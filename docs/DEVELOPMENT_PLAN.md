@@ -13,13 +13,15 @@ Deliverables:
 
 ## Phase 1: S3 USB MIDI Host Spike
 
+Status: raw logger implemented; hardware capture still required.
+
 Goal: prove that the S3 can enumerate the DDJ-FLX4 and read raw MIDI.
 
 Tasks:
 
-- add `flx4_midi_host` component;
-- initialize ESP-IDF USB host;
-- log device VID/PID, interfaces, endpoints, and MIDI packets;
+- add `flx4_midi_host` component; done
+- initialize ESP-IDF USB host; done
+- log device VID/PID, interfaces, endpoints, and MIDI packets; implemented, pending hardware capture
 - create a raw MIDI capture mode;
 - verify Play, Cue, Load, Browse, jog, tempo, channel faders, crossfader, and
   headphone cue against `docs/DDJ_FLX4_MIDI_MAP.md`.

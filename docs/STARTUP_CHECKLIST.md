@@ -32,8 +32,9 @@
 
 ## First Firmware Task
 
-Create `firmware/control-board-s3/components/flx4_midi_host/` and implement a
-raw MIDI logging spike before changing P4 behavior.
+`firmware/control-board-s3/components/flx4_midi_host/` now contains the raw
+USB MIDI logging spike. Build with `CONFIG_DDJ_FLX4_HOST_MODE=y`, flash the S3,
+connect the DDJ-FLX4, and capture the serial logs before changing P4 behavior.
 
 Required output from the spike:
 
