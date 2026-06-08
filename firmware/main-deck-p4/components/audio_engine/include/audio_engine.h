@@ -40,6 +40,8 @@
 #endif
 
 #define AUDIO_PVBR_LEN  400u   /* entries in Rekordbox PVBR seek table */
+#define AUDIO_ENGINE_DECK_COUNT 2u
+#define AUDIO_ENGINE_COMPAT_DECK 0u
 
 /*
  * Initialise the audio engine.
@@ -108,6 +110,25 @@ float audio_engine_raw_pitch_to_percent(int16_t raw_pitch);
 uint32_t audio_engine_position_ms(void);
 
 bool audio_engine_is_playing(void);
+
+/*
+ * Transitional deck-aware API for the DDJ-FLX4 port.
+ *
+ * Deck 0 delegates to the current single global engine. Deck 1 returns
+ * ESP_ERR_NOT_SUPPORTED for mutating operations until Phase 4 splits the
+ * engine state and output mixer.
+ */
+esp_err_t audio_engine_deck_load(uint8_t deck,
+                                 const char *mp3_path,
+                                 const uint32_t *pvbr_400,
+                                 uint32_t duration_ms);
+esp_err_t audio_engine_deck_play(uint8_t deck);
+esp_err_t audio_engine_deck_pause(uint8_t deck);
+esp_err_t audio_engine_deck_stop(uint8_t deck);
+esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
+void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
+uint32_t audio_engine_deck_position_ms(uint8_t deck);
+bool audio_engine_deck_is_playing(uint8_t deck);
 
 /*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).

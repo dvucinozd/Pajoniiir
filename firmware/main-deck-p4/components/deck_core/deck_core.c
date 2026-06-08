@@ -56,7 +56,7 @@ static uint8_t deck_index_for_event(const ctrl_event_t *ev)
 
 static bool deck_uses_audio_engine(uint8_t deck)
 {
-    return deck == DECK_CORE_COMPAT_DECK;
+    return deck < DECK_CORE_DECK_COUNT;
 }
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
@@ -98,13 +98,13 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
 
     switch (btn) {
     case BTN_PLAY:
-        if (uses_audio && audio_engine_is_playing()) {
-            audio_engine_pause();
+        if (uses_audio && audio_engine_deck_is_playing(deck)) {
+            audio_engine_deck_pause(deck);
             state->playing = false;
         } else {
             if (uses_audio) {
-                audio_engine_play();
-                state->playing = true;
+                esp_err_t rc = audio_engine_deck_play(deck);
+                state->playing = (rc == ESP_OK) ? true : !state->playing;
             } else {
                 state->playing = !state->playing;
             }
@@ -119,8 +119,8 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         // whether the deck is playing or already paused. Custom cue points are
         // handled by the hot-cue pads, so CUE here is a reliable "back to cue".
         if (uses_audio) {
-            audio_engine_pause();
-            audio_engine_seek(state->cue_point_ms);
+            audio_engine_deck_pause(deck);
+            audio_engine_deck_seek(deck, state->cue_point_ms);
         }
         state->playing     = false;
         state->position_ms = state->cue_point_ms;
@@ -142,7 +142,7 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
 
     case BTN_EJECT:
         if (uses_audio) {
-            audio_engine_stop();
+            audio_engine_deck_stop(deck);
         }
         state->playing      = false;
         state->position_ms  = 0;
@@ -178,10 +178,10 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
 
     case BTN_SEARCH_BACK:
     case BTN_SEARCH_FWD: {
-        uint32_t current = uses_audio ? audio_engine_position_ms() : state->position_ms;
+        uint32_t current = uses_audio ? audio_engine_deck_position_ms(deck) : state->position_ms;
         int32_t target = (int32_t)current + (btn == BTN_SEARCH_FWD ? SEARCH_STEP_MS : -SEARCH_STEP_MS);
         if (target < 0) target = 0;
-        esp_err_t rc = uses_audio ? audio_engine_seek((uint32_t)target) : ESP_OK;
+        esp_err_t rc = uses_audio ? audio_engine_deck_seek(deck, (uint32_t)target) : ESP_OK;
         if (rc == ESP_OK) {
             state->position_ms = (uint32_t)target;
             ESP_LOGI(TAG, "deck %u search %s -> %lu ms", (unsigned)deck + 1,
@@ -220,7 +220,7 @@ static void on_jog(uint8_t deck, int16_t delta)
         int32_t pos = (int32_t)state->position_ms + delta * 3;
         state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
         if (deck_uses_audio_engine(deck)) {
-            audio_engine_seek(state->position_ms);
+            audio_engine_deck_seek(deck, state->position_ms);
         }
         ESP_LOGD(TAG, "deck %u jog scratch -> %lu ms", (unsigned)deck + 1,
                  (unsigned long)state->position_ms);
@@ -243,7 +243,7 @@ static void on_pitch(uint8_t deck, int16_t raw)
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     state->pitch = raw;
     if (deck_uses_audio_engine(deck)) {
-        audio_engine_set_pitch(raw);
+        audio_engine_deck_set_pitch(deck, raw);
     }
     ESP_LOGD(TAG, "deck %u pitch %d (center %d, offset %+d)",
              (unsigned)deck + 1, raw, PITCH_CENTER, raw - PITCH_CENTER);
@@ -364,9 +364,9 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
     // global audio engine. Deck 2 state is authoritative until Phase 4
     // introduces per-deck audio engines.
     if (idx == DECK_CORE_COMPAT_DECK) {
-        if (audio_engine_is_playing()) {
+        if (audio_engine_deck_is_playing(idx)) {
             state->playing     = true;
-            state->position_ms = audio_engine_position_ms();
+            state->position_ms = audio_engine_deck_position_ms(idx);
         } else {
             state->playing     = false;
         }

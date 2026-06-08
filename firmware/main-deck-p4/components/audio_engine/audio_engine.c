@@ -1235,6 +1235,72 @@ void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end
     AE_UNLOCK();
 }
 
+static bool deck_is_valid(uint8_t deck)
+{
+    return deck < AUDIO_ENGINE_DECK_COUNT;
+}
+
+static bool deck_uses_compat_engine(uint8_t deck)
+{
+    return deck == AUDIO_ENGINE_COMPAT_DECK;
+}
+
+esp_err_t audio_engine_deck_load(uint8_t deck,
+                                 const char *mp3_path,
+                                 const uint32_t *pvbr_400,
+                                 uint32_t duration_ms)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    return audio_engine_load(mp3_path, pvbr_400, duration_ms);
+}
+
+esp_err_t audio_engine_deck_play(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    return audio_engine_play();
+}
+
+esp_err_t audio_engine_deck_pause(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    return audio_engine_pause();
+}
+
+esp_err_t audio_engine_deck_stop(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    return audio_engine_stop();
+}
+
+esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    return audio_engine_seek(position_ms);
+}
+
+void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
+{
+    if (!deck_uses_compat_engine(deck)) return;
+    audio_engine_set_pitch(raw_pitch);
+}
+
+uint32_t audio_engine_deck_position_ms(uint8_t deck)
+{
+    if (!deck_uses_compat_engine(deck)) return 0;
+    return audio_engine_position_ms();
+}
+
+bool audio_engine_deck_is_playing(uint8_t deck)
+{
+    if (!deck_uses_compat_engine(deck)) return false;
+    return audio_engine_is_playing();
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * PC test helper — decode to WAV file (AUDIO_ENGINE_PC_TEST only)

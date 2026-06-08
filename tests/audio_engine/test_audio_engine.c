@@ -114,10 +114,37 @@ static void test_pitch(void)
     audio_engine_set_pitch(8192);
 }
 
-/* ── Test 4: real MP3 decode to WAV (optional, skipped if no file given) ── */
+/* ── Test 4: per-deck transition API guards ─────────────────────────────── */
+static void test_deck_api(void)
+{
+    printf("\n[Test 4] Per-deck transition API\n");
+
+    EXPECT(audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
+           "deck 0 load delegates to current engine");
+    EXPECT(audio_engine_deck_load(1, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_SUPPORTED,
+           "deck 1 load is explicitly unsupported before dual engine");
+    EXPECT(audio_engine_deck_load(2, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_INVALID_ARG,
+           "out-of-range deck load returns INVALID_ARG");
+
+    EXPECT(audio_engine_deck_play(1) == ESP_ERR_NOT_SUPPORTED,
+           "deck 1 play unsupported before dual engine");
+    EXPECT(audio_engine_deck_pause(1) == ESP_ERR_NOT_SUPPORTED,
+           "deck 1 pause unsupported before dual engine");
+    EXPECT(audio_engine_deck_seek(1, 1000) == ESP_ERR_NOT_SUPPORTED,
+           "deck 1 seek unsupported before dual engine");
+
+    audio_engine_deck_set_pitch(0, 8192);
+    audio_engine_deck_set_pitch(1, 8192);
+    EXPECT(audio_engine_deck_is_playing(1) == false,
+           "deck 1 reports not playing before dual engine");
+    EXPECT(audio_engine_deck_position_ms(1) == 0,
+           "deck 1 position is zero before dual engine");
+}
+
+/* ── Test 5: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 4] Decode MP3 → WAV\n");
+    printf("\n[Test 5] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -176,12 +203,13 @@ int main(int argc, char *argv[])
     test_init();
     test_load_missing();
     test_pitch();
+    test_deck_api();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 4] Decode MP3 → WAV\n");
+        printf("\n[Test 5] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 
