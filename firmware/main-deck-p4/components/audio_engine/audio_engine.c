@@ -111,7 +111,7 @@ static inline void ring_pop(int16_t *l, int16_t *r)
 }
 
 /* ── Engine state ─────────────────────────────────────────────────────────── */
-static struct {
+typedef struct {
     FILE    *fp;
     mp3dec_t dec;
 
@@ -162,7 +162,12 @@ static struct {
     /* Instant Frame-Index Seek */
     uint32_t *seek_table;
     uint32_t  seek_table_len;
-} s_eng;
+} audio_engine_state_t;
+
+static audio_engine_state_t  s_engines[AUDIO_ENGINE_DECK_COUNT];
+static audio_engine_state_t *s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
+
+#define s_eng (*s_active_eng)
 
 /* UI-facing lifecycle state (P5a): LOADING while the track preloads from USB. */
 static volatile bool    s_loading  = false;
@@ -827,9 +832,12 @@ static void ae_output_task(void *arg)
 /* ── audio_engine_init ────────────────────────────────────────────────────── */
 esp_err_t audio_engine_init(void)
 {
-    memset(&s_eng, 0, sizeof s_eng);
-    s_eng.pitch_factor = 1.0f;
-    mp3dec_init(&s_eng.dec);
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        memset(&s_engines[i], 0, sizeof s_engines[i]);
+        s_engines[i].pitch_factor = 1.0f;
+        mp3dec_init(&s_engines[i].dec);
+    }
+    s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
     s_ring_w = s_ring_r = 0u;
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
@@ -1245,60 +1253,114 @@ static bool deck_uses_compat_engine(uint8_t deck)
     return deck == AUDIO_ENGINE_COMPAT_DECK;
 }
 
+static audio_engine_state_t *select_engine(uint8_t deck)
+{
+    audio_engine_state_t *prev = s_active_eng;
+    s_active_eng = &s_engines[deck];
+    return prev;
+}
+
+static void restore_engine(audio_engine_state_t *prev)
+{
+    s_active_eng = prev;
+}
+
 esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const char *mp3_path,
                                  const uint32_t *pvbr_400,
                                  uint32_t duration_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-    return audio_engine_load(mp3_path, pvbr_400, duration_ms);
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    esp_err_t rc = audio_engine_load(mp3_path, pvbr_400, duration_ms);
+    restore_engine(prev);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_play(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-    return audio_engine_play();
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    esp_err_t rc = audio_engine_play();
+    restore_engine(prev);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_pause(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-    return audio_engine_pause();
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    esp_err_t rc = audio_engine_pause();
+    restore_engine(prev);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_stop(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-    return audio_engine_stop();
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    esp_err_t rc = audio_engine_stop();
+    restore_engine(prev);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-    return audio_engine_seek(position_ms);
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    esp_err_t rc = audio_engine_seek(position_ms);
+    restore_engine(prev);
+    return rc;
 }
 
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 {
+    if (!deck_is_valid(deck)) return;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return;
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
     audio_engine_set_pitch(raw_pitch);
+    restore_engine(prev);
 }
 
 uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
+    if (!deck_is_valid(deck)) return 0;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return 0;
-    return audio_engine_position_ms();
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    uint32_t pos = audio_engine_position_ms();
+    restore_engine(prev);
+    return pos;
 }
 
 bool audio_engine_deck_is_playing(uint8_t deck)
 {
+    if (!deck_is_valid(deck)) return false;
+#if AE_FW
     if (!deck_uses_compat_engine(deck)) return false;
-    return audio_engine_is_playing();
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    bool playing = audio_engine_is_playing();
+    restore_engine(prev);
+    return playing;
 }
 
 

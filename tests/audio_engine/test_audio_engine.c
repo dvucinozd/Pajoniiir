@@ -121,30 +121,69 @@ static void test_deck_api(void)
 
     EXPECT(audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
            "deck 0 load delegates to current engine");
-    EXPECT(audio_engine_deck_load(1, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_SUPPORTED,
-           "deck 1 load is explicitly unsupported before dual engine");
+    EXPECT(audio_engine_deck_load(1, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
+           "deck 1 load has its own engine state");
     EXPECT(audio_engine_deck_load(2, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_INVALID_ARG,
            "out-of-range deck load returns INVALID_ARG");
 
-    EXPECT(audio_engine_deck_play(1) == ESP_ERR_NOT_SUPPORTED,
-           "deck 1 play unsupported before dual engine");
-    EXPECT(audio_engine_deck_pause(1) == ESP_ERR_NOT_SUPPORTED,
-           "deck 1 pause unsupported before dual engine");
-    EXPECT(audio_engine_deck_seek(1, 1000) == ESP_ERR_NOT_SUPPORTED,
-           "deck 1 seek unsupported before dual engine");
+    EXPECT(audio_engine_deck_play(1) == ESP_ERR_INVALID_STATE,
+           "deck 1 play before load returns INVALID_STATE");
+    EXPECT(audio_engine_deck_pause(1) == ESP_ERR_INVALID_STATE,
+           "deck 1 pause before load returns INVALID_STATE");
+    EXPECT(audio_engine_deck_seek(1, 1000) == ESP_ERR_INVALID_STATE,
+           "deck 1 seek before load returns INVALID_STATE");
 
     audio_engine_deck_set_pitch(0, 8192);
     audio_engine_deck_set_pitch(1, 8192);
     EXPECT(audio_engine_deck_is_playing(1) == false,
-           "deck 1 reports not playing before dual engine");
+           "deck 1 reports not playing before load");
     EXPECT(audio_engine_deck_position_ms(1) == 0,
-           "deck 1 position is zero before dual engine");
+           "deck 1 position is zero before load");
 }
 
-/* ── Test 5: real MP3 decode to WAV (optional, skipped if no file given) ── */
+static void test_deck_states_are_independent(void)
+{
+    printf("\n[Test 5] Per-deck state split\n");
+
+    const char *path = "dummy_deck_audio.mp3";
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        static const unsigned char bytes[] = {0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00};
+        fwrite(bytes, 1, sizeof bytes, f);
+        fclose(f);
+    }
+    EXPECT(f != NULL, "dummy audio file created");
+
+    EXPECT(audio_engine_deck_load(0, path, NULL, 10000) == ESP_OK,
+           "deck 0 dummy load returns ESP_OK");
+    EXPECT(audio_engine_deck_load(1, path, NULL, 20000) == ESP_OK,
+           "deck 1 dummy load returns ESP_OK");
+
+    EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 play returns ESP_OK");
+    EXPECT(audio_engine_deck_is_playing(0), "deck 0 is playing");
+    EXPECT(!audio_engine_deck_is_playing(1), "deck 1 is still stopped");
+
+    EXPECT(audio_engine_deck_play(1) == ESP_OK, "deck 1 play returns ESP_OK");
+    EXPECT(audio_engine_deck_is_playing(0), "deck 0 remains playing");
+    EXPECT(audio_engine_deck_is_playing(1), "deck 1 is playing");
+
+    EXPECT(audio_engine_deck_seek(0, 1234) == ESP_OK, "deck 0 seek returns ESP_OK");
+    EXPECT(audio_engine_deck_seek(1, 5678) == ESP_OK, "deck 1 seek returns ESP_OK");
+    EXPECT(audio_engine_deck_position_ms(0) == 1234, "deck 0 position is independent");
+    EXPECT(audio_engine_deck_position_ms(1) == 5678, "deck 1 position is independent");
+
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK, "deck 0 stop returns ESP_OK");
+    EXPECT(!audio_engine_deck_is_playing(0), "deck 0 stopped");
+    EXPECT(audio_engine_deck_is_playing(1), "deck 1 remains playing after deck 0 stop");
+
+    audio_engine_deck_stop(1);
+    remove(path);
+}
+
+/* ── Test 6: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 5] Decode MP3 → WAV\n");
+    printf("\n[Test 6] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -204,12 +243,13 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_deck_api();
+    test_deck_states_are_independent();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 5] Decode MP3 → WAV\n");
+        printf("\n[Test 6] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

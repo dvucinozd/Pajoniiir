@@ -101,14 +101,14 @@ Exit criteria:
 
 ## Phase 4: Dual Audio Engine And Mixer
 
-Status: started; deck-aware transition API implemented.
+Status: started; deck-aware API and per-deck engine state storage implemented.
 
 Goal: play two tracks and mix them into a master output.
 
 Tasks:
 
 - add deck-aware audio API boundary; done
-- split single global `s_eng` into per-deck engine state;
+- split single global `s_eng` into per-deck engine state; started
 - run two decode producers;
 - add a mixer/output consumer;
 - implement channel volume and crossfader gains;
@@ -125,10 +125,11 @@ Exit criteria:
 Validation note, 2026-06-08:
 
 - `audio_engine_deck_*` APIs exist as the boundary between `deck_core` and the
-  future dual-engine backend.
-- Deck 0 delegates to the inherited single global engine.
-- Deck 1 mutating audio operations return `ESP_ERR_NOT_SUPPORTED` until the
-  state split and mixer are implemented.
+  dual-engine backend.
+- `audio_engine` stores `s_engines[2]` and routes deck-aware operations through
+  the selected engine state in the PC/test path.
+- Deck 0 remains the firmware output compatibility deck. Deck 1 firmware output
+  remains blocked until per-deck decode/output tasks and the mixer are added.
 - `deck_core` now calls the deck-aware audio API instead of direct singleton
   audio calls.
 
