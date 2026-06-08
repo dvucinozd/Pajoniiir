@@ -1,0 +1,97 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# ── Chip revision ─────────────────────────────────────────────────────────────
+# Allow flashing on any ESP32-P4 silicon revision (incl. v1.3 early samples).
+# IDF 5.5 defaults to v3.1+ which blocks early-revision boards.
+CONFIG_ESP32P4_REV_MIN_100=y
+CONFIG_ESP32P4_REV_MIN_FULL=100
+
+# ── Flash + partitions (N16R8: 16 MB flash) ──────────────────────────────────
+# Default 2 MB / 1 MB single-app is too small for the full feature set
+# (LVGL + display + touch + USB-MSC + codec + minimp3). 16 MB flash, 4 MB app.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# RTOS – 1 kHz tick
+CONFIG_FREERTOS_HZ=1000
+
+# Console on UART0
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# ── SPIRAM (32MB HEX/16-line PSRAM on JC4880P443C_I_W) ───────────────────────
+# Enables external PSRAM so large buffers (PDB index, ANLZ waveforms, the MIPI
+# DSI frame buffer) fit. CONFIG_SPIRAM_USE_MALLOC lets malloc() fall back to PSRAM.
+# 200 MHz is REQUIRED for the DPI panel: at 20 MHz the DSI engine can't fetch the
+# RGB888 frame buffer fast enough and reports "underrun" every refresh.
+# 200M speed is gated behind IDF_EXPERIMENTAL_FEATURES (same as the IDF DSI demo).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_SPIRAM_FLASH_LOAD_TO_PSRAM=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=256
+
+# ── Main task stack ───────────────────────────────────────────────────────────
+# ui_init() builds all 7 LVGL screens synchronously on the main task; the default
+# 3.5 KB stack overflows (stack-protection panic). Give it room.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# ── USB host (Rekordbox media drive on the HS USB-C port) ────────────────────
+# Allow drives presented behind an internal hub (matches the IDF P4 MSC example).
+CONFIG_USB_HOST_HUBS_SUPPORTED=y
+
+# ── FATFS ─────────────────────────────────────────────────────────────────────
+# Long filename support is OFF by default (8.3 only) → Rekordbox paths like
+# "rekordbox/export.pdb" and "Contents/.../*.mp3" can't be opened. Enable LFN.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# ── LVGL rendering ────────────────────────────────────────────────────────────
+# Render natively in RGB565 to match the ST7701S panel frame buffer (16bpp, per
+# the JC4880 vendor demo), avoiding a per-frame color conversion in the flush path.
+CONFIG_LV_COLOR_DEPTH_16=y
+
+# ── LVGL fonts used by the UI ─────────────────────────────────────────────────
+# Enable the Montserrat font sizes referenced in ui.c
+CONFIG_LV_FONT_MONTSERRAT_12=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+
+# ── LVGL Custom Malloc ────────────────────────────────────────────────────────
+# Use standard C library malloc/free/realloc to allocate from ESP-IDF heap.
+# This allows LVGL widgets and large table cells to utilize 8MB of PSRAM,
+# preventing internal 64KB SRAM exhaustion.
+# CONFIG_LV_USE_BUILTIN_MALLOC is not set
+CONFIG_LV_USE_CLIB_MALLOC=y
+
+# ── ESP32-P4 Wi-Fi expansion via onboard ESP32-C6 (ESP-Hosted over SDIO) ─────
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD=y
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM=16
+CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_AMPDU_TX_ENABLED=y
+CONFIG_WIFI_RMT_TX_BA_WIN=32
+CONFIG_WIFI_RMT_AMPDU_RX_ENABLED=y
+CONFIG_WIFI_RMT_RX_BA_WIN=32
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=65534
+CONFIG_LWIP_TCP_WND_DEFAULT=65534
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCP_SACK_OUT=y

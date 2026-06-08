@@ -1,0 +1,9 @@
+## IDF Component Manager manifest for the `ui` component
+## This declares LVGL as a managed dependency so `idf.py build`
+## automatically fetches it from the ESP-IDF component registry.
+
+dependencies:
+  lvgl/lvgl:
+    version: ">=9.0.0"
+  idf:
+    version: ">=5.0.0"

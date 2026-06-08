@@ -1,0 +1,8 @@
+CompileFlags:
+    Remove: [-f*, -m*]
+
+---
+If:
+  PathMatch: lv_port_pc_vscode/.*
+CompileFlags:
+  CompilationDatabase: d:/AI/CDJ-XXX/repo/lv_port_pc_vscode/build

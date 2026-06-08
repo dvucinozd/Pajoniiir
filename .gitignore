@@ -1,0 +1,37 @@
+# Local source/reference drops
+JC4880P443C_I_W/
+upstream/
+vendor/
+
+
+# ESP-IDF / embedded build outputs
+build/
+managed_components/
+dependencies.lock
+sdkconfig
+sdkconfig.old
+
+# Tool/editor files
+.vscode/
+.idea/
+.cache/
+.superpowers/
+*.log
+*.tmp
+
+# PC test build artifacts
+tests/**/*.exe
+tests/**/*.o
+tests/**/*.obj
+tests/**/*.a
+tests/**/*.lib
+tests/**/*.dll
+tests/**/*.so
+tests/**/real_out.txt
+tests/**/real_err.txt
+tests/**/real_result.txt
+
+# OS files
+Thumbs.db
+Desktop.ini
+

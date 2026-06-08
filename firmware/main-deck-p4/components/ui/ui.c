@@ -1,0 +1,3504 @@
+#include "ui.h"
+#include "lvgl.h"
+#include "ui_theme.h"   // centralised colour palette (COL_*); needs lvgl.h above
+#include "esp_log.h"
+#include "deck_core.h"
+#include "library.h"
+#include "ui_beat_indicator.h"
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifndef WIN32
+// ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
+#include "bsp_jc4880.h"
+#include "audio_engine.h"
+#include "app_settings.h"
+#include "control_link.h"
+#include "media_catalog.h"
+#include "cdj_link_client.h"
+#include "remote_cache.h"
+#include "sd_diag_log.h"
+#include "wifi_link.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_mipi_dsi.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "esp_cache.h"
+#include "esp_private/esp_cache_private.h"
+#include "driver/ppa.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
+#include <sys/lock.h>
+
+#define LVGL_TICK_PERIOD_MS   2
+#define LVGL_TASK_STACK       (24 * 1024)
+#define LVGL_TASK_PRIO        2
+#define UI_TRACK_LOAD_STACK   (10 * 1024)
+
+// The UI canvas is 800x480 landscape; the physical ST7701 panel is 480x800
+// portrait. LVGL renders landscape, then the flush callback uses the ESP32-P4
+// PPA (Pixel Processing Accelerator) to rotate each full frame into the panel's
+// MIPI-DSI frame buffer. LVGL's own software rotation is unusable here (partial
+// mode corrupts the DSI DMA; full mode doesn't rotate), so we rotate in hardware.
+#define UI_HOR_RES   800   // logical landscape width  (LVGL canvas)
+#define UI_VER_RES   480   // logical landscape height
+#define UI_DSI_FB_COUNT 3  // DPI framebuffers (num_fbs=3) for tear-free triple buffering
+#define ALIGN_UP_BY(n, a)  (((n) + ((a) - 1)) & ~((a) - 1))
+
+// LVGL is not thread-safe: any LVGL call outside the handler task must hold this.
+static _lock_t              s_lvgl_lock;
+static lv_display_t        *s_disp        = NULL;
+static ppa_client_handle_t  s_ppa         = NULL;
+// Triple buffering: the PPA rotates each frame into a NON-displayed framebuffer,
+// then esp_lcd_panel_draw_bitmap() switches the DPI to it at the next frame
+// boundary (tear-free). Rotating through 3 buffers gives 2 frames of slack so we
+// never write the buffer currently on screen (LVGL flush rate ≤ panel refresh).
+static void                *s_dsi_fb[UI_DSI_FB_COUNT] = { NULL };
+static int                  s_dsi_fb_idx  = 1;   // next fb to render into (fb 0 active at boot)
+static size_t               s_cache_align = 64;
+#endif
+
+static const char *TAG = "ui";
+
+// ─── UI State and Variables ──────────────────────────────────────────────────
+static lv_obj_t *s_root_container = NULL;
+static lv_obj_t *s_header_container = NULL;
+static lv_obj_t *s_footer_container = NULL;
+static lv_obj_t *s_screens[7];
+static int       s_active_tab = 0;
+
+// Header elements
+static lv_obj_t *s_label_title = NULL;
+static lv_obj_t *s_label_artist = NULL;
+static lv_obj_t *s_label_time = NULL;          // elapsed (current position)
+static lv_obj_t *s_label_time_remain = NULL;   // remaining until end of track
+static lv_obj_t *s_label_bpm = NULL;
+static lv_obj_t *s_label_pitch = NULL;
+static lv_obj_t *s_label_status_indicator = NULL;
+static uint32_t  s_status_override_until_ms = 0;
+
+// Sub-screen elements
+static int       s_selected_track_idx = 0;
+static lv_obj_t *s_library_table = NULL;
+static volatile bool s_library_needs_refresh = false;
+static bool      s_sort_artist_desc = false;
+static bool      s_sort_name_desc = false;
+static bool      s_sort_bpm_desc = false;
+static bool      s_track_load_busy = false;
+#ifndef WIN32
+static media_loaded_track_t  s_loaded_media;
+static bool                  s_loaded_media_valid = false;
+static media_source_t        s_loaded_media_source = MEDIA_SOURCE_LOCAL_USB;
+static QueueHandle_t         s_track_load_result_q = NULL;
+static volatile bool         s_usb_removed_pending = false;
+#endif
+
+// Waveform visualizer definitions
+#define OVERVIEW_CV_W 400
+#define OVERVIEW_CV_H 76
+
+static lv_obj_t *s_overview_canvas = NULL;
+static uint8_t  *s_overview_cv_buf = NULL; // 8 bpp buffer u SRAM-u (~31 KB)
+static int       s_overview_stride_px = OVERVIEW_CV_W;
+static lv_obj_t *s_overview_playhead = NULL;
+static lv_obj_t *s_beat_pulses[4];
+
+// High-res zoom waveform: rendered to an lv_canvas for smooth pixel scrolling.
+#define ZOOM_CV_W       758   // canvas width  (even → RGB565/I8 stride, 4-byte aligned)
+#define ZOOM_CV_H       120   // canvas height (kept modest so the buffer fits internal RAM)
+#define ZOOM_MS_PER_PX  16    // horizontal scale: ms of audio per pixel column
+static lv_obj_t *s_zoom_canvas    = NULL;
+static uint8_t  *s_zoom_cv_buf    = NULL;   // 8 bpp pixel buffer (SRAM on firmware, including 1024B palette)
+static int       s_zoom_stride_px = ZOOM_CV_W;   // actual canvas row stride in pixels
+static uint32_t  s_zoom_last_pos  = 0xFFFFFFFFu; // last drawn position (for redraw gating)
+static bool      s_zoom_redraw    = true;        // force a redraw (track change, etc.)
+static int       s_overview_last_fill_x = -1;
+static int       s_overview_last_playhead_x = -1;
+
+// Hot cue buttons and values
+static uint32_t s_hot_cue_positions[8] = {
+    0,      // Cue A: 0s
+    15000,  // Cue B: 15s
+    30000,  // Cue C: 30s
+    45000,  // Cue D: 45s
+    60000,  // Cue E: 60s
+    90000,  // Cue F: 90s
+    120000, // Cue G: 120s
+    150000  // Cue H: 150s
+};
+static uint32_t s_hot_cue_ends[8] = {0};
+static uint8_t  s_hot_cue_types[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 = ANLZ_CUE_SINGLE, 2 = ANLZ_CUE_LOOP
+static lv_obj_t *s_hot_cue_buttons[8];
+static lv_obj_t *s_overview_cue_markers[8];
+static lv_obj_t *s_loop_buttons[6];
+static lv_obj_t *s_label_loop_status = NULL;
+static int       s_loop_active_beats = 0;
+
+// Footer navigation buttons
+static lv_obj_t *s_footer_buttons[7];
+static lv_obj_t *s_footer_active_strips[7];
+static const char *s_tab_names[7] = {
+    "OVERVIEW", "LIBRARY", "HOT CUES", "LOOP", "BEAT JUMP", "KEY SHIFT", "SETTINGS"
+};
+
+// Loop Simulation settings
+static bool     s_loop_active = false;
+static uint32_t s_loop_start_ms = 0;
+static uint32_t s_loop_end_ms = 0;
+
+// Settings Screen Widgets
+static lv_obj_t *s_slider_backlight = NULL;
+static lv_obj_t *s_label_brightness_val = NULL;
+static lv_obj_t *s_label_uart_status = NULL;
+static lv_obj_t *s_label_audio_out = NULL;
+static lv_obj_t *s_label_link_status = NULL;
+static lv_obj_t *s_label_link_mode = NULL;
+static lv_obj_t *s_label_sd_status = NULL;
+static lv_obj_t *s_label_sd_cache_status = NULL;
+static lv_obj_t *s_label_library_source = NULL;
+static lv_obj_t *s_btn_library_load = NULL;
+static lv_obj_t *s_label_library_hint = NULL;
+
+typedef struct {
+    bool valid;
+    char text[80];
+} ui_text_cache_t;
+
+typedef struct {
+    bool valid;
+    uint32_t color;
+} ui_color_cache_t;
+
+typedef struct {
+    bool valid;
+    bool active;
+    bool downbeat;
+    lv_opa_t opa;
+} ui_beat_dot_cache_t;
+
+static ui_text_cache_t s_cache_status_text;
+static ui_color_cache_t s_cache_status_color;
+static ui_color_cache_t s_cache_uart_color;
+static ui_color_cache_t s_cache_sd_color;
+static int s_cache_pitch_centipct = INT_MIN;
+static int s_cache_bpm_centi = INT_MIN;
+static uint32_t s_cache_elapsed_centis = UINT32_MAX;
+static uint32_t s_cache_remain_centis = UINT32_MAX;
+static bool s_cache_time_loading = false;
+static ui_color_cache_t s_cache_remain_color;
+static int s_cache_uart_state = -1;
+static uint32_t s_cache_uart_age_bucket = UINT32_MAX;
+static int s_cache_sd_state = -1;
+static uint32_t s_cache_sd_free_mib = UINT32_MAX;
+static uint32_t s_cache_sd_total_mib = UINT32_MAX;
+static uint32_t s_cache_sd_last_poll_ms = 0;
+static ui_text_cache_t s_cache_sd_text;
+static ui_text_cache_t s_cache_sd_cache_text;
+static uint32_t s_cache_sd_cache_last_poll_ms = 0;
+static uint32_t s_cache_sd_cache_mib = UINT32_MAX;
+static uint32_t s_cache_sd_cache_tracks = UINT32_MAX;
+static uint32_t s_cache_sd_cache_files = UINT32_MAX;
+static ui_beat_dot_cache_t s_cache_beat_dots[4];
+
+// ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
+static lv_style_t s_style_root;
+static lv_style_t s_style_header;
+static lv_style_t s_style_footer;
+static lv_style_t s_style_tab_btn_normal;
+static lv_style_t s_style_tab_btn_active;
+static lv_style_t s_style_tab_btn_disabled;
+static lv_style_t s_style_screen_bg;
+static lv_style_t s_style_panel_frame;
+static lv_style_t s_style_btn_primary;
+static lv_style_t s_style_btn_amber;
+static lv_style_t s_style_btn_secondary;
+static lv_style_t s_style_btn_disabled;
+static lv_style_t s_style_btn_neon;
+static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on press)
+
+#ifdef WIN32
+static void ui_load_waveform(const library_track_t *track);
+#endif
+#ifndef WIN32
+static void ui_load_waveform_media(const media_loaded_track_t *track);
+#endif
+static void ui_update_library_source_label(void);
+#ifndef WIN32
+static void ui_update_sd_status_label(bool force);
+static void ui_update_sd_cache_status_label(bool force);
+#endif
+static void ui_update_hot_cues(void);
+static void ui_fill_library_row(int i);
+static void jump_btn_event_cb(lv_event_t *e);
+#ifndef WIN32
+typedef struct {
+    int index;
+    uint32_t generation;
+    media_source_t source;
+    media_catalog_track_t item;
+    media_loaded_track_t loaded;
+    esp_err_t rc;
+    char status[40];
+} ui_track_load_result_t;
+
+typedef struct {
+    int index;
+    uint32_t generation;
+    media_source_t source;
+} ui_track_load_request_t;
+
+static ui_track_load_result_t s_track_load_worker_result;
+
+static void ui_submit_track_load(int index);
+static void ui_poll_track_load_result(void);
+#endif
+
+static void ui_cache_invalidate(void)
+{
+    s_cache_status_text.valid = false;
+    s_cache_status_color.valid = false;
+    s_cache_uart_color.valid = false;
+    s_cache_sd_color.valid = false;
+    s_cache_pitch_centipct = INT_MIN;
+    s_cache_bpm_centi = INT_MIN;
+    s_cache_elapsed_centis = UINT32_MAX;
+    s_cache_remain_centis = UINT32_MAX;
+    s_cache_time_loading = false;
+    s_cache_remain_color.valid = false;
+    s_cache_uart_state = -1;
+    s_cache_uart_age_bucket = UINT32_MAX;
+    s_cache_sd_state = -1;
+    s_cache_sd_free_mib = UINT32_MAX;
+    s_cache_sd_total_mib = UINT32_MAX;
+    s_cache_sd_last_poll_ms = 0;
+    s_cache_sd_text.valid = false;
+    s_cache_sd_cache_text.valid = false;
+    s_cache_sd_cache_last_poll_ms = 0;
+    s_cache_sd_cache_mib = UINT32_MAX;
+    s_cache_sd_cache_tracks = UINT32_MAX;
+    s_cache_sd_cache_files = UINT32_MAX;
+    memset(s_cache_beat_dots, 0, sizeof(s_cache_beat_dots));
+}
+
+static void ui_label_set_text_cached(lv_obj_t *label, ui_text_cache_t *cache, const char *text)
+{
+    if (!label || !cache) return;
+    const char *safe_text = text ? text : "";
+    if (cache->valid && strncmp(cache->text, safe_text, sizeof(cache->text)) == 0) {
+        return;
+    }
+    lv_label_set_text(label, safe_text);
+    snprintf(cache->text, sizeof(cache->text), "%s", safe_text);
+    cache->valid = true;
+}
+
+static void ui_obj_set_text_color_cached(lv_obj_t *obj, ui_color_cache_t *cache, lv_color_t color)
+{
+    if (!obj || !cache) return;
+    uint32_t color_u32 = lv_color_to_u32(color);
+    if (cache->valid && cache->color == color_u32) {
+        return;
+    }
+    lv_obj_set_style_text_color(obj, color, LV_PART_MAIN);
+    cache->color = color_u32;
+    cache->valid = true;
+}
+
+// LVGL's builtin vsnprintf has NO %f support unless LV_USE_FLOAT is enabled
+// (lv_sprintf_builtin.c: PRINTF_SUPPORT_FLOAT gates on it). Enabling LV_USE_FLOAT
+// would also switch lv_value_precise_t to float across all transform/anim math,
+// which we don't want. So render fixed 2-decimal floats here via integer math —
+// works on firmware and the PC simulator regardless of the sprintf config.
+static void ui_label_set_f2(lv_obj_t *lbl, float v) {
+    if (!lbl) return;
+    int c = (int)(v * 100.0f + (v >= 0.0f ? 0.5f : -0.5f));
+    if (c < 0) lv_label_set_text_fmt(lbl, "-%d.%02d", (-c) / 100, (-c) % 100);
+    else       lv_label_set_text_fmt(lbl, "%d.%02d", c / 100, c % 100);
+}
+
+static void ui_format_time_cc(char *out, size_t out_sz, uint32_t ms)
+{
+    uint32_t secs = ms / 1000;
+    uint32_t centis = (ms % 1000) / 10;
+    snprintf(out, out_sz, "%02u:%02u.%02u",
+             (unsigned)(secs / 60),
+             (unsigned)(secs % 60),
+             (unsigned)centis);
+}
+
+static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_t color)
+{
+    if (!label) {
+        return;
+    }
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+}
+
+static void ui_status_indicator_set(const char *text, lv_color_t color)
+{
+    if (!s_label_status_indicator) {
+        return;
+    }
+    ui_label_set_text_cached(s_label_status_indicator, &s_cache_status_text, text ? text : "LOAD ERR");
+    ui_obj_set_text_color_cached(s_label_status_indicator, &s_cache_status_color, color);
+}
+
+static void ui_status_indicator_hold(const char *text, lv_color_t color, uint32_t hold_ms)
+{
+    s_status_override_until_ms = lv_tick_get() + hold_ms;
+    ui_status_indicator_set(text, color);
+}
+
+static bool ui_status_indicator_has_override(void)
+{
+    return (int32_t)(s_status_override_until_ms - lv_tick_get()) > 0;
+}
+
+static lv_color_t ui_status_color_for_text(const char *status)
+{
+    if (!status || status[0] == '\0') {
+        return COL_RED;
+    }
+    if (strcmp(status, "HOST BUSY") == 0) {
+        return COL_AMBER;
+    }
+    if (strcmp(status, "JOIN OFFLINE") == 0 ||
+        strcmp(status, "JOIN FAILED") == 0 ||
+        strcmp(status, "MANIFEST ERR") == 0 ||
+        strcmp(status, "DAT ERR") == 0 ||
+        strcmp(status, "AUDIO ERR") == 0 ||
+        strcmp(status, "TASK CREATE ERR") == 0 ||
+        strcmp(status, "STOP ERR") == 0 ||
+        strcmp(status, "NO MEM") == 0 ||
+        strcmp(status, "NO AUDIO FRAME") == 0 ||
+        strcmp(status, "CODEC OPEN ERR") == 0 ||
+        strcmp(status, "NOT FOUND") == 0 ||
+        strcmp(status, "LOAD ERR") == 0) {
+        return COL_RED;
+    }
+    if (strcmp(status, "JOINED") == 0 ||
+        strcmp(status, "CACHE READY") == 0 ||
+        strcmp(status, "TRACK LOADED") == 0) {
+        return COL_GREEN;
+    }
+    if (strcmp(status, "LOADING") == 0 ||
+        strcmp(status, "CACHE START") == 0 ||
+        strcmp(status, "MANIFEST") == 0 ||
+        strcmp(status, "ANLZ0000.DAT") == 0 ||
+        strcmp(status, "ANLZ0000.EXT") == 0 ||
+        strcmp(status, "audio.mp3") == 0) {
+        return COL_ACCENT;
+    }
+    return COL_TEXT_DIM;
+}
+
+static void ui_library_set_load_busy(bool busy, const char *hint)
+{
+    if (s_btn_library_load) {
+        if (busy) {
+            lv_obj_add_state(s_btn_library_load, LV_STATE_DISABLED);
+            lv_obj_add_style(s_btn_library_load, &s_style_btn_disabled, LV_PART_MAIN);
+        } else {
+            lv_obj_clear_state(s_btn_library_load, LV_STATE_DISABLED);
+            lv_obj_remove_style(s_btn_library_load, &s_style_btn_disabled, LV_PART_MAIN);
+        }
+    }
+
+    if (s_label_library_hint) {
+        lv_label_set_text(s_label_library_hint, hint ? hint : "SELECT TRACK\nPRESS LOAD");
+    }
+}
+
+static void ui_style_hot_cue_pad(int index, bool is_loop, bool is_empty)
+{
+    if (index < 0 || index >= 8 || !s_hot_cue_buttons[index]) {
+        return;
+    }
+
+    static const uint32_t cue_hex_colors[8] = {
+        0x00E676,  // A: Green
+        0x00E5FF,  // B: Cyan
+        0xFFAB00,  // C: Orange/Amber
+        0xE040FB,  // D: Pink
+        0xFFD600,  // E: Yellow
+        0xFF1744,  // F: Red
+        0x7C4DFF,  // G: Purple
+        0x2979FF   // H: Blue
+    };
+
+    lv_obj_t *btn = s_hot_cue_buttons[index];
+    lv_color_t pad_color = lv_color_hex(cue_hex_colors[index]);
+    lv_color_t accent = is_empty ? COL_BORDER_LT : pad_color;
+    lv_color_t bg = is_empty ? COL_PANEL_DK : accent;
+    lv_color_t text = is_empty ? COL_TEXT_DIM : accent;
+
+    lv_obj_set_style_bg_color(btn, bg, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn, is_empty ? LV_OPA_COVER : LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, is_empty ? 1 : 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
+
+    lv_obj_t *lbl_pad = lv_obj_get_child(btn, 0);
+    if (lbl_pad) {
+        lv_obj_set_style_text_color(lbl_pad, text, LV_PART_MAIN);
+    }
+
+    lv_obj_t *lbl_time = lv_obj_get_child(btn, 1);
+    if (lbl_time) {
+        lv_obj_set_style_text_color(lbl_time, is_empty ? COL_TEXT_DIM : COL_TEXT, LV_PART_MAIN);
+    }
+}
+
+static void ui_update_loop_screen_state(void)
+{
+    if (s_label_loop_status) {
+        if (s_loop_active && s_loop_active_beats > 0) {
+            lv_label_set_text_fmt(s_label_loop_status, "ACTIVE: %d BEATS", s_loop_active_beats);
+            lv_obj_set_style_text_color(s_label_loop_status, COL_RED, LV_PART_MAIN);
+        } else if (s_loop_active) {
+            lv_label_set_text(s_label_loop_status, "ACTIVE LOOP");
+            lv_obj_set_style_text_color(s_label_loop_status, COL_RED, LV_PART_MAIN);
+        } else {
+            lv_label_set_text(s_label_loop_status, "NO ACTIVE LOOP");
+            lv_obj_set_style_text_color(s_label_loop_status, COL_TEXT_DIM, LV_PART_MAIN);
+        }
+    }
+
+    static const int loop_beats[6] = {1, 2, 4, 8, 16, 32};
+    for (int i = 0; i < 6; i++) {
+        lv_obj_t *btn = s_loop_buttons[i];
+        if (!btn) {
+            continue;
+        }
+
+        bool is_active = s_loop_active && s_loop_active_beats == loop_beats[i];
+        lv_color_t accent = is_active ? COL_RED : lv_color_hex(0x123A1B);
+        lv_obj_set_style_bg_color(btn, is_active ? COL_RED : lv_color_hex(0x051A0B), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(btn, is_active ? LV_OPA_30 : LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, is_active ? 2 : 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
+
+        lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+        if (lbl) {
+            lv_obj_set_style_text_color(lbl, is_active ? COL_RED : COL_TEXT_MUTED, LV_PART_MAIN);
+        }
+    }
+}
+
+static lv_obj_t *ui_settings_section(lv_obj_t *parent, int x, int y, int w, int h, const char *title)
+{
+    lv_obj_t *section = lv_obj_create(parent);
+    lv_obj_remove_style_all(section);
+    lv_obj_add_style(section, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(section, w, h);
+    lv_obj_set_pos(section, x, y);
+    lv_obj_clear_flag(section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *label = lv_label_create(section);
+    ui_label_set_small_caps(label, title, COL_TEXT_MUTED);
+    lv_obj_set_pos(label, 14, 12);
+
+    return section;
+}
+
+static lv_obj_t *ui_settings_value_label(lv_obj_t *parent, const char *text, lv_color_t color,
+                                         const lv_font_t *font, int x, int y)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_set_pos(label, x, y);
+    return label;
+}
+
+static lv_obj_t *ui_create_beat_jump_button(lv_obj_t *parent, int x, int y, int value,
+                                            bool forward)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_remove_style_all(btn);
+    lv_obj_add_style(btn, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn, 150, 82);
+    lv_obj_set_pos(btn, x, y);
+
+    lv_color_t accent = forward ? COL_GREEN : COL_RED;
+    lv_color_t fill = forward ? lv_color_hex(0x10251B) : lv_color_hex(0x2A1016);
+    lv_obj_set_style_bg_color(btn, fill, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
+
+    lv_obj_set_user_data(btn, (void*)(intptr_t)value);
+    lv_obj_add_event_cb(btn, jump_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    int abs_value = value < 0 ? -value : value;
+    lv_label_set_text_fmt(lbl, "%c%d BEAT%s", forward ? '+' : '-', abs_value,
+                          abs_value == 1 ? "" : "S");
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+
+    return btn;
+}
+
+static int ui_media_count(void)
+{
+#ifndef WIN32
+    return media_catalog_count();
+#else
+    return library_count();
+#endif
+}
+
+static uint32_t ui_current_duration_ms(void)
+{
+#ifndef WIN32
+    if (s_loaded_media_valid) return s_loaded_media.duration_ms;
+#endif
+    const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
+    return track ? track->duration_ms : 0;
+}
+
+static uint16_t ui_current_bpm(void)
+{
+#ifndef WIN32
+    if (s_loaded_media_valid && s_loaded_media.bpm > 0) return s_loaded_media.bpm;
+#endif
+    const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
+    return track ? track->bpm : 120;
+}
+
+static const anlz_metadata_t *ui_current_anlz(void)
+{
+#ifndef WIN32
+    if (s_loaded_media_valid) {
+        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(s_loaded_media_source);
+        if (meta) return meta;
+    }
+#endif
+    return library_get_current_anlz();
+}
+
+#ifndef WIN32
+static void ui_update_uart_status_label(const deck_state_t *state)
+{
+    if (!s_label_uart_status || !state) {
+        return;
+    }
+
+    int display_state;
+    uint32_t age_bucket;
+    if (state->control_link_connected) {
+        display_state = 1;
+        if (state->last_heartbeat_age_ms < 1000u) {
+            age_bucket = state->last_heartbeat_age_ms / 100u;
+            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
+                lv_label_set_text_fmt(s_label_uart_status,
+                                      "Control Link (S3): Connected (age %lu ms)",
+                                      (unsigned long)(age_bucket * 100u));
+                s_cache_uart_state = display_state;
+                s_cache_uart_age_bucket = age_bucket;
+            }
+        } else {
+            age_bucket = state->last_heartbeat_age_ms / 1000u;
+            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
+                lv_label_set_text_fmt(s_label_uart_status,
+                                      "Control Link (S3): Connected (age %lu s)",
+                                      (unsigned long)age_bucket);
+                s_cache_uart_state = display_state;
+                s_cache_uart_age_bucket = age_bucket;
+            }
+        }
+        ui_obj_set_text_color_cached(s_label_uart_status, &s_cache_uart_color, COL_GREEN);
+        return;
+    }
+
+    if (state->last_heartbeat_age_ms == UINT32_MAX) {
+        display_state = 0;
+        age_bucket = UINT32_MAX;
+        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
+            lv_label_set_text(s_label_uart_status, "Control Link (S3): Offline (no heartbeat)");
+            s_cache_uart_state = display_state;
+            s_cache_uart_age_bucket = age_bucket;
+        }
+    } else {
+        display_state = 2;
+        age_bucket = state->last_heartbeat_age_ms / 1000u;
+        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
+            lv_label_set_text_fmt(s_label_uart_status,
+                                  "Control Link (S3): Offline (last %lu s ago)",
+                                  (unsigned long)age_bucket);
+            s_cache_uart_state = display_state;
+            s_cache_uart_age_bucket = age_bucket;
+        }
+    }
+    ui_obj_set_text_color_cached(s_label_uart_status, &s_cache_uart_color, COL_RED);
+}
+
+static void ui_format_storage_size(uint64_t bytes, char *out, size_t out_size)
+{
+    const uint64_t gib = 1024ull * 1024ull * 1024ull;
+    const uint64_t mib = 1024ull * 1024ull;
+    uint64_t scale = mib;
+    const char *unit = "MB";
+    if (bytes >= gib) {
+        scale = gib;
+        unit = "GB";
+    }
+
+    uint64_t whole = bytes / scale;
+    uint64_t frac = ((bytes % scale) * 10ull) / scale;
+    snprintf(out, out_size, "%llu.%llu %s",
+             (unsigned long long)whole,
+             (unsigned long long)frac,
+             unit);
+}
+
+static void ui_update_sd_status_label(bool force)
+{
+    if (!s_label_sd_status) {
+        return;
+    }
+
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ull);
+    if (!force && s_cache_sd_last_poll_ms != 0 &&
+        (uint32_t)(now_ms - s_cache_sd_last_poll_ms) < 1000u) {
+        return;
+    }
+    s_cache_sd_last_poll_ms = now_ms;
+
+    bsp_sd_status_t status;
+    esp_err_t rc = bsp_sd_get_status(&status);
+    if (rc != ESP_OK || !status.mounted) {
+        if (s_cache_sd_state != 0) {
+            ui_label_set_text_cached(s_label_sd_status, &s_cache_sd_text, "Offline (/sd unavailable)");
+            s_cache_sd_state = 0;
+            s_cache_sd_free_mib = UINT32_MAX;
+            s_cache_sd_total_mib = UINT32_MAX;
+        }
+        ui_obj_set_text_color_cached(s_label_sd_status, &s_cache_sd_color, COL_RED);
+        return;
+    }
+
+    uint32_t free_mib = (uint32_t)(status.free_bytes / (1024ull * 1024ull));
+    uint32_t total_mib = (uint32_t)(status.total_bytes / (1024ull * 1024ull));
+    if (s_cache_sd_state != 1 ||
+        s_cache_sd_free_mib != free_mib ||
+        s_cache_sd_total_mib != total_mib) {
+        char free_buf[16];
+        char total_buf[16];
+        char text[80];
+        ui_format_storage_size(status.free_bytes, free_buf, sizeof(free_buf));
+        ui_format_storage_size(status.total_bytes, total_buf, sizeof(total_buf));
+        snprintf(text, sizeof(text), "Mounted: %s free / %s", free_buf, total_buf);
+        ui_label_set_text_cached(s_label_sd_status, &s_cache_sd_text, text);
+        s_cache_sd_state = 1;
+        s_cache_sd_free_mib = free_mib;
+        s_cache_sd_total_mib = total_mib;
+    }
+    ui_obj_set_text_color_cached(s_label_sd_status, &s_cache_sd_color, COL_GREEN);
+}
+
+static void ui_update_sd_cache_status_label(bool force)
+{
+    if (!s_label_sd_cache_status) {
+        return;
+    }
+
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ull);
+    if (!force && s_cache_sd_cache_last_poll_ms != 0 &&
+        (uint32_t)(now_ms - s_cache_sd_cache_last_poll_ms) < 1000u) {
+        return;
+    }
+    s_cache_sd_cache_last_poll_ms = now_ms;
+
+    remote_cache_stats_t stats;
+    esp_err_t rc = remote_cache_get_stats(&stats);
+    if (rc != ESP_OK) {
+        ui_label_set_text_cached(s_label_sd_cache_status, &s_cache_sd_cache_text,
+                                 "Cache unavailable");
+        s_cache_sd_cache_mib = UINT32_MAX;
+        s_cache_sd_cache_tracks = UINT32_MAX;
+        s_cache_sd_cache_files = UINT32_MAX;
+        return;
+    }
+
+    uint32_t mib = (uint32_t)(stats.bytes / (1024ull * 1024ull));
+    if (s_cache_sd_cache_mib != mib ||
+        s_cache_sd_cache_tracks != stats.tracks ||
+        s_cache_sd_cache_files != stats.files) {
+        char size_buf[16];
+        char text[80];
+        ui_format_storage_size(stats.bytes, size_buf, sizeof(size_buf));
+        snprintf(text, sizeof(text), "%s, %lu tracks, %lu files",
+                 size_buf,
+                 (unsigned long)stats.tracks,
+                 (unsigned long)stats.files);
+        ui_label_set_text_cached(s_label_sd_cache_status, &s_cache_sd_cache_text, text);
+        s_cache_sd_cache_mib = mib;
+        s_cache_sd_cache_tracks = stats.tracks;
+        s_cache_sd_cache_files = stats.files;
+    }
+}
+
+static const char *ui_link_mode_name(uint8_t mode)
+{
+    switch (mode) {
+    case WIFI_LINK_MODE_HOST:
+        return "HOST USB";
+    case WIFI_LINK_MODE_JOIN:
+        return "JOIN PLAYER";
+    default:
+        return "OFF";
+    }
+}
+
+static void ui_update_link_status_label(void)
+{
+    if (!s_label_link_status) {
+        return;
+    }
+
+    wifi_link_status_t st = wifi_link_get_status();
+    if (st.mode == WIFI_LINK_MODE_HOST) {
+        lv_label_set_text_fmt(s_label_link_status, "Link: HOST %s (%u client)",
+                              st.ssid[0] ? st.ssid : "CDJ100S",
+                              (unsigned)st.ap_clients);
+        return;
+    }
+
+    if (st.mode == WIFI_LINK_MODE_JOIN) {
+        cdj_link_peer_t peer;
+        if (cdj_link_client_get_peer(&peer)) {
+            lv_label_set_text_fmt(s_label_link_status, "Link: JOINED %s (%lu tracks)",
+                                  peer.name[0] ? peer.name : peer.host,
+                                  (unsigned long)peer.track_count);
+        } else {
+            lv_label_set_text(s_label_link_status, "Link: JOIN SCANNING");
+        }
+        return;
+    }
+
+    lv_label_set_text(s_label_link_status, "Link: OFF");
+}
+#endif
+
+static void ui_update_library_source_label(void)
+{
+    if (!s_label_library_source) {
+        return;
+    }
+#ifndef WIN32
+    if (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK) {
+        lv_label_set_text_fmt(s_label_library_source, "JOINED  %d TRACKS", media_catalog_count());
+    } else {
+        lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
+    }
+#else
+    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", library_count());
+#endif
+}
+
+#ifndef WIN32
+static void ui_track_load_worker(void *arg)
+{
+    ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
+    free(arg);
+
+    ui_track_load_result_t *result = &s_track_load_worker_result;
+    memset(result, 0, sizeof(*result));
+    result->index = req.index;
+    result->generation = req.generation;
+    result->source = req.source;
+    result->rc = ESP_OK;
+
+    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
+        result->rc = ESP_ERR_NOT_FOUND;
+        snprintf(result->status, sizeof(result->status), "NO TRACK");
+    } else {
+        result->rc = media_catalog_load(req.index, &result->loaded);
+        if (result->rc != ESP_OK) {
+            const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
+            snprintf(result->status, sizeof(result->status), "%s", status && status[0] ? status : "LOAD ERR");
+        } else {
+            audio_engine_clear_loop();
+            deck_core_reset();
+            result->rc = audio_engine_load(result->loaded.audio_path,
+                                           result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                                           result->loaded.duration_ms);
+            if (result->rc != ESP_OK) {
+                const char *audio_err = audio_engine_last_error_text();
+                snprintf(result->status, sizeof(result->status), "%s",
+                         audio_err && audio_err[0] ? audio_err : "AUDIO ERR");
+            } else {
+                snprintf(result->status, sizeof(result->status), "TRACK LOADED");
+            }
+        }
+    }
+
+    if (s_track_load_result_q) {
+        xQueueOverwrite(s_track_load_result_q, result);
+    }
+    ESP_LOGI(TAG, "ui_load stack high water=%u words",
+             (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    vTaskDelete(NULL);
+}
+
+static void ui_submit_track_load(int index)
+{
+    if (!s_track_load_result_q) {
+        s_track_load_result_q = xQueueCreate(1, sizeof(ui_track_load_result_t));
+    }
+    if (!s_track_load_result_q) {
+        ui_status_indicator_hold("NO QUEUE", COL_RED, 2500);
+        ui_library_set_load_busy(false, "NO QUEUE");
+        s_track_load_busy = false;
+        return;
+    }
+
+    ui_track_load_result_t stale;
+    while (xQueueReceive(s_track_load_result_q, &stale, 0) == pdTRUE) {
+    }
+
+    ui_track_load_request_t *req = malloc(sizeof(*req));
+    if (!req) {
+        ui_status_indicator_hold("NO MEM", COL_RED, 2500);
+        ui_library_set_load_busy(false, "NO MEM");
+        s_track_load_busy = false;
+        return;
+    }
+    req->index = index;
+    req->generation = library_generation();
+    req->source = media_catalog_get_source();
+
+    if (xTaskCreate(ui_track_load_worker, "ui_load", UI_TRACK_LOAD_STACK, req, 3, NULL) != pdPASS) {
+        free(req);
+        ui_status_indicator_hold("NO TASK", COL_RED, 2500);
+        ui_library_set_load_busy(false, "NO TASK");
+        s_track_load_busy = false;
+    }
+}
+
+static void ui_apply_usb_removed(void)
+{
+    s_usb_removed_pending = false;
+    if (s_loaded_media_valid && s_loaded_media_source == MEDIA_SOURCE_LOCAL_USB) {
+        ui_cache_invalidate();
+        s_loaded_media_valid = false;
+        lv_label_set_text(s_label_title, "No Track");
+        lv_label_set_text(s_label_artist, "");
+        ui_label_set_f2(s_label_bpm, 0.0f);
+        s_loop_active = false;
+        s_loop_active_beats = 0;
+        ui_update_loop_screen_state();
+        ui_update_hot_cues();
+        ui_status_indicator_hold("USB REMOVED", COL_AMBER, 2500);
+    }
+    if (media_catalog_get_source() == MEDIA_SOURCE_LOCAL_USB) {
+        ui_library_set_load_busy(false, "USB REMOVED");
+        s_track_load_busy = false;
+    }
+}
+
+static void ui_poll_track_load_result(void)
+{
+    if (!s_track_load_result_q) return;
+
+    ui_track_load_result_t result;
+    while (xQueueReceive(s_track_load_result_q, &result, 0) == pdTRUE) {
+        bool stale = (result.source != media_catalog_get_source());
+        if (result.source == MEDIA_SOURCE_LOCAL_USB &&
+            result.generation != library_generation()) {
+            stale = true;
+        }
+        if (stale) {
+            s_track_load_busy = false;
+            ui_library_set_load_busy(false,
+                                     result.source == MEDIA_SOURCE_LOCAL_USB ? "USB REMOVED" : "STALE");
+            continue;
+        }
+
+        if (result.rc != ESP_OK) {
+            const char *display = result.status[0] ? result.status : "LOAD ERR";
+            ESP_LOGW(TAG, "track load worker failed index=%d: %s", result.index, esp_err_to_name(result.rc));
+            ui_status_indicator_hold(display, ui_status_color_for_text(display), 3500);
+            ui_library_set_load_busy(false, display);
+            s_track_load_busy = false;
+            continue;
+        }
+
+        if (result.source == MEDIA_SOURCE_LOCAL_USB) {
+            mock_library_load_track_to_deck(result.index);
+        }
+        s_loaded_media = result.loaded;
+        s_loaded_media_valid = true;
+        s_loaded_media_source = result.source;
+
+        ui_cache_invalidate();
+        lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
+        lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
+        ui_label_set_f2(s_label_bpm, (float)(result.loaded.bpm ? result.loaded.bpm : result.item.bpm));
+        s_loop_active = false;
+        s_loop_active_beats = 0;
+        ui_update_loop_screen_state();
+        ui_load_waveform_media(&result.loaded);
+        ui_update_hot_cues();
+
+        ESP_LOGI(TAG, "Audio: loaded %s (autoplay off)", result.loaded.audio_path);
+        ui_status_indicator_hold("TRACK LOADED", COL_GREEN, 2000);
+        ui_library_set_load_busy(false, "TRACK LOADED");
+        s_track_load_busy = false;
+    }
+}
+#endif
+
+// ─── Event Callbacks ─────────────────────────────────────────────────────────
+
+// Switch screens when a footer button is tapped
+static void footer_btn_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int target_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+
+    // Update visibility of screens
+    for (int i = 0; i < 7; i++) {
+        if (i == target_idx) {
+            lv_obj_remove_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_active, LV_PART_MAIN);
+            if (s_footer_active_strips[i]) {
+                lv_obj_remove_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        } else {
+            lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_replace_style(s_footer_buttons[i], &s_style_tab_btn_active,
+                                 &s_style_tab_btn_normal, LV_PART_MAIN);
+            if (s_footer_active_strips[i]) {
+                lv_obj_add_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    s_active_tab = target_idx;
+    ESP_LOGD(TAG, "Switched to tab %d (%s)", target_idx, s_tab_names[target_idx]);
+}
+
+// Play/Pause button on overview clicked
+static void play_pause_event_cb(lv_event_t *e) {
+#ifdef WIN32
+    (void)e;
+    mock_deck_toggle_play();
+    deck_state_t state = deck_core_get_state();
+    ESP_LOGI(TAG, "Simulator Play/Pause: %s", state.playing ? "PLAYING" : "PAUSED");
+#else
+    (void)e;
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = BTN_PLAY,
+        .value = 1,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
+#endif
+}
+
+// CUE button on overview clicked. Returns to the cue point (track start by
+// default) and pauses — handled in deck_core on firmware (BTN_CUE).
+static void cue_event_cb(lv_event_t *e) {
+    (void)e;
+#ifdef WIN32
+    // Simulator: mirror deck_core — return to the cue point (start) and pause.
+    mock_deck_set_playing(false);
+    mock_deck_set_position(0);
+#else
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = BTN_CUE,
+        .value = 1,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
+#endif
+}
+
+// Load button in library clicked
+static void library_load_event_cb(lv_event_t *e) {
+    (void)e;
+    if (s_track_load_busy) {
+        ui_status_indicator_hold("LOAD BUSY", COL_AMBER, 1200);
+        return;
+    }
+    s_track_load_busy = true;
+    ui_library_set_load_busy(true, "LOAD BUSY");
+
+#ifdef WIN32
+    library_track_t *track = library_get_ptr(s_selected_track_idx);
+    if (!track) {
+        ui_library_set_load_busy(false, NULL);
+        s_track_load_busy = false;
+        return;
+    }
+
+    mock_library_load_track_to_deck(s_selected_track_idx);
+    library_load_anlz(track);          // load BPM, duration, waveform from ANLZ
+
+    /* Load detailed ANLZ metadata for the active track */
+    library_load_current_anlz(track);
+
+    lv_label_set_text(s_label_title, track->title);
+    lv_label_set_text(s_label_artist, track->artist);
+    ui_label_set_f2(s_label_bpm, (float)track->bpm);
+    s_loop_active = false;              // Reset loops on track load
+    s_loop_active_beats = 0;
+    ui_update_loop_screen_state();
+    ui_load_waveform(track);           // rebuild bar heights from PWAV data
+
+    /* Populate hot cue points from active ANLZ metadata */
+    ui_update_hot_cues();
+
+    ESP_LOGI(TAG, "Loaded track to deck: %s by %s (waveform=%d)",
+             track->title, track->artist, track->has_waveform);
+#else
+    media_catalog_track_t item;
+    if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK) {
+        ESP_LOGW(TAG, "No catalog row at index %d", s_selected_track_idx);
+        ui_library_set_load_busy(false, NULL);
+        s_track_load_busy = false;
+        return;
+    }
+
+    const bool remote_source = (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK);
+    ui_status_indicator_hold(remote_source ? "CACHE START" : "LOADING", COL_ACCENT, 1500);
+    ui_submit_track_load(s_selected_track_idx);
+    return;
+#endif
+    ui_status_indicator_hold("TRACK LOADED", COL_GREEN, 2000);
+    ui_library_set_load_busy(false, "TRACK LOADED");
+    s_track_load_busy = false;
+}
+
+bool ui_is_library_active(void)
+{
+    return s_active_tab == 1 && s_library_table != NULL;
+}
+
+esp_err_t ui_library_select_delta(int delta)
+{
+    if (delta == 0) {
+        return ESP_OK;
+    }
+    if (!s_library_table) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    int n = ui_media_count();
+    if (n <= 0) {
+        ui_lvgl_unlock();
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    int new_idx = s_selected_track_idx + delta;
+    if (new_idx < 0) new_idx = 0;
+    if (new_idx >= n) new_idx = n - 1;
+    if (new_idx == s_selected_track_idx) {
+        lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+        ui_lvgl_unlock();
+        return ESP_OK;
+    }
+
+    int old_idx = s_selected_track_idx;
+    s_selected_track_idx = new_idx;
+    ui_fill_library_row(old_idx);
+    ui_fill_library_row(new_idx);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+    ui_lvgl_unlock();
+    return ESP_OK;
+}
+
+esp_err_t ui_library_load_selected(void)
+{
+    if (!s_library_table) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (ui_media_count() <= 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (s_track_load_busy) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    library_load_event_cb(NULL);
+    ui_lvgl_unlock();
+    return ESP_OK;
+}
+
+// Sort tracks by Artist (Toggle ASC/DESC)
+static void library_sort_artist_event_cb(lv_event_t *e) {
+    (void)e;
+    if (!s_library_table) return;
+
+#ifdef WIN32
+    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
+    uint32_t target_id = sel_track ? sel_track->track_id : 0;
+
+    s_sort_artist_desc = !s_sort_artist_desc;
+    library_sort(0, s_sort_artist_desc);
+    ui_refresh_library();
+
+    if (target_id != 0) {
+        int n = library_count();
+        for (int i = 0; i < n; i++) {
+            library_track_t *t = library_get_ptr(i);
+            if (t && t->track_id == target_id) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#else
+    media_catalog_row_t sel_track;
+    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
+                          ? sel_track.track_key : 0;
+
+    s_sort_artist_desc = !s_sort_artist_desc;
+    media_catalog_sort(0, s_sort_artist_desc);
+    ui_refresh_library();
+
+    if (target_key != 0) {
+        int n = media_catalog_count();
+        for (int i = 0; i < n; i++) {
+            media_catalog_row_t t;
+            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#endif
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+}
+
+// Sort tracks by Title/Name (Toggle ASC/DESC)
+static void library_sort_name_event_cb(lv_event_t *e) {
+    (void)e;
+    if (!s_library_table) return;
+
+#ifdef WIN32
+    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
+    uint32_t target_id = sel_track ? sel_track->track_id : 0;
+
+    s_sort_name_desc = !s_sort_name_desc;
+    library_sort(1, s_sort_name_desc);
+    ui_refresh_library();
+
+    if (target_id != 0) {
+        int n = library_count();
+        for (int i = 0; i < n; i++) {
+            library_track_t *t = library_get_ptr(i);
+            if (t && t->track_id == target_id) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#else
+    media_catalog_row_t sel_track;
+    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
+                          ? sel_track.track_key : 0;
+
+    s_sort_name_desc = !s_sort_name_desc;
+    media_catalog_sort(1, s_sort_name_desc);
+    ui_refresh_library();
+
+    if (target_key != 0) {
+        int n = media_catalog_count();
+        for (int i = 0; i < n; i++) {
+            media_catalog_row_t t;
+            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#endif
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+}
+
+// Sort tracks by BPM (Toggle ASC/DESC)
+static void library_sort_bpm_event_cb(lv_event_t *e) {
+    (void)e;
+    if (!s_library_table) return;
+
+#ifdef WIN32
+    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
+    uint32_t target_id = sel_track ? sel_track->track_id : 0;
+
+    s_sort_bpm_desc = !s_sort_bpm_desc;
+    library_sort(2, s_sort_bpm_desc);
+    ui_refresh_library();
+
+    if (target_id != 0) {
+        int n = library_count();
+        for (int i = 0; i < n; i++) {
+            library_track_t *t = library_get_ptr(i);
+            if (t && t->track_id == target_id) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#else
+    media_catalog_row_t sel_track;
+    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
+                          ? sel_track.track_key : 0;
+
+    s_sort_bpm_desc = !s_sort_bpm_desc;
+    media_catalog_sort(2, s_sort_bpm_desc);
+    ui_refresh_library();
+
+    if (target_key != 0) {
+        int n = media_catalog_count();
+        for (int i = 0; i < n; i++) {
+            media_catalog_row_t t;
+            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
+                s_selected_track_idx = i;
+                break;
+            }
+        }
+    }
+#endif
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+}
+
+// Select track row in library table
+static void library_table_event_cb(lv_event_t *e) {
+    lv_obj_t *table = lv_event_get_target(e);
+    uint32_t row;
+    uint32_t col;
+    lv_table_get_selected_cell(table, &row, &col);
+
+    if (row > 0 && (int)row <= ui_media_count()) {
+        int new_idx = (int)row - 1;
+        if (new_idx != s_selected_track_idx) {
+            int old_idx = s_selected_track_idx;
+            s_selected_track_idx = new_idx;
+            ui_fill_library_row(old_idx);
+            ui_fill_library_row(new_idx);
+            // Explicitly restore the selection, since updating cell values resets the selection in LVGL
+            lv_table_set_selected_cell(table, row, 0);
+            ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
+        }
+    }
+}
+
+// Trigger hot cue pads
+static void hot_cue_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int cue_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    uint32_t pos = s_hot_cue_positions[cue_idx];
+
+    if (pos == 0xFFFFFFFF) {
+        ESP_LOGI(TAG, "Hot Cue %c is empty, ignoring click", 'A' + cue_idx);
+        return;
+    }
+
+    uint8_t type = s_hot_cue_types[cue_idx];
+    uint32_t end_pos = s_hot_cue_ends[cue_idx];
+
+    if (type == 2 && end_pos > pos) { // Hot Loop
+        s_loop_start_ms = pos;
+        s_loop_end_ms = end_pos;
+        s_loop_active = true;
+        s_loop_active_beats = 0;
+        ui_update_loop_screen_state();
+#ifndef WIN32
+        audio_engine_seek(pos);
+        audio_engine_set_loop(pos, end_pos);
+        audio_engine_play();
+        ESP_LOGI(TAG, "Hot Loop %c active: %lu - %lu ms on hardware", 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
+#else
+        mock_deck_set_position(pos);
+        mock_deck_set_playing(true);
+        ESP_LOGI(TAG, "Hot Loop %c active: %lu - %lu ms (simulated)", 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
+#endif
+    } else { // Normal Cue
+        s_loop_active = false;
+        s_loop_active_beats = 0;
+        ui_update_loop_screen_state();
+#ifndef WIN32
+        audio_engine_clear_loop();
+        audio_engine_seek(pos);
+        audio_engine_play();
+        ESP_LOGI(TAG, "Hot Cue %c triggered at %lu ms on hardware", 'A' + cue_idx, (unsigned long)pos);
+#else
+        mock_deck_set_position(pos);
+        mock_deck_set_playing(true);
+        ESP_LOGI(TAG, "Hot Cue %c triggered at %d ms", 'A' + cue_idx, pos);
+#endif
+    }
+}
+
+// Loop pad clicked (e.g. 1/2, 1, 2, 4, 8, 16 beats)
+static void loop_btn_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int beats = (int)(intptr_t)lv_obj_get_user_data(btn);
+
+    float bpm = (float)ui_current_bpm();
+    if (bpm <= 0.0f) bpm = 120.0f;
+    uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
+
+    uint32_t start_ms = 0;
+#ifndef WIN32
+    start_ms = audio_engine_position_ms();
+#else
+    deck_state_t state = deck_core_get_state();
+    start_ms = state.position_ms;
+#endif
+
+    uint32_t end_ms = start_ms + (beat_len_ms * beats);
+    s_loop_start_ms = start_ms;
+    s_loop_end_ms = end_ms;
+    s_loop_active = true;
+    s_loop_active_beats = beats;
+    ui_update_loop_screen_state();
+
+#ifndef WIN32
+    audio_engine_set_loop(start_ms, end_ms);
+    ESP_LOGI(TAG, "Hardware Loop of %d beats active: %lu to %lu ms", beats, (unsigned long)start_ms, (unsigned long)end_ms);
+#else
+    ESP_LOGI(TAG, "Simulating Loop of %d beats: %d ms to %d ms", beats, start_ms, end_ms);
+#endif
+}
+
+// Loop exit button
+static void exit_loop_event_cb(lv_event_t *e) {
+    (void)e;
+    s_loop_active = false;
+    s_loop_active_beats = 0;
+    ui_update_loop_screen_state();
+#ifndef WIN32
+    audio_engine_clear_loop();
+    ESP_LOGI(TAG, "Loop exited on hardware");
+#else
+    ESP_LOGI(TAG, "Loop exited");
+#endif
+}
+
+// Beat jump buttons clicked
+static void jump_btn_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int val = (int)(intptr_t)lv_obj_get_user_data(btn);
+
+    deck_state_t state = deck_core_get_state();
+    const anlz_metadata_t *meta = ui_current_anlz();
+    uint32_t new_pos = 0;
+
+    if (meta && meta->beat_count > 0) {
+        /* Find the closest beat in the PQTZ beatgrid */
+        int closest_idx = 0;
+        uint32_t min_diff = 0xFFFFFFFF;
+        for (int i = 0; i < meta->beat_count; i++) {
+            uint32_t diff = (state.position_ms > meta->beats[i].time_ms) ? 
+                            (state.position_ms - meta->beats[i].time_ms) : 
+                            (meta->beats[i].time_ms - state.position_ms);
+            if (diff < min_diff) {
+                min_diff = diff;
+                closest_idx = i;
+            }
+        }
+        
+        int target_idx = closest_idx + val;
+        if (target_idx < 0) target_idx = 0;
+        if (target_idx >= meta->beat_count) target_idx = meta->beat_count - 1;
+        
+        new_pos = meta->beats[target_idx].time_ms;
+        ESP_LOGI(TAG, "Beat Jump using beatgrid: from beat %d (%d ms) to beat %d (%d ms), shift=%d", 
+                 closest_idx, state.position_ms, target_idx, new_pos, val);
+    } else {
+        /* Fallback to BPM-based calculation */
+        float bpm = (float)ui_current_bpm();
+        if (bpm <= 0.0f) bpm = 120.0f;
+        uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
+        
+        int32_t shift = (int32_t)beat_len_ms * val;
+        int32_t target_pos = (int32_t)state.position_ms + shift;
+        if (target_pos < 0) target_pos = 0;
+        new_pos = (uint32_t)target_pos;
+        ESP_LOGI(TAG, "Beat Jump using BPM fallback: from %d ms to %d ms, shift=%d beats", 
+                 state.position_ms, new_pos, val);
+    }
+
+#ifndef WIN32
+    audio_engine_seek(new_pos);
+#else
+    mock_deck_set_position(new_pos);
+    s_loop_active = false;
+    s_loop_active_beats = 0;
+    ui_update_loop_screen_state();
+#endif
+}
+
+// Key lock toggle
+static void keylock_toggle_event_cb(lv_event_t *e) {
+#ifdef WIN32
+    mock_deck_toggle_master_tempo();
+    deck_state_t state = deck_core_get_state();
+    ESP_LOGI(TAG, "Master Tempo toggled: %s", state.master_tempo ? "ON" : "OFF");
+#endif
+}
+
+// Screen brightness slider
+static void slider_brightness_event_cb(lv_event_t *e) {
+    lv_obj_t *slider = lv_event_get_target(e);
+    int val = lv_slider_get_value(slider);
+    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", val);
+#ifndef WIN32
+    bsp_display_set_backlight((uint8_t)val);   // live brightness
+    app_settings_set_backlight((uint8_t)val);  // persist
+#endif
+    ESP_LOGI(TAG, "Backlight brightness set to %d%%", val);
+}
+
+// Audio output selector: switch OFF = onboard speaker, ON = RCA line-out
+static void audio_out_event_cb(lv_event_t *e) {
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool rca = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#ifndef WIN32
+    bsp_audio_set_output(rca ? BSP_AUDIO_OUT_RCA : BSP_AUDIO_OUT_SPEAKER);
+    app_settings_set_audio_out(rca ? 1 : 0);
+#endif
+    if (s_label_audio_out) {
+        lv_label_set_text(s_label_audio_out, rca ? "RCA LINE-OUT" : "SPEAKER");
+    }
+    ESP_LOGI(TAG, "Audio output: %s", rca ? "RCA line-out" : "Speaker");
+}
+
+static void library_source_local_event_cb(lv_event_t *e)
+{
+    (void)e;
+#ifndef WIN32
+    media_catalog_set_source(MEDIA_SOURCE_LOCAL_USB);
+#endif
+    s_selected_track_idx = 0;
+    ui_update_library_source_label();
+    ui_refresh_library();
+}
+
+static void library_source_joined_event_cb(lv_event_t *e)
+{
+    (void)e;
+#ifndef WIN32
+    esp_err_t rc = cdj_link_client_start();
+    if (rc == ESP_OK) {
+        rc = media_catalog_refresh_remote();
+    }
+    if (rc == ESP_OK) {
+        media_catalog_set_source(MEDIA_SOURCE_REMOTE_LINK);
+        s_selected_track_idx = 0;
+        ui_status_indicator_hold("JOINED", COL_GREEN, 2000);
+    } else {
+        ui_status_indicator_hold("JOIN FAILED", COL_RED, 3500);
+        ESP_LOGW(TAG, "joined library refresh failed: %s", esp_err_to_name(rc));
+    }
+#endif
+    ui_update_library_source_label();
+    ui_refresh_library();
+}
+
+#ifndef WIN32
+static void link_mode_event_cb(lv_event_t *e)
+{
+    (void)e;
+    app_settings_t cfg = app_settings_get();
+    uint8_t next = (uint8_t)((cfg.link_mode + 1u) % 3u);
+    app_settings_set_link_mode(next);
+    if (s_label_link_mode) {
+        lv_label_set_text_fmt(s_label_link_mode, "%s", ui_link_mode_name(next));
+    }
+    if (s_label_link_status) {
+        lv_label_set_text(s_label_link_status, "Link mode saved; reboot applies Wi-Fi role");
+    }
+    ESP_LOGI(TAG, "Link mode saved: %s", ui_link_mode_name(next));
+}
+
+static void sd_cache_clear_event_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_loaded_media_valid && s_loaded_media_source == MEDIA_SOURCE_REMOTE_LINK) {
+        ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
+        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
+        return;
+    }
+
+    esp_err_t rc = remote_cache_clear();
+    if (rc == ESP_OK) {
+        ui_status_indicator_hold("CACHE CLEARED", COL_GREEN, 2000);
+        sd_diag_log_write("sd_cache", "remote cache cleared");
+    } else {
+        ui_status_indicator_hold("CACHE ERR", COL_RED, 2000);
+        sd_diag_log_write("sd_cache", "remote cache clear failed");
+    }
+    ui_cache_invalidate();
+    ui_update_sd_status_label(true);
+    ui_update_sd_cache_status_label(true);
+}
+#endif
+
+// ─── Component Initialization Helpers ────────────────────────────────────────
+
+static void init_styles(void) {
+    // Root container style
+    lv_style_init(&s_style_root);
+    lv_style_set_bg_color(&s_style_root, COL_BG);
+    lv_style_set_bg_opa(&s_style_root, LV_OPA_COVER);
+    lv_style_set_pad_all(&s_style_root, 0);
+
+    // Header bar style
+    lv_style_init(&s_style_header);
+    lv_style_set_bg_color(&s_style_header, COL_PANEL);
+    lv_style_set_bg_opa(&s_style_header, LV_OPA_COVER);
+    lv_style_set_border_width(&s_style_header, 1);
+    lv_style_set_border_color(&s_style_header, COL_BORDER);
+    lv_style_set_border_side(&s_style_header, LV_BORDER_SIDE_BOTTOM);
+    lv_style_set_pad_left(&s_style_header, 15);
+    lv_style_set_pad_right(&s_style_header, 15);
+
+    // Footer bar style
+    lv_style_init(&s_style_footer);
+    lv_style_set_bg_color(&s_style_footer, COL_FOOTER);
+    lv_style_set_bg_opa(&s_style_footer, LV_OPA_COVER);
+    lv_style_set_border_width(&s_style_footer, 1);
+    lv_style_set_border_color(&s_style_footer, COL_BORDER);
+    lv_style_set_border_side(&s_style_footer, LV_BORDER_SIDE_TOP);
+    lv_style_set_pad_all(&s_style_footer, 0);
+
+    // Tab buttons - Normal
+    lv_style_init(&s_style_tab_btn_normal);
+    lv_style_set_bg_color(&s_style_tab_btn_normal, lv_color_hex(0x051A0B));
+    lv_style_set_bg_opa(&s_style_tab_btn_normal, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_normal, COL_TEXT_MUTED);
+    lv_style_set_border_width(&s_style_tab_btn_normal, 1);
+    lv_style_set_border_color(&s_style_tab_btn_normal, lv_color_hex(0x123A1B));
+    lv_style_set_radius(&s_style_tab_btn_normal, 4);
+    lv_style_set_pad_all(&s_style_tab_btn_normal, 0);
+    
+    // Tab buttons - Active
+    lv_style_init(&s_style_tab_btn_active);
+    lv_style_set_bg_color(&s_style_tab_btn_active, COL_ACCENT_DK);
+    lv_style_set_bg_opa(&s_style_tab_btn_active, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_active, COL_TEXT);
+    lv_style_set_border_width(&s_style_tab_btn_active, 1);
+    lv_style_set_border_color(&s_style_tab_btn_active, COL_ACCENT);
+    lv_style_set_radius(&s_style_tab_btn_active, 4);
+    lv_style_set_pad_all(&s_style_tab_btn_active, 0);
+
+    // Tab buttons - Disabled (future use)
+    lv_style_init(&s_style_tab_btn_disabled);
+    lv_style_set_bg_color(&s_style_tab_btn_disabled, COL_SURFACE);
+    lv_style_set_bg_opa(&s_style_tab_btn_disabled, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_tab_btn_disabled, COL_TEXT_DIM);
+    lv_style_set_border_width(&s_style_tab_btn_disabled, 1);
+    lv_style_set_border_color(&s_style_tab_btn_disabled, lv_color_hex(0x242424));
+    lv_style_set_radius(&s_style_tab_btn_disabled, 4);
+    lv_style_set_pad_all(&s_style_tab_btn_disabled, 0);
+
+    // Sub-screen generic background
+    lv_style_init(&s_style_screen_bg);
+    lv_style_set_bg_color(&s_style_screen_bg, COL_BG);
+    lv_style_set_bg_opa(&s_style_screen_bg, LV_OPA_COVER);
+    lv_style_set_pad_all(&s_style_screen_bg, 10);
+
+    lv_style_init(&s_style_panel_frame);
+    lv_style_set_bg_color(&s_style_panel_frame, COL_PANEL_DK);
+    lv_style_set_bg_opa(&s_style_panel_frame, LV_OPA_COVER);
+    lv_style_set_border_width(&s_style_panel_frame, 1);
+    lv_style_set_border_color(&s_style_panel_frame, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_panel_frame, 4);
+    lv_style_set_pad_all(&s_style_panel_frame, 0);
+
+    lv_style_init(&s_style_btn_primary);
+    lv_style_set_bg_color(&s_style_btn_primary, COL_GREEN);
+    lv_style_set_bg_opa(&s_style_btn_primary, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_primary, COL_ON_ACCENT);
+    lv_style_set_border_width(&s_style_btn_primary, 1);
+    lv_style_set_border_color(&s_style_btn_primary, lv_color_hex(0x6DFFB1));
+    lv_style_set_radius(&s_style_btn_primary, 6);
+
+    lv_style_init(&s_style_btn_amber);
+    lv_style_set_bg_color(&s_style_btn_amber, COL_AMBER);
+    lv_style_set_bg_opa(&s_style_btn_amber, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_amber, COL_ON_ACCENT);
+    lv_style_set_border_width(&s_style_btn_amber, 1);
+    lv_style_set_border_color(&s_style_btn_amber, lv_color_hex(0xFFD166));
+    lv_style_set_radius(&s_style_btn_amber, 6);
+
+    lv_style_init(&s_style_btn_secondary);
+    lv_style_set_bg_color(&s_style_btn_secondary, COL_SURFACE);
+    lv_style_set_bg_opa(&s_style_btn_secondary, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_secondary, COL_TEXT_MUTED);
+    lv_style_set_border_width(&s_style_btn_secondary, 1);
+    lv_style_set_border_color(&s_style_btn_secondary, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_btn_secondary, 5);
+
+    lv_style_init(&s_style_btn_disabled);
+    lv_style_set_bg_color(&s_style_btn_disabled, COL_DISABLED);
+    lv_style_set_bg_opa(&s_style_btn_disabled, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_disabled, COL_TEXT_DIM);
+    lv_style_set_border_width(&s_style_btn_disabled, 1);
+    lv_style_set_border_color(&s_style_btn_disabled, COL_BORDER);
+    lv_style_set_radius(&s_style_btn_disabled, 6);
+
+    // Styled Neon Action Button
+    lv_style_init(&s_style_btn_neon);
+    lv_style_set_bg_color(&s_style_btn_neon, COL_GREEN);
+    lv_style_set_bg_opa(&s_style_btn_neon, LV_OPA_COVER);
+    lv_style_set_text_color(&s_style_btn_neon, COL_BG);
+    lv_style_set_radius(&s_style_btn_neon, 6);
+
+    // Universal touch feedback: dim + slightly shrink on press (works on any
+    // colour). Attach with LV_STATE_PRESSED to interactive elements.
+    lv_style_init(&s_style_pressed);
+    lv_style_set_opa(&s_style_pressed, LV_OPA_70);
+    lv_style_set_transform_width(&s_style_pressed, -3);
+    lv_style_set_transform_height(&s_style_pressed, -3);
+}
+
+// Build the top bar UI elements
+static void create_header(lv_obj_t *parent) {
+    s_header_container = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_header_container);
+    lv_obj_add_style(s_header_container, &s_style_header, LV_PART_MAIN);
+    lv_obj_set_size(s_header_container, 800, 55);
+    lv_obj_set_pos(s_header_container, 0, 0);
+
+    // Track Title (Left block)
+    s_label_title = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_title, "Loading...");
+    lv_obj_set_style_text_font(s_label_title, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_title, COL_TEXT, LV_PART_MAIN);
+    lv_label_set_long_mode(s_label_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_size(s_label_title, 220, 24);
+    lv_obj_set_pos(s_label_title, 10, 5);
+
+    s_label_artist = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_artist, "No Track Loaded");
+    lv_obj_set_style_text_font(s_label_artist, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_artist, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_artist, 10, 30);
+
+    // Playhead indicator
+    s_label_status_indicator = lv_label_create(s_header_container);
+    ui_label_set_small_caps(s_label_status_indicator, "PAUSE", COL_AMBER);
+    lv_obj_set_pos(s_label_status_indicator, 245, 18);
+
+    // Elapsed time (current position) — large monospace, centred, blue.
+    s_label_time = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_time, "00:00.00");
+    lv_obj_set_style_text_font(s_label_time, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_time, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_align(s_label_time, LV_ALIGN_CENTER, 0, 0);
+
+    // Remaining time (until end of track) — sits immediately to the right of the
+    // elapsed counter, slightly smaller and dimmer to read as the secondary value.
+    s_label_time_remain = lv_label_create(s_header_container);
+    lv_label_set_text(s_label_time_remain, "-00:00.00");
+    lv_obj_set_style_text_font(s_label_time_remain, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_time_remain, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_update_layout(s_label_time);  // ensure elapsed size is known before aligning
+    lv_obj_align_to(s_label_time_remain, s_label_time, LV_ALIGN_OUT_RIGHT_MID, 14, 0);
+
+    // BPM & Pitch Info (pulled to the far right edge of the header)
+    lv_obj_t *bpm_info_container = lv_obj_create(s_header_container);
+    lv_obj_remove_style_all(bpm_info_container);
+    lv_obj_set_size(bpm_info_container, 130, 45);
+    lv_obj_align(bpm_info_container, LV_ALIGN_RIGHT_MID, -8, 0);
+
+    s_label_bpm = lv_label_create(bpm_info_container);
+    lv_label_set_text(s_label_bpm, "120.00");
+    lv_obj_set_style_text_font(s_label_bpm, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_bpm, COL_TEXT, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_bpm, 10, 2);
+
+    lv_obj_t *label_bpm_unit = lv_label_create(bpm_info_container);
+    lv_label_set_text(label_bpm_unit, "BPM");
+    lv_obj_set_style_text_font(label_bpm_unit, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label_bpm_unit, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(label_bpm_unit, 75, 7);
+
+    s_label_pitch = lv_label_create(bpm_info_container);
+    lv_label_set_text(s_label_pitch, "+0.00%");
+    lv_obj_set_style_text_font(s_label_pitch, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_pitch, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_pitch, 10, 23);
+
+    lv_obj_t *label_pitch_unit = lv_label_create(bpm_info_container);
+    lv_label_set_text(label_pitch_unit, "PITCH");
+    lv_obj_set_style_text_font(label_pitch_unit, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label_pitch_unit, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(label_pitch_unit, 75, 26);
+}
+
+// Build the footer navigation buttons
+static void create_footer(lv_obj_t *parent) {
+    s_footer_container = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_footer_container);
+    lv_obj_add_style(s_footer_container, &s_style_footer, LV_PART_MAIN);
+    lv_obj_set_size(s_footer_container, 800, 55);
+    lv_obj_set_pos(s_footer_container, 0, 425);
+
+    const int btn_width = 106;
+    const int btn_height = 47;
+    const int spacing = 6;
+    const int offset_left = 6;
+    const int offset_top = 4;
+
+    for (int i = 0; i < 7; i++) {
+        s_footer_buttons[i] = lv_button_create(s_footer_container);
+        lv_obj_remove_style_all(s_footer_buttons[i]);
+        lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_normal, LV_PART_MAIN);
+        lv_obj_add_style(s_footer_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
+        lv_obj_set_size(s_footer_buttons[i], btn_width, btn_height);
+        lv_obj_set_pos(s_footer_buttons[i], offset_left + i * (btn_width + spacing), offset_top);
+        lv_obj_clear_flag(s_footer_buttons[i], LV_OBJ_FLAG_SCROLLABLE);
+        
+        lv_obj_set_user_data(s_footer_buttons[i], (void*)(intptr_t)i);
+        lv_obj_add_event_cb(s_footer_buttons[i], footer_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+        s_footer_active_strips[i] = lv_obj_create(s_footer_buttons[i]);
+        lv_obj_remove_style_all(s_footer_active_strips[i]);
+        lv_obj_set_size(s_footer_active_strips[i], btn_width - 18, 3);
+        lv_obj_set_pos(s_footer_active_strips[i], 9, 4);
+        lv_obj_set_style_bg_color(s_footer_active_strips[i], COL_RED, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_footer_active_strips[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_footer_active_strips[i], 2, LV_PART_MAIN);
+        lv_obj_add_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *lbl = lv_label_create(s_footer_buttons[i]);
+        lv_label_set_text(lbl, s_tab_names[i]);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 4);
+    }
+
+    // Set first tab as active
+    lv_obj_add_style(s_footer_buttons[0], &s_style_tab_btn_active, LV_PART_MAIN);
+    lv_obj_remove_flag(s_footer_active_strips[0], LV_OBJ_FLAG_HIDDEN);
+}
+
+// Screen 1: OVERVIEW Layout
+// Tap-to-seek on the overview waveform: jump playback to the tapped position,
+// preserving the current play/pause state. The mapping mirrors the playhead —
+// the bars span 400 px starting 10 px into wv_border's content area.
+static void waveform_seek_event_cb(lv_event_t *e) {
+    lv_obj_t *wv = lv_event_get_target(e);
+    uint32_t duration_ms = ui_current_duration_ms();
+    if (duration_ms == 0) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+
+    lv_area_t content;
+    lv_obj_get_content_coords(wv, &content);
+    int rel_x = (int)p.x - content.x1 - 10;
+    if (rel_x < 0)   rel_x = 0;
+    if (rel_x > 400) rel_x = 400;
+    uint32_t target_ms = (uint32_t)(((uint64_t)rel_x * duration_ms) / 400u);
+
+#ifndef WIN32
+    audio_engine_seek(target_ms);
+#else
+    mock_deck_set_position(target_ms);
+#endif
+    ESP_LOGI(TAG, "Waveform seek -> %lu ms (%d%%)",
+             (unsigned long)target_ms, (int)((rel_x * 100) / 400));
+}
+
+// Tap-to-seek on the high-res zoom waveform. The centre needle marks the current
+// position; the horizontal scale is ZOOM_MS_PER_PX. A tap left of centre seeks
+// back, right seeks forward, relative to the live position.
+static void zoom_seek_event_cb(lv_event_t *e) {
+    lv_obj_t *zc = lv_event_get_target(e);
+    uint32_t duration_ms = ui_current_duration_ms();
+    if (duration_ms == 0) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+
+    lv_area_t content;
+    lv_obj_get_content_coords(zc, &content);
+    int center_x  = (content.x1 + content.x2) / 2;   // needle = current position
+    int offset_px = (int)p.x - center_x;
+
+    int32_t cur_ms;
+#ifndef WIN32
+    cur_ms = (int32_t)audio_engine_position_ms();
+#else
+    cur_ms = (int32_t)deck_core_get_state().position_ms;
+#endif
+    int32_t target = cur_ms + offset_px * ZOOM_MS_PER_PX;
+    if (target < 0) target = 0;
+    if (target > (int32_t)duration_ms) target = (int32_t)duration_ms;
+
+#ifndef WIN32
+    audio_engine_seek((uint32_t)target);
+#else
+    mock_deck_set_position((uint32_t)target);
+#endif
+    ESP_LOGI(TAG, "Zoom seek -> %ld ms (offset %d px)", (long)target, offset_px);
+}
+
+// Render the high-res zoom waveform into the canvas, centred on the current
+// position (centre column = playhead). Smooth pixel scroll: column x samples
+// waveform_high at position + (x - centre)*ZOOM_MS_PER_PX, so features glide a
+// few px per frame instead of jumping a whole bar. Faint beat grid behind the
+// green waveform; bright playhead on top.
+static void ui_draw_zoom_canvas(uint32_t position_ms, uint32_t duration_ms,
+                                const anlz_metadata_t *meta)
+{
+    if (!s_zoom_cv_buf || duration_ms == 0) return;
+#ifndef WIN32
+    int64_t draw_start_us = esp_timer_get_time();
+#endif
+    
+    // U LVGL v9 indeksiranom I8 formatu, paleta (1024 B) se nalazi na samom početku
+    // buffera, a stvarni pikseli (slikovni podaci) počinju nakon nje.
+    uint8_t *buf = s_zoom_cv_buf + 256 * sizeof(lv_color32_t);
+    const int  W = ZOOM_CV_W, H = ZOOM_CV_H, S = s_zoom_stride_px;
+    const int  cx = W / 2, cy = H / 2;
+
+    const uint8_t c_wave = 1; // Indeks 1 u paleti: neonsko zelena
+    const uint8_t c_play = 2; // Indeks 2 u paleti: neonsko crvena (playhead)
+    const uint8_t c_beat = 3; // Indeks 3 u paleti: prigušena siva (beat grid)
+    const uint8_t c_down = 4; // Indeks 4 u paleti: prigušeno crvena (downbeat)
+
+    // 1) Clear to background color (indeks 0 == crna).
+    memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
+
+    const int32_t  dur  = (int32_t)duration_ms;
+    const uint32_t hlen = (meta && meta->waveform_high) ? meta->waveform_high_len : 0u;
+    const int32_t  t_left  = (int32_t)position_ms - cx * ZOOM_MS_PER_PX;
+    const int32_t  t_right = (int32_t)position_ms + (W - cx) * ZOOM_MS_PER_PX;
+
+    // 2) Beat grid (faint, full height) behind the waveform.
+    if (meta && meta->beats && meta->beat_count > 0 && dur > 0) {
+        for (uint32_t b = 0; b < meta->beat_count; b++) {
+            int32_t bt = (int32_t)meta->beats[b].time_ms;
+            if (bt < t_left || bt > t_right) continue;
+            int x = cx + (int)((bt - (int32_t)position_ms) / ZOOM_MS_PER_PX);
+            if (x < 0 || x >= W) continue;
+            uint8_t col = (meta->beats[b].beat_phase == 0) ? c_down : c_beat;
+            for (int y = 0; y < H; y++) buf[y * S + x] = col;
+        }
+    }
+
+    // 3) Waveform columns on top.
+    if (hlen > 0 && dur > 0) {
+        for (int x = 0; x < W; x++) {
+            int32_t t = (int32_t)position_ms + (x - cx) * ZOOM_MS_PER_PX;
+            if (t < 0 || t >= dur) continue;
+            uint32_t hi = (uint32_t)(((uint64_t)t * hlen) / (uint32_t)dur);
+            if (hi >= hlen) continue;
+            int amp = meta->waveform_high[hi] & 0x1F;       // 0..31
+            int h = (amp * (H - 6)) / 31;
+            if (h < 1) h = 1;
+            int y0 = cy - h / 2, y1 = cy + h / 2;
+            if (y0 < 0) y0 = 0;
+            if (y1 >= H) y1 = H - 1;
+            for (int y = y0; y <= y1; y++) buf[y * S + x] = c_wave;
+        }
+    }
+
+    // 4) Centre playhead (2 px) on top of everything.
+    for (int x = cx - 1; x <= cx; x++) {
+        if (x < 0 || x >= W) continue;
+        for (int y = 0; y < H; y++) buf[y * S + x] = c_play;
+    }
+
+    lv_obj_invalidate(s_zoom_canvas);
+#ifndef WIN32
+    int64_t draw_us = esp_timer_get_time() - draw_start_us;
+    static int64_t s_last_zoom_slow_warn_us = 0;
+    if (draw_us > 12000 && draw_start_us - s_last_zoom_slow_warn_us > 1000000) {
+        s_last_zoom_slow_warn_us = draw_start_us;
+        ESP_LOGW(TAG, "ui_draw_zoom_canvas slow: %lld us", (long long)draw_us);
+    }
+#endif
+}
+
+
+static void create_screen_overview(lv_obj_t *parent) {
+    s_screens[0] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[0]);
+    lv_obj_add_style(s_screens[0], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[0], 800, 370);
+    lv_obj_set_pos(s_screens[0], 0, 55);
+
+    // ─── Play / Pause button (left) ───
+    lv_obj_t *btn_play = lv_button_create(s_screens[0]);
+    lv_obj_remove_style_all(btn_play);
+    lv_obj_add_style(btn_play, &s_style_btn_primary, LV_PART_MAIN);
+    lv_obj_add_style(btn_play, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_play, 140, 50);
+    lv_obj_set_pos(btn_play, 20, 20);
+    lv_obj_add_event_cb(btn_play, play_pause_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl_play = lv_label_create(btn_play);
+    lv_label_set_text(lbl_play, "PLAY / PAUSE");
+    lv_obj_set_style_text_font(lbl_play, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_play, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(lbl_play, LV_ALIGN_CENTER, 0, 0);
+
+    // ─── CUE button (right, level with Play/Pause, right of the upper waveform) ───
+    lv_obj_t *btn_cue = lv_button_create(s_screens[0]);
+    lv_obj_remove_style_all(btn_cue);
+    lv_obj_add_style(btn_cue, &s_style_btn_amber, LV_PART_MAIN);
+    lv_obj_add_style(btn_cue, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_cue, 140, 50);
+    lv_obj_set_pos(btn_cue, 640, 20);
+    lv_obj_add_event_cb(btn_cue, cue_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl_cue = lv_label_create(btn_cue);
+    lv_label_set_text(lbl_cue, "CUE");
+    lv_obj_set_style_text_font(lbl_cue, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_cue, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(lbl_cue, LV_ALIGN_CENTER, 0, 0);
+
+    // ─── STATIC OVERVIEW WAVEFORM (Sredina) ───
+    lv_obj_t *wv_border = lv_obj_create(s_screens[0]);
+    lv_obj_remove_style_all(wv_border);
+    lv_obj_add_style(wv_border, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(wv_border, 420, 80);
+    lv_obj_set_pos(wv_border, 180, 10);
+    lv_obj_set_style_pad_all(wv_border, 0, LV_PART_MAIN);
+    // Tap-to-seek: wv_border is clickable by default; disable scrolling so a tap
+    // never gets eaten as a drag. Child bars/markers below are made non-clickable
+    // so taps fall through to this handler.
+    lv_obj_remove_flag(wv_border, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(wv_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
+
+    // Create static overview canvas (high-res 1:1 Rekordbox display) in fast SRAM
+    size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+#ifndef WIN32
+    s_overview_cv_buf = heap_caps_malloc(ov_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#else
+    s_overview_cv_buf = malloc(ov_sz);
+#endif
+    if (s_overview_cv_buf) {
+        memset(s_overview_cv_buf, 0, ov_sz);
+        s_overview_canvas = lv_canvas_create(wv_border);
+        lv_canvas_set_buffer(s_overview_canvas, s_overview_cv_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+        lv_obj_align(s_overview_canvas, LV_ALIGN_TOP_LEFT, 10, 2);
+        lv_obj_remove_flag(s_overview_canvas, LV_OBJ_FLAG_CLICKABLE); // let taps reach wv_border
+
+        // Inicijalizacija palete boja za indeksirani I8 canvas
+        lv_canvas_set_palette(s_overview_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF)); // Pozadina (Crna)
+        lv_canvas_set_palette(s_overview_canvas, 1, lv_color32_make(0x00, 0x91, 0xFF, 0xFF)); // Waveform (Premium plava 0x0091FF)
+        lv_canvas_set_palette(s_overview_canvas, 2, lv_color32_make(0x27, 0x4C, 0x6B, 0xFF)); // Waveform played (Prigušeno plavo-zelena 0x274C6B)
+        lv_canvas_set_palette(s_overview_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF)); // Beat grid (Prigušeno siva)
+        lv_canvas_set_palette(s_overview_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF)); // Downbeat grid (Prigušeno crvena)
+
+        lv_image_dsc_t *dsc = lv_canvas_get_image(s_overview_canvas);
+        if (dsc && dsc->header.stride > 0) s_overview_stride_px = (int)dsc->header.stride;
+    } else {
+        ESP_LOGE(TAG, "overview canvas buffer alloc failed (%u bytes)", (unsigned)ov_sz);
+    }
+
+    // Playhead marker for the static overview (bright neon red, 3 px for visibility)
+    s_overview_playhead = lv_obj_create(wv_border);
+    lv_obj_set_style_bg_color(s_overview_playhead, COL_RED, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_overview_playhead, 0, LV_PART_MAIN);
+    lv_obj_set_size(s_overview_playhead, 3, 76);
+    lv_obj_set_pos(s_overview_playhead, 10, 2);
+    lv_obj_remove_flag(s_overview_playhead, LV_OBJ_FLAG_CLICKABLE);
+
+    // Cue markers for the static overview
+    for (int i = 0; i < 8; i++) {
+        s_overview_cue_markers[i] = lv_obj_create(wv_border);
+        lv_obj_set_style_border_width(s_overview_cue_markers[i], 0, LV_PART_MAIN);
+        lv_obj_set_size(s_overview_cue_markers[i], 3, 76);
+        lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hidden by default
+        lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    // ─── 4-beat Pulse Row (Ispod waveforma) ───
+    for (int i = 0; i < 4; i++) {
+        s_beat_pulses[i] = lv_obj_create(s_screens[0]);
+        lv_obj_set_size(s_beat_pulses[i], 12, 12);
+        // Centrirano ispod waveforma (180 + (420 - 72)/2 = 354)
+        lv_obj_set_pos(s_beat_pulses[i], 354 + i * 20, 96);
+        lv_obj_set_style_radius(s_beat_pulses[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_beat_pulses[i], COL_BORDER_LT, LV_PART_MAIN);
+        lv_obj_set_style_border_width(s_beat_pulses[i], 1, LV_PART_MAIN);
+    }
+
+    // Label for progress details
+    lv_obj_t *lbl_wv_info = lv_label_create(s_screens[0]);
+    lv_label_set_text(lbl_wv_info, "TRACK OVERVIEW");
+    lv_obj_set_style_text_font(lbl_wv_info, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_wv_info, lv_color_hex(0x666666), LV_PART_MAIN);
+    lv_obj_set_pos(lbl_wv_info, 180, 115);
+
+    // ─── ZOOM DYNAMIC WAVEFORM (Donji dio ekrana) ───
+    lv_obj_t *lbl_zoom_title = lv_label_create(s_screens[0]);
+    lv_label_set_text(lbl_zoom_title, "WAVEFORM ZOOM");
+    lv_obj_set_style_text_font(lbl_zoom_title, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_zoom_title, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_set_pos(lbl_zoom_title, 20, 140);
+
+    lv_obj_t *zoom_container = lv_obj_create(s_screens[0]);
+    lv_obj_remove_style_all(zoom_container);
+    lv_obj_add_style(zoom_container, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(zoom_container, lv_color_hex(0x050505), LV_PART_MAIN);
+    lv_obj_set_size(zoom_container, 760, 160);
+    lv_obj_set_pos(zoom_container, 20, 165);
+    lv_obj_set_style_pad_all(zoom_container, 0, LV_PART_MAIN);
+    // Tap-to-seek on the zoom waveform (relative to the centre needle). Disable
+    // scrolling so a tap isn't eaten as a drag; children below are non-clickable.
+    lv_obj_remove_flag(zoom_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(zoom_container, zoom_seek_event_cb, LV_EVENT_CLICKED, NULL);
+
+    // High-res zoom waveform rendered to a canvas (smooth pixel scroll). The
+    // canvas fills the container interior; tap-to-seek stays on zoom_container.
+    size_t cv_sz = LV_DRAW_BUF_SIZE(ZOOM_CV_W, ZOOM_CV_H, LV_COLOR_FORMAT_I8);
+#ifndef WIN32
+    s_zoom_cv_buf = heap_caps_malloc(cv_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // SRAM alokacija
+#else
+    s_zoom_cv_buf = malloc(cv_sz);
+#endif
+    if (s_zoom_cv_buf) {
+        memset(s_zoom_cv_buf, 0, cv_sz);   // start black (alloc isn't zeroed)
+        s_zoom_canvas = lv_canvas_create(zoom_container);
+        lv_canvas_set_buffer(s_zoom_canvas, s_zoom_cv_buf, ZOOM_CV_W, ZOOM_CV_H,
+                             LV_COLOR_FORMAT_I8);
+        lv_obj_center(s_zoom_canvas);
+        lv_obj_remove_flag(s_zoom_canvas, LV_OBJ_FLAG_CLICKABLE); // taps reach zoom_container
+
+        // Inicijalizacija palete boja za indeksirani I8 canvas
+        lv_canvas_set_palette(s_zoom_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF)); // Pozadina (Crna)
+        lv_canvas_set_palette(s_zoom_canvas, 1, lv_color32_make(0x00, 0xFF, 0x88, 0xFF)); // Waveform (Zelena)
+        lv_canvas_set_palette(s_zoom_canvas, 2, lv_color32_make(0xFF, 0x00, 0x55, 0xFF)); // Playhead (Crvena)
+        lv_canvas_set_palette(s_zoom_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF)); // Beat grid (Siva)
+        lv_canvas_set_palette(s_zoom_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF)); // Downbeat grid (Prigušeno crvena)
+
+        lv_image_dsc_t *dsc = lv_canvas_get_image(s_zoom_canvas);
+        if (dsc && dsc->header.stride > 0) s_zoom_stride_px = (int)dsc->header.stride; // 8 bpp: stride je u bajtovima
+        s_zoom_redraw = true;
+    } else {
+        ESP_LOGE(TAG, "zoom canvas buffer alloc failed (%u bytes)", (unsigned)cv_sz);
+    }
+}
+
+static void ui_truncate_str(char *dest, const char *src, size_t max_len) {
+    if (!src) {
+        dest[0] = '\0';
+        return;
+    }
+    size_t len = strlen(src);
+    if (len <= max_len) {
+        strcpy(dest, src);
+    } else {
+        strncpy(dest, src, max_len - 3);
+        dest[max_len - 3] = '\0';
+        strcat(dest, "...");
+    }
+}
+
+// Fill one library data row (track index i → table row i+1). Caller holds the
+// LVGL lock. NOTE: the table must have a fixed row height (min==max on ITEMS),
+// otherwise lv_table_set_cell_value triggers an O(n) self-size refresh per row
+// and populating a 300+ track table becomes O(n²) (seconds, watchdog trips).
+static void ui_fill_library_row(int i) {
+#ifndef WIN32
+    media_catalog_row_t row;
+    if (media_catalog_get_row(i, &row) != ESP_OK) {
+        return;
+    }
+    const char *title = row.title;
+    const char *artist = row.artist;
+    uint16_t bpm = row.bpm;
+    uint32_t duration_ms = row.duration_ms;
+#else
+    const library_track_t *track = library_get_ptr(i);
+    if (!track) {
+        return;
+    }
+    const char *title = track->title;
+    const char *artist = track->artist;
+    uint16_t bpm = track->bpm;
+    uint32_t duration_ms = track->duration_ms;
+#endif
+    char bpm_str[16];
+    char time_str[16];
+    char trunc_title[128];
+    char trunc_artist[128];
+
+    // Smart truncation for Montserrat 16 font (26 chars for title, 18 for artist)
+    ui_truncate_str(trunc_title, title, 26);
+    ui_truncate_str(trunc_artist, artist, 18);
+
+    uint32_t secs = duration_ms / 1000;
+    snprintf(bpm_str, sizeof(bpm_str), "%u", (unsigned)bpm);
+    snprintf(time_str, sizeof(time_str), "%u:%02u", (unsigned)(secs / 60), (unsigned)(secs % 60));
+
+    lv_table_set_cell_value(s_library_table, i + 1, 0, trunc_title);
+    lv_table_set_cell_value(s_library_table, i + 1, 1, trunc_artist);
+    lv_table_set_cell_value(s_library_table, i + 1, 2, bpm_str);
+    lv_table_set_cell_value(s_library_table, i + 1, 3, time_str);
+}
+
+// (Re)fill all library table rows. Sized exactly to the track count (+1 header)
+// so stale rows are dropped. Used at init where the count is small/zero.
+static void ui_populate_library_rows(void) {
+    if (!s_library_table) {
+        return;
+    }
+    int n_tracks = ui_media_count();
+    lv_table_set_row_count(s_library_table, n_tracks + 1);   // row 0 = header
+    for (int i = 0; i < n_tracks; i++) {
+        ui_fill_library_row(i);
+    }
+    ui_update_library_source_label();
+}
+
+// Screen 2: LIBRARY BROWSER Layout
+static void create_screen_library(lv_obj_t *parent) {
+    s_screens[1] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[1]);
+    lv_obj_add_style(s_screens[1], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[1], 800, 370);
+    lv_obj_set_pos(s_screens[1], 0, 55);
+
+    // Track list container table
+    s_library_table = lv_table_create(s_screens[1]);
+    lv_obj_set_size(s_library_table, 600, 330);
+    lv_obj_set_pos(s_library_table, 10, 10);
+    lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    
+    // 8 visible songs + 1 header = 9 rows total. 330px height / 9 = 36.6px.
+    // Fixed row height (36px) allows large legible text without word-wrap clipping.
+    lv_obj_set_style_min_height(s_library_table, 36, LV_PART_ITEMS);
+    lv_obj_set_style_max_height(s_library_table, 36, LV_PART_ITEMS);
+
+    // Modern compact padding tailored for 36px row and 16px font
+    lv_obj_set_style_pad_left(s_library_table, 6, LV_PART_ITEMS);
+    lv_obj_set_style_pad_right(s_library_table, 6, LV_PART_ITEMS);
+    lv_obj_set_style_pad_top(s_library_table, 8, LV_PART_ITEMS);
+    lv_obj_set_style_pad_bottom(s_library_table, 8, LV_PART_ITEMS);
+
+    // Subtly visible grid borders for tabular layout — draw only at the bottom of cells
+    lv_obj_set_style_border_color(s_library_table, COL_BORDER, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_library_table, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+
+    // Harmonious background color and premium Montserrat 16 font
+    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_library_table, COL_TEXT_MUTED, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_library_table, &lv_font_montserrat_16, LV_PART_ITEMS);
+
+    // Selected cell background and text color (Standard LVGL FOCUSED state)
+    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ALT, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(s_library_table, COL_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_width(s_library_table, 3, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_text_color(s_library_table, COL_TEXT, LV_PART_ITEMS | LV_STATE_FOCUSED);
+
+    // Configure Columns: Total width must fit 600px (4 columns instead of 5, '#' removed)
+    lv_table_set_column_width(s_library_table, 0, 290); // Title
+    lv_table_set_column_width(s_library_table, 1, 170); // Artist
+    lv_table_set_column_width(s_library_table, 2, 60);  // BPM
+    lv_table_set_column_width(s_library_table, 3, 80);  // Duration
+
+    // Header Row
+    lv_table_set_cell_value(s_library_table, 0, 0, "TITLE");
+    lv_table_set_cell_value(s_library_table, 0, 1, "ARTIST");
+    lv_table_set_cell_value(s_library_table, 0, 2, "BPM");
+    lv_table_set_cell_value(s_library_table, 0, 3, "TIME");
+
+    // Populate rows with track details from the media library
+    ui_populate_library_rows();
+
+    // Source selector
+    lv_obj_t *btn_src_local = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(btn_src_local);
+    lv_obj_add_style(btn_src_local, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(btn_src_local, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_src_local, 72, 38);
+    lv_obj_set_pos(btn_src_local, 630, 10);
+    lv_obj_add_event_cb(btn_src_local, library_source_local_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_src_local, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_src_local = lv_label_create(btn_src_local);
+    lv_label_set_text(lbl_src_local, "LOCAL");
+    lv_obj_set_style_text_font(lbl_src_local, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_src_local, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_src_local, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t *btn_src_join = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(btn_src_join);
+    lv_obj_add_style(btn_src_join, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(btn_src_join, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_src_join, 72, 38);
+    lv_obj_set_pos(btn_src_join, 708, 10);
+    lv_obj_add_event_cb(btn_src_join, library_source_joined_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_src_join, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_src_join = lv_label_create(btn_src_join);
+    lv_label_set_text(lbl_src_join, "JOINED");
+    lv_obj_set_style_text_font(lbl_src_join, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_src_join, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_src_join, LV_ALIGN_CENTER, 0, 0);
+
+    s_label_library_source = lv_label_create(s_screens[1]);
+    lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_library_source, 630, 52);
+    ui_update_library_source_label();
+
+    // Load selected track button (Right Panel)
+    s_btn_library_load = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(s_btn_library_load);
+    lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(s_btn_library_load, 150, 50);
+    lv_obj_set_pos(s_btn_library_load, 630, 72);
+    lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_load = lv_label_create(s_btn_library_load);
+    lv_label_set_text(lbl_load, "LOAD TRACK");
+    lv_obj_set_style_text_font(lbl_load, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_load, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(lbl_load, LV_ALIGN_CENTER, 0, 0);
+
+    // SORT ARTIST button
+    lv_obj_t *btn_sort_artist = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(btn_sort_artist);
+    lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_set_size(btn_sort_artist, 150, 45);
+    lv_obj_set_pos(btn_sort_artist, 630, 132);
+    lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_sort_artist = lv_label_create(btn_sort_artist);
+    lv_label_set_text(lbl_sort_artist, "SORT ARTIST");
+    lv_obj_set_style_text_font(lbl_sort_artist, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_sort_artist, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_sort_artist, LV_ALIGN_CENTER, 0, 0);
+
+    // SORT NAME button
+    lv_obj_t *btn_sort_name = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(btn_sort_name);
+    lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_set_size(btn_sort_name, 150, 45);
+    lv_obj_set_pos(btn_sort_name, 630, 187);
+    lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_sort_name = lv_label_create(btn_sort_name);
+    lv_label_set_text(lbl_sort_name, "SORT NAME");
+    lv_obj_set_style_text_font(lbl_sort_name, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_sort_name, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_sort_name, LV_ALIGN_CENTER, 0, 0);
+
+    // SORT BPM button
+    lv_obj_t *btn_sort_bpm = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(btn_sort_bpm);
+    lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_set_size(btn_sort_bpm, 150, 45);
+    lv_obj_set_pos(btn_sort_bpm, 630, 242);
+    lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_sort_bpm = lv_label_create(btn_sort_bpm);
+    lv_label_set_text(lbl_sort_bpm, "SORT BPM");
+    lv_obj_set_style_text_font(lbl_sort_bpm, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_sort_bpm, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_sort_bpm, LV_ALIGN_CENTER, 0, 0);
+
+    // Tip label
+    s_label_library_hint = lv_label_create(s_screens[1]);
+    lv_label_set_text(s_label_library_hint, "SELECT TRACK\nPRESS LOAD");
+    lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(s_label_library_hint, 630, 300);
+    ui_library_set_load_busy(false, NULL);
+}
+
+// Screen 3: HOT CUES Layout (2x4 Grid of pads)
+static void create_screen_hot_cues(lv_obj_t *parent) {
+    s_screens[2] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[2]);
+    lv_obj_add_style(s_screens[2], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[2], 800, 370);
+    lv_obj_set_pos(s_screens[2], 0, 55);
+
+    // Construct a grid of buttons: 4 in a row, 2 rows
+    int pad_w = 170;
+    int pad_h = 130;
+    int spacing_x = 20;
+    int spacing_y = 20;
+    int offset_x = 30;
+    int offset_y = 40;
+
+    for (int i = 0; i < 8; i++) {
+        int row = i / 4;
+        int col = i % 4;
+
+        s_hot_cue_buttons[i] = lv_button_create(s_screens[2]);
+        lv_obj_remove_style_all(s_hot_cue_buttons[i]);
+        lv_obj_add_style(s_hot_cue_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
+        ui_style_hot_cue_pad(i, false, false);
+        lv_obj_set_size(s_hot_cue_buttons[i], pad_w, pad_h);
+        lv_obj_set_pos(s_hot_cue_buttons[i], offset_x + col * (pad_w + spacing_x), offset_y + row * (pad_h + spacing_y));
+
+        lv_obj_set_user_data(s_hot_cue_buttons[i], (void*)(intptr_t)i);
+        lv_obj_add_event_cb(s_hot_cue_buttons[i], hot_cue_event_cb, LV_EVENT_CLICKED, NULL);
+
+        // Pad Title label
+        lv_obj_t *lbl_pad = lv_label_create(s_hot_cue_buttons[i]);
+        lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
+        lv_obj_set_style_text_font(lbl_pad, &lv_font_montserrat_16, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl_pad, COL_GREEN, LV_PART_MAIN);
+        lv_obj_align(lbl_pad, LV_ALIGN_TOP_LEFT, 10, 10);
+
+        // Pad Time label
+        lv_obj_t *lbl_time = lv_label_create(s_hot_cue_buttons[i]);
+        char time_buf[16];
+        ui_format_time_cc(time_buf, sizeof(time_buf), s_hot_cue_positions[i]);
+        lv_label_set_text(lbl_time, time_buf);
+        lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl_time, COL_TEXT, LV_PART_MAIN);
+        lv_obj_align(lbl_time, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    }
+}
+
+// Screen 4: BEAT LOOP Layout
+static void create_screen_beat_loop(lv_obj_t *parent) {
+    s_screens[3] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[3]);
+    lv_obj_add_style(s_screens[3], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[3], 800, 370);
+    lv_obj_set_pos(s_screens[3], 0, 55);
+
+    s_label_loop_status = lv_label_create(s_screens[3]);
+    ui_label_set_small_caps(s_label_loop_status, "NO ACTIVE LOOP", COL_TEXT_DIM);
+    lv_obj_align(s_label_loop_status, LV_ALIGN_TOP_MID, 0, 12);
+
+    // Predefined loops: 1/2, 1, 2, 4, 8, 16 beats
+    int loop_beats[6] = {1, 2, 4, 8, 16, 32}; // 1 = 1 beat, 32 = 32 beats
+    const char *loop_labels[6] = {"1 BEAT", "2 BEATS", "4 BEATS", "8 BEATS", "16 BEATS", "32 BEATS"};
+
+    int pad_w = 210;
+    int pad_h = 100;
+    int spacing_x = 30;
+    int spacing_y = 20;
+    int offset_x = 60;
+    int offset_y = 54;
+
+    for (int i = 0; i < 6; i++) {
+        int row = i / 3;
+        int col = i % 3;
+
+        s_loop_buttons[i] = lv_button_create(s_screens[3]);
+        lv_obj_remove_style_all(s_loop_buttons[i]);
+        lv_obj_add_style(s_loop_buttons[i], &s_style_btn_secondary, LV_PART_MAIN);
+        lv_obj_add_style(s_loop_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
+        lv_obj_set_size(s_loop_buttons[i], pad_w, pad_h);
+        lv_obj_set_pos(s_loop_buttons[i], offset_x + col * (pad_w + spacing_x), offset_y + row * (pad_h + spacing_y));
+
+        lv_obj_set_user_data(s_loop_buttons[i], (void*)(intptr_t)loop_beats[i]);
+        lv_obj_add_event_cb(s_loop_buttons[i], loop_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *lbl_loop = lv_label_create(s_loop_buttons[i]);
+        lv_label_set_text(lbl_loop, loop_labels[i]);
+        lv_obj_set_style_text_font(lbl_loop, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_color(lbl_loop, COL_TEXT, LV_PART_MAIN);
+        lv_obj_align(lbl_loop, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    // EXIT LOOP Button
+    lv_obj_t *btn_exit = lv_button_create(s_screens[3]);
+    lv_obj_remove_style_all(btn_exit);
+    lv_obj_set_style_bg_color(btn_exit, COL_RED, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn_exit, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(btn_exit, lv_color_hex(0xFF6B85), LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn_exit, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn_exit, 6, LV_PART_MAIN);
+    lv_obj_add_style(btn_exit, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_exit, 180, 50);
+    lv_obj_set_pos(btn_exit, 310, 290);
+    lv_obj_add_event_cb(btn_exit, exit_loop_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl_exit = lv_label_create(btn_exit);
+    lv_label_set_text(lbl_exit, "EXIT LOOP");
+    lv_obj_set_style_text_font(lbl_exit, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_exit, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_exit, LV_ALIGN_CENTER, 0, 0);
+
+    ui_update_loop_screen_state();
+}
+
+// Screen 5: BEAT JUMP Layout
+static void create_screen_beat_jump(lv_obj_t *parent) {
+    s_screens[4] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[4]);
+    lv_obj_add_style(s_screens[4], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[4], 800, 370);
+    lv_obj_set_pos(s_screens[4], 0, 55);
+
+    int jump_vals[4] = {1, 4, 8, 16};
+    const int lane_x = 40;
+    const int lane_w = 720;
+    const int lane_h = 132;
+    const int lane_gap = 24;
+    const int lane_top_y = 34;
+    const int btn_w = 150;
+    const int spacing_x = 24;
+    const int btn_x0 = 36;
+    const int btn_y = 38;
+
+    lv_obj_t *lane_back = lv_obj_create(s_screens[4]);
+    lv_obj_remove_style_all(lane_back);
+    lv_obj_add_style(lane_back, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(lane_back, lane_w, lane_h);
+    lv_obj_set_pos(lane_back, lane_x, lane_top_y);
+    lv_obj_clear_flag(lane_back, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *lbl_back = lv_label_create(lane_back);
+    ui_label_set_small_caps(lbl_back, "BACKWARD", COL_AMBER);
+    lv_obj_set_pos(lbl_back, 16, 12);
+
+    for (int i = 0; i < 4; i++) {
+        ui_create_beat_jump_button(lane_back, btn_x0 + i * (btn_w + spacing_x), btn_y,
+                                   -jump_vals[i], false);
+    }
+
+    lv_obj_t *lane_forward = lv_obj_create(s_screens[4]);
+    lv_obj_remove_style_all(lane_forward);
+    lv_obj_add_style(lane_forward, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(lane_forward, lane_w, lane_h);
+    lv_obj_set_pos(lane_forward, lane_x, lane_top_y + lane_h + lane_gap);
+    lv_obj_clear_flag(lane_forward, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *lbl_forward = lv_label_create(lane_forward);
+    ui_label_set_small_caps(lbl_forward, "FORWARD", COL_GREEN);
+    lv_obj_set_pos(lbl_forward, 16, 12);
+
+    for (int i = 0; i < 4; i++) {
+        ui_create_beat_jump_button(lane_forward, btn_x0 + i * (btn_w + spacing_x), btn_y,
+                                   jump_vals[i], true);
+    }
+}
+
+// Screen 6: KEY SHIFT / KEYLOCK Layout
+static void create_screen_key_shift(lv_obj_t *parent) {
+    s_screens[5] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[5]);
+    lv_obj_add_style(s_screens[5], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[5], 800, 370);
+    lv_obj_set_pos(s_screens[5], 0, 55);
+
+    const int panel_y = 40;
+    const int panel_h = 250;
+
+    lv_obj_t *tempo_panel = lv_obj_create(s_screens[5]);
+    lv_obj_remove_style_all(tempo_panel);
+    lv_obj_add_style(tempo_panel, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(tempo_panel, 320, panel_h);
+    lv_obj_set_pos(tempo_panel, 50, panel_y);
+    lv_obj_clear_flag(tempo_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *lbl_tempo = lv_label_create(tempo_panel);
+    ui_label_set_small_caps(lbl_tempo, "MASTER TEMPO", COL_TEXT_MUTED);
+    lv_obj_set_pos(lbl_tempo, 18, 16);
+
+    lv_obj_t *lbl_keylock = lv_label_create(tempo_panel);
+    lv_label_set_text(lbl_keylock, "KEY LOCK");
+    lv_obj_set_style_text_font(lbl_keylock, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_keylock, COL_GREEN, LV_PART_MAIN);
+    lv_obj_align(lbl_keylock, LV_ALIGN_TOP_LEFT, 18, 64);
+
+    lv_obj_t *sw_keylock = lv_switch_create(tempo_panel);
+    lv_obj_set_pos(sw_keylock, 18, 130);
+    lv_obj_add_event_cb(sw_keylock, keylock_toggle_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t *lbl_preserves = lv_label_create(tempo_panel);
+    lv_label_set_text(lbl_preserves, "PRESERVES KEY");
+    lv_obj_set_style_text_font(lbl_preserves, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_preserves, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(lbl_preserves, 18, 196);
+
+    lv_obj_t *transpose_panel = lv_obj_create(s_screens[5]);
+    lv_obj_remove_style_all(transpose_panel);
+    lv_obj_add_style(transpose_panel, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(transpose_panel, 360, panel_h);
+    lv_obj_set_pos(transpose_panel, 410, panel_y);
+    lv_obj_clear_flag(transpose_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *lbl_transpose = lv_label_create(transpose_panel);
+    ui_label_set_small_caps(lbl_transpose, "KEY TRANSPOSE", COL_TEXT_MUTED);
+    lv_obj_set_pos(lbl_transpose, 18, 16);
+
+    lv_obj_t *lbl_key_value = lv_label_create(transpose_panel);
+    lv_label_set_text(lbl_key_value, "ORIGINAL KEY");
+    lv_obj_set_style_text_font(lbl_key_value, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_key_value, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_key_value, LV_ALIGN_TOP_LEFT, 18, 84);
+
+    lv_obj_t *lbl_no_transpose = lv_label_create(transpose_panel);
+    lv_label_set_text(lbl_no_transpose, "NO TRANSPOSITION");
+    lv_obj_set_style_text_font(lbl_no_transpose, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_no_transpose, COL_TEXT_DIM, LV_PART_MAIN);
+    lv_obj_set_pos(lbl_no_transpose, 18, 150);
+}
+
+// Screen 7: SETTINGS Layout
+static void create_screen_settings(lv_obj_t *parent) {
+    s_screens[6] = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_screens[6]);
+    lv_obj_add_style(s_screens[6], &s_style_screen_bg, LV_PART_MAIN);
+    lv_obj_set_size(s_screens[6], 800, 370);
+    lv_obj_set_pos(s_screens[6], 0, 55);
+
+    // Saved settings (firmware); the simulator uses defaults.
+#ifndef WIN32
+    app_settings_t cfg = app_settings_get();
+    int  bl_init  = cfg.backlight_pct;
+    bool rca_init = (cfg.audio_out != 0);
+#else
+    int  bl_init  = 80;
+    bool rca_init = false;
+#endif
+
+    const int left_x = 30;
+    const int left_w = 350;
+
+    lv_obj_t *display_section = ui_settings_section(s_screens[6], left_x, 20, left_w, 86, "DISPLAY");
+    s_slider_backlight = lv_slider_create(display_section);
+    lv_obj_set_size(s_slider_backlight, 230, 18);
+    lv_obj_set_pos(s_slider_backlight, 16, 48);
+    lv_slider_set_range(s_slider_backlight, 10, 100);
+    lv_slider_set_value(s_slider_backlight, bl_init, LV_ANIM_OFF);
+    lv_obj_add_event_cb(s_slider_backlight, slider_brightness_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_label_brightness_val = ui_settings_value_label(display_section, "", COL_TEXT,
+                                                     &lv_font_montserrat_14, 270, 44);
+    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", bl_init);
+
+    lv_obj_t *audio_section = ui_settings_section(s_screens[6], left_x, 118, left_w, 86, "AUDIO OUTPUT");
+    lv_obj_t *sw_audio = lv_switch_create(audio_section);
+    lv_obj_set_pos(sw_audio, 16, 42);
+    lv_obj_add_event_cb(sw_audio, audio_out_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_label_audio_out = ui_settings_value_label(audio_section, rca_init ? "RCA LINE-OUT" : "SPEAKER",
+                                                COL_GREEN, &lv_font_montserrat_16, 104, 44);
+    if (rca_init) {
+        lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
+    }
+
+    lv_obj_t *link_section = ui_settings_section(s_screens[6], left_x, 216, left_w, 116, "CDJ LINK ROLE");
+    lv_obj_t *btn_link = lv_button_create(link_section);
+    lv_obj_remove_style_all(btn_link);
+    lv_obj_add_style(btn_link, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(btn_link, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_link, 210, 42);
+    lv_obj_set_pos(btn_link, 16, 42);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_link, link_mode_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    s_label_link_mode = lv_label_create(btn_link);
+#ifndef WIN32
+    lv_label_set_text_fmt(s_label_link_mode, "%s", ui_link_mode_name(cfg.link_mode));
+#else
+    lv_label_set_text(s_label_link_mode, "OFF");
+#endif
+    lv_obj_set_style_text_font(s_label_link_mode, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_link_mode, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(s_label_link_mode, LV_ALIGN_CENTER, 0, 0);
+
+    ui_settings_value_label(link_section, "Saved role applies after reboot", COL_AMBER,
+                            &lv_font_montserrat_12, 16, 90);
+
+    lv_obj_t *status_section = ui_settings_section(s_screens[6], 410, 20, 360, 312, "SYSTEM STATUS");
+
+    s_label_uart_status = ui_settings_value_label(status_section,
+                                                  "Control Link (S3): Offline (no heartbeat)",
+                                                  COL_RED, &lv_font_montserrat_12, 16, 46);
+    lv_obj_set_width(s_label_uart_status, 320);
+    lv_label_set_long_mode(s_label_uart_status, LV_LABEL_LONG_CLIP);
+
+    s_label_link_status = ui_settings_value_label(status_section, "Link: OFF",
+                                                  COL_ACCENT, &lv_font_montserrat_12, 16, 74);
+    lv_obj_set_width(s_label_link_status, 320);
+    lv_label_set_long_mode(s_label_link_status, LV_LABEL_LONG_CLIP);
+
+    ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 116);
+    s_label_sd_status = ui_settings_value_label(status_section, "Checking /sd...",
+                                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
+    lv_obj_set_width(s_label_sd_status, 320);
+    lv_label_set_long_mode(s_label_sd_status, LV_LABEL_LONG_CLIP);
+
+    ui_settings_value_label(status_section, "Remote Cache", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 176);
+    s_label_sd_cache_status = ui_settings_value_label(status_section, "Checking cache...",
+                                                      COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
+    lv_obj_set_width(s_label_sd_cache_status, 210);
+    lv_label_set_long_mode(s_label_sd_cache_status, LV_LABEL_LONG_CLIP);
+
+    lv_obj_t *btn_clear_cache = lv_button_create(status_section);
+    lv_obj_remove_style_all(btn_clear_cache);
+    lv_obj_add_style(btn_clear_cache, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(btn_clear_cache, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn_clear_cache, 116, 34);
+    lv_obj_set_pos(btn_clear_cache, 226, 190);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_clear_cache, sd_cache_clear_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    lv_obj_t *lbl_clear_cache = lv_label_create(btn_clear_cache);
+    lv_label_set_text(lbl_clear_cache, "CLEAR");
+    lv_obj_set_style_text_font(lbl_clear_cache, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_clear_cache, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_clear_cache, LV_ALIGN_CENTER, 0, 0);
+
+    ui_settings_value_label(status_section, "Board: JC4880P443C_I_W (ESP32-P4 N16R8)",
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 252);
+    ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 276);
+
+#ifndef WIN32
+    ui_update_link_status_label();
+    ui_update_sd_status_label(true);
+    ui_update_sd_cache_status_label(true);
+#endif
+}
+
+// ─── Waveform Helpers ────────────────────────────────────────────────────────
+
+/* Render the high-resolution 1:1 overview waveform to the canvas once at track load. */
+static void ui_load_waveform_data(uint32_t duration_ms,
+                                  const uint8_t waveform_low[400],
+                                  bool has_waveform,
+                                  const anlz_metadata_t *meta)
+{
+    ui_cache_invalidate();
+    s_zoom_redraw = true;              /* new track → force a zoom canvas redraw */
+    s_zoom_last_pos = 0xFFFFFFFFu;
+    s_overview_last_fill_x = -1;
+    s_overview_last_playhead_x = -1;
+    if (!s_overview_cv_buf) return;
+
+    uint8_t *buf = s_overview_cv_buf + 256 * sizeof(lv_color32_t);
+    const int W = OVERVIEW_CV_W;
+    const int H = OVERVIEW_CV_H;
+    const int S = s_overview_stride_px;
+
+    // 1) Clear buffer to background index (0 == black)
+    memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
+
+    // 2) Beat grid in the background (faint, full height)
+    if (meta && meta->beats && meta->beat_count > 0 && duration_ms > 0) {
+        for (uint32_t b = 0; b < meta->beat_count; b++) {
+            int32_t bt = (int32_t)meta->beats[b].time_ms;
+            int x = (int)(((uint64_t)bt * W) / duration_ms);
+            if (x < 0 || x >= W) continue;
+            uint8_t col = (meta->beats[b].beat_phase == 0) ? 4 : 3; // 4 == downbeat (red), 3 == beat (gray)
+            for (int y = 0; y < H; y++) {
+                buf[y * S + x] = col;
+            }
+        }
+    }
+
+    // 3) Waveform columns (bright blue index 1)
+    if (has_waveform && waveform_low) {
+        for (int x = 0; x < W; x++) {
+            int amp = waveform_low[x] & 0x1F; // 0..31
+            int h = (amp * (H - 4)) / 31;
+            if (h < 1) h = 1;
+            int cy = H / 2;
+            int y0 = cy - h / 2;
+            int y1 = cy + h / 2;
+            if (y0 < 0) y0 = 0;
+            if (y1 >= H) y1 = H - 1;
+            for (int y = y0; y <= y1; y++) {
+                buf[y * S + x] = 1; // 1 == upcoming waveform (premium blue)
+            }
+        }
+    }
+
+    lv_obj_invalidate(s_overview_canvas);
+}
+
+#ifdef WIN32
+static void ui_load_waveform(const library_track_t *track)
+{
+    if (!track) return;
+    ui_load_waveform_data(track->duration_ms, track->waveform_low,
+                          track->has_waveform != 0, library_get_current_anlz());
+}
+#endif
+
+#ifndef WIN32
+static void ui_load_waveform_media(const media_loaded_track_t *track)
+{
+    if (!track) return;
+    ui_load_waveform_data(track->duration_ms, track->waveform_low,
+                          track->has_waveform != 0, ui_current_anlz());
+}
+#endif
+
+/* Update Hot Cue pads with real Rekordbox cue metadata */
+static void ui_update_hot_cues(void)
+{
+    const anlz_metadata_t *meta = ui_current_anlz();
+    bool has_anlz = (meta != NULL);
+    uint32_t duration_ms = ui_current_duration_ms();
+
+    for (int i = 0; i < 8; i++) {
+        bool found = false;
+        uint32_t pos = 0;
+        uint32_t end_pos = 0;
+        uint8_t type = 1; // 1 = ANLZ_CUE_SINGLE, 2 = ANLZ_CUE_LOOP
+        
+        if (has_anlz) {
+            for (int j = 0; j < meta->cue_count; j++) {
+                if (meta->cues[j].index == i) {
+                    pos = meta->cues[j].start_ms;
+                    end_pos = meta->cues[j].end_ms;
+                    type = (uint8_t)meta->cues[j].type;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        
+        if (found) {
+            s_hot_cue_positions[i] = pos;
+            s_hot_cue_ends[i] = end_pos;
+            s_hot_cue_types[i] = type;
+            
+            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
+            if (lbl_time) {
+                char time_buf[16];
+                ui_format_time_cc(time_buf, sizeof(time_buf), pos);
+                lv_label_set_text(lbl_time, time_buf);
+            }
+            
+            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
+            
+            bool is_loop = (type == 2);
+            if (is_loop) {
+                if (lbl_pad) {
+                    lv_label_set_text_fmt(lbl_pad, "LOOP %c", 'A' + i);
+                }
+            } else {
+                if (lbl_pad) {
+                    lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
+                }
+            }
+            ui_style_hot_cue_pad(i, is_loop, false);
+            
+            // Set static overview waveform cue marker position and color
+            if (duration_ms > 0 && s_overview_cue_markers[i]) {
+                float progress = (float)pos / (float)duration_ms;
+                if (progress > 1.0f) progress = 1.0f;
+                int marker_x = 10 + (int)(progress * 400.0f) - 1; // Center it
+                lv_obj_set_pos(s_overview_cue_markers[i], marker_x, 2);
+                
+                static const uint32_t cue_hex_colors[8] = {
+                    0x00E676,  // A: Green
+                    0x00E5FF,  // B: Cyan
+                    0xFFAB00,  // C: Orange/Amber
+                    0xE040FB,  // D: Pink
+                    0xFFD600,  // E: Yellow
+                    0xFF1744,  // F: Red
+                    0x7C4DFF,  // G: Purple
+                    0x2979FF   // H: Blue
+                };
+                lv_obj_set_style_bg_color(s_overview_cue_markers[i], lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
+                lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Show
+            }
+        } else if (has_anlz) {
+            s_hot_cue_positions[i] = 0xFFFFFFFF;
+            s_hot_cue_ends[i] = 0;
+            s_hot_cue_types[i] = 1;
+            
+            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
+            if (lbl_time) {
+                lv_label_set_text(lbl_time, "EMPTY");
+            }
+            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
+            if (lbl_pad) {
+                lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
+            }
+            ui_style_hot_cue_pad(i, false, true);
+            
+            if (s_overview_cue_markers[i]) {
+                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hide
+            }
+        } else {
+            /* Simulator / Fallback default values */
+            uint32_t default_pos = i * 15000;
+            if (i >= 5) default_pos = (i - 1) * 30000;
+            
+            s_hot_cue_positions[i] = default_pos;
+            s_hot_cue_ends[i] = 0;
+            s_hot_cue_types[i] = 1;
+            
+            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
+            if (lbl_time) {
+                char time_buf[16];
+                ui_format_time_cc(time_buf, sizeof(time_buf), default_pos);
+                lv_label_set_text(lbl_time, time_buf);
+            }
+            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
+            if (lbl_pad) {
+                lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
+            }
+            ui_style_hot_cue_pad(i, false, false);
+            
+            if (s_overview_cue_markers[i]) {
+                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hide
+            }
+        }
+    }
+}
+
+// ─── Global Interface Functions ──────────────────────────────────────────────
+
+static void ui_timer_cb(lv_timer_t *timer) {
+    (void)timer;
+    ui_update();
+}
+
+#ifndef WIN32
+// ── Firmware-only LVGL backend (PPA-rotated flush, tick, handler task) ───────
+
+// LVGL rendered a full 800x480 landscape frame in `px_map`. Hardware-rotate it
+// 90° (PPA angle 270°, matching the vendor demo) straight into the 480x800
+// MIPI-DSI frame buffer, which the DPI engine scans out continuously.
+static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
+{
+    (void)area;
+    // Write back the rendered buffer so the PPA's DMA reads fresh pixels.
+    size_t src_sz = (size_t)UI_HOR_RES * UI_VER_RES * 2;   // RGB565
+    esp_cache_msync(px_map, src_sz, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+
+    // Rotate into a back buffer (not the one currently on screen).
+    void *target = s_dsi_fb[s_dsi_fb_idx];
+
+    ppa_srm_oper_config_t op = {
+        .in.buffer         = px_map,
+        .in.pic_w          = UI_HOR_RES,
+        .in.pic_h          = UI_VER_RES,
+        .in.block_w        = UI_HOR_RES,
+        .in.block_h        = UI_VER_RES,
+        .in.block_offset_x = 0,
+        .in.block_offset_y = 0,
+        .in.srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
+
+        .out.buffer        = target,
+        .out.buffer_size   = ALIGN_UP_BY((size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * 2, s_cache_align),
+        .out.pic_w         = BSP_LCD_H_RES,   // 480 (rotated width)
+        .out.pic_h         = BSP_LCD_V_RES,   // 800 (rotated height)
+        .out.block_offset_x = 0,
+        .out.block_offset_y = 0,
+        .out.srm_cm        = PPA_SRM_COLOR_MODE_RGB565,
+
+        .rotation_angle    = PPA_SRM_ROTATION_ANGLE_270,
+        .scale_x           = 1.0,
+        .scale_y           = 1.0,
+        .rgb_swap          = 0,
+        .byte_swap         = 0,
+        .mode              = PPA_TRANS_MODE_BLOCKING,
+    };
+    ppa_do_scale_rotate_mirror(s_ppa, &op);   // blocking: target buffer ready on return
+
+    // Switch the DPI to the freshly-rotated buffer. Because `target` is one of the
+    // panel's own framebuffers, the driver just flips the active buffer (no copy)
+    // and the hardware swaps at the next frame boundary → no tearing.
+    esp_lcd_panel_handle_t panel = lv_display_get_user_data(disp);
+    esp_lcd_panel_draw_bitmap(panel, 0, 0, BSP_LCD_H_RES, BSP_LCD_V_RES, target);
+
+    s_dsi_fb_idx = (s_dsi_fb_idx + 1) % UI_DSI_FB_COUNT;
+    lv_display_flush_ready(disp);
+}
+
+static void ui_lvgl_tick_cb(void *arg)
+{
+    (void)arg;
+    lv_tick_inc(LVGL_TICK_PERIOD_MS);
+}
+
+// LVGL pointer read: poll the GT911 (coordinates already mapped to 800x480 by
+// the BSP's swap_xy/mirror_x configuration).
+static void ui_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    esp_lcd_touch_handle_t tp = lv_indev_get_user_data(indev);
+    if (tp == NULL) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
+    esp_lcd_touch_point_data_t point = {0};
+    uint8_t cnt = 0;
+    esp_lcd_touch_read_data(tp);
+    esp_err_t rc = esp_lcd_touch_get_data(tp, &point, &cnt, 1);
+    if (rc == ESP_OK && cnt > 0) {
+        data->point.x = point.x;
+        data->point.y = point.y;
+        data->state   = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+static void ui_lvgl_task(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "LVGL handler task started");
+    while (1) {
+        _lock_acquire_recursive(&s_lvgl_lock);
+        uint32_t next_ms = lv_timer_handler();
+        _lock_release_recursive(&s_lvgl_lock);
+        if (next_ms > 100) next_ms = 100;   // cap to keep the UI responsive
+        if (next_ms < 5)   next_ms = 5;     // avoid starving lower-prio tasks
+        vTaskDelay(pdMS_TO_TICKS(next_ms));
+    }
+}
+
+// Bring up LVGL on top of the BSP panel. Must run before any widget is created.
+static esp_err_t ui_lvgl_backend_init(void)
+{
+    _lock_init_recursive(&s_lvgl_lock);
+
+    esp_lcd_panel_handle_t panel = bsp_display_get_panel_handle();
+    if (panel == NULL) {
+        ESP_LOGE(TAG, "panel handle is NULL — call bsp_display_init() first");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Grab all 3 DPI framebuffers (480x800) for tear-free triple buffering.
+    ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel, UI_DSI_FB_COUNT,
+                                                       &s_dsi_fb[0], &s_dsi_fb[1], &s_dsi_fb[2]));
+    s_dsi_fb_idx = 1;   // fb[0] is the active buffer at boot; render into fb[1] first
+    ESP_ERROR_CHECK(esp_cache_get_alignment(MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM, &s_cache_align));
+
+    // Register the PPA Scale-Rotate-Mirror client used by the flush callback.
+    ppa_client_config_t ppa_cfg = { .oper_type = PPA_OPERATION_SRM };
+    ESP_ERROR_CHECK(ppa_register_client(&ppa_cfg, &s_ppa));
+
+    lv_init();
+
+    // Display is the 800x480 LANDSCAPE canvas the UI is built for; rotation to the
+    // physical 480x800 panel happens in the flush callback via the PPA (LVGL's own
+    // software rotation is not used).
+    s_disp = lv_display_create(UI_HOR_RES, UI_VER_RES);
+    lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_user_data(s_disp, panel);
+    lv_display_set_flush_cb(s_disp, ui_lvgl_flush_cb);
+
+    // Two full-screen render buffers (FULL mode → flush gets the whole frame,
+    // so the PPA rotates one contiguous buffer per refresh). Cache-line aligned
+    // in PSRAM so the PPA's DMA can read them directly.
+    size_t buf_sz = ALIGN_UP_BY((size_t)UI_HOR_RES * UI_VER_RES * 2, s_cache_align);
+    void *buf1 = heap_caps_aligned_alloc(s_cache_align, buf_sz, MALLOC_CAP_SPIRAM);
+    void *buf2 = heap_caps_aligned_alloc(s_cache_align, buf_sz, MALLOC_CAP_SPIRAM);
+    if (!buf1 || !buf2) {
+        ESP_LOGE(TAG, "failed to allocate %u-byte LVGL draw buffers from PSRAM", (unsigned)buf_sz);
+        return ESP_ERR_NO_MEM;
+    }
+    lv_display_set_buffers(s_disp, buf1, buf2, buf_sz, LV_DISPLAY_RENDER_MODE_FULL);
+
+    const esp_timer_create_args_t tick_args = {
+        .callback = ui_lvgl_tick_cb,
+        .name     = "lvgl_tick",
+    };
+    esp_timer_handle_t tick_timer = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&tick_args, &tick_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(tick_timer, LVGL_TICK_PERIOD_MS * 1000));
+
+    // Register the GT911 as an LVGL pointer device (if touch came up).
+    esp_lcd_touch_handle_t tp = bsp_touch_get_handle();
+    if (tp != NULL) {
+        lv_indev_t *indev = lv_indev_create();
+        lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+        lv_indev_set_user_data(indev, tp);
+        lv_indev_set_read_cb(indev, ui_touch_read_cb);
+        ESP_LOGI(TAG, "GT911 registered as LVGL pointer input");
+    } else {
+        ESP_LOGW(TAG, "no touch handle — UI will be display-only");
+    }
+
+    ESP_LOGI(TAG, "LVGL backend ready (800x480 canvas → PPA-rotated to %dx%d, RGB565)",
+             BSP_LCD_H_RES, BSP_LCD_V_RES);
+    return ESP_OK;
+}
+
+void ui_lvgl_lock(void)   { _lock_acquire_recursive(&s_lvgl_lock); }
+void ui_lvgl_unlock(void) { _lock_release_recursive(&s_lvgl_lock); }
+#else
+void ui_lvgl_lock(void)   {}
+void ui_lvgl_unlock(void) {}
+#endif // !WIN32
+
+esp_err_t ui_init(void) {
+    ESP_LOGI(TAG, "Initializing LVGL DJ UI layout (800x480 landscape)...");
+
+#ifndef WIN32
+    // On firmware, bring up LVGL on top of the BSP panel before building widgets.
+    // (On the PC simulator the HAL has already initialised LVGL + a display.)
+    esp_err_t be_rc = ui_lvgl_backend_init();
+    if (be_rc != ESP_OK) {
+        return be_rc;
+    }
+#endif
+
+    // Initialize custom dark themes
+    init_styles();
+
+    // Create central base root container
+    s_root_container = lv_obj_create(lv_screen_active());
+    lv_obj_remove_style_all(s_root_container);
+    lv_obj_add_style(s_root_container, &s_style_root, LV_PART_MAIN);
+    lv_obj_set_size(s_root_container, 800, 480);
+
+    // Initialize mock database system (if simulator)
+#ifdef WIN32
+    library_init();
+    QueueHandle_t dummy;
+    deck_core_init(&dummy);
+#else
+    ESP_ERROR_CHECK(media_catalog_init());
+    if (app_settings_get().link_mode == WIFI_LINK_MODE_JOIN) {
+        cdj_link_client_start();
+    }
+#endif
+
+    // Build parts
+    create_header(s_root_container);
+    create_footer(s_root_container);
+
+    // Build the 7 screen layers
+    create_screen_overview(s_root_container);
+    create_screen_library(s_root_container);
+    create_screen_hot_cues(s_root_container);
+    create_screen_beat_loop(s_root_container);
+    create_screen_beat_jump(s_root_container);
+    create_screen_key_shift(s_root_container);
+    create_screen_settings(s_root_container);
+
+    // Switch initially to overview (index 0) and hide others
+    for (int i = 1; i < 7; i++) {
+        lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    s_active_tab = 0;
+
+    // Load initial track metadata into the header displays
+    mock_library_load_track_to_deck(0);
+#ifdef WIN32
+    library_track_t *track = library_get_ptr(0);
+    if (track) {
+        library_load_anlz(track);          // load BPM, duration, PWAV waveform
+        
+        /* Load detailed ANLZ metadata for the initial track */
+        library_load_current_anlz(track);
+        
+        lv_label_set_text(s_label_title, track->title);
+        lv_label_set_text(s_label_artist, track->artist);
+        ui_label_set_f2(s_label_bpm, (float)track->bpm);
+        ui_load_waveform(track);           // rebuild bar heights from PWAV data
+        
+        /* Populate hot cue points from active ANLZ metadata */
+        ui_update_hot_cues();
+    }
+#else
+    media_catalog_row_t row;
+    media_loaded_track_t loaded;
+    if (media_catalog_get_row(0, &row) == ESP_OK &&
+        media_catalog_load(0, &loaded) == ESP_OK) {
+        s_loaded_media = loaded;
+        s_loaded_media_valid = true;
+
+        lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
+        lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
+        ui_label_set_f2(s_label_bpm, (float)(loaded.bpm ? loaded.bpm : row.bpm));
+        ui_load_waveform_media(&loaded);
+        ui_update_hot_cues();
+    }
+#endif
+
+    // Register self-running LVGL timer to periodically refresh the UI states
+    lv_timer_create(ui_timer_cb, 30, NULL);
+
+#ifndef WIN32
+    // Start the LVGL handler task last, once all widgets exist.
+    if (xTaskCreate(ui_lvgl_task, "lvgl", LVGL_TASK_STACK, NULL, LVGL_TASK_PRIO, NULL) != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+#endif
+
+    ESP_LOGI(TAG, "LVGL DJ UI layout successfully initialized.");
+    return ESP_OK;
+}
+
+void ui_trigger_library_refresh(void) {
+    s_library_needs_refresh = true;
+}
+
+void ui_notify_usb_removed(void) {
+#ifndef WIN32
+    s_usb_removed_pending = true;
+#endif
+}
+
+void ui_refresh_library(void) {
+    if (!s_library_table) {
+        return;
+    }
+    int n = ui_media_count();
+
+#ifndef WIN32
+    ESP_LOGI(TAG, "ui_refresh_library start. Free SRAM: %d B, SPIRAM: %d B",
+             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#endif
+
+    ui_lvgl_lock();
+    ui_cache_invalidate();
+    lv_table_set_row_count(s_library_table, n + 1);   // row 0 = header
+
+    for (int i = 0; i < n; i++) {
+        ui_fill_library_row(i);
+    }
+
+    s_selected_track_idx = 0;
+#ifdef WIN32
+    const library_track_t *track = library_get_ptr(0);
+    if (track) {
+        if (s_label_title)  lv_label_set_text(s_label_title, track->title);
+        if (s_label_artist) lv_label_set_text(s_label_artist, track->artist);
+        if (s_label_bpm)    ui_label_set_f2(s_label_bpm, (float)track->bpm);
+    }
+#else
+    media_catalog_row_t row;
+    if (media_catalog_get_row(0, &row) == ESP_OK) {
+        if (s_label_title)  lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
+        if (s_label_artist) lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
+        if (s_label_bpm)    ui_label_set_f2(s_label_bpm, (float)row.bpm);
+    }
+#endif
+    ui_update_library_source_label();
+    ui_lvgl_unlock();
+
+#ifndef WIN32
+    ESP_LOGI(TAG, "ui_refresh_library end. Free SRAM: %d B, SPIRAM: %d B",
+             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+#endif
+
+    ESP_LOGI(TAG, "library table refreshed: %d tracks", n);
+}
+
+static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
+{
+    for (int i = 0; i < 4; i++) {
+        if (!s_beat_pulses[i]) {
+            continue;
+        }
+
+        bool active = state && state->valid && state->phase == (uint8_t)i;
+        bool downbeat = active && state->downbeat;
+        lv_opa_t opa = LV_OPA_40;
+        if (active) {
+            uint16_t progress = state->progress_permille > 1000 ? 1000 : state->progress_permille;
+            opa = (lv_opa_t)(255u - ((uint32_t)progress * 135u) / 1000u);
+        }
+
+        ui_beat_dot_cache_t *cache = &s_cache_beat_dots[i];
+        if (cache->valid &&
+            cache->active == active &&
+            cache->downbeat == downbeat &&
+            cache->opa == opa) {
+            continue;
+        }
+        cache->valid = true;
+        cache->active = active;
+        cache->downbeat = downbeat;
+        cache->opa = opa;
+
+        if (!active) {
+            lv_obj_set_style_bg_color(s_beat_pulses[i], lv_color_hex(0x30343B), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_40, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_beat_pulses[i], lv_color_hex(0x4A515C), LV_PART_MAIN);
+            continue;
+        }
+
+        // Beat-indicator colours stay inline (paired with the downbeat red, not chrome).
+        lv_color_t color = downbeat ? lv_color_hex(0xFF1744) : lv_color_hex(0xFFFFFF);
+        lv_obj_set_style_bg_color(s_beat_pulses[i], color, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_beat_pulses[i], opa, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_beat_pulses[i], color, LV_PART_MAIN);
+    }
+}
+
+void ui_update(void) {
+#ifndef WIN32
+    if (s_usb_removed_pending) {
+        ui_apply_usb_removed();
+    }
+    ui_poll_track_load_result();
+#endif
+
+    if (s_library_needs_refresh) {
+        s_library_needs_refresh = false;
+        ui_refresh_library();
+    }
+
+    // Keep the library table constantly focused while on the LIBRARY tab to preserve the neon blue selection highlight
+    if (s_active_tab == 1 && s_library_table) {
+        lv_group_t *g = lv_group_get_default();
+        if (g && lv_group_get_focused(g) != s_library_table) {
+            lv_group_focus_obj(s_library_table);
+        }
+        
+        // Ensure the active track is explicitly and persistently highlighted in blue
+        uint32_t sel_row = LV_TABLE_CELL_NONE;
+        uint32_t sel_col = LV_TABLE_CELL_NONE;
+        lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
+        
+        // Only restore the selection if there is currently NO selection active (or if it's on the header row 0)
+        if (sel_row == LV_TABLE_CELL_NONE || sel_row == 0) {
+            lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+        }
+    }
+
+    // Read state snapshot
+    deck_state_t state = deck_core_get_state();
+    
+    // Pre-calculate beat indicator state for LEDs and UI
+    ui_beat_indicator_state_t beat_state = {0};
+    bool beat_state_valid = false;
+    const anlz_metadata_t *meta = ui_current_anlz();
+    uint32_t duration_ms = ui_current_duration_ms();
+    uint16_t base_bpm = ui_current_bpm();
+    if (duration_ms > 0) {
+        beat_state = ui_beat_indicator_calculate(state.position_ms,
+                                                 meta ? meta->beats : NULL,
+                                                 meta ? meta->beat_count : 0,
+                                                 base_bpm);
+        beat_state_valid = beat_state.valid;
+    }
+
+    // P5a: preload feedback (firmware only)
+#ifndef WIN32
+    bool    ae_loading  = (audio_engine_get_state() == AE_LOADING);
+    uint8_t ae_load_pct = audio_engine_load_progress();
+#else
+    bool    ae_loading  = false;
+    uint8_t ae_load_pct = 100;
+    (void)ae_load_pct;
+#endif
+
+    // ─── 1. Simulate Loop constraints inside update loop (for simulator) ───
+#ifdef WIN32
+    if (s_loop_active) {
+        if (state.position_ms >= s_loop_end_ms) {
+            mock_deck_set_position(s_loop_start_ms);
+            state.position_ms = s_loop_start_ms;
+        }
+    }
+#endif
+
+    // ─── 2. Update Play / Pause state label ───
+    if (ae_loading) {
+        s_status_override_until_ms = 0;
+        char loading_status[16];
+        snprintf(loading_status, sizeof(loading_status), "LOADING %u%%", (unsigned)ae_load_pct);
+        ui_status_indicator_set(loading_status, COL_ACCENT);
+    } else if (!ui_status_indicator_has_override()) {
+        if (state.playing) {
+            ui_status_indicator_set("PLAYING", COL_GREEN);
+        } else {
+            ui_status_indicator_set("PAUSE", COL_AMBER);
+        }
+    }
+
+    // ─── 3. Update BPM and Pitch % labels ───
+    float pitch_pct;
+#ifndef WIN32
+    pitch_pct = audio_engine_raw_pitch_to_percent(state.pitch);
+#else
+    pitch_pct = ((8192.0f - (float)state.pitch) / 8192.0f) * 10.0f;
+#endif
+    // No %f in LVGL builtin printf — format the signed 2-decimal percent by hand.
+    int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
+    if (pc != s_cache_pitch_centipct) {
+        s_cache_pitch_centipct = pc;
+        lv_label_set_text_fmt(s_label_pitch, "%c%d.%02d%%",
+                              (pc < 0) ? '-' : '+', (pc < 0 ? -pc : pc) / 100, (pc < 0 ? -pc : pc) % 100);
+    }
+
+    float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
+    int bpm_centi = (int)(current_bpm * 100.0f + (current_bpm >= 0.0f ? 0.5f : -0.5f));
+    if (bpm_centi != s_cache_bpm_centi) {
+        s_cache_bpm_centi = bpm_centi;
+        ui_label_set_f2(s_label_bpm, current_bpm);
+    }
+
+    // ─── 4. Update time counters: elapsed (current position) + remaining ───
+    uint32_t elapsed_ms  = state.position_ms;
+    uint32_t remain_ms   = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
+
+    // Remaining-time warning colours: amber inside 30 s, red inside 10 s of the
+    // end (only while a real track is loaded — idle/no-duration stays neutral).
+    lv_color_t remain_col = COL_TEXT_MUTED;
+    if (duration_ms > 0) {
+        if (remain_ms <= 10000)      remain_col = lv_color_hex(0xFF1744); // red  <=10s
+        else if (remain_ms <= 30000) remain_col = lv_color_hex(0xFFAB00); // amber <=30s
+    }
+    ui_obj_set_text_color_cached(s_label_time_remain, &s_cache_remain_color, remain_col);
+
+    if (ae_loading) {
+        if (!s_cache_time_loading) {
+            lv_label_set_text(s_label_time, "LOADING");
+            lv_label_set_text(s_label_time_remain, "");
+            s_cache_time_loading = true;
+            s_cache_elapsed_centis = UINT32_MAX;
+            s_cache_remain_centis = UINT32_MAX;
+        }
+    } else {
+        if (s_cache_time_loading) {
+            s_cache_time_loading = false;
+            s_cache_elapsed_centis = UINT32_MAX;
+            s_cache_remain_centis = UINT32_MAX;
+        }
+        uint32_t elapsed_centis = elapsed_ms / 10u;
+        uint32_t remain_centis = remain_ms / 10u;
+        if (elapsed_centis != s_cache_elapsed_centis) {
+            s_cache_elapsed_centis = elapsed_centis;
+            lv_label_set_text_fmt(s_label_time, "%02u:%02u.%02u",
+                                (unsigned)(elapsed_ms / 60000),
+                                (unsigned)((elapsed_ms % 60000) / 1000),
+                                (unsigned)((elapsed_ms % 1000) / 10));
+        }
+        if (remain_centis != s_cache_remain_centis) {
+            s_cache_remain_centis = remain_centis;
+            lv_label_set_text_fmt(s_label_time_remain, "-%02u:%02u.%02u",
+                                (unsigned)(remain_ms / 60000),
+                                (unsigned)((remain_ms % 60000) / 1000),
+                                (unsigned)((remain_ms % 1000) / 10));
+        }
+    }
+
+    // ─── 4B. Update S3 Beat LED feedback ───
+#ifndef WIN32
+    static uint8_t s_last_beat_led_state = 0xFF;
+    uint8_t current_beat_led_state = 0;
+
+    if (state.playing && beat_state_valid) {
+        // LED turns ON during the first 20% of each beat (about 100ms at 120BPM)
+        if (beat_state.progress_permille < 200) {
+            current_beat_led_state = 1;
+        }
+    }
+
+    if (current_beat_led_state != s_last_beat_led_state) {
+        s_last_beat_led_state = current_beat_led_state;
+        control_link_send_led(LED_BEAT, current_beat_led_state);
+        ESP_LOGD(TAG, "S3 Beat LED -> %d (pos=%lu ms)", current_beat_led_state, (unsigned long)state.position_ms);
+    }
+#endif
+
+    // ─── 5. Update Waveform Visualizer (Only if overview screen is visible) ───
+    if (s_active_tab == 0 && duration_ms > 0) {
+        ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
+        // A. Static Overview Playhead marker
+        // Scale playhead position on the 400px width waveform track
+        float playhead_progress = (float)state.position_ms / (float)duration_ms;
+        if (playhead_progress > 1.0f) playhead_progress = 1.0f;
+        int playhead_pos_x = (int)(playhead_progress * 400.0f);
+        if (playhead_pos_x < 0) playhead_pos_x = 0;
+        if (playhead_pos_x > OVERVIEW_CV_W) playhead_pos_x = OVERVIEW_CV_W;
+        if (s_overview_playhead && playhead_pos_x != s_overview_last_playhead_x) {
+            lv_obj_set_pos(s_overview_playhead, 10 + playhead_pos_x, 2);
+            s_overview_last_playhead_x = playhead_pos_x;
+        }
+
+        // Progress fill: columns behind the playhead are marked as "played" (dimmed index 2),
+        // columns ahead stay bright. Only touch columns that changed since the last UI tick.
+        if (s_overview_canvas && s_overview_cv_buf && playhead_pos_x != s_overview_last_fill_x) {
+            uint8_t *buf = s_overview_cv_buf + 256 * sizeof(lv_color32_t);
+            const int W = OVERVIEW_CV_W;
+            const int H = OVERVIEW_CV_H;
+            const int S = s_overview_stride_px;
+
+            int x0 = 0;
+            int x1 = W;
+            uint8_t target_wave_color = 1;
+            if (s_overview_last_fill_x >= 0 && s_overview_last_fill_x <= W) {
+                if (playhead_pos_x > s_overview_last_fill_x) {
+                    x0 = s_overview_last_fill_x;
+                    x1 = playhead_pos_x;
+                    target_wave_color = 2;
+                } else {
+                    x0 = playhead_pos_x;
+                    x1 = s_overview_last_fill_x;
+                    target_wave_color = 1;
+                }
+            }
+
+            for (int x = x0; x < x1; x++) {
+                uint8_t col = (s_overview_last_fill_x < 0) ? ((x < playhead_pos_x) ? 2 : 1) : target_wave_color;
+                for (int y = 0; y < H; y++) {
+                    uint8_t val = buf[y * S + x];
+                    if ((val == 1 || val == 2) && val != col) {
+                        buf[y * S + x] = col;
+                    }
+                }
+            }
+            s_overview_last_fill_x = playhead_pos_x;
+            lv_obj_invalidate(s_overview_canvas);
+        }
+
+        // B. High-res zoom waveform (canvas, smooth pixel scroll). Redraw only when
+        // the position moved ≥1 px worth of time (or a redraw was forced on track
+        // change), so a paused deck costs nothing.
+        if (s_zoom_canvas) {
+            uint32_t zoom_pos = ((state.position_ms + (ZOOM_MS_PER_PX / 2u)) / ZOOM_MS_PER_PX) * ZOOM_MS_PER_PX;
+            if (s_zoom_redraw || zoom_pos != s_zoom_last_pos) {
+                ui_draw_zoom_canvas(zoom_pos, duration_ms, meta);
+                s_zoom_last_pos = zoom_pos;
+                s_zoom_redraw   = false;
+            }
+        }
+    } else if (s_active_tab == 0) {
+        ui_update_beat_indicator(NULL);
+    }
+
+    // ─── 6. Sync UI Status bar with mock settings ───
+    if (s_active_tab == 6) {
+#ifndef WIN32
+        ui_update_uart_status_label(&state);
+        ui_update_link_status_label();
+        ui_update_sd_status_label(false);
+        ui_update_sd_cache_status_label(false);
+#endif
+    }
+}

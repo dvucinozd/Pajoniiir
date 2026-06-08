@@ -1,0 +1,25 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+# RTOS – 1 kHz tick for 1 ms resolution in debounce timers
+CONFIG_FREERTOS_HZ=1000
+
+# TinyUSB MIDI device (esp_tinyusb 2.x managed component).
+# MIDI_COUNT > 0 enables the MIDI class; no separate ENABLED flag in v2.x.
+CONFIG_TINYUSB_MIDI_COUNT=1
+
+# ADC – keep calibration routines in IRAM for faster reads
+CONFIG_ADC_ONESHOT_CTRL_FUNC_IN_IRAM=y
+
+# Console on UART0 (GPIO43 TX, GPIO44 RX). USB-OTG (GPIO19/20) is fully owned
+# by TinyUSB; USB-Serial/JTAG (primary or secondary) conflicts with TinyUSB
+# and prevents USB enumeration.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# TinyUSB DCD: use slave/IRQ mode (safer for bringup; DMA can be re-enabled later)
+CONFIG_TINYUSB_MODE_SLAVE=y

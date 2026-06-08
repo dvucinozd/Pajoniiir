@@ -1,0 +1,5 @@
+## USB Host Mass Storage Class driver for the Rekordbox music drive.
+dependencies:
+  usb_host_msc: "^1.1.1"
+  idf:
+    version: ">=5.4.0"
