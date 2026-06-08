@@ -85,7 +85,7 @@ static void dispatch_frame(const uint8_t *f)
     case CTRL_TYPE_ENCODER:
         if (ev.id == 0 || control_link_id_is_deck_jog(ev.id)) {
             ev.type = CTRL_EV_JOG;
-        } else if (ev.id == 1) {
+        } else if (ev.id == 1 || ev.id == CTRL_ID_BROWSE_DELTA) {
             ev.type = CTRL_EV_BROWSE;
         } else {
             ESP_LOGW(TAG, "unknown encoder id %u", (unsigned)ev.id);

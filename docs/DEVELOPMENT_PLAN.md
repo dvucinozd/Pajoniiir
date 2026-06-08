@@ -71,7 +71,7 @@ Tasks:
 
 - adapt P4 `control_link` parser to route deck-aware IDs; started
 - refactor `deck_core` state into `deck_state[2]`; started
-- expose deck-specific load/play/cue/jog/pitch APIs; snapshot/reset started
+- expose deck-specific load/play/cue/jog/pitch APIs; snapshot/reset/load started
 - preserve old single-deck behavior behind compatibility helpers only where
   needed during transition;
 - update tests for both decks.
@@ -88,6 +88,10 @@ Validation note, 2026-06-08:
   single global `audio_engine`; Deck 2 is state-only until Phase 4 dual audio.
 - Added a host-side `deck_core_dual` test for independent Deck 1/Deck 2
   transport and pitch state.
+- Browser namespace routing now accepts `CTRL_ID_BROWSE_DELTA`,
+  `CTRL_ID_LOAD_DECK1`, and `CTRL_ID_LOAD_DECK2`. Deck 1 load delegates to the
+  existing UI library load flow; Deck 2 returns `ESP_ERR_NOT_SUPPORTED` until
+  the dual audio/load backend exists.
 
 Exit criteria:
 

@@ -1139,6 +1139,14 @@ esp_err_t ui_library_load_selected(void)
     return ESP_OK;
 }
 
+esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
+{
+    if (deck == CTRL_DECK_1) {
+        return ui_library_load_selected();
+    }
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
 // Sort tracks by Artist (Toggle ASC/DESC)
 static void library_sort_artist_event_cb(lv_event_t *e) {
     (void)e;

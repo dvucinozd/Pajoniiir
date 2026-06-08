@@ -65,7 +65,7 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
             ev->type = CTRL_EV_JOG;
             return true;
         }
-        if (ev->id == 1) {
+        if (ev->id == 1 || ev->id == CTRL_ID_BROWSE_DELTA) {
             ev->type = CTRL_EV_BROWSE;
             return true;
         }
@@ -131,7 +131,13 @@ static void test_encoder_ids_route_to_jog_and_browse(void)
     assert(ev.type == CTRL_EV_BROWSE);
     assert(ev.value == 2);
 
-    build_frame(frame, CTRL_TYPE_ENCODER, 2, 1, 10);
+    build_frame(frame, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, -2, 10);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BROWSE);
+    assert(ev.id == CTRL_ID_BROWSE_DELTA);
+    assert(ev.value == -2);
+
+    build_frame(frame, CTRL_TYPE_ENCODER, 2, 1, 11);
     assert(!decode_p4_frame(frame, &ev));
 }
 

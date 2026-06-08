@@ -17,6 +17,7 @@ static const char *TAG = "deck";
 extern bool ui_is_library_active(void) __attribute__((weak));
 extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
+extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
 
 static QueueHandle_t    s_queue;
 static SemaphoreHandle_t s_mutex;
@@ -38,6 +39,12 @@ static uint8_t normalize_deck(uint8_t deck)
 
 static uint8_t deck_index_for_event(const ctrl_event_t *ev)
 {
+    if (ev && ev->id == CTRL_ID_LOAD_DECK1) {
+        return CTRL_DECK_1;
+    }
+    if (ev && ev->id == CTRL_ID_LOAD_DECK2) {
+        return CTRL_DECK_2;
+    }
     if (ev && control_link_id_is_deck(ev->id)) {
         return control_link_id_deck(ev->id);
     }
@@ -54,6 +61,9 @@ static bool deck_uses_audio_engine(uint8_t deck)
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK1 || ev->id == CTRL_ID_LOAD_DECK2)) {
+        return BTN_LOAD;
+    }
     if (ev && control_link_id_is_deck(ev->id)) {
         switch (control_link_id_control(ev->id)) {
         case CTRL_DECK_CTL_PLAY:
@@ -142,9 +152,13 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         break;
 
     case BTN_LOAD:
-        if (ui_library_load_selected) {
+        if (ui_library_load_selected_for_deck) {
+            esp_err_t rc = ui_library_load_selected_for_deck(deck);
+            ESP_LOGI(TAG, "deck %u load selected -> %s", (unsigned)deck + 1,
+                     esp_err_to_name(rc));
+        } else if (deck == DECK_CORE_COMPAT_DECK && ui_library_load_selected) {
             esp_err_t rc = ui_library_load_selected();
-            ESP_LOGI(TAG, "load selected → %s", esp_err_to_name(rc));
+            ESP_LOGI(TAG, "load selected -> %s", esp_err_to_name(rc));
         } else {
             ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
         }
