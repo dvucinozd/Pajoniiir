@@ -70,8 +70,8 @@ Goal: split the single-deck state model into two deck instances.
 Tasks:
 
 - adapt P4 `control_link` parser to route deck-aware IDs; started
-- refactor `deck_core` state into `deck_state[2]`;
-- expose deck-specific load/play/cue/jog/pitch APIs;
+- refactor `deck_core` state into `deck_state[2]`; started
+- expose deck-specific load/play/cue/jog/pitch APIs; snapshot/reset started
 - preserve old single-deck behavior behind compatibility helpers only where
   needed during transition;
 - update tests for both decks.
@@ -83,6 +83,11 @@ Validation note, 2026-06-08:
   mixer, browser, and system namespaces.
 - UART parser fills `ctrl_event_t.deck` and `ctrl_event_t.control` for
   deck-aware IDs while preserving existing single-deck encoder IDs.
+- `deck_core` now stores two deck states and accepts deck-aware Play, Cue, jog,
+  and pitch events independently. Deck 1 remains connected to the current
+  single global `audio_engine`; Deck 2 is state-only until Phase 4 dual audio.
+- Added a host-side `deck_core_dual` test for independent Deck 1/Deck 2
+  transport and pitch state.
 
 Exit criteria:
 
