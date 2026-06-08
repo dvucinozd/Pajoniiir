@@ -22,19 +22,24 @@
 
 ## Hardware Bring-Up
 
-- [ ] Confirm S3 serial port.
+- [x] Confirm S3 serial port (`COM3` on 2026-06-08).
 - [ ] Confirm P4 serial port.
-- [ ] Flash inherited S3 firmware once before FLX4 changes.
+- [x] Flash S3 FLX4 host-mode firmware (`fd663e6`) before FLX4 capture.
 - [ ] Flash inherited P4 firmware once before dual-deck changes.
 - [ ] Verify S3/P4 UART heartbeat.
-- [ ] Connect DDJ-FLX4 to S3 USB host setup.
+- [ ] Validate DDJ-FLX4 physical USB host setup on S3 next session.
 - [ ] Capture raw MIDI packets for MVP controls.
 
 ## First Firmware Task
 
 `firmware/control-board-s3/components/flx4_midi_host/` now contains the raw
 USB MIDI logging spike. Build with `CONFIG_DDJ_FLX4_HOST_MODE=y`, flash the S3,
-connect the DDJ-FLX4, and capture the serial logs before changing P4 behavior.
+connect the DDJ-FLX4, and capture the serial logs.
+
+Current S3 status: firmware boots and starts the USB host logger, but FLX4
+enumeration was not observed on 2026-06-08. Continue this validation next time
+with a powered hub / verified 5 V VBUS / correct S3 OTG host port. P4 firmware
+exploration can proceed while this hardware validation remains open.
 
 Required output from the spike:
 
