@@ -74,6 +74,8 @@ static void dispatch_frame(const uint8_t *f)
         .id    = f[2],
         .value = (int16_t)((uint16_t)f[3] | ((uint16_t)f[4] << 8)),
         .seq   = f[5],
+        .deck  = control_link_id_deck(f[2]),
+        .control = control_link_id_control(f[2]),
     };
 
     switch (f[1]) {
@@ -81,7 +83,7 @@ static void dispatch_frame(const uint8_t *f)
         ev.type = CTRL_EV_BUTTON;
         break;
     case CTRL_TYPE_ENCODER:
-        if (ev.id == 0) {
+        if (ev.id == 0 || control_link_id_is_deck_jog(ev.id)) {
             ev.type = CTRL_EV_JOG;
         } else if (ev.id == 1) {
             ev.type = CTRL_EV_BROWSE;

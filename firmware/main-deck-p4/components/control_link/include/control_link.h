@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -59,6 +60,77 @@ typedef enum {
     LED_COUNT,
 } led_id_t;
 
+// ─── DDJ-FLX4 deck-aware semantic IDs ────────────────────────────────────────
+
+typedef enum {
+    CTRL_DECK_1 = 0,
+    CTRL_DECK_2 = 1,
+    CTRL_DECK_NONE = 0xFF,
+} ctrl_deck_t;
+
+typedef enum {
+    CTRL_DECK_CTL_PLAY = 0,
+    CTRL_DECK_CTL_CUE,
+    CTRL_DECK_CTL_JOG_SCRATCH,
+    CTRL_DECK_CTL_JOG_BEND,
+    CTRL_DECK_CTL_JOG_TOUCH,
+    CTRL_DECK_CTL_TEMPO,
+} ctrl_deck_control_t;
+
+#define CTRL_NS_DECK1   0x10
+#define CTRL_NS_DECK2   0x20
+#define CTRL_NS_MIXER   0x30
+#define CTRL_NS_BROWSER 0x40
+#define CTRL_NS_SYSTEM  0x70
+
+#define CTRL_ID_DECK1_PLAY        (CTRL_NS_DECK1 | CTRL_DECK_CTL_PLAY)
+#define CTRL_ID_DECK1_CUE         (CTRL_NS_DECK1 | CTRL_DECK_CTL_CUE)
+#define CTRL_ID_DECK1_JOG_SCRATCH (CTRL_NS_DECK1 | CTRL_DECK_CTL_JOG_SCRATCH)
+#define CTRL_ID_DECK1_JOG_BEND    (CTRL_NS_DECK1 | CTRL_DECK_CTL_JOG_BEND)
+#define CTRL_ID_DECK1_JOG_TOUCH   (CTRL_NS_DECK1 | CTRL_DECK_CTL_JOG_TOUCH)
+#define CTRL_ID_DECK1_TEMPO       (CTRL_NS_DECK1 | CTRL_DECK_CTL_TEMPO)
+
+#define CTRL_ID_DECK2_PLAY        (CTRL_NS_DECK2 | CTRL_DECK_CTL_PLAY)
+#define CTRL_ID_DECK2_CUE         (CTRL_NS_DECK2 | CTRL_DECK_CTL_CUE)
+#define CTRL_ID_DECK2_JOG_SCRATCH (CTRL_NS_DECK2 | CTRL_DECK_CTL_JOG_SCRATCH)
+#define CTRL_ID_DECK2_JOG_BEND    (CTRL_NS_DECK2 | CTRL_DECK_CTL_JOG_BEND)
+#define CTRL_ID_DECK2_JOG_TOUCH   (CTRL_NS_DECK2 | CTRL_DECK_CTL_JOG_TOUCH)
+#define CTRL_ID_DECK2_TEMPO       (CTRL_NS_DECK2 | CTRL_DECK_CTL_TEMPO)
+
+#define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
+#define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
+#define CTRL_ID_CROSSFADER        (CTRL_NS_MIXER | 0x02)
+#define CTRL_ID_DECK1_PFL         (CTRL_NS_MIXER | 0x03)
+#define CTRL_ID_DECK2_PFL         (CTRL_NS_MIXER | 0x04)
+
+#define CTRL_ID_BROWSE_DELTA      (CTRL_NS_BROWSER | 0x00)
+#define CTRL_ID_LOAD_DECK1        (CTRL_NS_BROWSER | 0x01)
+#define CTRL_ID_LOAD_DECK2        (CTRL_NS_BROWSER | 0x02)
+
+static inline bool control_link_id_is_deck(uint8_t id)
+{
+    return (id & 0xF0) == CTRL_NS_DECK1 || (id & 0xF0) == CTRL_NS_DECK2;
+}
+
+static inline uint8_t control_link_id_deck(uint8_t id)
+{
+    if ((id & 0xF0) == CTRL_NS_DECK1) return CTRL_DECK_1;
+    if ((id & 0xF0) == CTRL_NS_DECK2) return CTRL_DECK_2;
+    return CTRL_DECK_NONE;
+}
+
+static inline uint8_t control_link_id_control(uint8_t id)
+{
+    return control_link_id_is_deck(id) ? (uint8_t)(id & 0x0F) : id;
+}
+
+static inline bool control_link_id_is_deck_jog(uint8_t id)
+{
+    if (!control_link_id_is_deck(id)) return false;
+    uint8_t ctl = control_link_id_control(id);
+    return ctl == CTRL_DECK_CTL_JOG_SCRATCH || ctl == CTRL_DECK_CTL_JOG_BEND;
+}
+
 // ─── Parsed event (what deck_core receives) ───────────────────────────────────
 
 typedef enum {
@@ -74,6 +146,8 @@ typedef struct {
     uint8_t           id;
     int16_t           value;
     uint8_t           seq;
+    uint8_t           deck;     // CTRL_DECK_* for DDJ-FLX4 deck IDs
+    uint8_t           control;  // low-nibble semantic control for deck IDs
 } ctrl_event_t;
 
 // ─── Public API ───────────────────────────────────────────────────────────────

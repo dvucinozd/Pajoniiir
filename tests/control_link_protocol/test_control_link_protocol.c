@@ -53,13 +53,15 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
     ev->id = frame[2];
     ev->value = (int16_t)((uint16_t)frame[3] | ((uint16_t)frame[4] << 8));
     ev->seq = frame[5];
+    ev->deck = control_link_id_deck(frame[2]);
+    ev->control = control_link_id_control(frame[2]);
 
     switch (frame[1]) {
     case CTRL_TYPE_BUTTON:
         ev->type = CTRL_EV_BUTTON;
         return true;
     case CTRL_TYPE_ENCODER:
-        if (ev->id == 0) {
+        if (ev->id == 0 || control_link_id_is_deck_jog(ev->id)) {
             ev->type = CTRL_EV_JOG;
             return true;
         }
@@ -133,6 +135,38 @@ static void test_encoder_ids_route_to_jog_and_browse(void)
     assert(!decode_p4_frame(frame, &ev));
 }
 
+static void test_firmware_decodes_deck_aware_flx4_ids(void)
+{
+    uint8_t frame[CTRL_FRAME_LEN];
+    ctrl_event_t ev;
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PLAY, 1, 20);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.id == CTRL_ID_DECK1_PLAY);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_PLAY);
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_CUE, 1, 21);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.id == CTRL_ID_DECK2_CUE);
+    assert(ev.deck == CTRL_DECK_2);
+    assert(ev.control == CTRL_DECK_CTL_CUE);
+
+    build_frame(frame, CTRL_TYPE_ENCODER, CTRL_ID_DECK2_JOG_SCRATCH, -4, 22);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_JOG);
+    assert(ev.deck == CTRL_DECK_2);
+    assert(ev.control == CTRL_DECK_CTL_JOG_SCRATCH);
+
+    build_frame(frame, CTRL_TYPE_PITCH, CTRL_ID_DECK1_TEMPO, 9000, 23);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_PITCH);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_TEMPO);
+}
+
 static void test_led_command_values_and_bad_checksum(void)
 {
     uint8_t frame[CTRL_FRAME_LEN];
@@ -153,6 +187,7 @@ int main(void)
     test_button_ids_match_and_existing_ids_stay_stable();
     test_button_load_decodes();
     test_encoder_ids_route_to_jog_and_browse();
+    test_firmware_decodes_deck_aware_flx4_ids();
     test_led_command_values_and_bad_checksum();
     puts("control_link_protocol tests passed");
     return 0;

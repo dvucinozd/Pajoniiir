@@ -63,16 +63,26 @@ Exit criteria:
 
 ## Phase 3: P4 Deck-Aware Control Link And Deck Core
 
+Status: started; control-link semantic ID baseline implemented.
+
 Goal: split the single-deck state model into two deck instances.
 
 Tasks:
 
-- adapt P4 `control_link` parser to route deck-aware IDs;
+- adapt P4 `control_link` parser to route deck-aware IDs; started
 - refactor `deck_core` state into `deck_state[2]`;
 - expose deck-specific load/play/cue/jog/pitch APIs;
 - preserve old single-deck behavior behind compatibility helpers only where
   needed during transition;
 - update tests for both decks.
+
+Validation note, 2026-06-08:
+
+- P4 baseline build passes for target `esp32p4`.
+- `control_link` now defines DDJ-FLX4 deck-aware IDs for Deck 1, Deck 2,
+  mixer, browser, and system namespaces.
+- UART parser fills `ctrl_event_t.deck` and `ctrl_event_t.control` for
+  deck-aware IDs while preserving existing single-deck encoder IDs.
 
 Exit criteria:
 
