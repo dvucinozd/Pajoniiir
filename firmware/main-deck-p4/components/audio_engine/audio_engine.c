@@ -14,6 +14,7 @@
 #include "audio_engine.h"
 #include "audio_mixer.h"
 #include "audio_pcm_ring.h"
+#include "audio_resampler.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
 #endif
@@ -160,7 +161,6 @@ static inline audio_pcm_ring_t *active_pcm_ring(void)
     return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
 }
 
-static inline uint32_t ring_used(void) { return audio_pcm_ring_used(active_pcm_ring()); }
 static inline uint32_t ring_free(void) { return audio_pcm_ring_free(active_pcm_ring()); }
 
 static inline void ring_reset(void) { audio_pcm_ring_reset(active_pcm_ring()); }
@@ -168,15 +168,6 @@ static inline void ring_reset(void) { audio_pcm_ring_reset(active_pcm_ring()); }
 static inline bool ring_push(int16_t l, int16_t r)
 {
     return audio_pcm_ring_push(active_pcm_ring(), l, r);
-}
-
-static inline bool ring_pop(int16_t *l, int16_t *r)
-{
-    audio_mixer_frame_t frame = { 0 };
-    if (!audio_pcm_ring_pop(active_pcm_ring(), &frame)) return false;
-    *l = frame.left;
-    *r = frame.right;
-    return true;
 }
 
 /* UI-facing lifecycle state (P5a): LOADING while the track preloads from USB. */
@@ -229,11 +220,32 @@ static volatile size_t        s_loaded_bytes = 0;   /* bytes already in PSRAM */
 static volatile bool          s_load_done    = false;
 #endif
 
-/* ── Pitch-resampling state (SDL simulator + firmware I2S output) ─────────── */
+/* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
 #if AE_FW
-static int16_t  s_pitch_prev_l = 0, s_pitch_prev_r = 0;
-static int16_t  s_pitch_curr_l = 0, s_pitch_curr_r = 0;
-static double   s_pitch_frac   = 0.0;
+static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
+
+static audio_resampler_state_t *active_resampler(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (&s_engines[i] == s_active_eng) {
+            return &s_resamplers[i];
+        }
+    }
+    return &s_resamplers[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static void reset_all_resamplers(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        audio_resampler_reset(&s_resamplers[i]);
+    }
+}
+
+static bool pop_resampler_source(void *ctx, audio_mixer_frame_t *out_frame)
+{
+    (void)ctx;
+    return audio_pcm_ring_pop(active_pcm_ring(), out_frame);
+}
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -734,9 +746,7 @@ static void ae_decode_task(void *arg)
                 /* Loop wrap keeps the ring (gapless); user seeks flush it. */
                 if (!s_eng.seek_is_loop) {
                     ring_reset();
-                    s_pitch_prev_l = s_pitch_prev_r = 0;
-                    s_pitch_curr_l = s_pitch_curr_r = 0;
-                    s_pitch_frac   = 0.0;
+                    audio_resampler_reset(active_resampler());
                 }
                 s_eng.seek_is_loop   = false;
                 s_eng.seek_requested = false;
@@ -806,24 +816,13 @@ static void ae_output_task(void *arg)
         float deck0_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, NULL);
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
-            s_pitch_frac += (double)s_eng.pitch_factor;
-            while (s_pitch_frac >= 1.0) {
-                s_pitch_prev_l = s_pitch_curr_l;
-                s_pitch_prev_r = s_pitch_curr_r;
-                if (ring_used() > 0) {
-                    ring_pop(&s_pitch_curr_l, &s_pitch_curr_r);
-                    consumed++;
-                } else {
-                    s_pitch_curr_l = s_pitch_curr_r = 0;  /* underrun → silence */
-                }
-                s_pitch_frac -= 1.0;
-            }
-            float t   = (float)s_pitch_frac;
-            float inv = 1.0f - t;
-            audio_mixer_frame_t frame = {
-                .left = (int16_t)(inv * (float)s_pitch_prev_l + t * (float)s_pitch_curr_l),
-                .right = (int16_t)(inv * (float)s_pitch_prev_r + t * (float)s_pitch_curr_r),
-            };
+            uint32_t frame_consumed = 0;
+            audio_mixer_frame_t frame = audio_resampler_next(active_resampler(),
+                                                             s_eng.pitch_factor,
+                                                             pop_resampler_source,
+                                                             NULL,
+                                                             &frame_consumed);
+            consumed += frame_consumed;
             frame = audio_mixer_apply_gain(frame, deck0_gain);
             out[i * 2    ] = frame.left;
             out[i * 2 + 1] = frame.right;
@@ -862,6 +861,9 @@ esp_err_t audio_engine_init(void)
     }
     s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
     reset_all_pcm_rings();
+#if AE_FW
+    reset_all_resamplers();
+#endif
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
@@ -985,9 +987,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* Keep load() light: MP3 decode uses ~13 KB of stack (4 KB read buffer + a
      * 9 KB PCM frame) and would overflow the caller (e.g. the LVGL task). The
      * decode task latches the sample rate, opens the codec, then streams. */
-    s_pitch_prev_l = s_pitch_prev_r = 0;
-    s_pitch_curr_l = s_pitch_curr_r = 0;
-    s_pitch_frac   = 0.0;
+    audio_resampler_reset(active_resampler());
     s_codec_open   = false;
     s_loaded_bytes = 0;
     s_load_done    = false;
@@ -1163,9 +1163,7 @@ esp_err_t audio_engine_seek(uint32_t position_ms)
     ring_reset();
 
 #if AE_FW
-    s_pitch_prev_l = s_pitch_prev_r = 0;
-    s_pitch_curr_l = s_pitch_curr_r = 0;
-    s_pitch_frac   = 0.0;
+    audio_resampler_reset(active_resampler());
 #endif
     AE_UNLOCK();
 

@@ -145,6 +145,9 @@ Validation note, 2026-06-08:
   `audio_engine` owns one ring per deck while the firmware compatibility path
   still consumes only Deck 0. This removes the old global singleton ring as a
   blocker for the next Deck 1 producer step.
+- Pitch/resampler storage is now a host-tested `audio_resampler` module, and
+  `audio_engine` owns one resampler state per deck while the firmware
+  compatibility output still renders only Deck 0.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.

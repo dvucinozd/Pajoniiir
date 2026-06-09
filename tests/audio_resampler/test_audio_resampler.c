@@ -1,0 +1,87 @@
+#include "audio_resampler.h"
+#include <assert.h>
+#include <stdio.h>
+
+typedef struct {
+    const audio_mixer_frame_t *frames;
+    uint32_t count;
+    uint32_t index;
+} source_t;
+
+static bool pop_source(void *ctx, audio_mixer_frame_t *out_frame)
+{
+    source_t *source = (source_t *)ctx;
+    if (source->index >= source->count) return false;
+    *out_frame = source->frames[source->index++];
+    return true;
+}
+
+static void test_reset_outputs_silence_without_source(void)
+{
+    audio_resampler_state_t state;
+    audio_resampler_reset(&state);
+
+    uint32_t consumed = 99;
+    audio_mixer_frame_t out = audio_resampler_next(&state, 1.0f, NULL, NULL, &consumed);
+
+    assert(out.left == 0);
+    assert(out.right == 0);
+    assert(consumed == 0);
+}
+
+static void test_unity_pitch_preserves_existing_one_frame_latency(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 100, .right = -100 },
+        { .left = 200, .right = -200 },
+    };
+    source_t source = { .frames = frames, .count = 2, .index = 0 };
+    audio_resampler_state_t state;
+    audio_resampler_reset(&state);
+
+    uint32_t consumed = 0;
+    audio_mixer_frame_t out = audio_resampler_next(&state, 1.0f, pop_source, &source, &consumed);
+    assert(out.left == 0);
+    assert(out.right == 0);
+    assert(consumed == 1);
+
+    out = audio_resampler_next(&state, 1.0f, pop_source, &source, &consumed);
+    assert(out.left == 100);
+    assert(out.right == -100);
+    assert(consumed == 1);
+}
+
+static void test_fractional_pitch_interpolates_between_source_frames(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 100, .right = -100 },
+    };
+    source_t source = { .frames = frames, .count = 1, .index = 0 };
+    audio_resampler_state_t state;
+    audio_resampler_reset(&state);
+
+    uint32_t consumed = 0;
+    audio_mixer_frame_t out = audio_resampler_next(&state, 0.5f, pop_source, &source, &consumed);
+    assert(out.left == 0);
+    assert(out.right == 0);
+    assert(consumed == 0);
+
+    out = audio_resampler_next(&state, 0.5f, pop_source, &source, &consumed);
+    assert(out.left == 0);
+    assert(out.right == 0);
+    assert(consumed == 1);
+
+    out = audio_resampler_next(&state, 0.5f, pop_source, &source, &consumed);
+    assert(out.left == 50);
+    assert(out.right == -50);
+    assert(consumed == 0);
+}
+
+int main(void)
+{
+    test_reset_outputs_silence_without_source();
+    test_unity_pitch_preserves_existing_one_frame_latency();
+    test_fractional_pitch_interpolates_between_source_frames();
+    puts("audio_resampler tests passed");
+    return 0;
+}
