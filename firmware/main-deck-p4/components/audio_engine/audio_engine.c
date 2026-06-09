@@ -12,6 +12,7 @@
 #include "minimp3.h"
 
 #include "audio_engine.h"
+#include "audio_fw_preload.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
@@ -229,14 +230,11 @@ static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task 
 static volatile bool          s_fw_run      = false;
 static int                    s_fw_tasks_started = 0;
 static bool                   s_codec_open  = false;
-/* The MP3 is preloaded into PSRAM once (s_fw_buf) and decoded directly from the
+/* The MP3 is preloaded into PSRAM once and decoded directly from the
  * memory buffer. This keeps USB off the playback/teardown path entirely — streaming
  * reads from /usb during playback collide with the load sequence and trip a
  * USB-DWC channel assert. The only USB access is one bulk read at load time. */
-static char                   s_fw_path[384];
-static uint8_t               *s_fw_buf      = NULL;
-static volatile size_t        s_loaded_bytes = 0;   /* bytes already in PSRAM */
-static volatile bool          s_load_done    = false;
+static audio_fw_preload_t     s_fw_preloads[AUDIO_ENGINE_DECK_COUNT];
 #endif
 
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
@@ -259,6 +257,18 @@ static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 static bool pop_ring_source(void *ctx, audio_mixer_frame_t *out_frame)
 {
     return audio_pcm_ring_pop((audio_pcm_ring_t *)ctx, out_frame);
+}
+
+static audio_fw_preload_t *active_fw_preload(void)
+{
+    return &s_fw_preloads[active_deck_index()];
+}
+
+static void reset_all_fw_preloads(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        audio_fw_preload_reset(&s_fw_preloads[i]);
+    }
 }
 
 static bool deck_output_active(uint8_t deck)
@@ -311,8 +321,9 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
     if (s_eng.file_buf) {
         size_t available = s_eng.file_size;
 #if AE_FW
-        if (!s_load_done && s_loaded_bytes < available) {
-            available = s_loaded_bytes;
+        audio_fw_preload_t *fw = active_fw_preload();
+        if (!fw->load_done && fw->loaded_bytes < available) {
+            available = fw->loaded_bytes;
         }
 #endif
 
@@ -322,7 +333,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
         }
         if (s_eng.file_pos >= available) {
 #if AE_FW
-            if (!s_load_done) {
+            if (!active_fw_preload()->load_done) {
                 return 0;   /* loader has not reached this byte yet */
             }
 #endif
@@ -333,7 +344,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
         size_t bytes_left = available - s_eng.file_pos;
         if (bytes_left == 0) {
 #if AE_FW
-            if (!s_load_done) {
+            if (!active_fw_preload()->load_done) {
                 return 0;
             }
 #endif
@@ -341,7 +352,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
             return 0;
         }
 #if AE_FW
-        if (!s_load_done && bytes_left < 4096) {
+        if (!active_fw_preload()->load_done && bytes_left < 4096) {
             return 0;   /* avoid skipping bytes from a partially loaded frame */
         }
 #endif
@@ -353,7 +364,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
             s_eng.file_pos += (size_t)info.frame_bytes;
         } else {
 #if AE_FW
-            if (!s_load_done) {
+            if (!active_fw_preload()->load_done) {
                 return 0;
             }
 #endif
@@ -635,20 +646,20 @@ static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
 #define AE_FIRST_CHUNK_BYTES (96u * 1024u)  /* min loaded before the decoder starts */
 #define AE_LOAD_GATE_MARGIN  (32u * 1024u)  /* keep the decoder this far behind the loader */
 
-/* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark
- * (s_loaded_bytes); build the frame seek table once the whole file is in. Parks
+/* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark;
+ * build the frame seek table once the whole file is in. Parks
  * until stop() so the teardown counting semaphore stays balanced. */
 static void ae_loader_task(void *arg)
 {
     (void)arg;
-    s_loaded_bytes = 0;
-    s_load_done    = false;
+    audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_preload_begin_load(fw);
 
     media_io_gate_begin();
-    FILE *src = fopen(s_fw_path, "rb");
+    FILE *src = fopen(fw->path, "rb");
     if (!src) {
         media_io_gate_end();
-        ESP_LOGE(TAG, "Cannot open %s", s_fw_path);
+        ESP_LOGE(TAG, "Cannot open %s", fw->path);
         s_last_error = ESP_ERR_NOT_FOUND;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "NOT FOUND");
         goto park;
@@ -657,7 +668,7 @@ static void ae_loader_task(void *arg)
     long fsz = ftell(src);
     fseek(src, 0, SEEK_SET);
     if (fsz <= 0) {
-        ESP_LOGE(TAG, "bad size %ld: %s", fsz, s_fw_path);
+        ESP_LOGE(TAG, "bad size %ld: %s", fsz, fw->path);
         fclose(src);
         media_io_gate_end();
         s_last_error = ESP_ERR_INVALID_SIZE;
@@ -665,8 +676,8 @@ static void ae_loader_task(void *arg)
         goto park;
     }
 
-    s_fw_buf = heap_caps_malloc((size_t)fsz, MALLOC_CAP_SPIRAM);
-    if (!s_fw_buf) {
+    fw->buf = heap_caps_malloc((size_t)fsz, MALLOC_CAP_SPIRAM);
+    if (!fw->buf) {
         ESP_LOGE(TAG, "PSRAM alloc %ld B failed", fsz);
         fclose(src);
         media_io_gate_end();
@@ -676,7 +687,7 @@ static void ae_loader_task(void *arg)
     }
 
     AE_LOCK();
-    s_eng.file_buf  = s_fw_buf;
+    s_eng.file_buf  = fw->buf;
     s_eng.file_size = (size_t)fsz;
     s_eng.file_pos  = 0;
     s_eng.fp        = NULL;
@@ -687,10 +698,10 @@ static void ae_loader_task(void *arg)
     while (off < (size_t)fsz && s_fw_run) {
         size_t want = (size_t)fsz - off;
         if (want > (256u * 1024u)) want = 256u * 1024u;
-        size_t got = fread(s_fw_buf + off, 1, want, src);
+        size_t got = fread(fw->buf + off, 1, want, src);
         if (got == 0) break;
         off += got;
-        s_loaded_bytes = off;                                 /* publish watermark */
+        fw->loaded_bytes = off;                               /* publish watermark */
         s_load_pct = (uint8_t)(off * 100u / (size_t)fsz);
     }
     fclose(src);
@@ -703,7 +714,7 @@ static void ae_loader_task(void *arg)
         AE_LOCK();
         build_seek_table();        /* full file in PSRAM → frame-accurate IFI seeks */
         AE_UNLOCK();
-        s_load_done = true;
+        fw->load_done = true;
         s_load_pct  = 100;
     }
 
@@ -718,9 +729,10 @@ park:
 static void ae_decode_task(void *arg)
 {
     (void)arg;
+    audio_fw_preload_t *fw = active_fw_preload();
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
-    while (s_fw_run && s_loaded_bytes < AE_FIRST_CHUNK_BYTES && !s_load_done) {
+    while (s_fw_run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     if (!s_fw_run) goto cleanup;
@@ -729,7 +741,7 @@ static void ae_decode_task(void *arg)
      * Gated: a large ID3 tag may push frame 1 past the first chunk — wait for it. */
     int attempts = 0;
     while (s_fw_run && s_eng.sample_rate == 0 && attempts < 256 && !s_eng.eof) {
-        if (!s_load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > s_loaded_bytes) {
+        if (!fw->load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
@@ -799,7 +811,7 @@ static void ae_decode_task(void *arg)
         }
 
         /* Gate: never decode past what the loader has fetched into PSRAM. */
-        if (!s_load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > s_loaded_bytes) {
+        if (!fw->load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -838,7 +850,7 @@ static void ae_decode_task(void *arg)
     }
 
 cleanup:
-    /* s_fw_buf / the file are owned by the loader + audio_engine_stop(). */
+    /* The preload buffer / file are owned by the loader + audio_engine_stop(). */
     s_decode_task = NULL;
     xSemaphoreGive(s_tasks_done);
     vTaskDeleteWithCaps(NULL);
@@ -926,6 +938,7 @@ esp_err_t audio_engine_init(void)
     reset_all_pcm_rings();
 #if AE_FW
     reset_all_resamplers();
+    reset_all_fw_preloads();
 #endif
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
@@ -984,7 +997,8 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* Firmware: the loader task preloads the file from USB into PSRAM and the
      * decoder reads that memory buffer, so the slow USB read stays off the caller
      * and off the playback/teardown path. */
-    snprintf(s_fw_path, sizeof s_fw_path, "%s", mp3_path);
+    audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_preload_set_path(fw, mp3_path);
     s_eng.fp = NULL;
 #else
     FILE *fp = fopen(mp3_path, "rb");
@@ -1052,8 +1066,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
      * decode task latches the sample rate, opens the codec, then streams. */
     audio_resampler_reset(active_resampler());
     s_codec_open   = false;
-    s_loaded_bytes = 0;
-    s_load_done    = false;
+    audio_fw_preload_begin_load(fw);
     s_fw_run       = true;
     if (s_tasks_done) {
         while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
@@ -1093,9 +1106,9 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             esp_codec_dev_close(s_codec);
             s_codec_open = false;
         }
-        if (s_fw_buf) {
-            heap_caps_free(s_fw_buf);
-            s_fw_buf = NULL;
+        if (fw->buf) {
+            heap_caps_free(fw->buf);
+            fw->buf = NULL;
         }
         memset(&s_eng, 0, sizeof s_eng);
         s_eng.pitch_factor = 1.0f;
@@ -1197,7 +1210,9 @@ esp_err_t audio_engine_stop(void)
 
 #if AE_FW
     /* Free the PSRAM preload buffer. */
-    if (s_fw_buf) { heap_caps_free(s_fw_buf); s_fw_buf = NULL; }
+    audio_fw_preload_t *fw = active_fw_preload();
+    if (fw->buf) { heap_caps_free(fw->buf); fw->buf = NULL; }
+    audio_fw_preload_begin_load(fw);
 #endif
 
     memset(&s_eng, 0, sizeof s_eng);

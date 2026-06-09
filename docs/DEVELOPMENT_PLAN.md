@@ -152,6 +152,9 @@ Validation note, 2026-06-08:
   `audio_output_mixer` skeleton that accepts Deck 0 and Deck 1 sources, applies
   per-deck gains, and reports consumed frames per deck. Deck 1 remains silent
   until a firmware PCM producer is added.
+- Firmware preload path/buffer/progress state is now a host-tested
+  `audio_fw_preload` slot, with one slot allocated per deck. Task lifecycle is
+  still compatibility-singleton, so Deck 1 firmware producer remains pending.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
