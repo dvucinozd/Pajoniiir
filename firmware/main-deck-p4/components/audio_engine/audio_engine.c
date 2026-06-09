@@ -13,6 +13,7 @@
 
 #include "audio_engine.h"
 #include "audio_fw_preload.h"
+#include "audio_fw_runtime.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
@@ -223,18 +224,13 @@ static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_ini
 
 #if AE_FW
 static esp_codec_dev_handle_t s_codec       = NULL;  /* owned by bsp_jc4880 */
-static TaskHandle_t           s_loader_task = NULL;
-static TaskHandle_t           s_decode_task = NULL;
-static TaskHandle_t           s_output_task = NULL;
 static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task gives on exit */
-static volatile bool          s_fw_run      = false;
-static int                    s_fw_tasks_started = 0;
-static bool                   s_codec_open  = false;
 /* The MP3 is preloaded into PSRAM once and decoded directly from the
  * memory buffer. This keeps USB off the playback/teardown path entirely — streaming
  * reads from /usb during playback collide with the load sequence and trip a
  * USB-DWC channel assert. The only USB access is one bulk read at load time. */
 static audio_fw_preload_t     s_fw_preloads[AUDIO_ENGINE_DECK_COUNT];
+static audio_fw_runtime_t     s_fw_runtimes[AUDIO_ENGINE_DECK_COUNT];
 #endif
 
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
@@ -264,10 +260,22 @@ static audio_fw_preload_t *active_fw_preload(void)
     return &s_fw_preloads[active_deck_index()];
 }
 
+static audio_fw_runtime_t *active_fw_runtime(void)
+{
+    return &s_fw_runtimes[active_deck_index()];
+}
+
 static void reset_all_fw_preloads(void)
 {
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_fw_preload_reset(&s_fw_preloads[i]);
+    }
+}
+
+static void reset_all_fw_runtimes(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        audio_fw_runtime_reset(&s_fw_runtimes[i]);
     }
 }
 
@@ -653,6 +661,7 @@ static void ae_loader_task(void *arg)
 {
     (void)arg;
     audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_runtime_t *runtime = active_fw_runtime();
     audio_fw_preload_begin_load(fw);
 
     media_io_gate_begin();
@@ -695,7 +704,7 @@ static void ae_loader_task(void *arg)
 
     int64_t t0  = esp_timer_get_time();
     size_t  off = 0;
-    while (off < (size_t)fsz && s_fw_run) {
+    while (off < (size_t)fsz && runtime->run) {
         size_t want = (size_t)fsz - off;
         if (want > (256u * 1024u)) want = 256u * 1024u;
         size_t got = fread(fw->buf + off, 1, want, src);
@@ -707,7 +716,7 @@ static void ae_loader_task(void *arg)
     fclose(src);
     media_io_gate_end();
 
-    if (s_fw_run && off == (size_t)fsz) {
+    if (runtime->run && off == (size_t)fsz) {
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
@@ -719,8 +728,8 @@ static void ae_loader_task(void *arg)
     }
 
 park:
-    while (s_fw_run) vTaskDelay(pdMS_TO_TICKS(20));   /* stay alive until stop() */
-    s_loader_task = NULL;
+    while (runtime->run) vTaskDelay(pdMS_TO_TICKS(20));   /* stay alive until stop() */
+    runtime->loader_task = NULL;
     xSemaphoreGive(s_tasks_done);
     vTaskDelete(NULL);
 }
@@ -730,17 +739,18 @@ static void ae_decode_task(void *arg)
 {
     (void)arg;
     audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_runtime_t *runtime = active_fw_runtime();
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
-    while (s_fw_run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
+    while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
         vTaskDelay(pdMS_TO_TICKS(2));
     }
-    if (!s_fw_run) goto cleanup;
+    if (!runtime->run) goto cleanup;
 
     /* Latch the sample rate from the first decodable frame, then open the codec.
      * Gated: a large ID3 tag may push frame 1 past the first chunk — wait for it. */
     int attempts = 0;
-    while (s_fw_run && s_eng.sample_rate == 0 && attempts < 256 && !s_eng.eof) {
+    while (runtime->run && s_eng.sample_rate == 0 && attempts < 256 && !s_eng.eof) {
         if (!fw->load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
@@ -754,7 +764,7 @@ static void ae_decode_task(void *arg)
         AE_UNLOCK();
         attempts++;
     }
-    if (!s_fw_run || s_eng.sample_rate == 0) {
+    if (!runtime->run || s_eng.sample_rate == 0) {
         ESP_LOGE(TAG, "no audio frame found");
         s_last_error = ESP_FAIL;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "NO AUDIO FRAME");
@@ -772,13 +782,13 @@ static void ae_decode_task(void *arg)
         snprintf(s_last_error_text, sizeof(s_last_error_text), "CODEC OPEN ERR");
         goto cleanup;
     }
-    s_codec_open = true;
+    runtime->codec_open = true;
     s_load_pct   = 100;
     s_loading    = false;   /* P5a: track is now playable */
     ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)s_eng.sample_rate);
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
-    while (s_fw_run) {
+    while (runtime->run) {
         if (s_eng.seek_requested) {
             AE_LOCK();
             if (s_eng.seek_requested) {
@@ -838,20 +848,20 @@ static void ae_decode_task(void *arg)
 
         if (eof && samples <= 0) {
             s_eng.playing = false;
-            while (s_eng.eof && s_fw_run) vTaskDelay(pdMS_TO_TICKS(10));
+            while (s_eng.eof && runtime->run) vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
         if (samples <= 0) continue;
 
-        for (int i = 0; i < samples && s_fw_run; i++) {
-            while (ring_free() == 0 && s_fw_run) vTaskDelay(pdMS_TO_TICKS(1));
+        for (int i = 0; i < samples && runtime->run; i++) {
+            while (ring_free() == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
             ring_push(s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
         }
     }
 
 cleanup:
     /* The preload buffer / file are owned by the loader + audio_engine_stop(). */
-    s_decode_task = NULL;
+    runtime->decode_task = NULL;
     xSemaphoreGive(s_tasks_done);
     vTaskDeleteWithCaps(NULL);
 }
@@ -862,9 +872,10 @@ cleanup:
 static void ae_output_task(void *arg)
 {
     (void)arg;
+    audio_fw_runtime_t *runtime = active_fw_runtime();
     int16_t out[AE_OUT_FRAMES * 2];
-    while (s_fw_run) {
-        if (!s_codec_open) {
+    while (runtime->run) {
+        if (!runtime->codec_open) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -916,7 +927,7 @@ static void ae_output_task(void *arg)
             AE_UNLOCK();
         }
     }
-    s_output_task = NULL;
+    runtime->output_task = NULL;
     xSemaphoreGive(s_tasks_done);
     vTaskDelete(NULL);
 }
@@ -939,6 +950,7 @@ esp_err_t audio_engine_init(void)
 #if AE_FW
     reset_all_resamplers();
     reset_all_fw_preloads();
+    reset_all_fw_runtimes();
 #endif
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
@@ -1064,10 +1076,10 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* Keep load() light: MP3 decode uses ~13 KB of stack (4 KB read buffer + a
      * 9 KB PCM frame) and would overflow the caller (e.g. the LVGL task). The
      * decode task latches the sample rate, opens the codec, then streams. */
+    audio_fw_runtime_t *runtime = active_fw_runtime();
     audio_resampler_reset(active_resampler());
-    s_codec_open   = false;
+    audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
-    s_fw_run       = true;
     if (s_tasks_done) {
         while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
             /* drain stale task-exit signals from a previous load */
@@ -1076,35 +1088,37 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* loader: streams USB→PSRAM (sole USB user). decode: minimp3 needs a large
      * on-stack scratch (~15 KB) + linear-seek scanning → 48 KB stack. output:
      * real-time I2S writes (highest prio). */
-    s_fw_tasks_started = 0;
-    if (xTaskCreate(ae_loader_task, "ae_loader", 4096, NULL, 5, &s_loader_task) == pdPASS) {
-        s_fw_tasks_started++;
+    if (xTaskCreate(ae_loader_task, "ae_loader", 4096, NULL, 5,
+                    (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
+        audio_fw_runtime_mark_task_started(runtime);
     } else {
         ESP_LOGE(TAG, "failed to create ae_loader task");
     }
-    if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, NULL, 5, &s_decode_task,
+    if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, NULL, 5,
+                            (TaskHandle_t *)&runtime->decode_task,
                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
-        s_fw_tasks_started++;
+        audio_fw_runtime_mark_task_started(runtime);
     } else {
         ESP_LOGE(TAG, "failed to create ae_decode task");
     }
-    if (xTaskCreate(ae_output_task, "ae_output", 4096, NULL, 6, &s_output_task) == pdPASS) {
-        s_fw_tasks_started++;
+    if (xTaskCreate(ae_output_task, "ae_output", 4096, NULL, 6,
+                    (TaskHandle_t *)&runtime->output_task) == pdPASS) {
+        audio_fw_runtime_mark_task_started(runtime);
     } else {
         ESP_LOGE(TAG, "failed to create ae_output task");
     }
-    if (s_fw_tasks_started != 3) {
+    if (runtime->tasks_started != 3) {
         s_last_error = ESP_ERR_NO_MEM;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "TASK CREATE ERR");
         s_loading  = false;
         s_load_pct = 100;
-        s_fw_run = false;
-        for (int i = 0; i < s_fw_tasks_started; i++) {
+        runtime->run = false;
+        for (int i = 0; i < runtime->tasks_started; i++) {
             xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
         }
-        if (s_codec_open) {
+        if (runtime->codec_open) {
             esp_codec_dev_close(s_codec);
-            s_codec_open = false;
+            runtime->codec_open = false;
         }
         if (fw->buf) {
             heap_caps_free(fw->buf);
@@ -1112,7 +1126,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
         }
         memset(&s_eng, 0, sizeof s_eng);
         s_eng.pitch_factor = 1.0f;
-        s_fw_tasks_started = 0;
+        audio_fw_runtime_mark_stopped(runtime);
         return ESP_ERR_NO_MEM;
     }
 #endif
@@ -1164,31 +1178,32 @@ esp_err_t audio_engine_stop(void)
 
 
 #if AE_FW
-    if (s_fw_run || s_fw_tasks_started > 0) {
-        s_fw_run  = false;
+    audio_fw_runtime_t *runtime = active_fw_runtime();
+    if (runtime->run || runtime->tasks_started > 0) {
+        runtime->run = false;
         s_eng.eof = false;   /* wake decode task if parked at EOF */
         /* Wait for all started tasks before freeing buffers they can touch. */
         if (s_tasks_done) {
             int exited = 0;
-            for (int i = 0; i < s_fw_tasks_started; i++) {
+            for (int i = 0; i < runtime->tasks_started; i++) {
                 if (xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500)) == pdTRUE) {
                     exited++;
                 }
             }
-            if (exited != s_fw_tasks_started) {
+            if (exited != runtime->tasks_started) {
                 ESP_LOGE(TAG, "audio stop timed out waiting for tasks (%d/%d exited)",
-                         exited, s_fw_tasks_started);
+                         exited, runtime->tasks_started);
                 return ESP_ERR_TIMEOUT;
             }
         }
-        s_loader_task = NULL;
-        s_decode_task = NULL;
-        s_output_task = NULL;
-        s_fw_tasks_started = 0;
+        runtime->loader_task = NULL;
+        runtime->decode_task = NULL;
+        runtime->output_task = NULL;
+        runtime->tasks_started = 0;
     }
-    if (s_codec_open) {
+    if (runtime->codec_open) {
         esp_codec_dev_close(s_codec);   /* handle persists for the next load */
-        s_codec_open = false;
+        runtime->codec_open = false;
     }
 #endif
 

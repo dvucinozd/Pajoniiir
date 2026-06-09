@@ -153,8 +153,11 @@ Validation note, 2026-06-08:
   per-deck gains, and reports consumed frames per deck. Deck 1 remains silent
   until a firmware PCM producer is added.
 - Firmware preload path/buffer/progress state is now a host-tested
-  `audio_fw_preload` slot, with one slot allocated per deck. Task lifecycle is
-  still compatibility-singleton, so Deck 1 firmware producer remains pending.
+  `audio_fw_preload` slot, with one slot allocated per deck.
+- Firmware task lifecycle state is now a host-tested `audio_fw_runtime` slot,
+  with one slot allocated per deck. The current firmware task creation path
+  still starts only the compatibility producer/output task set, so Deck 1
+  firmware producer activation remains pending.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
