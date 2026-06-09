@@ -90,8 +90,8 @@ Validation note, 2026-06-08:
   transport and pitch state.
 - Browser namespace routing now accepts `CTRL_ID_BROWSE_DELTA`,
   `CTRL_ID_LOAD_DECK1`, and `CTRL_ID_LOAD_DECK2`. Deck 1 load delegates to the
-  existing UI library load flow; Deck 2 returns `ESP_ERR_NOT_SUPPORTED` until
-  the dual audio/load backend exists.
+  UI library load flow; Deck 2 now targets the deck-aware UI load flow and is
+  limited by the current producer-only Deck 2 audio backend.
 
 Exit criteria:
 
@@ -164,6 +164,10 @@ Validation note, 2026-06-08:
   compatibility deck still starts loader/decode/output and owns codec open;
   Deck 1 load starts producer-only loader/decode tasks into its own PCM ring and
   remains silent until Deck 1 play/output activation is intentionally enabled.
+- The P4 Library screen exposes `LOAD D1` and `LOAD D2` buttons. `LOAD D1`
+  updates the active waveform/header and compatibility output path; `LOAD D2`
+  exercises the deck-local producer path and remains silent until Deck 2 output
+  activation is intentionally enabled.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.

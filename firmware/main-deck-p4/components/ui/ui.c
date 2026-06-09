@@ -88,6 +88,7 @@ static bool      s_sort_artist_desc = false;
 static bool      s_sort_name_desc = false;
 static bool      s_sort_bpm_desc = false;
 static bool      s_track_load_busy = false;
+static uint8_t   s_library_load_request_deck = 0;
 #ifndef WIN32
 static media_loaded_track_t  s_loaded_media;
 static bool                  s_loaded_media_valid = false;
@@ -160,6 +161,7 @@ static lv_obj_t *s_label_sd_status = NULL;
 static lv_obj_t *s_label_sd_cache_status = NULL;
 static lv_obj_t *s_label_library_source = NULL;
 static lv_obj_t *s_btn_library_load = NULL;
+static lv_obj_t *s_btn_library_load_deck2 = NULL;
 static lv_obj_t *s_label_library_hint = NULL;
 
 typedef struct {
@@ -236,6 +238,7 @@ static void jump_btn_event_cb(lv_event_t *e);
 #ifndef WIN32
 typedef struct {
     int index;
+    uint8_t deck;
     uint32_t generation;
     media_source_t source;
     media_catalog_track_t item;
@@ -246,13 +249,14 @@ typedef struct {
 
 typedef struct {
     int index;
+    uint8_t deck;
     uint32_t generation;
     media_source_t source;
 } ui_track_load_request_t;
 
 static ui_track_load_result_t s_track_load_worker_result;
 
-static void ui_submit_track_load(int index);
+static void ui_submit_track_load(int index, uint8_t deck);
 static void ui_poll_track_load_result(void);
 #endif
 
@@ -399,18 +403,21 @@ static lv_color_t ui_status_color_for_text(const char *status)
 
 static void ui_library_set_load_busy(bool busy, const char *hint)
 {
-    if (s_btn_library_load) {
+    lv_obj_t *buttons[] = { s_btn_library_load, s_btn_library_load_deck2 };
+    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++) {
+        lv_obj_t *btn = buttons[i];
+        if (!btn) continue;
         if (busy) {
-            lv_obj_add_state(s_btn_library_load, LV_STATE_DISABLED);
-            lv_obj_add_style(s_btn_library_load, &s_style_btn_disabled, LV_PART_MAIN);
+            lv_obj_add_state(btn, LV_STATE_DISABLED);
+            lv_obj_add_style(btn, &s_style_btn_disabled, LV_PART_MAIN);
         } else {
-            lv_obj_clear_state(s_btn_library_load, LV_STATE_DISABLED);
-            lv_obj_remove_style(s_btn_library_load, &s_style_btn_disabled, LV_PART_MAIN);
+            lv_obj_clear_state(btn, LV_STATE_DISABLED);
+            lv_obj_remove_style(btn, &s_style_btn_disabled, LV_PART_MAIN);
         }
     }
 
     if (s_label_library_hint) {
-        lv_label_set_text(s_label_library_hint, hint ? hint : "SELECT TRACK\nPRESS LOAD");
+        lv_label_set_text(s_label_library_hint, hint ? hint : "SELECT TRACK\nLOAD D1/D2");
     }
 }
 
@@ -816,6 +823,7 @@ static void ui_track_load_worker(void *arg)
     ui_track_load_result_t *result = &s_track_load_worker_result;
     memset(result, 0, sizeof(*result));
     result->index = req.index;
+    result->deck = req.deck;
     result->generation = req.generation;
     result->source = req.source;
     result->rc = ESP_OK;
@@ -829,11 +837,14 @@ static void ui_track_load_worker(void *arg)
             const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
             snprintf(result->status, sizeof(result->status), "%s", status && status[0] ? status : "LOAD ERR");
         } else {
-            audio_engine_clear_loop();
-            deck_core_reset();
-            result->rc = audio_engine_load(result->loaded.audio_path,
-                                           result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                                           result->loaded.duration_ms);
+            if (req.deck == CTRL_DECK_1) {
+                audio_engine_clear_loop();
+            }
+            deck_core_reset_deck(req.deck);
+            result->rc = audio_engine_deck_load(req.deck,
+                                                result->loaded.audio_path,
+                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                                                result->loaded.duration_ms);
             if (result->rc != ESP_OK) {
                 const char *audio_err = audio_engine_last_error_text();
                 snprintf(result->status, sizeof(result->status), "%s",
@@ -852,7 +863,7 @@ static void ui_track_load_worker(void *arg)
     vTaskDelete(NULL);
 }
 
-static void ui_submit_track_load(int index)
+static void ui_submit_track_load(int index, uint8_t deck)
 {
     if (!s_track_load_result_q) {
         s_track_load_result_q = xQueueCreate(1, sizeof(ui_track_load_result_t));
@@ -876,6 +887,7 @@ static void ui_submit_track_load(int index)
         return;
     }
     req->index = index;
+    req->deck = deck;
     req->generation = library_generation();
     req->source = media_catalog_get_source();
 
@@ -938,23 +950,27 @@ static void ui_poll_track_load_result(void)
         if (result.source == MEDIA_SOURCE_LOCAL_USB) {
             mock_library_load_track_to_deck(result.index);
         }
-        s_loaded_media = result.loaded;
-        s_loaded_media_valid = true;
-        s_loaded_media_source = result.source;
+        if (result.deck == CTRL_DECK_1) {
+            s_loaded_media = result.loaded;
+            s_loaded_media_valid = true;
+            s_loaded_media_source = result.source;
 
-        ui_cache_invalidate();
-        lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
-        lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
-        ui_label_set_f2(s_label_bpm, (float)(result.loaded.bpm ? result.loaded.bpm : result.item.bpm));
-        s_loop_active = false;
-        s_loop_active_beats = 0;
-        ui_update_loop_screen_state();
-        ui_load_waveform_media(&result.loaded);
-        ui_update_hot_cues();
+            ui_cache_invalidate();
+            lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
+            lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
+            ui_label_set_f2(s_label_bpm, (float)(result.loaded.bpm ? result.loaded.bpm : result.item.bpm));
+            s_loop_active = false;
+            s_loop_active_beats = 0;
+            ui_update_loop_screen_state();
+            ui_load_waveform_media(&result.loaded);
+            ui_update_hot_cues();
+        }
 
-        ESP_LOGI(TAG, "Audio: loaded %s (autoplay off)", result.loaded.audio_path);
-        ui_status_indicator_hold("TRACK LOADED", COL_GREEN, 2000);
-        ui_library_set_load_busy(false, "TRACK LOADED");
+        ESP_LOGI(TAG, "Audio: loaded deck %u: %s (autoplay off)",
+                 (unsigned)result.deck + 1u, result.loaded.audio_path);
+        const char *loaded_text = result.deck == CTRL_DECK_1 ? "D1 LOADED" : "D2 PRODUCER";
+        ui_status_indicator_hold(loaded_text, COL_GREEN, 2000);
+        ui_library_set_load_busy(false, loaded_text);
         s_track_load_busy = false;
     }
 }
@@ -1028,7 +1044,11 @@ static void cue_event_cb(lv_event_t *e) {
 
 // Load button in library clicked
 static void library_load_event_cb(lv_event_t *e) {
-    (void)e;
+    uint8_t deck = s_library_load_request_deck;
+    if (e) {
+        lv_obj_t *btn = lv_event_get_target(e);
+        deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(btn);
+    }
     if (s_track_load_busy) {
         ui_status_indicator_hold("LOAD BUSY", COL_AMBER, 1200);
         return;
@@ -1074,7 +1094,7 @@ static void library_load_event_cb(lv_event_t *e) {
 
     const bool remote_source = (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK);
     ui_status_indicator_hold(remote_source ? "CACHE START" : "LOADING", COL_ACCENT, 1500);
-    ui_submit_track_load(s_selected_track_idx);
+    ui_submit_track_load(s_selected_track_idx, deck);
     return;
 #endif
     ui_status_indicator_hold("TRACK LOADED", COL_GREEN, 2000);
@@ -1123,6 +1143,11 @@ esp_err_t ui_library_select_delta(int delta)
 
 esp_err_t ui_library_load_selected(void)
 {
+    return ui_library_load_selected_for_deck(CTRL_DECK_1);
+}
+
+esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
+{
     if (!s_library_table) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1134,17 +1159,12 @@ esp_err_t ui_library_load_selected(void)
     }
 
     ui_lvgl_lock();
+    uint8_t old_deck = s_library_load_request_deck;
+    s_library_load_request_deck = deck;
     library_load_event_cb(NULL);
+    s_library_load_request_deck = old_deck;
     ui_lvgl_unlock();
     return ESP_OK;
-}
-
-esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
-{
-    if (deck == CTRL_DECK_1) {
-        return ui_library_load_selected();
-    }
-    return ESP_ERR_NOT_SUPPORTED;
 }
 
 // Sort tracks by Artist (Toggle ASC/DESC)
@@ -2277,21 +2297,38 @@ static void create_screen_library(lv_obj_t *parent) {
     lv_obj_set_pos(s_label_library_source, 630, 52);
     ui_update_library_source_label();
 
-    // Load selected track button (Right Panel)
+    // Load selected track buttons (Right Panel)
     s_btn_library_load = lv_button_create(s_screens[1]);
     lv_obj_remove_style_all(s_btn_library_load);
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load, 150, 50);
+    lv_obj_set_size(s_btn_library_load, 72, 50);
     lv_obj_set_pos(s_btn_library_load, 630, 72);
+    lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
     lv_obj_t *lbl_load = lv_label_create(s_btn_library_load);
-    lv_label_set_text(lbl_load, "LOAD TRACK");
+    lv_label_set_text(lbl_load, "LOAD D1");
     lv_obj_set_style_text_font(lbl_load, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_load, COL_ON_ACCENT, LV_PART_MAIN);
     lv_obj_align(lbl_load, LV_ALIGN_CENTER, 0, 0);
+
+    s_btn_library_load_deck2 = lv_button_create(s_screens[1]);
+    lv_obj_remove_style_all(s_btn_library_load_deck2);
+    lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(s_btn_library_load_deck2, 72, 50);
+    lv_obj_set_pos(s_btn_library_load_deck2, 708, 72);
+    lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
+    lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_load_deck2 = lv_label_create(s_btn_library_load_deck2);
+    lv_label_set_text(lbl_load_deck2, "LOAD D2");
+    lv_obj_set_style_text_font(lbl_load_deck2, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_load_deck2, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(lbl_load_deck2, LV_ALIGN_CENTER, 0, 0);
 
     // SORT ARTIST button
     lv_obj_t *btn_sort_artist = lv_button_create(s_screens[1]);
@@ -2340,7 +2377,7 @@ static void create_screen_library(lv_obj_t *parent) {
 
     // Tip label
     s_label_library_hint = lv_label_create(s_screens[1]);
-    lv_label_set_text(s_label_library_hint, "SELECT TRACK\nPRESS LOAD");
+    lv_label_set_text(s_label_library_hint, "SELECT TRACK\nLOAD D1/D2");
     lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
     lv_obj_set_pos(s_label_library_hint, 630, 300);
