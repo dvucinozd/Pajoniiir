@@ -339,13 +339,14 @@ static void reset_all_resamplers(void)
  * Caller must hold s_file_mutex if called from multiple threads.
  */
 static int decode_one_frame(
+    audio_engine_state_t *eng,
 #if AE_FW
     audio_fw_preload_t *fw,
 #endif
     int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
-    if (s_eng.file_buf) {
-        size_t available = s_eng.file_size;
+    if (eng->file_buf) {
+        size_t available = eng->file_size;
 #if AE_FW
         if (!fw) return 0;
         if (!fw->load_done && fw->loaded_bytes < available) {
@@ -353,28 +354,28 @@ static int decode_one_frame(
         }
 #endif
 
-        if (s_eng.eof || s_eng.file_pos >= s_eng.file_size) {
-            s_eng.eof = true;
+        if (eng->eof || eng->file_pos >= eng->file_size) {
+            eng->eof = true;
             return 0;
         }
-        if (s_eng.file_pos >= available) {
+        if (eng->file_pos >= available) {
 #if AE_FW
             if (!fw->load_done) {
                 return 0;   /* loader has not reached this byte yet */
             }
 #endif
-            s_eng.eof = true;
+            eng->eof = true;
             return 0;
         }
 
-        size_t bytes_left = available - s_eng.file_pos;
+        size_t bytes_left = available - eng->file_pos;
         if (bytes_left == 0) {
 #if AE_FW
             if (!fw->load_done) {
                 return 0;
             }
 #endif
-            s_eng.eof = true;
+            eng->eof = true;
             return 0;
         }
 #if AE_FW
@@ -384,26 +385,26 @@ static int decode_one_frame(
 #endif
 
         mp3dec_frame_info_t info;
-        int samples = mp3dec_decode_frame(&s_eng.dec, s_eng.file_buf + s_eng.file_pos, (int)bytes_left, s_scratch_pcm, &info);
+        int samples = mp3dec_decode_frame(&eng->dec, eng->file_buf + eng->file_pos, (int)bytes_left, s_scratch_pcm, &info);
 
         if (info.frame_bytes > 0) {
-            s_eng.file_pos += (size_t)info.frame_bytes;
+            eng->file_pos += (size_t)info.frame_bytes;
         } else {
 #if AE_FW
             if (!fw->load_done) {
                 return 0;
             }
 #endif
-            s_eng.file_pos += 1;
+            eng->file_pos += 1;
             return 0;
         }
 
         if (samples == 0) return 0; /* header-only frame */
 
         /* Latch sample rate and channels from first real audio frame */
-        if (s_eng.sample_rate == 0 && info.hz > 0) {
-            s_eng.sample_rate = (uint32_t)info.hz;
-            s_eng.channels    = info.channels;
+        if (eng->sample_rate == 0 && info.hz > 0) {
+            eng->sample_rate = (uint32_t)info.hz;
+            eng->channels    = info.channels;
             ESP_LOGI(TAG, "MP3: %d Hz, %d ch, %d kbps", info.hz, info.channels, info.bitrate_kbps);
         }
 
@@ -419,33 +420,33 @@ static int decode_one_frame(
 
         return samples;
     } else {
-        if (!s_eng.fp || s_eng.eof) return 0;
+        if (!eng->fp || eng->eof) return 0;
 
         /* Read a window large enough to contain at least one MP3 frame.
          * Max CBR frame at 320 kbps ≈ 1441 bytes; 4096 is always sufficient. */
         uint8_t buf[4096];
-        long    pos_before = ftell(s_eng.fp);
-        size_t  bytes_read = fread(buf, 1u, sizeof buf, s_eng.fp);
-        if (bytes_read == 0) { s_eng.eof = true; return 0; }
+        long    pos_before = ftell(eng->fp);
+        size_t  bytes_read = fread(buf, 1u, sizeof buf, eng->fp);
+        if (bytes_read == 0) { eng->eof = true; return 0; }
 
         mp3dec_frame_info_t info;
-        int samples = mp3dec_decode_frame(&s_eng.dec, buf, (int)bytes_read, s_scratch_pcm, &info);
+        int samples = mp3dec_decode_frame(&eng->dec, buf, (int)bytes_read, s_scratch_pcm, &info);
 
         /* Reposition file to just after the consumed frame (or +1 if no sync) */
         if (info.frame_bytes > 0) {
-            fseek(s_eng.fp, pos_before + (long)info.frame_bytes, SEEK_SET);
+            fseek(eng->fp, pos_before + (long)info.frame_bytes, SEEK_SET);
         } else {
             /* No MP3 sync found — advance 1 byte to search further */
-            fseek(s_eng.fp, pos_before + 1L, SEEK_SET);
+            fseek(eng->fp, pos_before + 1L, SEEK_SET);
             return 0;
         }
 
         if (samples == 0) return 0; /* header-only frame (Xing/VBRi/LAME) */
 
         /* Latch sample rate and channels from first real audio frame */
-        if (s_eng.sample_rate == 0 && info.hz > 0) {
-            s_eng.sample_rate = (uint32_t)info.hz;
-            s_eng.channels    = info.channels;
+        if (eng->sample_rate == 0 && info.hz > 0) {
+            eng->sample_rate = (uint32_t)info.hz;
+            eng->channels    = info.channels;
             ESP_LOGI(TAG, "MP3: %d Hz, %d ch, %d kbps", info.hz, info.channels, info.bitrate_kbps);
         }
 
@@ -468,43 +469,43 @@ static int decode_one_frame(
  * build_seek_table — fast frame scanning by reading headers in PSRAM/file.
  * Does NOT decode PCM audio to ensure sub-millisecond execution.
  */
-static void build_seek_table(void)
+static void build_seek_table(audio_engine_state_t *eng)
 {
-    if (!s_eng.file_buf && !s_eng.fp) return;
+    if (!eng->file_buf && !eng->fp) return;
 
     uint32_t cap = 20000; /* initial capacity for ~8-10 mins track */
 #if AE_FW
-    s_eng.seek_table = heap_caps_malloc(cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+    eng->seek_table = heap_caps_malloc(cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
 #else
-    s_eng.seek_table = malloc(cap * sizeof(uint32_t));
+    eng->seek_table = malloc(cap * sizeof(uint32_t));
 #endif
-    if (!s_eng.seek_table) {
+    if (!eng->seek_table) {
         ESP_LOGE(TAG, "Failed to allocate seek table memory!");
         return;
     }
-    s_eng.seek_table_len = 0;
+    eng->seek_table_len = 0;
 
     size_t pos = 0;
-    size_t size = s_eng.file_size;
+    size_t size = eng->file_size;
     uint8_t *scan_buf = NULL;
 
     /* For PC, read the file into a temporary buffer for fast memory scanning */
-    if (!s_eng.file_buf && s_eng.fp) {
-        long prev_pos = ftell(s_eng.fp);
-        fseek(s_eng.fp, 0, SEEK_END);
-        long fsz = ftell(s_eng.fp);
-        fseek(s_eng.fp, 0, SEEK_SET);
+    if (!eng->file_buf && eng->fp) {
+        long prev_pos = ftell(eng->fp);
+        fseek(eng->fp, 0, SEEK_END);
+        long fsz = ftell(eng->fp);
+        fseek(eng->fp, 0, SEEK_SET);
         if (fsz > 0) {
             scan_buf = malloc(fsz);
             if (scan_buf) {
-                size_t read_bytes = fread(scan_buf, 1, fsz, s_eng.fp);
+                size_t read_bytes = fread(scan_buf, 1, fsz, eng->fp);
                 size = read_bytes;
             }
         }
-        fseek(s_eng.fp, prev_pos, SEEK_SET);
+        fseek(eng->fp, prev_pos, SEEK_SET);
     }
 
-    const uint8_t *buf = s_eng.file_buf ? s_eng.file_buf : scan_buf;
+    const uint8_t *buf = eng->file_buf ? eng->file_buf : scan_buf;
     if (!buf) {
         if (scan_buf) free(scan_buf);
         return;
@@ -521,21 +522,21 @@ static void build_seek_table(void)
                 continue;
             }
 
-            if (s_eng.seek_table_len >= cap) {
+            if (eng->seek_table_len >= cap) {
                 cap *= 2;
 #if AE_FW
-                uint32_t *new_table = heap_caps_realloc(s_eng.seek_table, cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+                uint32_t *new_table = heap_caps_realloc(eng->seek_table, cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
 #else
-                uint32_t *new_table = realloc(s_eng.seek_table, cap * sizeof(uint32_t));
+                uint32_t *new_table = realloc(eng->seek_table, cap * sizeof(uint32_t));
 #endif
                 if (!new_table) {
                     ESP_LOGE(TAG, "Failed to reallocate seek table!");
                     break;
                 }
-                s_eng.seek_table = new_table;
+                eng->seek_table = new_table;
             }
 
-            s_eng.seek_table[s_eng.seek_table_len++] = (uint32_t)pos;
+            eng->seek_table[eng->seek_table_len++] = (uint32_t)pos;
             pos += frame_bytes;
         } else {
             pos++;
@@ -548,80 +549,80 @@ static void build_seek_table(void)
 
     int64_t dt_us = ae_now_us() - t0;
     ESP_LOGI(TAG, "Indexed %u MP3 frames in %lld ms", 
-             (unsigned)s_eng.seek_table_len, (long long)(dt_us / 1000));
+             (unsigned)eng->seek_table_len, (long long)(dt_us / 1000));
 }
 
 /*
  * seek_index — ultra-fast O(1) seek using our custom frame index seek table.
  * Caller holds s_file_mutex.
  */
-static void seek_index(uint32_t position_ms)
+static void seek_index(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    if (!s_eng.seek_table || s_eng.seek_table_len == 0) return;
+    if (!eng->seek_table || eng->seek_table_len == 0) return;
 
-    uint32_t sr = (s_eng.sample_rate > 0) ? s_eng.sample_rate : 44100u;
+    uint32_t sr = (eng->sample_rate > 0) ? eng->sample_rate : 44100u;
     uint32_t samples_per_frame = 1152u;
 
     /* Read first frame header to obtain exact properties */
-    const uint8_t *buf = s_eng.file_buf;
-    if (buf && s_eng.seek_table_len > 0) {
-        const uint8_t *hdr = buf + s_eng.seek_table[0];
+    const uint8_t *buf = eng->file_buf;
+    if (buf && eng->seek_table_len > 0) {
+        const uint8_t *hdr = buf + eng->seek_table[0];
         samples_per_frame = hdr_frame_samples(hdr);
         sr = hdr_sample_rate_hz(hdr);
-    } else if (s_eng.fp && s_eng.seek_table_len > 0) {
-        long prev = ftell(s_eng.fp);
-        fseek(s_eng.fp, (long)s_eng.seek_table[0], SEEK_SET);
+    } else if (eng->fp && eng->seek_table_len > 0) {
+        long prev = ftell(eng->fp);
+        fseek(eng->fp, (long)eng->seek_table[0], SEEK_SET);
         uint8_t hdr[4];
-        if (fread(hdr, 1, 4, s_eng.fp) == 4) {
+        if (fread(hdr, 1, 4, eng->fp) == 4) {
             samples_per_frame = hdr_frame_samples(hdr);
             sr = hdr_sample_rate_hz(hdr);
         }
-        fseek(s_eng.fp, prev, SEEK_SET);
+        fseek(eng->fp, prev, SEEK_SET);
     }
 
     double frame_idx_double = (double)position_ms * (double)sr / ((double)samples_per_frame * 1000.0);
     uint32_t target_frame = (uint32_t)(frame_idx_double + 0.5);
 
-    if (target_frame >= s_eng.seek_table_len) {
-        target_frame = s_eng.seek_table_len - 1;
+    if (target_frame >= eng->seek_table_len) {
+        target_frame = eng->seek_table_len - 1;
     }
 
-    uint32_t target_byte = s_eng.seek_table[target_frame];
+    uint32_t target_byte = eng->seek_table[target_frame];
 
-    if (s_eng.file_buf) {
-        s_eng.file_pos = target_byte;
-    } else if (s_eng.fp) {
-        fseek(s_eng.fp, (long)target_byte, SEEK_SET);
+    if (eng->file_buf) {
+        eng->file_pos = target_byte;
+    } else if (eng->fp) {
+        fseek(eng->fp, (long)target_byte, SEEK_SET);
     }
 
-    s_eng.seek_base_ms = (uint32_t)((double)target_frame * (double)samples_per_frame * 1000.0 / (double)sr);
-    s_eng.frames_since_seek = 0;
+    eng->seek_base_ms = (uint32_t)((double)target_frame * (double)samples_per_frame * 1000.0 / (double)sr);
+    eng->frames_since_seek = 0;
 
     ESP_LOGI(TAG, "Index seek %u ms → frame %u/%u (byte %u), actual position: %u ms",
-             (unsigned)position_ms, (unsigned)target_frame, (unsigned)s_eng.seek_table_len,
-             (unsigned)target_byte, (unsigned)s_eng.seek_base_ms);
+             (unsigned)position_ms, (unsigned)target_frame, (unsigned)eng->seek_table_len,
+             (unsigned)target_byte, (unsigned)eng->seek_base_ms);
 }
 
 /*
  * seek_pvbr — fast O(1) seek using the 400-entry PVBR table.
  * Caller holds s_file_mutex.
  */
-static void seek_pvbr(uint32_t position_ms)
+static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    uint32_t idx = (s_eng.duration_ms > 0)
-                   ? (position_ms * AUDIO_PVBR_LEN / s_eng.duration_ms)
+    uint32_t idx = (eng->duration_ms > 0)
+                   ? (position_ms * AUDIO_PVBR_LEN / eng->duration_ms)
                    : 0u;
     if (idx >= AUDIO_PVBR_LEN) idx = AUDIO_PVBR_LEN - 1u;
-    uint32_t target_byte = s_eng.pvbr[idx];
+    uint32_t target_byte = eng->pvbr[idx];
 
-    if (s_eng.file_buf) {
-        if (target_byte > s_eng.file_size) target_byte = s_eng.file_size;
-        s_eng.file_pos = target_byte;
+    if (eng->file_buf) {
+        if (target_byte > eng->file_size) target_byte = eng->file_size;
+        eng->file_pos = target_byte;
         ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u",
                  (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte);
     } else {
-        int rc = fseek(s_eng.fp, (long)target_byte, SEEK_SET);
-        long actual_pos = ftell(s_eng.fp);
+        int rc = fseek(eng->fp, (long)target_byte, SEEK_SET);
+        long actual_pos = ftell(eng->fp);
         ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u (fseek ret=%d, ftell=%ld)",
                  (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte, rc, actual_pos);
     }
@@ -638,22 +639,22 @@ static void seek_pvbr(uint32_t position_ms)
  * (with vTaskDelay) until the loader streams up to the new position.
  * Caller holds s_file_mutex.
  */
-static void seek_estimate(uint32_t position_ms)
+static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    uint32_t target_byte = (s_eng.duration_ms > 0 && s_eng.file_size > 0)
-        ? (uint32_t)(((uint64_t)position_ms * (uint64_t)s_eng.file_size) / s_eng.duration_ms)
+    uint32_t target_byte = (eng->duration_ms > 0 && eng->file_size > 0)
+        ? (uint32_t)(((uint64_t)position_ms * (uint64_t)eng->file_size) / eng->duration_ms)
         : 0u;
-    if (target_byte > s_eng.file_size) target_byte = s_eng.file_size;
+    if (target_byte > eng->file_size) target_byte = eng->file_size;
 
-    if (s_eng.file_buf) {
-        s_eng.file_pos = target_byte;
+    if (eng->file_buf) {
+        eng->file_pos = target_byte;
     } else {
-        fseek(s_eng.fp, (long)target_byte, SEEK_SET);
+        fseek(eng->fp, (long)target_byte, SEEK_SET);
     }
-    mp3dec_init(&s_eng.dec);
-    s_eng.eof = false;
+    mp3dec_init(&eng->dec);
+    eng->eof = false;
     ESP_LOGI(TAG, "Estimate seek %u ms → byte %u/%u (no PVBR/index)",
-             (unsigned)position_ms, (unsigned)target_byte, (unsigned)s_eng.file_size);
+             (unsigned)position_ms, (unsigned)target_byte, (unsigned)eng->file_size);
 }
 
 
@@ -685,6 +686,7 @@ static void ae_loader_task(void *arg)
     }
     audio_fw_preload_t *fw = ctx->preload;
     audio_fw_runtime_t *runtime = ctx->runtime;
+    audio_engine_state_t *eng = (audio_engine_state_t *)ctx->engine;
     audio_fw_preload_begin_load(fw);
 
     media_io_gate_begin();
@@ -719,10 +721,10 @@ static void ae_loader_task(void *arg)
     }
 
     AE_LOCK();
-    s_eng.file_buf  = fw->buf;
-    s_eng.file_size = (size_t)fsz;
-    s_eng.file_pos  = 0;
-    s_eng.fp        = NULL;
+    eng->file_buf  = fw->buf;
+    eng->file_size = (size_t)fsz;
+    eng->file_pos  = 0;
+    eng->fp        = NULL;
     AE_UNLOCK();
 
     int64_t t0  = esp_timer_get_time();
@@ -744,7 +746,7 @@ static void ae_loader_task(void *arg)
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
         AE_LOCK();
-        build_seek_table();        /* full file in PSRAM → frame-accurate IFI seeks */
+        build_seek_table(eng);        /* full file in PSRAM → frame-accurate IFI seeks */
         AE_UNLOCK();
         fw->load_done = true;
         s_load_pct  = 100;
@@ -768,6 +770,9 @@ static void ae_decode_task(void *arg)
     }
     audio_fw_preload_t *fw = ctx->preload;
     audio_fw_runtime_t *runtime = ctx->runtime;
+    audio_engine_state_t *eng = (audio_engine_state_t *)ctx->engine;
+    audio_pcm_ring_t *pcm_ring = (audio_pcm_ring_t *)ctx->pcm_ring;
+    audio_resampler_state_t *resampler = (audio_resampler_state_t *)ctx->resampler;
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
     while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
@@ -778,21 +783,23 @@ static void ae_decode_task(void *arg)
     /* Latch the sample rate from the first decodable frame, then open the codec.
      * Gated: a large ID3 tag may push frame 1 past the first chunk — wait for it. */
     int attempts = 0;
-    while (runtime->run && s_eng.sample_rate == 0 && attempts < 256 && !s_eng.eof) {
-        if (!fw->load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
+    while (runtime->run && eng->sample_rate == 0 && attempts < 256 && !eng->eof) {
+        if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
         AE_LOCK();
-        int n = decode_one_frame(fw, s_decode_pcm);
+        int n = decode_one_frame(eng, fw, s_decode_pcm);
         if (n > 0) {
-            s_eng.frames_since_seek += (uint64_t)n;
-            for (int i = 0; i < n; i++) ring_push(s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
+            eng->frames_since_seek += (uint64_t)n;
+            for (int i = 0; i < n; i++) {
+                audio_pcm_ring_push(pcm_ring, s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
+            }
         }
         AE_UNLOCK();
         attempts++;
     }
-    if (!runtime->run || s_eng.sample_rate == 0) {
+    if (!runtime->run || eng->sample_rate == 0) {
         ESP_LOGE(TAG, "no audio frame found");
         s_last_error = ESP_FAIL;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "NO AUDIO FRAME");
@@ -802,10 +809,10 @@ static void ae_decode_task(void *arg)
     esp_codec_dev_sample_info_t fs = {
         .bits_per_sample = 16,
         .channel         = 2,
-        .sample_rate     = s_eng.sample_rate,
+        .sample_rate     = eng->sample_rate,
     };
     if (esp_codec_dev_open(s_codec, &fs) != 0) {
-        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)s_eng.sample_rate);
+        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
         s_last_error = ESP_FAIL;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "CODEC OPEN ERR");
         goto cleanup;
@@ -813,77 +820,77 @@ static void ae_decode_task(void *arg)
     runtime->codec_open = true;
     s_load_pct   = 100;
     s_loading    = false;   /* P5a: track is now playable */
-    ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)s_eng.sample_rate);
+    ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)eng->sample_rate);
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
-        if (s_eng.seek_requested) {
+        if (eng->seek_requested) {
             AE_LOCK();
-            if (s_eng.seek_requested) {
-                uint32_t target_ms = s_eng.seek_target_ms;
-                if (s_eng.seek_table) {
-                    seek_index(target_ms);
-                } else if (s_eng.has_pvbr) {
-                    seek_pvbr(target_ms);
+            if (eng->seek_requested) {
+                uint32_t target_ms = eng->seek_target_ms;
+                if (eng->seek_table) {
+                    seek_index(eng, target_ms);
+                } else if (eng->has_pvbr) {
+                    seek_pvbr(eng, target_ms);
                 } else {
-                    seek_estimate(target_ms);
+                    seek_estimate(eng, target_ms);
                 }
-                s_eng.seek_base_ms      = target_ms;
-                s_eng.frames_since_seek = 0u;
-                if (!s_eng.seek_is_loop) {
-                    s_eng.output_base_ms = target_ms;
-                    s_eng.output_frames_since_seek = 0u;
+                eng->seek_base_ms      = target_ms;
+                eng->frames_since_seek = 0u;
+                if (!eng->seek_is_loop) {
+                    eng->output_base_ms = target_ms;
+                    eng->output_frames_since_seek = 0u;
                 }
-                s_eng.eof               = false;
-                mp3dec_init(&s_eng.dec);
+                eng->eof               = false;
+                mp3dec_init(&eng->dec);
 
                 /* Loop wrap keeps the ring (gapless); user seeks flush it. */
-                if (!s_eng.seek_is_loop) {
-                    ring_reset();
-                    audio_resampler_reset(active_resampler());
+                if (!eng->seek_is_loop) {
+                    audio_pcm_ring_reset(pcm_ring);
+                    audio_resampler_reset(resampler);
                 }
-                s_eng.seek_is_loop   = false;
-                s_eng.seek_requested = false;
+                eng->seek_is_loop   = false;
+                eng->seek_requested = false;
             }
             AE_UNLOCK();
         }
 
         /* Gate: never decode past what the loader has fetched into PSRAM. */
-        if (!fw->load_done && s_eng.file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
+        if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
 
-        if (s_eng.eof || ring_free() < (uint32_t)MINIMP3_MAX_SAMPLES_PER_FRAME) {
+        if (eng->eof || audio_pcm_ring_free(pcm_ring) < (uint32_t)MINIMP3_MAX_SAMPLES_PER_FRAME) {
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
         AE_LOCK();
-        int  samples = decode_one_frame(fw, s_decode_pcm);
+        int  samples = decode_one_frame(eng, fw, s_decode_pcm);
         if (samples > 0) {
-            s_eng.frames_since_seek += (uint64_t)samples;
-            if (s_eng.loop_active && s_eng.sample_rate > 0) {
-                uint32_t current_ms = s_eng.seek_base_ms + (uint32_t)(s_eng.frames_since_seek * 1000u / s_eng.sample_rate);
-                if (current_ms >= s_eng.loop_end_ms) {
-                    s_eng.seek_target_ms = s_eng.loop_start_ms;
-                    s_eng.seek_is_loop   = true;   /* gapless: keep the ring */
-                    s_eng.seek_requested = true;
+            eng->frames_since_seek += (uint64_t)samples;
+            if (eng->loop_active && eng->sample_rate > 0) {
+                uint32_t current_ms = eng->seek_base_ms + (uint32_t)(eng->frames_since_seek * 1000u / eng->sample_rate);
+                if (current_ms >= eng->loop_end_ms) {
+                    eng->seek_target_ms = eng->loop_start_ms;
+                    eng->seek_is_loop   = true;   /* gapless: keep the ring */
+                    eng->seek_requested = true;
                 }
             }
         }
-        bool eof = s_eng.eof;
+        bool eof = eng->eof;
         AE_UNLOCK();
 
         if (eof && samples <= 0) {
-            s_eng.playing = false;
-            while (s_eng.eof && runtime->run) vTaskDelay(pdMS_TO_TICKS(10));
+            eng->playing = false;
+            while (eng->eof && runtime->run) vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
         if (samples <= 0) continue;
 
         for (int i = 0; i < samples && runtime->run; i++) {
-            while (ring_free() == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
-            ring_push(s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
+            while (audio_pcm_ring_free(pcm_ring) == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
+            audio_pcm_ring_push(pcm_ring, s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
         }
     }
 
@@ -1115,7 +1122,14 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     audio_resampler_reset(active_resampler());
     audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
-    audio_fw_task_context_bind(task_ctx, active_deck_index(), fw, runtime);
+    uint8_t deck = active_deck_index();
+    audio_fw_task_context_bind(task_ctx,
+                               deck,
+                               fw,
+                               runtime,
+                               &s_engines[deck],
+                               &s_pcm_rings[deck],
+                               &s_resamplers[deck]);
     if (s_tasks_done) {
         while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
             /* drain stale task-exit signals from a previous load */
@@ -1642,7 +1656,7 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
 
     while (true) {
         AE_LOCK();
-        int samples = decode_one_frame(pcm);
+        int samples = decode_one_frame(&s_eng, pcm);
         if (samples > 0) s_eng.frames_since_seek += (uint64_t)samples;
         bool eof = s_eng.eof;
         AE_UNLOCK();

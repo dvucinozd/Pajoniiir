@@ -160,7 +160,8 @@ Validation note, 2026-06-08:
   firmware producer activation remains pending.
 - Firmware task arguments are now bound through a host-tested
   `audio_fw_task_context` slot. Loader/decode/output tasks receive explicit
-  preload/runtime state instead of looking up the active deck while running.
+  preload/runtime state, plus deck-local engine/ring/resampler slots, instead
+  of looking up the active deck while running.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
