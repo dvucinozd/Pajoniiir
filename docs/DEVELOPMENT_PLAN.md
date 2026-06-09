@@ -141,6 +141,10 @@ Validation note, 2026-06-08:
 - The firmware output task applies the Deck 0 master gain in the compatibility
   path. True dual-deck summing is still pending until Deck 1 has a firmware PCM
   producer/output path.
+- PCM ring storage is now a host-tested `audio_pcm_ring` module, and
+  `audio_engine` owns one ring per deck while the firmware compatibility path
+  still consumes only Deck 0. This removes the old global singleton ring as a
+  blocker for the next Deck 1 producer step.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.

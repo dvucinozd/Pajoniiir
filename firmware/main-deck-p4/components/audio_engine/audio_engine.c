@@ -13,6 +13,7 @@
 
 #include "audio_engine.h"
 #include "audio_mixer.h"
+#include "audio_pcm_ring.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
 #endif
@@ -73,42 +74,21 @@ static int64_t ae_now_us(void)
 #endif
 }
 
-/* ── SPSC ring buffer (stereo int16 PCM frames) ───────────────────────────── *
+/* ── PCM ring buffers (stereo int16 PCM frames) ───────────────────────────── *
  *
  * Producer: decode thread (PC) / decode task (firmware).
  * Consumer: SDL audio callback (PC simulator) or codec/I2S output task (firmware).
- *
- * Indices are monotonically increasing uint32_t frame counts.
- * Effective buffer size  = RING_FRAMES - 1  (one slot kept empty: full ≠ empty).
- * RING_FRAMES must be a power of 2.
  */
-#define RING_FRAMES  8192u            /* ~185 ms @ 44100 Hz */
-#define RING_MASK   (RING_FRAMES - 1u)
-
-static int16_t            s_ring[RING_FRAMES * 2u]; /* stereo: [frame*2]=L, [frame*2+1]=R */
-static volatile uint32_t  s_ring_w = 0u;            /* write cursor (in frames) */
-static volatile uint32_t  s_ring_r = 0u;            /* read  cursor (in frames) */
+static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 
 /* Shared scratchpad buffer for decoding to avoid stack allocation */
 static int16_t            s_scratch_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2u];
 
-static inline uint32_t ring_used(void) { return s_ring_w - s_ring_r; }
-static inline uint32_t ring_free(void) { return RING_FRAMES - 1u - ring_used(); }
-
-static inline void ring_push(int16_t l, int16_t r)
+static void reset_all_pcm_rings(void)
 {
-    uint32_t idx       = s_ring_w & RING_MASK;
-    s_ring[idx * 2u   ] = l;
-    s_ring[idx * 2u + 1] = r;
-    s_ring_w++;
-}
-
-static inline void ring_pop(int16_t *l, int16_t *r)
-{
-    uint32_t idx = s_ring_r & RING_MASK;
-    *l = s_ring[idx * 2u   ];
-    *r = s_ring[idx * 2u + 1];
-    s_ring_r++;
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        audio_pcm_ring_reset(&s_pcm_rings[i]);
+    }
 }
 
 /* ── Engine state ─────────────────────────────────────────────────────────── */
@@ -169,6 +149,35 @@ static audio_engine_state_t  s_engines[AUDIO_ENGINE_DECK_COUNT];
 static audio_engine_state_t *s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
 
 #define s_eng (*s_active_eng)
+
+static inline audio_pcm_ring_t *active_pcm_ring(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (&s_engines[i] == s_active_eng) {
+            return &s_pcm_rings[i];
+        }
+    }
+    return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static inline uint32_t ring_used(void) { return audio_pcm_ring_used(active_pcm_ring()); }
+static inline uint32_t ring_free(void) { return audio_pcm_ring_free(active_pcm_ring()); }
+
+static inline void ring_reset(void) { audio_pcm_ring_reset(active_pcm_ring()); }
+
+static inline bool ring_push(int16_t l, int16_t r)
+{
+    return audio_pcm_ring_push(active_pcm_ring(), l, r);
+}
+
+static inline bool ring_pop(int16_t *l, int16_t *r)
+{
+    audio_mixer_frame_t frame = { 0 };
+    if (!audio_pcm_ring_pop(active_pcm_ring(), &frame)) return false;
+    *l = frame.left;
+    *r = frame.right;
+    return true;
+}
 
 /* UI-facing lifecycle state (P5a): LOADING while the track preloads from USB. */
 static volatile bool    s_loading  = false;
@@ -724,7 +733,7 @@ static void ae_decode_task(void *arg)
 
                 /* Loop wrap keeps the ring (gapless); user seeks flush it. */
                 if (!s_eng.seek_is_loop) {
-                    s_ring_r = s_ring_w;
+                    ring_reset();
                     s_pitch_prev_l = s_pitch_prev_r = 0;
                     s_pitch_curr_l = s_pitch_curr_r = 0;
                     s_pitch_frac   = 0.0;
@@ -852,7 +861,7 @@ esp_err_t audio_engine_init(void)
         mp3dec_init(&s_engines[i].dec);
     }
     s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
-    s_ring_w = s_ring_r = 0u;
+    reset_all_pcm_rings();
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
@@ -963,7 +972,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     s_eng.loaded            = true;
 
     mp3dec_init(&s_eng.dec);
-    s_ring_w = s_ring_r = 0u;
+    ring_reset();
 
 
 
@@ -1130,7 +1139,7 @@ esp_err_t audio_engine_stop(void)
 
     memset(&s_eng, 0, sizeof s_eng);
     s_eng.pitch_factor = 1.0f;
-    s_ring_w = s_ring_r = 0u;
+    ring_reset();
 
     return ESP_OK;
 }
@@ -1151,7 +1160,7 @@ esp_err_t audio_engine_seek(uint32_t position_ms)
     s_eng.seek_base_ms = position_ms;
     s_eng.frames_since_seek = 0u;
     /* Flush stale decoded data from ring buffer to mute audio immediately */
-    s_ring_r = s_ring_w;
+    ring_reset();
 
 #if AE_FW
     s_pitch_prev_l = s_pitch_prev_r = 0;
