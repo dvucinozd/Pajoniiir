@@ -12,6 +12,7 @@
 #include "minimp3.h"
 
 #include "audio_engine.h"
+#include "audio_mixer.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
 #endif
@@ -174,6 +175,11 @@ static volatile bool    s_loading  = false;
 static volatile uint8_t s_load_pct = 100;
 static esp_err_t        s_last_error = ESP_OK;
 static char             s_last_error_text[64] = "OK";
+static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
+    AUDIO_MIXER_CONTROL_MAX,
+    AUDIO_MIXER_CONTROL_MAX,
+};
+static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -841,6 +847,10 @@ esp_err_t audio_engine_init(void)
     s_ring_w = s_ring_r = 0u;
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 
 #if AE_FW
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
@@ -1248,10 +1258,12 @@ static bool deck_is_valid(uint8_t deck)
     return deck < AUDIO_ENGINE_DECK_COUNT;
 }
 
+#if AE_FW
 static bool deck_uses_compat_engine(uint8_t deck)
 {
     return deck == AUDIO_ENGINE_COMPAT_DECK;
 }
+#endif
 
 static audio_engine_state_t *select_engine(uint8_t deck)
 {
@@ -1361,6 +1373,39 @@ bool audio_engine_deck_is_playing(uint8_t deck)
     bool playing = audio_engine_is_playing();
     restore_engine(prev);
     return playing;
+}
+
+esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (raw_volume > AUDIO_MIXER_CONTROL_MAX) {
+        raw_volume = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_channel_volume[deck] = raw_volume;
+    return ESP_OK;
+}
+
+esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
+{
+    if (raw_crossfader > AUDIO_MIXER_CONTROL_MAX) {
+        raw_crossfader = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_crossfader = raw_crossfader;
+    return ESP_OK;
+}
+
+void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
+{
+    float xf0 = 1.0f;
+    float xf1 = 1.0f;
+    audio_mixer_crossfader_gains(s_crossfader, &xf0, &xf1);
+
+    if (deck0_gain) {
+        *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) * xf0;
+    }
+    if (deck1_gain) {
+        *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) * xf1;
+    }
 }
 
 

@@ -57,3 +57,19 @@ static inline bool audio_engine_deck_is_playing(uint8_t deck)
     (void)deck;
     return false;
 }
+
+extern int audio_engine_stub_channel_volume[2];
+extern int audio_engine_stub_crossfader;
+
+static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
+{
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_channel_volume[deck] = raw_volume;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
+{
+    audio_engine_stub_crossfader = raw_crossfader;
+    return ESP_OK;
+}

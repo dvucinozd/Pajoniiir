@@ -59,6 +59,13 @@ static bool deck_uses_audio_engine(uint8_t deck)
     return deck < DECK_CORE_DECK_COUNT;
 }
 
+static bool event_is_mixer_control(const ctrl_event_t *ev)
+{
+    return ev && (ev->id == CTRL_ID_CH1_VOLUME ||
+                  ev->id == CTRL_ID_CH2_VOLUME ||
+                  ev->id == CTRL_ID_CROSSFADER);
+}
+
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
     if (ev && (ev->id == CTRL_ID_LOAD_DECK1 || ev->id == CTRL_ID_LOAD_DECK2)) {
@@ -249,6 +256,25 @@ static void on_pitch(uint8_t deck, int16_t raw)
              (unsigned)deck + 1, raw, PITCH_CENTER, raw - PITCH_CENTER);
 }
 
+static void on_mixer_control(uint8_t id, int16_t raw)
+{
+    uint16_t value = raw < 0 ? 0u : (uint16_t)raw;
+
+    switch (id) {
+    case CTRL_ID_CH1_VOLUME:
+        audio_engine_set_channel_volume(CTRL_DECK_1, value);
+        break;
+    case CTRL_ID_CH2_VOLUME:
+        audio_engine_set_channel_volume(CTRL_DECK_2, value);
+        break;
+    case CTRL_ID_CROSSFADER:
+        audio_engine_set_crossfader(value);
+        break;
+    default:
+        break;
+    }
+}
+
 static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
 {
     if (control_link_id_is_deck(ev->id)) {
@@ -282,6 +308,12 @@ static void deck_task(void *arg)
 
         xSemaphoreTake(s_mutex, portMAX_DELAY);
         uint8_t deck = deck_index_for_event(&ev);
+
+        if (event_is_mixer_control(&ev)) {
+            on_mixer_control(ev.id, ev.value);
+            xSemaphoreGive(s_mutex);
+            continue;
+        }
 
         switch (ev.type) {
         case CTRL_EV_BUTTON:
@@ -414,6 +446,11 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
     if (!ev) return;
 
     uint8_t deck = deck_index_for_event(ev);
+
+    if (event_is_mixer_control(ev)) {
+        on_mixer_control(ev->id, ev->value);
+        return;
+    }
 
     switch (ev->type) {
     case CTRL_EV_BUTTON:

@@ -114,10 +114,53 @@ static void test_pitch(void)
     audio_engine_set_pitch(8192);
 }
 
-/* ── Test 4: per-deck transition API guards ─────────────────────────────── */
+static int nearf(float actual, float expected)
+{
+    float diff = actual - expected;
+    if (diff < 0.0f) diff = -diff;
+    return diff < 0.01f;
+}
+
+/* ── Test 4: mixer state API ─────────────────────────────────────────────── */
+static void test_mixer_state_api(void)
+{
+    printf("\n[Test 4] Mixer state API\n");
+
+    float deck1 = 0.0f;
+    float deck2 = 0.0f;
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets mixer state");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 1.0f), "default deck 0 gain is unity");
+    EXPECT(nearf(deck2, 1.0f), "default deck 1 gain is unity");
+
+    EXPECT(audio_engine_set_channel_volume(0, 8192) == ESP_OK,
+           "deck 0 channel volume accepts center raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 0.5f), "deck 0 channel volume affects output gain");
+    EXPECT(nearf(deck2, 1.0f), "deck 1 remains unity");
+
+    EXPECT(audio_engine_set_channel_volume(1, 0) == ESP_OK,
+           "deck 1 channel volume accepts zero raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck2, 0.0f), "deck 1 channel volume mutes output gain");
+
+    EXPECT(audio_engine_set_channel_volume(2, 0) == ESP_ERR_INVALID_ARG,
+           "invalid mixer deck returns INVALID_ARG");
+
+    EXPECT(audio_engine_set_channel_volume(1, 16383) == ESP_OK,
+           "deck 1 channel volume accepts max raw value");
+    EXPECT(audio_engine_set_crossfader(16383) == ESP_OK,
+           "crossfader accepts max raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 0.0f), "crossfader right mutes deck 0");
+    EXPECT(nearf(deck2, 1.0f), "crossfader right keeps deck 1");
+}
+
+/* ── Test 5: per-deck transition API guards ─────────────────────────────── */
 static void test_deck_api(void)
 {
-    printf("\n[Test 4] Per-deck transition API\n");
+    printf("\n[Test 5] Per-deck transition API\n");
 
     EXPECT(audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
            "deck 0 load delegates to current engine");
@@ -143,7 +186,7 @@ static void test_deck_api(void)
 
 static void test_deck_states_are_independent(void)
 {
-    printf("\n[Test 5] Per-deck state split\n");
+    printf("\n[Test 6] Per-deck state split\n");
 
     const char *path = "dummy_deck_audio.mp3";
     FILE *f = fopen(path, "wb");
@@ -180,10 +223,10 @@ static void test_deck_states_are_independent(void)
     remove(path);
 }
 
-/* ── Test 6: real MP3 decode to WAV (optional, skipped if no file given) ── */
+/* ── Test 7: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 6] Decode MP3 → WAV\n");
+    printf("\n[Test 7] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -242,6 +285,7 @@ int main(int argc, char *argv[])
     test_init();
     test_load_missing();
     test_pitch();
+    test_mixer_state_api();
     test_deck_api();
     test_deck_states_are_independent();
 
@@ -249,7 +293,7 @@ int main(int argc, char *argv[])
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 6] Decode MP3 → WAV\n");
+        printf("\n[Test 7] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

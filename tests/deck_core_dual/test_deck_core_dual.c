@@ -5,6 +5,8 @@
 
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
+int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_crossfader;
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -47,6 +49,15 @@ static ctrl_event_t browse_delta(int16_t delta)
 }
 
 static ctrl_event_t deck_pitch(uint8_t id, int16_t value)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_PITCH,
+        .id = id,
+        .value = value,
+    };
+}
+
+static ctrl_event_t mixer_value(uint8_t id, int16_t value)
 {
     return (ctrl_event_t) {
         .type = CTRL_EV_PITCH,
@@ -118,12 +129,33 @@ static void test_browser_namespace_routes_browse_delta(void)
     assert(s_browse_delta == 3);
 }
 
+static void test_mixer_namespace_routes_volume_and_crossfader(void)
+{
+    deck_core_test_reset();
+    audio_engine_stub_channel_volume[CTRL_DECK_1] = -1;
+    audio_engine_stub_channel_volume[CTRL_DECK_2] = -1;
+    audio_engine_stub_crossfader = -1;
+
+    ctrl_event_t ch1 = mixer_value(CTRL_ID_CH1_VOLUME, 7000);
+    ctrl_event_t ch2 = mixer_value(CTRL_ID_CH2_VOLUME, 9000);
+    ctrl_event_t crossfader = mixer_value(CTRL_ID_CROSSFADER, 8192);
+
+    deck_core_test_apply_event(&ch1);
+    deck_core_test_apply_event(&ch2);
+    deck_core_test_apply_event(&crossfader);
+
+    assert(audio_engine_stub_channel_volume[CTRL_DECK_1] == 7000);
+    assert(audio_engine_stub_channel_volume[CTRL_DECK_2] == 9000);
+    assert(audio_engine_stub_crossfader == 8192);
+}
+
 int main(void)
 {
     test_decks_track_transport_independently();
     test_decks_track_pitch_independently();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();
+    test_mixer_namespace_routes_volume_and_crossfader();
     puts("deck_core_dual tests passed");
     return 0;
 }

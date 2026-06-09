@@ -135,6 +135,10 @@ Validation note, 2026-06-08:
 - `audio_mixer` provides host-tested channel fader gain, center-open
   crossfader gains, stereo summing, and int16 saturation. It is not wired into
   the firmware output task yet.
+- `audio_engine` now stores channel volume and crossfader state, exposes output
+  gain calculation, and `deck_core` routes `CTRL_ID_CH1_VOLUME`,
+  `CTRL_ID_CH2_VOLUME`, and `CTRL_ID_CROSSFADER` into that state. PFL routing
+  remains pending.
 
 ## Phase 5: LED Feedback
 
