@@ -15,6 +15,7 @@
 #include "audio_fw_preload.h"
 #include "audio_fw_runtime.h"
 #include "audio_fw_task_context.h"
+#include "audio_fw_task_plan.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
@@ -811,16 +812,20 @@ static void ae_decode_task(void *arg)
         .channel         = 2,
         .sample_rate     = eng->sample_rate,
     };
-    if (esp_codec_dev_open(s_codec, &fs) != 0) {
-        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
-        s_last_error = ESP_FAIL;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "CODEC OPEN ERR");
-        goto cleanup;
+    if (ctx->task_plan.codec_owner) {
+        if (esp_codec_dev_open(s_codec, &fs) != 0) {
+            ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
+            s_last_error = ESP_FAIL;
+            snprintf(s_last_error_text, sizeof(s_last_error_text), "CODEC OPEN ERR");
+            goto cleanup;
+        }
+        runtime->codec_open = true;
+        ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)eng->sample_rate);
+    } else {
+        ESP_LOGI(TAG, "producer ready @ %u Hz, output task not started", (unsigned)eng->sample_rate);
     }
-    runtime->codec_open = true;
     s_load_pct   = 100;
     s_loading    = false;   /* P5a: track is now playable */
-    ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)eng->sample_rate);
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
@@ -1010,7 +1015,9 @@ esp_err_t audio_engine_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
-    if (!s_tasks_done) s_tasks_done = xSemaphoreCreateCounting(3, 0);  /* loader+decode+output */
+    if (!s_tasks_done) {
+        s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
+    }
     if (!s_file_mutex || !s_tasks_done) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "audio_engine_init: ES8311 codec ready");
 #endif
@@ -1123,13 +1130,15 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
     uint8_t deck = active_deck_index();
+    audio_fw_task_plan_t task_plan = audio_fw_task_plan_for_deck(deck, AUDIO_ENGINE_COMPAT_DECK);
     audio_fw_task_context_bind(task_ctx,
                                deck,
                                fw,
                                runtime,
                                &s_engines[deck],
                                &s_pcm_rings[deck],
-                               &s_resamplers[deck]);
+                               &s_resamplers[deck],
+                               task_plan);
     if (s_tasks_done) {
         while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
             /* drain stale task-exit signals from a previous load */
@@ -1138,26 +1147,32 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* loader: streams USB→PSRAM (sole USB user). decode: minimp3 needs a large
      * on-stack scratch (~15 KB) + linear-seek scanning → 48 KB stack. output:
      * real-time I2S writes (highest prio). */
-    if (xTaskCreate(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
-                    (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
-        audio_fw_runtime_mark_task_started(runtime);
-    } else {
-        ESP_LOGE(TAG, "failed to create ae_loader task");
+    if (task_plan.start_loader) {
+        if (xTaskCreate(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
+                        (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
+            audio_fw_runtime_mark_task_started(runtime);
+        } else {
+            ESP_LOGE(TAG, "failed to create ae_loader task");
+        }
     }
-    if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, task_ctx, 5,
-                            (TaskHandle_t *)&runtime->decode_task,
-                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
-        audio_fw_runtime_mark_task_started(runtime);
-    } else {
-        ESP_LOGE(TAG, "failed to create ae_decode task");
+    if (task_plan.start_decode) {
+        if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, task_ctx, 5,
+                                (TaskHandle_t *)&runtime->decode_task,
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
+            audio_fw_runtime_mark_task_started(runtime);
+        } else {
+            ESP_LOGE(TAG, "failed to create ae_decode task");
+        }
     }
-    if (xTaskCreate(ae_output_task, "ae_output", 4096, task_ctx, 6,
-                    (TaskHandle_t *)&runtime->output_task) == pdPASS) {
-        audio_fw_runtime_mark_task_started(runtime);
-    } else {
-        ESP_LOGE(TAG, "failed to create ae_output task");
+    if (task_plan.start_output) {
+        if (xTaskCreate(ae_output_task, "ae_output", 4096, task_ctx, 6,
+                        (TaskHandle_t *)&runtime->output_task) == pdPASS) {
+            audio_fw_runtime_mark_task_started(runtime);
+        } else {
+            ESP_LOGE(TAG, "failed to create ae_output task");
+        }
     }
-    if (runtime->tasks_started != 3) {
+    if (runtime->tasks_started != task_plan.expected_tasks) {
         s_last_error = ESP_ERR_NO_MEM;
         snprintf(s_last_error_text, sizeof(s_last_error_text), "TASK CREATE ERR");
         s_loading  = false;
@@ -1444,9 +1459,6 @@ esp_err_t audio_engine_deck_load(uint8_t deck,
                                  uint32_t duration_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-#if AE_FW
-    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-#endif
     audio_engine_state_t *prev = select_engine(deck);
     esp_err_t rc = audio_engine_load(mp3_path, pvbr_400, duration_ms);
     restore_engine(prev);
@@ -1480,9 +1492,6 @@ esp_err_t audio_engine_deck_pause(uint8_t deck)
 esp_err_t audio_engine_deck_stop(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-#if AE_FW
-    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
-#endif
     audio_engine_state_t *prev = select_engine(deck);
     esp_err_t rc = audio_engine_stop();
     restore_engine(prev);
