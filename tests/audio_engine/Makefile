@@ -26,7 +26,8 @@ AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c
 
 SRCS    = test_audio_engine.c \
           $(AUDIO_SRC)

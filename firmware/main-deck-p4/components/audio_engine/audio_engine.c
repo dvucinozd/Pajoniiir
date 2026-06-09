@@ -14,6 +14,7 @@
 #include "audio_engine.h"
 #include "audio_fw_preload.h"
 #include "audio_fw_runtime.h"
+#include "audio_fw_task_context.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
@@ -231,6 +232,7 @@ static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task 
  * USB-DWC channel assert. The only USB access is one bulk read at load time. */
 static audio_fw_preload_t     s_fw_preloads[AUDIO_ENGINE_DECK_COUNT];
 static audio_fw_runtime_t     s_fw_runtimes[AUDIO_ENGINE_DECK_COUNT];
+static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 #endif
 
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
@@ -265,6 +267,11 @@ static audio_fw_runtime_t *active_fw_runtime(void)
     return &s_fw_runtimes[active_deck_index()];
 }
 
+static audio_fw_task_context_t *active_fw_task_context(void)
+{
+    return &s_fw_task_contexts[active_deck_index()];
+}
+
 static void reset_all_fw_preloads(void)
 {
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
@@ -276,6 +283,13 @@ static void reset_all_fw_runtimes(void)
 {
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_fw_runtime_reset(&s_fw_runtimes[i]);
+    }
+}
+
+static void reset_all_fw_task_contexts(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        audio_fw_task_context_reset(&s_fw_task_contexts[i]);
     }
 }
 
@@ -324,12 +338,16 @@ static void reset_all_resamplers(void)
  * File position advances by exactly one frame (frame_bytes).
  * Caller must hold s_file_mutex if called from multiple threads.
  */
-static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
+static int decode_one_frame(
+#if AE_FW
+    audio_fw_preload_t *fw,
+#endif
+    int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
     if (s_eng.file_buf) {
         size_t available = s_eng.file_size;
 #if AE_FW
-        audio_fw_preload_t *fw = active_fw_preload();
+        if (!fw) return 0;
         if (!fw->load_done && fw->loaded_bytes < available) {
             available = fw->loaded_bytes;
         }
@@ -341,7 +359,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
         }
         if (s_eng.file_pos >= available) {
 #if AE_FW
-            if (!active_fw_preload()->load_done) {
+            if (!fw->load_done) {
                 return 0;   /* loader has not reached this byte yet */
             }
 #endif
@@ -352,7 +370,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
         size_t bytes_left = available - s_eng.file_pos;
         if (bytes_left == 0) {
 #if AE_FW
-            if (!active_fw_preload()->load_done) {
+            if (!fw->load_done) {
                 return 0;
             }
 #endif
@@ -360,7 +378,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
             return 0;
         }
 #if AE_FW
-        if (!active_fw_preload()->load_done && bytes_left < 4096) {
+        if (!fw->load_done && bytes_left < 4096) {
             return 0;   /* avoid skipping bytes from a partially loaded frame */
         }
 #endif
@@ -372,7 +390,7 @@ static int decode_one_frame(int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
             s_eng.file_pos += (size_t)info.frame_bytes;
         } else {
 #if AE_FW
-            if (!active_fw_preload()->load_done) {
+            if (!fw->load_done) {
                 return 0;
             }
 #endif
@@ -659,9 +677,14 @@ static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
  * until stop() so the teardown counting semaphore stays balanced. */
 static void ae_loader_task(void *arg)
 {
-    (void)arg;
-    audio_fw_preload_t *fw = active_fw_preload();
-    audio_fw_runtime_t *runtime = active_fw_runtime();
+    audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
+    if (!audio_fw_task_context_is_bound(ctx)) {
+        xSemaphoreGive(s_tasks_done);
+        vTaskDelete(NULL);
+        return;
+    }
+    audio_fw_preload_t *fw = ctx->preload;
+    audio_fw_runtime_t *runtime = ctx->runtime;
     audio_fw_preload_begin_load(fw);
 
     media_io_gate_begin();
@@ -737,9 +760,14 @@ park:
 /* Decoder: plays from the loaded PSRAM region; never touches USB. */
 static void ae_decode_task(void *arg)
 {
-    (void)arg;
-    audio_fw_preload_t *fw = active_fw_preload();
-    audio_fw_runtime_t *runtime = active_fw_runtime();
+    audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
+    if (!audio_fw_task_context_is_bound(ctx)) {
+        xSemaphoreGive(s_tasks_done);
+        vTaskDeleteWithCaps(NULL);
+        return;
+    }
+    audio_fw_preload_t *fw = ctx->preload;
+    audio_fw_runtime_t *runtime = ctx->runtime;
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
     while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
@@ -756,7 +784,7 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
-        int n = decode_one_frame(s_decode_pcm);
+        int n = decode_one_frame(fw, s_decode_pcm);
         if (n > 0) {
             s_eng.frames_since_seek += (uint64_t)n;
             for (int i = 0; i < n; i++) ring_push(s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
@@ -831,7 +859,7 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
-        int  samples = decode_one_frame(s_decode_pcm);
+        int  samples = decode_one_frame(fw, s_decode_pcm);
         if (samples > 0) {
             s_eng.frames_since_seek += (uint64_t)samples;
             if (s_eng.loop_active && s_eng.sample_rate > 0) {
@@ -871,8 +899,13 @@ cleanup:
 #define AE_OUT_FRAMES 256
 static void ae_output_task(void *arg)
 {
-    (void)arg;
-    audio_fw_runtime_t *runtime = active_fw_runtime();
+    audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
+    if (!audio_fw_task_context_is_bound(ctx)) {
+        xSemaphoreGive(s_tasks_done);
+        vTaskDelete(NULL);
+        return;
+    }
+    audio_fw_runtime_t *runtime = ctx->runtime;
     int16_t out[AE_OUT_FRAMES * 2];
     while (runtime->run) {
         if (!runtime->codec_open) {
@@ -951,6 +984,7 @@ esp_err_t audio_engine_init(void)
     reset_all_resamplers();
     reset_all_fw_preloads();
     reset_all_fw_runtimes();
+    reset_all_fw_task_contexts();
 #endif
     s_last_error = ESP_OK;
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
@@ -1077,9 +1111,11 @@ esp_err_t audio_engine_load(const char     *mp3_path,
      * 9 KB PCM frame) and would overflow the caller (e.g. the LVGL task). The
      * decode task latches the sample rate, opens the codec, then streams. */
     audio_fw_runtime_t *runtime = active_fw_runtime();
+    audio_fw_task_context_t *task_ctx = active_fw_task_context();
     audio_resampler_reset(active_resampler());
     audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
+    audio_fw_task_context_bind(task_ctx, active_deck_index(), fw, runtime);
     if (s_tasks_done) {
         while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
             /* drain stale task-exit signals from a previous load */
@@ -1088,20 +1124,20 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     /* loader: streams USB→PSRAM (sole USB user). decode: minimp3 needs a large
      * on-stack scratch (~15 KB) + linear-seek scanning → 48 KB stack. output:
      * real-time I2S writes (highest prio). */
-    if (xTaskCreate(ae_loader_task, "ae_loader", 4096, NULL, 5,
+    if (xTaskCreate(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
                     (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
         audio_fw_runtime_mark_task_started(runtime);
     } else {
         ESP_LOGE(TAG, "failed to create ae_loader task");
     }
-    if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, NULL, 5,
+    if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, task_ctx, 5,
                             (TaskHandle_t *)&runtime->decode_task,
                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
         audio_fw_runtime_mark_task_started(runtime);
     } else {
         ESP_LOGE(TAG, "failed to create ae_decode task");
     }
-    if (xTaskCreate(ae_output_task, "ae_output", 4096, NULL, 6,
+    if (xTaskCreate(ae_output_task, "ae_output", 4096, task_ctx, 6,
                     (TaskHandle_t *)&runtime->output_task) == pdPASS) {
         audio_fw_runtime_mark_task_started(runtime);
     } else {
@@ -1127,6 +1163,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
         memset(&s_eng, 0, sizeof s_eng);
         s_eng.pitch_factor = 1.0f;
         audio_fw_runtime_mark_stopped(runtime);
+        audio_fw_task_context_reset(task_ctx);
         return ESP_ERR_NO_MEM;
     }
 #endif
@@ -1200,6 +1237,7 @@ esp_err_t audio_engine_stop(void)
         runtime->decode_task = NULL;
         runtime->output_task = NULL;
         runtime->tasks_started = 0;
+        audio_fw_task_context_reset(active_fw_task_context());
     }
     if (runtime->codec_open) {
         esp_codec_dev_close(s_codec);   /* handle persists for the next load */

@@ -158,6 +158,9 @@ Validation note, 2026-06-08:
   with one slot allocated per deck. The current firmware task creation path
   still starts only the compatibility producer/output task set, so Deck 1
   firmware producer activation remains pending.
+- Firmware task arguments are now bound through a host-tested
+  `audio_fw_task_context` slot. Loader/decode/output tasks receive explicit
+  preload/runtime state instead of looking up the active deck while running.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
