@@ -13,6 +13,7 @@
 
 #include "audio_engine.h"
 #include "audio_mixer.h"
+#include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
 #include "audio_resampler.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
@@ -161,6 +162,24 @@ static inline audio_pcm_ring_t *active_pcm_ring(void)
     return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
 }
 
+static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) {
+        return &s_pcm_rings[deck];
+    }
+    return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static inline uint8_t active_deck_index(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (&s_engines[i] == s_active_eng) {
+            return i;
+        }
+    }
+    return AUDIO_ENGINE_COMPAT_DECK;
+}
+
 static inline uint32_t ring_free(void) { return audio_pcm_ring_free(active_pcm_ring()); }
 
 static inline void ring_reset(void) { audio_pcm_ring_reset(active_pcm_ring()); }
@@ -226,12 +245,42 @@ static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
 
 static audio_resampler_state_t *active_resampler(void)
 {
-    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        if (&s_engines[i] == s_active_eng) {
-            return &s_resamplers[i];
-        }
+    return &s_resamplers[active_deck_index()];
+}
+
+static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) {
+        return &s_resamplers[deck];
     }
     return &s_resamplers[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static bool pop_ring_source(void *ctx, audio_mixer_frame_t *out_frame)
+{
+    return audio_pcm_ring_pop((audio_pcm_ring_t *)ctx, out_frame);
+}
+
+static bool deck_output_active(uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return false;
+    audio_engine_state_t *eng = &s_engines[deck];
+    return eng->playing && !eng->paused;
+}
+
+static void update_deck_output_position(uint8_t deck, uint32_t consumed)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || consumed == 0u) return;
+    audio_engine_state_t *eng = &s_engines[deck];
+    eng->output_frames_since_seek += consumed;
+    if (eng->loop_active && eng->sample_rate > 0) {
+        uint32_t played_ms = eng->output_base_ms +
+            (uint32_t)(eng->output_frames_since_seek * 1000u / eng->sample_rate);
+        if (played_ms >= eng->loop_end_ms) {
+            eng->output_base_ms = eng->loop_start_ms;
+            eng->output_frames_since_seek = 0u;
+        }
+    }
 }
 
 static void reset_all_resamplers(void)
@@ -241,11 +290,6 @@ static void reset_all_resamplers(void)
     }
 }
 
-static bool pop_resampler_source(void *ctx, audio_mixer_frame_t *out_frame)
-{
-    (void)ctx;
-    return audio_pcm_ring_pop(active_pcm_ring(), out_frame);
-}
 #endif
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -808,36 +852,55 @@ static void ae_output_task(void *arg)
     (void)arg;
     int16_t out[AE_OUT_FRAMES * 2];
     while (s_fw_run) {
-        if (!s_eng.playing || s_eng.paused || !s_codec_open) {
+        if (!s_codec_open) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
-        uint32_t consumed = 0;
         float deck0_gain = 1.0f;
-        audio_engine_get_output_gains(&deck0_gain, NULL);
+        float deck1_gain = 1.0f;
+        audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
+
+        const uint8_t deck0_index = AUDIO_ENGINE_COMPAT_DECK;
+        const uint8_t deck1_index = 1u;
+        audio_output_mixer_deck_t deck0 = {
+            .active = deck_output_active(deck0_index),
+            .pitch_factor = s_engines[deck0_index].pitch_factor,
+            .gain = deck0_gain,
+            .resampler = resampler_for_deck(deck0_index),
+            .pop_source = pop_ring_source,
+            .source_ctx = pcm_ring_for_deck(deck0_index),
+        };
+        audio_output_mixer_deck_t deck1 = {
+            .active = deck_output_active(deck1_index),
+            .pitch_factor = s_engines[deck1_index].pitch_factor,
+            .gain = deck1_gain,
+            .resampler = resampler_for_deck(deck1_index),
+            .pop_source = pop_ring_source,
+            .source_ctx = pcm_ring_for_deck(deck1_index),
+        };
+
+        if (!deck0.active && !deck1.active) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+
+        uint32_t consumed[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
-            uint32_t frame_consumed = 0;
-            audio_mixer_frame_t frame = audio_resampler_next(active_resampler(),
-                                                             s_eng.pitch_factor,
-                                                             pop_resampler_source,
-                                                             NULL,
-                                                             &frame_consumed);
-            consumed += frame_consumed;
-            frame = audio_mixer_apply_gain(frame, deck0_gain);
+            uint32_t frame_consumed0 = 0;
+            uint32_t frame_consumed1 = 0;
+            audio_mixer_frame_t frame = audio_output_mixer_next(&deck0,
+                                                                &deck1,
+                                                                &frame_consumed0,
+                                                                &frame_consumed1);
+            consumed[deck0_index] += frame_consumed0;
+            consumed[deck1_index] += frame_consumed1;
             out[i * 2    ] = frame.left;
             out[i * 2 + 1] = frame.right;
         }
         if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
             AE_LOCK();
-            s_eng.output_frames_since_seek += consumed;
-            if (s_eng.loop_active && s_eng.sample_rate > 0) {
-                uint32_t played_ms = s_eng.output_base_ms +
-                    (uint32_t)(s_eng.output_frames_since_seek * 1000u / s_eng.sample_rate);
-                if (played_ms >= s_eng.loop_end_ms) {
-                    s_eng.output_base_ms = s_eng.loop_start_ms;
-                    s_eng.output_frames_since_seek = 0u;
-                }
-            }
+            update_deck_output_position(deck0_index, consumed[deck0_index]);
+            update_deck_output_position(deck1_index, consumed[deck1_index]);
             AE_UNLOCK();
         }
     }

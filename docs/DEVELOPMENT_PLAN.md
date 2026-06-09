@@ -148,6 +148,10 @@ Validation note, 2026-06-08:
 - Pitch/resampler storage is now a host-tested `audio_resampler` module, and
   `audio_engine` owns one resampler state per deck while the firmware
   compatibility output still renders only Deck 0.
+- The firmware output task now renders through a host-tested
+  `audio_output_mixer` skeleton that accepts Deck 0 and Deck 1 sources, applies
+  per-deck gains, and reports consumed frames per deck. Deck 1 remains silent
+  until a firmware PCM producer is added.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
