@@ -133,11 +133,14 @@ Validation note, 2026-06-08:
 - `deck_core` now calls the deck-aware audio API instead of direct singleton
   audio calls.
 - `audio_mixer` provides host-tested channel fader gain, center-open
-  crossfader gains, stereo summing, and int16 saturation. It is not wired into
-  the firmware output task yet.
+  crossfader gains, stereo summing, single-frame gain application, and int16
+  saturation.
 - `audio_engine` now stores channel volume and crossfader state, exposes output
   gain calculation, and `deck_core` routes `CTRL_ID_CH1_VOLUME`,
   `CTRL_ID_CH2_VOLUME`, and `CTRL_ID_CROSSFADER` into that state.
+- The firmware output task applies the Deck 0 master gain in the compatibility
+  path. True dual-deck summing is still pending until Deck 1 has a firmware PCM
+  producer/output path.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.

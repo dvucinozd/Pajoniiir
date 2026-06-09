@@ -58,12 +58,30 @@ static void test_stereo_frame_uses_channel_and_crossfader_gains(void)
     assert(out.right == 12000);
 }
 
+static void test_apply_gain_scales_stereo_frame(void)
+{
+    audio_mixer_frame_t out = audio_mixer_apply_gain(
+        (audio_mixer_frame_t){ .left = 12000, .right = -8000 },
+        0.5f);
+
+    assert(out.left == 6000);
+    assert(out.right == -4000);
+
+    out = audio_mixer_apply_gain(
+        (audio_mixer_frame_t){ .left = 12000, .right = -8000 },
+        -1.0f);
+
+    assert(out.left == 0);
+    assert(out.right == 0);
+}
+
 int main(void)
 {
     test_fader_gain_clamps_to_unit_range();
     test_crossfader_keeps_center_both_decks_open();
     test_mixer_saturates_instead_of_wrapping();
     test_stereo_frame_uses_channel_and_crossfader_gains();
+    test_apply_gain_scales_stereo_frame();
     puts("audio_mixer tests passed");
     return 0;
 }

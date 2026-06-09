@@ -794,6 +794,8 @@ static void ae_output_task(void *arg)
             continue;
         }
         uint32_t consumed = 0;
+        float deck0_gain = 1.0f;
+        audio_engine_get_output_gains(&deck0_gain, NULL);
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             s_pitch_frac += (double)s_eng.pitch_factor;
             while (s_pitch_frac >= 1.0) {
@@ -809,8 +811,13 @@ static void ae_output_task(void *arg)
             }
             float t   = (float)s_pitch_frac;
             float inv = 1.0f - t;
-            out[i * 2    ] = (int16_t)(inv * (float)s_pitch_prev_l + t * (float)s_pitch_curr_l);
-            out[i * 2 + 1] = (int16_t)(inv * (float)s_pitch_prev_r + t * (float)s_pitch_curr_r);
+            audio_mixer_frame_t frame = {
+                .left = (int16_t)(inv * (float)s_pitch_prev_l + t * (float)s_pitch_curr_l),
+                .right = (int16_t)(inv * (float)s_pitch_prev_r + t * (float)s_pitch_curr_r),
+            };
+            frame = audio_mixer_apply_gain(frame, deck0_gain);
+            out[i * 2    ] = frame.left;
+            out[i * 2 + 1] = frame.right;
         }
         if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
             AE_LOCK();

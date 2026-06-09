@@ -42,6 +42,14 @@ int16_t audio_mixer_mix_sample(int16_t deck1,
     return (int16_t)(mixed >= 0.0f ? mixed + 0.5f : mixed - 0.5f);
 }
 
+audio_mixer_frame_t audio_mixer_apply_gain(audio_mixer_frame_t frame, float gain)
+{
+    return (audio_mixer_frame_t) {
+        .left = audio_mixer_mix_sample(frame.left, 0, gain, 0.0f),
+        .right = audio_mixer_mix_sample(frame.right, 0, gain, 0.0f),
+    };
+}
+
 audio_mixer_frame_t audio_mixer_mix_stereo(audio_mixer_frame_t deck1,
                                            audio_mixer_frame_t deck2,
                                            float deck1_channel_gain,
