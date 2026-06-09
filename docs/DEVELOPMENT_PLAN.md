@@ -111,8 +111,8 @@ Tasks:
 - split single global `s_eng` into per-deck engine state; started
 - run two decode producers;
 - add a mixer/output consumer;
-- implement channel volume and crossfader gains;
-- add clipping-safe summing;
+- implement channel volume and crossfader gains; math layer done
+- add clipping-safe summing; math layer done
 - produce cue/PFL buffer path after master mix is stable.
 
 Exit criteria:
@@ -132,6 +132,9 @@ Validation note, 2026-06-08:
   remains blocked until per-deck decode/output tasks and the mixer are added.
 - `deck_core` now calls the deck-aware audio API instead of direct singleton
   audio calls.
+- `audio_mixer` provides host-tested channel fader gain, center-open
+  crossfader gains, stereo summing, and int16 saturation. It is not wired into
+  the firmware output task yet.
 
 ## Phase 5: LED Feedback
 
