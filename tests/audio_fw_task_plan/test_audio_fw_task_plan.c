@@ -11,6 +11,7 @@ static void test_compat_deck_starts_full_output_task_set(void)
     assert(plan.start_decode);
     assert(plan.start_output);
     assert(plan.codec_owner);
+    assert(plan.transport_supported);
     assert(plan.expected_tasks == 3);
 }
 
@@ -22,6 +23,7 @@ static void test_non_compat_deck_starts_producer_only_task_set(void)
     assert(plan.start_decode);
     assert(!plan.start_output);
     assert(!plan.codec_owner);
+    assert(plan.transport_supported);
     assert(plan.expected_tasks == 2);
 }
 

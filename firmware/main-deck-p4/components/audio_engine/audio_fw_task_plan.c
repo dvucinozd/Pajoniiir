@@ -8,6 +8,7 @@ audio_fw_task_plan_t audio_fw_task_plan_for_deck(uint8_t deck, uint8_t compat_de
         .start_decode = true,
         .start_output = compat,
         .codec_owner = compat,
+        .transport_supported = true,
         .expected_tasks = compat ? 3 : 2,
     };
 }

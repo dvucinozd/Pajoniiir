@@ -114,9 +114,9 @@ bool audio_engine_is_playing(void);
 /*
  * Transitional deck-aware API for the DDJ-FLX4 port.
  *
- * Deck 0 delegates to the current single global engine. Deck 1 returns
- * ESP_ERR_NOT_SUPPORTED for mutating operations until Phase 4 splits the
- * engine state and output mixer.
+ * Deck 0 is the compatibility deck that owns codec/output startup. Deck 1
+ * has deck-local load/play/pause/seek/pitch state and can participate in the
+ * shared firmware output mixer once the compatibility output task is running.
  */
 esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const char *mp3_path,

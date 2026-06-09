@@ -822,7 +822,7 @@ static void ae_decode_task(void *arg)
         runtime->codec_open = true;
         ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)eng->sample_rate);
     } else {
-        ESP_LOGI(TAG, "producer ready @ %u Hz, output task not started", (unsigned)eng->sample_rate);
+        ESP_LOGI(TAG, "producer ready @ %u Hz, shared output mixer eligible", (unsigned)eng->sample_rate);
     }
     s_load_pct   = 100;
     s_loading    = false;   /* P5a: track is now playable */
@@ -1435,9 +1435,9 @@ static bool deck_is_valid(uint8_t deck)
 }
 
 #if AE_FW
-static bool deck_uses_compat_engine(uint8_t deck)
+static bool deck_transport_supported(uint8_t deck)
 {
-    return deck == AUDIO_ENGINE_COMPAT_DECK;
+    return audio_fw_task_plan_for_deck(deck, AUDIO_ENGINE_COMPAT_DECK).transport_supported;
 }
 #endif
 
@@ -1469,7 +1469,7 @@ esp_err_t audio_engine_deck_play(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     esp_err_t rc = audio_engine_play();
@@ -1481,7 +1481,7 @@ esp_err_t audio_engine_deck_pause(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     esp_err_t rc = audio_engine_pause();
@@ -1502,7 +1502,7 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return ESP_ERR_NOT_SUPPORTED;
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     esp_err_t rc = audio_engine_seek(position_ms);
@@ -1514,7 +1514,7 @@ void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 {
     if (!deck_is_valid(deck)) return;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return;
+    if (!deck_transport_supported(deck)) return;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     audio_engine_set_pitch(raw_pitch);
@@ -1525,7 +1525,7 @@ uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return 0;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return 0;
+    if (!deck_transport_supported(deck)) return 0;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     uint32_t pos = audio_engine_position_ms();
@@ -1537,7 +1537,7 @@ bool audio_engine_deck_is_playing(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return false;
 #if AE_FW
-    if (!deck_uses_compat_engine(deck)) return false;
+    if (!deck_transport_supported(deck)) return false;
 #endif
     audio_engine_state_t *prev = select_engine(deck);
     bool playing = audio_engine_is_playing();

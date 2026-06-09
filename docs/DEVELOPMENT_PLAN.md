@@ -128,8 +128,9 @@ Validation note, 2026-06-08:
   dual-engine backend.
 - `audio_engine` stores `s_engines[2]` and routes deck-aware operations through
   the selected engine state in the PC/test path.
-- Deck 0 remains the firmware output compatibility deck. Deck 1 firmware output
-  remains blocked until per-deck decode/output tasks and the mixer are added.
+- Deck 0 remains the firmware output compatibility deck and owns codec/output
+  startup. Deck 1 can now participate in the shared output mixer once the
+  compatibility output task is running.
 - `deck_core` now calls the deck-aware audio API instead of direct singleton
   audio calls.
 - `audio_mixer` provides host-tested channel fader gain, center-open
@@ -138,20 +139,16 @@ Validation note, 2026-06-08:
 - `audio_engine` now stores channel volume and crossfader state, exposes output
   gain calculation, and `deck_core` routes `CTRL_ID_CH1_VOLUME`,
   `CTRL_ID_CH2_VOLUME`, and `CTRL_ID_CROSSFADER` into that state.
-- The firmware output task applies the Deck 0 master gain in the compatibility
-  path. True dual-deck summing is still pending until Deck 1 has a firmware PCM
-  producer/output path.
+- The firmware output task reads both deck rings through `audio_output_mixer`
+  and applies the current channel/crossfader gains.
 - PCM ring storage is now a host-tested `audio_pcm_ring` module, and
-  `audio_engine` owns one ring per deck while the firmware compatibility path
-  still consumes only Deck 0. This removes the old global singleton ring as a
-  blocker for the next Deck 1 producer step.
+  `audio_engine` owns one ring per deck. The shared firmware output path can
+  consume both rings through the mixer.
 - Pitch/resampler storage is now a host-tested `audio_resampler` module, and
-  `audio_engine` owns one resampler state per deck while the firmware
-  compatibility output still renders only Deck 0.
+  `audio_engine` owns one resampler state per deck.
 - The firmware output task now renders through a host-tested
-  `audio_output_mixer` skeleton that accepts Deck 0 and Deck 1 sources, applies
-  per-deck gains, and reports consumed frames per deck. Deck 1 remains silent
-  until a firmware PCM producer is added.
+  `audio_output_mixer` path that accepts Deck 0 and Deck 1 sources, applies
+  per-deck gains, and reports consumed frames per deck.
 - Firmware preload path/buffer/progress state is now a host-tested
   `audio_fw_preload` slot, with one slot allocated per deck.
 - Firmware task lifecycle state is now a host-tested `audio_fw_runtime` slot,
@@ -163,11 +160,11 @@ Validation note, 2026-06-08:
 - Firmware task creation now uses a host-tested `audio_fw_task_plan`. The
   compatibility deck still starts loader/decode/output and owns codec open;
   Deck 1 load starts producer-only loader/decode tasks into its own PCM ring and
-  remains silent until Deck 1 play/output activation is intentionally enabled.
+  is transport-supported for play/pause/seek/pitch through the shared output
+  mixer.
 - The P4 Library screen exposes `LOAD D1` and `LOAD D2` buttons. `LOAD D1`
   updates the active waveform/header and compatibility output path; `LOAD D2`
-  exercises the deck-local producer path and remains silent until Deck 2 output
-  activation is intentionally enabled.
+  exercises the deck-local producer path for the shared output mixer.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.

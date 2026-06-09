@@ -8,6 +8,7 @@ typedef struct {
     bool start_decode;
     bool start_output;
     bool codec_owner;
+    bool transport_supported;
     int expected_tasks;
 } audio_fw_task_plan_t;
 
