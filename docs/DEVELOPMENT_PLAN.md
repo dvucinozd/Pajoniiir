@@ -137,8 +137,10 @@ Validation note, 2026-06-08:
   the firmware output task yet.
 - `audio_engine` now stores channel volume and crossfader state, exposes output
   gain calculation, and `deck_core` routes `CTRL_ID_CH1_VOLUME`,
-  `CTRL_ID_CH2_VOLUME`, and `CTRL_ID_CROSSFADER` into that state. PFL routing
-  remains pending.
+  `CTRL_ID_CH2_VOLUME`, and `CTRL_ID_CROSSFADER` into that state.
+- `audio_engine` now stores per-deck PFL state, and `deck_core` routes
+  `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
+  PFL toggles. The actual cue/headphone audio buffer path remains pending.
 
 ## Phase 5: LED Feedback
 

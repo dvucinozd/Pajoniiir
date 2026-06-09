@@ -180,6 +180,7 @@ static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
     AUDIO_MIXER_CONTROL_MAX,
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
+static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -849,6 +850,7 @@ esp_err_t audio_engine_init(void)
     snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
+        s_pfl_enabled[i] = false;
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 
@@ -1406,6 +1408,19 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     if (deck1_gain) {
         *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) * xf1;
     }
+}
+
+esp_err_t audio_engine_toggle_pfl(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    s_pfl_enabled[deck] = !s_pfl_enabled[deck];
+    return ESP_OK;
+}
+
+bool audio_engine_get_pfl_enabled(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return false;
+    return s_pfl_enabled[deck];
 }
 
 

@@ -63,7 +63,9 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
 {
     return ev && (ev->id == CTRL_ID_CH1_VOLUME ||
                   ev->id == CTRL_ID_CH2_VOLUME ||
-                  ev->id == CTRL_ID_CROSSFADER);
+                  ev->id == CTRL_ID_CROSSFADER ||
+                  ev->id == CTRL_ID_DECK1_PFL ||
+                  ev->id == CTRL_ID_DECK2_PFL);
 }
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
@@ -269,6 +271,16 @@ static void on_mixer_control(uint8_t id, int16_t raw)
         break;
     case CTRL_ID_CROSSFADER:
         audio_engine_set_crossfader(value);
+        break;
+    case CTRL_ID_DECK1_PFL:
+        if (raw != 0) {
+            audio_engine_toggle_pfl(CTRL_DECK_1);
+        }
+        break;
+    case CTRL_ID_DECK2_PFL:
+        if (raw != 0) {
+            audio_engine_toggle_pfl(CTRL_DECK_2);
+        }
         break;
     default:
         break;

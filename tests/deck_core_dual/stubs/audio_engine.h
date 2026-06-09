@@ -60,6 +60,7 @@ static inline bool audio_engine_deck_is_playing(uint8_t deck)
 
 extern int audio_engine_stub_channel_volume[2];
 extern int audio_engine_stub_crossfader;
+extern int audio_engine_stub_pfl_toggle_count[2];
 
 static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
 {
@@ -71,5 +72,12 @@ static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t r
 static inline esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
 {
     audio_engine_stub_crossfader = raw_crossfader;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_toggle_pfl(uint8_t deck)
+{
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_pfl_toggle_count[deck]++;
     return ESP_OK;
 }

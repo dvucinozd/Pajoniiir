@@ -158,9 +158,33 @@ static void test_mixer_state_api(void)
 }
 
 /* ── Test 5: per-deck transition API guards ─────────────────────────────── */
+static void test_pfl_state_api(void)
+{
+    printf("\n[Test 5] PFL state API\n");
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets PFL state");
+    EXPECT(!audio_engine_get_pfl_enabled(0), "deck 0 PFL defaults off");
+    EXPECT(!audio_engine_get_pfl_enabled(1), "deck 1 PFL defaults off");
+
+    EXPECT(audio_engine_toggle_pfl(0) == ESP_OK, "deck 0 PFL toggle returns ESP_OK");
+    EXPECT(audio_engine_get_pfl_enabled(0), "deck 0 PFL toggles on");
+    EXPECT(!audio_engine_get_pfl_enabled(1), "deck 1 PFL remains off");
+
+    EXPECT(audio_engine_toggle_pfl(0) == ESP_OK, "deck 0 second PFL toggle returns ESP_OK");
+    EXPECT(!audio_engine_get_pfl_enabled(0), "deck 0 PFL toggles off");
+
+    EXPECT(audio_engine_toggle_pfl(1) == ESP_OK, "deck 1 PFL toggle returns ESP_OK");
+    EXPECT(audio_engine_get_pfl_enabled(1), "deck 1 PFL toggles independently");
+
+    EXPECT(audio_engine_toggle_pfl(2) == ESP_ERR_INVALID_ARG,
+           "invalid PFL deck returns INVALID_ARG");
+    EXPECT(!audio_engine_get_pfl_enabled(2), "invalid PFL deck reads as off");
+}
+
+/* ── Test 6: per-deck transition API guards ─────────────────────────────── */
 static void test_deck_api(void)
 {
-    printf("\n[Test 5] Per-deck transition API\n");
+    printf("\n[Test 6] Per-deck transition API\n");
 
     EXPECT(audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
            "deck 0 load delegates to current engine");
@@ -186,7 +210,7 @@ static void test_deck_api(void)
 
 static void test_deck_states_are_independent(void)
 {
-    printf("\n[Test 6] Per-deck state split\n");
+    printf("\n[Test 7] Per-deck state split\n");
 
     const char *path = "dummy_deck_audio.mp3";
     FILE *f = fopen(path, "wb");
@@ -223,10 +247,10 @@ static void test_deck_states_are_independent(void)
     remove(path);
 }
 
-/* ── Test 7: real MP3 decode to WAV (optional, skipped if no file given) ── */
+/* ── Test 8: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 7] Decode MP3 → WAV\n");
+    printf("\n[Test 8] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -286,6 +310,7 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
+    test_pfl_state_api();
     test_deck_api();
     test_deck_states_are_independent();
 
@@ -293,7 +318,7 @@ int main(int argc, char *argv[])
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 7] Decode MP3 → WAV\n");
+        printf("\n[Test 8] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

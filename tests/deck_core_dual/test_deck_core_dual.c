@@ -7,6 +7,7 @@ static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
+int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -61,6 +62,15 @@ static ctrl_event_t mixer_value(uint8_t id, int16_t value)
 {
     return (ctrl_event_t) {
         .type = CTRL_EV_PITCH,
+        .id = id,
+        .value = value,
+    };
+}
+
+static ctrl_event_t mixer_button(uint8_t id, int16_t value)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_BUTTON,
         .id = id,
         .value = value,
     };
@@ -149,6 +159,24 @@ static void test_mixer_namespace_routes_volume_and_crossfader(void)
     assert(audio_engine_stub_crossfader == 8192);
 }
 
+static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
+{
+    deck_core_test_reset();
+    audio_engine_stub_pfl_toggle_count[CTRL_DECK_1] = 0;
+    audio_engine_stub_pfl_toggle_count[CTRL_DECK_2] = 0;
+
+    ctrl_event_t pfl1_press = mixer_button(CTRL_ID_DECK1_PFL, 1);
+    ctrl_event_t pfl1_release = mixer_button(CTRL_ID_DECK1_PFL, 0);
+    ctrl_event_t pfl2_press = mixer_button(CTRL_ID_DECK2_PFL, 1);
+
+    deck_core_test_apply_event(&pfl1_press);
+    deck_core_test_apply_event(&pfl1_release);
+    deck_core_test_apply_event(&pfl2_press);
+
+    assert(audio_engine_stub_pfl_toggle_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_pfl_toggle_count[CTRL_DECK_2] == 1);
+}
+
 int main(void)
 {
     test_decks_track_transport_independently();
@@ -156,6 +184,7 @@ int main(void)
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();
     test_mixer_namespace_routes_volume_and_crossfader();
+    test_mixer_namespace_routes_pfl_toggle_on_press();
     puts("deck_core_dual tests passed");
     return 0;
 }

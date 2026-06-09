@@ -133,6 +133,8 @@ bool audio_engine_deck_is_playing(uint8_t deck);
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
+esp_err_t audio_engine_toggle_pfl(uint8_t deck);
+bool audio_engine_get_pfl_enabled(uint8_t deck);
 
 /*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).
