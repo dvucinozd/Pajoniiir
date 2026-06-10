@@ -169,6 +169,13 @@ void audio_engine_clear_loop(void);
  */
 void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end_ms);
 
+esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
+esp_err_t audio_engine_deck_clear_loop(uint8_t deck);
+esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
+                                           bool *active,
+                                           uint32_t *start_ms,
+                                           uint32_t *end_ms);
+
 
 /* ── PC test helper (AUDIO_ENGINE_PC_TEST only) ───────────────────────────
  * Decode the loaded track to a WAV file.

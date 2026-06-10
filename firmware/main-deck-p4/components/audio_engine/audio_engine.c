@@ -97,6 +97,8 @@ static void reset_all_pcm_rings(void)
     }
 }
 
+static bool deck_is_valid(uint8_t deck);
+
 /* ── Engine state ─────────────────────────────────────────────────────────── */
 typedef struct {
     FILE    *fp;
@@ -1427,6 +1429,51 @@ void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end
     if (start_ms) *start_ms = s_eng.loop_start_ms;
     if (end_ms) *end_ms = s_eng.loop_end_ms;
     AE_UNLOCK();
+}
+
+static audio_engine_state_t *select_engine(uint8_t deck);
+static void restore_engine(audio_engine_state_t *prev);
+#if AE_FW
+static bool deck_transport_supported(uint8_t deck);
+#endif
+
+esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    audio_engine_set_loop(start_ms, end_ms);
+    restore_engine(prev);
+    return ESP_OK;
+}
+
+esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    audio_engine_clear_loop();
+    restore_engine(prev);
+    return ESP_OK;
+}
+
+esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
+                                           bool *active,
+                                           uint32_t *start_ms,
+                                           uint32_t *end_ms)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
+#endif
+    audio_engine_state_t *prev = select_engine(deck);
+    audio_engine_get_loop_state(active, start_ms, end_ms);
+    restore_engine(prev);
+    return ESP_OK;
 }
 
 static bool deck_is_valid(uint8_t deck)

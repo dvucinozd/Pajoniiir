@@ -247,10 +247,57 @@ static void test_deck_states_are_independent(void)
     remove(path);
 }
 
+static void test_deck_loops_are_independent(void)
+{
+    printf("\n[Test 8] Per-deck loop state\n");
+
+    EXPECT(audio_engine_deck_set_loop(0, 1000, 2000) == ESP_OK,
+           "deck 0 loop set returns ESP_OK");
+    EXPECT(audio_engine_deck_set_loop(1, 3000, 5000) == ESP_OK,
+           "deck 1 loop set returns ESP_OK");
+
+    bool active = false;
+    uint32_t start = 0;
+    uint32_t end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
+           "deck 0 loop read returns ESP_OK");
+    EXPECT(active && start == 1000 && end == 2000,
+           "deck 0 loop state is independent");
+
+    active = false;
+    start = 0;
+    end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(1, &active, &start, &end) == ESP_OK,
+           "deck 1 loop read returns ESP_OK");
+    EXPECT(active && start == 3000 && end == 5000,
+           "deck 1 loop state is independent");
+
+    EXPECT(audio_engine_deck_clear_loop(0) == ESP_OK,
+           "deck 0 loop clear returns ESP_OK");
+    EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
+           "deck 0 cleared loop read returns ESP_OK");
+    EXPECT(!active, "deck 0 loop clears");
+
+    active = false;
+    start = 0;
+    end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(1, &active, &start, &end) == ESP_OK,
+           "deck 1 loop still readable after deck 0 clear");
+    EXPECT(active && start == 3000 && end == 5000,
+           "deck 1 loop survives deck 0 clear");
+
+    EXPECT(audio_engine_deck_set_loop(2, 0, 1) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop set returns INVALID_ARG");
+    EXPECT(audio_engine_deck_clear_loop(2) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop clear returns INVALID_ARG");
+    EXPECT(audio_engine_deck_get_loop_state(2, NULL, NULL, NULL) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop read returns INVALID_ARG");
+}
+
 /* ── Test 8: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 8] Decode MP3 → WAV\n");
+    printf("\n[Test 9] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -313,12 +360,13 @@ int main(int argc, char *argv[])
     test_pfl_state_api();
     test_deck_api();
     test_deck_states_are_independent();
+    test_deck_loops_are_independent();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 8] Decode MP3 → WAV\n");
+        printf("\n[Test 9] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

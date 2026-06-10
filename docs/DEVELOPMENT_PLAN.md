@@ -213,5 +213,9 @@ Validation note, 2026-06-10:
   render budget allow it.
 - P4 UI now stores deck-local ANLZ metadata snapshots, so loading Deck 2 no
   longer overwrites the metadata used by Deck 1 Overview waveform rendering.
-- Hot Cue and Beat Jump screens still use the D1 compatibility view until an
-  active-deck/performance-pad target model is added.
+- Hot Cue, Beat Loop, and Beat Jump screens now expose a D1/D2 target selector.
+  These performance controls use deck-local ANLZ/BPM/position metadata and
+  deck-aware audio seek/play/loop APIs.
+- Header status, legacy beat LED feedback, and D1 overview cue markers still
+  remain compatibility-oriented until the active-deck header/LED model is
+  explicitly redesigned.

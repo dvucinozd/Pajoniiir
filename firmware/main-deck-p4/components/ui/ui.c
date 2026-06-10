@@ -6,6 +6,7 @@
 #include "library.h"
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
+#include "ui_performance_target.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,6 +102,7 @@ typedef struct {
 
 static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
 static ui_deck_anlz_store_t s_deck_anlz_store;
+static ui_performance_target_t s_performance_target;
 
 #ifndef WIN32
 static media_loaded_track_t  s_loaded_media[DECK_CORE_DECK_COUNT];
@@ -157,6 +159,8 @@ static lv_obj_t *s_overview_cue_markers[8];
 static lv_obj_t *s_loop_buttons[6];
 static lv_obj_t *s_label_loop_status = NULL;
 static int       s_loop_active_beats = 0;
+static lv_obj_t *s_perf_target_buttons[6];
+static size_t    s_perf_target_button_count = 0;
 
 // Footer navigation buttons
 static lv_obj_t *s_footer_buttons[7];
@@ -169,6 +173,10 @@ static const char *s_tab_names[7] = {
 static bool     s_loop_active = false;
 static uint32_t s_loop_start_ms = 0;
 static uint32_t s_loop_end_ms = 0;
+static bool     s_loop_active_by_deck[DECK_CORE_DECK_COUNT];
+static uint32_t s_loop_start_ms_by_deck[DECK_CORE_DECK_COUNT];
+static uint32_t s_loop_end_ms_by_deck[DECK_CORE_DECK_COUNT];
+static int      s_loop_active_beats_by_deck[DECK_CORE_DECK_COUNT];
 
 // Settings Screen Widgets
 static lv_obj_t *s_slider_backlight = NULL;
@@ -253,6 +261,9 @@ static void ui_update_sd_status_label(bool force);
 static void ui_update_sd_cache_status_label(bool force);
 #endif
 static void ui_update_hot_cues(void);
+static void ui_refresh_loop_screen_from_target(void);
+static void ui_update_performance_target_visuals(void);
+static void ui_set_performance_deck(uint8_t deck);
 static void ui_fill_library_row(int i);
 static void jump_btn_event_cb(lv_event_t *e);
 static void ui_load_waveform_data(uint8_t deck,
@@ -523,6 +534,87 @@ static void ui_update_loop_screen_state(void)
     }
 }
 
+static void ui_update_performance_target_visuals(void)
+{
+    uint8_t active_deck = ui_performance_target_get(&s_performance_target);
+
+    for (size_t i = 0; i < s_perf_target_button_count; i++) {
+        lv_obj_t *btn = s_perf_target_buttons[i];
+        if (!btn) {
+            continue;
+        }
+        uint8_t deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(btn);
+        bool active = deck == active_deck;
+        lv_color_t color = deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN;
+        lv_obj_set_style_bg_color(btn, active ? color : COL_PANEL_DK, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(btn, active ? LV_OPA_COVER : LV_OPA_40, LV_PART_MAIN);
+        lv_obj_set_style_border_color(btn, color, LV_PART_MAIN);
+        lv_obj_set_style_border_width(btn, active ? 2 : 1, LV_PART_MAIN);
+
+        lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+        if (lbl) {
+            lv_obj_set_style_text_color(lbl, active ? COL_ON_ACCENT : color, LV_PART_MAIN);
+        }
+    }
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        ui_overview_deck_panel_t *panel = &s_overview_decks[deck];
+        if (!panel->panel) {
+            continue;
+        }
+        bool active = deck == active_deck;
+        lv_color_t color = deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN;
+        lv_obj_set_style_border_color(panel->panel, active ? color : COL_BORDER_LT, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->panel, active ? 2 : 1, LV_PART_MAIN);
+        if (panel->label_deck) {
+            lv_obj_set_style_text_color(panel->label_deck, active ? color : COL_TEXT_MUTED, LV_PART_MAIN);
+        }
+    }
+}
+
+static void perf_target_event_cb(lv_event_t *e)
+{
+    lv_obj_t *btn = lv_event_get_target(e);
+    uint8_t deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(btn);
+    ui_set_performance_deck(deck);
+}
+
+static void overview_deck_select_event_cb(lv_event_t *e)
+{
+    lv_obj_t *panel = lv_event_get_target(e);
+    uint8_t deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(panel);
+    ui_set_performance_deck(deck);
+}
+
+static void ui_create_performance_target_selector(lv_obj_t *parent, int x, int y)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    ui_label_set_small_caps(label, "TARGET", COL_TEXT_MUTED);
+    lv_obj_set_pos(label, x, y + 8);
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        lv_obj_t *btn = lv_button_create(parent);
+        lv_obj_remove_style_all(btn);
+        lv_obj_add_style(btn, &s_style_pressed, LV_STATE_PRESSED);
+        lv_obj_set_size(btn, 52, 34);
+        lv_obj_set_pos(btn, x + 70 + deck * 60, y);
+        lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
+        lv_obj_set_user_data(btn, (void *)(uintptr_t)deck);
+        lv_obj_add_event_cb(btn, perf_target_event_cb, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *lbl = lv_label_create(btn);
+        lv_label_set_text(lbl, deck == CTRL_DECK_1 ? "D1" : "D2");
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+
+        if (s_perf_target_button_count < sizeof(s_perf_target_buttons) / sizeof(s_perf_target_buttons[0])) {
+            s_perf_target_buttons[s_perf_target_button_count++] = btn;
+        }
+    }
+
+    ui_update_performance_target_visuals();
+}
+
 static lv_obj_t *ui_settings_section(lv_obj_t *parent, int x, int y, int w, int h, const char *title)
 {
     lv_obj_t *section = lv_obj_create(parent);
@@ -635,6 +727,11 @@ static uint32_t ui_current_duration_ms(void)
     return ui_deck_duration_ms(CTRL_DECK_1);
 }
 
+static uint32_t ui_performance_duration_ms(void)
+{
+    return ui_deck_duration_ms(ui_performance_target_get(&s_performance_target));
+}
+
 static uint16_t ui_deck_bpm(uint8_t deck)
 {
 #ifndef WIN32
@@ -649,6 +746,11 @@ static uint16_t ui_deck_bpm(uint8_t deck)
 static uint16_t ui_current_bpm(void)
 {
     return ui_deck_bpm(CTRL_DECK_1);
+}
+
+static uint16_t ui_performance_bpm(void)
+{
+    return ui_deck_bpm(ui_performance_target_get(&s_performance_target));
 }
 
 static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
@@ -666,6 +768,66 @@ static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
 static const anlz_metadata_t *ui_current_anlz(void)
 {
     return ui_deck_anlz(CTRL_DECK_1);
+}
+
+static const anlz_metadata_t *ui_performance_anlz(void)
+{
+    return ui_deck_anlz(ui_performance_target_get(&s_performance_target));
+}
+
+static deck_state_t ui_performance_deck_state(void)
+{
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
+    return deck == CTRL_DECK_1 ? deck_core_get_state()
+                               : deck_core_get_deck_state(deck);
+}
+
+static void ui_set_loop_shadow(uint8_t deck,
+                               bool active,
+                               uint32_t start_ms,
+                               uint32_t end_ms,
+                               int beats)
+{
+    uint8_t idx = ui_deck_index(deck);
+    s_loop_active_by_deck[idx] = active;
+    s_loop_start_ms_by_deck[idx] = start_ms;
+    s_loop_end_ms_by_deck[idx] = end_ms;
+    s_loop_active_beats_by_deck[idx] = beats;
+
+    if (ui_performance_target_is_active(&s_performance_target, idx)) {
+        s_loop_active = active;
+        s_loop_start_ms = start_ms;
+        s_loop_end_ms = end_ms;
+        s_loop_active_beats = beats;
+        ui_update_loop_screen_state();
+    }
+}
+
+static void ui_refresh_loop_screen_from_target(void)
+{
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
+    s_loop_active = s_loop_active_by_deck[deck];
+    s_loop_start_ms = s_loop_start_ms_by_deck[deck];
+    s_loop_end_ms = s_loop_end_ms_by_deck[deck];
+    s_loop_active_beats = s_loop_active_beats_by_deck[deck];
+    ui_update_loop_screen_state();
+}
+
+static void ui_set_performance_deck(uint8_t deck)
+{
+    uint8_t before = ui_performance_target_get(&s_performance_target);
+    ui_performance_target_set(&s_performance_target, ui_deck_index(deck));
+    uint8_t after = ui_performance_target_get(&s_performance_target);
+
+    ui_update_performance_target_visuals();
+    ui_refresh_loop_screen_from_target();
+    ui_update_hot_cues();
+
+    if (before != after) {
+        ui_status_indicator_hold(after == CTRL_DECK_1 ? "TARGET D1" : "TARGET D2",
+                                 after == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                                 1200);
+    }
 }
 
 static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *meta)
@@ -991,6 +1153,7 @@ static void ui_apply_usb_removed(void)
             s_loaded_media_valid[deck] = false;
             ui_deck_anlz_store_clear(&s_deck_anlz_store, deck);
             ui_deck_track_info_clear(deck);
+            ui_set_loop_shadow(deck, false, 0, 0, 0);
             ui_load_waveform_data(deck, 0, NULL, false, NULL);
             removed_loaded = true;
         }
@@ -1053,15 +1216,15 @@ static void ui_poll_track_load_result(void)
                                result.loaded.duration_ms);
         ui_deck_anlz_set_from_current(deck, media_catalog_get_loaded_anlz_for_source(result.source));
         ui_load_waveform_media(deck, &result.loaded);
+        ui_set_loop_shadow(deck, false, 0, 0, 0);
 
         if (deck == CTRL_DECK_1) {
             ui_cache_invalidate();
             lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
             lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
             ui_label_set_f2(s_label_bpm, (float)(result.loaded.bpm ? result.loaded.bpm : result.item.bpm));
-            s_loop_active = false;
-            s_loop_active_beats = 0;
-            ui_update_loop_screen_state();
+        }
+        if (ui_performance_target_is_active(&s_performance_target, deck)) {
             ui_update_hot_cues();
         }
 
@@ -1194,13 +1357,11 @@ static void library_load_event_cb(lv_event_t *e) {
         lv_label_set_text(s_label_title, track->title);
         lv_label_set_text(s_label_artist, track->artist);
         ui_label_set_f2(s_label_bpm, (float)track->bpm);
-        s_loop_active = false;              // Reset loops on track load
-        s_loop_active_beats = 0;
-        ui_update_loop_screen_state();
     }
+    ui_set_loop_shadow(deck, false, 0, 0, 0);
 
     /* Populate hot cue points from active ANLZ metadata */
-    if (deck == CTRL_DECK_1) {
+    if (ui_performance_target_is_active(&s_performance_target, deck)) {
         ui_update_hot_cues();
     }
 
@@ -1454,9 +1615,11 @@ static void hot_cue_event_cb(lv_event_t *e) {
     lv_obj_t *btn = lv_event_get_target(e);
     int cue_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
     uint32_t pos = s_hot_cue_positions[cue_idx];
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
 
     if (pos == 0xFFFFFFFF) {
-        ESP_LOGI(TAG, "Hot Cue %c is empty, ignoring click", 'A' + cue_idx);
+        ESP_LOGI(TAG, "D%u Hot Cue %c is empty, ignoring click",
+                 (unsigned)deck + 1u, 'A' + cue_idx);
         return;
     }
 
@@ -1464,34 +1627,32 @@ static void hot_cue_event_cb(lv_event_t *e) {
     uint32_t end_pos = s_hot_cue_ends[cue_idx];
 
     if (type == 2 && end_pos > pos) { // Hot Loop
-        s_loop_start_ms = pos;
-        s_loop_end_ms = end_pos;
-        s_loop_active = true;
-        s_loop_active_beats = 0;
-        ui_update_loop_screen_state();
+        ui_set_loop_shadow(deck, true, pos, end_pos, 0);
 #ifndef WIN32
-        audio_engine_seek(pos);
-        audio_engine_set_loop(pos, end_pos);
-        audio_engine_play();
-        ESP_LOGI(TAG, "Hot Loop %c active: %lu - %lu ms on hardware", 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
+        audio_engine_deck_seek(deck, pos);
+        audio_engine_deck_set_loop(deck, pos, end_pos);
+        audio_engine_deck_play(deck);
+        ESP_LOGI(TAG, "D%u Hot Loop %c active: %lu - %lu ms on hardware",
+                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
 #else
         mock_deck_set_position(pos);
         mock_deck_set_playing(true);
-        ESP_LOGI(TAG, "Hot Loop %c active: %lu - %lu ms (simulated)", 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
+        ESP_LOGI(TAG, "D%u Hot Loop %c active: %lu - %lu ms (simulated)",
+                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
 #endif
     } else { // Normal Cue
-        s_loop_active = false;
-        s_loop_active_beats = 0;
-        ui_update_loop_screen_state();
+        ui_set_loop_shadow(deck, false, 0, 0, 0);
 #ifndef WIN32
-        audio_engine_clear_loop();
-        audio_engine_seek(pos);
-        audio_engine_play();
-        ESP_LOGI(TAG, "Hot Cue %c triggered at %lu ms on hardware", 'A' + cue_idx, (unsigned long)pos);
+        audio_engine_deck_clear_loop(deck);
+        audio_engine_deck_seek(deck, pos);
+        audio_engine_deck_play(deck);
+        ESP_LOGI(TAG, "D%u Hot Cue %c triggered at %lu ms on hardware",
+                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos);
 #else
         mock_deck_set_position(pos);
         mock_deck_set_playing(true);
-        ESP_LOGI(TAG, "Hot Cue %c triggered at %d ms", 'A' + cue_idx, pos);
+        ESP_LOGI(TAG, "D%u Hot Cue %c triggered at %d ms",
+                 (unsigned)deck + 1u, 'A' + cue_idx, pos);
 #endif
     }
 }
@@ -1500,45 +1661,43 @@ static void hot_cue_event_cb(lv_event_t *e) {
 static void loop_btn_event_cb(lv_event_t *e) {
     lv_obj_t *btn = lv_event_get_target(e);
     int beats = (int)(intptr_t)lv_obj_get_user_data(btn);
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
 
-    float bpm = (float)ui_current_bpm();
+    float bpm = (float)ui_performance_bpm();
     if (bpm <= 0.0f) bpm = 120.0f;
     uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
 
     uint32_t start_ms = 0;
 #ifndef WIN32
-    start_ms = audio_engine_position_ms();
+    start_ms = audio_engine_deck_position_ms(deck);
 #else
-    deck_state_t state = deck_core_get_state();
+    deck_state_t state = ui_performance_deck_state();
     start_ms = state.position_ms;
 #endif
 
     uint32_t end_ms = start_ms + (beat_len_ms * beats);
-    s_loop_start_ms = start_ms;
-    s_loop_end_ms = end_ms;
-    s_loop_active = true;
-    s_loop_active_beats = beats;
-    ui_update_loop_screen_state();
+    ui_set_loop_shadow(deck, true, start_ms, end_ms, beats);
 
 #ifndef WIN32
-    audio_engine_set_loop(start_ms, end_ms);
-    ESP_LOGI(TAG, "Hardware Loop of %d beats active: %lu to %lu ms", beats, (unsigned long)start_ms, (unsigned long)end_ms);
+    audio_engine_deck_set_loop(deck, start_ms, end_ms);
+    ESP_LOGI(TAG, "D%u Hardware Loop of %d beats active: %lu to %lu ms",
+             (unsigned)deck + 1u, beats, (unsigned long)start_ms, (unsigned long)end_ms);
 #else
-    ESP_LOGI(TAG, "Simulating Loop of %d beats: %d ms to %d ms", beats, start_ms, end_ms);
+    ESP_LOGI(TAG, "D%u Simulating Loop of %d beats: %d ms to %d ms",
+             (unsigned)deck + 1u, beats, start_ms, end_ms);
 #endif
 }
 
 // Loop exit button
 static void exit_loop_event_cb(lv_event_t *e) {
     (void)e;
-    s_loop_active = false;
-    s_loop_active_beats = 0;
-    ui_update_loop_screen_state();
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
+    ui_set_loop_shadow(deck, false, 0, 0, 0);
 #ifndef WIN32
-    audio_engine_clear_loop();
-    ESP_LOGI(TAG, "Loop exited on hardware");
+    audio_engine_deck_clear_loop(deck);
+    ESP_LOGI(TAG, "D%u Loop exited on hardware", (unsigned)deck + 1u);
 #else
-    ESP_LOGI(TAG, "Loop exited");
+    ESP_LOGI(TAG, "D%u Loop exited", (unsigned)deck + 1u);
 #endif
 }
 
@@ -1546,9 +1705,10 @@ static void exit_loop_event_cb(lv_event_t *e) {
 static void jump_btn_event_cb(lv_event_t *e) {
     lv_obj_t *btn = lv_event_get_target(e);
     int val = (int)(intptr_t)lv_obj_get_user_data(btn);
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
 
-    deck_state_t state = deck_core_get_state();
-    const anlz_metadata_t *meta = ui_current_anlz();
+    deck_state_t state = ui_performance_deck_state();
+    const anlz_metadata_t *meta = ui_performance_anlz();
     uint32_t new_pos = 0;
 
     if (meta && meta->beat_count > 0) {
@@ -1574,7 +1734,7 @@ static void jump_btn_event_cb(lv_event_t *e) {
                  closest_idx, state.position_ms, target_idx, new_pos, val);
     } else {
         /* Fallback to BPM-based calculation */
-        float bpm = (float)ui_current_bpm();
+        float bpm = (float)ui_performance_bpm();
         if (bpm <= 0.0f) bpm = 120.0f;
         uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
         
@@ -1587,13 +1747,11 @@ static void jump_btn_event_cb(lv_event_t *e) {
     }
 
 #ifndef WIN32
-    audio_engine_seek(new_pos);
+    audio_engine_deck_seek(deck, new_pos);
 #else
     mock_deck_set_position(new_pos);
-    s_loop_active = false;
-    s_loop_active_beats = 0;
-    ui_update_loop_screen_state();
 #endif
+    ui_set_loop_shadow(deck, false, 0, 0, 0);
 }
 
 // Key lock toggle
@@ -2027,6 +2185,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_size(panel->panel, 772, 170);
     lv_obj_set_pos(panel->panel, 14, y);
     lv_obj_set_style_pad_all(panel->panel, 0, LV_PART_MAIN);
+    lv_obj_set_user_data(panel->panel, (void *)(uintptr_t)deck);
+    lv_obj_add_flag(panel->panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(panel->panel, overview_deck_select_event_cb, LV_EVENT_CLICKED, NULL);
 
     panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
                                                 deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
@@ -2114,6 +2275,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
     ui_overview_small_button(panel->panel, deck, 598, 115, "PLAY", &s_style_btn_primary, play_pause_event_cb);
     ui_overview_small_button(panel->panel, deck, 686, 115, "CUE", &s_style_btn_amber, cue_event_cb);
+    ui_update_performance_target_visuals();
 }
 
 static void create_screen_overview(lv_obj_t *parent) {
@@ -2388,6 +2550,7 @@ static void create_screen_hot_cues(lv_obj_t *parent) {
     lv_obj_add_style(s_screens[2], &s_style_screen_bg, LV_PART_MAIN);
     lv_obj_set_size(s_screens[2], 800, 370);
     lv_obj_set_pos(s_screens[2], 0, 55);
+    ui_create_performance_target_selector(s_screens[2], 298, 4);
 
     // Construct a grid of buttons: 4 in a row, 2 rows
     int pad_w = 170;
@@ -2395,7 +2558,7 @@ static void create_screen_hot_cues(lv_obj_t *parent) {
     int spacing_x = 20;
     int spacing_y = 20;
     int offset_x = 30;
-    int offset_y = 40;
+    int offset_y = 48;
 
     for (int i = 0; i < 8; i++) {
         int row = i / 4;
@@ -2436,6 +2599,7 @@ static void create_screen_beat_loop(lv_obj_t *parent) {
     lv_obj_add_style(s_screens[3], &s_style_screen_bg, LV_PART_MAIN);
     lv_obj_set_size(s_screens[3], 800, 370);
     lv_obj_set_pos(s_screens[3], 0, 55);
+    ui_create_performance_target_selector(s_screens[3], 20, 8);
 
     s_label_loop_status = lv_label_create(s_screens[3]);
     ui_label_set_small_caps(s_label_loop_status, "NO ACTIVE LOOP", COL_TEXT_DIM);
@@ -2502,6 +2666,7 @@ static void create_screen_beat_jump(lv_obj_t *parent) {
     lv_obj_add_style(s_screens[4], &s_style_screen_bg, LV_PART_MAIN);
     lv_obj_set_size(s_screens[4], 800, 370);
     lv_obj_set_pos(s_screens[4], 0, 55);
+    ui_create_performance_target_selector(s_screens[4], 298, 0);
 
     int jump_vals[4] = {1, 4, 8, 16};
     const int lane_x = 40;
@@ -2810,9 +2975,11 @@ static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *tra
 /* Update Hot Cue pads with real Rekordbox cue metadata */
 static void ui_update_hot_cues(void)
 {
-    const anlz_metadata_t *meta = ui_current_anlz();
+    uint8_t deck = ui_performance_target_get(&s_performance_target);
+    const bool show_overview_markers = (deck == CTRL_DECK_1);
+    const anlz_metadata_t *meta = ui_performance_anlz();
     bool has_anlz = (meta != NULL);
-    uint32_t duration_ms = ui_current_duration_ms();
+    uint32_t duration_ms = ui_performance_duration_ms();
 
     for (int i = 0; i < 8; i++) {
         bool found = false;
@@ -2859,7 +3026,7 @@ static void ui_update_hot_cues(void)
             ui_style_hot_cue_pad(i, is_loop, false);
             
             // Set static overview waveform cue marker position and color
-            if (duration_ms > 0 && s_overview_cue_markers[i]) {
+            if (show_overview_markers && duration_ms > 0 && s_overview_cue_markers[i]) {
                 float progress = (float)pos / (float)duration_ms;
                 if (progress > 1.0f) progress = 1.0f;
                 int marker_x = 10 + (int)(progress * (float)OVERVIEW_CV_W) - 1;
@@ -2877,6 +3044,8 @@ static void ui_update_hot_cues(void)
                 };
                 lv_obj_set_style_bg_color(s_overview_cue_markers[i], lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
                 lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Show
+            } else if (s_overview_cue_markers[i]) {
+                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN);
             }
         } else if (has_anlz) {
             s_hot_cue_positions[i] = 0xFFFFFFFF;
@@ -3104,6 +3273,13 @@ void ui_lvgl_unlock(void) {}
 esp_err_t ui_init(void) {
     ESP_LOGI(TAG, "Initializing LVGL DJ UI layout (800x480 landscape)...");
     ui_deck_anlz_store_init(&s_deck_anlz_store);
+    ui_performance_target_init(&s_performance_target);
+    memset(s_perf_target_buttons, 0, sizeof(s_perf_target_buttons));
+    s_perf_target_button_count = 0;
+    memset(s_loop_active_by_deck, 0, sizeof(s_loop_active_by_deck));
+    memset(s_loop_start_ms_by_deck, 0, sizeof(s_loop_start_ms_by_deck));
+    memset(s_loop_end_ms_by_deck, 0, sizeof(s_loop_end_ms_by_deck));
+    memset(s_loop_active_beats_by_deck, 0, sizeof(s_loop_active_beats_by_deck));
 
 #ifndef WIN32
     // On firmware, bring up LVGL on top of the BSP panel before building widgets.
