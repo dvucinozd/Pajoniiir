@@ -191,8 +191,8 @@ Goal: adapt the P4 display from single-deck CDJ UI to DDJ-FFL4 dual-deck status.
 
 Tasks:
 
-- show Deck 1 and Deck 2 loaded tracks;
-- show positions, BPM, pitch, play/cue states;
+- show Deck 1 and Deck 2 loaded tracks; started
+- show positions, BPM, pitch, play/cue states; started
 - show mixer/cue status;
 - keep large waveform work secondary until audio engine is stable.
 
@@ -200,3 +200,16 @@ Exit criteria:
 
 - operator can confirm both deck states without using serial logs;
 - UI does not drive authoritative playback decisions.
+
+Validation note, 2026-06-10:
+
+- Overview tab now uses two deck panels instead of the inherited single-deck
+  view.
+- Each panel shows deck-local title/artist, elapsed/remaining time, BPM, pitch,
+  transport status, and a low-resolution Rekordbox waveform canvas.
+- `LOAD D1` and `LOAD D2` update their own Overview waveform and metadata.
+- The old full-width high-resolution zoom waveform was removed from Overview
+  for this MVP; bring it back later as an active-deck detail view if SRAM and
+  render budget allow it.
+- Hot cue marker and beat-grid metadata remain compatibility/D1-oriented until
+  ANLZ metadata is stored per deck.

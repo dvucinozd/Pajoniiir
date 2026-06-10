@@ -89,35 +89,53 @@ static bool      s_sort_name_desc = false;
 static bool      s_sort_bpm_desc = false;
 static bool      s_track_load_busy = false;
 static uint8_t   s_library_load_request_deck = 0;
+
+typedef struct {
+    bool valid;
+    char title[96];
+    char artist[64];
+    uint16_t bpm;
+    uint32_t duration_ms;
+} ui_deck_track_info_t;
+
+static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
+
 #ifndef WIN32
-static media_loaded_track_t  s_loaded_media;
-static bool                  s_loaded_media_valid = false;
-static media_source_t        s_loaded_media_source = MEDIA_SOURCE_LOCAL_USB;
+static media_loaded_track_t  s_loaded_media[DECK_CORE_DECK_COUNT];
+static bool                  s_loaded_media_valid[DECK_CORE_DECK_COUNT];
+static media_source_t        s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
+    MEDIA_SOURCE_LOCAL_USB,
+    MEDIA_SOURCE_LOCAL_USB,
+};
 static QueueHandle_t         s_track_load_result_q = NULL;
 static volatile bool         s_usb_removed_pending = false;
 #endif
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 400
-#define OVERVIEW_CV_H 76
+#define OVERVIEW_CV_W 500
+#define OVERVIEW_CV_H 72
 
-static lv_obj_t *s_overview_canvas = NULL;
-static uint8_t  *s_overview_cv_buf = NULL; // 8 bpp buffer u SRAM-u (~31 KB)
-static int       s_overview_stride_px = OVERVIEW_CV_W;
-static lv_obj_t *s_overview_playhead = NULL;
+typedef struct {
+    lv_obj_t *panel;
+    lv_obj_t *label_deck;
+    lv_obj_t *label_status;
+    lv_obj_t *label_title;
+    lv_obj_t *label_artist;
+    lv_obj_t *label_time;
+    lv_obj_t *label_remain;
+    lv_obj_t *label_bpm;
+    lv_obj_t *label_pitch;
+    lv_obj_t *wave_border;
+    lv_obj_t *wave_canvas;
+    uint8_t  *wave_buf;
+    int       wave_stride_px;
+    lv_obj_t *playhead;
+    int       last_fill_x;
+    int       last_playhead_x;
+} ui_overview_deck_panel_t;
+
+static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_beat_pulses[4];
-
-// High-res zoom waveform: rendered to an lv_canvas for smooth pixel scrolling.
-#define ZOOM_CV_W       758   // canvas width  (even → RGB565/I8 stride, 4-byte aligned)
-#define ZOOM_CV_H       120   // canvas height (kept modest so the buffer fits internal RAM)
-#define ZOOM_MS_PER_PX  16    // horizontal scale: ms of audio per pixel column
-static lv_obj_t *s_zoom_canvas    = NULL;
-static uint8_t  *s_zoom_cv_buf    = NULL;   // 8 bpp pixel buffer (SRAM on firmware, including 1024B palette)
-static int       s_zoom_stride_px = ZOOM_CV_W;   // actual canvas row stride in pixels
-static uint32_t  s_zoom_last_pos  = 0xFFFFFFFFu; // last drawn position (for redraw gating)
-static bool      s_zoom_redraw    = true;        // force a redraw (track change, etc.)
-static int       s_overview_last_fill_x = -1;
-static int       s_overview_last_playhead_x = -1;
 
 // Hot cue buttons and values
 static uint32_t s_hot_cue_positions[8] = {
@@ -225,7 +243,7 @@ static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on pr
 static void ui_load_waveform(const library_track_t *track);
 #endif
 #ifndef WIN32
-static void ui_load_waveform_media(const media_loaded_track_t *track);
+static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *track);
 #endif
 static void ui_update_library_source_label(void);
 #ifndef WIN32
@@ -235,6 +253,11 @@ static void ui_update_sd_cache_status_label(bool force);
 static void ui_update_hot_cues(void);
 static void ui_fill_library_row(int i);
 static void jump_btn_event_cb(lv_event_t *e);
+static void ui_load_waveform_data(uint8_t deck,
+                                  uint32_t duration_ms,
+                                  const uint8_t waveform_low[400],
+                                  bool has_waveform,
+                                  const anlz_metadata_t *meta);
 #ifndef WIN32
 typedef struct {
     int index;
@@ -565,33 +588,83 @@ static int ui_media_count(void)
 #endif
 }
 
-static uint32_t ui_current_duration_ms(void)
+static uint8_t ui_deck_index(uint8_t deck)
+{
+    return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
+}
+
+static void ui_deck_track_info_clear(uint8_t deck)
+{
+    uint8_t idx = ui_deck_index(deck);
+    memset(&s_deck_track_info[idx], 0, sizeof(s_deck_track_info[idx]));
+}
+
+static void ui_deck_track_info_set(uint8_t deck,
+                                   const char *title,
+                                   const char *artist,
+                                   uint16_t bpm,
+                                   uint32_t duration_ms)
+{
+    uint8_t idx = ui_deck_index(deck);
+    ui_deck_track_info_t *info = &s_deck_track_info[idx];
+    memset(info, 0, sizeof(*info));
+    snprintf(info->title, sizeof(info->title), "%s",
+             title && title[0] ? title : "Unknown Title");
+    snprintf(info->artist, sizeof(info->artist), "%s",
+             artist && artist[0] ? artist : "Unknown Artist");
+    info->bpm = bpm;
+    info->duration_ms = duration_ms;
+    info->valid = true;
+}
+
+static uint32_t ui_deck_duration_ms(uint8_t deck)
 {
 #ifndef WIN32
-    if (s_loaded_media_valid) return s_loaded_media.duration_ms;
+    uint8_t idx = ui_deck_index(deck);
+    if (s_loaded_media_valid[idx]) return s_loaded_media[idx].duration_ms;
 #endif
+    if (deck != CTRL_DECK_1) return 0;
     const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
     return track ? track->duration_ms : 0;
 }
 
-static uint16_t ui_current_bpm(void)
+static uint32_t ui_current_duration_ms(void)
+{
+    return ui_deck_duration_ms(CTRL_DECK_1);
+}
+
+static uint16_t ui_deck_bpm(uint8_t deck)
 {
 #ifndef WIN32
-    if (s_loaded_media_valid && s_loaded_media.bpm > 0) return s_loaded_media.bpm;
+    uint8_t idx = ui_deck_index(deck);
+    if (s_loaded_media_valid[idx] && s_loaded_media[idx].bpm > 0) return s_loaded_media[idx].bpm;
 #endif
+    if (deck != CTRL_DECK_1) return 120;
     const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
     return track ? track->bpm : 120;
 }
 
-static const anlz_metadata_t *ui_current_anlz(void)
+static uint16_t ui_current_bpm(void)
+{
+    return ui_deck_bpm(CTRL_DECK_1);
+}
+
+static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
 {
 #ifndef WIN32
-    if (s_loaded_media_valid) {
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(s_loaded_media_source);
+    uint8_t idx = ui_deck_index(deck);
+    if (idx == CTRL_DECK_1 && s_loaded_media_valid[idx]) {
+        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(s_loaded_media_source[idx]);
         if (meta) return meta;
     }
 #endif
+    if (deck != CTRL_DECK_1) return NULL;
     return library_get_current_anlz();
+}
+
+static const anlz_metadata_t *ui_current_anlz(void)
+{
+    return ui_deck_anlz(CTRL_DECK_1);
 }
 
 #ifndef WIN32
@@ -902,9 +975,17 @@ static void ui_submit_track_load(int index, uint8_t deck)
 static void ui_apply_usb_removed(void)
 {
     s_usb_removed_pending = false;
-    if (s_loaded_media_valid && s_loaded_media_source == MEDIA_SOURCE_LOCAL_USB) {
+    bool removed_loaded = false;
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_LOCAL_USB) {
+            s_loaded_media_valid[deck] = false;
+            ui_deck_track_info_clear(deck);
+            ui_load_waveform_data(deck, 0, NULL, false, NULL);
+            removed_loaded = true;
+        }
+    }
+    if (removed_loaded) {
         ui_cache_invalidate();
-        s_loaded_media_valid = false;
         lv_label_set_text(s_label_title, "No Track");
         lv_label_set_text(s_label_artist, "");
         ui_label_set_f2(s_label_bpm, 0.0f);
@@ -950,11 +1031,18 @@ static void ui_poll_track_load_result(void)
         if (result.source == MEDIA_SOURCE_LOCAL_USB) {
             mock_library_load_track_to_deck(result.index);
         }
-        if (result.deck == CTRL_DECK_1) {
-            s_loaded_media = result.loaded;
-            s_loaded_media_valid = true;
-            s_loaded_media_source = result.source;
+        uint8_t deck = ui_deck_index(result.deck);
+        s_loaded_media[deck] = result.loaded;
+        s_loaded_media_valid[deck] = true;
+        s_loaded_media_source[deck] = result.source;
+        ui_deck_track_info_set(deck,
+                               result.item.title,
+                               result.item.artist,
+                               result.loaded.bpm ? result.loaded.bpm : result.item.bpm,
+                               result.loaded.duration_ms);
+        ui_load_waveform_media(deck, &result.loaded);
 
+        if (deck == CTRL_DECK_1) {
             ui_cache_invalidate();
             lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
             lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
@@ -962,7 +1050,6 @@ static void ui_poll_track_load_result(void)
             s_loop_active = false;
             s_loop_active_beats = 0;
             ui_update_loop_screen_state();
-            ui_load_waveform_media(&result.loaded);
             ui_update_hot_cues();
         }
 
@@ -1004,18 +1091,31 @@ static void footer_btn_event_cb(lv_event_t *e) {
     ESP_LOGD(TAG, "Switched to tab %d (%s)", target_idx, s_tab_names[target_idx]);
 }
 
+static uint8_t ui_event_deck(lv_event_t *e)
+{
+    if (!e) return CTRL_DECK_1;
+    lv_obj_t *target = lv_event_get_target(e);
+    return ui_deck_index((uint8_t)(uintptr_t)lv_obj_get_user_data(target));
+}
+
+static uint8_t ui_deck_control_id(uint8_t deck, uint8_t deck1_id, uint8_t deck2_id)
+{
+    return ui_deck_index(deck) == CTRL_DECK_2 ? deck2_id : deck1_id;
+}
+
 // Play/Pause button on overview clicked
 static void play_pause_event_cb(lv_event_t *e) {
+    uint8_t deck = ui_event_deck(e);
 #ifdef WIN32
-    (void)e;
+    (void)deck;
     mock_deck_toggle_play();
     deck_state_t state = deck_core_get_state();
     ESP_LOGI(TAG, "Simulator Play/Pause: %s", state.playing ? "PLAYING" : "PAUSED");
 #else
-    (void)e;
     ctrl_event_t ev = {
         .type  = CTRL_EV_BUTTON,
-        .id    = BTN_PLAY,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY),
+        .deck  = deck,
         .value = 1,
         .seq   = 0
     };
@@ -1026,15 +1126,17 @@ static void play_pause_event_cb(lv_event_t *e) {
 // CUE button on overview clicked. Returns to the cue point (track start by
 // default) and pauses — handled in deck_core on firmware (BTN_CUE).
 static void cue_event_cb(lv_event_t *e) {
-    (void)e;
+    uint8_t deck = ui_event_deck(e);
 #ifdef WIN32
+    (void)deck;
     // Simulator: mirror deck_core — return to the cue point (start) and pause.
     mock_deck_set_playing(false);
     mock_deck_set_position(0);
 #else
     ctrl_event_t ev = {
         .type  = CTRL_EV_BUTTON,
-        .id    = BTN_CUE,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_CUE, CTRL_ID_DECK2_CUE),
+        .deck  = deck,
         .value = 1,
         .seq   = 0
     };
@@ -1070,19 +1172,27 @@ static void library_load_event_cb(lv_event_t *e) {
     /* Load detailed ANLZ metadata for the active track */
     library_load_current_anlz(track);
 
-    lv_label_set_text(s_label_title, track->title);
-    lv_label_set_text(s_label_artist, track->artist);
-    ui_label_set_f2(s_label_bpm, (float)track->bpm);
-    s_loop_active = false;              // Reset loops on track load
-    s_loop_active_beats = 0;
-    ui_update_loop_screen_state();
-    ui_load_waveform(track);           // rebuild bar heights from PWAV data
+    ui_deck_track_info_set(deck, track->title, track->artist, track->bpm, track->duration_ms);
+    ui_load_waveform_data(deck, track->duration_ms, track->waveform_low,
+                          track->has_waveform != 0,
+                          deck == CTRL_DECK_1 ? library_get_current_anlz() : NULL);
+
+    if (deck == CTRL_DECK_1) {
+        lv_label_set_text(s_label_title, track->title);
+        lv_label_set_text(s_label_artist, track->artist);
+        ui_label_set_f2(s_label_bpm, (float)track->bpm);
+        s_loop_active = false;              // Reset loops on track load
+        s_loop_active_beats = 0;
+        ui_update_loop_screen_state();
+    }
 
     /* Populate hot cue points from active ANLZ metadata */
-    ui_update_hot_cues();
+    if (deck == CTRL_DECK_1) {
+        ui_update_hot_cues();
+    }
 
-    ESP_LOGI(TAG, "Loaded track to deck: %s by %s (waveform=%d)",
-             track->title, track->artist, track->has_waveform);
+    ESP_LOGI(TAG, "Loaded track to deck %u: %s by %s (waveform=%d)",
+             (unsigned)deck + 1u, track->title, track->artist, track->has_waveform);
 #else
     media_catalog_track_t item;
     if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK) {
@@ -1559,10 +1669,12 @@ static void link_mode_event_cb(lv_event_t *e)
 static void sd_cache_clear_event_cb(lv_event_t *e)
 {
     (void)e;
-    if (s_loaded_media_valid && s_loaded_media_source == MEDIA_SOURCE_REMOTE_LINK) {
-        ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
-        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
-        return;
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_REMOTE_LINK) {
+            ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
+            sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
+            return;
+        }
     }
 
     esp_err_t rc = remote_cache_clear();
@@ -1826,7 +1938,8 @@ static void create_footer(lv_obj_t *parent) {
 // the bars span 400 px starting 10 px into wv_border's content area.
 static void waveform_seek_event_cb(lv_event_t *e) {
     lv_obj_t *wv = lv_event_get_target(e);
-    uint32_t duration_ms = ui_current_duration_ms();
+    uint8_t deck = ui_event_deck(e);
+    uint32_t duration_ms = ui_deck_duration_ms(deck);
     if (duration_ms == 0) return;
 
     lv_indev_t *indev = lv_indev_active();
@@ -1838,132 +1951,157 @@ static void waveform_seek_event_cb(lv_event_t *e) {
     lv_obj_get_content_coords(wv, &content);
     int rel_x = (int)p.x - content.x1 - 10;
     if (rel_x < 0)   rel_x = 0;
-    if (rel_x > 400) rel_x = 400;
-    uint32_t target_ms = (uint32_t)(((uint64_t)rel_x * duration_ms) / 400u);
+    if (rel_x > OVERVIEW_CV_W) rel_x = OVERVIEW_CV_W;
+    uint32_t target_ms = (uint32_t)(((uint64_t)rel_x * duration_ms) / OVERVIEW_CV_W);
 
 #ifndef WIN32
-    audio_engine_seek(target_ms);
+    audio_engine_deck_seek(deck, target_ms);
 #else
+    (void)deck;
     mock_deck_set_position(target_ms);
 #endif
-    ESP_LOGI(TAG, "Waveform seek -> %lu ms (%d%%)",
-             (unsigned long)target_ms, (int)((rel_x * 100) / 400));
+    ESP_LOGI(TAG, "D%u waveform seek -> %lu ms (%d%%)",
+             (unsigned)deck + 1u, (unsigned long)target_ms, (int)((rel_x * 100) / OVERVIEW_CV_W));
 }
 
-// Tap-to-seek on the high-res zoom waveform. The centre needle marks the current
-// position; the horizontal scale is ZOOM_MS_PER_PX. A tap left of centre seeks
-// back, right seeks forward, relative to the live position.
-static void zoom_seek_event_cb(lv_event_t *e) {
-    lv_obj_t *zc = lv_event_get_target(e);
-    uint32_t duration_ms = ui_current_duration_ms();
-    if (duration_ms == 0) return;
-
-    lv_indev_t *indev = lv_indev_active();
-    if (!indev) return;
-    lv_point_t p;
-    lv_indev_get_point(indev, &p);
-
-    lv_area_t content;
-    lv_obj_get_content_coords(zc, &content);
-    int center_x  = (content.x1 + content.x2) / 2;   // needle = current position
-    int offset_px = (int)p.x - center_x;
-
-    int32_t cur_ms;
-#ifndef WIN32
-    cur_ms = (int32_t)audio_engine_position_ms();
-#else
-    cur_ms = (int32_t)deck_core_get_state().position_ms;
-#endif
-    int32_t target = cur_ms + offset_px * ZOOM_MS_PER_PX;
-    if (target < 0) target = 0;
-    if (target > (int32_t)duration_ms) target = (int32_t)duration_ms;
-
-#ifndef WIN32
-    audio_engine_seek((uint32_t)target);
-#else
-    mock_deck_set_position((uint32_t)target);
-#endif
-    ESP_LOGI(TAG, "Zoom seek -> %ld ms (offset %d px)", (long)target, offset_px);
-}
-
-// Render the high-res zoom waveform into the canvas, centred on the current
-// position (centre column = playhead). Smooth pixel scroll: column x samples
-// waveform_high at position + (x - centre)*ZOOM_MS_PER_PX, so features glide a
-// few px per frame instead of jumping a whole bar. Faint beat grid behind the
-// green waveform; bright playhead on top.
-static void ui_draw_zoom_canvas(uint32_t position_ms, uint32_t duration_ms,
-                                const anlz_metadata_t *meta)
+static lv_obj_t *ui_overview_value_label(lv_obj_t *parent, const lv_font_t *font,
+                                         lv_color_t color, int x, int y,
+                                         int w, const char *text)
 {
-    if (!s_zoom_cv_buf || duration_ms == 0) return;
-#ifndef WIN32
-    int64_t draw_start_us = esp_timer_get_time();
-#endif
-    
-    // U LVGL v9 indeksiranom I8 formatu, paleta (1024 B) se nalazi na samom početku
-    // buffera, a stvarni pikseli (slikovni podaci) počinju nakon nje.
-    uint8_t *buf = s_zoom_cv_buf + 256 * sizeof(lv_color32_t);
-    const int  W = ZOOM_CV_W, H = ZOOM_CV_H, S = s_zoom_stride_px;
-    const int  cx = W / 2, cy = H / 2;
-
-    const uint8_t c_wave = 1; // Indeks 1 u paleti: neonsko zelena
-    const uint8_t c_play = 2; // Indeks 2 u paleti: neonsko crvena (playhead)
-    const uint8_t c_beat = 3; // Indeks 3 u paleti: prigušena siva (beat grid)
-    const uint8_t c_down = 4; // Indeks 4 u paleti: prigušeno crvena (downbeat)
-
-    // 1) Clear to background color (indeks 0 == crna).
-    memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
-
-    const int32_t  dur  = (int32_t)duration_ms;
-    const uint32_t hlen = (meta && meta->waveform_high) ? meta->waveform_high_len : 0u;
-    const int32_t  t_left  = (int32_t)position_ms - cx * ZOOM_MS_PER_PX;
-    const int32_t  t_right = (int32_t)position_ms + (W - cx) * ZOOM_MS_PER_PX;
-
-    // 2) Beat grid (faint, full height) behind the waveform.
-    if (meta && meta->beats && meta->beat_count > 0 && dur > 0) {
-        for (uint32_t b = 0; b < meta->beat_count; b++) {
-            int32_t bt = (int32_t)meta->beats[b].time_ms;
-            if (bt < t_left || bt > t_right) continue;
-            int x = cx + (int)((bt - (int32_t)position_ms) / ZOOM_MS_PER_PX);
-            if (x < 0 || x >= W) continue;
-            uint8_t col = (meta->beats[b].beat_phase == 0) ? c_down : c_beat;
-            for (int y = 0; y < H; y++) buf[y * S + x] = col;
-        }
-    }
-
-    // 3) Waveform columns on top.
-    if (hlen > 0 && dur > 0) {
-        for (int x = 0; x < W; x++) {
-            int32_t t = (int32_t)position_ms + (x - cx) * ZOOM_MS_PER_PX;
-            if (t < 0 || t >= dur) continue;
-            uint32_t hi = (uint32_t)(((uint64_t)t * hlen) / (uint32_t)dur);
-            if (hi >= hlen) continue;
-            int amp = meta->waveform_high[hi] & 0x1F;       // 0..31
-            int h = (amp * (H - 6)) / 31;
-            if (h < 1) h = 1;
-            int y0 = cy - h / 2, y1 = cy + h / 2;
-            if (y0 < 0) y0 = 0;
-            if (y1 >= H) y1 = H - 1;
-            for (int y = y0; y <= y1; y++) buf[y * S + x] = c_wave;
-        }
-    }
-
-    // 4) Centre playhead (2 px) on top of everything.
-    for (int x = cx - 1; x <= cx; x++) {
-        if (x < 0 || x >= W) continue;
-        for (int y = 0; y < H; y++) buf[y * S + x] = c_play;
-    }
-
-    lv_obj_invalidate(s_zoom_canvas);
-#ifndef WIN32
-    int64_t draw_us = esp_timer_get_time() - draw_start_us;
-    static int64_t s_last_zoom_slow_warn_us = 0;
-    if (draw_us > 12000 && draw_start_us - s_last_zoom_slow_warn_us > 1000000) {
-        s_last_zoom_slow_warn_us = draw_start_us;
-        ESP_LOGW(TAG, "ui_draw_zoom_canvas slow: %lld us", (long long)draw_us);
-    }
-#endif
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_size(label, w, 24);
+    lv_obj_set_pos(label, x, y);
+    return label;
 }
 
+static lv_obj_t *ui_overview_small_button(lv_obj_t *parent, uint8_t deck,
+                                          int x, int y, const char *text,
+                                          const lv_style_t *style,
+                                          lv_event_cb_t cb)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_remove_style_all(btn);
+    lv_obj_add_style(btn, style, LV_PART_MAIN);
+    lv_obj_add_style(btn, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_size(btn, 78, 34);
+    lv_obj_set_pos(btn, x, y);
+    lv_obj_set_user_data(btn, (void *)(uintptr_t)deck);
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
+    return btn;
+}
+
+static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
+{
+    ui_overview_deck_panel_t *panel = &s_overview_decks[ui_deck_index(deck)];
+    panel->wave_stride_px = OVERVIEW_CV_W;
+    panel->last_fill_x = -1;
+    panel->last_playhead_x = -1;
+
+    panel->panel = lv_obj_create(parent);
+    lv_obj_remove_style_all(panel->panel);
+    lv_obj_add_style(panel->panel, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(panel->panel, lv_color_hex(0x080B0F), LV_PART_MAIN);
+    lv_obj_set_size(panel->panel, 772, 170);
+    lv_obj_set_pos(panel->panel, 14, y);
+    lv_obj_set_style_pad_all(panel->panel, 0, LV_PART_MAIN);
+
+    panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
+                                                deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                                                14, 10, 42,
+                                                deck == CTRL_DECK_1 ? "D1" : "D2");
+    panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                                  COL_AMBER, 58, 14, 88, "PAUSE");
+    panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
+                                                 COL_TEXT, 14, 38, 188, "No Track");
+    panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                                  COL_TEXT_DIM, 14, 62, 188, "");
+    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
+                                                COL_ACCENT, 14, 94, 116, "00:00.00");
+    panel->label_remain = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
+                                                  COL_TEXT_MUTED, 14, 121, 116, "-00:00.00");
+    panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_14,
+                                               COL_TEXT, 134, 96, 68, "120.00");
+    panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                                 COL_GREEN, 134, 122, 68, "+0.00%");
+
+    panel->wave_border = lv_obj_create(panel->panel);
+    lv_obj_remove_style_all(panel->wave_border);
+    lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
+    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 14);
+    lv_obj_set_pos(panel->wave_border, 218, 14);
+    lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
+    lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
+    lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(panel->wave_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
+
+    size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+#ifndef WIN32
+    panel->wave_buf = heap_caps_malloc(ov_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#else
+    panel->wave_buf = malloc(ov_sz);
+#endif
+    if (panel->wave_buf) {
+        memset(panel->wave_buf, 0, ov_sz);
+        panel->wave_canvas = lv_canvas_create(panel->wave_border);
+        lv_canvas_set_buffer(panel->wave_canvas, panel->wave_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+        lv_obj_align(panel->wave_canvas, LV_ALIGN_TOP_LEFT, 10, 7);
+        lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x91, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x27, 0x4C, 0x6B, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF));
+
+        lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
+        if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
+    } else {
+        ESP_LOGE(TAG, "D%u overview canvas buffer alloc failed (%u bytes)",
+                 (unsigned)deck + 1u, (unsigned)ov_sz);
+    }
+
+    panel->playhead = lv_obj_create(panel->wave_border);
+    lv_obj_set_style_bg_color(panel->playhead, COL_RED, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
+    lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
+    lv_obj_set_pos(panel->playhead, 10, 7);
+    lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
+
+    if (deck == CTRL_DECK_1) {
+        for (int i = 0; i < 8; i++) {
+            s_overview_cue_markers[i] = lv_obj_create(panel->wave_border);
+            lv_obj_set_style_border_width(s_overview_cue_markers[i], 0, LV_PART_MAIN);
+            lv_obj_set_size(s_overview_cue_markers[i], 3, OVERVIEW_CV_H);
+            lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_CLICKABLE);
+        }
+        for (int i = 0; i < 4; i++) {
+            s_beat_pulses[i] = lv_obj_create(panel->panel);
+            lv_obj_set_size(s_beat_pulses[i], 12, 12);
+            lv_obj_set_pos(s_beat_pulses[i], 444 + i * 20, 118);
+            lv_obj_set_style_radius(s_beat_pulses[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
+            lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_beat_pulses[i], COL_BORDER_LT, LV_PART_MAIN);
+            lv_obj_set_style_border_width(s_beat_pulses[i], 1, LV_PART_MAIN);
+        }
+    }
+
+    ui_overview_small_button(panel->panel, deck, 598, 115, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    ui_overview_small_button(panel->panel, deck, 686, 115, "CUE", &s_style_btn_amber, cue_event_cb);
+}
 
 static void create_screen_overview(lv_obj_t *parent) {
     s_screens[0] = lv_obj_create(parent);
@@ -1972,162 +2110,8 @@ static void create_screen_overview(lv_obj_t *parent) {
     lv_obj_set_size(s_screens[0], 800, 370);
     lv_obj_set_pos(s_screens[0], 0, 55);
 
-    // ─── Play / Pause button (left) ───
-    lv_obj_t *btn_play = lv_button_create(s_screens[0]);
-    lv_obj_remove_style_all(btn_play);
-    lv_obj_add_style(btn_play, &s_style_btn_primary, LV_PART_MAIN);
-    lv_obj_add_style(btn_play, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_play, 140, 50);
-    lv_obj_set_pos(btn_play, 20, 20);
-    lv_obj_add_event_cb(btn_play, play_pause_event_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lbl_play = lv_label_create(btn_play);
-    lv_label_set_text(lbl_play, "PLAY / PAUSE");
-    lv_obj_set_style_text_font(lbl_play, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_play, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(lbl_play, LV_ALIGN_CENTER, 0, 0);
-
-    // ─── CUE button (right, level with Play/Pause, right of the upper waveform) ───
-    lv_obj_t *btn_cue = lv_button_create(s_screens[0]);
-    lv_obj_remove_style_all(btn_cue);
-    lv_obj_add_style(btn_cue, &s_style_btn_amber, LV_PART_MAIN);
-    lv_obj_add_style(btn_cue, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_cue, 140, 50);
-    lv_obj_set_pos(btn_cue, 640, 20);
-    lv_obj_add_event_cb(btn_cue, cue_event_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lbl_cue = lv_label_create(btn_cue);
-    lv_label_set_text(lbl_cue, "CUE");
-    lv_obj_set_style_text_font(lbl_cue, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_cue, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(lbl_cue, LV_ALIGN_CENTER, 0, 0);
-
-    // ─── STATIC OVERVIEW WAVEFORM (Sredina) ───
-    lv_obj_t *wv_border = lv_obj_create(s_screens[0]);
-    lv_obj_remove_style_all(wv_border);
-    lv_obj_add_style(wv_border, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(wv_border, 420, 80);
-    lv_obj_set_pos(wv_border, 180, 10);
-    lv_obj_set_style_pad_all(wv_border, 0, LV_PART_MAIN);
-    // Tap-to-seek: wv_border is clickable by default; disable scrolling so a tap
-    // never gets eaten as a drag. Child bars/markers below are made non-clickable
-    // so taps fall through to this handler.
-    lv_obj_remove_flag(wv_border, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(wv_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
-
-    // Create static overview canvas (high-res 1:1 Rekordbox display) in fast SRAM
-    size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-#ifndef WIN32
-    s_overview_cv_buf = heap_caps_malloc(ov_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-#else
-    s_overview_cv_buf = malloc(ov_sz);
-#endif
-    if (s_overview_cv_buf) {
-        memset(s_overview_cv_buf, 0, ov_sz);
-        s_overview_canvas = lv_canvas_create(wv_border);
-        lv_canvas_set_buffer(s_overview_canvas, s_overview_cv_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-        lv_obj_align(s_overview_canvas, LV_ALIGN_TOP_LEFT, 10, 2);
-        lv_obj_remove_flag(s_overview_canvas, LV_OBJ_FLAG_CLICKABLE); // let taps reach wv_border
-
-        // Inicijalizacija palete boja za indeksirani I8 canvas
-        lv_canvas_set_palette(s_overview_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF)); // Pozadina (Crna)
-        lv_canvas_set_palette(s_overview_canvas, 1, lv_color32_make(0x00, 0x91, 0xFF, 0xFF)); // Waveform (Premium plava 0x0091FF)
-        lv_canvas_set_palette(s_overview_canvas, 2, lv_color32_make(0x27, 0x4C, 0x6B, 0xFF)); // Waveform played (Prigušeno plavo-zelena 0x274C6B)
-        lv_canvas_set_palette(s_overview_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF)); // Beat grid (Prigušeno siva)
-        lv_canvas_set_palette(s_overview_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF)); // Downbeat grid (Prigušeno crvena)
-
-        lv_image_dsc_t *dsc = lv_canvas_get_image(s_overview_canvas);
-        if (dsc && dsc->header.stride > 0) s_overview_stride_px = (int)dsc->header.stride;
-    } else {
-        ESP_LOGE(TAG, "overview canvas buffer alloc failed (%u bytes)", (unsigned)ov_sz);
-    }
-
-    // Playhead marker for the static overview (bright neon red, 3 px for visibility)
-    s_overview_playhead = lv_obj_create(wv_border);
-    lv_obj_set_style_bg_color(s_overview_playhead, COL_RED, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_overview_playhead, 0, LV_PART_MAIN);
-    lv_obj_set_size(s_overview_playhead, 3, 76);
-    lv_obj_set_pos(s_overview_playhead, 10, 2);
-    lv_obj_remove_flag(s_overview_playhead, LV_OBJ_FLAG_CLICKABLE);
-
-    // Cue markers for the static overview
-    for (int i = 0; i < 8; i++) {
-        s_overview_cue_markers[i] = lv_obj_create(wv_border);
-        lv_obj_set_style_border_width(s_overview_cue_markers[i], 0, LV_PART_MAIN);
-        lv_obj_set_size(s_overview_cue_markers[i], 3, 76);
-        lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hidden by default
-        lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_CLICKABLE);
-    }
-
-    // ─── 4-beat Pulse Row (Ispod waveforma) ───
-    for (int i = 0; i < 4; i++) {
-        s_beat_pulses[i] = lv_obj_create(s_screens[0]);
-        lv_obj_set_size(s_beat_pulses[i], 12, 12);
-        // Centrirano ispod waveforma (180 + (420 - 72)/2 = 354)
-        lv_obj_set_pos(s_beat_pulses[i], 354 + i * 20, 96);
-        lv_obj_set_style_radius(s_beat_pulses[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_color(s_beat_pulses[i], COL_BORDER_LT, LV_PART_MAIN);
-        lv_obj_set_style_border_width(s_beat_pulses[i], 1, LV_PART_MAIN);
-    }
-
-    // Label for progress details
-    lv_obj_t *lbl_wv_info = lv_label_create(s_screens[0]);
-    lv_label_set_text(lbl_wv_info, "TRACK OVERVIEW");
-    lv_obj_set_style_text_font(lbl_wv_info, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_wv_info, lv_color_hex(0x666666), LV_PART_MAIN);
-    lv_obj_set_pos(lbl_wv_info, 180, 115);
-
-    // ─── ZOOM DYNAMIC WAVEFORM (Donji dio ekrana) ───
-    lv_obj_t *lbl_zoom_title = lv_label_create(s_screens[0]);
-    lv_label_set_text(lbl_zoom_title, "WAVEFORM ZOOM");
-    lv_obj_set_style_text_font(lbl_zoom_title, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_zoom_title, COL_TEXT_MUTED, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_zoom_title, 20, 140);
-
-    lv_obj_t *zoom_container = lv_obj_create(s_screens[0]);
-    lv_obj_remove_style_all(zoom_container);
-    lv_obj_add_style(zoom_container, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(zoom_container, lv_color_hex(0x050505), LV_PART_MAIN);
-    lv_obj_set_size(zoom_container, 760, 160);
-    lv_obj_set_pos(zoom_container, 20, 165);
-    lv_obj_set_style_pad_all(zoom_container, 0, LV_PART_MAIN);
-    // Tap-to-seek on the zoom waveform (relative to the centre needle). Disable
-    // scrolling so a tap isn't eaten as a drag; children below are non-clickable.
-    lv_obj_remove_flag(zoom_container, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(zoom_container, zoom_seek_event_cb, LV_EVENT_CLICKED, NULL);
-
-    // High-res zoom waveform rendered to a canvas (smooth pixel scroll). The
-    // canvas fills the container interior; tap-to-seek stays on zoom_container.
-    size_t cv_sz = LV_DRAW_BUF_SIZE(ZOOM_CV_W, ZOOM_CV_H, LV_COLOR_FORMAT_I8);
-#ifndef WIN32
-    s_zoom_cv_buf = heap_caps_malloc(cv_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // SRAM alokacija
-#else
-    s_zoom_cv_buf = malloc(cv_sz);
-#endif
-    if (s_zoom_cv_buf) {
-        memset(s_zoom_cv_buf, 0, cv_sz);   // start black (alloc isn't zeroed)
-        s_zoom_canvas = lv_canvas_create(zoom_container);
-        lv_canvas_set_buffer(s_zoom_canvas, s_zoom_cv_buf, ZOOM_CV_W, ZOOM_CV_H,
-                             LV_COLOR_FORMAT_I8);
-        lv_obj_center(s_zoom_canvas);
-        lv_obj_remove_flag(s_zoom_canvas, LV_OBJ_FLAG_CLICKABLE); // taps reach zoom_container
-
-        // Inicijalizacija palete boja za indeksirani I8 canvas
-        lv_canvas_set_palette(s_zoom_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF)); // Pozadina (Crna)
-        lv_canvas_set_palette(s_zoom_canvas, 1, lv_color32_make(0x00, 0xFF, 0x88, 0xFF)); // Waveform (Zelena)
-        lv_canvas_set_palette(s_zoom_canvas, 2, lv_color32_make(0xFF, 0x00, 0x55, 0xFF)); // Playhead (Crvena)
-        lv_canvas_set_palette(s_zoom_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF)); // Beat grid (Siva)
-        lv_canvas_set_palette(s_zoom_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF)); // Downbeat grid (Prigušeno crvena)
-
-        lv_image_dsc_t *dsc = lv_canvas_get_image(s_zoom_canvas);
-        if (dsc && dsc->header.stride > 0) s_zoom_stride_px = (int)dsc->header.stride; // 8 bpp: stride je u bajtovima
-        s_zoom_redraw = true;
-    } else {
-        ESP_LOGE(TAG, "zoom canvas buffer alloc failed (%u bytes)", (unsigned)cv_sz);
-    }
+    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_1, 8);
+    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_2, 188);
 }
 
 static void ui_truncate_str(char *dest, const char *src, size_t max_len) {
@@ -2738,22 +2722,23 @@ static void create_screen_settings(lv_obj_t *parent) {
 // ─── Waveform Helpers ────────────────────────────────────────────────────────
 
 /* Render the high-resolution 1:1 overview waveform to the canvas once at track load. */
-static void ui_load_waveform_data(uint32_t duration_ms,
+static void ui_load_waveform_data(uint8_t deck,
+                                  uint32_t duration_ms,
                                   const uint8_t waveform_low[400],
                                   bool has_waveform,
                                   const anlz_metadata_t *meta)
 {
     ui_cache_invalidate();
-    s_zoom_redraw = true;              /* new track → force a zoom canvas redraw */
-    s_zoom_last_pos = 0xFFFFFFFFu;
-    s_overview_last_fill_x = -1;
-    s_overview_last_playhead_x = -1;
-    if (!s_overview_cv_buf) return;
+    uint8_t idx = ui_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    panel->last_fill_x = -1;
+    panel->last_playhead_x = -1;
+    if (!panel->wave_buf) return;
 
-    uint8_t *buf = s_overview_cv_buf + 256 * sizeof(lv_color32_t);
+    uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
     const int W = OVERVIEW_CV_W;
     const int H = OVERVIEW_CV_H;
-    const int S = s_overview_stride_px;
+    const int S = panel->wave_stride_px;
 
     // 1) Clear buffer to background index (0 == black)
     memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
@@ -2788,24 +2773,24 @@ static void ui_load_waveform_data(uint32_t duration_ms,
         }
     }
 
-    lv_obj_invalidate(s_overview_canvas);
+    lv_obj_invalidate(panel->wave_canvas);
 }
 
 #ifdef WIN32
 static void ui_load_waveform(const library_track_t *track)
 {
     if (!track) return;
-    ui_load_waveform_data(track->duration_ms, track->waveform_low,
+    ui_load_waveform_data(CTRL_DECK_1, track->duration_ms, track->waveform_low,
                           track->has_waveform != 0, library_get_current_anlz());
 }
 #endif
 
 #ifndef WIN32
-static void ui_load_waveform_media(const media_loaded_track_t *track)
+static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *track)
 {
     if (!track) return;
-    ui_load_waveform_data(track->duration_ms, track->waveform_low,
-                          track->has_waveform != 0, ui_current_anlz());
+    ui_load_waveform_data(deck, track->duration_ms, track->waveform_low,
+                          track->has_waveform != 0, ui_deck_anlz(deck));
 }
 #endif
 
@@ -2864,8 +2849,8 @@ static void ui_update_hot_cues(void)
             if (duration_ms > 0 && s_overview_cue_markers[i]) {
                 float progress = (float)pos / (float)duration_ms;
                 if (progress > 1.0f) progress = 1.0f;
-                int marker_x = 10 + (int)(progress * 400.0f) - 1; // Center it
-                lv_obj_set_pos(s_overview_cue_markers[i], marker_x, 2);
+                int marker_x = 10 + (int)(progress * (float)OVERVIEW_CV_W) - 1;
+                lv_obj_set_pos(s_overview_cue_markers[i], marker_x, 7);
                 
                 static const uint32_t cue_hex_colors[8] = {
                     0x00E676,  // A: Green
@@ -3168,6 +3153,8 @@ esp_err_t ui_init(void) {
         lv_label_set_text(s_label_title, track->title);
         lv_label_set_text(s_label_artist, track->artist);
         ui_label_set_f2(s_label_bpm, (float)track->bpm);
+        ui_deck_track_info_set(CTRL_DECK_1, track->title, track->artist,
+                               track->bpm, track->duration_ms);
         ui_load_waveform(track);           // rebuild bar heights from PWAV data
         
         /* Populate hot cue points from active ANLZ metadata */
@@ -3178,13 +3165,19 @@ esp_err_t ui_init(void) {
     media_loaded_track_t loaded;
     if (media_catalog_get_row(0, &row) == ESP_OK &&
         media_catalog_load(0, &loaded) == ESP_OK) {
-        s_loaded_media = loaded;
-        s_loaded_media_valid = true;
+        s_loaded_media[CTRL_DECK_1] = loaded;
+        s_loaded_media_valid[CTRL_DECK_1] = true;
+        s_loaded_media_source[CTRL_DECK_1] = loaded.source;
+        ui_deck_track_info_set(CTRL_DECK_1,
+                               row.title,
+                               row.artist,
+                               loaded.bpm ? loaded.bpm : row.bpm,
+                               loaded.duration_ms);
 
         lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
         lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
         ui_label_set_f2(s_label_bpm, (float)(loaded.bpm ? loaded.bpm : row.bpm));
-        ui_load_waveform_media(&loaded);
+        ui_load_waveform_media(CTRL_DECK_1, &loaded);
         ui_update_hot_cues();
     }
 #endif
@@ -3303,6 +3296,105 @@ static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
     }
 }
 
+static void ui_update_overview_waveform_progress(ui_overview_deck_panel_t *panel,
+                                                 uint32_t position_ms,
+                                                 uint32_t duration_ms)
+{
+    if (!panel || duration_ms == 0) return;
+
+    float progress = (float)position_ms / (float)duration_ms;
+    if (progress > 1.0f) progress = 1.0f;
+    int playhead_x = (int)(progress * (float)OVERVIEW_CV_W);
+    if (playhead_x < 0) playhead_x = 0;
+    if (playhead_x > OVERVIEW_CV_W) playhead_x = OVERVIEW_CV_W;
+
+    if (panel->playhead && playhead_x != panel->last_playhead_x) {
+        lv_obj_set_pos(panel->playhead, 10 + playhead_x, 7);
+        panel->last_playhead_x = playhead_x;
+    }
+
+    if (!panel->wave_canvas || !panel->wave_buf || playhead_x == panel->last_fill_x) {
+        return;
+    }
+
+    uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
+    const int W = OVERVIEW_CV_W;
+    const int H = OVERVIEW_CV_H;
+    const int S = panel->wave_stride_px;
+    int x0 = 0;
+    int x1 = W;
+    uint8_t target_wave_color = 1;
+
+    if (panel->last_fill_x >= 0 && panel->last_fill_x <= W) {
+        if (playhead_x > panel->last_fill_x) {
+            x0 = panel->last_fill_x;
+            x1 = playhead_x;
+            target_wave_color = 2;
+        } else {
+            x0 = playhead_x;
+            x1 = panel->last_fill_x;
+            target_wave_color = 1;
+        }
+    }
+
+    for (int x = x0; x < x1; x++) {
+        uint8_t col = (panel->last_fill_x < 0) ? ((x < playhead_x) ? 2 : 1) : target_wave_color;
+        for (int y = 0; y < H; y++) {
+            uint8_t val = buf[y * S + x];
+            if ((val == 1 || val == 2) && val != col) {
+                buf[y * S + x] = col;
+            }
+        }
+    }
+    panel->last_fill_x = playhead_x;
+    lv_obj_invalidate(panel->wave_canvas);
+}
+
+static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
+{
+    uint8_t idx = ui_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    if (!panel->panel || !state) return;
+
+    uint32_t duration_ms = ui_deck_duration_ms(idx);
+    uint32_t elapsed_ms = state->position_ms;
+    uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
+    const ui_deck_track_info_t *info = &s_deck_track_info[idx];
+
+    lv_label_set_text(panel->label_status, state->playing ? "PLAYING" : (info->valid ? "LOADED" : "EMPTY"));
+    lv_obj_set_style_text_color(panel->label_status,
+                                state->playing ? COL_GREEN : (info->valid ? COL_AMBER : COL_TEXT_DIM),
+                                LV_PART_MAIN);
+    lv_label_set_text(panel->label_title, info->valid ? info->title : "No Track");
+    lv_label_set_text(panel->label_artist, info->valid ? info->artist : "");
+
+    lv_label_set_text_fmt(panel->label_time, "%02u:%02u.%02u",
+                          (unsigned)(elapsed_ms / 60000),
+                          (unsigned)((elapsed_ms % 60000) / 1000),
+                          (unsigned)((elapsed_ms % 1000) / 10));
+    lv_label_set_text_fmt(panel->label_remain, "-%02u:%02u.%02u",
+                          (unsigned)(remain_ms / 60000),
+                          (unsigned)((remain_ms % 60000) / 1000),
+                          (unsigned)((remain_ms % 1000) / 10));
+
+    float pitch_pct;
+#ifndef WIN32
+    pitch_pct = audio_engine_raw_pitch_to_percent(state->pitch);
+#else
+    pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
+#endif
+    uint16_t base_bpm = ui_deck_bpm(idx);
+    float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
+    ui_label_set_f2(panel->label_bpm, current_bpm);
+    int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
+    lv_label_set_text_fmt(panel->label_pitch, "%c%d.%02d%%",
+                          (pc < 0) ? '-' : '+',
+                          (pc < 0 ? -pc : pc) / 100,
+                          (pc < 0 ? -pc : pc) % 100);
+
+    ui_update_overview_waveform_progress(panel, elapsed_ms, duration_ms);
+}
+
 void ui_update(void) {
 #ifndef WIN32
     if (s_usb_removed_pending) {
@@ -3336,6 +3428,7 @@ void ui_update(void) {
 
     // Read state snapshot
     deck_state_t state = deck_core_get_state();
+    deck_state_t deck2_state = deck_core_get_deck_state(CTRL_DECK_2);
     
     // Pre-calculate beat indicator state for LEDs and UI
     ui_beat_indicator_state_t beat_state = {0};
@@ -3471,70 +3564,15 @@ void ui_update(void) {
     }
 #endif
 
-    // ─── 5. Update Waveform Visualizer (Only if overview screen is visible) ───
+    // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
     if (s_active_tab == 0 && duration_ms > 0) {
         ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
-        // A. Static Overview Playhead marker
-        // Scale playhead position on the 400px width waveform track
-        float playhead_progress = (float)state.position_ms / (float)duration_ms;
-        if (playhead_progress > 1.0f) playhead_progress = 1.0f;
-        int playhead_pos_x = (int)(playhead_progress * 400.0f);
-        if (playhead_pos_x < 0) playhead_pos_x = 0;
-        if (playhead_pos_x > OVERVIEW_CV_W) playhead_pos_x = OVERVIEW_CV_W;
-        if (s_overview_playhead && playhead_pos_x != s_overview_last_playhead_x) {
-            lv_obj_set_pos(s_overview_playhead, 10 + playhead_pos_x, 2);
-            s_overview_last_playhead_x = playhead_pos_x;
-        }
-
-        // Progress fill: columns behind the playhead are marked as "played" (dimmed index 2),
-        // columns ahead stay bright. Only touch columns that changed since the last UI tick.
-        if (s_overview_canvas && s_overview_cv_buf && playhead_pos_x != s_overview_last_fill_x) {
-            uint8_t *buf = s_overview_cv_buf + 256 * sizeof(lv_color32_t);
-            const int W = OVERVIEW_CV_W;
-            const int H = OVERVIEW_CV_H;
-            const int S = s_overview_stride_px;
-
-            int x0 = 0;
-            int x1 = W;
-            uint8_t target_wave_color = 1;
-            if (s_overview_last_fill_x >= 0 && s_overview_last_fill_x <= W) {
-                if (playhead_pos_x > s_overview_last_fill_x) {
-                    x0 = s_overview_last_fill_x;
-                    x1 = playhead_pos_x;
-                    target_wave_color = 2;
-                } else {
-                    x0 = playhead_pos_x;
-                    x1 = s_overview_last_fill_x;
-                    target_wave_color = 1;
-                }
-            }
-
-            for (int x = x0; x < x1; x++) {
-                uint8_t col = (s_overview_last_fill_x < 0) ? ((x < playhead_pos_x) ? 2 : 1) : target_wave_color;
-                for (int y = 0; y < H; y++) {
-                    uint8_t val = buf[y * S + x];
-                    if ((val == 1 || val == 2) && val != col) {
-                        buf[y * S + x] = col;
-                    }
-                }
-            }
-            s_overview_last_fill_x = playhead_pos_x;
-            lv_obj_invalidate(s_overview_canvas);
-        }
-
-        // B. High-res zoom waveform (canvas, smooth pixel scroll). Redraw only when
-        // the position moved ≥1 px worth of time (or a redraw was forced on track
-        // change), so a paused deck costs nothing.
-        if (s_zoom_canvas) {
-            uint32_t zoom_pos = ((state.position_ms + (ZOOM_MS_PER_PX / 2u)) / ZOOM_MS_PER_PX) * ZOOM_MS_PER_PX;
-            if (s_zoom_redraw || zoom_pos != s_zoom_last_pos) {
-                ui_draw_zoom_canvas(zoom_pos, duration_ms, meta);
-                s_zoom_last_pos = zoom_pos;
-                s_zoom_redraw   = false;
-            }
-        }
+        ui_update_overview_deck(CTRL_DECK_1, &state);
+        ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
     } else if (s_active_tab == 0) {
         ui_update_beat_indicator(NULL);
+        ui_update_overview_deck(CTRL_DECK_1, &state);
+        ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
     }
 
     // ─── 6. Sync UI Status bar with mock settings ───
