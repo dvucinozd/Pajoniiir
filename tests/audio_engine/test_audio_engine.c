@@ -155,6 +155,14 @@ static void test_mixer_state_api(void)
     audio_engine_get_output_gains(&deck1, &deck2);
     EXPECT(nearf(deck1, 0.0f), "crossfader right mutes deck 0");
     EXPECT(nearf(deck2, 1.0f), "crossfader right keeps deck 1");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.channel_volume[0] == 8192, "snapshot captures deck 0 raw channel fader");
+    EXPECT(snapshot.channel_volume[1] == 16383, "snapshot captures deck 1 raw channel fader");
+    EXPECT(snapshot.crossfader == 16383, "snapshot captures raw crossfader");
+    EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
+    EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
 }
 
 /* ── Test 5: per-deck transition API guards ─────────────────────────────── */
@@ -175,6 +183,11 @@ static void test_pfl_state_api(void)
 
     EXPECT(audio_engine_toggle_pfl(1) == ESP_OK, "deck 1 PFL toggle returns ESP_OK");
     EXPECT(audio_engine_get_pfl_enabled(1), "deck 1 PFL toggles independently");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.pfl_enabled[0], "snapshot captures deck 0 PFL off");
+    EXPECT(snapshot.pfl_enabled[1], "snapshot captures deck 1 PFL on");
 
     EXPECT(audio_engine_toggle_pfl(2) == ESP_ERR_INVALID_ARG,
            "invalid PFL deck returns INVALID_ARG");

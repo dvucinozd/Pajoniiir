@@ -7,6 +7,7 @@
 #include "ui_active_deck_leds.h"
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
+#include "ui_mixer_view.h"
 #include "ui_performance_target.h"
 #include <limits.h>
 #include <stdio.h>
@@ -130,6 +131,11 @@ typedef struct {
     lv_obj_t *label_remain;
     lv_obj_t *label_bpm;
     lv_obj_t *label_pitch;
+    lv_obj_t *label_ch;
+    lv_obj_t *label_out;
+    lv_obj_t *label_pfl;
+    lv_obj_t *out_bar_bg;
+    lv_obj_t *out_bar_fill;
     lv_obj_t *wave_border;
     lv_obj_t *wave_canvas;
     uint8_t  *wave_buf;
@@ -141,6 +147,10 @@ typedef struct {
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_beat_pulses[4];
+static lv_obj_t *s_crossfader_label = NULL;
+static lv_obj_t *s_crossfader_track = NULL;
+static lv_obj_t *s_crossfader_knob = NULL;
+static int       s_crossfader_track_w = 0;
 
 // Hot cue buttons and values
 static uint32_t s_hot_cue_positions[8] = {
@@ -235,6 +245,9 @@ static uint32_t s_cache_sd_cache_mib = UINT32_MAX;
 static uint32_t s_cache_sd_cache_tracks = UINT32_MAX;
 static uint32_t s_cache_sd_cache_files = UINT32_MAX;
 static ui_beat_dot_cache_t s_cache_beat_dots[4];
+#ifndef WIN32
+static audio_engine_mixer_snapshot_t s_cache_mixer_snapshot = {0};
+#endif
 
 static void ui_invalidate_header_cache(void)
 {
@@ -2189,6 +2202,19 @@ static lv_obj_t *ui_overview_small_button(lv_obj_t *parent, uint8_t deck,
     return btn;
 }
 
+static lv_obj_t *ui_overview_bar(lv_obj_t *parent, int x, int y, int w, int h, lv_color_t color)
+{
+    lv_obj_t *bar = lv_obj_create(parent);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_style_bg_color(bar, color, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 3, LV_PART_MAIN);
+    lv_obj_set_size(bar, w, h);
+    lv_obj_set_pos(bar, x, y);
+    lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
+    return bar;
+}
+
 static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 {
     ui_overview_deck_panel_t *panel = &s_overview_decks[ui_deck_index(deck)];
@@ -2225,6 +2251,16 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                                                COL_TEXT, 134, 96, 68, "120.00");
     panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                  COL_GREEN, 134, 122, 68, "+0.00%");
+
+    panel->label_ch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                              COL_TEXT_MUTED, 598, 18, 76, "CH 100%");
+    panel->label_out = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                               COL_TEXT_MUTED, 598, 42, 76, "OUT 100%");
+    panel->label_pfl = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                               COL_TEXT_DIM, 686, 18, 64, "PFL OFF");
+    panel->out_bar_bg = ui_overview_bar(panel->panel, 598, 66, 146, 8, lv_color_hex(0x20252C));
+    panel->out_bar_fill = ui_overview_bar(panel->panel, 598, 66, 146, 8,
+                                          deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
 
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
@@ -2293,6 +2329,16 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
     ui_overview_small_button(panel->panel, deck, 598, 115, "PLAY", &s_style_btn_primary, play_pause_event_cb);
     ui_overview_small_button(panel->panel, deck, 686, 115, "CUE", &s_style_btn_amber, cue_event_cb);
+
+    if (deck == CTRL_DECK_1) {
+        s_crossfader_label = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
+                                                     COL_TEXT_MUTED, 598, 84, 28, "XF");
+        s_crossfader_track_w = 112;
+        s_crossfader_track = ui_overview_bar(panel->panel, 632, 91, s_crossfader_track_w, 6,
+                                             lv_color_hex(0x20252C));
+        s_crossfader_knob = ui_overview_bar(panel->panel, 632 + (s_crossfader_track_w / 2) - 3,
+                                            86, 6, 16, COL_RED);
+    }
     ui_update_performance_target_visuals();
 }
 
@@ -3560,6 +3606,49 @@ static void ui_update_overview_waveform_progress(ui_overview_deck_panel_t *panel
     lv_obj_invalidate(panel->wave_canvas);
 }
 
+#ifndef WIN32
+static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapshot)
+{
+    if (!snapshot) {
+        return;
+    }
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        ui_overview_deck_panel_t *panel = &s_overview_decks[deck];
+        ui_mixer_deck_view_t view =
+            ui_mixer_deck_view_from_state(snapshot->channel_volume[deck],
+                                          snapshot->output_gain[deck],
+                                          snapshot->pfl_enabled[deck]);
+
+        if (panel->label_ch) {
+            lv_label_set_text_fmt(panel->label_ch, "CH %3u%%", (unsigned)view.fader_pct);
+        }
+        if (panel->label_out) {
+            lv_label_set_text_fmt(panel->label_out, "OUT %3u%%", (unsigned)view.output_pct);
+        }
+        if (panel->label_pfl) {
+            lv_label_set_text(panel->label_pfl, view.pfl_on ? "PFL ON" : "PFL OFF");
+            lv_obj_set_style_text_color(panel->label_pfl,
+                                        view.pfl_on ? COL_AMBER : COL_TEXT_DIM,
+                                        LV_PART_MAIN);
+        }
+        if (panel->out_bar_fill) {
+            int w = (146 * (int)view.output_pct) / 100;
+            if (w < 2) w = 2;
+            lv_obj_set_width(panel->out_bar_fill, w);
+            lv_obj_set_style_bg_color(panel->out_bar_fill,
+                                      deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                                      LV_PART_MAIN);
+        }
+    }
+
+    if (s_crossfader_knob) {
+        int knob_x = ui_mixer_crossfader_knob_x(snapshot->crossfader, s_crossfader_track_w);
+        lv_obj_set_x(s_crossfader_knob, 632 + knob_x - 3);
+    }
+}
+#endif
+
 static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 {
     uint8_t idx = ui_deck_index(deck);
@@ -3661,6 +3750,7 @@ void ui_update(void) {
 #ifndef WIN32
     bool    ae_loading  = (audio_engine_get_state() == AE_LOADING);
     uint8_t ae_load_pct = audio_engine_load_progress();
+    audio_engine_get_mixer_snapshot(&s_cache_mixer_snapshot);
 #else
     bool    ae_loading  = false;
     uint8_t ae_load_pct = 100;
@@ -3796,10 +3886,16 @@ void ui_update(void) {
     // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
     if (s_active_tab == 0 && active_duration_ms > 0) {
         ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
+        #ifndef WIN32
+        ui_update_mixer_overview(&s_cache_mixer_snapshot);
+        #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
     } else if (s_active_tab == 0) {
         ui_update_beat_indicator(NULL);
+        #ifndef WIN32
+        ui_update_mixer_overview(&s_cache_mixer_snapshot);
+        #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
     }

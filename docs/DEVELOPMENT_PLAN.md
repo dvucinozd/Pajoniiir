@@ -220,5 +220,9 @@ Validation note, 2026-06-10:
   performance target.
 - The legacy single-set `PLAY`, `CUE`, `BEAT`, and `END` LED feedback sent to
   S3 now represents the active D1/D2 performance target.
+- Overview deck panels now expose mixer/PFL state from
+  `audio_engine_get_mixer_snapshot`: raw channel fader percent, effective
+  output gain percent, and deck-local PFL on/off state. The top deck panel also
+  shows a global crossfader strip.
 - D1 overview cue markers remain compatibility-oriented until per-deck overview
   cue marker rendering is added.

@@ -130,11 +130,19 @@ void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 
+typedef struct {
+    uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
+    uint16_t crossfader;
+    float output_gain[AUDIO_ENGINE_DECK_COUNT];
+    bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
+} audio_engine_mixer_snapshot_t;
+
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
 esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);
+void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 
 /*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).

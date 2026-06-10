@@ -1638,6 +1638,21 @@ bool audio_engine_get_pfl_enabled(uint8_t deck)
     return s_pfl_enabled[deck];
 }
 
+void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot)
+{
+    if (!out_snapshot) return;
+    float gain0 = 0.0f;
+    float gain1 = 0.0f;
+    audio_engine_get_output_gains(&gain0, &gain1);
+    out_snapshot->channel_volume[0] = s_channel_volume[0];
+    out_snapshot->channel_volume[1] = s_channel_volume[1];
+    out_snapshot->crossfader = s_crossfader;
+    out_snapshot->output_gain[0] = gain0;
+    out_snapshot->output_gain[1] = gain1;
+    out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
+    out_snapshot->pfl_enabled[1] = s_pfl_enabled[1];
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * PC test helper — decode to WAV file (AUDIO_ENGINE_PC_TEST only)
