@@ -211,5 +211,7 @@ Validation note, 2026-06-10:
 - The old full-width high-resolution zoom waveform was removed from Overview
   for this MVP; bring it back later as an active-deck detail view if SRAM and
   render budget allow it.
-- Hot cue marker and beat-grid metadata remain compatibility/D1-oriented until
-  ANLZ metadata is stored per deck.
+- P4 UI now stores deck-local ANLZ metadata snapshots, so loading Deck 2 no
+  longer overwrites the metadata used by Deck 1 Overview waveform rendering.
+- Hot Cue and Beat Jump screens still use the D1 compatibility view until an
+  active-deck/performance-pad target model is added.

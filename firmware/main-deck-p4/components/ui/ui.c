@@ -5,6 +5,7 @@
 #include "deck_core.h"
 #include "library.h"
 #include "ui_beat_indicator.h"
+#include "ui_deck_anlz_store.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,6 +100,7 @@ typedef struct {
 } ui_deck_track_info_t;
 
 static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
+static ui_deck_anlz_store_t s_deck_anlz_store;
 
 #ifndef WIN32
 static media_loaded_track_t  s_loaded_media[DECK_CORE_DECK_COUNT];
@@ -651,13 +653,12 @@ static uint16_t ui_current_bpm(void)
 
 static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
 {
-#ifndef WIN32
     uint8_t idx = ui_deck_index(deck);
-    if (idx == CTRL_DECK_1 && s_loaded_media_valid[idx]) {
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(s_loaded_media_source[idx]);
-        if (meta) return meta;
+    const anlz_metadata_t *meta = ui_deck_anlz_store_get(&s_deck_anlz_store, idx);
+    if (meta) {
+        return meta;
     }
-#endif
+
     if (deck != CTRL_DECK_1) return NULL;
     return library_get_current_anlz();
 }
@@ -665,6 +666,15 @@ static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
 static const anlz_metadata_t *ui_current_anlz(void)
 {
     return ui_deck_anlz(CTRL_DECK_1);
+}
+
+static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *meta)
+{
+    uint8_t idx = ui_deck_index(deck);
+    if (!meta || !ui_deck_anlz_store_set(&s_deck_anlz_store, idx, meta)) {
+        ui_deck_anlz_store_clear(&s_deck_anlz_store, idx);
+        ESP_LOGW(TAG, "Deck %u ANLZ metadata unavailable", (unsigned)idx + 1u);
+    }
 }
 
 #ifndef WIN32
@@ -979,6 +989,7 @@ static void ui_apply_usb_removed(void)
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_LOCAL_USB) {
             s_loaded_media_valid[deck] = false;
+            ui_deck_anlz_store_clear(&s_deck_anlz_store, deck);
             ui_deck_track_info_clear(deck);
             ui_load_waveform_data(deck, 0, NULL, false, NULL);
             removed_loaded = true;
@@ -1040,6 +1051,7 @@ static void ui_poll_track_load_result(void)
                                result.item.artist,
                                result.loaded.bpm ? result.loaded.bpm : result.item.bpm,
                                result.loaded.duration_ms);
+        ui_deck_anlz_set_from_current(deck, media_catalog_get_loaded_anlz_for_source(result.source));
         ui_load_waveform_media(deck, &result.loaded);
 
         if (deck == CTRL_DECK_1) {
@@ -1173,9 +1185,10 @@ static void library_load_event_cb(lv_event_t *e) {
     library_load_current_anlz(track);
 
     ui_deck_track_info_set(deck, track->title, track->artist, track->bpm, track->duration_ms);
+    ui_deck_anlz_set_from_current(deck, library_get_current_anlz());
     ui_load_waveform_data(deck, track->duration_ms, track->waveform_low,
                           track->has_waveform != 0,
-                          deck == CTRL_DECK_1 ? library_get_current_anlz() : NULL);
+                          ui_deck_anlz(deck));
 
     if (deck == CTRL_DECK_1) {
         lv_label_set_text(s_label_title, track->title);
@@ -2781,7 +2794,7 @@ static void ui_load_waveform(const library_track_t *track)
 {
     if (!track) return;
     ui_load_waveform_data(CTRL_DECK_1, track->duration_ms, track->waveform_low,
-                          track->has_waveform != 0, library_get_current_anlz());
+                          track->has_waveform != 0, ui_deck_anlz(CTRL_DECK_1));
 }
 #endif
 
@@ -3090,6 +3103,7 @@ void ui_lvgl_unlock(void) {}
 
 esp_err_t ui_init(void) {
     ESP_LOGI(TAG, "Initializing LVGL DJ UI layout (800x480 landscape)...");
+    ui_deck_anlz_store_init(&s_deck_anlz_store);
 
 #ifndef WIN32
     // On firmware, bring up LVGL on top of the BSP panel before building widgets.
@@ -3155,6 +3169,7 @@ esp_err_t ui_init(void) {
         ui_label_set_f2(s_label_bpm, (float)track->bpm);
         ui_deck_track_info_set(CTRL_DECK_1, track->title, track->artist,
                                track->bpm, track->duration_ms);
+        ui_deck_anlz_set_from_current(CTRL_DECK_1, library_get_current_anlz());
         ui_load_waveform(track);           // rebuild bar heights from PWAV data
         
         /* Populate hot cue points from active ANLZ metadata */
@@ -3177,6 +3192,7 @@ esp_err_t ui_init(void) {
         lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
         lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
         ui_label_set_f2(s_label_bpm, (float)(loaded.bpm ? loaded.bpm : row.bpm));
+        ui_deck_anlz_set_from_current(CTRL_DECK_1, media_catalog_get_loaded_anlz_for_source(loaded.source));
         ui_load_waveform_media(CTRL_DECK_1, &loaded);
         ui_update_hot_cues();
     }
