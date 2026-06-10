@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "deck_core.h"
 #include "library.h"
+#include "ui_active_deck_leds.h"
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
 #include "ui_performance_target.h"
@@ -210,6 +211,8 @@ typedef struct {
 } ui_beat_dot_cache_t;
 
 static ui_text_cache_t s_cache_status_text;
+static ui_text_cache_t s_cache_header_title;
+static ui_text_cache_t s_cache_header_artist;
 static ui_color_cache_t s_cache_status_color;
 static ui_color_cache_t s_cache_uart_color;
 static ui_color_cache_t s_cache_sd_color;
@@ -232,6 +235,17 @@ static uint32_t s_cache_sd_cache_mib = UINT32_MAX;
 static uint32_t s_cache_sd_cache_tracks = UINT32_MAX;
 static uint32_t s_cache_sd_cache_files = UINT32_MAX;
 static ui_beat_dot_cache_t s_cache_beat_dots[4];
+
+static void ui_invalidate_header_cache(void)
+{
+    s_cache_header_title.valid = false;
+    s_cache_header_artist.valid = false;
+    s_cache_pitch_centipct = INT_MIN;
+    s_cache_bpm_centi = INT_MIN;
+    s_cache_elapsed_centis = UINT32_MAX;
+    s_cache_remain_centis = UINT32_MAX;
+    s_cache_time_loading = false;
+}
 
 // ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
 static lv_style_t s_style_root;
@@ -722,11 +736,6 @@ static uint32_t ui_deck_duration_ms(uint8_t deck)
     return track ? track->duration_ms : 0;
 }
 
-static uint32_t ui_current_duration_ms(void)
-{
-    return ui_deck_duration_ms(CTRL_DECK_1);
-}
-
 static uint32_t ui_performance_duration_ms(void)
 {
     return ui_deck_duration_ms(ui_performance_target_get(&s_performance_target));
@@ -741,11 +750,6 @@ static uint16_t ui_deck_bpm(uint8_t deck)
     if (deck != CTRL_DECK_1) return 120;
     const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
     return track ? track->bpm : 120;
-}
-
-static uint16_t ui_current_bpm(void)
-{
-    return ui_deck_bpm(CTRL_DECK_1);
 }
 
 static uint16_t ui_performance_bpm(void)
@@ -765,11 +769,6 @@ static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
     return library_get_current_anlz();
 }
 
-static const anlz_metadata_t *ui_current_anlz(void)
-{
-    return ui_deck_anlz(CTRL_DECK_1);
-}
-
 static const anlz_metadata_t *ui_performance_anlz(void)
 {
     return ui_deck_anlz(ui_performance_target_get(&s_performance_target));
@@ -780,6 +779,22 @@ static deck_state_t ui_performance_deck_state(void)
     uint8_t deck = ui_performance_target_get(&s_performance_target);
     return deck == CTRL_DECK_1 ? deck_core_get_state()
                                : deck_core_get_deck_state(deck);
+}
+
+static void ui_update_active_header_track(uint8_t deck)
+{
+    uint8_t idx = ui_deck_index(deck);
+    const ui_deck_track_info_t *info = &s_deck_track_info[idx];
+
+    char title[128];
+    snprintf(title, sizeof(title), "D%u  %s",
+             (unsigned)idx + 1u,
+             (info->valid && info->title[0]) ? info->title : "No Track");
+    ui_label_set_text_cached(s_label_title, &s_cache_header_title, title);
+
+    ui_label_set_text_cached(s_label_artist,
+                             &s_cache_header_artist,
+                             (info->valid && info->artist[0]) ? info->artist : "");
 }
 
 static void ui_set_loop_shadow(uint8_t deck,
@@ -818,6 +833,9 @@ static void ui_set_performance_deck(uint8_t deck)
     uint8_t before = ui_performance_target_get(&s_performance_target);
     ui_performance_target_set(&s_performance_target, ui_deck_index(deck));
     uint8_t after = ui_performance_target_get(&s_performance_target);
+    if (before != after) {
+        ui_invalidate_header_cache();
+    }
 
     ui_update_performance_target_visuals();
     ui_refresh_loop_screen_from_target();
@@ -3621,18 +3639,21 @@ void ui_update(void) {
     // Read state snapshot
     deck_state_t state = deck_core_get_state();
     deck_state_t deck2_state = deck_core_get_deck_state(CTRL_DECK_2);
+    uint8_t active_deck = ui_performance_target_get(&s_performance_target);
+    deck_state_t active_state = active_deck == CTRL_DECK_1 ? state : deck2_state;
+    uint32_t active_duration_ms = ui_deck_duration_ms(active_deck);
+    uint16_t active_base_bpm = ui_deck_bpm(active_deck);
+    const anlz_metadata_t *active_meta = ui_deck_anlz(active_deck);
+    ui_update_active_header_track(active_deck);
     
     // Pre-calculate beat indicator state for LEDs and UI
     ui_beat_indicator_state_t beat_state = {0};
     bool beat_state_valid = false;
-    const anlz_metadata_t *meta = ui_current_anlz();
-    uint32_t duration_ms = ui_current_duration_ms();
-    uint16_t base_bpm = ui_current_bpm();
-    if (duration_ms > 0) {
-        beat_state = ui_beat_indicator_calculate(state.position_ms,
-                                                 meta ? meta->beats : NULL,
-                                                 meta ? meta->beat_count : 0,
-                                                 base_bpm);
+    if (active_duration_ms > 0) {
+        beat_state = ui_beat_indicator_calculate(active_state.position_ms,
+                                                 active_meta ? active_meta->beats : NULL,
+                                                 active_meta ? active_meta->beat_count : 0,
+                                                 active_base_bpm);
         beat_state_valid = beat_state.valid;
     }
 
@@ -3660,22 +3681,27 @@ void ui_update(void) {
     if (ae_loading) {
         s_status_override_until_ms = 0;
         char loading_status[16];
-        snprintf(loading_status, sizeof(loading_status), "LOADING %u%%", (unsigned)ae_load_pct);
+        snprintf(loading_status, sizeof(loading_status), "D%u LOAD %u%%",
+                 (unsigned)active_deck + 1u, (unsigned)ae_load_pct);
         ui_status_indicator_set(loading_status, COL_ACCENT);
     } else if (!ui_status_indicator_has_override()) {
-        if (state.playing) {
-            ui_status_indicator_set("PLAYING", COL_GREEN);
+        char status_text[16];
+        snprintf(status_text, sizeof(status_text), "D%u %s",
+                 (unsigned)active_deck + 1u,
+                 active_state.playing ? "PLAY" : "PAUSE");
+        if (active_state.playing) {
+            ui_status_indicator_set(status_text, COL_GREEN);
         } else {
-            ui_status_indicator_set("PAUSE", COL_AMBER);
+            ui_status_indicator_set(status_text, COL_AMBER);
         }
     }
 
     // ─── 3. Update BPM and Pitch % labels ───
     float pitch_pct;
 #ifndef WIN32
-    pitch_pct = audio_engine_raw_pitch_to_percent(state.pitch);
+    pitch_pct = audio_engine_raw_pitch_to_percent(active_state.pitch);
 #else
-    pitch_pct = ((8192.0f - (float)state.pitch) / 8192.0f) * 10.0f;
+    pitch_pct = ((8192.0f - (float)active_state.pitch) / 8192.0f) * 10.0f;
 #endif
     // No %f in LVGL builtin printf — format the signed 2-decimal percent by hand.
     int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
@@ -3685,7 +3711,7 @@ void ui_update(void) {
                               (pc < 0) ? '-' : '+', (pc < 0 ? -pc : pc) / 100, (pc < 0 ? -pc : pc) % 100);
     }
 
-    float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
+    float current_bpm = (float)(active_base_bpm ? active_base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
     int bpm_centi = (int)(current_bpm * 100.0f + (current_bpm >= 0.0f ? 0.5f : -0.5f));
     if (bpm_centi != s_cache_bpm_centi) {
         s_cache_bpm_centi = bpm_centi;
@@ -3693,13 +3719,13 @@ void ui_update(void) {
     }
 
     // ─── 4. Update time counters: elapsed (current position) + remaining ───
-    uint32_t elapsed_ms  = state.position_ms;
-    uint32_t remain_ms   = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
+    uint32_t elapsed_ms  = active_state.position_ms;
+    uint32_t remain_ms   = (active_duration_ms > elapsed_ms) ? (active_duration_ms - elapsed_ms) : 0;
 
     // Remaining-time warning colours: amber inside 30 s, red inside 10 s of the
     // end (only while a real track is loaded — idle/no-duration stays neutral).
     lv_color_t remain_col = COL_TEXT_MUTED;
-    if (duration_ms > 0) {
+    if (active_duration_ms > 0) {
         if (remain_ms <= 10000)      remain_col = lv_color_hex(0xFF1744); // red  <=10s
         else if (remain_ms <= 30000) remain_col = lv_color_hex(0xFFAB00); // amber <=30s
     }
@@ -3739,25 +3765,36 @@ void ui_update(void) {
 
     // ─── 4B. Update S3 Beat LED feedback ───
 #ifndef WIN32
-    static uint8_t s_last_beat_led_state = 0xFF;
-    uint8_t current_beat_led_state = 0;
-
-    if (state.playing && beat_state_valid) {
-        // LED turns ON during the first 20% of each beat (about 100ms at 120BPM)
-        if (beat_state.progress_permille < 200) {
-            current_beat_led_state = 1;
-        }
+    static uint8_t s_last_led_state[LED_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF};
+    static uint8_t s_last_led_deck = CTRL_DECK_NONE;
+    if (s_last_led_deck != active_deck) {
+        memset(s_last_led_state, 0xFF, sizeof(s_last_led_state));
+        s_last_led_deck = active_deck;
     }
 
-    if (current_beat_led_state != s_last_beat_led_state) {
-        s_last_beat_led_state = current_beat_led_state;
-        control_link_send_led(LED_BEAT, current_beat_led_state);
-        ESP_LOGD(TAG, "S3 Beat LED -> %d (pos=%lu ms)", current_beat_led_state, (unsigned long)state.position_ms);
+    ui_active_deck_leds_t leds =
+        ui_active_deck_leds_calculate(active_state.playing,
+                                      active_state.position_ms,
+                                      active_state.cue_point_ms,
+                                      active_duration_ms,
+                                      beat_state_valid,
+                                      beat_state.progress_permille);
+    const uint8_t next_leds[LED_COUNT] = {
+        [LED_CUE] = leds.cue,
+        [LED_PLAY] = leds.play,
+        [LED_BEAT] = leds.beat,
+        [LED_END] = leds.end,
+    };
+    for (int led = 0; led < LED_COUNT; led++) {
+        if (next_leds[led] != s_last_led_state[led]) {
+            s_last_led_state[led] = next_leds[led];
+            control_link_send_led((led_id_t)led, next_leds[led]);
+        }
     }
 #endif
 
     // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
-    if (s_active_tab == 0 && duration_ms > 0) {
+    if (s_active_tab == 0 && active_duration_ms > 0) {
         ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);

@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "ui.c"
+         "ui_active_deck_leds.c"
          "ui_deck_anlz_store.c"
          "ui_performance_target.c"
          "ui_beat_indicator.c"

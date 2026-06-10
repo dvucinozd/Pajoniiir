@@ -216,6 +216,9 @@ Validation note, 2026-06-10:
 - Hot Cue, Beat Loop, and Beat Jump screens now expose a D1/D2 target selector.
   These performance controls use deck-local ANLZ/BPM/position metadata and
   deck-aware audio seek/play/loop APIs.
-- Header status, legacy beat LED feedback, and D1 overview cue markers still
-  remain compatibility-oriented until the active-deck header/LED model is
-  explicitly redesigned.
+- Header title/artist/time/BPM/pitch/status now follow the active D1/D2
+  performance target.
+- The legacy single-set `PLAY`, `CUE`, `BEAT`, and `END` LED feedback sent to
+  S3 now represents the active D1/D2 performance target.
+- D1 overview cue markers remain compatibility-oriented until per-deck overview
+  cue marker rendering is added.
