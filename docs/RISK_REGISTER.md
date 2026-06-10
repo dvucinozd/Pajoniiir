@@ -2,7 +2,7 @@
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| S3 USB host cannot reliably power or enumerate DDJ-FLX4 | Blocks controller input | Test powered hub and external VBUS early; keep raw MIDI spike as Phase 1 |
+| S3 USB host cannot reliably power or enumerate DDJ-FLX4 | Blocks controller input | Firmware raw logger boots, but 2026-06-08 capture saw no enumeration; next validation must verify S3 OTG port, powered hub orientation, 5 V VBUS, and shared ground |
 | Mixxx XML differs from actual hardware messages | Wrong mappings and unstable controls | Verify every MVP control with raw MIDI capture before implementing behavior |
 | Analog controls generate noisy high-rate events | UART queue pressure and jitter | Threshold/debounce on S3; coalesce MSB/LSB; send only meaningful value changes |
 | Existing 7-byte control frame becomes too tight | Protocol churn | Use deck-aware ID namespace for MVP; only version frame if a real blocker appears |

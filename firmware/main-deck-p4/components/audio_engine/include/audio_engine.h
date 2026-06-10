@@ -40,6 +40,8 @@
 #endif
 
 #define AUDIO_PVBR_LEN  400u   /* entries in Rekordbox PVBR seek table */
+#define AUDIO_ENGINE_DECK_COUNT 2u
+#define AUDIO_ENGINE_COMPAT_DECK 0u
 
 /*
  * Initialise the audio engine.
@@ -110,6 +112,39 @@ uint32_t audio_engine_position_ms(void);
 bool audio_engine_is_playing(void);
 
 /*
+ * Transitional deck-aware API for the DDJ-FLX4 port.
+ *
+ * Deck 0 is the compatibility deck that owns codec/output startup. Deck 1
+ * has deck-local load/play/pause/seek/pitch state and can participate in the
+ * shared firmware output mixer once the compatibility output task is running.
+ */
+esp_err_t audio_engine_deck_load(uint8_t deck,
+                                 const char *mp3_path,
+                                 const uint32_t *pvbr_400,
+                                 uint32_t duration_ms);
+esp_err_t audio_engine_deck_play(uint8_t deck);
+esp_err_t audio_engine_deck_pause(uint8_t deck);
+esp_err_t audio_engine_deck_stop(uint8_t deck);
+esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
+void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
+uint32_t audio_engine_deck_position_ms(uint8_t deck);
+bool audio_engine_deck_is_playing(uint8_t deck);
+
+typedef struct {
+    uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
+    uint16_t crossfader;
+    float output_gain[AUDIO_ENGINE_DECK_COUNT];
+    bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
+} audio_engine_mixer_snapshot_t;
+
+esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
+esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
+void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
+esp_err_t audio_engine_toggle_pfl(uint8_t deck);
+bool audio_engine_get_pfl_enabled(uint8_t deck);
+void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
+
+/*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).
  *   AE_IDLE     — no track loaded
  *   AE_LOADING  — preloading the MP3 from USB into PSRAM (not playable yet)
@@ -141,6 +176,13 @@ void audio_engine_clear_loop(void);
  * Get the current loop boundaries and active state.
  */
 void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end_ms);
+
+esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
+esp_err_t audio_engine_deck_clear_loop(uint8_t deck);
+esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
+                                           bool *active,
+                                           uint32_t *start_ms,
+                                           uint32_t *end_ms);
 
 
 /* ── PC test helper (AUDIO_ENGINE_PC_TEST only) ───────────────────────────

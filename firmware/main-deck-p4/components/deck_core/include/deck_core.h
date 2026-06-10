@@ -19,6 +19,9 @@ typedef enum {
 
 // ─── Deck state (read-only snapshot for UI / audio_engine) ───────────────────
 
+#define DECK_CORE_DECK_COUNT 2
+#define DECK_CORE_COMPAT_DECK CTRL_DECK_1
+
 typedef struct {
     bool          playing;
     uint32_t      position_ms;
@@ -37,10 +40,24 @@ typedef struct {
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out);
 
 // Thread-safe snapshot of the current deck state.
+// Compatibility helper: returns Deck 1.
 deck_state_t deck_core_get_state(void);
+
+// Thread-safe snapshot of one deck state.
+deck_state_t deck_core_get_deck_state(uint8_t deck);
 
 // Queue a control event (from touch screen or other source).
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
 
 // Reset the deck state synchronously (on track load).
+// Compatibility helper: resets Deck 1.
 void deck_core_reset(void);
+
+// Reset one deck state synchronously.
+void deck_core_reset_deck(uint8_t deck);
+
+#if defined(DECK_CORE_PC_TEST)
+void deck_core_test_reset(void);
+void deck_core_test_apply_event(const ctrl_event_t *ev);
+deck_state_t deck_core_test_get_deck_state(uint8_t deck);
+#endif

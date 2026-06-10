@@ -20,7 +20,15 @@ CFLAGS  = -Wall -Wextra -std=c99 \
            -I../../firmware/main-deck-p4/components/audio_engine/include \
            -I../../firmware/main-deck-p4/components/library/include
 
-AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c
+AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c
 
 SRCS    = test_audio_engine.c \
           $(AUDIO_SRC)

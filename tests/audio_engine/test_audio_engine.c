@@ -114,10 +114,203 @@ static void test_pitch(void)
     audio_engine_set_pitch(8192);
 }
 
-/* ── Test 4: real MP3 decode to WAV (optional, skipped if no file given) ── */
+static int nearf(float actual, float expected)
+{
+    float diff = actual - expected;
+    if (diff < 0.0f) diff = -diff;
+    return diff < 0.01f;
+}
+
+/* ── Test 4: mixer state API ─────────────────────────────────────────────── */
+static void test_mixer_state_api(void)
+{
+    printf("\n[Test 4] Mixer state API\n");
+
+    float deck1 = 0.0f;
+    float deck2 = 0.0f;
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets mixer state");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 1.0f), "default deck 0 gain is unity");
+    EXPECT(nearf(deck2, 1.0f), "default deck 1 gain is unity");
+
+    EXPECT(audio_engine_set_channel_volume(0, 8192) == ESP_OK,
+           "deck 0 channel volume accepts center raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 0.5f), "deck 0 channel volume affects output gain");
+    EXPECT(nearf(deck2, 1.0f), "deck 1 remains unity");
+
+    EXPECT(audio_engine_set_channel_volume(1, 0) == ESP_OK,
+           "deck 1 channel volume accepts zero raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck2, 0.0f), "deck 1 channel volume mutes output gain");
+
+    EXPECT(audio_engine_set_channel_volume(2, 0) == ESP_ERR_INVALID_ARG,
+           "invalid mixer deck returns INVALID_ARG");
+
+    EXPECT(audio_engine_set_channel_volume(1, 16383) == ESP_OK,
+           "deck 1 channel volume accepts max raw value");
+    EXPECT(audio_engine_set_crossfader(16383) == ESP_OK,
+           "crossfader accepts max raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 0.0f), "crossfader right mutes deck 0");
+    EXPECT(nearf(deck2, 1.0f), "crossfader right keeps deck 1");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.channel_volume[0] == 8192, "snapshot captures deck 0 raw channel fader");
+    EXPECT(snapshot.channel_volume[1] == 16383, "snapshot captures deck 1 raw channel fader");
+    EXPECT(snapshot.crossfader == 16383, "snapshot captures raw crossfader");
+    EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
+    EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
+}
+
+/* ── Test 5: per-deck transition API guards ─────────────────────────────── */
+static void test_pfl_state_api(void)
+{
+    printf("\n[Test 5] PFL state API\n");
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets PFL state");
+    EXPECT(!audio_engine_get_pfl_enabled(0), "deck 0 PFL defaults off");
+    EXPECT(!audio_engine_get_pfl_enabled(1), "deck 1 PFL defaults off");
+
+    EXPECT(audio_engine_toggle_pfl(0) == ESP_OK, "deck 0 PFL toggle returns ESP_OK");
+    EXPECT(audio_engine_get_pfl_enabled(0), "deck 0 PFL toggles on");
+    EXPECT(!audio_engine_get_pfl_enabled(1), "deck 1 PFL remains off");
+
+    EXPECT(audio_engine_toggle_pfl(0) == ESP_OK, "deck 0 second PFL toggle returns ESP_OK");
+    EXPECT(!audio_engine_get_pfl_enabled(0), "deck 0 PFL toggles off");
+
+    EXPECT(audio_engine_toggle_pfl(1) == ESP_OK, "deck 1 PFL toggle returns ESP_OK");
+    EXPECT(audio_engine_get_pfl_enabled(1), "deck 1 PFL toggles independently");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.pfl_enabled[0], "snapshot captures deck 0 PFL off");
+    EXPECT(snapshot.pfl_enabled[1], "snapshot captures deck 1 PFL on");
+
+    EXPECT(audio_engine_toggle_pfl(2) == ESP_ERR_INVALID_ARG,
+           "invalid PFL deck returns INVALID_ARG");
+    EXPECT(!audio_engine_get_pfl_enabled(2), "invalid PFL deck reads as off");
+}
+
+/* ── Test 6: per-deck transition API guards ─────────────────────────────── */
+static void test_deck_api(void)
+{
+    printf("\n[Test 6] Per-deck transition API\n");
+
+    EXPECT(audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
+           "deck 0 load delegates to current engine");
+    EXPECT(audio_engine_deck_load(1, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
+           "deck 1 load has its own engine state");
+    EXPECT(audio_engine_deck_load(2, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_INVALID_ARG,
+           "out-of-range deck load returns INVALID_ARG");
+
+    EXPECT(audio_engine_deck_play(1) == ESP_ERR_INVALID_STATE,
+           "deck 1 play before load returns INVALID_STATE");
+    EXPECT(audio_engine_deck_pause(1) == ESP_ERR_INVALID_STATE,
+           "deck 1 pause before load returns INVALID_STATE");
+    EXPECT(audio_engine_deck_seek(1, 1000) == ESP_ERR_INVALID_STATE,
+           "deck 1 seek before load returns INVALID_STATE");
+
+    audio_engine_deck_set_pitch(0, 8192);
+    audio_engine_deck_set_pitch(1, 8192);
+    EXPECT(audio_engine_deck_is_playing(1) == false,
+           "deck 1 reports not playing before load");
+    EXPECT(audio_engine_deck_position_ms(1) == 0,
+           "deck 1 position is zero before load");
+}
+
+static void test_deck_states_are_independent(void)
+{
+    printf("\n[Test 7] Per-deck state split\n");
+
+    const char *path = "dummy_deck_audio.mp3";
+    FILE *f = fopen(path, "wb");
+    if (f) {
+        static const unsigned char bytes[] = {0xff, 0xfb, 0x90, 0x64, 0x00, 0x00, 0x00, 0x00};
+        fwrite(bytes, 1, sizeof bytes, f);
+        fclose(f);
+    }
+    EXPECT(f != NULL, "dummy audio file created");
+
+    EXPECT(audio_engine_deck_load(0, path, NULL, 10000) == ESP_OK,
+           "deck 0 dummy load returns ESP_OK");
+    EXPECT(audio_engine_deck_load(1, path, NULL, 20000) == ESP_OK,
+           "deck 1 dummy load returns ESP_OK");
+
+    EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 play returns ESP_OK");
+    EXPECT(audio_engine_deck_is_playing(0), "deck 0 is playing");
+    EXPECT(!audio_engine_deck_is_playing(1), "deck 1 is still stopped");
+
+    EXPECT(audio_engine_deck_play(1) == ESP_OK, "deck 1 play returns ESP_OK");
+    EXPECT(audio_engine_deck_is_playing(0), "deck 0 remains playing");
+    EXPECT(audio_engine_deck_is_playing(1), "deck 1 is playing");
+
+    EXPECT(audio_engine_deck_seek(0, 1234) == ESP_OK, "deck 0 seek returns ESP_OK");
+    EXPECT(audio_engine_deck_seek(1, 5678) == ESP_OK, "deck 1 seek returns ESP_OK");
+    EXPECT(audio_engine_deck_position_ms(0) == 1234, "deck 0 position is independent");
+    EXPECT(audio_engine_deck_position_ms(1) == 5678, "deck 1 position is independent");
+
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK, "deck 0 stop returns ESP_OK");
+    EXPECT(!audio_engine_deck_is_playing(0), "deck 0 stopped");
+    EXPECT(audio_engine_deck_is_playing(1), "deck 1 remains playing after deck 0 stop");
+
+    audio_engine_deck_stop(1);
+    remove(path);
+}
+
+static void test_deck_loops_are_independent(void)
+{
+    printf("\n[Test 8] Per-deck loop state\n");
+
+    EXPECT(audio_engine_deck_set_loop(0, 1000, 2000) == ESP_OK,
+           "deck 0 loop set returns ESP_OK");
+    EXPECT(audio_engine_deck_set_loop(1, 3000, 5000) == ESP_OK,
+           "deck 1 loop set returns ESP_OK");
+
+    bool active = false;
+    uint32_t start = 0;
+    uint32_t end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
+           "deck 0 loop read returns ESP_OK");
+    EXPECT(active && start == 1000 && end == 2000,
+           "deck 0 loop state is independent");
+
+    active = false;
+    start = 0;
+    end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(1, &active, &start, &end) == ESP_OK,
+           "deck 1 loop read returns ESP_OK");
+    EXPECT(active && start == 3000 && end == 5000,
+           "deck 1 loop state is independent");
+
+    EXPECT(audio_engine_deck_clear_loop(0) == ESP_OK,
+           "deck 0 loop clear returns ESP_OK");
+    EXPECT(audio_engine_deck_get_loop_state(0, &active, &start, &end) == ESP_OK,
+           "deck 0 cleared loop read returns ESP_OK");
+    EXPECT(!active, "deck 0 loop clears");
+
+    active = false;
+    start = 0;
+    end = 0;
+    EXPECT(audio_engine_deck_get_loop_state(1, &active, &start, &end) == ESP_OK,
+           "deck 1 loop still readable after deck 0 clear");
+    EXPECT(active && start == 3000 && end == 5000,
+           "deck 1 loop survives deck 0 clear");
+
+    EXPECT(audio_engine_deck_set_loop(2, 0, 1) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop set returns INVALID_ARG");
+    EXPECT(audio_engine_deck_clear_loop(2) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop clear returns INVALID_ARG");
+    EXPECT(audio_engine_deck_get_loop_state(2, NULL, NULL, NULL) == ESP_ERR_INVALID_ARG,
+           "invalid deck loop read returns INVALID_ARG");
+}
+
+/* ── Test 8: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 4] Decode MP3 → WAV\n");
+    printf("\n[Test 9] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -176,12 +369,17 @@ int main(int argc, char *argv[])
     test_init();
     test_load_missing();
     test_pitch();
+    test_mixer_state_api();
+    test_pfl_state_api();
+    test_deck_api();
+    test_deck_states_are_independent();
+    test_deck_loops_are_independent();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 4] Decode MP3 → WAV\n");
+        printf("\n[Test 9] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

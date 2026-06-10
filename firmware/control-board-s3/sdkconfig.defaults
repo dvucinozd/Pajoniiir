@@ -1,5 +1,10 @@
 CONFIG_IDF_TARGET="esp32s3"
 
+# DDJ-FFL4: use the S3 USB OTG peripheral as host for the Pioneer DDJ-FLX4.
+# Disable this in menuconfig only when returning to the inherited CDJ panel
+# USB MIDI device compatibility mode.
+CONFIG_DDJ_FLX4_HOST_MODE=y
+
 # Flash
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_SINGLE_APP=y
