@@ -236,3 +236,6 @@ Validation note, 2026-06-10:
   tabs now expose their utility/status strips, Key Shift has D1/D2 targeting and
   visible tempo/key/pitch controls, Settings has a mixer/PFL routing block, and
   Overview owns per-deck cue marker objects for D1 and D2.
+- First Overview polish pass now follows the Pioneered reference more closely:
+  the two deck waveforms live in the upper overview area, Beat FX is a compact
+  right-side stack, and the deck metadata is split into two lower deck strips.
