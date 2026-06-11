@@ -130,11 +130,15 @@ static volatile bool         s_usb_removed_pending = false;
 #endif
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 550
-#define OVERVIEW_CV_H 78
+#define OVERVIEW_CV_W 560
+#define OVERVIEW_CV_H 96
 #define OVERVIEW_MINI_CV_W 390
 #define OVERVIEW_MINI_CV_H 30
 #define OVERVIEW_XFADER_X 314
+#define OVERVIEW_WAVE_X 92
+#define OVERVIEW_WAVE_INSET_X 10
+#define OVERVIEW_WAVE_INSET_Y 7
+#define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_MAIN_VISIBLE_BEATS 16u
 #define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
 #define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
@@ -2198,7 +2202,7 @@ static void waveform_seek_event_cb(lv_event_t *e) {
 
     lv_area_t content;
     lv_obj_get_content_coords(wv, &content);
-    int rel_x = (int)p.x - content.x1 - 10;
+    int rel_x = (int)p.x - content.x1 - OVERVIEW_WAVE_INSET_X;
     if (rel_x < 0)   rel_x = 0;
     if (rel_x > OVERVIEW_CV_W) rel_x = OVERVIEW_CV_W;
 
@@ -2367,8 +2371,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_remove_style_all(panel->wave_border);
     lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
     lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
-    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 18);
-    lv_obj_set_pos(panel->wave_border, 98, top_y + 42);
+    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + (OVERVIEW_WAVE_INSET_X * 2),
+                    OVERVIEW_CV_H + (OVERVIEW_WAVE_INSET_Y * 2));
+    lv_obj_set_pos(panel->wave_border, OVERVIEW_WAVE_X, top_y + 42);
     lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
     lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
@@ -2384,14 +2389,17 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         memset(panel->wave_buf, 0, ov_sz);
         panel->wave_canvas = lv_canvas_create(panel->wave_border);
         lv_canvas_set_buffer(panel->wave_canvas, panel->wave_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-        lv_obj_align(panel->wave_canvas, LV_ALIGN_TOP_LEFT, 10, 7);
+        lv_obj_align(panel->wave_canvas, LV_ALIGN_TOP_LEFT, OVERVIEW_WAVE_INSET_X, OVERVIEW_WAVE_INSET_Y);
         lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
 
         lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0xF0, 0x2B, 0x72, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0xFF, 0xA6, 0xD4, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
         if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
@@ -2404,7 +2412,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
-    lv_obj_set_pos(panel->playhead, 10 + (OVERVIEW_CV_W / 2), 7);
+    lv_obj_set_pos(panel->playhead, OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2), OVERVIEW_WAVE_INSET_Y);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_foreground(panel->wave_border);
 
@@ -2433,9 +2441,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_remove_flag(panel->mini_wave_canvas, LV_OBJ_FLAG_CLICKABLE);
         lv_canvas_set_palette(panel->mini_wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 1, lv_color32_make(0xE8, 0x2B, 0x78, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0xFF, 0xA6, 0xD4, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
         lv_image_dsc_t *mini_dsc = lv_canvas_get_image(panel->mini_wave_canvas);
         if (mini_dsc && mini_dsc->header.stride > 0) {
             panel->mini_wave_stride_px = (int)mini_dsc->header.stride;
@@ -2549,15 +2560,15 @@ static void ui_create_overview_fx_panel(lv_obj_t *parent)
 
 static void ui_create_overview_center_marker(lv_obj_t *parent)
 {
-    lv_obj_t *line = ui_overview_bar(parent, 421, 0, 1, 316, COL_TEXT);
+    lv_obj_t *line = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X, 0, 1, 316, COL_TEXT);
     lv_obj_set_style_bg_opa(line, LV_OPA_80, LV_PART_MAIN);
 
-    lv_obj_t *top = ui_overview_bar(parent, 417, 0, 9, 2, COL_TEXT);
+    lv_obj_t *top = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, 0, 9, 2, COL_TEXT);
     lv_obj_set_style_bg_opa(top, LV_OPA_80, LV_PART_MAIN);
-    lv_obj_t *bottom = ui_overview_bar(parent, 417, 158, 9, 2, COL_TEXT);
+    lv_obj_t *bottom = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, 158, 9, 2, COL_TEXT);
     lv_obj_set_style_bg_opa(bottom, LV_OPA_80, LV_PART_MAIN);
 
-    lv_obj_t *cue = ui_overview_bar(parent, 407, 300, 32, 16, COL_AMBER);
+    lv_obj_t *cue = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 16, 300, 32, 16, COL_AMBER);
     lv_obj_set_style_border_width(cue, 0, LV_PART_MAIN);
     lv_obj_t *label = lv_label_create(cue);
     lv_label_set_text(label, "CUE");
@@ -3360,8 +3371,9 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
 
     if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
         for (int x = 0; x < W; x++) {
-            int amp = ui_waveform_peak_for_column(source, duration_ms,
-                                                  window_start_ms, window_ms, x, W);
+            ui_waveform_column_t col = ui_waveform_column_for_column(
+                source, duration_ms, window_start_ms, window_ms, x, W);
+            int amp = col.peak;
             int h = 2 + (amp * (H - 8)) / 31;
             if (h < 1) h = 1;
             int cy = H / 2;
@@ -3369,7 +3381,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
             int y1 = cy + h / 2;
             if (y0 < 0) y0 = 0;
             if (y1 >= H) y1 = H - 1;
-            uint8_t color = (x % 23 < 4) ? 3 : 1;
+            uint8_t color = col.palette_index ? col.palette_index : 1;
             for (int y = y0; y <= y1; y++) {
                 buf[y * S + x] = color;
             }
@@ -3414,7 +3426,9 @@ static void ui_load_waveform_data(uint8_t deck,
 
         if (wave_valid) {
             for (int x = 0; x < MW; x++) {
-                int amp = ui_waveform_peak_for_column(&wave_source, duration_ms, 0, duration_ms, x, MW);
+                ui_waveform_column_t col = ui_waveform_column_for_column(
+                    &wave_source, duration_ms, 0, duration_ms, x, MW);
+                int amp = col.peak;
                 int h = (amp * (MH - 2)) / 31;
                 if (h < 1) h = 1;
                 int cy = MH / 2;
@@ -3422,7 +3436,7 @@ static void ui_load_waveform_data(uint8_t deck,
                 int y1 = cy + h / 2;
                 if (y0 < 0) y0 = 0;
                 if (y1 >= MH) y1 = MH - 1;
-                uint8_t color = (x % 17 < 3) ? 3 : 1;
+                uint8_t color = col.palette_index ? col.palette_index : 1;
                 for (int y = y0; y <= y1; y++) {
                     mini_buf[y * MS + x] = color;
                 }
@@ -3512,11 +3526,14 @@ static void ui_update_overview_cue_markers(uint8_t deck)
             continue;
         }
 
-        int marker_x = 10 + (int)((((int64_t)pos - window_start_ms) * OVERVIEW_CV_W) /
-                                  (int64_t)window_ms) - 1;
-        if (marker_x < 9) marker_x = 9;
-        if (marker_x > 10 + OVERVIEW_CV_W - 2) marker_x = 10 + OVERVIEW_CV_W - 2;
-        lv_obj_set_pos(marker, marker_x, 7);
+        int marker_x = OVERVIEW_WAVE_INSET_X +
+            (int)((((int64_t)pos - window_start_ms) * OVERVIEW_CV_W) /
+                  (int64_t)window_ms) - 1;
+        if (marker_x < OVERVIEW_WAVE_INSET_X - 1) marker_x = OVERVIEW_WAVE_INSET_X - 1;
+        if (marker_x > OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2) {
+            marker_x = OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2;
+        }
+        lv_obj_set_pos(marker, marker_x, OVERVIEW_WAVE_INSET_Y);
         lv_obj_set_style_bg_color(marker, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
         lv_obj_remove_flag(marker, LV_OBJ_FLAG_HIDDEN);
     }
@@ -4022,7 +4039,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
 
     int main_playhead_x = OVERVIEW_CV_W / 2;
     if (panel->playhead && main_playhead_x != panel->last_playhead_x) {
-        lv_obj_set_pos(panel->playhead, 10 + main_playhead_x, 7);
+        lv_obj_set_pos(panel->playhead, OVERVIEW_WAVE_INSET_X + main_playhead_x, OVERVIEW_WAVE_INSET_Y);
         panel->last_playhead_x = main_playhead_x;
     }
 

@@ -55,6 +55,41 @@ static void test_peak_sampling_uses_high_resolution_window(void)
     assert(peak == 31u);
 }
 
+static void test_column_sampling_preserves_color_hint_from_peak_sample(void)
+{
+    uint8_t high[16] = {0};
+    anlz_metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.waveform_high = high;
+    meta.waveform_high_len = sizeof(high);
+    high[4] = 0x7Eu;  // color hint 3, amplitude 30
+    high[5] = 0x1Eu;  // equal amplitude, but no color hint
+
+    ui_waveform_source_t source = ui_waveform_source_select(&meta, NULL, false);
+    ui_waveform_column_t column =
+        ui_waveform_column_for_column(&source, 16000u, 0, 16000u, 2, 8);
+
+    assert(column.peak == 30u);
+    assert(column.palette_index == 5u);
+}
+
+static void test_column_sampling_uses_amplitude_color_fallback_without_hint(void)
+{
+    uint8_t high[16] = {0};
+    anlz_metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.waveform_high = high;
+    meta.waveform_high_len = sizeof(high);
+    high[6] = 0x1Eu;  // no color hint, high transient amplitude
+
+    ui_waveform_source_t source = ui_waveform_source_select(&meta, NULL, false);
+    ui_waveform_column_t column =
+        ui_waveform_column_for_column(&source, 16000u, 0, 16000u, 3, 8);
+
+    assert(column.peak == 30u);
+    assert(column.palette_index == 3u);
+}
+
 static void test_window_outside_track_returns_silence(void)
 {
     uint8_t high[16];
@@ -75,6 +110,8 @@ int main(void)
     test_prefers_high_resolution_waveform_when_available();
     test_falls_back_to_low_resolution_waveform();
     test_peak_sampling_uses_high_resolution_window();
+    test_column_sampling_preserves_color_hint_from_peak_sample();
+    test_column_sampling_uses_amplitude_color_fallback_without_hint();
     test_window_outside_track_returns_silence();
 
     puts("ui_waveform_model tests passed");

@@ -261,3 +261,6 @@ Validation note, 2026-06-10:
   grid lines. The lower mini waveform remains the full-track overview/position
   strip, and tap-to-seek/cue markers now use the visible zoom-window coordinate
   system.
+- Follow-up polish enlarges the main waveform canvas and maps Rekordbox waveform
+  color hints plus amplitude fallback into a Pioneered-like palette: hot pink,
+  blue, cyan, green, amber, purple, and white downbeat/grid markers.
