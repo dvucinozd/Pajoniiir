@@ -224,5 +224,9 @@ Validation note, 2026-06-10:
   `audio_engine_get_mixer_snapshot`: raw channel fader percent, effective
   output gain percent, and deck-local PFL on/off state. The top deck panel also
   shows a global crossfader strip.
+- P4 GUI visual direction is now aligned with the Pioneered/Pioneered-Plus
+  reference: top navigation, black base surface, Pioneered color tokens, sharp
+  rectangular controls, and a first-pass Overview layout with wide deck
+  waveforms, deck-local title strips, and right-side mixer/transport blocks.
 - D1 overview cue markers remain compatibility-oriented until per-deck overview
   cue marker rendering is added.

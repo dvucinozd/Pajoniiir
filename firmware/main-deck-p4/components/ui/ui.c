@@ -49,6 +49,9 @@
 // mode corrupts the DSI DMA; full mode doesn't rotate), so we rotate in hardware.
 #define UI_HOR_RES   800   // logical landscape width  (LVGL canvas)
 #define UI_VER_RES   480   // logical landscape height
+#define UI_TOPBAR_H   46
+#define UI_CONTENT_Y  UI_TOPBAR_H
+#define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
 #define UI_DSI_FB_COUNT 3  // DPI framebuffers (num_fbs=3) for tear-free triple buffering
 #define ALIGN_UP_BY(n, a)  (((n) + ((a) - 1)) & ~((a) - 1))
 
@@ -63,6 +66,14 @@ static ppa_client_handle_t  s_ppa         = NULL;
 static void                *s_dsi_fb[UI_DSI_FB_COUNT] = { NULL };
 static int                  s_dsi_fb_idx  = 1;   // next fb to render into (fb 0 active at boot)
 static size_t               s_cache_align = 64;
+#endif
+
+#ifndef UI_HOR_RES
+#define UI_HOR_RES   800
+#define UI_VER_RES   480
+#define UI_TOPBAR_H   46
+#define UI_CONTENT_Y  UI_TOPBAR_H
+#define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
 #endif
 
 static const char *TAG = "ui";
@@ -118,7 +129,7 @@ static volatile bool         s_usb_removed_pending = false;
 #endif
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 500
+#define OVERVIEW_CV_W 560
 #define OVERVIEW_CV_H 72
 
 typedef struct {
@@ -590,11 +601,10 @@ static void ui_update_performance_target_visuals(void)
             continue;
         }
         bool active = deck == active_deck;
-        lv_color_t color = deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN;
-        lv_obj_set_style_border_color(panel->panel, active ? color : COL_BORDER_LT, LV_PART_MAIN);
-        lv_obj_set_style_border_width(panel->panel, active ? 2 : 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(panel->panel, active ? COL_TEXT : COL_BG, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->panel, active ? 1 : 0, LV_PART_MAIN);
         if (panel->label_deck) {
-            lv_obj_set_style_text_color(panel->label_deck, active ? color : COL_TEXT_MUTED, LV_PART_MAIN);
+            lv_obj_set_style_text_color(panel->label_deck, active ? COL_TEXT : COL_TEXT_MUTED, LV_PART_MAIN);
         }
     }
 }
@@ -1902,43 +1912,44 @@ static void init_styles(void) {
     lv_style_set_bg_opa(&s_style_root, LV_OPA_COVER);
     lv_style_set_pad_all(&s_style_root, 0);
 
-    // Header bar style
+    // Legacy header state sink. Hidden in the Pioneered layout but kept alive
+    // because update paths still write active deck metadata into these labels.
     lv_style_init(&s_style_header);
-    lv_style_set_bg_color(&s_style_header, COL_PANEL);
-    lv_style_set_bg_opa(&s_style_header, LV_OPA_COVER);
-    lv_style_set_border_width(&s_style_header, 1);
+    lv_style_set_bg_color(&s_style_header, COL_BG);
+    lv_style_set_bg_opa(&s_style_header, LV_OPA_TRANSP);
+    lv_style_set_border_width(&s_style_header, 0);
     lv_style_set_border_color(&s_style_header, COL_BORDER);
     lv_style_set_border_side(&s_style_header, LV_BORDER_SIDE_BOTTOM);
-    lv_style_set_pad_left(&s_style_header, 15);
-    lv_style_set_pad_right(&s_style_header, 15);
+    lv_style_set_pad_left(&s_style_header, 0);
+    lv_style_set_pad_right(&s_style_header, 0);
 
-    // Footer bar style
+    // Top navigation bar style.
     lv_style_init(&s_style_footer);
     lv_style_set_bg_color(&s_style_footer, COL_FOOTER);
     lv_style_set_bg_opa(&s_style_footer, LV_OPA_COVER);
-    lv_style_set_border_width(&s_style_footer, 1);
+    lv_style_set_border_width(&s_style_footer, 0);
     lv_style_set_border_color(&s_style_footer, COL_BORDER);
-    lv_style_set_border_side(&s_style_footer, LV_BORDER_SIDE_TOP);
+    lv_style_set_border_side(&s_style_footer, LV_BORDER_SIDE_BOTTOM);
     lv_style_set_pad_all(&s_style_footer, 0);
 
-    // Tab buttons - Normal
+    // Tab buttons - Pioneered normal
     lv_style_init(&s_style_tab_btn_normal);
-    lv_style_set_bg_color(&s_style_tab_btn_normal, lv_color_hex(0x051A0B));
+    lv_style_set_bg_color(&s_style_tab_btn_normal, COL_BG);
     lv_style_set_bg_opa(&s_style_tab_btn_normal, LV_OPA_COVER);
     lv_style_set_text_color(&s_style_tab_btn_normal, COL_TEXT_MUTED);
     lv_style_set_border_width(&s_style_tab_btn_normal, 1);
-    lv_style_set_border_color(&s_style_tab_btn_normal, lv_color_hex(0x123A1B));
-    lv_style_set_radius(&s_style_tab_btn_normal, 4);
+    lv_style_set_border_color(&s_style_tab_btn_normal, COL_BORDER_LT);
+    lv_style_set_radius(&s_style_tab_btn_normal, 0);
     lv_style_set_pad_all(&s_style_tab_btn_normal, 0);
     
-    // Tab buttons - Active
+    // Tab buttons - Pioneered active
     lv_style_init(&s_style_tab_btn_active);
-    lv_style_set_bg_color(&s_style_tab_btn_active, COL_ACCENT_DK);
+    lv_style_set_bg_color(&s_style_tab_btn_active, COL_BG);
     lv_style_set_bg_opa(&s_style_tab_btn_active, LV_OPA_COVER);
-    lv_style_set_text_color(&s_style_tab_btn_active, COL_TEXT);
-    lv_style_set_border_width(&s_style_tab_btn_active, 1);
-    lv_style_set_border_color(&s_style_tab_btn_active, COL_ACCENT);
-    lv_style_set_radius(&s_style_tab_btn_active, 4);
+    lv_style_set_text_color(&s_style_tab_btn_active, COL_TAB_ACTIVE);
+    lv_style_set_border_width(&s_style_tab_btn_active, 2);
+    lv_style_set_border_color(&s_style_tab_btn_active, COL_TAB_ACTIVE);
+    lv_style_set_radius(&s_style_tab_btn_active, 0);
     lv_style_set_pad_all(&s_style_tab_btn_active, 0);
 
     // Tab buttons - Disabled (future use)
@@ -1948,21 +1959,21 @@ static void init_styles(void) {
     lv_style_set_text_color(&s_style_tab_btn_disabled, COL_TEXT_DIM);
     lv_style_set_border_width(&s_style_tab_btn_disabled, 1);
     lv_style_set_border_color(&s_style_tab_btn_disabled, lv_color_hex(0x242424));
-    lv_style_set_radius(&s_style_tab_btn_disabled, 4);
+    lv_style_set_radius(&s_style_tab_btn_disabled, 0);
     lv_style_set_pad_all(&s_style_tab_btn_disabled, 0);
 
     // Sub-screen generic background
     lv_style_init(&s_style_screen_bg);
     lv_style_set_bg_color(&s_style_screen_bg, COL_BG);
     lv_style_set_bg_opa(&s_style_screen_bg, LV_OPA_COVER);
-    lv_style_set_pad_all(&s_style_screen_bg, 10);
+    lv_style_set_pad_all(&s_style_screen_bg, 0);
 
     lv_style_init(&s_style_panel_frame);
     lv_style_set_bg_color(&s_style_panel_frame, COL_PANEL_DK);
     lv_style_set_bg_opa(&s_style_panel_frame, LV_OPA_COVER);
     lv_style_set_border_width(&s_style_panel_frame, 1);
     lv_style_set_border_color(&s_style_panel_frame, COL_BORDER_LT);
-    lv_style_set_radius(&s_style_panel_frame, 4);
+    lv_style_set_radius(&s_style_panel_frame, 0);
     lv_style_set_pad_all(&s_style_panel_frame, 0);
 
     lv_style_init(&s_style_btn_primary);
@@ -1971,7 +1982,7 @@ static void init_styles(void) {
     lv_style_set_text_color(&s_style_btn_primary, COL_ON_ACCENT);
     lv_style_set_border_width(&s_style_btn_primary, 1);
     lv_style_set_border_color(&s_style_btn_primary, lv_color_hex(0x6DFFB1));
-    lv_style_set_radius(&s_style_btn_primary, 6);
+    lv_style_set_radius(&s_style_btn_primary, 2);
 
     lv_style_init(&s_style_btn_amber);
     lv_style_set_bg_color(&s_style_btn_amber, COL_AMBER);
@@ -1979,7 +1990,7 @@ static void init_styles(void) {
     lv_style_set_text_color(&s_style_btn_amber, COL_ON_ACCENT);
     lv_style_set_border_width(&s_style_btn_amber, 1);
     lv_style_set_border_color(&s_style_btn_amber, lv_color_hex(0xFFD166));
-    lv_style_set_radius(&s_style_btn_amber, 6);
+    lv_style_set_radius(&s_style_btn_amber, 2);
 
     lv_style_init(&s_style_btn_secondary);
     lv_style_set_bg_color(&s_style_btn_secondary, COL_SURFACE);
@@ -1987,7 +1998,7 @@ static void init_styles(void) {
     lv_style_set_text_color(&s_style_btn_secondary, COL_TEXT_MUTED);
     lv_style_set_border_width(&s_style_btn_secondary, 1);
     lv_style_set_border_color(&s_style_btn_secondary, COL_BORDER_LT);
-    lv_style_set_radius(&s_style_btn_secondary, 5);
+    lv_style_set_radius(&s_style_btn_secondary, 2);
 
     lv_style_init(&s_style_btn_disabled);
     lv_style_set_bg_color(&s_style_btn_disabled, COL_DISABLED);
@@ -1995,14 +2006,14 @@ static void init_styles(void) {
     lv_style_set_text_color(&s_style_btn_disabled, COL_TEXT_DIM);
     lv_style_set_border_width(&s_style_btn_disabled, 1);
     lv_style_set_border_color(&s_style_btn_disabled, COL_BORDER);
-    lv_style_set_radius(&s_style_btn_disabled, 6);
+    lv_style_set_radius(&s_style_btn_disabled, 2);
 
     // Styled Neon Action Button
     lv_style_init(&s_style_btn_neon);
     lv_style_set_bg_color(&s_style_btn_neon, COL_GREEN);
     lv_style_set_bg_opa(&s_style_btn_neon, LV_OPA_COVER);
     lv_style_set_text_color(&s_style_btn_neon, COL_BG);
-    lv_style_set_radius(&s_style_btn_neon, 6);
+    lv_style_set_radius(&s_style_btn_neon, 2);
 
     // Universal touch feedback: dim + slightly shrink on press (works on any
     // colour). Attach with LV_STATE_PRESSED to interactive elements.
@@ -2017,8 +2028,9 @@ static void create_header(lv_obj_t *parent) {
     s_header_container = lv_obj_create(parent);
     lv_obj_remove_style_all(s_header_container);
     lv_obj_add_style(s_header_container, &s_style_header, LV_PART_MAIN);
-    lv_obj_set_size(s_header_container, 800, 55);
+    lv_obj_set_size(s_header_container, UI_HOR_RES, UI_TOPBAR_H);
     lv_obj_set_pos(s_header_container, 0, 0);
+    lv_obj_add_flag(s_header_container, LV_OBJ_FLAG_HIDDEN);
 
     // Track Title (Left block)
     s_label_title = lv_label_create(s_header_container);
@@ -2087,19 +2099,19 @@ static void create_header(lv_obj_t *parent) {
     lv_obj_set_pos(label_pitch_unit, 75, 26);
 }
 
-// Build the footer navigation buttons
+// Build Pioneered-style top navigation buttons.
 static void create_footer(lv_obj_t *parent) {
     s_footer_container = lv_obj_create(parent);
     lv_obj_remove_style_all(s_footer_container);
     lv_obj_add_style(s_footer_container, &s_style_footer, LV_PART_MAIN);
-    lv_obj_set_size(s_footer_container, 800, 55);
-    lv_obj_set_pos(s_footer_container, 0, 425);
+    lv_obj_set_size(s_footer_container, UI_HOR_RES, UI_TOPBAR_H);
+    lv_obj_set_pos(s_footer_container, 0, 0);
 
     const int btn_width = 106;
-    const int btn_height = 47;
+    const int btn_height = 28;
     const int spacing = 6;
     const int offset_left = 6;
-    const int offset_top = 4;
+    const int offset_top = 9;
 
     for (int i = 0; i < 7; i++) {
         s_footer_buttons[i] = lv_button_create(s_footer_container);
@@ -2115,18 +2127,18 @@ static void create_footer(lv_obj_t *parent) {
 
         s_footer_active_strips[i] = lv_obj_create(s_footer_buttons[i]);
         lv_obj_remove_style_all(s_footer_active_strips[i]);
-        lv_obj_set_size(s_footer_active_strips[i], btn_width - 18, 3);
-        lv_obj_set_pos(s_footer_active_strips[i], 9, 4);
-        lv_obj_set_style_bg_color(s_footer_active_strips[i], COL_RED, LV_PART_MAIN);
+        lv_obj_set_size(s_footer_active_strips[i], btn_width - 10, 2);
+        lv_obj_set_pos(s_footer_active_strips[i], 5, btn_height - 4);
+        lv_obj_set_style_bg_color(s_footer_active_strips[i], COL_TAB_ACTIVE, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(s_footer_active_strips[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_radius(s_footer_active_strips[i], 2, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_footer_active_strips[i], 0, LV_PART_MAIN);
         lv_obj_add_flag(s_footer_active_strips[i], LV_OBJ_FLAG_HIDDEN);
 
         lv_obj_t *lbl = lv_label_create(s_footer_buttons[i]);
         lv_label_set_text(lbl, s_tab_names[i]);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, LV_PART_MAIN);
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 4);
+        lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
     }
 
     // Set first tab as active
@@ -2208,7 +2220,7 @@ static lv_obj_t *ui_overview_bar(lv_obj_t *parent, int x, int y, int w, int h, l
     lv_obj_remove_style_all(bar);
     lv_obj_set_style_bg_color(bar, color, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_radius(bar, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 0, LV_PART_MAIN);
     lv_obj_set_size(bar, w, h);
     lv_obj_set_pos(bar, x, y);
     lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
@@ -2225,49 +2237,57 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->panel = lv_obj_create(parent);
     lv_obj_remove_style_all(panel->panel);
     lv_obj_add_style(panel->panel, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(panel->panel, lv_color_hex(0x080B0F), LV_PART_MAIN);
-    lv_obj_set_size(panel->panel, 772, 170);
-    lv_obj_set_pos(panel->panel, 14, y);
+    lv_obj_set_style_bg_color(panel->panel, COL_BG, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->panel, COL_BG, LV_PART_MAIN);
+    lv_obj_set_size(panel->panel, 790, 204);
+    lv_obj_set_pos(panel->panel, 5, y);
     lv_obj_set_style_pad_all(panel->panel, 0, LV_PART_MAIN);
     lv_obj_set_user_data(panel->panel, (void *)(uintptr_t)deck);
     lv_obj_add_flag(panel->panel, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(panel->panel, overview_deck_select_event_cb, LV_EVENT_CLICKED, NULL);
 
     panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
-                                                deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
-                                                14, 10, 42,
-                                                deck == CTRL_DECK_1 ? "D1" : "D2");
+                                                COL_TEXT, 0, 5, 88,
+                                                deck == CTRL_DECK_1 ? "DECK 1" : "DECK 2");
+    lv_obj_set_style_bg_color(panel->label_deck, COL_PANEL, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(panel->label_deck, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel->label_deck, 2, LV_PART_MAIN);
     panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                  COL_AMBER, 58, 14, 88, "PAUSE");
+                                                  COL_RED, 8, 33, 76, "((PAUSE))");
     panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                 COL_TEXT, 14, 38, 188, "No Track");
+                                                 COL_TEXT, 0, 126, 390, "No Track");
+    lv_obj_set_style_bg_color(panel->label_title, COL_TITLE_BLUE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->label_title, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(panel->label_title, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel->label_title, 1, LV_PART_MAIN);
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                  COL_TEXT_DIM, 14, 62, 188, "");
+                                                  COL_TEXT_MUTED, 8, 64, 76, "-- BARS");
     panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
-                                                COL_ACCENT, 14, 94, 116, "00:00.00");
+                                                COL_TEXT, 92, 154, 142, "00:00.00");
     panel->label_remain = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                  COL_TEXT_MUTED, 14, 121, 116, "-00:00.00");
+                                                  COL_TEXT_MUTED, 240, 162, 116, "-00:00.00");
     panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_14,
-                                               COL_TEXT, 134, 96, 68, "120.00");
+                                               COL_TEXT, 704, 154, 74, "120.00");
     panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                 COL_GREEN, 134, 122, 68, "+0.00%");
+                                                 COL_TEXT_MUTED, 704, 178, 74, "BPM");
 
     panel->label_ch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                              COL_TEXT_MUTED, 598, 18, 76, "CH 100%");
+                                              COL_TEXT_MUTED, 674, 18, 76, "CH 100%");
     panel->label_out = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                               COL_TEXT_MUTED, 598, 42, 76, "OUT 100%");
+                                               COL_TEXT_MUTED, 674, 42, 76, "OUT 100%");
     panel->label_pfl = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                               COL_TEXT_DIM, 686, 18, 64, "PFL OFF");
-    panel->out_bar_bg = ui_overview_bar(panel->panel, 598, 66, 146, 8, lv_color_hex(0x20252C));
-    panel->out_bar_fill = ui_overview_bar(panel->panel, 598, 66, 146, 8,
+                                               COL_TEXT_DIM, 674, 66, 80, "PFL OFF");
+    panel->out_bar_bg = ui_overview_bar(panel->panel, 674, 91, 102, 6, COL_PANEL);
+    panel->out_bar_fill = ui_overview_bar(panel->panel, 674, 91, 102, 6,
                                           deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
 
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
     lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
     lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
-    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 14);
-    lv_obj_set_pos(panel->wave_border, 218, 14);
+    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 18);
+    lv_obj_set_pos(panel->wave_border, 90, 25);
     lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
     lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
@@ -2287,10 +2307,10 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
 
         lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x91, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x27, 0x4C, 0x6B, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x2E, 0x36, 0x40, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0x6E, 0x20, 0x30, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x7D, 0xE1, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x40, 0xFF, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x32, 0x32, 0x3C, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xD7, 0x35, 0x35, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
         if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
@@ -2317,8 +2337,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         for (int i = 0; i < 4; i++) {
             s_beat_pulses[i] = lv_obj_create(panel->panel);
             lv_obj_set_size(s_beat_pulses[i], 12, 12);
-            lv_obj_set_pos(s_beat_pulses[i], 444 + i * 20, 118);
-            lv_obj_set_style_radius(s_beat_pulses[i], LV_RADIUS_CIRCLE, LV_PART_MAIN);
+            lv_obj_set_pos(s_beat_pulses[i], 472 + i * 20, 108);
+            lv_obj_set_style_radius(s_beat_pulses[i], 0, LV_PART_MAIN);
             lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
             lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
             lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_COVER, LV_PART_MAIN);
@@ -2327,17 +2347,17 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         }
     }
 
-    ui_overview_small_button(panel->panel, deck, 598, 115, "PLAY", &s_style_btn_primary, play_pause_event_cb);
-    ui_overview_small_button(panel->panel, deck, 686, 115, "CUE", &s_style_btn_amber, cue_event_cb);
+    ui_overview_small_button(panel->panel, deck, 674, 108, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    ui_overview_small_button(panel->panel, deck, 674, 146, "CUE", &s_style_btn_amber, cue_event_cb);
 
     if (deck == CTRL_DECK_1) {
         s_crossfader_label = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                     COL_TEXT_MUTED, 598, 84, 28, "XF");
-        s_crossfader_track_w = 112;
-        s_crossfader_track = ui_overview_bar(panel->panel, 632, 91, s_crossfader_track_w, 6,
-                                             lv_color_hex(0x20252C));
-        s_crossfader_knob = ui_overview_bar(panel->panel, 632 + (s_crossfader_track_w / 2) - 3,
-                                            86, 6, 16, COL_RED);
+                                                     COL_TEXT_MUTED, 674, 178, 28, "XF");
+        s_crossfader_track_w = 70;
+        s_crossfader_track = ui_overview_bar(panel->panel, 704, 185, s_crossfader_track_w, 6,
+                                             COL_PANEL);
+        s_crossfader_knob = ui_overview_bar(panel->panel, 704 + (s_crossfader_track_w / 2) - 3,
+                                            180, 6, 16, COL_RED);
     }
     ui_update_performance_target_visuals();
 }
@@ -2346,11 +2366,11 @@ static void create_screen_overview(lv_obj_t *parent) {
     s_screens[0] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[0]);
     lv_obj_add_style(s_screens[0], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[0], 800, 370);
-    lv_obj_set_pos(s_screens[0], 0, 55);
+    lv_obj_set_size(s_screens[0], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[0], 0, UI_CONTENT_Y);
 
-    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_1, 8);
-    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_2, 188);
+    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_1, 4);
+    ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_2, 222);
 }
 
 static void ui_truncate_str(char *dest, const char *src, size_t max_len) {
@@ -2430,8 +2450,8 @@ static void create_screen_library(lv_obj_t *parent) {
     s_screens[1] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[1]);
     lv_obj_add_style(s_screens[1], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[1], 800, 370);
-    lv_obj_set_pos(s_screens[1], 0, 55);
+    lv_obj_set_size(s_screens[1], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[1], 0, UI_CONTENT_Y);
 
     // Track list container table
     s_library_table = lv_table_create(s_screens[1]);
@@ -2466,7 +2486,7 @@ static void create_screen_library(lv_obj_t *parent) {
     lv_obj_set_style_border_width(s_library_table, 3, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_text_color(s_library_table, COL_TEXT, LV_PART_ITEMS | LV_STATE_FOCUSED);
+    lv_obj_set_style_text_color(s_library_table, COL_ON_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
 
     // Configure Columns: Total width must fit 600px (4 columns instead of 5, '#' removed)
     lv_table_set_column_width(s_library_table, 0, 290); // Title
@@ -2612,8 +2632,8 @@ static void create_screen_hot_cues(lv_obj_t *parent) {
     s_screens[2] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[2]);
     lv_obj_add_style(s_screens[2], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[2], 800, 370);
-    lv_obj_set_pos(s_screens[2], 0, 55);
+    lv_obj_set_size(s_screens[2], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[2], 0, UI_CONTENT_Y);
     ui_create_performance_target_selector(s_screens[2], 298, 4);
 
     // Construct a grid of buttons: 4 in a row, 2 rows
@@ -2661,8 +2681,8 @@ static void create_screen_beat_loop(lv_obj_t *parent) {
     s_screens[3] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[3]);
     lv_obj_add_style(s_screens[3], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[3], 800, 370);
-    lv_obj_set_pos(s_screens[3], 0, 55);
+    lv_obj_set_size(s_screens[3], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[3], 0, UI_CONTENT_Y);
     ui_create_performance_target_selector(s_screens[3], 20, 8);
 
     s_label_loop_status = lv_label_create(s_screens[3]);
@@ -2728,8 +2748,8 @@ static void create_screen_beat_jump(lv_obj_t *parent) {
     s_screens[4] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[4]);
     lv_obj_add_style(s_screens[4], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[4], 800, 370);
-    lv_obj_set_pos(s_screens[4], 0, 55);
+    lv_obj_set_size(s_screens[4], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[4], 0, UI_CONTENT_Y);
     ui_create_performance_target_selector(s_screens[4], 298, 0);
 
     int jump_vals[4] = {1, 4, 8, 16};
@@ -2781,8 +2801,8 @@ static void create_screen_key_shift(lv_obj_t *parent) {
     s_screens[5] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[5]);
     lv_obj_add_style(s_screens[5], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[5], 800, 370);
-    lv_obj_set_pos(s_screens[5], 0, 55);
+    lv_obj_set_size(s_screens[5], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[5], 0, UI_CONTENT_Y);
 
     const int panel_y = 40;
     const int panel_h = 250;
@@ -2843,8 +2863,8 @@ static void create_screen_settings(lv_obj_t *parent) {
     s_screens[6] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[6]);
     lv_obj_add_style(s_screens[6], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[6], 800, 370);
-    lv_obj_set_pos(s_screens[6], 0, 55);
+    lv_obj_set_size(s_screens[6], UI_HOR_RES, UI_CONTENT_H);
+    lv_obj_set_pos(s_screens[6], 0, UI_CONTENT_Y);
 
     // Saved settings (firmware); the simulator uses defaults.
 #ifndef WIN32
@@ -3633,7 +3653,7 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
                                         LV_PART_MAIN);
         }
         if (panel->out_bar_fill) {
-            int w = (146 * (int)view.output_pct) / 100;
+            int w = (102 * (int)view.output_pct) / 100;
             if (w < 2) w = 2;
             lv_obj_set_width(panel->out_bar_fill, w);
             lv_obj_set_style_bg_color(panel->out_bar_fill,
@@ -3644,7 +3664,7 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
 
     if (s_crossfader_knob) {
         int knob_x = ui_mixer_crossfader_knob_x(snapshot->crossfader, s_crossfader_track_w);
-        lv_obj_set_x(s_crossfader_knob, 632 + knob_x - 3);
+        lv_obj_set_x(s_crossfader_knob, 704 + knob_x - 3);
     }
 }
 #endif
@@ -3660,9 +3680,9 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
     const ui_deck_track_info_t *info = &s_deck_track_info[idx];
 
-    lv_label_set_text(panel->label_status, state->playing ? "PLAYING" : (info->valid ? "LOADED" : "EMPTY"));
+    lv_label_set_text(panel->label_status, state->playing ? "((PLAY))" : (info->valid ? "LOADED" : "EMPTY"));
     lv_obj_set_style_text_color(panel->label_status,
-                                state->playing ? COL_GREEN : (info->valid ? COL_AMBER : COL_TEXT_DIM),
+                                state->playing ? COL_RED : (info->valid ? COL_AMBER : COL_TEXT_DIM),
                                 LV_PART_MAIN);
     lv_label_set_text(panel->label_title, info->valid ? info->title : "No Track");
     lv_label_set_text(panel->label_artist, info->valid ? info->artist : "");
