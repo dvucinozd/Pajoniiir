@@ -3288,15 +3288,14 @@ static void ui_load_waveform_data(uint8_t deck,
         }
     }
 
-    // 3) Waveform columns (bright blue index 1)
+    // 3) Waveform columns. Rekordbox low waveform amplitude is stored in the
+    // low 5 bits; upper bits can carry color/flags and must not affect height.
     if (has_waveform && waveform_low) {
         for (int x = 0; x < W; x++) {
             int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / W;
             if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
-            int raw = waveform_low[src_x];
-            int amp = raw > 31 ? (raw >> 3) : (raw & 0x1F); // normalize 0..255 or 0..31 sources
-            if (amp > 31) amp = 31;
-            int h = 6 + (amp * (H - 10)) / 31;
+            int amp = waveform_low[src_x] & 0x1F;
+            int h = 2 + (amp * (H - 8)) / 31;
             if (h < 1) h = 1;
             int cy = H / 2;
             int y0 = cy - h / 2;

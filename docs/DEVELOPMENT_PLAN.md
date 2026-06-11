@@ -248,3 +248,6 @@ Validation note, 2026-06-10:
 - Main waveform visibility was strengthened with a high-contrast Pioneered-like
   palette, source-amplitude normalization, and explicit foreground ordering for
   the primary waveform object.
+- Main waveform height now uses the same Rekordbox low-5-bit amplitude field as
+  the working mini waveform renderer; upper bits are treated as flags/color data
+  and no longer inflate every column into a solid block.
