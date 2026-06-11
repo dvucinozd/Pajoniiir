@@ -228,5 +228,9 @@ Validation note, 2026-06-10:
   reference: top navigation, black base surface, Pioneered color tokens, sharp
   rectangular controls, and a first-pass Overview layout with wide deck
   waveforms, deck-local title strips, and right-side mixer/transport blocks.
+- Overview now reserves a Pioneered-style right FX/status panel and uses a more
+  reference-like waveform treatment: white playhead, brighter vertical grid
+  guides, downbeat markers, fallback grid when beat metadata is missing, and a
+  lighter played overlay color.
 - D1 overview cue markers remain compatibility-oriented until per-deck overview
   cue marker rendering is added.
