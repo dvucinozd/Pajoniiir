@@ -2257,6 +2257,20 @@ static lv_obj_t *ui_overview_bar(lv_obj_t *parent, int x, int y, int w, int h, l
     return bar;
 }
 
+#ifndef WIN32
+static void *ui_overview_alloc_canvas(size_t size, bool prefer_psram)
+{
+    void *buf = NULL;
+    if (prefer_psram) {
+        buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    if (!buf) {
+        buf = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    return buf;
+}
+#endif
+
 static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 {
     (void)y;
@@ -2328,6 +2342,50 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->out_bar_fill = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6,
                                           deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
 
+    panel->wave_border = lv_obj_create(panel->panel);
+    lv_obj_remove_style_all(panel->wave_border);
+    lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
+    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 18);
+    lv_obj_set_pos(panel->wave_border, 98, top_y + 42);
+    lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
+    lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
+    lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(panel->wave_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
+
+    size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+#ifndef WIN32
+    panel->wave_buf = ui_overview_alloc_canvas(ov_sz, false);
+#else
+    panel->wave_buf = malloc(ov_sz);
+#endif
+    if (panel->wave_buf) {
+        memset(panel->wave_buf, 0, ov_sz);
+        panel->wave_canvas = lv_canvas_create(panel->wave_border);
+        lv_canvas_set_buffer(panel->wave_canvas, panel->wave_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
+        lv_obj_align(panel->wave_canvas, LV_ALIGN_TOP_LEFT, 10, 7);
+        lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x7D, 0xE1, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0xA6, 0xC8, 0xE8, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x5F, 0x5F, 0x5F, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
+
+        lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
+        if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
+    } else {
+        ESP_LOGE(TAG, "D%u overview canvas buffer alloc failed (%u bytes)",
+                 (unsigned)deck + 1u, (unsigned)ov_sz);
+    }
+
+    panel->playhead = lv_obj_create(panel->wave_border);
+    lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
+    lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
+    lv_obj_set_pos(panel->playhead, 10, 7);
+    lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
+
     panel->mini_wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->mini_wave_border);
     lv_obj_set_style_bg_color(panel->mini_wave_border, COL_BG, LV_PART_MAIN);
@@ -2340,7 +2398,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
     size_t mini_sz = LV_DRAW_BUF_SIZE(OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, LV_COLOR_FORMAT_I8);
 #ifndef WIN32
-    panel->mini_wave_buf = heap_caps_malloc(mini_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    panel->mini_wave_buf = ui_overview_alloc_canvas(mini_sz, true);
 #else
     panel->mini_wave_buf = malloc(mini_sz);
 #endif
@@ -2371,50 +2429,6 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_size(panel->mini_playhead, 2, OVERVIEW_MINI_CV_H);
     lv_obj_set_pos(panel->mini_playhead, 0, 0);
     lv_obj_remove_flag(panel->mini_playhead, LV_OBJ_FLAG_CLICKABLE);
-
-    panel->wave_border = lv_obj_create(panel->panel);
-    lv_obj_remove_style_all(panel->wave_border);
-    lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
-    lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + 20, OVERVIEW_CV_H + 18);
-    lv_obj_set_pos(panel->wave_border, 98, top_y + 42);
-    lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
-    lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
-    lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(panel->wave_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
-
-    size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-#ifndef WIN32
-    panel->wave_buf = heap_caps_malloc(ov_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-#else
-    panel->wave_buf = malloc(ov_sz);
-#endif
-    if (panel->wave_buf) {
-        memset(panel->wave_buf, 0, ov_sz);
-        panel->wave_canvas = lv_canvas_create(panel->wave_border);
-        lv_canvas_set_buffer(panel->wave_canvas, panel->wave_buf, OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-        lv_obj_align(panel->wave_canvas, LV_ALIGN_TOP_LEFT, 10, 7);
-        lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
-
-        lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x7D, 0xE1, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0xA6, 0xC8, 0xE8, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x5F, 0x5F, 0x5F, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
-
-        lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
-        if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
-    } else {
-        ESP_LOGE(TAG, "D%u overview canvas buffer alloc failed (%u bytes)",
-                 (unsigned)deck + 1u, (unsigned)ov_sz);
-    }
-
-    panel->playhead = lv_obj_create(panel->wave_border);
-    lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
-    lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
-    lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
-    lv_obj_set_pos(panel->playhead, 10, 7);
-    lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
 
     uint8_t deck_idx = ui_deck_index(deck);
     for (int i = 0; i < 8; i++) {

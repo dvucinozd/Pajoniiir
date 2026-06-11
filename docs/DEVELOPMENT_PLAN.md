@@ -242,3 +242,6 @@ Validation note, 2026-06-10:
 - Second Overview polish pass adds lower mini waveform strips, a centered
   playhead/CUE marker, and scaled Rekordbox low-waveform sampling so the wider
   overview canvases do not read past the 400-sample source buffer.
+- Follow-up waveform visibility fix keeps the primary overview waveform canvas
+  allocation ahead of mini waveform allocation and prefers PSRAM for mini strips
+  so decorative buffers do not starve the main waveform canvas.
