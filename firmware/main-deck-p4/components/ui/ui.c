@@ -8,6 +8,7 @@
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
+#include "ui_overview_grid.h"
 #include "ui_performance_target.h"
 #include "ui_waveform_model.h"
 #include <limits.h>
@@ -2400,6 +2401,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_canvas_set_palette(panel->wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 8, lv_color32_make(0x36, 0x40, 0x48, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
         if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
@@ -3328,23 +3330,27 @@ static void ui_draw_overview_zoom_grid(uint8_t *buf,
             }
             last_x = x;
 
-            bool downbeat = (meta->beats[b].beat_phase == 0);
-            int line_w = downbeat ? 2 : 1;
-            int y0 = downbeat ? 0 : height_px / 5;
-            int y1 = downbeat ? height_px : (height_px * 4) / 5;
-            uint8_t col = downbeat ? 4 : 2;
-            for (int lx = 0; lx < line_w && x + lx < width_px; lx++) {
+            ui_overview_grid_style_t style =
+                ui_overview_grid_style_for_phase(meta->beats[b].beat_phase);
+            int y0 = (height_px * style.y0_permille) / 1000;
+            int y1 = (height_px * style.y1_permille) / 1000;
+            if (y1 <= y0) y1 = y0 + 1;
+            if (y1 > height_px) y1 = height_px;
+            for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
                 for (int y = y0; y < y1; y++) {
-                    buf[y * stride_px + x + lx] = col;
+                    buf[y * stride_px + x + lx] = style.palette_index;
                 }
             }
         }
         return;
     }
 
+    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
+    int y0 = (height_px * style.y0_permille) / 1000;
+    int y1 = (height_px * style.y1_permille) / 1000;
     for (int x = width_px / 4; x < width_px; x += width_px / 4) {
-        for (int y = height_px / 5; y < (height_px * 4) / 5; y++) {
-            buf[y * stride_px + x] = 4;
+        for (int y = y0; y < y1; y++) {
+            buf[y * stride_px + x] = style.palette_index;
         }
     }
 }

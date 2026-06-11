@@ -264,3 +264,6 @@ Validation note, 2026-06-10:
 - Follow-up polish enlarges the main waveform canvas and maps Rekordbox waveform
   color hints plus amplitude fallback into a Pioneered-like palette: hot pink,
   blue, cyan, green, amber, purple, and white downbeat/grid markers.
+- Beat-grid clarity pass separates grid colors from waveform colors: downbeats
+  remain bright full-height markers, while regular beat guides are short, dim
+  grey lines so they aid beatmatching without hiding transients.
