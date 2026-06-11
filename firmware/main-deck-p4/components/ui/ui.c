@@ -2193,16 +2193,16 @@ static lv_obj_t *ui_overview_value_label(lv_obj_t *parent, const lv_font_t *font
     return label;
 }
 
-static lv_obj_t *ui_overview_small_button(lv_obj_t *parent, uint8_t deck,
-                                          int x, int y, const char *text,
-                                          const lv_style_t *style,
-                                          lv_event_cb_t cb)
+static lv_obj_t *ui_overview_compact_button(lv_obj_t *parent, uint8_t deck,
+                                            int x, int y, int w, const char *text,
+                                            const lv_style_t *style,
+                                            lv_event_cb_t cb)
 {
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_remove_style_all(btn);
     lv_obj_add_style(btn, style, LV_PART_MAIN);
     lv_obj_add_style(btn, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn, 78, 34);
+    lv_obj_set_size(btn, w, 34);
     lv_obj_set_pos(btn, x, y);
     lv_obj_set_user_data(btn, (void *)(uintptr_t)deck);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
@@ -2348,8 +2348,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         }
     }
 
-    ui_overview_small_button(panel->panel, deck, 574, 108, "PLAY", &s_style_btn_primary, play_pause_event_cb);
-    ui_overview_small_button(panel->panel, deck, 574, 146, "CUE", &s_style_btn_amber, cue_event_cb);
+    ui_overview_compact_button(panel->panel, deck, 574, 108, 38, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    ui_overview_compact_button(panel->panel, deck, 614, 108, 38, "CUE", &s_style_btn_amber, cue_event_cb);
 
     if (deck == CTRL_DECK_1) {
         s_crossfader_label = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
