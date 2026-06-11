@@ -178,11 +178,11 @@ static uint32_t s_hot_cue_positions[8] = {
 static uint32_t s_hot_cue_ends[8] = {0};
 static uint8_t  s_hot_cue_types[8] = {1, 1, 1, 1, 1, 1, 1, 1}; // 1 = ANLZ_CUE_SINGLE, 2 = ANLZ_CUE_LOOP
 static lv_obj_t *s_hot_cue_buttons[8];
-static lv_obj_t *s_overview_cue_markers[8];
+static lv_obj_t *s_overview_cue_markers[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_loop_buttons[6];
 static lv_obj_t *s_label_loop_status = NULL;
 static int       s_loop_active_beats = 0;
-static lv_obj_t *s_perf_target_buttons[6];
+static lv_obj_t *s_perf_target_buttons[10];
 static size_t    s_perf_target_button_count = 0;
 
 // Footer navigation buttons
@@ -680,6 +680,29 @@ static lv_obj_t *ui_settings_value_label(lv_obj_t *parent, const char *text, lv_
     return label;
 }
 
+static lv_obj_t *ui_static_tile(lv_obj_t *parent, int x, int y, int w, int h,
+                                const char *text, lv_color_t text_color,
+                                lv_color_t fill_color, lv_color_t border_color)
+{
+    lv_obj_t *tile = lv_obj_create(parent);
+    lv_obj_remove_style_all(tile);
+    lv_obj_set_style_bg_color(tile, fill_color, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(tile, border_color, LV_PART_MAIN);
+    lv_obj_set_style_border_width(tile, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(tile, 2, LV_PART_MAIN);
+    lv_obj_set_size(tile, w, h);
+    lv_obj_set_pos(tile, x, y);
+    lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *label = lv_label_create(tile);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    return tile;
+}
+
 static lv_obj_t *ui_create_beat_jump_button(lv_obj_t *parent, int x, int y, int value,
                                             bool forward)
 {
@@ -758,11 +781,6 @@ static uint32_t ui_deck_duration_ms(uint8_t deck)
     if (deck != CTRL_DECK_1) return 0;
     const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
     return track ? track->duration_ms : 0;
-}
-
-static uint32_t ui_performance_duration_ms(void)
-{
-    return ui_deck_duration_ms(ui_performance_target_get(&s_performance_target));
 }
 
 static uint16_t ui_deck_bpm(uint8_t deck)
@@ -2327,14 +2345,16 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_pos(panel->playhead, 10, 7);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
 
+    uint8_t deck_idx = ui_deck_index(deck);
+    for (int i = 0; i < 8; i++) {
+        s_overview_cue_markers[deck_idx][i] = lv_obj_create(panel->wave_border);
+        lv_obj_set_style_border_width(s_overview_cue_markers[deck_idx][i], 0, LV_PART_MAIN);
+        lv_obj_set_size(s_overview_cue_markers[deck_idx][i], 3, OVERVIEW_CV_H);
+        lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_CLICKABLE);
+    }
+
     if (deck == CTRL_DECK_1) {
-        for (int i = 0; i < 8; i++) {
-            s_overview_cue_markers[i] = lv_obj_create(panel->wave_border);
-            lv_obj_set_style_border_width(s_overview_cue_markers[i], 0, LV_PART_MAIN);
-            lv_obj_set_size(s_overview_cue_markers[i], 3, OVERVIEW_CV_H);
-            lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_CLICKABLE);
-        }
         for (int i = 0; i < 4; i++) {
             s_beat_pulses[i] = lv_obj_create(panel->panel);
             lv_obj_set_size(s_beat_pulses[i], 12, 12);
@@ -2740,6 +2760,19 @@ static void create_screen_hot_cues(lv_obj_t *parent) {
         lv_obj_set_style_text_color(lbl_time, COL_TEXT, LV_PART_MAIN);
         lv_obj_align(lbl_time, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     }
+
+    lv_obj_t *status_strip = lv_obj_create(s_screens[2]);
+    lv_obj_remove_style_all(status_strip);
+    lv_obj_add_style(status_strip, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(status_strip, 740, 62);
+    lv_obj_set_pos(status_strip, 30, 360);
+    lv_obj_clear_flag(status_strip, LV_OBJ_FLAG_SCROLLABLE);
+    ui_settings_value_label(status_strip, "HOT CUE STATUS", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 12);
+    ui_static_tile(status_strip, 176, 12, 90, 36, "CUE A-H", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+    ui_static_tile(status_strip, 278, 12, 104, 36, "LOOP CUES", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_static_tile(status_strip, 394, 12, 112, 36, "ANLZ DATA", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
+    ui_static_tile(status_strip, 518, 12, 142, 36, "D1/D2 TARGET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
 }
 
 // Screen 4: BEAT LOOP Layout
@@ -2806,6 +2839,19 @@ static void create_screen_beat_loop(lv_obj_t *parent) {
     lv_obj_set_style_text_color(lbl_exit, COL_TEXT, LV_PART_MAIN);
     lv_obj_align(lbl_exit, LV_ALIGN_CENTER, 0, 0);
 
+    lv_obj_t *loop_strip = lv_obj_create(s_screens[3]);
+    lv_obj_remove_style_all(loop_strip);
+    lv_obj_add_style(loop_strip, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(loop_strip, 740, 62);
+    lv_obj_set_pos(loop_strip, 30, 360);
+    lv_obj_clear_flag(loop_strip, LV_OBJ_FLAG_SCROLLABLE);
+    ui_settings_value_label(loop_strip, "LOOP TOOLS", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 12);
+    ui_static_tile(loop_strip, 176, 12, 96, 36, "IN", COL_TEXT, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(loop_strip, 284, 12, 96, 36, "OUT", COL_TEXT, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(loop_strip, 392, 12, 118, 36, "RELOOP", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(loop_strip, 522, 12, 124, 36, "ACTIVE SIZE", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+
     ui_update_loop_screen_state();
 }
 
@@ -2860,6 +2906,19 @@ static void create_screen_beat_jump(lv_obj_t *parent) {
         ui_create_beat_jump_button(lane_forward, btn_x0 + i * (btn_w + spacing_x), btn_y,
                                    jump_vals[i], true);
     }
+
+    lv_obj_t *jump_strip = lv_obj_create(s_screens[4]);
+    lv_obj_remove_style_all(jump_strip);
+    lv_obj_add_style(jump_strip, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(jump_strip, 720, 62);
+    lv_obj_set_pos(jump_strip, 40, 346);
+    lv_obj_clear_flag(jump_strip, LV_OBJ_FLAG_SCROLLABLE);
+    ui_settings_value_label(jump_strip, "GRID / QUANTIZE", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 12);
+    ui_static_tile(jump_strip, 184, 12, 106, 36, "BEAT GRID", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
+    ui_static_tile(jump_strip, 302, 12, 110, 36, "QUANTIZE", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(jump_strip, 424, 12, 116, 36, "SNAP: ON", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+    ui_static_tile(jump_strip, 552, 12, 112, 36, "D1/D2", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
 }
 
 // Screen 6: KEY SHIFT / KEYLOCK Layout
@@ -2869,9 +2928,10 @@ static void create_screen_key_shift(lv_obj_t *parent) {
     lv_obj_add_style(s_screens[5], &s_style_screen_bg, LV_PART_MAIN);
     lv_obj_set_size(s_screens[5], UI_HOR_RES, UI_CONTENT_H);
     lv_obj_set_pos(s_screens[5], 0, UI_CONTENT_Y);
+    ui_create_performance_target_selector(s_screens[5], 298, 4);
 
-    const int panel_y = 40;
-    const int panel_h = 250;
+    const int panel_y = 54;
+    const int panel_h = 282;
 
     lv_obj_t *tempo_panel = lv_obj_create(s_screens[5]);
     lv_obj_remove_style_all(tempo_panel);
@@ -2898,7 +2958,14 @@ static void create_screen_key_shift(lv_obj_t *parent) {
     lv_label_set_text(lbl_preserves, "PRESERVES KEY");
     lv_obj_set_style_text_font(lbl_preserves, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_preserves, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_preserves, 18, 196);
+    lv_obj_set_pos(lbl_preserves, 18, 174);
+
+    ui_settings_value_label(tempo_panel, "TEMPO RANGE", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 18, 208);
+    ui_static_tile(tempo_panel, 18, 234, 58, 30, "6%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(tempo_panel, 84, 234, 58, 30, "10%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(tempo_panel, 150, 234, 58, 30, "16%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
+    ui_static_tile(tempo_panel, 216, 234, 76, 30, "WIDE", COL_TEXT, COL_PANEL_DK, COL_BORDER);
 
     lv_obj_t *transpose_panel = lv_obj_create(s_screens[5]);
     lv_obj_remove_style_all(transpose_panel);
@@ -2922,6 +2989,26 @@ static void create_screen_key_shift(lv_obj_t *parent) {
     lv_obj_set_style_text_font(lbl_no_transpose, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_no_transpose, COL_TEXT_DIM, LV_PART_MAIN);
     lv_obj_set_pos(lbl_no_transpose, 18, 150);
+
+    ui_settings_value_label(transpose_panel, "KEY CONTROL", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 18, 190);
+    ui_static_tile(transpose_panel, 18, 218, 88, 42, "- KEY", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_static_tile(transpose_panel, 118, 218, 104, 42, "RESET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
+    ui_static_tile(transpose_panel, 234, 218, 88, 42, "+ KEY", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+
+    lv_obj_t *pitch_strip = lv_obj_create(s_screens[5]);
+    lv_obj_remove_style_all(pitch_strip);
+    lv_obj_add_style(pitch_strip, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_size(pitch_strip, 720, 66);
+    lv_obj_set_pos(pitch_strip, 50, 352);
+    lv_obj_clear_flag(pitch_strip, LV_OBJ_FLAG_SCROLLABLE);
+
+    ui_settings_value_label(pitch_strip, "PITCH / SYNC PLACEHOLDERS", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 18, 14);
+    ui_static_tile(pitch_strip, 250, 14, 88, 38, "- PITCH", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_static_tile(pitch_strip, 350, 14, 88, 38, "RESET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
+    ui_static_tile(pitch_strip, 450, 14, 88, 38, "+ PITCH", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+    ui_static_tile(pitch_strip, 560, 14, 92, 38, "SYNC", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
 }
 
 // Screen 7: SETTINGS Layout
@@ -3040,6 +3127,14 @@ static void create_screen_settings(lv_obj_t *parent) {
     ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
                             COL_TEXT_DIM, &lv_font_montserrat_12, 16, 276);
 
+    lv_obj_t *mixer_section = ui_settings_section(s_screens[6], 30, 346, 740, 70, "MIXER / PFL ROUTING");
+    ui_static_tile(mixer_section, 18, 30, 108, 28, "CH1 FADER", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
+    ui_static_tile(mixer_section, 138, 30, 108, 28, "CH2 FADER", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+    ui_static_tile(mixer_section, 258, 30, 118, 28, "CROSSFADER", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
+    ui_static_tile(mixer_section, 388, 30, 88, 28, "PFL D1", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_static_tile(mixer_section, 488, 30, 88, 28, "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_static_tile(mixer_section, 588, 30, 124, 28, "CUE PATH TODO", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+
 #ifndef WIN32
     ui_update_link_status_label();
     ui_update_sd_status_label(true);
@@ -3152,14 +3247,67 @@ static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *tra
 }
 #endif
 
+static void ui_update_overview_cue_markers(uint8_t deck)
+{
+    uint8_t deck_idx = ui_deck_index(deck);
+    const anlz_metadata_t *meta = ui_deck_anlz(deck);
+    uint32_t duration_ms = ui_deck_duration_ms(deck);
+    static const uint32_t cue_hex_colors[8] = {
+        0x00E676,
+        0x00E5FF,
+        0xFFAB00,
+        0xE040FB,
+        0xFFD600,
+        0xFF1744,
+        0x7C4DFF,
+        0x2979FF
+    };
+
+    if (!meta || duration_ms == 0) {
+        for (int i = 0; i < 8; i++) {
+            if (s_overview_cue_markers[deck_idx][i]) {
+                lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        return;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        lv_obj_t *marker = s_overview_cue_markers[deck_idx][i];
+        if (!marker) {
+            continue;
+        }
+
+        bool found = false;
+        uint32_t pos = 0;
+        for (int j = 0; j < meta->cue_count; j++) {
+            if (meta->cues[j].index == i) {
+                pos = meta->cues[j].start_ms;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        float progress = (float)pos / (float)duration_ms;
+        if (progress > 1.0f) progress = 1.0f;
+        int marker_x = 10 + (int)(progress * (float)OVERVIEW_CV_W) - 1;
+        lv_obj_set_pos(marker, marker_x, 7);
+        lv_obj_set_style_bg_color(marker, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
+        lv_obj_remove_flag(marker, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 /* Update Hot Cue pads with real Rekordbox cue metadata */
 static void ui_update_hot_cues(void)
 {
     uint8_t deck = ui_performance_target_get(&s_performance_target);
-    const bool show_overview_markers = (deck == CTRL_DECK_1);
     const anlz_metadata_t *meta = ui_performance_anlz();
     bool has_anlz = (meta != NULL);
-    uint32_t duration_ms = ui_performance_duration_ms();
 
     for (int i = 0; i < 8; i++) {
         bool found = false;
@@ -3205,28 +3353,6 @@ static void ui_update_hot_cues(void)
             }
             ui_style_hot_cue_pad(i, is_loop, false);
             
-            // Set static overview waveform cue marker position and color
-            if (show_overview_markers && duration_ms > 0 && s_overview_cue_markers[i]) {
-                float progress = (float)pos / (float)duration_ms;
-                if (progress > 1.0f) progress = 1.0f;
-                int marker_x = 10 + (int)(progress * (float)OVERVIEW_CV_W) - 1;
-                lv_obj_set_pos(s_overview_cue_markers[i], marker_x, 7);
-                
-                static const uint32_t cue_hex_colors[8] = {
-                    0x00E676,  // A: Green
-                    0x00E5FF,  // B: Cyan
-                    0xFFAB00,  // C: Orange/Amber
-                    0xE040FB,  // D: Pink
-                    0xFFD600,  // E: Yellow
-                    0xFF1744,  // F: Red
-                    0x7C4DFF,  // G: Purple
-                    0x2979FF   // H: Blue
-                };
-                lv_obj_set_style_bg_color(s_overview_cue_markers[i], lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
-                lv_obj_remove_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Show
-            } else if (s_overview_cue_markers[i]) {
-                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN);
-            }
         } else if (has_anlz) {
             s_hot_cue_positions[i] = 0xFFFFFFFF;
             s_hot_cue_ends[i] = 0;
@@ -3242,9 +3368,6 @@ static void ui_update_hot_cues(void)
             }
             ui_style_hot_cue_pad(i, false, true);
             
-            if (s_overview_cue_markers[i]) {
-                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hide
-            }
         } else {
             /* Simulator / Fallback default values */
             uint32_t default_pos = i * 15000;
@@ -3266,11 +3389,10 @@ static void ui_update_hot_cues(void)
             }
             ui_style_hot_cue_pad(i, false, false);
             
-            if (s_overview_cue_markers[i]) {
-                lv_obj_add_flag(s_overview_cue_markers[i], LV_OBJ_FLAG_HIDDEN); // Hide
-            }
         }
     }
+
+    ui_update_overview_cue_markers(deck);
 }
 
 // ─── Global Interface Functions ──────────────────────────────────────────────
@@ -4007,6 +4129,8 @@ void ui_update(void) {
         #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        ui_update_overview_cue_markers(CTRL_DECK_1);
+        ui_update_overview_cue_markers(CTRL_DECK_2);
     } else if (s_active_tab == 0) {
         ui_update_beat_indicator(NULL);
         #ifndef WIN32
@@ -4014,6 +4138,8 @@ void ui_update(void) {
         #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        ui_update_overview_cue_markers(CTRL_DECK_1);
+        ui_update_overview_cue_markers(CTRL_DECK_2);
     }
 
     // ─── 6. Sync UI Status bar with mock settings ───

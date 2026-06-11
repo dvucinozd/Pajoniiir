@@ -232,5 +232,7 @@ Validation note, 2026-06-10:
   reference-like waveform treatment: white playhead, brighter vertical grid
   guides, downbeat markers, fallback grid when beat metadata is missing, and a
   lighter played overlay color.
-- D1 overview cue markers remain compatibility-oriented until per-deck overview
-  cue marker rendering is added.
+- Functional GUI element pass is in progress before final polish: performance
+  tabs now expose their utility/status strips, Key Shift has D1/D2 targeting and
+  visible tempo/key/pitch controls, Settings has a mixer/PFL routing block, and
+  Overview owns per-deck cue marker objects for D1 and D2.
