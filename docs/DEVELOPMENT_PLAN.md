@@ -251,3 +251,6 @@ Validation note, 2026-06-10:
 - Main waveform height now uses the same Rekordbox low-5-bit amplitude field as
   the working mini waveform renderer; upper bits are treated as flags/color data
   and no longer inflate every column into a solid block.
+- Main waveform solid-cyan failure was traced to the second full-height beat-grid
+  overlay: normal-length Rekordbox beat lists can cover every canvas column.
+  Overview now draws only sparse white downbeat/bar guides on top of the waveform.

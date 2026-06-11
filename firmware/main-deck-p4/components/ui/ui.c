@@ -8,6 +8,7 @@
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
+#include "ui_overview_grid.h"
 #include "ui_performance_target.h"
 #include <limits.h>
 #include <stdio.h>
@@ -3243,6 +3244,40 @@ static void create_screen_settings(lv_obj_t *parent) {
 
 // ─── Waveform Helpers ────────────────────────────────────────────────────────
 
+static void ui_draw_overview_grid(uint8_t *buf,
+                                  int stride_px,
+                                  int width_px,
+                                  int height_px,
+                                  uint32_t duration_ms,
+                                  const anlz_metadata_t *meta)
+{
+    int columns[32];
+    size_t column_count = 0;
+
+    if (meta && meta->beats && meta->beat_count > 0 && duration_ms > 0) {
+        column_count = ui_overview_grid_build_columns(
+            meta->beats, meta->beat_count, duration_ms, width_px,
+            UI_OVERVIEW_GRID_DEFAULT_MIN_SPACING_PX,
+            columns, sizeof(columns) / sizeof(columns[0]));
+    }
+
+    if (column_count == 0) {
+        for (int x = 48; x < width_px; x += 72) {
+            for (int y = 0; y < height_px; y++) {
+                buf[y * stride_px + x] = 4;
+            }
+        }
+        return;
+    }
+
+    for (size_t i = 0; i < column_count; i++) {
+        int x = columns[i];
+        for (int y = 0; y < height_px; y++) {
+            buf[y * stride_px + x] = 4;
+        }
+    }
+}
+
 /* Render the high-resolution 1:1 overview waveform to the canvas once at track load. */
 static void ui_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
@@ -3266,29 +3301,7 @@ static void ui_load_waveform_data(uint8_t deck,
     // 1) Clear buffer to background index (0 == black)
     memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
 
-    // 2) Beat grid in the background (Pioneered-style vertical guides).
-    if (meta && meta->beats && meta->beat_count > 0 && duration_ms > 0) {
-        for (uint32_t b = 0; b < meta->beat_count; b++) {
-            int32_t bt = (int32_t)meta->beats[b].time_ms;
-            int x = (int)(((uint64_t)bt * W) / duration_ms);
-            if (x < 0 || x >= W) continue;
-            uint8_t col = (meta->beats[b].beat_phase == 0) ? 4 : 3;
-            for (int y = 0; y < H; y++) {
-                buf[y * S + x] = col;
-            }
-        }
-    } else {
-        for (int x = 40; x < W; x += 80) {
-            for (int y = 0; y < H; y++) {
-                buf[y * S + x] = 3;
-            }
-        }
-        for (int y = 0; y < H; y++) {
-            buf[y * S + (W / 2)] = 4;
-        }
-    }
-
-    // 3) Waveform columns. Rekordbox low waveform amplitude is stored in the
+    // 2) Waveform columns. Rekordbox low waveform amplitude is stored in the
     // low 5 bits; upper bits can carry color/flags and must not affect height.
     if (has_waveform && waveform_low) {
         for (int x = 0; x < W; x++) {
@@ -3309,26 +3322,9 @@ static void ui_load_waveform_data(uint8_t deck,
         }
     }
 
-    if (meta && meta->beats && meta->beat_count > 0 && duration_ms > 0) {
-        for (uint32_t b = 0; b < meta->beat_count; b++) {
-            int32_t bt = (int32_t)meta->beats[b].time_ms;
-            int x = (int)(((uint64_t)bt * W) / duration_ms);
-            if (x < 0 || x >= W) continue;
-            uint8_t col = (meta->beats[b].beat_phase == 0) ? 4 : 3;
-            for (int y = 0; y < H; y++) {
-                buf[y * S + x] = col;
-            }
-        }
-    } else {
-        for (int x = 40; x < W; x += 80) {
-            for (int y = 0; y < H; y++) {
-                buf[y * S + x] = 3;
-            }
-        }
-        for (int y = 0; y < H; y++) {
-            buf[y * S + (W / 2)] = 4;
-        }
-    }
+    // 3) Sparse white bar guides on top. Drawing every beat here fills all
+    // canvas columns on normal-length tracks and turns the waveform solid cyan.
+    ui_draw_overview_grid(buf, S, W, H, duration_ms, meta);
 
     lv_obj_invalidate(panel->wave_canvas);
 
