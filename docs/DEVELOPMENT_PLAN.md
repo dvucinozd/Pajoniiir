@@ -254,3 +254,10 @@ Validation note, 2026-06-10:
 - Main waveform solid-cyan failure was traced to the second full-height beat-grid
   overlay: normal-length Rekordbox beat lists can cover every canvas column.
   Overview now draws only sparse white downbeat/bar guides on top of the waveform.
+- Overview waveform model now prefers Rekordbox `PWV3` high-resolution waveform
+  data when present and falls back to `PWAV` low-resolution data only when needed.
+- The large D1/D2 Overview waveform is no longer a compressed full-track view:
+  it renders a 16-beat zoom window around the current playhead with beat/downbeat
+  grid lines. The lower mini waveform remains the full-track overview/position
+  strip, and tap-to-seek/cue markers now use the visible zoom-window coordinate
+  system.

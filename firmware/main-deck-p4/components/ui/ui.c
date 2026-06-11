@@ -8,8 +8,8 @@
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
-#include "ui_overview_grid.h"
 #include "ui_performance_target.h"
+#include "ui_waveform_model.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -134,8 +134,11 @@ static volatile bool         s_usb_removed_pending = false;
 #define OVERVIEW_CV_H 78
 #define OVERVIEW_MINI_CV_W 390
 #define OVERVIEW_MINI_CV_H 30
-#define OVERVIEW_WAVEFORM_LOW_SAMPLES 400
 #define OVERVIEW_XFADER_X 314
+#define OVERVIEW_MAIN_VISIBLE_BEATS 16u
+#define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
+#define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
+#define OVERVIEW_MAIN_REDRAW_STEP_MS 80u
 
 typedef struct {
     lv_obj_t *panel;
@@ -162,9 +165,10 @@ typedef struct {
     int       mini_wave_stride_px;
     lv_obj_t *mini_playhead;
     lv_obj_t *playhead;
-    int       last_fill_x;
     int       last_mini_fill_x;
     int       last_playhead_x;
+    uint32_t  last_wave_center_ms;
+    uint32_t  last_wave_window_ms;
 } ui_overview_deck_panel_t;
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
@@ -174,6 +178,7 @@ static lv_obj_t *s_crossfader_track = NULL;
 static lv_obj_t *s_crossfader_knob = NULL;
 static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
+static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
 
 // Hot cue buttons and values
 static uint32_t s_hot_cue_positions[8] = {
@@ -2178,9 +2183,8 @@ static void create_footer(lv_obj_t *parent) {
 }
 
 // Screen 1: OVERVIEW Layout
-// Tap-to-seek on the overview waveform: jump playback to the tapped position,
-// preserving the current play/pause state. The mapping mirrors the playhead —
-// the bars span 400 px starting 10 px into wv_border's content area.
+// Tap-to-seek on the overview waveform: jump playback to the tapped position
+// inside the visible zoom window.
 static void waveform_seek_event_cb(lv_event_t *e) {
     lv_obj_t *wv = lv_event_get_target(e);
     uint8_t deck = ui_event_deck(e);
@@ -2197,7 +2201,21 @@ static void waveform_seek_event_cb(lv_event_t *e) {
     int rel_x = (int)p.x - content.x1 - 10;
     if (rel_x < 0)   rel_x = 0;
     if (rel_x > OVERVIEW_CV_W) rel_x = OVERVIEW_CV_W;
-    uint32_t target_ms = (uint32_t)(((uint64_t)rel_x * duration_ms) / OVERVIEW_CV_W);
+
+    ui_overview_deck_panel_t *panel = &s_overview_decks[ui_deck_index(deck)];
+    const anlz_metadata_t *meta = ui_deck_anlz(deck);
+    uint32_t window_ms = panel->last_wave_window_ms > 0
+                       ? panel->last_wave_window_ms
+                       : ui_overview_main_window_ms(deck, meta);
+    uint32_t center_ms = panel->last_wave_center_ms != UINT32_MAX
+                       ? panel->last_wave_center_ms
+                       : 0;
+    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+    int64_t target = window_start_ms +
+        (((int64_t)rel_x * (int64_t)window_ms) / OVERVIEW_CV_W);
+    if (target < 0) target = 0;
+    if (target > (int64_t)duration_ms) target = duration_ms;
+    uint32_t target_ms = (uint32_t)target;
 
 #ifndef WIN32
     audio_engine_deck_seek(deck, target_ms);
@@ -2205,8 +2223,9 @@ static void waveform_seek_event_cb(lv_event_t *e) {
     (void)deck;
     mock_deck_set_position(target_ms);
 #endif
-    ESP_LOGI(TAG, "D%u waveform seek -> %lu ms (%d%%)",
-             (unsigned)deck + 1u, (unsigned long)target_ms, (int)((rel_x * 100) / OVERVIEW_CV_W));
+    ESP_LOGI(TAG, "D%u waveform seek -> %lu ms (zoom x=%d%%)",
+             (unsigned)deck + 1u, (unsigned long)target_ms,
+             (int)((rel_x * 100) / OVERVIEW_CV_W));
 }
 
 static lv_obj_t *ui_overview_value_label(lv_obj_t *parent, const lv_font_t *font,
@@ -2278,9 +2297,10 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     ui_overview_deck_panel_t *panel = &s_overview_decks[ui_deck_index(deck)];
     panel->wave_stride_px = OVERVIEW_CV_W;
     panel->mini_wave_stride_px = OVERVIEW_MINI_CV_W;
-    panel->last_fill_x = -1;
     panel->last_mini_fill_x = -1;
     panel->last_playhead_x = -1;
+    panel->last_wave_center_ms = UINT32_MAX;
+    panel->last_wave_window_ms = 0;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
     int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
     int accent_x = info_x + 2;
@@ -2384,7 +2404,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
-    lv_obj_set_pos(panel->playhead, 10, 7);
+    lv_obj_set_pos(panel->playhead, 10 + (OVERVIEW_CV_W / 2), 7);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_foreground(panel->wave_border);
 
@@ -3244,70 +3264,104 @@ static void create_screen_settings(lv_obj_t *parent) {
 
 // ─── Waveform Helpers ────────────────────────────────────────────────────────
 
-static void ui_draw_overview_grid(uint8_t *buf,
-                                  int stride_px,
-                                  int width_px,
-                                  int height_px,
-                                  uint32_t duration_ms,
-                                  const anlz_metadata_t *meta)
+static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta)
 {
-    int columns[32];
-    size_t column_count = 0;
-
-    if (meta && meta->beats && meta->beat_count > 0 && duration_ms > 0) {
-        column_count = ui_overview_grid_build_columns(
-            meta->beats, meta->beat_count, duration_ms, width_px,
-            UI_OVERVIEW_GRID_DEFAULT_MIN_SPACING_PX,
-            columns, sizeof(columns) / sizeof(columns[0]));
+    uint32_t beat_ms = 0;
+    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
+        beat_ms = 6000000u / meta->beats[0].bpm_x100;
+    } else {
+        uint16_t bpm = ui_deck_bpm(deck);
+        if (bpm > 0) {
+            beat_ms = 60000u / bpm;
+        }
     }
 
-    if (column_count == 0) {
-        for (int x = 48; x < width_px; x += 72) {
-            for (int y = 0; y < height_px; y++) {
-                buf[y * stride_px + x] = 4;
+    if (beat_ms == 0) {
+        beat_ms = 500u;
+    }
+
+    uint32_t window_ms = beat_ms * OVERVIEW_MAIN_VISIBLE_BEATS;
+    if (window_ms < OVERVIEW_MAIN_MIN_WINDOW_MS) {
+        window_ms = OVERVIEW_MAIN_MIN_WINDOW_MS;
+    }
+    if (window_ms > OVERVIEW_MAIN_MAX_WINDOW_MS) {
+        window_ms = OVERVIEW_MAIN_MAX_WINDOW_MS;
+    }
+    return window_ms;
+}
+
+static void ui_draw_overview_zoom_grid(uint8_t *buf,
+                                       int stride_px,
+                                       int width_px,
+                                       int height_px,
+                                       int64_t window_start_ms,
+                                       uint32_t window_span_ms,
+                                       const anlz_metadata_t *meta)
+{
+    if (window_span_ms == 0) {
+        return;
+    }
+
+    if (meta && meta->beats && meta->beat_count > 0) {
+        int last_x = -1000;
+        for (uint16_t b = 0; b < meta->beat_count; b++) {
+            int64_t beat_ms = meta->beats[b].time_ms;
+            if (beat_ms < window_start_ms ||
+                beat_ms > window_start_ms + (int64_t)window_span_ms) {
+                continue;
+            }
+
+            int x = (int)(((beat_ms - window_start_ms) * width_px) / window_span_ms);
+            if (x < 0 || x >= width_px || x == last_x) {
+                continue;
+            }
+            last_x = x;
+
+            bool downbeat = (meta->beats[b].beat_phase == 0);
+            int line_w = downbeat ? 2 : 1;
+            int y0 = downbeat ? 0 : height_px / 5;
+            int y1 = downbeat ? height_px : (height_px * 4) / 5;
+            uint8_t col = downbeat ? 4 : 2;
+            for (int lx = 0; lx < line_w && x + lx < width_px; lx++) {
+                for (int y = y0; y < y1; y++) {
+                    buf[y * stride_px + x + lx] = col;
+                }
             }
         }
         return;
     }
 
-    for (size_t i = 0; i < column_count; i++) {
-        int x = columns[i];
-        for (int y = 0; y < height_px; y++) {
+    for (int x = width_px / 4; x < width_px; x += width_px / 4) {
+        for (int y = height_px / 5; y < (height_px * 4) / 5; y++) {
             buf[y * stride_px + x] = 4;
         }
     }
 }
 
-/* Render the high-resolution 1:1 overview waveform to the canvas once at track load. */
-static void ui_load_waveform_data(uint8_t deck,
-                                  uint32_t duration_ms,
-                                  const uint8_t waveform_low[400],
-                                  bool has_waveform,
-                                  const anlz_metadata_t *meta)
+static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
+                                             const ui_waveform_source_t *source,
+                                             uint32_t duration_ms,
+                                             const anlz_metadata_t *meta,
+                                             uint32_t center_ms,
+                                             uint32_t window_ms)
 {
-    ui_cache_invalidate();
-    uint8_t idx = ui_deck_index(deck);
-    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
-    panel->last_fill_x = -1;
-    panel->last_mini_fill_x = -1;
-    panel->last_playhead_x = -1;
-    if (!panel->wave_buf) return;
+    if (!panel || !panel->wave_buf) {
+        return;
+    }
 
     uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
     const int W = OVERVIEW_CV_W;
     const int H = OVERVIEW_CV_H;
     const int S = panel->wave_stride_px;
+    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
 
-    // 1) Clear buffer to background index (0 == black)
     memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
+    ui_draw_overview_zoom_grid(buf, S, W, H, window_start_ms, window_ms, meta);
 
-    // 2) Waveform columns. Rekordbox low waveform amplitude is stored in the
-    // low 5 bits; upper bits can carry color/flags and must not affect height.
-    if (has_waveform && waveform_low) {
+    if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
         for (int x = 0; x < W; x++) {
-            int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / W;
-            if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
-            int amp = waveform_low[src_x] & 0x1F;
+            int amp = ui_waveform_peak_for_column(source, duration_ms,
+                                                  window_start_ms, window_ms, x, W);
             int h = 2 + (amp * (H - 8)) / 31;
             if (h < 1) h = 1;
             int cy = H / 2;
@@ -3322,11 +3376,34 @@ static void ui_load_waveform_data(uint8_t deck,
         }
     }
 
-    // 3) Sparse white bar guides on top. Drawing every beat here fills all
-    // canvas columns on normal-length tracks and turns the waveform solid cyan.
-    ui_draw_overview_grid(buf, S, W, H, duration_ms, meta);
-
+    ui_draw_overview_zoom_grid(buf, S, W, H, window_start_ms, window_ms, meta);
+    panel->last_wave_center_ms = center_ms;
+    panel->last_wave_window_ms = window_ms;
     lv_obj_invalidate(panel->wave_canvas);
+}
+
+/* Render the overview waveform to the canvas once at track load. */
+static void ui_load_waveform_data(uint8_t deck,
+                                  uint32_t duration_ms,
+                                  const uint8_t waveform_low[400],
+                                  bool has_waveform,
+                                  const anlz_metadata_t *meta)
+{
+    ui_cache_invalidate();
+    uint8_t idx = ui_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    panel->last_mini_fill_x = -1;
+    panel->last_playhead_x = -1;
+    panel->last_wave_center_ms = UINT32_MAX;
+    panel->last_wave_window_ms = 0;
+    if (!panel->wave_buf) return;
+
+    ui_waveform_source_t wave_source =
+        ui_waveform_source_select(meta, waveform_low, has_waveform);
+    bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
+
+    uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
+    ui_render_overview_main_waveform(panel, &wave_source, duration_ms, meta, 0, window_ms);
 
     if (panel->mini_wave_canvas && panel->mini_wave_buf) {
         uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
@@ -3335,11 +3412,9 @@ static void ui_load_waveform_data(uint8_t deck,
         const int MS = panel->mini_wave_stride_px;
         memset(mini_buf, 0, (size_t)MS * MH * sizeof(uint8_t));
 
-        if (has_waveform && waveform_low) {
+        if (wave_valid) {
             for (int x = 0; x < MW; x++) {
-                int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / MW;
-                if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
-                int amp = waveform_low[src_x] & 0x1F;
+                int amp = ui_waveform_peak_for_column(&wave_source, duration_ms, 0, duration_ms, x, MW);
                 int h = (amp * (MH - 2)) / 31;
                 if (h < 1) h = 1;
                 int cy = MH / 2;
@@ -3379,6 +3454,7 @@ static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *tra
 static void ui_update_overview_cue_markers(uint8_t deck)
 {
     uint8_t deck_idx = ui_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[deck_idx];
     const anlz_metadata_t *meta = ui_deck_anlz(deck);
     uint32_t duration_ms = ui_deck_duration_ms(deck);
     static const uint32_t cue_hex_colors[8] = {
@@ -3401,6 +3477,15 @@ static void ui_update_overview_cue_markers(uint8_t deck)
         return;
     }
 
+    uint32_t window_ms = panel->last_wave_window_ms > 0
+                       ? panel->last_wave_window_ms
+                       : ui_overview_main_window_ms(deck, meta);
+    uint32_t center_ms = panel->last_wave_center_ms != UINT32_MAX
+                       ? panel->last_wave_center_ms
+                       : 0;
+    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+    int64_t window_end_ms = window_start_ms + (int64_t)window_ms;
+
     for (int i = 0; i < 8; i++) {
         lv_obj_t *marker = s_overview_cue_markers[deck_idx][i];
         if (!marker) {
@@ -3422,9 +3507,15 @@ static void ui_update_overview_cue_markers(uint8_t deck)
             continue;
         }
 
-        float progress = (float)pos / (float)duration_ms;
-        if (progress > 1.0f) progress = 1.0f;
-        int marker_x = 10 + (int)(progress * (float)OVERVIEW_CV_W) - 1;
+        if ((int64_t)pos < window_start_ms || (int64_t)pos > window_end_ms) {
+            lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        int marker_x = 10 + (int)((((int64_t)pos - window_start_ms) * OVERVIEW_CV_W) /
+                                  (int64_t)window_ms) - 1;
+        if (marker_x < 9) marker_x = 9;
+        if (marker_x > 10 + OVERVIEW_CV_W - 2) marker_x = 10 + OVERVIEW_CV_W - 2;
         lv_obj_set_pos(marker, marker_x, 7);
         lv_obj_set_style_bg_color(marker, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
         lv_obj_remove_flag(marker, LV_OBJ_FLAG_HIDDEN);
@@ -3919,7 +4010,8 @@ static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
     }
 }
 
-static void ui_update_overview_waveform_progress(ui_overview_deck_panel_t *panel,
+static void ui_update_overview_waveform_progress(uint8_t deck,
+                                                 ui_overview_deck_panel_t *panel,
                                                  uint32_t position_ms,
                                                  uint32_t duration_ms)
 {
@@ -3927,50 +4019,32 @@ static void ui_update_overview_waveform_progress(ui_overview_deck_panel_t *panel
 
     float progress = (float)position_ms / (float)duration_ms;
     if (progress > 1.0f) progress = 1.0f;
-    int playhead_x = (int)(progress * (float)OVERVIEW_CV_W);
-    if (playhead_x < 0) playhead_x = 0;
-    if (playhead_x > OVERVIEW_CV_W) playhead_x = OVERVIEW_CV_W;
 
-    if (panel->playhead && playhead_x != panel->last_playhead_x) {
-        lv_obj_set_pos(panel->playhead, 10 + playhead_x, 7);
-        panel->last_playhead_x = playhead_x;
+    int main_playhead_x = OVERVIEW_CV_W / 2;
+    if (panel->playhead && main_playhead_x != panel->last_playhead_x) {
+        lv_obj_set_pos(panel->playhead, 10 + main_playhead_x, 7);
+        panel->last_playhead_x = main_playhead_x;
     }
 
-    if (!panel->wave_canvas || !panel->wave_buf || playhead_x == panel->last_fill_x) {
-        return;
+    const anlz_metadata_t *meta = ui_deck_anlz(deck);
+    uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
+    uint32_t center_ms = position_ms > duration_ms ? duration_ms : position_ms;
+    bool redraw_main = panel->last_wave_center_ms == UINT32_MAX ||
+                       panel->last_wave_window_ms != window_ms;
+    if (!redraw_main) {
+        uint32_t delta = center_ms > panel->last_wave_center_ms
+                       ? center_ms - panel->last_wave_center_ms
+                       : panel->last_wave_center_ms - center_ms;
+        redraw_main = delta >= OVERVIEW_MAIN_REDRAW_STEP_MS;
     }
 
-    uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
-    const int W = OVERVIEW_CV_W;
-    const int H = OVERVIEW_CV_H;
-    const int S = panel->wave_stride_px;
-    int x0 = 0;
-    int x1 = W;
-    uint8_t target_wave_color = 1;
-
-    if (panel->last_fill_x >= 0 && panel->last_fill_x <= W) {
-        if (playhead_x > panel->last_fill_x) {
-            x0 = panel->last_fill_x;
-            x1 = playhead_x;
-            target_wave_color = 2;
-        } else {
-            x0 = playhead_x;
-            x1 = panel->last_fill_x;
-            target_wave_color = 1;
+    if (redraw_main && panel->wave_canvas && panel->wave_buf) {
+        ui_waveform_source_t source = ui_waveform_source_select(meta, NULL, false);
+        if (source.kind != UI_WAVEFORM_SOURCE_NONE) {
+            ui_render_overview_main_waveform(panel, &source, duration_ms, meta,
+                                             center_ms, window_ms);
         }
     }
-
-    for (int x = x0; x < x1; x++) {
-        uint8_t col = (panel->last_fill_x < 0) ? ((x < playhead_x) ? 2 : 1) : target_wave_color;
-        for (int y = 0; y < H; y++) {
-            uint8_t val = buf[y * S + x];
-            if ((val == 1 || val == 2) && val != col) {
-                buf[y * S + x] = col;
-            }
-        }
-    }
-    panel->last_fill_x = playhead_x;
-    lv_obj_invalidate(panel->wave_canvas);
 
     if (!panel->mini_wave_canvas || !panel->mini_wave_buf) {
         return;
@@ -4103,7 +4177,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
                           (pc < 0 ? -pc : pc) / 100,
                           (pc < 0 ? -pc : pc) % 100);
 
-    ui_update_overview_waveform_progress(panel, elapsed_ms, duration_ms);
+    ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms);
 }
 
 void ui_update(void) {
