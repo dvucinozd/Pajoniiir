@@ -245,3 +245,6 @@ Validation note, 2026-06-10:
 - Follow-up waveform visibility fix keeps the primary overview waveform canvas
   allocation ahead of mini waveform allocation and prefers PSRAM for mini strips
   so decorative buffers do not starve the main waveform canvas.
+- Main waveform visibility was strengthened with a high-contrast Pioneered-like
+  palette, source-amplitude normalization, and explicit foreground ordering for
+  the primary waveform object.

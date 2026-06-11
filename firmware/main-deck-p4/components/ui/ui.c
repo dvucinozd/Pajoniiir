@@ -2367,9 +2367,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
 
         lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0x00, 0x7D, 0xE1, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0xA6, 0xC8, 0xE8, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x5F, 0x5F, 0x5F, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0xF0, 0x2B, 0x72, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0xFF, 0xA6, 0xD4, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
@@ -2385,6 +2385,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
     lv_obj_set_pos(panel->playhead, 10, 7);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_foreground(panel->wave_border);
 
     panel->mini_wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->mini_wave_border);
@@ -3292,16 +3293,19 @@ static void ui_load_waveform_data(uint8_t deck,
         for (int x = 0; x < W; x++) {
             int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / W;
             if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
-            int amp = waveform_low[src_x] & 0x1F; // 0..31
-            int h = (amp * (H - 4)) / 31;
+            int raw = waveform_low[src_x];
+            int amp = raw > 31 ? (raw >> 3) : (raw & 0x1F); // normalize 0..255 or 0..31 sources
+            if (amp > 31) amp = 31;
+            int h = 6 + (amp * (H - 10)) / 31;
             if (h < 1) h = 1;
             int cy = H / 2;
             int y0 = cy - h / 2;
             int y1 = cy + h / 2;
             if (y0 < 0) y0 = 0;
             if (y1 >= H) y1 = H - 1;
+            uint8_t color = (x % 23 < 4) ? 3 : 1;
             for (int y = y0; y <= y1; y++) {
-                buf[y * S + x] = 1; // 1 == upcoming waveform (premium blue)
+                buf[y * S + x] = color;
             }
         }
     }
