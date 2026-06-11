@@ -131,6 +131,9 @@ static volatile bool         s_usb_removed_pending = false;
 // Waveform visualizer definitions
 #define OVERVIEW_CV_W 550
 #define OVERVIEW_CV_H 78
+#define OVERVIEW_MINI_CV_W 390
+#define OVERVIEW_MINI_CV_H 30
+#define OVERVIEW_WAVEFORM_LOW_SAMPLES 400
 #define OVERVIEW_XFADER_X 314
 
 typedef struct {
@@ -152,8 +155,14 @@ typedef struct {
     lv_obj_t *wave_canvas;
     uint8_t  *wave_buf;
     int       wave_stride_px;
+    lv_obj_t *mini_wave_border;
+    lv_obj_t *mini_wave_canvas;
+    uint8_t  *mini_wave_buf;
+    int       mini_wave_stride_px;
+    lv_obj_t *mini_playhead;
     lv_obj_t *playhead;
     int       last_fill_x;
+    int       last_mini_fill_x;
     int       last_playhead_x;
 } ui_overview_deck_panel_t;
 
@@ -2253,7 +2262,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     (void)y;
     ui_overview_deck_panel_t *panel = &s_overview_decks[ui_deck_index(deck)];
     panel->wave_stride_px = OVERVIEW_CV_W;
+    panel->mini_wave_stride_px = OVERVIEW_MINI_CV_W;
     panel->last_fill_x = -1;
+    panel->last_mini_fill_x = -1;
     panel->last_playhead_x = -1;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
     int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
@@ -2316,6 +2327,50 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->out_bar_bg = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6, COL_PANEL);
     panel->out_bar_fill = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6,
                                           deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
+
+    panel->mini_wave_border = lv_obj_create(panel->panel);
+    lv_obj_remove_style_all(panel->mini_wave_border);
+    lv_obj_set_style_bg_color(panel->mini_wave_border, COL_BG, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->mini_wave_border, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->mini_wave_border, 0, LV_PART_MAIN);
+    lv_obj_set_size(panel->mini_wave_border, OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H);
+    lv_obj_set_pos(panel->mini_wave_border, info_x + 4, 401);
+    lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_SCROLLABLE);
+
+    size_t mini_sz = LV_DRAW_BUF_SIZE(OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, LV_COLOR_FORMAT_I8);
+#ifndef WIN32
+    panel->mini_wave_buf = heap_caps_malloc(mini_sz, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#else
+    panel->mini_wave_buf = malloc(mini_sz);
+#endif
+    if (panel->mini_wave_buf) {
+        memset(panel->mini_wave_buf, 0, mini_sz);
+        panel->mini_wave_canvas = lv_canvas_create(panel->mini_wave_border);
+        lv_canvas_set_buffer(panel->mini_wave_canvas, panel->mini_wave_buf,
+                             OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, LV_COLOR_FORMAT_I8);
+        lv_obj_align(panel->mini_wave_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_remove_flag(panel->mini_wave_canvas, LV_OBJ_FLAG_CLICKABLE);
+        lv_canvas_set_palette(panel->mini_wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 1, lv_color32_make(0xE8, 0x2B, 0x78, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0xFF, 0xA6, 0xD4, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
+        lv_image_dsc_t *mini_dsc = lv_canvas_get_image(panel->mini_wave_canvas);
+        if (mini_dsc && mini_dsc->header.stride > 0) {
+            panel->mini_wave_stride_px = (int)mini_dsc->header.stride;
+        }
+    } else {
+        ESP_LOGE(TAG, "D%u mini overview canvas alloc failed (%u bytes)",
+                 (unsigned)deck + 1u, (unsigned)mini_sz);
+    }
+
+    panel->mini_playhead = lv_obj_create(panel->mini_wave_border);
+    lv_obj_set_style_bg_color(panel->mini_playhead, COL_TEXT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->mini_playhead, 0, LV_PART_MAIN);
+    lv_obj_set_size(panel->mini_playhead, 2, OVERVIEW_MINI_CV_H);
+    lv_obj_set_pos(panel->mini_playhead, 0, 0);
+    lv_obj_remove_flag(panel->mini_playhead, LV_OBJ_FLAG_CLICKABLE);
 
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
@@ -2456,6 +2511,25 @@ static void ui_create_overview_fx_panel(lv_obj_t *parent)
     }
 }
 
+static void ui_create_overview_center_marker(lv_obj_t *parent)
+{
+    lv_obj_t *line = ui_overview_bar(parent, 421, 0, 1, 316, COL_TEXT);
+    lv_obj_set_style_bg_opa(line, LV_OPA_80, LV_PART_MAIN);
+
+    lv_obj_t *top = ui_overview_bar(parent, 417, 0, 9, 2, COL_TEXT);
+    lv_obj_set_style_bg_opa(top, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_t *bottom = ui_overview_bar(parent, 417, 158, 9, 2, COL_TEXT);
+    lv_obj_set_style_bg_opa(bottom, LV_OPA_80, LV_PART_MAIN);
+
+    lv_obj_t *cue = ui_overview_bar(parent, 407, 300, 32, 16, COL_AMBER);
+    lv_obj_set_style_border_width(cue, 0, LV_PART_MAIN);
+    lv_obj_t *label = lv_label_create(cue);
+    lv_label_set_text(label, "CUE");
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+}
+
 static void create_screen_overview(lv_obj_t *parent) {
     s_screens[0] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[0]);
@@ -2465,6 +2539,7 @@ static void create_screen_overview(lv_obj_t *parent) {
 
     ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_1, 4);
     ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_2, 222);
+    ui_create_overview_center_marker(s_screens[0]);
     ui_create_overview_fx_panel(s_screens[0]);
 }
 
@@ -3164,6 +3239,7 @@ static void ui_load_waveform_data(uint8_t deck,
     uint8_t idx = ui_deck_index(deck);
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
     panel->last_fill_x = -1;
+    panel->last_mini_fill_x = -1;
     panel->last_playhead_x = -1;
     if (!panel->wave_buf) return;
 
@@ -3200,7 +3276,9 @@ static void ui_load_waveform_data(uint8_t deck,
     // 3) Waveform columns (bright blue index 1)
     if (has_waveform && waveform_low) {
         for (int x = 0; x < W; x++) {
-            int amp = waveform_low[x] & 0x1F; // 0..31
+            int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / W;
+            if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
+            int amp = waveform_low[src_x] & 0x1F; // 0..31
             int h = (amp * (H - 4)) / 31;
             if (h < 1) h = 1;
             int cy = H / 2;
@@ -3236,6 +3314,35 @@ static void ui_load_waveform_data(uint8_t deck,
     }
 
     lv_obj_invalidate(panel->wave_canvas);
+
+    if (panel->mini_wave_canvas && panel->mini_wave_buf) {
+        uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
+        const int MW = OVERVIEW_MINI_CV_W;
+        const int MH = OVERVIEW_MINI_CV_H;
+        const int MS = panel->mini_wave_stride_px;
+        memset(mini_buf, 0, (size_t)MS * MH * sizeof(uint8_t));
+
+        if (has_waveform && waveform_low) {
+            for (int x = 0; x < MW; x++) {
+                int src_x = (x * OVERVIEW_WAVEFORM_LOW_SAMPLES) / MW;
+                if (src_x >= OVERVIEW_WAVEFORM_LOW_SAMPLES) src_x = OVERVIEW_WAVEFORM_LOW_SAMPLES - 1;
+                int amp = waveform_low[src_x] & 0x1F;
+                int h = (amp * (MH - 2)) / 31;
+                if (h < 1) h = 1;
+                int cy = MH / 2;
+                int y0 = cy - h / 2;
+                int y1 = cy + h / 2;
+                if (y0 < 0) y0 = 0;
+                if (y1 >= MH) y1 = MH - 1;
+                uint8_t color = (x % 17 < 3) ? 3 : 1;
+                for (int y = y0; y <= y1; y++) {
+                    mini_buf[y * MS + x] = color;
+                }
+            }
+        }
+
+        lv_obj_invalidate(panel->mini_wave_canvas);
+    }
 }
 
 #ifdef WIN32
@@ -3851,6 +3958,51 @@ static void ui_update_overview_waveform_progress(ui_overview_deck_panel_t *panel
     }
     panel->last_fill_x = playhead_x;
     lv_obj_invalidate(panel->wave_canvas);
+
+    if (!panel->mini_wave_canvas || !panel->mini_wave_buf) {
+        return;
+    }
+
+    int mini_x = (int)(progress * (float)OVERVIEW_MINI_CV_W);
+    if (mini_x < 0) mini_x = 0;
+    if (mini_x > OVERVIEW_MINI_CV_W) mini_x = OVERVIEW_MINI_CV_W;
+    if (panel->mini_playhead) {
+        lv_obj_set_x(panel->mini_playhead, mini_x);
+    }
+    if (mini_x == panel->last_mini_fill_x) {
+        return;
+    }
+
+    uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
+    const int MW = OVERVIEW_MINI_CV_W;
+    const int MH = OVERVIEW_MINI_CV_H;
+    const int MS = panel->mini_wave_stride_px;
+    int mx0 = 0;
+    int mx1 = MW;
+    uint8_t mini_color = 1;
+    if (panel->last_mini_fill_x >= 0 && panel->last_mini_fill_x <= MW) {
+        if (mini_x > panel->last_mini_fill_x) {
+            mx0 = panel->last_mini_fill_x;
+            mx1 = mini_x;
+            mini_color = 2;
+        } else {
+            mx0 = mini_x;
+            mx1 = panel->last_mini_fill_x;
+            mini_color = 1;
+        }
+    }
+
+    for (int x = mx0; x < mx1; x++) {
+        uint8_t col = (panel->last_mini_fill_x < 0) ? ((x < mini_x) ? 2 : 1) : mini_color;
+        for (int y = 0; y < MH; y++) {
+            uint8_t val = mini_buf[y * MS + x];
+            if ((val == 1 || val == 2) && val != col) {
+                mini_buf[y * MS + x] = col;
+            }
+        }
+    }
+    panel->last_mini_fill_x = mini_x;
+    lv_obj_invalidate(panel->mini_wave_canvas);
 }
 
 #ifndef WIN32

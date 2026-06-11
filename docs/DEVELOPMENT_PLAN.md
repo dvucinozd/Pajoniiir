@@ -239,3 +239,6 @@ Validation note, 2026-06-10:
 - First Overview polish pass now follows the Pioneered reference more closely:
   the two deck waveforms live in the upper overview area, Beat FX is a compact
   right-side stack, and the deck metadata is split into two lower deck strips.
+- Second Overview polish pass adds lower mini waveform strips, a centered
+  playhead/CUE marker, and scaled Rekordbox low-waveform sampling so the wider
+  overview canvases do not read past the 400-sample source buffer.
