@@ -49,28 +49,27 @@
 #define UI_TRACK_LOAD_STACK   (10 * 1024)
 
 // The UI canvas is 800x480 landscape; the physical ST7701 panel is 480x800
-// portrait. LVGL renders landscape, then the flush callback uses the ESP32-P4
-// PPA (Pixel Processing Accelerator) to rotate each full frame into the panel's
-// MIPI-DSI frame buffer. LVGL's own software rotation is unusable here (partial
-// mode corrupts the DSI DMA; full mode doesn't rotate), so we rotate in hardware.
+// portrait. LVGL renders landscape dirty rectangles, then the flush callback
+// uses the ESP32-P4 PPA (Pixel Processing Accelerator) to rotate each rectangle
+// into the panel's MIPI-DSI frame buffer. LVGL's own software rotation is
+// unusable here, so we rotate in hardware.
 #define UI_HOR_RES   800   // logical landscape width  (LVGL canvas)
 #define UI_VER_RES   480   // logical landscape height
 #define UI_TOPBAR_H   46
 #define UI_CONTENT_Y  UI_TOPBAR_H
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
 #define UI_DSI_FB_COUNT 3  // DPI framebuffers (num_fbs=3) for tear-free triple buffering
+#define UI_LVGL_PARTIAL_BUF_ROWS 80u
 #define ALIGN_UP_BY(n, a)  (((n) + ((a) - 1)) & ~((a) - 1))
 
 // LVGL is not thread-safe: any LVGL call outside the handler task must hold this.
 static _lock_t              s_lvgl_lock;
 static lv_display_t        *s_disp        = NULL;
 static ppa_client_handle_t  s_ppa         = NULL;
-// Triple buffering: the PPA rotates each frame into a NON-displayed framebuffer,
-// then esp_lcd_panel_draw_bitmap() switches the DPI to it at the next frame
-// boundary (tear-free). Rotating through 3 buffers gives 2 frames of slack so we
-// never write the buffer currently on screen (LVGL flush rate ≤ panel refresh).
+// The BSP owns 3 DPI framebuffers. Partial LVGL flushes and waveform overlays
+// update the currently scanned buffer directly so small UI changes do not force
+// a full 800x480 redraw.
 static void                *s_dsi_fb[UI_DSI_FB_COUNT] = { NULL };
-static int                  s_dsi_fb_idx  = 1;   // next fb to render into (fb 0 active at boot)
 static int                  s_dsi_active_fb_idx = 0;
 static size_t               s_cache_align = 64;
 #endif
@@ -199,9 +198,25 @@ static ui_overview_perf_counter_t s_ui_update_interval_perf;
 static ui_overview_perf_counter_t s_ui_update_duration_perf;
 static ui_overview_perf_counter_t s_lvgl_handler_interval_perf;
 static ui_overview_perf_counter_t s_lvgl_handler_duration_perf;
+static ui_overview_perf_counter_t s_lvgl_flush_total_perf;
+static ui_overview_perf_counter_t s_lvgl_flush_msync_perf;
+static ui_overview_perf_counter_t s_lvgl_flush_ppa_perf;
+static ui_overview_perf_counter_t s_lvgl_refr_total_perf;
+static ui_overview_perf_counter_t s_lvgl_render_total_perf;
+static ui_overview_perf_counter_t s_lvgl_flush_event_perf;
 #ifndef WIN32
 #define UI_RGB565(r, g, b) \
     (uint16_t)((((uint16_t)(r) & 0xF8u) << 8) | (((uint16_t)(g) & 0xFCu) << 3) | ((uint16_t)(b) >> 3))
+#define UI_PERF_SPIKE_THRESHOLD_US 20000u
+static int64_t s_lvgl_refr_start_us = 0;
+static int64_t s_lvgl_render_start_us = 0;
+static int64_t s_lvgl_flush_event_start_us = 0;
+static uint32_t s_lvgl_inval_count = 0;
+static uint32_t s_lvgl_inval_total_px = 0;
+static uint32_t s_lvgl_inval_max_px = 0;
+static uint32_t s_lvgl_frame_inval_count = 0;
+static uint32_t s_lvgl_frame_inval_total_px = 0;
+static uint32_t s_lvgl_frame_inval_max_px = 0;
 static const uint16_t s_overview_wave_rgb565_palette[] = {
     UI_RGB565(0x00, 0x00, 0x00),
     UI_RGB565(0xF0, 0x2B, 0x72),
@@ -215,6 +230,7 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
+static uint8_t   s_overview_main_redraw_budget = 0;
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_convert_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
@@ -3516,22 +3532,18 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
     }
 }
 
-static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
-                                          uint8_t deck,
-                                          const uint8_t *indexed_pixels,
-                                          int stride_px)
+static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel,
+                                                 uint8_t deck,
+                                                 uint16_t *src)
 {
     int64_t total_start_us = esp_timer_get_time();
     uint8_t idx = ui_deck_index(deck);
     if (idx >= DECK_CORE_DECK_COUNT || s_active_tab != 0 ||
-        !indexed_pixels || stride_px <= 0 || !s_ppa) {
+        !src || !s_ppa) {
         return false;
     }
     if (s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
         !s_dsi_fb[s_dsi_active_fb_idx]) {
-        return false;
-    }
-    if (!ui_overview_wave_overlay_ensure_buffer(idx)) {
         return false;
     }
 
@@ -3540,26 +3552,6 @@ static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
     if (!ui_overview_wave_overlay_rect(panel, &logical, &physical)) {
         return false;
     }
-
-    uint16_t *src = s_overview_wave_overlay_rgb565[idx];
-    int64_t convert_start_us = esp_timer_get_time();
-    ui_overlay_i8_to_rgb565(indexed_pixels,
-                            stride_px,
-                            src,
-                            OVERVIEW_CV_W,
-                            OVERVIEW_CV_W,
-                            OVERVIEW_CV_H,
-                            s_overview_wave_rgb565_palette,
-                            sizeof(s_overview_wave_rgb565_palette) /
-                                sizeof(s_overview_wave_rgb565_palette[0]));
-    int64_t convert_us = esp_timer_get_time() - convert_start_us;
-    if (convert_us < 0) {
-        convert_us = 0;
-    }
-    ui_overview_overlay_perf_record(&s_overview_overlay_convert_perf[idx],
-                                    idx,
-                                    "convert",
-                                    (uint32_t)convert_us);
 
     int64_t msync_start_us = esp_timer_get_time();
     esp_cache_msync(src,
@@ -3631,6 +3623,42 @@ static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
                                     (uint32_t)total_us);
     return true;
 }
+
+static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
+                                          uint8_t deck,
+                                          const uint8_t *indexed_pixels,
+                                          int stride_px)
+{
+    uint8_t idx = ui_deck_index(deck);
+    if (idx >= DECK_CORE_DECK_COUNT || !indexed_pixels || stride_px <= 0) {
+        return false;
+    }
+    if (!ui_overview_wave_overlay_ensure_buffer(idx)) {
+        return false;
+    }
+
+    uint16_t *src = s_overview_wave_overlay_rgb565[idx];
+    int64_t convert_start_us = esp_timer_get_time();
+    ui_overlay_i8_to_rgb565(indexed_pixels,
+                            stride_px,
+                            src,
+                            OVERVIEW_CV_W,
+                            OVERVIEW_CV_W,
+                            OVERVIEW_CV_H,
+                            s_overview_wave_rgb565_palette,
+                            sizeof(s_overview_wave_rgb565_palette) /
+                                sizeof(s_overview_wave_rgb565_palette[0]));
+    int64_t convert_us = esp_timer_get_time() - convert_start_us;
+    if (convert_us < 0) {
+        convert_us = 0;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_convert_perf[idx],
+                                    idx,
+                                    "convert",
+                                    (uint32_t)convert_us);
+
+    return ui_overview_blit_wave_overlay_rgb565(panel, deck, src);
+}
 #endif
 
 static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
@@ -3660,13 +3688,14 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     if (render_us < 0) {
         render_us = 0;
     }
+    uint8_t idx = ui_deck_index(deck);
     ui_overview_perf_report_t report;
-    if (ui_overview_perf_record(&s_overview_wave_perf[ui_deck_index(deck)],
+    if (ui_overview_perf_record(&s_overview_wave_perf[idx],
                                 (uint32_t)render_us,
                                 &report)) {
         ESP_LOGI(TAG,
                  "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
-                 (unsigned)(ui_deck_index(deck) + 1u),
+                 (unsigned)(idx + 1u),
                  (unsigned)report.last_us,
                  (unsigned)report.avg_us,
                  (unsigned)report.max_us,
@@ -3930,38 +3959,172 @@ static void ui_perf_log_us(const char *label, const ui_overview_perf_report_t *r
              (unsigned)report->samples);
 }
 
+static uint32_t ui_perf_elapsed_us(int64_t start_us)
+{
+    int64_t elapsed_us = esp_timer_get_time() - start_us;
+    return elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
+}
+
+static bool ui_perf_record_phase_us(ui_overview_perf_counter_t *counter,
+                                    const char *label,
+                                    uint32_t duration_us)
+{
+    ui_overview_perf_report_t report;
+    if (ui_overview_perf_record(counter, duration_us, &report)) {
+        ui_perf_log_us(label, &report);
+        if (report.max_us >= UI_PERF_SPIKE_THRESHOLD_US) {
+            ESP_LOGW(TAG,
+                     "%s spike window max: %u us",
+                     label,
+                     (unsigned)report.max_us);
+            return true;
+        }
+    }
+    return false;
+}
+
 // ── Firmware-only LVGL backend (PPA-rotated flush, tick, handler task) ───────
 
 // LVGL rendered a full 800x480 landscape frame in `px_map`. Hardware-rotate it
 // 90° (PPA angle 270°, matching the vendor demo) straight into the 480x800
 // MIPI-DSI frame buffer, which the DPI engine scans out continuously.
+static void ui_lvgl_log_frame_context(const char *label)
+{
+    ESP_LOGI(TAG,
+             "%s invalidated: count=%u total_px=%u max_px=%u",
+             label,
+             (unsigned)s_lvgl_frame_inval_count,
+             (unsigned)s_lvgl_frame_inval_total_px,
+             (unsigned)s_lvgl_frame_inval_max_px);
+}
+
+static void ui_lvgl_display_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    switch (code) {
+    case LV_EVENT_INVALIDATE_AREA: {
+        lv_area_t *area = lv_event_get_invalidated_area(e);
+        if (!area) {
+            break;
+        }
+        int32_t w = area->x2 - area->x1 + 1;
+        int32_t h = area->y2 - area->y1 + 1;
+        if (w <= 0 || h <= 0) {
+            break;
+        }
+        uint32_t px = (uint32_t)w * (uint32_t)h;
+        s_lvgl_inval_count++;
+        s_lvgl_inval_total_px += px;
+        if (px > s_lvgl_inval_max_px) {
+            s_lvgl_inval_max_px = px;
+        }
+        break;
+    }
+    case LV_EVENT_REFR_START:
+        s_lvgl_refr_start_us = esp_timer_get_time();
+        s_lvgl_frame_inval_count = s_lvgl_inval_count;
+        s_lvgl_frame_inval_total_px = s_lvgl_inval_total_px;
+        s_lvgl_frame_inval_max_px = s_lvgl_inval_max_px;
+        s_lvgl_inval_count = 0;
+        s_lvgl_inval_total_px = 0;
+        s_lvgl_inval_max_px = 0;
+        break;
+    case LV_EVENT_REFR_READY:
+        if (s_lvgl_refr_start_us != 0) {
+            uint32_t elapsed_us = ui_perf_elapsed_us(s_lvgl_refr_start_us);
+            if (ui_perf_record_phase_us(&s_lvgl_refr_total_perf,
+                                        "LVGL refr total",
+                                        elapsed_us)) {
+                ui_lvgl_log_frame_context("LVGL refr");
+            }
+        }
+        break;
+    case LV_EVENT_RENDER_START:
+        s_lvgl_render_start_us = esp_timer_get_time();
+        break;
+    case LV_EVENT_RENDER_READY:
+        if (s_lvgl_render_start_us != 0) {
+            uint32_t elapsed_us = ui_perf_elapsed_us(s_lvgl_render_start_us);
+            if (ui_perf_record_phase_us(&s_lvgl_render_total_perf,
+                                        "LVGL render total",
+                                        elapsed_us)) {
+                ui_lvgl_log_frame_context("LVGL render");
+            }
+        }
+        break;
+    case LV_EVENT_FLUSH_START:
+        s_lvgl_flush_event_start_us = esp_timer_get_time();
+        break;
+    case LV_EVENT_FLUSH_FINISH:
+        if (s_lvgl_flush_event_start_us != 0) {
+            ui_perf_record_phase_us(&s_lvgl_flush_event_perf,
+                                    "LVGL flush event",
+                                    ui_perf_elapsed_us(s_lvgl_flush_event_start_us));
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    (void)area;
-    // Write back the rendered buffer so the PPA's DMA reads fresh pixels.
-    size_t src_sz = (size_t)UI_HOR_RES * UI_VER_RES * 2;   // RGB565
+    int64_t total_start_us = esp_timer_get_time();
+    if (!area || !px_map ||
+        s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
+        !s_dsi_fb[s_dsi_active_fb_idx]) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    int32_t area_w = area->x2 - area->x1 + 1;
+    int32_t area_h = area->y2 - area->y1 + 1;
+    if (area_w <= 0 || area_h <= 0) {
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    ui_overlay_rect_t logical = {
+        .x = area->x1,
+        .y = area->y1,
+        .w = area_w,
+        .h = area_h,
+    };
+    ui_overlay_rect_t physical;
+    if (!ui_overlay_map_ppa270(logical, UI_HOR_RES, UI_VER_RES, &physical)) {
+        ESP_LOGW(TAG,
+                 "LVGL flush area outside canvas: x=%d y=%d w=%d h=%d",
+                 logical.x, logical.y, logical.w, logical.h);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
+    // Write back the rendered dirty rectangle so the PPA's DMA reads fresh pixels.
+    size_t src_sz = (size_t)area_w * (size_t)area_h * sizeof(uint16_t);
+    int64_t msync_start_us = esp_timer_get_time();
     esp_cache_msync(px_map, src_sz, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    ui_perf_record_phase_us(&s_lvgl_flush_msync_perf,
+                            "LVGL flush msync",
+                            ui_perf_elapsed_us(msync_start_us));
 
-    // Rotate into a back buffer (not the one currently on screen).
-    int target_idx = s_dsi_fb_idx;
-    void *target = s_dsi_fb[target_idx];
-
+    // Rotate the dirty rectangle directly into the currently scanned DSI buffer.
     ppa_srm_oper_config_t op = {
         .in.buffer         = px_map,
-        .in.pic_w          = UI_HOR_RES,
-        .in.pic_h          = UI_VER_RES,
-        .in.block_w        = UI_HOR_RES,
-        .in.block_h        = UI_VER_RES,
+        .in.pic_w          = (uint32_t)area_w,
+        .in.pic_h          = (uint32_t)area_h,
+        .in.block_w        = (uint32_t)area_w,
+        .in.block_h        = (uint32_t)area_h,
         .in.block_offset_x = 0,
         .in.block_offset_y = 0,
         .in.srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
 
-        .out.buffer        = target,
+        .out.buffer        = s_dsi_fb[s_dsi_active_fb_idx],
         .out.buffer_size   = ALIGN_UP_BY((size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * 2, s_cache_align),
         .out.pic_w         = BSP_LCD_H_RES,   // 480 (rotated width)
         .out.pic_h         = BSP_LCD_V_RES,   // 800 (rotated height)
-        .out.block_offset_x = 0,
-        .out.block_offset_y = 0,
+        .out.block_offset_x = (uint32_t)physical.x,
+        .out.block_offset_y = (uint32_t)physical.y,
         .out.srm_cm        = PPA_SRM_COLOR_MODE_RGB565,
 
         .rotation_angle    = PPA_SRM_ROTATION_ANGLE_270,
@@ -3971,16 +4134,19 @@ static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
         .byte_swap         = 0,
         .mode              = PPA_TRANS_MODE_BLOCKING,
     };
-    ppa_do_scale_rotate_mirror(s_ppa, &op);   // blocking: target buffer ready on return
+    int64_t ppa_start_us = esp_timer_get_time();
+    esp_err_t ppa_err = ppa_do_scale_rotate_mirror(s_ppa, &op);   // blocking: target buffer ready on return
+    ui_perf_record_phase_us(&s_lvgl_flush_ppa_perf,
+                            "LVGL flush PPA",
+                            ui_perf_elapsed_us(ppa_start_us));
+    if (ppa_err != ESP_OK) {
+        ESP_LOGW(TAG, "LVGL flush PPA failed: %s", esp_err_to_name(ppa_err));
+    }
 
-    // Switch the DPI to the freshly-rotated buffer. Because `target` is one of the
-    // panel's own framebuffers, the driver just flips the active buffer (no copy)
-    // and the hardware swaps at the next frame boundary → no tearing.
-    esp_lcd_panel_handle_t panel = lv_display_get_user_data(disp);
-    esp_lcd_panel_draw_bitmap(panel, 0, 0, BSP_LCD_H_RES, BSP_LCD_V_RES, target);
-
-    s_dsi_active_fb_idx = target_idx;
-    s_dsi_fb_idx = (s_dsi_fb_idx + 1) % UI_DSI_FB_COUNT;
+    // Blocking PPA has updated the dirty rectangle in the active framebuffer.
+    ui_perf_record_phase_us(&s_lvgl_flush_total_perf,
+                            "LVGL flush total",
+                            ui_perf_elapsed_us(total_start_us));
     lv_display_flush_ready(disp);
 }
 
@@ -4058,10 +4224,9 @@ static esp_err_t ui_lvgl_backend_init(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Grab all 3 DPI framebuffers (480x800) for tear-free triple buffering.
+    // Grab the BSP-owned DPI framebuffers; fb[0] is active at boot.
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel, UI_DSI_FB_COUNT,
                                                        &s_dsi_fb[0], &s_dsi_fb[1], &s_dsi_fb[2]));
-    s_dsi_fb_idx = 1;   // fb[0] is the active buffer at boot; render into fb[1] first
     ESP_ERROR_CHECK(esp_cache_get_alignment(MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM, &s_cache_align));
 
     // Register the PPA Scale-Rotate-Mirror client used by the flush callback.
@@ -4077,18 +4242,20 @@ static esp_err_t ui_lvgl_backend_init(void)
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_user_data(s_disp, panel);
     lv_display_set_flush_cb(s_disp, ui_lvgl_flush_cb);
+    lv_display_add_event_cb(s_disp, ui_lvgl_display_event_cb, LV_EVENT_ALL, NULL);
 
-    // Two full-screen render buffers (FULL mode → flush gets the whole frame,
-    // so the PPA rotates one contiguous buffer per refresh). Cache-line aligned
-    // in PSRAM so the PPA's DMA can read them directly.
-    size_t buf_sz = ALIGN_UP_BY((size_t)UI_HOR_RES * UI_VER_RES * 2, s_cache_align);
+    // One partial render buffer keeps LVGL redraw work proportional to the
+    // invalidated area instead of repainting the whole 800x480 canvas.
+    size_t buf_sz = ALIGN_UP_BY((size_t)UI_HOR_RES *
+                                UI_LVGL_PARTIAL_BUF_ROWS *
+                                sizeof(uint16_t),
+                                s_cache_align);
     void *buf1 = heap_caps_aligned_alloc(s_cache_align, buf_sz, MALLOC_CAP_SPIRAM);
-    void *buf2 = heap_caps_aligned_alloc(s_cache_align, buf_sz, MALLOC_CAP_SPIRAM);
-    if (!buf1 || !buf2) {
-        ESP_LOGE(TAG, "failed to allocate %u-byte LVGL draw buffers from PSRAM", (unsigned)buf_sz);
+    if (!buf1) {
+        ESP_LOGE(TAG, "failed to allocate %u-byte LVGL draw buffer from PSRAM", (unsigned)buf_sz);
         return ESP_ERR_NO_MEM;
     }
-    lv_display_set_buffers(s_disp, buf1, buf2, buf_sz, LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_buffers(s_disp, buf1, NULL, buf_sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     const esp_timer_create_args_t tick_args = {
         .callback = ui_lvgl_tick_cb,
@@ -4457,6 +4624,17 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
                                                         window_ms,
                                                         source.kind,
                                                         playing);
+
+    if (redraw_main && panel->wave_canvas && panel->wave_buf &&
+        source.kind != UI_WAVEFORM_SOURCE_NONE) {
+#ifndef WIN32
+        if (s_overview_main_redraw_budget == 0) {
+            redraw_main = false;
+        } else {
+            s_overview_main_redraw_budget--;
+        }
+#endif
+    }
 
     if (redraw_main && panel->wave_canvas && panel->wave_buf &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
@@ -4854,6 +5032,7 @@ void ui_update(void) {
 
     // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
     static uint32_t s_overview_slow_bucket = UINT32_MAX;
+    static bool s_overview_deck_order_flip = false;
     uint32_t overview_slow_bucket = lv_tick_get() / 1000u;
     bool overview_slow_update = overview_slow_bucket != s_overview_slow_bucket;
     if (overview_slow_update) {
@@ -4861,8 +5040,17 @@ void ui_update(void) {
     }
 
     if (s_active_tab == 0 && active_duration_ms > 0) {
-        ui_update_overview_deck(CTRL_DECK_1, &state);
-        ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+#ifndef WIN32
+        s_overview_main_redraw_budget = 1;
+#endif
+        if (s_overview_deck_order_flip) {
+            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+            ui_update_overview_deck(CTRL_DECK_1, &state);
+        } else {
+            ui_update_overview_deck(CTRL_DECK_1, &state);
+            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        }
+        s_overview_deck_order_flip = !s_overview_deck_order_flip;
         if (overview_slow_update) {
             ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
             #ifndef WIN32
@@ -4873,8 +5061,17 @@ void ui_update(void) {
             ui_update_overview_cue_markers(CTRL_DECK_2);
         }
     } else if (s_active_tab == 0) {
-        ui_update_overview_deck(CTRL_DECK_1, &state);
-        ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+#ifndef WIN32
+        s_overview_main_redraw_budget = 1;
+#endif
+        if (s_overview_deck_order_flip) {
+            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+            ui_update_overview_deck(CTRL_DECK_1, &state);
+        } else {
+            ui_update_overview_deck(CTRL_DECK_1, &state);
+            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        }
+        s_overview_deck_order_flip = !s_overview_deck_order_flip;
         if (overview_slow_update) {
             ui_update_beat_indicator(NULL);
             #ifndef WIN32

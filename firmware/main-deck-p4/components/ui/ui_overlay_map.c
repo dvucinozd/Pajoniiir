@@ -34,12 +34,24 @@ void ui_overlay_i8_to_rgb565(const uint8_t *src,
         return;
     }
 
+    uint16_t lut[256];
+    uint16_t fallback = palette[0];
+    for (size_t i = 0; i < 256; i++) {
+        lut[i] = (i < palette_count) ? palette[i] : fallback;
+    }
+
     for (int y = 0; y < height_px; y++) {
         const uint8_t *src_row = src + (size_t)y * (size_t)src_stride_px;
         uint16_t *dst_row = dst + (size_t)y * (size_t)dst_stride_px;
-        for (int x = 0; x < width_px; x++) {
-            uint8_t index = src_row[x];
-            dst_row[x] = (index < palette_count) ? palette[index] : palette[0];
+        int x = 0;
+        for (; x + 3 < width_px; x += 4) {
+            dst_row[x] = lut[src_row[x]];
+            dst_row[x + 1] = lut[src_row[x + 1]];
+            dst_row[x + 2] = lut[src_row[x + 2]];
+            dst_row[x + 3] = lut[src_row[x + 3]];
+        }
+        for (; x < width_px; x++) {
+            dst_row[x] = lut[src_row[x]];
         }
     }
 }
