@@ -8,6 +8,7 @@
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
+#include "ui_overview_motion.h"
 #include "ui_overview_grid.h"
 #include "ui_performance_target.h"
 #include "ui_waveform_model.h"
@@ -143,7 +144,6 @@ static volatile bool         s_usb_removed_pending = false;
 #define OVERVIEW_MAIN_VISIBLE_BEATS 16u
 #define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
 #define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
-#define OVERVIEW_MAIN_REDRAW_STEP_MS 80u
 #define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - 110)
 #define OVERVIEW_PHASE_Y 176
 #define OVERVIEW_PHASE_W 220
@@ -4168,7 +4168,8 @@ static ui_waveform_source_t ui_overview_redraw_source(uint8_t deck,
 static void ui_update_overview_waveform_progress(uint8_t deck,
                                                  ui_overview_deck_panel_t *panel,
                                                  uint32_t position_ms,
-                                                 uint32_t duration_ms)
+                                                 uint32_t duration_ms,
+                                                 bool playing)
 {
     if (!panel || duration_ms == 0) return;
 
@@ -4184,21 +4185,18 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     const anlz_metadata_t *meta = ui_deck_anlz(deck);
     uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
     uint32_t center_ms = position_ms > duration_ms ? duration_ms : position_ms;
-    bool redraw_main = panel->last_wave_center_ms == UINT32_MAX ||
-                       panel->last_wave_window_ms != window_ms;
-    if (!redraw_main) {
-        uint32_t delta = center_ms > panel->last_wave_center_ms
-                       ? center_ms - panel->last_wave_center_ms
-                       : panel->last_wave_center_ms - center_ms;
-        redraw_main = delta >= OVERVIEW_MAIN_REDRAW_STEP_MS;
-    }
+    ui_waveform_source_t source = ui_overview_redraw_source(deck, meta);
+    bool redraw_main = ui_overview_motion_should_redraw(panel->last_wave_center_ms,
+                                                        panel->last_wave_window_ms,
+                                                        center_ms,
+                                                        window_ms,
+                                                        source.kind,
+                                                        playing);
 
-    if (redraw_main && panel->wave_canvas && panel->wave_buf) {
-        ui_waveform_source_t source = ui_overview_redraw_source(deck, meta);
-        if (source.kind != UI_WAVEFORM_SOURCE_NONE) {
-            ui_render_overview_main_waveform(panel, &source, duration_ms, meta,
-                                             center_ms, window_ms);
-        }
+    if (redraw_main && panel->wave_canvas && panel->wave_buf &&
+        source.kind != UI_WAVEFORM_SOURCE_NONE) {
+        ui_render_overview_main_waveform(panel, &source, duration_ms, meta,
+                                         center_ms, window_ms);
     }
 
     if (!panel->mini_wave_canvas || !panel->mini_wave_buf) {
@@ -4332,7 +4330,8 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
                           (pc < 0 ? -pc : pc) / 100,
                           (pc < 0 ? -pc : pc) % 100);
 
-    ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms);
+    ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
+                                         state->playing);
 }
 
 void ui_update(void) {

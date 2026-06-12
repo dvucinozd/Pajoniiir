@@ -279,3 +279,8 @@ Validation note, 2026-06-10:
 - Overview redraw now keeps the deck-local loaded low-resolution waveform as a
   fallback when no `PWV3` high-resolution data is present, so zoom-window redraw
   can still follow Deck 2 playback on tracks with only low waveform data.
+- Smooth Overview motion pass starts by moving main waveform redraw cadence into
+  a host-tested helper. Playing decks now refresh the zoom window at roughly
+  30 fps, while paused decks keep the coarser 80 ms cadence. If this is still
+  not fluid enough on hardware, the next renderer step is partial scroll/append
+  drawing instead of full canvas redraws.
