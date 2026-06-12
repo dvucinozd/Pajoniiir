@@ -296,3 +296,7 @@ Validation note, 2026-06-10:
   Deck snapshots remain authoritative, but while a deck is playing the Overview
   screen advances display position between backend snapshots using the UI
   monotonic clock and current pitch speed, then rebases on cue/seek/large drift.
+- Follow-up diagnostics log `ui_update` interval/duration and LVGL handler
+  interval/duration every 60 samples. This separates slow redraw causes between
+  application update cadence, LVGL full-frame handling, and waveform renderer
+  cost.

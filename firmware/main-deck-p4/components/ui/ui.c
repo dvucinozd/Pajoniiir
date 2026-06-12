@@ -191,6 +191,10 @@ static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
 static ui_position_interpolator_t s_overview_position_interp[DECK_CORE_DECK_COUNT];
+static ui_overview_perf_counter_t s_ui_update_interval_perf;
+static ui_overview_perf_counter_t s_ui_update_duration_perf;
+static ui_overview_perf_counter_t s_lvgl_handler_interval_perf;
+static ui_overview_perf_counter_t s_lvgl_handler_duration_perf;
 static lv_obj_t *s_phase_meter_label = NULL;
 static lv_obj_t *s_phase_meter_track = NULL;
 static lv_obj_t *s_phase_meter_center = NULL;
@@ -3626,6 +3630,20 @@ static void ui_timer_cb(lv_timer_t *timer) {
 }
 
 #ifndef WIN32
+static void ui_perf_log_us(const char *label, const ui_overview_perf_report_t *report)
+{
+    if (!label || !report) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "%s: last=%u us avg=%u us max=%u us samples=%u",
+             label,
+             (unsigned)report->last_us,
+             (unsigned)report->avg_us,
+             (unsigned)report->max_us,
+             (unsigned)report->samples);
+}
+
 // ── Firmware-only LVGL backend (PPA-rotated flush, tick, handler task) ───────
 
 // LVGL rendered a full 800x480 landscape frame in `px_map`. Hardware-rotate it
@@ -3710,10 +3728,31 @@ static void ui_lvgl_task(void *arg)
 {
     (void)arg;
     ESP_LOGI(TAG, "LVGL handler task started");
+    uint64_t last_handler_start_us = 0;
     while (1) {
+        uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
+        if (last_handler_start_us != 0) {
+            ui_overview_perf_report_t interval_report;
+            if (ui_overview_perf_record(&s_lvgl_handler_interval_perf,
+                                        (uint32_t)(handler_start_us - last_handler_start_us),
+                                        &interval_report)) {
+                ui_perf_log_us("LVGL handler interval", &interval_report);
+            }
+        }
+        last_handler_start_us = handler_start_us;
+
         _lock_acquire_recursive(&s_lvgl_lock);
         uint32_t next_ms = lv_timer_handler();
         _lock_release_recursive(&s_lvgl_lock);
+
+        uint64_t handler_end_us = (uint64_t)esp_timer_get_time();
+        ui_overview_perf_report_t duration_report;
+        if (ui_overview_perf_record(&s_lvgl_handler_duration_perf,
+                                    (uint32_t)(handler_end_us - handler_start_us),
+                                    &duration_report)) {
+            ui_perf_log_us("LVGL handler duration", &duration_report);
+        }
+
         if (next_ms > 100) next_ms = 100;   // cap to keep the UI responsive
         if (next_ms < 5)   next_ms = 5;     // avoid starving lower-prio tasks
         vTaskDelay(pdMS_TO_TICKS(next_ms));
@@ -4306,6 +4345,20 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
 void ui_update(void) {
 #ifndef WIN32
+    uint64_t update_start_us = (uint64_t)esp_timer_get_time();
+    static uint64_t last_update_start_us = 0;
+    if (last_update_start_us != 0) {
+        ui_overview_perf_report_t interval_report;
+        if (ui_overview_perf_record(&s_ui_update_interval_perf,
+                                    (uint32_t)(update_start_us - last_update_start_us),
+                                    &interval_report)) {
+            ui_perf_log_us("ui_update interval", &interval_report);
+        }
+    }
+    last_update_start_us = update_start_us;
+#endif
+
+#ifndef WIN32
     if (s_usb_removed_pending) {
         ui_apply_usb_removed();
     }
@@ -4525,4 +4578,14 @@ void ui_update(void) {
         ui_update_sd_cache_status_label(false);
 #endif
     }
+
+#ifndef WIN32
+    uint64_t update_end_us = (uint64_t)esp_timer_get_time();
+    ui_overview_perf_report_t duration_report;
+    if (ui_overview_perf_record(&s_ui_update_duration_perf,
+                                (uint32_t)(update_end_us - update_start_us),
+                                &duration_report)) {
+        ui_perf_log_us("ui_update duration", &duration_report);
+    }
+#endif
 }
