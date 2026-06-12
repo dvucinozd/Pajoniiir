@@ -59,6 +59,14 @@ static bool deck_uses_audio_engine(uint8_t deck)
     return deck < DECK_CORE_DECK_COUNT;
 }
 
+static void sync_deck_from_audio(uint8_t deck, deck_state_t *state)
+{
+    if (!state || !deck_uses_audio_engine(deck)) return;
+
+    state->playing = audio_engine_deck_is_playing(deck);
+    state->position_ms = audio_engine_deck_position_ms(deck);
+}
+
 static bool event_is_mixer_control(const ctrl_event_t *ev)
 {
     return ev && (ev->id == CTRL_ID_CH1_VOLUME ||
@@ -108,12 +116,22 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
     switch (btn) {
     case BTN_PLAY:
         if (uses_audio && audio_engine_deck_is_playing(deck)) {
-            audio_engine_deck_pause(deck);
-            state->playing = false;
+            esp_err_t rc = audio_engine_deck_pause(deck);
+            if (rc == ESP_OK) {
+                state->playing = false;
+            } else {
+                ESP_LOGW(TAG, "deck %u pause failed: %s", (unsigned)deck + 1,
+                         esp_err_to_name(rc));
+            }
         } else {
             if (uses_audio) {
                 esp_err_t rc = audio_engine_deck_play(deck);
-                state->playing = (rc == ESP_OK) ? true : !state->playing;
+                if (rc == ESP_OK) {
+                    state->playing = true;
+                } else {
+                    ESP_LOGW(TAG, "deck %u play failed: %s", (unsigned)deck + 1,
+                             esp_err_to_name(rc));
+                }
             } else {
                 state->playing = !state->playing;
             }
@@ -404,17 +422,7 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
     uint8_t idx = normalize_deck(deck);
     deck_state_t *state = &s_decks[idx];
     
-    // Deck 1 remains the compatibility deck backed by the current single
-    // global audio engine. Deck 2 state is authoritative until Phase 4
-    // introduces per-deck audio engines.
-    if (idx == DECK_CORE_COMPAT_DECK) {
-        if (audio_engine_deck_is_playing(idx)) {
-            state->playing     = true;
-            state->position_ms = audio_engine_deck_position_ms(idx);
-        } else {
-            state->playing     = false;
-        }
-    }
+    sync_deck_from_audio(idx, state);
     TickType_t now = xTaskGetTickCount();
     if (s_last_heartbeat_tick != 0) {
         uint32_t age_ms = (uint32_t)((now - s_last_heartbeat_tick) * portTICK_PERIOD_MS);
@@ -485,6 +493,8 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 
 deck_state_t deck_core_test_get_deck_state(uint8_t deck)
 {
-    return s_decks[normalize_deck(deck)];
+    uint8_t idx = normalize_deck(deck);
+    sync_deck_from_audio(idx, &s_decks[idx]);
+    return s_decks[idx];
 }
 #endif

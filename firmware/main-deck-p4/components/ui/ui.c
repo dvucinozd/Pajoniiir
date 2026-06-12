@@ -1320,7 +1320,7 @@ static void ui_poll_track_load_result(void)
 
         ESP_LOGI(TAG, "Audio: loaded deck %u: %s (autoplay off)",
                  (unsigned)result.deck + 1u, result.loaded.audio_path);
-        const char *loaded_text = result.deck == CTRL_DECK_1 ? "D1 LOADED" : "D2 PRODUCER";
+        const char *loaded_text = result.deck == CTRL_DECK_1 ? "D1 LOADED" : "D2 LOADED";
         ui_status_indicator_hold(loaded_text, COL_GREEN, 2000);
         ui_library_set_load_busy(false, loaded_text);
         s_track_load_busy = false;

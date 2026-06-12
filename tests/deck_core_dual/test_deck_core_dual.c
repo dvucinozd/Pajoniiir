@@ -8,6 +8,9 @@ static int s_browse_delta;
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
+esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
+uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -76,9 +79,19 @@ static ctrl_event_t mixer_button(uint8_t id, int16_t value)
     };
 }
 
+static void reset_audio_engine_stub(void)
+{
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        audio_engine_stub_deck_play_result[deck] = ESP_OK;
+        audio_engine_stub_deck_playing[deck] = false;
+        audio_engine_stub_deck_position_ms[deck] = 0;
+    }
+}
+
 static void test_decks_track_transport_independently(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
 
     ctrl_event_t deck1_play = deck_button(CTRL_ID_DECK1_PLAY);
     ctrl_event_t deck2_play = deck_button(CTRL_ID_DECK2_PLAY);
@@ -97,9 +110,38 @@ static void test_decks_track_transport_independently(void)
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
 }
 
+static void test_deck2_snapshot_follows_audio_engine_position(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck2_play = deck_button(CTRL_ID_DECK2_PLAY);
+    deck_core_test_apply_event(&deck2_play);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 4321;
+
+    deck_state_t deck2 = deck_core_test_get_deck_state(CTRL_DECK_2);
+
+    assert(deck2.playing);
+    assert(deck2.position_ms == 4321);
+}
+
+static void test_failed_deck_play_does_not_mark_deck_playing(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_play_result[CTRL_DECK_2] = ESP_ERR_NOT_SUPPORTED;
+
+    ctrl_event_t deck2_play = deck_button(CTRL_ID_DECK2_PLAY);
+
+    deck_core_test_apply_event(&deck2_play);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+}
+
 static void test_decks_track_pitch_independently(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
 
     ctrl_event_t deck1_pitch = deck_pitch(CTRL_ID_DECK1_TEMPO, 7000);
     ctrl_event_t deck2_pitch = deck_pitch(CTRL_ID_DECK2_TEMPO, 9600);
@@ -114,6 +156,7 @@ static void test_decks_track_pitch_independently(void)
 static void test_browser_namespace_routes_load_to_requested_deck(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
     s_load_calls[CTRL_DECK_1] = 0;
     s_load_calls[CTRL_DECK_2] = 0;
 
@@ -131,6 +174,7 @@ static void test_browser_namespace_routes_load_to_requested_deck(void)
 static void test_browser_namespace_routes_browse_delta(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
     s_browse_delta = 0;
 
     ctrl_event_t browse = browse_delta(3);
@@ -142,6 +186,7 @@ static void test_browser_namespace_routes_browse_delta(void)
 static void test_mixer_namespace_routes_volume_and_crossfader(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
     audio_engine_stub_channel_volume[CTRL_DECK_1] = -1;
     audio_engine_stub_channel_volume[CTRL_DECK_2] = -1;
     audio_engine_stub_crossfader = -1;
@@ -162,6 +207,7 @@ static void test_mixer_namespace_routes_volume_and_crossfader(void)
 static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
 {
     deck_core_test_reset();
+    reset_audio_engine_stub();
     audio_engine_stub_pfl_toggle_count[CTRL_DECK_1] = 0;
     audio_engine_stub_pfl_toggle_count[CTRL_DECK_2] = 0;
 
@@ -180,6 +226,8 @@ static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
 int main(void)
 {
     test_decks_track_transport_independently();
+    test_deck2_snapshot_follows_audio_engine_position();
+    test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();

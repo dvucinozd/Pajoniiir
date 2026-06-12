@@ -19,14 +19,25 @@ static inline void audio_engine_set_pitch(int16_t raw_pitch)
 }
 static inline uint32_t audio_engine_position_ms(void) { return 0; }
 
+extern esp_err_t audio_engine_stub_deck_play_result[2];
+extern bool audio_engine_stub_deck_playing[2];
+extern uint32_t audio_engine_stub_deck_position_ms[2];
+
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
-    return deck == 0 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    esp_err_t rc = audio_engine_stub_deck_play_result[deck];
+    if (rc == ESP_OK) {
+        audio_engine_stub_deck_playing[deck] = true;
+    }
+    return rc;
 }
 
 static inline esp_err_t audio_engine_deck_pause(uint8_t deck)
 {
-    return deck == 0 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_deck_playing[deck] = false;
+    return ESP_OK;
 }
 
 static inline esp_err_t audio_engine_deck_stop(uint8_t deck)
@@ -48,14 +59,12 @@ static inline void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 
 static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
-    (void)deck;
-    return 0;
+    return deck < 2 ? audio_engine_stub_deck_position_ms[deck] : 0;
 }
 
 static inline bool audio_engine_deck_is_playing(uint8_t deck)
 {
-    (void)deck;
-    return false;
+    return deck < 2 ? audio_engine_stub_deck_playing[deck] : false;
 }
 
 extern int audio_engine_stub_channel_volume[2];

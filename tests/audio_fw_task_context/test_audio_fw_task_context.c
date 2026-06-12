@@ -10,7 +10,7 @@ static void test_reset_clears_context(void)
     int engine;
     int pcm_ring;
     int resampler;
-    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(1, 0);
+    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(1, 0, true);
     audio_fw_task_context_t ctx = {
         .deck = 1,
         .preload = &preload,
@@ -40,7 +40,7 @@ static void test_bind_keeps_explicit_deck_and_runtime_slots(void)
     int engine;
     int pcm_ring;
     int resampler;
-    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(1, 0);
+    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(1, 0, true);
     audio_fw_task_context_t ctx;
     audio_fw_task_context_reset(&ctx);
 
@@ -71,7 +71,7 @@ static void test_bind_requires_all_state_slots(void)
     int engine;
     int pcm_ring;
     int resampler;
-    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(0, 0);
+    audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(0, 0, false);
     audio_fw_task_context_t ctx;
 
     audio_fw_task_context_bind(&ctx, 0, NULL, &runtime, &engine, &pcm_ring, &resampler, plan);

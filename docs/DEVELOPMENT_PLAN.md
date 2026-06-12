@@ -270,3 +270,9 @@ Validation note, 2026-06-10:
 - Overview now includes a compact D2-vs-D1 phase meter between the main
   waveforms. It uses the shared beat-grid/BPM helper, shows signed beat offset,
   and turns green when the two decks are within the current lock tolerance.
+- Deck 2 transport follow-up: firmware task planning now lets whichever deck is
+  loaded first own the shared output task/codec path. This fixes the D2-first
+  play path where Deck 2 could decode as a producer but had no active output
+  consumer. `deck_core` also no longer marks a deck as playing when the audio
+  backend rejects the play request, and D2 snapshots now sync position from the
+  audio engine so the Overview waveform advances while Deck 2 is playing.

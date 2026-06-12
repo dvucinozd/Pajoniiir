@@ -296,6 +296,16 @@ static void reset_all_fw_task_contexts(void)
     }
 }
 
+static bool audio_fw_output_task_running(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (s_fw_runtimes[i].run && s_fw_runtimes[i].output_task) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool deck_output_active(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return false;
@@ -1132,7 +1142,10 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
     uint8_t deck = active_deck_index();
-    audio_fw_task_plan_t task_plan = audio_fw_task_plan_for_deck(deck, AUDIO_ENGINE_COMPAT_DECK);
+    audio_fw_task_plan_t task_plan =
+        audio_fw_task_plan_for_deck(deck,
+                                    AUDIO_ENGINE_COMPAT_DECK,
+                                    audio_fw_output_task_running());
     audio_fw_task_context_bind(task_ctx,
                                deck,
                                fw,
@@ -1484,7 +1497,9 @@ static bool deck_is_valid(uint8_t deck)
 #if AE_FW
 static bool deck_transport_supported(uint8_t deck)
 {
-    return audio_fw_task_plan_for_deck(deck, AUDIO_ENGINE_COMPAT_DECK).transport_supported;
+    return audio_fw_task_plan_for_deck(deck,
+                                       AUDIO_ENGINE_COMPAT_DECK,
+                                       true).transport_supported;
 }
 #endif
 
