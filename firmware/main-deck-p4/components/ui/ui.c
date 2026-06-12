@@ -9,7 +9,7 @@
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
 #include "ui_overview_motion.h"
-#include "ui_overview_grid.h"
+#include "ui_overview_renderer.h"
 #include "ui_performance_target.h"
 #include "ui_waveform_model.h"
 #include <limits.h>
@@ -3347,58 +3347,6 @@ static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *
     return window_ms;
 }
 
-static void ui_draw_overview_zoom_grid(uint8_t *buf,
-                                       int stride_px,
-                                       int width_px,
-                                       int height_px,
-                                       int64_t window_start_ms,
-                                       uint32_t window_span_ms,
-                                       const anlz_metadata_t *meta)
-{
-    if (window_span_ms == 0) {
-        return;
-    }
-
-    if (meta && meta->beats && meta->beat_count > 0) {
-        int last_x = -1000;
-        for (uint16_t b = 0; b < meta->beat_count; b++) {
-            int64_t beat_ms = meta->beats[b].time_ms;
-            if (beat_ms < window_start_ms ||
-                beat_ms > window_start_ms + (int64_t)window_span_ms) {
-                continue;
-            }
-
-            int x = (int)(((beat_ms - window_start_ms) * width_px) / window_span_ms);
-            if (x < 0 || x >= width_px || x == last_x) {
-                continue;
-            }
-            last_x = x;
-
-            ui_overview_grid_style_t style =
-                ui_overview_grid_style_for_phase(meta->beats[b].beat_phase);
-            int y0 = (height_px * style.y0_permille) / 1000;
-            int y1 = (height_px * style.y1_permille) / 1000;
-            if (y1 <= y0) y1 = y0 + 1;
-            if (y1 > height_px) y1 = height_px;
-            for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
-                for (int y = y0; y < y1; y++) {
-                    buf[y * stride_px + x + lx] = style.palette_index;
-                }
-            }
-        }
-        return;
-    }
-
-    ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
-    int y0 = (height_px * style.y0_permille) / 1000;
-    int y1 = (height_px * style.y1_permille) / 1000;
-    for (int x = width_px / 4; x < width_px; x += width_px / 4) {
-        for (int y = y0; y < y1; y++) {
-            buf[y * stride_px + x] = style.palette_index;
-        }
-    }
-}
-
 static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                              const ui_waveform_source_t *source,
                                              uint32_t duration_ms,
@@ -3414,31 +3362,9 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     const int W = OVERVIEW_CV_W;
     const int H = OVERVIEW_CV_H;
     const int S = panel->wave_stride_px;
-    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
 
-    memset(buf, 0, (size_t)S * H * sizeof(uint8_t));
-    ui_draw_overview_zoom_grid(buf, S, W, H, window_start_ms, window_ms, meta);
-
-    if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
-        for (int x = 0; x < W; x++) {
-            ui_waveform_column_t col = ui_waveform_column_for_column(
-                source, duration_ms, window_start_ms, window_ms, x, W);
-            int amp = col.peak;
-            int h = 2 + (amp * (H - 8)) / 31;
-            if (h < 1) h = 1;
-            int cy = H / 2;
-            int y0 = cy - h / 2;
-            int y1 = cy + h / 2;
-            if (y0 < 0) y0 = 0;
-            if (y1 >= H) y1 = H - 1;
-            uint8_t color = col.palette_index ? col.palette_index : 1;
-            for (int y = y0; y <= y1; y++) {
-                buf[y * S + x] = color;
-            }
-        }
-    }
-
-    ui_draw_overview_zoom_grid(buf, S, W, H, window_start_ms, window_ms, meta);
+    ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
+                                   center_ms, window_ms);
     panel->last_wave_center_ms = center_ms;
     panel->last_wave_window_ms = window_ms;
     lv_obj_invalidate(panel->wave_canvas);
@@ -3472,26 +3398,9 @@ static void ui_load_waveform_data(uint8_t deck,
         const int MW = OVERVIEW_MINI_CV_W;
         const int MH = OVERVIEW_MINI_CV_H;
         const int MS = panel->mini_wave_stride_px;
-        memset(mini_buf, 0, (size_t)MS * MH * sizeof(uint8_t));
-
-        if (wave_valid) {
-            for (int x = 0; x < MW; x++) {
-                ui_waveform_column_t col = ui_waveform_column_for_column(
-                    &wave_source, duration_ms, 0, duration_ms, x, MW);
-                int amp = col.peak;
-                int h = (amp * (MH - 2)) / 31;
-                if (h < 1) h = 1;
-                int cy = MH / 2;
-                int y0 = cy - h / 2;
-                int y1 = cy + h / 2;
-                if (y0 < 0) y0 = 0;
-                if (y1 >= MH) y1 = MH - 1;
-                uint8_t color = col.palette_index ? col.palette_index : 1;
-                for (int y = y0; y <= y1; y++) {
-                    mini_buf[y * MS + x] = color;
-                }
-            }
-        }
+        ui_overview_renderer_draw_mini(mini_buf, MS, MW, MH,
+                                       wave_valid ? &wave_source : NULL,
+                                       duration_ms);
 
         lv_obj_invalidate(panel->mini_wave_canvas);
     }

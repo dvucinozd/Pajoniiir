@@ -284,3 +284,7 @@ Validation note, 2026-06-10:
   30 fps, while paused decks keep the coarser 80 ms cadence. If this is still
   not fluid enough on hardware, the next renderer step is partial scroll/append
   drawing instead of full canvas redraws.
+- Overview renderer refactor extracted indexed-pixel main/mini waveform drawing
+  from `ui.c` into a host-tested `ui_overview_renderer` module. LVGL layout and
+  callbacks remain in `ui.c`; the next fluidity pass can now focus on renderer
+  internals without touching the rest of the UI screen wiring.
