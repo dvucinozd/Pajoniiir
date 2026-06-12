@@ -9,6 +9,7 @@
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
 #include "ui_overview_motion.h"
+#include "ui_overlay_map.h"
 #include "ui_overview_perf.h"
 #include "ui_overview_renderer.h"
 #include "ui_performance_target.h"
@@ -70,6 +71,7 @@ static ppa_client_handle_t  s_ppa         = NULL;
 // never write the buffer currently on screen (LVGL flush rate ≤ panel refresh).
 static void                *s_dsi_fb[UI_DSI_FB_COUNT] = { NULL };
 static int                  s_dsi_fb_idx  = 1;   // next fb to render into (fb 0 active at boot)
+static int                  s_dsi_active_fb_idx = 0;
 static size_t               s_cache_align = 64;
 #endif
 
@@ -180,6 +182,8 @@ typedef struct {
     int       last_playhead_x;
     uint32_t  last_wave_center_ms;
     uint32_t  last_wave_window_ms;
+    uint32_t  last_time_bucket;
+    uint32_t  last_remain_bucket;
 } ui_overview_deck_panel_t;
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
@@ -195,6 +199,27 @@ static ui_overview_perf_counter_t s_ui_update_interval_perf;
 static ui_overview_perf_counter_t s_ui_update_duration_perf;
 static ui_overview_perf_counter_t s_lvgl_handler_interval_perf;
 static ui_overview_perf_counter_t s_lvgl_handler_duration_perf;
+#ifndef WIN32
+#define UI_RGB565(r, g, b) \
+    (uint16_t)((((uint16_t)(r) & 0xF8u) << 8) | (((uint16_t)(g) & 0xFCu) << 3) | ((uint16_t)(b) >> 3))
+static const uint16_t s_overview_wave_rgb565_palette[] = {
+    UI_RGB565(0x00, 0x00, 0x00),
+    UI_RGB565(0xF0, 0x2B, 0x72),
+    UI_RGB565(0x26, 0x65, 0xFF),
+    UI_RGB565(0x46, 0xE9, 0xE5),
+    UI_RGB565(0xE5, 0xE6, 0xEA),
+    UI_RGB565(0x1D, 0xF5, 0x94),
+    UI_RGB565(0xFF, 0xB3, 0x38),
+    UI_RGB565(0x9B, 0x5C, 0xFF),
+    UI_RGB565(0x36, 0x40, 0x48),
+};
+static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
+static size_t    s_overview_wave_overlay_bytes = 0;
+static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
+static ui_overview_perf_counter_t s_overview_overlay_convert_perf[DECK_CORE_DECK_COUNT];
+static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
+static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
+#endif
 static lv_obj_t *s_phase_meter_label = NULL;
 static lv_obj_t *s_phase_meter_track = NULL;
 static lv_obj_t *s_phase_meter_center = NULL;
@@ -411,6 +436,63 @@ static void ui_label_set_text_cached(lv_obj_t *label, ui_text_cache_t *cache, co
     cache->valid = true;
 }
 
+static bool ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (!label) {
+        return false;
+    }
+    const char *safe_text = text ? text : "";
+    const char *current = lv_label_get_text(label);
+    if (current && strcmp(current, safe_text) == 0) {
+        return false;
+    }
+    lv_label_set_text(label, safe_text);
+    return true;
+}
+
+static void ui_obj_set_text_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (!obj) {
+        return;
+    }
+    lv_color_t current = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
+    if (lv_color_to_u32(current) == lv_color_to_u32(color)) {
+        return;
+    }
+    lv_obj_set_style_text_color(obj, color, LV_PART_MAIN);
+}
+
+static void ui_obj_set_bg_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (!obj) {
+        return;
+    }
+    lv_color_t current = lv_obj_get_style_bg_color(obj, LV_PART_MAIN);
+    if (lv_color_to_u32(current) == lv_color_to_u32(color)) {
+        return;
+    }
+    lv_obj_set_style_bg_color(obj, color, LV_PART_MAIN);
+}
+
+static void ui_obj_set_bg_opa_if_changed(lv_obj_t *obj, lv_opa_t opa)
+{
+    if (!obj) {
+        return;
+    }
+    if (lv_obj_get_style_bg_opa(obj, LV_PART_MAIN) == opa) {
+        return;
+    }
+    lv_obj_set_style_bg_opa(obj, opa, LV_PART_MAIN);
+}
+
+static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
+{
+    if (!obj || lv_obj_get_x(obj) == x) {
+        return;
+    }
+    lv_obj_set_x(obj, x);
+}
+
 static void ui_obj_set_text_color_cached(lv_obj_t *obj, ui_color_cache_t *cache, lv_color_t color)
 {
     if (!obj || !cache) return;
@@ -433,6 +515,19 @@ static void ui_label_set_f2(lv_obj_t *lbl, float v) {
     int c = (int)(v * 100.0f + (v >= 0.0f ? 0.5f : -0.5f));
     if (c < 0) lv_label_set_text_fmt(lbl, "-%d.%02d", (-c) / 100, (-c) % 100);
     else       lv_label_set_text_fmt(lbl, "%d.%02d", c / 100, c % 100);
+}
+
+static void ui_label_set_f2_if_changed(lv_obj_t *lbl, float v)
+{
+    if (!lbl) return;
+    char text[16];
+    int c = (int)(v * 100.0f + (v >= 0.0f ? 0.5f : -0.5f));
+    if (c < 0) {
+        snprintf(text, sizeof(text), "-%d.%02d", (-c) / 100, (-c) % 100);
+    } else {
+        snprintf(text, sizeof(text), "%d.%02d", c / 100, c % 100);
+    }
+    ui_label_set_text_if_changed(lbl, text);
 }
 
 static void ui_format_time_cc(char *out, size_t out_sz, uint32_t ms)
@@ -2322,6 +2417,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->last_playhead_x = -1;
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
+    panel->last_time_bucket = UINT32_MAX;
+    panel->last_remain_bucket = UINT32_MAX;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
     int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
     int accent_x = info_x + 2;
@@ -3355,6 +3452,187 @@ static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *
     return window_ms;
 }
 
+#ifndef WIN32
+static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
+{
+    if (idx >= DECK_CORE_DECK_COUNT) {
+        return false;
+    }
+    if (s_overview_wave_overlay_rgb565[idx]) {
+        return true;
+    }
+
+    size_t bytes = (size_t)OVERVIEW_CV_W * OVERVIEW_CV_H * sizeof(uint16_t);
+    s_overview_wave_overlay_bytes = ALIGN_UP_BY(bytes, s_cache_align);
+    s_overview_wave_overlay_rgb565[idx] =
+        heap_caps_aligned_alloc(s_cache_align,
+                                s_overview_wave_overlay_bytes,
+                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_overview_wave_overlay_rgb565[idx]) {
+        ESP_LOGW(TAG, "D%u overview overlay RGB565 buffer alloc failed (%u bytes)",
+                 (unsigned)(idx + 1u),
+                 (unsigned)s_overview_wave_overlay_bytes);
+        return false;
+    }
+
+    memset(s_overview_wave_overlay_rgb565[idx], 0, s_overview_wave_overlay_bytes);
+    return true;
+}
+
+static bool ui_overview_wave_overlay_rect(const ui_overview_deck_panel_t *panel,
+                                          ui_overlay_rect_t *logical,
+                                          ui_overlay_rect_t *physical)
+{
+    if (!panel || !panel->wave_canvas || !logical || !physical) {
+        return false;
+    }
+
+    lv_area_t area;
+    lv_obj_get_coords(panel->wave_canvas, &area);
+    *logical = (ui_overlay_rect_t){
+        .x = area.x1,
+        .y = area.y1,
+        .w = area.x2 - area.x1 + 1,
+        .h = area.y2 - area.y1 + 1,
+    };
+    return ui_overlay_map_ppa270(*logical, UI_HOR_RES, UI_VER_RES, physical);
+}
+
+static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
+                                            uint8_t idx,
+                                            const char *phase,
+                                            uint32_t duration_us)
+{
+    ui_overview_perf_report_t report;
+    if (ui_overview_perf_record(counter, duration_us, &report)) {
+        ESP_LOGI(TAG,
+                 "D%u overview overlay %s: last=%u us avg=%u us max=%u us samples=%u",
+                 (unsigned)(idx + 1u),
+                 phase,
+                 (unsigned)report.last_us,
+                 (unsigned)report.avg_us,
+                 (unsigned)report.max_us,
+                 (unsigned)report.samples);
+    }
+}
+
+static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
+                                          uint8_t deck,
+                                          const uint8_t *indexed_pixels,
+                                          int stride_px)
+{
+    int64_t total_start_us = esp_timer_get_time();
+    uint8_t idx = ui_deck_index(deck);
+    if (idx >= DECK_CORE_DECK_COUNT || s_active_tab != 0 ||
+        !indexed_pixels || stride_px <= 0 || !s_ppa) {
+        return false;
+    }
+    if (s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
+        !s_dsi_fb[s_dsi_active_fb_idx]) {
+        return false;
+    }
+    if (!ui_overview_wave_overlay_ensure_buffer(idx)) {
+        return false;
+    }
+
+    ui_overlay_rect_t logical;
+    ui_overlay_rect_t physical;
+    if (!ui_overview_wave_overlay_rect(panel, &logical, &physical)) {
+        return false;
+    }
+
+    uint16_t *src = s_overview_wave_overlay_rgb565[idx];
+    int64_t convert_start_us = esp_timer_get_time();
+    ui_overlay_i8_to_rgb565(indexed_pixels,
+                            stride_px,
+                            src,
+                            OVERVIEW_CV_W,
+                            OVERVIEW_CV_W,
+                            OVERVIEW_CV_H,
+                            s_overview_wave_rgb565_palette,
+                            sizeof(s_overview_wave_rgb565_palette) /
+                                sizeof(s_overview_wave_rgb565_palette[0]));
+    int64_t convert_us = esp_timer_get_time() - convert_start_us;
+    if (convert_us < 0) {
+        convert_us = 0;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_convert_perf[idx],
+                                    idx,
+                                    "convert",
+                                    (uint32_t)convert_us);
+
+    int64_t msync_start_us = esp_timer_get_time();
+    esp_cache_msync(src,
+                    s_overview_wave_overlay_bytes,
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    int64_t msync_us = esp_timer_get_time() - msync_start_us;
+    if (msync_us < 0) {
+        msync_us = 0;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_msync_perf[idx],
+                                    idx,
+                                    "msync",
+                                    (uint32_t)msync_us);
+
+    ppa_srm_oper_config_t op = {
+        .in.buffer          = src,
+        .in.pic_w           = OVERVIEW_CV_W,
+        .in.pic_h           = OVERVIEW_CV_H,
+        .in.block_w         = OVERVIEW_CV_W,
+        .in.block_h         = OVERVIEW_CV_H,
+        .in.block_offset_x  = 0,
+        .in.block_offset_y  = 0,
+        .in.srm_cm          = PPA_SRM_COLOR_MODE_RGB565,
+
+        .out.buffer         = s_dsi_fb[s_dsi_active_fb_idx],
+        .out.buffer_size    = ALIGN_UP_BY((size_t)BSP_LCD_H_RES * BSP_LCD_V_RES * 2,
+                                          s_cache_align),
+        .out.pic_w          = BSP_LCD_H_RES,
+        .out.pic_h          = BSP_LCD_V_RES,
+        .out.block_offset_x = (uint32_t)physical.x,
+        .out.block_offset_y = (uint32_t)physical.y,
+        .out.srm_cm         = PPA_SRM_COLOR_MODE_RGB565,
+
+        .rotation_angle     = PPA_SRM_ROTATION_ANGLE_270,
+        .scale_x            = 1.0,
+        .scale_y            = 1.0,
+        .rgb_swap           = 0,
+        .byte_swap          = 0,
+        .mode               = PPA_TRANS_MODE_BLOCKING,
+    };
+
+    int64_t ppa_start_us = esp_timer_get_time();
+    esp_err_t err = ppa_do_scale_rotate_mirror(s_ppa, &op);
+    int64_t ppa_us = esp_timer_get_time() - ppa_start_us;
+    if (ppa_us < 0) {
+        ppa_us = 0;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_ppa_perf[idx],
+                                    idx,
+                                    "ppa",
+                                    (uint32_t)ppa_us);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "D%u overview overlay PPA failed: %s logical=(%d,%d %dx%d) physical=(%d,%d %dx%d)",
+                 (unsigned)(idx + 1u),
+                 esp_err_to_name(err),
+                 logical.x, logical.y, logical.w, logical.h,
+                 physical.x, physical.y, physical.w, physical.h);
+        return false;
+    }
+
+    int64_t total_us = esp_timer_get_time() - total_start_us;
+    if (total_us < 0) {
+        total_us = 0;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_total_perf[idx],
+                                    idx,
+                                    "total",
+                                    (uint32_t)total_us);
+    return true;
+}
+#endif
+
 static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                              uint8_t deck,
                                              const ui_waveform_source_t *source,
@@ -3397,7 +3675,13 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
 #endif
     panel->last_wave_center_ms = center_ms;
     panel->last_wave_window_ms = window_ms;
+#ifndef WIN32
+    if (!ui_overview_blit_wave_overlay(panel, deck, buf, S)) {
+        lv_obj_invalidate(panel->wave_canvas);
+    }
+#else
     lv_obj_invalidate(panel->wave_canvas);
+#endif
 }
 
 /* Render the overview waveform to the canvas once at track load. */
@@ -3414,6 +3698,8 @@ static void ui_load_waveform_data(uint8_t deck,
     panel->last_playhead_x = -1;
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
+    panel->last_time_bucket = UINT32_MAX;
+    panel->last_remain_bucket = UINT32_MAX;
     if (!panel->wave_buf) return;
 
     ui_waveform_source_t wave_source =
@@ -3657,7 +3943,8 @@ static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     esp_cache_msync(px_map, src_sz, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
 
     // Rotate into a back buffer (not the one currently on screen).
-    void *target = s_dsi_fb[s_dsi_fb_idx];
+    int target_idx = s_dsi_fb_idx;
+    void *target = s_dsi_fb[target_idx];
 
     ppa_srm_oper_config_t op = {
         .in.buffer         = px_map,
@@ -3692,6 +3979,7 @@ static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     esp_lcd_panel_handle_t panel = lv_display_get_user_data(disp);
     esp_lcd_panel_draw_bitmap(panel, 0, 0, BSP_LCD_H_RES, BSP_LCD_V_RES, target);
 
+    s_dsi_active_fb_idx = target_idx;
     s_dsi_fb_idx = (s_dsi_fb_idx + 1) % UI_DSI_FB_COUNT;
     lv_display_flush_ready(disp);
 }
@@ -4062,13 +4350,13 @@ static void ui_update_phase_meter(const deck_state_t *deck1_state,
     bool tracks_ready = s_deck_track_info[ui_deck_index(CTRL_DECK_1)].valid &&
                         s_deck_track_info[ui_deck_index(CTRL_DECK_2)].valid;
     if (!deck1_state || !deck2_state || !tracks_ready) {
-        lv_label_set_text(s_phase_meter_label, "PHASE --");
-        lv_obj_set_style_text_color(s_phase_meter_label, COL_TEXT_MUTED, LV_PART_MAIN);
-        lv_obj_set_x(s_phase_meter_knob,
-                     OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
-                         (OVERVIEW_PHASE_KNOB_W / 2));
-        lv_obj_set_style_bg_color(s_phase_meter_knob, COL_TEXT_DIM, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_60, LV_PART_MAIN);
+        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE --");
+        ui_obj_set_text_color_if_changed(s_phase_meter_label, COL_TEXT_MUTED);
+        ui_obj_set_x_if_changed(s_phase_meter_knob,
+                                OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
+                                    (OVERVIEW_PHASE_KNOB_W / 2));
+        ui_obj_set_bg_color_if_changed(s_phase_meter_knob, COL_TEXT_DIM);
+        ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_60);
         return;
     }
 
@@ -4086,13 +4374,13 @@ static void ui_update_phase_meter(const deck_state_t *deck1_state,
                                     ui_deck_bpm(CTRL_DECK_2));
     ui_beat_phase_delta_t delta = ui_beat_phase_delta_calculate(beat1, beat2);
     if (!delta.valid) {
-        lv_label_set_text(s_phase_meter_label, "PHASE --");
-        lv_obj_set_style_text_color(s_phase_meter_label, COL_TEXT_MUTED, LV_PART_MAIN);
-        lv_obj_set_x(s_phase_meter_knob,
-                     OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
-                         (OVERVIEW_PHASE_KNOB_W / 2));
-        lv_obj_set_style_bg_color(s_phase_meter_knob, COL_TEXT_DIM, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_60, LV_PART_MAIN);
+        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE --");
+        ui_obj_set_text_color_if_changed(s_phase_meter_label, COL_TEXT_MUTED);
+        ui_obj_set_x_if_changed(s_phase_meter_knob,
+                                OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
+                                    (OVERVIEW_PHASE_KNOB_W / 2));
+        ui_obj_set_bg_color_if_changed(s_phase_meter_knob, COL_TEXT_DIM);
+        ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_60);
         return;
     }
 
@@ -4102,26 +4390,28 @@ static void ui_update_phase_meter(const deck_state_t *deck1_state,
     int max_center = OVERVIEW_PHASE_X + OVERVIEW_PHASE_W;
     if (knob_center < min_center) knob_center = min_center;
     if (knob_center > max_center) knob_center = max_center;
-    lv_obj_set_x(s_phase_meter_knob, knob_center - (OVERVIEW_PHASE_KNOB_W / 2));
+    ui_obj_set_x_if_changed(s_phase_meter_knob, knob_center - (OVERVIEW_PHASE_KNOB_W / 2));
 
     lv_color_t color = COL_GREEN;
     if (!delta.locked) {
         color = delta.deck2_delta_permille < 0 ? COL_AMBER : COL_ACCENT;
     }
-    lv_obj_set_style_bg_color(s_phase_meter_knob, color, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_phase_meter_label, color, LV_PART_MAIN);
+    ui_obj_set_bg_color_if_changed(s_phase_meter_knob, color);
+    ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_COVER);
+    ui_obj_set_text_color_if_changed(s_phase_meter_label, color);
 
     if (delta.locked) {
-        lv_label_set_text(s_phase_meter_label, "PHASE LOCK");
+        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE LOCK");
     } else {
         int abs_delta = delta.deck2_delta_permille < 0 ?
             -delta.deck2_delta_permille : delta.deck2_delta_permille;
-        lv_label_set_text_fmt(s_phase_meter_label,
-                              "D2 %c%d.%02dB",
-                              delta.deck2_delta_permille < 0 ? '-' : '+',
-                              abs_delta / 1000,
-                              (abs_delta % 1000) / 10);
+        char text[16];
+        snprintf(text, sizeof(text),
+                 "D2 %c%d.%02dB",
+                 delta.deck2_delta_permille < 0 ? '-' : '+',
+                 abs_delta / 1000,
+                 (abs_delta % 1000) / 10);
+        ui_label_set_text_if_changed(s_phase_meter_label, text);
     }
 }
 
@@ -4182,7 +4472,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     if (mini_x < 0) mini_x = 0;
     if (mini_x > OVERVIEW_MINI_CV_W) mini_x = OVERVIEW_MINI_CV_W;
     if (panel->mini_playhead) {
-        lv_obj_set_x(panel->mini_playhead, mini_x);
+        ui_obj_set_x_if_changed(panel->mini_playhead, mini_x);
     }
     if (mini_x == panel->last_mini_fill_x) {
         return;
@@ -4234,31 +4524,32 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
                                           snapshot->output_gain[deck],
                                           snapshot->pfl_enabled[deck]);
 
+        char text[16];
         if (panel->label_ch) {
-            lv_label_set_text_fmt(panel->label_ch, "CH %3u%%", (unsigned)view.fader_pct);
+            snprintf(text, sizeof(text), "CH %3u%%", (unsigned)view.fader_pct);
+            ui_label_set_text_if_changed(panel->label_ch, text);
         }
         if (panel->label_out) {
-            lv_label_set_text_fmt(panel->label_out, "OUT %3u%%", (unsigned)view.output_pct);
+            snprintf(text, sizeof(text), "OUT %3u%%", (unsigned)view.output_pct);
+            ui_label_set_text_if_changed(panel->label_out, text);
         }
         if (panel->label_pfl) {
-            lv_label_set_text(panel->label_pfl, view.pfl_on ? "PFL ON" : "PFL OFF");
-            lv_obj_set_style_text_color(panel->label_pfl,
-                                        view.pfl_on ? COL_AMBER : COL_TEXT_DIM,
-                                        LV_PART_MAIN);
+            ui_label_set_text_if_changed(panel->label_pfl, view.pfl_on ? "PFL ON" : "PFL OFF");
+            ui_obj_set_text_color_if_changed(panel->label_pfl,
+                                             view.pfl_on ? COL_AMBER : COL_TEXT_DIM);
         }
         if (panel->out_bar_fill) {
             int w = (78 * (int)view.output_pct) / 100;
             if (w < 2) w = 2;
-            lv_obj_set_width(panel->out_bar_fill, w);
-            lv_obj_set_style_bg_color(panel->out_bar_fill,
-                                      deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
-                                      LV_PART_MAIN);
+            if (lv_obj_get_width(panel->out_bar_fill) != w) {
+                lv_obj_set_width(panel->out_bar_fill, w);
+            }
         }
     }
 
     if (s_crossfader_knob) {
         int knob_x = ui_mixer_crossfader_knob_x(snapshot->crossfader, s_crossfader_track_w);
-        lv_obj_set_x(s_crossfader_knob, OVERVIEW_XFADER_X + knob_x - 3);
+        ui_obj_set_x_if_changed(s_crossfader_knob, OVERVIEW_XFADER_X + knob_x - 3);
     }
 }
 #endif
@@ -4308,21 +4599,34 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
     const ui_deck_track_info_t *info = &s_deck_track_info[idx];
 
-    lv_label_set_text(panel->label_status, state->playing ? "((PLAY))" : (info->valid ? "LOADED" : "EMPTY"));
-    lv_obj_set_style_text_color(panel->label_status,
-                                state->playing ? COL_RED : (info->valid ? COL_AMBER : COL_TEXT_DIM),
-                                LV_PART_MAIN);
-    lv_label_set_text(panel->label_title, info->valid ? info->title : "No Track");
-    lv_label_set_text(panel->label_artist, info->valid ? info->artist : "");
+    ui_label_set_text_if_changed(panel->label_status,
+                                 state->playing ? "((PLAY))" : (info->valid ? "LOADED" : "EMPTY"));
+    ui_obj_set_text_color_if_changed(panel->label_status,
+                                     state->playing ? COL_RED : (info->valid ? COL_AMBER : COL_TEXT_DIM));
+    ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "No Track");
+    ui_label_set_text_if_changed(panel->label_artist, info->valid ? info->artist : "");
 
-    lv_label_set_text_fmt(panel->label_time, "%02u:%02u.%02u",
-                          (unsigned)(elapsed_ms / 60000),
-                          (unsigned)((elapsed_ms % 60000) / 1000),
-                          (unsigned)((elapsed_ms % 1000) / 10));
-    lv_label_set_text_fmt(panel->label_remain, "-%02u:%02u.%02u",
-                          (unsigned)(remain_ms / 60000),
-                          (unsigned)((remain_ms % 60000) / 1000),
-                          (unsigned)((remain_ms % 1000) / 10));
+    uint32_t time_bucket = elapsed_ms / 1000u;
+    if (time_bucket != panel->last_time_bucket) {
+        char text[16];
+        panel->last_time_bucket = time_bucket;
+        snprintf(text, sizeof(text), "%02u:%02u.%02u",
+                 (unsigned)(elapsed_ms / 60000),
+                 (unsigned)((elapsed_ms % 60000) / 1000),
+                 (unsigned)((elapsed_ms % 1000) / 10));
+        ui_label_set_text_if_changed(panel->label_time, text);
+    }
+
+    uint32_t remain_bucket = remain_ms / 1000u;
+    if (remain_bucket != panel->last_remain_bucket) {
+        char text[16];
+        panel->last_remain_bucket = remain_bucket;
+        snprintf(text, sizeof(text), "-%02u:%02u.%02u",
+                 (unsigned)(remain_ms / 60000),
+                 (unsigned)((remain_ms % 60000) / 1000),
+                 (unsigned)((remain_ms % 1000) / 10));
+        ui_label_set_text_if_changed(panel->label_remain, text);
+    }
 
     float pitch_pct;
 #ifndef WIN32
@@ -4332,12 +4636,14 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 #endif
     uint16_t base_bpm = ui_deck_bpm(idx);
     float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
-    ui_label_set_f2(panel->label_bpm, current_bpm);
+    ui_label_set_f2_if_changed(panel->label_bpm, current_bpm);
     int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
-    lv_label_set_text_fmt(panel->label_pitch, "%c%d.%02d%%",
-                          (pc < 0) ? '-' : '+',
-                          (pc < 0 ? -pc : pc) / 100,
-                          (pc < 0 ? -pc : pc) % 100);
+    char pitch_text[16];
+    snprintf(pitch_text, sizeof(pitch_text), "%c%d.%02d%%",
+             (pc < 0) ? '-' : '+',
+             (pc < 0 ? -pc : pc) / 100,
+             (pc < 0 ? -pc : pc) % 100);
+    ui_label_set_text_if_changed(panel->label_pitch, pitch_text);
 
     ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
                                          state->playing);
@@ -4498,8 +4804,8 @@ void ui_update(void) {
             s_cache_elapsed_centis = UINT32_MAX;
             s_cache_remain_centis = UINT32_MAX;
         }
-        uint32_t elapsed_centis = elapsed_ms / 10u;
-        uint32_t remain_centis = remain_ms / 10u;
+        uint32_t elapsed_centis = elapsed_ms / 1000u;
+        uint32_t remain_centis = remain_ms / 1000u;
         if (elapsed_centis != s_cache_elapsed_centis) {
             s_cache_elapsed_centis = elapsed_centis;
             lv_label_set_text_fmt(s_label_time, "%02u:%02u.%02u",
@@ -4547,26 +4853,37 @@ void ui_update(void) {
 #endif
 
     // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
+    static uint32_t s_overview_slow_bucket = UINT32_MAX;
+    uint32_t overview_slow_bucket = lv_tick_get() / 1000u;
+    bool overview_slow_update = overview_slow_bucket != s_overview_slow_bucket;
+    if (overview_slow_update) {
+        s_overview_slow_bucket = overview_slow_bucket;
+    }
+
     if (s_active_tab == 0 && active_duration_ms > 0) {
-        ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
-        #ifndef WIN32
-        ui_update_mixer_overview(&s_cache_mixer_snapshot);
-        #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-        ui_update_phase_meter(&state, &deck2_state);
-        ui_update_overview_cue_markers(CTRL_DECK_1);
-        ui_update_overview_cue_markers(CTRL_DECK_2);
+        if (overview_slow_update) {
+            ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
+            #ifndef WIN32
+            ui_update_mixer_overview(&s_cache_mixer_snapshot);
+            #endif
+            ui_update_phase_meter(&state, &deck2_state);
+            ui_update_overview_cue_markers(CTRL_DECK_1);
+            ui_update_overview_cue_markers(CTRL_DECK_2);
+        }
     } else if (s_active_tab == 0) {
-        ui_update_beat_indicator(NULL);
-        #ifndef WIN32
-        ui_update_mixer_overview(&s_cache_mixer_snapshot);
-        #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-        ui_update_phase_meter(&state, &deck2_state);
-        ui_update_overview_cue_markers(CTRL_DECK_1);
-        ui_update_overview_cue_markers(CTRL_DECK_2);
+        if (overview_slow_update) {
+            ui_update_beat_indicator(NULL);
+            #ifndef WIN32
+            ui_update_mixer_overview(&s_cache_mixer_snapshot);
+            #endif
+            ui_update_phase_meter(&state, &deck2_state);
+            ui_update_overview_cue_markers(CTRL_DECK_1);
+            ui_update_overview_cue_markers(CTRL_DECK_2);
+        }
     }
 
     // ─── 6. Sync UI Status bar with mock settings ───

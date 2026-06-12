@@ -59,6 +59,27 @@ static void draw_zoom_grid(uint8_t *pixels,
     }
 }
 
+static void draw_center_playhead(uint8_t *pixels,
+                                 int stride_px,
+                                 int width_px,
+                                 int height_px)
+{
+    if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
+        return;
+    }
+
+    int center_x = width_px / 2;
+    for (int dx = -1; dx <= 1; dx++) {
+        int x = center_x + dx;
+        if (x < 0 || x >= width_px) {
+            continue;
+        }
+        for (int y = 0; y < height_px; y++) {
+            pixels[y * stride_px + x] = 4;
+        }
+    }
+}
+
 void ui_overview_renderer_draw_main(uint8_t *pixels,
                                     int stride_px,
                                     int width_px,
@@ -100,6 +121,7 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
 
     draw_zoom_grid(pixels, stride_px, width_px, height_px,
                    window_start_ms, window_ms, meta);
+    draw_center_playhead(pixels, stride_px, width_px, height_px);
 }
 
 bool ui_overview_renderer_draw_mini(uint8_t *pixels,

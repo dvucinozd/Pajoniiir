@@ -300,3 +300,13 @@ Validation note, 2026-06-10:
   interval/duration every 60 samples. This separates slow redraw causes between
   application update cadence, LVGL full-frame handling, and waveform renderer
   cost.
+- Hardware timing pass on 2026-06-12 confirms the indexed main waveform
+  renderer is not the main fluidity bottleneck: D1/D2 main render averages were
+  roughly 1.7-2.2 ms, while the live overlay path averaged roughly 7.2-8.3 ms
+  per deck. Most of that cost is the I8-to-RGB565 conversion at roughly 4-5 ms
+  per deck, followed by PPA rotation/copy at roughly 2.4-2.6 ms per deck.
+  Dual-deck live overlay therefore costs about 15-17 ms per UI update before
+  LVGL full-frame handler spikes. Next optimization should remove conversion
+  from the hot path by rendering the overview overlay directly into an RGB565
+  source buffer, or narrow the live zoom surface to a single active deck if
+  dual live overlays remain too expensive.

@@ -49,6 +49,23 @@ static void test_main_renderer_keeps_downbeat_grid_on_top(void)
     assert(pixels[9 * 8 + 4] == 4);
 }
 
+static void test_main_renderer_draws_center_playhead(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x04u, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    uint8_t pixels[9 * 10] = {0};
+
+    ui_overview_renderer_draw_main(pixels, 9, 9, 10, &source, 8000, NULL, 4000, 8000);
+
+    assert(pixels[0 * 9 + 4] == 4);
+    assert(pixels[9 * 9 - 5] == 4);
+}
+
 static void test_mini_renderer_clears_and_draws_full_track_waveform(void)
 {
     uint8_t samples[8] = {0x00, 0x05, 0x0A, 0x1F, 0x1F, 0x0A, 0x05, 0x00};
@@ -71,6 +88,7 @@ int main(void)
 {
     test_main_renderer_clears_and_draws_waveform_columns();
     test_main_renderer_keeps_downbeat_grid_on_top();
+    test_main_renderer_draws_center_playhead();
     test_mini_renderer_clears_and_draws_full_track_waveform();
 
     puts("ui_overview_renderer tests passed");

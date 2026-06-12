@@ -240,5 +240,19 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
     integer math (`%d.%02d`), never `%f`, in any `lv_label_set_text_fmt`.
   - ✅ Header: BPM/pitch right-aligned to the edge; added a **remaining-time** counter beside the
     elapsed one (`-MM:SS.cc`), yellow ≤30 s / red ≤10 s to track end. Old click-toggle removed.
+- ⚠️ **Overview waveform fluidity bench (2026-06-12):** dual-deck main waveforms now move on
+  hardware, but are still not fluid enough for comfortable mixing. Instrumented COM15 monitor run
+  while both decks were playing showed:
+  - D1 main renderer: avg ~1.7 ms, max ~5.7 ms; D2 main renderer: avg ~2.2 ms, max ~5.6 ms.
+  - D1 overlay total: avg ~7.2-7.9 ms, max up to ~20.2 ms; D2 overlay total: avg ~7.5-8.3 ms,
+    max up to ~16.5 ms.
+  - Overlay cost is dominated by I8→RGB565 conversion (~4-5 ms per deck), then PPA copy/rotate
+    (~2.4-2.6 ms per deck). `esp_cache_msync` averages below 1 ms but can spike.
+  - `ui_update` still averages ~15-17 ms with ~37-41 ms spikes, and LVGL handler/full-frame flush
+    can spike near 190-206 ms.
+  - Conclusion: the next optimization should remove I8→RGB565 conversion from the hot path by
+    rendering the live overview waveform directly into an RGB565 source buffer. If dual live zoom
+    surfaces remain too expensive, fall back to a Pioneered/CDJ-style single active zoom waveform
+    plus full-track mini strips.
 - **Deferred to S3/chassis phase:** physical CDJ controls → `deck_core` queue; Beat LED feedback
   (PQTZ → S3 LED); wire CDJ front panel to the S3 per `PINOUT.md`; mount display in the CDJ-100S opening.
