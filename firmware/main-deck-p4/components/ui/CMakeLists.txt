@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "ui.c"
+         "ui_lvgl_backend.c"
          "ui_active_deck_leds.c"
          "ui_deck_anlz_store.c"
          "ui_mixer_view.c"
