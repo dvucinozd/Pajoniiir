@@ -13,6 +13,7 @@
 #include "ui_overlay_map.h"
 #include "ui_overview_perf.h"
 #include "ui_overview_renderer.h"
+#include "ui_overview_scheduler.h"
 #include "ui_performance_target.h"
 #include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
@@ -172,6 +173,7 @@ static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
 static ui_position_interpolator_t s_overview_position_interp[DECK_CORE_DECK_COUNT];
+static ui_overview_scheduler_t s_overview_scheduler;
 static ui_overview_perf_counter_t s_ui_update_interval_perf;
 static ui_overview_perf_counter_t s_ui_update_duration_perf;
 #ifndef WIN32
@@ -190,7 +192,6 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
-static uint8_t   s_overview_main_redraw_budget = 0;
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_convert_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
@@ -3881,6 +3882,7 @@ esp_err_t ui_init(void) {
     memset(s_loop_start_ms_by_deck, 0, sizeof(s_loop_start_ms_by_deck));
     memset(s_loop_end_ms_by_deck, 0, sizeof(s_loop_end_ms_by_deck));
     memset(s_loop_active_beats_by_deck, 0, sizeof(s_loop_active_beats_by_deck));
+    ui_overview_scheduler_init(&s_overview_scheduler);
 
 #ifndef WIN32
     // On firmware, bring up LVGL on top of the BSP panel before building widgets.
@@ -4211,10 +4213,8 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     if (redraw_main && panel->wave_canvas && panel->wave_buf &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
 #ifndef WIN32
-        if (s_overview_main_redraw_budget == 0) {
+        if (!ui_overview_scheduler_try_consume_main_redraw(&s_overview_scheduler)) {
             redraw_main = false;
-        } else {
-            s_overview_main_redraw_budget--;
         }
 #endif
     }
@@ -4615,51 +4615,35 @@ void ui_update(void) {
 
     // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
     static uint32_t s_overview_slow_bucket = UINT32_MAX;
-    static bool s_overview_deck_order_flip = false;
     uint32_t overview_slow_bucket = lv_tick_get() / 1000u;
     bool overview_slow_update = overview_slow_bucket != s_overview_slow_bucket;
     if (overview_slow_update) {
         s_overview_slow_bucket = overview_slow_bucket;
     }
 
-    if (s_active_tab == 0 && active_duration_ms > 0) {
+    if (s_active_tab == 0) {
 #ifndef WIN32
-        s_overview_main_redraw_budget = 1;
+        ui_overview_scheduler_begin_tick(&s_overview_scheduler, 1);
 #endif
-        if (s_overview_deck_order_flip) {
-            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-            ui_update_overview_deck(CTRL_DECK_1, &state);
-        } else {
-            ui_update_overview_deck(CTRL_DECK_1, &state);
-            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-        }
-        s_overview_deck_order_flip = !s_overview_deck_order_flip;
+        uint8_t first_deck = CTRL_DECK_1;
+        uint8_t second_deck = CTRL_DECK_2;
+        ui_overview_scheduler_next_deck_order(&s_overview_scheduler,
+                                              CTRL_DECK_1,
+                                              CTRL_DECK_2,
+                                              &first_deck,
+                                              &second_deck);
+
+        ui_update_overview_deck(first_deck,
+                                first_deck == CTRL_DECK_2 ? &deck2_state : &state);
+        ui_update_overview_deck(second_deck,
+                                second_deck == CTRL_DECK_2 ? &deck2_state : &state);
+
         if (overview_slow_update) {
-            ui_update_beat_indicator(beat_state_valid ? &beat_state : NULL);
-            #ifndef WIN32
-            ui_update_mixer_overview(&s_cache_mixer_snapshot);
-            #endif
-            ui_update_phase_meter(&state, &deck2_state);
-            ui_update_overview_cue_markers(CTRL_DECK_1);
-            ui_update_overview_cue_markers(CTRL_DECK_2);
-        }
-    } else if (s_active_tab == 0) {
+            ui_update_beat_indicator((active_duration_ms > 0 && beat_state_valid) ?
+                                     &beat_state : NULL);
 #ifndef WIN32
-        s_overview_main_redraw_budget = 1;
-#endif
-        if (s_overview_deck_order_flip) {
-            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-            ui_update_overview_deck(CTRL_DECK_1, &state);
-        } else {
-            ui_update_overview_deck(CTRL_DECK_1, &state);
-            ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
-        }
-        s_overview_deck_order_flip = !s_overview_deck_order_flip;
-        if (overview_slow_update) {
-            ui_update_beat_indicator(NULL);
-            #ifndef WIN32
             ui_update_mixer_overview(&s_cache_mixer_snapshot);
-            #endif
+#endif
             ui_update_phase_meter(&state, &deck2_state);
             ui_update_overview_cue_markers(CTRL_DECK_1);
             ui_update_overview_cue_markers(CTRL_DECK_2);
