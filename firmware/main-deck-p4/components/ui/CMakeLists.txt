@@ -4,6 +4,7 @@ idf_component_register(
          "ui_overview.c"
          "ui_lvgl_backend.c"
          "ui_active_deck_leds.c"
+         "ui_controls.c"
          "ui_deck_anlz_store.c"
          "ui_mixer_view.c"
          "ui_overview_motion.c"

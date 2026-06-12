@@ -57,6 +57,18 @@ void ui_library_format_row_text(ui_library_row_text_t *out,
              (unsigned)(secs % 60u));
 }
 
+ui_library_update_plan_t ui_library_plan_update(int active_tab,
+                                                bool needs_refresh,
+                                                bool usb_removed_pending)
+{
+    return (ui_library_update_plan_t){
+        .apply_usb_removed = usb_removed_pending,
+        .poll_track_load_result = true,
+        .refresh_library = needs_refresh,
+        .focus_library_table = active_tab == 1,
+    };
+}
+
 #ifndef UI_LIBRARY_HOST_TEST
 
 #include "library.h"
@@ -1004,23 +1016,34 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
     return ESP_OK;
 }
 
-void ui_library_update(int active_tab)
+void ui_library_update(const ui_frame_context_t *ctx)
 {
+    int active_tab = ctx ? ctx->active_tab : 0;
     s_active_tab = active_tab;
+    ui_library_update_plan_t plan =
+        ui_library_plan_update(active_tab, s_library_needs_refresh,
+#ifndef WIN32
+                               s_usb_removed_pending
+#else
+                               false
+#endif
+        );
 
 #ifndef WIN32
-    if (s_usb_removed_pending) {
+    if (plan.apply_usb_removed) {
         ui_apply_usb_removed();
     }
-    ui_poll_track_load_result();
+    if (plan.poll_track_load_result) {
+        ui_poll_track_load_result();
+    }
 #endif
 
-    if (s_library_needs_refresh) {
+    if (plan.refresh_library) {
         s_library_needs_refresh = false;
         ui_refresh_library();
     }
 
-    if (active_tab == 1 && s_library_table) {
+    if (plan.focus_library_table && s_library_table) {
         lv_group_t *g = lv_group_get_default();
         if (g && lv_group_get_focused(g) != s_library_table) {
             lv_group_focus_obj(s_library_table);
