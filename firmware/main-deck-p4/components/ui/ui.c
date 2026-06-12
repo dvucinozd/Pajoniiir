@@ -9,6 +9,7 @@
 #include "ui_deck_anlz_store.h"
 #include "ui_mixer_view.h"
 #include "ui_overview_motion.h"
+#include "ui_overview_perf.h"
 #include "ui_overview_renderer.h"
 #include "ui_performance_target.h"
 #include "ui_waveform_model.h"
@@ -187,6 +188,7 @@ static lv_obj_t *s_crossfader_track = NULL;
 static lv_obj_t *s_crossfader_knob = NULL;
 static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
+static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_phase_meter_label = NULL;
 static lv_obj_t *s_phase_meter_track = NULL;
 static lv_obj_t *s_phase_meter_center = NULL;
@@ -3348,6 +3350,7 @@ static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *
 }
 
 static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
+                                             uint8_t deck,
                                              const ui_waveform_source_t *source,
                                              uint32_t duration_ms,
                                              const anlz_metadata_t *meta,
@@ -3363,8 +3366,29 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     const int H = OVERVIEW_CV_H;
     const int S = panel->wave_stride_px;
 
+#ifndef WIN32
+    int64_t render_start_us = esp_timer_get_time();
+#endif
     ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
                                    center_ms, window_ms);
+#ifndef WIN32
+    int64_t render_us = esp_timer_get_time() - render_start_us;
+    if (render_us < 0) {
+        render_us = 0;
+    }
+    ui_overview_perf_report_t report;
+    if (ui_overview_perf_record(&s_overview_wave_perf[ui_deck_index(deck)],
+                                (uint32_t)render_us,
+                                &report)) {
+        ESP_LOGI(TAG,
+                 "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
+                 (unsigned)(ui_deck_index(deck) + 1u),
+                 (unsigned)report.last_us,
+                 (unsigned)report.avg_us,
+                 (unsigned)report.max_us,
+                 (unsigned)report.samples);
+    }
+#endif
     panel->last_wave_center_ms = center_ms;
     panel->last_wave_window_ms = window_ms;
     lv_obj_invalidate(panel->wave_canvas);
@@ -3391,7 +3415,8 @@ static void ui_load_waveform_data(uint8_t deck,
     bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
 
     uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
-    ui_render_overview_main_waveform(panel, &wave_source, duration_ms, meta, 0, window_ms);
+    ui_render_overview_main_waveform(panel, deck, &wave_source, duration_ms, meta,
+                                     0, window_ms);
 
     if (panel->mini_wave_canvas && panel->mini_wave_buf) {
         uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
@@ -4104,7 +4129,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
 
     if (redraw_main && panel->wave_canvas && panel->wave_buf &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
-        ui_render_overview_main_waveform(panel, &source, duration_ms, meta,
+        ui_render_overview_main_waveform(panel, deck, &source, duration_ms, meta,
                                          center_ms, window_ms);
     }
 

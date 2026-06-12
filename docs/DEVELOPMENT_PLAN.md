@@ -288,3 +288,7 @@ Validation note, 2026-06-10:
   from `ui.c` into a host-tested `ui_overview_renderer` module. LVGL layout and
   callbacks remain in `ui.c`; the next fluidity pass can now focus on renderer
   internals without touching the rest of the UI screen wiring.
+- Overview render timing probe logs aggregated main waveform render cost per
+  deck every 60 redraws (`last/avg/max/samples`). Use this data to decide
+  whether the next optimization should target full-canvas redraw cost, LVGL
+  invalidation/copy cost, or playback position cadence.
