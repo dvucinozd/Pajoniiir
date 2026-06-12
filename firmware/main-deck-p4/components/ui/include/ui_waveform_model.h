@@ -30,6 +30,10 @@ ui_waveform_source_t ui_waveform_source_select(const anlz_metadata_t *meta,
                                                const uint8_t *fallback_low,
                                                bool fallback_low_valid);
 
+ui_waveform_source_t ui_waveform_source_select_for_overview_redraw(const anlz_metadata_t *meta,
+                                                                  const uint8_t *loaded_low,
+                                                                  bool loaded_low_valid);
+
 uint8_t ui_waveform_palette_for_sample(uint8_t sample);
 
 ui_waveform_column_t ui_waveform_column_for_column(const ui_waveform_source_t *source,

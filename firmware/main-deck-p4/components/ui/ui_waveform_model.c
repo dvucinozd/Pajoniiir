@@ -36,6 +36,13 @@ ui_waveform_source_t ui_waveform_source_select(const anlz_metadata_t *meta,
     return no_source();
 }
 
+ui_waveform_source_t ui_waveform_source_select_for_overview_redraw(const anlz_metadata_t *meta,
+                                                                  const uint8_t *loaded_low,
+                                                                  bool loaded_low_valid)
+{
+    return ui_waveform_source_select(meta, loaded_low, loaded_low_valid);
+}
+
 uint8_t ui_waveform_palette_for_sample(uint8_t sample)
 {
     uint8_t hint = sample >> 5;

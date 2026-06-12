@@ -4150,6 +4150,21 @@ static void ui_update_phase_meter(const deck_state_t *deck1_state,
     }
 }
 
+static ui_waveform_source_t ui_overview_redraw_source(uint8_t deck,
+                                                      const anlz_metadata_t *meta)
+{
+#ifndef WIN32
+    uint8_t idx = ui_deck_index(deck);
+    if (s_loaded_media_valid[idx]) {
+        return ui_waveform_source_select_for_overview_redraw(
+            meta,
+            s_loaded_media[idx].waveform_low,
+            s_loaded_media[idx].has_waveform != 0);
+    }
+#endif
+    return ui_waveform_source_select_for_overview_redraw(meta, NULL, false);
+}
+
 static void ui_update_overview_waveform_progress(uint8_t deck,
                                                  ui_overview_deck_panel_t *panel,
                                                  uint32_t position_ms,
@@ -4179,7 +4194,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     }
 
     if (redraw_main && panel->wave_canvas && panel->wave_buf) {
-        ui_waveform_source_t source = ui_waveform_source_select(meta, NULL, false);
+        ui_waveform_source_t source = ui_overview_redraw_source(deck, meta);
         if (source.kind != UI_WAVEFORM_SOURCE_NONE) {
             ui_render_overview_main_waveform(panel, &source, duration_ms, meta,
                                              center_ms, window_ms);

@@ -38,6 +38,23 @@ static void test_falls_back_to_low_resolution_waveform(void)
     assert(peak == 17u);
 }
 
+static void test_overview_redraw_keeps_loaded_low_resolution_fallback(void)
+{
+    uint8_t low[ANLZ_WAVEFORM_LOW_LEN] = {0};
+    anlz_metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    low[100] = 24u;
+
+    ui_waveform_source_t source =
+        ui_waveform_source_select_for_overview_redraw(&meta, low, true);
+    uint8_t peak = ui_waveform_peak_for_column(&source, 400000u, 100000, 4000u, 0, 4);
+
+    assert(source.kind == UI_WAVEFORM_SOURCE_LOW);
+    assert(source.samples == low);
+    assert(source.sample_count == ANLZ_WAVEFORM_LOW_LEN);
+    assert(peak == 24u);
+}
+
 static void test_peak_sampling_uses_high_resolution_window(void)
 {
     uint8_t high[16] = {0};
@@ -109,6 +126,7 @@ int main(void)
 {
     test_prefers_high_resolution_waveform_when_available();
     test_falls_back_to_low_resolution_waveform();
+    test_overview_redraw_keeps_loaded_low_resolution_fallback();
     test_peak_sampling_uses_high_resolution_window();
     test_column_sampling_preserves_color_hint_from_peak_sample();
     test_column_sampling_uses_amplitude_color_fallback_without_hint();

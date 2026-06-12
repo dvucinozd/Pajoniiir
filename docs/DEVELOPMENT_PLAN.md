@@ -276,3 +276,6 @@ Validation note, 2026-06-10:
   consumer. `deck_core` also no longer marks a deck as playing when the audio
   backend rejects the play request, and D2 snapshots now sync position from the
   audio engine so the Overview waveform advances while Deck 2 is playing.
+- Overview redraw now keeps the deck-local loaded low-resolution waveform as a
+  fallback when no `PWV3` high-resolution data is present, so zoom-window redraw
+  can still follow Deck 2 playback on tracks with only low waveform data.
