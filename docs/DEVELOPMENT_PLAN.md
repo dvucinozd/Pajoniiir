@@ -292,3 +292,7 @@ Validation note, 2026-06-10:
   deck every 60 redraws (`last/avg/max/samples`). Use this data to decide
   whether the next optimization should target full-canvas redraw cost, LVGL
   invalidation/copy cost, or playback position cadence.
+- Overview waveform fluidity pass adds a host-tested UI position interpolator.
+  Deck snapshots remain authoritative, but while a deck is playing the Overview
+  screen advances display position between backend snapshots using the UI
+  monotonic clock and current pitch speed, then rebases on cue/seek/large drift.

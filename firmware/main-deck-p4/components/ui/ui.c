@@ -12,6 +12,7 @@
 #include "ui_overview_perf.h"
 #include "ui_overview_renderer.h"
 #include "ui_performance_target.h"
+#include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
 #include <limits.h>
 #include <stdio.h>
@@ -189,6 +190,7 @@ static lv_obj_t *s_crossfader_knob = NULL;
 static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
+static ui_position_interpolator_t s_overview_position_interp[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_phase_meter_label = NULL;
 static lv_obj_t *s_phase_meter_track = NULL;
 static lv_obj_t *s_phase_meter_center = NULL;
@@ -4222,6 +4224,34 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
 }
 #endif
 
+static uint64_t ui_monotonic_time_us(void)
+{
+#ifndef WIN32
+    return (uint64_t)esp_timer_get_time();
+#else
+    return (uint64_t)lv_tick_get() * 1000u;
+#endif
+}
+
+static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
+{
+    if (!state) {
+        return 1000u;
+    }
+
+    float pitch_pct;
+#ifndef WIN32
+    pitch_pct = audio_engine_raw_pitch_to_percent(state->pitch);
+#else
+    pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
+#endif
+    int speed = 1000 + (int)(pitch_pct * 10.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
+    if (speed < 1) {
+        speed = 1;
+    }
+    return (uint32_t)speed;
+}
+
 static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 {
     uint8_t idx = ui_deck_index(deck);
@@ -4229,7 +4259,13 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     if (!panel->panel || !state) return;
 
     uint32_t duration_ms = ui_deck_duration_ms(idx);
-    uint32_t elapsed_ms = state->position_ms;
+    uint32_t elapsed_ms = ui_position_interpolator_update(
+        &s_overview_position_interp[idx],
+        state->position_ms,
+        duration_ms,
+        state->playing,
+        ui_pitch_speed_permille(state),
+        ui_monotonic_time_us());
     uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
     const ui_deck_track_info_t *info = &s_deck_track_info[idx];
 
