@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "deck_core.h"
 #include "ui_beat_indicator.h"
+#include "ui_diagnostics.h"
 #include "ui_lvgl_backend.h"
 #include "ui_mixer_view.h"
 #include "ui_overview_motion.h"
@@ -738,6 +739,10 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
                                             const char *phase,
                                             uint32_t duration_us)
 {
+    if (!ui_diagnostics_enabled()) {
+        return;
+    }
+
     ui_overview_perf_report_t report;
     if (ui_overview_perf_record(counter, duration_us, &report)) {
         ESP_LOGI(TAG,
@@ -852,27 +857,29 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     const int S = panel->wave_stride_px;
 
 #ifndef WIN32
-    int64_t render_start_us = esp_timer_get_time();
+    int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
 #endif
     ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
                                    center_ms, window_ms);
 #ifndef WIN32
-    int64_t render_us = esp_timer_get_time() - render_start_us;
-    if (render_us < 0) {
-        render_us = 0;
-    }
-    uint8_t idx = ui_overview_deck_index(deck);
-    ui_overview_perf_report_t report;
-    if (ui_overview_perf_record(&s_overview_wave_perf[idx],
-                                (uint32_t)render_us,
-                                &report)) {
-        ESP_LOGI(TAG,
-                 "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
-                 (unsigned)(idx + 1u),
-                 (unsigned)report.last_us,
-                 (unsigned)report.avg_us,
-                 (unsigned)report.max_us,
-                 (unsigned)report.samples);
+    if (ui_diagnostics_enabled()) {
+        int64_t render_us = esp_timer_get_time() - render_start_us;
+        if (render_us < 0) {
+            render_us = 0;
+        }
+        uint8_t idx = ui_overview_deck_index(deck);
+        ui_overview_perf_report_t report;
+        if (ui_overview_perf_record(&s_overview_wave_perf[idx],
+                                    (uint32_t)render_us,
+                                    &report)) {
+            ESP_LOGI(TAG,
+                     "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
+                     (unsigned)(idx + 1u),
+                     (unsigned)report.last_us,
+                     (unsigned)report.avg_us,
+                     (unsigned)report.max_us,
+                     (unsigned)report.samples);
+        }
     }
 #endif
     panel->last_wave_center_ms = center_ms;

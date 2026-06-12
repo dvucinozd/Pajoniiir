@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "ui.c"
+         "ui_library.c"
          "ui_overview.c"
          "ui_lvgl_backend.c"
          "ui_active_deck_leds.c"

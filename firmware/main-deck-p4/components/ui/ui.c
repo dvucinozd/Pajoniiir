@@ -7,7 +7,9 @@
 #include "ui_active_deck_leds.h"
 #include "ui_beat_indicator.h"
 #include "ui_deck_anlz_store.h"
+#include "ui_diagnostics.h"
 #include "ui_frame_context.h"
+#include "ui_library.h"
 #include "ui_overview.h"
 #include "ui_lvgl_backend.h"
 #include "ui_overview_perf.h"
@@ -33,8 +35,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-
-#define UI_TRACK_LOAD_STACK   (10 * 1024)
 
 // The UI canvas is 800x480 landscape; the physical ST7701 panel is 480x800
 // portrait. LVGL renders landscape dirty rectangles, then the flush callback
@@ -76,28 +76,11 @@ static lv_obj_t *s_label_status_indicator = NULL;
 static uint32_t  s_status_override_until_ms = 0;
 
 // Sub-screen elements
-static int       s_selected_track_idx = 0;
-static lv_obj_t *s_library_table = NULL;
-static volatile bool s_library_needs_refresh = false;
-static bool      s_sort_artist_desc = false;
-static bool      s_sort_name_desc = false;
-static bool      s_sort_bpm_desc = false;
-static bool      s_track_load_busy = false;
-static uint8_t   s_library_load_request_deck = 0;
-
 static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
 static ui_deck_anlz_store_t s_deck_anlz_store;
 static ui_performance_target_t s_performance_target;
 
 #ifndef WIN32
-static media_loaded_track_t  s_loaded_media[DECK_CORE_DECK_COUNT];
-static bool                  s_loaded_media_valid[DECK_CORE_DECK_COUNT];
-static media_source_t        s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
-    MEDIA_SOURCE_LOCAL_USB,
-    MEDIA_SOURCE_LOCAL_USB,
-};
-static QueueHandle_t         s_track_load_result_q = NULL;
-static volatile bool         s_usb_removed_pending = false;
 #endif
 
 // UI update timing diagnostics
@@ -149,10 +132,6 @@ static lv_obj_t *s_label_link_status = NULL;
 static lv_obj_t *s_label_link_mode = NULL;
 static lv_obj_t *s_label_sd_status = NULL;
 static lv_obj_t *s_label_sd_cache_status = NULL;
-static lv_obj_t *s_label_library_source = NULL;
-static lv_obj_t *s_btn_library_load = NULL;
-static lv_obj_t *s_btn_library_load_deck2 = NULL;
-static lv_obj_t *s_label_library_hint = NULL;
 
 typedef struct {
     bool valid;
@@ -216,13 +195,6 @@ static lv_style_t s_style_btn_disabled;
 static lv_style_t s_style_btn_neon;
 static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on press)
 
-#ifdef WIN32
-static void ui_load_waveform(const library_track_t *track);
-#endif
-#ifndef WIN32
-static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *track);
-#endif
-static void ui_update_library_source_label(void);
 #ifndef WIN32
 static void ui_update_sd_status_label(bool force);
 static void ui_update_sd_cache_status_label(bool force);
@@ -231,38 +203,12 @@ static void ui_update_hot_cues(void);
 static void ui_refresh_loop_screen_from_target(void);
 static void ui_update_performance_target_visuals(void);
 static void ui_set_performance_deck(uint8_t deck);
-static void ui_fill_library_row(int i);
 static void jump_btn_event_cb(lv_event_t *e);
 static void ui_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
                                   const uint8_t waveform_low[400],
                                   bool has_waveform,
                                   const anlz_metadata_t *meta);
-#ifndef WIN32
-typedef struct {
-    int index;
-    uint8_t deck;
-    uint32_t generation;
-    media_source_t source;
-    media_catalog_track_t item;
-    media_loaded_track_t loaded;
-    esp_err_t rc;
-    char status[40];
-} ui_track_load_result_t;
-
-typedef struct {
-    int index;
-    uint8_t deck;
-    uint32_t generation;
-    media_source_t source;
-} ui_track_load_request_t;
-
-static ui_track_load_result_t s_track_load_worker_result;
-
-static void ui_submit_track_load(int index, uint8_t deck);
-static void ui_poll_track_load_result(void);
-#endif
-
 static void ui_cache_invalidate(void)
 {
     s_cache_status_text.valid = false;
@@ -401,26 +347,6 @@ static lv_color_t ui_status_color_for_text(const char *status)
         return COL_ACCENT;
     }
     return COL_TEXT_DIM;
-}
-
-static void ui_library_set_load_busy(bool busy, const char *hint)
-{
-    lv_obj_t *buttons[] = { s_btn_library_load, s_btn_library_load_deck2 };
-    for (size_t i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++) {
-        lv_obj_t *btn = buttons[i];
-        if (!btn) continue;
-        if (busy) {
-            lv_obj_add_state(btn, LV_STATE_DISABLED);
-            lv_obj_add_style(btn, &s_style_btn_disabled, LV_PART_MAIN);
-        } else {
-            lv_obj_clear_state(btn, LV_STATE_DISABLED);
-            lv_obj_remove_style(btn, &s_style_btn_disabled, LV_PART_MAIN);
-        }
-    }
-
-    if (s_label_library_hint) {
-        lv_label_set_text(s_label_library_hint, hint ? hint : "SELECT TRACK\nLOAD D1/D2");
-    }
 }
 
 static void ui_style_hot_cue_pad(int index, bool is_loop, bool is_empty)
@@ -643,15 +569,6 @@ static lv_obj_t *ui_create_beat_jump_button(lv_obj_t *parent, int x, int y, int 
     return btn;
 }
 
-static int ui_media_count(void)
-{
-#ifndef WIN32
-    return media_catalog_count();
-#else
-    return library_count();
-#endif
-}
-
 static uint8_t ui_deck_index(uint8_t deck)
 {
     return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
@@ -683,24 +600,22 @@ static void ui_deck_track_info_set(uint8_t deck,
 
 static uint32_t ui_deck_duration_ms(uint8_t deck)
 {
-#ifndef WIN32
-    uint8_t idx = ui_deck_index(deck);
-    if (s_loaded_media_valid[idx]) return s_loaded_media[idx].duration_ms;
-#endif
-    if (deck != CTRL_DECK_1) return 0;
-    const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
-    return track ? track->duration_ms : 0;
+    uint32_t fallback = 0;
+    if (deck == CTRL_DECK_1) {
+        const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
+        fallback = track ? track->duration_ms : 0;
+    }
+    return ui_library_deck_duration_ms(deck, fallback);
 }
 
 static uint16_t ui_deck_bpm(uint8_t deck)
 {
-#ifndef WIN32
-    uint8_t idx = ui_deck_index(deck);
-    if (s_loaded_media_valid[idx] && s_loaded_media[idx].bpm > 0) return s_loaded_media[idx].bpm;
-#endif
-    if (deck != CTRL_DECK_1) return 120;
-    const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
-    return track ? track->bpm : 120;
+    uint16_t fallback = 120;
+    if (deck == CTRL_DECK_1) {
+        const library_track_t *track = library_get_ptr(mock_library_get_current_track_index());
+        fallback = track ? track->bpm : 120;
+    }
+    return ui_library_deck_bpm(deck, fallback);
 }
 
 static uint16_t ui_performance_bpm(void)
@@ -1012,201 +927,6 @@ static void ui_update_link_status_label(void)
 }
 #endif
 
-static void ui_update_library_source_label(void)
-{
-    if (!s_label_library_source) {
-        return;
-    }
-#ifndef WIN32
-    if (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK) {
-        lv_label_set_text_fmt(s_label_library_source, "JOINED  %d TRACKS", media_catalog_count());
-    } else {
-        lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
-    }
-#else
-    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", library_count());
-#endif
-}
-
-#ifndef WIN32
-static void ui_track_load_worker(void *arg)
-{
-    ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
-    free(arg);
-
-    ui_track_load_result_t *result = &s_track_load_worker_result;
-    memset(result, 0, sizeof(*result));
-    result->index = req.index;
-    result->deck = req.deck;
-    result->generation = req.generation;
-    result->source = req.source;
-    result->rc = ESP_OK;
-
-    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
-        result->rc = ESP_ERR_NOT_FOUND;
-        snprintf(result->status, sizeof(result->status), "NO TRACK");
-    } else {
-        result->rc = media_catalog_load(req.index, &result->loaded);
-        if (result->rc != ESP_OK) {
-            const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
-            snprintf(result->status, sizeof(result->status), "%s", status && status[0] ? status : "LOAD ERR");
-        } else {
-            if (req.deck == CTRL_DECK_1) {
-                audio_engine_clear_loop();
-            }
-            deck_core_reset_deck(req.deck);
-            result->rc = audio_engine_deck_load(req.deck,
-                                                result->loaded.audio_path,
-                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                                                result->loaded.duration_ms);
-            if (result->rc != ESP_OK) {
-                const char *audio_err = audio_engine_last_error_text();
-                snprintf(result->status, sizeof(result->status), "%s",
-                         audio_err && audio_err[0] ? audio_err : "AUDIO ERR");
-            } else {
-                snprintf(result->status, sizeof(result->status), "TRACK LOADED");
-            }
-        }
-    }
-
-    if (s_track_load_result_q) {
-        xQueueOverwrite(s_track_load_result_q, result);
-    }
-    ESP_LOGI(TAG, "ui_load stack high water=%u words",
-             (unsigned)uxTaskGetStackHighWaterMark(NULL));
-    vTaskDelete(NULL);
-}
-
-static void ui_submit_track_load(int index, uint8_t deck)
-{
-    if (!s_track_load_result_q) {
-        s_track_load_result_q = xQueueCreate(1, sizeof(ui_track_load_result_t));
-    }
-    if (!s_track_load_result_q) {
-        ui_status_indicator_hold("NO QUEUE", COL_RED, 2500);
-        ui_library_set_load_busy(false, "NO QUEUE");
-        s_track_load_busy = false;
-        return;
-    }
-
-    ui_track_load_result_t stale;
-    while (xQueueReceive(s_track_load_result_q, &stale, 0) == pdTRUE) {
-    }
-
-    ui_track_load_request_t *req = malloc(sizeof(*req));
-    if (!req) {
-        ui_status_indicator_hold("NO MEM", COL_RED, 2500);
-        ui_library_set_load_busy(false, "NO MEM");
-        s_track_load_busy = false;
-        return;
-    }
-    req->index = index;
-    req->deck = deck;
-    req->generation = library_generation();
-    req->source = media_catalog_get_source();
-
-    if (xTaskCreate(ui_track_load_worker, "ui_load", UI_TRACK_LOAD_STACK, req, 3, NULL) != pdPASS) {
-        free(req);
-        ui_status_indicator_hold("NO TASK", COL_RED, 2500);
-        ui_library_set_load_busy(false, "NO TASK");
-        s_track_load_busy = false;
-    }
-}
-
-static void ui_apply_usb_removed(void)
-{
-    s_usb_removed_pending = false;
-    bool removed_loaded = false;
-    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_LOCAL_USB) {
-            s_loaded_media_valid[deck] = false;
-            ui_deck_anlz_store_clear(&s_deck_anlz_store, deck);
-            ui_deck_track_info_clear(deck);
-            ui_set_loop_shadow(deck, false, 0, 0, 0);
-            ui_load_waveform_data(deck, 0, NULL, false, NULL);
-            removed_loaded = true;
-        }
-    }
-    if (removed_loaded) {
-        ui_cache_invalidate();
-        lv_label_set_text(s_label_title, "No Track");
-        lv_label_set_text(s_label_artist, "");
-        ui_label_set_f2(s_label_bpm, 0.0f);
-        s_loop_active = false;
-        s_loop_active_beats = 0;
-        ui_update_loop_screen_state();
-        ui_update_hot_cues();
-        ui_status_indicator_hold("USB REMOVED", COL_AMBER, 2500);
-    }
-    if (media_catalog_get_source() == MEDIA_SOURCE_LOCAL_USB) {
-        ui_library_set_load_busy(false, "USB REMOVED");
-        s_track_load_busy = false;
-    }
-}
-
-static void ui_poll_track_load_result(void)
-{
-    if (!s_track_load_result_q) return;
-
-    ui_track_load_result_t result;
-    while (xQueueReceive(s_track_load_result_q, &result, 0) == pdTRUE) {
-        bool stale = (result.source != media_catalog_get_source());
-        if (result.source == MEDIA_SOURCE_LOCAL_USB &&
-            result.generation != library_generation()) {
-            stale = true;
-        }
-        if (stale) {
-            s_track_load_busy = false;
-            ui_library_set_load_busy(false,
-                                     result.source == MEDIA_SOURCE_LOCAL_USB ? "USB REMOVED" : "STALE");
-            continue;
-        }
-
-        if (result.rc != ESP_OK) {
-            const char *display = result.status[0] ? result.status : "LOAD ERR";
-            ESP_LOGW(TAG, "track load worker failed index=%d: %s", result.index, esp_err_to_name(result.rc));
-            ui_status_indicator_hold(display, ui_status_color_for_text(display), 3500);
-            ui_library_set_load_busy(false, display);
-            s_track_load_busy = false;
-            continue;
-        }
-
-        if (result.source == MEDIA_SOURCE_LOCAL_USB) {
-            mock_library_load_track_to_deck(result.index);
-        }
-        uint8_t deck = ui_deck_index(result.deck);
-        s_loaded_media[deck] = result.loaded;
-        s_loaded_media_valid[deck] = true;
-        s_loaded_media_source[deck] = result.source;
-        ui_deck_track_info_set(deck,
-                               result.item.title,
-                               result.item.artist,
-                               result.loaded.bpm ? result.loaded.bpm : result.item.bpm,
-                               result.loaded.duration_ms);
-        ui_deck_anlz_set_from_current(deck, media_catalog_get_loaded_anlz_for_source(result.source));
-        ui_load_waveform_media(deck, &result.loaded);
-        ui_set_loop_shadow(deck, false, 0, 0, 0);
-
-        if (deck == CTRL_DECK_1) {
-            ui_cache_invalidate();
-            lv_label_set_text(s_label_title, result.item.title[0] ? result.item.title : "Unknown Title");
-            lv_label_set_text(s_label_artist, result.item.artist[0] ? result.item.artist : "Unknown Artist");
-            ui_label_set_f2(s_label_bpm, (float)(result.loaded.bpm ? result.loaded.bpm : result.item.bpm));
-        }
-        if (ui_performance_target_is_active(&s_performance_target, deck)) {
-            ui_update_hot_cues();
-        }
-
-        ESP_LOGI(TAG, "Audio: loaded deck %u: %s (autoplay off)",
-                 (unsigned)result.deck + 1u, result.loaded.audio_path);
-        const char *loaded_text = result.deck == CTRL_DECK_1 ? "D1 LOADED" : "D2 LOADED";
-        ui_status_indicator_hold(loaded_text, COL_GREEN, 2000);
-        ui_library_set_load_busy(false, loaded_text);
-        s_track_load_busy = false;
-    }
-}
-#endif
-
 // ─── Event Callbacks ─────────────────────────────────────────────────────────
 
 // Switch screens when a footer button is tapped
@@ -1285,297 +1005,6 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
     (void)deck;
     mock_deck_set_position(target_ms);
 #endif
-}
-
-// Load button in library clicked
-static void library_load_event_cb(lv_event_t *e) {
-    uint8_t deck = s_library_load_request_deck;
-    if (e) {
-        lv_obj_t *btn = lv_event_get_target(e);
-        deck = (uint8_t)(uintptr_t)lv_obj_get_user_data(btn);
-    }
-    if (s_track_load_busy) {
-        ui_status_indicator_hold("LOAD BUSY", COL_AMBER, 1200);
-        return;
-    }
-    s_track_load_busy = true;
-    ui_library_set_load_busy(true, "LOAD BUSY");
-
-#ifdef WIN32
-    library_track_t *track = library_get_ptr(s_selected_track_idx);
-    if (!track) {
-        ui_library_set_load_busy(false, NULL);
-        s_track_load_busy = false;
-        return;
-    }
-
-    mock_library_load_track_to_deck(s_selected_track_idx);
-    library_load_anlz(track);          // load BPM, duration, waveform from ANLZ
-
-    /* Load detailed ANLZ metadata for the active track */
-    library_load_current_anlz(track);
-
-    ui_deck_track_info_set(deck, track->title, track->artist, track->bpm, track->duration_ms);
-    ui_deck_anlz_set_from_current(deck, library_get_current_anlz());
-    ui_load_waveform_data(deck, track->duration_ms, track->waveform_low,
-                          track->has_waveform != 0,
-                          ui_deck_anlz(deck));
-
-    if (deck == CTRL_DECK_1) {
-        lv_label_set_text(s_label_title, track->title);
-        lv_label_set_text(s_label_artist, track->artist);
-        ui_label_set_f2(s_label_bpm, (float)track->bpm);
-    }
-    ui_set_loop_shadow(deck, false, 0, 0, 0);
-
-    /* Populate hot cue points from active ANLZ metadata */
-    if (ui_performance_target_is_active(&s_performance_target, deck)) {
-        ui_update_hot_cues();
-    }
-
-    ESP_LOGI(TAG, "Loaded track to deck %u: %s by %s (waveform=%d)",
-             (unsigned)deck + 1u, track->title, track->artist, track->has_waveform);
-#else
-    media_catalog_track_t item;
-    if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK) {
-        ESP_LOGW(TAG, "No catalog row at index %d", s_selected_track_idx);
-        ui_library_set_load_busy(false, NULL);
-        s_track_load_busy = false;
-        return;
-    }
-
-    const bool remote_source = (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK);
-    ui_status_indicator_hold(remote_source ? "CACHE START" : "LOADING", COL_ACCENT, 1500);
-    ui_submit_track_load(s_selected_track_idx, deck);
-    return;
-#endif
-    ui_status_indicator_hold("TRACK LOADED", COL_GREEN, 2000);
-    ui_library_set_load_busy(false, "TRACK LOADED");
-    s_track_load_busy = false;
-}
-
-bool ui_is_library_active(void)
-{
-    return s_active_tab == 1 && s_library_table != NULL;
-}
-
-esp_err_t ui_library_select_delta(int delta)
-{
-    if (delta == 0) {
-        return ESP_OK;
-    }
-    if (!s_library_table) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    ui_lvgl_lock();
-    int n = ui_media_count();
-    if (n <= 0) {
-        ui_lvgl_unlock();
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    int new_idx = s_selected_track_idx + delta;
-    if (new_idx < 0) new_idx = 0;
-    if (new_idx >= n) new_idx = n - 1;
-    if (new_idx == s_selected_track_idx) {
-        lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-        ui_lvgl_unlock();
-        return ESP_OK;
-    }
-
-    int old_idx = s_selected_track_idx;
-    s_selected_track_idx = new_idx;
-    ui_fill_library_row(old_idx);
-    ui_fill_library_row(new_idx);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-    ui_lvgl_unlock();
-    return ESP_OK;
-}
-
-esp_err_t ui_library_load_selected(void)
-{
-    return ui_library_load_selected_for_deck(CTRL_DECK_1);
-}
-
-esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
-{
-    if (!s_library_table) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (ui_media_count() <= 0) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (s_track_load_busy) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    ui_lvgl_lock();
-    uint8_t old_deck = s_library_load_request_deck;
-    s_library_load_request_deck = deck;
-    library_load_event_cb(NULL);
-    s_library_load_request_deck = old_deck;
-    ui_lvgl_unlock();
-    return ESP_OK;
-}
-
-// Sort tracks by Artist (Toggle ASC/DESC)
-static void library_sort_artist_event_cb(lv_event_t *e) {
-    (void)e;
-    if (!s_library_table) return;
-
-#ifdef WIN32
-    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
-    uint32_t target_id = sel_track ? sel_track->track_id : 0;
-
-    s_sort_artist_desc = !s_sort_artist_desc;
-    library_sort(0, s_sort_artist_desc);
-    ui_refresh_library();
-
-    if (target_id != 0) {
-        int n = library_count();
-        for (int i = 0; i < n; i++) {
-            library_track_t *t = library_get_ptr(i);
-            if (t && t->track_id == target_id) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#else
-    media_catalog_row_t sel_track;
-    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
-                          ? sel_track.track_key : 0;
-
-    s_sort_artist_desc = !s_sort_artist_desc;
-    media_catalog_sort(0, s_sort_artist_desc);
-    ui_refresh_library();
-
-    if (target_key != 0) {
-        int n = media_catalog_count();
-        for (int i = 0; i < n; i++) {
-            media_catalog_row_t t;
-            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#endif
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-}
-
-// Sort tracks by Title/Name (Toggle ASC/DESC)
-static void library_sort_name_event_cb(lv_event_t *e) {
-    (void)e;
-    if (!s_library_table) return;
-
-#ifdef WIN32
-    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
-    uint32_t target_id = sel_track ? sel_track->track_id : 0;
-
-    s_sort_name_desc = !s_sort_name_desc;
-    library_sort(1, s_sort_name_desc);
-    ui_refresh_library();
-
-    if (target_id != 0) {
-        int n = library_count();
-        for (int i = 0; i < n; i++) {
-            library_track_t *t = library_get_ptr(i);
-            if (t && t->track_id == target_id) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#else
-    media_catalog_row_t sel_track;
-    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
-                          ? sel_track.track_key : 0;
-
-    s_sort_name_desc = !s_sort_name_desc;
-    media_catalog_sort(1, s_sort_name_desc);
-    ui_refresh_library();
-
-    if (target_key != 0) {
-        int n = media_catalog_count();
-        for (int i = 0; i < n; i++) {
-            media_catalog_row_t t;
-            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#endif
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-}
-
-// Sort tracks by BPM (Toggle ASC/DESC)
-static void library_sort_bpm_event_cb(lv_event_t *e) {
-    (void)e;
-    if (!s_library_table) return;
-
-#ifdef WIN32
-    library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
-    uint32_t target_id = sel_track ? sel_track->track_id : 0;
-
-    s_sort_bpm_desc = !s_sort_bpm_desc;
-    library_sort(2, s_sort_bpm_desc);
-    ui_refresh_library();
-
-    if (target_id != 0) {
-        int n = library_count();
-        for (int i = 0; i < n; i++) {
-            library_track_t *t = library_get_ptr(i);
-            if (t && t->track_id == target_id) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#else
-    media_catalog_row_t sel_track;
-    uint32_t target_key = (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
-                          ? sel_track.track_key : 0;
-
-    s_sort_bpm_desc = !s_sort_bpm_desc;
-    media_catalog_sort(2, s_sort_bpm_desc);
-    ui_refresh_library();
-
-    if (target_key != 0) {
-        int n = media_catalog_count();
-        for (int i = 0; i < n; i++) {
-            media_catalog_row_t t;
-            if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
-                s_selected_track_idx = i;
-                break;
-            }
-        }
-    }
-#endif
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-}
-
-// Select track row in library table
-static void library_table_event_cb(lv_event_t *e) {
-    lv_obj_t *table = lv_event_get_target(e);
-    uint32_t row;
-    uint32_t col;
-    lv_table_get_selected_cell(table, &row, &col);
-
-    if (row > 0 && (int)row <= ui_media_count()) {
-        int new_idx = (int)row - 1;
-        if (new_idx != s_selected_track_idx) {
-            int old_idx = s_selected_track_idx;
-            s_selected_track_idx = new_idx;
-            ui_fill_library_row(old_idx);
-            ui_fill_library_row(new_idx);
-            // Explicitly restore the selection, since updating cell values resets the selection in LVGL
-            lv_table_set_selected_cell(table, row, 0);
-            ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
-        }
-    }
 }
 
 // Trigger hot cue pads
@@ -1757,38 +1186,6 @@ static void audio_out_event_cb(lv_event_t *e) {
     ESP_LOGI(TAG, "Audio output: %s", rca ? "RCA line-out" : "Speaker");
 }
 
-static void library_source_local_event_cb(lv_event_t *e)
-{
-    (void)e;
-#ifndef WIN32
-    media_catalog_set_source(MEDIA_SOURCE_LOCAL_USB);
-#endif
-    s_selected_track_idx = 0;
-    ui_update_library_source_label();
-    ui_refresh_library();
-}
-
-static void library_source_joined_event_cb(lv_event_t *e)
-{
-    (void)e;
-#ifndef WIN32
-    esp_err_t rc = cdj_link_client_start();
-    if (rc == ESP_OK) {
-        rc = media_catalog_refresh_remote();
-    }
-    if (rc == ESP_OK) {
-        media_catalog_set_source(MEDIA_SOURCE_REMOTE_LINK);
-        s_selected_track_idx = 0;
-        ui_status_indicator_hold("JOINED", COL_GREEN, 2000);
-    } else {
-        ui_status_indicator_hold("JOIN FAILED", COL_RED, 3500);
-        ESP_LOGW(TAG, "joined library refresh failed: %s", esp_err_to_name(rc));
-    }
-#endif
-    ui_update_library_source_label();
-    ui_refresh_library();
-}
-
 #ifndef WIN32
 static void link_mode_event_cb(lv_event_t *e)
 {
@@ -1808,12 +1205,10 @@ static void link_mode_event_cb(lv_event_t *e)
 static void sd_cache_clear_event_cb(lv_event_t *e)
 {
     (void)e;
-    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_REMOTE_LINK) {
-            ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
-            sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
-            return;
-        }
+    if (ui_library_has_remote_loaded_track()) {
+        ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
+        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
+        return;
     }
 
     esp_err_t rc = remote_cache_clear();
@@ -2071,260 +1466,6 @@ static void create_footer(lv_obj_t *parent) {
     // Set first tab as active
     lv_obj_add_style(s_footer_buttons[0], &s_style_tab_btn_active, LV_PART_MAIN);
     lv_obj_remove_flag(s_footer_active_strips[0], LV_OBJ_FLAG_HIDDEN);
-}
-
-static void ui_truncate_str(char *dest, const char *src, size_t max_len) {
-    if (!src) {
-        dest[0] = '\0';
-        return;
-    }
-    size_t len = strlen(src);
-    if (len <= max_len) {
-        strcpy(dest, src);
-    } else {
-        strncpy(dest, src, max_len - 3);
-        dest[max_len - 3] = '\0';
-        strcat(dest, "...");
-    }
-}
-
-// Fill one library data row (track index i → table row i+1). Caller holds the
-// LVGL lock. NOTE: the table must have a fixed row height (min==max on ITEMS),
-// otherwise lv_table_set_cell_value triggers an O(n) self-size refresh per row
-// and populating a 300+ track table becomes O(n²) (seconds, watchdog trips).
-static void ui_fill_library_row(int i) {
-#ifndef WIN32
-    media_catalog_row_t row;
-    if (media_catalog_get_row(i, &row) != ESP_OK) {
-        return;
-    }
-    const char *title = row.title;
-    const char *artist = row.artist;
-    uint16_t bpm = row.bpm;
-    uint32_t duration_ms = row.duration_ms;
-#else
-    const library_track_t *track = library_get_ptr(i);
-    if (!track) {
-        return;
-    }
-    const char *title = track->title;
-    const char *artist = track->artist;
-    uint16_t bpm = track->bpm;
-    uint32_t duration_ms = track->duration_ms;
-#endif
-    char bpm_str[16];
-    char time_str[16];
-    char trunc_title[128];
-    char trunc_artist[128];
-
-    // Smart truncation for Montserrat 16 font (26 chars for title, 18 for artist)
-    ui_truncate_str(trunc_title, title, 26);
-    ui_truncate_str(trunc_artist, artist, 18);
-
-    uint32_t secs = duration_ms / 1000;
-    snprintf(bpm_str, sizeof(bpm_str), "%u", (unsigned)bpm);
-    snprintf(time_str, sizeof(time_str), "%u:%02u", (unsigned)(secs / 60), (unsigned)(secs % 60));
-
-    lv_table_set_cell_value(s_library_table, i + 1, 0, trunc_title);
-    lv_table_set_cell_value(s_library_table, i + 1, 1, trunc_artist);
-    lv_table_set_cell_value(s_library_table, i + 1, 2, bpm_str);
-    lv_table_set_cell_value(s_library_table, i + 1, 3, time_str);
-}
-
-// (Re)fill all library table rows. Sized exactly to the track count (+1 header)
-// so stale rows are dropped. Used at init where the count is small/zero.
-static void ui_populate_library_rows(void) {
-    if (!s_library_table) {
-        return;
-    }
-    int n_tracks = ui_media_count();
-    lv_table_set_row_count(s_library_table, n_tracks + 1);   // row 0 = header
-    for (int i = 0; i < n_tracks; i++) {
-        ui_fill_library_row(i);
-    }
-    ui_update_library_source_label();
-}
-
-// Screen 2: LIBRARY BROWSER Layout
-static void create_screen_library(lv_obj_t *parent) {
-    s_screens[1] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[1]);
-    lv_obj_add_style(s_screens[1], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[1], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[1], 0, UI_CONTENT_Y);
-
-    // Track list container table
-    s_library_table = lv_table_create(s_screens[1]);
-    lv_obj_set_size(s_library_table, 600, 330);
-    lv_obj_set_pos(s_library_table, 10, 10);
-    lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
-    // 8 visible songs + 1 header = 9 rows total. 330px height / 9 = 36.6px.
-    // Fixed row height (36px) allows large legible text without word-wrap clipping.
-    lv_obj_set_style_min_height(s_library_table, 36, LV_PART_ITEMS);
-    lv_obj_set_style_max_height(s_library_table, 36, LV_PART_ITEMS);
-
-    // Modern compact padding tailored for 36px row and 16px font
-    lv_obj_set_style_pad_left(s_library_table, 6, LV_PART_ITEMS);
-    lv_obj_set_style_pad_right(s_library_table, 6, LV_PART_ITEMS);
-    lv_obj_set_style_pad_top(s_library_table, 8, LV_PART_ITEMS);
-    lv_obj_set_style_pad_bottom(s_library_table, 8, LV_PART_ITEMS);
-
-    // Subtly visible grid borders for tabular layout — draw only at the bottom of cells
-    lv_obj_set_style_border_color(s_library_table, COL_BORDER, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(s_library_table, 1, LV_PART_ITEMS);
-    lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
-
-    // Harmonious background color and premium Montserrat 16 font
-    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(s_library_table, COL_TEXT_MUTED, LV_PART_ITEMS);
-    lv_obj_set_style_text_font(s_library_table, &lv_font_montserrat_16, LV_PART_ITEMS);
-
-    // Selected cell background and text color (Standard LVGL FOCUSED state)
-    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ALT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_color(s_library_table, COL_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_width(s_library_table, 3, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_obj_set_style_text_color(s_library_table, COL_ON_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-
-    // Configure Columns: Total width must fit 600px (4 columns instead of 5, '#' removed)
-    lv_table_set_column_width(s_library_table, 0, 290); // Title
-    lv_table_set_column_width(s_library_table, 1, 170); // Artist
-    lv_table_set_column_width(s_library_table, 2, 60);  // BPM
-    lv_table_set_column_width(s_library_table, 3, 80);  // Duration
-
-    // Header Row
-    lv_table_set_cell_value(s_library_table, 0, 0, "TITLE");
-    lv_table_set_cell_value(s_library_table, 0, 1, "ARTIST");
-    lv_table_set_cell_value(s_library_table, 0, 2, "BPM");
-    lv_table_set_cell_value(s_library_table, 0, 3, "TIME");
-
-    // Populate rows with track details from the media library
-    ui_populate_library_rows();
-
-    // Source selector
-    lv_obj_t *btn_src_local = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(btn_src_local);
-    lv_obj_add_style(btn_src_local, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_src_local, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_src_local, 72, 38);
-    lv_obj_set_pos(btn_src_local, 630, 10);
-    lv_obj_add_event_cb(btn_src_local, library_source_local_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_src_local, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_src_local = lv_label_create(btn_src_local);
-    lv_label_set_text(lbl_src_local, "LOCAL");
-    lv_obj_set_style_text_font(lbl_src_local, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_src_local, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_src_local, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_t *btn_src_join = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(btn_src_join);
-    lv_obj_add_style(btn_src_join, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_src_join, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_src_join, 72, 38);
-    lv_obj_set_pos(btn_src_join, 708, 10);
-    lv_obj_add_event_cb(btn_src_join, library_source_joined_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_src_join, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_src_join = lv_label_create(btn_src_join);
-    lv_label_set_text(lbl_src_join, "JOINED");
-    lv_obj_set_style_text_font(lbl_src_join, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_src_join, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_src_join, LV_ALIGN_CENTER, 0, 0);
-
-    s_label_library_source = lv_label_create(s_screens[1]);
-    lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_source, 630, 52);
-    ui_update_library_source_label();
-
-    // Load selected track buttons (Right Panel)
-    s_btn_library_load = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(s_btn_library_load);
-    lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
-    lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load, 72, 50);
-    lv_obj_set_pos(s_btn_library_load, 630, 72);
-    lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
-    lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_load = lv_label_create(s_btn_library_load);
-    lv_label_set_text(lbl_load, "LOAD D1");
-    lv_obj_set_style_text_font(lbl_load, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_load, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(lbl_load, LV_ALIGN_CENTER, 0, 0);
-
-    s_btn_library_load_deck2 = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(s_btn_library_load_deck2);
-    lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
-    lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load_deck2, 72, 50);
-    lv_obj_set_pos(s_btn_library_load_deck2, 708, 72);
-    lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
-    lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_load_deck2 = lv_label_create(s_btn_library_load_deck2);
-    lv_label_set_text(lbl_load_deck2, "LOAD D2");
-    lv_obj_set_style_text_font(lbl_load_deck2, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_load_deck2, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(lbl_load_deck2, LV_ALIGN_CENTER, 0, 0);
-
-    // SORT ARTIST button
-    lv_obj_t *btn_sort_artist = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(btn_sort_artist);
-    lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_artist, 150, 45);
-    lv_obj_set_pos(btn_sort_artist, 630, 132);
-    lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_sort_artist = lv_label_create(btn_sort_artist);
-    lv_label_set_text(lbl_sort_artist, "SORT ARTIST");
-    lv_obj_set_style_text_font(lbl_sort_artist, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_sort_artist, COL_TEXT_MUTED, LV_PART_MAIN);
-    lv_obj_align(lbl_sort_artist, LV_ALIGN_CENTER, 0, 0);
-
-    // SORT NAME button
-    lv_obj_t *btn_sort_name = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(btn_sort_name);
-    lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_name, 150, 45);
-    lv_obj_set_pos(btn_sort_name, 630, 187);
-    lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_sort_name = lv_label_create(btn_sort_name);
-    lv_label_set_text(lbl_sort_name, "SORT NAME");
-    lv_obj_set_style_text_font(lbl_sort_name, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_sort_name, COL_TEXT_MUTED, LV_PART_MAIN);
-    lv_obj_align(lbl_sort_name, LV_ALIGN_CENTER, 0, 0);
-
-    // SORT BPM button
-    lv_obj_t *btn_sort_bpm = lv_button_create(s_screens[1]);
-    lv_obj_remove_style_all(btn_sort_bpm);
-    lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_bpm, 150, 45);
-    lv_obj_set_pos(btn_sort_bpm, 630, 242);
-    lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_sort_bpm = lv_label_create(btn_sort_bpm);
-    lv_label_set_text(lbl_sort_bpm, "SORT BPM");
-    lv_obj_set_style_text_font(lbl_sort_bpm, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_sort_bpm, COL_TEXT_MUTED, LV_PART_MAIN);
-    lv_obj_align(lbl_sort_bpm, LV_ALIGN_CENTER, 0, 0);
-
-    // Tip label
-    s_label_library_hint = lv_label_create(s_screens[1]);
-    lv_label_set_text(s_label_library_hint, "SELECT TRACK\nLOAD D1/D2");
-    lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_hint, 630, 300);
-    ui_library_set_load_busy(false, NULL);
 }
 
 // Screen 3: HOT CUES Layout (2x4 Grid of pads)
@@ -2768,23 +1909,23 @@ static void ui_load_waveform_data(uint8_t deck,
     ui_overview_load_waveform_data(deck, duration_ms, waveform_low, has_waveform, meta);
 }
 
-#ifdef WIN32
-static void ui_load_waveform(const library_track_t *track)
+static void ui_library_set_header_track(const char *title, const char *artist, uint16_t bpm)
 {
-    if (!track) return;
-    ui_load_waveform_data(CTRL_DECK_1, track->duration_ms, track->waveform_low,
-                          track->has_waveform != 0, ui_deck_anlz(CTRL_DECK_1));
+    if (s_label_title) {
+        lv_label_set_text(s_label_title, title && title[0] ? title : "Unknown Title");
+    }
+    if (s_label_artist) {
+        lv_label_set_text(s_label_artist, artist && artist[0] ? artist : "Unknown Artist");
+    }
+    if (s_label_bpm) {
+        ui_label_set_f2(s_label_bpm, (float)bpm);
+    }
 }
-#endif
 
-#ifndef WIN32
-static void ui_load_waveform_media(uint8_t deck, const media_loaded_track_t *track)
+static bool ui_library_is_performance_target_active(uint8_t deck)
 {
-    if (!track) return;
-    ui_load_waveform_data(deck, track->duration_ms, track->waveform_low,
-                          track->has_waveform != 0, ui_deck_anlz(deck));
+    return ui_performance_target_is_active(&s_performance_target, deck);
 }
-#endif
 
 static void ui_update_overview_cue_markers(uint8_t deck)
 {
@@ -2948,6 +2089,35 @@ esp_err_t ui_init(void) {
     };
     ui_overview_init(&overview_config);
 
+    ui_library_config_t library_config = {
+        .styles = {
+            .screen_bg = &s_style_screen_bg,
+            .btn_primary = &s_style_btn_primary,
+            .btn_secondary = &s_style_btn_secondary,
+            .btn_disabled = &s_style_btn_disabled,
+            .pressed = &s_style_pressed,
+        },
+        .actions = {
+            .status_hold = ui_status_indicator_hold,
+            .status_color_for_text = ui_status_color_for_text,
+            .cache_invalidate = ui_cache_invalidate,
+            .set_header_track = ui_library_set_header_track,
+            .clear_deck_track_info = ui_deck_track_info_clear,
+            .set_deck_track_info = ui_deck_track_info_set,
+            .set_deck_anlz = ui_deck_anlz_set_from_current,
+            .get_deck_anlz = ui_deck_anlz,
+            .load_waveform_data = ui_load_waveform_data,
+            .set_loop_shadow = ui_set_loop_shadow,
+            .is_performance_target_active = ui_library_is_performance_target_active,
+            .update_hot_cues = ui_update_hot_cues,
+            .update_loop_screen_state = ui_update_loop_screen_state,
+        },
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+    };
+    ui_library_init(&library_config);
+
     // Create central base root container
     s_root_container = lv_obj_create(lv_screen_active());
     lv_obj_remove_style_all(s_root_container);
@@ -2973,7 +2143,7 @@ esp_err_t ui_init(void) {
     // Build the 7 screen layers
     s_screens[0] = ui_overview_create(s_root_container);
     ui_update_performance_target_visuals();
-    create_screen_library(s_root_container);
+    s_screens[1] = ui_library_create(s_root_container);
     create_screen_hot_cues(s_root_container);
     create_screen_beat_loop(s_root_container);
     create_screen_beat_jump(s_root_container);
@@ -2986,49 +2156,7 @@ esp_err_t ui_init(void) {
     }
     s_active_tab = 0;
 
-    // Load initial track metadata into the header displays
-    mock_library_load_track_to_deck(0);
-#ifdef WIN32
-    library_track_t *track = library_get_ptr(0);
-    if (track) {
-        library_load_anlz(track);          // load BPM, duration, PWAV waveform
-        
-        /* Load detailed ANLZ metadata for the initial track */
-        library_load_current_anlz(track);
-        
-        lv_label_set_text(s_label_title, track->title);
-        lv_label_set_text(s_label_artist, track->artist);
-        ui_label_set_f2(s_label_bpm, (float)track->bpm);
-        ui_deck_track_info_set(CTRL_DECK_1, track->title, track->artist,
-                               track->bpm, track->duration_ms);
-        ui_deck_anlz_set_from_current(CTRL_DECK_1, library_get_current_anlz());
-        ui_load_waveform(track);           // rebuild bar heights from PWAV data
-        
-        /* Populate hot cue points from active ANLZ metadata */
-        ui_update_hot_cues();
-    }
-#else
-    media_catalog_row_t row;
-    media_loaded_track_t loaded;
-    if (media_catalog_get_row(0, &row) == ESP_OK &&
-        media_catalog_load(0, &loaded) == ESP_OK) {
-        s_loaded_media[CTRL_DECK_1] = loaded;
-        s_loaded_media_valid[CTRL_DECK_1] = true;
-        s_loaded_media_source[CTRL_DECK_1] = loaded.source;
-        ui_deck_track_info_set(CTRL_DECK_1,
-                               row.title,
-                               row.artist,
-                               loaded.bpm ? loaded.bpm : row.bpm,
-                               loaded.duration_ms);
-
-        lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
-        lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
-        ui_label_set_f2(s_label_bpm, (float)(loaded.bpm ? loaded.bpm : row.bpm));
-        ui_deck_anlz_set_from_current(CTRL_DECK_1, media_catalog_get_loaded_anlz_for_source(loaded.source));
-        ui_load_waveform_media(CTRL_DECK_1, &loaded);
-        ui_update_hot_cues();
-    }
-#endif
+    ui_library_load_initial_track();
 
     // Register self-running LVGL timer to periodically refresh the UI states
     lv_timer_create(ui_timer_cb, 30, NULL);
@@ -3043,64 +2171,6 @@ esp_err_t ui_init(void) {
 
     ESP_LOGI(TAG, "LVGL DJ UI layout successfully initialized.");
     return ESP_OK;
-}
-
-void ui_trigger_library_refresh(void) {
-    s_library_needs_refresh = true;
-}
-
-void ui_notify_usb_removed(void) {
-#ifndef WIN32
-    s_usb_removed_pending = true;
-#endif
-}
-
-void ui_refresh_library(void) {
-    if (!s_library_table) {
-        return;
-    }
-    int n = ui_media_count();
-
-#ifndef WIN32
-    ESP_LOGI(TAG, "ui_refresh_library start. Free SRAM: %d B, SPIRAM: %d B",
-             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-#endif
-
-    ui_lvgl_lock();
-    ui_cache_invalidate();
-    lv_table_set_row_count(s_library_table, n + 1);   // row 0 = header
-
-    for (int i = 0; i < n; i++) {
-        ui_fill_library_row(i);
-    }
-
-    s_selected_track_idx = 0;
-#ifdef WIN32
-    const library_track_t *track = library_get_ptr(0);
-    if (track) {
-        if (s_label_title)  lv_label_set_text(s_label_title, track->title);
-        if (s_label_artist) lv_label_set_text(s_label_artist, track->artist);
-        if (s_label_bpm)    ui_label_set_f2(s_label_bpm, (float)track->bpm);
-    }
-#else
-    media_catalog_row_t row;
-    if (media_catalog_get_row(0, &row) == ESP_OK) {
-        if (s_label_title)  lv_label_set_text(s_label_title, row.title[0] ? row.title : "Unknown Title");
-        if (s_label_artist) lv_label_set_text(s_label_artist, row.artist[0] ? row.artist : "Unknown Artist");
-        if (s_label_bpm)    ui_label_set_f2(s_label_bpm, (float)row.bpm);
-    }
-#endif
-    ui_update_library_source_label();
-    ui_lvgl_unlock();
-
-#ifndef WIN32
-    ESP_LOGI(TAG, "ui_refresh_library end. Free SRAM: %d B, SPIRAM: %d B",
-             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-#endif
-
-    ESP_LOGI(TAG, "library table refreshed: %d tracks", n);
 }
 
 static uint64_t ui_monotonic_time_us(void)
@@ -3155,15 +2225,15 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
         ctx->deck_speed_permille[deck] =
             ui_pitch_speed_permille(&ctx->deck_state[deck]);
 
-#ifndef WIN32
-        if (s_loaded_media_valid[deck]) {
+        const uint8_t *loaded_waveform_low = NULL;
+        bool loaded_has_waveform = false;
+        if (ui_library_get_loaded_waveform(deck, &loaded_waveform_low, &loaded_has_waveform)) {
             ctx->overview_wave_source[deck] = (ui_overview_waveform_source_info_t){
                 .kind = UI_OVERVIEW_WAVEFORM_SOURCE_LOADED_MEDIA,
-                .waveform_low = s_loaded_media[deck].waveform_low,
-                .has_waveform = s_loaded_media[deck].has_waveform != 0,
+                .waveform_low = loaded_waveform_low,
+                .has_waveform = loaded_has_waveform,
             };
         } else
-#endif
         {
             ctx->overview_wave_source[deck] = (ui_overview_waveform_source_info_t){
                 .kind = UI_OVERVIEW_WAVEFORM_SOURCE_METADATA,
@@ -3204,48 +2274,23 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
 
 void ui_update(void) {
 #ifndef WIN32
-    uint64_t update_start_us = (uint64_t)esp_timer_get_time();
-    static uint64_t last_update_start_us = 0;
-    if (last_update_start_us != 0) {
-        ui_overview_perf_report_t interval_report;
-        if (ui_overview_perf_record(&s_ui_update_interval_perf,
-                                    (uint32_t)(update_start_us - last_update_start_us),
-                                    &interval_report)) {
-            ui_perf_log_us("ui_update interval", &interval_report);
+    uint64_t update_start_us = 0;
+    if (ui_diagnostics_enabled()) {
+        update_start_us = (uint64_t)esp_timer_get_time();
+        static uint64_t last_update_start_us = 0;
+        if (last_update_start_us != 0) {
+            ui_overview_perf_report_t interval_report;
+            if (ui_overview_perf_record(&s_ui_update_interval_perf,
+                                        (uint32_t)(update_start_us - last_update_start_us),
+                                        &interval_report)) {
+                ui_perf_log_us("ui_update interval", &interval_report);
+            }
         }
+        last_update_start_us = update_start_us;
     }
-    last_update_start_us = update_start_us;
 #endif
 
-#ifndef WIN32
-    if (s_usb_removed_pending) {
-        ui_apply_usb_removed();
-    }
-    ui_poll_track_load_result();
-#endif
-
-    if (s_library_needs_refresh) {
-        s_library_needs_refresh = false;
-        ui_refresh_library();
-    }
-
-    // Keep the library table constantly focused while on the LIBRARY tab to preserve the neon blue selection highlight
-    if (s_active_tab == 1 && s_library_table) {
-        lv_group_t *g = lv_group_get_default();
-        if (g && lv_group_get_focused(g) != s_library_table) {
-            lv_group_focus_obj(s_library_table);
-        }
-        
-        // Ensure the active track is explicitly and persistently highlighted in blue
-        uint32_t sel_row = LV_TABLE_CELL_NONE;
-        uint32_t sel_col = LV_TABLE_CELL_NONE;
-        lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
-        
-        // Only restore the selection if there is currently NO selection active (or if it's on the header row 0)
-        if (sel_row == LV_TABLE_CELL_NONE || sel_row == 0) {
-            lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
-        }
-    }
+    ui_library_update(s_active_tab);
 
     ui_frame_context_t ctx;
     ui_build_frame_context(&ctx);
@@ -3400,12 +2445,14 @@ void ui_update(void) {
     }
 
 #ifndef WIN32
-    uint64_t update_end_us = (uint64_t)esp_timer_get_time();
-    ui_overview_perf_report_t duration_report;
-    if (ui_overview_perf_record(&s_ui_update_duration_perf,
-                                (uint32_t)(update_end_us - update_start_us),
-                                &duration_report)) {
-        ui_perf_log_us("ui_update duration", &duration_report);
+    if (ui_diagnostics_enabled()) {
+        uint64_t update_end_us = (uint64_t)esp_timer_get_time();
+        ui_overview_perf_report_t duration_report;
+        if (ui_overview_perf_record(&s_ui_update_duration_perf,
+                                    (uint32_t)(update_end_us - update_start_us),
+                                    &duration_report)) {
+            ui_perf_log_us("ui_update duration", &duration_report);
+        }
     }
 #endif
 }

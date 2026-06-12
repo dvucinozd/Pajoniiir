@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "lvgl.h"
+#include "ui_diagnostics.h"
 #include "ui_overview_perf.h"
 
 static const char *TAG = "ui";
@@ -123,6 +124,10 @@ static bool ui_lvgl_backend_perf_record_phase_us(ui_overview_perf_counter_t *cou
                                                  const char *label,
                                                  uint32_t duration_us)
 {
+    if (!ui_diagnostics_enabled()) {
+        return false;
+    }
+
     ui_overview_perf_report_t report;
     if (ui_overview_perf_record(counter, duration_us, &report)) {
         ui_lvgl_backend_perf_log_us(label, &report);
@@ -149,6 +154,10 @@ static void ui_lvgl_log_frame_context(const char *label)
 
 static void ui_lvgl_display_event_cb(lv_event_t *e)
 {
+    if (!ui_diagnostics_enabled()) {
+        return;
+    }
+
     lv_event_code_t code = lv_event_get_code(e);
 
     switch (code) {
@@ -373,7 +382,7 @@ static void ui_lvgl_task(void *arg)
     uint64_t last_handler_start_us = 0;
     while (1) {
         uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
-        if (last_handler_start_us != 0) {
+        if (ui_diagnostics_enabled() && last_handler_start_us != 0) {
             ui_overview_perf_report_t interval_report;
             if (ui_overview_perf_record(&s_lvgl_handler_interval_perf,
                                         (uint32_t)(handler_start_us - last_handler_start_us),
@@ -388,11 +397,13 @@ static void ui_lvgl_task(void *arg)
         _lock_release_recursive(&s_lvgl_lock);
 
         uint64_t handler_end_us = (uint64_t)esp_timer_get_time();
-        ui_overview_perf_report_t duration_report;
-        if (ui_overview_perf_record(&s_lvgl_handler_duration_perf,
-                                    (uint32_t)(handler_end_us - handler_start_us),
-                                    &duration_report)) {
-            ui_lvgl_backend_perf_log_us("LVGL handler duration", &duration_report);
+        if (ui_diagnostics_enabled()) {
+            ui_overview_perf_report_t duration_report;
+            if (ui_overview_perf_record(&s_lvgl_handler_duration_perf,
+                                        (uint32_t)(handler_end_us - handler_start_us),
+                                        &duration_report)) {
+                ui_lvgl_backend_perf_log_us("LVGL handler duration", &duration_report);
+            }
         }
 
         if (next_ms > 100) next_ms = 100;
