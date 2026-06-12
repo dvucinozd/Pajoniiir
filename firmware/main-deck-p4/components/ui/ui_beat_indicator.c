@@ -16,6 +16,17 @@ static uint16_t clamp_progress(uint32_t elapsed_ms, uint32_t beat_len_ms)
     return (uint16_t)((elapsed_ms * 1000u) / beat_len_ms);
 }
 
+static uint16_t clamp_state_progress(uint16_t progress_permille)
+{
+    return progress_permille > 1000u ? 1000u : progress_permille;
+}
+
+static int16_t state_to_bar_permille(ui_beat_indicator_state_t state)
+{
+    return (int16_t)(((uint16_t)(state.phase % 4u) * 1000u) +
+                     clamp_state_progress(state.progress_permille));
+}
+
 static ui_beat_indicator_state_t from_bpm(uint32_t position_ms, uint16_t bpm)
 {
     if (bpm == 0) {
@@ -36,6 +47,30 @@ static ui_beat_indicator_state_t from_bpm(uint32_t position_ms, uint16_t bpm)
         .phase = phase,
         .downbeat = (phase == 0),
         .progress_permille = clamp_progress(elapsed, beat_len_ms),
+    };
+}
+
+ui_beat_phase_delta_t ui_beat_phase_delta_calculate(ui_beat_indicator_state_t deck1,
+                                                    ui_beat_indicator_state_t deck2)
+{
+    if (!deck1.valid || !deck2.valid) {
+        return (ui_beat_phase_delta_t){0};
+    }
+
+    int16_t delta = (int16_t)(state_to_bar_permille(deck2) -
+                              state_to_bar_permille(deck1));
+    while (delta > 2000) {
+        delta = (int16_t)(delta - 4000);
+    }
+    while (delta < -2000) {
+        delta = (int16_t)(delta + 4000);
+    }
+
+    int16_t abs_delta = delta < 0 ? (int16_t)-delta : delta;
+    return (ui_beat_phase_delta_t){
+        .valid = true,
+        .deck2_delta_permille = delta,
+        .locked = abs_delta <= 50,
     };
 }
 

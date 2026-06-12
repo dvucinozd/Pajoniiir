@@ -144,6 +144,10 @@ static volatile bool         s_usb_removed_pending = false;
 #define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
 #define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
 #define OVERVIEW_MAIN_REDRAW_STEP_MS 80u
+#define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - 110)
+#define OVERVIEW_PHASE_Y 176
+#define OVERVIEW_PHASE_W 220
+#define OVERVIEW_PHASE_KNOB_W 8
 
 typedef struct {
     lv_obj_t *panel;
@@ -183,6 +187,10 @@ static lv_obj_t *s_crossfader_track = NULL;
 static lv_obj_t *s_crossfader_knob = NULL;
 static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
+static lv_obj_t *s_phase_meter_label = NULL;
+static lv_obj_t *s_phase_meter_track = NULL;
+static lv_obj_t *s_phase_meter_center = NULL;
+static lv_obj_t *s_phase_meter_knob = NULL;
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
 
 // Hot cue buttons and values
@@ -2579,6 +2587,41 @@ static void ui_create_overview_center_marker(lv_obj_t *parent)
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 }
 
+static void ui_create_overview_phase_meter(lv_obj_t *parent)
+{
+    s_phase_meter_label = ui_overview_value_label(parent, &lv_font_montserrat_12,
+                                                  COL_TEXT_MUTED,
+                                                  OVERVIEW_PHASE_X,
+                                                  OVERVIEW_PHASE_Y - 18,
+                                                  OVERVIEW_PHASE_W,
+                                                  "PHASE --");
+    lv_obj_set_style_text_align(s_phase_meter_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    s_phase_meter_track = ui_overview_bar(parent,
+                                          OVERVIEW_PHASE_X,
+                                          OVERVIEW_PHASE_Y,
+                                          OVERVIEW_PHASE_W,
+                                          4,
+                                          COL_PANEL_DK);
+    lv_obj_set_style_bg_opa(s_phase_meter_track, LV_OPA_COVER, LV_PART_MAIN);
+
+    s_phase_meter_center = ui_overview_bar(parent,
+                                           OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2),
+                                           OVERVIEW_PHASE_Y - 5,
+                                           1,
+                                           14,
+                                           COL_TEXT);
+    lv_obj_set_style_bg_opa(s_phase_meter_center, LV_OPA_80, LV_PART_MAIN);
+
+    s_phase_meter_knob = ui_overview_bar(parent,
+                                         OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
+                                             (OVERVIEW_PHASE_KNOB_W / 2),
+                                         OVERVIEW_PHASE_Y - 6,
+                                         OVERVIEW_PHASE_KNOB_W,
+                                         16,
+                                         COL_TEXT_DIM);
+}
+
 static void create_screen_overview(lv_obj_t *parent) {
     s_screens[0] = lv_obj_create(parent);
     lv_obj_remove_style_all(s_screens[0]);
@@ -2589,6 +2632,7 @@ static void create_screen_overview(lv_obj_t *parent) {
     ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_1, 4);
     ui_create_overview_deck_panel(s_screens[0], CTRL_DECK_2, 222);
     ui_create_overview_center_marker(s_screens[0]);
+    ui_create_overview_phase_meter(s_screens[0]);
     ui_create_overview_fx_panel(s_screens[0]);
 }
 
@@ -4033,6 +4077,79 @@ static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
     }
 }
 
+static void ui_update_phase_meter(const deck_state_t *deck1_state,
+                                  const deck_state_t *deck2_state)
+{
+    if (!s_phase_meter_label || !s_phase_meter_knob) {
+        return;
+    }
+
+    bool tracks_ready = s_deck_track_info[ui_deck_index(CTRL_DECK_1)].valid &&
+                        s_deck_track_info[ui_deck_index(CTRL_DECK_2)].valid;
+    if (!deck1_state || !deck2_state || !tracks_ready) {
+        lv_label_set_text(s_phase_meter_label, "PHASE --");
+        lv_obj_set_style_text_color(s_phase_meter_label, COL_TEXT_MUTED, LV_PART_MAIN);
+        lv_obj_set_x(s_phase_meter_knob,
+                     OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
+                         (OVERVIEW_PHASE_KNOB_W / 2));
+        lv_obj_set_style_bg_color(s_phase_meter_knob, COL_TEXT_DIM, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_60, LV_PART_MAIN);
+        return;
+    }
+
+    const anlz_metadata_t *meta1 = ui_deck_anlz(CTRL_DECK_1);
+    const anlz_metadata_t *meta2 = ui_deck_anlz(CTRL_DECK_2);
+    ui_beat_indicator_state_t beat1 =
+        ui_beat_indicator_calculate(deck1_state->position_ms,
+                                    meta1 ? meta1->beats : NULL,
+                                    meta1 ? meta1->beat_count : 0,
+                                    ui_deck_bpm(CTRL_DECK_1));
+    ui_beat_indicator_state_t beat2 =
+        ui_beat_indicator_calculate(deck2_state->position_ms,
+                                    meta2 ? meta2->beats : NULL,
+                                    meta2 ? meta2->beat_count : 0,
+                                    ui_deck_bpm(CTRL_DECK_2));
+    ui_beat_phase_delta_t delta = ui_beat_phase_delta_calculate(beat1, beat2);
+    if (!delta.valid) {
+        lv_label_set_text(s_phase_meter_label, "PHASE --");
+        lv_obj_set_style_text_color(s_phase_meter_label, COL_TEXT_MUTED, LV_PART_MAIN);
+        lv_obj_set_x(s_phase_meter_knob,
+                     OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
+                         (OVERVIEW_PHASE_KNOB_W / 2));
+        lv_obj_set_style_bg_color(s_phase_meter_knob, COL_TEXT_DIM, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_60, LV_PART_MAIN);
+        return;
+    }
+
+    int knob_center = OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) +
+        ((int)delta.deck2_delta_permille * (OVERVIEW_PHASE_W / 2)) / 2000;
+    int min_center = OVERVIEW_PHASE_X;
+    int max_center = OVERVIEW_PHASE_X + OVERVIEW_PHASE_W;
+    if (knob_center < min_center) knob_center = min_center;
+    if (knob_center > max_center) knob_center = max_center;
+    lv_obj_set_x(s_phase_meter_knob, knob_center - (OVERVIEW_PHASE_KNOB_W / 2));
+
+    lv_color_t color = COL_GREEN;
+    if (!delta.locked) {
+        color = delta.deck2_delta_permille < 0 ? COL_AMBER : COL_ACCENT;
+    }
+    lv_obj_set_style_bg_color(s_phase_meter_knob, color, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_phase_meter_knob, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_phase_meter_label, color, LV_PART_MAIN);
+
+    if (delta.locked) {
+        lv_label_set_text(s_phase_meter_label, "PHASE LOCK");
+    } else {
+        int abs_delta = delta.deck2_delta_permille < 0 ?
+            -delta.deck2_delta_permille : delta.deck2_delta_permille;
+        lv_label_set_text_fmt(s_phase_meter_label,
+                              "D2 %c%d.%02dB",
+                              delta.deck2_delta_permille < 0 ? '-' : '+',
+                              abs_delta / 1000,
+                              (abs_delta % 1000) / 10);
+    }
+}
+
 static void ui_update_overview_waveform_progress(uint8_t deck,
                                                  ui_overview_deck_panel_t *panel,
                                                  uint32_t position_ms,
@@ -4400,6 +4517,7 @@ void ui_update(void) {
         #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        ui_update_phase_meter(&state, &deck2_state);
         ui_update_overview_cue_markers(CTRL_DECK_1);
         ui_update_overview_cue_markers(CTRL_DECK_2);
     } else if (s_active_tab == 0) {
@@ -4409,6 +4527,7 @@ void ui_update(void) {
         #endif
         ui_update_overview_deck(CTRL_DECK_1, &state);
         ui_update_overview_deck(CTRL_DECK_2, &deck2_state);
+        ui_update_phase_meter(&state, &deck2_state);
         ui_update_overview_cue_markers(CTRL_DECK_1);
         ui_update_overview_cue_markers(CTRL_DECK_2);
     }

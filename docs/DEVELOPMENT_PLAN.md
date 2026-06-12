@@ -267,3 +267,6 @@ Validation note, 2026-06-10:
 - Beat-grid clarity pass separates grid colors from waveform colors: downbeats
   remain bright full-height markers, while regular beat guides are short, dim
   grey lines so they aid beatmatching without hiding transients.
+- Overview now includes a compact D2-vs-D1 phase meter between the main
+  waveforms. It uses the shared beat-grid/BPM helper, shows signed beat offset,
+  and turns green when the two decks are within the current lock tolerance.
