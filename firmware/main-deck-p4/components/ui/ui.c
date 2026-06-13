@@ -14,6 +14,7 @@
 #include "ui_overview.h"
 #include "ui_lvgl_backend.h"
 #include "ui_overview_perf.h"
+#include "ui_performance_tabs.h"
 #include "ui_settings.h"
 #include "ui_status.h"
 #include <limits.h>
@@ -88,11 +89,6 @@ static ui_controls_state_t s_controls;
 static ui_overview_perf_counter_t s_ui_update_interval_perf;
 static ui_overview_perf_counter_t s_ui_update_duration_perf;
 
-// Performance tab widgets
-static lv_obj_t *s_hot_cue_buttons[8];
-static lv_obj_t *s_loop_buttons[6];
-static lv_obj_t *s_label_loop_status = NULL;
-
 // Footer navigation buttons
 static lv_obj_t *s_footer_buttons[7];
 static lv_obj_t *s_footer_active_strips[7];
@@ -122,10 +118,7 @@ static lv_style_t s_style_btn_disabled;
 static lv_style_t s_style_btn_neon;
 static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on press)
 
-static void ui_update_hot_cues(void);
-static void ui_refresh_loop_screen_from_target(void);
 static void ui_set_performance_deck(uint8_t deck);
-static void jump_btn_event_cb(lv_event_t *e);
 static void ui_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
                                   const uint8_t waveform_low[400],
@@ -137,16 +130,6 @@ static void ui_cache_invalidate(void)
     ui_settings_invalidate();
 }
 
-static void ui_format_time_cc(char *out, size_t out_sz, uint32_t ms)
-{
-    uint32_t secs = ms / 1000;
-    uint32_t centis = (ms % 1000) / 10;
-    snprintf(out, out_sz, "%02u:%02u.%02u",
-             (unsigned)(secs / 60),
-             (unsigned)(secs % 60),
-             (unsigned)centis);
-}
-
 static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_t color)
 {
     if (!label) {
@@ -155,85 +138,6 @@ static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
-}
-
-static void ui_style_hot_cue_pad(int index, bool is_loop, bool is_empty)
-{
-    if (index < 0 || index >= 8 || !s_hot_cue_buttons[index]) {
-        return;
-    }
-
-    static const uint32_t cue_hex_colors[8] = {
-        0x00E676,  // A: Green
-        0x00E5FF,  // B: Cyan
-        0xFFAB00,  // C: Orange/Amber
-        0xE040FB,  // D: Pink
-        0xFFD600,  // E: Yellow
-        0xFF1744,  // F: Red
-        0x7C4DFF,  // G: Purple
-        0x2979FF   // H: Blue
-    };
-
-    lv_obj_t *btn = s_hot_cue_buttons[index];
-    lv_color_t pad_color = lv_color_hex(cue_hex_colors[index]);
-    lv_color_t accent = is_empty ? COL_BORDER_LT : pad_color;
-    lv_color_t bg = is_empty ? COL_PANEL_DK : accent;
-    lv_color_t text = is_empty ? COL_TEXT_DIM : accent;
-
-    lv_obj_set_style_bg_color(btn, bg, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn, is_empty ? LV_OPA_COVER : LV_OPA_30, LV_PART_MAIN);
-    lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
-    lv_obj_set_style_border_width(btn, is_empty ? 1 : 2, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
-
-    lv_obj_t *lbl_pad = lv_obj_get_child(btn, 0);
-    if (lbl_pad) {
-        lv_obj_set_style_text_color(lbl_pad, text, LV_PART_MAIN);
-    }
-
-    lv_obj_t *lbl_time = lv_obj_get_child(btn, 1);
-    if (lbl_time) {
-        lv_obj_set_style_text_color(lbl_time, is_empty ? COL_TEXT_DIM : COL_TEXT, LV_PART_MAIN);
-    }
-}
-
-static void ui_update_loop_screen_state(void)
-{
-    ui_controls_loop_state_t loop = ui_controls_active_loop(&s_controls);
-
-    if (s_label_loop_status) {
-        if (loop.active && loop.beats > 0) {
-            lv_label_set_text_fmt(s_label_loop_status, "ACTIVE: %d BEATS", loop.beats);
-            lv_obj_set_style_text_color(s_label_loop_status, COL_RED, LV_PART_MAIN);
-        } else if (loop.active) {
-            lv_label_set_text(s_label_loop_status, "ACTIVE LOOP");
-            lv_obj_set_style_text_color(s_label_loop_status, COL_RED, LV_PART_MAIN);
-        } else {
-            lv_label_set_text(s_label_loop_status, "NO ACTIVE LOOP");
-            lv_obj_set_style_text_color(s_label_loop_status, COL_TEXT_DIM, LV_PART_MAIN);
-        }
-    }
-
-    static const int loop_beats[6] = {1, 2, 4, 8, 16, 32};
-    for (int i = 0; i < 6; i++) {
-        lv_obj_t *btn = s_loop_buttons[i];
-        if (!btn) {
-            continue;
-        }
-
-        bool is_active = loop.active && loop.beats == loop_beats[i];
-        lv_color_t accent = is_active ? COL_RED : lv_color_hex(0x123A1B);
-        lv_obj_set_style_bg_color(btn, is_active ? COL_RED : lv_color_hex(0x051A0B), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn, is_active ? LV_OPA_30 : LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
-        lv_obj_set_style_border_width(btn, is_active ? 2 : 1, LV_PART_MAIN);
-        lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
-
-        lv_obj_t *lbl = lv_obj_get_child(btn, 0);
-        if (lbl) {
-            lv_obj_set_style_text_color(lbl, is_active ? COL_RED : COL_TEXT_MUTED, LV_PART_MAIN);
-        }
-    }
 }
 
 static lv_obj_t *ui_settings_section(lv_obj_t *parent, int x, int y, int w, int h, const char *title)
@@ -284,37 +188,6 @@ static lv_obj_t *ui_static_tile(lv_obj_t *parent, int x, int y, int w, int h,
     lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
     return tile;
-}
-
-static lv_obj_t *ui_create_beat_jump_button(lv_obj_t *parent, int x, int y, int value,
-                                            bool forward)
-{
-    lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_remove_style_all(btn);
-    lv_obj_add_style(btn, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn, 150, 82);
-    lv_obj_set_pos(btn, x, y);
-
-    lv_color_t accent = forward ? COL_GREEN : COL_RED;
-    lv_color_t fill = forward ? lv_color_hex(0x10251B) : lv_color_hex(0x2A1016);
-    lv_obj_set_style_bg_color(btn, fill, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(btn, accent, LV_PART_MAIN);
-    lv_obj_set_style_border_width(btn, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn, 6, LV_PART_MAIN);
-
-    lv_obj_set_user_data(btn, (void*)(intptr_t)value);
-    lv_obj_add_event_cb(btn, jump_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lbl = lv_label_create(btn);
-    int abs_value = value < 0 ? -value : value;
-    lv_label_set_text_fmt(lbl, "%c%d BEAT%s", forward ? '+' : '-', abs_value,
-                          abs_value == 1 ? "" : "S");
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl, LV_ALIGN_CENTER, 0, 0);
-
-    return btn;
 }
 
 static uint8_t ui_deck_index(uint8_t deck)
@@ -395,23 +268,72 @@ static deck_state_t ui_performance_deck_state(void)
                                : deck_core_get_deck_state(deck);
 }
 
+static uint32_t ui_performance_deck_position_ms(uint8_t deck)
+{
+#ifndef WIN32
+    return audio_engine_deck_position_ms(deck);
+#else
+    return deck == CTRL_DECK_1 ? deck_core_get_state().position_ms
+                               : deck_core_get_deck_state(deck).position_ms;
+#endif
+}
+
+static void ui_performance_seek(uint8_t deck, uint32_t position_ms)
+{
+#ifndef WIN32
+    audio_engine_deck_seek(deck, position_ms);
+#else
+    (void)deck;
+    mock_deck_set_position(position_ms);
+#endif
+}
+
+static void ui_performance_play(uint8_t deck)
+{
+#ifndef WIN32
+    audio_engine_deck_play(deck);
+#else
+    (void)deck;
+    mock_deck_set_playing(true);
+#endif
+}
+
+static void ui_performance_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
+{
+#ifndef WIN32
+    audio_engine_deck_set_loop(deck, start_ms, end_ms);
+#else
+    (void)deck;
+    (void)start_ms;
+    (void)end_ms;
+#endif
+}
+
+static void ui_performance_clear_loop(uint8_t deck)
+{
+#ifndef WIN32
+    audio_engine_deck_clear_loop(deck);
+#else
+    (void)deck;
+#endif
+}
+
+static void ui_performance_toggle_master_tempo(void)
+{
+#ifdef WIN32
+    mock_deck_toggle_master_tempo();
+    deck_state_t state = deck_core_get_state();
+    ESP_LOGI(TAG, "Master Tempo toggled: %s", state.master_tempo ? "ON" : "OFF");
+#endif
+}
+
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
                                uint32_t start_ms,
                                uint32_t end_ms,
                                int beats)
 {
-    uint8_t idx = ui_deck_index(deck);
-    ui_controls_set_loop_shadow(&s_controls, idx, active, start_ms, end_ms, beats);
-
-    if (ui_controls_is_active_deck(&s_controls, idx)) {
-        ui_update_loop_screen_state();
-    }
-}
-
-static void ui_refresh_loop_screen_from_target(void)
-{
-    ui_update_loop_screen_state();
+    ui_performance_tabs_set_loop_shadow(deck, active, start_ms, end_ms, beats);
 }
 
 static void ui_set_performance_deck(uint8_t deck)
@@ -424,8 +346,8 @@ static void ui_set_performance_deck(uint8_t deck)
     }
 
     ui_controls_update_performance_target_visuals(&s_controls);
-    ui_refresh_loop_screen_from_target();
-    ui_update_hot_cues();
+    ui_performance_tabs_update_loop_screen_state();
+    ui_performance_tabs_update_hot_cues();
 
     if (before != after) {
         ui_status_hold(after == CTRL_DECK_1 ? "TARGET D1" : "TARGET D2",
@@ -532,160 +454,6 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
 #else
     (void)deck;
     mock_deck_set_position(target_ms);
-#endif
-}
-
-// Trigger hot cue pads
-static void hot_cue_event_cb(lv_event_t *e) {
-    lv_obj_t *btn = lv_event_get_target(e);
-    int cue_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
-    ui_controls_hot_cue_t cue = ui_controls_hot_cue(&s_controls, (uint8_t)cue_idx);
-    uint32_t pos = cue.position_ms;
-    uint8_t deck = ui_controls_active_deck(&s_controls);
-
-    if (cue.empty || pos == UI_CONTROLS_EMPTY_HOT_CUE_MS) {
-        ESP_LOGI(TAG, "D%u Hot Cue %c is empty, ignoring click",
-                 (unsigned)deck + 1u, 'A' + cue_idx);
-        return;
-    }
-
-    uint8_t type = cue.type;
-    uint32_t end_pos = cue.end_ms;
-
-    if (type == 2 && end_pos > pos) { // Hot Loop
-        ui_set_loop_shadow(deck, true, pos, end_pos, 0);
-#ifndef WIN32
-        audio_engine_deck_seek(deck, pos);
-        audio_engine_deck_set_loop(deck, pos, end_pos);
-        audio_engine_deck_play(deck);
-        ESP_LOGI(TAG, "D%u Hot Loop %c active: %lu - %lu ms on hardware",
-                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
-#else
-        mock_deck_set_position(pos);
-        mock_deck_set_playing(true);
-        ESP_LOGI(TAG, "D%u Hot Loop %c active: %lu - %lu ms (simulated)",
-                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos, (unsigned long)end_pos);
-#endif
-    } else { // Normal Cue
-        ui_set_loop_shadow(deck, false, 0, 0, 0);
-#ifndef WIN32
-        audio_engine_deck_clear_loop(deck);
-        audio_engine_deck_seek(deck, pos);
-        audio_engine_deck_play(deck);
-        ESP_LOGI(TAG, "D%u Hot Cue %c triggered at %lu ms on hardware",
-                 (unsigned)deck + 1u, 'A' + cue_idx, (unsigned long)pos);
-#else
-        mock_deck_set_position(pos);
-        mock_deck_set_playing(true);
-        ESP_LOGI(TAG, "D%u Hot Cue %c triggered at %d ms",
-                 (unsigned)deck + 1u, 'A' + cue_idx, pos);
-#endif
-    }
-}
-
-// Loop pad clicked (e.g. 1/2, 1, 2, 4, 8, 16 beats)
-static void loop_btn_event_cb(lv_event_t *e) {
-    lv_obj_t *btn = lv_event_get_target(e);
-    int beats = (int)(intptr_t)lv_obj_get_user_data(btn);
-    uint8_t deck = ui_controls_active_deck(&s_controls);
-
-    float bpm = (float)ui_performance_bpm();
-    if (bpm <= 0.0f) bpm = 120.0f;
-    uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
-
-    uint32_t start_ms = 0;
-#ifndef WIN32
-    start_ms = audio_engine_deck_position_ms(deck);
-#else
-    deck_state_t state = ui_performance_deck_state();
-    start_ms = state.position_ms;
-#endif
-
-    uint32_t end_ms = start_ms + (beat_len_ms * beats);
-    ui_set_loop_shadow(deck, true, start_ms, end_ms, beats);
-
-#ifndef WIN32
-    audio_engine_deck_set_loop(deck, start_ms, end_ms);
-    ESP_LOGI(TAG, "D%u Hardware Loop of %d beats active: %lu to %lu ms",
-             (unsigned)deck + 1u, beats, (unsigned long)start_ms, (unsigned long)end_ms);
-#else
-    ESP_LOGI(TAG, "D%u Simulating Loop of %d beats: %d ms to %d ms",
-             (unsigned)deck + 1u, beats, start_ms, end_ms);
-#endif
-}
-
-// Loop exit button
-static void exit_loop_event_cb(lv_event_t *e) {
-    (void)e;
-    uint8_t deck = ui_controls_active_deck(&s_controls);
-    ui_set_loop_shadow(deck, false, 0, 0, 0);
-#ifndef WIN32
-    audio_engine_deck_clear_loop(deck);
-    ESP_LOGI(TAG, "D%u Loop exited on hardware", (unsigned)deck + 1u);
-#else
-    ESP_LOGI(TAG, "D%u Loop exited", (unsigned)deck + 1u);
-#endif
-}
-
-// Beat jump buttons clicked
-static void jump_btn_event_cb(lv_event_t *e) {
-    lv_obj_t *btn = lv_event_get_target(e);
-    int val = (int)(intptr_t)lv_obj_get_user_data(btn);
-    uint8_t deck = ui_controls_active_deck(&s_controls);
-
-    deck_state_t state = ui_performance_deck_state();
-    const anlz_metadata_t *meta = ui_performance_anlz();
-    uint32_t new_pos = 0;
-
-    if (meta && meta->beat_count > 0) {
-        /* Find the closest beat in the PQTZ beatgrid */
-        int closest_idx = 0;
-        uint32_t min_diff = 0xFFFFFFFF;
-        for (int i = 0; i < meta->beat_count; i++) {
-            uint32_t diff = (state.position_ms > meta->beats[i].time_ms) ? 
-                            (state.position_ms - meta->beats[i].time_ms) : 
-                            (meta->beats[i].time_ms - state.position_ms);
-            if (diff < min_diff) {
-                min_diff = diff;
-                closest_idx = i;
-            }
-        }
-        
-        int target_idx = closest_idx + val;
-        if (target_idx < 0) target_idx = 0;
-        if (target_idx >= meta->beat_count) target_idx = meta->beat_count - 1;
-        
-        new_pos = meta->beats[target_idx].time_ms;
-        ESP_LOGI(TAG, "Beat Jump using beatgrid: from beat %d (%d ms) to beat %d (%d ms), shift=%d", 
-                 closest_idx, state.position_ms, target_idx, new_pos, val);
-    } else {
-        /* Fallback to BPM-based calculation */
-        float bpm = (float)ui_performance_bpm();
-        if (bpm <= 0.0f) bpm = 120.0f;
-        uint32_t beat_len_ms = (uint32_t)(60000.0f / bpm);
-        
-        int32_t shift = (int32_t)beat_len_ms * val;
-        int32_t target_pos = (int32_t)state.position_ms + shift;
-        if (target_pos < 0) target_pos = 0;
-        new_pos = (uint32_t)target_pos;
-        ESP_LOGI(TAG, "Beat Jump using BPM fallback: from %d ms to %d ms, shift=%d beats", 
-                 state.position_ms, new_pos, val);
-    }
-
-#ifndef WIN32
-    audio_engine_deck_seek(deck, new_pos);
-#else
-    mock_deck_set_position(new_pos);
-#endif
-    ui_set_loop_shadow(deck, false, 0, 0, 0);
-}
-
-// Key lock toggle
-static void keylock_toggle_event_cb(lv_event_t *e) {
-#ifdef WIN32
-    mock_deck_toggle_master_tempo();
-    deck_state_t state = deck_core_get_state();
-    ESP_LOGI(TAG, "Master Tempo toggled: %s", state.master_tempo ? "ON" : "OFF");
 #endif
 }
 
@@ -1005,305 +773,6 @@ static void create_footer(lv_obj_t *parent) {
     lv_obj_remove_flag(s_footer_active_strips[0], LV_OBJ_FLAG_HIDDEN);
 }
 
-// Screen 3: HOT CUES Layout (2x4 Grid of pads)
-static void create_screen_hot_cues(lv_obj_t *parent) {
-    s_screens[2] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[2]);
-    lv_obj_add_style(s_screens[2], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[2], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[2], 0, UI_CONTENT_Y);
-    ui_controls_create_performance_target_selector(s_screens[2], 298, 4);
-
-    // Construct a grid of buttons: 4 in a row, 2 rows
-    int pad_w = 170;
-    int pad_h = 130;
-    int spacing_x = 20;
-    int spacing_y = 20;
-    int offset_x = 30;
-    int offset_y = 48;
-
-    for (int i = 0; i < 8; i++) {
-        int row = i / 4;
-        int col = i % 4;
-
-        s_hot_cue_buttons[i] = lv_button_create(s_screens[2]);
-        lv_obj_remove_style_all(s_hot_cue_buttons[i]);
-        lv_obj_add_style(s_hot_cue_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
-        ui_style_hot_cue_pad(i, false, false);
-        lv_obj_set_size(s_hot_cue_buttons[i], pad_w, pad_h);
-        lv_obj_set_pos(s_hot_cue_buttons[i], offset_x + col * (pad_w + spacing_x), offset_y + row * (pad_h + spacing_y));
-
-        lv_obj_set_user_data(s_hot_cue_buttons[i], (void*)(intptr_t)i);
-        lv_obj_add_event_cb(s_hot_cue_buttons[i], hot_cue_event_cb, LV_EVENT_CLICKED, NULL);
-
-        // Pad Title label
-        lv_obj_t *lbl_pad = lv_label_create(s_hot_cue_buttons[i]);
-        lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
-        lv_obj_set_style_text_font(lbl_pad, &lv_font_montserrat_16, LV_PART_MAIN);
-        lv_obj_set_style_text_color(lbl_pad, COL_GREEN, LV_PART_MAIN);
-        lv_obj_align(lbl_pad, LV_ALIGN_TOP_LEFT, 10, 10);
-
-        // Pad Time label
-        lv_obj_t *lbl_time = lv_label_create(s_hot_cue_buttons[i]);
-        char time_buf[16];
-        ui_controls_hot_cue_t cue = ui_controls_hot_cue(&s_controls, (uint8_t)i);
-        ui_format_time_cc(time_buf, sizeof(time_buf), cue.position_ms);
-        lv_label_set_text(lbl_time, time_buf);
-        lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_12, LV_PART_MAIN);
-        lv_obj_set_style_text_color(lbl_time, COL_TEXT, LV_PART_MAIN);
-        lv_obj_align(lbl_time, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
-    }
-
-    lv_obj_t *status_strip = lv_obj_create(s_screens[2]);
-    lv_obj_remove_style_all(status_strip);
-    lv_obj_add_style(status_strip, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(status_strip, 740, 62);
-    lv_obj_set_pos(status_strip, 30, 360);
-    lv_obj_clear_flag(status_strip, LV_OBJ_FLAG_SCROLLABLE);
-    ui_settings_value_label(status_strip, "HOT CUE STATUS", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 12);
-    ui_static_tile(status_strip, 176, 12, 90, 36, "CUE A-H", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_static_tile(status_strip, 278, 12, 104, 36, "LOOP CUES", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_static_tile(status_strip, 394, 12, 112, 36, "ANLZ DATA", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
-    ui_static_tile(status_strip, 518, 12, 142, 36, "D1/D2 TARGET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-}
-
-// Screen 4: BEAT LOOP Layout
-static void create_screen_beat_loop(lv_obj_t *parent) {
-    s_screens[3] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[3]);
-    lv_obj_add_style(s_screens[3], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[3], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[3], 0, UI_CONTENT_Y);
-    ui_controls_create_performance_target_selector(s_screens[3], 20, 8);
-
-    s_label_loop_status = lv_label_create(s_screens[3]);
-    ui_label_set_small_caps(s_label_loop_status, "NO ACTIVE LOOP", COL_TEXT_DIM);
-    lv_obj_align(s_label_loop_status, LV_ALIGN_TOP_MID, 0, 12);
-
-    // Predefined loops: 1/2, 1, 2, 4, 8, 16 beats
-    int loop_beats[6] = {1, 2, 4, 8, 16, 32}; // 1 = 1 beat, 32 = 32 beats
-    const char *loop_labels[6] = {"1 BEAT", "2 BEATS", "4 BEATS", "8 BEATS", "16 BEATS", "32 BEATS"};
-
-    int pad_w = 210;
-    int pad_h = 100;
-    int spacing_x = 30;
-    int spacing_y = 20;
-    int offset_x = 60;
-    int offset_y = 54;
-
-    for (int i = 0; i < 6; i++) {
-        int row = i / 3;
-        int col = i % 3;
-
-        s_loop_buttons[i] = lv_button_create(s_screens[3]);
-        lv_obj_remove_style_all(s_loop_buttons[i]);
-        lv_obj_add_style(s_loop_buttons[i], &s_style_btn_secondary, LV_PART_MAIN);
-        lv_obj_add_style(s_loop_buttons[i], &s_style_pressed, LV_STATE_PRESSED);
-        lv_obj_set_size(s_loop_buttons[i], pad_w, pad_h);
-        lv_obj_set_pos(s_loop_buttons[i], offset_x + col * (pad_w + spacing_x), offset_y + row * (pad_h + spacing_y));
-
-        lv_obj_set_user_data(s_loop_buttons[i], (void*)(intptr_t)loop_beats[i]);
-        lv_obj_add_event_cb(s_loop_buttons[i], loop_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-        lv_obj_t *lbl_loop = lv_label_create(s_loop_buttons[i]);
-        lv_label_set_text(lbl_loop, loop_labels[i]);
-        lv_obj_set_style_text_font(lbl_loop, &lv_font_montserrat_14, LV_PART_MAIN);
-        lv_obj_set_style_text_color(lbl_loop, COL_TEXT, LV_PART_MAIN);
-        lv_obj_align(lbl_loop, LV_ALIGN_CENTER, 0, 0);
-    }
-
-    // EXIT LOOP Button
-    lv_obj_t *btn_exit = lv_button_create(s_screens[3]);
-    lv_obj_remove_style_all(btn_exit);
-    lv_obj_set_style_bg_color(btn_exit, COL_RED, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(btn_exit, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(btn_exit, lv_color_hex(0xFF6B85), LV_PART_MAIN);
-    lv_obj_set_style_border_width(btn_exit, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn_exit, 6, LV_PART_MAIN);
-    lv_obj_add_style(btn_exit, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_exit, 180, 50);
-    lv_obj_set_pos(btn_exit, 310, 290);
-    lv_obj_add_event_cb(btn_exit, exit_loop_event_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lbl_exit = lv_label_create(btn_exit);
-    lv_label_set_text(lbl_exit, "EXIT LOOP");
-    lv_obj_set_style_text_font(lbl_exit, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_exit, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_exit, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_t *loop_strip = lv_obj_create(s_screens[3]);
-    lv_obj_remove_style_all(loop_strip);
-    lv_obj_add_style(loop_strip, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(loop_strip, 740, 62);
-    lv_obj_set_pos(loop_strip, 30, 360);
-    lv_obj_clear_flag(loop_strip, LV_OBJ_FLAG_SCROLLABLE);
-    ui_settings_value_label(loop_strip, "LOOP TOOLS", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 12);
-    ui_static_tile(loop_strip, 176, 12, 96, 36, "IN", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(loop_strip, 284, 12, 96, 36, "OUT", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(loop_strip, 392, 12, 118, 36, "RELOOP", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(loop_strip, 522, 12, 124, 36, "ACTIVE SIZE", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-
-    ui_update_loop_screen_state();
-}
-
-// Screen 5: BEAT JUMP Layout
-static void create_screen_beat_jump(lv_obj_t *parent) {
-    s_screens[4] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[4]);
-    lv_obj_add_style(s_screens[4], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[4], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[4], 0, UI_CONTENT_Y);
-    ui_controls_create_performance_target_selector(s_screens[4], 298, 0);
-
-    int jump_vals[4] = {1, 4, 8, 16};
-    const int lane_x = 40;
-    const int lane_w = 720;
-    const int lane_h = 132;
-    const int lane_gap = 24;
-    const int lane_top_y = 34;
-    const int btn_w = 150;
-    const int spacing_x = 24;
-    const int btn_x0 = 36;
-    const int btn_y = 38;
-
-    lv_obj_t *lane_back = lv_obj_create(s_screens[4]);
-    lv_obj_remove_style_all(lane_back);
-    lv_obj_add_style(lane_back, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(lane_back, lane_w, lane_h);
-    lv_obj_set_pos(lane_back, lane_x, lane_top_y);
-    lv_obj_clear_flag(lane_back, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_back = lv_label_create(lane_back);
-    ui_label_set_small_caps(lbl_back, "BACKWARD", COL_AMBER);
-    lv_obj_set_pos(lbl_back, 16, 12);
-
-    for (int i = 0; i < 4; i++) {
-        ui_create_beat_jump_button(lane_back, btn_x0 + i * (btn_w + spacing_x), btn_y,
-                                   -jump_vals[i], false);
-    }
-
-    lv_obj_t *lane_forward = lv_obj_create(s_screens[4]);
-    lv_obj_remove_style_all(lane_forward);
-    lv_obj_add_style(lane_forward, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(lane_forward, lane_w, lane_h);
-    lv_obj_set_pos(lane_forward, lane_x, lane_top_y + lane_h + lane_gap);
-    lv_obj_clear_flag(lane_forward, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_forward = lv_label_create(lane_forward);
-    ui_label_set_small_caps(lbl_forward, "FORWARD", COL_GREEN);
-    lv_obj_set_pos(lbl_forward, 16, 12);
-
-    for (int i = 0; i < 4; i++) {
-        ui_create_beat_jump_button(lane_forward, btn_x0 + i * (btn_w + spacing_x), btn_y,
-                                   jump_vals[i], true);
-    }
-
-    lv_obj_t *jump_strip = lv_obj_create(s_screens[4]);
-    lv_obj_remove_style_all(jump_strip);
-    lv_obj_add_style(jump_strip, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(jump_strip, 720, 62);
-    lv_obj_set_pos(jump_strip, 40, 346);
-    lv_obj_clear_flag(jump_strip, LV_OBJ_FLAG_SCROLLABLE);
-    ui_settings_value_label(jump_strip, "GRID / QUANTIZE", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 12);
-    ui_static_tile(jump_strip, 184, 12, 106, 36, "BEAT GRID", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
-    ui_static_tile(jump_strip, 302, 12, 110, 36, "QUANTIZE", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(jump_strip, 424, 12, 116, 36, "SNAP: ON", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_static_tile(jump_strip, 552, 12, 112, 36, "D1/D2", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-}
-
-// Screen 6: KEY SHIFT / KEYLOCK Layout
-static void create_screen_key_shift(lv_obj_t *parent) {
-    s_screens[5] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[5]);
-    lv_obj_add_style(s_screens[5], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[5], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[5], 0, UI_CONTENT_Y);
-    ui_controls_create_performance_target_selector(s_screens[5], 298, 4);
-
-    const int panel_y = 54;
-    const int panel_h = 282;
-
-    lv_obj_t *tempo_panel = lv_obj_create(s_screens[5]);
-    lv_obj_remove_style_all(tempo_panel);
-    lv_obj_add_style(tempo_panel, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(tempo_panel, 320, panel_h);
-    lv_obj_set_pos(tempo_panel, 50, panel_y);
-    lv_obj_clear_flag(tempo_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_tempo = lv_label_create(tempo_panel);
-    ui_label_set_small_caps(lbl_tempo, "MASTER TEMPO", COL_TEXT_MUTED);
-    lv_obj_set_pos(lbl_tempo, 18, 16);
-
-    lv_obj_t *lbl_keylock = lv_label_create(tempo_panel);
-    lv_label_set_text(lbl_keylock, "KEY LOCK");
-    lv_obj_set_style_text_font(lbl_keylock, &lv_font_montserrat_24, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_keylock, COL_GREEN, LV_PART_MAIN);
-    lv_obj_align(lbl_keylock, LV_ALIGN_TOP_LEFT, 18, 64);
-
-    lv_obj_t *sw_keylock = lv_switch_create(tempo_panel);
-    lv_obj_set_pos(sw_keylock, 18, 130);
-    lv_obj_add_event_cb(sw_keylock, keylock_toggle_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    lv_obj_t *lbl_preserves = lv_label_create(tempo_panel);
-    lv_label_set_text(lbl_preserves, "PRESERVES KEY");
-    lv_obj_set_style_text_font(lbl_preserves, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_preserves, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_preserves, 18, 174);
-
-    ui_settings_value_label(tempo_panel, "TEMPO RANGE", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 18, 208);
-    ui_static_tile(tempo_panel, 18, 234, 58, 30, "6%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(tempo_panel, 84, 234, 58, 30, "10%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(tempo_panel, 150, 234, 58, 30, "16%", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_static_tile(tempo_panel, 216, 234, 76, 30, "WIDE", COL_TEXT, COL_PANEL_DK, COL_BORDER);
-
-    lv_obj_t *transpose_panel = lv_obj_create(s_screens[5]);
-    lv_obj_remove_style_all(transpose_panel);
-    lv_obj_add_style(transpose_panel, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(transpose_panel, 360, panel_h);
-    lv_obj_set_pos(transpose_panel, 410, panel_y);
-    lv_obj_clear_flag(transpose_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_transpose = lv_label_create(transpose_panel);
-    ui_label_set_small_caps(lbl_transpose, "KEY TRANSPOSE", COL_TEXT_MUTED);
-    lv_obj_set_pos(lbl_transpose, 18, 16);
-
-    lv_obj_t *lbl_key_value = lv_label_create(transpose_panel);
-    lv_label_set_text(lbl_key_value, "ORIGINAL KEY");
-    lv_obj_set_style_text_font(lbl_key_value, &lv_font_montserrat_24, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_key_value, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_key_value, LV_ALIGN_TOP_LEFT, 18, 84);
-
-    lv_obj_t *lbl_no_transpose = lv_label_create(transpose_panel);
-    lv_label_set_text(lbl_no_transpose, "NO TRANSPOSITION");
-    lv_obj_set_style_text_font(lbl_no_transpose, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_no_transpose, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_no_transpose, 18, 150);
-
-    ui_settings_value_label(transpose_panel, "KEY CONTROL", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 18, 190);
-    ui_static_tile(transpose_panel, 18, 218, 88, 42, "- KEY", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_static_tile(transpose_panel, 118, 218, 104, 42, "RESET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_static_tile(transpose_panel, 234, 218, 88, 42, "+ KEY", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-
-    lv_obj_t *pitch_strip = lv_obj_create(s_screens[5]);
-    lv_obj_remove_style_all(pitch_strip);
-    lv_obj_add_style(pitch_strip, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(pitch_strip, 720, 66);
-    lv_obj_set_pos(pitch_strip, 50, 352);
-    lv_obj_clear_flag(pitch_strip, LV_OBJ_FLAG_SCROLLABLE);
-
-    ui_settings_value_label(pitch_strip, "PITCH / SYNC PLACEHOLDERS", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 18, 14);
-    ui_static_tile(pitch_strip, 250, 14, 88, 38, "- PITCH", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_static_tile(pitch_strip, 350, 14, 88, 38, "RESET", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_static_tile(pitch_strip, 450, 14, 88, 38, "+ PITCH", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_static_tile(pitch_strip, 560, 14, 92, 38, "SYNC", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
-}
-
 // Screen 7: SETTINGS Layout
 static void create_screen_settings(lv_obj_t *parent) {
     s_screens[6] = lv_obj_create(parent);
@@ -1464,103 +933,6 @@ static void ui_update_overview_cue_markers(uint8_t deck)
     ui_overview_update_cue_markers(deck, ui_deck_anlz(deck), ui_deck_duration_ms(deck));
 }
 
-/* Update Hot Cue pads with real Rekordbox cue metadata */
-static void ui_update_hot_cues(void)
-{
-    uint8_t deck = ui_controls_active_deck(&s_controls);
-    const anlz_metadata_t *meta = ui_performance_anlz();
-    bool has_anlz = (meta != NULL);
-
-    for (int i = 0; i < 8; i++) {
-        bool found = false;
-        uint32_t pos = 0;
-        uint32_t end_pos = 0;
-        uint8_t type = 1; // 1 = ANLZ_CUE_SINGLE, 2 = ANLZ_CUE_LOOP
-        
-        if (has_anlz) {
-            for (int j = 0; j < meta->cue_count; j++) {
-                if (meta->cues[j].index == i) {
-                    pos = meta->cues[j].start_ms;
-                    end_pos = meta->cues[j].end_ms;
-                    type = (uint8_t)meta->cues[j].type;
-                    found = true;
-                    break;
-                }
-            }
-        }
-        
-        if (found) {
-            ui_controls_set_hot_cue(&s_controls, (uint8_t)i, pos, end_pos, type, false);
-            
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
-            if (lbl_time) {
-                char time_buf[16];
-                ui_format_time_cc(time_buf, sizeof(time_buf), pos);
-                lv_label_set_text(lbl_time, time_buf);
-            }
-            
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
-            
-            bool is_loop = (type == 2);
-            if (is_loop) {
-                if (lbl_pad) {
-                    lv_label_set_text_fmt(lbl_pad, "LOOP %c", 'A' + i);
-                }
-            } else {
-                if (lbl_pad) {
-                    lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
-                }
-            }
-            ui_style_hot_cue_pad(i, is_loop, false);
-            
-        } else if (has_anlz) {
-            ui_controls_set_hot_cue(&s_controls,
-                                    (uint8_t)i,
-                                    0,
-                                    0,
-                                    UI_CONTROLS_HOT_CUE_SINGLE,
-                                    true);
-            
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
-            if (lbl_time) {
-                lv_label_set_text(lbl_time, "EMPTY");
-            }
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
-            if (lbl_pad) {
-                lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
-            }
-            ui_style_hot_cue_pad(i, false, true);
-            
-        } else {
-            /* Simulator / Fallback default values */
-            uint32_t default_pos = i * 15000;
-            if (i >= 5) default_pos = (i - 1) * 30000;
-            
-            ui_controls_set_hot_cue(&s_controls,
-                                    (uint8_t)i,
-                                    default_pos,
-                                    0,
-                                    UI_CONTROLS_HOT_CUE_SINGLE,
-                                    false);
-            
-            lv_obj_t *lbl_time = lv_obj_get_child(s_hot_cue_buttons[i], 1);
-            if (lbl_time) {
-                char time_buf[16];
-                ui_format_time_cc(time_buf, sizeof(time_buf), default_pos);
-                lv_label_set_text(lbl_time, time_buf);
-            }
-            lv_obj_t *lbl_pad = lv_obj_get_child(s_hot_cue_buttons[i], 0);
-            if (lbl_pad) {
-                lv_label_set_text_fmt(lbl_pad, "CUE %c", 'A' + i);
-            }
-            ui_style_hot_cue_pad(i, false, false);
-            
-        }
-    }
-
-    ui_update_overview_cue_markers(deck);
-}
-
 // ─── Global Interface Functions ──────────────────────────────────────────────
 
 static void ui_timer_cb(lv_timer_t *timer) {
@@ -1626,6 +998,32 @@ esp_err_t ui_init(void) {
     };
     ui_overview_init(&overview_config);
 
+    ui_performance_tabs_config_t performance_tabs_config = {
+        .controls = &s_controls,
+        .styles = {
+            .screen_bg = &s_style_screen_bg,
+            .panel_frame = &s_style_panel_frame,
+            .btn_secondary = &s_style_btn_secondary,
+            .pressed = &s_style_pressed,
+        },
+        .actions = {
+            .active_bpm = ui_performance_bpm,
+            .active_anlz = ui_performance_anlz,
+            .active_state = ui_performance_deck_state,
+            .deck_position_ms = ui_performance_deck_position_ms,
+            .seek = ui_performance_seek,
+            .play = ui_performance_play,
+            .set_loop = ui_performance_set_loop,
+            .clear_loop = ui_performance_clear_loop,
+            .toggle_master_tempo = ui_performance_toggle_master_tempo,
+            .update_overview_cue_markers = ui_update_overview_cue_markers,
+        },
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+    };
+    ui_performance_tabs_init(&performance_tabs_config);
+
     ui_library_config_t library_config = {
         .styles = {
             .screen_bg = &s_style_screen_bg,
@@ -1646,8 +1044,8 @@ esp_err_t ui_init(void) {
             .load_waveform_data = ui_load_waveform_data,
             .set_loop_shadow = ui_set_loop_shadow,
             .is_performance_target_active = ui_library_is_performance_target_active,
-            .update_hot_cues = ui_update_hot_cues,
-            .update_loop_screen_state = ui_update_loop_screen_state,
+            .update_hot_cues = ui_performance_tabs_update_hot_cues,
+            .update_loop_screen_state = ui_performance_tabs_update_loop_screen_state,
         },
         .hor_res = UI_HOR_RES,
         .content_y = UI_CONTENT_Y,
@@ -1681,10 +1079,10 @@ esp_err_t ui_init(void) {
     s_screens[0] = ui_overview_create(s_root_container);
     ui_controls_update_performance_target_visuals(&s_controls);
     s_screens[1] = ui_library_create(s_root_container);
-    create_screen_hot_cues(s_root_container);
-    create_screen_beat_loop(s_root_container);
-    create_screen_beat_jump(s_root_container);
-    create_screen_key_shift(s_root_container);
+    s_screens[2] = ui_performance_tabs_create_hot_cues(s_root_container);
+    s_screens[3] = ui_performance_tabs_create_beat_loop(s_root_container);
+    s_screens[4] = ui_performance_tabs_create_beat_jump(s_root_container);
+    s_screens[5] = ui_performance_tabs_create_key_shift(s_root_container);
     create_screen_settings(s_root_container);
 
     // Switch initially to overview (index 0) and hide others
