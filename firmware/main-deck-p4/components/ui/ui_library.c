@@ -1,4 +1,5 @@
 #include "ui_library.h"
+#include "ui_diagnostics.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -348,8 +349,10 @@ static void ui_track_load_worker(void *arg)
     if (s_track_load_result_q) {
         xQueueOverwrite(s_track_load_result_q, result);
     }
-    ESP_LOGI(TAG, "ui_load stack high water=%u words",
-             (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    if (ui_diagnostics_enabled()) {
+        ESP_LOGI(TAG, "ui_load stack high water=%u words",
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    }
     vTaskDelete(NULL);
 }
 
@@ -912,9 +915,11 @@ void ui_refresh_library(void)
     int n = ui_library_media_count();
 
 #ifndef WIN32
-    ESP_LOGI(TAG, "ui_refresh_library start. Free SRAM: %d B, SPIRAM: %d B",
-             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    if (ui_diagnostics_enabled()) {
+        ESP_LOGI(TAG, "ui_refresh_library start. Free SRAM: %d B, SPIRAM: %d B",
+                 (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    }
 #endif
 
     ui_lvgl_lock();
@@ -943,9 +948,11 @@ void ui_refresh_library(void)
     ui_lvgl_unlock();
 
 #ifndef WIN32
-    ESP_LOGI(TAG, "ui_refresh_library end. Free SRAM: %d B, SPIRAM: %d B",
-             (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    if (ui_diagnostics_enabled()) {
+        ESP_LOGI(TAG, "ui_refresh_library end. Free SRAM: %d B, SPIRAM: %d B",
+                 (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (int)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    }
 #endif
 
     ESP_LOGI(TAG, "library table refreshed: %d tracks", n);
