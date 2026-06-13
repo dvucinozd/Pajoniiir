@@ -223,15 +223,23 @@ Checkpoint:
 - `idf.py build`.
 - Flash/monitor when async load path changes.
 
-### Phase 6: Introduce `ui_frame_context_t`
+### Phase 6: Introduce `ui_frame_context_t` - Complete
 
 Make `ui_update()` gather state once and pass a context into modules. This phase should remove repeated snapshot reads and make update ordering explicit.
 
+Closed on 2026-06-12:
+
+- `ui_frame_context_t` now carries deck snapshots, active target, timing, beat, mixer, loading, tab, and slow-update state.
+- `ui_update()` now builds one context and calls `ui_library_update`, `ui_status_update`, `ui_overview_update`, and `ui_settings_update` in explicit order.
+- Status/header/time/BPM/pitch/legacy LED updates moved from `ui.c` into `ui_status`.
+- Settings system status polling moved from `ui.c` into `ui_settings`.
+- `ui.c` no longer owns the removed status/settings cache globals.
+
 Checkpoint:
 
-- Host tests for pure helpers.
-- `idf.py build`.
-- Flash/monitor for overview and library flows.
+- Host tests for pure helpers passed.
+- `idf.py build` passed for `firmware/main-deck-p4`.
+- Flash/monitor remains part of the Phase 7 stabilization checkpoint.
 
 ### Phase 7: Stabilization Pass
 

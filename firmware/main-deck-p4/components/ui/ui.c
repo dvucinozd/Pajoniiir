@@ -14,6 +14,8 @@
 #include "ui_overview.h"
 #include "ui_lvgl_backend.h"
 #include "ui_overview_perf.h"
+#include "ui_settings.h"
+#include "ui_status.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,7 +75,6 @@ static lv_obj_t *s_label_time_remain = NULL;   // remaining until end of track
 static lv_obj_t *s_label_bpm = NULL;
 static lv_obj_t *s_label_pitch = NULL;
 static lv_obj_t *s_label_status_indicator = NULL;
-static uint32_t  s_status_override_until_ms = 0;
 
 // Sub-screen elements
 static ui_deck_track_info_t s_deck_track_info[DECK_CORE_DECK_COUNT];
@@ -102,58 +103,8 @@ static const char *s_tab_names[7] = {
 // Settings Screen Widgets
 static lv_obj_t *s_slider_backlight = NULL;
 static lv_obj_t *s_label_brightness_val = NULL;
-static lv_obj_t *s_label_uart_status = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
-static lv_obj_t *s_label_link_status = NULL;
 static lv_obj_t *s_label_link_mode = NULL;
-static lv_obj_t *s_label_sd_status = NULL;
-static lv_obj_t *s_label_sd_cache_status = NULL;
-
-typedef struct {
-    bool valid;
-    char text[80];
-} ui_text_cache_t;
-
-typedef struct {
-    bool valid;
-    uint32_t color;
-} ui_color_cache_t;
-
-static ui_text_cache_t s_cache_status_text;
-static ui_text_cache_t s_cache_header_title;
-static ui_text_cache_t s_cache_header_artist;
-static ui_color_cache_t s_cache_status_color;
-static ui_color_cache_t s_cache_uart_color;
-static ui_color_cache_t s_cache_sd_color;
-static int s_cache_pitch_centipct = INT_MIN;
-static int s_cache_bpm_centi = INT_MIN;
-static uint32_t s_cache_elapsed_centis = UINT32_MAX;
-static uint32_t s_cache_remain_centis = UINT32_MAX;
-static bool s_cache_time_loading = false;
-static ui_color_cache_t s_cache_remain_color;
-static int s_cache_uart_state = -1;
-static uint32_t s_cache_uart_age_bucket = UINT32_MAX;
-static int s_cache_sd_state = -1;
-static uint32_t s_cache_sd_free_mib = UINT32_MAX;
-static uint32_t s_cache_sd_total_mib = UINT32_MAX;
-static uint32_t s_cache_sd_last_poll_ms = 0;
-static ui_text_cache_t s_cache_sd_text;
-static ui_text_cache_t s_cache_sd_cache_text;
-static uint32_t s_cache_sd_cache_last_poll_ms = 0;
-static uint32_t s_cache_sd_cache_mib = UINT32_MAX;
-static uint32_t s_cache_sd_cache_tracks = UINT32_MAX;
-static uint32_t s_cache_sd_cache_files = UINT32_MAX;
-
-static void ui_invalidate_header_cache(void)
-{
-    s_cache_header_title.valid = false;
-    s_cache_header_artist.valid = false;
-    s_cache_pitch_centipct = INT_MIN;
-    s_cache_bpm_centi = INT_MIN;
-    s_cache_elapsed_centis = UINT32_MAX;
-    s_cache_remain_centis = UINT32_MAX;
-    s_cache_time_loading = false;
-}
 
 // ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
 static lv_style_t s_style_root;
@@ -171,10 +122,6 @@ static lv_style_t s_style_btn_disabled;
 static lv_style_t s_style_btn_neon;
 static lv_style_t s_style_pressed;   // color-agnostic touch feedback (dim on press)
 
-#ifndef WIN32
-static void ui_update_sd_status_label(bool force);
-static void ui_update_sd_cache_status_label(bool force);
-#endif
 static void ui_update_hot_cues(void);
 static void ui_refresh_loop_screen_from_target(void);
 static void ui_set_performance_deck(uint8_t deck);
@@ -186,64 +133,8 @@ static void ui_load_waveform_data(uint8_t deck,
                                   const anlz_metadata_t *meta);
 static void ui_cache_invalidate(void)
 {
-    s_cache_status_text.valid = false;
-    s_cache_status_color.valid = false;
-    s_cache_uart_color.valid = false;
-    s_cache_sd_color.valid = false;
-    s_cache_pitch_centipct = INT_MIN;
-    s_cache_bpm_centi = INT_MIN;
-    s_cache_elapsed_centis = UINT32_MAX;
-    s_cache_remain_centis = UINT32_MAX;
-    s_cache_time_loading = false;
-    s_cache_remain_color.valid = false;
-    s_cache_uart_state = -1;
-    s_cache_uart_age_bucket = UINT32_MAX;
-    s_cache_sd_state = -1;
-    s_cache_sd_free_mib = UINT32_MAX;
-    s_cache_sd_total_mib = UINT32_MAX;
-    s_cache_sd_last_poll_ms = 0;
-    s_cache_sd_text.valid = false;
-    s_cache_sd_cache_text.valid = false;
-    s_cache_sd_cache_last_poll_ms = 0;
-    s_cache_sd_cache_mib = UINT32_MAX;
-    s_cache_sd_cache_tracks = UINT32_MAX;
-    s_cache_sd_cache_files = UINT32_MAX;
-}
-
-static void ui_label_set_text_cached(lv_obj_t *label, ui_text_cache_t *cache, const char *text)
-{
-    if (!label || !cache) return;
-    const char *safe_text = text ? text : "";
-    if (cache->valid && strncmp(cache->text, safe_text, sizeof(cache->text)) == 0) {
-        return;
-    }
-    lv_label_set_text(label, safe_text);
-    snprintf(cache->text, sizeof(cache->text), "%s", safe_text);
-    cache->valid = true;
-}
-
-static void ui_obj_set_text_color_cached(lv_obj_t *obj, ui_color_cache_t *cache, lv_color_t color)
-{
-    if (!obj || !cache) return;
-    uint32_t color_u32 = lv_color_to_u32(color);
-    if (cache->valid && cache->color == color_u32) {
-        return;
-    }
-    lv_obj_set_style_text_color(obj, color, LV_PART_MAIN);
-    cache->color = color_u32;
-    cache->valid = true;
-}
-
-// LVGL's builtin vsnprintf has NO %f support unless LV_USE_FLOAT is enabled
-// (lv_sprintf_builtin.c: PRINTF_SUPPORT_FLOAT gates on it). Enabling LV_USE_FLOAT
-// would also switch lv_value_precise_t to float across all transform/anim math,
-// which we don't want. So render fixed 2-decimal floats here via integer math —
-// works on firmware and the PC simulator regardless of the sprintf config.
-static void ui_label_set_f2(lv_obj_t *lbl, float v) {
-    if (!lbl) return;
-    int c = (int)(v * 100.0f + (v >= 0.0f ? 0.5f : -0.5f));
-    if (c < 0) lv_label_set_text_fmt(lbl, "-%d.%02d", (-c) / 100, (-c) % 100);
-    else       lv_label_set_text_fmt(lbl, "%d.%02d", c / 100, c % 100);
+    ui_status_invalidate();
+    ui_settings_invalidate();
 }
 
 static void ui_format_time_cc(char *out, size_t out_sz, uint32_t ms)
@@ -264,64 +155,6 @@ static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
-}
-
-static void ui_status_indicator_set(const char *text, lv_color_t color)
-{
-    if (!s_label_status_indicator) {
-        return;
-    }
-    ui_label_set_text_cached(s_label_status_indicator, &s_cache_status_text, text ? text : "LOAD ERR");
-    ui_obj_set_text_color_cached(s_label_status_indicator, &s_cache_status_color, color);
-}
-
-static void ui_status_indicator_hold(const char *text, lv_color_t color, uint32_t hold_ms)
-{
-    s_status_override_until_ms = lv_tick_get() + hold_ms;
-    ui_status_indicator_set(text, color);
-}
-
-static bool ui_status_indicator_has_override(void)
-{
-    return (int32_t)(s_status_override_until_ms - lv_tick_get()) > 0;
-}
-
-static lv_color_t ui_status_color_for_text(const char *status)
-{
-    if (!status || status[0] == '\0') {
-        return COL_RED;
-    }
-    if (strcmp(status, "HOST BUSY") == 0) {
-        return COL_AMBER;
-    }
-    if (strcmp(status, "JOIN OFFLINE") == 0 ||
-        strcmp(status, "JOIN FAILED") == 0 ||
-        strcmp(status, "MANIFEST ERR") == 0 ||
-        strcmp(status, "DAT ERR") == 0 ||
-        strcmp(status, "AUDIO ERR") == 0 ||
-        strcmp(status, "TASK CREATE ERR") == 0 ||
-        strcmp(status, "STOP ERR") == 0 ||
-        strcmp(status, "NO MEM") == 0 ||
-        strcmp(status, "NO AUDIO FRAME") == 0 ||
-        strcmp(status, "CODEC OPEN ERR") == 0 ||
-        strcmp(status, "NOT FOUND") == 0 ||
-        strcmp(status, "LOAD ERR") == 0) {
-        return COL_RED;
-    }
-    if (strcmp(status, "JOINED") == 0 ||
-        strcmp(status, "CACHE READY") == 0 ||
-        strcmp(status, "TRACK LOADED") == 0) {
-        return COL_GREEN;
-    }
-    if (strcmp(status, "LOADING") == 0 ||
-        strcmp(status, "CACHE START") == 0 ||
-        strcmp(status, "MANIFEST") == 0 ||
-        strcmp(status, "ANLZ0000.DAT") == 0 ||
-        strcmp(status, "ANLZ0000.EXT") == 0 ||
-        strcmp(status, "audio.mp3") == 0) {
-        return COL_ACCENT;
-    }
-    return COL_TEXT_DIM;
 }
 
 static void ui_style_hot_cue_pad(int index, bool is_loop, bool is_empty)
@@ -562,22 +395,6 @@ static deck_state_t ui_performance_deck_state(void)
                                : deck_core_get_deck_state(deck);
 }
 
-static void ui_update_active_header_track(uint8_t deck)
-{
-    uint8_t idx = ui_deck_index(deck);
-    const ui_deck_track_info_t *info = &s_deck_track_info[idx];
-
-    char title[128];
-    snprintf(title, sizeof(title), "D%u  %s",
-             (unsigned)idx + 1u,
-             (info->valid && info->title[0]) ? info->title : "No Track");
-    ui_label_set_text_cached(s_label_title, &s_cache_header_title, title);
-
-    ui_label_set_text_cached(s_label_artist,
-                             &s_cache_header_artist,
-                             (info->valid && info->artist[0]) ? info->artist : "");
-}
-
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
                                uint32_t start_ms,
@@ -603,7 +420,7 @@ static void ui_set_performance_deck(uint8_t deck)
     ui_controls_set_active_deck(&s_controls, ui_deck_index(deck));
     uint8_t after = ui_controls_active_deck(&s_controls);
     if (before != after) {
-        ui_invalidate_header_cache();
+        ui_status_invalidate_header();
     }
 
     ui_controls_update_performance_target_visuals(&s_controls);
@@ -611,9 +428,9 @@ static void ui_set_performance_deck(uint8_t deck)
     ui_update_hot_cues();
 
     if (before != after) {
-        ui_status_indicator_hold(after == CTRL_DECK_1 ? "TARGET D1" : "TARGET D2",
-                                 after == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
-                                 1200);
+        ui_status_hold(after == CTRL_DECK_1 ? "TARGET D1" : "TARGET D2",
+                       after == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                       1200);
     }
 }
 
@@ -623,168 +440,6 @@ static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *m
     if (!meta || !ui_deck_anlz_store_set(&s_deck_anlz_store, idx, meta)) {
         ui_deck_anlz_store_clear(&s_deck_anlz_store, idx);
         ESP_LOGW(TAG, "Deck %u ANLZ metadata unavailable", (unsigned)idx + 1u);
-    }
-}
-
-#ifndef WIN32
-static void ui_update_uart_status_label(const deck_state_t *state)
-{
-    if (!s_label_uart_status || !state) {
-        return;
-    }
-
-    int display_state;
-    uint32_t age_bucket;
-    if (state->control_link_connected) {
-        display_state = 1;
-        if (state->last_heartbeat_age_ms < 1000u) {
-            age_bucket = state->last_heartbeat_age_ms / 100u;
-            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-                lv_label_set_text_fmt(s_label_uart_status,
-                                      "Control Link (S3): Connected (age %lu ms)",
-                                      (unsigned long)(age_bucket * 100u));
-                s_cache_uart_state = display_state;
-                s_cache_uart_age_bucket = age_bucket;
-            }
-        } else {
-            age_bucket = state->last_heartbeat_age_ms / 1000u;
-            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-                lv_label_set_text_fmt(s_label_uart_status,
-                                      "Control Link (S3): Connected (age %lu s)",
-                                      (unsigned long)age_bucket);
-                s_cache_uart_state = display_state;
-                s_cache_uart_age_bucket = age_bucket;
-            }
-        }
-        ui_obj_set_text_color_cached(s_label_uart_status, &s_cache_uart_color, COL_GREEN);
-        return;
-    }
-
-    if (state->last_heartbeat_age_ms == UINT32_MAX) {
-        display_state = 0;
-        age_bucket = UINT32_MAX;
-        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-            lv_label_set_text(s_label_uart_status, "Control Link (S3): Offline (no heartbeat)");
-            s_cache_uart_state = display_state;
-            s_cache_uart_age_bucket = age_bucket;
-        }
-    } else {
-        display_state = 2;
-        age_bucket = state->last_heartbeat_age_ms / 1000u;
-        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-            lv_label_set_text_fmt(s_label_uart_status,
-                                  "Control Link (S3): Offline (last %lu s ago)",
-                                  (unsigned long)age_bucket);
-            s_cache_uart_state = display_state;
-            s_cache_uart_age_bucket = age_bucket;
-        }
-    }
-    ui_obj_set_text_color_cached(s_label_uart_status, &s_cache_uart_color, COL_RED);
-}
-
-static void ui_format_storage_size(uint64_t bytes, char *out, size_t out_size)
-{
-    const uint64_t gib = 1024ull * 1024ull * 1024ull;
-    const uint64_t mib = 1024ull * 1024ull;
-    uint64_t scale = mib;
-    const char *unit = "MB";
-    if (bytes >= gib) {
-        scale = gib;
-        unit = "GB";
-    }
-
-    uint64_t whole = bytes / scale;
-    uint64_t frac = ((bytes % scale) * 10ull) / scale;
-    snprintf(out, out_size, "%llu.%llu %s",
-             (unsigned long long)whole,
-             (unsigned long long)frac,
-             unit);
-}
-
-static void ui_update_sd_status_label(bool force)
-{
-    if (!s_label_sd_status) {
-        return;
-    }
-
-    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ull);
-    if (!force && s_cache_sd_last_poll_ms != 0 &&
-        (uint32_t)(now_ms - s_cache_sd_last_poll_ms) < 1000u) {
-        return;
-    }
-    s_cache_sd_last_poll_ms = now_ms;
-
-    bsp_sd_status_t status;
-    esp_err_t rc = bsp_sd_get_status(&status);
-    if (rc != ESP_OK || !status.mounted) {
-        if (s_cache_sd_state != 0) {
-            ui_label_set_text_cached(s_label_sd_status, &s_cache_sd_text, "Offline (/sd unavailable)");
-            s_cache_sd_state = 0;
-            s_cache_sd_free_mib = UINT32_MAX;
-            s_cache_sd_total_mib = UINT32_MAX;
-        }
-        ui_obj_set_text_color_cached(s_label_sd_status, &s_cache_sd_color, COL_RED);
-        return;
-    }
-
-    uint32_t free_mib = (uint32_t)(status.free_bytes / (1024ull * 1024ull));
-    uint32_t total_mib = (uint32_t)(status.total_bytes / (1024ull * 1024ull));
-    if (s_cache_sd_state != 1 ||
-        s_cache_sd_free_mib != free_mib ||
-        s_cache_sd_total_mib != total_mib) {
-        char free_buf[16];
-        char total_buf[16];
-        char text[80];
-        ui_format_storage_size(status.free_bytes, free_buf, sizeof(free_buf));
-        ui_format_storage_size(status.total_bytes, total_buf, sizeof(total_buf));
-        snprintf(text, sizeof(text), "Mounted: %s free / %s", free_buf, total_buf);
-        ui_label_set_text_cached(s_label_sd_status, &s_cache_sd_text, text);
-        s_cache_sd_state = 1;
-        s_cache_sd_free_mib = free_mib;
-        s_cache_sd_total_mib = total_mib;
-    }
-    ui_obj_set_text_color_cached(s_label_sd_status, &s_cache_sd_color, COL_GREEN);
-}
-
-static void ui_update_sd_cache_status_label(bool force)
-{
-    if (!s_label_sd_cache_status) {
-        return;
-    }
-
-    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ull);
-    if (!force && s_cache_sd_cache_last_poll_ms != 0 &&
-        (uint32_t)(now_ms - s_cache_sd_cache_last_poll_ms) < 1000u) {
-        return;
-    }
-    s_cache_sd_cache_last_poll_ms = now_ms;
-
-    remote_cache_stats_t stats;
-    esp_err_t rc = remote_cache_get_stats(&stats);
-    if (rc != ESP_OK) {
-        ui_label_set_text_cached(s_label_sd_cache_status, &s_cache_sd_cache_text,
-                                 "Cache unavailable");
-        s_cache_sd_cache_mib = UINT32_MAX;
-        s_cache_sd_cache_tracks = UINT32_MAX;
-        s_cache_sd_cache_files = UINT32_MAX;
-        return;
-    }
-
-    uint32_t mib = (uint32_t)(stats.bytes / (1024ull * 1024ull));
-    if (s_cache_sd_cache_mib != mib ||
-        s_cache_sd_cache_tracks != stats.tracks ||
-        s_cache_sd_cache_files != stats.files) {
-        char size_buf[16];
-        char text[80];
-        ui_format_storage_size(stats.bytes, size_buf, sizeof(size_buf));
-        snprintf(text, sizeof(text), "%s, %lu tracks, %lu files",
-                 size_buf,
-                 (unsigned long)stats.tracks,
-                 (unsigned long)stats.files);
-        ui_label_set_text_cached(s_label_sd_cache_status, &s_cache_sd_cache_text, text);
-        s_cache_sd_cache_mib = mib;
-        s_cache_sd_cache_tracks = stats.tracks;
-        s_cache_sd_cache_files = stats.files;
     }
 }
 
@@ -799,36 +454,6 @@ static const char *ui_link_mode_name(uint8_t mode)
         return "OFF";
     }
 }
-
-static void ui_update_link_status_label(void)
-{
-    if (!s_label_link_status) {
-        return;
-    }
-
-    wifi_link_status_t st = wifi_link_get_status();
-    if (st.mode == WIFI_LINK_MODE_HOST) {
-        lv_label_set_text_fmt(s_label_link_status, "Link: HOST %s (%u client)",
-                              st.ssid[0] ? st.ssid : "CDJ100S",
-                              (unsigned)st.ap_clients);
-        return;
-    }
-
-    if (st.mode == WIFI_LINK_MODE_JOIN) {
-        cdj_link_peer_t peer;
-        if (cdj_link_client_get_peer(&peer)) {
-            lv_label_set_text_fmt(s_label_link_status, "Link: JOINED %s (%lu tracks)",
-                                  peer.name[0] ? peer.name : peer.host,
-                                  (unsigned long)peer.track_count);
-        } else {
-            lv_label_set_text(s_label_link_status, "Link: JOIN SCANNING");
-        }
-        return;
-    }
-
-    lv_label_set_text(s_label_link_status, "Link: OFF");
-}
-#endif
 
 // ─── Event Callbacks ─────────────────────────────────────────────────────────
 
@@ -1100,9 +725,7 @@ static void link_mode_event_cb(lv_event_t *e)
     if (s_label_link_mode) {
         lv_label_set_text_fmt(s_label_link_mode, "%s", ui_link_mode_name(next));
     }
-    if (s_label_link_status) {
-        lv_label_set_text(s_label_link_status, "Link mode saved; reboot applies Wi-Fi role");
-    }
+    ui_settings_note_link_mode_saved(ui_link_mode_name(next));
     ESP_LOGI(TAG, "Link mode saved: %s", ui_link_mode_name(next));
 }
 
@@ -1110,22 +733,21 @@ static void sd_cache_clear_event_cb(lv_event_t *e)
 {
     (void)e;
     if (ui_library_has_remote_loaded_track()) {
-        ui_status_indicator_hold("REMOTE LOADED", COL_AMBER, 2000);
+        ui_status_hold("REMOTE LOADED", COL_AMBER, 2000);
         sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
         return;
     }
 
     esp_err_t rc = remote_cache_clear();
     if (rc == ESP_OK) {
-        ui_status_indicator_hold("CACHE CLEARED", COL_GREEN, 2000);
+        ui_status_hold("CACHE CLEARED", COL_GREEN, 2000);
         sd_diag_log_write("sd_cache", "remote cache cleared");
     } else {
-        ui_status_indicator_hold("CACHE ERR", COL_RED, 2000);
+        ui_status_hold("CACHE ERR", COL_RED, 2000);
         sd_diag_log_write("sd_cache", "remote cache clear failed");
     }
     ui_cache_invalidate();
-    ui_update_sd_status_label(true);
-    ui_update_sd_cache_status_label(true);
+    ui_settings_refresh_storage();
 }
 #endif
 
@@ -1323,6 +945,17 @@ static void create_header(lv_obj_t *parent) {
     lv_obj_set_style_text_font(label_pitch_unit, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(label_pitch_unit, COL_TEXT_DIM, LV_PART_MAIN);
     lv_obj_set_pos(label_pitch_unit, 75, 26);
+
+    ui_status_widgets_t status_widgets = {
+        .title = s_label_title,
+        .artist = s_label_artist,
+        .time_elapsed = s_label_time,
+        .time_remain = s_label_time_remain,
+        .bpm = s_label_bpm,
+        .pitch = s_label_pitch,
+        .status_indicator = s_label_status_indicator,
+    };
+    ui_status_init(&status_widgets);
 }
 
 // Build Pioneered-style top navigation buttons.
@@ -1741,30 +1374,34 @@ static void create_screen_settings(lv_obj_t *parent) {
 
     lv_obj_t *status_section = ui_settings_section(s_screens[6], 410, 20, 360, 312, "SYSTEM STATUS");
 
-    s_label_uart_status = ui_settings_value_label(status_section,
-                                                  "Control Link (S3): Offline (no heartbeat)",
-                                                  COL_RED, &lv_font_montserrat_12, 16, 46);
-    lv_obj_set_width(s_label_uart_status, 320);
-    lv_label_set_long_mode(s_label_uart_status, LV_LABEL_LONG_CLIP);
+    lv_obj_t *label_uart_status =
+        ui_settings_value_label(status_section,
+                                "Control Link (S3): Offline (no heartbeat)",
+                                COL_RED, &lv_font_montserrat_12, 16, 46);
+    lv_obj_set_width(label_uart_status, 320);
+    lv_label_set_long_mode(label_uart_status, LV_LABEL_LONG_CLIP);
 
-    s_label_link_status = ui_settings_value_label(status_section, "Link: OFF",
-                                                  COL_ACCENT, &lv_font_montserrat_12, 16, 74);
-    lv_obj_set_width(s_label_link_status, 320);
-    lv_label_set_long_mode(s_label_link_status, LV_LABEL_LONG_CLIP);
+    lv_obj_t *label_link_status =
+        ui_settings_value_label(status_section, "Link: OFF",
+                                COL_ACCENT, &lv_font_montserrat_12, 16, 74);
+    lv_obj_set_width(label_link_status, 320);
+    lv_label_set_long_mode(label_link_status, LV_LABEL_LONG_CLIP);
 
     ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
                             &lv_font_montserrat_12, 16, 116);
-    s_label_sd_status = ui_settings_value_label(status_section, "Checking /sd...",
-                                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
-    lv_obj_set_width(s_label_sd_status, 320);
-    lv_label_set_long_mode(s_label_sd_status, LV_LABEL_LONG_CLIP);
+    lv_obj_t *label_sd_status =
+        ui_settings_value_label(status_section, "Checking /sd...",
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
+    lv_obj_set_width(label_sd_status, 320);
+    lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
 
     ui_settings_value_label(status_section, "Remote Cache", COL_TEXT_MUTED,
                             &lv_font_montserrat_12, 16, 176);
-    s_label_sd_cache_status = ui_settings_value_label(status_section, "Checking cache...",
-                                                      COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
-    lv_obj_set_width(s_label_sd_cache_status, 210);
-    lv_label_set_long_mode(s_label_sd_cache_status, LV_LABEL_LONG_CLIP);
+    lv_obj_t *label_sd_cache_status =
+        ui_settings_value_label(status_section, "Checking cache...",
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
+    lv_obj_set_width(label_sd_cache_status, 210);
+    lv_label_set_long_mode(label_sd_cache_status, LV_LABEL_LONG_CLIP);
 
     lv_obj_t *btn_clear_cache = lv_button_create(status_section);
     lv_obj_remove_style_all(btn_clear_cache);
@@ -1795,11 +1432,14 @@ static void create_screen_settings(lv_obj_t *parent) {
     ui_static_tile(mixer_section, 488, 30, 88, 28, "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
     ui_static_tile(mixer_section, 588, 30, 124, 28, "CUE PATH TODO", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
 
-#ifndef WIN32
-    ui_update_link_status_label();
-    ui_update_sd_status_label(true);
-    ui_update_sd_cache_status_label(true);
-#endif
+    ui_settings_widgets_t settings_widgets = {
+        .uart_status = label_uart_status,
+        .link_status = label_link_status,
+        .sd_status = label_sd_status,
+        .sd_cache_status = label_sd_cache_status,
+    };
+    ui_settings_init(&settings_widgets);
+    ui_settings_refresh_storage();
 }
 
 // Overview waveform bridge. Library/track-load code still owns cache invalidation
@@ -1812,19 +1452,6 @@ static void ui_load_waveform_data(uint8_t deck,
 {
     ui_cache_invalidate();
     ui_overview_load_waveform_data(deck, duration_ms, waveform_low, has_waveform, meta);
-}
-
-static void ui_library_set_header_track(const char *title, const char *artist, uint16_t bpm)
-{
-    if (s_label_title) {
-        lv_label_set_text(s_label_title, title && title[0] ? title : "Unknown Title");
-    }
-    if (s_label_artist) {
-        lv_label_set_text(s_label_artist, artist && artist[0] ? artist : "Unknown Artist");
-    }
-    if (s_label_bpm) {
-        ui_label_set_f2(s_label_bpm, (float)bpm);
-    }
 }
 
 static bool ui_library_is_performance_target_active(uint8_t deck)
@@ -2008,10 +1635,10 @@ esp_err_t ui_init(void) {
             .pressed = &s_style_pressed,
         },
         .actions = {
-            .status_hold = ui_status_indicator_hold,
+            .status_hold = ui_status_hold,
             .status_color_for_text = ui_status_color_for_text,
             .cache_invalidate = ui_cache_invalidate,
-            .set_header_track = ui_library_set_header_track,
+            .set_header_track = ui_status_set_header_track,
             .clear_deck_track_info = ui_deck_track_info_clear,
             .set_deck_track_info = ui_deck_track_info_set,
             .set_deck_anlz = ui_deck_anlz_set_from_current,
@@ -2204,156 +1831,23 @@ void ui_update(void) {
     ui_build_frame_context(&ctx);
     ui_library_update(&ctx);
 
-    deck_state_t state = ctx.deck_state[CTRL_DECK_1];
-    uint8_t active_deck = ctx.active_deck;
-    deck_state_t active_state = ctx.active_state;
-    uint32_t active_duration_ms = ctx.active_duration_ms;
-    uint16_t active_base_bpm = ctx.active_base_bpm;
-    ui_update_active_header_track(active_deck);
-    ui_beat_indicator_state_t beat_state = ctx.active_beat_state;
-    bool beat_state_valid = ctx.active_beat_state_valid;
-    bool ae_loading = ctx.ae_loading;
-    uint8_t ae_load_pct = ctx.ae_load_pct;
-
-    // ─── 1. Simulate Loop constraints inside update loop (for simulator) ───
 #ifdef WIN32
+    deck_state_t state = ctx.deck_state[CTRL_DECK_1];
     ui_controls_loop_state_t active_loop = ui_controls_active_loop(&s_controls);
     if (active_loop.active) {
         if (state.position_ms >= active_loop.end_ms) {
             mock_deck_set_position(active_loop.start_ms);
-            state.position_ms = active_loop.start_ms;
+            ctx.deck_state[CTRL_DECK_1].position_ms = active_loop.start_ms;
+            if (ctx.active_deck == CTRL_DECK_1) {
+                ctx.active_state.position_ms = active_loop.start_ms;
+            }
         }
     }
 #endif
 
-    // ─── 2. Update Play / Pause state label ───
-    if (ae_loading) {
-        s_status_override_until_ms = 0;
-        char loading_status[16];
-        snprintf(loading_status, sizeof(loading_status), "D%u LOAD %u%%",
-                 (unsigned)active_deck + 1u, (unsigned)ae_load_pct);
-        ui_status_indicator_set(loading_status, COL_ACCENT);
-    } else if (!ui_status_indicator_has_override()) {
-        char status_text[16];
-        snprintf(status_text, sizeof(status_text), "D%u %s",
-                 (unsigned)active_deck + 1u,
-                 active_state.playing ? "PLAY" : "PAUSE");
-        if (active_state.playing) {
-            ui_status_indicator_set(status_text, COL_GREEN);
-        } else {
-            ui_status_indicator_set(status_text, COL_AMBER);
-        }
-    }
-
-    // ─── 3. Update BPM and Pitch % labels ───
-    float pitch_pct;
-#ifndef WIN32
-    pitch_pct = audio_engine_raw_pitch_to_percent(active_state.pitch);
-#else
-    pitch_pct = ((8192.0f - (float)active_state.pitch) / 8192.0f) * 10.0f;
-#endif
-    // No %f in LVGL builtin printf — format the signed 2-decimal percent by hand.
-    int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
-    if (pc != s_cache_pitch_centipct) {
-        s_cache_pitch_centipct = pc;
-        lv_label_set_text_fmt(s_label_pitch, "%c%d.%02d%%",
-                              (pc < 0) ? '-' : '+', (pc < 0 ? -pc : pc) / 100, (pc < 0 ? -pc : pc) % 100);
-    }
-
-    float current_bpm = (float)(active_base_bpm ? active_base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
-    int bpm_centi = (int)(current_bpm * 100.0f + (current_bpm >= 0.0f ? 0.5f : -0.5f));
-    if (bpm_centi != s_cache_bpm_centi) {
-        s_cache_bpm_centi = bpm_centi;
-        ui_label_set_f2(s_label_bpm, current_bpm);
-    }
-
-    // ─── 4. Update time counters: elapsed (current position) + remaining ───
-    uint32_t elapsed_ms  = active_state.position_ms;
-    uint32_t remain_ms   = (active_duration_ms > elapsed_ms) ? (active_duration_ms - elapsed_ms) : 0;
-
-    // Remaining-time warning colours: amber inside 30 s, red inside 10 s of the
-    // end (only while a real track is loaded — idle/no-duration stays neutral).
-    lv_color_t remain_col = COL_TEXT_MUTED;
-    if (active_duration_ms > 0) {
-        if (remain_ms <= 10000)      remain_col = lv_color_hex(0xFF1744); // red  <=10s
-        else if (remain_ms <= 30000) remain_col = lv_color_hex(0xFFAB00); // amber <=30s
-    }
-    ui_obj_set_text_color_cached(s_label_time_remain, &s_cache_remain_color, remain_col);
-
-    if (ae_loading) {
-        if (!s_cache_time_loading) {
-            lv_label_set_text(s_label_time, "LOADING");
-            lv_label_set_text(s_label_time_remain, "");
-            s_cache_time_loading = true;
-            s_cache_elapsed_centis = UINT32_MAX;
-            s_cache_remain_centis = UINT32_MAX;
-        }
-    } else {
-        if (s_cache_time_loading) {
-            s_cache_time_loading = false;
-            s_cache_elapsed_centis = UINT32_MAX;
-            s_cache_remain_centis = UINT32_MAX;
-        }
-        uint32_t elapsed_centis = elapsed_ms / 1000u;
-        uint32_t remain_centis = remain_ms / 1000u;
-        if (elapsed_centis != s_cache_elapsed_centis) {
-            s_cache_elapsed_centis = elapsed_centis;
-            lv_label_set_text_fmt(s_label_time, "%02u:%02u.%02u",
-                                (unsigned)(elapsed_ms / 60000),
-                                (unsigned)((elapsed_ms % 60000) / 1000),
-                                (unsigned)((elapsed_ms % 1000) / 10));
-        }
-        if (remain_centis != s_cache_remain_centis) {
-            s_cache_remain_centis = remain_centis;
-            lv_label_set_text_fmt(s_label_time_remain, "-%02u:%02u.%02u",
-                                (unsigned)(remain_ms / 60000),
-                                (unsigned)((remain_ms % 60000) / 1000),
-                                (unsigned)((remain_ms % 1000) / 10));
-        }
-    }
-
-    // ─── 4B. Update S3 Beat LED feedback ───
-#ifndef WIN32
-    static uint8_t s_last_led_state[LED_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF};
-    static uint8_t s_last_led_deck = CTRL_DECK_NONE;
-    if (s_last_led_deck != active_deck) {
-        memset(s_last_led_state, 0xFF, sizeof(s_last_led_state));
-        s_last_led_deck = active_deck;
-    }
-
-    ui_active_deck_leds_t leds =
-        ui_active_deck_leds_calculate(active_state.playing,
-                                      active_state.position_ms,
-                                      active_state.cue_point_ms,
-                                      active_duration_ms,
-                                      beat_state_valid,
-                                      beat_state.progress_permille);
-    const uint8_t next_leds[LED_COUNT] = {
-        [LED_CUE] = leds.cue,
-        [LED_PLAY] = leds.play,
-        [LED_BEAT] = leds.beat,
-        [LED_END] = leds.end,
-    };
-    for (int led = 0; led < LED_COUNT; led++) {
-        if (next_leds[led] != s_last_led_state[led]) {
-            s_last_led_state[led] = next_leds[led];
-            control_link_send_led((led_id_t)led, next_leds[led]);
-        }
-    }
-#endif
-
-    // ─── 5. Update Overview deck panels (Only if overview screen is visible) ───
+    ui_status_update(&ctx);
     ui_overview_update(&ctx);
-
-    // ─── 6. Sync UI Status bar with mock settings ───
-    if (s_active_tab == 6) {
-#ifndef WIN32
-        ui_update_uart_status_label(&state);
-        ui_update_link_status_label();
-        ui_update_sd_status_label(false);
-        ui_update_sd_cache_status_label(false);
-#endif
-    }
+    ui_settings_update(&ctx);
 
 #ifndef WIN32
     if (ui_diagnostics_enabled()) {

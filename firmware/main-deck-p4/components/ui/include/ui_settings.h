@@ -1,0 +1,29 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+bool ui_settings_should_poll(uint32_t now_ms,
+                             uint32_t last_poll_ms,
+                             bool force,
+                             uint32_t interval_ms);
+
+#ifndef UI_SETTINGS_HOST_TEST
+
+#include "lvgl.h"
+#include "ui_frame_context.h"
+
+typedef struct {
+    lv_obj_t *uart_status;
+    lv_obj_t *link_status;
+    lv_obj_t *sd_status;
+    lv_obj_t *sd_cache_status;
+} ui_settings_widgets_t;
+
+void ui_settings_init(const ui_settings_widgets_t *widgets);
+void ui_settings_invalidate(void);
+void ui_settings_update(const ui_frame_context_t *ctx);
+void ui_settings_refresh_storage(void);
+void ui_settings_note_link_mode_saved(const char *mode_name);
+
+#endif
