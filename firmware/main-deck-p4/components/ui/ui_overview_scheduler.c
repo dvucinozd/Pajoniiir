@@ -30,6 +30,17 @@ bool ui_overview_scheduler_try_consume_main_redraw(ui_overview_scheduler_t *sche
     return true;
 }
 
+uint8_t ui_overview_scheduler_budget_for_playing_decks(bool deck_a_playing,
+                                                       bool deck_b_playing)
+{
+    return (deck_a_playing && deck_b_playing) ? 2u : 1u;
+}
+
+bool ui_overview_scheduler_direct_overlay_allowed(uint8_t deck)
+{
+    return deck == 0u;
+}
+
 void ui_overview_scheduler_next_deck_order(ui_overview_scheduler_t *scheduler,
                                            uint8_t deck_a,
                                            uint8_t deck_b,

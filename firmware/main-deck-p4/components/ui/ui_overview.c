@@ -811,6 +811,9 @@ static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
     if (idx >= DECK_CORE_DECK_COUNT || !indexed_pixels || stride_px <= 0) {
         return false;
     }
+    if (!ui_overview_scheduler_direct_overlay_allowed(idx)) {
+        return false;
+    }
     if (!ui_overview_wave_overlay_ensure_buffer(idx)) {
         return false;
     }
@@ -1432,7 +1435,11 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     }
 
 #ifndef WIN32
-    ui_overview_scheduler_begin_tick(&s_overview_scheduler, 1);
+    ui_overview_scheduler_begin_tick(
+        &s_overview_scheduler,
+        ui_overview_scheduler_budget_for_playing_decks(
+            ctx->deck_state[CTRL_DECK_1].playing,
+            ctx->deck_state[CTRL_DECK_2].playing));
 #endif
     uint8_t first_deck = CTRL_DECK_1;
     uint8_t second_deck = CTRL_DECK_2;
