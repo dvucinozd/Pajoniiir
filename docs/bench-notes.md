@@ -240,9 +240,9 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
     integer math (`%d.%02d`), never `%f`, in any `lv_label_set_text_fmt`.
   - ✅ Header: BPM/pitch right-aligned to the edge; added a **remaining-time** counter beside the
     elapsed one (`-MM:SS.cc`), yellow ≤30 s / red ≤10 s to track end. Old click-toggle removed.
-- ⚠️ **Overview waveform fluidity bench (2026-06-12):** dual-deck main waveforms now move on
-  hardware, but are still not fluid enough for comfortable mixing. Instrumented COM15 monitor run
-  while both decks were playing showed:
+- ⚠️ **Overview waveform fluidity bench (2026-06-12, historical measurement):** dual-deck main
+  waveforms were moving on hardware, but Deck 2 lower waveform still visibly jittered. Instrumented
+  COM15 monitor run while both decks were playing showed:
   - D1 main renderer: avg ~1.7 ms, max ~5.7 ms; D2 main renderer: avg ~2.2 ms, max ~5.6 ms.
   - D1 overlay total: avg ~7.2-7.9 ms, max up to ~20.2 ms; D2 overlay total: avg ~7.5-8.3 ms,
     max up to ~16.5 ms.
@@ -250,9 +250,12 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
     (~2.4-2.6 ms per deck). `esp_cache_msync` averages below 1 ms but can spike.
   - `ui_update` still averages ~15-17 ms with ~37-41 ms spikes, and LVGL handler/full-frame flush
     can spike near 190-206 ms.
-  - Conclusion: the next optimization should remove I8→RGB565 conversion from the hot path by
-    rendering the live overview waveform directly into an RGB565 source buffer. If dual live zoom
-    surfaces remain too expensive, fall back to a Pioneered/CDJ-style single active zoom waveform
-    plus full-track mini strips.
+  - Conclusion at the time: the next optimization candidate was removing I8→RGB565 conversion
+    from the hot path or narrowing the live zoom surface to one active deck.
+- ✅ **Deck 2 lower Overview waveform jitter fix (2026-06-13):** user-visible jitter on Deck 2 was
+  eliminated by keeping Deck 2 on the normal LVGL invalidate/flush path and allowing direct PPA
+  overlay only for Deck 1. The scheduler still has an adaptive two-deck redraw budget when both
+  decks are playing. Verified with host UI tests, `idf.py build` for `firmware/main-deck-p4`,
+  COM15 flash/smoke capture (`bad_lines=0`), and hardware visual confirmation.
 - **Deferred to S3/chassis phase:** physical CDJ controls → `deck_core` queue; Beat LED feedback
   (PQTZ → S3 LED); wire CDJ front panel to the S3 per `PINOUT.md`; mount display in the CDJ-100S opening.

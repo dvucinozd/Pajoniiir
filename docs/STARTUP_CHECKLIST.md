@@ -5,30 +5,40 @@
 - [x] Start from a fork-style import of `dvucinozd/CDJ100S-XXX`.
 - [x] Preserve upstream README in `docs/reference/CDJ100S-XXX-README.md`.
 - [x] Add `docs/reference/Pioneer-DDJ-FLX4.midi.xml`.
-- [ ] Commit the baseline import and DDJ-FFL4 documentation.
+- [x] Commit the baseline import and DDJ-FFL4 documentation.
 
 ## Local Tooling
 
-- [ ] Confirm ESP-IDF v5.5 is installed.
-- [ ] Confirm `Initialize-Idf.ps1` works in PowerShell.
-- [ ] Confirm `idf.py --version`.
-- [ ] Confirm MinGW `mingw32-make` is available for PC tests.
+- [x] Confirm ESP-IDF v5.5 is installed.
+- [x] Confirm `Initialize-Idf.ps1` works in PowerShell.
+- [x] Confirm `idf.py --version`.
+- [x] Confirm MinGW `mingw32-make` is available for PC tests.
 
 ## Baseline Builds
 
-- [ ] Build `firmware/control-board-s3`.
-- [ ] Build `firmware/main-deck-p4`.
-- [ ] Run inherited PC tests that do not require hardware.
+- [x] Build `firmware/control-board-s3`.
+- [x] Build `firmware/main-deck-p4`.
+- [x] Run inherited PC tests that do not require hardware.
 
 ## Hardware Bring-Up
 
 - [x] Confirm S3 serial port (`COM3` on 2026-06-08).
-- [ ] Confirm P4 serial port.
+- [x] Confirm P4 serial port (`COM15` on 2026-06-13).
 - [x] Flash S3 FLX4 host-mode firmware (`fd663e6`) before FLX4 capture.
-- [ ] Flash inherited P4 firmware once before dual-deck changes.
+- [x] Flash P4 firmware after dual-deck UI stabilization (`5f9b425` on 2026-06-13).
 - [ ] Verify S3/P4 UART heartbeat.
 - [ ] Validate DDJ-FLX4 physical USB host setup on S3 next session.
 - [ ] Capture raw MIDI packets for MVP controls.
+
+## Current Repository State
+
+- `master` includes the P4 dual-deck UI refactor and the 2026-06-13 Deck 2
+  Overview waveform jitter fix.
+- P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
+  887-line orchestrator, with Overview, Library, Controls, Performance tabs,
+  Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
+  split into focused modules.
+- The next hardware-critical task is still S3 DDJ-FLX4 raw MIDI capture.
 
 ## First Firmware Task
 

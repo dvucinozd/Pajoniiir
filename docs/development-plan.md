@@ -1,5 +1,9 @@
 # CDJ100S-XXX Development Plan
 
+> Historical note: this is the pre-DDJ-FLX4/CDJ100S chassis plan retained from
+> the imported project. For the active DDJ-FFL4 roadmap, use
+> [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md).
+
 **Goal:** Standalone single-deck DJ player inside a Pioneer CDJ-100S chassis.  
 ESP32-S3 handles CDJ panel controls + USB MIDI; ESP32-P4 handles UI/audio/media.
 

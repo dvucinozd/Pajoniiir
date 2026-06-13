@@ -70,7 +70,7 @@ Owns expensive overview work budgeting:
 - Round-robin deck ordering for waveform redraws.
 - Decisions about when to render, defer, or skip a heavy update.
 
-The first implementation keeps the current simple rule: at most one main overview waveform redraw per UI update tick. Later work can extend this to a microsecond budget without changing overview screen internals.
+The implementation started with one main overview waveform redraw per UI update tick. After the Deck 2 jitter follow-up, the scheduler uses an adaptive budget: one redraw normally, two redraws when both decks are playing. Deck 2 direct overlay remains disabled because that lower framebuffer path jittered on hardware; Deck 2 uses normal LVGL invalidation/flush.
 
 ### Screen Modules
 
@@ -139,7 +139,7 @@ LVGL backend rules:
 Scheduler rules:
 
 - Heavy overview work must be budgeted.
-- Main waveform redraw is limited to one deck per UI tick in the first refactor phase.
+- Main waveform redraw is budgeted centrally; the current policy allows both decks only when both are playing.
 - Deferred redraw must not block cheap label/playhead/mini updates.
 
 Async load rules:
@@ -175,7 +175,7 @@ Move LVGL/P4 backend code out of `ui.c`:
 Checkpoint:
 
 - `idf.py build`.
-- Flash to COM10.
+- Flash to COM15.
 - 45-second monitor focused on boot, LVGL handler duration, flush timing, and panics/asserts.
 
 ### Phase 3: Extract `ui_overview_scheduler`
@@ -254,6 +254,16 @@ Closed on 2026-06-13:
 - `idf.py build` passed for `firmware/main-deck-p4`.
 - Flash to COM15 passed with app version `5f9b425`.
 - 45-second COM15 monitor captured 26 lines with `bad_lines=0`.
+
+### Post-Phase 7: Deck 2 Overview Waveform Stabilization - Complete
+
+Closed on 2026-06-13:
+
+- Deck 2 lower Overview waveform jitter was traced to the direct overlay path on the lower framebuffer region.
+- `ui_overview_scheduler` now exposes the redraw budget and direct-overlay policy separately.
+- The redraw budget is adaptive: one deck normally, two decks when both decks are playing.
+- Direct PPA overlay remains enabled for Deck 1 and disabled for Deck 2; Deck 2 falls back to LVGL invalidate/flush.
+- Hardware visual confirmation showed Deck 2 no longer jittering.
 
 ## Testing Strategy
 

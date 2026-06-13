@@ -6,11 +6,14 @@ ESP32-P4 firmware for the CDJ100S-XXX main deck board (JC4880P443C_I_W).
 Responsible for: UI (LVGL), deck state machine, audio decode/output, USB media library.  
 Communicates with the ESP32-S3 control board via UART1 (7-byte frame protocol).
 
-**Status:** Display, touch, USB media library, and audio (ES8311 + I2S) are operational on the hardware.
-`deck_core` drives the `audio_engine` (play/pause/cue/jog/pitch/loop/hot-cue/beat-jump) — driven
-via touchscreen (touch); the S3 will populate the same event queue later. P1–P5 are implemented and hardware
-verified. P6 software covers the SDMMC mount and display triple buffering; hardware smoke tests for the SD card/tearing,
-line-out validation, followed by physical S3 + chassis integration are pending.
+**Status:** Display, touch, USB media library, audio (ES8311 + I2S), SDMMC mount,
+display triple buffering, and the dual-deck P4 touchscreen path are operational
+on hardware. `deck_core` drives `audio_engine` through deck-aware APIs for local
+touchscreen control; the S3 will populate the same event queue after FLX4 raw
+MIDI capture is proven. The P4 UI has been refactored into focused modules, and
+the 2026-06-13 Deck 2 lower Overview waveform jitter fix is in `master`.
+Line-out validation, native FLX4 input, native FLX4 LED feedback, and the cue/PFL
+audio output path remain pending.
 
 ---
 
@@ -25,8 +28,8 @@ line-out validation, followed by physical S3 + chassis integration are pending.
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads 308 tracks from `/usb`; `library_get_ptr()` (no stack copy) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → FATFS mount `/usb`; callback reload library + UI refresh |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480; PPA rotation; touch indev; `ui_trigger_library_refresh()` |
-| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + ES8311 audio ✅; SDMMC `/sd` mount implemented, card smoke test pending |
+| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; `ui_trigger_library_refresh()` |
+| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + ES8311 audio; SDMMC `/sd` mount hardware-verified |
 | `audio_engine` | ✅ **RUNNING ON HW** | minimp3 → ES8311/I2S; PSRAM preload (fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); SDL2 on PC |
 
 ---
@@ -200,7 +203,7 @@ mingw32-make test MP3=F:/Contents/...mp3  # real MP3 decode to out.wav
 
 ---
 
-## LVGL UI (`ui.c`) ✅ RUNNING ON HW
+## LVGL UI ✅ RUNNING ON HW
 
 800×480 landscape layout with 7 screens (PPA hw rotation, GT911 touch indev):
 
@@ -216,6 +219,24 @@ mingw32-make test MP3=F:/Contents/...mp3  # real MP3 decode to out.wav
 
 Header (always visible): title, artist (left), status indicator, two time counters
 in the middle, BPM + pitch% (aligned to the right edge).
+
+`ui.c` is now the top-level orchestrator (init, screen registry, tab switching,
+frame-context construction) and is intentionally kept under 1000 lines. Screen
+and backend ownership has moved into focused modules:
+
+- `ui_lvgl_backend`: display/touch/LVGL task/PPA flush plumbing.
+- `ui_overview`: dual-deck Overview screen construction and update flow.
+- `ui_library`: track table, selection, source labels, and D1/D2 load buttons.
+- `ui_controls` and `ui_performance_tabs`: transport/performance controls.
+- `ui_settings`: Settings screen and system/mixer status.
+- `ui_status`: header, status/time/BPM/pitch labels, and legacy active-target LED output.
+- `ui_overview_renderer`, `ui_overview_scheduler`, `ui_waveform_model`, and
+  `ui_position_interpolator`: testable waveform helpers.
+
+Overview waveform note: Deck 1 may use the direct PPA overlay path. Deck 2 uses
+the normal LVGL invalidation/flush path because the direct overlay path caused
+visible lower waveform jitter on hardware; this was fixed and visually verified
+on 2026-06-13.
 
 **Header Time Counters:**
 - Left (larger, blue) = elapsed time (current position).
@@ -235,7 +256,7 @@ colors (waveform, playhead, cue pads, status amber/red, beat-pulse) remain inlin
 
 ---
 
-## Display (ST7701 MIPI-DSI) — `bsp_jc4880.c` + `ui.c` ✅ RUNNING ON HARDWARE
+## Display (ST7701 MIPI-DSI) — `bsp_jc4880.c` + `ui_lvgl_backend.c` ✅ RUNNING ON HARDWARE
 
 Panel: ST7701S, **480×800 native portrait**, MIPI-DSI 2 lane @ 500 Mbps, RGB565.
 UI is 800×480 landscape → rotated 90° in **hardware via PPA** (not LVGL sw-rotation).
@@ -248,7 +269,7 @@ UI is 800×480 landscape → rotated 90° in **hardware via PPA** (not LVGL sw-r
 - `flags.use_mipi_interface = 1` (otherwise the driver falls back to RGB path)
 - Backlight GPIO23 (simple GPIO high = on; vendor uses LEDC PWM), reset GPIO5
 
-**Rotation (PPA):** `ui.c` creates the LVGL display as 800×480 landscape (WITHOUT `lv_display_set_rotation`),
+**Rotation (PPA):** `ui_lvgl_backend.c` creates the LVGL display as 800×480 landscape (WITHOUT `lv_display_set_rotation`),
 the flush callback performs `ppa_do_scale_rotate_mirror()` (angle `PPA_SRM_ROTATION_ANGLE_270`) from the LVGL
 render buffer into the inactive DPI frame buffer (480×800), then requests a swap on the refresh boundary.
 FULL render mode, 2 PSRAM render buffers (cache-aligned) + 3 DPI frame buffers.
@@ -269,7 +290,7 @@ non-PSRAM address fails ("invalid addr"), DSI hangs. (Now we write directly to F
   The same bus will be shared by the ES8311 codec (`bsp_get_i2c_bus()`).
 - Coordinate transform for our 90° rotation: **swap_xy=1, mirror_x=1** (x_max=480, y_max=800 native).
   Taps map accurately (verified). Values from vendor demo ROTATION_90.
-- `ui.c` registers the LVGL pointer indev which polls `esp_lcd_touch_get_coordinates()`.
+- `ui_lvgl_backend.c` registers the LVGL pointer indev which polls `esp_lcd_touch_get_coordinates()`.
 - The I2C pull-up warning in logs is benign (the board has external pull-ups; GT911 reads ID OK).
 
 ---
@@ -328,8 +349,10 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~BSP audio (ES8311 + I2S)~~ — WORKS (MP3 playback, 44.1/48k)
 - ✅ ~~USB host + VFS mount `/usb`~~ — WORKS (308 tracks, library auto-load)
 - ✅ ~~GPIO28/29 UART link~~ — verified end-to-end with S3
-- **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — next step
+- **S3 DDJ-FLX4 raw MIDI capture** — next hardware blocker before real FLX4 controls
+- **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — after raw capture
 - **Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)
-- `bsp_sd_init()` SDMMC (config/cache) — implemented, card smoke test pending
+- ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
-- Tearing optimization of display — triple buffering path implemented; visual smoke test pending
+- ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
+- ✅ ~~Deck 2 lower Overview waveform jitter~~ — fixed by disabling direct overlay for Deck 2

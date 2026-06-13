@@ -1,6 +1,21 @@
-# CDJ100S-XXX Project Documentation
+# DDJ-FFL4 Project Documentation
 
-Architecture decisions, board analysis, hardware bringup notes, and development plan.
+Architecture decisions, board analysis, hardware bring-up notes, and development plans.
+
+The active DDJ-FLX4 port roadmap is [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md).
+The older [`development-plan.md`](development-plan.md) remains as historical
+CDJ100S/P4 standalone context from the imported project.
+
+## Active DDJ-FFL4 Docs
+
+- [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) - product shape and current port status
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) - S3/P4 responsibility split
+- [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) - FLX4 MVP controls and XML-derived mapping notes
+- [`CONTROL_LINK_PROTOCOL.md`](CONTROL_LINK_PROTOCOL.md) - internal UART frame and DDJ control IDs
+- [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) - current two-board wiring notes
+- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active staged DDJ-FLX4 plan
+- [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) - current bootstrap/hardware checklist
+- [`RISK_REGISTER.md`](RISK_REGISTER.md) - remaining technical risks
 
 ## Analysis & Decisions
 
@@ -14,7 +29,8 @@ Architecture decisions, board analysis, hardware bringup notes, and development 
 
 ## Implementation
 
-- [`development-plan.md`](development-plan.md) — staged implementation plan (Phase 0–10) with task checklists
+- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active DDJ-FLX4 staged implementation plan
+- [`development-plan.md`](development-plan.md) - legacy CDJ100S/P4 standalone plan retained for reference
 - [`cdj-link-cache-preload.md`](cdj-link-cache-preload.md) — remote USB library, binary protocol and SD cache/preload design
 
 ## Hardware Bringup

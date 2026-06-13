@@ -2,7 +2,7 @@
 
 ## Phase 0: Baseline Import And Documentation
 
-Status: started.
+Status: complete.
 
 Deliverables:
 
@@ -63,7 +63,8 @@ Exit criteria:
 
 ## Phase 3: P4 Deck-Aware Control Link And Deck Core
 
-Status: started; control-link semantic ID baseline implemented.
+Status: substantially complete for the local P4 path; S3 real input remains
+pending until FLX4 raw MIDI capture is proven.
 
 Goal: split the single-deck state model into two deck instances.
 
@@ -92,6 +93,9 @@ Validation note, 2026-06-08:
   `CTRL_ID_LOAD_DECK1`, and `CTRL_ID_LOAD_DECK2`. Deck 1 load delegates to the
   UI library load flow; Deck 2 now targets the deck-aware UI load flow and is
   limited by the current producer-only Deck 2 audio backend.
+- Later P4 UI/audio work verified Deck 1 and Deck 2 snapshots, active target
+  selection, Deck 2 transport position sync, and deck-local Overview metadata
+  for the local touchscreen path.
 
 Exit criteria:
 
@@ -101,7 +105,8 @@ Exit criteria:
 
 ## Phase 4: Dual Audio Engine And Mixer
 
-Status: started; deck-aware API and per-deck engine state storage implemented.
+Status: master mix path implemented for the P4 local path; cue/PFL audio output
+buffer remains pending.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -168,8 +173,14 @@ Validation note, 2026-06-08:
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
+- Deck 2-first playback was fixed after task-planning follow-up work: whichever
+  deck loads first can now own the shared output task/codec path, and
+  `deck_core` only marks a deck playing after the backend accepts play.
 
 ## Phase 5: LED Feedback
+
+Status: legacy S3 LED path exists for the active P4 performance target; native
+FLX4 MIDI LED feedback is pending S3 raw MIDI capture.
 
 Goal: reflect P4-confirmed state on the FLX4.
 
@@ -187,14 +198,17 @@ Exit criteria:
 
 ## Phase 6: Dual-Deck LVGL UI
 
+Status: complete for the current P4 touchscreen/UI scope.
+
 Goal: adapt the P4 display from single-deck CDJ UI to DDJ-FFL4 dual-deck status.
 
 Tasks:
 
-- show Deck 1 and Deck 2 loaded tracks; started
-- show positions, BPM, pitch, play/cue states; started
-- show mixer/cue status;
-- keep large waveform work secondary until audio engine is stable.
+- show Deck 1 and Deck 2 loaded tracks; done
+- show positions, BPM, pitch, play/cue states; done
+- show mixer/cue status; done
+- keep large waveform work secondary until audio engine is stable; done through
+  scheduled redraws and module-level renderer isolation.
 
 Exit criteria:
 
@@ -232,10 +246,10 @@ Validation note, 2026-06-10:
   reference-like waveform treatment: white playhead, brighter vertical grid
   guides, downbeat markers, fallback grid when beat metadata is missing, and a
   lighter played overlay color.
-- Functional GUI element pass is in progress before final polish: performance
-  tabs now expose their utility/status strips, Key Shift has D1/D2 targeting and
-  visible tempo/key/pitch controls, Settings has a mixer/PFL routing block, and
-  Overview owns per-deck cue marker objects for D1 and D2.
+- Functional GUI element pass is complete for the current scope: performance
+  tabs expose utility/status strips, Key Shift has D1/D2 targeting and visible
+  tempo/key/pitch controls, Settings has a mixer/PFL routing block, and Overview
+  owns per-deck cue marker objects for D1 and D2.
 - First Overview polish pass now follows the Pioneered reference more closely:
   the two deck waveforms live in the upper overview area, Beat FX is a compact
   right-side stack, and the deck metadata is split into two lower deck strips.
@@ -279,15 +293,13 @@ Validation note, 2026-06-10:
 - Overview redraw now keeps the deck-local loaded low-resolution waveform as a
   fallback when no `PWV3` high-resolution data is present, so zoom-window redraw
   can still follow Deck 2 playback on tracks with only low waveform data.
-- Smooth Overview motion pass starts by moving main waveform redraw cadence into
-  a host-tested helper. Playing decks now refresh the zoom window at roughly
-  30 fps, while paused decks keep the coarser 80 ms cadence. If this is still
-  not fluid enough on hardware, the next renderer step is partial scroll/append
-  drawing instead of full canvas redraws.
+- Smooth Overview motion pass moved main waveform redraw cadence into a
+  host-tested helper. Playing decks refresh the zoom window at roughly 30 fps,
+  while paused decks keep the coarser 80 ms cadence.
 - Overview renderer refactor extracted indexed-pixel main/mini waveform drawing
-  from `ui.c` into a host-tested `ui_overview_renderer` module. LVGL layout and
-  callbacks remain in `ui.c`; the next fluidity pass can now focus on renderer
-  internals without touching the rest of the UI screen wiring.
+  from `ui.c` into a host-tested `ui_overview_renderer` module. Later refactor
+  phases moved LVGL screen construction and callbacks into `ui_overview`, so
+  `ui.c` is now an 887-line top-level orchestrator.
 - Overview render timing probe logs aggregated main waveform render cost per
   deck every 60 redraws (`last/avg/max/samples`). Use this data to decide
   whether the next optimization should target full-canvas redraw cost, LVGL
@@ -310,3 +322,14 @@ Validation note, 2026-06-10:
   from the hot path by rendering the overview overlay directly into an RGB565
   source buffer, or narrow the live zoom surface to a single active deck if
   dual live overlays remain too expensive.
+- P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
+  `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
+  `ui_performance_tabs`, `ui_settings`, `ui_status`,
+  `ui_overview_renderer`, `ui_overview_scheduler`, and frame-context helpers.
+  `ui.c` owns init, screen registry, top-level tab switching, and frame context
+  construction.
+- Deck 2 lower Overview waveform jitter was fixed on 2026-06-13. The scheduler
+  now allows a two-deck redraw budget when both decks are playing, but direct
+  PPA overlay is allowed only for Deck 1. Deck 2 uses the normal LVGL
+  invalidate/flush path, which visually removed the lower Deck 2 waveform
+  jitter on hardware.

@@ -81,9 +81,12 @@ cd ..\main-deck-p4
 idf.py build
 ```
 
-Do not treat the inherited firmware as DDJ-FLX4-ready. The current code is the
-single-deck CDJ100S baseline. The porting steps are tracked in
-[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
+substantial DDJ-FFL4 work in place: deck-aware state, dual-deck library load
+paths, dual producer/mixer audio plumbing, and a refactored two-deck LVGL UI.
+The S3 FLX4 USB host/raw MIDI capture remains the next hardware blocker before
+real controller input and FLX4 LED feedback can be finished. The porting steps
+are tracked in [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target
 
@@ -93,7 +96,10 @@ two-deck standalone path:
 1. S3 enumerates the DDJ-FLX4 as a class-compliant USB MIDI device.
 2. S3 translates Play, Cue, Load, Jog, Tempo, channel faders, crossfader, and
    headphone cue into deck-aware `control_link` frames.
-3. P4 maintains two independent deck states.
-4. P4 decodes two tracks and outputs a simple master mix.
+3. P4 maintains two independent deck states. Current P4 firmware already does
+   this for the local UI/control path.
+4. P4 decodes two tracks and outputs a simple master mix. Current P4 firmware
+   has the producer/mixer plumbing in place; cue/PFL audio output remains
+   pending.
 5. P4 sends transport LED feedback back to the S3, and S3 sends the matching
    MIDI LED messages to the FLX4.

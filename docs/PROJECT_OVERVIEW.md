@@ -39,19 +39,27 @@ The imported upstream code already provides:
 - An ESP32-S3 firmware target with UART `control_link`.
 - PC unit tests for parsers, audio engine, control link, and selected UI logic.
 
-## New DDJ-FFL4 Work
+## Current Port Status
 
-The fork must add:
+The fork is no longer only the imported single-deck baseline:
 
-- USB MIDI host input on the S3 for the DDJ-FLX4.
-- A verified FLX4 mapping table based on
-  `docs/reference/Pioneer-DDJ-FLX4.midi.xml` and bench MIDI capture.
-- Deck-aware `control_link` event IDs or values.
-- Dual `deck_core` instances on the P4.
-- Dual audio decode and a mixer/output task.
-- Master and cue/PFL audio routing.
-- FLX4 LED feedback from P4 state.
-- Dual-deck LVGL UI changes after the engine path is stable.
+- S3 raw USB MIDI host logging exists, but physical DDJ-FLX4 enumeration and
+  raw packet capture are still pending.
+- The DDJ control-link namespace is deck-aware, and the P4 parser carries deck
+  and control fields for DDJ events while preserving legacy frames.
+- P4 `deck_core` now stores independent Deck 1/Deck 2 state and routes local
+  UI operations through deck-aware APIs.
+- P4 audio has per-deck engine/ring/resampler/preload/runtime/task context
+  storage, a shared output mixer, channel fader/crossfader gain handling, and
+  Deck 2 producer support. Cue/PFL output is still state-only.
+- P4 LVGL UI is dual-deck: Overview, Library load paths, performance target
+  selection, Settings, status/header, and waveform rendering are split into
+  smaller UI modules.
+- Deck 2 lower Overview waveform jitter was fixed on 2026-06-13 by keeping
+  Deck 2 on the normal LVGL invalidation/flush path while Deck 1 may use the
+  direct overlay path.
+- FLX4 LED MIDI output remains pending until S3 raw capture confirms the actual
+  hardware messages.
 
 ## Non-Goals For The First Milestone
 
