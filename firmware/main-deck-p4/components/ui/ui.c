@@ -24,14 +24,11 @@
 
 #ifndef WIN32
 // ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
-#include "bsp_jc4880.h"
 #include "audio_engine.h"
 #include "app_settings.h"
 #include "control_link.h"
 #include "media_catalog.h"
 #include "cdj_link_client.h"
-#include "remote_cache.h"
-#include "sd_diag_log.h"
 #include "wifi_link.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -96,12 +93,6 @@ static const char *s_tab_names[7] = {
     "OVERVIEW", "LIBRARY", "HOT CUES", "LOOP", "BEAT JUMP", "KEY SHIFT", "SETTINGS"
 };
 
-// Settings Screen Widgets
-static lv_obj_t *s_slider_backlight = NULL;
-static lv_obj_t *s_label_brightness_val = NULL;
-static lv_obj_t *s_label_audio_out = NULL;
-static lv_obj_t *s_label_link_mode = NULL;
-
 // ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
 static lv_style_t s_style_root;
 static lv_style_t s_style_header;
@@ -138,56 +129,6 @@ static void ui_label_set_small_caps(lv_obj_t *label, const char *text, lv_color_
     lv_label_set_text(label, text);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
-}
-
-static lv_obj_t *ui_settings_section(lv_obj_t *parent, int x, int y, int w, int h, const char *title)
-{
-    lv_obj_t *section = lv_obj_create(parent);
-    lv_obj_remove_style_all(section);
-    lv_obj_add_style(section, &s_style_panel_frame, LV_PART_MAIN);
-    lv_obj_set_size(section, w, h);
-    lv_obj_set_pos(section, x, y);
-    lv_obj_clear_flag(section, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *label = lv_label_create(section);
-    ui_label_set_small_caps(label, title, COL_TEXT_MUTED);
-    lv_obj_set_pos(label, 14, 12);
-
-    return section;
-}
-
-static lv_obj_t *ui_settings_value_label(lv_obj_t *parent, const char *text, lv_color_t color,
-                                         const lv_font_t *font, int x, int y)
-{
-    lv_obj_t *label = lv_label_create(parent);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
-    lv_obj_set_pos(label, x, y);
-    return label;
-}
-
-static lv_obj_t *ui_static_tile(lv_obj_t *parent, int x, int y, int w, int h,
-                                const char *text, lv_color_t text_color,
-                                lv_color_t fill_color, lv_color_t border_color)
-{
-    lv_obj_t *tile = lv_obj_create(parent);
-    lv_obj_remove_style_all(tile);
-    lv_obj_set_style_bg_color(tile, fill_color, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_color(tile, border_color, LV_PART_MAIN);
-    lv_obj_set_style_border_width(tile, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(tile, 2, LV_PART_MAIN);
-    lv_obj_set_size(tile, w, h);
-    lv_obj_set_pos(tile, x, y);
-    lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
-
-    lv_obj_t *label = lv_label_create(tile);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
-    return tile;
 }
 
 static uint8_t ui_deck_index(uint8_t deck)
@@ -365,18 +306,6 @@ static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *m
     }
 }
 
-static const char *ui_link_mode_name(uint8_t mode)
-{
-    switch (mode) {
-    case WIFI_LINK_MODE_HOST:
-        return "HOST USB";
-    case WIFI_LINK_MODE_JOIN:
-        return "JOIN PLAYER";
-    default:
-        return "OFF";
-    }
-}
-
 // ─── Event Callbacks ─────────────────────────────────────────────────────────
 
 // Switch screens when a footer button is tapped
@@ -456,68 +385,6 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
     mock_deck_set_position(target_ms);
 #endif
 }
-
-// Screen brightness slider
-static void slider_brightness_event_cb(lv_event_t *e) {
-    lv_obj_t *slider = lv_event_get_target(e);
-    int val = lv_slider_get_value(slider);
-    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", val);
-#ifndef WIN32
-    bsp_display_set_backlight((uint8_t)val);   // live brightness
-    app_settings_set_backlight((uint8_t)val);  // persist
-#endif
-    ESP_LOGI(TAG, "Backlight brightness set to %d%%", val);
-}
-
-// Audio output selector: switch OFF = onboard speaker, ON = RCA line-out
-static void audio_out_event_cb(lv_event_t *e) {
-    lv_obj_t *sw = lv_event_get_target(e);
-    bool rca = lv_obj_has_state(sw, LV_STATE_CHECKED);
-#ifndef WIN32
-    bsp_audio_set_output(rca ? BSP_AUDIO_OUT_RCA : BSP_AUDIO_OUT_SPEAKER);
-    app_settings_set_audio_out(rca ? 1 : 0);
-#endif
-    if (s_label_audio_out) {
-        lv_label_set_text(s_label_audio_out, rca ? "RCA LINE-OUT" : "SPEAKER");
-    }
-    ESP_LOGI(TAG, "Audio output: %s", rca ? "RCA line-out" : "Speaker");
-}
-
-#ifndef WIN32
-static void link_mode_event_cb(lv_event_t *e)
-{
-    (void)e;
-    app_settings_t cfg = app_settings_get();
-    uint8_t next = (uint8_t)((cfg.link_mode + 1u) % 3u);
-    app_settings_set_link_mode(next);
-    if (s_label_link_mode) {
-        lv_label_set_text_fmt(s_label_link_mode, "%s", ui_link_mode_name(next));
-    }
-    ui_settings_note_link_mode_saved(ui_link_mode_name(next));
-    ESP_LOGI(TAG, "Link mode saved: %s", ui_link_mode_name(next));
-}
-
-static void sd_cache_clear_event_cb(lv_event_t *e)
-{
-    (void)e;
-    if (ui_library_has_remote_loaded_track()) {
-        ui_status_hold("REMOTE LOADED", COL_AMBER, 2000);
-        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
-        return;
-    }
-
-    esp_err_t rc = remote_cache_clear();
-    if (rc == ESP_OK) {
-        ui_status_hold("CACHE CLEARED", COL_GREEN, 2000);
-        sd_diag_log_write("sd_cache", "remote cache cleared");
-    } else {
-        ui_status_hold("CACHE ERR", COL_RED, 2000);
-        sd_diag_log_write("sd_cache", "remote cache clear failed");
-    }
-    ui_cache_invalidate();
-    ui_settings_refresh_storage();
-}
-#endif
 
 // ─── Component Initialization Helpers ────────────────────────────────────────
 
@@ -773,144 +640,6 @@ static void create_footer(lv_obj_t *parent) {
     lv_obj_remove_flag(s_footer_active_strips[0], LV_OBJ_FLAG_HIDDEN);
 }
 
-// Screen 7: SETTINGS Layout
-static void create_screen_settings(lv_obj_t *parent) {
-    s_screens[6] = lv_obj_create(parent);
-    lv_obj_remove_style_all(s_screens[6]);
-    lv_obj_add_style(s_screens[6], &s_style_screen_bg, LV_PART_MAIN);
-    lv_obj_set_size(s_screens[6], UI_HOR_RES, UI_CONTENT_H);
-    lv_obj_set_pos(s_screens[6], 0, UI_CONTENT_Y);
-
-    // Saved settings (firmware); the simulator uses defaults.
-#ifndef WIN32
-    app_settings_t cfg = app_settings_get();
-    int  bl_init  = cfg.backlight_pct;
-    bool rca_init = (cfg.audio_out != 0);
-#else
-    int  bl_init  = 80;
-    bool rca_init = false;
-#endif
-
-    const int left_x = 30;
-    const int left_w = 350;
-
-    lv_obj_t *display_section = ui_settings_section(s_screens[6], left_x, 20, left_w, 86, "DISPLAY");
-    s_slider_backlight = lv_slider_create(display_section);
-    lv_obj_set_size(s_slider_backlight, 230, 18);
-    lv_obj_set_pos(s_slider_backlight, 16, 48);
-    lv_slider_set_range(s_slider_backlight, 10, 100);
-    lv_slider_set_value(s_slider_backlight, bl_init, LV_ANIM_OFF);
-    lv_obj_add_event_cb(s_slider_backlight, slider_brightness_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    s_label_brightness_val = ui_settings_value_label(display_section, "", COL_TEXT,
-                                                     &lv_font_montserrat_14, 270, 44);
-    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", bl_init);
-
-    lv_obj_t *audio_section = ui_settings_section(s_screens[6], left_x, 118, left_w, 86, "AUDIO OUTPUT");
-    lv_obj_t *sw_audio = lv_switch_create(audio_section);
-    lv_obj_set_pos(sw_audio, 16, 42);
-    lv_obj_add_event_cb(sw_audio, audio_out_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    s_label_audio_out = ui_settings_value_label(audio_section, rca_init ? "RCA LINE-OUT" : "SPEAKER",
-                                                COL_GREEN, &lv_font_montserrat_16, 104, 44);
-    if (rca_init) {
-        lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
-    }
-
-    lv_obj_t *link_section = ui_settings_section(s_screens[6], left_x, 216, left_w, 116, "CDJ LINK ROLE");
-    lv_obj_t *btn_link = lv_button_create(link_section);
-    lv_obj_remove_style_all(btn_link);
-    lv_obj_add_style(btn_link, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_link, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_link, 210, 42);
-    lv_obj_set_pos(btn_link, 16, 42);
-#ifndef WIN32
-    lv_obj_add_event_cb(btn_link, link_mode_event_cb, LV_EVENT_CLICKED, NULL);
-#endif
-
-    s_label_link_mode = lv_label_create(btn_link);
-#ifndef WIN32
-    lv_label_set_text_fmt(s_label_link_mode, "%s", ui_link_mode_name(cfg.link_mode));
-#else
-    lv_label_set_text(s_label_link_mode, "OFF");
-#endif
-    lv_obj_set_style_text_font(s_label_link_mode, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_link_mode, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(s_label_link_mode, LV_ALIGN_CENTER, 0, 0);
-
-    ui_settings_value_label(link_section, "Saved role applies after reboot", COL_AMBER,
-                            &lv_font_montserrat_12, 16, 90);
-
-    lv_obj_t *status_section = ui_settings_section(s_screens[6], 410, 20, 360, 312, "SYSTEM STATUS");
-
-    lv_obj_t *label_uart_status =
-        ui_settings_value_label(status_section,
-                                "Control Link (S3): Offline (no heartbeat)",
-                                COL_RED, &lv_font_montserrat_12, 16, 46);
-    lv_obj_set_width(label_uart_status, 320);
-    lv_label_set_long_mode(label_uart_status, LV_LABEL_LONG_CLIP);
-
-    lv_obj_t *label_link_status =
-        ui_settings_value_label(status_section, "Link: OFF",
-                                COL_ACCENT, &lv_font_montserrat_12, 16, 74);
-    lv_obj_set_width(label_link_status, 320);
-    lv_label_set_long_mode(label_link_status, LV_LABEL_LONG_CLIP);
-
-    ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 116);
-    lv_obj_t *label_sd_status =
-        ui_settings_value_label(status_section, "Checking /sd...",
-                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
-    lv_obj_set_width(label_sd_status, 320);
-    lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
-
-    ui_settings_value_label(status_section, "Remote Cache", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 176);
-    lv_obj_t *label_sd_cache_status =
-        ui_settings_value_label(status_section, "Checking cache...",
-                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
-    lv_obj_set_width(label_sd_cache_status, 210);
-    lv_label_set_long_mode(label_sd_cache_status, LV_LABEL_LONG_CLIP);
-
-    lv_obj_t *btn_clear_cache = lv_button_create(status_section);
-    lv_obj_remove_style_all(btn_clear_cache);
-    lv_obj_add_style(btn_clear_cache, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_clear_cache, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_clear_cache, 116, 34);
-    lv_obj_set_pos(btn_clear_cache, 226, 190);
-#ifndef WIN32
-    lv_obj_add_event_cb(btn_clear_cache, sd_cache_clear_event_cb, LV_EVENT_CLICKED, NULL);
-#endif
-
-    lv_obj_t *lbl_clear_cache = lv_label_create(btn_clear_cache);
-    lv_label_set_text(lbl_clear_cache, "CLEAR");
-    lv_obj_set_style_text_font(lbl_clear_cache, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_clear_cache, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_clear_cache, LV_ALIGN_CENTER, 0, 0);
-
-    ui_settings_value_label(status_section, "Board: JC4880P443C_I_W (ESP32-P4 N16R8)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 252);
-    ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 276);
-
-    lv_obj_t *mixer_section = ui_settings_section(s_screens[6], 30, 346, 740, 70, "MIXER / PFL ROUTING");
-    ui_static_tile(mixer_section, 18, 30, 108, 28, "CH1 FADER", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
-    ui_static_tile(mixer_section, 138, 30, 108, 28, "CH2 FADER", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_static_tile(mixer_section, 258, 30, 118, 28, "CROSSFADER", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_static_tile(mixer_section, 388, 30, 88, 28, "PFL D1", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_static_tile(mixer_section, 488, 30, 88, 28, "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_static_tile(mixer_section, 588, 30, 124, 28, "CUE PATH TODO", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
-
-    ui_settings_widgets_t settings_widgets = {
-        .uart_status = label_uart_status,
-        .link_status = label_link_status,
-        .sd_status = label_sd_status,
-        .sd_cache_status = label_sd_cache_status,
-    };
-    ui_settings_init(&settings_widgets);
-    ui_settings_refresh_storage();
-}
-
 // Overview waveform bridge. Library/track-load code still owns cache invalidation
 // and metadata selection; the overview module owns all widgets and rendering.
 static void ui_load_waveform_data(uint8_t deck,
@@ -1024,6 +753,17 @@ esp_err_t ui_init(void) {
     };
     ui_performance_tabs_init(&performance_tabs_config);
 
+    ui_settings_config_t settings_config = {
+        .screen_bg = &s_style_screen_bg,
+        .panel_frame = &s_style_panel_frame,
+        .btn_secondary = &s_style_btn_secondary,
+        .pressed = &s_style_pressed,
+        .hor_res = UI_HOR_RES,
+        .content_y = UI_CONTENT_Y,
+        .content_h = UI_CONTENT_H,
+    };
+    ui_settings_configure(&settings_config);
+
     ui_library_config_t library_config = {
         .styles = {
             .screen_bg = &s_style_screen_bg,
@@ -1083,7 +823,7 @@ esp_err_t ui_init(void) {
     s_screens[3] = ui_performance_tabs_create_beat_loop(s_root_container);
     s_screens[4] = ui_performance_tabs_create_beat_jump(s_root_container);
     s_screens[5] = ui_performance_tabs_create_key_shift(s_root_container);
-    create_screen_settings(s_root_container);
+    s_screens[6] = ui_settings_create(s_root_container);
 
     // Switch initially to overview (index 0) and hide others
     for (int i = 1; i < 7; i++) {

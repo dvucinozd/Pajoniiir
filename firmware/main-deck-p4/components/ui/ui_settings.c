@@ -12,17 +12,36 @@ bool ui_settings_should_poll(uint32_t now_ms,
     return force || last_poll_ms == 0 || (uint32_t)(now_ms - last_poll_ms) >= interval_ms;
 }
 
+const char *ui_settings_link_mode_name(uint8_t mode)
+{
+    switch (mode) {
+    case 1:
+        return "HOST USB";
+    case 2:
+        return "JOIN PLAYER";
+    default:
+        return "OFF";
+    }
+}
+
 #ifndef UI_SETTINGS_HOST_TEST
 
+#include "esp_log.h"
+#include "ui_library.h"
+#include "ui_status.h"
 #include "ui_theme.h"
 
 #ifndef WIN32
+#include "app_settings.h"
 #include "bsp_jc4880.h"
 #include "cdj_link_client.h"
 #include "esp_timer.h"
 #include "remote_cache.h"
+#include "sd_diag_log.h"
 #include "wifi_link.h"
 #endif
+
+static const char *TAG = "ui_settings";
 
 typedef struct {
     bool valid;
@@ -34,7 +53,11 @@ typedef struct {
     uint32_t color;
 } ui_settings_color_cache_t;
 
+static ui_settings_config_t s_config;
 static ui_settings_widgets_t s_widgets;
+static lv_obj_t *s_label_brightness_val = NULL;
+static lv_obj_t *s_label_audio_out = NULL;
+static lv_obj_t *s_label_link_mode = NULL;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -80,6 +103,312 @@ static void ui_settings_obj_set_text_color_cached(lv_obj_t *obj,
     lv_obj_set_style_text_color(obj, color, LV_PART_MAIN);
     cache->color = color_u32;
     cache->valid = true;
+}
+
+static void ui_settings_label_small_caps(lv_obj_t *label, const char *text, lv_color_t color)
+{
+    if (!label) {
+        return;
+    }
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+}
+
+static lv_obj_t *ui_settings_section(lv_obj_t *parent,
+                                     int x,
+                                     int y,
+                                     int w,
+                                     int h,
+                                     const char *title)
+{
+    lv_obj_t *section = lv_obj_create(parent);
+    lv_obj_remove_style_all(section);
+    if (s_config.panel_frame) {
+        lv_obj_add_style(section, s_config.panel_frame, LV_PART_MAIN);
+    }
+    lv_obj_set_size(section, w, h);
+    lv_obj_set_pos(section, x, y);
+    lv_obj_clear_flag(section, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *label = lv_label_create(section);
+    ui_settings_label_small_caps(label, title, COL_TEXT_MUTED);
+    lv_obj_set_pos(label, 14, 12);
+    return section;
+}
+
+static lv_obj_t *ui_settings_value_label(lv_obj_t *parent,
+                                         const char *text,
+                                         lv_color_t color,
+                                         const lv_font_t *font,
+                                         int x,
+                                         int y)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_set_pos(label, x, y);
+    return label;
+}
+
+static lv_obj_t *ui_settings_static_tile(lv_obj_t *parent,
+                                         int x,
+                                         int y,
+                                         int w,
+                                         int h,
+                                         const char *text,
+                                         lv_color_t text_color,
+                                         lv_color_t fill_color,
+                                         lv_color_t border_color)
+{
+    lv_obj_t *tile = lv_obj_create(parent);
+    lv_obj_remove_style_all(tile);
+    lv_obj_set_style_bg_color(tile, fill_color, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(tile, border_color, LV_PART_MAIN);
+    lv_obj_set_style_border_width(tile, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(tile, 2, LV_PART_MAIN);
+    lv_obj_set_size(tile, w, h);
+    lv_obj_set_pos(tile, x, y);
+    lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *label = lv_label_create(tile);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, text_color, LV_PART_MAIN);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    return tile;
+}
+
+static void slider_brightness_event_cb(lv_event_t *event)
+{
+    lv_obj_t *slider = lv_event_get_target(event);
+    int val = lv_slider_get_value(slider);
+    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", val);
+#ifndef WIN32
+    bsp_display_set_backlight((uint8_t)val);
+    app_settings_set_backlight((uint8_t)val);
+#endif
+    ESP_LOGI(TAG, "Backlight brightness set to %d%%", val);
+}
+
+static void audio_out_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool rca = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#ifndef WIN32
+    bsp_audio_set_output(rca ? BSP_AUDIO_OUT_RCA : BSP_AUDIO_OUT_SPEAKER);
+    app_settings_set_audio_out(rca ? 1 : 0);
+#endif
+    if (s_label_audio_out) {
+        lv_label_set_text(s_label_audio_out, rca ? "RCA LINE-OUT" : "SPEAKER");
+    }
+    ESP_LOGI(TAG, "Audio output: %s", rca ? "RCA line-out" : "Speaker");
+}
+
+#ifndef WIN32
+static void link_mode_event_cb(lv_event_t *event)
+{
+    (void)event;
+    app_settings_t cfg = app_settings_get();
+    uint8_t next = (uint8_t)((cfg.link_mode + 1u) % 3u);
+    app_settings_set_link_mode(next);
+    if (s_label_link_mode) {
+        lv_label_set_text_fmt(s_label_link_mode, "%s", ui_settings_link_mode_name(next));
+    }
+    ui_settings_note_link_mode_saved(ui_settings_link_mode_name(next));
+    ESP_LOGI(TAG, "Link mode saved: %s", ui_settings_link_mode_name(next));
+}
+
+static void sd_cache_clear_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (ui_library_has_remote_loaded_track()) {
+        ui_status_hold("REMOTE LOADED", COL_AMBER, 2000);
+        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
+        return;
+    }
+
+    esp_err_t rc = remote_cache_clear();
+    if (rc == ESP_OK) {
+        ui_status_hold("CACHE CLEARED", COL_GREEN, 2000);
+        sd_diag_log_write("sd_cache", "remote cache cleared");
+    } else {
+        ui_status_hold("CACHE ERR", COL_RED, 2000);
+        sd_diag_log_write("sd_cache", "remote cache clear failed");
+    }
+    ui_status_invalidate();
+    ui_settings_invalidate();
+    ui_settings_refresh_storage();
+}
+#endif
+
+void ui_settings_configure(const ui_settings_config_t *config)
+{
+    s_config = (ui_settings_config_t){0};
+    if (config) {
+        s_config = *config;
+    }
+}
+
+lv_obj_t *ui_settings_create(lv_obj_t *parent)
+{
+    lv_obj_t *screen = lv_obj_create(parent);
+    lv_obj_remove_style_all(screen);
+    if (s_config.screen_bg) {
+        lv_obj_add_style(screen, s_config.screen_bg, LV_PART_MAIN);
+    }
+    lv_obj_set_size(screen, s_config.hor_res, s_config.content_h);
+    lv_obj_set_pos(screen, 0, s_config.content_y);
+
+#ifndef WIN32
+    app_settings_t cfg = app_settings_get();
+    int bl_init = cfg.backlight_pct;
+    bool rca_init = (cfg.audio_out != 0);
+#else
+    int bl_init = 80;
+    bool rca_init = false;
+#endif
+
+    const int left_x = 30;
+    const int left_w = 350;
+
+    lv_obj_t *display_section = ui_settings_section(screen, left_x, 20, left_w, 86, "DISPLAY");
+    lv_obj_t *slider_backlight = lv_slider_create(display_section);
+    lv_obj_set_size(slider_backlight, 230, 18);
+    lv_obj_set_pos(slider_backlight, 16, 48);
+    lv_slider_set_range(slider_backlight, 10, 100);
+    lv_slider_set_value(slider_backlight, bl_init, LV_ANIM_OFF);
+    lv_obj_add_event_cb(slider_backlight, slider_brightness_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_label_brightness_val = ui_settings_value_label(display_section, "", COL_TEXT,
+                                                     &lv_font_montserrat_14, 270, 44);
+    lv_label_set_text_fmt(s_label_brightness_val, "%d%%", bl_init);
+
+    lv_obj_t *audio_section = ui_settings_section(screen, left_x, 118, left_w, 86, "AUDIO OUTPUT");
+    lv_obj_t *sw_audio = lv_switch_create(audio_section);
+    lv_obj_set_pos(sw_audio, 16, 42);
+    lv_obj_add_event_cb(sw_audio, audio_out_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_label_audio_out = ui_settings_value_label(audio_section,
+                                                rca_init ? "RCA LINE-OUT" : "SPEAKER",
+                                                COL_GREEN,
+                                                &lv_font_montserrat_16,
+                                                104,
+                                                44);
+    if (rca_init) {
+        lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
+    }
+
+    lv_obj_t *link_section = ui_settings_section(screen, left_x, 216, left_w, 116, "CDJ LINK ROLE");
+    lv_obj_t *btn_link = lv_button_create(link_section);
+    lv_obj_remove_style_all(btn_link);
+    if (s_config.btn_secondary) {
+        lv_obj_add_style(btn_link, s_config.btn_secondary, LV_PART_MAIN);
+    }
+    if (s_config.pressed) {
+        lv_obj_add_style(btn_link, s_config.pressed, LV_STATE_PRESSED);
+    }
+    lv_obj_set_size(btn_link, 210, 42);
+    lv_obj_set_pos(btn_link, 16, 42);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_link, link_mode_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    s_label_link_mode = lv_label_create(btn_link);
+#ifndef WIN32
+    lv_label_set_text_fmt(s_label_link_mode, "%s", ui_settings_link_mode_name(cfg.link_mode));
+#else
+    lv_label_set_text(s_label_link_mode, "OFF");
+#endif
+    lv_obj_set_style_text_font(s_label_link_mode, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_link_mode, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(s_label_link_mode, LV_ALIGN_CENTER, 0, 0);
+
+    ui_settings_value_label(link_section, "Saved role applies after reboot", COL_AMBER,
+                            &lv_font_montserrat_12, 16, 90);
+
+    lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 312, "SYSTEM STATUS");
+
+    lv_obj_t *label_uart_status =
+        ui_settings_value_label(status_section,
+                                "Control Link (S3): Offline (no heartbeat)",
+                                COL_RED, &lv_font_montserrat_12, 16, 46);
+    lv_obj_set_width(label_uart_status, 320);
+    lv_label_set_long_mode(label_uart_status, LV_LABEL_LONG_CLIP);
+
+    lv_obj_t *label_link_status =
+        ui_settings_value_label(status_section, "Link: OFF",
+                                COL_ACCENT, &lv_font_montserrat_12, 16, 74);
+    lv_obj_set_width(label_link_status, 320);
+    lv_label_set_long_mode(label_link_status, LV_LABEL_LONG_CLIP);
+
+    ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 116);
+    lv_obj_t *label_sd_status =
+        ui_settings_value_label(status_section, "Checking /sd...",
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
+    lv_obj_set_width(label_sd_status, 320);
+    lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
+
+    ui_settings_value_label(status_section, "Remote Cache", COL_TEXT_MUTED,
+                            &lv_font_montserrat_12, 16, 176);
+    lv_obj_t *label_sd_cache_status =
+        ui_settings_value_label(status_section, "Checking cache...",
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
+    lv_obj_set_width(label_sd_cache_status, 210);
+    lv_label_set_long_mode(label_sd_cache_status, LV_LABEL_LONG_CLIP);
+
+    lv_obj_t *btn_clear_cache = lv_button_create(status_section);
+    lv_obj_remove_style_all(btn_clear_cache);
+    if (s_config.btn_secondary) {
+        lv_obj_add_style(btn_clear_cache, s_config.btn_secondary, LV_PART_MAIN);
+    }
+    if (s_config.pressed) {
+        lv_obj_add_style(btn_clear_cache, s_config.pressed, LV_STATE_PRESSED);
+    }
+    lv_obj_set_size(btn_clear_cache, 116, 34);
+    lv_obj_set_pos(btn_clear_cache, 226, 190);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_clear_cache, sd_cache_clear_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    lv_obj_t *lbl_clear_cache = lv_label_create(btn_clear_cache);
+    lv_label_set_text(lbl_clear_cache, "CLEAR");
+    lv_obj_set_style_text_font(lbl_clear_cache, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_clear_cache, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(lbl_clear_cache, LV_ALIGN_CENTER, 0, 0);
+
+    ui_settings_value_label(status_section, "Board: JC4880P443C_I_W (ESP32-P4 N16R8)",
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 252);
+    ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 276);
+
+    lv_obj_t *mixer_section = ui_settings_section(screen, 30, 346, 740, 70, "MIXER / PFL ROUTING");
+    ui_settings_static_tile(mixer_section, 18, 30, 108, 28,
+                            "CH1 FADER", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
+    ui_settings_static_tile(mixer_section, 138, 30, 108, 28,
+                            "CH2 FADER", COL_GREEN, COL_PANEL_DK, COL_GREEN);
+    ui_settings_static_tile(mixer_section, 258, 30, 118, 28,
+                            "CROSSFADER", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
+    ui_settings_static_tile(mixer_section, 388, 30, 88, 28,
+                            "PFL D1", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_settings_static_tile(mixer_section, 488, 30, 88, 28,
+                            "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    ui_settings_static_tile(mixer_section, 588, 30, 124, 28,
+                            "CUE PATH TODO", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+
+    ui_settings_widgets_t settings_widgets = {
+        .uart_status = label_uart_status,
+        .link_status = label_link_status,
+        .sd_status = label_sd_status,
+        .sd_cache_status = label_sd_cache_status,
+    };
+    ui_settings_init(&settings_widgets);
+    ui_settings_refresh_storage();
+
+    return screen;
 }
 
 void ui_settings_init(const ui_settings_widgets_t *widgets)
