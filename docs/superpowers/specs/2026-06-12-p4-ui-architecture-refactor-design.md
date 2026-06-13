@@ -241,17 +241,19 @@ Checkpoint:
 - `idf.py build` passed for `firmware/main-deck-p4`.
 - Flash/monitor remains part of the Phase 7 stabilization checkpoint.
 
-### Phase 7: Stabilization Pass
+### Phase 7: Stabilization Pass - Complete
 
 Review module boundaries and remove temporary diagnostics or gate them behind explicit diagnostic macros. Keep only useful aggregated performance logs.
 
-Final checkpoint:
+Closed on 2026-06-13:
 
-- `git diff --check`.
-- Host tests.
-- `idf.py build`.
-- Flash to COM10.
-- 45-second monitor.
+- Settings screen construction and callbacks were extracted from `ui.c` into `ui_settings`.
+- `ui.c` is now 887 lines and remains a top-level orchestrator for init, screen registry, tab switching, and frame context construction.
+- `git diff --check` passed.
+- All `tests/ui_*` host tests passed.
+- `idf.py build` passed for `firmware/main-deck-p4`.
+- Flash to COM15 passed with app version `5f9b425`.
+- 45-second COM15 monitor captured 26 lines with `bad_lines=0`.
 
 ## Testing Strategy
 
@@ -282,7 +284,7 @@ Use monitor evidence after risky phases:
 
 ## Success Criteria
 
-- `ui.c` is under 1000 lines after phases 2-6 and no longer contains LVGL backend internals.
+- `ui.c` is under 1000 lines after phases 2-7 and no longer contains LVGL backend internals.
 - Display backend changes can be reviewed and tested independently.
 - Overview redraw policy is testable without hardware.
 - `ui_update()` reads like an orchestrator instead of a full application implementation.
