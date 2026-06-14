@@ -27,6 +27,31 @@ function Invoke-Step {
     }
 }
 
+function Assert-FileContains {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Patterns
+    )
+
+    Write-Host "==> static $Name"
+    foreach ($pattern in $Patterns) {
+        if (-not (Select-String -LiteralPath $Path -Pattern $pattern -SimpleMatch)) {
+            throw "$Name missing expected pattern '$pattern' in $Path"
+        }
+    }
+}
+
+Assert-FileContains `
+    -Name "flx4 mode split" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/Kconfig") `
+    -Patterns @("DDJ_FLX4_TRANSLATE_TO_P4")
+
+Assert-FileContains `
+    -Name "app mode split" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("CONFIG_DDJ_FLX4_TRANSLATE_TO_P4", "mode: DDJ-FLX4 USB MIDI host raw logger", "mode: DDJ-FLX4 USB MIDI translator")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"
