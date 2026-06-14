@@ -116,6 +116,8 @@ static media_source_t s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
     MEDIA_SOURCE_LOCAL_USB,
 };
 static QueueHandle_t s_track_load_result_q = NULL;
+static QueueHandle_t s_remote_refresh_result_q = NULL;
+static bool s_remote_refresh_busy = false;
 static volatile bool s_usb_removed_pending = false;
 
 typedef struct {
@@ -137,6 +139,7 @@ typedef struct {
 } ui_track_load_request_t;
 
 static ui_track_load_result_t s_track_load_worker_result;
+static esp_err_t s_remote_refresh_worker_result;
 #endif
 
 #define s_style_screen_bg (*s_library_config.styles.screen_bg)
@@ -319,11 +322,11 @@ static void ui_track_load_worker(void *arg)
     result->source = req.source;
     result->rc = ESP_OK;
 
-    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
+    if (media_catalog_get_from_source(req.source, req.index, &result->item) != ESP_OK) {
         result->rc = ESP_ERR_NOT_FOUND;
         snprintf(result->status, sizeof(result->status), "NO TRACK");
     } else {
-        result->rc = media_catalog_load(req.index, &result->loaded);
+        result->rc = media_catalog_load_from_source(req.source, req.index, &result->loaded);
         if (result->rc != ESP_OK) {
             const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
             snprintf(result->status, sizeof(result->status), "%s", status && status[0] ? status : "LOAD ERR");
@@ -389,6 +392,45 @@ static void ui_submit_track_load(int index, uint8_t deck)
         ui_library_status_hold("NO TASK", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO TASK");
         s_track_load_busy = false;
+    }
+}
+
+static void ui_remote_refresh_worker(void *arg)
+{
+    (void)arg;
+    esp_err_t rc = cdj_link_client_start();
+    if (rc == ESP_OK) {
+        rc = media_catalog_refresh_remote();
+    }
+    s_remote_refresh_worker_result = rc;
+    if (s_remote_refresh_result_q) {
+        xQueueOverwrite(s_remote_refresh_result_q, &s_remote_refresh_worker_result);
+    }
+    vTaskDelete(NULL);
+}
+
+static void ui_submit_remote_refresh(void)
+{
+    if (s_remote_refresh_busy) {
+        ui_library_status_hold("JOINING", COL_AMBER, 1500);
+        return;
+    }
+    if (!s_remote_refresh_result_q) {
+        s_remote_refresh_result_q = xQueueCreate(1, sizeof(esp_err_t));
+    }
+    if (!s_remote_refresh_result_q) {
+        ui_library_status_hold("NO QUEUE", COL_RED, 2500);
+        return;
+    }
+    esp_err_t stale;
+    while (xQueueReceive(s_remote_refresh_result_q, &stale, 0) == pdTRUE) {
+    }
+
+    s_remote_refresh_busy = true;
+    ui_library_status_hold("JOINING", COL_AMBER, 2000);
+    if (xTaskCreate(ui_remote_refresh_worker, "ui_joined", 6144, NULL, 3, NULL) != pdPASS) {
+        s_remote_refresh_busy = false;
+        ui_library_status_hold("NO TASK", COL_RED, 2500);
     }
 }
 
@@ -482,6 +524,26 @@ static void ui_poll_track_load_result(void)
         ui_library_status_hold(loaded_text, COL_GREEN, 2000);
         ui_library_set_load_busy(false, loaded_text);
         s_track_load_busy = false;
+    }
+}
+
+static void ui_poll_remote_refresh_result(void)
+{
+    if (!s_remote_refresh_result_q) return;
+
+    esp_err_t rc;
+    while (xQueueReceive(s_remote_refresh_result_q, &rc, 0) == pdTRUE) {
+        s_remote_refresh_busy = false;
+        if (rc == ESP_OK) {
+            media_catalog_set_source(MEDIA_SOURCE_REMOTE_LINK);
+            s_selected_track_idx = 0;
+            ui_library_status_hold("JOINED", COL_GREEN, 2000);
+        } else {
+            ui_library_status_hold("JOIN FAILED", COL_RED, 3500);
+            ESP_LOGW(TAG, "joined library refresh failed: %s", esp_err_to_name(rc));
+        }
+        ui_library_update_source_label();
+        ui_refresh_library();
     }
 }
 #endif
@@ -669,21 +731,9 @@ static void library_source_joined_event_cb(lv_event_t *e)
 {
     (void)e;
 #ifndef WIN32
-    esp_err_t rc = cdj_link_client_start();
-    if (rc == ESP_OK) {
-        rc = media_catalog_refresh_remote();
-    }
-    if (rc == ESP_OK) {
-        media_catalog_set_source(MEDIA_SOURCE_REMOTE_LINK);
-        s_selected_track_idx = 0;
-        ui_library_status_hold("JOINED", COL_GREEN, 2000);
-    } else {
-        ui_library_status_hold("JOIN FAILED", COL_RED, 3500);
-        ESP_LOGW(TAG, "joined library refresh failed: %s", esp_err_to_name(rc));
-    }
+    ui_submit_remote_refresh();
 #endif
     ui_library_update_source_label();
-    ui_refresh_library();
 }
 
 void ui_library_init(const ui_library_config_t *config)
@@ -1042,6 +1092,7 @@ void ui_library_update(const ui_frame_context_t *ctx)
     }
     if (plan.poll_track_load_result) {
         ui_poll_track_load_result();
+        ui_poll_remote_refresh_result();
     }
 #endif
 
