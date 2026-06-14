@@ -190,7 +190,7 @@ typedef struct {
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
 static bool s_overview_deck_pfl[DECK_CORE_DECK_COUNT];
 static bool s_overview_deck_playing[DECK_CORE_DECK_COUNT];
-static lv_obj_t *s_beat_pulses[4];
+static lv_obj_t *s_beat_pulses[DECK_CORE_DECK_COUNT][4];
 static lv_obj_t *s_overview_cue_heads[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_overview_fx_panel = NULL;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
@@ -356,6 +356,34 @@ static void *ui_overview_alloc_canvas(size_t size, bool prefer_psram)
     return buf;
 }
 #endif
+
+static void cue_head_draw_cb(lv_event_t *e)
+{
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_obj_t *obj = lv_event_get_target(e);
+
+    lv_area_t coords;
+    lv_obj_get_coords(obj, &coords);
+
+    lv_color_t color = lv_obj_get_style_bg_color(obj, LV_PART_MAIN);
+
+    lv_draw_triangle_dsc_t tri_dsc;
+    lv_draw_triangle_dsc_init(&tri_dsc);
+    tri_dsc.color = color;
+    tri_dsc.opa = LV_OPA_COVER;
+
+    /* Triangle pointing down: top-left, top-right, bottom-center */
+    tri_dsc.p[0].x = coords.x1;
+    tri_dsc.p[0].y = coords.y1;
+
+    tri_dsc.p[1].x = coords.x2;
+    tri_dsc.p[1].y = coords.y1;
+
+    tri_dsc.p[2].x = (coords.x1 + coords.x2) / 2;
+    tri_dsc.p[2].y = coords.y2;
+
+    lv_draw_triangle(layer, &tri_dsc);
+}
 
 static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 {
@@ -547,23 +575,23 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
         s_overview_cue_heads[deck_idx][i] = lv_obj_create(panel->wave_border);
         lv_obj_set_style_border_width(s_overview_cue_heads[deck_idx][i], 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_overview_cue_heads[deck_idx][i], LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_size(s_overview_cue_heads[deck_idx][i], 7, 7);
         lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(s_overview_cue_heads[deck_idx][i], cue_head_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
     }
 
-    if (deck == CTRL_DECK_1) {
-        for (int i = 0; i < 4; i++) {
-            s_beat_pulses[i] = lv_obj_create(panel->panel);
-            lv_obj_set_size(s_beat_pulses[i], 12, 12);
-            lv_obj_set_pos(s_beat_pulses[i], 390 + i * 18, OVERVIEW_BEAT_PULSES_Y);
-            lv_obj_set_style_radius(s_beat_pulses[i], 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
-            lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_border_color(s_beat_pulses[i], COL_BORDER_LT, LV_PART_MAIN);
-            lv_obj_set_style_border_width(s_beat_pulses[i], 1, LV_PART_MAIN);
-        }
+    for (int i = 0; i < 4; i++) {
+        s_beat_pulses[deck_idx][i] = lv_obj_create(panel->panel);
+        lv_obj_set_size(s_beat_pulses[deck_idx][i], 12, 12);
+        lv_obj_set_pos(s_beat_pulses[deck_idx][i], 390 + i * 18, top_y + OVERVIEW_BEAT_PULSES_Y);
+        lv_obj_set_style_radius(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_beat_pulses[deck_idx][i], COL_PANEL_DK, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_beat_pulses[deck_idx][i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_beat_pulses[deck_idx][i], COL_BORDER_LT, LV_PART_MAIN);
+        lv_obj_set_style_border_width(s_beat_pulses[deck_idx][i], 1, LV_PART_MAIN);
     }
 
     ui_overview_compact_button(panel->panel, deck, 4, top_y + 63, 76, "PLAY", &s_style_btn_primary, play_pause_event_cb);
@@ -1070,12 +1098,15 @@ typedef struct {
     lv_opa_t opa;
 } ui_overview_beat_dot_cache_t;
 
-static ui_overview_beat_dot_cache_t s_cache_beat_dots[4];
+static ui_overview_beat_dot_cache_t s_cache_beat_dots[DECK_CORE_DECK_COUNT][4];
 
-static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
+static void ui_update_beat_indicator(uint8_t deck_idx, const ui_beat_indicator_state_t *state)
 {
+    if (deck_idx >= DECK_CORE_DECK_COUNT) {
+        return;
+    }
     for (int i = 0; i < 4; i++) {
-        if (!s_beat_pulses[i]) {
+        if (!s_beat_pulses[deck_idx][i]) {
             continue;
         }
 
@@ -1087,7 +1118,7 @@ static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
             opa = (lv_opa_t)(255u - ((uint32_t)progress * 135u) / 1000u);
         }
 
-        ui_overview_beat_dot_cache_t *cache = &s_cache_beat_dots[i];
+        ui_overview_beat_dot_cache_t *cache = &s_cache_beat_dots[deck_idx][i];
         if (cache->valid &&
             cache->active == active &&
             cache->downbeat == downbeat &&
@@ -1100,17 +1131,17 @@ static void ui_update_beat_indicator(const ui_beat_indicator_state_t *state)
         cache->opa = opa;
 
         if (!active) {
-            lv_obj_set_style_bg_color(s_beat_pulses[i], lv_color_hex(0x30343B), LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(s_beat_pulses[i], LV_OPA_40, LV_PART_MAIN);
-            lv_obj_set_style_border_color(s_beat_pulses[i], lv_color_hex(0x4A515C), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(s_beat_pulses[deck_idx][i], lv_color_hex(0x30343B), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(s_beat_pulses[deck_idx][i], LV_OPA_40, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_beat_pulses[deck_idx][i], lv_color_hex(0x4A515C), LV_PART_MAIN);
             continue;
         }
 
         // Beat-indicator colours stay inline (paired with the downbeat red, not chrome).
         lv_color_t color = downbeat ? lv_color_hex(0xFF1744) : lv_color_hex(0xFFFFFF);
-        lv_obj_set_style_bg_color(s_beat_pulses[i], color, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(s_beat_pulses[i], opa, LV_PART_MAIN);
-        lv_obj_set_style_border_color(s_beat_pulses[i], color, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_beat_pulses[deck_idx][i], color, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_beat_pulses[deck_idx][i], opa, LV_PART_MAIN);
+        lv_obj_set_style_border_color(s_beat_pulses[deck_idx][i], color, LV_PART_MAIN);
     }
 }
 
@@ -1441,13 +1472,21 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
 void ui_overview_set_performance_target(uint8_t active_deck)
 {
-    (void)active_deck;
+    uint8_t active_idx = ui_overview_deck_index(active_deck);
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ui_overview_deck_panel_t *panel = &s_overview_decks[deck];
-        if (!panel->panel) {
+        if (!panel->panel || !panel->wave_border) {
             continue;
         }
-        lv_obj_set_style_border_width(panel->panel, 0, LV_PART_MAIN);
+        if (deck == active_idx) {
+            lv_obj_set_style_border_width(panel->wave_border, 2, LV_PART_MAIN);
+            lv_obj_set_style_border_color(panel->wave_border,
+                                          (deck == 0) ? COL_RED : COL_ACCENT,
+                                          LV_PART_MAIN);
+        } else {
+            lv_obj_set_style_border_width(panel->wave_border, 1, LV_PART_MAIN);
+            lv_obj_set_style_border_color(panel->wave_border, COL_BORDER_LT, LV_PART_MAIN);
+        }
     }
 }
 
@@ -1498,8 +1537,19 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
 
     if (ctx->overview_slow_update) {
-        ui_update_beat_indicator((ctx->active_duration_ms > 0 && ctx->active_beat_state_valid) ?
-                                 &ctx->active_beat_state : NULL);
+        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+            ui_beat_indicator_state_t beat_state = {0};
+            bool beat_valid = false;
+            if (ctx->deck_duration_ms[d] > 0) {
+                beat_state = ui_beat_indicator_calculate(
+                    ctx->deck_state[d].position_ms,
+                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
+                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
+                    ctx->deck_bpm[d]);
+                beat_valid = beat_state.valid;
+            }
+            ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
+        }
 #ifndef WIN32
         ui_update_mixer_overview(&ctx->mixer_snapshot);
 #endif
