@@ -1,11 +1,20 @@
-# CDJ100S-XXX Control Board Firmware — Claude Guide
+# DDJ-FFL4 S3 Control Board Firmware - Claude Guide
 
 ## Project Overview
 
-ESP32-S3-DevKitC-1 N16R8 firmware for CDJ100S-XXX control board.  
-Handles CDJ-100S front panel I/O, USB MIDI device, and UART control link to ESP32-P4.
+ESP32-S3-DevKitC-1 N16R8 firmware for the DDJ-FFL4 control board role.
+The active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
+deck-aware `0xA5` UART control-link frames to the ESP32-P4.
 
-**Status: S3/P4 compatible** ✅ — V1 controls plus LOAD/BROWSE are implemented. Front panel wiring still needs hardware smoke tests.
+The inherited CDJ-100S GPIO panel path remains available as a compatibility
+mode when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
+
+Status:
+
+- default build: DDJ-FLX4 USB MIDI raw logger;
+- optional build: DDJ-FLX4 MIDI-to-P4 translator via
+  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
+- pending hardware task: physical DDJ-FLX4 enumeration and raw MIDI capture.
 
 ---
 
@@ -39,13 +48,14 @@ LEDs: CUE=GPIO33, PLAY=GPIO34, BEAT=GPIO38, END=GPIO39 (active-high, 220Ω)
 
 ## Build & Flash
 
-**Always flash via COM4 (CH343 UART bridge). Never COM5.**  
-COM5 = USB-OTG TinyUSB MIDI device (becomes VID_303A:PID_4008 after flashing).
+Use the CH343 UART bridge serial port for flashing and logs. Do not use the
+USB-OTG port as a serial console while testing FLX4 host mode; GPIO19/20 are
+owned by the USB host/device stack.
 
 ```powershell
-# Prepare environment (once per shell) — same IDF as P4
+# Prepare environment (once per shell) - same IDF as P4
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1Document
+. C:\Espressif\Initialize-Idf.ps1
 
 # Flash and monitor logs
 cd firmware/control-board-s3
@@ -66,33 +76,41 @@ Must be in `sdkconfig.defaults`. Check if CMake regenerates `sdkconfig`.
 
 | Key | Value | Why |
 |-----|-------|-------|
+| `CONFIG_DDJ_FLX4_HOST_MODE` | `y` | Default DDJ-FLX4 raw USB MIDI capture mode |
+| `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` | unset by default | Enable only after hardware capture validates the map |
 | `CONFIG_TINYUSB_MIDI_COUNT` | `1` | Enables MIDI driver (default is 0 → linker error) |
 | `CONFIG_ESP_CONSOLE_UART_DEFAULT` | `y` | Console on UART0/COM4 |
 | `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | **CRITICAL**: USB-JTAG secondary conflicts with TinyUSB |
 | `CONFIG_TINYUSB_MODE_SLAVE` | `y` | DMA mode causes enumeration failure |
 | `CONFIG_FREERTOS_HZ` | `1000` | 1ms tick for debounce timers |
 
-If MIDI stops working: first check `CONFIG_TINYUSB_MIDI_COUNT`.
+If inherited TinyUSB MIDI compatibility stops working: first check
+`CONFIG_TINYUSB_MIDI_COUNT`. If DDJ-FLX4 host capture stops working: first
+confirm that `CONFIG_DDJ_FLX4_HOST_MODE=y` and that the USB-OTG port has valid
+VBUS/ground wiring.
 
 ---
 
 ## Architecture
 
 ```
-panel_io  →  panel_event_t queue
-                   ↓
-               router_task
-              /           \
-      midi_compat      control_link
-    (TinyUSB MIDI)   (UART1 → P4)
+DDJ-FLX4 host raw logger:
+  flx4_midi_host -> ESP_LOG raw packet capture
+
+DDJ-FLX4 translator:
+  flx4_midi_host -> flx4_map -> coalescing queue -> control_link UART1 -> P4
+
+Inherited CDJ panel compatibility:
+  panel_io -> panel_event_t queue -> router_task -> midi_compat + control_link
 ```
 
 ### Components
 
 | Component | Description |
 |-----------|------|
+| `flx4_midi_host` | USB host raw logger, MIDI packet parser, FLX4 mapping helpers |
 | `panel_io` | Buttons (active-low, pull-up), PCNT encoders, ADC pitch, LED output |
-| `midi_compat` | TinyUSB MIDI device, maps buttons/encoders/pitch to MIDI |
+| `midi_compat` | Legacy TinyUSB MIDI device compatibility path |
 | `control_link` | UART1 binary protocol to ESP32-P4 |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 
@@ -118,13 +136,17 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 
 | Type | Direction | Content |
 |------|-------|---------|
-| 0x01 BUTTON | S3→P4 | id=button_id (0–13), val=0/1 |
-| 0x02 ENCODER | S3→P4 | id=0 (jog) / id=1 (browse), val=signed delta |
-| 0x03 PITCH | S3→P4 | id=0, val_lo+val_hi = 14-bit pitch |
+| 0x01 BUTTON | S3→P4 | legacy button id or deck-aware semantic id |
+| 0x02 ENCODER | S3→P4 | legacy encoder id or deck-aware jog/browse semantic id |
+| 0x03 PITCH | S3→P4 | legacy pitch id or deck-aware analog semantic id |
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime seconds |
 | 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
 
 UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 115200 baud.
+
+Deck-aware semantic IDs are documented in
+`docs/CONTROL_LINK_PROTOCOL.md`. S3 and P4 headers are kept aligned by the
+`control_link_protocol` host test.
 
 ---
 
@@ -140,5 +162,13 @@ UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 115200 baud.
 
 ## Pending
 
-- **Wire CDJ-100S front panel** according to `PINOUT.md` (physical hardware task)
-- Hardware acceptance: confirm LOAD/BROWSE, pitch direction, LED feedback, and offline heartbeat timeout on a physical S3/P4 pair
+- Validate DDJ-FLX4 physical USB host wiring: correct OTG port, powered hub or
+  valid VBUS source, and shared ground.
+- Capture raw FLX4 MIDI packets for all MVP controls and compare them with
+  `docs/DDJ_FLX4_MIDI_MAP.md`.
+- Enable `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` only after capture confirms or
+  corrects the current XML-derived map.
+- Implement native FLX4 LED MIDI feedback after output messages are verified.
+- Legacy hardware acceptance: confirm LOAD/BROWSE, pitch direction, LED
+  feedback, and offline heartbeat timeout on a physical S3/P4 pair if the
+  inherited CDJ panel path is still used.

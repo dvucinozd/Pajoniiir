@@ -30,6 +30,8 @@ Responsibilities:
 - parse class-compliant USB MIDI packets;
 - translate MIDI status/midino/value triples into semantic events;
 - combine MSB/LSB pairs for 14-bit controls before forwarding when practical;
+- coalesce high-rate jog and analog values locally so stale motion does not
+  flood the UART queue;
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
 - emit FLX4 MIDI LED feedback.
@@ -76,6 +78,14 @@ Current P4 audio ownership rule:
 6. P4 sends LED feedback back over `control_link`.
 7. S3 emits the matching MIDI LED message to the FLX4.
 
+Current S3 firmware modes:
+
+- default DDJ-FLX4 host mode: raw USB MIDI logger for hardware capture;
+- DDJ-FLX4 translator mode: raw MIDI input mapped to deck-aware `0xA5`
+  semantic frames, enabled by `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
+- inherited CDJ panel compatibility mode: direct GPIO panel input plus TinyUSB
+  MIDI device compatibility when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
+
 ## Main Code Surfaces
 
 Inherited files that will be touched early:
@@ -88,13 +98,14 @@ Inherited files that will be touched early:
 - `firmware/main-deck-p4/components/audio_engine/`
 - `firmware/main-deck-p4/components/ui/`
 
-Expected new S3 component:
+Current S3 FLX4 component:
 
 ```text
 firmware/control-board-s3/components/flx4_midi_host/
   include/flx4_midi_host.h
   include/flx4_map.h
   flx4_midi_host.c
+  flx4_map.c
 ```
 
 Expected P4 additions:

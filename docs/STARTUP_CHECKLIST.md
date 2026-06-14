@@ -13,6 +13,8 @@
 - [x] Confirm `Initialize-Idf.ps1` works in PowerShell.
 - [x] Confirm `idf.py --version`.
 - [x] Confirm MinGW/GCC is available for PC tests.
+- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions when `make`
+  is not present in PATH.
 - [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions when `make`
   is not present in PATH.
 
@@ -40,6 +42,10 @@
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
   regression runner.
+- S3 review fixes add a host regression runner, hardened DDJ-FLX4 USB MIDI
+  descriptor handling, deck-aware S3 `control_link` constants, an XML-derived
+  FLX4 MIDI mapper, translator-mode UART coalescing, and safer legacy CDJ panel
+  queue behavior.
 - P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
@@ -49,8 +55,10 @@
 ## First Firmware Task
 
 `firmware/control-board-s3/components/flx4_midi_host/` now contains the raw
-USB MIDI logging spike. Build with `CONFIG_DDJ_FLX4_HOST_MODE=y`, flash the S3,
-connect the DDJ-FLX4, and capture the serial logs.
+USB MIDI logging spike and the software translator path. Build with
+`CONFIG_DDJ_FLX4_HOST_MODE=y` and the default
+`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=n`, flash the S3, connect the DDJ-FLX4, and
+capture the serial logs.
 
 Current S3 status: firmware boots and starts the USB host logger, but FLX4
 enumeration was not observed on 2026-06-08. Continue this validation next time
@@ -63,3 +71,7 @@ Required output from the spike:
 - Endpoint/interface summary.
 - Raw packet logs for every MVP control.
 - Differences from `docs/DDJ_FLX4_MIDI_MAP.md`.
+
+After the capture matches the MVP map, enable
+`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` and verify that S3 emits deck-aware 7-byte
+`0xA5` frames while P4 heartbeat detection still reports the S3 online.

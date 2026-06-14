@@ -87,13 +87,22 @@ P4 host regression tests on Windows:
 .\tests\run_p4_host_tests.ps1
 ```
 
+S3 host regression tests on Windows:
+
+```powershell
+.\tests\run_s3_host_tests.ps1
+```
+
 Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
 substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
 library load paths, shared output/mixer audio plumbing, and a refactored
 two-deck LVGL UI.
-The S3 FLX4 USB host/raw MIDI capture remains the next hardware blocker before
-real controller input and FLX4 LED feedback can be finished. The porting steps
-are tracked in [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+The S3 target now has a raw FLX4 USB MIDI logger, a deck-aware software
+translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
+mapper/protocol path. Physical FLX4 USB enumeration and raw MIDI capture remain
+the next hardware blockers before enabling real controller input by default and
+finishing FLX4 LED feedback. The porting steps are tracked in
+[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target
 

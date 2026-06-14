@@ -43,8 +43,11 @@ The imported upstream code already provides:
 
 The fork is no longer only the imported single-deck baseline:
 
-- S3 raw USB MIDI host logging exists, but physical DDJ-FLX4 enumeration and
-  raw packet capture are still pending.
+- S3 raw USB MIDI host logging exists, USB descriptor parsing is hardened, and
+  the software translator path can map MVP FLX4 MIDI messages into deck-aware
+  `control_link` frames behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`.
+- Physical DDJ-FLX4 enumeration and raw packet capture are still pending, so
+  the default S3 firmware mode remains the raw logger.
 - The DDJ control-link namespace is deck-aware, and the P4 parser carries deck
   and control fields for DDJ events while preserving legacy frames.
 - P4 `deck_core` now stores independent Deck 1/Deck 2 state and routes local
