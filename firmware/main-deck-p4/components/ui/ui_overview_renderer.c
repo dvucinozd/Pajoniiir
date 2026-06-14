@@ -4,6 +4,60 @@
 
 #include "ui_overview_grid.h"
 
+typedef struct {
+    uint8_t avg;
+    uint8_t peak;
+    uint8_t palette_index;
+} mini_waveform_column_t;
+
+static bool mini_waveform_column_for_column(const ui_waveform_source_t *source,
+                                            uint32_t duration_ms,
+                                            int column,
+                                            int column_count,
+                                            mini_waveform_column_t *out)
+{
+    if (!out) return false;
+    *out = (mini_waveform_column_t){0};
+    if (!source || !source->samples || source->sample_count == 0 ||
+        duration_ms == 0 || column < 0 || column_count <= 0 ||
+        column >= column_count) {
+        return false;
+    }
+
+    uint64_t sample_start = ((uint64_t)column * source->sample_count) / (uint64_t)column_count;
+    uint64_t sample_end = ((uint64_t)(column + 1) * source->sample_count + (uint64_t)column_count - 1u) /
+                          (uint64_t)column_count;
+    if (sample_start >= source->sample_count) {
+        return false;
+    }
+    if (sample_end > source->sample_count) {
+        sample_end = source->sample_count;
+    }
+    if (sample_end <= sample_start) {
+        sample_end = sample_start + 1u;
+    }
+
+    uint32_t sum = 0;
+    uint32_t count = 0;
+    uint8_t peak = 0;
+    uint8_t peak_sample = 0;
+    for (uint64_t i = sample_start; i < sample_end; i++) {
+        uint8_t sample = source->samples[i];
+        uint8_t amp = sample & 0x1Fu;
+        sum += amp;
+        count++;
+        if (amp > peak) {
+            peak = amp;
+            peak_sample = sample;
+        }
+    }
+
+    out->avg = count ? (uint8_t)((sum + (count / 2u)) / count) : 0;
+    out->peak = peak;
+    out->palette_index = peak ? ui_waveform_palette_for_sample(peak_sample) : 0;
+    return true;
+}
+
 static void draw_zoom_grid(uint8_t *pixels,
                            int stride_px,
                            int width_px,
@@ -141,20 +195,49 @@ bool ui_overview_renderer_draw_mini(uint8_t *pixels,
         return false;
     }
 
-    for (int x = 0; x < width_px; x++) {
-        ui_waveform_column_t col = ui_waveform_column_for_column(
-            source, duration_ms, 0, duration_ms, x, width_px);
-        int amp = col.peak;
-        int h = (amp * (height_px - 2)) / 31;
-        if (h < 1) h = 1;
-        int cy = height_px / 2;
-        int y0 = cy - h / 2;
-        int y1 = cy + h / 2;
-        if (y0 < 0) y0 = 0;
-        if (y1 >= height_px) y1 = height_px - 1;
+    int body_span = height_px > 8 ? height_px - 8 : height_px - 2;
+    if (body_span < 1) body_span = height_px;
+    int peak_span = height_px > 3 ? height_px - 2 : height_px;
+    int bottom = height_px - 1;
+
+    int bar_count = (width_px + 1) / 2;
+    if (bar_count < 1) bar_count = 1;
+
+    for (int bar = 0; bar < bar_count; bar++) {
+        int x = bar * 2;
+        if (x >= width_px) {
+            break;
+        }
+
+        mini_waveform_column_t col;
+        if (!mini_waveform_column_for_column(source, duration_ms, bar, bar_count, &col)) {
+            continue;
+        }
+
+        int body_h = (col.avg * body_span) / 31;
+        if (col.avg > 0 && body_h < 1) body_h = 1;
+        if (body_h > height_px) body_h = height_px;
+        int peak_h = (col.peak * peak_span) / 31;
+        if (col.peak > 0 && peak_h < 1) peak_h = 1;
+        if (peak_h > height_px) peak_h = height_px;
+
         uint8_t color = col.palette_index ? col.palette_index : 1;
-        for (int y = y0; y <= y1; y++) {
-            pixels[y * stride_px + x] = color;
+        int body_top = bottom + 1;
+        if (body_h > 0) {
+            body_top = bottom - body_h + 1;
+            if (body_top < 0) body_top = 0;
+            for (int y = body_top; y <= bottom; y++) {
+                pixels[y * stride_px + x] = color;
+            }
+        }
+
+        if (peak_h > body_h + 1) {
+            int peak_y = bottom - peak_h + 1;
+            if (peak_y < 0) peak_y = 0;
+            int stem_bottom = body_top > 0 ? body_top - 1 : 0;
+            for (int y = peak_y; y <= stem_bottom; y++) {
+                pixels[y * stride_px + x] = color;
+            }
         }
     }
 

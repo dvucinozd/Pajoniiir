@@ -156,6 +156,22 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_overview_renderer"
+        Dir = "tests/ui_overview_renderer"
+        Target = "test_ui_overview_renderer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_overview_renderer.exe",
+            "test_ui_overview_renderer.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_renderer.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c",
+            "../../firmware/main-deck-p4/components/ui/ui_waveform_model.c"
+        )
+    },
+    @{
         Name = "anlz"
         Dir = "tests/anlz"
         Target = "test_anlz.exe"

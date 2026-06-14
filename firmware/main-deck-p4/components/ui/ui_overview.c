@@ -115,35 +115,45 @@ static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
     lv_obj_set_x(obj, x);
 }
 
-static void ui_label_set_f2_if_changed(lv_obj_t *lbl, float v)
-{
-    if (!lbl) return;
-    char text[16];
-    int c = (int)(v * 100.0f + (v >= 0.0f ? 0.5f : -0.5f));
-    if (c < 0) snprintf(text, sizeof(text), "-%d.%02d", (-c) / 100, (-c) % 100);
-    else snprintf(text, sizeof(text), "%d.%02d", c / 100, c % 100);
-    ui_label_set_text_if_changed(lbl, text);
-}
-
 // Waveform visualizer definitions
 #define OVERVIEW_CV_W 620
-#define OVERVIEW_CV_H 122
-#define OVERVIEW_MINI_CV_W 390
-#define OVERVIEW_MINI_CV_H 30
-#define OVERVIEW_XFADER_X 314
-#define OVERVIEW_WAVE_X 92
+#define OVERVIEW_CV_H 141
+#define OVERVIEW_MINI_CV_W 392
+#define OVERVIEW_MINI_CV_H 45
+#define OVERVIEW_WAVE_X 80
 #define OVERVIEW_WAVE_INSET_X 10
 #define OVERVIEW_WAVE_INSET_Y 7
-#define OVERVIEW_DECK1_WAVE_Y 42
-#define OVERVIEW_DECK2_WAVE_Y 180
+#define OVERVIEW_DECK1_WAVE_Y 4
+#define OVERVIEW_DECK2_WAVE_Y 161
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
+#define OVERVIEW_BEAT_PULSES_Y 152
 #define OVERVIEW_MAIN_VISIBLE_BEATS 16u
 #define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
 #define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
 #define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - 110)
-#define OVERVIEW_PHASE_Y 178
+#define OVERVIEW_PHASE_Y 158
 #define OVERVIEW_PHASE_W 220
 #define OVERVIEW_PHASE_KNOB_W 8
+#define OVERVIEW_DECK_INFO_W 400
+#define OVERVIEW_TITLE_Y 312
+#define OVERVIEW_TITLE_H 30
+#define OVERVIEW_TITLE_TEXT_W 240
+#define OVERVIEW_TITLE_TIMER_X 248
+#define OVERVIEW_TITLE_TIMER_Y 314
+#define OVERVIEW_TITLE_TIMER_W 148
+#define OVERVIEW_INFO_DIVIDER_Y 344
+#define OVERVIEW_INFO_ROW_Y 346
+#define OVERVIEW_TIME_Y 354
+#define OVERVIEW_MIX_ROW_Y 370
+#define OVERVIEW_BPM_X 184
+#define OVERVIEW_BPM_Y 348
+#define OVERVIEW_BPM_W 58
+#define OVERVIEW_BPM_TAG_X 246
+#define OVERVIEW_PITCH_X 282
+#define OVERVIEW_PITCH_Y 350
+#define OVERVIEW_PITCH_W 108
+#define OVERVIEW_MINI_WAVE_Y 386
+#define OVERVIEW_ACCENT_Y 432
 
 typedef struct {
     lv_obj_t *panel;
@@ -157,7 +167,6 @@ typedef struct {
     lv_obj_t *label_pitch;
     lv_obj_t *label_ch;
     lv_obj_t *label_out;
-    lv_obj_t *label_pfl;
     lv_obj_t *out_bar_bg;
     lv_obj_t *out_bar_fill;
     lv_obj_t *wave_border;
@@ -179,12 +188,10 @@ typedef struct {
 } ui_overview_deck_panel_t;
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
+static bool s_overview_deck_pfl[DECK_CORE_DECK_COUNT];
+static bool s_overview_deck_playing[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_beat_pulses[4];
 static lv_obj_t *s_overview_cue_heads[DECK_CORE_DECK_COUNT][8];
-static lv_obj_t *s_crossfader_label = NULL;
-static lv_obj_t *s_crossfader_track = NULL;
-static lv_obj_t *s_crossfader_knob = NULL;
-static int       s_crossfader_track_w = 0;
 static lv_obj_t *s_overview_fx_panel = NULL;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
 static ui_position_interpolator_t s_overview_position_interp[DECK_CORE_DECK_COUNT];
@@ -282,6 +289,26 @@ static lv_obj_t *ui_overview_value_label(lv_obj_t *parent, const lv_font_t *font
     return label;
 }
 
+static void ui_overview_apply_deck_badge(uint8_t deck)
+{
+    uint8_t idx = ui_overview_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    if (!panel->label_deck) {
+        return;
+    }
+
+    bool pfl_on = s_overview_deck_pfl[idx];
+    bool playing = s_overview_deck_playing[idx];
+    lv_color_t bg = pfl_on ? COL_GREEN : COL_RED;
+    lv_color_t text = pfl_on ? COL_ON_ACCENT : COL_TEXT;
+
+    lv_obj_set_style_bg_color(panel->label_deck, bg, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(panel->label_deck, text, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->label_deck, playing ? COL_TEXT : bg, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->label_deck, playing ? 3 : 1, LV_PART_MAIN);
+}
+
 static lv_obj_t *ui_overview_compact_button(lv_obj_t *parent, uint8_t deck,
                                             int x, int y, int w, const char *text,
                                             const lv_style_t *style,
@@ -371,40 +398,48 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_user_data(panel->label_deck, (void *)(uintptr_t)deck);
     lv_obj_add_flag(panel->label_deck, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(panel->label_deck, overview_deck_select_event_cb, LV_EVENT_CLICKED, NULL);
+    ui_overview_apply_deck_badge(deck);
     panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_RED, 4, top_y + 36, 90, "((PAUSE))");
-    panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                 COL_TEXT, info_x, 316, 400, "No Track");
+    ui_overview_bar(panel->panel, info_x, OVERVIEW_TITLE_Y,
+                    OVERVIEW_DECK_INFO_W, OVERVIEW_TITLE_H, COL_TITLE_BLUE);
+    panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                 COL_TEXT, info_x, OVERVIEW_TITLE_Y,
+                                                 OVERVIEW_TITLE_TEXT_W, "No Track");
+    lv_label_set_long_mode(panel->label_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_height(panel->label_title, OVERVIEW_TITLE_H);
     lv_obj_set_style_bg_color(panel->label_title, COL_TITLE_BLUE, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_title, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_pad_left(panel->label_title, 8, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(panel->label_title, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel->label_title, 0, LV_PART_MAIN);
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                  COL_TEXT_MUTED, info_x + 28, 350, 112, "TRACK");
+                                                  COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
+    lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
     panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                COL_TEXT, info_x + 78, 374, 150, "00:00.00");
+                                                COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X,
+                                                OVERVIEW_TITLE_TIMER_Y,
+                                                OVERVIEW_TITLE_TIMER_W, "-00:00.00");
+    lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
     panel->label_remain = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                  COL_TEXT_MUTED, info_x + 228, 382, 86, "-00:00");
-    panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_14,
-                                               COL_TEXT, info_x + 334, 366, 62, "120.00");
-    panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                 COL_TEXT_MUTED, info_x + 284, 382, 48, "0.0%");
+                                                  COL_TEXT_MUTED, info_x + 254, OVERVIEW_TIME_Y + 8, 68, "-00:00");
+    lv_obj_add_flag(panel->label_remain, LV_OBJ_FLAG_HIDDEN);
+    panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                               COL_TEXT, info_x + OVERVIEW_BPM_X,
+                                               OVERVIEW_BPM_Y, OVERVIEW_BPM_W, "120");
+    lv_obj_set_style_text_align(panel->label_bpm, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
+                                                 COL_TEXT_MUTED, info_x + OVERVIEW_PITCH_X,
+                                                 OVERVIEW_PITCH_Y, OVERVIEW_PITCH_W, "+0.00%");
 
-    ui_overview_bar(panel->panel, info_x, 340, 400, 1, COL_BORDER);
-    ui_overview_bar(panel->panel, accent_x, 423, 396, 10,
+    ui_overview_bar(panel->panel, info_x, OVERVIEW_INFO_DIVIDER_Y, OVERVIEW_DECK_INFO_W, 1, COL_BORDER);
+    ui_overview_bar(panel->panel, accent_x, OVERVIEW_ACCENT_Y, OVERVIEW_DECK_INFO_W - 4, 2,
                     deck == CTRL_DECK_1 ? COL_RED : COL_ACCENT);
     ui_overview_value_label(panel->panel, &lv_font_montserrat_12, COL_TEXT_MUTED,
-                            info_x + 372, 352, 26, "BPM");
-
-    panel->label_ch = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                              COL_TEXT_MUTED, info_x + 10, 374, 60, "CH 100%");
-    panel->label_out = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                               COL_TEXT_MUTED, info_x + 10, 394, 68, "OUT 100%");
-    panel->label_pfl = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                               COL_TEXT_DIM, 4, top_y + 142, 80, "PFL OFF");
-    panel->out_bar_bg = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6, COL_PANEL);
-    panel->out_bar_fill = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6,
-                                          deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
+                            info_x + OVERVIEW_BPM_TAG_X, OVERVIEW_BPM_Y + 8, 30, "BPM");
+    panel->label_ch = NULL;
+    panel->label_out = NULL;
+    panel->out_bar_bg = NULL;
+    panel->out_bar_fill = NULL;
 
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
@@ -462,7 +497,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_opa(panel->mini_wave_border, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->mini_wave_border, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->mini_wave_border, OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H);
-    lv_obj_set_pos(panel->mini_wave_border, info_x + 4, 401);
+    lv_obj_set_pos(panel->mini_wave_border, info_x + 4, OVERVIEW_MINI_WAVE_Y);
     lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -522,7 +557,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         for (int i = 0; i < 4; i++) {
             s_beat_pulses[i] = lv_obj_create(panel->panel);
             lv_obj_set_size(s_beat_pulses[i], 12, 12);
-            lv_obj_set_pos(s_beat_pulses[i], 390 + i * 18, 146);
+            lv_obj_set_pos(s_beat_pulses[i], 390 + i * 18, OVERVIEW_BEAT_PULSES_Y);
             lv_obj_set_style_radius(s_beat_pulses[i], 0, LV_PART_MAIN);
             lv_obj_set_style_pad_all(s_beat_pulses[i], 0, LV_PART_MAIN);
             lv_obj_set_style_bg_color(s_beat_pulses[i], COL_PANEL_DK, LV_PART_MAIN);
@@ -532,18 +567,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         }
     }
 
-    ui_overview_compact_button(panel->panel, deck, 4, top_y + 68, 74, "PLAY", &s_style_btn_primary, play_pause_event_cb);
-    ui_overview_compact_button(panel->panel, deck, 4, top_y + 104, 74, "CUE", &s_style_btn_amber, cue_event_cb);
-
-    if (deck == CTRL_DECK_1) {
-        s_crossfader_label = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                     COL_TEXT_MUTED, OVERVIEW_XFADER_X - 30, 394, 28, "XF");
-        s_crossfader_track_w = 84;
-        s_crossfader_track = ui_overview_bar(panel->panel, OVERVIEW_XFADER_X, 410, s_crossfader_track_w, 6,
-                                             COL_PANEL);
-        s_crossfader_knob = ui_overview_bar(panel->panel, OVERVIEW_XFADER_X + (s_crossfader_track_w / 2) - 3,
-                                            405, 6, 16, COL_RED);
-    }
+    ui_overview_compact_button(panel->panel, deck, 4, top_y + 63, 76, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    ui_overview_compact_button(panel->panel, deck, 4, top_y + 99, 76, "CUE", &s_style_btn_amber, cue_event_cb);
 }
 
 static lv_obj_t *ui_fx_panel_label(lv_obj_t *parent, const char *text,
@@ -616,13 +641,6 @@ static void ui_create_overview_center_marker(lv_obj_t *parent)
     lv_obj_t *bottom = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, OVERVIEW_DECK2_WAVE_Y - 2, 9, 2, COL_TEXT);
     lv_obj_set_style_bg_opa(bottom, LV_OPA_80, LV_PART_MAIN);
 
-    lv_obj_t *cue = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 16, 300, 32, 16, COL_AMBER);
-    lv_obj_set_style_border_width(cue, 0, LV_PART_MAIN);
-    lv_obj_t *label = lv_label_create(cue);
-    lv_label_set_text(label, "CUE");
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(label, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 }
 
 static void ui_create_overview_phase_meter(lv_obj_t *parent)
@@ -634,6 +652,7 @@ static void ui_create_overview_phase_meter(lv_obj_t *parent)
                                                   OVERVIEW_PHASE_W,
                                                   "PHASE --");
     lv_obj_set_style_text_align(s_phase_meter_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_add_flag(s_phase_meter_label, LV_OBJ_FLAG_HIDDEN);
 
     s_phase_meter_track = ui_overview_bar(parent,
                                           OVERVIEW_PHASE_X,
@@ -1303,10 +1322,9 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
             snprintf(text, sizeof(text), "OUT %3u%%", (unsigned)view.output_pct);
             ui_label_set_text_if_changed(panel->label_out, text);
         }
-        if (panel->label_pfl) {
-            ui_label_set_text_if_changed(panel->label_pfl, view.pfl_on ? "PFL ON" : "PFL OFF");
-            ui_obj_set_text_color_if_changed(panel->label_pfl,
-                                             view.pfl_on ? COL_AMBER : COL_TEXT_DIM);
+        if (s_overview_deck_pfl[deck] != view.pfl_on) {
+            s_overview_deck_pfl[deck] = view.pfl_on;
+            ui_overview_apply_deck_badge(deck);
         }
         if (panel->out_bar_fill) {
             int w = (78 * (int)view.output_pct) / 100;
@@ -1315,11 +1333,6 @@ static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapsh
                 lv_obj_set_width(panel->out_bar_fill, w);
             }
         }
-    }
-
-    if (s_crossfader_knob) {
-        int knob_x = ui_mixer_crossfader_knob_x(snapshot->crossfader, s_crossfader_track_w);
-        ui_obj_set_x_if_changed(s_crossfader_knob, OVERVIEW_XFADER_X + knob_x - 3);
     }
 }
 #endif
@@ -1377,17 +1390,20 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
                                  state->playing ? "((PLAY))" : (info->valid ? "LOADED" : "EMPTY"));
     ui_obj_set_text_color_if_changed(panel->label_status,
                                      state->playing ? COL_RED : (info->valid ? COL_AMBER : COL_TEXT_DIM));
+    if (s_overview_deck_playing[idx] != state->playing) {
+        s_overview_deck_playing[idx] = state->playing;
+        ui_overview_apply_deck_badge(deck);
+    }
     ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "No Track");
-    ui_label_set_text_if_changed(panel->label_artist, info->valid ? info->artist : "");
 
-    uint32_t time_bucket = elapsed_ms / 1000u;
+    uint32_t time_bucket = remain_ms / 10u;
     if (time_bucket != panel->last_time_bucket) {
         char text[16];
         panel->last_time_bucket = time_bucket;
-        snprintf(text, sizeof(text), "%02u:%02u.%02u",
-                 (unsigned)(elapsed_ms / 60000),
-                 (unsigned)((elapsed_ms % 60000) / 1000),
-                 (unsigned)((elapsed_ms % 1000) / 10));
+        snprintf(text, sizeof(text), "-%02u:%02u.%02u",
+                 (unsigned)(remain_ms / 60000),
+                 (unsigned)((remain_ms % 60000) / 1000),
+                 (unsigned)((remain_ms % 1000) / 10));
         ui_label_set_text_if_changed(panel->label_time, text);
     }
 
@@ -1410,7 +1426,9 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 #endif
     uint16_t base_bpm = s_overview_deck_bpm[idx];
     float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
-    ui_label_set_f2_if_changed(panel->label_bpm, current_bpm);
+    char bpm_text[8];
+    snprintf(bpm_text, sizeof(bpm_text), "%u", (unsigned)(current_bpm + 0.5f));
+    ui_label_set_text_if_changed(panel->label_bpm, bpm_text);
     int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
     char pitch_text[16];
     snprintf(pitch_text, sizeof(pitch_text), "%c%d.%02d%%",
@@ -1426,19 +1444,13 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
 void ui_overview_set_performance_target(uint8_t active_deck)
 {
-    active_deck = ui_overview_deck_index(active_deck);
+    (void)active_deck;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ui_overview_deck_panel_t *panel = &s_overview_decks[deck];
         if (!panel->panel) {
             continue;
         }
-        bool active = deck == active_deck;
         lv_obj_set_style_border_width(panel->panel, 0, LV_PART_MAIN);
-        if (panel->label_deck) {
-            lv_obj_set_style_text_color(panel->label_deck, active ? COL_TEXT : COL_TEXT_MUTED, LV_PART_MAIN);
-            lv_obj_set_style_border_color(panel->label_deck, active ? COL_TEXT : COL_BORDER, LV_PART_MAIN);
-            lv_obj_set_style_border_width(panel->label_deck, active ? 1 : 0, LV_PART_MAIN);
-        }
     }
 }
 
