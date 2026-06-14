@@ -36,13 +36,14 @@
 
 ## Current Repository State
 
-- `master` includes the P4 dual-deck UI refactor and the 2026-06-13 Deck 2
-  Overview waveform jitter fix.
+- `master` includes the P4 dual-deck UI refactor, the 2026-06-13 Deck 2
+  Overview waveform jitter fix, and the S3 review fixes for FLX4 host/translator
+  mode.
 - Branch `codex/p4-review-fixes` adds P4 review fixes: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
   regression runner.
-- S3 review fixes add a host regression runner, hardened DDJ-FLX4 USB MIDI
+- S3 review fixes include a host regression runner, hardened DDJ-FLX4 USB MIDI
   descriptor handling, deck-aware S3 `control_link` constants, an XML-derived
   FLX4 MIDI mapper, translator-mode UART coalescing, and safer legacy CDJ panel
   queue behavior.
