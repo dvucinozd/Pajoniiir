@@ -31,7 +31,7 @@ static void on_usb_storage_event(bool mounted)
         ui_trigger_library_refresh();            // safely schedule table repopulation in the LVGL task context
     } else {
         ESP_LOGW(TAG, "USB drive removed");
-        esp_err_t stop_rc = audio_engine_stop();
+        esp_err_t stop_rc = audio_engine_stop_all();
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
@@ -46,7 +46,7 @@ static void on_usb_storage_event(bool mounted)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "CDJ100S-XXX main deck firmware starting");
+    ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────

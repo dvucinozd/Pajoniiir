@@ -95,12 +95,17 @@ int media_catalog_count(void)
 
 esp_err_t media_catalog_get(int index, media_catalog_track_t *out_track)
 {
+    return media_catalog_get_from_source(s_source, index, out_track);
+}
+
+esp_err_t media_catalog_get_from_source(media_source_t source, int index, media_catalog_track_t *out_track)
+{
     if (!out_track || index < 0) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(out_track, 0, sizeof(*out_track));
 
-    if (s_source == MEDIA_SOURCE_REMOTE_LINK) {
+    if (source == MEDIA_SOURCE_REMOTE_LINK) {
         if (index >= s_remote_count || !s_remote_records) {
             return ESP_ERR_NOT_FOUND;
         }
@@ -142,15 +147,15 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
         return ESP_OK;
     }
 
-    library_track_t *track = library_get_ptr(index);
-    if (!track) {
+    library_track_t track;
+    if (library_get(index, &track) != ESP_OK) {
         return ESP_ERR_NOT_FOUND;
     }
-    out_row->track_key = cdj_link_track_key(track->track_id, track->path);
-    out_row->bpm = track->bpm;
-    out_row->duration_ms = track->duration_ms;
-    copy_str(out_row->title, sizeof(out_row->title), track->title);
-    copy_str(out_row->artist, sizeof(out_row->artist), track->artist);
+    out_row->track_key = cdj_link_track_key(track.track_id, track.path);
+    out_row->bpm = track.bpm;
+    out_row->duration_ms = track.duration_ms;
+    copy_str(out_row->title, sizeof(out_row->title), track.title);
+    copy_str(out_row->artist, sizeof(out_row->artist), track.artist);
     return ESP_OK;
 }
 
@@ -304,11 +309,16 @@ static esp_err_t load_remote(int index, media_loaded_track_t *out_loaded)
 
 esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
 {
+    return media_catalog_load_from_source(s_source, index, out_loaded);
+}
+
+esp_err_t media_catalog_load_from_source(media_source_t source, int index, media_loaded_track_t *out_loaded)
+{
     if (!out_loaded) {
         return ESP_ERR_INVALID_ARG;
     }
-    return s_source == MEDIA_SOURCE_REMOTE_LINK ? load_remote(index, out_loaded)
-                                                : load_local(index, out_loaded);
+    return source == MEDIA_SOURCE_REMOTE_LINK ? load_remote(index, out_loaded)
+                                              : load_local(index, out_loaded);
 }
 
 const anlz_metadata_t *media_catalog_get_loaded_anlz(void)

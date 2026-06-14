@@ -59,14 +59,6 @@ static bool deck_uses_audio_engine(uint8_t deck)
     return deck < DECK_CORE_DECK_COUNT;
 }
 
-static void sync_deck_from_audio(uint8_t deck, deck_state_t *state)
-{
-    if (!state || !deck_uses_audio_engine(deck)) return;
-
-    state->playing = audio_engine_deck_is_playing(deck);
-    state->position_ms = audio_engine_deck_position_ms(deck);
-}
-
 static bool event_is_mixer_control(const ctrl_event_t *ev)
 {
     return ev && (ev->id == CTRL_ID_CH1_VOLUME ||
@@ -336,12 +328,10 @@ static void deck_task(void *arg)
             continue;
         }
 
-        xSemaphoreTake(s_mutex, portMAX_DELAY);
         uint8_t deck = deck_index_for_event(&ev);
 
         if (event_is_mixer_control(&ev)) {
             on_mixer_control(ev.id, ev.value);
-            xSemaphoreGive(s_mutex);
             continue;
         }
 
@@ -359,12 +349,12 @@ static void deck_task(void *arg)
             on_pitch(deck, ev.value);
             break;
         case CTRL_EV_HEARTBEAT:
+            xSemaphoreTake(s_mutex, portMAX_DELAY);
             s_last_heartbeat_tick = xTaskGetTickCount();
+            xSemaphoreGive(s_mutex);
             ESP_LOGD(TAG, "S3 heartbeat seq=%d", ev.seq);
             break;
         }
-
-        xSemaphoreGive(s_mutex);
     }
 }
 
@@ -418,11 +408,21 @@ deck_state_t deck_core_get_state(void)
 
 deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t idx = normalize_deck(deck);
+    bool uses_audio = deck_uses_audio_engine(idx);
+    bool audio_playing = false;
+    uint32_t audio_position_ms = 0;
+    if (uses_audio) {
+        audio_playing = audio_engine_deck_is_playing(idx);
+        audio_position_ms = audio_engine_deck_position_ms(idx);
+    }
+
+    xSemaphoreTake(s_mutex, portMAX_DELAY);
     deck_state_t *state = &s_decks[idx];
-    
-    sync_deck_from_audio(idx, state);
+    if (uses_audio) {
+        state->playing = audio_playing;
+        state->position_ms = audio_position_ms;
+    }
     TickType_t now = xTaskGetTickCount();
     if (s_last_heartbeat_tick != 0) {
         uint32_t age_ms = (uint32_t)((now - s_last_heartbeat_tick) * portTICK_PERIOD_MS);
@@ -494,7 +494,10 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 deck_state_t deck_core_test_get_deck_state(uint8_t deck)
 {
     uint8_t idx = normalize_deck(deck);
-    sync_deck_from_audio(idx, &s_decks[idx]);
+    if (deck_uses_audio_engine(idx)) {
+        s_decks[idx].playing = audio_engine_deck_is_playing(idx);
+        s_decks[idx].position_ms = audio_engine_deck_position_ms(idx);
+    }
     return s_decks[idx];
 }
 #endif

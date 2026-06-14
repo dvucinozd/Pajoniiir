@@ -81,9 +81,16 @@ cd ..\main-deck-p4
 idf.py build
 ```
 
+P4 host regression tests on Windows:
+
+```powershell
+.\tests\run_p4_host_tests.ps1
+```
+
 Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
-substantial DDJ-FFL4 work in place: deck-aware state, dual-deck library load
-paths, dual producer/mixer audio plumbing, and a refactored two-deck LVGL UI.
+substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
+library load paths, shared output/mixer audio plumbing, and a refactored
+two-deck LVGL UI.
 The S3 FLX4 USB host/raw MIDI capture remains the next hardware blocker before
 real controller input and FLX4 LED feedback can be finished. The porting steps
 are tracked in [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

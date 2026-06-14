@@ -221,9 +221,42 @@ static void test_deck_api(void)
            "deck 1 position is zero before load");
 }
 
+static void test_deck_status_is_independent(void)
+{
+    printf("\n[Test 7] Per-deck status API\n");
+
+    audio_engine_deck_status_t status0;
+    audio_engine_deck_status_t status1;
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets deck status");
+    EXPECT(audio_engine_deck_get_status(0, &status0) == ESP_OK,
+           "deck 0 status read returns ESP_OK");
+    EXPECT(audio_engine_deck_get_status(1, &status1) == ESP_OK,
+           "deck 1 status read returns ESP_OK");
+    EXPECT(status0.state == AE_IDLE, "deck 0 starts idle");
+    EXPECT(status1.state == AE_IDLE, "deck 1 starts idle");
+
+    EXPECT(audio_engine_deck_load(1, "/nonexistent/file.mp3", NULL, 0) == ESP_ERR_NOT_FOUND,
+           "deck 1 failed load returns NOT_FOUND");
+    EXPECT(audio_engine_deck_get_status(0, &status0) == ESP_OK,
+           "deck 0 status still readable after deck 1 error");
+    EXPECT(audio_engine_deck_get_status(1, &status1) == ESP_OK,
+           "deck 1 status readable after deck 1 error");
+    EXPECT(status0.state == AE_IDLE, "deck 1 error does not affect deck 0 state");
+    EXPECT(status0.last_error == ESP_OK, "deck 1 error does not affect deck 0 error");
+    EXPECT(status1.state == AE_ERROR, "deck 1 state reports ERROR");
+    EXPECT(status1.last_error == ESP_ERR_NOT_FOUND, "deck 1 error reports NOT_FOUND");
+    EXPECT(status1.load_progress == 100, "deck 1 failed load resets progress");
+
+    EXPECT(audio_engine_deck_get_status(2, &status0) == ESP_ERR_INVALID_ARG,
+           "invalid deck status returns INVALID_ARG");
+    EXPECT(audio_engine_deck_get_status(0, NULL) == ESP_ERR_INVALID_ARG,
+           "NULL status output returns INVALID_ARG");
+}
+
 static void test_deck_states_are_independent(void)
 {
-    printf("\n[Test 7] Per-deck state split\n");
+    printf("\n[Test 8] Per-deck state split\n");
 
     const char *path = "dummy_deck_audio.mp3";
     FILE *f = fopen(path, "wb");
@@ -262,7 +295,7 @@ static void test_deck_states_are_independent(void)
 
 static void test_deck_loops_are_independent(void)
 {
-    printf("\n[Test 8] Per-deck loop state\n");
+    printf("\n[Test 9] Per-deck loop state\n");
 
     EXPECT(audio_engine_deck_set_loop(0, 1000, 2000) == ESP_OK,
            "deck 0 loop set returns ESP_OK");
@@ -307,10 +340,10 @@ static void test_deck_loops_are_independent(void)
            "invalid deck loop read returns INVALID_ARG");
 }
 
-/* ── Test 8: real MP3 decode to WAV (optional, skipped if no file given) ── */
+/* ── Test 10: real MP3 decode to WAV (optional, skipped if no file given) ── */
 static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
 {
-    printf("\n[Test 9] Decode MP3 → WAV\n");
+    printf("\n[Test 10] Decode MP3 → WAV\n");
     printf("  Input:  %s\n", mp3_path);
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
@@ -372,6 +405,7 @@ int main(int argc, char *argv[])
     test_mixer_state_api();
     test_pfl_state_api();
     test_deck_api();
+    test_deck_status_is_independent();
     test_deck_states_are_independent();
     test_deck_loops_are_independent();
 
@@ -379,7 +413,7 @@ int main(int argc, char *argv[])
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;
         test_decode_to_wav(argv[1], max_ms);
     } else {
-        printf("\n[Test 9] Decode MP3 → WAV\n");
+        printf("\n[Test 10] Decode MP3 → WAV\n");
         printf("  SKIP: no MP3 path provided  (usage: %s <file.mp3> [max_ms])\n", argv[0]);
     }
 

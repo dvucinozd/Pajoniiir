@@ -19,6 +19,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifndef REKORDBOX_PDB_STANDALONE_TEST
+#include "esp_heap_caps.h"
+#endif
+
 static const char *TAG = "pdb";
 
 /* ── PDB format constants ─────────────────────────────────────────────────── */
@@ -330,13 +334,17 @@ static const char *lookup_name(const name_entry_t *arr, int count, uint32_t id)
 typedef struct {
     struct pdb_s *p;
     int           count;
+    bool          truncated;
 } track_ctx_t;
 
 static bool track_cb(const struct pdb_s *p, uint32_t page_num,
                       uint32_t heap_off, void *user)
 {
     track_ctx_t *ctx = (track_ctx_t *)user;
-    if (ctx->count >= (int)PDB_MAX_TRACKS) return false;
+    if (ctx->count >= (int)PDB_MAX_TRACKS) {
+        ctx->truncated = true;
+        return false;
+    }
 
     size_t row = page_base_off(p, page_num) + PAGE_HEAP_OFFSET + (size_t)heap_off;
     if (row + TRACK_ROW_MIN_SIZE > p->data_len) return true;
@@ -421,10 +429,18 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
     struct pdb_s *p = (struct pdb_s *)calloc(1u, sizeof(struct pdb_s));
     if (!p) { fclose(fp); return ESP_ERR_NO_MEM; }
 
-    p->data = (uint8_t *)malloc((size_t)fsize);
+    size_t data_size = (size_t)fsize;
+#ifndef REKORDBOX_PDB_STANDALONE_TEST
+    p->data = (uint8_t *)heap_caps_malloc(data_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p->data) {
+        p->data = (uint8_t *)malloc(data_size);
+    }
+#else
+    p->data = (uint8_t *)malloc(data_size);
+#endif
     if (!p->data) { free(p); fclose(fp); return ESP_ERR_NO_MEM; }
 
-    if (fread(p->data, 1u, (size_t)fsize, fp) != (size_t)fsize) {
+    if (fread(p->data, 1u, data_size, fp) != data_size) {
         PDB_LOGE(TAG, "Read error");
         free(p->data); free(p); fclose(fp);
         return ESP_FAIL;
@@ -470,9 +486,12 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
     }
 
     /* Parse tracks */
-    track_ctx_t ctx = { p, 0 };
+    track_ctx_t ctx = { .p = p, .count = 0, .truncated = false };
     walk_table(p, TABLE_TYPE_TRACKS, track_cb, &ctx);
     p->track_count = ctx.count;
+    if (ctx.truncated) {
+        PDB_LOGW(TAG, "Track index truncated at %u entries", PDB_MAX_TRACKS);
+    }
 
     PDB_LOGI(TAG, "Loaded: %d tracks, %d artists, %d albums",
              p->track_count, p->artist_count, p->album_count);

@@ -55,6 +55,17 @@ Responsibilities:
 - render UI state;
 - send LED feedback commands to the S3.
 
+Current P4 audio ownership rule:
+
+- each deck owns its own engine state, preload buffer, decode runtime, PCM ring,
+  resampler, lifecycle status, and last-error state;
+- one shared firmware output service owns codec open/close and consumes both
+  deck PCM rings through the output mixer;
+- stopping or reloading one deck must not close the codec while another deck is
+  still loaded or playing;
+- USB removal uses `audio_engine_stop_all()` to tear down both decks and the
+  shared output service.
+
 ## Data Flow
 
 1. FLX4 sends a MIDI event, for example `0x90 0x0B 0x7F` for Deck 1 Play.
