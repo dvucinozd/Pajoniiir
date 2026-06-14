@@ -158,19 +158,6 @@ typedef struct {
 } audio_engine_state_t;
 
 static audio_engine_state_t  s_engines[AUDIO_ENGINE_DECK_COUNT];
-static audio_engine_state_t *s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
-
-#define s_eng (*s_active_eng)
-
-static inline audio_pcm_ring_t *active_pcm_ring(void)
-{
-    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        if (&s_engines[i] == s_active_eng) {
-            return &s_pcm_rings[i];
-        }
-    }
-    return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
-}
 
 static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
 {
@@ -178,25 +165,6 @@ static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
         return &s_pcm_rings[deck];
     }
     return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
-}
-
-static inline uint8_t active_deck_index(void)
-{
-    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        if (&s_engines[i] == s_active_eng) {
-            return i;
-        }
-    }
-    return AUDIO_ENGINE_COMPAT_DECK;
-}
-
-static inline uint32_t ring_free(void) { return audio_pcm_ring_free(active_pcm_ring()); }
-
-static inline void ring_reset(void) { audio_pcm_ring_reset(active_pcm_ring()); }
-
-static inline bool ring_push(int16_t l, int16_t r)
-{
-    return audio_pcm_ring_push(active_pcm_ring(), l, r);
 }
 
 static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
@@ -246,11 +214,6 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 #if AE_FW
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
 
-static audio_resampler_state_t *active_resampler(void)
-{
-    return &s_resamplers[active_deck_index()];
-}
-
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 {
     if (deck < AUDIO_ENGINE_DECK_COUNT) {
@@ -262,21 +225,6 @@ static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 static bool pop_ring_source(void *ctx, audio_mixer_frame_t *out_frame)
 {
     return audio_pcm_ring_pop((audio_pcm_ring_t *)ctx, out_frame);
-}
-
-static audio_fw_preload_t *active_fw_preload(void)
-{
-    return &s_fw_preloads[active_deck_index()];
-}
-
-static audio_fw_runtime_t *active_fw_runtime(void)
-{
-    return &s_fw_runtimes[active_deck_index()];
-}
-
-static audio_fw_task_context_t *active_fw_task_context(void)
-{
-    return &s_fw_task_contexts[active_deck_index()];
 }
 
 static void reset_all_fw_preloads(void)
@@ -351,7 +299,7 @@ static bool any_deck_loaded(void)
  * ═════════════════════════════════════════════════════════════════════════ */
 
 /*
- * decode_one_frame — read + decode one MP3 frame from s_eng.fp.
+ * decode_one_frame — read + decode one MP3 frame from a deck engine.
  *
  * Returns PCM samples-per-channel (>0), or 0 on EOF / no frame found.
  * out_pcm[] is stereo-interleaved: out_pcm[i*2]=L, out_pcm[i*2+1]=R.
@@ -1060,18 +1008,24 @@ static esp_err_t audio_output_service_stop(void)
  * Public API
  * ═════════════════════════════════════════════════════════════════════════ */
 
+static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, const char *err_text)
+{
+    memset(eng, 0, sizeof(*eng));
+    eng->pitch_factor = 1.0f;
+    eng->load_progress = 100;
+    eng->last_error = err;
+    snprintf(eng->last_error_text, sizeof(eng->last_error_text), "%s", err_text ? err_text : "OK");
+    mp3dec_init(&eng->dec);
+}
+
+static esp_err_t audio_engine_stop_for_deck(uint8_t deck);
+
 /* ── audio_engine_init ────────────────────────────────────────────────────── */
 esp_err_t audio_engine_init(void)
 {
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        memset(&s_engines[i], 0, sizeof s_engines[i]);
-        s_engines[i].pitch_factor = 1.0f;
-        s_engines[i].load_progress = 100;
-        s_engines[i].last_error = ESP_OK;
-        snprintf(s_engines[i].last_error_text, sizeof(s_engines[i].last_error_text), "OK");
-        mp3dec_init(&s_engines[i].dec);
+        audio_engine_reset_state(&s_engines[i], ESP_OK, "OK");
     }
-    s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
     reset_all_pcm_rings();
 #if AE_FW
     reset_all_resamplers();
@@ -1107,61 +1061,56 @@ esp_err_t audio_engine_init(void)
     return ESP_OK;
 }
 
-/* ── audio_engine_load ────────────────────────────────────────────────────── */
-esp_err_t audio_engine_load(const char     *mp3_path,
-                             const uint32_t *pvbr_400,
-                             uint32_t        duration_ms)
+static esp_err_t audio_engine_load_for_deck(uint8_t deck,
+                                            const char *mp3_path,
+                                            const uint32_t *pvbr_400,
+                                            uint32_t duration_ms)
 {
-    s_eng.last_error = ESP_OK;
-    snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OK");
+    audio_engine_state_t *eng = &s_engines[deck];
+    audio_pcm_ring_t *ring = &s_pcm_rings[deck];
+    eng->last_error = ESP_OK;
+    snprintf(eng->last_error_text, sizeof(eng->last_error_text), "OK");
 
     if (!mp3_path) {
-        s_eng.last_error = ESP_ERR_INVALID_ARG;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "INVALID ARG");
+        eng->last_error = ESP_ERR_INVALID_ARG;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "INVALID ARG");
         return ESP_ERR_INVALID_ARG;
     }
 
-    /* Stop any running playback before loading a new track. If teardown times
-     * out, keep ownership unchanged and refuse to start a second engine. */
-    if (s_eng.loaded) {
-        esp_err_t stop_rc = audio_engine_stop();
+    if (eng->loaded) {
+        esp_err_t stop_rc = audio_engine_stop_for_deck(deck);
         if (stop_rc != ESP_OK) {
-            s_eng.last_error = stop_rc;
-            snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "STOP ERR");
+            eng->last_error = stop_rc;
+            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
             return stop_rc;
         }
     }
 
-    s_eng.loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
-    s_eng.load_progress = 0;
+    eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
+    eng->load_progress = 0;
 
 #if AE_FW
-    /* Firmware: the loader task preloads the file from USB into PSRAM and the
-     * decoder reads that memory buffer, so the slow USB read stays off the caller
-     * and off the playback/teardown path. */
-    audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_preload_t *fw = &s_fw_preloads[deck];
     audio_fw_preload_set_path(fw, mp3_path);
-    s_eng.fp = NULL;
+    eng->fp = NULL;
 #else
     FILE *fp = fopen(mp3_path, "rb");
     if (!fp) {
         ESP_LOGE(TAG, "Cannot open: %s", mp3_path);
-        s_eng.last_error = ESP_ERR_NOT_FOUND;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "NOT FOUND");
-        s_eng.loading = false;
-        s_eng.load_progress = 100;
+        eng->last_error = ESP_ERR_NOT_FOUND;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NOT FOUND");
+        eng->loading = false;
+        eng->load_progress = 100;
         return ESP_ERR_NOT_FOUND;
     }
-    s_eng.fp = fp;
+    eng->fp = fp;
 #endif
 
-    s_eng.duration_ms = duration_ms;
-    s_eng.sample_rate = 0u;   /* latched on first decoded frame */
-    s_eng.channels    = 2;
+    eng->duration_ms = duration_ms;
+    eng->sample_rate = 0u;   /* latched on first decoded frame */
+    eng->channels    = 2;
 
     if (pvbr_400) {
-        /* Check if the PVBR table is just filled with zeros.
-         * Index 0 is always 0, so we check indexes from 1 to AUDIO_PVBR_LEN-1. */
         bool any_nonzero = false;
         for (int i = 1; i < AUDIO_PVBR_LEN; i++) {
             if (pvbr_400[i] > 0) {
@@ -1170,48 +1119,40 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             }
         }
         if (any_nonzero) {
-            memcpy(s_eng.pvbr, pvbr_400, AUDIO_PVBR_LEN * sizeof(uint32_t));
-            s_eng.has_pvbr = true;
+            memcpy(eng->pvbr, pvbr_400, AUDIO_PVBR_LEN * sizeof(uint32_t));
+            eng->has_pvbr = true;
             ESP_LOGI(TAG, "PVBR seek table loaded and verified (has non-zero values)");
         } else {
             ESP_LOGW(TAG, "PVBR table contains only zeros! Disabling PVBR seek, using linear fallback.");
-            memset(s_eng.pvbr, 0, sizeof s_eng.pvbr);
-            s_eng.has_pvbr = false;
+            memset(eng->pvbr, 0, sizeof eng->pvbr);
+            eng->has_pvbr = false;
         }
     } else {
-        memset(s_eng.pvbr, 0, sizeof s_eng.pvbr);
-        s_eng.has_pvbr = false;
+        memset(eng->pvbr, 0, sizeof eng->pvbr);
+        eng->has_pvbr = false;
     }
 
-    s_eng.seek_base_ms      = 0u;
-    s_eng.frames_since_seek = 0u;
-    s_eng.output_base_ms    = 0u;
-    s_eng.output_frames_since_seek = 0u;
-    s_eng.playing           = false;
-    s_eng.paused            = false;
-    s_eng.eof               = false;
-    s_eng.loaded            = true;
+    eng->seek_base_ms      = 0u;
+    eng->frames_since_seek = 0u;
+    eng->output_base_ms    = 0u;
+    eng->output_frames_since_seek = 0u;
+    eng->playing           = false;
+    eng->paused            = false;
+    eng->eof               = false;
+    eng->loaded            = true;
 
-    mp3dec_init(&s_eng.dec);
-    ring_reset();
-
-
+    mp3dec_init(&eng->dec);
+    audio_pcm_ring_reset(ring);
 
     ESP_LOGI(TAG, "Loaded: %s  dur=%u ms  pvbr=%s",
              mp3_path, (unsigned)duration_ms, pvbr_400 ? "yes" : "no");
 
-
-
 #if AE_FW
-    /* Keep load() light: MP3 decode uses ~13 KB of stack (4 KB read buffer + a
-     * 9 KB PCM frame) and would overflow the caller (e.g. the LVGL task). The
-     * decode task latches the sample rate, opens the codec, then streams. */
-    audio_fw_runtime_t *runtime = active_fw_runtime();
-    audio_fw_task_context_t *task_ctx = active_fw_task_context();
-    audio_resampler_reset(active_resampler());
+    audio_fw_runtime_t *runtime = &s_fw_runtimes[deck];
+    audio_fw_task_context_t *task_ctx = &s_fw_task_contexts[deck];
+    audio_resampler_reset(&s_resamplers[deck]);
     audio_fw_runtime_begin_load(runtime);
     audio_fw_preload_begin_load(fw);
-    uint8_t deck = active_deck_index();
     audio_fw_task_plan_t task_plan =
         audio_fw_task_plan_for_deck(deck,
                                     AUDIO_ENGINE_COMPAT_DECK,
@@ -1220,8 +1161,8 @@ esp_err_t audio_engine_load(const char     *mp3_path,
                                deck,
                                fw,
                                runtime,
-                               &s_engines[deck],
-                               &s_pcm_rings[deck],
+                               eng,
+                               ring,
                                &s_resamplers[deck],
                                task_plan);
     if (s_tasks_done) {
@@ -1229,9 +1170,6 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             /* drain stale task-exit signals from a previous load */
         }
     }
-    /* loader: streams USB→PSRAM (sole USB user). decode: minimp3 needs a large
-     * on-stack scratch (~15 KB) + linear-seek scanning → 48 KB stack. output:
-     * real-time I2S writes (highest prio). */
     if (task_plan.start_loader) {
         if (xTaskCreate(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
                         (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
@@ -1260,10 +1198,10 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     esp_err_t output_rc = audio_output_service_ensure_started();
     if (output_rc != ESP_OK) {
         ESP_LOGE(TAG, "failed to start shared output task");
-        s_eng.last_error = output_rc;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OUTPUT TASK ERR");
-        s_eng.loading = false;
-        s_eng.load_progress = 100;
+        eng->last_error = output_rc;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "OUTPUT TASK ERR");
+        eng->loading = false;
+        eng->load_progress = 100;
         runtime->run = false;
         for (int i = 0; i < runtime->tasks_started; i++) {
             xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
@@ -1272,20 +1210,16 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             heap_caps_free(fw->buf);
             fw->buf = NULL;
         }
-        memset(&s_eng, 0, sizeof s_eng);
-        s_eng.pitch_factor = 1.0f;
-        s_eng.load_progress = 100;
-        s_eng.last_error = output_rc;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OUTPUT TASK ERR");
+        audio_engine_reset_state(eng, output_rc, "OUTPUT TASK ERR");
         audio_fw_runtime_mark_stopped(runtime);
         audio_fw_task_context_reset(task_ctx);
         return output_rc;
     }
     if (runtime->tasks_started != task_plan.expected_tasks) {
-        s_eng.last_error = ESP_ERR_NO_MEM;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "TASK CREATE ERR");
-        s_eng.loading = false;
-        s_eng.load_progress = 100;
+        eng->last_error = ESP_ERR_NO_MEM;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "TASK CREATE ERR");
+        eng->loading = false;
+        eng->load_progress = 100;
         runtime->run = false;
         for (int i = 0; i < runtime->tasks_started; i++) {
             xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
@@ -1298,11 +1232,7 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             heap_caps_free(fw->buf);
             fw->buf = NULL;
         }
-        memset(&s_eng, 0, sizeof s_eng);
-        s_eng.pitch_factor = 1.0f;
-        s_eng.load_progress = 100;
-        s_eng.last_error = ESP_ERR_NO_MEM;
-        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "TASK CREATE ERR");
+        audio_engine_reset_state(eng, ESP_ERR_NO_MEM, "TASK CREATE ERR");
         audio_fw_runtime_mark_stopped(runtime);
         audio_fw_task_context_reset(task_ctx);
         return ESP_ERR_NO_MEM;
@@ -1310,57 +1240,70 @@ esp_err_t audio_engine_load(const char     *mp3_path,
 #endif
 
 #if !AE_FW
-    /* PC paths decode on demand (no PSRAM preload) — ready immediately. */
-    s_eng.loading = false;
-    s_eng.load_progress = 100;
+    eng->loading = false;
+    eng->load_progress = 100;
 #endif
 
+    return ESP_OK;
+}
+
+/* ── audio_engine_load ────────────────────────────────────────────────────── */
+esp_err_t audio_engine_load(const char     *mp3_path,
+                             const uint32_t *pvbr_400,
+                             uint32_t        duration_ms)
+{
+    return audio_engine_load_for_deck(AUDIO_ENGINE_COMPAT_DECK, mp3_path, pvbr_400, duration_ms);
+}
+
+static esp_err_t audio_engine_play_for_deck(uint8_t deck)
+{
+    audio_engine_state_t *eng = &s_engines[deck];
+    if (!eng->loaded) return ESP_ERR_INVALID_STATE;
+
+    eng->paused  = false;
+    eng->playing = true;
+    eng->eof     = false; /* allow replay if previously at end */
     return ESP_OK;
 }
 
 /* ── audio_engine_play ────────────────────────────────────────────────────── */
 esp_err_t audio_engine_play(void)
 {
-    if (!s_eng.loaded) return ESP_ERR_INVALID_STATE;
+    return audio_engine_play_for_deck(AUDIO_ENGINE_COMPAT_DECK);
+}
 
-    s_eng.paused  = false;
-    s_eng.playing = true;
-    s_eng.eof     = false; /* allow replay if previously at end */
+static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
+{
+    audio_engine_state_t *eng = &s_engines[deck];
+    if (!eng->loaded) return ESP_ERR_INVALID_STATE;
 
-
+    eng->playing = false;
+    eng->paused  = true;
     return ESP_OK;
 }
 
 /* ── audio_engine_pause ───────────────────────────────────────────────────── */
 esp_err_t audio_engine_pause(void)
 {
-    if (!s_eng.loaded) return ESP_ERR_INVALID_STATE;
-
-    s_eng.playing = false;
-    s_eng.paused  = true;
-
-
-    return ESP_OK;
+    return audio_engine_pause_for_deck(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 /* ── audio_engine_stop ────────────────────────────────────────────────────── */
-esp_err_t audio_engine_stop(void)
+static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 {
-    if (!s_eng.loaded) return ESP_OK;
+    audio_engine_state_t *eng = &s_engines[deck];
+    if (!eng->loaded) return ESP_OK;
 
-    s_eng.playing = false;
-    s_eng.paused  = false;
-    s_eng.loading = false;
-    s_eng.load_progress = 100;
-
-
+    eng->playing = false;
+    eng->paused  = false;
+    eng->loading = false;
+    eng->load_progress = 100;
 
 #if AE_FW
-    audio_fw_runtime_t *runtime = active_fw_runtime();
+    audio_fw_runtime_t *runtime = &s_fw_runtimes[deck];
     if (runtime->run || runtime->tasks_started > 0) {
         runtime->run = false;
-        s_eng.eof = false;   /* wake decode task if parked at EOF */
-        /* Wait for all started tasks before freeing buffers they can touch. */
+        eng->eof = false;   /* wake decode task if parked at EOF */
         if (s_tasks_done) {
             int exited = 0;
             for (int i = 0; i < runtime->tasks_started; i++) {
@@ -1378,39 +1321,34 @@ esp_err_t audio_engine_stop(void)
         runtime->decode_task = NULL;
         runtime->output_task = NULL;
         runtime->tasks_started = 0;
-        audio_fw_task_context_reset(active_fw_task_context());
+        audio_fw_task_context_reset(&s_fw_task_contexts[deck]);
     }
 #endif
 
     AE_LOCK();
-    if (s_eng.fp) { fclose(s_eng.fp); s_eng.fp = NULL; }
-    s_eng.file_buf  = NULL;
-    s_eng.file_size = 0;
-    s_eng.file_pos  = 0;
-    if (s_eng.seek_table) {
+    if (eng->fp) { fclose(eng->fp); eng->fp = NULL; }
+    eng->file_buf  = NULL;
+    eng->file_size = 0;
+    eng->file_pos  = 0;
+    if (eng->seek_table) {
 #if AE_FW
-        heap_caps_free(s_eng.seek_table);
+        heap_caps_free(eng->seek_table);
 #else
-        free(s_eng.seek_table);
+        free(eng->seek_table);
 #endif
-        s_eng.seek_table = NULL;
+        eng->seek_table = NULL;
     }
-    s_eng.seek_table_len = 0;
+    eng->seek_table_len = 0;
     AE_UNLOCK();
 
 #if AE_FW
-    /* Free the PSRAM preload buffer. */
-    audio_fw_preload_t *fw = active_fw_preload();
+    audio_fw_preload_t *fw = &s_fw_preloads[deck];
     if (fw->buf) { heap_caps_free(fw->buf); fw->buf = NULL; }
     audio_fw_preload_begin_load(fw);
 #endif
 
-    memset(&s_eng, 0, sizeof s_eng);
-    s_eng.pitch_factor = 1.0f;
-    s_eng.load_progress = 100;
-    s_eng.last_error = ESP_OK;
-    snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OK");
-    ring_reset();
+    audio_engine_reset_state(eng, ESP_OK, "OK");
+    audio_pcm_ring_reset(&s_pcm_rings[deck]);
 
 #if AE_FW
     if (!any_deck_loaded()) {
@@ -1424,30 +1362,40 @@ esp_err_t audio_engine_stop(void)
     return ESP_OK;
 }
 
-/* ── audio_engine_seek ────────────────────────────────────────────────────── */
-esp_err_t audio_engine_seek(uint32_t position_ms)
+esp_err_t audio_engine_stop(void)
 {
-    if (!s_eng.loaded || (!s_eng.fp && !s_eng.file_buf)) return ESP_ERR_INVALID_STATE;
+    return audio_engine_stop_for_deck(AUDIO_ENGINE_COMPAT_DECK);
+}
 
-    s_eng.seek_target_ms = position_ms;
-    s_eng.seek_is_loop   = false;  /* user seek → flush ring (set before requested) */
-    s_eng.seek_requested = true;
-    s_eng.eof            = false;  /* also wakes decode thread if at EOF */
+/* ── audio_engine_seek ────────────────────────────────────────────────────── */
+static esp_err_t audio_engine_seek_for_deck(uint8_t deck, uint32_t position_ms)
+{
+    audio_engine_state_t *eng = &s_engines[deck];
+    if (!eng->loaded || (!eng->fp && !eng->file_buf)) return ESP_ERR_INVALID_STATE;
+
+    eng->seek_target_ms = position_ms;
+    eng->seek_is_loop   = false;  /* user seek -> flush ring (set before requested) */
+    eng->seek_requested = true;
+    eng->eof            = false;  /* also wakes decode thread if at EOF */
 
     AE_LOCK();
-    s_eng.output_base_ms = position_ms;
-    s_eng.output_frames_since_seek = 0u;
-    s_eng.seek_base_ms = position_ms;
-    s_eng.frames_since_seek = 0u;
-    /* Flush stale decoded data from ring buffer to mute audio immediately */
-    ring_reset();
+    eng->output_base_ms = position_ms;
+    eng->output_frames_since_seek = 0u;
+    eng->seek_base_ms = position_ms;
+    eng->frames_since_seek = 0u;
+    audio_pcm_ring_reset(&s_pcm_rings[deck]);
 
 #if AE_FW
-    audio_resampler_reset(active_resampler());
+    audio_resampler_reset(&s_resamplers[deck]);
 #endif
     AE_UNLOCK();
 
     return ESP_OK;
+}
+
+esp_err_t audio_engine_seek(uint32_t position_ms)
+{
+    return audio_engine_seek_for_deck(AUDIO_ENGINE_COMPAT_DECK, position_ms);
 }
 
 /* ── audio_engine_set_pitch ───────────────────────────────────────────────── */
@@ -1462,11 +1410,16 @@ esp_err_t audio_engine_seek(uint32_t position_ms)
  */
 void audio_engine_set_pitch(int16_t raw_pitch)
 {
+    audio_engine_deck_set_pitch(AUDIO_ENGINE_COMPAT_DECK, raw_pitch);
+}
+
+static void audio_engine_set_pitch_for_deck(uint8_t deck, int16_t raw_pitch)
+{
     float factor = 1.0f + ((8192.0f - (float)raw_pitch) / 8192.0f) * 0.10f;
     /* Clamp to ±20% to stay sane even if fader value is out of range */
     if (factor < 0.80f) factor = 0.80f;
     if (factor > 1.20f) factor = 1.20f;
-    s_eng.pitch_factor = factor;
+    s_engines[deck].pitch_factor = factor;
 }
 
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch)
@@ -1477,14 +1430,20 @@ float audio_engine_raw_pitch_to_percent(int16_t raw_pitch)
 /* ── audio_engine_position_ms ─────────────────────────────────────────────── */
 uint32_t audio_engine_position_ms(void)
 {
+    return audio_engine_deck_position_ms(AUDIO_ENGINE_COMPAT_DECK);
+}
+
+static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
+{
+    audio_engine_state_t *eng = &s_engines[deck];
     AE_LOCK();
-    if (!s_eng.loaded || s_eng.sample_rate == 0) {
-        uint32_t base = s_eng.output_base_ms;
+    if (!eng->loaded || eng->sample_rate == 0) {
+        uint32_t base = eng->output_base_ms;
         AE_UNLOCK();
         return base;
     }
-    uint32_t from_frames = (uint32_t)(s_eng.output_frames_since_seek * 1000u / s_eng.sample_rate);
-    uint32_t pos = s_eng.output_base_ms + from_frames;
+    uint32_t from_frames = (uint32_t)(eng->output_frames_since_seek * 1000u / eng->sample_rate);
+    uint32_t pos = eng->output_base_ms + from_frames;
     AE_UNLOCK();
     return pos;
 }
@@ -1492,7 +1451,7 @@ uint32_t audio_engine_position_ms(void)
 /* ── audio_engine_is_playing ──────────────────────────────────────────────── */
 bool audio_engine_is_playing(void)
 {
-    return s_eng.playing && !s_eng.paused;
+    return audio_engine_deck_is_playing(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 static bool deck_is_valid(uint8_t deck);
@@ -1534,56 +1493,42 @@ esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t 
 /* ── audio_engine_get_state / load_progress (P5a) ─────────────────────────── */
 ae_state_t audio_engine_get_state(void)
 {
-    return engine_lifecycle_state(&s_eng);
+    return engine_lifecycle_state(&s_engines[AUDIO_ENGINE_COMPAT_DECK]);
 }
 
 uint8_t audio_engine_load_progress(void)
 {
-    return s_eng.load_progress;
+    return s_engines[AUDIO_ENGINE_COMPAT_DECK].load_progress;
 }
 
 esp_err_t audio_engine_last_error(void)
 {
-    return s_eng.last_error;
+    return s_engines[AUDIO_ENGINE_COMPAT_DECK].last_error;
 }
 
 const char *audio_engine_last_error_text(void)
 {
-    return s_eng.last_error_text;
+    return s_engines[AUDIO_ENGINE_COMPAT_DECK].last_error_text;
 }
 
 /* ── audio_engine_set_loop ────────────────────────────────────────────────── */
 void audio_engine_set_loop(uint32_t start_ms, uint32_t end_ms)
 {
-    AE_LOCK();
-    s_eng.loop_start_ms = start_ms;
-    s_eng.loop_end_ms   = end_ms;
-    s_eng.loop_active   = true;
-    AE_UNLOCK();
-    ESP_LOGI(TAG, "Audio loop set: %lu ms to %lu ms", (unsigned long)start_ms, (unsigned long)end_ms);
+    (void)audio_engine_deck_set_loop(AUDIO_ENGINE_COMPAT_DECK, start_ms, end_ms);
 }
 
 /* ── audio_engine_clear_loop ──────────────────────────────────────────────── */
 void audio_engine_clear_loop(void)
 {
-    AE_LOCK();
-    s_eng.loop_active   = false;
-    AE_UNLOCK();
-    ESP_LOGI(TAG, "Audio loop cleared");
+    (void)audio_engine_deck_clear_loop(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 /* ── audio_engine_get_loop_state ───────────────────────────────────────────── */
 void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end_ms)
 {
-    AE_LOCK();
-    if (active) *active = s_eng.loop_active;
-    if (start_ms) *start_ms = s_eng.loop_start_ms;
-    if (end_ms) *end_ms = s_eng.loop_end_ms;
-    AE_UNLOCK();
+    (void)audio_engine_deck_get_loop_state(AUDIO_ENGINE_COMPAT_DECK, active, start_ms, end_ms);
 }
 
-static audio_engine_state_t *select_engine(uint8_t deck);
-static void restore_engine(audio_engine_state_t *prev);
 #if AE_FW
 static bool deck_transport_supported(uint8_t deck);
 #endif
@@ -1594,9 +1539,13 @@ esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t e
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    audio_engine_set_loop(start_ms, end_ms);
-    restore_engine(prev);
+    audio_engine_state_t *eng = &s_engines[deck];
+    AE_LOCK();
+    eng->loop_start_ms = start_ms;
+    eng->loop_end_ms   = end_ms;
+    eng->loop_active   = true;
+    AE_UNLOCK();
+    ESP_LOGI(TAG, "Audio loop set: %lu ms to %lu ms", (unsigned long)start_ms, (unsigned long)end_ms);
     return ESP_OK;
 }
 
@@ -1606,9 +1555,10 @@ esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    audio_engine_clear_loop();
-    restore_engine(prev);
+    AE_LOCK();
+    s_engines[deck].loop_active = false;
+    AE_UNLOCK();
+    ESP_LOGI(TAG, "Audio loop cleared");
     return ESP_OK;
 }
 
@@ -1621,9 +1571,12 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    audio_engine_get_loop_state(active, start_ms, end_ms);
-    restore_engine(prev);
+    audio_engine_state_t *eng = &s_engines[deck];
+    AE_LOCK();
+    if (active) *active = eng->loop_active;
+    if (start_ms) *start_ms = eng->loop_start_ms;
+    if (end_ms) *end_ms = eng->loop_end_ms;
+    AE_UNLOCK();
     return ESP_OK;
 }
 
@@ -1641,28 +1594,13 @@ static bool deck_transport_supported(uint8_t deck)
 }
 #endif
 
-static audio_engine_state_t *select_engine(uint8_t deck)
-{
-    audio_engine_state_t *prev = s_active_eng;
-    s_active_eng = &s_engines[deck];
-    return prev;
-}
-
-static void restore_engine(audio_engine_state_t *prev)
-{
-    s_active_eng = prev;
-}
-
 esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const char *mp3_path,
                                  const uint32_t *pvbr_400,
                                  uint32_t duration_ms)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    audio_engine_state_t *prev = select_engine(deck);
-    esp_err_t rc = audio_engine_load(mp3_path, pvbr_400, duration_ms);
-    restore_engine(prev);
-    return rc;
+    return audio_engine_load_for_deck(deck, mp3_path, pvbr_400, duration_ms);
 }
 
 esp_err_t audio_engine_deck_play(uint8_t deck)
@@ -1671,10 +1609,7 @@ esp_err_t audio_engine_deck_play(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    esp_err_t rc = audio_engine_play();
-    restore_engine(prev);
-    return rc;
+    return audio_engine_play_for_deck(deck);
 }
 
 esp_err_t audio_engine_deck_pause(uint8_t deck)
@@ -1683,19 +1618,13 @@ esp_err_t audio_engine_deck_pause(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    esp_err_t rc = audio_engine_pause();
-    restore_engine(prev);
-    return rc;
+    return audio_engine_pause_for_deck(deck);
 }
 
 esp_err_t audio_engine_deck_stop(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    audio_engine_state_t *prev = select_engine(deck);
-    esp_err_t rc = audio_engine_stop();
-    restore_engine(prev);
-    return rc;
+    return audio_engine_stop_for_deck(deck);
 }
 
 esp_err_t audio_engine_stop_all(void)
@@ -1722,10 +1651,7 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
 #if AE_FW
     if (!deck_transport_supported(deck)) return ESP_ERR_NOT_SUPPORTED;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    esp_err_t rc = audio_engine_seek(position_ms);
-    restore_engine(prev);
-    return rc;
+    return audio_engine_seek_for_deck(deck, position_ms);
 }
 
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
@@ -1734,9 +1660,7 @@ void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 #if AE_FW
     if (!deck_transport_supported(deck)) return;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    audio_engine_set_pitch(raw_pitch);
-    restore_engine(prev);
+    audio_engine_set_pitch_for_deck(deck, raw_pitch);
 }
 
 uint32_t audio_engine_deck_position_ms(uint8_t deck)
@@ -1745,10 +1669,7 @@ uint32_t audio_engine_deck_position_ms(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return 0;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    uint32_t pos = audio_engine_position_ms();
-    restore_engine(prev);
-    return pos;
+    return audio_engine_position_ms_for_deck(deck);
 }
 
 bool audio_engine_deck_is_playing(uint8_t deck)
@@ -1757,10 +1678,7 @@ bool audio_engine_deck_is_playing(uint8_t deck)
 #if AE_FW
     if (!deck_transport_supported(deck)) return false;
 #endif
-    audio_engine_state_t *prev = select_engine(deck);
-    bool playing = audio_engine_is_playing();
-    restore_engine(prev);
-    return playing;
+    return s_engines[deck].playing && !s_engines[deck].paused;
 }
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
@@ -1873,8 +1791,9 @@ static void wav_write_header(FILE      *wav,
  */
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms)
 {
-    if (!s_eng.loaded || !s_eng.fp) return ESP_ERR_INVALID_STATE;
-    if (!wav_path)                   return ESP_ERR_INVALID_ARG;
+    audio_engine_state_t *eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
+    if (!eng->loaded || !eng->fp) return ESP_ERR_INVALID_STATE;
+    if (!wav_path)                 return ESP_ERR_INVALID_ARG;
 
     FILE *wav = fopen(wav_path, "wb");
     if (!wav) {
@@ -1886,10 +1805,10 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
     wav_write_header(wav, 44100u, 2u, 0u);
 
     /* Rewind input, reset decoder */
-    rewind(s_eng.fp);
-    mp3dec_init(&s_eng.dec);
-    s_eng.frames_since_seek = 0u;
-    s_eng.eof               = false;
+    rewind(eng->fp);
+    mp3dec_init(&eng->dec);
+    eng->frames_since_seek = 0u;
+    eng->eof               = false;
 
     int16_t  pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
     uint32_t pcm_bytes   = 0u;
@@ -1898,22 +1817,22 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
 
     while (true) {
         AE_LOCK();
-        int samples = decode_one_frame(&s_eng, pcm);
-        if (samples > 0) s_eng.frames_since_seek += (uint64_t)samples;
-        bool eof = s_eng.eof;
+        int samples = decode_one_frame(eng, pcm);
+        if (samples > 0) eng->frames_since_seek += (uint64_t)samples;
+        bool eof = eng->eof;
         AE_UNLOCK();
 
         if (eof || samples <= 0) break;
 
         /* Latch format on first real audio frame */
-        if (sample_rate == 0u && s_eng.sample_rate > 0u) {
-            sample_rate = s_eng.sample_rate;
-            channels    = (s_eng.channels == 1) ? 2u : (uint16_t)s_eng.channels;
+        if (sample_rate == 0u && eng->sample_rate > 0u) {
+            sample_rate = eng->sample_rate;
+            channels    = (eng->channels == 1) ? 2u : (uint16_t)eng->channels;
         }
 
         /* Respect optional duration limit */
         if (max_duration_ms > 0u && sample_rate > 0u) {
-            uint32_t pos = (uint32_t)(s_eng.frames_since_seek * 1000u / sample_rate);
+            uint32_t pos = (uint32_t)(eng->frames_since_seek * 1000u / sample_rate);
             if (pos >= max_duration_ms) break;
         }
 
