@@ -97,11 +97,11 @@ Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
 substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
 library load paths, shared output/mixer audio plumbing, and a refactored
 two-deck LVGL UI.
-The S3 target now has a raw FLX4 USB MIDI logger, a deck-aware software
+The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
-mapper/protocol path. Physical FLX4 USB enumeration and raw MIDI capture remain
-the next hardware blockers before enabling real controller input by default and
-finishing FLX4 LED feedback. The porting steps are tracked in
+mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture, dual-deck
+headphone cue/PFL routing, and active physical FLX4 LED feedback (Play, Cue, PFL)
+are fully implemented. The porting steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target
@@ -114,8 +114,5 @@ two-deck standalone path:
    headphone cue into deck-aware `control_link` frames.
 3. P4 maintains two independent deck states. Current P4 firmware already does
    this for the local UI/control path.
-4. P4 decodes two tracks and outputs a simple master mix. Current P4 firmware
-   has the producer/mixer plumbing in place; cue/PFL audio output remains
-   pending.
-5. P4 sends transport LED feedback back to the S3, and S3 sends the matching
-   MIDI LED messages to the FLX4.
+4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented).
+5. P4 sends transport and mixer LED feedback (Play, Cue, PFL) back to the S3, and S3 sends the matching MIDI LED messages to the FLX4 (implemented).

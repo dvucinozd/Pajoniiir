@@ -52,6 +52,7 @@
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
   split into focused modules.
 - S3 DDJ-FLX4 raw MIDI capture and translation are verified and completed.
+- S3 and P4 Phase 5 LED feedback (Play, Cue, PFL) is verified and completed.
 
 ## First Firmware Task
 

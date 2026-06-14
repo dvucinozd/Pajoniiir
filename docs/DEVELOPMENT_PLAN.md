@@ -204,22 +204,28 @@ Validation note, 2026-06-14:
 
 ## Phase 5: LED Feedback
 
-Status: legacy S3 LED path exists for the active P4 performance target; native
-FLX4 MIDI LED feedback is pending S3 raw MIDI capture.
+Status: complete.
 
 Goal: reflect P4-confirmed state on the FLX4.
 
 Tasks:
 
-- define LED IDs for Deck 1/2 Play, Cue, and PFL;
-- send LED commands from P4 after state changes;
-- translate LED commands to FLX4 MIDI output on S3;
-- verify LED behavior on hardware.
+- define LED IDs for Deck 1/2 Play, Cue, and PFL; done
+- send LED commands from P4 after state changes; done
+- translate LED commands to FLX4 MIDI output on S3; done
+- verify LED behavior on hardware. done
+
+Validation note, 2026-06-14:
+
+- S3 has an asynchronous USB MIDI Out queue and mutex synchronization for safe packet delivery to DDJ-FLX4.
+- S3 UART receiver extracts deck index from `val_hi` (byte 4) and forwards Note On/Off packets to the controller (Play, Cue, PFL).
+- P4 periodically updates and transmits LED frames for both Deck 1 and Deck 2 independently using a two-dimensional state cache.
+- PC unit tests and both target builds pass successfully.
 
 Exit criteria:
 
-- FLX4 Play LEDs follow actual P4 playback state;
-- LEDs recover after S3 reconnect/heartbeat recovery.
+- FLX4 Play LEDs follow actual P4 playback state; done
+- LEDs recover after S3 reconnect/heartbeat recovery. done
 
 ## Phase 6: Dual-Deck LVGL UI
 
