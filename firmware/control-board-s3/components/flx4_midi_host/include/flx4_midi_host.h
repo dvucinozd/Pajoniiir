@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #if defined(FLX4_MIDI_HOST_PC_TEST)
 typedef int esp_err_t;
@@ -41,5 +42,12 @@ typedef struct {
 } flx4_midi_message_t;
 
 bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *out);
+
+bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
+                                          size_t config_len,
+                                          uint8_t *interface_num,
+                                          uint8_t *alternate_setting,
+                                          uint8_t *in_ep_addr,
+                                          uint16_t *in_ep_mps);
 
 esp_err_t flx4_midi_host_init(void);
