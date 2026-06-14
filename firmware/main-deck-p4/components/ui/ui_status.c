@@ -334,30 +334,39 @@ static void ui_status_update_transport(const ui_frame_context_t *ctx)
 #ifndef WIN32
 static void ui_status_update_legacy_leds(const ui_frame_context_t *ctx)
 {
-    static uint8_t s_last_led_state[LED_COUNT] = {0xFF, 0xFF, 0xFF, 0xFF};
-    static uint8_t s_last_led_deck = CTRL_DECK_NONE;
-    if (s_last_led_deck != ctx->active_deck) {
-        memset(s_last_led_state, 0xFF, sizeof(s_last_led_state));
-        s_last_led_deck = ctx->active_deck;
-    }
-
-    ui_active_deck_leds_t leds =
-        ui_active_deck_leds_calculate(ctx->active_state.playing,
-                                      ctx->active_state.position_ms,
-                                      ctx->active_state.cue_point_ms,
-                                      ctx->active_duration_ms,
-                                      ctx->active_beat_state_valid,
-                                      ctx->active_beat_state.progress_permille);
-    const uint8_t next_leds[LED_COUNT] = {
-        [LED_CUE] = leds.cue,
-        [LED_PLAY] = leds.play,
-        [LED_BEAT] = leds.beat,
-        [LED_END] = leds.end,
+    static uint8_t s_last_led_state[2][LED_COUNT] = {
+        {0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+        {0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
     };
-    for (int led = 0; led < LED_COUNT; led++) {
-        if (next_leds[led] != s_last_led_state[led]) {
-            s_last_led_state[led] = next_leds[led];
-            control_link_send_led((led_id_t)led, next_leds[led]);
+
+    for (int d = 0; d < 2; d++) {
+        const deck_state_t *ds = &ctx->deck_state[d];
+        uint32_t duration_ms = ctx->deck_duration_ms[d];
+
+        bool is_active = (d == ctx->active_deck);
+        ui_active_deck_leds_t leds =
+            ui_active_deck_leds_calculate(ds->playing,
+                                          ds->position_ms,
+                                          ds->cue_point_ms,
+                                          duration_ms,
+                                          is_active ? ctx->active_beat_state_valid : false,
+                                          is_active ? ctx->active_beat_state.progress_permille : 0);
+
+        bool pfl_on = ctx->mixer_snapshot.pfl_enabled[d];
+
+        const uint8_t next_leds[LED_COUNT] = {
+            [LED_CUE] = leds.cue,
+            [LED_PLAY] = leds.play,
+            [LED_BEAT] = leds.beat,
+            [LED_END] = leds.end,
+            [LED_PFL] = pfl_on ? 1u : 0u,
+        };
+
+        for (int led = 0; led < LED_COUNT; led++) {
+            if (next_leds[led] != s_last_led_state[d][led]) {
+                s_last_led_state[d][led] = next_leds[led];
+                control_link_send_led_deck((led_id_t)led, next_leds[led], d);
+            }
         }
     }
 }

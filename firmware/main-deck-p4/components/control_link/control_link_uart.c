@@ -57,9 +57,15 @@ static void send_frame(uint8_t type, uint8_t id, int16_t value)
     }
 }
 
+void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck)
+{
+    int16_t val = (int16_t)(state | (deck << 8));
+    send_frame(CTRL_TYPE_LED, (uint8_t)led, val);
+}
+
 void control_link_send_led(led_id_t led, uint8_t state)
 {
-    send_frame(CTRL_TYPE_LED, (uint8_t)led, (int16_t)state);
+    control_link_send_led_deck(led, state, 0);
 }
 
 // ─── RX parser ────────────────────────────────────────────────────────────────

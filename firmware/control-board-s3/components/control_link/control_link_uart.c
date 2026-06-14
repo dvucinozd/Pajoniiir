@@ -1,5 +1,6 @@
 #include "control_link.h"
 #include "panel_io.h"
+#include "flx4_midi_host.h"
 #include "esp_check.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
@@ -73,14 +74,46 @@ static void handle_p4_frame(const uint8_t *f)
 {
     uint8_t type = f[1];
     uint8_t id   = f[2];
-    int16_t val  = (int16_t)((f[4] << 8) | f[3]);
+    uint8_t state = f[3];
+    uint8_t deck  = f[4];
 
     if (type == CTRL_TYPE_LED) {
+        // 1. Forward to DDJ-FLX4 via USB MIDI
+        if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
+            uint8_t note = 0;
+            bool valid_led = true;
+            switch (id) {
+            case LED_PLAY:
+                note = 0x0B;
+                break;
+            case LED_CUE:
+                note = 0x0C;
+                break;
+            case LED_PFL:
+                note = 0x54;
+                break;
+            default:
+                valid_led = false;
+                break;
+            }
+
+            if (valid_led) {
+                uint8_t status = (deck == CTRL_DECK_1) ? 0x90 : 0x91;
+                uint8_t velocity = (state != 0) ? 0x7F : 0x00;
+                uint8_t packet[4] = { 0x09, status, note, velocity };
+
+                #if !defined(FLX4_MIDI_HOST_PC_TEST)
+                flx4_midi_host_send_packet(packet);
+                #endif
+            }
+        }
+
+        // 2. Fallback to local panel LEDs (compatibility / tests)
         if (id < LED_COUNT) {
-            if (val == 2) {
+            if (state == 2) {
                 panel_led_blink((led_id_t)id, 500);
             } else {
-                panel_led_set((led_id_t)id, val != 0);
+                panel_led_set((led_id_t)id, state != 0);
             }
         }
     }

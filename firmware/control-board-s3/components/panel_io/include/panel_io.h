@@ -39,6 +39,7 @@ typedef enum {
     LED_PLAY,
     LED_BEAT,
     LED_END,
+    LED_PFL,
     LED_COUNT,
 } led_id_t;
 

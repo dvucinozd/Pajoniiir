@@ -57,6 +57,7 @@ typedef enum {
     LED_PLAY,
     LED_BEAT,
     LED_END,
+    LED_PFL,
     LED_COUNT,
 } led_id_t;
 
@@ -158,3 +159,4 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue);
 
 // Send LED command to S3. Thread-safe.
 void control_link_send_led(led_id_t led, uint8_t state);  // state: 0 off / 1 on / 2 blink
+void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
