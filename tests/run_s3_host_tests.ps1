@@ -60,10 +60,28 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DFLX4_MIDI_HOST_PC_TEST",
+            "-I../control_link_protocol/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-o", "test_flx4_midi_host.exe",
             "test_flx4_midi_host.c",
             "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c"
+        )
+    },
+    @{
+        Name = "flx4_map"
+        Dir = "tests/flx4_midi_host"
+        Target = "test_flx4_map.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            "-DFLX4_MIDI_HOST_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/control-board-s3/components/panel_io/include",
+            "-o", "test_flx4_map.exe",
+            "test_flx4_map.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_map.c"
         )
     },
     @{

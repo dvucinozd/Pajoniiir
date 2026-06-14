@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "flx4_midi_host.c"
+    SRCS "flx4_midi_host.c" "flx4_map.c"
     INCLUDE_DIRS "include"
-    REQUIRES log freertos usb
+    REQUIRES log freertos usb control_link
 )
