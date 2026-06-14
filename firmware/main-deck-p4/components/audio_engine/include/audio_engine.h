@@ -154,6 +154,19 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
  */
 typedef enum { AE_IDLE = 0, AE_LOADING, AE_READY, AE_PLAYING, AE_ERROR } ae_state_t;
 
+typedef struct {
+    ae_state_t state;
+    uint8_t load_progress;
+    esp_err_t last_error;
+    char last_error_text[64];
+    bool loaded;
+    bool playing;
+    uint32_t position_ms;
+} audio_engine_deck_status_t;
+
+esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
+esp_err_t audio_engine_stop_all(void);
+
 ae_state_t audio_engine_get_state(void);
 esp_err_t audio_engine_last_error(void);
 const char *audio_engine_last_error_text(void);

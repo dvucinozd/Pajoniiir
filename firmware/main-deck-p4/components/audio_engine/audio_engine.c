@@ -134,6 +134,10 @@ typedef struct {
     bool     playing;
     bool     paused;
     bool     eof;
+    bool     loading;
+    uint8_t  load_progress;
+    esp_err_t last_error;
+    char     last_error_text[64];
 
     /* Asynchronous seek */
     volatile uint32_t seek_target_ms;
@@ -195,11 +199,6 @@ static inline bool ring_push(int16_t l, int16_t r)
     return audio_pcm_ring_push(active_pcm_ring(), l, r);
 }
 
-/* UI-facing lifecycle state (P5a): LOADING while the track preloads from USB. */
-static volatile bool    s_loading  = false;
-static volatile uint8_t s_load_pct = 100;
-static esp_err_t        s_last_error = ESP_OK;
-static char             s_last_error_text[64] = "OK";
 static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
     AUDIO_MIXER_CONTROL_MAX,
     AUDIO_MIXER_CONTROL_MAX,
@@ -707,8 +706,8 @@ static void ae_loader_task(void *arg)
     if (!src) {
         media_io_gate_end();
         ESP_LOGE(TAG, "Cannot open %s", fw->path);
-        s_last_error = ESP_ERR_NOT_FOUND;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "NOT FOUND");
+        eng->last_error = ESP_ERR_NOT_FOUND;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NOT FOUND");
         goto park;
     }
     fseek(src, 0, SEEK_END);
@@ -718,8 +717,8 @@ static void ae_loader_task(void *arg)
         ESP_LOGE(TAG, "bad size %ld: %s", fsz, fw->path);
         fclose(src);
         media_io_gate_end();
-        s_last_error = ESP_ERR_INVALID_SIZE;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "BAD SIZE");
+        eng->last_error = ESP_ERR_INVALID_SIZE;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "BAD SIZE");
         goto park;
     }
 
@@ -728,8 +727,8 @@ static void ae_loader_task(void *arg)
         ESP_LOGE(TAG, "PSRAM alloc %ld B failed", fsz);
         fclose(src);
         media_io_gate_end();
-        s_last_error = ESP_ERR_NO_MEM;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "NO MEM");
+        eng->last_error = ESP_ERR_NO_MEM;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NO MEM");
         goto park;
     }
 
@@ -749,7 +748,7 @@ static void ae_loader_task(void *arg)
         if (got == 0) break;
         off += got;
         fw->loaded_bytes = off;                               /* publish watermark */
-        s_load_pct = (uint8_t)(off * 100u / (size_t)fsz);
+        eng->load_progress = (uint8_t)(off * 100u / (size_t)fsz);
     }
     fclose(src);
     media_io_gate_end();
@@ -762,7 +761,7 @@ static void ae_loader_task(void *arg)
         build_seek_table(eng);        /* full file in PSRAM → frame-accurate IFI seeks */
         AE_UNLOCK();
         fw->load_done = true;
-        s_load_pct  = 100;
+        eng->load_progress = 100;
     }
 
 park:
@@ -814,8 +813,8 @@ static void ae_decode_task(void *arg)
     }
     if (!runtime->run || eng->sample_rate == 0) {
         ESP_LOGE(TAG, "no audio frame found");
-        s_last_error = ESP_FAIL;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "NO AUDIO FRAME");
+        eng->last_error = ESP_FAIL;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NO AUDIO FRAME");
         goto cleanup;
     }
 
@@ -827,8 +826,8 @@ static void ae_decode_task(void *arg)
     if (ctx->task_plan.codec_owner) {
         if (esp_codec_dev_open(s_codec, &fs) != 0) {
             ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
-            s_last_error = ESP_FAIL;
-            snprintf(s_last_error_text, sizeof(s_last_error_text), "CODEC OPEN ERR");
+            eng->last_error = ESP_FAIL;
+            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "CODEC OPEN ERR");
             goto cleanup;
         }
         runtime->codec_open = true;
@@ -836,8 +835,8 @@ static void ae_decode_task(void *arg)
     } else {
         ESP_LOGI(TAG, "producer ready @ %u Hz, shared output mixer eligible", (unsigned)eng->sample_rate);
     }
-    s_load_pct   = 100;
-    s_loading    = false;   /* P5a: track is now playable */
+    eng->load_progress = 100;
+    eng->loading       = false;   /* P5a: track is now playable */
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
@@ -1000,6 +999,9 @@ esp_err_t audio_engine_init(void)
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         memset(&s_engines[i], 0, sizeof s_engines[i]);
         s_engines[i].pitch_factor = 1.0f;
+        s_engines[i].load_progress = 100;
+        s_engines[i].last_error = ESP_OK;
+        snprintf(s_engines[i].last_error_text, sizeof(s_engines[i].last_error_text), "OK");
         mp3dec_init(&s_engines[i].dec);
     }
     s_active_eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
@@ -1010,8 +1012,6 @@ esp_err_t audio_engine_init(void)
     reset_all_fw_runtimes();
     reset_all_fw_task_contexts();
 #endif
-    s_last_error = ESP_OK;
-    snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
         s_pfl_enabled[i] = false;
@@ -1042,12 +1042,12 @@ esp_err_t audio_engine_load(const char     *mp3_path,
                              const uint32_t *pvbr_400,
                              uint32_t        duration_ms)
 {
-    s_last_error = ESP_OK;
-    snprintf(s_last_error_text, sizeof(s_last_error_text), "OK");
+    s_eng.last_error = ESP_OK;
+    snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OK");
 
     if (!mp3_path) {
-        s_last_error = ESP_ERR_INVALID_ARG;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "INVALID ARG");
+        s_eng.last_error = ESP_ERR_INVALID_ARG;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "INVALID ARG");
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -1056,14 +1056,14 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     if (s_eng.loaded) {
         esp_err_t stop_rc = audio_engine_stop();
         if (stop_rc != ESP_OK) {
-            s_last_error = stop_rc;
-            snprintf(s_last_error_text, sizeof(s_last_error_text), "STOP ERR");
+            s_eng.last_error = stop_rc;
+            snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "STOP ERR");
             return stop_rc;
         }
     }
 
-    s_loading  = true;   /* cleared when the codec opens (FW) / at end (PC) */
-    s_load_pct = 0;
+    s_eng.loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
+    s_eng.load_progress = 0;
 
 #if AE_FW
     /* Firmware: the loader task preloads the file from USB into PSRAM and the
@@ -1076,10 +1076,10 @@ esp_err_t audio_engine_load(const char     *mp3_path,
     FILE *fp = fopen(mp3_path, "rb");
     if (!fp) {
         ESP_LOGE(TAG, "Cannot open: %s", mp3_path);
-        s_last_error = ESP_ERR_NOT_FOUND;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "NOT FOUND");
-        s_loading  = false;
-        s_load_pct = 100;
+        s_eng.last_error = ESP_ERR_NOT_FOUND;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "NOT FOUND");
+        s_eng.loading = false;
+        s_eng.load_progress = 100;
         return ESP_ERR_NOT_FOUND;
     }
     s_eng.fp = fp;
@@ -1188,10 +1188,10 @@ esp_err_t audio_engine_load(const char     *mp3_path,
         }
     }
     if (runtime->tasks_started != task_plan.expected_tasks) {
-        s_last_error = ESP_ERR_NO_MEM;
-        snprintf(s_last_error_text, sizeof(s_last_error_text), "TASK CREATE ERR");
-        s_loading  = false;
-        s_load_pct = 100;
+        s_eng.last_error = ESP_ERR_NO_MEM;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "TASK CREATE ERR");
+        s_eng.loading = false;
+        s_eng.load_progress = 100;
         runtime->run = false;
         for (int i = 0; i < runtime->tasks_started; i++) {
             xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
@@ -1206,6 +1206,9 @@ esp_err_t audio_engine_load(const char     *mp3_path,
         }
         memset(&s_eng, 0, sizeof s_eng);
         s_eng.pitch_factor = 1.0f;
+        s_eng.load_progress = 100;
+        s_eng.last_error = ESP_ERR_NO_MEM;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "TASK CREATE ERR");
         audio_fw_runtime_mark_stopped(runtime);
         audio_fw_task_context_reset(task_ctx);
         return ESP_ERR_NO_MEM;
@@ -1214,8 +1217,8 @@ esp_err_t audio_engine_load(const char     *mp3_path,
 
 #if !AE_FW
     /* PC paths decode on demand (no PSRAM preload) — ready immediately. */
-    s_loading  = false;
-    s_load_pct = 100;
+    s_eng.loading = false;
+    s_eng.load_progress = 100;
 #endif
 
     return ESP_OK;
@@ -1253,8 +1256,8 @@ esp_err_t audio_engine_stop(void)
 
     s_eng.playing = false;
     s_eng.paused  = false;
-    s_loading     = false;
-    s_load_pct    = 100;
+    s_eng.loading = false;
+    s_eng.load_progress = 100;
 
 
 
@@ -1314,6 +1317,9 @@ esp_err_t audio_engine_stop(void)
 
     memset(&s_eng, 0, sizeof s_eng);
     s_eng.pitch_factor = 1.0f;
+    s_eng.load_progress = 100;
+    s_eng.last_error = ESP_OK;
+    snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OK");
     ring_reset();
 
     return ESP_OK;
@@ -1390,28 +1396,61 @@ bool audio_engine_is_playing(void)
     return s_eng.playing && !s_eng.paused;
 }
 
+static bool deck_is_valid(uint8_t deck);
+
+static ae_state_t engine_lifecycle_state(const audio_engine_state_t *eng)
+{
+    if (!eng) return AE_IDLE;
+    if (eng->last_error != ESP_OK) return AE_ERROR;
+    if (!eng->loaded) return AE_IDLE;
+    if (eng->loading) return AE_LOADING;
+    return (eng->playing && !eng->paused) ? AE_PLAYING : AE_READY;
+}
+
+esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out)
+{
+    if (!deck_is_valid(deck) || !out) return ESP_ERR_INVALID_ARG;
+
+    audio_engine_state_t *eng = &s_engines[deck];
+    memset(out, 0, sizeof(*out));
+
+    AE_LOCK();
+    out->state = engine_lifecycle_state(eng);
+    out->load_progress = eng->load_progress;
+    out->last_error = eng->last_error;
+    snprintf(out->last_error_text, sizeof(out->last_error_text), "%s", eng->last_error_text);
+    out->loaded = eng->loaded;
+    out->playing = eng->playing && !eng->paused;
+    if (!eng->loaded || eng->sample_rate == 0) {
+        out->position_ms = eng->output_base_ms;
+    } else {
+        uint32_t from_frames = (uint32_t)(eng->output_frames_since_seek * 1000u / eng->sample_rate);
+        out->position_ms = eng->output_base_ms + from_frames;
+    }
+    AE_UNLOCK();
+
+    return ESP_OK;
+}
+
 /* ── audio_engine_get_state / load_progress (P5a) ─────────────────────────── */
 ae_state_t audio_engine_get_state(void)
 {
-    if (s_last_error != ESP_OK) return AE_ERROR;
-    if (!s_eng.loaded) return AE_IDLE;
-    if (s_loading)     return AE_LOADING;
-    return (s_eng.playing && !s_eng.paused) ? AE_PLAYING : AE_READY;
+    return engine_lifecycle_state(&s_eng);
 }
 
 uint8_t audio_engine_load_progress(void)
 {
-    return s_load_pct;
+    return s_eng.load_progress;
 }
 
 esp_err_t audio_engine_last_error(void)
 {
-    return s_last_error;
+    return s_eng.last_error;
 }
 
 const char *audio_engine_last_error_text(void)
 {
-    return s_last_error_text;
+    return s_eng.last_error_text;
 }
 
 /* ── audio_engine_set_loop ────────────────────────────────────────────────── */
@@ -1558,6 +1597,18 @@ esp_err_t audio_engine_deck_stop(uint8_t deck)
     esp_err_t rc = audio_engine_stop();
     restore_engine(prev);
     return rc;
+}
+
+esp_err_t audio_engine_stop_all(void)
+{
+    esp_err_t first_err = ESP_OK;
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        esp_err_t rc = audio_engine_deck_stop(deck);
+        if (first_err == ESP_OK && rc != ESP_OK) {
+            first_err = rc;
+        }
+    }
+    return first_err;
 }
 
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
