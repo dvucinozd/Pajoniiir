@@ -62,6 +62,21 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("s_flx4_event_queue", "flx4_translator_task", "s_flx4_coalesced_count")
 
+Assert-FileContains `
+    -Name "legacy panel coalescing" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/panel_io/panel_io.c") `
+    -Patterns @("s_pending_jog", "s_pending_browse", "panel_flush_pending_motion")
+
+Assert-FileContains `
+    -Name "legacy encoder pull config" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/panel_io/panel_encoder.c") `
+    -Patterns @("GPIO_PULLUP_ENABLE", "configure_encoder_gpio")
+
+Assert-FileContains `
+    -Name "legacy midi burst limit" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/midi_compat/midi_compat.c") `
+    -Patterns @("MIDI_COMPAT_MAX_ENCODER_BURST")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"

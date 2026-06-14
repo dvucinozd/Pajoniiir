@@ -21,6 +21,8 @@ static const char *TAG = "midi";
 #define NOTE_ON_CH3   0x92   // channel 3 – browse
 #define NOTE_OFF_CH3  0x82
 
+#define MIDI_COMPAT_MAX_ENCODER_BURST 8
+
 // ─── Button → MIDI Note (XDJ100SX upstream mapping) ─────────────────────────
 static const uint8_t BTN_NOTE[BTN_COUNT] = {
     [BTN_EJECT]        = 63,   // 0x3F
@@ -192,6 +194,9 @@ void midi_compat_process_event(const panel_event_t *ev)
         int ticks = ev->value;
         uint8_t v = (ticks > 0) ? 65 : 63;
         int n = (ticks < 0) ? -ticks : ticks;
+        if (n > MIDI_COMPAT_MAX_ENCODER_BURST) {
+            n = MIDI_COMPAT_MAX_ENCODER_BURST;
+        }
         msg[0] = CC_CH2;
         msg[1] = 20;
         msg[2] = v;
@@ -204,6 +209,9 @@ void midi_compat_process_event(const panel_event_t *ev)
         int ticks = ev->value;
         uint8_t note = (ticks > 0) ? 70 : 71;
         int n = (ticks < 0) ? -ticks : ticks;
+        if (n > MIDI_COMPAT_MAX_ENCODER_BURST) {
+            n = MIDI_COMPAT_MAX_ENCODER_BURST;
+        }
         for (int i = 0; i < n; i++) {
             uint8_t on[3]  = { NOTE_ON_CH3,  note, 127 };
             uint8_t off[3] = { NOTE_OFF_CH3, note, 0 };

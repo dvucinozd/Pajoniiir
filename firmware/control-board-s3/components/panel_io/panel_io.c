@@ -70,6 +70,10 @@ static uint32_t s_button_drop_count;
 static uint32_t s_jog_drop_count;
 static uint32_t s_browse_drop_count;
 static uint32_t s_pitch_drop_count;
+static int16_t  s_pending_jog;
+static bool     s_pending_jog_valid;
+static int16_t  s_pending_browse;
+static bool     s_pending_browse_valid;
 static uint16_t s_pending_pitch;
 static bool     s_pending_pitch_valid;
 static TickType_t s_last_drop_warn;
@@ -86,27 +90,49 @@ static void panel_queue_warn_rate_limited(void)
              s_button_drop_count, s_jog_drop_count, s_browse_drop_count, s_pitch_drop_count);
 }
 
+static int16_t clamp_i32_to_i16(int32_t value)
+{
+    if (value > INT16_MAX) {
+        return INT16_MAX;
+    }
+    if (value < INT16_MIN) {
+        return INT16_MIN;
+    }
+    return (int16_t)value;
+}
+
+static void panel_store_pending_motion(panel_event_t *ev)
+{
+    if (ev->type == PANEL_EV_JOG) {
+        int32_t value = (s_pending_jog_valid ? s_pending_jog : 0) + ev->value;
+        s_pending_jog = clamp_i32_to_i16(value);
+        s_pending_jog_valid = true;
+        s_jog_drop_count++;
+    } else if (ev->type == PANEL_EV_BROWSE) {
+        int32_t value = (s_pending_browse_valid ? s_pending_browse : 0) + ev->value;
+        s_pending_browse = clamp_i32_to_i16(value);
+        s_pending_browse_valid = true;
+        s_browse_drop_count++;
+    }
+}
+
 static bool panel_queue_send(panel_event_t *ev)
 {
     if (xQueueSend(s_queue, ev, 0) == pdTRUE) {
         return true;
     }
 
-    if (ev->type == PANEL_EV_BUTTON && ev->value == 0) {
-        panel_event_t dropped;
-        if (xQueueReceive(s_queue, &dropped, 0) == pdTRUE &&
-            xQueueSend(s_queue, ev, 0) == pdTRUE) {
-            s_button_drop_count++;
-            panel_queue_warn_rate_limited();
-            return true;
-        }
-    }
-
     switch (ev->type) {
         case PANEL_EV_BUTTON: s_button_drop_count++; break;
-        case PANEL_EV_JOG:    s_jog_drop_count++;    break;
-        case PANEL_EV_BROWSE: s_browse_drop_count++; break;
-        case PANEL_EV_PITCH:  s_pitch_drop_count++;  break;
+        case PANEL_EV_JOG:
+        case PANEL_EV_BROWSE:
+            panel_store_pending_motion(ev);
+            break;
+        case PANEL_EV_PITCH:
+            s_pending_pitch = (uint16_t)ev->value;
+            s_pending_pitch_valid = true;
+            s_pitch_drop_count++;
+            break;
         default: break;
     }
     panel_queue_warn_rate_limited();
@@ -116,10 +142,7 @@ static bool panel_queue_send(panel_event_t *ev)
 static void panel_queue_pitch(uint16_t pitch)
 {
     panel_event_t ev = { .type = PANEL_EV_PITCH, .id = 0, .value = (int16_t)pitch };
-    if (!panel_queue_send(&ev)) {
-        s_pending_pitch = pitch;
-        s_pending_pitch_valid = true;
-    }
+    panel_queue_send(&ev);
 }
 
 static void panel_flush_pending_pitch(void)
@@ -127,9 +150,27 @@ static void panel_flush_pending_pitch(void)
     if (!s_pending_pitch_valid || uxQueueSpacesAvailable(s_queue) == 0) {
         return;
     }
-    uint16_t pitch = s_pending_pitch;
-    s_pending_pitch_valid = false;
-    panel_queue_pitch(pitch);
+    panel_event_t ev = { .type = PANEL_EV_PITCH, .id = 0, .value = (int16_t)s_pending_pitch };
+    if (xQueueSend(s_queue, &ev, 0) == pdTRUE) {
+        s_pending_pitch_valid = false;
+    }
+}
+
+static void panel_flush_pending_motion(void)
+{
+    if (s_pending_jog_valid && uxQueueSpacesAvailable(s_queue) > 0) {
+        panel_event_t ev = { .type = PANEL_EV_JOG, .id = 0, .value = s_pending_jog };
+        if (xQueueSend(s_queue, &ev, 0) == pdTRUE) {
+            s_pending_jog_valid = false;
+        }
+    }
+
+    if (s_pending_browse_valid && uxQueueSpacesAvailable(s_queue) > 0) {
+        panel_event_t ev = { .type = PANEL_EV_BROWSE, .id = 1, .value = s_pending_browse };
+        if (xQueueSend(s_queue, &ev, 0) == pdTRUE) {
+            s_pending_browse_valid = false;
+        }
+    }
 }
 
 // ─── Scan task ────────────────────────────────────────────────────────────────
@@ -140,6 +181,7 @@ static void scan_task(void *arg)
     uint32_t   pitch_div = 0;   // read pitch every other tick (10 ms)
 
     while (1) {
+        panel_flush_pending_motion();
         panel_flush_pending_pitch();
 
         // Buttons
