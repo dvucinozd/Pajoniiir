@@ -173,6 +173,7 @@ static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -936,17 +937,50 @@ static void ae_output_task(void *arg)
         }
 
         uint32_t consumed[AUDIO_ENGINE_DECK_COUNT] = { 0 };
+        float pfl_gain0 = s_pfl_enabled[deck0_index] ? 1.0f : 0.0f;
+        float pfl_gain1 = s_pfl_enabled[deck1_index] ? 1.0f : 0.0f;
+        uint8_t mode = s_cue_mode;
+
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
-            audio_mixer_frame_t frame = audio_output_mixer_next(&deck0,
-                                                                &deck1,
-                                                                &frame_consumed0,
-                                                                &frame_consumed1);
+            audio_mixer_frame_t frame0 = { 0 };
+            audio_mixer_frame_t frame1 = { 0 };
+
+            if (deck0.active && deck0.resampler) {
+                frame0 = audio_resampler_next(deck0.resampler,
+                                              deck0.pitch_factor,
+                                              deck0.pop_source,
+                                              deck0.source_ctx,
+                                              &frame_consumed0);
+            }
+            if (deck1.active && deck1.resampler) {
+                frame1 = audio_resampler_next(deck1.resampler,
+                                              deck1.pitch_factor,
+                                              deck1.pop_source,
+                                              deck1.source_ctx,
+                                              &frame_consumed1);
+            }
+
             consumed[deck0_index] += frame_consumed0;
             consumed[deck1_index] += frame_consumed1;
-            out[i * 2    ] = frame.left;
-            out[i * 2 + 1] = frame.right;
+
+            audio_mixer_frame_t master_frame = {
+                .left = audio_mixer_mix_sample(frame0.left, frame1.left, deck0.gain, deck1.gain),
+                .right = audio_mixer_mix_sample(frame0.right, frame1.right, deck0.gain, deck1.gain),
+            };
+
+            if (mode == 1) { // Split Mono
+                audio_mixer_frame_t pfl_frame = {
+                    .left = audio_mixer_mix_sample(frame0.left, frame1.left, pfl_gain0, pfl_gain1),
+                    .right = audio_mixer_mix_sample(frame0.right, frame1.right, pfl_gain0, pfl_gain1),
+                };
+                out[i * 2    ] = audio_mixer_mix_sample(master_frame.left, master_frame.right, 0.5f, 0.5f);
+                out[i * 2 + 1] = audio_mixer_mix_sample(pfl_frame.left, pfl_frame.right, 0.5f, 0.5f);
+            } else { // Stereo Master
+                out[i * 2    ] = master_frame.left;
+                out[i * 2 + 1] = master_frame.right;
+            }
         }
         if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
             AE_LOCK();
@@ -1740,6 +1774,18 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
     out_snapshot->pfl_enabled[1] = s_pfl_enabled[1];
+}
+
+esp_err_t audio_engine_set_cue_mode(uint8_t mode)
+{
+    if (mode > 1) return ESP_ERR_INVALID_ARG;
+    s_cue_mode = mode;
+    return ESP_OK;
+}
+
+uint8_t audio_engine_get_cue_mode(void)
+{
+    return s_cue_mode;
 }
 
 

@@ -142,6 +142,8 @@ esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
 esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);
+esp_err_t audio_engine_set_cue_mode(uint8_t mode);
+uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 
 /*

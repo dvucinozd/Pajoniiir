@@ -90,6 +90,7 @@ void app_main(void)
         cdj_link_server_rebuild_library();
     }
     ESP_ERROR_CHECK(audio_engine_init());
+    audio_engine_set_cue_mode(app_settings_get().cue_mode);
 
     // ── UI ───────────────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(ui_init());

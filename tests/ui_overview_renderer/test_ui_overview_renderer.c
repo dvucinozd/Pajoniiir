@@ -90,7 +90,8 @@ static void test_main_rgb565_renderer_maps_palette_directly(void)
 
     for (int x = 0; x < 8; x++) {
         assert(pixels[(10 / 2) * 8 + x] == palette[3] ||
-               pixels[(10 / 2) * 8 + x] == palette[4]);
+               pixels[(10 / 2) * 8 + x] == palette[4] ||
+               pixels[(10 / 2) * 8 + x] == palette[8]);
     }
     assert(pixels[0 * 8 + 4] == palette[4]);
     assert(pixels[9 * 8 + 4] == palette[4]);

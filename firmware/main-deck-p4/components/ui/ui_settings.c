@@ -24,6 +24,16 @@ const char *ui_settings_link_mode_name(uint8_t mode)
     }
 }
 
+const char *ui_settings_cue_mode_name(uint8_t mode)
+{
+    switch (mode) {
+    case 1:
+        return "CUE: SPLIT MONO";
+    default:
+        return "CUE: STEREO";
+    }
+}
+
 #ifndef UI_SETTINGS_HOST_TEST
 
 #include "esp_log.h"
@@ -58,6 +68,7 @@ static ui_settings_widgets_t s_widgets;
 static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
 static lv_obj_t *s_label_link_mode = NULL;
+static lv_obj_t *s_label_cue_mode = NULL;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -219,6 +230,19 @@ static void link_mode_event_cb(lv_event_t *event)
     }
     ui_settings_note_link_mode_saved(ui_settings_link_mode_name(next));
     ESP_LOGI(TAG, "Link mode saved: %s", ui_settings_link_mode_name(next));
+}
+
+static void cue_mode_event_cb(lv_event_t *event)
+{
+    (void)event;
+    app_settings_t cfg = app_settings_get();
+    uint8_t next = (uint8_t)((cfg.cue_mode + 1u) % 2u);
+    app_settings_set_cue_mode(next);
+    audio_engine_set_cue_mode(next);
+    if (s_label_cue_mode) {
+        lv_label_set_text_fmt(s_label_cue_mode, "%s", ui_settings_cue_mode_name(next));
+    }
+    ESP_LOGI(TAG, "Cue mode saved: %s", ui_settings_cue_mode_name(next));
 }
 
 static void sd_cache_clear_event_cb(lv_event_t *event)
@@ -396,8 +420,30 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             "PFL D1", COL_AMBER, COL_PANEL_DK, COL_AMBER);
     ui_settings_static_tile(mixer_section, 488, 30, 88, 28,
                             "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_settings_static_tile(mixer_section, 588, 30, 124, 28,
-                            "CUE PATH", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+
+    lv_obj_t *btn_cue = lv_button_create(mixer_section);
+    lv_obj_remove_style_all(btn_cue);
+    if (s_config.btn_secondary) {
+        lv_obj_add_style(btn_cue, s_config.btn_secondary, LV_PART_MAIN);
+    }
+    if (s_config.pressed) {
+        lv_obj_add_style(btn_cue, s_config.pressed, LV_STATE_PRESSED);
+    }
+    lv_obj_set_size(btn_cue, 124, 28);
+    lv_obj_set_pos(btn_cue, 588, 30);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_cue, cue_mode_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    s_label_cue_mode = lv_label_create(btn_cue);
+#ifndef WIN32
+    lv_label_set_text_fmt(s_label_cue_mode, "%s", ui_settings_cue_mode_name(cfg.cue_mode));
+#else
+    lv_label_set_text(s_label_cue_mode, "CUE: STEREO");
+#endif
+    lv_obj_set_style_text_font(s_label_cue_mode, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_cue_mode, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(s_label_cue_mode, LV_ALIGN_CENTER, 0, 0);
 
     ui_settings_widgets_t settings_widgets = {
         .uart_status = label_uart_status,

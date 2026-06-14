@@ -194,6 +194,24 @@ static void test_pfl_state_api(void)
     EXPECT(!audio_engine_get_pfl_enabled(2), "invalid PFL deck reads as off");
 }
 
+/* ── Test 5b: Cue mode setting API ───────────────────────────────────────── */
+static void test_cue_mode_api(void)
+{
+    printf("\n[Test 5b] Cue Mode API\n");
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets cue mode");
+    EXPECT(audio_engine_get_cue_mode() == 0, "default cue mode is 0 (stereo)");
+
+    EXPECT(audio_engine_set_cue_mode(1) == ESP_OK, "set_cue_mode(1) returns ESP_OK");
+    EXPECT(audio_engine_get_cue_mode() == 1, "cue mode is 1 (split mono)");
+
+    EXPECT(audio_engine_set_cue_mode(2) == ESP_ERR_INVALID_ARG, "invalid cue mode returns INVALID_ARG");
+    EXPECT(audio_engine_get_cue_mode() == 1, "cue mode remains unchanged on invalid argument");
+
+    EXPECT(audio_engine_set_cue_mode(0) == ESP_OK, "set_cue_mode(0) returns ESP_OK");
+    EXPECT(audio_engine_get_cue_mode() == 0, "cue mode is 0 (stereo)");
+}
+
 /* ── Test 6: per-deck transition API guards ─────────────────────────────── */
 static void test_deck_api(void)
 {
@@ -404,6 +422,7 @@ int main(int argc, char *argv[])
     test_pitch();
     test_mixer_state_api();
     test_pfl_state_api();
+    test_cue_mode_api();
     test_deck_api();
     test_deck_status_is_independent();
     test_deck_states_are_independent();

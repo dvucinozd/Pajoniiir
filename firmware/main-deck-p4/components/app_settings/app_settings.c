@@ -12,6 +12,7 @@ static app_settings_t s_cfg = {
     .backlight_pct = 80,
     .time_remain   = 0,
     .link_mode     = 0,
+    .cue_mode      = 0,   /* stereo master */
 };
 
 static void save_u8(const char *key, uint8_t v)
@@ -46,10 +47,11 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(h, "backlight", &v) == ESP_OK) s_cfg.backlight_pct = v;
         if (nvs_get_u8(h, "time_rem",  &v) == ESP_OK) s_cfg.time_remain   = v;
         if (nvs_get_u8(h, "link_mode", &v) == ESP_OK && v <= 2) s_cfg.link_mode = v;
+        if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "loaded: audio_out=%u backlight=%u time_remain=%u link_mode=%u",
-             s_cfg.audio_out, s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.link_mode);
+    ESP_LOGI(TAG, "loaded: audio_out=%u backlight=%u time_remain=%u link_mode=%u cue_mode=%u",
+             s_cfg.audio_out, s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.link_mode, s_cfg.cue_mode);
     return ESP_OK;
 }
 
@@ -85,4 +87,12 @@ void app_settings_set_link_mode(uint8_t mode)
     if (s_cfg.link_mode == mode) return;
     s_cfg.link_mode = mode;
     save_u8("link_mode", mode);
+}
+
+void app_settings_set_cue_mode(uint8_t mode)
+{
+    if (mode > 1) mode = 0;
+    if (s_cfg.cue_mode == mode) return;
+    s_cfg.cue_mode = mode;
+    save_u8("cue_mode", mode);
 }
