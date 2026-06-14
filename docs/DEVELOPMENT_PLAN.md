@@ -131,11 +131,14 @@ Validation note, 2026-06-08:
 
 - `audio_engine_deck_*` APIs exist as the boundary between `deck_core` and the
   dual-engine backend.
-- `audio_engine` stores `s_engines[2]` and routes deck-aware operations through
-  the selected engine state in the PC/test path.
-- Deck 0 remains the firmware output compatibility deck and owns codec/output
-  startup. Deck 1 can now participate in the shared output mixer once the
-  compatibility output task is running.
+- `audio_engine` stores `s_engines[2]` with deck-local lifecycle state,
+  load progress, and last-error reporting. `audio_engine_deck_get_status()`
+  is the UI-safe per-deck status API; the legacy singleton status functions are
+  compatibility wrappers for Deck 1.
+- Firmware output/codec ownership is now a shared output service, not a deck
+  runtime responsibility. Per-deck loads start loader/decode producer tasks;
+  one shared output task mixes both PCM rings and closes the codec only when
+  all decks are stopped.
 - `deck_core` now calls the deck-aware audio API instead of direct singleton
   audio calls.
 - `audio_mixer` provides host-tested channel fader gain, center-open
@@ -162,20 +165,32 @@ Validation note, 2026-06-08:
   `audio_fw_task_context` slot. Loader/decode/output tasks receive explicit
   preload/runtime state, plus deck-local engine/ring/resampler slots, instead
   of looking up the active deck while running.
-- Firmware task creation now uses a host-tested `audio_fw_task_plan`. The
-  compatibility deck still starts loader/decode/output and owns codec open;
-  Deck 1 load starts producer-only loader/decode tasks into its own PCM ring and
-  is transport-supported for play/pause/seek/pitch through the shared output
-  mixer.
+- Firmware task creation now uses a host-tested `audio_fw_task_plan`.
+  Deck-local task plans are producer-only loader/decode plans; shared output
+  task startup is handled separately by `audio_engine`.
 - The P4 Library screen exposes `LOAD D1` and `LOAD D2` buttons. `LOAD D1`
   updates the active waveform/header and compatibility output path; `LOAD D2`
   exercises the deck-local producer path for the shared output mixer.
 - `audio_engine` now stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
   PFL toggles. The actual cue/headphone audio buffer path remains pending.
-- Deck 2-first playback was fixed after task-planning follow-up work: whichever
-  deck loads first can now own the shared output task/codec path, and
-  `deck_core` only marks a deck playing after the backend accepts play.
+- Deck 2-first playback no longer depends on whichever deck loaded first owning
+  output. `deck_core` only marks a deck playing after the backend accepts play,
+  and USB removal now calls `audio_engine_stop_all()`.
+
+Validation note, 2026-06-14:
+
+- `tests/run_p4_host_tests.ps1` is the primary Windows host regression runner
+  when `make` is not available.
+- `deck_core` no longer holds its state mutex while calling audio/UI APIs, and
+  P4 UART RX coalesces high-rate JOG/PITCH events when the queue is full.
+- `media_catalog_load_from_source()` and `media_catalog_get_from_source()` keep
+  UI load workers pinned to the source captured at submit time. JOINED library
+  refresh now runs in a worker task and reports back to the LVGL update loop.
+- PDB raw file buffers prefer PSRAM on firmware builds, PDB truncation is
+  logged explicitly, and ANLZ PQTZ beat allocation is capped before allocation.
+- `sdkconfig.defaults` no longer assigns the unknown
+  `CONFIG_ESP32P4_SELECTS_REV_LESS_V3` symbol under ESP-IDF v5.5.
 
 ## Phase 5: LED Feedback
 

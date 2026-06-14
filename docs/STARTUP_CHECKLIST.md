@@ -12,7 +12,9 @@
 - [x] Confirm ESP-IDF v5.5 is installed.
 - [x] Confirm `Initialize-Idf.ps1` works in PowerShell.
 - [x] Confirm `idf.py --version`.
-- [x] Confirm MinGW `mingw32-make` is available for PC tests.
+- [x] Confirm MinGW/GCC is available for PC tests.
+- [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions when `make`
+  is not present in PATH.
 
 ## Baseline Builds
 
@@ -34,6 +36,10 @@
 
 - `master` includes the P4 dual-deck UI refactor and the 2026-06-13 Deck 2
   Overview waveform jitter fix.
+- Branch `codex/p4-review-fixes` adds P4 review fixes: per-deck audio status,
+  shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
+  control coalescing, source-safe media load, parser hardening, and the P4 host
+  regression runner.
 - P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
