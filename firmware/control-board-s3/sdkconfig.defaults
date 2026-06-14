@@ -4,6 +4,7 @@ CONFIG_IDF_TARGET="esp32s3"
 # Disable this in menuconfig only when returning to the inherited CDJ panel
 # USB MIDI device compatibility mode.
 CONFIG_DDJ_FLX4_HOST_MODE=y
+CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y
 
 # Default host mode is a raw MIDI capture logger. Enable
 # CONFIG_DDJ_FLX4_TRANSLATE_TO_P4 only after the physical FLX4 MIDI capture has
@@ -32,3 +33,7 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
 # TinyUSB DCD: use slave/IRQ mode (safer for bringup; DMA can be re-enabled later)
 CONFIG_TINYUSB_MODE_SLAVE=y
+
+# Increase control transfer size to support large configuration descriptors of DDJ-FLX4
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
+
