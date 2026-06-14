@@ -22,6 +22,7 @@
 #include <stdbool.h>
 
 static const char *TAG = "anlz";
+#define ANLZ_MAX_BEATS 0xFFFFu
 
 /* ── Big-endian read helpers ─────────────────────────────────────────────── */
 
@@ -189,26 +190,33 @@ static esp_err_t parse_pqtz(FILE *fp, anlz_metadata_t *out)
         return ESP_OK;
     }
 
-    out->beats = (anlz_beat_t *)malloc(count * sizeof(anlz_beat_t));
+    uint32_t stored_count = count > ANLZ_MAX_BEATS ? ANLZ_MAX_BEATS : count;
+    out->beats = (anlz_beat_t *)malloc(stored_count * sizeof(anlz_beat_t));
     if (!out->beats) {
-        ANLZ_LOGE(TAG, "PQTZ: malloc failed (%u entries)", count);
+        ANLZ_LOGE(TAG, "PQTZ: malloc failed (%u entries)", stored_count);
         return ESP_ERR_NO_MEM;
     }
-    out->beat_count = (uint16_t)(count > 0xFFFFu ? 0xFFFFu : count);
+    out->beat_count = (uint16_t)stored_count;
 
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < stored_count; i++) {
         out->beats[i].beat_phase = read_be16(fp);
         out->beats[i].bpm_x100  = read_be16(fp);
         out->beats[i].time_ms   = read_be32(fp);
     }
+    if (count > stored_count) {
+        uint32_t skipped = count - stored_count;
+        if (fseek(fp, (long)(skipped * 8u), SEEK_CUR) != 0) return ESP_ERR_INVALID_ARG;
+        ANLZ_LOGW(TAG, "PQTZ: truncated beat grid from %u to %u entries",
+                  count, stored_count);
+    }
 
     /* BPM from first entry */
-    if (count > 0 && out->beats[0].bpm_x100 > 0) {
+    if (stored_count > 0 && out->beats[0].bpm_x100 > 0) {
         out->bpm = (uint16_t)((out->beats[0].bpm_x100 + 50u) / 100u);
     }
 
-    ANLZ_LOGI(TAG, "PQTZ: %u beats, BPM=%u (raw=%u)", count, out->bpm,
-              count > 0 ? out->beats[0].bpm_x100 : 0);
+    ANLZ_LOGI(TAG, "PQTZ: %u beats, BPM=%u (raw=%u)", stored_count, out->bpm,
+              stored_count > 0 ? out->beats[0].bpm_x100 : 0);
     return ESP_OK;
 }
 

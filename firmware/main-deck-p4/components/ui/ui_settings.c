@@ -397,7 +397,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     ui_settings_static_tile(mixer_section, 488, 30, 88, 28,
                             "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
     ui_settings_static_tile(mixer_section, 588, 30, 124, 28,
-                            "CUE PATH TODO", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
+                            "CUE PATH", COL_DISABLED, COL_PANEL_DK, COL_BORDER);
 
     ui_settings_widgets_t settings_widgets = {
         .uart_status = label_uart_status,
@@ -613,7 +613,7 @@ static void ui_settings_update_link_status_label(void)
     if (st.mode == WIFI_LINK_MODE_HOST) {
         lv_label_set_text_fmt(s_widgets.link_status,
                               "Link: HOST %s (%u client)",
-                              st.ssid[0] ? st.ssid : "CDJ100S",
+                              st.ssid[0] ? st.ssid : "DDJ-FFL4",
                               (unsigned)st.ap_clients);
         return;
     }
