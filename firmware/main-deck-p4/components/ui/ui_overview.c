@@ -126,20 +126,22 @@ static void ui_label_set_f2_if_changed(lv_obj_t *lbl, float v)
 }
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 560
-#define OVERVIEW_CV_H 96
+#define OVERVIEW_CV_W 620
+#define OVERVIEW_CV_H 122
 #define OVERVIEW_MINI_CV_W 390
 #define OVERVIEW_MINI_CV_H 30
 #define OVERVIEW_XFADER_X 314
 #define OVERVIEW_WAVE_X 92
 #define OVERVIEW_WAVE_INSET_X 10
 #define OVERVIEW_WAVE_INSET_Y 7
+#define OVERVIEW_DECK1_WAVE_Y 42
+#define OVERVIEW_DECK2_WAVE_Y 180
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_MAIN_VISIBLE_BEATS 16u
 #define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
 #define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
 #define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - 110)
-#define OVERVIEW_PHASE_Y 176
+#define OVERVIEW_PHASE_Y 178
 #define OVERVIEW_PHASE_W 220
 #define OVERVIEW_PHASE_KNOB_W 8
 
@@ -178,6 +180,7 @@ typedef struct {
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
 static lv_obj_t *s_beat_pulses[4];
+static lv_obj_t *s_overview_cue_heads[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_crossfader_label = NULL;
 static lv_obj_t *s_crossfader_track = NULL;
 static lv_obj_t *s_crossfader_knob = NULL;
@@ -341,6 +344,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->last_time_bucket = UINT32_MAX;
     panel->last_remain_bucket = UINT32_MAX;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
+    int wave_y = (deck == CTRL_DECK_1) ? OVERVIEW_DECK1_WAVE_Y : OVERVIEW_DECK2_WAVE_Y;
     int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
     int accent_x = info_x + 2;
 
@@ -397,7 +401,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_out = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                COL_TEXT_MUTED, info_x + 10, 394, 68, "OUT 100%");
     panel->label_pfl = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                               COL_TEXT_DIM, 4, top_y + 100, 80, "PFL OFF");
+                                               COL_TEXT_DIM, 4, top_y + 142, 80, "PFL OFF");
     panel->out_bar_bg = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6, COL_PANEL);
     panel->out_bar_fill = ui_overview_bar(panel->panel, info_x + 286, 410, 78, 6,
                                           deck == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
@@ -408,7 +412,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
     lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + (OVERVIEW_WAVE_INSET_X * 2),
                     OVERVIEW_CV_H + (OVERVIEW_WAVE_INSET_Y * 2));
-    lv_obj_set_pos(panel->wave_border, OVERVIEW_WAVE_X, top_y + 42);
+    lv_obj_set_pos(panel->wave_border, OVERVIEW_WAVE_X, wave_y);
     lv_obj_set_style_pad_all(panel->wave_border, 0, LV_PART_MAIN);
     lv_obj_set_user_data(panel->wave_border, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
@@ -416,7 +420,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
     size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
 #ifndef WIN32
-    panel->wave_buf = ui_overview_alloc_canvas(ov_sz, false);
+    panel->wave_buf = ui_overview_alloc_canvas(ov_sz, true);
 #else
     panel->wave_buf = malloc(ov_sz);
 #endif
@@ -503,9 +507,15 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     for (int i = 0; i < 8; i++) {
         s_overview_cue_markers[deck_idx][i] = lv_obj_create(panel->wave_border);
         lv_obj_set_style_border_width(s_overview_cue_markers[deck_idx][i], 0, LV_PART_MAIN);
-        lv_obj_set_size(s_overview_cue_markers[deck_idx][i], 3, OVERVIEW_CV_H);
+        lv_obj_set_size(s_overview_cue_markers[deck_idx][i], 2, OVERVIEW_CV_H - 4);
         lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_CLICKABLE);
+
+        s_overview_cue_heads[deck_idx][i] = lv_obj_create(panel->wave_border);
+        lv_obj_set_style_border_width(s_overview_cue_heads[deck_idx][i], 0, LV_PART_MAIN);
+        lv_obj_set_size(s_overview_cue_heads[deck_idx][i], 7, 7);
+        lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_CLICKABLE);
     }
 
     if (deck == CTRL_DECK_1) {
@@ -522,8 +532,8 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         }
     }
 
-    ui_overview_compact_button(panel->panel, deck, 4, top_y + 68, 38, "PLAY", &s_style_btn_primary, play_pause_event_cb);
-    ui_overview_compact_button(panel->panel, deck, 46, top_y + 68, 38, "CUE", &s_style_btn_amber, cue_event_cb);
+    ui_overview_compact_button(panel->panel, deck, 4, top_y + 68, 74, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    ui_overview_compact_button(panel->panel, deck, 4, top_y + 104, 74, "CUE", &s_style_btn_amber, cue_event_cb);
 
     if (deck == CTRL_DECK_1) {
         s_crossfader_label = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
@@ -554,41 +564,44 @@ static lv_obj_t *ui_fx_panel_label(lv_obj_t *parent, const char *text,
 
 static void ui_create_overview_fx_panel(lv_obj_t *parent)
 {
+    const int fx_x = 736;
+    const int fx_w = 64;
+    const int slot_x = 4;
+    const int slot_w = 56;
+
     s_overview_fx_panel = lv_obj_create(parent);
     lv_obj_remove_style_all(s_overview_fx_panel);
     lv_obj_add_style(s_overview_fx_panel, &s_style_panel_frame, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_overview_fx_panel, COL_BG, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_overview_fx_panel, COL_BORDER_LT, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_overview_fx_panel, 1, LV_PART_MAIN);
-    lv_obj_set_size(s_overview_fx_panel, 128, 316);
-    lv_obj_set_pos(s_overview_fx_panel, 672, 0);
+    lv_obj_set_size(s_overview_fx_panel, fx_w, 316);
+    lv_obj_set_pos(s_overview_fx_panel, fx_x, 0);
     lv_obj_clear_flag(s_overview_fx_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *header = ui_overview_bar(s_overview_fx_panel, 0, 0, 128, 28, COL_PANEL);
+    lv_obj_t *header = ui_overview_bar(s_overview_fx_panel, 0, 0, fx_w, 28, COL_PANEL);
     lv_obj_remove_flag(header, LV_OBJ_FLAG_CLICKABLE);
-    ui_fx_panel_label(s_overview_fx_panel, "BEAT FX", 0, 6, 128,
-                      &lv_font_montserrat_14, COL_TEXT);
+    ui_fx_panel_label(s_overview_fx_panel, "BEAT FX", 0, 7, fx_w,
+                      &lv_font_montserrat_12, COL_TEXT);
 
     const char *values[] = { "ECHO", "ECHO", "REVERB" };
     const int y0[] = { 30, 120, 210 };
     for (int i = 0; i < 3; i++) {
-        lv_obj_t *slot = ui_overview_bar(s_overview_fx_panel, 4, y0[i], 120, 58, lv_color_hex(0x263033));
+        lv_obj_t *slot = ui_overview_bar(s_overview_fx_panel, slot_x, y0[i], slot_w, 58, lv_color_hex(0x263033));
         lv_obj_set_style_border_width(slot, 1, LV_PART_MAIN);
         lv_obj_set_style_border_color(slot, COL_BORDER, LV_PART_MAIN);
         lv_obj_remove_flag(slot, LV_OBJ_FLAG_CLICKABLE);
 
-        ui_overview_bar(s_overview_fx_panel, 4, y0[i] + 54, 120, 5,
+        ui_overview_bar(s_overview_fx_panel, slot_x, y0[i] + 54, slot_w, 5,
                         i == 1 ? lv_color_hex(0x146B17) : lv_color_hex(0x18F72B));
-        ui_fx_panel_label(s_overview_fx_panel, values[i], 10, y0[i] + 20, 84,
-                          &lv_font_montserrat_14, COL_ACCENT);
-        ui_fx_panel_label(s_overview_fx_panel, "v", 102, y0[i] + 20, 18,
-                          &lv_font_montserrat_14, COL_TEXT);
+        ui_fx_panel_label(s_overview_fx_panel, values[i], slot_x, y0[i] + 21, slot_w,
+                          &lv_font_montserrat_12, COL_ACCENT);
 
-        lv_obj_t *off = ui_overview_bar(s_overview_fx_panel, 4, y0[i] + 62, 120, 26, COL_BG);
+        lv_obj_t *off = ui_overview_bar(s_overview_fx_panel, slot_x, y0[i] + 62, slot_w, 26, COL_BG);
         lv_obj_set_style_border_width(off, 1, LV_PART_MAIN);
         lv_obj_set_style_border_color(off, COL_BORDER, LV_PART_MAIN);
         lv_obj_remove_flag(off, LV_OBJ_FLAG_CLICKABLE);
-        ui_fx_panel_label(s_overview_fx_panel, "OFF", 0, y0[i] + 68, 128,
+        ui_fx_panel_label(s_overview_fx_panel, "OFF", 0, y0[i] + 68, fx_w,
                           &lv_font_montserrat_12, COL_TEXT_DIM);
     }
 }
@@ -600,7 +613,7 @@ static void ui_create_overview_center_marker(lv_obj_t *parent)
 
     lv_obj_t *top = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, 0, 9, 2, COL_TEXT);
     lv_obj_set_style_bg_opa(top, LV_OPA_80, LV_PART_MAIN);
-    lv_obj_t *bottom = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, 158, 9, 2, COL_TEXT);
+    lv_obj_t *bottom = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 4, OVERVIEW_DECK2_WAVE_Y - 2, 9, 2, COL_TEXT);
     lv_obj_set_style_bg_opa(bottom, LV_OPA_80, LV_PART_MAIN);
 
     lv_obj_t *cue = ui_overview_bar(parent, OVERVIEW_WAVE_CENTER_X - 16, 300, 32, 16, COL_AMBER);
@@ -962,6 +975,9 @@ void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, u
             if (s_overview_cue_markers[deck_idx][i]) {
                 lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
             }
+            if (s_overview_cue_heads[deck_idx][i]) {
+                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
         return;
     }
@@ -993,11 +1009,17 @@ void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, u
 
         if (!found) {
             lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+            if (s_overview_cue_heads[deck_idx][i]) {
+                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+            }
             continue;
         }
 
         if ((int64_t)pos < window_start_ms || (int64_t)pos > window_end_ms) {
             lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+            if (s_overview_cue_heads[deck_idx][i]) {
+                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+            }
             continue;
         }
 
@@ -1008,9 +1030,23 @@ void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, u
         if (marker_x > OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2) {
             marker_x = OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2;
         }
-        lv_obj_set_pos(marker, marker_x, OVERVIEW_WAVE_INSET_Y);
+        lv_obj_set_pos(marker, marker_x, OVERVIEW_WAVE_INSET_Y + 4);
         lv_obj_set_style_bg_color(marker, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
         lv_obj_remove_flag(marker, LV_OBJ_FLAG_HIDDEN);
+        if (s_overview_cue_heads[deck_idx][i]) {
+            int head_x = marker_x - 2;
+            int head_min = OVERVIEW_WAVE_INSET_X;
+            int head_max = OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 7;
+            if (head_x < head_min) {
+                head_x = head_min;
+            } else if (head_x > head_max) {
+                head_x = head_max;
+            }
+            lv_obj_set_pos(s_overview_cue_heads[deck_idx][i], head_x, OVERVIEW_WAVE_INSET_Y);
+            lv_obj_set_style_bg_color(s_overview_cue_heads[deck_idx][i],
+                                      lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
+            lv_obj_remove_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
