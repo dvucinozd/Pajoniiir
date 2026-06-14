@@ -228,6 +228,11 @@ static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_ini
 #if AE_FW
 static esp_codec_dev_handle_t s_codec       = NULL;  /* owned by bsp_jc4880 */
 static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task gives on exit */
+static SemaphoreHandle_t      s_output_done = NULL;
+static TaskHandle_t           s_output_task = NULL;
+static volatile bool          s_output_run = false;
+static volatile bool          s_output_codec_open = false;
+static uint32_t               s_output_sample_rate = 0;
 /* The MP3 is preloaded into PSRAM once and decoded directly from the
  * memory buffer. This keeps USB off the playback/teardown path entirely — streaming
  * reads from /usb during playback collide with the load sequence and trip a
@@ -297,12 +302,7 @@ static void reset_all_fw_task_contexts(void)
 
 static bool audio_fw_output_task_running(void)
 {
-    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
-        if (s_fw_runtimes[i].run && s_fw_runtimes[i].output_task) {
-            return true;
-        }
-    }
-    return false;
+    return s_output_run && s_output_task != NULL;
 }
 
 static bool deck_output_active(uint8_t deck)
@@ -332,6 +332,16 @@ static void reset_all_resamplers(void)
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_resampler_reset(&s_resamplers[i]);
     }
+}
+
+static bool any_deck_loaded(void)
+{
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (s_engines[i].loaded) {
+            return true;
+        }
+    }
+    return false;
 }
 
 #endif
@@ -685,6 +695,10 @@ static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
 #define AE_FIRST_CHUNK_BYTES (96u * 1024u)  /* min loaded before the decoder starts */
 #define AE_LOAD_GATE_MARGIN  (32u * 1024u)  /* keep the decoder this far behind the loader */
 
+static esp_err_t audio_output_service_open_codec(uint32_t sample_rate);
+static esp_err_t audio_output_service_ensure_started(void);
+static esp_err_t audio_output_service_stop(void);
+
 /* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark;
  * build the frame seek table once the whole file is in. Parks
  * until stop() so the teardown counting semaphore stays balanced. */
@@ -818,23 +832,13 @@ static void ae_decode_task(void *arg)
         goto cleanup;
     }
 
-    esp_codec_dev_sample_info_t fs = {
-        .bits_per_sample = 16,
-        .channel         = 2,
-        .sample_rate     = eng->sample_rate,
-    };
-    if (ctx->task_plan.codec_owner) {
-        if (esp_codec_dev_open(s_codec, &fs) != 0) {
-            ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
-            eng->last_error = ESP_FAIL;
-            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "CODEC OPEN ERR");
-            goto cleanup;
-        }
-        runtime->codec_open = true;
-        ESP_LOGI(TAG, "codec open @ %u Hz, playback streaming", (unsigned)eng->sample_rate);
-    } else {
-        ESP_LOGI(TAG, "producer ready @ %u Hz, shared output mixer eligible", (unsigned)eng->sample_rate);
+    if (audio_output_service_open_codec(eng->sample_rate) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
+        eng->last_error = ESP_FAIL;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "CODEC OPEN ERR");
+        goto cleanup;
     }
+    ESP_LOGI(TAG, "producer ready @ %u Hz, shared output mixer eligible", (unsigned)eng->sample_rate);
     eng->load_progress = 100;
     eng->loading       = false;   /* P5a: track is now playable */
 
@@ -920,18 +924,38 @@ cleanup:
 /* Consumer: pitch-resample from the ring and write PCM to the ES8311.
  * esp_codec_dev_write() blocks on the I2S DMA, which paces real-time playback. */
 #define AE_OUT_FRAMES 256
+static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
+{
+    if (sample_rate == 0) return ESP_ERR_INVALID_ARG;
+
+    AE_LOCK();
+    if (s_output_codec_open) {
+        AE_UNLOCK();
+        return ESP_OK;
+    }
+
+    esp_codec_dev_sample_info_t fs = {
+        .bits_per_sample = 16,
+        .channel         = 2,
+        .sample_rate     = sample_rate,
+    };
+    if (esp_codec_dev_open(s_codec, &fs) != 0) {
+        AE_UNLOCK();
+        return ESP_FAIL;
+    }
+    s_output_codec_open = true;
+    s_output_sample_rate = sample_rate;
+    ESP_LOGI(TAG, "shared codec open @ %u Hz", (unsigned)sample_rate);
+    AE_UNLOCK();
+    return ESP_OK;
+}
+
 static void ae_output_task(void *arg)
 {
-    audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
-    if (!audio_fw_task_context_is_bound(ctx)) {
-        xSemaphoreGive(s_tasks_done);
-        vTaskDelete(NULL);
-        return;
-    }
-    audio_fw_runtime_t *runtime = ctx->runtime;
+    (void)arg;
     int16_t out[AE_OUT_FRAMES * 2];
-    while (runtime->run) {
-        if (!runtime->codec_open) {
+    while (s_output_run) {
+        if (!s_output_codec_open) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -983,9 +1007,52 @@ static void ae_output_task(void *arg)
             AE_UNLOCK();
         }
     }
-    runtime->output_task = NULL;
-    xSemaphoreGive(s_tasks_done);
+    if (s_output_codec_open) {
+        esp_codec_dev_close(s_codec);
+        s_output_codec_open = false;
+        s_output_sample_rate = 0;
+    }
+    s_output_task = NULL;
+    if (s_output_done) xSemaphoreGive(s_output_done);
     vTaskDelete(NULL);
+}
+
+static esp_err_t audio_output_service_ensure_started(void)
+{
+    if (s_output_task) return ESP_OK;
+    if (s_output_done) {
+        while (xSemaphoreTake(s_output_done, 0) == pdTRUE) {
+            /* drain stale output exit signals */
+        }
+    }
+    s_output_run = true;
+    if (xTaskCreate(ae_output_task, "ae_output", 4096, NULL, 6, &s_output_task) != pdPASS) {
+        s_output_run = false;
+        s_output_task = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t audio_output_service_stop(void)
+{
+    if (!s_output_task) {
+        if (s_output_codec_open) {
+            esp_codec_dev_close(s_codec);
+            s_output_codec_open = false;
+            s_output_sample_rate = 0;
+        }
+        s_output_run = false;
+        return ESP_OK;
+    }
+
+    s_output_run = false;
+    if (s_output_done &&
+        xSemaphoreTake(s_output_done, pdMS_TO_TICKS(1500)) != pdTRUE) {
+        ESP_LOGE(TAG, "shared output stop timed out");
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
 }
 #endif /* AE_FW */
 
@@ -1030,7 +1097,10 @@ esp_err_t audio_engine_init(void)
     if (!s_tasks_done) {
         s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
     }
-    if (!s_file_mutex || !s_tasks_done) return ESP_ERR_NO_MEM;
+    if (!s_output_done) {
+        s_output_done = xSemaphoreCreateCounting(1, 0);
+    }
+    if (!s_file_mutex || !s_tasks_done || !s_output_done) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "audio_engine_init: ES8311 codec ready");
 #endif
 
@@ -1187,6 +1257,30 @@ esp_err_t audio_engine_load(const char     *mp3_path,
             ESP_LOGE(TAG, "failed to create ae_output task");
         }
     }
+    esp_err_t output_rc = audio_output_service_ensure_started();
+    if (output_rc != ESP_OK) {
+        ESP_LOGE(TAG, "failed to start shared output task");
+        s_eng.last_error = output_rc;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OUTPUT TASK ERR");
+        s_eng.loading = false;
+        s_eng.load_progress = 100;
+        runtime->run = false;
+        for (int i = 0; i < runtime->tasks_started; i++) {
+            xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
+        }
+        if (fw->buf) {
+            heap_caps_free(fw->buf);
+            fw->buf = NULL;
+        }
+        memset(&s_eng, 0, sizeof s_eng);
+        s_eng.pitch_factor = 1.0f;
+        s_eng.load_progress = 100;
+        s_eng.last_error = output_rc;
+        snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OUTPUT TASK ERR");
+        audio_fw_runtime_mark_stopped(runtime);
+        audio_fw_task_context_reset(task_ctx);
+        return output_rc;
+    }
     if (runtime->tasks_started != task_plan.expected_tasks) {
         s_eng.last_error = ESP_ERR_NO_MEM;
         snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "TASK CREATE ERR");
@@ -1286,10 +1380,6 @@ esp_err_t audio_engine_stop(void)
         runtime->tasks_started = 0;
         audio_fw_task_context_reset(active_fw_task_context());
     }
-    if (runtime->codec_open) {
-        esp_codec_dev_close(s_codec);   /* handle persists for the next load */
-        runtime->codec_open = false;
-    }
 #endif
 
     AE_LOCK();
@@ -1321,6 +1411,15 @@ esp_err_t audio_engine_stop(void)
     s_eng.last_error = ESP_OK;
     snprintf(s_eng.last_error_text, sizeof(s_eng.last_error_text), "OK");
     ring_reset();
+
+#if AE_FW
+    if (!any_deck_loaded()) {
+        esp_err_t output_rc = audio_output_service_stop();
+        if (output_rc != ESP_OK) {
+            return output_rc;
+        }
+    }
+#endif
 
     return ESP_OK;
 }
@@ -1608,6 +1707,12 @@ esp_err_t audio_engine_stop_all(void)
             first_err = rc;
         }
     }
+#if AE_FW
+    esp_err_t output_rc = audio_output_service_stop();
+    if (first_err == ESP_OK && output_rc != ESP_OK) {
+        first_err = output_rc;
+    }
+#endif
     return first_err;
 }
 
