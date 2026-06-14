@@ -7,6 +7,23 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Gcc = Get-Command gcc -ErrorAction Stop
 
+function Assert-FileDoesNotContain {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Patterns
+    )
+
+    Write-Host "==> static $Name"
+    foreach ($pattern in $Patterns) {
+        $matches = Select-String -LiteralPath $Path -Pattern $pattern -SimpleMatch
+        if ($matches) {
+            $first = $matches | Select-Object -First 1
+            throw "$Name contains forbidden selector pattern '$pattern' at $($first.Path):$($first.LineNumber)"
+        }
+    }
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -26,6 +43,11 @@ function Invoke-Step {
         Pop-Location
     }
 }
+
+Assert-FileDoesNotContain `
+    -Name "audio_engine explicit deck state" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Patterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
 
 $tests = @(
     @{
