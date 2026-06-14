@@ -3,6 +3,15 @@
 #include <inttypes.h>
 #include <string.h>
 
+static flx4_midi_message_cb_t s_message_cb;
+static void *s_message_cb_ctx;
+
+void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx)
+{
+    s_message_cb = cb;
+    s_message_cb_ctx = user_ctx;
+}
+
 static uint8_t cin_payload_len(uint8_t cin)
 {
     switch (cin) {
@@ -176,6 +185,9 @@ static void log_midi_packet(const uint8_t packet[4])
     ESP_LOGI(TAG,
              "USB-MIDI cable=%u cin=0x%X len=%u status=0x%02X data1=0x%02X data2=0x%02X",
              msg.cable, msg.cin, msg.len, msg.status, msg.data1, msg.data2);
+    if (s_message_cb) {
+        s_message_cb(&msg, s_message_cb_ctx);
+    }
 }
 
 static void midi_in_transfer_cb(usb_transfer_t *transfer)

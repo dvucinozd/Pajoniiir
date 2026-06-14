@@ -52,6 +52,16 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("CONFIG_DDJ_FLX4_TRANSLATE_TO_P4", "mode: DDJ-FLX4 USB MIDI host raw logger", "mode: DDJ-FLX4 USB MIDI translator")
 
+Assert-FileContains `
+    -Name "flx4 host callback API" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/include/flx4_midi_host.h") `
+    -Patterns @("flx4_midi_message_cb_t", "flx4_midi_host_set_message_callback")
+
+Assert-FileContains `
+    -Name "flx4 translator queue" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("s_flx4_event_queue", "flx4_translator_task", "s_flx4_coalesced_count")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"

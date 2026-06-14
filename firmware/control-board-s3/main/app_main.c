@@ -4,6 +4,7 @@
 #include "sdkconfig.h"
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
+#include "flx4_map.h"
 #else
 #include "midi_compat.h"
 #endif
@@ -12,6 +13,7 @@
 #include "freertos/queue.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include <inttypes.h>
 
 static const char *TAG = "main";
 
@@ -50,6 +52,115 @@ static void heartbeat_task(void *arg)
 }
 #endif
 
+#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+#define FLX4_EVENT_QUEUE_LEN 32
+
+static QueueHandle_t s_flx4_event_queue;
+static flx4_map_state_t s_flx4_map;
+static uint32_t s_flx4_dropped_count;
+static uint32_t s_flx4_coalesced_count;
+static uint32_t s_flx4_unsupported_count;
+static TickType_t s_flx4_last_warn;
+
+static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
+{
+    if (!ev) {
+        return false;
+    }
+    if (ev->type == CTRL_TYPE_ENCODER &&
+        ev->id != CTRL_ID_BROWSE_DELTA) {
+        return true;
+    }
+    if (ev->type == CTRL_TYPE_PITCH) {
+        return ev->id == CTRL_ID_DECK1_TEMPO ||
+               ev->id == CTRL_ID_DECK2_TEMPO ||
+               ev->id == CTRL_ID_CH1_VOLUME ||
+               ev->id == CTRL_ID_CH2_VOLUME ||
+               ev->id == CTRL_ID_CROSSFADER;
+    }
+    return false;
+}
+
+static void flx4_translator_warn_rate_limited(void)
+{
+    TickType_t now = xTaskGetTickCount();
+    if (now - s_flx4_last_warn < pdMS_TO_TICKS(1000)) {
+        return;
+    }
+    s_flx4_last_warn = now;
+    ESP_LOGW(TAG, "FLX4 translator queue dropped=%" PRIu32 " coalesced=%" PRIu32
+             " unsupported=%" PRIu32,
+             s_flx4_dropped_count, s_flx4_coalesced_count, s_flx4_unsupported_count);
+}
+
+static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
+{
+    if (!flx4_event_is_high_rate(ev) || !s_flx4_event_queue) {
+        return false;
+    }
+
+    flx4_control_event_t stash[FLX4_EVENT_QUEUE_LEN];
+    int stash_len = 0;
+    bool replaced = false;
+    flx4_control_event_t cur;
+
+    while (stash_len < FLX4_EVENT_QUEUE_LEN &&
+           xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
+        if (!replaced && cur.type == ev->type && cur.id == ev->id) {
+            replaced = true;
+            continue;
+        }
+        stash[stash_len++] = cur;
+    }
+
+    for (int i = 0; i < stash_len; i++) {
+        (void)xQueueSend(s_flx4_event_queue, &stash[i], 0);
+    }
+
+    if (!replaced) {
+        return false;
+    }
+    if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
+        s_flx4_coalesced_count++;
+        return true;
+    }
+    return false;
+}
+
+static void flx4_enqueue_event(const flx4_control_event_t *ev)
+{
+    if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
+        return;
+    }
+    if (!flx4_try_coalesce_latest(ev)) {
+        s_flx4_dropped_count++;
+    }
+    flx4_translator_warn_rate_limited();
+}
+
+static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
+{
+    (void)user_ctx;
+    flx4_control_event_t ev;
+    if (flx4_map_message(&s_flx4_map, msg, &ev)) {
+        flx4_enqueue_event(&ev);
+    } else {
+        s_flx4_unsupported_count++;
+    }
+}
+
+static void flx4_translator_task(void *arg)
+{
+    (void)arg;
+    flx4_control_event_t ev;
+    while (1) {
+        if (xQueueReceive(s_flx4_event_queue, &ev, portMAX_DELAY) == pdTRUE) {
+            (void)control_link_send_semantic(ev.type, ev.id, ev.value);
+        }
+    }
+}
+#endif
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");
@@ -58,8 +169,14 @@ void app_main(void)
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
     ESP_LOGI(TAG, "mode: DDJ-FLX4 USB MIDI translator");
+    flx4_map_init(&s_flx4_map);
+    s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
+    ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(control_link_init(NULL));
+    flx4_midi_host_set_message_callback(flx4_midi_message_cb, NULL);
     ESP_ERROR_CHECK(flx4_midi_host_init());
+    ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6, NULL) == pdPASS
+                    ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", 1024, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #else
