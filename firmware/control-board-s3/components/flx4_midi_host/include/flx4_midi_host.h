@@ -2,12 +2,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #if defined(FLX4_MIDI_HOST_PC_TEST)
-typedef int esp_err_t;
-#define ESP_OK 0
-#define ESP_ERR_INVALID_ARG 0x102
-#define ESP_ERR_NO_MEM 0x101
+#include "esp_err.h"
 #else
 #include "esp_err.h"
 #endif
@@ -40,6 +38,17 @@ typedef struct {
     uint8_t data2;
 } flx4_midi_message_t;
 
+typedef void (*flx4_midi_message_cb_t)(const flx4_midi_message_t *msg, void *user_ctx);
+
 bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *out);
+
+bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
+                                          size_t config_len,
+                                          uint8_t *interface_num,
+                                          uint8_t *alternate_setting,
+                                          uint8_t *in_ep_addr,
+                                          uint16_t *in_ep_mps);
+
+void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx);
 
 esp_err_t flx4_midi_host_init(void);

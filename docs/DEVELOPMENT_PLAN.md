@@ -13,7 +13,8 @@ Deliverables:
 
 ## Phase 1: S3 USB MIDI Host Spike
 
-Status: raw logger implemented and flashed; hardware capture deferred.
+Status: raw logger implemented, descriptor parsing hardened, and host-tested;
+hardware capture deferred.
 
 Goal: prove that the S3 can enumerate the DDJ-FLX4 and read raw MIDI.
 
@@ -24,6 +25,9 @@ Tasks:
 - log device VID/PID, interfaces, endpoints, and MIDI packets; implemented,
   pending FLX4 enumeration
 - create a raw MIDI capture mode; done
+- reject malformed/truncated USB descriptors before claiming endpoints; done
+- add Windows host regression coverage for MIDI packet parsing and endpoint
+  selection; done
 - verify Play, Cue, Load, Browse, jog, tempo, channel faders, crossfader, and
   headphone cue against `docs/DDJ_FLX4_MIDI_MAP.md`.
 
@@ -45,21 +49,47 @@ Exit criteria:
 
 ## Phase 2: S3 MIDI-To-Control-Link Translation
 
+Status: software path implemented behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
+disabled by default until physical FLX4 capture confirms the mapping.
+
 Goal: send deck-aware semantic frames from S3 to P4.
 
 Tasks:
 
-- create `flx4_map.h`;
-- implement MSB/LSB coalescing for 14-bit controls;
-- map MVP controls to the IDs in `docs/CONTROL_LINK_PROTOCOL.md`;
-- keep heartbeat behavior;
-- add PC tests or host-side unit tests for mapping logic where possible.
+- create `flx4_map.h`; done
+- implement MSB/LSB coalescing for 14-bit controls; done
+- map MVP controls to the IDs in `docs/CONTROL_LINK_PROTOCOL.md`; done
+- keep heartbeat behavior in translator mode; done
+- add PC tests or host-side unit tests for mapping logic where possible; done
+- coalesce high-rate jog/tempo/fader values before UART transmission; done
+- keep raw logger and translator as separate firmware modes; done
 
 Exit criteria:
 
 - serial logs show correct 7-byte frames for all MVP controls;
 - no duplicate noisy frames from analog controls beyond a configured threshold;
 - P4 can still detect S3 connected/offline state.
+
+Validation note, 2026-06-14:
+
+- `tests/run_s3_host_tests.ps1` is the primary Windows host runner for S3
+  regression checks when `make` is not available.
+- The S3 `control_link` constants now mirror the P4 deck-aware namespace for
+  Deck 1, Deck 2, mixer, browser, and system IDs.
+- `flx4_map` maps the MVP transport, cue, load, jog, tempo, channel fader,
+  crossfader, browse, and PFL controls from the XML-derived reference map into
+  semantic `control_link` frames. The XML remains a reference; hardware raw
+  capture still decides whether any mapping needs correction.
+- `app_main.c` has three explicit modes:
+  `CONFIG_DDJ_FLX4_HOST_MODE=y` raw logger,
+  `CONFIG_DDJ_FLX4_HOST_MODE=y` plus `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`
+  translator, and legacy CDJ panel compatibility when host mode is disabled.
+- Translator mode uses a queue plus latest-value coalescing for high-rate
+  controls. Button edge events remain FIFO.
+- Legacy CDJ panel compatibility was stabilized: panel queue overflow no
+  longer discards earlier button events to make room for releases, jog/browse
+  deltas are accumulated as pending motion, encoder GPIOs are configured with
+  pull-ups before PCNT setup, and MIDI compatibility encoder bursts are capped.
 
 ## Phase 3: P4 Deck-Aware Control Link And Deck Core
 

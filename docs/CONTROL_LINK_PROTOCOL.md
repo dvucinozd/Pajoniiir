@@ -28,12 +28,12 @@ Baud rate: `115200`.
 | P4 -> S3 | `0x81` | LED |
 | P4 -> S3 | `0x82` | state feedback/reserved |
 
-## DDJ-FFL4 Extension Strategy
+## DDJ-FFL4 Semantic Namespace
 
-The current frame has only one `id` byte and one 16-bit value. That is enough
-for MVP if the id namespace becomes deck-aware.
+The current frame has only one `id` byte and one 16-bit value. DDJ-FFL4 keeps
+that wire format for MVP and makes the `id` namespace deck-aware instead.
 
-Recommended near-term extension:
+Implemented namespace layout:
 
 ```text
 id high nibble: deck or mixer namespace
@@ -51,7 +51,11 @@ Suggested namespaces:
 | Browser | `0x40`-`0x4F` | browse/load/navigation |
 | System | `0x70`-`0x7F` | heartbeat, diagnostics |
 
-This avoids changing the wire frame before the first MVP test.
+The S3 and P4 headers carry matching constants for this layout. Host tests
+verify that the shared MVP IDs stay aligned across both firmware targets.
+
+This avoids changing the wire frame before the first MVP hardware integration
+test.
 
 ## MVP Semantic IDs
 
@@ -77,6 +81,11 @@ This avoids changing the wire frame before the first MVP test.
 | `0x40` | Browse delta | signed delta |
 | `0x41` | Load Deck 1 | `0` release, `1` press |
 | `0x42` | Load Deck 2 | `0` release, `1` press |
+
+In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
+`docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
+channel fader, and crossfader events are locally coalesced before UART send;
+button edges and load/PFL events remain FIFO.
 
 ## LED Feedback
 

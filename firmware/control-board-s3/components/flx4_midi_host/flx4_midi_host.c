@@ -3,6 +3,15 @@
 #include <inttypes.h>
 #include <string.h>
 
+static flx4_midi_message_cb_t s_message_cb;
+static void *s_message_cb_ctx;
+
+void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx)
+{
+    s_message_cb = cb;
+    s_message_cb_ctx = user_ctx;
+}
+
 static uint8_t cin_payload_len(uint8_t cin)
 {
     switch (cin) {
@@ -49,6 +58,79 @@ bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *ou
     return true;
 }
 
+#define FLX4_USB_DESC_TYPE_CONFIG     0x02
+#define FLX4_USB_DESC_TYPE_INTERFACE  0x04
+#define FLX4_USB_DESC_TYPE_ENDPOINT   0x05
+#define FLX4_USB_CLASS_AUDIO          0x01
+#define FLX4_MIDI_STREAM_SUBCLASS     0x03
+#define FLX4_USB_EP_DIR_IN_MASK       0x80
+#define FLX4_USB_EP_XFER_TYPE_MASK    0x03
+#define FLX4_USB_EP_XFER_BULK         0x02
+#define FLX4_USB_EP_XFER_INTR         0x03
+
+bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
+                                          size_t config_len,
+                                          uint8_t *interface_num,
+                                          uint8_t *alternate_setting,
+                                          uint8_t *in_ep_addr,
+                                          uint16_t *in_ep_mps)
+{
+    if (!config_desc || config_len < 9 ||
+        !interface_num || !alternate_setting || !in_ep_addr || !in_ep_mps) {
+        return false;
+    }
+    if (config_desc[1] != FLX4_USB_DESC_TYPE_CONFIG) {
+        return false;
+    }
+
+    size_t total_len = (size_t)config_desc[2] | ((size_t)config_desc[3] << 8);
+    if (total_len == 0 || total_len > config_len) {
+        total_len = config_len;
+    }
+
+    size_t offset = config_desc[0];
+    bool in_midi_streaming_interface = false;
+
+    while (offset + 2 <= total_len) {
+        uint8_t len = config_desc[offset];
+        uint8_t type = config_desc[offset + 1];
+        if (len < 2 || offset + len > total_len) {
+            return false;
+        }
+
+        if (type == FLX4_USB_DESC_TYPE_INTERFACE) {
+            if (len < 9) {
+                return false;
+            }
+            in_midi_streaming_interface =
+                config_desc[offset + 5] == FLX4_USB_CLASS_AUDIO &&
+                config_desc[offset + 6] == FLX4_MIDI_STREAM_SUBCLASS;
+            if (in_midi_streaming_interface) {
+                *interface_num = config_desc[offset + 2];
+                *alternate_setting = config_desc[offset + 3];
+            }
+        } else if (in_midi_streaming_interface && type == FLX4_USB_DESC_TYPE_ENDPOINT) {
+            if (len < 7) {
+                return false;
+            }
+            uint8_t ep_addr = config_desc[offset + 2];
+            uint8_t xfer_type = config_desc[offset + 3] & FLX4_USB_EP_XFER_TYPE_MASK;
+            bool is_stream_endpoint = xfer_type == FLX4_USB_EP_XFER_BULK ||
+                                      xfer_type == FLX4_USB_EP_XFER_INTR;
+            if ((ep_addr & FLX4_USB_EP_DIR_IN_MASK) && is_stream_endpoint) {
+                *in_ep_addr = ep_addr;
+                *in_ep_mps = (uint16_t)config_desc[offset + 4] |
+                             ((uint16_t)config_desc[offset + 5] << 8);
+                return true;
+            }
+        }
+
+        offset += len;
+    }
+
+    return false;
+}
+
 #if defined(FLX4_MIDI_HOST_PC_TEST)
 esp_err_t flx4_midi_host_init(void)
 {
@@ -71,7 +153,6 @@ static const char *TAG = "flx4_host";
 #define MIDI_CLIENT_TASK_STACK  (6 * 1024)
 #define MIDI_CLIENT_TASK_PRIO   5
 #define CLIENT_NUM_EVENT_MSG    5
-#define MIDI_STREAM_SUBCLASS    0x03
 #define MIDI_TRANSFER_BYTES     64
 
 typedef struct {
@@ -87,6 +168,7 @@ typedef struct {
     bool opened;
     bool claimed;
     bool transfer_active;
+    bool closing;
 } flx4_host_state_t;
 
 static flx4_host_state_t s_host;
@@ -103,6 +185,9 @@ static void log_midi_packet(const uint8_t packet[4])
     ESP_LOGI(TAG,
              "USB-MIDI cable=%u cin=0x%X len=%u status=0x%02X data1=0x%02X data2=0x%02X",
              msg.cable, msg.cin, msg.len, msg.status, msg.data1, msg.data2);
+    if (s_message_cb) {
+        s_message_cb(&msg, s_message_cb_ctx);
+    }
 }
 
 static void midi_in_transfer_cb(usb_transfer_t *transfer)
@@ -116,6 +201,17 @@ static void midi_in_transfer_cb(usb_transfer_t *transfer)
         }
     } else if (transfer->status != USB_TRANSFER_STATUS_NO_DEVICE) {
         ESP_LOGW(TAG, "MIDI IN transfer status=%d bytes=%d", transfer->status, transfer->actual_num_bytes);
+    }
+
+    if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE || host->closing) {
+        if (host->in_xfer == transfer) {
+            esp_err_t rc = usb_host_transfer_free(host->in_xfer);
+            if (rc != ESP_OK) {
+                ESP_LOGW(TAG, "free MIDI IN transfer after disconnect: %s", esp_err_to_name(rc));
+            }
+            host->in_xfer = NULL;
+        }
+        return;
     }
 
     if (host->opened && host->claimed && transfer->status != USB_TRANSFER_STATUS_NO_DEVICE) {
@@ -144,13 +240,18 @@ static bool find_midi_streaming_in_endpoint(const usb_config_desc_t *cfg,
         if (std->bLength < USB_STANDARD_DESC_SIZE) {
             break;
         }
+        if (offset + std->bLength > cfg->wTotalLength) {
+            ESP_LOGW(TAG, "truncated USB descriptor at offset=%d len=%u total=%u",
+                     offset, std->bLength, cfg->wTotalLength);
+            break;
+        }
 
         if (std->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE &&
             std->bLength >= USB_INTF_DESC_SIZE) {
             const usb_intf_desc_t *intf = (const usb_intf_desc_t *)std;
             in_midi_streaming_interface =
                 intf->bInterfaceClass == USB_CLASS_AUDIO &&
-                intf->bInterfaceSubClass == MIDI_STREAM_SUBCLASS;
+                intf->bInterfaceSubClass == FLX4_MIDI_STREAM_SUBCLASS;
             ESP_LOGI(TAG,
                      "interface=%u alt=%u class=0x%02X subclass=0x%02X endpoints=%u%s",
                      intf->bInterfaceNumber,
@@ -211,27 +312,39 @@ static esp_err_t start_midi_in_transfer(flx4_host_state_t *host)
 
 static void close_device(flx4_host_state_t *host)
 {
+    host->closing = true;
     if (host->in_xfer && !host->transfer_active) {
-        usb_host_transfer_free(host->in_xfer);
+        esp_err_t rc = usb_host_transfer_free(host->in_xfer);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "free MIDI IN transfer: %s", esp_err_to_name(rc));
+        }
         host->in_xfer = NULL;
     }
     if (host->claimed) {
-        usb_host_interface_release(host->client_hdl, host->dev_hdl, host->interface_num);
+        esp_err_t rc = usb_host_interface_release(host->client_hdl, host->dev_hdl, host->interface_num);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "release MIDI interface: %s", esp_err_to_name(rc));
+        }
         host->claimed = false;
     }
     if (host->opened) {
-        usb_host_device_close(host->client_hdl, host->dev_hdl);
+        esp_err_t rc = usb_host_device_close(host->client_hdl, host->dev_hdl);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "close USB device: %s", esp_err_to_name(rc));
+        }
         host->dev_hdl = NULL;
         host->opened = false;
     }
     host->in_ep_addr = 0;
     host->in_ep_mps = 0;
+    host->transfer_active = false;
     ESP_LOGW(TAG, "DDJ-FLX4 device closed/disconnected");
 }
 
 static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
 {
     ESP_LOGI(TAG, "opening USB device addr=%u", dev_addr);
+    host->closing = false;
     ESP_RETURN_ON_ERROR(usb_host_device_open(host->client_hdl, dev_addr, &host->dev_hdl),
                         TAG, "open device");
     host->opened = true;

@@ -8,4 +8,12 @@ config DDJ_FLX4_HOST_MODE
         capture. When enabled, the legacy TinyUSB MIDI device compatibility
         path is not started because the USB OTG peripheral is used as host.
 
+config DDJ_FLX4_TRANSLATE_TO_P4
+    bool "Translate DDJ-FLX4 USB MIDI to P4 control-link frames"
+    depends on DDJ_FLX4_HOST_MODE
+    default n
+    help
+        Enables the S3 USB host translator path. Keep this disabled until
+        raw MIDI capture from the physical DDJ-FLX4 has confirmed the mapping.
+
 endmenu

@@ -159,6 +159,14 @@ void control_link_send_heartbeat(void)
     send_frame_checked(frame, "heartbeat");
 }
 
+esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
+{
+    uint8_t frame[CTRL_FRAME_LEN];
+    build_frame(frame, type, id, value);
+    send_frame_checked(frame, "semantic event");
+    return ESP_OK;
+}
+
 void control_link_send_event(const panel_event_t *ev)
 {
     uint8_t frame[CTRL_FRAME_LEN];

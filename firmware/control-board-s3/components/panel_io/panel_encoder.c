@@ -21,9 +21,24 @@ static pcnt_unit_handle_t s_browse_unit;
 static int s_jog_last = 0;
 static int s_browse_last = 0;
 
+static esp_err_t configure_encoder_gpio(gpio_num_t pin)
+{
+    gpio_config_t cfg = {
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+        .pin_bit_mask = 1ULL << pin,
+    };
+    return gpio_config(&cfg);
+}
+
 static esp_err_t init_encoder_unit(gpio_num_t pin_a, gpio_num_t pin_b,
                                    pcnt_unit_handle_t *out_unit)
 {
+    ESP_RETURN_ON_ERROR(configure_encoder_gpio(pin_a), TAG, "gpio a");
+    ESP_RETURN_ON_ERROR(configure_encoder_gpio(pin_b), TAG, "gpio b");
+
     pcnt_unit_config_t unit_cfg = {
         .low_limit  = INT16_MIN,
         .high_limit = INT16_MAX,

@@ -29,6 +29,13 @@ int s3_btn_load(void);
 int s3_btn_count(void);
 int s3_panel_ev_jog(void);
 int s3_panel_ev_browse(void);
+int s3_ctrl_id_deck1_play(void);
+int s3_ctrl_id_deck2_cue(void);
+int s3_ctrl_id_deck1_tempo(void);
+int s3_ctrl_id_ch1_volume(void);
+int s3_ctrl_id_crossfader(void);
+int s3_ctrl_id_browse_delta(void);
+int s3_ctrl_id_load_deck2(void);
 
 static void build_frame(uint8_t frame[CTRL_FRAME_LEN],
                         uint8_t type, uint8_t id, int16_t value, uint8_t seq)
@@ -173,6 +180,17 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(ev.control == CTRL_DECK_CTL_TEMPO);
 }
 
+static void test_s3_and_p4_deck_aware_ids_match(void)
+{
+    assert(s3_ctrl_id_deck1_play() == CTRL_ID_DECK1_PLAY);
+    assert(s3_ctrl_id_deck2_cue() == CTRL_ID_DECK2_CUE);
+    assert(s3_ctrl_id_deck1_tempo() == CTRL_ID_DECK1_TEMPO);
+    assert(s3_ctrl_id_ch1_volume() == CTRL_ID_CH1_VOLUME);
+    assert(s3_ctrl_id_crossfader() == CTRL_ID_CROSSFADER);
+    assert(s3_ctrl_id_browse_delta() == CTRL_ID_BROWSE_DELTA);
+    assert(s3_ctrl_id_load_deck2() == CTRL_ID_LOAD_DECK2);
+}
+
 static void test_led_command_values_and_bad_checksum(void)
 {
     uint8_t frame[CTRL_FRAME_LEN];
@@ -194,6 +212,7 @@ int main(void)
     test_button_load_decodes();
     test_encoder_ids_route_to_jog_and_browse();
     test_firmware_decodes_deck_aware_flx4_ids();
+    test_s3_and_p4_deck_aware_ids_match();
     test_led_command_values_and_bad_checksum();
     puts("control_link_protocol tests passed");
     return 0;
