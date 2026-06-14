@@ -26,6 +26,7 @@ static QueueHandle_t    s_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static uint32_t s_event_drop_count;
+static uint32_t s_event_coalesce_count;
 static TickType_t s_last_warn;
 
 // ─── TX helpers ───────────────────────────────────────────────────────────────
@@ -68,6 +69,47 @@ typedef struct {
     int     pos;
 } rx_state_t;
 
+static bool event_is_high_rate(const ctrl_event_t *ev)
+{
+    return ev && (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_PITCH);
+}
+
+static bool try_coalesce_latest_event(const ctrl_event_t *ev)
+{
+    if (!event_is_high_rate(ev) || !s_event_queue) {
+        return false;
+    }
+
+    ctrl_event_t stash[32];
+    int stash_len = 0;
+    bool replaced = false;
+    ctrl_event_t cur;
+
+    while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
+           xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
+        if (!replaced && cur.type == ev->type && cur.id == ev->id) {
+            replaced = true;
+            continue;
+        }
+        stash[stash_len++] = cur;
+    }
+
+    for (int i = 0; i < stash_len; i++) {
+        (void)xQueueSend(s_event_queue, &stash[i], 0);
+    }
+
+    if (!replaced) {
+        return false;
+    }
+
+    if (xQueueSend(s_event_queue, ev, 0) == pdTRUE) {
+        s_event_coalesce_count++;
+        return true;
+    }
+
+    return false;
+}
+
 static void dispatch_frame(const uint8_t *f)
 {
     ctrl_event_t ev = {
@@ -103,13 +145,15 @@ static void dispatch_frame(const uint8_t *f)
         return;
     }
 
-    if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) {
+    if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE &&
+        !try_coalesce_latest_event(&ev)) {
         s_event_drop_count++;
         TickType_t now = xTaskGetTickCount();
         if (now - s_last_warn >= pdMS_TO_TICKS(1000)) {
             s_last_warn = now;
-            ESP_LOGW(TAG, "control event queue full, drops=%" PRIu32 " write_fail=%" PRIu32,
-                     s_event_drop_count, s_uart_write_fail_count);
+            ESP_LOGW(TAG, "control event queue full, drops=%" PRIu32
+                     " coalesced=%" PRIu32 " write_fail=%" PRIu32,
+                     s_event_drop_count, s_event_coalesce_count, s_uart_write_fail_count);
         }
     }
 }
