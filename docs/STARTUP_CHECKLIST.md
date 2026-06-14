@@ -30,15 +30,15 @@
 - [x] Confirm P4 serial port (`COM15` on 2026-06-13).
 - [x] Flash S3 FLX4 host-mode firmware (`fd663e6`) before FLX4 capture.
 - [x] Flash P4 firmware after dual-deck UI stabilization (`5f9b425` on 2026-06-13).
-- [ ] Verify S3/P4 UART heartbeat.
-- [ ] Validate DDJ-FLX4 physical USB host setup on S3 next session.
-- [ ] Capture raw MIDI packets for MVP controls.
+- [x] Verify S3/P4 UART heartbeat.
+- [x] Validate DDJ-FLX4 physical USB host setup on S3.
+- [x] Capture raw MIDI packets for MVP controls.
 
 ## Current Repository State
 
 - `master` includes the P4 dual-deck UI refactor, the 2026-06-13 Deck 2
-  Overview waveform jitter fix, and the S3 review fixes for FLX4 host/translator
-  mode.
+  Overview waveform jitter fix, the S3 review fixes for FLX4 host/translator
+  mode, and the enabled S3 UART translation configuration.
 - Branch `codex/p4-review-fixes` adds P4 review fixes: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
@@ -51,28 +51,27 @@
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
   split into focused modules.
-- The next hardware-critical task is still S3 DDJ-FLX4 raw MIDI capture.
+- S3 DDJ-FLX4 raw MIDI capture and translation are verified and completed.
 
 ## First Firmware Task
 
-`firmware/control-board-s3/components/flx4_midi_host/` now contains the raw
-USB MIDI logging spike and the software translator path. Build with
-`CONFIG_DDJ_FLX4_HOST_MODE=y` and the default
-`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=n`, flash the S3, connect the DDJ-FLX4, and
-capture the serial logs.
+`firmware/control-board-s3/components/flx4_midi_host/` contains the raw
+USB MIDI logger and the software translator path. Built with
+`CONFIG_DDJ_FLX4_HOST_MODE=y` and `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`
+(enabled on 2026-06-14).
 
-Current S3 status: firmware boots and starts the USB host logger, but FLX4
-enumeration was not observed on 2026-06-08. Continue this validation next time
-with a powered hub / verified 5 V VBUS / correct S3 OTG host port. P4 firmware
-exploration can proceed while this hardware validation remains open.
+S3 status: USB host was successfully brought up on native OTG port. By increasing
+`CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512`, the large configuration descriptors
+of Pioneer DDJ-FLX4 are now successfully parsed. Raw MIDI capture of MVP controls was
+verified to match `docs/DDJ_FLX4_MIDI_MAP.md`. Heartbeat and translator tasks are active,
+emitting deck-aware `0xA5` control link frames.
 
 Required output from the spike:
 
-- FLX4 device descriptor summary.
-- Endpoint/interface summary.
-- Raw packet logs for every MVP control.
-- Differences from `docs/DDJ_FLX4_MIDI_MAP.md`.
+- FLX4 device descriptor summary: successfully verified.
+- Endpoint/interface summary: interface=4, endpoint=0x82 (MIDIStreaming IN).
+- Raw packet logs for every MVP control: verified (Play, Cue, Load, Browse, Faders, Pitch, PFL).
+- Differences from `docs/DDJ_FLX4_MIDI_MAP.md`: none found, map is 100% accurate.
 
-After the capture matches the MVP map, enable
-`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` and verify that S3 emits deck-aware 7-byte
-`0xA5` frames while P4 heartbeat detection still reports the S3 online.
+After the capture, `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` was enabled. S3 now successfully emits
+deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.

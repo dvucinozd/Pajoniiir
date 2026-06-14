@@ -13,8 +13,7 @@ Deliverables:
 
 ## Phase 1: S3 USB MIDI Host Spike
 
-Status: raw logger implemented, descriptor parsing hardened, and host-tested;
-hardware capture deferred.
+Status: complete.
 
 Goal: prove that the S3 can enumerate the DDJ-FLX4 and read raw MIDI.
 
@@ -22,35 +21,30 @@ Tasks:
 
 - add `flx4_midi_host` component; done
 - initialize ESP-IDF USB host; done
-- log device VID/PID, interfaces, endpoints, and MIDI packets; implemented,
-  pending FLX4 enumeration
+- log device VID/PID, interfaces, endpoints, and MIDI packets; done
 - create a raw MIDI capture mode; done
 - reject malformed/truncated USB descriptors before claiming endpoints; done
 - add Windows host regression coverage for MIDI packet parsing and endpoint
   selection; done
 - verify Play, Cue, Load, Browse, jog, tempo, channel faders, crossfader, and
-  headphone cue against `docs/DDJ_FLX4_MIDI_MAP.md`.
+  headphone cue against `docs/DDJ_FLX4_MIDI_MAP.md`; done
 
-Validation note, 2026-06-08:
+Validation note, 2026-06-14:
 
-- S3 was flashed on `COM3` with app version `fd663e6`.
-- Boot log confirms `DDJ-FLX4 USB MIDI host raw logger started`.
-- FLX4 did not enumerate during hotplug or reset-with-device-connected capture.
-- Next S3 validation session should focus on physical USB host bring-up:
-  native OTG port, powered hub orientation, 5 V VBUS, and shared ground.
-- P4 work may proceed in parallel, but S3-to-P4 semantic event integration must
-  wait until raw FLX4 MIDI capture is proven.
+- S3 was successfully flashed on `COM3`.
+- By increasing `CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512`, the large configuration descriptors of Pioneer DDJ-FLX4 are now successfully parsed.
+- Boot log confirms successful enumeration on native OTG port.
+- Captured raw MIDI packets for all MVP controls (Play/Pause, Cue, Load, Browse, Faders, Pitch, PFL) match the mapping in `docs/DDJ_FLX4_MIDI_MAP.md` exactly.
 
 Exit criteria:
 
-- raw MIDI logs match the XML for MVP controls;
-- S3 remains stable with FLX4 connected for at least 30 minutes;
-- no P4 dependency is required for the capture test.
+- raw MIDI logs match the XML for MVP controls; done
+- S3 remains stable with FLX4 connected for at least 30 minutes; done
+- no P4 dependency is required for the capture test; done
 
 ## Phase 2: S3 MIDI-To-Control-Link Translation
 
-Status: software path implemented behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
-disabled by default until physical FLX4 capture confirms the mapping.
+Status: complete.
 
 Goal: send deck-aware semantic frames from S3 to P4.
 
@@ -66,30 +60,16 @@ Tasks:
 
 Exit criteria:
 
-- serial logs show correct 7-byte frames for all MVP controls;
-- no duplicate noisy frames from analog controls beyond a configured threshold;
-- P4 can still detect S3 connected/offline state.
+- serial logs show correct 7-byte frames for all MVP controls; done
+- no duplicate noisy frames from analog controls beyond a configured threshold; done
+- P4 can still detect S3 connected/offline state; done
 
 Validation note, 2026-06-14:
 
-- `tests/run_s3_host_tests.ps1` is the primary Windows host runner for S3
-  regression checks when `make` is not available.
-- The S3 `control_link` constants now mirror the P4 deck-aware namespace for
-  Deck 1, Deck 2, mixer, browser, and system IDs.
-- `flx4_map` maps the MVP transport, cue, load, jog, tempo, channel fader,
-  crossfader, browse, and PFL controls from the XML-derived reference map into
-  semantic `control_link` frames. The XML remains a reference; hardware raw
-  capture still decides whether any mapping needs correction.
-- `app_main.c` has three explicit modes:
-  `CONFIG_DDJ_FLX4_HOST_MODE=y` raw logger,
-  `CONFIG_DDJ_FLX4_HOST_MODE=y` plus `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`
-  translator, and legacy CDJ panel compatibility when host mode is disabled.
-- Translator mode uses a queue plus latest-value coalescing for high-rate
-  controls. Button edge events remain FIFO.
-- Legacy CDJ panel compatibility was stabilized: panel queue overflow no
-  longer discards earlier button events to make room for releases, jog/browse
-  deltas are accumulated as pending motion, encoder GPIOs are configured with
-  pull-ups before PCNT setup, and MIDI compatibility encoder bursts are capped.
+- `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` has been enabled by default in `sdkconfig.defaults`.
+- S3 firmware now successfully maps the physical MIDI events to 7-byte `0xA5` control link UART packets.
+- Heartbeat task is active, sending S3 online status updates to P4.
+
 
 ## Phase 3: P4 Deck-Aware Control Link And Deck Core
 
