@@ -116,14 +116,14 @@ static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
 }
 
 // Waveform visualizer definitions
-#define OVERVIEW_CV_W 620
+#define OVERVIEW_CV_W 648
 #define OVERVIEW_CV_H 141
 #define OVERVIEW_MINI_CV_W 392
 #define OVERVIEW_MINI_CV_H 45
-#define OVERVIEW_WAVE_X 80
-#define OVERVIEW_WAVE_INSET_X 10
-#define OVERVIEW_WAVE_INSET_Y 7
-#define OVERVIEW_DECK1_WAVE_Y 4
+#define OVERVIEW_WAVE_X 82
+#define OVERVIEW_WAVE_INSET_X 0
+#define OVERVIEW_WAVE_INSET_Y 0
+#define OVERVIEW_DECK1_WAVE_Y 0
 #define OVERVIEW_DECK2_WAVE_Y 161
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_BEAT_PULSES_Y 152
@@ -1230,6 +1230,10 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     const anlz_metadata_t *meta = s_overview_deck_meta[ui_overview_deck_index(deck)];
     uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
     uint32_t center_ms = position_ms > duration_ms ? duration_ms : position_ms;
+    center_ms = ui_overview_motion_snap_center_ms(center_ms, window_ms, OVERVIEW_CV_W);
+    if (center_ms > duration_ms) {
+        center_ms = duration_ms;
+    }
     ui_waveform_source_t source = ui_overview_redraw_source(deck, meta);
     bool redraw_main = ui_overview_motion_should_redraw(panel->last_wave_center_ms,
                                                         panel->last_wave_window_ms,

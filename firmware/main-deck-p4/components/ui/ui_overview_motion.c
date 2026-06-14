@@ -16,6 +16,20 @@ uint32_t ui_overview_motion_redraw_step_ms(ui_waveform_source_kind_t source_kind
                    : UI_OVERVIEW_MOTION_PAUSED_STEP_MS;
 }
 
+uint32_t ui_overview_motion_snap_center_ms(uint32_t center_ms,
+                                           uint32_t window_ms,
+                                           int width_px)
+{
+    if (window_ms == 0 || width_px <= 0) {
+        return center_ms;
+    }
+
+    uint64_t pixel = (((uint64_t)center_ms * (uint64_t)width_px) +
+                      ((uint64_t)window_ms / 2u)) / (uint64_t)window_ms;
+    uint64_t snapped = (pixel * (uint64_t)window_ms) / (uint64_t)width_px;
+    return snapped > UINT32_MAX ? UINT32_MAX : (uint32_t)snapped;
+}
+
 bool ui_overview_motion_should_redraw(uint32_t last_center_ms,
                                       uint32_t last_window_ms,
                                       uint32_t center_ms,

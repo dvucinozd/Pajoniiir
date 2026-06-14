@@ -156,6 +156,20 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_overview_motion"
+        Dir = "tests/ui_overview_motion"
+        Target = "test_ui_overview_motion.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_overview_motion.exe",
+            "test_ui_overview_motion.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_motion.c"
+        )
+    },
+    @{
         Name = "ui_overview_renderer"
         Dir = "tests/ui_overview_renderer"
         Target = "test_ui_overview_renderer.exe"

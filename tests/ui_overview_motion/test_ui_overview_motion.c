@@ -79,6 +79,13 @@ static void test_missing_waveform_source_does_not_redraw_after_initial_render(vo
                                              true));
 }
 
+static void test_center_snap_quantizes_to_waveform_pixel_grid(void)
+{
+    assert(ui_overview_motion_snap_center_ms(1000, 8000, 620) == 1006);
+    assert(ui_overview_motion_snap_center_ms(1006, 8000, 620) == 1006);
+    assert(ui_overview_motion_snap_center_ms(1019, 8000, 620) == 1019);
+}
+
 int main(void)
 {
     test_first_render_redraws();
@@ -87,6 +94,7 @@ int main(void)
     test_low_resolution_fallback_uses_same_playing_cadence();
     test_paused_waveform_keeps_coarser_cadence();
     test_missing_waveform_source_does_not_redraw_after_initial_render();
+    test_center_snap_quantizes_to_waveform_pixel_grid();
 
     puts("ui_overview_motion tests passed");
     return 0;

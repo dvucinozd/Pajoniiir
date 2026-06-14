@@ -93,6 +93,24 @@ static int column_height(const uint8_t *pixels, int stride, int height, int x)
     return count;
 }
 
+static void test_main_renderer_spreads_isolated_transient_to_neighbor_columns(void)
+{
+    uint8_t samples[16] = {0};
+    samples[6] = 0x1Fu;
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_HIGH,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    uint8_t pixels[16 * 24] = {0};
+
+    ui_overview_renderer_draw_main(pixels, 16, 16, 24, &source, 16000, NULL, 8000, 16000);
+
+    assert(column_height(pixels, 16, 24, 5) > 12);
+    assert(column_height(pixels, 16, 24, 6) > 12);
+    assert(column_height(pixels, 16, 24, 7) > 12);
+}
+
 static void test_mini_renderer_preserves_spikes_on_tall_canvas(void)
 {
     uint8_t samples[8] = {0x00, 0x08, 0x1F, 0x1F, 0x0A, 0x0A, 0x08, 0x00};
@@ -190,6 +208,7 @@ int main(void)
     test_main_renderer_clears_and_draws_waveform_columns();
     test_main_renderer_keeps_downbeat_grid_on_top();
     test_main_renderer_draws_center_playhead();
+    test_main_renderer_spreads_isolated_transient_to_neighbor_columns();
     test_mini_renderer_clears_and_draws_full_track_waveform();
     test_mini_renderer_preserves_spikes_on_tall_canvas();
     test_mini_renderer_does_not_clip_hot_spikes();

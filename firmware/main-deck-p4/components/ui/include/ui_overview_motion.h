@@ -15,6 +15,10 @@ extern "C" {
 uint32_t ui_overview_motion_redraw_step_ms(ui_waveform_source_kind_t source_kind,
                                            bool playing);
 
+uint32_t ui_overview_motion_snap_center_ms(uint32_t center_ms,
+                                           uint32_t window_ms,
+                                           int width_px);
+
 bool ui_overview_motion_should_redraw(uint32_t last_center_ms,
                                       uint32_t last_window_ms,
                                       uint32_t center_ms,

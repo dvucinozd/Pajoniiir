@@ -134,6 +134,31 @@ static void draw_center_playhead(uint8_t *pixels,
     }
 }
 
+static ui_waveform_column_t main_waveform_column_for_display(const ui_waveform_source_t *source,
+                                                             uint32_t duration_ms,
+                                                             int64_t window_start_ms,
+                                                             uint32_t window_ms,
+                                                             int column,
+                                                             int column_count)
+{
+    ui_waveform_column_t best = ui_waveform_column_for_column(
+        source, duration_ms, window_start_ms, window_ms, column, column_count);
+
+    for (int dx = -1; dx <= 1; dx += 2) {
+        int neighbor_x = column + dx;
+        if (neighbor_x < 0 || neighbor_x >= column_count) {
+            continue;
+        }
+        ui_waveform_column_t neighbor = ui_waveform_column_for_column(
+            source, duration_ms, window_start_ms, window_ms, neighbor_x, column_count);
+        if (neighbor.peak > best.peak) {
+            best = neighbor;
+        }
+    }
+
+    return best;
+}
+
 void ui_overview_renderer_draw_main(uint8_t *pixels,
                                     int stride_px,
                                     int width_px,
@@ -156,7 +181,7 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
 
     if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
         for (int x = 0; x < width_px; x++) {
-            ui_waveform_column_t col = ui_waveform_column_for_column(
+            ui_waveform_column_t col = main_waveform_column_for_display(
                 source, duration_ms, window_start_ms, window_ms, x, width_px);
             int amp = col.peak;
             int h = 2 + (amp * (height_px - 8)) / 31;
