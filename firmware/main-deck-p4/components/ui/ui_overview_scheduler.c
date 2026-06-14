@@ -38,7 +38,7 @@ uint8_t ui_overview_scheduler_budget_for_playing_decks(bool deck_a_playing,
 
 bool ui_overview_scheduler_direct_overlay_allowed(uint8_t deck)
 {
-    return deck == 0u;
+    return deck < 2u;
 }
 
 void ui_overview_scheduler_next_deck_order(ui_overview_scheduler_t *scheduler,

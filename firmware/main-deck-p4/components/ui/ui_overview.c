@@ -213,7 +213,6 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
-static ui_overview_perf_counter_t s_overview_overlay_convert_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
 #endif
@@ -834,44 +833,6 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
     return true;
 }
 
-static bool ui_overview_blit_wave_overlay(ui_overview_deck_panel_t *panel,
-                                          uint8_t deck,
-                                          const uint8_t *indexed_pixels,
-                                          int stride_px)
-{
-    uint8_t idx = ui_overview_deck_index(deck);
-    if (idx >= DECK_CORE_DECK_COUNT || !indexed_pixels || stride_px <= 0) {
-        return false;
-    }
-    if (!ui_overview_scheduler_direct_overlay_allowed(idx)) {
-        return false;
-    }
-    if (!ui_overview_wave_overlay_ensure_buffer(idx)) {
-        return false;
-    }
-
-    uint16_t *src = s_overview_wave_overlay_rgb565[idx];
-    int64_t convert_start_us = esp_timer_get_time();
-    ui_overlay_i8_to_rgb565(indexed_pixels,
-                            stride_px,
-                            src,
-                            OVERVIEW_CV_W,
-                            OVERVIEW_CV_W,
-                            OVERVIEW_CV_H,
-                            s_overview_wave_rgb565_palette,
-                            sizeof(s_overview_wave_rgb565_palette) /
-                                sizeof(s_overview_wave_rgb565_palette[0]));
-    int64_t convert_us = esp_timer_get_time() - convert_start_us;
-    if (convert_us < 0) {
-        convert_us = 0;
-    }
-    ui_overview_overlay_perf_record(&s_overview_overlay_convert_perf[idx],
-                                    idx,
-                                    "convert",
-                                    (uint32_t)convert_us);
-
-    return ui_overview_blit_wave_overlay_rgb565(panel, deck, src);
-}
 #endif
 
 static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
@@ -892,40 +853,72 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     const int S = panel->wave_stride_px;
 
 #ifndef WIN32
-    int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
-#endif
-    ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
-                                   center_ms, window_ms);
-#ifndef WIN32
-    if (ui_diagnostics_enabled()) {
-        int64_t render_us = esp_timer_get_time() - render_start_us;
-        if (render_us < 0) {
-            render_us = 0;
+    bool overlay_rendered = false;
+    uint8_t idx = ui_overview_deck_index(deck);
+    if (idx < DECK_CORE_DECK_COUNT &&
+        ui_overview_scheduler_direct_overlay_allowed(idx) &&
+        ui_overview_wave_overlay_ensure_buffer(idx)) {
+        uint16_t *overlay = s_overview_wave_overlay_rgb565[idx];
+        int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
+        ui_overview_renderer_draw_main_rgb565(overlay, W, W, H, source,
+                                              duration_ms, meta, center_ms,
+                                              window_ms,
+                                              s_overview_wave_rgb565_palette,
+                                              sizeof(s_overview_wave_rgb565_palette) /
+                                                  sizeof(s_overview_wave_rgb565_palette[0]));
+        if (ui_diagnostics_enabled()) {
+            int64_t render_us = esp_timer_get_time() - render_start_us;
+            if (render_us < 0) {
+                render_us = 0;
+            }
+            ui_overview_perf_report_t report;
+            if (ui_overview_perf_record(&s_overview_wave_perf[idx],
+                                        (uint32_t)render_us,
+                                        &report)) {
+                ESP_LOGI(TAG,
+                         "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
+                         (unsigned)(idx + 1u),
+                         (unsigned)report.last_us,
+                         (unsigned)report.avg_us,
+                         (unsigned)report.max_us,
+                         (unsigned)report.samples);
+            }
         }
-        uint8_t idx = ui_overview_deck_index(deck);
-        ui_overview_perf_report_t report;
-        if (ui_overview_perf_record(&s_overview_wave_perf[idx],
-                                    (uint32_t)render_us,
-                                    &report)) {
-            ESP_LOGI(TAG,
-                     "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
-                     (unsigned)(idx + 1u),
-                     (unsigned)report.last_us,
-                     (unsigned)report.avg_us,
-                     (unsigned)report.max_us,
-                     (unsigned)report.samples);
-        }
+        overlay_rendered = ui_overview_blit_wave_overlay_rgb565(panel, deck, overlay);
     }
-#endif
-    panel->last_wave_center_ms = center_ms;
-    panel->last_wave_window_ms = window_ms;
-#ifndef WIN32
-    if (!ui_overview_blit_wave_overlay(panel, deck, buf, S)) {
+
+    if (!overlay_rendered) {
+        int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
+        ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
+                                       center_ms, window_ms);
+        if (ui_diagnostics_enabled()) {
+            int64_t render_us = esp_timer_get_time() - render_start_us;
+            if (render_us < 0) {
+                render_us = 0;
+            }
+            ui_overview_perf_report_t report;
+            if (idx < DECK_CORE_DECK_COUNT &&
+                ui_overview_perf_record(&s_overview_wave_perf[idx],
+                                        (uint32_t)render_us,
+                                        &report)) {
+                ESP_LOGI(TAG,
+                         "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
+                         (unsigned)(idx + 1u),
+                         (unsigned)report.last_us,
+                         (unsigned)report.avg_us,
+                         (unsigned)report.max_us,
+                         (unsigned)report.samples);
+            }
+        }
         lv_obj_invalidate(panel->wave_canvas);
     }
 #else
+    ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
+                                   center_ms, window_ms);
     lv_obj_invalidate(panel->wave_canvas);
 #endif
+    panel->last_wave_center_ms = center_ms;
+    panel->last_wave_window_ms = window_ms;
 }
 
 /* Render the overview waveform to the canvas once at track load. */

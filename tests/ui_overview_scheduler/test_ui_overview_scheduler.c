@@ -67,10 +67,11 @@ static void test_single_or_no_playing_deck_keeps_one_redraw_budget(void)
     assert(ui_overview_scheduler_budget_for_playing_decks(false, false) == 1);
 }
 
-static void test_direct_overlay_is_limited_to_top_deck(void)
+static void test_direct_overlay_is_allowed_for_both_decks(void)
 {
     assert(ui_overview_scheduler_direct_overlay_allowed(0));
-    assert(!ui_overview_scheduler_direct_overlay_allowed(1));
+    assert(ui_overview_scheduler_direct_overlay_allowed(1));
+    assert(!ui_overview_scheduler_direct_overlay_allowed(2));
 }
 
 static void test_deck_order_alternates_each_call(void)
@@ -123,7 +124,7 @@ int main(void)
     test_two_redraw_budget_allows_exactly_two_consumes();
     test_two_playing_decks_get_two_redraw_budget();
     test_single_or_no_playing_deck_keeps_one_redraw_budget();
-    test_direct_overlay_is_limited_to_top_deck();
+    test_direct_overlay_is_allowed_for_both_decks();
     test_deck_order_alternates_each_call();
     test_null_arguments_are_safe();
 
