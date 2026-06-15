@@ -24,18 +24,18 @@ static void test_window_change_redraws_immediately(void)
                                             true));
 }
 
-static void test_playing_waveform_uses_thirty_fps_cadence(void)
+static void test_playing_waveform_redraws_when_snapped_center_changes(void)
 {
-    assert(ui_overview_motion_redraw_step_ms(UI_WAVEFORM_SOURCE_HIGH, true) == 33u);
+    assert(ui_overview_motion_redraw_step_ms(UI_WAVEFORM_SOURCE_HIGH, true) == 1u);
     assert(!ui_overview_motion_should_redraw(1000,
                                              4000,
-                                             1032,
+                                             1000,
                                              4000,
                                              UI_WAVEFORM_SOURCE_HIGH,
                                              true));
     assert(ui_overview_motion_should_redraw(1000,
                                             4000,
-                                            1033,
+                                            1030,
                                             4000,
                                             UI_WAVEFORM_SOURCE_HIGH,
                                             true));
@@ -43,10 +43,10 @@ static void test_playing_waveform_uses_thirty_fps_cadence(void)
 
 static void test_low_resolution_fallback_uses_same_playing_cadence(void)
 {
-    assert(ui_overview_motion_redraw_step_ms(UI_WAVEFORM_SOURCE_LOW, true) == 33u);
+    assert(ui_overview_motion_redraw_step_ms(UI_WAVEFORM_SOURCE_LOW, true) == 1u);
     assert(ui_overview_motion_should_redraw(2000,
                                             4000,
-                                            2033,
+                                            2030,
                                             4000,
                                             UI_WAVEFORM_SOURCE_LOW,
                                             true));
@@ -90,7 +90,7 @@ int main(void)
 {
     test_first_render_redraws();
     test_window_change_redraws_immediately();
-    test_playing_waveform_uses_thirty_fps_cadence();
+    test_playing_waveform_redraws_when_snapped_center_changes();
     test_low_resolution_fallback_uses_same_playing_cadence();
     test_paused_waveform_keeps_coarser_cadence();
     test_missing_waveform_source_does_not_redraw_after_initial_render();

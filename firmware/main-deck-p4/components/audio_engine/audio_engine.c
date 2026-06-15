@@ -638,8 +638,9 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
  * a concurrent USB transfer (the condition that crashed usb_dwc_hal). This also
  * cuts load-to-play latency: playback starts after the first chunk (~0.25 s)
  * instead of waiting for the whole file (USB read is only ~1 MB/s).
- * `s_decode_pcm` is static (9 KB) to keep it off the task stack. */
-static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+ * `s_decode_pcm` is per-deck and static (9 KB/deck) to keep it off the task
+ * stack without sharing decoded samples between concurrent deck decoders. */
+static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
 
 #define AE_FIRST_CHUNK_BYTES (96u * 1024u)  /* min loaded before the decoder starts */
 #define AE_LOAD_GATE_MARGIN  (32u * 1024u)  /* keep the decoder this far behind the loader */
@@ -748,6 +749,12 @@ static void ae_decode_task(void *arg)
     audio_engine_state_t *eng = (audio_engine_state_t *)ctx->engine;
     audio_pcm_ring_t *pcm_ring = (audio_pcm_ring_t *)ctx->pcm_ring;
     audio_resampler_state_t *resampler = (audio_resampler_state_t *)ctx->resampler;
+    if (ctx->deck >= AUDIO_ENGINE_DECK_COUNT) {
+        xSemaphoreGive(s_tasks_done);
+        vTaskDeleteWithCaps(NULL);
+        return;
+    }
+    int16_t *decode_pcm = s_decode_pcm[ctx->deck];
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
     while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
@@ -764,11 +771,11 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
-        int n = decode_one_frame(eng, fw, s_decode_pcm);
+        int n = decode_one_frame(eng, fw, decode_pcm);
         if (n > 0) {
             eng->frames_since_seek += (uint64_t)n;
             for (int i = 0; i < n; i++) {
-                audio_pcm_ring_push(pcm_ring, s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
+                audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
             }
         }
         AE_UNLOCK();
@@ -835,7 +842,7 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
-        int  samples = decode_one_frame(eng, fw, s_decode_pcm);
+        int  samples = decode_one_frame(eng, fw, decode_pcm);
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
             if (eng->loop_active && eng->sample_rate > 0) {
@@ -859,7 +866,7 @@ static void ae_decode_task(void *arg)
 
         for (int i = 0; i < samples && runtime->run; i++) {
             while (audio_pcm_ring_free(pcm_ring) == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
-            audio_pcm_ring_push(pcm_ring, s_decode_pcm[i * 2], s_decode_pcm[i * 2 + 1]);
+            audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
         }
     }
 

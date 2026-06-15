@@ -56,6 +56,8 @@
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
 #endif
 
+#define UI_UPDATE_PERIOD_MS 16u
+
 static const char *TAG = "ui";
 
 // ─── UI State and Variables ──────────────────────────────────────────────────
@@ -834,7 +836,7 @@ esp_err_t ui_init(void) {
     ui_library_load_initial_track();
 
     // Register self-running LVGL timer to periodically refresh the UI states
-    lv_timer_create(ui_timer_cb, 30, NULL);
+    lv_timer_create(ui_timer_cb, UI_UPDATE_PERIOD_MS, NULL);
 
 #ifndef WIN32
     // Start the LVGL handler task last, once all widgets exist.

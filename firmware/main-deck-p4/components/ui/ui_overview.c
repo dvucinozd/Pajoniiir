@@ -357,6 +357,15 @@ static void *ui_overview_alloc_canvas(size_t size, bool prefer_psram)
 }
 #endif
 
+static bool ui_overview_main_wave_ready(const ui_overview_deck_panel_t *panel)
+{
+#ifndef WIN32
+    return panel && panel->wave_border;
+#else
+    return panel && panel->wave_canvas && panel->wave_buf;
+#endif
+}
+
 static void cue_head_draw_cb(lv_event_t *e)
 {
     lv_layer_t *layer = lv_event_get_layer(e);
@@ -480,12 +489,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_remove_flag(panel->wave_border, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(panel->wave_border, waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
 
+#ifdef WIN32
     size_t ov_sz = LV_DRAW_BUF_SIZE(OVERVIEW_CV_W, OVERVIEW_CV_H, LV_COLOR_FORMAT_I8);
-#ifndef WIN32
-    panel->wave_buf = ui_overview_alloc_canvas(ov_sz, true);
-#else
     panel->wave_buf = malloc(ov_sz);
-#endif
     if (panel->wave_buf) {
         memset(panel->wave_buf, 0, ov_sz);
         panel->wave_canvas = lv_canvas_create(panel->wave_border);
@@ -509,6 +515,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         ESP_LOGE(TAG, "D%u overview canvas buffer alloc failed (%u bytes)",
                  (unsigned)deck + 1u, (unsigned)ov_sz);
     }
+#endif
 
     panel->playhead = lv_obj_create(panel->wave_border);
     lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
@@ -778,17 +785,17 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
 static bool ui_overview_wave_overlay_rect(const ui_overview_deck_panel_t *panel,
                                           ui_overlay_rect_t *logical)
 {
-    if (!panel || !panel->wave_canvas || !logical) {
+    if (!panel || !panel->wave_border || !logical) {
         return false;
     }
 
     lv_area_t area;
-    lv_obj_get_coords(panel->wave_canvas, &area);
+    lv_obj_get_coords(panel->wave_border, &area);
     *logical = (ui_overlay_rect_t){
-        .x = area.x1,
-        .y = area.y1,
-        .w = area.x2 - area.x1 + 1,
-        .h = area.y2 - area.y1 + 1,
+        .x = area.x1 + OVERVIEW_WAVE_INSET_X,
+        .y = area.y1 + OVERVIEW_WAVE_INSET_Y,
+        .w = OVERVIEW_CV_W,
+        .h = OVERVIEW_CV_H,
     };
     return true;
 }
@@ -871,17 +878,14 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                              uint32_t center_ms,
                                              uint32_t window_ms)
 {
-    if (!panel || !panel->wave_buf) {
+    if (!panel) {
         return;
     }
 
-    uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
     const int W = OVERVIEW_CV_W;
     const int H = OVERVIEW_CV_H;
-    const int S = panel->wave_stride_px;
 
 #ifndef WIN32
-    bool overlay_rendered = false;
     uint8_t idx = ui_overview_deck_index(deck);
     if (idx < DECK_CORE_DECK_COUNT &&
         ui_overview_scheduler_direct_overlay_allowed(idx) &&
@@ -912,35 +916,18 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                          (unsigned)report.samples);
             }
         }
-        overlay_rendered = ui_overview_blit_wave_overlay_rgb565(panel, deck, overlay);
-    }
-
-    if (!overlay_rendered) {
-        int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
-        ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
-                                       center_ms, window_ms);
-        if (ui_diagnostics_enabled()) {
-            int64_t render_us = esp_timer_get_time() - render_start_us;
-            if (render_us < 0) {
-                render_us = 0;
-            }
-            ui_overview_perf_report_t report;
-            if (idx < DECK_CORE_DECK_COUNT &&
-                ui_overview_perf_record(&s_overview_wave_perf[idx],
-                                        (uint32_t)render_us,
-                                        &report)) {
-                ESP_LOGI(TAG,
-                         "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
-                         (unsigned)(idx + 1u),
-                         (unsigned)report.last_us,
-                         (unsigned)report.avg_us,
-                         (unsigned)report.max_us,
-                         (unsigned)report.samples);
-            }
+        if (!ui_overview_blit_wave_overlay_rgb565(panel, deck, overlay)) {
+            return;
         }
-        lv_obj_invalidate(panel->wave_canvas);
+    } else {
+        return;
     }
 #else
+    if (!panel->wave_buf) {
+        return;
+    }
+    uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
+    const int S = panel->wave_stride_px;
     ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
                                    center_ms, window_ms);
     lv_obj_invalidate(panel->wave_canvas);
@@ -972,15 +959,15 @@ void ui_overview_load_waveform_data(uint8_t deck,
     panel->last_wave_window_ms = 0;
     panel->last_time_bucket = UINT32_MAX;
     panel->last_remain_bucket = UINT32_MAX;
-    if (!panel->wave_buf) return;
-
     ui_waveform_source_t wave_source =
         ui_waveform_source_select(meta, waveform_low, has_waveform);
     bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
 
     uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
-    ui_render_overview_main_waveform(panel, deck, &wave_source, duration_ms, meta,
-                                     0, window_ms);
+    if (ui_overview_main_wave_ready(panel)) {
+        ui_render_overview_main_waveform(panel, deck, &wave_source, duration_ms, meta,
+                                         0, window_ms);
+    }
 
     if (panel->mini_wave_canvas && panel->mini_wave_buf) {
         uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
@@ -1266,7 +1253,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
                                                         source.kind,
                                                         playing);
 
-    if (redraw_main && panel->wave_canvas && panel->wave_buf &&
+    if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
 #ifndef WIN32
         if (!ui_overview_scheduler_try_consume_main_redraw(&s_overview_scheduler)) {
@@ -1275,7 +1262,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
 #endif
     }
 
-    if (redraw_main && panel->wave_canvas && panel->wave_buf &&
+    if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
         ui_render_overview_main_waveform(panel, deck, &source, duration_ms, meta,
                                          center_ms, window_ms);

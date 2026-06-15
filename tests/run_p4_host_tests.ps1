@@ -49,6 +49,16 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -Patterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
 
+Assert-FileDoesNotContain `
+    -Name "audio_engine per-deck firmware decode PCM buffers" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -Patterns @("static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];")
+
+Assert-FileDoesNotContain `
+    -Name "overview main RGB565 runtime path" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Patterns @("if (!overlay_rendered)")
+
 $tests = @(
     @{
         Name = "audio_engine"
