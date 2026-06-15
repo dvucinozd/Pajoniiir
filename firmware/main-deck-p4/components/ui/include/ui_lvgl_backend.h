@@ -30,6 +30,17 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270(const ui_overlay_rect_t *logical,
                                              size_t src_bytes,
                                              ui_lvgl_backend_blit_perf_t *perf);
 
+esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *logical,
+                                                    const uint16_t *src,
+                                                    uint32_t src_w,
+                                                    uint32_t src_h,
+                                                    uint32_t src_x,
+                                                    uint32_t src_y,
+                                                    uint32_t block_w,
+                                                    uint32_t block_h,
+                                                    size_t src_bytes,
+                                                    ui_lvgl_backend_blit_perf_t *perf);
+
 #ifdef __cplusplus
 }
 #endif

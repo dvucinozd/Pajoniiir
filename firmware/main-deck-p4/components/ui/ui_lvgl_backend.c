@@ -10,6 +10,36 @@
 
 static const char *TAG = "ui";
 
+static esp_err_t ui_lvgl_backend_validate_rgb565_region_args(const ui_overlay_rect_t *logical,
+                                                             const uint16_t *src,
+                                                             uint32_t src_w,
+                                                             uint32_t src_h,
+                                                             uint32_t src_x,
+                                                             uint32_t src_y,
+                                                             uint32_t block_w,
+                                                             uint32_t block_h,
+                                                             size_t src_bytes)
+{
+    if (!logical || !src || logical->w <= 0 || logical->h <= 0 ||
+        src_w == 0 || src_h == 0 || block_w == 0 || block_h == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (src_x >= src_w || src_y >= src_h ||
+        block_w > src_w - src_x || block_h > src_h - src_y) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (src_w > ((size_t)-1) / sizeof(uint16_t) ||
+        src_h > (((size_t)-1) / sizeof(uint16_t)) / src_w) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t required_bytes = (size_t)src_w * (size_t)src_h * sizeof(uint16_t);
+    if (src_bytes < required_bytes) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
 #ifdef WIN32
 esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
 {
@@ -41,11 +71,41 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270(const ui_overlay_rect_t *logical,
                                              size_t src_bytes,
                                              ui_lvgl_backend_blit_perf_t *perf)
 {
-    (void)logical;
-    (void)src;
-    (void)src_w;
-    (void)src_h;
-    (void)src_bytes;
+    return ui_lvgl_backend_blit_rgb565_ppa270_region(logical,
+                                                     src,
+                                                     src_w,
+                                                     src_h,
+                                                     0,
+                                                     0,
+                                                     src_w,
+                                                     src_h,
+                                                     src_bytes,
+                                                     perf);
+}
+
+esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *logical,
+                                                    const uint16_t *src,
+                                                    uint32_t src_w,
+                                                    uint32_t src_h,
+                                                    uint32_t src_x,
+                                                    uint32_t src_y,
+                                                    uint32_t block_w,
+                                                    uint32_t block_h,
+                                                    size_t src_bytes,
+                                                    ui_lvgl_backend_blit_perf_t *perf)
+{
+    esp_err_t err = ui_lvgl_backend_validate_rgb565_region_args(logical,
+                                                                src,
+                                                                src_w,
+                                                                src_h,
+                                                                src_x,
+                                                                src_y,
+                                                                block_w,
+                                                                block_h,
+                                                                src_bytes);
+    if (err != ESP_OK) {
+        return err;
+    }
     if (perf) {
         memset(perf, 0, sizeof(*perf));
     }
@@ -231,14 +291,29 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
                                                            const uint16_t *src,
                                                            uint32_t src_w,
                                                            uint32_t src_h,
+                                                           uint32_t src_x,
+                                                           uint32_t src_y,
+                                                           uint32_t block_w,
+                                                           uint32_t block_h,
                                                            size_t src_bytes,
                                                            ui_lvgl_backend_blit_perf_t *perf)
 {
     if (perf) {
         memset(perf, 0, sizeof(*perf));
     }
-    if (!logical || !physical || !src || src_w == 0 || src_h == 0 || src_bytes == 0 ||
-        !s_ppa || s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
+    esp_err_t arg_err = ui_lvgl_backend_validate_rgb565_region_args(logical,
+                                                                    src,
+                                                                    src_w,
+                                                                    src_h,
+                                                                    src_x,
+                                                                    src_y,
+                                                                    block_w,
+                                                                    block_h,
+                                                                    src_bytes);
+    if (arg_err != ESP_OK || !physical || physical->w <= 0 || physical->h <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_ppa || s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
         !s_dsi_fb[s_dsi_active_fb_idx]) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -254,10 +329,10 @@ static esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_mapped(const ui_overlay_rect
         .in.buffer          = (void *)src,
         .in.pic_w           = src_w,
         .in.pic_h           = src_h,
-        .in.block_w         = src_w,
-        .in.block_h         = src_h,
-        .in.block_offset_x  = 0,
-        .in.block_offset_y  = 0,
+        .in.block_w         = block_w,
+        .in.block_h         = block_h,
+        .in.block_offset_x  = src_x,
+        .in.block_offset_y  = src_y,
         .in.srm_cm          = PPA_SRM_COLOR_MODE_RGB565,
 
         .out.buffer         = s_dsi_fb[s_dsi_active_fb_idx],
@@ -330,6 +405,10 @@ static void ui_lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t 
     esp_err_t err = ui_lvgl_backend_blit_rgb565_ppa270_mapped(&logical,
                                                               &physical,
                                                               (const uint16_t *)px_map,
+                                                              (uint32_t)area_w,
+                                                              (uint32_t)area_h,
+                                                              0,
+                                                              0,
                                                               (uint32_t)area_w,
                                                               (uint32_t)area_h,
                                                               (size_t)area_w * (size_t)area_h * sizeof(uint16_t),
@@ -540,11 +619,43 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270(const ui_overlay_rect_t *logical,
                                              size_t src_bytes,
                                              ui_lvgl_backend_blit_perf_t *perf)
 {
+    return ui_lvgl_backend_blit_rgb565_ppa270_region(logical,
+                                                     src,
+                                                     src_w,
+                                                     src_h,
+                                                     0,
+                                                     0,
+                                                     src_w,
+                                                     src_h,
+                                                     src_bytes,
+                                                     perf);
+}
+
+esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *logical,
+                                                    const uint16_t *src,
+                                                    uint32_t src_w,
+                                                    uint32_t src_h,
+                                                    uint32_t src_x,
+                                                    uint32_t src_y,
+                                                    uint32_t block_w,
+                                                    uint32_t block_h,
+                                                    size_t src_bytes,
+                                                    ui_lvgl_backend_blit_perf_t *perf)
+{
     if (perf) {
         memset(perf, 0, sizeof(*perf));
     }
-    if (!logical || !src) {
-        return ESP_ERR_INVALID_ARG;
+    esp_err_t arg_err = ui_lvgl_backend_validate_rgb565_region_args(logical,
+                                                                    src,
+                                                                    src_w,
+                                                                    src_h,
+                                                                    src_x,
+                                                                    src_y,
+                                                                    block_w,
+                                                                    block_h,
+                                                                    src_bytes);
+    if (arg_err != ESP_OK) {
+        return arg_err;
     }
 
     ui_overlay_rect_t physical;
@@ -557,6 +668,10 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270(const ui_overlay_rect_t *logical,
                                                      src,
                                                      src_w,
                                                      src_h,
+                                                     src_x,
+                                                     src_y,
+                                                     block_w,
+                                                     block_h,
                                                      src_bytes,
                                                      perf);
 }
