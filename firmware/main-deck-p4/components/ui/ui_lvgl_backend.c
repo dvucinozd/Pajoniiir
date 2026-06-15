@@ -25,6 +25,10 @@ static esp_err_t ui_lvgl_backend_validate_rgb565_region_args(const ui_overlay_re
         src_w == 0 || src_h == 0 || block_w == 0 || block_h == 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (logical->x > INT_MAX - logical->w ||
+        logical->y > INT_MAX - logical->h) {
+        return ESP_ERR_INVALID_ARG;
+    }
     if (logical->x < 0 || logical->y < 0 ||
         block_w > INT_MAX || block_h > INT_MAX ||
         logical->w != (int)block_w || logical->h != (int)block_h) {
