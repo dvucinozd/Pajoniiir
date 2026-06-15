@@ -169,19 +169,26 @@ static uint16_t rgb565_palette_color(const uint16_t *palette,
     return palette[index];
 }
 
-static void draw_zoom_grid_rgb565(uint16_t *pixels,
-                                  int stride_px,
-                                  int width_px,
-                                  int height_px,
-                                  int64_t window_start_ms,
-                                  uint32_t window_span_ms,
-                                  const anlz_metadata_t *meta,
-                                  const uint16_t *palette,
-                                  size_t palette_count)
+static void draw_zoom_grid_rgb565_columns(uint16_t *pixels,
+                                          int stride_px,
+                                          int width_px,
+                                          int height_px,
+                                          int dest_x,
+                                          int column_count,
+                                          int64_t window_start_ms,
+                                          uint32_t window_span_ms,
+                                          const anlz_metadata_t *meta,
+                                          const uint16_t *palette,
+                                          size_t palette_count)
 {
     if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0 ||
+        dest_x < 0 || column_count <= 0 || dest_x >= width_px ||
         window_span_ms == 0) {
         return;
+    }
+    int end_x = dest_x + column_count;
+    if (end_x > width_px) {
+        end_x = width_px;
     }
 
     if (meta && meta->beats && meta->beat_count > 0) {
@@ -208,8 +215,12 @@ static void draw_zoom_grid_rgb565(uint16_t *pixels,
             uint16_t color = rgb565_palette_color(palette, palette_count,
                                                    style.palette_index);
             for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
+                int gx = x + lx;
+                if (gx < dest_x || gx >= end_x) {
+                    continue;
+                }
                 for (int y = y0; y < y1; y++) {
-                    pixels[y * stride_px + x + lx] = color;
+                    pixels[y * stride_px + gx] = color;
                 }
             }
         }
@@ -224,6 +235,9 @@ static void draw_zoom_grid_rgb565(uint16_t *pixels,
     uint16_t color = rgb565_palette_color(palette, palette_count,
                                            style.palette_index);
     for (int x = width_px / 4; x < width_px; x += width_px / 4) {
+        if (x < dest_x || x >= end_x) {
+            continue;
+        }
         for (int y = y0; y < y1; y++) {
             pixels[y * stride_px + x] = color;
         }
@@ -250,6 +264,21 @@ static void draw_center_playhead_rgb565(uint16_t *pixels,
         }
         for (int y = 0; y < height_px; y++) {
             pixels[y * stride_px + x] = color;
+        }
+    }
+}
+
+static void clear_rgb565_columns(uint16_t *pixels,
+                                 int stride_px,
+                                 int height_px,
+                                 int dest_x,
+                                 int column_count,
+                                 uint16_t background)
+{
+    for (int y = 0; y < height_px; y++) {
+        uint16_t *row = &pixels[y * stride_px + dest_x];
+        for (int x = 0; x < column_count; x++) {
+            row[x] = background;
         }
     }
 }
@@ -298,36 +327,43 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
     draw_center_playhead(pixels, stride_px, width_px, height_px);
 }
 
-void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
-                                           int stride_px,
-                                           int width_px,
-                                           int height_px,
-                                           const ui_waveform_source_t *source,
-                                           uint32_t duration_ms,
-                                           const anlz_metadata_t *meta,
-                                           uint32_t center_ms,
-                                           uint32_t window_ms,
-                                           const uint16_t *palette,
-                                           size_t palette_count)
+void ui_overview_renderer_draw_main_rgb565_columns(uint16_t *pixels,
+                                                   int stride_px,
+                                                   int width_px,
+                                                   int height_px,
+                                                   int dest_x,
+                                                   int column_count,
+                                                   const ui_waveform_source_t *source,
+                                                   uint32_t duration_ms,
+                                                   const anlz_metadata_t *meta,
+                                                   uint32_t center_ms,
+                                                   uint32_t window_ms,
+                                                   const uint16_t *palette,
+                                                   size_t palette_count)
 {
-    if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
+    if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0 ||
+        dest_x >= width_px || column_count <= 0) {
         return;
     }
-
-    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+    if (dest_x < 0) {
+        column_count += dest_x;
+        dest_x = 0;
+    }
+    if (column_count <= 0) {
+        return;
+    }
+    if (dest_x + column_count > width_px) {
+        column_count = width_px - dest_x;
+    }
 
     uint16_t background = rgb565_palette_color(palette, palette_count, 0);
-    for (int y = 0; y < height_px; y++) {
-        for (int x = 0; x < width_px; x++) {
-            pixels[y * stride_px + x] = background;
-        }
-    }
-    draw_zoom_grid_rgb565(pixels, stride_px, width_px, height_px,
-                          window_start_ms, window_ms, meta, palette,
-                          palette_count);
+    clear_rgb565_columns(pixels, stride_px, height_px, dest_x, column_count,
+                         background);
 
-    if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
-        for (int x = 0; x < width_px; x++) {
+    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+    if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && source->samples &&
+        source->sample_count > 0 && duration_ms > 0 && window_ms > 0) {
+        for (int x = dest_x; x < dest_x + column_count; x++) {
             ui_waveform_column_t col = main_waveform_column_for_display(
                 source, duration_ms, window_start_ms, window_ms, x, width_px);
             int amp = col.peak;
@@ -347,9 +383,39 @@ void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
         }
     }
 
-    draw_zoom_grid_rgb565(pixels, stride_px, width_px, height_px,
-                          window_start_ms, window_ms, meta, palette,
-                          palette_count);
+    draw_zoom_grid_rgb565_columns(pixels, stride_px, width_px, height_px,
+                                  dest_x, column_count, window_start_ms,
+                                  window_ms, meta, palette, palette_count);
+}
+
+void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
+                                           int stride_px,
+                                           int width_px,
+                                           int height_px,
+                                           const ui_waveform_source_t *source,
+                                           uint32_t duration_ms,
+                                           const anlz_metadata_t *meta,
+                                           uint32_t center_ms,
+                                           uint32_t window_ms,
+                                           const uint16_t *palette,
+                                           size_t palette_count)
+{
+    if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
+        return;
+    }
+
+    uint16_t background = rgb565_palette_color(palette, palette_count, 0);
+    for (int y = 0; y < height_px; y++) {
+        for (int x = 0; x < width_px; x++) {
+            pixels[y * stride_px + x] = background;
+        }
+    }
+
+    ui_overview_renderer_draw_main_rgb565_columns(pixels, stride_px, width_px,
+                                                  height_px, 0, width_px,
+                                                  source, duration_ms, meta,
+                                                  center_ms, window_ms,
+                                                  palette, palette_count);
     draw_center_playhead_rgb565(pixels, stride_px, width_px, height_px,
                                 palette, palette_count);
 }

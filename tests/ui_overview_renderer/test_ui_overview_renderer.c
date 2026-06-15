@@ -97,6 +97,35 @@ static void test_main_rgb565_renderer_maps_palette_directly(void)
     assert(pixels[9 * 8 + 4] == palette[4]);
 }
 
+static void test_main_rgb565_renderer_can_draw_column_range_without_clearing_all(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    const uint16_t palette[] = {
+        0x0000, 0xF16E, 0x235F, 0x475C, 0xE71D,
+        0x1F32, 0xFD66, 0x9ADF, 0x3989,
+    };
+    uint16_t pixels[8 * 10];
+    for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++) {
+        pixels[i] = 0xAAAA;
+    }
+
+    ui_overview_renderer_draw_main_rgb565_columns(pixels, 8, 8, 10,
+                                                  6, 2,
+                                                  &source, 8000, NULL,
+                                                  4000, 8000, palette,
+                                                  sizeof(palette) / sizeof(palette[0]));
+
+    assert(pixels[0] == 0xAAAA);
+    assert(pixels[(10 / 2) * 8 + 6] != 0xAAAA);
+    assert(pixels[(10 / 2) * 8 + 7] != 0xAAAA);
+}
+
 static void test_mini_renderer_clears_and_draws_full_track_waveform(void)
 {
     uint8_t samples[8] = {0x00, 0x05, 0x0A, 0x1F, 0x1F, 0x0A, 0x05, 0x00};
@@ -241,6 +270,7 @@ int main(void)
     test_main_renderer_draws_center_playhead();
     test_main_renderer_spreads_isolated_transient_to_neighbor_columns();
     test_main_rgb565_renderer_maps_palette_directly();
+    test_main_rgb565_renderer_can_draw_column_range_without_clearing_all();
     test_mini_renderer_clears_and_draws_full_track_waveform();
     test_mini_renderer_preserves_spikes_on_tall_canvas();
     test_mini_renderer_does_not_clip_hot_spikes();

@@ -196,6 +196,23 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_overview_wave_cache"
+        Dir = "tests/ui_overview_wave_cache"
+        Target = "test_ui_overview_wave_cache.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_overview_wave_cache.exe",
+            "test_ui_overview_wave_cache.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_renderer.c",
+            "../../firmware/main-deck-p4/components/ui/ui_waveform_model.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c"
+        )
+    },
+    @{
         Name = "anlz"
         Dir = "tests/anlz"
         Target = "test_anlz.exe"

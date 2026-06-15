@@ -12,6 +12,7 @@ idf_component_register(
          "ui_overview_perf.c"
          "ui_overview_scheduler.c"
          "ui_overview_renderer.c"
+         "ui_overview_wave_cache.c"
          "ui_overview_grid.c"
          "ui_performance_target.c"
          "ui_performance_tabs.c"
