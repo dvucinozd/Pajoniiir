@@ -59,6 +59,11 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -Patterns @("if (!overlay_rendered)")
 
+Assert-FileDoesNotContain `
+    -Name "overview runtime avoids full RGB565 redraw" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -Patterns @("ui_overview_renderer_draw_main_rgb565(overlay")
+
 $tests = @(
     @{
         Name = "audio_engine"

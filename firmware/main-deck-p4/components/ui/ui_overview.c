@@ -13,6 +13,7 @@
 #include "ui_overview_perf.h"
 #include "ui_overview_renderer.h"
 #include "ui_overview_scheduler.h"
+#include "ui_overview_wave_cache.h"
 #include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
 #include <limits.h>
@@ -212,6 +213,7 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
+static ui_overview_wave_cache_t s_overview_wave_cache[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
@@ -765,6 +767,16 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
         return false;
     }
     if (s_overview_wave_overlay_rgb565[idx]) {
+        if (!s_overview_wave_cache[idx].pixels) {
+            (void)ui_overview_wave_cache_bind(&s_overview_wave_cache[idx],
+                                              s_overview_wave_overlay_rgb565[idx],
+                                              OVERVIEW_CV_W,
+                                              OVERVIEW_CV_W,
+                                              OVERVIEW_CV_H,
+                                              s_overview_wave_rgb565_palette,
+                                              sizeof(s_overview_wave_rgb565_palette) /
+                                                  sizeof(s_overview_wave_rgb565_palette[0]));
+        }
         return true;
     }
 
@@ -779,6 +791,14 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
     }
 
     memset(s_overview_wave_overlay_rgb565[idx], 0, s_overview_wave_overlay_bytes);
+    (void)ui_overview_wave_cache_bind(&s_overview_wave_cache[idx],
+                                      s_overview_wave_overlay_rgb565[idx],
+                                      OVERVIEW_CV_W,
+                                      OVERVIEW_CV_W,
+                                      OVERVIEW_CV_H,
+                                      s_overview_wave_rgb565_palette,
+                                      sizeof(s_overview_wave_rgb565_palette) /
+                                          sizeof(s_overview_wave_rgb565_palette[0]));
     return true;
 }
 
@@ -882,22 +902,24 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
         return;
     }
 
-    const int W = OVERVIEW_CV_W;
-    const int H = OVERVIEW_CV_H;
-
 #ifndef WIN32
     uint8_t idx = ui_overview_deck_index(deck);
     if (idx < DECK_CORE_DECK_COUNT &&
         ui_overview_scheduler_direct_overlay_allowed(idx) &&
         ui_overview_wave_overlay_ensure_buffer(idx)) {
         uint16_t *overlay = s_overview_wave_overlay_rgb565[idx];
+        ui_overview_wave_cache_report_t cache_report = {0};
         int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
-        ui_overview_renderer_draw_main_rgb565(overlay, W, W, H, source,
-                                              duration_ms, meta, center_ms,
-                                              window_ms,
-                                              s_overview_wave_rgb565_palette,
-                                              sizeof(s_overview_wave_rgb565_palette) /
-                                                  sizeof(s_overview_wave_rgb565_palette[0]));
+        bool cache_updated = ui_overview_wave_cache_update(&s_overview_wave_cache[idx],
+                                                           source,
+                                                           duration_ms,
+                                                           meta,
+                                                           center_ms,
+                                                           window_ms,
+                                                           &cache_report);
+        if (!cache_updated || !cache_report.blit_required) {
+            return;
+        }
         if (ui_diagnostics_enabled()) {
             int64_t render_us = esp_timer_get_time() - render_start_us;
             if (render_us < 0) {
@@ -908,8 +930,11 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                         (uint32_t)render_us,
                                         &report)) {
                 ESP_LOGI(TAG,
-                         "D%u overview main render: last=%u us avg=%u us max=%u us samples=%u",
+                         "D%u overview main cache: kind=%u dx=%d cols=%u last=%u us avg=%u us max=%u us samples=%u",
                          (unsigned)(idx + 1u),
+                         (unsigned)cache_report.kind,
+                         cache_report.scroll_dx_px,
+                         (unsigned)cache_report.columns_rendered,
                          (unsigned)report.last_us,
                          (unsigned)report.avg_us,
                          (unsigned)report.max_us,
@@ -926,6 +951,8 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     if (!panel->wave_buf) {
         return;
     }
+    const int W = OVERVIEW_CV_W;
+    const int H = OVERVIEW_CV_H;
     uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
     const int S = panel->wave_stride_px;
     ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
@@ -959,6 +986,9 @@ void ui_overview_load_waveform_data(uint8_t deck,
     panel->last_wave_window_ms = 0;
     panel->last_time_bucket = UINT32_MAX;
     panel->last_remain_bucket = UINT32_MAX;
+#ifndef WIN32
+    ui_overview_wave_cache_reset(&s_overview_wave_cache[idx]);
+#endif
     ui_waveform_source_t wave_source =
         ui_waveform_source_select(meta, waveform_low, has_waveform);
     bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
