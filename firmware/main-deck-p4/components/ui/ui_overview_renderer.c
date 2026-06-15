@@ -192,12 +192,20 @@ static void draw_zoom_grid_rgb565_columns(uint16_t *pixels,
     }
 
     if (meta && meta->beats && meta->beat_count > 0) {
+        int64_t range_start_ms =
+            window_start_ms +
+            (((int64_t)(dest_x - 4) * (int64_t)window_span_ms) / width_px);
+        int64_t range_end_ms =
+            window_start_ms +
+            (((int64_t)(end_x + 4) * (int64_t)window_span_ms) / width_px);
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
             int64_t beat_ms = meta->beats[b].time_ms;
-            if (beat_ms < window_start_ms ||
-                beat_ms > window_start_ms + (int64_t)window_span_ms) {
+            if (beat_ms < range_start_ms) {
                 continue;
+            }
+            if (beat_ms > range_end_ms) {
+                break;
             }
 
             int x = (int)(((beat_ms - window_start_ms) * width_px) / window_span_ms);

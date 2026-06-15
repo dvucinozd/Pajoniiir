@@ -511,7 +511,26 @@ void *ui_lvgl_backend_alloc_dma_buffer(size_t bytes, size_t *aligned_bytes)
     if (aligned_bytes) {
         *aligned_bytes = aligned;
     }
-    return heap_caps_aligned_alloc(s_cache_align, aligned, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+    void *buf = heap_caps_aligned_alloc(s_cache_align,
+                                        aligned,
+                                        MALLOC_CAP_INTERNAL |
+                                            MALLOC_CAP_DMA |
+                                            MALLOC_CAP_8BIT);
+    if (buf) {
+        return buf;
+    }
+    buf = heap_caps_aligned_alloc(s_cache_align,
+                                  aligned,
+                                  MALLOC_CAP_SPIRAM |
+                                      MALLOC_CAP_DMA |
+                                      MALLOC_CAP_8BIT);
+    if (buf) {
+        return buf;
+    }
+    return heap_caps_aligned_alloc(s_cache_align,
+                                   aligned,
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 
 esp_err_t ui_lvgl_backend_blit_rgb565_ppa270(const ui_overlay_rect_t *logical,

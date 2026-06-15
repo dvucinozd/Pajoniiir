@@ -178,7 +178,6 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
         dx = center_delta_to_pixels(cache->center_ms, center_ms,
                                     window_ms, cache->width_px);
         if (dx == 0) {
-            cache->center_ms = center_ms;
             return false;
         }
         if (abs(dx) >= cache->width_px) {

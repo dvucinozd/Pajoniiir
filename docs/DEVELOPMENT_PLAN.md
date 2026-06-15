@@ -353,6 +353,18 @@ Validation note, 2026-06-10:
   from the hot path by rendering the overview overlay directly into an RGB565
   source buffer, or narrow the live zoom surface to a single active deck if
   dual live overlays remain too expensive.
+- Follow-up RGB565 pass on 2026-06-15 removes the I8-to-RGB565 conversion from
+  the steady Overview waveform path. The main waveform now uses a per-deck
+  RGB565 cache with host-tested column rendering, source/window invalidation,
+  and subpixel scroll accumulation. COM15 diagnostics confirm the original
+  11-12 ms full-redraw path is gone, but the current cache still physically
+  scrolls the whole 648x141 RGB565 buffer before blitting. Dual-deck steady
+  playback therefore remains limited by CPU buffer scroll plus full overlay PPA
+  copy: measured `overview main cache` was still roughly 5.5-6.5 ms and
+  `overview overlay total` roughly 4.8-5.2 ms per updated deck. The next
+  fluidity fix should avoid full-buffer CPU scrolling, either with a
+  framebuffer/overlay PPA scroll-and-edge-fill path or a wider/circular RGB565
+  strip that can be blitted by source offset without moving the whole cache.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,
