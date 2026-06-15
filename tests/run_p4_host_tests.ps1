@@ -13,7 +13,7 @@ function Assert-FileDoesNotContain {
         [string]$Description,
         [Parameter(Mandatory = $true)][string]$Path,
         [string[]]$LiteralPatterns,
-        [string]$Pattern
+        [Alias("Pattern")][string]$RegexPattern
     )
 
     if (-not $Name) {
@@ -25,8 +25,8 @@ function Assert-FileDoesNotContain {
     if (-not $PSBoundParameters.ContainsKey("LiteralPatterns")) {
         $LiteralPatterns = @()
     }
-    if (-not $PSBoundParameters.ContainsKey("Pattern")) {
-        $Pattern = $null
+    if (-not $PSBoundParameters.ContainsKey("RegexPattern")) {
+        $RegexPattern = $null
     }
 
     Write-Host "==> static $Name"
@@ -37,11 +37,11 @@ function Assert-FileDoesNotContain {
             throw "$Name contains forbidden selector pattern '$pattern' at $($first.Path):$($first.LineNumber)"
         }
     }
-    if ($Description -and $Pattern) {
-        $matches = Select-String -LiteralPath $Path -Pattern $Pattern
+    if ($RegexPattern) {
+        $matches = Select-String -LiteralPath $Path -Pattern $RegexPattern
         if ($matches) {
             $first = $matches | Select-Object -First 1
-            throw "$Name contains forbidden pattern '$Pattern' at $($first.Path):$($first.LineNumber)"
+            throw "$Name contains forbidden pattern '$RegexPattern' at $($first.Path):$($first.LineNumber)"
         }
     }
 }

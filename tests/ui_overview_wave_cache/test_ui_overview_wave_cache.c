@@ -119,7 +119,7 @@ static void test_steady_advance_uses_offset_without_mutating_pixels(void)
     memcpy(before, pixels, sizeof(before));
 
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
-                                         10080, 8000, &report));
+                                         10500, 8000, &report));
 
     assert(report.kind == UI_OVERVIEW_WAVE_CACHE_OFFSET);
     assert(report.columns_rendered == 0);
