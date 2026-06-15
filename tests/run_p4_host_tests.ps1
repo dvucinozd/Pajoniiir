@@ -9,17 +9,39 @@ $Gcc = Get-Command gcc -ErrorAction Stop
 
 function Assert-FileDoesNotContain {
     param(
-        [Parameter(Mandatory = $true)][string]$Name,
+        [string]$Name,
+        [string]$Description,
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string[]]$Patterns
+        [string[]]$LiteralPatterns,
+        [string]$Pattern
     )
 
+    if (-not $Name) {
+        $Name = $Description
+    }
+    if (-not $Name) {
+        $Name = "file guard"
+    }
+    if (-not $PSBoundParameters.ContainsKey("LiteralPatterns")) {
+        $LiteralPatterns = @()
+    }
+    if (-not $PSBoundParameters.ContainsKey("Pattern")) {
+        $Pattern = $null
+    }
+
     Write-Host "==> static $Name"
-    foreach ($pattern in $Patterns) {
+    foreach ($pattern in $LiteralPatterns) {
         $matches = Select-String -LiteralPath $Path -Pattern $pattern -SimpleMatch
         if ($matches) {
             $first = $matches | Select-Object -First 1
             throw "$Name contains forbidden selector pattern '$pattern' at $($first.Path):$($first.LineNumber)"
+        }
+    }
+    if ($Description -and $Pattern) {
+        $matches = Select-String -LiteralPath $Path -Pattern $Pattern
+        if ($matches) {
+            $first = $matches | Select-Object -First 1
+            throw "$Name contains forbidden pattern '$Pattern' at $($first.Path):$($first.LineNumber)"
         }
     }
 }
@@ -47,22 +69,27 @@ function Invoke-Step {
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -Patterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
+    -LiteralPatterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
 
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -Patterns @("static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];")
+    -LiteralPatterns @("static int16_t s_decode_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];")
 
 Assert-FileDoesNotContain `
     -Name "overview main RGB565 runtime path" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
-    -Patterns @("if (!overlay_rendered)")
+    -LiteralPatterns @("if (!overlay_rendered)")
 
 Assert-FileDoesNotContain `
     -Name "overview runtime avoids full RGB565 redraw" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
-    -Patterns @("ui_overview_renderer_draw_main_rgb565(overlay")
+    -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
+
+Assert-FileDoesNotContain `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c") `
+    -Pattern "memmove\s*\(" `
+    -Description "overview waveform cache must not use CPU memmove for steady scroll"
 
 $tests = @(
     @{
@@ -206,7 +233,7 @@ $tests = @(
         Target = "test_ui_overview_wave_cache.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-DANLZ_STANDALONE_TEST",
+            "-DANLZ_STANDALONE_TEST", "-DUI_OVERVIEW_WAVE_CACHE_TESTING",
             "-I../../firmware/main-deck-p4/components/ui/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_ui_overview_wave_cache.exe",

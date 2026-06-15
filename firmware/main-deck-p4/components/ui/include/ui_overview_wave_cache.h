@@ -15,7 +15,19 @@ typedef enum {
     UI_OVERVIEW_WAVE_CACHE_NONE = 0,
     UI_OVERVIEW_WAVE_CACHE_FULL,
     UI_OVERVIEW_WAVE_CACHE_SCROLL,
+    UI_OVERVIEW_WAVE_CACHE_OFFSET,
+    UI_OVERVIEW_WAVE_CACHE_EDGE,
 } ui_overview_wave_cache_update_kind_t;
+
+#define UI_OVERVIEW_WAVE_CACHE_MAX_BLITS 2
+#define UI_OVERVIEW_WAVE_CACHE_MARGIN_PX 128
+#define UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX 32
+
+typedef struct {
+    uint16_t src_x_px;
+    uint16_t dst_x_px;
+    uint16_t width_px;
+} ui_overview_wave_cache_blit_t;
 
 typedef struct {
     bool valid;
@@ -30,6 +42,14 @@ typedef struct {
     int stride_px;
     int width_px;
     int height_px;
+    int strip_width_px;
+    int view_width_px;
+    int margin_px;
+    int ring_head_px;
+    int view_origin_px;
+    int64_t strip_start_ms_q16;
+    int64_t ms_per_px_q16;
+    uint32_t source_generation;
     const uint16_t *palette;
     size_t palette_count;
 } ui_overview_wave_cache_t;
@@ -39,6 +59,9 @@ typedef struct {
     int scroll_dx_px;
     uint16_t columns_rendered;
     bool blit_required;
+    uint8_t blit_count;
+    uint16_t blit_height_px;
+    ui_overview_wave_cache_blit_t blit[UI_OVERVIEW_WAVE_CACHE_MAX_BLITS];
 } ui_overview_wave_cache_report_t;
 
 void ui_overview_wave_cache_reset(ui_overview_wave_cache_t *cache);
@@ -51,6 +74,16 @@ bool ui_overview_wave_cache_bind(ui_overview_wave_cache_t *cache,
                                  const uint16_t *palette,
                                  size_t palette_count);
 
+bool ui_overview_wave_cache_bind_strip(ui_overview_wave_cache_t *cache,
+                                       uint16_t *pixels,
+                                       int stride_px,
+                                       int strip_width_px,
+                                       int view_width_px,
+                                       int height_px,
+                                       int margin_px,
+                                       const uint16_t *palette,
+                                       size_t palette_count);
+
 bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
                                    const ui_waveform_source_t *source,
                                    uint32_t duration_ms,
@@ -58,6 +91,10 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
                                    uint32_t center_ms,
                                    uint32_t window_ms,
                                    ui_overview_wave_cache_report_t *out_report);
+
+#ifdef UI_OVERVIEW_WAVE_CACHE_TESTING
+void ui_overview_wave_cache_test_force_view_origin(ui_overview_wave_cache_t *cache, int origin_px);
+#endif
 
 #ifdef __cplusplus
 }
