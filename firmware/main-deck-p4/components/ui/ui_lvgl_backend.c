@@ -1,5 +1,6 @@
 #include "ui_lvgl_backend.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,6 +23,11 @@ static esp_err_t ui_lvgl_backend_validate_rgb565_region_args(const ui_overlay_re
 {
     if (!logical || !src || logical->w <= 0 || logical->h <= 0 ||
         src_w == 0 || src_h == 0 || block_w == 0 || block_h == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (logical->x < 0 || logical->y < 0 ||
+        block_w > INT_MAX || block_h > INT_MAX ||
+        logical->w != (int)block_w || logical->h != (int)block_h) {
         return ESP_ERR_INVALID_ARG;
     }
     if (src_x >= src_w || src_y >= src_h ||
