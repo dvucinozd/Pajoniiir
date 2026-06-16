@@ -119,6 +119,9 @@ static void ui_obj_set_x_if_changed(lv_obj_t *obj, int32_t x)
 // Waveform visualizer definitions
 #define OVERVIEW_CV_W 648
 #define OVERVIEW_CV_H 141
+#define OVERVIEW_WAVE_STRIP_MARGIN_PX UI_OVERVIEW_WAVE_CACHE_MARGIN_PX
+#define OVERVIEW_WAVE_STRIP_W (OVERVIEW_CV_W + (OVERVIEW_WAVE_STRIP_MARGIN_PX * 2))
+_Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider than visible canvas");
 #define OVERVIEW_MINI_CV_W 392
 #define OVERVIEW_MINI_CV_H 45
 #define OVERVIEW_WAVE_X 82
@@ -768,19 +771,21 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
     }
     if (s_overview_wave_overlay_rgb565[idx]) {
         if (!s_overview_wave_cache[idx].pixels) {
-            (void)ui_overview_wave_cache_bind(&s_overview_wave_cache[idx],
-                                              s_overview_wave_overlay_rgb565[idx],
-                                              OVERVIEW_CV_W,
-                                              OVERVIEW_CV_W,
-                                              OVERVIEW_CV_H,
-                                              s_overview_wave_rgb565_palette,
-                                              sizeof(s_overview_wave_rgb565_palette) /
-                                                  sizeof(s_overview_wave_rgb565_palette[0]));
+            (void)ui_overview_wave_cache_bind_strip(&s_overview_wave_cache[idx],
+                                                    s_overview_wave_overlay_rgb565[idx],
+                                                    OVERVIEW_WAVE_STRIP_W,
+                                                    OVERVIEW_WAVE_STRIP_W,
+                                                    OVERVIEW_CV_W,
+                                                    OVERVIEW_CV_H,
+                                                    OVERVIEW_WAVE_STRIP_MARGIN_PX,
+                                                    s_overview_wave_rgb565_palette,
+                                                    sizeof(s_overview_wave_rgb565_palette) /
+                                                        sizeof(s_overview_wave_rgb565_palette[0]));
         }
         return true;
     }
 
-    size_t bytes = (size_t)OVERVIEW_CV_W * OVERVIEW_CV_H * sizeof(uint16_t);
+    size_t bytes = (size_t)OVERVIEW_WAVE_STRIP_W * OVERVIEW_CV_H * sizeof(uint16_t);
     s_overview_wave_overlay_rgb565[idx] =
         ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_overlay_bytes);
     if (!s_overview_wave_overlay_rgb565[idx]) {
@@ -791,14 +796,24 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
     }
 
     memset(s_overview_wave_overlay_rgb565[idx], 0, s_overview_wave_overlay_bytes);
-    (void)ui_overview_wave_cache_bind(&s_overview_wave_cache[idx],
-                                      s_overview_wave_overlay_rgb565[idx],
-                                      OVERVIEW_CV_W,
-                                      OVERVIEW_CV_W,
-                                      OVERVIEW_CV_H,
-                                      s_overview_wave_rgb565_palette,
-                                      sizeof(s_overview_wave_rgb565_palette) /
-                                          sizeof(s_overview_wave_rgb565_palette[0]));
+    ESP_LOGI(TAG,
+             "D%u overview waveform strip: visible=%dx%d strip=%dx%d bytes=%u",
+             (unsigned)(idx + 1u),
+             OVERVIEW_CV_W,
+             OVERVIEW_CV_H,
+             OVERVIEW_WAVE_STRIP_W,
+             OVERVIEW_CV_H,
+             (unsigned)s_overview_wave_overlay_bytes);
+    (void)ui_overview_wave_cache_bind_strip(&s_overview_wave_cache[idx],
+                                            s_overview_wave_overlay_rgb565[idx],
+                                            OVERVIEW_WAVE_STRIP_W,
+                                            OVERVIEW_WAVE_STRIP_W,
+                                            OVERVIEW_CV_W,
+                                            OVERVIEW_CV_H,
+                                            OVERVIEW_WAVE_STRIP_MARGIN_PX,
+                                            s_overview_wave_rgb565_palette,
+                                            sizeof(s_overview_wave_rgb565_palette) /
+                                                sizeof(s_overview_wave_rgb565_palette[0]));
     return true;
 }
 
@@ -844,11 +859,13 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
 
 static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel,
                                                  uint8_t deck,
-                                                 uint16_t *src)
+                                                 uint16_t *src,
+                                                 const ui_overview_wave_cache_report_t *cache_report,
+                                                 ui_lvgl_backend_blit_perf_t *out_perf)
 {
     uint8_t idx = ui_overview_deck_index(deck);
     if (idx >= DECK_CORE_DECK_COUNT || s_overview_active_tab != 0 ||
-        !src) {
+        !src || !cache_report || cache_report->blit_count == 0) {
         return false;
     }
 
@@ -857,33 +874,57 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
         return false;
     }
 
-    ui_lvgl_backend_blit_perf_t perf = {0};
-    esp_err_t err = ui_lvgl_backend_blit_rgb565_ppa270(&logical,
-                                                       src,
-                                                       OVERVIEW_CV_W,
-                                                       OVERVIEW_CV_H,
-                                                       s_overview_wave_overlay_bytes,
-                                                       &perf);
-    ui_overview_overlay_perf_record(&s_overview_overlay_msync_perf[idx],
-                                    idx,
-                                    "msync",
-                                    perf.msync_us);
-    ui_overview_overlay_perf_record(&s_overview_overlay_ppa_perf[idx],
-                                    idx,
-                                    "ppa",
-                                    perf.ppa_us);
-    ui_overview_overlay_perf_record(&s_overview_overlay_total_perf[idx],
-                                    idx,
-                                    "total",
-                                    perf.total_us);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG,
-                 "D%u overview overlay PPA failed: %s logical=(%d,%d %dx%d)",
-                 (unsigned)(idx + 1u),
-                 esp_err_to_name(err),
-                 logical.x, logical.y, logical.w, logical.h);
-        return false;
+    ui_lvgl_backend_blit_perf_t total_perf = {0};
+    for (uint8_t seg_i = 0; seg_i < cache_report->blit_count; seg_i++) {
+        const ui_overview_wave_cache_blit_t *seg = &cache_report->blit[seg_i];
+        if (seg->width_px == 0) {
+            continue;
+        }
+
+        ui_overlay_rect_t seg_logical = logical;
+        seg_logical.x += seg->dst_x_px;
+        seg_logical.w = seg->width_px;
+
+        ui_lvgl_backend_blit_perf_t perf = {0};
+        esp_err_t err = ui_lvgl_backend_blit_rgb565_ppa270_region(&seg_logical,
+                                                                  src,
+                                                                  OVERVIEW_WAVE_STRIP_W,
+                                                                  OVERVIEW_CV_H,
+                                                                  seg->src_x_px,
+                                                                  0,
+                                                                  seg->width_px,
+                                                                  OVERVIEW_CV_H,
+                                                                  s_overview_wave_overlay_bytes,
+                                                                  &perf);
+        total_perf.msync_us += perf.msync_us;
+        total_perf.ppa_us += perf.ppa_us;
+        total_perf.total_us += perf.total_us;
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG,
+                     "D%u overview overlay PPA failed: %s seg=%u logical=(%d,%d %dx%d) src_x=%u",
+                     (unsigned)(idx + 1u),
+                     esp_err_to_name(err),
+                     (unsigned)seg_i,
+                     seg_logical.x, seg_logical.y, seg_logical.w, seg_logical.h,
+                     (unsigned)seg->src_x_px);
+            return false;
+        }
     }
+    if (out_perf) {
+        *out_perf = total_perf;
+    }
+    ui_overview_overlay_perf_record(&s_overview_overlay_msync_perf[idx],
+                                     idx,
+                                     "msync",
+                                     total_perf.msync_us);
+    ui_overview_overlay_perf_record(&s_overview_overlay_ppa_perf[idx],
+                                     idx,
+                                     "ppa",
+                                     total_perf.ppa_us);
+    ui_overview_overlay_perf_record(&s_overview_overlay_total_perf[idx],
+                                     idx,
+                                     "total",
+                                     total_perf.total_us);
 
     return true;
 }
@@ -920,6 +961,12 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
         if (!cache_updated || !cache_report.blit_required) {
             return;
         }
+        ui_lvgl_backend_blit_perf_t blit_perf = {0};
+        if (!ui_overview_blit_wave_overlay_rgb565(panel, deck, overlay,
+                                                  &cache_report,
+                                                  &blit_perf)) {
+            return;
+        }
         if (ui_diagnostics_enabled()) {
             int64_t render_us = esp_timer_get_time() - render_start_us;
             if (render_us < 0) {
@@ -930,19 +977,18 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                         (uint32_t)render_us,
                                         &report)) {
                 ESP_LOGI(TAG,
-                         "D%u overview main cache: kind=%u dx=%d cols=%u last=%u us avg=%u us max=%u us samples=%u",
+                         "D%u overview main cache: kind=%u dx=%d cols=%u blits=%u cache_last=%u us cache_avg=%u us cache_max=%u us ppa_us=%u samples=%u",
                          (unsigned)(idx + 1u),
                          (unsigned)cache_report.kind,
                          cache_report.scroll_dx_px,
                          (unsigned)cache_report.columns_rendered,
+                         (unsigned)cache_report.blit_count,
                          (unsigned)report.last_us,
                          (unsigned)report.avg_us,
                          (unsigned)report.max_us,
+                         (unsigned)blit_perf.total_us,
                          (unsigned)report.samples);
             }
-        }
-        if (!ui_overview_blit_wave_overlay_rgb565(panel, deck, overlay)) {
-            return;
         }
     } else {
         return;
