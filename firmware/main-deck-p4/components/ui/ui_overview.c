@@ -139,6 +139,8 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - (OVERVIEW_PHASE_W / 2))
 #define OVERVIEW_PHASE_Y 150
 #define OVERVIEW_PHASE_KNOB_W 8
+#define OVERVIEW_PLAYHEAD_W 3
+#define OVERVIEW_OUTLINE_W 1
 #define OVERVIEW_DECK_INFO_W 400
 #define OVERVIEW_TITLE_Y 312
 #define OVERVIEW_TITLE_H 30
@@ -221,6 +223,12 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
+static uint16_t *s_overview_wave_playhead_rgb565 = NULL;
+static size_t    s_overview_wave_playhead_bytes = 0;
+static uint16_t *s_overview_wave_outline_h_rgb565 = NULL;
+static size_t    s_overview_wave_outline_h_bytes = 0;
+static uint16_t *s_overview_wave_outline_v_rgb565 = NULL;
+static size_t    s_overview_wave_outline_v_bytes = 0;
 static ui_overview_wave_cache_t s_overview_wave_cache[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
@@ -559,8 +567,10 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->playhead = lv_obj_create(panel->wave_border);
     lv_obj_set_style_bg_color(panel->playhead, COL_TEXT, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->playhead, 0, LV_PART_MAIN);
-    lv_obj_set_size(panel->playhead, 3, OVERVIEW_CV_H);
-    lv_obj_set_pos(panel->playhead, OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2), OVERVIEW_WAVE_INSET_Y);
+    lv_obj_set_size(panel->playhead, OVERVIEW_PLAYHEAD_W, OVERVIEW_CV_H);
+    lv_obj_set_pos(panel->playhead,
+                   OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2) - (OVERVIEW_PLAYHEAD_W / 2),
+                   OVERVIEW_WAVE_INSET_Y);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_foreground(panel->wave_border);
 
@@ -852,6 +862,72 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
     return true;
 }
 
+static void ui_overview_fill_rgb565(uint16_t *pixels, size_t pixel_count, uint16_t color)
+{
+    if (!pixels) {
+        return;
+    }
+    for (size_t i = 0; i < pixel_count; i++) {
+        pixels[i] = color;
+    }
+}
+
+static bool ui_overview_wave_chrome_ensure_buffers(void)
+{
+    if (s_overview_wave_playhead_rgb565 &&
+        s_overview_wave_outline_h_rgb565 &&
+        s_overview_wave_outline_v_rgb565) {
+        return true;
+    }
+
+    const uint16_t playhead = UI_RGB565(0xF8, 0xFA, 0xFC);
+    const uint16_t outline = UI_RGB565(0xC8, 0xD2, 0xDE);
+
+    if (!s_overview_wave_playhead_rgb565) {
+        size_t bytes = (size_t)OVERVIEW_PLAYHEAD_W * OVERVIEW_CV_H * sizeof(uint16_t);
+        s_overview_wave_playhead_rgb565 =
+            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_playhead_bytes);
+        if (!s_overview_wave_playhead_rgb565) {
+            ESP_LOGW(TAG, "overview playhead overlay alloc failed (%u bytes)",
+                     (unsigned)s_overview_wave_playhead_bytes);
+            return false;
+        }
+        ui_overview_fill_rgb565(s_overview_wave_playhead_rgb565,
+                                (size_t)OVERVIEW_PLAYHEAD_W * OVERVIEW_CV_H,
+                                playhead);
+    }
+
+    if (!s_overview_wave_outline_h_rgb565) {
+        size_t bytes = (size_t)OVERVIEW_CV_W * OVERVIEW_OUTLINE_W * sizeof(uint16_t);
+        s_overview_wave_outline_h_rgb565 =
+            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_outline_h_bytes);
+        if (!s_overview_wave_outline_h_rgb565) {
+            ESP_LOGW(TAG, "overview horizontal outline alloc failed (%u bytes)",
+                     (unsigned)s_overview_wave_outline_h_bytes);
+            return false;
+        }
+        ui_overview_fill_rgb565(s_overview_wave_outline_h_rgb565,
+                                (size_t)OVERVIEW_CV_W * OVERVIEW_OUTLINE_W,
+                                outline);
+    }
+
+    if (!s_overview_wave_outline_v_rgb565) {
+        size_t bytes = (size_t)OVERVIEW_OUTLINE_W * OVERVIEW_CV_H * sizeof(uint16_t);
+        s_overview_wave_outline_v_rgb565 =
+            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_outline_v_bytes);
+        if (!s_overview_wave_outline_v_rgb565) {
+            ESP_LOGW(TAG, "overview vertical outline alloc failed (%u bytes)",
+                     (unsigned)s_overview_wave_outline_v_bytes);
+            return false;
+        }
+        ui_overview_fill_rgb565(s_overview_wave_outline_v_rgb565,
+                                (size_t)OVERVIEW_OUTLINE_W * OVERVIEW_CV_H,
+                                outline);
+    }
+
+    return true;
+}
+
 static bool ui_overview_wave_overlay_rect(const ui_overview_deck_panel_t *panel,
                                           ui_overlay_rect_t *logical)
 {
@@ -889,6 +965,102 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
                  (unsigned)report.avg_us,
                  (unsigned)report.max_us,
                  (unsigned)report.samples);
+    }
+}
+
+static void ui_overview_blit_wave_chrome_rgb565(const ui_overlay_rect_t *logical,
+                                                uint8_t idx)
+{
+    if (!logical || !ui_overview_wave_chrome_ensure_buffers()) {
+        return;
+    }
+
+    ui_overlay_rect_t rect = {
+        .x = logical->x,
+        .y = logical->y,
+        .w = logical->w,
+        .h = OVERVIEW_OUTLINE_W,
+    };
+    esp_err_t err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
+                                                              s_overview_wave_outline_h_rgb565,
+                                                              OVERVIEW_CV_W,
+                                                              OVERVIEW_OUTLINE_W,
+                                                              0,
+                                                              0,
+                                                              OVERVIEW_CV_W,
+                                                              OVERVIEW_OUTLINE_W,
+                                                              s_overview_wave_outline_h_bytes,
+                                                              NULL);
+    if (err == ESP_OK) {
+        rect.y = logical->y + logical->h - OVERVIEW_OUTLINE_W;
+        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
+                                                        s_overview_wave_outline_h_rgb565,
+                                                        OVERVIEW_CV_W,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        0,
+                                                        0,
+                                                        OVERVIEW_CV_W,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        s_overview_wave_outline_h_bytes,
+                                                        NULL);
+    }
+
+    if (err == ESP_OK) {
+        rect = (ui_overlay_rect_t){
+            .x = logical->x,
+            .y = logical->y,
+            .w = OVERVIEW_OUTLINE_W,
+            .h = logical->h,
+        };
+        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
+                                                        s_overview_wave_outline_v_rgb565,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        OVERVIEW_CV_H,
+                                                        0,
+                                                        0,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        OVERVIEW_CV_H,
+                                                        s_overview_wave_outline_v_bytes,
+                                                        NULL);
+    }
+
+    if (err == ESP_OK) {
+        rect.x = logical->x + logical->w - OVERVIEW_OUTLINE_W;
+        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
+                                                        s_overview_wave_outline_v_rgb565,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        OVERVIEW_CV_H,
+                                                        0,
+                                                        0,
+                                                        OVERVIEW_OUTLINE_W,
+                                                        OVERVIEW_CV_H,
+                                                        s_overview_wave_outline_v_bytes,
+                                                        NULL);
+    }
+
+    if (err == ESP_OK) {
+        rect = (ui_overlay_rect_t){
+            .x = logical->x + (logical->w / 2) - (OVERVIEW_PLAYHEAD_W / 2),
+            .y = logical->y,
+            .w = OVERVIEW_PLAYHEAD_W,
+            .h = logical->h,
+        };
+        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
+                                                        s_overview_wave_playhead_rgb565,
+                                                        OVERVIEW_PLAYHEAD_W,
+                                                        OVERVIEW_CV_H,
+                                                        0,
+                                                        0,
+                                                        OVERVIEW_PLAYHEAD_W,
+                                                        OVERVIEW_CV_H,
+                                                        s_overview_wave_playhead_bytes,
+                                                        NULL);
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "D%u overview chrome PPA failed: %s",
+                 (unsigned)(idx + 1u),
+                 esp_err_to_name(err));
     }
 }
 
@@ -945,6 +1117,7 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
             return false;
         }
     }
+    ui_overview_blit_wave_chrome_rgb565(&logical, idx);
     if (out_perf) {
         *out_perf = total_perf;
     }
@@ -1346,7 +1519,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     float progress = (float)position_ms / (float)duration_ms;
     if (progress > 1.0f) progress = 1.0f;
 
-    int main_playhead_x = OVERVIEW_CV_W / 2;
+    int main_playhead_x = (OVERVIEW_CV_W / 2) - (OVERVIEW_PLAYHEAD_W / 2);
     if (panel->playhead && main_playhead_x != panel->last_playhead_x) {
         lv_obj_set_pos(panel->playhead, OVERVIEW_WAVE_INSET_X + main_playhead_x, OVERVIEW_WAVE_INSET_Y);
         panel->last_playhead_x = main_playhead_x;
