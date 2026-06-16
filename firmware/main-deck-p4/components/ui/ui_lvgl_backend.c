@@ -121,6 +121,14 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *log
     }
     return ESP_ERR_NOT_SUPPORTED;
 }
+
+esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uint16_t color)
+{
+    if (!logical || logical->w <= 0 || logical->h <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
 #else
 #include "bsp_jc4880.h"
 #include "esp_cache.h"
@@ -693,5 +701,39 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *log
                                                      block_h,
                                                      src_bytes,
                                                      perf);
+}
+
+esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uint16_t color)
+{
+    if (!logical || logical->w <= 0 || logical->h <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_dsi_active_fb_idx < 0 || s_dsi_active_fb_idx >= UI_DSI_FB_COUNT ||
+        !s_dsi_fb[s_dsi_active_fb_idx]) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_overlay_rect_t physical;
+    if (!ui_overlay_map_ppa270(*logical, s_hor_res, s_ver_res, &physical)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t *fb = (uint16_t *)s_dsi_fb[s_dsi_active_fb_idx];
+    uint32_t stride = BSP_LCD_H_RES;
+
+    for (int y = physical.y; y < physical.y + physical.h; y++) {
+        uint16_t *row = fb + (size_t)y * stride;
+        for (int x = physical.x; x < physical.x + physical.w; x++) {
+            row[x] = color;
+        }
+    }
+
+    // Cache sync to RAM for DMA controller to pick it up
+    esp_cache_msync((void *)(fb + (size_t)physical.y * stride),
+                    (size_t)physical.h * stride * sizeof(uint16_t),
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+
+    return ESP_OK;
 }
 #endif

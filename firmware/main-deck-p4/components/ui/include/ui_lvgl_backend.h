@@ -41,6 +41,8 @@ esp_err_t ui_lvgl_backend_blit_rgb565_ppa270_region(const ui_overlay_rect_t *log
                                                     size_t src_bytes,
                                                     ui_lvgl_backend_blit_perf_t *perf);
 
+esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uint16_t color);
+
 #ifdef __cplusplus
 }
 #endif

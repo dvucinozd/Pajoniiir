@@ -128,7 +128,7 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_WAVE_INSET_X 0
 #define OVERVIEW_WAVE_INSET_Y 0
 #define OVERVIEW_DECK1_WAVE_Y 0
-#define OVERVIEW_DECK2_WAVE_Y 161
+#define OVERVIEW_DECK2_WAVE_Y 175
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_BEAT_PULSES_Y 144
 #define OVERVIEW_BEAT_PULSES_X (OVERVIEW_WAVE_CENTER_X - 33)
@@ -145,9 +145,9 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_TITLE_Y 312
 #define OVERVIEW_TITLE_H 30
 #define OVERVIEW_TITLE_TEXT_W 224
-#define OVERVIEW_TITLE_TIMER_X 232
+#define OVERVIEW_TITLE_TIMER_X 248
 #define OVERVIEW_TITLE_TIMER_Y 314
-#define OVERVIEW_TITLE_TIMER_MAIN_W 116
+#define OVERVIEW_TITLE_TIMER_MAIN_W 90
 #define OVERVIEW_TITLE_TIMER_FRACTION_X (OVERVIEW_TITLE_TIMER_X + OVERVIEW_TITLE_TIMER_MAIN_W + 2)
 #define OVERVIEW_TITLE_TIMER_FRACTION_W 46
 #define OVERVIEW_INFO_DIVIDER_Y 344
@@ -172,6 +172,7 @@ typedef struct {
     lv_obj_t *label_title;
     lv_obj_t *label_artist;
     lv_obj_t *label_time;
+    lv_obj_t *label_time_secs;
     lv_obj_t *label_time_fraction;
     lv_obj_t *label_remain;
     lv_obj_t *label_bpm;
@@ -223,20 +224,16 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
-static uint16_t *s_overview_wave_playhead_rgb565 = NULL;
-static size_t    s_overview_wave_playhead_bytes = 0;
-static uint16_t *s_overview_wave_outline_h_rgb565 = NULL;
-static size_t    s_overview_wave_outline_h_bytes = 0;
-static uint16_t *s_overview_wave_outline_v_rgb565 = NULL;
-static size_t    s_overview_wave_outline_v_bytes = 0;
 static ui_overview_wave_cache_t s_overview_wave_cache[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
 #endif
 static lv_obj_t *s_phase_meter_label = NULL;
+#if 0
 static lv_obj_t *s_phase_meter_track = NULL;
 static lv_obj_t *s_phase_meter_center = NULL;
+#endif
 static lv_obj_t *s_phase_meter_knob = NULL;
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
 
@@ -495,9 +492,24 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                 COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X,
                                                 OVERVIEW_TITLE_TIMER_Y,
-                                                OVERVIEW_TITLE_TIMER_MAIN_W, "-00:00");
+                                                48, "-00");
     lv_obj_set_height(panel->label_time, OVERVIEW_TITLE_H);
     lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+
+    lv_obj_t *label_colon = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                    COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X + 48,
+                                                    OVERVIEW_TITLE_TIMER_Y,
+                                                    8, ":");
+    lv_obj_set_height(label_colon, OVERVIEW_TITLE_H);
+    lv_obj_set_style_text_align(label_colon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+
+    panel->label_time_secs = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                     COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X + 56,
+                                                     OVERVIEW_TITLE_TIMER_Y,
+                                                     34, "00");
+    lv_obj_set_height(panel->label_time_secs, OVERVIEW_TITLE_H);
+    lv_obj_set_style_text_align(panel->label_time_secs, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+
     panel->label_time_fraction =
         ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                 COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_FRACTION_X,
@@ -527,6 +539,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->wave_border = lv_obj_create(panel->panel);
     lv_obj_remove_style_all(panel->wave_border);
     lv_obj_add_style(panel->wave_border, &s_style_panel_frame, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->wave_border, 0, LV_PART_MAIN);
     lv_obj_set_style_bg_color(panel->wave_border, lv_color_hex(0x020406), LV_PART_MAIN);
     lv_obj_set_size(panel->wave_border, OVERVIEW_CV_W + (OVERVIEW_WAVE_INSET_X * 2),
                     OVERVIEW_CV_H + (OVERVIEW_WAVE_INSET_Y * 2));
@@ -641,8 +654,13 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     for (int i = 0; i < 4; i++) {
         s_beat_pulses[deck_idx][i] = lv_obj_create(panel->panel);
         lv_obj_set_size(s_beat_pulses[deck_idx][i], 12, 12);
-        lv_obj_set_pos(s_beat_pulses[deck_idx][i], OVERVIEW_BEAT_PULSES_X + i * 18,
-                       top_y + OVERVIEW_BEAT_PULSES_Y);
+        int pulse_y = (deck_idx == CTRL_DECK_1) ? 145 : 161;
+        int pulse_x = 0;
+        if (i == 0) pulse_x = 358;
+        else if (i == 1) pulse_x = 382;
+        else if (i == 2) pulse_x = 418;
+        else if (i == 3) pulse_x = 442;
+        lv_obj_set_pos(s_beat_pulses[deck_idx][i], pulse_x, pulse_y);
         lv_obj_set_style_radius(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
         lv_obj_set_style_bg_color(s_beat_pulses[deck_idx][i], COL_PANEL_DK, LV_PART_MAIN);
@@ -727,6 +745,7 @@ static void ui_create_overview_center_marker(lv_obj_t *parent)
 
 }
 
+#if 0
 static void ui_create_overview_phase_meter(lv_obj_t *parent)
 {
     s_phase_meter_label = ui_overview_value_label(parent, &lv_font_montserrat_12,
@@ -762,6 +781,7 @@ static void ui_create_overview_phase_meter(lv_obj_t *parent)
                                          16,
                                          COL_TEXT_DIM);
 }
+#endif
 
 lv_obj_t *ui_overview_create(lv_obj_t *parent) {
     lv_obj_t *screen = NULL;
@@ -774,7 +794,7 @@ lv_obj_t *ui_overview_create(lv_obj_t *parent) {
     ui_create_overview_deck_panel(screen, CTRL_DECK_1, 4);
     ui_create_overview_deck_panel(screen, CTRL_DECK_2, 222);
     ui_create_overview_center_marker(screen);
-    ui_create_overview_phase_meter(screen);
+    // ui_create_overview_phase_meter(screen);
     ui_create_overview_fx_panel(screen);
     return screen;
 }
@@ -862,72 +882,6 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
     return true;
 }
 
-static void ui_overview_fill_rgb565(uint16_t *pixels, size_t pixel_count, uint16_t color)
-{
-    if (!pixels) {
-        return;
-    }
-    for (size_t i = 0; i < pixel_count; i++) {
-        pixels[i] = color;
-    }
-}
-
-static bool ui_overview_wave_chrome_ensure_buffers(void)
-{
-    if (s_overview_wave_playhead_rgb565 &&
-        s_overview_wave_outline_h_rgb565 &&
-        s_overview_wave_outline_v_rgb565) {
-        return true;
-    }
-
-    const uint16_t playhead = UI_RGB565(0xF8, 0xFA, 0xFC);
-    const uint16_t outline = UI_RGB565(0xC8, 0xD2, 0xDE);
-
-    if (!s_overview_wave_playhead_rgb565) {
-        size_t bytes = (size_t)OVERVIEW_PLAYHEAD_W * OVERVIEW_CV_H * sizeof(uint16_t);
-        s_overview_wave_playhead_rgb565 =
-            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_playhead_bytes);
-        if (!s_overview_wave_playhead_rgb565) {
-            ESP_LOGW(TAG, "overview playhead overlay alloc failed (%u bytes)",
-                     (unsigned)s_overview_wave_playhead_bytes);
-            return false;
-        }
-        ui_overview_fill_rgb565(s_overview_wave_playhead_rgb565,
-                                (size_t)OVERVIEW_PLAYHEAD_W * OVERVIEW_CV_H,
-                                playhead);
-    }
-
-    if (!s_overview_wave_outline_h_rgb565) {
-        size_t bytes = (size_t)OVERVIEW_CV_W * OVERVIEW_OUTLINE_W * sizeof(uint16_t);
-        s_overview_wave_outline_h_rgb565 =
-            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_outline_h_bytes);
-        if (!s_overview_wave_outline_h_rgb565) {
-            ESP_LOGW(TAG, "overview horizontal outline alloc failed (%u bytes)",
-                     (unsigned)s_overview_wave_outline_h_bytes);
-            return false;
-        }
-        ui_overview_fill_rgb565(s_overview_wave_outline_h_rgb565,
-                                (size_t)OVERVIEW_CV_W * OVERVIEW_OUTLINE_W,
-                                outline);
-    }
-
-    if (!s_overview_wave_outline_v_rgb565) {
-        size_t bytes = (size_t)OVERVIEW_OUTLINE_W * OVERVIEW_CV_H * sizeof(uint16_t);
-        s_overview_wave_outline_v_rgb565 =
-            ui_lvgl_backend_alloc_dma_buffer(bytes, &s_overview_wave_outline_v_bytes);
-        if (!s_overview_wave_outline_v_rgb565) {
-            ESP_LOGW(TAG, "overview vertical outline alloc failed (%u bytes)",
-                     (unsigned)s_overview_wave_outline_v_bytes);
-            return false;
-        }
-        ui_overview_fill_rgb565(s_overview_wave_outline_v_rgb565,
-                                (size_t)OVERVIEW_OUTLINE_W * OVERVIEW_CV_H,
-                                outline);
-    }
-
-    return true;
-}
-
 static bool ui_overview_wave_overlay_rect(const ui_overview_deck_panel_t *panel,
                                           ui_overlay_rect_t *logical)
 {
@@ -971,97 +925,20 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
 static void ui_overview_blit_wave_chrome_rgb565(const ui_overlay_rect_t *logical,
                                                 uint8_t idx)
 {
-    if (!logical || !ui_overview_wave_chrome_ensure_buffers()) {
+    if (!logical) {
         return;
     }
 
+    const uint16_t playhead_color = UI_RGB565(0x00, 0xFF, 0x00); // Bright green
+
+    // Playhead (middle line)
     ui_overlay_rect_t rect = {
-        .x = logical->x,
+        .x = logical->x + (logical->w / 2) - (OVERVIEW_PLAYHEAD_W / 2),
         .y = logical->y,
-        .w = logical->w,
-        .h = OVERVIEW_OUTLINE_W,
+        .w = OVERVIEW_PLAYHEAD_W,
+        .h = logical->h,
     };
-    esp_err_t err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
-                                                              s_overview_wave_outline_h_rgb565,
-                                                              OVERVIEW_CV_W,
-                                                              OVERVIEW_OUTLINE_W,
-                                                              0,
-                                                              0,
-                                                              OVERVIEW_CV_W,
-                                                              OVERVIEW_OUTLINE_W,
-                                                              s_overview_wave_outline_h_bytes,
-                                                              NULL);
-    if (err == ESP_OK) {
-        rect.y = logical->y + logical->h - OVERVIEW_OUTLINE_W;
-        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
-                                                        s_overview_wave_outline_h_rgb565,
-                                                        OVERVIEW_CV_W,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        0,
-                                                        0,
-                                                        OVERVIEW_CV_W,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        s_overview_wave_outline_h_bytes,
-                                                        NULL);
-    }
-
-    if (err == ESP_OK) {
-        rect = (ui_overlay_rect_t){
-            .x = logical->x,
-            .y = logical->y,
-            .w = OVERVIEW_OUTLINE_W,
-            .h = logical->h,
-        };
-        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
-                                                        s_overview_wave_outline_v_rgb565,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        OVERVIEW_CV_H,
-                                                        0,
-                                                        0,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        OVERVIEW_CV_H,
-                                                        s_overview_wave_outline_v_bytes,
-                                                        NULL);
-    }
-
-    if (err == ESP_OK) {
-        rect.x = logical->x + logical->w - OVERVIEW_OUTLINE_W;
-        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
-                                                        s_overview_wave_outline_v_rgb565,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        OVERVIEW_CV_H,
-                                                        0,
-                                                        0,
-                                                        OVERVIEW_OUTLINE_W,
-                                                        OVERVIEW_CV_H,
-                                                        s_overview_wave_outline_v_bytes,
-                                                        NULL);
-    }
-
-    if (err == ESP_OK) {
-        rect = (ui_overlay_rect_t){
-            .x = logical->x + (logical->w / 2) - (OVERVIEW_PLAYHEAD_W / 2),
-            .y = logical->y,
-            .w = OVERVIEW_PLAYHEAD_W,
-            .h = logical->h,
-        };
-        err = ui_lvgl_backend_blit_rgb565_ppa270_region(&rect,
-                                                        s_overview_wave_playhead_rgb565,
-                                                        OVERVIEW_PLAYHEAD_W,
-                                                        OVERVIEW_CV_H,
-                                                        0,
-                                                        0,
-                                                        OVERVIEW_PLAYHEAD_W,
-                                                        OVERVIEW_CV_H,
-                                                        s_overview_wave_playhead_bytes,
-                                                        NULL);
-    }
-
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "D%u overview chrome PPA failed: %s",
-                 (unsigned)(idx + 1u),
-                 esp_err_to_name(err));
-    }
+    ui_lvgl_backend_draw_rect_rgb565(&rect, playhead_color);
 }
 
 static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel,
@@ -1386,11 +1263,7 @@ static void ui_update_beat_indicator(uint8_t deck_idx, const ui_beat_indicator_s
 
         bool active = state && state->valid && state->phase == (uint8_t)i;
         bool downbeat = active && state->downbeat;
-        lv_opa_t opa = LV_OPA_40;
-        if (active) {
-            uint16_t progress = state->progress_permille > 1000 ? 1000 : state->progress_permille;
-            opa = (lv_opa_t)(255u - ((uint32_t)progress * 135u) / 1000u);
-        }
+        lv_opa_t opa = active ? LV_OPA_COVER : LV_OPA_40;
 
         ui_overview_beat_dot_cache_t *cache = &s_cache_beat_dots[deck_idx][i];
         if (cache->valid &&
@@ -1700,16 +1573,19 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
     uint32_t time_bucket = remain_ms / OVERVIEW_TIME_UPDATE_MS;
     if (time_bucket != panel->last_time_bucket) {
-        char main_text[12];
+        char mins_text[8];
+        char secs_text[4];
         char fraction_text[8];
         panel->last_time_bucket = time_bucket;
         uint32_t display_remain_ms = time_bucket * OVERVIEW_TIME_UPDATE_MS;
-        snprintf(main_text, sizeof(main_text), "-%02u:%02u",
-                 (unsigned)(display_remain_ms / 60000),
+        snprintf(mins_text, sizeof(mins_text), "-%02u",
+                 (unsigned)(display_remain_ms / 60000));
+        snprintf(secs_text, sizeof(secs_text), "%02u",
                  (unsigned)((display_remain_ms % 60000) / 1000));
         snprintf(fraction_text, sizeof(fraction_text), ".%02u",
                  (unsigned)((display_remain_ms % 1000) / 10));
-        ui_label_set_text_if_changed(panel->label_time, main_text);
+        ui_label_set_text_if_changed(panel->label_time, mins_text);
+        ui_label_set_text_if_changed(panel->label_time_secs, secs_text);
         ui_label_set_text_if_changed(panel->label_time_fraction, fraction_text);
     }
 
@@ -1756,8 +1632,7 @@ void ui_overview_set_performance_target(uint8_t active_deck)
         if (!panel->panel || !panel->wave_border) {
             continue;
         }
-        lv_obj_set_style_border_width(panel->wave_border, 1, LV_PART_MAIN);
-        lv_obj_set_style_border_color(panel->wave_border, COL_BORDER_LT, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->wave_border, 0, LV_PART_MAIN);
     }
 }
 
@@ -1807,20 +1682,21 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck]);
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
 
-    if (ctx->overview_slow_update) {
-        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
-            ui_beat_indicator_state_t beat_state = {0};
-            bool beat_valid = false;
-            if (ctx->deck_duration_ms[d] > 0) {
-                beat_state = ui_beat_indicator_calculate(
-                    ctx->deck_state[d].position_ms,
-                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
-                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
-                    ctx->deck_bpm[d]);
-                beat_valid = beat_state.valid;
-            }
-            ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+        ui_beat_indicator_state_t beat_state = {0};
+        bool beat_valid = false;
+        if (ctx->deck_duration_ms[d] > 0) {
+            beat_state = ui_beat_indicator_calculate(
+                ctx->deck_state[d].position_ms,
+                ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
+                ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
+                ctx->deck_bpm[d]);
+            beat_valid = beat_state.valid;
         }
+        ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
+    }
+
+    if (ctx->overview_slow_update) {
 #ifndef WIN32
         ui_update_mixer_overview(&ctx->mixer_snapshot);
 #endif
