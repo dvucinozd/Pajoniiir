@@ -1,4 +1,9 @@
 #include "ui_beat_indicator.h"
+#include <limits.h>
+
+#ifndef UINT32_MAX
+#define UINT32_MAX (0xFFFFFFFFu)
+#endif
 
 static ui_beat_indicator_state_t invalid_state(void)
 {
@@ -74,13 +79,51 @@ ui_beat_phase_delta_t ui_beat_phase_delta_calculate(ui_beat_indicator_state_t de
     };
 }
 
-ui_beat_indicator_state_t ui_beat_indicator_calculate(uint32_t position_ms,
-                                                       const anlz_beat_t *beats,
-                                                       uint16_t beat_count,
-                                                       uint16_t fallback_bpm)
+typedef struct {
+    const anlz_beat_t *beats;
+    uint16_t last_idx;
+} beat_cache_entry_t;
+
+static beat_cache_entry_t s_beat_cache[2] = {
+    { .beats = NULL, .last_idx = 0 },
+    { .beats = NULL, .last_idx = 0 }
+};
+
+static uint16_t find_beat_index(uint32_t position_ms, const anlz_beat_t *beats, uint16_t beat_count)
 {
-    if (!beats || beat_count == 0) {
-        return from_bpm(position_ms, fallback_bpm);
+    if (beat_count == 0) return 0;
+
+    int slot = -1;
+    if (s_beat_cache[0].beats == beats) {
+        slot = 0;
+    } else if (s_beat_cache[1].beats == beats) {
+        slot = 1;
+    } else {
+        static int next_slot = 0;
+        slot = next_slot;
+        s_beat_cache[slot].beats = beats;
+        s_beat_cache[slot].last_idx = 0;
+        next_slot = (next_slot + 1) % 2;
+    }
+
+    uint16_t last_idx = s_beat_cache[slot].last_idx;
+    if (last_idx >= beat_count) {
+        last_idx = 0;
+    }
+
+    uint32_t t_current = beats[last_idx].time_ms;
+    uint32_t t_next = (last_idx + 1 < beat_count) ? beats[last_idx + 1].time_ms : UINT32_MAX;
+
+    if (position_ms >= t_current && position_ms < t_next) {
+        return last_idx;
+    }
+
+    if (last_idx + 1 < beat_count) {
+        uint32_t t_next_next = (last_idx + 2 < beat_count) ? beats[last_idx + 2].time_ms : UINT32_MAX;
+        if (position_ms >= t_next && position_ms < t_next_next) {
+            s_beat_cache[slot].last_idx = last_idx + 1;
+            return last_idx + 1;
+        }
     }
 
     uint16_t idx = 0;
@@ -99,6 +142,21 @@ ui_beat_indicator_state_t ui_beat_indicator_calculate(uint32_t position_ms,
         }
         idx = low;
     }
+
+    s_beat_cache[slot].last_idx = idx;
+    return idx;
+}
+
+ui_beat_indicator_state_t ui_beat_indicator_calculate(uint32_t position_ms,
+                                                       const anlz_beat_t *beats,
+                                                       uint16_t beat_count,
+                                                       uint16_t fallback_bpm)
+{
+    if (!beats || beat_count == 0) {
+        return from_bpm(position_ms, fallback_bpm);
+    }
+
+    uint16_t idx = find_beat_index(position_ms, beats, beat_count);
 
     uint32_t beat_start = beats[idx].time_ms;
     uint32_t beat_len_ms = 0;

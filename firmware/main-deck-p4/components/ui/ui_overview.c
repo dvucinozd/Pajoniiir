@@ -1682,18 +1682,22 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck]);
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
 
-    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
-        ui_beat_indicator_state_t beat_state = {0};
-        bool beat_valid = false;
-        if (ctx->deck_duration_ms[d] > 0) {
-            beat_state = ui_beat_indicator_calculate(
-                ctx->deck_state[d].position_ms,
-                ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
-                ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
-                ctx->deck_bpm[d]);
-            beat_valid = beat_state.valid;
+    static uint32_t last_beat_update_ms = 0;
+    if (ctx->now_ms - last_beat_update_ms >= 30u || last_beat_update_ms == 0) {
+        last_beat_update_ms = ctx->now_ms;
+        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+            ui_beat_indicator_state_t beat_state = {0};
+            bool beat_valid = false;
+            if (ctx->deck_duration_ms[d] > 0) {
+                beat_state = ui_beat_indicator_calculate(
+                    ctx->deck_state[d].position_ms,
+                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
+                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
+                    ctx->deck_bpm[d]);
+                beat_valid = beat_state.valid;
+            }
+            ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
         }
-        ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
     }
 
     if (ctx->overview_slow_update) {
