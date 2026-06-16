@@ -958,6 +958,13 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                                            center_ms,
                                                            window_ms,
                                                            &cache_report);
+        uint32_t cache_us = 0;
+        if (ui_diagnostics_enabled()) {
+            int64_t elapsed_us = esp_timer_get_time() - render_start_us;
+            if (elapsed_us > 0) {
+                cache_us = (uint32_t)elapsed_us;
+            }
+        }
         if (!cache_updated || !cache_report.blit_required) {
             return;
         }
@@ -968,13 +975,9 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
             return;
         }
         if (ui_diagnostics_enabled()) {
-            int64_t render_us = esp_timer_get_time() - render_start_us;
-            if (render_us < 0) {
-                render_us = 0;
-            }
             ui_overview_perf_report_t report;
             if (ui_overview_perf_record(&s_overview_wave_perf[idx],
-                                        (uint32_t)render_us,
+                                        cache_us,
                                         &report)) {
                 ESP_LOGI(TAG,
                          "D%u overview main cache: kind=%u dx=%d cols=%u blits=%u cache_last=%u us cache_avg=%u us cache_max=%u us ppa_us=%u samples=%u",
@@ -986,7 +989,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                          (unsigned)report.last_us,
                          (unsigned)report.avg_us,
                          (unsigned)report.max_us,
-                         (unsigned)blit_perf.total_us,
+                         (unsigned)blit_perf.ppa_us,
                          (unsigned)report.samples);
             }
         }
