@@ -404,7 +404,12 @@ Validation note, 2026-06-10:
   `ui.c` owns init, screen registry, top-level tab switching, and frame context
   construction.
 - Deck 2 lower Overview waveform jitter was fixed on 2026-06-13. The scheduler
-  now allows a two-deck redraw budget when both decks are playing, but direct
+  now  allow two-deck redraw budget when both decks are playing, but direct
   PPA overlay is allowed only for Deck 1. Deck 2 uses the normal LVGL
   invalidate/flush path, which visually removed the lower Deck 2 waveform
   jitter on hardware.
+- **Overview waveform fix and visual polish (2026-06-16)**:
+  - Fixed Deck 2 waveform stuttering (zapinjanje) and disappearing beatgrid lines during play state. The bug was traced to a fallback to `library_get_current_anlz()` inside `ui_deck_anlz` which caused cross-deck metadata corruption. Removed the fallback entirely; decks now strictly use their isolated and cloned snapshots in `s_deck_anlz_store`.
+  - Redefined `s_overview_wave_rgb565_palette` and LVGL canvas palettes to dim the beatgrid lines: normal beats (index 3) are now dark cyan (`#1D5F5E`) and downbeats (index 8) are dark grey (`#5A5D64`). Playhead (index 4) remains bright white/grey for clarity.
+  - Moved the lower deck waveform vertical position (`OVERVIEW_DECK2_WAVE_Y`) to **142**, resulting in a tight **1px** vertical gap between both decks' waveforms to create a "touching" alignment effect.
+  - Relocated beat pulse indicators (flashing boxes) below the lower waveform (Y=288 for Deck 1 and Y=300 for Deck 2) to prevent overlapping with the shifted waveform.

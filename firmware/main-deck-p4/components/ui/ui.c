@@ -190,13 +190,7 @@ static uint16_t ui_performance_bpm(void)
 static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
 {
     uint8_t idx = ui_deck_index(deck);
-    const anlz_metadata_t *meta = ui_deck_anlz_store_get(&s_deck_anlz_store, idx);
-    if (meta) {
-        return meta;
-    }
-
-    if (deck != CTRL_DECK_1) return NULL;
-    return library_get_current_anlz();
+    return ui_deck_anlz_store_get(&s_deck_anlz_store, idx);
 }
 
 static const anlz_metadata_t *ui_performance_anlz(void)

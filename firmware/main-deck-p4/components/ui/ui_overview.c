@@ -128,7 +128,7 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_WAVE_INSET_X 0
 #define OVERVIEW_WAVE_INSET_Y 0
 #define OVERVIEW_DECK1_WAVE_Y 0
-#define OVERVIEW_DECK2_WAVE_Y 175
+#define OVERVIEW_DECK2_WAVE_Y 142
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_BEAT_PULSES_Y 144
 #define OVERVIEW_BEAT_PULSES_X (OVERVIEW_WAVE_CENTER_X - 33)
@@ -215,12 +215,12 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
     UI_RGB565(0x00, 0x00, 0x00),
     UI_RGB565(0xF0, 0x2B, 0x72),
     UI_RGB565(0x26, 0x65, 0xFF),
-    UI_RGB565(0x46, 0xE9, 0xE5),
+    UI_RGB565(0x1D, 0x5F, 0x5E),
     UI_RGB565(0xE5, 0xE6, 0xEA),
     UI_RGB565(0x1D, 0xF5, 0x94),
     UI_RGB565(0xFF, 0xB3, 0x38),
     UI_RGB565(0x9B, 0x5C, 0xFF),
-    UI_RGB565(0x36, 0x40, 0x48),
+    UI_RGB565(0x5A, 0x5D, 0x64),
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
@@ -562,12 +562,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0xF0, 0x2B, 0x72, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x1D, 0x5F, 0x5E, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 8, lv_color32_make(0x36, 0x40, 0x48, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
         if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
@@ -613,11 +613,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_canvas_set_palette(panel->mini_wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 1, lv_color32_make(0xE8, 0x2B, 0x78, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x46, 0xE9, 0xE5, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x1D, 0x5F, 0x5E, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
         lv_image_dsc_t *mini_dsc = lv_canvas_get_image(panel->mini_wave_canvas);
         if (mini_dsc && mini_dsc->header.stride > 0) {
             panel->mini_wave_stride_px = (int)mini_dsc->header.stride;
@@ -654,7 +655,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     for (int i = 0; i < 4; i++) {
         s_beat_pulses[deck_idx][i] = lv_obj_create(panel->panel);
         lv_obj_set_size(s_beat_pulses[deck_idx][i], 12, 12);
-        int pulse_y = (deck_idx == CTRL_DECK_1) ? 145 : 161;
+        int pulse_y = (deck_idx == CTRL_DECK_1) ? 288 : 300;
         int pulse_x = 0;
         if (i == 0) pulse_x = 358;
         else if (i == 1) pulse_x = 382;

@@ -49,7 +49,7 @@ ui_overview_grid_style_t ui_overview_grid_style_for_phase(uint16_t beat_phase)
 {
     if ((beat_phase % 4u) == 0u) {
         return (ui_overview_grid_style_t){
-            .palette_index = 4,
+            .palette_index = 8,
             .line_width_px = 2,
             .y0_permille = 0,
             .y1_permille = 1000,
