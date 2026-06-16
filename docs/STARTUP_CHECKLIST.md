@@ -51,6 +51,10 @@
   steady main waveform motion should report `UI_OVERVIEW_WAVE_CACHE_OFFSET`
   with zero rendered columns, while occasional edge updates render bounded
   batches instead of moving the whole waveform buffer.
+- Current P4 Overview polish keeps title/timer LVGL invalidation bounded,
+  stabilizes the blue-strip remaining-time display with fixed timer segments,
+  centers beat-match/phase indicators around the main playhead, removes weak
+  active-deck accent bars/borders, and uses taller Play/Cue touch targets.
 - P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
@@ -67,7 +71,8 @@ USB MIDI logger and the software translator path. Built with
 
 ## P4 Overview Waveform Smoke Test
 
-- [ ] Flash current P4 firmware to COM15.
+- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-06-16 after
+  Overview timer/beat/phase polish.
 - [ ] Start serial monitor and keep it running for at least 60 seconds while
   Deck 1 and Deck 2 are both loaded and playing.
 - [ ] Confirm no panic, watchdog timeout, brownout, or unexpected reset appears

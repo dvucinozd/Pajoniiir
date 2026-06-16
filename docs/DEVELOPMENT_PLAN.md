@@ -390,6 +390,13 @@ Validation note, 2026-06-10:
   area disappears. The largest repeated invalidated area is now `10584 px`, so
   diagnostics were extended to log `max_area=(x,y wxh)` for the next capture
   with both decks playing.
+- Overview chrome polish on 2026-06-16 removes continuous LVGL title marquee
+  invalidation, updates the remaining-time display in 50 ms buckets, and splits
+  the blue-strip timer into fixed `-MM:SS` and `.CC` labels so the centiseconds
+  no longer shift the seconds field. The same pass removes weak active-deck
+  accent/border indicators, centers the beat-match dots and D2-vs-D1 phase
+  meter around the main playhead, and slightly enlarges the Play/Cue touch
+  buttons.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,

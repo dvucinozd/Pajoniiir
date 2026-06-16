@@ -96,6 +96,16 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("lv_obj_invalidate(panel->mini_wave_canvas);")
 
+Assert-FileDoesNotContain `
+    -Name "overview title avoids continuous LVGL marquee invalidation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("LV_LABEL_LONG_SCROLL_CIRCULAR", "LV_LABEL_LONG_DOT")
+
+Assert-FileDoesNotContain `
+    -Name "overview timer avoids frame-rate LVGL text invalidation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("remain_ms / 10u")
+
 $tests = @(
     @{
         Name = "audio_engine"

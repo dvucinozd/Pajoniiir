@@ -61,8 +61,11 @@ The fork is no longer only the imported single-deck baseline:
 - Deck 2 lower Overview waveform jitter was fixed on 2026-06-13 by keeping
   Deck 2 on the normal LVGL invalidation/flush path while Deck 1 may use the
   direct overlay path.
-- FLX4 LED MIDI output remains pending until S3 raw capture confirms the actual
-  hardware messages.
+- The current Overview UI uses Pioneered-style deck strips, centered beat/phase
+  indicators, fixed-segment blue-strip timers, and bounded title/timer
+  invalidation so status chrome does not create continuous redraw pressure.
+- FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
+  control-link feedback and the S3 USB MIDI Out queue.
 
 ## Non-Goals For The First Milestone
 

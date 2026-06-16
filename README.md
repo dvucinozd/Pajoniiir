@@ -96,7 +96,8 @@ S3 host regression tests on Windows:
 Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
 substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
 library load paths, shared output/mixer audio plumbing, and a refactored
-two-deck LVGL UI.
+two-deck LVGL UI with Pioneered-style Overview chrome, centered beat/phase
+indicators, fixed-segment timers, and bounded title/timer invalidation.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
 mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture, dual-deck
