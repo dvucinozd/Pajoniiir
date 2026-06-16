@@ -375,13 +375,15 @@ Validation note, 2026-06-10:
   wrapped two-segment blits, source-region geometry validation, and the guard
   that `ui_overview_wave_cache.c` must not use `memmove(`.
 - Zero-copy runtime validation status: P4 build and COM15 flash passed on
-  2026-06-16, boot logs show USB/library startup without panic/watchdog/brownout,
-  and prior pre-fix logs captured the limiting path at roughly 5.5-7.0 ms cache
-  work plus roughly 4.8-5.2 ms overlay copy per active deck. A 60-second
-  post-fix monitor capture did not include manual dual-deck playback, so final
-  hardware numbers for `OFFSET cache_us`, `EDGE cache_us`, and two-deck
-  `ui_update` intervals still need to be captured during a real D1+D2 playback
-  smoke test.
+  2026-06-16. A diagnostics run with both decks playing confirmed the cache
+  fix: steady `OFFSET` updates averaged about 10 us per deck with
+  `columns_rendered == 0`, and bounded `EDGE` updates averaged about 0.5 ms for
+  32 rendered columns. No panic, watchdog timeout, brownout, or unexpected reset
+  appeared in the capture. The remaining visible budget is no longer CPU cache
+  scrolling; each deck still spends roughly 4.0 ms in overlay PPA copy, while
+  LVGL render/refr windows still spike into roughly 30-35 ms ranges. The next
+  fluidity pass should reduce dual overlay blit cost and/or decouple the main
+  waveform overlay cadence from full LVGL invalidation/render spikes.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,

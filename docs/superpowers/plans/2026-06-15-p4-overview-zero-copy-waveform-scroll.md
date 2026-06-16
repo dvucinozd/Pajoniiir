@@ -6,10 +6,11 @@
 
 - Implementation tasks 1-6 are complete and committed on
   `codex/p4-overview-zero-copy-waveform-scroll`.
-- Task 7 firmware build and COM15 flash passed on 2026-06-16. The captured
-  boot logs showed no panic/watchdog/brownout, but the monitor session did not
-  include manual dual-deck playback, so final before/after runtime numbers still
-  require a hardware smoke run with both decks playing.
+- Task 7 firmware build and COM15 flash passed on 2026-06-16. A diagnostics
+  COM15 capture with both decks playing showed steady `OFFSET` cache updates at
+  roughly 10 us per deck, bounded `EDGE` updates at roughly 0.5 ms for 32
+  columns, and no panic/watchdog/brownout. The remaining runtime cost is the
+  per-deck PPA overlay copy plus LVGL render/refr spikes, not cache scrolling.
 - Task 8 documentation was updated to describe the circular RGB565 strip model
   and the remaining dual-deck capture step.
 - Final verification should run the P4 host test runner, P4 build,
