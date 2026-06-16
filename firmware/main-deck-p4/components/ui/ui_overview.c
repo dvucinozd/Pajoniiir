@@ -336,15 +336,20 @@ static void ui_overview_apply_deck_badge(uint8_t deck)
     }
 
     bool pfl_on = s_overview_deck_pfl[idx];
-    bool playing = s_overview_deck_playing[idx];
-    lv_color_t bg = pfl_on ? COL_GREEN : COL_RED;
-    lv_color_t text = pfl_on ? COL_ON_ACCENT : COL_TEXT;
+    lv_color_t bg = COL_PANEL;
+    lv_color_t text = COL_TEXT;
 
     lv_obj_set_style_bg_color(panel->label_deck, bg, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_text_color(panel->label_deck, text, LV_PART_MAIN);
-    lv_obj_set_style_border_color(panel->label_deck, playing ? COL_TEXT : bg, LV_PART_MAIN);
-    lv_obj_set_style_border_width(panel->label_deck, playing ? 3 : 1, LV_PART_MAIN);
+
+    if (pfl_on) {
+        lv_obj_set_style_border_color(panel->label_deck, COL_GREEN, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->label_deck, 3, LV_PART_MAIN);
+    } else {
+        lv_obj_set_style_border_color(panel->label_deck, bg, LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->label_deck, 1, LV_PART_MAIN);
+    }
 }
 
 static lv_obj_t *ui_overview_compact_button(lv_obj_t *parent, uint8_t deck,
