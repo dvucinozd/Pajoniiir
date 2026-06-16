@@ -462,13 +462,13 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_user_data(panel->panel, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->panel, LV_OBJ_FLAG_CLICKABLE);
 
-    panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                COL_TEXT, 0, top_y + 4, 88,
+    panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
+                                                COL_TEXT, 4, top_y + 12, 76,
                                                 deck == CTRL_DECK_1 ? "DECK 1" : "DECK 2");
-    lv_obj_set_size(panel->label_deck, 88, 52);
+    lv_obj_set_size(panel->label_deck, 76, 38);
     lv_obj_set_style_bg_color(panel->label_deck, COL_PANEL, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(panel->label_deck, 8, LV_PART_MAIN);
+    lv_obj_set_style_text_align(panel->label_deck, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_style_pad_top(panel->label_deck, 10, LV_PART_MAIN);
     lv_obj_set_user_data(panel->label_deck, (void *)(uintptr_t)deck);
     lv_obj_add_flag(panel->label_deck, LV_OBJ_FLAG_CLICKABLE);

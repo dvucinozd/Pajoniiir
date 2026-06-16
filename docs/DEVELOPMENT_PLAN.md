@@ -414,4 +414,4 @@ Validation note, 2026-06-10:
   - Moved the lower deck waveform vertical position (`OVERVIEW_DECK2_WAVE_Y`) to **142**, resulting in a tight **1px** vertical gap between both decks' waveforms to create a "touching" alignment effect.
   - Relocated beat pulse indicators (flashing boxes) below the lower waveform (Y=288 for Deck 1 and Y=300 for Deck 2) to prevent overlapping with the shifted waveform.
   - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the DECK 1 and DECK 2 labels.
-  - Increased the vertical dimensions of the `panel->label_deck` ("DECK 1" / "DECK 2") to **52px** height, increased their font size to **24** (`lv_font_montserrat_24`), and vertically centered the text with a top padding of **10px**.
+  - Resized the `panel->label_deck` ("DECK 1" / "DECK 2") to **76x38px** to match the dimensions of the Play/Cue buttons, reduced the font size to **16** (`lv_font_montserrat_16`), and centered the text (with a top padding of **10px**).
