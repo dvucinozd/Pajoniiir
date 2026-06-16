@@ -4,6 +4,10 @@
 
 #include "ui_overview_grid.h"
 
+#ifndef WIN32
+#include "esp_log.h"
+#endif
+
 typedef struct {
     uint8_t avg;
     uint8_t peak;
@@ -200,6 +204,15 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
         int64_t range_end_ms =
             window_start_ms +
             (((int64_t)(logical_end_x + 4) * (int64_t)window_span_ms) / logical_width_px);
+
+#ifndef WIN32
+        static int log_counter = 0;
+        if (log_counter++ % 100 == 0) {
+            ESP_LOGI("grid_debug", "Drawing grid: meta=%p, beat_count=%d, range=[%lld, %lld]",
+                     meta, meta->beat_count, range_start_ms, range_end_ms);
+        }
+#endif
+
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
             int64_t beat_ms = meta->beats[b].time_ms;
