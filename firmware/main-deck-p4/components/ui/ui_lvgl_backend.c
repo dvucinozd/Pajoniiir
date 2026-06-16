@@ -166,9 +166,11 @@ static int64_t s_lvgl_flush_event_start_us = 0;
 static uint32_t s_lvgl_inval_count = 0;
 static uint32_t s_lvgl_inval_total_px = 0;
 static uint32_t s_lvgl_inval_max_px = 0;
+static lv_area_t s_lvgl_inval_max_area = {0};
 static uint32_t s_lvgl_frame_inval_count = 0;
 static uint32_t s_lvgl_frame_inval_total_px = 0;
 static uint32_t s_lvgl_frame_inval_max_px = 0;
+static lv_area_t s_lvgl_frame_inval_max_area = {0};
 
 static void ui_lvgl_backend_perf_log_us(const char *label, const ui_overview_perf_report_t *report)
 {
@@ -215,11 +217,15 @@ static bool ui_lvgl_backend_perf_record_phase_us(ui_overview_perf_counter_t *cou
 static void ui_lvgl_log_frame_context(const char *label)
 {
     ESP_LOGI(TAG,
-             "%s invalidated: count=%u total_px=%u max_px=%u",
+             "%s invalidated: count=%u total_px=%u max_px=%u max_area=(%d,%d %dx%d)",
              label,
              (unsigned)s_lvgl_frame_inval_count,
              (unsigned)s_lvgl_frame_inval_total_px,
-             (unsigned)s_lvgl_frame_inval_max_px);
+             (unsigned)s_lvgl_frame_inval_max_px,
+             (int)s_lvgl_frame_inval_max_area.x1,
+             (int)s_lvgl_frame_inval_max_area.y1,
+             (int)(s_lvgl_frame_inval_max_area.x2 - s_lvgl_frame_inval_max_area.x1 + 1),
+             (int)(s_lvgl_frame_inval_max_area.y2 - s_lvgl_frame_inval_max_area.y1 + 1));
 }
 
 static void ui_lvgl_display_event_cb(lv_event_t *e)
@@ -246,6 +252,7 @@ static void ui_lvgl_display_event_cb(lv_event_t *e)
         s_lvgl_inval_total_px += px;
         if (px > s_lvgl_inval_max_px) {
             s_lvgl_inval_max_px = px;
+            s_lvgl_inval_max_area = *area;
         }
         break;
     }
@@ -254,9 +261,11 @@ static void ui_lvgl_display_event_cb(lv_event_t *e)
         s_lvgl_frame_inval_count = s_lvgl_inval_count;
         s_lvgl_frame_inval_total_px = s_lvgl_inval_total_px;
         s_lvgl_frame_inval_max_px = s_lvgl_inval_max_px;
+        s_lvgl_frame_inval_max_area = s_lvgl_inval_max_area;
         s_lvgl_inval_count = 0;
         s_lvgl_inval_total_px = 0;
         s_lvgl_inval_max_px = 0;
+        s_lvgl_inval_max_area = (lv_area_t){0};
         break;
     case LV_EVENT_REFR_READY:
         if (s_lvgl_refr_start_us != 0) {

@@ -384,6 +384,12 @@ Validation note, 2026-06-10:
   LVGL render/refr windows still spike into roughly 30-35 ms ranges. The next
   fluidity pass should reduce dual overlay blit cost and/or decouple the main
   waveform overlay cadence from full LVGL invalidation/render spikes.
+- Follow-up mini-wave invalidation pass limits the lower mini waveform progress
+  update to the changed column range instead of invalidating the full 392x45
+  canvas. COM15 diagnostics confirmed the previous `17640 px` max invalidated
+  area disappears. The largest repeated invalidated area is now `10584 px`, so
+  diagnostics were extended to log `max_area=(x,y wxh)` for the next capture
+  with both decks playing.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,
