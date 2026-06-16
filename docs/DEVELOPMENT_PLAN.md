@@ -365,6 +365,23 @@ Validation note, 2026-06-10:
   fluidity fix should avoid full-buffer CPU scrolling, either with a
   framebuffer/overlay PPA scroll-and-edge-fill path or a wider/circular RGB565
   strip that can be blitted by source offset without moving the whole cache.
+- Follow-up zero-copy scroll pass on 2026-06-16 implements the circular RGB565
+  strip path. Each Overview deck now owns a wider RGB565 strip and reports one
+  or two source-region PPA blit segments for the visible window. Steady scroll
+  advances by changing the source offset (`UI_OVERVIEW_WAVE_CACHE_OFFSET`) with
+  `columns_rendered == 0`; bounded `EDGE` updates render only newly exposed
+  columns, and full strip rebuilds are reserved for load/source/window changes
+  or large seeks. Host tests cover offset-only updates, bounded edge batches,
+  wrapped two-segment blits, source-region geometry validation, and the guard
+  that `ui_overview_wave_cache.c` must not use `memmove(`.
+- Zero-copy runtime validation status: P4 build and COM15 flash passed on
+  2026-06-16, boot logs show USB/library startup without panic/watchdog/brownout,
+  and prior pre-fix logs captured the limiting path at roughly 5.5-7.0 ms cache
+  work plus roughly 4.8-5.2 ms overlay copy per active deck. A 60-second
+  post-fix monitor capture did not include manual dual-deck playback, so final
+  hardware numbers for `OFFSET cache_us`, `EDGE cache_us`, and two-deck
+  `ui_update` intervals still need to be captured during a real D1+D2 playback
+  smoke test.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,

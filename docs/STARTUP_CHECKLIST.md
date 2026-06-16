@@ -47,6 +47,10 @@
   descriptor handling, deck-aware S3 `control_link` constants, an XML-derived
   FLX4 MIDI mapper, translator-mode UART coalescing, and safer legacy CDJ panel
   queue behavior.
+- P4 Overview waveform performance branch adds RGB565 circular-strip scrolling:
+  steady main waveform motion should report `UI_OVERVIEW_WAVE_CACHE_OFFSET`
+  with zero rendered columns, while occasional edge updates render bounded
+  batches instead of moving the whole waveform buffer.
 - P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
@@ -60,6 +64,18 @@
 USB MIDI logger and the software translator path. Built with
 `CONFIG_DDJ_FLX4_HOST_MODE=y` and `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`
 (enabled on 2026-06-14).
+
+## P4 Overview Waveform Smoke Test
+
+- [ ] Flash current P4 firmware to COM15.
+- [ ] Start serial monitor and keep it running for at least 60 seconds while
+  Deck 1 and Deck 2 are both loaded and playing.
+- [ ] Confirm no panic, watchdog timeout, brownout, or unexpected reset appears
+  in the log.
+- [ ] Confirm steady logs are mostly `kind=OFFSET` with `cols=0`; `EDGE`
+  should appear only occasionally with bounded column counts.
+- [ ] Record `cache_us`, `ppa_us`, and `ui_update interval` values in
+  `docs/DEVELOPMENT_PLAN.md` after a representative dual-deck run.
 
 S3 status: USB host was successfully brought up on native OTG port. By increasing
 `CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512`, the large configuration descriptors
