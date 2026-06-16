@@ -54,7 +54,7 @@ static void test_initial_update_renders_full_view(void)
     assert(cache.valid);
 }
 
-static void test_small_center_advance_scrolls_cached_view(void)
+static void test_small_center_advance_rebuilds_compat_view(void)
 {
     uint8_t samples[256];
     for (int i = 0; i < 256; i++) {
@@ -80,9 +80,9 @@ static void test_small_center_advance_scrolls_cached_view(void)
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
                                          33000, 16000, &report));
 
-    assert(report.kind == UI_OVERVIEW_WAVE_CACHE_SCROLL);
-    assert(report.scroll_dx_px > 0);
-    assert(report.columns_rendered <= 2);
+    assert(report.kind == UI_OVERVIEW_WAVE_CACHE_FULL);
+    assert(report.scroll_dx_px == 0);
+    assert(report.columns_rendered == 16);
     assert(report.blit_required);
     assert(count_changed_pixels(before, pixels, 16 * 12) > 0);
 }
@@ -198,7 +198,7 @@ static void test_wrap_reports_two_blit_segments(void)
 
     ui_overview_wave_cache_test_force_view_origin(&cache, TEST_STRIP_W - 4);
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
-                                         10080, 8000, &report));
+                                         10000, 8000, &report));
 
     assert(report.blit_count == 2);
     assert((uint16_t)(report.blit[0].width_px + report.blit[1].width_px) == TEST_VIEW_W);
@@ -214,20 +214,26 @@ static void test_window_change_forces_full_redraw(void)
         .samples = samples,
         .sample_count = sizeof(samples),
     };
-    uint16_t pixels[16 * 12] = {0};
+    uint16_t pixels[TEST_STRIP_W * TEST_H] = {0};
     ui_overview_wave_cache_t cache = {0};
     ui_overview_wave_cache_report_t report;
 
     ui_overview_wave_cache_reset(&cache);
-    assert(ui_overview_wave_cache_bind(&cache, pixels, 16, 16, 12,
-                                       palette, sizeof(palette) / sizeof(palette[0])));
+    assert(ui_overview_wave_cache_bind_strip(&cache, pixels,
+                                             TEST_STRIP_W,
+                                             TEST_STRIP_W,
+                                             TEST_VIEW_W,
+                                             TEST_H,
+                                             TEST_MARGIN_W,
+                                             palette,
+                                             sizeof(palette) / sizeof(palette[0])));
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
                                          32000, 16000, &report));
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
                                          32000, 8000, &report));
 
     assert(report.kind == UI_OVERVIEW_WAVE_CACHE_FULL);
-    assert(report.columns_rendered == 16);
+    assert(report.columns_rendered == TEST_STRIP_W);
 }
 
 static void test_subpixel_advance_accumulates_until_visible_scroll(void)
@@ -241,13 +247,19 @@ static void test_subpixel_advance_accumulates_until_visible_scroll(void)
         .samples = samples,
         .sample_count = sizeof(samples),
     };
-    uint16_t pixels[16 * 12] = {0};
+    uint16_t pixels[TEST_STRIP_W * TEST_H] = {0};
     ui_overview_wave_cache_t cache = {0};
     ui_overview_wave_cache_report_t report;
 
     ui_overview_wave_cache_reset(&cache);
-    assert(ui_overview_wave_cache_bind(&cache, pixels, 16, 16, 12,
-                                       palette, sizeof(palette) / sizeof(palette[0])));
+    assert(ui_overview_wave_cache_bind_strip(&cache, pixels,
+                                             TEST_STRIP_W,
+                                             TEST_STRIP_W,
+                                             TEST_VIEW_W,
+                                             TEST_H,
+                                             TEST_MARGIN_W,
+                                             palette,
+                                             sizeof(palette) / sizeof(palette[0])));
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
                                          32000, 16000, &report));
     assert(!ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
@@ -255,9 +267,10 @@ static void test_subpixel_advance_accumulates_until_visible_scroll(void)
     assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
                                          32550, 16000, &report));
 
-    assert(report.kind == UI_OVERVIEW_WAVE_CACHE_SCROLL);
+    assert(report.kind == UI_OVERVIEW_WAVE_CACHE_OFFSET);
     assert(report.scroll_dx_px == 1);
-    assert(report.columns_rendered == 1);
+    assert(report.columns_rendered == 0);
+    assert(report.blit_required);
 }
 
 static void test_large_jump_forces_full_redraw(void)
@@ -308,7 +321,7 @@ static void test_missing_source_returns_false_without_blit(void)
 int main(void)
 {
     test_initial_update_renders_full_view();
-    test_small_center_advance_scrolls_cached_view();
+    test_small_center_advance_rebuilds_compat_view();
     test_steady_advance_uses_offset_without_mutating_pixels();
     test_edge_advance_renders_small_batch_without_full_rebuild();
     test_wrap_reports_two_blit_segments();
