@@ -462,19 +462,19 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_user_data(panel->panel, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->panel, LV_OBJ_FLAG_CLICKABLE);
 
-    panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
+    panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                 COL_TEXT, 0, top_y + 4, 88,
                                                 deck == CTRL_DECK_1 ? "DECK 1" : "DECK 2");
+    lv_obj_set_size(panel->label_deck, 88, 52);
     lv_obj_set_style_bg_color(panel->label_deck, COL_PANEL, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_pad_left(panel->label_deck, 8, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(panel->label_deck, 2, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel->label_deck, 10, LV_PART_MAIN);
     lv_obj_set_user_data(panel->label_deck, (void *)(uintptr_t)deck);
     lv_obj_add_flag(panel->label_deck, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(panel->label_deck, overview_deck_select_event_cb, LV_EVENT_CLICKED, NULL);
     ui_overview_apply_deck_badge(deck);
-    panel->label_status = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
-                                                  COL_RED, 4, top_y + 36, 90, "((PAUSE))");
+    panel->label_status = NULL;
     ui_overview_bar(panel->panel, info_x, OVERVIEW_TITLE_Y,
                     OVERVIEW_DECK_INFO_W, OVERVIEW_TITLE_H, COL_TITLE_BLUE);
     panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
@@ -1562,10 +1562,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
         info = &empty_info;
     }
 
-    ui_label_set_text_if_changed(panel->label_status,
-                                 state->playing ? "((PLAY))" : (info->valid ? "LOADED" : "EMPTY"));
-    ui_obj_set_text_color_if_changed(panel->label_status,
-                                     state->playing ? COL_RED : (info->valid ? COL_AMBER : COL_TEXT_DIM));
+
     if (s_overview_deck_playing[idx] != state->playing) {
         s_overview_deck_playing[idx] = state->playing;
         ui_overview_apply_deck_badge(deck);
