@@ -91,6 +91,11 @@ Assert-FileDoesNotContain `
     -Pattern "memmove\s*\(" `
     -Description "overview waveform cache must not use CPU memmove for steady scroll"
 
+Assert-FileDoesNotContain `
+    -Name "overview mini waveform avoids full canvas invalidation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("lv_obj_invalidate(panel->mini_wave_canvas);")
+
 $tests = @(
     @{
         Name = "audio_engine"

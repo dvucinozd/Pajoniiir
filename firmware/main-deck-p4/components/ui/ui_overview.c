@@ -235,6 +235,30 @@ static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
 
+static void ui_overview_invalidate_mini_wave_range(const ui_overview_deck_panel_t *panel,
+                                                   int x0,
+                                                   int x1)
+{
+    if (!panel || !panel->mini_wave_canvas || x0 >= x1) {
+        return;
+    }
+    if (x0 < 0) x0 = 0;
+    if (x1 > OVERVIEW_MINI_CV_W) x1 = OVERVIEW_MINI_CV_W;
+    if (x0 >= x1) {
+        return;
+    }
+
+    lv_area_t coords;
+    lv_obj_get_coords(panel->mini_wave_canvas, &coords);
+    lv_area_t area = {
+        .x1 = coords.x1 + x0,
+        .y1 = coords.y1,
+        .x2 = coords.x1 + x1 - 1,
+        .y2 = coords.y2,
+    };
+    lv_obj_invalidate_area(panel->mini_wave_canvas, &area);
+}
+
 // Screen 1: OVERVIEW Layout
 // Tap-to-seek on the overview waveform: jump playback to the tapped position
 // inside the visible zoom window.
@@ -1057,7 +1081,7 @@ void ui_overview_load_waveform_data(uint8_t deck,
                                        wave_valid ? &wave_source : NULL,
                                        duration_ms);
 
-        lv_obj_invalidate(panel->mini_wave_canvas);
+        ui_overview_invalidate_mini_wave_range(panel, 0, OVERVIEW_MINI_CV_W);
     }
 }
 
@@ -1390,7 +1414,7 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
         }
     }
     panel->last_mini_fill_x = mini_x;
-    lv_obj_invalidate(panel->mini_wave_canvas);
+    ui_overview_invalidate_mini_wave_range(panel, mx0, mx1);
 }
 
 #ifndef WIN32
