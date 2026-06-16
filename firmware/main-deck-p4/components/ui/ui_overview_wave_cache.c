@@ -302,18 +302,33 @@ static bool origin_inside_safe_margin(const ui_overview_wave_cache_t *cache,
                cache->strip_width_px - safe_margin;
 }
 
-static int edge_batch_px(const ui_overview_wave_cache_t *cache, int desired_shift)
+static int max_edge_batch_px(const ui_overview_wave_cache_t *cache)
 {
-    int batch = abs(desired_shift);
-    if (batch < UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX) {
-        batch = UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX;
-    }
     int max_batch = cache->strip_width_px - cache->view_width_px;
     if (cache->margin_px > 0 && max_batch > cache->margin_px) {
         max_batch = cache->margin_px;
     }
     if (max_batch < 1) {
         max_batch = 1;
+    }
+    return max_batch;
+}
+
+static int edge_batch_px(const ui_overview_wave_cache_t *cache,
+                         int desired_shift,
+                         int required_to_fit)
+{
+    int max_batch = max_edge_batch_px(cache);
+    if (required_to_fit > max_batch) {
+        return 0;
+    }
+
+    int batch = abs(desired_shift);
+    if (batch < UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX) {
+        batch = UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX;
+    }
+    if (batch < required_to_fit) {
+        batch = required_to_fit;
     }
     if (batch > max_batch) {
         batch = max_batch;
@@ -326,10 +341,13 @@ static void advance_right_edge(ui_overview_wave_cache_t *cache,
                                uint32_t duration_ms,
                                const anlz_metadata_t *meta,
                                int desired_origin,
+                               int required_to_fit,
                                ui_overview_wave_cache_report_t *report)
 {
     int old_origin = cache->view_origin_px;
-    int batch = edge_batch_px(cache, desired_origin - cache->view_origin_px);
+    int batch = edge_batch_px(cache,
+                              desired_origin - cache->view_origin_px,
+                              required_to_fit);
     cache->ring_head_px = wrap_px(cache, cache->ring_head_px + batch);
     cache->strip_start_ms_q16 += (int64_t)batch * cache->ms_per_px_q16;
     cache->view_origin_px = desired_origin - batch;
@@ -353,10 +371,13 @@ static void advance_left_edge(ui_overview_wave_cache_t *cache,
                               uint32_t duration_ms,
                               const anlz_metadata_t *meta,
                               int desired_origin,
+                              int required_to_fit,
                               ui_overview_wave_cache_report_t *report)
 {
     int old_origin = cache->view_origin_px;
-    int batch = edge_batch_px(cache, cache->view_origin_px - desired_origin);
+    int batch = edge_batch_px(cache,
+                              cache->view_origin_px - desired_origin,
+                              required_to_fit);
     cache->ring_head_px = wrap_px(cache, cache->ring_head_px - batch);
     cache->strip_start_ms_q16 -= (int64_t)batch * cache->ms_per_px_q16;
     cache->view_origin_px = desired_origin + batch;
@@ -440,11 +461,27 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
         report.columns_rendered = 0;
         build_blit_segments(cache, &report);
     } else if (dx > 0) {
-        advance_right_edge(cache, source, duration_ms, meta,
-                           desired_origin, &report);
+        int required_to_fit = desired_origin + cache->view_width_px -
+                              cache->strip_width_px;
+        if (required_to_fit < 0) {
+            required_to_fit = 0;
+        }
+        if (required_to_fit > max_edge_batch_px(cache)) {
+            rebuild_full(cache, source, duration_ms, meta,
+                         center_ms, window_ms, &report);
+        } else {
+            advance_right_edge(cache, source, duration_ms, meta,
+                               desired_origin, required_to_fit, &report);
+        }
     } else {
-        advance_left_edge(cache, source, duration_ms, meta,
-                          desired_origin, &report);
+        int required_to_fit = desired_origin < 0 ? -desired_origin : 0;
+        if (required_to_fit > max_edge_batch_px(cache)) {
+            rebuild_full(cache, source, duration_ms, meta,
+                         center_ms, window_ms, &report);
+        } else {
+            advance_left_edge(cache, source, duration_ms, meta,
+                              desired_origin, required_to_fit, &report);
+        }
     }
 
     cache_store_key(cache, source, duration_ms, meta, center_ms, window_ms);
