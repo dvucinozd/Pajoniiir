@@ -57,7 +57,7 @@ ui_overview_grid_style_t ui_overview_grid_style_for_phase(uint16_t beat_phase)
     }
 
     return (ui_overview_grid_style_t){
-        .palette_index = 8,
+        .palette_index = 3,
         .line_width_px = 1,
         .y0_permille = 0,
         .y1_permille = 1000,
