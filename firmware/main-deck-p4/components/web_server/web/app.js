@@ -224,3 +224,15 @@ function escapeHtml(str) {
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#039;');
 }
+
+function toggleBrowserExpand() {
+    const body = document.body;
+    const btn = document.getElementById('browser-expand-btn');
+    if (body.classList.contains('browser-expanded')) {
+        body.classList.remove('browser-expanded');
+        btn.innerText = 'SHOW';
+    } else {
+        body.classList.add('browser-expanded');
+        btn.innerText = 'HIDE';
+    }
+}

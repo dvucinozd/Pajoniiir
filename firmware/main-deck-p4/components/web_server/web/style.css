@@ -1,393 +1,1041 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   DDJ-FFL4 Web Controller – Precision Performance Design System
+   Palette: firmware ui_theme.h (COL_BG=#000, COL_GREEN=#6EE128, COL_AMBER=#EB870F, …)
+   Typography: Montserrat (mirrors LVGL lv_font_montserrat_*)
+───────────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap');
+
+/* ── Design Tokens ────────────────────────────────────────────────────────── */
 :root {
-    --bg-color: #0b0f19;
-    --card-bg: #151c2c;
-    --border-color: #27354f;
-    --text-color: #e2e8f0;
-    --text-muted: #94a3b8;
-    --col-green: #1df594;
-    --col-green-dim: #106341;
-    --col-amber: #ffb338;
-    --col-amber-dim: #7a5010;
-    --col-blue: #2665ff;
-    --col-red: #f02b72;
+    /* Backgrounds / surfaces */
+    --bg:          #000000;   /* COL_BG      – root / screen */
+    --surface:     #050505;   /* COL_PANEL_DK */
+    --panel:       #32323C;   /* COL_PANEL   */
+    --title-blue:  #112F5C;   /* COL_TITLE_BLUE */
+
+    /* Borders */
+    --border:      #32323C;   /* COL_BORDER  */
+    --border-lt:   #5F5F5F;   /* COL_BORDER_LT */
+
+    /* Text */
+    --text:        #E5E6EA;   /* COL_TEXT    */
+    --text-muted:  #B8BAC2;   /* COL_TEXT_MUTED */
+    --text-dim:    #7F838C;   /* COL_TEXT_DIM */
+    --on-accent:   #000000;   /* COL_ON_ACCENT */
+
+    /* Accents */
+    --blue:        #2D85CD;   /* COL_ACCENT  */
+    --blue-dark:   #112F5C;   /* COL_ACCENT_DK */
+    --green:       #6EE128;   /* COL_GREEN   */
+    --green-dark:  #146B17;
+    --amber:       #EB870F;   /* COL_AMBER   */
+    --amber-dark:  #7A4200;
+    --red:         #D73535;   /* COL_RED     */
+    --tab-active:  #C3D541;   /* COL_TAB_ACTIVE */
+
+    /* Legacy alias – used in app.js inline style: color: var(--col-red) */
+    --col-red:     #D73535;
+
+    /* Spacing rhythm (4 px grid) */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
 }
 
-* {
+/* ── Reset ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    height: 100%;
 }
 
 body {
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    padding: 10px;
-    font-size: 14px;
-}
-
-.main-header {
-    text-align: center;
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.main-header h1 {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--text-color);
-    letter-spacing: 1px;
-}
-
-.container {
-    max-width: 900px;
-    margin: 0 auto;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    overflow: hidden; /* one-screen layout on desktop */
 }
 
-/* Decks */
-.decks-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 15px;
-}
-
-@media (min-width: 600px) {
-    .decks-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-}
-
-.deck-card {
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
+/* ── Top Bar ──────────────────────────────────────────────────────────────── */
+.topbar {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.deck-header {
-    display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
+    height: 36px;
+    padding: 0 var(--sp-4);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
 }
 
-.deck-header h2 {
-    font-size: 1.1rem;
-    color: var(--text-muted);
+.topbar-brand {
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    color: var(--blue);
+    text-transform: uppercase;
 }
 
+.topbar-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+.status-dot.online {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+}
+
+/* ── Performance Zone: flex row ────────────────────────────────────────────── */
+.perf-zone {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Deck Card ────────────────────────────────────────────────────────────── */
+.deck-card {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+#deck-1-card {
+    border-right: 1px solid var(--border);
+}
+
+#deck-2-card {
+    border-left: 1px solid var(--border);
+}
+
+/* Deck title strip */
+.deck-title-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--sp-3);
+    height: 32px;
+    background: var(--title-blue);
+    flex-shrink: 0;
+}
+
+.deck-name {
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text);
+}
+
+/* ── Status Badge ─────────────────────────────────────────────────────────── */
 .badge {
-    font-size: 0.75rem;
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-weight: bold;
-    background-color: #27354f;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding: 3px 7px;
+    border: 1px solid var(--border-lt);
+    background: var(--panel);
     color: var(--text-muted);
+    text-transform: uppercase;
+    border-radius: 0;
+    transition: background 200ms ease, color 200ms ease, border-color 200ms ease;
 }
 
 .badge.playing {
-    background-color: var(--col-green-dim);
-    color: var(--col-green);
+    background: var(--green-dark);
+    border-color: var(--green);
+    color: var(--green);
+    animation: badge-pulse 1.5s ease-in-out infinite;
 }
 
 .badge.ready {
-    background-color: var(--col-blue);
+    background: var(--blue);
+    border-color: var(--blue);
     color: #fff;
 }
 
 .badge.error {
-    background-color: var(--col-red);
+    background: var(--red);
+    border-color: var(--red);
     color: #fff;
 }
 
-.track-info {
-    min-height: 40px;
+@keyframes badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(110, 225, 40, 0); }
+    50%       { box-shadow: 0 0 6px 1px rgba(110, 225, 40, 0.45); }
+}
+
+/* ── Deck Header Info (track title + time) ────────────────────────────────── */
+.deck-header-info {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: 10px var(--sp-3) 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.track-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
 }
 
 .track-title {
-    font-size: 1.1rem;
-    font-weight: bold;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+.track-artist {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.track-artist {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-top: 2px;
-}
-
 .track-stats {
     display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    color: var(--text-muted);
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    flex-wrap: wrap;
 }
 
-.track-stats .val {
-    color: var(--text-color);
-    font-weight: bold;
+.stat-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
 }
 
+.stat-val {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+}
+
+.stat-sep {
+    display: block;
+    width: 1px;
+    height: 12px;
+    background: var(--border-lt);
+    flex-shrink: 0;
+}
+
+/* Time Display */
 .time-display {
-    font-family: monospace;
-    font-size: 2.2rem;
-    text-align: center;
-    background-color: #0b0f19;
-    padding: 8px;
-    border-radius: 4px;
-    color: var(--col-blue);
-    letter-spacing: 1px;
+    font-size: 30px;
+    font-weight: 900;
+    color: var(--blue);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding-top: 2px;
 }
 
-.deck-controls {
-    display: grid;
-    grid-template-columns: 1fr 1.5fr;
-    gap: 10px;
+/* ── Pitch/Tempo horizontal slider row ───────────────────────────────────── */
+.pitch-control {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 10px var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg);
 }
 
+.pitch-control-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* ── Deck Footer: CUE / PLAY / LOOP / CLEAR ───────────────────────────────── */
+.deck-footer {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-2);
+    padding: 10px var(--sp-3);
+    background: var(--bg);
+    flex-shrink: 0;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
 .btn {
-    padding: 12px;
-    border-radius: 6px;
-    font-weight: bold;
-    font-size: 0.95rem;
+    flex: 1;
+    padding: 10px var(--sp-2);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     cursor: pointer;
-    border: 1px solid transparent;
-    transition: all 0.1s ease;
+    border: 1px solid var(--border-lt);
+    border-radius: 2px;
+    background: var(--surface);
+    color: var(--text-muted);
     text-align: center;
-    display: inline-block;
+    white-space: nowrap;
+    transition: transform 80ms ease, opacity 80ms ease,
+                background 150ms ease, color 150ms ease,
+                border-color 150ms ease;
+    line-height: 1;
 }
 
+.btn:active {
+    transform: scale(0.97);
+    opacity: 0.75;
+}
+
+/* CUE – amber */
 .btn-cue {
-    background-color: #1e2530;
-    color: var(--col-amber);
-    border-color: var(--col-amber-dim);
+    background: var(--surface);
+    color: var(--amber);
+    border-color: var(--amber);
+    flex: 0 0 auto;
+    min-width: 52px;
 }
 
 .btn-cue:active {
-    background-color: var(--col-amber);
-    color: #000;
+    background: var(--amber);
+    color: var(--on-accent);
 }
 
+/* PLAY – green (inactive = outline, active = filled) */
 .btn-play {
-    background-color: #1e2530;
-    color: var(--col-green);
-    border-color: var(--col-green-dim);
+    background: var(--surface);
+    color: var(--green);
+    border-color: var(--green);
+    flex: 0 0 auto;
+    min-width: 60px;
 }
 
 .btn-play.active {
-    background-color: var(--col-green);
-    color: #000;
+    background: var(--green);
+    color: var(--on-accent);
+    border-color: #6DFFB1;
 }
 
-.pitch-control {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.pitch-control label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-
-input[type="range"] {
-    -webkit-appearance: none;
-    width: 100%;
-    height: 6px;
-    background: #0b0f19;
-    border-radius: 3px;
-    outline: none;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--text-color);
-    cursor: pointer;
-}
-
-.loop-controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-}
-
+/* Loop controls */
 .btn-loop {
-    background-color: #1e2530;
+    background: var(--surface);
     color: var(--text-muted);
-    border-color: var(--border-color);
+    border-color: var(--border-lt);
 }
 
-/* Mixer */
-.mixer-card {
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    align-items: center;
-}
-
-.mixer-card h2 {
-    font-size: 1.1rem;
-    color: var(--text-muted);
-    align-self: flex-start;
-}
-
-.faders-grid {
-    display: flex;
-    justify-content: space-around;
-    width: 100%;
-    max-width: 300px;
-    gap: 40px;
-}
-
-.volume-control {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-}
-
-.volume-control span {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-
-.vertical-slider {
-    writing-mode: bt-lr; /* IE */
-    -webkit-appearance: slider-vertical; /* WebKit */
-    width: 8px;
-    height: 120px;
-    padding: 0 5px;
-}
-
+/* PFL / CUE in mixer */
 .btn-pfl {
-    background-color: #1e2530;
+    flex: none;
+    width: 100%;
+    padding: 6px var(--sp-2);
+    font-size: 9px;
+    background: var(--surface);
     color: var(--text-muted);
-    border-color: var(--border-color);
-    padding: 6px 12px;
-    font-size: 0.8rem;
+    border-color: var(--border-lt);
 }
 
 .btn-pfl.active {
-    background-color: var(--col-green-dim);
-    color: var(--col-green);
-    border-color: var(--col-green);
+    background: var(--green-dark);
+    color: var(--green);
+    border-color: var(--green);
+    border-width: 2px;
 }
 
-.crossfader-control {
+/* LOAD D1 / D2 in library table (generated by app.js) */
+.btn-load {
+    flex: none;
+    padding: 4px 7px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    background: var(--surface);
+    color: var(--blue);
+    border-color: var(--blue);
+    border-radius: 1px;
+    margin-right: 4px;
+}
+
+.btn-load:last-child {
+    margin-right: 0;
+}
+
+.btn-load:active {
+    background: var(--blue);
+    color: var(--on-accent);
+}
+
+/* ── Range Inputs ─────────────────────────────────────────────────────────── */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    outline: none;
+    cursor: pointer;
+}
+
+/* Horizontal slider (crossfader only) */
+input[type="range"]:not(.vertical-slider) {
+    width: 100%;
+    height: 24px;
+    display: block;
+}
+
+input[type="range"]:not(.vertical-slider)::-webkit-slider-runnable-track {
+    height: 4px;
+    background: var(--panel);
+    border-radius: 0;
+}
+
+input[type="range"]:not(.vertical-slider)::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 26px;
+    margin-top: -11px;
+    background: var(--text);
+    border: 1px solid var(--border-lt);
+    border-radius: 1px;
+    transition: transform 100ms ease;
+}
+
+input[type="range"]:not(.vertical-slider)::-webkit-slider-thumb:hover {
+    transform: scaleX(1.1);
+}
+
+/* Firefox horizontal */
+input[type="range"]:not(.vertical-slider)::-moz-range-track {
+    height: 4px;
+    background: var(--panel);
+    border-radius: 0;
+}
+
+input[type="range"]:not(.vertical-slider)::-moz-range-thumb {
+    width: 14px;
+    height: 26px;
+    background: var(--text);
+    border: 1px solid var(--border-lt);
+    border-radius: 1px;
+}
+
+/* ── Vertical Sliders (tempo & volume faders) ─────────────────────────────── */
+.vertical-slider {
+    -webkit-appearance: slider-vertical; /* Safari/WebKit legacy */
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 24px;
+    height: 150px;
+    padding: 0;
+}
+
+.vertical-slider::-webkit-slider-runnable-track {
+    width: 4px;
+    background: var(--panel);
+    border-radius: 0;
+}
+
+.vertical-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 28px;
+    height: 10px;
+    background: var(--text);
+    border: 1px solid var(--border-lt);
+    border-radius: 1px;
+    margin-left: -12px;
+    transition: opacity 100ms ease;
+}
+
+.vertical-slider::-webkit-slider-thumb:hover {
+    opacity: 0.85;
+}
+
+/* Firefox vertical */
+.vertical-slider::-moz-range-track {
+    width: 4px;
+    background: var(--panel);
+}
+
+.vertical-slider::-moz-range-thumb {
+    width: 28px;
+    height: 10px;
+    background: var(--text);
+    border: 1px solid var(--border-lt);
+    border-radius: 1px;
+}
+
+/* ── Mixer Card ───────────────────────────────────────────────────────────── */
+.mixer-card {
+    width: 196px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.mixer-title-strip {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.mixer-body {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    padding: var(--sp-3) var(--sp-2);
+    gap: var(--sp-1);
+    align-items: flex-start;
+    justify-content: space-between;
+    overflow: hidden;
+}
+
+.channel-strip {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    width: 100%;
-    max-width: 250px;
+    gap: var(--sp-2);
+    flex: 1;
 }
 
-.crossfader-control span {
-    font-size: 0.8rem;
-    color: var(--text-muted);
+.ch-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
 }
 
-/* Browser */
-.browser-card {
-    background-color: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
+.fader-track-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Decorative VU meter column */
+.vu-column {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    align-items: center;
+    justify-content: flex-end;
+    padding-top: 36px; /* visual alignment with faders */
+    flex-shrink: 0;
+    width: 14px;
+}
+
+.vu-bar-container {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 2px;
+    height: 150px;
+    width: 8px;
+}
+
+.vu-seg {
+    flex: 1;
+    border-radius: 0;
+}
+
+.vu-green          { background: var(--green-dark); }
+.vu-green.vu-active{ background: var(--green); }
+.vu-amber          { background: #4a3000; }
+.vu-amber.vu-active{ background: var(--amber); }
+.vu-red            { background: #3a0000; }
+.vu-red.vu-active  { background: var(--red); }
+
+/* ── Crossfader ───────────────────────────────────────────────────────────── */
+.crossfader-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px var(--sp-3) var(--sp-3);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    gap: var(--sp-2);
+}
+
+.crossfader-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.crossfader-wrap {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+/* Subtle center notch on the crossfader track */
+.cf-center-notch {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 1px;
+    height: 20px;
+    background: var(--border-lt);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ── Browser / Library ────────────────────────────────────────────────────── */
+.browser-card {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    height: 40px; /* uvučeno stanje (samo header) */
+    max-height: 40px;
+    overflow: hidden;
 }
 
 .browser-header {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--sp-4);
+    height: 40px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border-lt);
+    gap: var(--sp-3);
+    flex-shrink: 0;
 }
 
-@media (min-width: 500px) {
-    .browser-header {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-    }
+.browser-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.search-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex: 1;
+    max-width: 380px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 0 10px;
+    height: 28px;
+    transition: border-color 150ms ease;
+}
+
+.search-wrap:focus-within {
+    border-color: var(--blue);
+}
+
+.search-icon {
+    width: 13px;
+    height: 13px;
+    color: var(--text-dim);
+    flex-shrink: 0;
 }
 
 #search-input {
-    background-color: #0b0f19;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-    padding: 8px 12px;
-    font-size: 0.9rem;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
     outline: none;
     width: 100%;
-    max-width: 300px;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+#search-input::placeholder {
+    color: var(--text-dim);
 }
 
 .library-container {
-    max-height: 250px;
     overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    overflow-x: hidden;
+    flex: 1;
+    min-height: 0;
+    display: none; /* Sakrij listu po defaultu */
+}
+
+/* Custom scrollbar */
+.library-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.library-container::-webkit-scrollbar-track {
+    background: var(--surface);
+}
+
+.library-container::-webkit-scrollbar-thumb {
+    background: var(--border-lt);
 }
 
 .library-table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
+    table-layout: fixed;
 }
 
-.library-table th, .library-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border-color);
-}
+.library-table col:nth-child(1) { width: 35%; }
+.library-table col:nth-child(2) { width: 25%; }
+.library-table col:nth-child(3) { width: 9%;  }
+.library-table col:nth-child(4) { width: 11%; }
+.library-table col:nth-child(5) { width: 20%; }
 
 .library-table th {
-    background-color: #0b0f19;
-    color: var(--text-muted);
-    font-size: 0.85rem;
+    padding: 0 var(--sp-3);
+    height: 28px;
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
     position: sticky;
     top: 0;
+    z-index: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.library-table td {
+    padding: 0 var(--sp-3);
+    height: 32px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .library-table tbody tr:hover {
-    background-color: rgba(255, 255, 255, 0.03);
+    background: rgba(45, 133, 205, 0.08);
 }
 
-.loading-cell {
-    text-align: center;
+/* Selected row (highlighted via JS, e.g. after load) */
+.library-table tbody tr.selected {
+    background: var(--title-blue);
+}
+
+.browser-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.btn-expand {
+    padding: 2px 8px !important;
+    font-size: 9px !important;
+    height: 20px !important;
+    line-height: 14px !important;
+    flex: none !important;
+    border-color: var(--blue) !important;
+    color: var(--blue) !important;
+    background: transparent !important;
+}
+
+.btn-expand:active {
+    background: var(--blue) !important;
+    color: var(--on-accent) !important;
+}
+
+/* ── Expanded Browser State & Horizontal Controls Layout ─────────────────── */
+body.browser-expanded {
+    overflow: hidden;
+}
+
+body.browser-expanded .browser-card {
+    flex: 1;
+    max-height: none;
+}
+
+body.browser-expanded .perf-zone {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: auto;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Sakrij mikser u proširenom načinu kako bi oslobodili prostor za deckove */
+body.browser-expanded .mixer-card {
+    display: none;
+}
+
+/* Prebaci deck-card u horizontalni layout */
+body.browser-expanded .deck-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-2) var(--sp-3);
+    height: 52px; /* ultra tanko */
+}
+
+/* Prilagodbe za granice u horizontalnom načinu */
+body.browser-expanded #deck-1-card {
+    border-right: 1px solid var(--border);
+}
+
+body.browser-expanded #deck-2-card {
+    border-left: none;
+}
+
+/* Title strip unutar deck-card u horizontalnom modu */
+body.browser-expanded .deck-card .deck-title-strip {
+    height: auto;
+    background: transparent;
+    padding: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-right: var(--sp-3);
+}
+
+body.browser-expanded .deck-card .deck-name {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: var(--blue);
+}
+
+/* Header info (track title + time) u horizontalnom modu */
+body.browser-expanded .deck-card .deck-header-info {
+    border-bottom: none;
+    padding: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-4);
+    flex: 1;
+    min-width: 0;
+    margin-right: var(--sp-3);
+}
+
+body.browser-expanded .deck-card .track-meta {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
+    flex: 1;
+    min-width: 0;
+}
+
+body.browser-expanded .deck-card .track-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+body.browser-expanded .deck-card .track-artist {
+    font-size: 10px;
     color: var(--text-muted);
-    padding: 20px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
 }
 
-.btn-load {
-    padding: 4px 8px;
-    font-size: 0.75rem;
-    background-color: #1e2530;
-    color: var(--col-blue);
-    border-color: var(--col-blue);
-    margin-right: 5px;
+body.browser-expanded .deck-card .track-stats {
+    margin-top: 0;
+    gap: 6px;
+    flex-wrap: nowrap;
 }
 
-.btn-load:active {
-    background-color: var(--col-blue);
-    color: #fff;
+body.browser-expanded .deck-card .stat-val {
+    font-size: 11px;
+}
+
+body.browser-expanded .deck-card .stat-sep {
+    height: 10px;
+}
+
+body.browser-expanded .deck-card .time-display {
+    font-size: 18px;
+    font-weight: 900;
+    padding-top: 0;
+    color: var(--blue);
+}
+
+/* Pitch/Tempo horizontal slider row u horizontalnom modu */
+body.browser-expanded .deck-card .pitch-control {
+    border-bottom: none;
+    padding: 0;
+    width: 110px;
+    flex-shrink: 0;
+    margin-right: var(--sp-3);
+    background: transparent;
+}
+
+body.browser-expanded .deck-card .pitch-control-label {
+    display: none; /* Sakrij oznaku za veću kompaktnost */
+}
+
+/* Deck footer gumbe u horizontalnom modu */
+body.browser-expanded .deck-card .deck-footer {
+    padding: 0;
+    gap: var(--sp-2);
+    flex-shrink: 0;
+    background: transparent;
+}
+
+body.browser-expanded .deck-card .deck-footer .btn {
+    padding: 6px 10px;
+    font-size: 9px;
+    height: 26px;
+    line-height: 12px;
+}
+
+/* Loop i loop clear gumbe sakrij u horizontalnom modu radi mjesta */
+body.browser-expanded .deck-card .deck-footer .btn-loop {
+    display: none;
+}
+
+body.browser-expanded .browser-card .library-container {
+    display: block;
+}
+
+@media (max-width: 700px) {
+    body {
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    body.browser-expanded {
+        overflow: hidden; /* Zaključaj scroll kad je proširen na malim ekranima */
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+
+    /* U proširenom načinu na mobitelu, deckovi su u koloni (jedan ispod drugog) ali su horizontalnog layouta */
+    body.browser-expanded .perf-zone {
+        flex-direction: column;
+        height: auto;
+    }
+
+    body.browser-expanded #deck-1-card {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .perf-zone {
+        flex-direction: column;
+        overflow: visible;
+        flex: none;
+    }
+
+    .deck-card {
+        border-right: none;
+        border-left: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    #deck-2-card {
+        border-left: none;
+        border-right: none;
+    }
+
+    .mixer-card {
+        width: 100%;
+        border-left: none;
+        border-right: none;
+        border-top: 1px solid var(--border);
+    }
+
+    .mixer-body {
+        justify-content: center;
+        gap: var(--sp-4);
+    }
+
+    .vu-column {
+        display: none;
+    }
+
+    .deck-body {
+        min-height: 120px;
+    }
+
+    .time-display {
+        font-size: 22px;
+    }
+
 }

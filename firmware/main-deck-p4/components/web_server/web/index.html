@@ -3,123 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DDJ-FFL4 Web Controller</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <title>PAJoNIIR Web Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
-    <header class="main-header">
-        <h1>DDJ-FFL4 Web Controller</h1>
+
+    <!-- ── Top Bar ──────────────────────────────────────────────────────── -->
+    <header class="topbar">
+        <div class="topbar-brand">PAJoNIIR</div>
+        <div class="topbar-right">
+            <span class="topbar-label">WEB CONTROLLER</span>
+            <span class="status-dot" id="conn-dot" title="API status"></span>
+        </div>
     </header>
 
-    <main class="container">
-        <!-- Decks Section -->
-        <section class="decks-grid">
-            <!-- DECK 1 -->
-            <div class="deck-card" id="deck-1-card">
-                <div class="deck-header">
-                    <h2>DECK 1</h2>
-                    <span class="badge" id="deck-1-status">IDLE</span>
-                </div>
-                <div class="track-info">
+    <!-- ── Performance Zone: DECK 1 | MIXER | DECK 2 ───────────────────── -->
+    <main class="perf-zone">
+
+        <!-- DECK 1 ──────────────────────────────────────────────────────── -->
+        <div class="deck-card" id="deck-1-card">
+            <div class="deck-title-strip">
+                <span class="deck-name">DECK 1</span>
+                <span class="badge" id="deck-1-status">IDLE</span>
+            </div>
+
+            <div class="deck-header-info">
+                <div class="track-meta">
                     <div class="track-title" id="deck-1-title">No Track</div>
                     <div class="track-artist" id="deck-1-artist">Unknown Artist</div>
+                    <div class="track-stats">
+                        <span class="stat-label">BPM</span>
+                        <span class="val stat-val" id="deck-1-bpm">0</span>
+                        <div class="stat-sep"></div>
+                        <span class="stat-label">PITCH</span>
+                        <span class="val stat-val" id="deck-1-pitch">+0.00%</span>
+                    </div>
                 </div>
-                <div class="track-stats">
-                    <div>BPM: <span class="val" id="deck-1-bpm">0</span></div>
-                    <div>Pitch: <span class="val" id="deck-1-pitch">+0.00%</span></div>
+                <div class="time-display" id="deck-1-time">00:00:00</div>
+            </div>
+
+            <!-- Pitch / Tempo control -->
+            <div class="pitch-control">
+                <span class="pitch-control-label">TEMPO</span>
+                <input type="range" id="deck-1-pitch-slider"
+                       min="0" max="16383" value="8192"
+                       oninput="onPitchChange(1, this.value)">
+            </div>
+
+            <!-- Controls row -->
+            <div class="deck-footer">
+                <button class="btn btn-cue" onclick="sendControl(1, 'cue')">CUE</button>
+                <button class="btn btn-play" id="deck-1-play-btn" onclick="sendControl(1, 'play_pause')">PLAY</button>
+                <button class="btn btn-loop" onclick="sendControl(1, 'loop_4')">4B LOOP</button>
+                <button class="btn btn-loop" onclick="sendControl(1, 'loop_clear')">CLEAR</button>
+            </div>
+        </div>
+
+        <!-- MIXER ───────────────────────────────────────────────────────── -->
+        <section class="mixer-card">
+            <div class="mixer-title-strip">MIXER</div>
+
+            <div class="mixer-body">
+                <!-- Channel 1 -->
+                <div class="channel-strip">
+                    <span class="ch-label">CH 1</span>
+                    <button class="btn btn-pfl" id="deck-1-pfl-btn" onclick="sendControl(1, 'pfl')">CUE</button>
+                    <div class="fader-track-wrap">
+                        <input type="range" id="deck-1-vol"
+                               class="vertical-slider" orient="vertical"
+                               min="0" max="16383" value="16383"
+                               oninput="onVolumeChange(1, this.value)">
+                    </div>
                 </div>
-                <div class="time-display" id="deck-1-time">00:00.00</div>
-                <div class="deck-controls">
-                    <button class="btn btn-cue" onclick="sendControl(1, 'cue')">CUE</button>
-                    <button class="btn btn-play" id="deck-1-play-btn" onclick="sendControl(1, 'play_pause')">PLAY</button>
+
+                <!-- Decorative VU meter -->
+                <div class="vu-column">
+                    <div class="vu-bar-container">
+                        <div class="vu-seg vu-red"></div>
+                        <div class="vu-seg vu-red"></div>
+                        <div class="vu-seg vu-amber"></div>
+                        <div class="vu-seg vu-amber"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green vu-active"></div>
+                    </div>
                 </div>
-                <div class="pitch-control">
-                    <label for="deck-1-pitch-slider">Pitch</label>
-                    <input type="range" id="deck-1-pitch-slider" min="0" max="16383" value="8192" oninput="onPitchChange(1, this.value)">
-                </div>
-                <div class="loop-controls">
-                    <button class="btn btn-loop" onclick="sendControl(1, 'loop_4')">4B Loop</button>
-                    <button class="btn btn-loop" onclick="sendControl(1, 'loop_clear')">Clear</button>
+
+                <!-- Channel 2 -->
+                <div class="channel-strip">
+                    <span class="ch-label">CH 2</span>
+                    <button class="btn btn-pfl" id="deck-2-pfl-btn" onclick="sendControl(2, 'pfl')">CUE</button>
+                    <div class="fader-track-wrap">
+                        <input type="range" id="deck-2-vol"
+                               class="vertical-slider" orient="vertical"
+                               min="0" max="16383" value="16383"
+                               oninput="onVolumeChange(2, this.value)">
+                    </div>
                 </div>
             </div>
 
-            <!-- DECK 2 -->
-            <div class="deck-card" id="deck-2-card">
-                <div class="deck-header">
-                    <h2>DECK 2</h2>
-                    <span class="badge" id="deck-2-status">IDLE</span>
+            <!-- Crossfader -->
+            <div class="crossfader-section">
+                <span class="crossfader-label">CROSSFADER</span>
+                <div class="crossfader-wrap">
+                    <input type="range" id="crossfader"
+                           min="0" max="16383" value="8192"
+                           oninput="onCrossfaderChange(this.value)">
+                    <div class="cf-center-notch"></div>
                 </div>
-                <div class="track-info">
+            </div>
+        </section>
+
+        <!-- DECK 2 ──────────────────────────────────────────────────────── -->
+        <div class="deck-card" id="deck-2-card">
+            <div class="deck-title-strip">
+                <span class="deck-name">DECK 2</span>
+                <span class="badge" id="deck-2-status">IDLE</span>
+            </div>
+
+            <div class="deck-header-info">
+                <div class="track-meta">
                     <div class="track-title" id="deck-2-title">No Track</div>
                     <div class="track-artist" id="deck-2-artist">Unknown Artist</div>
+                    <div class="track-stats">
+                        <span class="stat-label">BPM</span>
+                        <span class="val stat-val" id="deck-2-bpm">0</span>
+                        <div class="stat-sep"></div>
+                        <span class="stat-label">PITCH</span>
+                        <span class="val stat-val" id="deck-2-pitch">+0.00%</span>
+                    </div>
                 </div>
-                <div class="track-stats">
-                    <div>BPM: <span class="val" id="deck-2-bpm">0</span></div>
-                    <div>Pitch: <span class="val" id="deck-2-pitch">+0.00%</span></div>
-                </div>
-                <div class="time-display" id="deck-2-time">00:00.00</div>
-                <div class="deck-controls">
-                    <button class="btn btn-cue" onclick="sendControl(2, 'cue')">CUE</button>
-                    <button class="btn btn-play" id="deck-2-play-btn" onclick="sendControl(2, 'play_pause')">PLAY</button>
-                </div>
-                <div class="pitch-control">
-                    <label for="deck-2-pitch-slider">Pitch</label>
-                    <input type="range" id="deck-2-pitch-slider" min="0" max="16383" value="8192" oninput="onPitchChange(2, this.value)">
-                </div>
-                <div class="loop-controls">
-                    <button class="btn btn-loop" onclick="sendControl(2, 'loop_4')">4B Loop</button>
-                    <button class="btn btn-loop" onclick="sendControl(2, 'loop_clear')">Clear</button>
-                </div>
+                <div class="time-display" id="deck-2-time">00:00:00</div>
             </div>
-        </section>
 
-        <!-- Mixer Section -->
-        <section class="mixer-card">
-            <h2>MIXER</h2>
-            <div class="faders-grid">
-                <div class="volume-control">
-                    <span>D1 VOL</span>
-                    <input type="range" id="deck-1-vol" min="0" max="16383" value="16383" orient="vertical" class="vertical-slider" oninput="onVolumeChange(1, this.value)">
-                    <button class="btn btn-pfl" id="deck-1-pfl-btn" onclick="sendControl(1, 'pfl')">PFL</button>
-                </div>
-                <div class="volume-control">
-                    <span>D2 VOL</span>
-                    <input type="range" id="deck-2-vol" min="0" max="16383" value="16383" orient="vertical" class="vertical-slider" oninput="onVolumeChange(2, this.value)">
-                    <button class="btn btn-pfl" id="deck-2-pfl-btn" onclick="sendControl(2, 'pfl')">PFL</button>
-                </div>
+            <!-- Pitch / Tempo control -->
+            <div class="pitch-control">
+                <span class="pitch-control-label">TEMPO</span>
+                <input type="range" id="deck-2-pitch-slider"
+                       min="0" max="16383" value="8192"
+                       oninput="onPitchChange(2, this.value)">
             </div>
-            <div class="crossfader-control">
-                <span>CROSSFADER</span>
-                <input type="range" id="crossfader" min="0" max="16383" value="8192" oninput="onCrossfaderChange(this.value)">
-            </div>
-        </section>
 
-        <!-- Browser Section -->
-        <section class="browser-card">
-            <div class="browser-header">
-                <h2>USB BROWSER</h2>
-                <input type="text" id="search-input" placeholder="Pretraži pjesme..." oninput="filterLibrary()">
+            <div class="deck-footer">
+                <button class="btn btn-cue" onclick="sendControl(2, 'cue')">CUE</button>
+                <button class="btn btn-play" id="deck-2-play-btn" onclick="sendControl(2, 'play_pause')">PLAY</button>
+                <button class="btn btn-loop" onclick="sendControl(2, 'loop_4')">4B LOOP</button>
+                <button class="btn btn-loop" onclick="sendControl(2, 'loop_clear')">CLEAR</button>
             </div>
-            <div class="library-container">
-                <table class="library-table">
-                    <thead>
-                        <tr>
-                            <th>Naslov</th>
-                            <th>Izvođač</th>
-                            <th>BPM</th>
-                            <th>Trajanje</th>
-                            <th>Akcija</th>
-                        </tr>
-                    </thead>
-                    <tbody id="library-body">
-                        <tr>
-                            <td colspan="5" class="loading-cell">Učitavanje knjižnice...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        </div>
+
     </main>
+
+    <!-- ── USB Browser ──────────────────────────────────────────────────── -->
+    <section class="browser-card">
+        <div class="browser-header">
+            <div class="browser-header-left">
+                <h2 class="browser-title">USB BROWSER</h2>
+                <button class="btn btn-expand" id="browser-expand-btn" onclick="toggleBrowserExpand()">SHOW</button>
+            </div>
+            <div class="search-wrap">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" id="search-input"
+                       placeholder="Search collection..."
+                       oninput="filterLibrary()">
+            </div>
+        </div>
+        <div class="library-container">
+            <table class="library-table">
+                <thead>
+                    <tr>
+                        <th>TITLE</th>
+                        <th>ARTIST</th>
+                        <th>BPM</th>
+                        <th>DURATION</th>
+                        <th>ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="library-body">
+                    <tr>
+                        <td colspan="5" class="loading-cell">Učitavanje knjižnice...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
 
     <script src="app.js?v=4"></script>
 </body>
