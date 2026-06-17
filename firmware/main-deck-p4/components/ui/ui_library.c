@@ -1252,14 +1252,51 @@ void ui_library_update(const ui_frame_context_t *ctx)
         }
     }
 
-    if (ctx && s_active_deck_indicator && s_label_indicator_deck) {
-        uint8_t active = ctx->active_deck;
-        if (active == CTRL_DECK_1) {
+    if (ctx && s_active_deck_indicator && s_label_indicator_deck && s_label_indicator_status) {
+        bool d1_playing = ctx->deck_state[CTRL_DECK_1].playing;
+        bool d2_playing = ctx->deck_state[CTRL_DECK_2].playing;
+
+        if (d1_playing && d2_playing) {
+            lv_obj_set_style_bg_color(s_active_deck_indicator, lv_color_hex(0x4DB37A), LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_active_deck_indicator, COL_BORDER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
+            lv_label_set_text(s_label_indicator_deck, "DECK 1+2");
+            lv_label_set_text(s_label_indicator_status, "ACTIVE");
+            lv_obj_set_style_text_color(s_label_indicator_deck, COL_ON_ACCENT, LV_PART_MAIN);
+            lv_obj_set_style_text_color(s_label_indicator_status, COL_ON_ACCENT, LV_PART_MAIN);
+        } else if (d1_playing) {
             lv_obj_set_style_bg_color(s_active_deck_indicator, COL_ACCENT, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_active_deck_indicator, COL_BORDER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
             lv_label_set_text(s_label_indicator_deck, "DECK 1");
-        } else {
+            lv_label_set_text(s_label_indicator_status, "ACTIVE");
+            lv_obj_set_style_text_color(s_label_indicator_deck, COL_ON_ACCENT, LV_PART_MAIN);
+            lv_obj_set_style_text_color(s_label_indicator_status, COL_ON_ACCENT, LV_PART_MAIN);
+        } else if (d2_playing) {
             lv_obj_set_style_bg_color(s_active_deck_indicator, COL_GREEN, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_active_deck_indicator, COL_BORDER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
             lv_label_set_text(s_label_indicator_deck, "DECK 2");
+            lv_label_set_text(s_label_indicator_status, "ACTIVE");
+            lv_obj_set_style_text_color(s_label_indicator_deck, COL_ON_ACCENT, LV_PART_MAIN);
+            lv_obj_set_style_text_color(s_label_indicator_status, COL_ON_ACCENT, LV_PART_MAIN);
+        } else {
+            // Nijedan ne svira: prikazujemo target deck u neaktivnom/ready stanju
+            uint8_t target = ctx->active_deck;
+            lv_color_t target_color = (target == CTRL_DECK_1) ? COL_ACCENT : COL_GREEN;
+            
+            lv_obj_set_style_bg_color(s_active_deck_indicator, COL_PANEL_DK, LV_PART_MAIN);
+            lv_obj_set_style_border_color(s_active_deck_indicator, target_color, LV_PART_MAIN);
+            lv_obj_set_style_border_width(s_active_deck_indicator, 2, LV_PART_MAIN);
+            
+            if (target == CTRL_DECK_1) {
+                lv_label_set_text(s_label_indicator_deck, "DECK 1");
+            } else {
+                lv_label_set_text(s_label_indicator_deck, "DECK 2");
+            }
+            lv_label_set_text(s_label_indicator_status, "READY");
+            lv_obj_set_style_text_color(s_label_indicator_deck, COL_TEXT, LV_PART_MAIN);
+            lv_obj_set_style_text_color(s_label_indicator_status, COL_TEXT_MUTED, LV_PART_MAIN);
         }
     }
 }
