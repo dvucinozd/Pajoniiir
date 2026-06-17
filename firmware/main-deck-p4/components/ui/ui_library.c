@@ -139,7 +139,9 @@ typedef struct {
 } ui_track_load_request_t;
 
 static ui_track_load_result_t s_track_load_worker_result;
+#if 0
 static esp_err_t s_remote_refresh_worker_result;
+#endif
 #endif
 
 #define s_style_screen_bg (*s_library_config.styles.screen_bg)
@@ -395,6 +397,7 @@ static void ui_submit_track_load(int index, uint8_t deck)
     }
 }
 
+#if 0
 static void ui_remote_refresh_worker(void *arg)
 {
     (void)arg;
@@ -433,6 +436,7 @@ static void ui_submit_remote_refresh(void)
         ui_library_status_hold("NO TASK", COL_RED, 2500);
     }
 }
+#endif
 
 static void ui_apply_usb_removed(void)
 {
@@ -716,6 +720,7 @@ static void library_table_event_cb(lv_event_t *e)
     }
 }
 
+#if 0
 static void library_source_local_event_cb(lv_event_t *e)
 {
     (void)e;
@@ -735,6 +740,7 @@ static void library_source_joined_event_cb(lv_event_t *e)
 #endif
     ui_library_update_source_label();
 }
+#endif
 
 void ui_library_init(const ui_library_config_t *config)
 {
@@ -785,48 +791,14 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_cell_value(s_library_table, 0, 3, "TIME");
     ui_library_populate_rows();
 
-    lv_obj_t *btn_src_local = lv_button_create(s_library_screen);
-    lv_obj_remove_style_all(btn_src_local);
-    lv_obj_add_style(btn_src_local, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_src_local, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_src_local, 72, 38);
-    lv_obj_set_pos(btn_src_local, 630, 10);
-    lv_obj_add_event_cb(btn_src_local, library_source_local_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_src_local, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_src_local = lv_label_create(btn_src_local);
-    lv_label_set_text(lbl_src_local, "LOCAL");
-    lv_obj_set_style_text_font(lbl_src_local, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_src_local, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_src_local, LV_ALIGN_CENTER, 0, 0);
-
-    lv_obj_t *btn_src_join = lv_button_create(s_library_screen);
-    lv_obj_remove_style_all(btn_src_join);
-    lv_obj_add_style(btn_src_join, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_add_style(btn_src_join, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(btn_src_join, 72, 38);
-    lv_obj_set_pos(btn_src_join, 708, 10);
-    lv_obj_add_event_cb(btn_src_join, library_source_joined_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_remove_flag(btn_src_join, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-
-    lv_obj_t *lbl_src_join = lv_label_create(btn_src_join);
-    lv_label_set_text(lbl_src_join, "JOINED");
-    lv_obj_set_style_text_font(lbl_src_join, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_src_join, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_src_join, LV_ALIGN_CENTER, 0, 0);
-
-    s_label_library_source = lv_label_create(s_library_screen);
-    lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_source, 630, 52);
-    ui_library_update_source_label();
+    // LOCAL/JOINED source buttons have been removed as per user request (CDJ Link disabled)
 
     s_btn_library_load = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(s_btn_library_load);
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
     lv_obj_set_size(s_btn_library_load, 72, 50);
-    lv_obj_set_pos(s_btn_library_load, 630, 72);
+    lv_obj_set_pos(s_btn_library_load, 630, 10);
     lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -842,7 +814,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
     lv_obj_set_size(s_btn_library_load_deck2, 72, 50);
-    lv_obj_set_pos(s_btn_library_load_deck2, 708, 72);
+    lv_obj_set_pos(s_btn_library_load_deck2, 708, 10);
     lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
     lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -857,7 +829,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_artist);
     lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_artist, 150, 45);
-    lv_obj_set_pos(btn_sort_artist, 630, 132);
+    lv_obj_set_pos(btn_sort_artist, 630, 70);
     lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -871,7 +843,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_name);
     lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_name, 150, 45);
-    lv_obj_set_pos(btn_sort_name, 630, 187);
+    lv_obj_set_pos(btn_sort_name, 630, 125);
     lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -885,7 +857,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_bpm);
     lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_bpm, 150, 45);
-    lv_obj_set_pos(btn_sort_bpm, 630, 242);
+    lv_obj_set_pos(btn_sort_bpm, 630, 180);
     lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -899,7 +871,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_label_set_text(s_label_library_hint, "SELECT TRACK\nLOAD D1/D2");
     lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_hint, 630, 300);
+    lv_obj_set_pos(s_label_library_hint, 630, 240);
     ui_library_set_load_busy(false, NULL);
 
     return s_library_screen;

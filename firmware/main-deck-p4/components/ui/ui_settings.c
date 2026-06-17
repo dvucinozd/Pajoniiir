@@ -67,7 +67,7 @@ static ui_settings_config_t s_config;
 static ui_settings_widgets_t s_widgets;
 static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
-static lv_obj_t *s_label_link_mode = NULL;
+// static lv_obj_t *s_label_link_mode = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
@@ -219,6 +219,7 @@ static void audio_out_event_cb(lv_event_t *event)
 }
 
 #ifndef WIN32
+#if 0
 static void link_mode_event_cb(lv_event_t *event)
 {
     (void)event;
@@ -231,6 +232,7 @@ static void link_mode_event_cb(lv_event_t *event)
     ui_settings_note_link_mode_saved(ui_settings_link_mode_name(next));
     ESP_LOGI(TAG, "Link mode saved: %s", ui_settings_link_mode_name(next));
 }
+#endif
 
 static void cue_mode_event_cb(lv_event_t *event)
 {
@@ -245,6 +247,7 @@ static void cue_mode_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Cue mode saved: %s", ui_settings_cue_mode_name(next));
 }
 
+#if 0
 static void sd_cache_clear_event_cb(lv_event_t *event)
 {
     (void)event;
@@ -266,6 +269,7 @@ static void sd_cache_clear_event_cb(lv_event_t *event)
     ui_settings_invalidate();
     ui_settings_refresh_storage();
 }
+#endif
 #endif
 
 void ui_settings_configure(const ui_settings_config_t *config)
@@ -325,89 +329,29 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
         lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
     }
 
-    lv_obj_t *link_section = ui_settings_section(screen, left_x, 216, left_w, 116, "CDJ LINK ROLE");
-    lv_obj_t *btn_link = lv_button_create(link_section);
-    lv_obj_remove_style_all(btn_link);
-    if (s_config.btn_secondary) {
-        lv_obj_add_style(btn_link, s_config.btn_secondary, LV_PART_MAIN);
-    }
-    if (s_config.pressed) {
-        lv_obj_add_style(btn_link, s_config.pressed, LV_STATE_PRESSED);
-    }
-    lv_obj_set_size(btn_link, 210, 42);
-    lv_obj_set_pos(btn_link, 16, 42);
-#ifndef WIN32
-    lv_obj_add_event_cb(btn_link, link_mode_event_cb, LV_EVENT_CLICKED, NULL);
-#endif
+    // CDJ Link UI elements have been removed as per user request
 
-    s_label_link_mode = lv_label_create(btn_link);
-#ifndef WIN32
-    lv_label_set_text_fmt(s_label_link_mode, "%s", ui_settings_link_mode_name(cfg.link_mode));
-#else
-    lv_label_set_text(s_label_link_mode, "OFF");
-#endif
-    lv_obj_set_style_text_font(s_label_link_mode, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_link_mode, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(s_label_link_mode, LV_ALIGN_CENTER, 0, 0);
-
-    ui_settings_value_label(link_section, "Saved role applies after reboot", COL_AMBER,
-                            &lv_font_montserrat_12, 16, 90);
-
-    lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 312, "SYSTEM STATUS");
+    lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
     lv_obj_t *label_uart_status =
         ui_settings_value_label(status_section,
                                 "Control Link (S3): Offline (no heartbeat)",
-                                COL_RED, &lv_font_montserrat_12, 16, 46);
+                                COL_RED, &lv_font_montserrat_12, 16, 40);
     lv_obj_set_width(label_uart_status, 320);
     lv_label_set_long_mode(label_uart_status, LV_LABEL_LONG_CLIP);
 
-    lv_obj_t *label_link_status =
-        ui_settings_value_label(status_section, "Link: OFF",
-                                COL_ACCENT, &lv_font_montserrat_12, 16, 74);
-    lv_obj_set_width(label_link_status, 320);
-    lv_label_set_long_mode(label_link_status, LV_LABEL_LONG_CLIP);
-
     ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 116);
+                            &lv_font_montserrat_12, 16, 76);
     lv_obj_t *label_sd_status =
         ui_settings_value_label(status_section, "Checking /sd...",
-                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 140);
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 96);
     lv_obj_set_width(label_sd_status, 320);
     lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
 
-    ui_settings_value_label(status_section, "Remote Cache", COL_TEXT_MUTED,
-                            &lv_font_montserrat_12, 16, 176);
-    lv_obj_t *label_sd_cache_status =
-        ui_settings_value_label(status_section, "Checking cache...",
-                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 200);
-    lv_obj_set_width(label_sd_cache_status, 210);
-    lv_label_set_long_mode(label_sd_cache_status, LV_LABEL_LONG_CLIP);
-
-    lv_obj_t *btn_clear_cache = lv_button_create(status_section);
-    lv_obj_remove_style_all(btn_clear_cache);
-    if (s_config.btn_secondary) {
-        lv_obj_add_style(btn_clear_cache, s_config.btn_secondary, LV_PART_MAIN);
-    }
-    if (s_config.pressed) {
-        lv_obj_add_style(btn_clear_cache, s_config.pressed, LV_STATE_PRESSED);
-    }
-    lv_obj_set_size(btn_clear_cache, 116, 34);
-    lv_obj_set_pos(btn_clear_cache, 226, 190);
-#ifndef WIN32
-    lv_obj_add_event_cb(btn_clear_cache, sd_cache_clear_event_cb, LV_EVENT_CLICKED, NULL);
-#endif
-
-    lv_obj_t *lbl_clear_cache = lv_label_create(btn_clear_cache);
-    lv_label_set_text(lbl_clear_cache, "CLEAR");
-    lv_obj_set_style_text_font(lbl_clear_cache, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_clear_cache, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_clear_cache, LV_ALIGN_CENTER, 0, 0);
-
     ui_settings_value_label(status_section, "Board: JC4880P443C_I_W (ESP32-P4 N16R8)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 252);
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 146);
     ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 276);
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 346, 740, 70, "MIXER / PFL ROUTING");
     ui_settings_static_tile(mixer_section, 18, 30, 108, 28,
@@ -447,9 +391,9 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 
     ui_settings_widgets_t settings_widgets = {
         .uart_status = label_uart_status,
-        .link_status = label_link_status,
+        .link_status = NULL,
         .sd_status = label_sd_status,
-        .sd_cache_status = label_sd_cache_status,
+        .sd_cache_status = NULL,
     };
     ui_settings_init(&settings_widgets);
     ui_settings_refresh_storage();
