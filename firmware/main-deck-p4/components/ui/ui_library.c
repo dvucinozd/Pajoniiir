@@ -258,10 +258,10 @@ static void ui_library_fill_row(int i)
 
     ui_library_row_text_t text;
     ui_library_format_row_text(&text, title, artist, bpm, duration_ms);
-    lv_table_set_cell_value(s_library_table, i + 1, 0, text.title);
-    lv_table_set_cell_value(s_library_table, i + 1, 1, text.artist);
-    lv_table_set_cell_value(s_library_table, i + 1, 2, text.bpm);
-    lv_table_set_cell_value(s_library_table, i + 1, 3, text.duration);
+    lv_table_set_cell_value(s_library_table, i, 0, text.title);
+    lv_table_set_cell_value(s_library_table, i, 1, text.artist);
+    lv_table_set_cell_value(s_library_table, i, 2, text.bpm);
+    lv_table_set_cell_value(s_library_table, i, 3, text.duration);
 }
 
 static void ui_library_populate_rows(void)
@@ -270,7 +270,7 @@ static void ui_library_populate_rows(void)
         return;
     }
     int n_tracks = ui_library_media_count();
-    lv_table_set_row_count(s_library_table, n_tracks + 1);
+    lv_table_set_row_count(s_library_table, n_tracks);
     for (int i = 0; i < n_tracks; i++) {
         ui_library_fill_row(i);
     }
@@ -665,7 +665,7 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
 }
 
 static void library_sort_name_event_cb(lv_event_t *e)
@@ -681,7 +681,7 @@ static void library_sort_name_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
 }
 
 static void library_sort_bpm_event_cb(lv_event_t *e)
@@ -697,7 +697,7 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
 }
 
 static void library_table_event_cb(lv_event_t *e)
@@ -707,8 +707,8 @@ static void library_table_event_cb(lv_event_t *e)
     uint32_t col;
     lv_table_get_selected_cell(table, &row, &col);
 
-    if (row > 0 && (int)row <= ui_library_media_count()) {
-        int new_idx = (int)row - 1;
+    if ((int)row >= 0 && (int)row < ui_library_media_count()) {
+        int new_idx = (int)row;
         if (new_idx != s_selected_track_idx) {
             int old_idx = s_selected_track_idx;
             s_selected_track_idx = new_idx;
@@ -758,9 +758,42 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_size(s_library_screen, s_library_config.hor_res, s_library_config.content_h);
     lv_obj_set_pos(s_library_screen, 0, s_library_config.content_y);
 
+    // Fixed header table to prevent it from scrolling away
+    lv_obj_t *s_library_header_table = lv_table_create(s_library_screen);
+    lv_obj_remove_style_all(s_library_header_table);
+    lv_obj_set_size(s_library_header_table, 600, 36);
+    lv_obj_set_pos(s_library_header_table, 10, 10);
+    lv_obj_clear_flag(s_library_header_table, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(s_library_header_table, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_set_style_min_height(s_library_header_table, 36, LV_PART_ITEMS);
+    lv_obj_set_style_max_height(s_library_header_table, 36, LV_PART_ITEMS);
+    lv_obj_set_style_pad_left(s_library_header_table, 6, LV_PART_ITEMS);
+    lv_obj_set_style_pad_right(s_library_header_table, 6, LV_PART_ITEMS);
+    lv_obj_set_style_pad_top(s_library_header_table, 8, LV_PART_ITEMS);
+    lv_obj_set_style_pad_bottom(s_library_header_table, 8, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_library_header_table, COL_BORDER, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_library_header_table, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(s_library_header_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(s_library_header_table, COL_PANEL_DK, LV_PART_ITEMS);
+    lv_obj_set_style_bg_opa(s_library_header_table, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_text_color(s_library_header_table, COL_ACCENT, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_12, LV_PART_ITEMS);
+
+    lv_table_set_column_width(s_library_header_table, 0, 290);
+    lv_table_set_column_width(s_library_header_table, 1, 170);
+    lv_table_set_column_width(s_library_header_table, 2, 60);
+    lv_table_set_column_width(s_library_header_table, 3, 80);
+    lv_table_set_row_count(s_library_header_table, 1);
+    lv_table_set_cell_value(s_library_header_table, 0, 0, "TITLE");
+    lv_table_set_cell_value(s_library_header_table, 0, 1, "ARTIST");
+    lv_table_set_cell_value(s_library_header_table, 0, 2, "BPM");
+    lv_table_set_cell_value(s_library_header_table, 0, 3, "TIME");
+
+    // Main scrollable tracks table (height stretched to the bottom of the screen)
     s_library_table = lv_table_create(s_library_screen);
-    lv_obj_set_size(s_library_table, 600, 330);
-    lv_obj_set_pos(s_library_table, 10, 10);
+    lv_obj_set_size(s_library_table, 600, 378);
+    lv_obj_set_pos(s_library_table, 10, 46);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_set_style_min_height(s_library_table, 36, LV_PART_ITEMS);
@@ -785,27 +818,24 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_column_width(s_library_table, 1, 170);
     lv_table_set_column_width(s_library_table, 2, 60);
     lv_table_set_column_width(s_library_table, 3, 80);
-    lv_table_set_cell_value(s_library_table, 0, 0, "TITLE");
-    lv_table_set_cell_value(s_library_table, 0, 1, "ARTIST");
-    lv_table_set_cell_value(s_library_table, 0, 2, "BPM");
-    lv_table_set_cell_value(s_library_table, 0, 3, "TIME");
     ui_library_populate_rows();
 
-    // LOCAL/JOINED source buttons have been removed as per user request (CDJ Link disabled)
-
+    // Stacks LOAD D1/D2 vertically with specific accent coloring
     s_btn_library_load = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(s_btn_library_load);
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load, 72, 50);
+    lv_obj_set_size(s_btn_library_load, 150, 55);
     lv_obj_set_pos(s_btn_library_load, 630, 10);
     lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_set_style_bg_color(s_btn_library_load, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_btn_library_load, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t *lbl_load = lv_label_create(s_btn_library_load);
-    lv_label_set_text(lbl_load, "LOAD D1");
-    lv_obj_set_style_text_font(lbl_load, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_label_set_text(lbl_load, "LOAD DECK 1");
+    lv_obj_set_style_text_font(lbl_load, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_load, COL_ON_ACCENT, LV_PART_MAIN);
     lv_obj_align(lbl_load, LV_ALIGN_CENTER, 0, 0);
 
@@ -813,15 +843,17 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_btn_library_load_deck2);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load_deck2, 72, 50);
-    lv_obj_set_pos(s_btn_library_load_deck2, 708, 10);
+    lv_obj_set_size(s_btn_library_load_deck2, 150, 55);
+    lv_obj_set_pos(s_btn_library_load_deck2, 630, 75);
     lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
     lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_set_style_bg_color(s_btn_library_load_deck2, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_btn_library_load_deck2, LV_OPA_COVER, LV_PART_MAIN);
 
     lv_obj_t *lbl_load_deck2 = lv_label_create(s_btn_library_load_deck2);
-    lv_label_set_text(lbl_load_deck2, "LOAD D2");
-    lv_obj_set_style_text_font(lbl_load_deck2, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_label_set_text(lbl_load_deck2, "LOAD DECK 2");
+    lv_obj_set_style_text_font(lbl_load_deck2, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_load_deck2, COL_ON_ACCENT, LV_PART_MAIN);
     lv_obj_align(lbl_load_deck2, LV_ALIGN_CENTER, 0, 0);
 
@@ -829,7 +861,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_artist);
     lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_artist, 150, 45);
-    lv_obj_set_pos(btn_sort_artist, 630, 70);
+    lv_obj_set_pos(btn_sort_artist, 630, 145);
     lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -843,7 +875,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_name);
     lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_name, 150, 45);
-    lv_obj_set_pos(btn_sort_name, 630, 125);
+    lv_obj_set_pos(btn_sort_name, 630, 195);
     lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -857,7 +889,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_bpm);
     lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_bpm, 150, 45);
-    lv_obj_set_pos(btn_sort_bpm, 630, 180);
+    lv_obj_set_pos(btn_sort_bpm, 630, 245);
     lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -871,7 +903,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_label_set_text(s_label_library_hint, "SELECT TRACK\nLOAD D1/D2");
     lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_hint, 630, 240);
+    lv_obj_set_pos(s_label_library_hint, 630, 305);
     ui_library_set_load_busy(false, NULL);
 
     return s_library_screen;
@@ -946,7 +978,7 @@ void ui_refresh_library(void)
 
     ui_lvgl_lock();
     ui_library_cache_invalidate();
-    lv_table_set_row_count(s_library_table, n + 1);
+    lv_table_set_row_count(s_library_table, n);
 
     for (int i = 0; i < n; i++) {
         ui_library_fill_row(i);
@@ -1005,7 +1037,7 @@ esp_err_t ui_library_select_delta(int delta)
     if (new_idx < 0) new_idx = 0;
     if (new_idx >= n) new_idx = n - 1;
     if (new_idx == s_selected_track_idx) {
-        lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+        lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
         ui_lvgl_unlock();
         return ESP_OK;
     }
@@ -1014,7 +1046,7 @@ esp_err_t ui_library_select_delta(int delta)
     s_selected_track_idx = new_idx;
     ui_library_fill_row(old_idx);
     ui_library_fill_row(new_idx);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
     ui_lvgl_unlock();
     return ESP_OK;
 }
@@ -1082,8 +1114,8 @@ void ui_library_update(const ui_frame_context_t *ctx)
         uint32_t sel_row = LV_TABLE_CELL_NONE;
         uint32_t sel_col = LV_TABLE_CELL_NONE;
         lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
-        if (sel_row == LV_TABLE_CELL_NONE || sel_row == 0) {
-            lv_table_set_selected_cell(s_library_table, s_selected_track_idx + 1, 0);
+        if (sel_row == LV_TABLE_CELL_NONE) {
+            lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
         }
     }
 }
