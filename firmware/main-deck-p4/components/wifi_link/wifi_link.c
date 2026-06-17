@@ -46,8 +46,7 @@ static esp_err_t make_identity(void)
     }
     snprintf(s_status.peer_id, sizeof(s_status.peer_id), "%02X%02X%02X%02X%02X%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    snprintf(s_status.ssid, sizeof(s_status.ssid), WIFI_LINK_SOFTAP_PREFIX "%02X%02X",
-             mac[4], mac[5]);
+    snprintf(s_status.ssid, sizeof(s_status.ssid), "%s", WIFI_LINK_SOFTAP_PREFIX);
     return ESP_OK;
 }
 
@@ -121,7 +120,17 @@ static esp_err_t ensure_wifi_stack(void)
 
 static esp_err_t start_host(void)
 {
-    esp_netif_create_default_wifi_ap();
+    esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+    if (ap_netif) {
+        esp_netif_ip_info_t ip_info;
+        memset(&ip_info, 0, sizeof(ip_info));
+        ip_info.ip.addr = ESP_IP4TOADDR(192, 168, 4, 1);
+        ip_info.gw.addr = ESP_IP4TOADDR(192, 168, 4, 1);
+        ip_info.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
+        esp_netif_dhcps_stop(ap_netif);
+        esp_netif_set_ip_info(ap_netif, &ip_info);
+        esp_netif_dhcps_start(ap_netif);
+    }
 
     wifi_config_t cfg = {0};
     copy_wifi_bytes(cfg.ap.ssid, sizeof(cfg.ap.ssid), s_status.ssid);

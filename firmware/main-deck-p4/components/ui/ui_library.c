@@ -1178,4 +1178,35 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
 #endif
 }
 
+esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
+{
+#ifndef WIN32
+    if (index < 0 || index >= media_catalog_count()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ui_submit_track_load(index, deck);
+    return ESP_OK;
+#else
+    if (index < 0 || index >= library_count()) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    mock_library_load_track_to_deck(index);
+    library_track_t *track = library_get_ptr(index);
+    if (track) {
+        library_load_anlz(track);
+        library_load_current_anlz(track);
+        const anlz_metadata_t *meta = library_get_current_anlz();
+        ui_library_apply_loaded_track(deck,
+                                      track->title,
+                                      track->artist,
+                                      track->bpm,
+                                      track->duration_ms,
+                                      track->waveform_low,
+                                      track->has_waveform != 0,
+                                      meta);
+    }
+    return ESP_OK;
+#endif
+}
+
 #endif

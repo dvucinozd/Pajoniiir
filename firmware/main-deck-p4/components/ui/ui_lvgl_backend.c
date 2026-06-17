@@ -144,7 +144,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
 
 #define LVGL_TICK_PERIOD_MS        2
 #define LVGL_TASK_STACK            (24 * 1024)
-#define LVGL_TASK_PRIO             2
+#define LVGL_TASK_PRIO             4
 #define UI_DSI_FB_COUNT            3
 #define UI_LVGL_PARTIAL_BUF_ROWS   80u
 #define UI_PERF_SPIKE_THRESHOLD_US 20000u
@@ -588,7 +588,7 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
 
 esp_err_t ui_lvgl_backend_start(void)
 {
-    if (xTaskCreate(ui_lvgl_task, "lvgl", LVGL_TASK_STACK, NULL, LVGL_TASK_PRIO, NULL) != pdPASS) {
+    if (xTaskCreatePinnedToCore(ui_lvgl_task, "lvgl", LVGL_TASK_STACK, NULL, LVGL_TASK_PRIO, NULL, 1) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;

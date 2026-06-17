@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DDJ-FFL4 Web Controller</title>
+    <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+    <header class="main-header">
+        <h1>DDJ-FFL4 Web Controller</h1>
+    </header>
+
+    <main class="container">
+        <!-- Decks Section -->
+        <section class="decks-grid">
+            <!-- DECK 1 -->
+            <div class="deck-card" id="deck-1-card">
+                <div class="deck-header">
+                    <h2>DECK 1</h2>
+                    <span class="badge" id="deck-1-status">IDLE</span>
+                </div>
+                <div class="track-info">
+                    <div class="track-title" id="deck-1-title">No Track</div>
+                    <div class="track-artist" id="deck-1-artist">Unknown Artist</div>
+                </div>
+                <div class="track-stats">
+                    <div>BPM: <span class="val" id="deck-1-bpm">0</span></div>
+                    <div>Pitch: <span class="val" id="deck-1-pitch">+0.00%</span></div>
+                </div>
+                <div class="time-display" id="deck-1-time">00:00.00</div>
+                <div class="deck-controls">
+                    <button class="btn btn-cue" onclick="sendControl(1, 'cue')">CUE</button>
+                    <button class="btn btn-play" id="deck-1-play-btn" onclick="sendControl(1, 'play_pause')">PLAY</button>
+                </div>
+                <div class="pitch-control">
+                    <label for="deck-1-pitch-slider">Pitch</label>
+                    <input type="range" id="deck-1-pitch-slider" min="0" max="16383" value="8192" oninput="onPitchChange(1, this.value)">
+                </div>
+                <div class="loop-controls">
+                    <button class="btn btn-loop" onclick="sendControl(1, 'loop_4')">4B Loop</button>
+                    <button class="btn btn-loop" onclick="sendControl(1, 'loop_clear')">Clear</button>
+                </div>
+            </div>
+
+            <!-- DECK 2 -->
+            <div class="deck-card" id="deck-2-card">
+                <div class="deck-header">
+                    <h2>DECK 2</h2>
+                    <span class="badge" id="deck-2-status">IDLE</span>
+                </div>
+                <div class="track-info">
+                    <div class="track-title" id="deck-2-title">No Track</div>
+                    <div class="track-artist" id="deck-2-artist">Unknown Artist</div>
+                </div>
+                <div class="track-stats">
+                    <div>BPM: <span class="val" id="deck-2-bpm">0</span></div>
+                    <div>Pitch: <span class="val" id="deck-2-pitch">+0.00%</span></div>
+                </div>
+                <div class="time-display" id="deck-2-time">00:00.00</div>
+                <div class="deck-controls">
+                    <button class="btn btn-cue" onclick="sendControl(2, 'cue')">CUE</button>
+                    <button class="btn btn-play" id="deck-2-play-btn" onclick="sendControl(2, 'play_pause')">PLAY</button>
+                </div>
+                <div class="pitch-control">
+                    <label for="deck-2-pitch-slider">Pitch</label>
+                    <input type="range" id="deck-2-pitch-slider" min="0" max="16383" value="8192" oninput="onPitchChange(2, this.value)">
+                </div>
+                <div class="loop-controls">
+                    <button class="btn btn-loop" onclick="sendControl(2, 'loop_4')">4B Loop</button>
+                    <button class="btn btn-loop" onclick="sendControl(2, 'loop_clear')">Clear</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mixer Section -->
+        <section class="mixer-card">
+            <h2>MIXER</h2>
+            <div class="faders-grid">
+                <div class="volume-control">
+                    <span>D1 VOL</span>
+                    <input type="range" id="deck-1-vol" min="0" max="16383" value="16383" orient="vertical" class="vertical-slider" oninput="onVolumeChange(1, this.value)">
+                    <button class="btn btn-pfl" id="deck-1-pfl-btn" onclick="sendControl(1, 'pfl')">PFL</button>
+                </div>
+                <div class="volume-control">
+                    <span>D2 VOL</span>
+                    <input type="range" id="deck-2-vol" min="0" max="16383" value="16383" orient="vertical" class="vertical-slider" oninput="onVolumeChange(2, this.value)">
+                    <button class="btn btn-pfl" id="deck-2-pfl-btn" onclick="sendControl(2, 'pfl')">PFL</button>
+                </div>
+            </div>
+            <div class="crossfader-control">
+                <span>CROSSFADER</span>
+                <input type="range" id="crossfader" min="0" max="16383" value="8192" oninput="onCrossfaderChange(this.value)">
+            </div>
+        </section>
+
+        <!-- Browser Section -->
+        <section class="browser-card">
+            <div class="browser-header">
+                <h2>USB BROWSER</h2>
+                <input type="text" id="search-input" placeholder="Pretraži pjesme..." oninput="filterLibrary()">
+            </div>
+            <div class="library-container">
+                <table class="library-table">
+                    <thead>
+                        <tr>
+                            <th>Naslov</th>
+                            <th>Izvođač</th>
+                            <th>BPM</th>
+                            <th>Trajanje</th>
+                            <th>Akcija</th>
+                        </tr>
+                    </thead>
+                    <tbody id="library-body">
+                        <tr>
+                            <td colspan="5" class="loading-cell">Učitavanje knjižnice...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js?v=4"></script>
+</body>
+</html>

@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-#define WIFI_LINK_SOFTAP_PREFIX "DDJ-FFL4-"
-#define WIFI_LINK_PASSWORD      "ddjffl4link"
+#define WIFI_LINK_SOFTAP_PREFIX "PAJONIIR"
+#define WIFI_LINK_PASSWORD      "12345678"
 
 typedef enum {
     WIFI_LINK_MODE_OFF = 0,

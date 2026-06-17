@@ -105,5 +105,6 @@ bool ui_library_has_remote_loaded_track(void);
 bool ui_library_get_loaded_waveform(uint8_t deck,
                                     const uint8_t **waveform_low,
                                     bool *has_waveform);
+esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck);
 
 #endif

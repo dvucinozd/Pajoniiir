@@ -23,3 +23,5 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
 // wrap LVGL API calls in ui_lvgl_lock()/ui_lvgl_unlock(). No-ops on the PC sim.
 void      ui_lvgl_lock(void);
 void      ui_lvgl_unlock(void);
+
+void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms);

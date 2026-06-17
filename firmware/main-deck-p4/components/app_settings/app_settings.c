@@ -11,9 +11,10 @@ static app_settings_t s_cfg = {
     .audio_out     = 0,   /* speaker */
     .backlight_pct = 80,
     .time_remain   = 0,
-    .link_mode     = 0,
+    .link_mode     = 1,   /* host USB mode - Wi-Fi AP active */
     .cue_mode      = 0,   /* stereo master */
 };
+
 
 static void save_u8(const char *key, uint8_t v)
 {

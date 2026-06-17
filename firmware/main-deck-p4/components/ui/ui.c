@@ -995,3 +995,20 @@ void ui_update(void) {
     }
 #endif
 }
+
+void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms)
+{
+    uint8_t idx = ui_deck_index(deck);
+    if (out_title && title_max > 0) {
+        snprintf(out_title, title_max, "%s", s_deck_track_info[idx].title[0] ? s_deck_track_info[idx].title : "No Track");
+    }
+    if (out_artist && artist_max > 0) {
+        snprintf(out_artist, artist_max, "%s", s_deck_track_info[idx].artist[0] ? s_deck_track_info[idx].artist : "Unknown Artist");
+    }
+    if (out_bpm) {
+        *out_bpm = s_deck_track_info[idx].bpm;
+    }
+    if (out_duration_ms) {
+        *out_duration_ms = s_deck_track_info[idx].duration_ms;
+    }
+}

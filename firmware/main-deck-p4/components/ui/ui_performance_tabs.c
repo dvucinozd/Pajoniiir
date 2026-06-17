@@ -83,12 +83,14 @@ static const anlz_metadata_t *ui_performance_tabs_active_anlz(void)
 
 static void ui_performance_tabs_format_time(char *out, size_t out_sz, uint32_t ms)
 {
-    uint32_t secs = ms / 1000u;
-    uint32_t centis = (ms % 1000u) / 10u;
-    snprintf(out, out_sz, "%02u:%02u.%02u",
-             (unsigned)(secs / 60u),
-             (unsigned)(secs % 60u),
-             (unsigned)centis);
+    uint32_t total_secs = ms / 1000u;
+    uint32_t hrs = total_secs / 3600u;
+    uint32_t mins = (total_secs % 3600u) / 60u;
+    uint32_t secs = total_secs % 60u;
+    snprintf(out, out_sz, "%02u:%02u:%02u",
+             (unsigned)hrs,
+             (unsigned)mins,
+             (unsigned)secs);
 }
 
 static void ui_performance_tabs_label_small_caps(lv_obj_t *label,

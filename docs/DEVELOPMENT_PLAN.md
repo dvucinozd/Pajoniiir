@@ -415,3 +415,7 @@ Validation note, 2026-06-10:
   - Relocated beat pulse indicators (flashing boxes) below the lower waveform (Y=288 for Deck 1 and Y=300 for Deck 2) to prevent overlapping with the shifted waveform.
   - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the DECK 1 and DECK 2 labels.
   - Resized the `panel->label_deck` ("DECK 1" / "DECK 2") to **76x38px** to match the dimensions of the Play/Cue buttons, reduced the font size to **16** (`lv_font_montserrat_16`), centered the text (with a top padding of **10px**), and replaced the white play-state outline with a neon green (`COL_GREEN`) PFL outline on a neutral background.
+- **Time formatting and Web Control performance optimization (2026-06-17)**:
+  - Removed centiseconds from time representation and applied `hh:mm:ss` format across the physical screen (Overview status, deck panels, and Performance tabs) and the mobile web controller interface.
+  - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
+  - Applied CPU Core Affinity (Task Pinning): pinned the main `lvgl` graphics task to **Core 1** and the HTTP web server task to **Core 0** (with `config.core_id = 0`), isolating waveform drawing from network interrupts and web socket processing.

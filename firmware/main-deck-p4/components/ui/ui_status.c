@@ -300,17 +300,17 @@ static void ui_status_update_time(const ui_frame_context_t *ctx)
     uint32_t remain_seconds = remain_ms / 1000u;
     if (elapsed_seconds != s_cache_elapsed_seconds) {
         s_cache_elapsed_seconds = elapsed_seconds;
-        lv_label_set_text_fmt(s_widgets.time_elapsed, "%02u:%02u.%02u",
-                              (unsigned)(elapsed_ms / 60000u),
-                              (unsigned)((elapsed_ms % 60000u) / 1000u),
-                              (unsigned)((elapsed_ms % 1000u) / 10u));
+        unsigned hrs = elapsed_seconds / 3600u;
+        unsigned mins = (elapsed_seconds % 3600u) / 60u;
+        unsigned secs = elapsed_seconds % 60u;
+        lv_label_set_text_fmt(s_widgets.time_elapsed, "%02u:%02u:%02u", hrs, mins, secs);
     }
     if (remain_seconds != s_cache_remain_seconds) {
         s_cache_remain_seconds = remain_seconds;
-        lv_label_set_text_fmt(s_widgets.time_remain, "-%02u:%02u.%02u",
-                              (unsigned)(remain_ms / 60000u),
-                              (unsigned)((remain_ms % 60000u) / 1000u),
-                              (unsigned)((remain_ms % 1000u) / 10u));
+        unsigned hrs = remain_seconds / 3600u;
+        unsigned mins = (remain_seconds % 3600u) / 60u;
+        unsigned secs = remain_seconds % 60u;
+        lv_label_set_text_fmt(s_widgets.time_remain, "-%02u:%02u:%02u", hrs, mins, secs);
     }
 }
 

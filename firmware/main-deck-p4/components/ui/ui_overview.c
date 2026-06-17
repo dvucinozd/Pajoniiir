@@ -1635,17 +1635,20 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
     uint32_t time_bucket = remain_ms / OVERVIEW_TIME_UPDATE_MS;
     if (time_bucket != panel->last_time_bucket) {
-        char mins_text[8];
+        char mins_text[12];
         char secs_text[4];
         char fraction_text[8];
         panel->last_time_bucket = time_bucket;
         uint32_t display_remain_ms = time_bucket * OVERVIEW_TIME_UPDATE_MS;
-        snprintf(mins_text, sizeof(mins_text), "-%02u",
-                 (unsigned)(display_remain_ms / 60000));
-        snprintf(secs_text, sizeof(secs_text), "%02u",
-                 (unsigned)((display_remain_ms % 60000) / 1000));
-        snprintf(fraction_text, sizeof(fraction_text), ".%02u",
-                 (unsigned)((display_remain_ms % 1000) / 10));
+        uint32_t total_secs = display_remain_ms / 1000u;
+        uint32_t hrs = total_secs / 3600u;
+        uint32_t mins = (total_secs % 3600u) / 60u;
+        uint32_t secs = total_secs % 60u;
+
+        snprintf(mins_text, sizeof(mins_text), "-%02u", (unsigned)hrs);
+        snprintf(secs_text, sizeof(secs_text), "%02u", (unsigned)mins);
+        snprintf(fraction_text, sizeof(fraction_text), ":%02u", (unsigned)secs);
+
         ui_label_set_text_if_changed(panel->label_time, mins_text);
         ui_label_set_text_if_changed(panel->label_time_secs, secs_text);
         ui_label_set_text_if_changed(panel->label_time_fraction, fraction_text);
@@ -1655,10 +1658,14 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     if (remain_bucket != panel->last_remain_bucket) {
         char text[16];
         panel->last_remain_bucket = remain_bucket;
-        snprintf(text, sizeof(text), "-%02u:%02u.%02u",
-                 (unsigned)(remain_ms / 60000),
-                 (unsigned)((remain_ms % 60000) / 1000),
-                 (unsigned)((remain_ms % 1000) / 10));
+        uint32_t total_secs = remain_ms / 1000u;
+        uint32_t hrs = total_secs / 3600u;
+        uint32_t mins = (total_secs % 3600u) / 60u;
+        uint32_t secs = total_secs % 60u;
+        snprintf(text, sizeof(text), "-%02u:%02u:%02u",
+                 (unsigned)hrs,
+                 (unsigned)mins,
+                 (unsigned)secs);
         ui_label_set_text_if_changed(panel->label_remain, text);
     }
 

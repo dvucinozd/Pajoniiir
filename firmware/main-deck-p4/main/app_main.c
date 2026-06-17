@@ -8,7 +8,7 @@
 #include "app_settings.h"
 #include "media_io_gate.h"
 #include "wifi_link.h"
-#include "cdj_link_server.h"
+#include "web_server.h"
 #include "sd_diag_log.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -22,9 +22,6 @@ static void on_usb_storage_event(bool mounted)
         esp_err_t rc = library_init();   // open export.pdb, build the track index
         if (rc == ESP_OK) {
             ESP_LOGI(TAG, "USB media library loaded: %d tracks", library_count());
-            if (app_settings_get().link_mode == WIFI_LINK_MODE_HOST) {
-                cdj_link_server_rebuild_library();
-            }
         } else {
             ESP_LOGW(TAG, "library_init after USB mount: %s", esp_err_to_name(rc));
         }
@@ -36,9 +33,6 @@ static void on_usb_storage_event(bool mounted)
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
         library_clear();
-        if (app_settings_get().link_mode == WIFI_LINK_MODE_HOST) {
-            cdj_link_server_rebuild_library();
-        }
         ui_notify_usb_removed();
         ui_trigger_library_refresh();
     }
@@ -77,7 +71,8 @@ void app_main(void)
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init(%u): %s", (unsigned)link_mode, esp_err_to_name(wifi_rc));
     } else if (link_mode == WIFI_LINK_MODE_HOST) {
-        ESP_ERROR_CHECK(cdj_link_server_start());
+        ESP_ERROR_CHECK(web_server_start());
+        ESP_ERROR_CHECK(dns_server_start());
     }
 
     // ── Media and audio ──────────────────────────────────────────────────────
@@ -86,9 +81,8 @@ void app_main(void)
     esp_err_t lib_rc = library_init();
     if (lib_rc != ESP_OK) {
         ESP_LOGW(TAG, "library_init: %s (USB not mounted yet — OK)", esp_err_to_name(lib_rc));
-    } else if (link_mode == WIFI_LINK_MODE_HOST) {
-        cdj_link_server_rebuild_library();
     }
+
     ESP_ERROR_CHECK(audio_engine_init());
     audio_engine_set_cue_mode(app_settings_get().cue_mode);
 
