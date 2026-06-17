@@ -98,7 +98,9 @@ static lv_obj_t *s_library_table = NULL;
 static lv_obj_t *s_label_library_source = NULL;
 static lv_obj_t *s_btn_library_load = NULL;
 static lv_obj_t *s_btn_library_load_deck2 = NULL;
-static lv_obj_t *s_label_library_hint = NULL;
+static lv_obj_t *s_active_deck_indicator = NULL;
+static lv_obj_t *s_label_indicator_deck = NULL;
+static lv_obj_t *s_label_indicator_status = NULL;
 static int s_active_tab = 0;
 static int s_selected_track_idx = 0;
 static volatile bool s_library_needs_refresh = false;
@@ -211,9 +213,7 @@ static void ui_library_set_load_busy(bool busy, const char *hint)
         }
     }
 
-    if (s_label_library_hint) {
-        lv_label_set_text(s_label_library_hint, hint ? hint : "SELECT TRACK\nLOAD D1/D2");
-    }
+    (void)hint;
 }
 
 static void ui_library_update_source_label(void)
@@ -928,13 +928,35 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_column_width(s_library_table, 3, 80);
     ui_library_populate_rows();
 
-    // Stacks LOAD D1/D2 vertically with specific accent coloring
+    // Active Deck Indicator (150x150 square)
+    s_active_deck_indicator = lv_obj_create(s_library_screen);
+    lv_obj_remove_style_all(s_active_deck_indicator);
+    lv_obj_set_size(s_active_deck_indicator, 150, 150);
+    lv_obj_set_pos(s_active_deck_indicator, 630, 10);
+    lv_obj_set_style_bg_opa(s_active_deck_indicator, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_active_deck_indicator, 10, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_active_deck_indicator, COL_BORDER, LV_PART_MAIN);
+
+    s_label_indicator_deck = lv_label_create(s_active_deck_indicator);
+    lv_label_set_text(s_label_indicator_deck, "DECK 1");
+    lv_obj_set_style_text_font(s_label_indicator_deck, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_indicator_deck, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(s_label_indicator_deck, LV_ALIGN_CENTER, 0, -15);
+
+    s_label_indicator_status = lv_label_create(s_active_deck_indicator);
+    lv_label_set_text(s_label_indicator_status, "ACTIVE");
+    lv_obj_set_style_text_font(s_label_indicator_status, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_indicator_status, COL_ON_ACCENT, LV_PART_MAIN);
+    lv_obj_align(s_label_indicator_status, LV_ALIGN_CENTER, 0, 20);
+
+    // Stacks LOAD D1/D2 vertically with specific accent coloring, pushed down
     s_btn_library_load = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(s_btn_library_load);
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load, 150, 55);
-    lv_obj_set_pos(s_btn_library_load, 630, 10);
+    lv_obj_set_size(s_btn_library_load, 150, 45);
+    lv_obj_set_pos(s_btn_library_load, 630, 175);
     lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -951,8 +973,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_btn_library_load_deck2);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load_deck2, 150, 55);
-    lv_obj_set_pos(s_btn_library_load_deck2, 630, 75);
+    lv_obj_set_size(s_btn_library_load_deck2, 150, 45);
+    lv_obj_set_pos(s_btn_library_load_deck2, 630, 225);
     lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
     lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -968,8 +990,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_artist = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_artist);
     lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_artist, 150, 45);
-    lv_obj_set_pos(btn_sort_artist, 630, 145);
+    lv_obj_set_size(btn_sort_artist, 150, 40);
+    lv_obj_set_pos(btn_sort_artist, 630, 280);
     lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -982,8 +1004,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_name = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_name);
     lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_name, 150, 45);
-    lv_obj_set_pos(btn_sort_name, 630, 195);
+    lv_obj_set_size(btn_sort_name, 150, 40);
+    lv_obj_set_pos(btn_sort_name, 630, 325);
     lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -996,8 +1018,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_bpm = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_bpm);
     lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_bpm, 150, 45);
-    lv_obj_set_pos(btn_sort_bpm, 630, 245);
+    lv_obj_set_size(btn_sort_bpm, 150, 40);
+    lv_obj_set_pos(btn_sort_bpm, 630, 370);
     lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -1007,11 +1029,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(lbl_sort_bpm, COL_TEXT_MUTED, LV_PART_MAIN);
     lv_obj_align(lbl_sort_bpm, LV_ALIGN_CENTER, 0, 0);
 
-    s_label_library_hint = lv_label_create(s_library_screen);
-    lv_label_set_text(s_label_library_hint, "SELECT TRACK\nLOAD D1/D2");
-    lv_obj_set_style_text_font(s_label_library_hint, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_label_library_hint, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(s_label_library_hint, 630, 305);
+    // s_label_library_hint has been removed
     ui_library_set_load_busy(false, NULL);
 
     return s_library_screen;
@@ -1231,6 +1249,17 @@ void ui_library_update(const ui_frame_context_t *ctx)
         lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
         if (sel_row == LV_TABLE_CELL_NONE) {
             lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+        }
+    }
+
+    if (ctx && s_active_deck_indicator && s_label_indicator_deck) {
+        uint8_t active = ctx->active_deck;
+        if (active == CTRL_DECK_1) {
+            lv_obj_set_style_bg_color(s_active_deck_indicator, COL_ACCENT, LV_PART_MAIN);
+            lv_label_set_text(s_label_indicator_deck, "DECK 1");
+        } else {
+            lv_obj_set_style_bg_color(s_active_deck_indicator, COL_GREEN, LV_PART_MAIN);
+            lv_label_set_text(s_label_indicator_deck, "DECK 2");
         }
     }
 }
