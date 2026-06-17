@@ -778,7 +778,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_bg_color(s_library_header_table, COL_PANEL_DK, LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(s_library_header_table, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_text_color(s_library_header_table, COL_ACCENT, LV_PART_ITEMS);
-    lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_12, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_14, LV_PART_ITEMS);
 
     lv_table_set_column_width(s_library_header_table, 0, 290);
     lv_table_set_column_width(s_library_header_table, 1, 170);
@@ -796,8 +796,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_pos(s_library_table, 10, 46);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    lv_obj_set_style_min_height(s_library_table, 36, LV_PART_ITEMS);
-    lv_obj_set_style_max_height(s_library_table, 36, LV_PART_ITEMS);
+    lv_obj_set_style_min_height(s_library_table, 40, LV_PART_ITEMS);
+    lv_obj_set_style_max_height(s_library_table, 40, LV_PART_ITEMS);
     lv_obj_set_style_pad_left(s_library_table, 6, LV_PART_ITEMS);
     lv_obj_set_style_pad_right(s_library_table, 6, LV_PART_ITEMS);
     lv_obj_set_style_pad_top(s_library_table, 8, LV_PART_ITEMS);
@@ -807,7 +807,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_ITEMS);
     lv_obj_set_style_text_color(s_library_table, COL_TEXT_MUTED, LV_PART_ITEMS);
-    lv_obj_set_style_text_font(s_library_table, &lv_font_montserrat_16, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_library_table, &lv_font_montserrat_18, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ALT, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_color(s_library_table, COL_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_width(s_library_table, 3, LV_PART_ITEMS | LV_STATE_FOCUSED);
