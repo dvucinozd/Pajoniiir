@@ -590,6 +590,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                    OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2) - (OVERVIEW_PLAYHEAD_W / 2),
                    OVERVIEW_WAVE_INSET_Y);
     lv_obj_remove_flag(panel->playhead, LV_OBJ_FLAG_CLICKABLE);
+#ifndef WIN32
+    /* On firmware the PPA chrome path draws its own playhead directly into
+     * the framebuffer.  Keeping this LVGL object visible causes flicker
+     * because LVGL redraws its white bar between PPA blits. */
+    lv_obj_add_flag(panel->playhead, LV_OBJ_FLAG_HIDDEN);
+#endif
     lv_obj_move_foreground(panel->wave_border);
 
     panel->mini_wave_border = lv_obj_create(panel->panel);
@@ -928,24 +934,66 @@ static void ui_overview_overlay_perf_record(ui_overview_perf_counter_t *counter,
     }
 }
 
-static void ui_overview_blit_wave_chrome_rgb565(const ui_overlay_rect_t *logical,
-                                                uint8_t idx)
+/* ---------- playhead burn-in helpers ---------- */
+
+/* Maximum playhead width in pixels – must match OVERVIEW_PLAYHEAD_W. */
+#define PLAYHEAD_BURN_MAX_W 4
+
+/* Temporary column storage for save / restore around the PPA blit.
+ * Each column is OVERVIEW_CV_H uint16_t values.  We need at most
+ * PLAYHEAD_BURN_MAX_W columns, but the ring wrap may split them into two
+ * runs, so we keep room for the worst case (all columns). */
+typedef struct {
+    uint16_t saved[PLAYHEAD_BURN_MAX_W][OVERVIEW_CV_H];
+    int      physical[PLAYHEAD_BURN_MAX_W];   /* physical x in strip */
+    int      count;
+} playhead_burn_ctx_t;
+
+static void playhead_burn_save_and_fill(ui_overview_wave_cache_t *cache,
+                                        playhead_burn_ctx_t *ctx,
+                                        uint16_t color)
 {
-    if (!logical) {
+    ctx->count = 0;
+    if (!cache || !cache->pixels || cache->strip_width_px <= 0 ||
+        cache->view_width_px <= 0 || cache->height_px <= 0) {
         return;
     }
 
-    const uint16_t playhead_color = UI_RGB565(0x00, 0xFF, 0x00); // Bright green
+    int center_logical = cache->view_origin_px + cache->view_width_px / 2;
+    int half = OVERVIEW_PLAYHEAD_W / 2;   /* 1 for a 3-px playhead */
 
-    // Playhead (middle line)
-    ui_overlay_rect_t rect = {
-        .x = logical->x + (logical->w / 2) - (OVERVIEW_PLAYHEAD_W / 2),
-        .y = logical->y,
-        .w = OVERVIEW_PLAYHEAD_W,
-        .h = logical->h,
-    };
-    ui_lvgl_backend_draw_rect_rgb565(&rect, playhead_color);
+    for (int dx = -half; dx <= half && ctx->count < PLAYHEAD_BURN_MAX_W; dx++) {
+        int logical_x = center_logical + dx;
+        int px = (cache->ring_head_px + logical_x) % cache->strip_width_px;
+        if (px < 0) px += cache->strip_width_px;
+        if (px >= cache->strip_width_px) continue;
+
+        ctx->physical[ctx->count] = px;
+        /* save the original column */
+        for (int y = 0; y < cache->height_px; y++) {
+            ctx->saved[ctx->count][y] = cache->pixels[y * cache->stride_px + px];
+        }
+        /* overwrite with playhead colour */
+        for (int y = 0; y < cache->height_px; y++) {
+            cache->pixels[y * cache->stride_px + px] = color;
+        }
+        ctx->count++;
+    }
 }
+
+static void playhead_burn_restore(ui_overview_wave_cache_t *cache,
+                                  const playhead_burn_ctx_t *ctx)
+{
+    if (!cache || !cache->pixels || !ctx) return;
+    for (int i = 0; i < ctx->count; i++) {
+        int px = ctx->physical[i];
+        for (int y = 0; y < cache->height_px; y++) {
+            cache->pixels[y * cache->stride_px + px] = ctx->saved[i][y];
+        }
+    }
+}
+
+/* ---------- overlay blit ---------- */
 
 static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel,
                                                  uint8_t deck,
@@ -963,6 +1011,13 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
     if (!ui_overview_wave_overlay_rect(panel, &logical)) {
         return false;
     }
+
+    /* Burn the playhead into the strip so the PPA blit transfers it
+     * atomically with the waveform – no separate framebuffer write. */
+    const uint16_t playhead_color = UI_RGB565(0x00, 0xFF, 0x00);
+    playhead_burn_ctx_t burn_ctx;
+    playhead_burn_save_and_fill(&s_overview_wave_cache[idx], &burn_ctx,
+                                playhead_color);
 
     ui_lvgl_backend_blit_perf_t total_perf = {0};
     for (uint8_t seg_i = 0; seg_i < cache_report->blit_count; seg_i++) {
@@ -997,10 +1052,14 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
                      (unsigned)seg_i,
                      seg_logical.x, seg_logical.y, seg_logical.w, seg_logical.h,
                      (unsigned)seg->src_x_px);
+            playhead_burn_restore(&s_overview_wave_cache[idx], &burn_ctx);
             return false;
         }
     }
-    ui_overview_blit_wave_chrome_rgb565(&logical, idx);
+
+    /* Restore the strip so the cache stays clean for future scrolling. */
+    playhead_burn_restore(&s_overview_wave_cache[idx], &burn_ctx);
+
     if (out_perf) {
         *out_perf = total_perf;
     }
