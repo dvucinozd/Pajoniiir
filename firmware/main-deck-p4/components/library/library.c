@@ -167,6 +167,12 @@ esp_err_t library_init(void)
         lt->bpm      = pt.bpm;
         lt->duration_ms = (uint32_t)pt.duration_s * 1000u;
 
+        const char *camelot_keys[] = {
+            "8A", "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A",
+            "8B", "9B", "10B", "11B", "12B", "1B", "2B", "3B", "4B", "5B", "6B", "7B"
+        };
+        strncpy(lt->key, camelot_keys[lt->track_id % 24], sizeof(lt->key) - 1);
+
         build_count++;
     }
 
@@ -438,6 +444,22 @@ static int compare_bpm_desc(const void *a, const void *b)
     return compare_bpm_asc(b, a);
 }
 
+static int compare_key_asc(const void *a, const void *b)
+{
+    const library_track_t *ta = (const library_track_t *)a;
+    const library_track_t *tb = (const library_track_t *)b;
+    int cmp = strcasecmp(ta->key, tb->key);
+    if (cmp == 0) {
+        return strcasecmp(ta->title, tb->title);
+    }
+    return cmp;
+}
+
+static int compare_key_desc(const void *a, const void *b)
+{
+    return compare_key_asc(b, a);
+}
+
 void library_sort(int field_type, bool descending)
 {
     if (ensure_library_mutex() != ESP_OK) return;
@@ -454,6 +476,8 @@ void library_sort(int field_type, bool descending)
         qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_title_desc : compare_title_asc);
     } else if (field_type == 2) { // BPM
         qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_bpm_desc : compare_bpm_asc);
+    } else if (field_type == 3) { // Key
+        qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_key_desc : compare_key_asc);
     }
     s_generation++;
     xSemaphoreGiveRecursive(s_library_mutex);

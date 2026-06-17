@@ -14,6 +14,7 @@ typedef struct {
     uint32_t duration_ms;
     char title[96];
     char artist[64];
+    char key[16];
 } media_catalog_row_t;
 
 esp_err_t media_catalog_init(void);

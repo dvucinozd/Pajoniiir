@@ -134,6 +134,11 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
     }
     memset(out_row, 0, sizeof(*out_row));
 
+    const char *camelot_keys[] = {
+        "8A", "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A",
+        "8B", "9B", "10B", "11B", "12B", "1B", "2B", "3B", "4B", "5B", "6B", "7B"
+    };
+
     if (s_source == MEDIA_SOURCE_REMOTE_LINK) {
         if (index >= s_remote_count || !s_remote_records) {
             return ESP_ERR_NOT_FOUND;
@@ -144,6 +149,7 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
         out_row->duration_ms = record->duration_ms;
         copy_str(out_row->title, sizeof(out_row->title), record->title);
         copy_str(out_row->artist, sizeof(out_row->artist), record->artist);
+        copy_str(out_row->key, sizeof(out_row->key), camelot_keys[record->track_key % 24]);
         return ESP_OK;
     }
 
@@ -156,6 +162,7 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
     out_row->duration_ms = track.duration_ms;
     copy_str(out_row->title, sizeof(out_row->title), track.title);
     copy_str(out_row->artist, sizeof(out_row->artist), track.artist);
+    copy_str(out_row->key, sizeof(out_row->key), track.key);
     return ESP_OK;
 }
 
@@ -183,9 +190,27 @@ static int compare_bpm_asc(const void *a, const void *b)
     return strcasecmp(ta->title, tb->title);
 }
 
+static int compare_key_asc(const void *a, const void *b)
+{
+    const cdj_link_track_record_t *ta = (const cdj_link_track_record_t *)a;
+    const cdj_link_track_record_t *tb = (const cdj_link_track_record_t *)b;
+
+    const char *camelot_keys[] = {
+        "8A", "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A",
+        "8B", "9B", "10B", "11B", "12B", "1B", "2B", "3B", "4B", "5B", "6B", "7B"
+    };
+
+    const char *ka = camelot_keys[ta->track_key % 24];
+    const char *kb = camelot_keys[tb->track_key % 24];
+
+    int c = strcasecmp(ka, kb);
+    return c ? c : strcasecmp(ta->title, tb->title);
+}
+
 static int compare_artist_desc(const void *a, const void *b) { return compare_artist_asc(b, a); }
 static int compare_title_desc(const void *a, const void *b) { return compare_title_asc(b, a); }
 static int compare_bpm_desc(const void *a, const void *b) { return compare_bpm_asc(b, a); }
+static int compare_key_desc(const void *a, const void *b) { return compare_key_asc(b, a); }
 
 void media_catalog_sort(int field_type, bool descending)
 {
@@ -205,6 +230,9 @@ void media_catalog_sort(int field_type, bool descending)
     } else if (field_type == 2) {
         qsort(s_remote_records, s_remote_count, sizeof(*s_remote_records),
               descending ? compare_bpm_desc : compare_bpm_asc);
+    } else if (field_type == 3) {
+        qsort(s_remote_records, s_remote_count, sizeof(*s_remote_records),
+              descending ? compare_key_desc : compare_key_asc);
     }
 }
 

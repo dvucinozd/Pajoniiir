@@ -33,6 +33,7 @@ typedef struct {
     char     title[LIBRARY_STR_MAX];      // track title (or filename if no ID3 title)
     char     artist[LIBRARY_STR_MAX];     // artist name (empty string if unknown)
     char     album[LIBRARY_STR_MAX];      // album name  (empty string if unknown)
+    char     key[16];                     // Camelot key (e.g. 8A, 9A)
     uint32_t track_id;                    // Rekordbox internal ID
     uint16_t bpm;                         // BPM from PDB (overwritten by ANLZ if loaded)
 

@@ -15,6 +15,7 @@
 typedef struct {
     char title[UI_LIBRARY_TITLE_TEXT_MAX];
     char artist[UI_LIBRARY_ARTIST_TEXT_MAX];
+    char key[16];
     char bpm[16];
     char duration[16];
 } ui_library_row_text_t;
@@ -29,6 +30,7 @@ typedef struct {
 void ui_library_format_row_text(ui_library_row_text_t *out,
                                 const char *title,
                                 const char *artist,
+                                const char *key,
                                 uint16_t bpm,
                                 uint32_t duration_ms);
 

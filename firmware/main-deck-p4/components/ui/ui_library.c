@@ -41,6 +41,7 @@ static void ui_library_truncate_str(char *dest, size_t dest_size, const char *sr
 void ui_library_format_row_text(ui_library_row_text_t *out,
                                 const char *title,
                                 const char *artist,
+                                const char *key,
                                 uint16_t bpm,
                                 uint32_t duration_ms)
 {
@@ -50,6 +51,8 @@ void ui_library_format_row_text(ui_library_row_text_t *out,
 
     ui_library_truncate_str(out->title, sizeof(out->title), title, 26);
     ui_library_truncate_str(out->artist, sizeof(out->artist), artist, 18);
+    strncpy(out->key, key ? key : "", sizeof(out->key) - 1);
+    out->key[sizeof(out->key) - 1] = '\0';
 
     uint32_t secs = duration_ms / 1000u;
     snprintf(out->bpm, sizeof(out->bpm), "%u", (unsigned)bpm);
@@ -107,6 +110,7 @@ static volatile bool s_library_needs_refresh = false;
 static bool s_sort_artist_desc = false;
 static bool s_sort_name_desc = false;
 static bool s_sort_bpm_desc = false;
+static bool s_sort_key_desc = false;
 static bool s_track_load_busy = false;
 static uint8_t s_library_load_request_deck = CTRL_DECK_1;
 
@@ -236,6 +240,7 @@ static void ui_library_fill_row(int i)
 {
     const char *title = NULL;
     const char *artist = NULL;
+    const char *key = NULL;
     uint16_t bpm = 0;
     uint32_t duration_ms = 0;
 
@@ -248,6 +253,7 @@ static void ui_library_fill_row(int i)
     artist = row.artist;
     bpm = row.bpm;
     duration_ms = row.duration_ms;
+    key = row.key;
 #else
     const library_track_t *track = library_get_ptr(i);
     if (!track) {
@@ -257,14 +263,16 @@ static void ui_library_fill_row(int i)
     artist = track->artist;
     bpm = track->bpm;
     duration_ms = track->duration_ms;
+    key = track->key;
 #endif
 
     ui_library_row_text_t text;
-    ui_library_format_row_text(&text, title, artist, bpm, duration_ms);
+    ui_library_format_row_text(&text, title, artist, key, bpm, duration_ms);
     lv_table_set_cell_value(s_library_table, i, 0, text.title);
     lv_table_set_cell_value(s_library_table, i, 1, text.artist);
-    lv_table_set_cell_value(s_library_table, i, 2, text.bpm);
-    lv_table_set_cell_value(s_library_table, i, 3, text.duration);
+    lv_table_set_cell_value(s_library_table, i, 2, text.key);
+    lv_table_set_cell_value(s_library_table, i, 3, text.bpm);
+    lv_table_set_cell_value(s_library_table, i, 4, text.duration);
 }
 
 static void ui_library_populate_rows(void)
@@ -719,6 +727,22 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
     lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
 }
 
+static void library_sort_key_event_cb(lv_event_t *e)
+{
+    (void)e;
+    if (!s_library_table) return;
+    uint32_t target_key = ui_library_selected_key();
+    s_sort_key_desc = !s_sort_key_desc;
+#ifndef WIN32
+    media_catalog_sort(3, s_sort_key_desc);
+#else
+    library_sort(3, s_sort_key_desc);
+#endif
+    ui_refresh_library();
+    ui_library_preserve_selection_by_key(target_key);
+    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+}
+
 static void library_table_event_cb(lv_event_t *e)
 {
     lv_obj_t *table = lv_event_get_target(e);
@@ -886,15 +910,18 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_library_header_table, COL_ACCENT, LV_PART_ITEMS);
     lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_14, LV_PART_ITEMS);
 
-    lv_table_set_column_width(s_library_header_table, 0, 290);
-    lv_table_set_column_width(s_library_header_table, 1, 170);
-    lv_table_set_column_width(s_library_header_table, 2, 60);
-    lv_table_set_column_width(s_library_header_table, 3, 80);
+    lv_table_set_column_width(s_library_header_table, 0, 230);
+    lv_table_set_column_width(s_library_header_table, 1, 130);
+    lv_table_set_column_width(s_library_header_table, 2, 70);
+    lv_table_set_column_width(s_library_header_table, 3, 75);
+    lv_table_set_column_width(s_library_header_table, 4, 75);
+    lv_table_set_column_count(s_library_header_table, 5);
     lv_table_set_row_count(s_library_header_table, 1);
     lv_table_set_cell_value(s_library_header_table, 0, 0, "TITLE");
     lv_table_set_cell_value(s_library_header_table, 0, 1, "ARTIST");
-    lv_table_set_cell_value(s_library_header_table, 0, 2, "BPM");
-    lv_table_set_cell_value(s_library_header_table, 0, 3, "TIME");
+    lv_table_set_cell_value(s_library_header_table, 0, 2, "KEY");
+    lv_table_set_cell_value(s_library_header_table, 0, 3, "BPM");
+    lv_table_set_cell_value(s_library_header_table, 0, 4, "TIME");
 
     // Main scrollable tracks table (height stretched to the bottom of the screen)
     s_library_table = lv_table_create(s_library_screen);
@@ -922,16 +949,18 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_text_color(s_library_table, COL_ON_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_table_set_column_width(s_library_table, 0, 290);
-    lv_table_set_column_width(s_library_table, 1, 170);
-    lv_table_set_column_width(s_library_table, 2, 60);
-    lv_table_set_column_width(s_library_table, 3, 80);
+    lv_table_set_column_width(s_library_table, 0, 230);
+    lv_table_set_column_width(s_library_table, 1, 130);
+    lv_table_set_column_width(s_library_table, 2, 70);
+    lv_table_set_column_width(s_library_table, 3, 75);
+    lv_table_set_column_width(s_library_table, 4, 75);
+    lv_table_set_column_count(s_library_table, 5);
     ui_library_populate_rows();
 
-    // Active Deck Indicator (150x150 square)
+    // Active Deck Indicator (150x90, reduced height)
     s_active_deck_indicator = lv_obj_create(s_library_screen);
     lv_obj_remove_style_all(s_active_deck_indicator);
-    lv_obj_set_size(s_active_deck_indicator, 150, 150);
+    lv_obj_set_size(s_active_deck_indicator, 150, 90);
     lv_obj_set_pos(s_active_deck_indicator, 630, 10);
     lv_obj_set_style_bg_opa(s_active_deck_indicator, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(s_active_deck_indicator, 10, LV_PART_MAIN);
@@ -942,13 +971,13 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_label_set_text(s_label_indicator_deck, "DECK 1");
     lv_obj_set_style_text_font(s_label_indicator_deck, &lv_font_montserrat_28, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_indicator_deck, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(s_label_indicator_deck, LV_ALIGN_CENTER, 0, -15);
+    lv_obj_align(s_label_indicator_deck, LV_ALIGN_CENTER, 0, -12);
 
     s_label_indicator_status = lv_label_create(s_active_deck_indicator);
     lv_label_set_text(s_label_indicator_status, "ACTIVE");
     lv_obj_set_style_text_font(s_label_indicator_status, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_label_indicator_status, COL_ON_ACCENT, LV_PART_MAIN);
-    lv_obj_align(s_label_indicator_status, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_align(s_label_indicator_status, LV_ALIGN_CENTER, 0, 18);
 
     // Stacks LOAD D1/D2 vertically with specific accent coloring, pushed down
     s_btn_library_load = lv_button_create(s_library_screen);
@@ -956,7 +985,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
     lv_obj_set_size(s_btn_library_load, 150, 45);
-    lv_obj_set_pos(s_btn_library_load, 630, 175);
+    lv_obj_set_pos(s_btn_library_load, 630, 110);
     lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -974,7 +1003,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
     lv_obj_set_size(s_btn_library_load_deck2, 150, 45);
-    lv_obj_set_pos(s_btn_library_load_deck2, 630, 225);
+    lv_obj_set_pos(s_btn_library_load_deck2, 630, 160);
     lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
     lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -991,13 +1020,13 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_artist);
     lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_artist, 150, 40);
-    lv_obj_set_pos(btn_sort_artist, 630, 280);
+    lv_obj_set_pos(btn_sort_artist, 630, 215);
     lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
     lv_obj_t *lbl_sort_artist = lv_label_create(btn_sort_artist);
     lv_label_set_text(lbl_sort_artist, "SORT ARTIST");
-    lv_obj_set_style_text_font(lbl_sort_artist, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl_sort_artist, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_sort_artist, COL_TEXT_MUTED, LV_PART_MAIN);
     lv_obj_align(lbl_sort_artist, LV_ALIGN_CENTER, 0, 0);
 
@@ -1005,13 +1034,13 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_name);
     lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_name, 150, 40);
-    lv_obj_set_pos(btn_sort_name, 630, 325);
+    lv_obj_set_pos(btn_sort_name, 630, 260);
     lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
     lv_obj_t *lbl_sort_name = lv_label_create(btn_sort_name);
     lv_label_set_text(lbl_sort_name, "SORT NAME");
-    lv_obj_set_style_text_font(lbl_sort_name, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl_sort_name, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_sort_name, COL_TEXT_MUTED, LV_PART_MAIN);
     lv_obj_align(lbl_sort_name, LV_ALIGN_CENTER, 0, 0);
 
@@ -1019,15 +1048,29 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(btn_sort_bpm);
     lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
     lv_obj_set_size(btn_sort_bpm, 150, 40);
-    lv_obj_set_pos(btn_sort_bpm, 630, 370);
+    lv_obj_set_pos(btn_sort_bpm, 630, 305);
     lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
     lv_obj_t *lbl_sort_bpm = lv_label_create(btn_sort_bpm);
     lv_label_set_text(lbl_sort_bpm, "SORT BPM");
-    lv_obj_set_style_text_font(lbl_sort_bpm, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl_sort_bpm, &lv_font_montserrat_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl_sort_bpm, COL_TEXT_MUTED, LV_PART_MAIN);
     lv_obj_align(lbl_sort_bpm, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t *btn_sort_key = lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(btn_sort_key);
+    lv_obj_add_style(btn_sort_key, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_set_size(btn_sort_key, 150, 40);
+    lv_obj_set_pos(btn_sort_key, 630, 350);
+    lv_obj_add_event_cb(btn_sort_key, library_sort_key_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(btn_sort_key, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+
+    lv_obj_t *lbl_sort_key = lv_label_create(btn_sort_key);
+    lv_label_set_text(lbl_sort_key, "SORT KEY");
+    lv_obj_set_style_text_font(lbl_sort_key, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_sort_key, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_sort_key, LV_ALIGN_CENTER, 0, 0);
 
     // s_label_library_hint has been removed
     ui_library_set_load_busy(false, NULL);
@@ -1257,7 +1300,7 @@ void ui_library_update(const ui_frame_context_t *ctx)
         bool d2_playing = ctx->deck_state[CTRL_DECK_2].playing;
 
         if (d1_playing && d2_playing) {
-            lv_obj_set_style_bg_color(s_active_deck_indicator, lv_color_hex(0x4DB37A), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(s_active_deck_indicator, COL_RED, LV_PART_MAIN);
             lv_obj_set_style_border_color(s_active_deck_indicator, COL_BORDER, LV_PART_MAIN);
             lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
             lv_label_set_text(s_label_indicator_deck, "DECK 1+2");
