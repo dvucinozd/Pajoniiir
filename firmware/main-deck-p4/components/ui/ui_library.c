@@ -891,7 +891,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     // Fixed header table to prevent it from scrolling away
     lv_obj_t *s_library_header_table = lv_table_create(s_library_screen);
     lv_obj_remove_style_all(s_library_header_table);
-    lv_obj_set_size(s_library_header_table, 600, 36);
+    lv_obj_set_size(s_library_header_table, 630, 36);
     lv_obj_set_pos(s_library_header_table, 10, 10);
     lv_obj_clear_flag(s_library_header_table, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(s_library_header_table, LV_OBJ_FLAG_SCROLLABLE);
@@ -910,8 +910,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_library_header_table, COL_ACCENT, LV_PART_ITEMS);
     lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_14, LV_PART_ITEMS);
 
-    lv_table_set_column_width(s_library_header_table, 0, 260);
-    lv_table_set_column_width(s_library_header_table, 1, 150);
+    lv_table_set_column_width(s_library_header_table, 0, 280);
+    lv_table_set_column_width(s_library_header_table, 1, 160);
     lv_table_set_column_width(s_library_header_table, 2, 70);
     lv_table_set_column_width(s_library_header_table, 3, 55);
     lv_table_set_column_width(s_library_header_table, 4, 65);
@@ -925,7 +925,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
 
     // Main scrollable tracks table (height stretched to the bottom of the screen)
     s_library_table = lv_table_create(s_library_screen);
-    lv_obj_set_size(s_library_table, 600, 378);
+    lv_obj_set_size(s_library_table, 630, 378);
     lv_obj_set_pos(s_library_table, 10, 46);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_library_table, library_table_draw_part_begin_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
@@ -949,19 +949,19 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_text_color(s_library_table, COL_ON_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_table_set_column_width(s_library_table, 0, 260);
-    lv_table_set_column_width(s_library_table, 1, 150);
+    lv_table_set_column_width(s_library_table, 0, 280);
+    lv_table_set_column_width(s_library_table, 1, 160);
     lv_table_set_column_width(s_library_table, 2, 70);
     lv_table_set_column_width(s_library_table, 3, 55);
     lv_table_set_column_width(s_library_table, 4, 65);
     lv_table_set_column_count(s_library_table, 5);
     ui_library_populate_rows();
 
-    // Active Deck Indicator (150x90, reduced height)
+    // Active Deck Indicator (130x90, reduced height and width)
     s_active_deck_indicator = lv_obj_create(s_library_screen);
     lv_obj_remove_style_all(s_active_deck_indicator);
-    lv_obj_set_size(s_active_deck_indicator, 150, 90);
-    lv_obj_set_pos(s_active_deck_indicator, 630, 10);
+    lv_obj_set_size(s_active_deck_indicator, 130, 90);
+    lv_obj_set_pos(s_active_deck_indicator, 660, 10);
     lv_obj_set_style_bg_opa(s_active_deck_indicator, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(s_active_deck_indicator, 10, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_active_deck_indicator, 1, LV_PART_MAIN);
@@ -984,8 +984,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_btn_library_load);
     lv_obj_add_style(s_btn_library_load, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load, 150, 45);
-    lv_obj_set_pos(s_btn_library_load, 630, 110);
+    lv_obj_set_size(s_btn_library_load, 130, 45);
+    lv_obj_set_pos(s_btn_library_load, 660, 110);
     lv_obj_set_user_data(s_btn_library_load, (void *)(uintptr_t)CTRL_DECK_1);
     lv_obj_add_event_cb(s_btn_library_load, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -1002,8 +1002,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_remove_style_all(s_btn_library_load_deck2);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_btn_primary, LV_PART_MAIN);
     lv_obj_add_style(s_btn_library_load_deck2, &s_style_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(s_btn_library_load_deck2, 150, 45);
-    lv_obj_set_pos(s_btn_library_load_deck2, 630, 160);
+    lv_obj_set_size(s_btn_library_load_deck2, 130, 45);
+    lv_obj_set_pos(s_btn_library_load_deck2, 660, 160);
     lv_obj_set_user_data(s_btn_library_load_deck2, (void *)(uintptr_t)CTRL_DECK_2);
     lv_obj_add_event_cb(s_btn_library_load_deck2, library_load_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(s_btn_library_load_deck2, LV_OBJ_FLAG_CLICK_FOCUSABLE);
@@ -1019,8 +1019,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_artist = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_artist);
     lv_obj_add_style(btn_sort_artist, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_artist, 150, 40);
-    lv_obj_set_pos(btn_sort_artist, 630, 215);
+    lv_obj_set_size(btn_sort_artist, 130, 40);
+    lv_obj_set_pos(btn_sort_artist, 660, 215);
     lv_obj_add_event_cb(btn_sort_artist, library_sort_artist_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_artist, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -1033,8 +1033,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_name = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_name);
     lv_obj_add_style(btn_sort_name, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_name, 150, 40);
-    lv_obj_set_pos(btn_sort_name, 630, 260);
+    lv_obj_set_size(btn_sort_name, 130, 40);
+    lv_obj_set_pos(btn_sort_name, 660, 260);
     lv_obj_add_event_cb(btn_sort_name, library_sort_name_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_name, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -1047,8 +1047,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_bpm = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_bpm);
     lv_obj_add_style(btn_sort_bpm, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_bpm, 150, 40);
-    lv_obj_set_pos(btn_sort_bpm, 630, 305);
+    lv_obj_set_size(btn_sort_bpm, 130, 40);
+    lv_obj_set_pos(btn_sort_bpm, 660, 305);
     lv_obj_add_event_cb(btn_sort_bpm, library_sort_bpm_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_bpm, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
@@ -1061,8 +1061,8 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_t *btn_sort_key = lv_button_create(s_library_screen);
     lv_obj_remove_style_all(btn_sort_key);
     lv_obj_add_style(btn_sort_key, &s_style_btn_secondary, LV_PART_MAIN);
-    lv_obj_set_size(btn_sort_key, 150, 40);
-    lv_obj_set_pos(btn_sort_key, 630, 350);
+    lv_obj_set_size(btn_sort_key, 130, 40);
+    lv_obj_set_pos(btn_sort_key, 660, 350);
     lv_obj_add_event_cb(btn_sort_key, library_sort_key_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_remove_flag(btn_sort_key, LV_OBJ_FLAG_CLICK_FOCUSABLE);
 
