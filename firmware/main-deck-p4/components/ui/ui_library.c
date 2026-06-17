@@ -910,11 +910,11 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_library_header_table, COL_ACCENT, LV_PART_ITEMS);
     lv_obj_set_style_text_font(s_library_header_table, &lv_font_montserrat_14, LV_PART_ITEMS);
 
-    lv_table_set_column_width(s_library_header_table, 0, 230);
-    lv_table_set_column_width(s_library_header_table, 1, 130);
+    lv_table_set_column_width(s_library_header_table, 0, 260);
+    lv_table_set_column_width(s_library_header_table, 1, 150);
     lv_table_set_column_width(s_library_header_table, 2, 70);
-    lv_table_set_column_width(s_library_header_table, 3, 75);
-    lv_table_set_column_width(s_library_header_table, 4, 75);
+    lv_table_set_column_width(s_library_header_table, 3, 55);
+    lv_table_set_column_width(s_library_header_table, 4, 65);
     lv_table_set_column_count(s_library_header_table, 5);
     lv_table_set_row_count(s_library_header_table, 1);
     lv_table_set_cell_value(s_library_header_table, 0, 0, "TITLE");
@@ -949,11 +949,11 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_obj_set_style_border_side(s_library_table, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_border_opa(s_library_table, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_FOCUSED);
     lv_obj_set_style_text_color(s_library_table, COL_ON_ACCENT, LV_PART_ITEMS | LV_STATE_FOCUSED);
-    lv_table_set_column_width(s_library_table, 0, 230);
-    lv_table_set_column_width(s_library_table, 1, 130);
+    lv_table_set_column_width(s_library_table, 0, 260);
+    lv_table_set_column_width(s_library_table, 1, 150);
     lv_table_set_column_width(s_library_table, 2, 70);
-    lv_table_set_column_width(s_library_table, 3, 75);
-    lv_table_set_column_width(s_library_table, 4, 75);
+    lv_table_set_column_width(s_library_table, 3, 55);
+    lv_table_set_column_width(s_library_table, 4, 65);
     lv_table_set_column_count(s_library_table, 5);
     ui_library_populate_rows();
 
