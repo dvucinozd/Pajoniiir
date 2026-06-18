@@ -4,5 +4,5 @@ idf_component_register(
          "rekordbox_pdb.c"
          "track_meta_cache.c"
     INCLUDE_DIRS "include"
-    REQUIRES log heap freertos media_io_gate cdj_link_protocol sd_diag_log
+    REQUIRES log heap freertos media_io_gate sd_diag_log
 )

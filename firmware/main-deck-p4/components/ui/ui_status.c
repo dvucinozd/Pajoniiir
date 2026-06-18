@@ -165,14 +165,7 @@ lv_color_t ui_status_color_for_text(const char *status)
     if (!status || status[0] == '\0') {
         return COL_RED;
     }
-    if (strcmp(status, "HOST BUSY") == 0) {
-        return COL_AMBER;
-    }
-    if (strcmp(status, "JOIN OFFLINE") == 0 ||
-        strcmp(status, "JOIN FAILED") == 0 ||
-        strcmp(status, "MANIFEST ERR") == 0 ||
-        strcmp(status, "DAT ERR") == 0 ||
-        strcmp(status, "AUDIO ERR") == 0 ||
+    if (strcmp(status, "AUDIO ERR") == 0 ||
         strcmp(status, "TASK CREATE ERR") == 0 ||
         strcmp(status, "STOP ERR") == 0 ||
         strcmp(status, "NO MEM") == 0 ||
@@ -182,17 +175,10 @@ lv_color_t ui_status_color_for_text(const char *status)
         strcmp(status, "LOAD ERR") == 0) {
         return COL_RED;
     }
-    if (strcmp(status, "JOINED") == 0 ||
-        strcmp(status, "CACHE READY") == 0 ||
-        strcmp(status, "TRACK LOADED") == 0) {
+    if (strcmp(status, "TRACK LOADED") == 0) {
         return COL_GREEN;
     }
-    if (strcmp(status, "LOADING") == 0 ||
-        strcmp(status, "CACHE START") == 0 ||
-        strcmp(status, "MANIFEST") == 0 ||
-        strcmp(status, "ANLZ0000.DAT") == 0 ||
-        strcmp(status, "ANLZ0000.EXT") == 0 ||
-        strcmp(status, "audio.mp3") == 0) {
+    if (strcmp(status, "LOADING") == 0) {
         return COL_ACCENT;
     }
     return COL_TEXT_DIM;
