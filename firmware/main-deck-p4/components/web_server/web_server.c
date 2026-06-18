@@ -6,6 +6,7 @@
 #include "media_catalog.h"
 #include "ui.h"
 #include "ui_library.h"
+#include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
 #include <string.h>
@@ -74,37 +75,6 @@ static esp_err_t app_js_handler(httpd_req_t *req)
     return httpd_resp_send(req, (const char *)app_js_start, size);
 }
 
-static void escape_json_string(const char *src, char *dst, size_t dst_max)
-{
-    size_t j = 0;
-    for (size_t i = 0; src[i] != '\0' && j < dst_max - 2; i++) {
-        if (src[i] == '"' || src[i] == '\\') {
-            if (j < dst_max - 3) {
-                dst[j++] = '\\';
-                dst[j++] = src[i];
-            }
-        } else if (src[i] == '\n') {
-            if (j < dst_max - 3) {
-                dst[j++] = '\\';
-                dst[j++] = 'n';
-            }
-        } else if (src[i] == '\r') {
-            if (j < dst_max - 3) {
-                dst[j++] = '\\';
-                dst[j++] = 'r';
-            }
-        } else if (src[i] == '\t') {
-            if (j < dst_max - 3) {
-                dst[j++] = '\\';
-                dst[j++] = 't';
-            }
-        } else {
-            dst[j++] = src[i];
-        }
-    }
-    dst[j] = '\0';
-}
-
 // GET /api/status
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
@@ -133,10 +103,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     char artist1_esc[128] = {0};
     char title2_esc[128] = {0};
     char artist2_esc[128] = {0};
-    escape_json_string(title1, title1_esc, sizeof(title1_esc));
-    escape_json_string(artist1, artist1_esc, sizeof(artist1_esc));
-    escape_json_string(title2, title2_esc, sizeof(title2_esc));
-    escape_json_string(artist2, artist2_esc, sizeof(artist2_esc));
+    web_api_json_escape(title1, title1_esc, sizeof(title1_esc));
+    web_api_json_escape(artist1, artist1_esc, sizeof(artist1_esc));
+    web_api_json_escape(title2, title2_esc, sizeof(title2_esc));
+    web_api_json_escape(artist2, artist2_esc, sizeof(artist2_esc));
 
     const char *state_text1 = "IDLE";
     if (deck1.state == AE_LOADING) state_text1 = "LOADING";
@@ -234,11 +204,19 @@ static esp_err_t api_library_handler(httpd_req_t *req)
     for (int i = 0; i < count; i++) {
         media_catalog_row_t row;
         if (media_catalog_get_row(i, &row) == ESP_OK) {
-            char item[256];
+            char title_esc[256];
+            char artist_esc[256];
+            char item[768];
+            web_api_json_escape(row.title, title_esc, sizeof(title_esc));
+            web_api_json_escape(row.artist, artist_esc, sizeof(artist_esc));
             int item_len = snprintf(item, sizeof(item),
                                     "%s{\"index\":%d,\"title\":\"%s\",\"artist\":\"%s\",\"bpm\":%u,\"duration_ms\":%u}",
                                     first ? "" : ",",
-                                    i, row.title, row.artist, row.bpm, (unsigned)row.duration_ms);
+                                    i, title_esc, artist_esc, row.bpm, (unsigned)row.duration_ms);
+            if (item_len < 0 || (size_t)item_len >= sizeof(item)) {
+                ESP_LOGW(TAG, "Skipping oversized library JSON row index=%d", i);
+                continue;
+            }
             
             // Ako bi dodavanje ovog stavka premašilo sigurnosnu granicu chunka, pošalji trenutni chunk
             if (chunk_len + item_len >= chunk_sz - 10) {
@@ -344,15 +322,29 @@ static esp_err_t api_control_handler(httpd_req_t *req)
         deck_core_queue_event(&ev);
     } else if (strcmp(action, "loop_4") == 0) {
         audio_engine_deck_status_t status = {0};
-        audio_engine_deck_get_status(deck, &status);
+        esp_err_t rc = audio_engine_deck_get_status(deck, &status);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid deck");
+            return ESP_FAIL;
+        }
         uint32_t pos = status.position_ms;
-        // Izračunaj dužinu loopa na temelju BPM-a (npr. default 120 BPM)
-        uint32_t bpm = 12000; // default 120.00 BPM
-        uint32_t beat_len_ms = 6000000 / bpm; // 500 ms
-        uint32_t loop_len_ms = 4 * beat_len_ms; // 2000 ms
-        audio_engine_deck_set_loop(deck, pos, pos + loop_len_ms);
+        uint16_t bpm = ui_library_deck_bpm(deck, 120);
+        if (bpm == 0) {
+            bpm = 120;
+        }
+        uint32_t beat_len_ms = 60000u / bpm;
+        uint32_t loop_len_ms = 4u * beat_len_ms;
+        rc = audio_engine_deck_set_loop(deck, pos, pos + loop_len_ms);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop failed");
+            return ESP_FAIL;
+        }
     } else if (strcmp(action, "loop_clear") == 0) {
-        audio_engine_deck_clear_loop(deck);
+        esp_err_t rc = audio_engine_deck_clear_loop(deck);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop clear failed");
+            return ESP_FAIL;
+        }
     } else {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown action");
         return ESP_FAIL;
@@ -382,6 +374,12 @@ static esp_err_t api_load_handler(httpd_req_t *req)
 
     esp_err_t rc = ui_library_load_track_index_for_deck(index, deck);
     if (rc != ESP_OK) {
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        if (rc == ESP_ERR_INVALID_STATE) {
+            httpd_resp_set_status(req, "409 Conflict");
+            httpd_resp_send(req, "Load busy", HTTPD_RESP_USE_STRLEN);
+            return ESP_FAIL;
+        }
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Load failed");
         return ESP_FAIL;
     }

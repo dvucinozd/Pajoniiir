@@ -118,6 +118,7 @@ static uint32_t s_deck_loaded_track_key[DECK_CORE_DECK_COUNT] = {0, 0};
 static bool s_deck_loaded_track_valid[DECK_CORE_DECK_COUNT] = {false, false};
 
 #ifndef WIN32
+static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
 static bool s_loaded_media_valid[DECK_CORE_DECK_COUNT];
 static media_source_t s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
@@ -147,11 +148,53 @@ typedef struct {
     media_source_t source;
 } ui_track_load_request_t;
 
-static ui_track_load_result_t s_track_load_worker_result;
 #if 0
 static esp_err_t s_remote_refresh_worker_result;
 #endif
 #endif
+
+#ifndef WIN32
+static void ui_track_load_set_status(ui_track_load_result_t *result,
+                                     const char *status,
+                                     const char *fallback)
+{
+    const char *text = (status && status[0]) ? status : fallback;
+    snprintf(result->status, sizeof(result->status), "%.*s",
+             (int)sizeof(result->status) - 1,
+             text ? text : "");
+}
+#endif
+
+static bool ui_library_try_begin_track_load(void)
+{
+#ifndef WIN32
+    bool accepted = false;
+    portENTER_CRITICAL(&s_track_load_lock);
+    if (!s_track_load_busy) {
+        s_track_load_busy = true;
+        accepted = true;
+    }
+    portEXIT_CRITICAL(&s_track_load_lock);
+    return accepted;
+#else
+    if (s_track_load_busy) {
+        return false;
+    }
+    s_track_load_busy = true;
+    return true;
+#endif
+}
+
+static void ui_library_finish_track_load(void)
+{
+#ifndef WIN32
+    portENTER_CRITICAL(&s_track_load_lock);
+    s_track_load_busy = false;
+    portEXIT_CRITICAL(&s_track_load_lock);
+#else
+    s_track_load_busy = false;
+#endif
+}
 
 #define s_style_screen_bg (*s_library_config.styles.screen_bg)
 #define s_style_btn_primary (*s_library_config.styles.btn_primary)
@@ -327,43 +370,46 @@ static void ui_track_load_worker(void *arg)
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
     free(arg);
 
-    ui_track_load_result_t *result = &s_track_load_worker_result;
-    memset(result, 0, sizeof(*result));
-    result->index = req.index;
-    result->deck = req.deck;
-    result->generation = req.generation;
-    result->source = req.source;
-    result->rc = ESP_OK;
+    ui_track_load_result_t result;
+    memset(&result, 0, sizeof(result));
+    result.index = req.index;
+    result.deck = req.deck;
+    result.generation = req.generation;
+    result.source = req.source;
+    result.rc = ESP_OK;
 
-    if (media_catalog_get_from_source(req.source, req.index, &result->item) != ESP_OK) {
-        result->rc = ESP_ERR_NOT_FOUND;
-        snprintf(result->status, sizeof(result->status), "NO TRACK");
+    if (media_catalog_get_from_source(req.source, req.index, &result.item) != ESP_OK) {
+        result.rc = ESP_ERR_NOT_FOUND;
+        ui_track_load_set_status(&result, "NO TRACK", "NO TRACK");
     } else {
-        result->rc = media_catalog_load_from_source(req.source, req.index, &result->loaded);
-        if (result->rc != ESP_OK) {
+        result.rc = media_catalog_load_from_source(req.source, req.index, &result.loaded);
+        if (result.rc != ESP_OK) {
             const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
-            snprintf(result->status, sizeof(result->status), "%s", status && status[0] ? status : "LOAD ERR");
+            ui_track_load_set_status(&result, status, "LOAD ERR");
         } else {
             if (req.deck == CTRL_DECK_1) {
                 audio_engine_clear_loop();
             }
             deck_core_reset_deck(req.deck);
-            result->rc = audio_engine_deck_load(req.deck,
-                                                result->loaded.audio_path,
-                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                                                result->loaded.duration_ms);
-            if (result->rc != ESP_OK) {
-                const char *audio_err = audio_engine_last_error_text();
-                snprintf(result->status, sizeof(result->status), "%s",
-                         audio_err && audio_err[0] ? audio_err : "AUDIO ERR");
+            result.rc = audio_engine_deck_load(req.deck,
+                                               result.loaded.audio_path,
+                                               result.loaded.has_pvbr ? result.loaded.pvbr : NULL,
+                                               result.loaded.duration_ms);
+            if (result.rc != ESP_OK) {
+                audio_engine_deck_status_t deck_status = {0};
+                const char *audio_err = NULL;
+                if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
+                    audio_err = deck_status.last_error_text;
+                }
+                ui_track_load_set_status(&result, audio_err, "AUDIO ERR");
             } else {
-                snprintf(result->status, sizeof(result->status), "TRACK LOADED");
+                ui_track_load_set_status(&result, "TRACK LOADED", "TRACK LOADED");
             }
         }
     }
 
     if (s_track_load_result_q) {
-        xQueueOverwrite(s_track_load_result_q, result);
+        xQueueOverwrite(s_track_load_result_q, &result);
     }
     if (ui_diagnostics_enabled()) {
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
@@ -372,7 +418,7 @@ static void ui_track_load_worker(void *arg)
     vTaskDelete(NULL);
 }
 
-static void ui_submit_track_load(int index, uint8_t deck)
+static esp_err_t ui_submit_track_load(int index, uint8_t deck)
 {
     if (!s_track_load_result_q) {
         s_track_load_result_q = xQueueCreate(1, sizeof(ui_track_load_result_t));
@@ -380,8 +426,8 @@ static void ui_submit_track_load(int index, uint8_t deck)
     if (!s_track_load_result_q) {
         ui_library_status_hold("NO QUEUE", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO QUEUE");
-        s_track_load_busy = false;
-        return;
+        ui_library_finish_track_load();
+        return ESP_ERR_NO_MEM;
     }
 
     ui_track_load_result_t stale;
@@ -392,8 +438,8 @@ static void ui_submit_track_load(int index, uint8_t deck)
     if (!req) {
         ui_library_status_hold("NO MEM", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO MEM");
-        s_track_load_busy = false;
-        return;
+        ui_library_finish_track_load();
+        return ESP_ERR_NO_MEM;
     }
     req->index = index;
     req->deck = deck;
@@ -404,8 +450,10 @@ static void ui_submit_track_load(int index, uint8_t deck)
         free(req);
         ui_library_status_hold("NO TASK", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO TASK");
-        s_track_load_busy = false;
+        ui_library_finish_track_load();
+        return ESP_ERR_NO_MEM;
     }
+    return ESP_OK;
 }
 
 #if 0
@@ -489,7 +537,7 @@ static void ui_apply_usb_removed(void)
     }
     if (media_catalog_get_source() == MEDIA_SOURCE_LOCAL_USB) {
         ui_library_set_load_busy(false, "USB REMOVED");
-        s_track_load_busy = false;
+        ui_library_finish_track_load();
     }
 }
 
@@ -505,9 +553,9 @@ static void ui_poll_track_load_result(void)
             stale = true;
         }
         if (stale) {
-            s_track_load_busy = false;
             ui_library_set_load_busy(false,
                                      result.source == MEDIA_SOURCE_LOCAL_USB ? "USB REMOVED" : "STALE");
+            ui_library_finish_track_load();
             continue;
         }
 
@@ -516,7 +564,7 @@ static void ui_poll_track_load_result(void)
             ESP_LOGW(TAG, "track load worker failed index=%d: %s", result.index, esp_err_to_name(result.rc));
             ui_library_status_hold(display, ui_library_status_color_for_text(display), 3500);
             ui_library_set_load_busy(false, display);
-            s_track_load_busy = false;
+            ui_library_finish_track_load();
             continue;
         }
 
@@ -549,7 +597,7 @@ static void ui_poll_track_load_result(void)
         const char *loaded_text = result.deck == CTRL_DECK_1 ? "D1 LOADED" : "D2 LOADED";
         ui_library_status_hold(loaded_text, COL_GREEN, 2000);
         ui_library_set_load_busy(false, loaded_text);
-        s_track_load_busy = false;
+        ui_library_finish_track_load();
     }
 }
 
@@ -576,18 +624,17 @@ static void ui_poll_remote_refresh_result(void)
 
 static void ui_library_load_selected_deck(uint8_t deck)
 {
-    if (s_track_load_busy) {
+    if (!ui_library_try_begin_track_load()) {
         ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
         return;
     }
-    s_track_load_busy = true;
     ui_library_set_load_busy(true, "LOAD BUSY");
 
 #ifdef WIN32
     library_track_t *track = library_get_ptr(s_selected_track_idx);
     if (!track) {
         ui_library_set_load_busy(false, NULL);
-        s_track_load_busy = false;
+        ui_library_finish_track_load();
         return;
     }
 
@@ -616,18 +663,18 @@ static void ui_library_load_selected_deck(uint8_t deck)
     if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK) {
         ESP_LOGW(TAG, "No catalog row at index %d", s_selected_track_idx);
         ui_library_set_load_busy(false, NULL);
-        s_track_load_busy = false;
+        ui_library_finish_track_load();
         return;
     }
 
     const bool remote_source = (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK);
     ui_library_status_hold(remote_source ? "CACHE START" : "LOADING", COL_ACCENT, 1500);
-    ui_submit_track_load(s_selected_track_idx, deck);
+    (void)ui_submit_track_load(s_selected_track_idx, deck);
     return;
 #endif
     ui_library_status_hold("TRACK LOADED", COL_GREEN, 2000);
     ui_library_set_load_busy(false, "TRACK LOADED");
-    s_track_load_busy = false;
+    ui_library_finish_track_load();
 }
 
 static void library_load_event_cb(lv_event_t *e)
@@ -1412,11 +1459,20 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (index < 0 || index >= media_catalog_count()) {
         return ESP_ERR_INVALID_ARG;
     }
-    ui_submit_track_load(index, deck);
+    if (!ui_library_try_begin_track_load()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t rc = ui_submit_track_load(index, deck);
+    if (rc != ESP_OK) {
+        return rc;
+    }
     return ESP_OK;
 #else
     if (index < 0 || index >= library_count()) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (!ui_library_try_begin_track_load()) {
+        return ESP_ERR_INVALID_STATE;
     }
     mock_library_load_track_to_deck(index);
     library_track_t *track = library_get_ptr(index);
@@ -1438,6 +1494,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
                                       track->has_waveform != 0,
                                       meta);
     }
+    ui_library_finish_track_load();
     return ESP_OK;
 #endif
 }

@@ -213,6 +213,30 @@ $tests = @(
         )
     },
     @{
+        Name = "web_api_helpers"
+        Dir = "tests/web_api_helpers"
+        Target = "test_web_api_helpers.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/web_server/include",
+            "-o", "test_web_api_helpers.exe",
+            "test_web_api_helpers.c",
+            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"
+        )
+    },
+    @{
+        Name = "dns_reply"
+        Dir = "tests/dns_reply"
+        Target = "test_dns_reply.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/web_server/include",
+            "-o", "test_dns_reply.exe",
+            "test_dns_reply.c",
+            "../../firmware/main-deck-p4/components/web_server/dns_reply.c"
+        )
+    },
+    @{
         Name = "ui_overview_motion"
         Dir = "tests/ui_overview_motion"
         Target = "test_ui_overview_motion.exe"
