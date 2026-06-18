@@ -88,7 +88,7 @@ ui_library_update_plan_t ui_library_plan_update(int active_tab,
 #include "freertos/task.h"
 #include "media_catalog.h"
 
-#define UI_TRACK_LOAD_STACK (10 * 1024)
+#define UI_TRACK_LOAD_STACK (16 * 1024)
 #endif
 
 static const char *TAG = "ui_library";
@@ -353,49 +353,60 @@ static void ui_track_load_worker(void *arg)
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
     free(arg);
 
-    ui_track_load_result_t result;
-    memset(&result, 0, sizeof(result));
-    result.index = req.index;
-    result.deck = req.deck;
-    result.generation = req.generation;
-    result.rc = ESP_OK;
+    ui_track_load_result_t *result = heap_caps_calloc(1, sizeof(*result),
+                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!result) {
+        result = calloc(1, sizeof(*result));
+    }
+    if (!result) {
+        ESP_LOGE(TAG, "track load result allocation failed");
+        ui_library_finish_track_load();
+        vTaskDelete(NULL);
+        return;
+    }
 
-    if (media_catalog_get(req.index, &result.item) != ESP_OK) {
-        result.rc = ESP_ERR_NOT_FOUND;
-        ui_track_load_set_status(&result, "NO TRACK", "NO TRACK");
+    result->index = req.index;
+    result->deck = req.deck;
+    result->generation = req.generation;
+    result->rc = ESP_OK;
+
+    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
+        result->rc = ESP_ERR_NOT_FOUND;
+        ui_track_load_set_status(result, "NO TRACK", "NO TRACK");
     } else {
-        result.rc = media_catalog_load(req.index, &result.loaded);
-        if (result.rc != ESP_OK) {
-            ui_track_load_set_status(&result, "LOAD ERR", "LOAD ERR");
+        result->rc = media_catalog_load(req.index, &result->loaded);
+        if (result->rc != ESP_OK) {
+            ui_track_load_set_status(result, "LOAD ERR", "LOAD ERR");
         } else {
             if (req.deck == CTRL_DECK_1) {
                 audio_engine_clear_loop();
             }
             deck_core_reset_deck(req.deck);
-            result.rc = audio_engine_deck_load(req.deck,
-                                               result.loaded.audio_path,
-                                               result.loaded.has_pvbr ? result.loaded.pvbr : NULL,
-                                               result.loaded.duration_ms);
-            if (result.rc != ESP_OK) {
+            result->rc = audio_engine_deck_load(req.deck,
+                                                result->loaded.audio_path,
+                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                                                result->loaded.duration_ms);
+            if (result->rc != ESP_OK) {
                 audio_engine_deck_status_t deck_status = {0};
                 const char *audio_err = NULL;
                 if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
                     audio_err = deck_status.last_error_text;
                 }
-                ui_track_load_set_status(&result, audio_err, "AUDIO ERR");
+                ui_track_load_set_status(result, audio_err, "AUDIO ERR");
             } else {
-                ui_track_load_set_status(&result, "TRACK LOADED", "TRACK LOADED");
+                ui_track_load_set_status(result, "TRACK LOADED", "TRACK LOADED");
             }
         }
     }
 
     if (s_track_load_result_q) {
-        xQueueOverwrite(s_track_load_result_q, &result);
+        xQueueOverwrite(s_track_load_result_q, result);
     }
     if (ui_diagnostics_enabled()) {
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
                  (unsigned)uxTaskGetStackHighWaterMark(NULL));
     }
+    free(result);
     vTaskDelete(NULL);
 }
 
@@ -411,9 +422,7 @@ static esp_err_t ui_submit_track_load(int index, uint8_t deck)
         return ESP_ERR_NO_MEM;
     }
 
-    ui_track_load_result_t stale;
-    while (xQueueReceive(s_track_load_result_q, &stale, 0) == pdTRUE) {
-    }
+    xQueueReset(s_track_load_result_q);
 
     ui_track_load_request_t *req = malloc(sizeof(*req));
     if (!req) {
