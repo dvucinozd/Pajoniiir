@@ -97,19 +97,16 @@ Python/toolchain paths until the local Espressif export environment is repaired.
 | Loop playback | V1 P4 Firmware | Loop in/out repeats gaplessly | **PASS** | after gapless fix (loop wrap no longer flushes ring); short ~1-beat loops OK |
 | On-screen beat indicator | V1 P4 Firmware | 4-beat pulse indicator updates from beatgrid/BPM | **PASS** | Build + boot verified; uses PQTZ beatgrid with BPM fallback |
 
-### CDJ Link / Remote Cache Bench Plan
+### Hosted Wi-Fi / Web UI Bench Plan
 
 | Test | Firmware/example | Expected | Result | Notes |
 | --- | --- | --- | --- | --- |
-| ESP32-C6 hosted Wi-Fi firmware | P4 CDJ Link build | P4 initializes hosted Wi-Fi without error | **PENDING** | Verify C6 image compatibility before judging STA/AP behavior |
-| Host SoftAP | `link_mode=HOST USB` | SoftAP `CDJ100S-<id>` starts | **PENDING** | Uses C6 SDIO wiring from vendor notes: CMD GPIO19, CLK GPIO18, D0-D3 GPIO14-17, reset GPIO54 |
-| Joined STA | `link_mode=JOIN PLAYER` | Client scans, joins strongest `CDJ100S-*`, receives IP | **PENDING** | One host + one joined client for V1 |
-| UDP discovery | Host + joined client | Client sees beacon within 5 s and peer expires after 5 s silent | **PENDING** | Port 42424, packet magic `CDJLINK1` protocol v1 |
-| Remote library fetch | Host USB with 308 tracks | `/v1/library.bin` transfers and decodes under 2 s | **PENDING** | Binary fixed records; no JSON |
-| Remote cache load | Client SD mounted | DAT + MP3 required, EXT optional, writes to `/sd/cdjlink/<peer>/<track>/` | **PENDING** | `.part` download then rename; repeated load must reuse cache |
-| USB busy handling | Host starts local load during remote request | Client receives `503 BUSY`, no USB-DWC assert | **PENDING** | All USB file reads must pass through `media_io_gate` |
-| Transfer throughput | Host USB → client SD | MP3 sustained throughput >= 0.8 MB/s | **PARTIAL / UNSTABLE** | Host USB → Wi-Fi client best run reached ~0.96 MB/s; later Windows-client runs varied around ~0.75 MB/s and one connection reset. Still measure full two-board client SD cache path |
-| Cached track power cycle | Client reboot with SD cache intact | Cached track reloads without Wi-Fi transfer | **PENDING** | Confirms cache persistence |
+| ESP32-C6 hosted Wi-Fi firmware | P4 MVP build | P4 initializes hosted Wi-Fi without error | **PENDING** | Verify C6 image compatibility before judging AP behavior |
+| Web UI SoftAP | P4 startup | SoftAP starts without a user-selectable link mode | **PENDING** | P4 now starts hosted AP unconditionally for web UI/captive portal |
+| Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PENDING** | Current user-facing network path |
+| Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PENDING** | Uses bounds-checked DNS reply builder |
+| Concurrent web load | Browser double-click/load spam | Second `/api/load` is rejected while load worker is busy | **PENDING** | Prevents concurrent P4 track load workers |
+| Remote cache re-enable | Future CDJ Link build | STA/join, UDP discovery, remote library fetch and SD cache are revalidated | **PARKED** | The old Settings link mode and Library JOINED selector are removed from the current MVP |
 
 ### Key P4 PSRAM & Performance Optimizations
 
@@ -187,7 +184,7 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | P4 flash target | **PASS** | `COM15`, ESP32-P4 rev v1.3, MAC `80:f1:b2:d0:b4:9b` |
 | ESP-Hosted SDIO pins | **PASS** | Log confirms slot 1, 4-bit, CLK 18, CMD 19, D0-D3 14-17, C6 reset 54 |
 | Host transport init | **PASS** | C6 identified as `esp32c6`; SDIO card init successful; transport active |
-| SoftAP host mode | **PASS** | With NVS `link_mode=1`, SoftAP starts on `192.168.4.1`; current firmware must reject zero-MAC identity instead of advertising `CDJ100S-0000` |
+| SoftAP host mode | **PASS / HISTORICAL** | Previous build used NVS `link_mode=1` to start SoftAP on `192.168.4.1`; current firmware starts host AP directly for web UI/captive portal |
 | Remote library snapshot | **PASS** | USB mounted and `cdj_link_server` built snapshot: 308 tracks, 73320 bytes |
 | Windows Wi-Fi scan | **PASS** | PC sees the `CDJ100S-<id>` SoftAP at strong signal; WPA2 profile connects with `cdj100slink` |
 | HTTP hello/library | **PASS** | `GET /v1/hello.txt` returns `CDJLINK1`; `GET /v1/library.bin` returns 73320 bytes with 308 records in ~0.13 s from a Windows Wi-Fi client |

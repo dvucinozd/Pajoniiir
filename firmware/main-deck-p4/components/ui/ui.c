@@ -25,11 +25,8 @@
 #ifndef WIN32
 // ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
 #include "audio_engine.h"
-#include "app_settings.h"
 #include "control_link.h"
 #include "media_catalog.h"
-#include "cdj_link_client.h"
-#include "wifi_link.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -802,9 +799,6 @@ esp_err_t ui_init(void) {
     deck_core_init(&dummy);
 #else
     ESP_ERROR_CHECK(media_catalog_init());
-    if (app_settings_get().link_mode == WIFI_LINK_MODE_JOIN) {
-        cdj_link_client_start();
-    }
 #endif
 
     // Build parts

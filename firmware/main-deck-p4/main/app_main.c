@@ -65,12 +65,11 @@ void app_main(void)
                                                       : BSP_AUDIO_OUT_SPEAKER);
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
-    // ── Optional CDJ Link Wi-Fi mode (OFF / host USB / join player) ─────────
-    wifi_link_mode_t link_mode = (wifi_link_mode_t)app_settings_get().link_mode;
-    esp_err_t wifi_rc = wifi_link_init(link_mode);
+    // ── Wi-Fi AP for web UI / captive portal ────────────────────────────────
+    esp_err_t wifi_rc = wifi_link_init(WIFI_LINK_MODE_HOST);
     if (wifi_rc != ESP_OK) {
-        ESP_LOGW(TAG, "wifi_link_init(%u): %s", (unsigned)link_mode, esp_err_to_name(wifi_rc));
-    } else if (link_mode == WIFI_LINK_MODE_HOST) {
+        ESP_LOGW(TAG, "wifi_link_init(host): %s", esp_err_to_name(wifi_rc));
+    } else {
         ESP_ERROR_CHECK(web_server_start());
         ESP_ERROR_CHECK(dns_server_start());
     }

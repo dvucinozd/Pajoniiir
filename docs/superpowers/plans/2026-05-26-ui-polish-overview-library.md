@@ -1,5 +1,10 @@
 # UI Polish Overview Library Implementation Plan
 
+> Superseded note, 2026-06-18: active DDJ-FFL4 firmware no longer exposes the
+> Settings link-mode control or Library `JOINED` source selector. The remote
+> library/cache portions of this historical plan are parked until a future
+> remote-link re-enable pass.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Polish the CDJ deck `OVERVIEW` and `LIBRARY` screens so playback, waveform, beat, source, cache and load states are easier to read at 800x480 without changing media or audio behavior.

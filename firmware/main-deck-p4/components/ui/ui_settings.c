@@ -12,18 +12,6 @@ bool ui_settings_should_poll(uint32_t now_ms,
     return force || last_poll_ms == 0 || (uint32_t)(now_ms - last_poll_ms) >= interval_ms;
 }
 
-const char *ui_settings_link_mode_name(uint8_t mode)
-{
-    switch (mode) {
-    case 1:
-        return "HOST USB";
-    case 2:
-        return "JOIN PLAYER";
-    default:
-        return "OFF";
-    }
-}
-
 const char *ui_settings_cue_mode_name(uint8_t mode)
 {
     switch (mode) {
@@ -44,7 +32,6 @@ const char *ui_settings_cue_mode_name(uint8_t mode)
 #ifndef WIN32
 #include "app_settings.h"
 #include "bsp_jc4880.h"
-#include "cdj_link_client.h"
 #include "esp_timer.h"
 #include "remote_cache.h"
 #include "sd_diag_log.h"
@@ -67,7 +54,6 @@ static ui_settings_config_t s_config;
 static ui_settings_widgets_t s_widgets;
 static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
-// static lv_obj_t *s_label_link_mode = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
@@ -219,21 +205,6 @@ static void audio_out_event_cb(lv_event_t *event)
 }
 
 #ifndef WIN32
-#if 0
-static void link_mode_event_cb(lv_event_t *event)
-{
-    (void)event;
-    app_settings_t cfg = app_settings_get();
-    uint8_t next = (uint8_t)((cfg.link_mode + 1u) % 3u);
-    app_settings_set_link_mode(next);
-    if (s_label_link_mode) {
-        lv_label_set_text_fmt(s_label_link_mode, "%s", ui_settings_link_mode_name(next));
-    }
-    ui_settings_note_link_mode_saved(ui_settings_link_mode_name(next));
-    ESP_LOGI(TAG, "Link mode saved: %s", ui_settings_link_mode_name(next));
-}
-#endif
-
 static void cue_mode_event_cb(lv_event_t *event)
 {
     (void)event;
@@ -608,19 +579,6 @@ static void ui_settings_update_link_status_label(void)
         return;
     }
 
-    if (st.mode == WIFI_LINK_MODE_JOIN) {
-        cdj_link_peer_t peer;
-        if (cdj_link_client_get_peer(&peer)) {
-            lv_label_set_text_fmt(s_widgets.link_status,
-                                  "Link: JOINED %s (%lu tracks)",
-                                  peer.name[0] ? peer.name : peer.host,
-                                  (unsigned long)peer.track_count);
-        } else {
-            lv_label_set_text(s_widgets.link_status, "Link: JOIN SCANNING");
-        }
-        return;
-    }
-
     lv_label_set_text(s_widgets.link_status, "Link: OFF");
 }
 #endif
@@ -643,16 +601,6 @@ void ui_settings_refresh_storage(void)
 #ifndef WIN32
     ui_settings_update_sd_status_label(true);
     ui_settings_update_sd_cache_status_label(true);
-#endif
-}
-
-void ui_settings_note_link_mode_saved(const char *mode_name)
-{
-    (void)mode_name;
-#ifndef WIN32
-    if (s_widgets.link_status) {
-        lv_label_set_text(s_widgets.link_status, "Link mode saved; reboot applies Wi-Fi role");
-    }
 #endif
 }
 

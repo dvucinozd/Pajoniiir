@@ -61,7 +61,10 @@
   split into focused modules.
 - S3 DDJ-FLX4 raw MIDI capture and translation are verified and completed.
 - S3 and P4 Phase 5 LED feedback (Play, Cue, PFL) is verified and completed.
-- P4 captive portal web server and mobile controller interface are stabilized, optimized, and completed.
+- P4 captive portal web server and mobile controller interface are stabilized,
+  optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
+  path; the old Settings `link_mode` selector has been removed from active
+  firmware.
 
 ## First Firmware Task
 

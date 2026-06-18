@@ -68,8 +68,9 @@ event source feeding the same `deck_core` → `audio_engine`.
       green/amber/dim states, Loop shows active/inactive status, and Exit Loop uses the
       shared destructive visual language.
     - [x] Settings: reorganized into an operational two-column screen with
-      controls on the left, live system/link status on the right, and clearer
-      CDJ Link role/reboot messaging.
+      controls on the left and live system/link status on the right. The old
+      CDJ Link role selector was removed; P4 now starts the hosted web UI AP
+      directly.
     - [x] Beat Jump: retained the dedicated screen and existing jump values while
       replacing the explanatory header with clear backward/forward lanes and
       restrained red/green performance buttons.
@@ -79,13 +80,14 @@ event source feeding the same `deck_core` → `audio_engine`.
     - [x] Footer tabs: retained the seven-tab navigation model while refining
       active, normal, pressed and future disabled states into a clearer
       performance-bar footer.
-    - [x] Empty/loading/error states: normalized Library, JOIN and remote cache
-      status vocabulary with consistent action, success, warning and error
-      colors while preserving existing load/cache behavior.
+    - [x] Empty/loading/error states: normalized Library and load/cache status
+      vocabulary with consistent action, success, warning and error colors.
 
-- **P7 — CDJ Link remote USB library: 🟡 software implemented, hardware verification pending.**
-  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi role selection (`OFF`, `HOST USB`, `JOIN PLAYER`),
-    SoftAP `CDJ100S-<id>` and STA scan/join path for `CDJ100S-*`.
+- **P7 — Hosted Wi-Fi + remote USB library: 🟡 web AP active, remote library parked.**
+  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP support. Current startup uses host AP
+    unconditionally for the local web UI/captive portal.
+  - [ ] STA scan/join path for `CDJ100S-*` is retained as component code but not exposed
+    through Settings or Library UI in the current DDJ-FFL4 MVP.
   - [x] `cdj_link_protocol`: packed binary library records, manifests and UDP discovery packet,
     with PC tests for encode/decode validation.
   - [x] `media_io_gate`: global USB read gate wrapped around `library_init`,
@@ -93,16 +95,19 @@ event source feeding the same `deck_core` → `audio_engine`.
   - [x] `cdj_link_server`: host HTTP endpoints for `hello.txt`, `library.bin`, manifest,
     ANLZ DAT/EXT and MP3 assets; file endpoints return `503 BUSY` when USB is locked.
   - [x] `cdj_link_client`: UDP discovery with 5-second peer timeout and HTTP binary fetch.
+    Parked until STA/join mode is re-enabled.
   - [x] `remote_cache`: `/sd/cdjlink/<peer_id>/<track_key>/` cache with `.part` downloads,
-    byte-count validation and reuse on repeated loads.
-  - [x] `media_catalog`: local/remote catalog facade used by the UI load path.
-  - [x] UI: Settings link mode control, Library `LOCAL` / `JOINED` selector, remote cache/load
-    status and shared loaded-track metadata for overview, waveform, hot cues and beat indicator.
+    byte-count validation and reuse on repeated loads. Parked with the remote client flow.
+  - [x] `media_catalog`: local/remote catalog facade exists; the active MVP UI uses local USB.
+  - [x] UI: removed the old Settings link mode control and Library `JOINED` selector from
+    active firmware. Shared loaded-track metadata for overview, waveform, hot cues and beat
+    indicator remains in the local USB load path.
   - [x] Hardware host bring-up: ESP32-C6 hosted firmware updated to `2.12.8`; SoftAP starts,
     `library.bin` serves 308 tracks, and host MP3 endpoint reached ~0.96 MB/s best-case to a
     Wi-Fi client, with stability still under validation.
-  - [ ] Hardware two-player validation: verify STA join on second P4, client SD cache write speed,
-    USB busy behavior and power-cycle cache reuse on two boards.
+  - [ ] Future remote-link re-enable: restore an explicit UX for STA/join, restart the client
+    discovery path, and revalidate second-P4 SD cache write speed, USB busy behavior and
+    power-cycle cache reuse on two boards.
 
 > **Status note (2026-05-22): P1–P4 verified on hardware** via touch. PLAY/PAUSE, hot cues
 > (real PCOB positions), beat jump, and header/waveform position-tracking all work. Loop was

@@ -1,7 +1,12 @@
 # UI Polish: Settings
 
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Status: Historical design; superseded for CDJ Link role controls
+
+Superseded note, 2026-06-18: the Settings `link_mode` control, saved Wi-Fi
+role cycle, and `JOIN PLAYER` user flow were removed from active DDJ-FFL4
+firmware. P4 now starts the hosted web UI/captive portal AP directly. Treat the
+CDJ Link role-control portions below as historical context only.
 
 ## Scope
 

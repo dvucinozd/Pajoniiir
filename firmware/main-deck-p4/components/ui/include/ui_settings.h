@@ -7,7 +7,6 @@ bool ui_settings_should_poll(uint32_t now_ms,
                              uint32_t last_poll_ms,
                              bool force,
                              uint32_t interval_ms);
-const char *ui_settings_link_mode_name(uint8_t mode);
 
 #ifndef UI_SETTINGS_HOST_TEST
 
@@ -37,6 +36,5 @@ void ui_settings_init(const ui_settings_widgets_t *widgets);
 void ui_settings_invalidate(void);
 void ui_settings_update(const ui_frame_context_t *ctx);
 void ui_settings_refresh_storage(void);
-void ui_settings_note_link_mode_saved(const char *mode_name);
 
 #endif

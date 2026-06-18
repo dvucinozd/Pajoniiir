@@ -1,5 +1,11 @@
 # UI Polish Settings Implementation Plan
 
+> Superseded note, 2026-06-18: the Settings `link_mode` control,
+> `s_label_link_mode`, `link_mode_event_cb()`, and saved Wi-Fi role cycle were
+> removed from active DDJ-FFL4 firmware. P4 now starts the hosted web UI/captive
+> portal AP directly. Treat CDJ Link role-control tasks in this historical plan
+> as superseded.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the `SETTINGS` tab as a two-column operational screen with controls on the left and live status on the right, without changing saved settings or runtime behavior.

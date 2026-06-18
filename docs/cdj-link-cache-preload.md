@@ -2,11 +2,18 @@
 
 ## Scope
 
+Status: this is a parked design/bench record, not the active DDJ-FFL4 MVP UI
+flow. The current P4 firmware always starts hosted Wi-Fi SoftAP for the local
+web UI/captive portal and no longer exposes a Settings Link Mode selector or a
+Library `JOINED` source selector. The `cdj_link_*`, `remote_cache` and remote
+`media_catalog` code paths remain available for a future re-enable pass, but
+they are not wired into startup or user-facing UI in the current MVP.
+
 V1 implements a remote USB library between two CDJ100S players. One player owns the USB stick and runs as the host. The joined player browses the host library, downloads the selected track assets to its local SD card, then plays the cached MP3 locally through the existing `audio_engine`.
 
 V1 deliberately does not stream live audio and does not implement beat-sync, phase-sync, shared hot-cue edits, library writeback, or Pioneer Pro DJ Link compatibility.
 
-## Topology
+## Target Topology
 
 - Host player: Wi-Fi SoftAP `CDJ100S-<id>`, USB stick mounted at `/usb`, SD optional.
 - Joined player: Wi-Fi STA, SD required, cache mounted at `/sd`.
@@ -14,6 +21,10 @@ V1 deliberately does not stream live audio and does not implement beat-sync, pha
 - V1 scale: one host and one joined client.
 
 The host advertises itself with UDP beacons on port `42424`. The joined player stores the most recent peer in RAM and expires it after 5 seconds without a beacon.
+
+Current MVP topology is narrower: the P4 starts hosted SoftAP mode for the
+mobile controller web UI and captive DNS only. STA/join mode and remote library
+selection are disabled until this design is deliberately re-enabled.
 
 ## Cache Layout
 
@@ -86,19 +97,27 @@ File endpoints send fixed `Content-Length` responses and pipeline USB reads with
 
 ## Firmware Components
 
-- `wifi_link`: hosted Wi-Fi init, SoftAP/STA mode, link status.
+- `wifi_link`: hosted Wi-Fi init and link status. Current startup uses host
+  SoftAP mode unconditionally for web UI/captive portal.
 - `cdj_link_protocol`: binary library, manifest and discovery structures.
 - `media_io_gate`: single global gate for USB file reads.
-- `cdj_link_server`: host library snapshot and binary file endpoints.
-- `cdj_link_client`: UDP discovery and HTTP downloads.
-- `remote_cache`: SD cache population and reuse.
-- `media_catalog`: common UI facade for local USB and joined remote library.
+- `cdj_link_server`: host library snapshot and binary file endpoints, parked
+  until the remote-link flow is wired back into startup.
+- `cdj_link_client`: UDP discovery and HTTP downloads, parked until STA/join
+  mode is re-enabled.
+- `remote_cache`: SD cache population and reuse, parked with the remote client
+  flow.
+- `media_catalog`: common UI facade for local USB and remote library data. The
+  active MVP UI uses the local USB source path.
 
-## UI Flow
+## Archived V1 UI Flow
 
-1. In Settings, set Link mode to `HOST USB` or `JOIN PLAYER`. The Wi-Fi role is applied on reboot.
+This flow describes the intended re-enable path. It is not present in the
+current Settings or Library UI.
+
+1. Select a host or joined-player Wi-Fi role.
 2. On the host, insert USB and let the local library index load.
-3. On the joined player, choose `JOINED` in the Library tab.
+3. On the joined player, choose the remote library source in the Library tab.
 4. Select a remote track and press `LOAD TRACK`.
 5. The joined player downloads required assets to `/sd/cdjlink/...`.
 6. When cache completes, it parses cached DAT/EXT and calls `audio_engine_load()` with the cached MP3 path.
@@ -106,6 +125,8 @@ File endpoints send fixed `Content-Length` responses and pipeline USB reads with
 The Overview screen reads title, artist, BPM, waveform, hot cues and beat indicator metadata through the same loaded-track facade for local and remote tracks.
 
 ## Verification Checklist
+
+For a future re-enable pass:
 
 - Host SoftAP starts and joined client obtains IP.
 - Joined player receives beacons within 5 seconds.
@@ -117,6 +138,7 @@ The Overview screen reads title, artist, BPM, waveform, hot cues and beat indica
 
 ## Known V1 Limits
 
+- Not active in the current DDJ-FFL4 MVP UI/startup path.
 - One host, one joined client.
 - Full-track cache must complete before playback starts.
 - SD card is required on the joined player.

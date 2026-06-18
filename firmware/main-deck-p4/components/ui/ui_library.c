@@ -82,7 +82,6 @@ ui_library_update_plan_t ui_library_plan_update(int active_tab,
 
 #ifndef WIN32
 #include "audio_engine.h"
-#include "cdj_link_client.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -126,8 +125,6 @@ static media_source_t s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
     MEDIA_SOURCE_LOCAL_USB,
 };
 static QueueHandle_t s_track_load_result_q = NULL;
-static QueueHandle_t s_remote_refresh_result_q = NULL;
-static bool s_remote_refresh_busy = false;
 static volatile bool s_usb_removed_pending = false;
 
 typedef struct {
@@ -148,9 +145,6 @@ typedef struct {
     media_source_t source;
 } ui_track_load_request_t;
 
-#if 0
-static esp_err_t s_remote_refresh_worker_result;
-#endif
 #endif
 
 #ifndef WIN32
@@ -456,47 +450,6 @@ static esp_err_t ui_submit_track_load(int index, uint8_t deck)
     return ESP_OK;
 }
 
-#if 0
-static void ui_remote_refresh_worker(void *arg)
-{
-    (void)arg;
-    esp_err_t rc = cdj_link_client_start();
-    if (rc == ESP_OK) {
-        rc = media_catalog_refresh_remote();
-    }
-    s_remote_refresh_worker_result = rc;
-    if (s_remote_refresh_result_q) {
-        xQueueOverwrite(s_remote_refresh_result_q, &s_remote_refresh_worker_result);
-    }
-    vTaskDelete(NULL);
-}
-
-static void ui_submit_remote_refresh(void)
-{
-    if (s_remote_refresh_busy) {
-        ui_library_status_hold("JOINING", COL_AMBER, 1500);
-        return;
-    }
-    if (!s_remote_refresh_result_q) {
-        s_remote_refresh_result_q = xQueueCreate(1, sizeof(esp_err_t));
-    }
-    if (!s_remote_refresh_result_q) {
-        ui_library_status_hold("NO QUEUE", COL_RED, 2500);
-        return;
-    }
-    esp_err_t stale;
-    while (xQueueReceive(s_remote_refresh_result_q, &stale, 0) == pdTRUE) {
-    }
-
-    s_remote_refresh_busy = true;
-    ui_library_status_hold("JOINING", COL_AMBER, 2000);
-    if (xTaskCreate(ui_remote_refresh_worker, "ui_joined", 6144, NULL, 3, NULL) != pdPASS) {
-        s_remote_refresh_busy = false;
-        ui_library_status_hold("NO TASK", COL_RED, 2500);
-    }
-}
-#endif
-
 static void ui_apply_usb_removed(void)
 {
     s_usb_removed_pending = false;
@@ -601,25 +554,6 @@ static void ui_poll_track_load_result(void)
     }
 }
 
-static void ui_poll_remote_refresh_result(void)
-{
-    if (!s_remote_refresh_result_q) return;
-
-    esp_err_t rc;
-    while (xQueueReceive(s_remote_refresh_result_q, &rc, 0) == pdTRUE) {
-        s_remote_refresh_busy = false;
-        if (rc == ESP_OK) {
-            media_catalog_set_source(MEDIA_SOURCE_REMOTE_LINK);
-            s_selected_track_idx = 0;
-            ui_library_status_hold("JOINED", COL_GREEN, 2000);
-        } else {
-            ui_library_status_hold("JOIN FAILED", COL_RED, 3500);
-            ESP_LOGW(TAG, "joined library refresh failed: %s", esp_err_to_name(rc));
-        }
-        ui_library_update_source_label();
-        ui_refresh_library();
-    }
-}
 #endif
 
 static void ui_library_load_selected_deck(uint8_t deck)
@@ -809,28 +743,6 @@ static void library_table_event_cb(lv_event_t *e)
         }
     }
 }
-
-#if 0
-static void library_source_local_event_cb(lv_event_t *e)
-{
-    (void)e;
-#ifndef WIN32
-    media_catalog_set_source(MEDIA_SOURCE_LOCAL_USB);
-#endif
-    s_selected_track_idx = 0;
-    ui_library_update_source_label();
-    ui_refresh_library();
-}
-
-static void library_source_joined_event_cb(lv_event_t *e)
-{
-    (void)e;
-#ifndef WIN32
-    ui_submit_remote_refresh();
-#endif
-    ui_library_update_source_label();
-}
-#endif
 
 static void library_table_draw_part_begin_cb(lv_event_t *e)
 {
@@ -1319,7 +1231,6 @@ void ui_library_update(const ui_frame_context_t *ctx)
     }
     if (plan.poll_track_load_result) {
         ui_poll_track_load_result();
-        ui_poll_remote_refresh_result();
     }
 #endif
 

@@ -195,8 +195,9 @@ Validation note, 2026-06-14:
 - `deck_core` no longer holds its state mutex while calling audio/UI APIs, and
   P4 UART RX coalesces high-rate JOG/PITCH events when the queue is full.
 - `media_catalog_load_from_source()` and `media_catalog_get_from_source()` keep
-  UI load workers pinned to the source captured at submit time. JOINED library
-  refresh now runs in a worker task and reports back to the LVGL update loop.
+  UI load workers pinned to the source captured at submit time. The previous
+  JOINED library refresh UI path has since been removed from the MVP; remote
+  library refresh remains a future re-enable item.
 - PDB raw file buffers prefer PSRAM on firmware builds, PDB truncation is
   logged explicitly, and ANLZ PQTZ beat allocation is capped before allocation.
 - `sdkconfig.defaults` no longer assigns the unknown
