@@ -103,7 +103,6 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
 void ui_library_update(const ui_frame_context_t *ctx);
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms);
 uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm);
-bool ui_library_has_remote_loaded_track(void);
 bool ui_library_get_loaded_waveform(uint8_t deck,
                                     const uint8_t **waveform_low,
                                     bool *has_waveform);

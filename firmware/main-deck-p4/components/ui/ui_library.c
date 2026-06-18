@@ -87,9 +87,8 @@ ui_library_update_plan_t ui_library_plan_update(int active_tab,
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "media_catalog.h"
-#include "remote_cache.h"
 
-#define UI_TRACK_LOAD_STACK (10 * 1024)
+#define UI_TRACK_LOAD_STACK (16 * 1024)
 #endif
 
 static const char *TAG = "ui_library";
@@ -120,10 +119,6 @@ static bool s_deck_loaded_track_valid[DECK_CORE_DECK_COUNT] = {false, false};
 static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
 static bool s_loaded_media_valid[DECK_CORE_DECK_COUNT];
-static media_source_t s_loaded_media_source[DECK_CORE_DECK_COUNT] = {
-    MEDIA_SOURCE_LOCAL_USB,
-    MEDIA_SOURCE_LOCAL_USB,
-};
 static QueueHandle_t s_track_load_result_q = NULL;
 static volatile bool s_usb_removed_pending = false;
 
@@ -131,7 +126,6 @@ typedef struct {
     int index;
     uint8_t deck;
     uint32_t generation;
-    media_source_t source;
     media_catalog_track_t item;
     media_loaded_track_t loaded;
     esp_err_t rc;
@@ -142,7 +136,6 @@ typedef struct {
     int index;
     uint8_t deck;
     uint32_t generation;
-    media_source_t source;
 } ui_track_load_request_t;
 
 #endif
@@ -263,11 +256,7 @@ static void ui_library_update_source_label(void)
         return;
     }
 #ifndef WIN32
-    if (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK) {
-        lv_label_set_text_fmt(s_label_library_source, "JOINED  %d TRACKS", media_catalog_count());
-    } else {
-        lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
-    }
+    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
 #else
     lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", library_count());
 #endif
@@ -364,51 +353,60 @@ static void ui_track_load_worker(void *arg)
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
     free(arg);
 
-    ui_track_load_result_t result;
-    memset(&result, 0, sizeof(result));
-    result.index = req.index;
-    result.deck = req.deck;
-    result.generation = req.generation;
-    result.source = req.source;
-    result.rc = ESP_OK;
+    ui_track_load_result_t *result = heap_caps_calloc(1, sizeof(*result),
+                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!result) {
+        result = calloc(1, sizeof(*result));
+    }
+    if (!result) {
+        ESP_LOGE(TAG, "track load result allocation failed");
+        ui_library_finish_track_load();
+        vTaskDelete(NULL);
+        return;
+    }
 
-    if (media_catalog_get_from_source(req.source, req.index, &result.item) != ESP_OK) {
-        result.rc = ESP_ERR_NOT_FOUND;
-        ui_track_load_set_status(&result, "NO TRACK", "NO TRACK");
+    result->index = req.index;
+    result->deck = req.deck;
+    result->generation = req.generation;
+    result->rc = ESP_OK;
+
+    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
+        result->rc = ESP_ERR_NOT_FOUND;
+        ui_track_load_set_status(result, "NO TRACK", "NO TRACK");
     } else {
-        result.rc = media_catalog_load_from_source(req.source, req.index, &result.loaded);
-        if (result.rc != ESP_OK) {
-            const char *status = (req.source == MEDIA_SOURCE_REMOTE_LINK) ? remote_cache_status() : "LOAD ERR";
-            ui_track_load_set_status(&result, status, "LOAD ERR");
+        result->rc = media_catalog_load(req.index, &result->loaded);
+        if (result->rc != ESP_OK) {
+            ui_track_load_set_status(result, "LOAD ERR", "LOAD ERR");
         } else {
             if (req.deck == CTRL_DECK_1) {
                 audio_engine_clear_loop();
             }
             deck_core_reset_deck(req.deck);
-            result.rc = audio_engine_deck_load(req.deck,
-                                               result.loaded.audio_path,
-                                               result.loaded.has_pvbr ? result.loaded.pvbr : NULL,
-                                               result.loaded.duration_ms);
-            if (result.rc != ESP_OK) {
+            result->rc = audio_engine_deck_load(req.deck,
+                                                result->loaded.audio_path,
+                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                                                result->loaded.duration_ms);
+            if (result->rc != ESP_OK) {
                 audio_engine_deck_status_t deck_status = {0};
                 const char *audio_err = NULL;
                 if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
                     audio_err = deck_status.last_error_text;
                 }
-                ui_track_load_set_status(&result, audio_err, "AUDIO ERR");
+                ui_track_load_set_status(result, audio_err, "AUDIO ERR");
             } else {
-                ui_track_load_set_status(&result, "TRACK LOADED", "TRACK LOADED");
+                ui_track_load_set_status(result, "TRACK LOADED", "TRACK LOADED");
             }
         }
     }
 
     if (s_track_load_result_q) {
-        xQueueOverwrite(s_track_load_result_q, &result);
+        xQueueOverwrite(s_track_load_result_q, result);
     }
     if (ui_diagnostics_enabled()) {
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
                  (unsigned)uxTaskGetStackHighWaterMark(NULL));
     }
+    free(result);
     vTaskDelete(NULL);
 }
 
@@ -424,9 +422,7 @@ static esp_err_t ui_submit_track_load(int index, uint8_t deck)
         return ESP_ERR_NO_MEM;
     }
 
-    ui_track_load_result_t stale;
-    while (xQueueReceive(s_track_load_result_q, &stale, 0) == pdTRUE) {
-    }
+    xQueueReset(s_track_load_result_q);
 
     ui_track_load_request_t *req = malloc(sizeof(*req));
     if (!req) {
@@ -438,7 +434,6 @@ static esp_err_t ui_submit_track_load(int index, uint8_t deck)
     req->index = index;
     req->deck = deck;
     req->generation = library_generation();
-    req->source = media_catalog_get_source();
 
     if (xTaskCreate(ui_track_load_worker, "ui_load", UI_TRACK_LOAD_STACK, req, 3, NULL) != pdPASS) {
         free(req);
@@ -455,7 +450,7 @@ static void ui_apply_usb_removed(void)
     s_usb_removed_pending = false;
     bool removed_loaded = false;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_LOCAL_USB) {
+        if (s_loaded_media_valid[deck]) {
             s_loaded_media_valid[deck] = false;
             s_deck_loaded_track_valid[deck] = false;
             s_deck_loaded_track_key[deck] = 0;
@@ -488,10 +483,8 @@ static void ui_apply_usb_removed(void)
         }
         ui_library_status_hold("USB REMOVED", COL_AMBER, 2500);
     }
-    if (media_catalog_get_source() == MEDIA_SOURCE_LOCAL_USB) {
-        ui_library_set_load_busy(false, "USB REMOVED");
-        ui_library_finish_track_load();
-    }
+    ui_library_set_load_busy(false, "USB REMOVED");
+    ui_library_finish_track_load();
 }
 
 static void ui_poll_track_load_result(void)
@@ -500,14 +493,9 @@ static void ui_poll_track_load_result(void)
 
     ui_track_load_result_t result;
     while (xQueueReceive(s_track_load_result_q, &result, 0) == pdTRUE) {
-        bool stale = (result.source != media_catalog_get_source());
-        if (result.source == MEDIA_SOURCE_LOCAL_USB &&
-            result.generation != library_generation()) {
-            stale = true;
-        }
+        bool stale = result.generation != library_generation();
         if (stale) {
-            ui_library_set_load_busy(false,
-                                     result.source == MEDIA_SOURCE_LOCAL_USB ? "USB REMOVED" : "STALE");
+            ui_library_set_load_busy(false, "USB REMOVED");
             ui_library_finish_track_load();
             continue;
         }
@@ -521,13 +509,10 @@ static void ui_poll_track_load_result(void)
             continue;
         }
 
-        if (result.source == MEDIA_SOURCE_LOCAL_USB) {
-            mock_library_load_track_to_deck(result.index);
-        }
+        mock_library_load_track_to_deck(result.index);
         uint8_t deck = ui_library_deck_index(result.deck);
         s_loaded_media[deck] = result.loaded;
         s_loaded_media_valid[deck] = true;
-        s_loaded_media_source[deck] = result.source;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
         s_deck_loaded_track_valid[deck] = true;
         ESP_LOGI("UI_HIGHLIGHT", "POLL RESULT: deck=%u, key=0x%08X", (unsigned)deck, (unsigned)result.loaded.track_key);
@@ -535,7 +520,7 @@ static void ui_poll_track_load_result(void)
             lv_obj_invalidate(s_library_table);
         }
         const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(result.source);
+        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz();
         ui_library_apply_loaded_track(deck,
                                       result.item.title,
                                       result.item.artist,
@@ -601,8 +586,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
         return;
     }
 
-    const bool remote_source = (media_catalog_get_source() == MEDIA_SOURCE_REMOTE_LINK);
-    ui_library_status_hold(remote_source ? "CACHE START" : "LOADING", COL_ACCENT, 1500);
+    ui_library_status_hold("LOADING", COL_ACCENT, 1500);
     (void)ui_submit_track_load(s_selected_track_idx, deck);
     return;
 #endif
@@ -1064,11 +1048,10 @@ void ui_library_load_initial_track(void)
         media_catalog_load(0, &loaded) == ESP_OK) {
         s_loaded_media[CTRL_DECK_1] = loaded;
         s_loaded_media_valid[CTRL_DECK_1] = true;
-        s_loaded_media_source[CTRL_DECK_1] = loaded.source;
         s_deck_loaded_track_key[CTRL_DECK_1] = loaded.track_key;
         s_deck_loaded_track_valid[CTRL_DECK_1] = true;
         const uint16_t bpm = loaded.bpm ? loaded.bpm : row.bpm;
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz_for_source(loaded.source);
+        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz();
         ui_library_apply_loaded_track(CTRL_DECK_1,
                                       row.title,
                                       row.artist,
@@ -1322,18 +1305,6 @@ uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm)
     (void)deck;
 #endif
     return fallback_bpm;
-}
-
-bool ui_library_has_remote_loaded_track(void)
-{
-#ifndef WIN32
-    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        if (s_loaded_media_valid[deck] && s_loaded_media_source[deck] == MEDIA_SOURCE_REMOTE_LINK) {
-            return true;
-        }
-    }
-#endif
-    return false;
 }
 
 bool ui_library_get_loaded_waveform(uint8_t deck,

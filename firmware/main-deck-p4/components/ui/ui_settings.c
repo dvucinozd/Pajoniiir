@@ -25,17 +25,12 @@ const char *ui_settings_cue_mode_name(uint8_t mode)
 #ifndef UI_SETTINGS_HOST_TEST
 
 #include "esp_log.h"
-#include "ui_library.h"
-#include "ui_status.h"
 #include "ui_theme.h"
 
 #ifndef WIN32
 #include "app_settings.h"
 #include "bsp_jc4880.h"
 #include "esp_timer.h"
-#include "remote_cache.h"
-#include "sd_diag_log.h"
-#include "wifi_link.h"
 #endif
 
 static const char *TAG = "ui_settings";
@@ -64,11 +59,6 @@ static uint32_t s_cache_sd_free_mib = UINT32_MAX;
 static uint32_t s_cache_sd_total_mib = UINT32_MAX;
 static uint32_t s_cache_sd_last_poll_ms = 0;
 static ui_settings_text_cache_t s_cache_sd_text;
-static ui_settings_text_cache_t s_cache_sd_cache_text;
-static uint32_t s_cache_sd_cache_last_poll_ms = 0;
-static uint32_t s_cache_sd_cache_mib = UINT32_MAX;
-static uint32_t s_cache_sd_cache_tracks = UINT32_MAX;
-static uint32_t s_cache_sd_cache_files = UINT32_MAX;
 
 static void ui_settings_label_set_text_cached(lv_obj_t *label,
                                               ui_settings_text_cache_t *cache,
@@ -218,29 +208,6 @@ static void cue_mode_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Cue mode saved: %s", ui_settings_cue_mode_name(next));
 }
 
-#if 0
-static void sd_cache_clear_event_cb(lv_event_t *event)
-{
-    (void)event;
-    if (ui_library_has_remote_loaded_track()) {
-        ui_status_hold("REMOTE LOADED", COL_AMBER, 2000);
-        sd_diag_log_write("sd_cache", "clear blocked while remote track is loaded");
-        return;
-    }
-
-    esp_err_t rc = remote_cache_clear();
-    if (rc == ESP_OK) {
-        ui_status_hold("CACHE CLEARED", COL_GREEN, 2000);
-        sd_diag_log_write("sd_cache", "remote cache cleared");
-    } else {
-        ui_status_hold("CACHE ERR", COL_RED, 2000);
-        sd_diag_log_write("sd_cache", "remote cache clear failed");
-    }
-    ui_status_invalidate();
-    ui_settings_invalidate();
-    ui_settings_refresh_storage();
-}
-#endif
 #endif
 
 void ui_settings_configure(const ui_settings_config_t *config)
@@ -362,9 +329,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 
     ui_settings_widgets_t settings_widgets = {
         .uart_status = label_uart_status,
-        .link_status = NULL,
         .sd_status = label_sd_status,
-        .sd_cache_status = NULL,
     };
     ui_settings_init(&settings_widgets);
     ui_settings_refresh_storage();
@@ -392,11 +357,6 @@ void ui_settings_invalidate(void)
     s_cache_sd_total_mib = UINT32_MAX;
     s_cache_sd_last_poll_ms = 0;
     s_cache_sd_text.valid = false;
-    s_cache_sd_cache_text.valid = false;
-    s_cache_sd_cache_last_poll_ms = 0;
-    s_cache_sd_cache_mib = UINT32_MAX;
-    s_cache_sd_cache_tracks = UINT32_MAX;
-    s_cache_sd_cache_files = UINT32_MAX;
 }
 
 static void ui_settings_format_storage_size(uint64_t bytes, char *out, size_t out_size)
@@ -520,67 +480,6 @@ static void ui_settings_update_sd_status_label(bool force)
     ui_settings_obj_set_text_color_cached(s_widgets.sd_status, &s_cache_sd_color, COL_GREEN);
 }
 
-static void ui_settings_update_sd_cache_status_label(bool force)
-{
-    if (!s_widgets.sd_cache_status) {
-        return;
-    }
-
-    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ull);
-    if (!ui_settings_should_poll(now_ms, s_cache_sd_cache_last_poll_ms, force, 1000u)) {
-        return;
-    }
-    s_cache_sd_cache_last_poll_ms = now_ms;
-
-    remote_cache_stats_t stats;
-    esp_err_t rc = remote_cache_get_stats(&stats);
-    if (rc != ESP_OK) {
-        ui_settings_label_set_text_cached(s_widgets.sd_cache_status,
-                                          &s_cache_sd_cache_text,
-                                          "Cache unavailable");
-        s_cache_sd_cache_mib = UINT32_MAX;
-        s_cache_sd_cache_tracks = UINT32_MAX;
-        s_cache_sd_cache_files = UINT32_MAX;
-        return;
-    }
-
-    uint32_t mib = (uint32_t)(stats.bytes / (1024ull * 1024ull));
-    if (s_cache_sd_cache_mib != mib ||
-        s_cache_sd_cache_tracks != stats.tracks ||
-        s_cache_sd_cache_files != stats.files) {
-        char size_buf[16];
-        char text[80];
-        ui_settings_format_storage_size(stats.bytes, size_buf, sizeof(size_buf));
-        snprintf(text, sizeof(text), "%s, %lu tracks, %lu files",
-                 size_buf,
-                 (unsigned long)stats.tracks,
-                 (unsigned long)stats.files);
-        ui_settings_label_set_text_cached(s_widgets.sd_cache_status,
-                                          &s_cache_sd_cache_text,
-                                          text);
-        s_cache_sd_cache_mib = mib;
-        s_cache_sd_cache_tracks = stats.tracks;
-        s_cache_sd_cache_files = stats.files;
-    }
-}
-
-static void ui_settings_update_link_status_label(void)
-{
-    if (!s_widgets.link_status) {
-        return;
-    }
-
-    wifi_link_status_t st = wifi_link_get_status();
-    if (st.mode == WIFI_LINK_MODE_HOST) {
-        lv_label_set_text_fmt(s_widgets.link_status,
-                              "Link: HOST %s (%u client)",
-                              st.ssid[0] ? st.ssid : "DDJ-FFL4",
-                              (unsigned)st.ap_clients);
-        return;
-    }
-
-    lv_label_set_text(s_widgets.link_status, "Link: OFF");
-}
 #endif
 
 void ui_settings_update(const ui_frame_context_t *ctx)
@@ -590,9 +489,7 @@ void ui_settings_update(const ui_frame_context_t *ctx)
     }
 #ifndef WIN32
     ui_settings_update_uart_status_label(&ctx->deck_state[CTRL_DECK_1]);
-    ui_settings_update_link_status_label();
     ui_settings_update_sd_status_label(false);
-    ui_settings_update_sd_cache_status_label(false);
 #endif
 }
 
@@ -600,7 +497,6 @@ void ui_settings_refresh_storage(void)
 {
 #ifndef WIN32
     ui_settings_update_sd_status_label(true);
-    ui_settings_update_sd_cache_status_label(true);
 #endif
 }
 

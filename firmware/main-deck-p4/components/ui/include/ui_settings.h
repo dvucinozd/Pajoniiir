@@ -25,9 +25,7 @@ typedef struct {
 
 typedef struct {
     lv_obj_t *uart_status;
-    lv_obj_t *link_status;
     lv_obj_t *sd_status;
-    lv_obj_t *sd_cache_status;
 } ui_settings_widgets_t;
 
 void ui_settings_configure(const ui_settings_config_t *config);

@@ -3,7 +3,6 @@
 #include "rekordbox_anlz.h"
 #include "track_meta_cache.h"
 #include "media_io_gate.h"
-#include "cdj_link_protocol.h"
 #include "sd_diag_log.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -66,9 +65,22 @@ static inline library_track_t *active_index(void)
     return s_index_buf[s_active_buf];
 }
 
-static uint32_t library_track_key_for_cache(const library_track_t *track)
+uint32_t library_track_key(const library_track_t *track)
 {
-    return track ? cdj_link_track_key(track->track_id, track->path) : 0;
+    if (!track) {
+        return 0;
+    }
+    if (track->track_id != 0) {
+        return track->track_id;
+    }
+
+    uint32_t hash = 2166136261u;
+    const unsigned char *p = (const unsigned char *)track->path;
+    while (*p) {
+        hash ^= (uint32_t)(*p++);
+        hash *= 16777619u;
+    }
+    return hash == 0 ? 1u : hash;
 }
 
 static void library_build_anlz_paths(const library_track_t *track,
@@ -271,7 +283,7 @@ esp_err_t library_load_anlz(library_track_t *track)
     char dat_path[LIBRARY_PATH_MAX + 8];
     char ext_path[LIBRARY_PATH_MAX + 8];
     library_build_anlz_paths(track, dat_path, sizeof(dat_path), ext_path, sizeof(ext_path));
-    uint32_t track_key = library_track_key_for_cache(track);
+    uint32_t track_key = library_track_key(track);
 
     anlz_metadata_t cached;
     esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, false, &cached);
@@ -339,7 +351,7 @@ esp_err_t library_load_current_anlz(const library_track_t *track)
     char dat_path[LIBRARY_PATH_MAX + 8];
     char ext_path[LIBRARY_PATH_MAX + 8];
     library_build_anlz_paths(track, dat_path, sizeof(dat_path), ext_path, sizeof(ext_path));
-    uint32_t track_key = library_track_key_for_cache(track);
+    uint32_t track_key = library_track_key(track);
 
     anlz_metadata_t cached;
     esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, &cached);

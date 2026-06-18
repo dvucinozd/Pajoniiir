@@ -52,6 +52,7 @@ uint32_t  library_generation(void);                          // increments on in
 int       library_count(void);                               // number of tracks found
 esp_err_t library_get(int index, library_track_t *out);      // get track by index
 library_track_t *library_get_ptr(int index);                 // get direct pointer to track by index
+uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI/cache use
 esp_err_t library_load_anlz(library_track_t *track);         // populate precise BPM/cues from ANLZ
 void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
 

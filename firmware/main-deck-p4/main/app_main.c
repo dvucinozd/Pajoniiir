@@ -66,7 +66,7 @@ void app_main(void)
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
     // ── Wi-Fi AP for web UI / captive portal ────────────────────────────────
-    esp_err_t wifi_rc = wifi_link_init(WIFI_LINK_MODE_HOST);
+    esp_err_t wifi_rc = wifi_link_init();
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init(host): %s", esp_err_to_name(wifi_rc));
     } else {
