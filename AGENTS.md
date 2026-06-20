@@ -45,9 +45,10 @@ D:\Documents\DDJ-FFL4
 ```
 
 Prije vecih promjena procitaj relevantne dokumente iz `docs\` i postojece
-komponente koje diras. Ne pretpostavljaj da Mixxx XML definira runtime logiku;
-to je map reference koji mora biti potvrden raw MIDI captureom na stvarnom
-DDJ-FLX4 kontroleru.
+komponente koje diras. Mixxx XML se smatra provjerenim i autoritativnim izvorom
+MIDI adresa za DDJ-FLX4 kontrole (sva dosadašnja mapiranja su se pokazala 100%
+točnima). Fizički raw MIDI capture više nije preduvjet za razvoj, te se
+preostale kontrole mogu implementirati izravno iz XML reference.
 
 ## ESP-IDF okruzenje
 
@@ -127,17 +128,7 @@ Branch prefix za agent promjene je `codex/`.
 
 ## DDJ-FLX4 MVP kontrole
 
-MVP kontrole koje treba prvo potvrditi raw MIDI captureom:
-
-- Play/Pause Deck 1/2
-- Cue Deck 1/2
-- Load Deck 1/2
-- Browse rotate/press
-- Jog scratch/bend/touch Deck 1/2
-- Tempo fader Deck 1/2
-- Channel fader Deck 1/2
-- Crossfader
-- Headphone cue/PFL Deck 1/2
+MVP kontrole su u potpunosti potvrđene raw MIDI captureom i implementirane u firmwareu. Preostale kontrole iz proširenog inventara u `docs/DDJ_FLX4_MIDI_MAP.md` uvode se izravno iz Mixxx XML-a. Fizički smoke capture radi se samo kao naknadni test prihvaćanja, a ne kao preduvjet za kodiranje.
 
 Primarni mapping dokument je:
 

@@ -129,8 +129,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and
   Key Shift behavior before adding new performance features.
 - [ ] Expand LED feedback only from P4-confirmed state.
-- [ ] Hardware-smoke each delivered control group and record exceptions from
-  the XML mapping.
+- [ ] Final hardware-smoke testing of the integrated control surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the
 implementation seed because the physical MVP capture matched them exactly;

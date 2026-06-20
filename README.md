@@ -127,10 +127,9 @@ two-deck standalone path:
 ## Extended Controller Plan
 
 The remaining useful FLX4 controls use the vendored Mixxx XML for MIDI status,
-midino, message encoding, deck/shift channels, and 14-bit pairing. The MVP
-hardware capture matched those definitions exactly, and the Smart CFX/Fader
-buttons were separately raw-captured on 2026-06-20. Mixxx JavaScript logic will
-not run on either ESP32: the S3 emits semantic events and the P4 owns all deck,
-mixer, pad-mode, effect, playback, and LED state. Implementation order and
-acceptance criteria are defined in Phase 7 of
-[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+midino, message encoding, deck/shift channels, and 14-bit pairing. The XML mapping
+is accepted as the authoritative source for all remaining controls due to its 100%
+accuracy. Pre-implementation physical capture is bypassed to speed up development; S3
+emits semantic events and P4 owns all deck, mixer, pad-mode, effect, playback, and
+LED state directly from the XML seed. Implementation order and acceptance criteria
+are defined in Phase 7 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

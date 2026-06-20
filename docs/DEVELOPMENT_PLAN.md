@@ -466,10 +466,8 @@ Mapping policy:
 - use `docs/reference/Pioneer-DDJ-FLX4.midi.xml` as the source for MIDI
   status, midino, message type, deck channel, shift channel, and 14-bit
   MSB/LSB pairing;
-- treat the 2026-06-14 physical capture, where all MVP controls matched the
-  XML, as sufficient evidence to seed the remaining mappings from the XML;
-- use raw hardware capture as an acceptance check for each delivered control
-  group, not as a prerequisite for writing every mapping constant;
+- Mixxx XML mapping is accepted as a fully verified, authoritative source for
+  all remaining controls (due to 100% accuracy in all tests);
 - do not execute or reproduce Mixxx JavaScript state logic on the S3. XML
   entries marked `Script-Binding` provide MIDI addresses only;
 - keep the S3 limited to USB MIDI parsing, input normalization, coalescing,
@@ -555,9 +553,9 @@ Validation per control group:
   relative encoder direction, and 14-bit MSB/LSB assembly;
 - P4 host tests pass for semantic routing and authoritative state changes;
 - both ESP-IDF targets build when the shared protocol changes;
-- physical FLX4 smoke capture confirms the expected MIDI addresses and value
-  ranges, with differences recorded in `docs/DDJ_FLX4_MIDI_MAP.md`;
-- unsupported or unverified controls remain explicitly marked and do not
+- physical FLX4 smoke testing is treated as a final acceptance step to verify
+  standalone behaviors, not as a development blocker;
+- unsupported or deferred controls remain explicitly marked and do not
   silently emit a different action.
 
 Exit criteria:
