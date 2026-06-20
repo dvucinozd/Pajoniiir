@@ -19,6 +19,8 @@ int p4_ctrl_ev_browse(void);
 int p4_ctrl_ev_state(void);
 int p4_ctrl_type_state(void);
 int p4_ctrl_id_flx4_connection(void);
+int p4_ctrl_id_smart_cfx(void);
+int p4_ctrl_id_smart_fader(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -44,6 +46,8 @@ int s3_ctrl_id_load_deck2(void);
 int s3_ctrl_id_browse_press(void);
 int s3_ctrl_type_state(void);
 int s3_ctrl_id_flx4_connection(void);
+int s3_ctrl_id_smart_cfx(void);
+int s3_ctrl_id_smart_fader(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -216,6 +220,10 @@ static void test_s3_and_p4_flx4_connection_state_ids_match(void)
     assert(s3_ctrl_flx4_disconnected() == CTRL_FLX4_DISCONNECTED);
     assert(s3_ctrl_flx4_connected() == p4_ctrl_flx4_connected());
     assert(s3_ctrl_flx4_connected() == CTRL_FLX4_CONNECTED);
+    assert(s3_ctrl_id_smart_cfx() == p4_ctrl_id_smart_cfx());
+    assert(s3_ctrl_id_smart_cfx() == CTRL_ID_SMART_CFX);
+    assert(s3_ctrl_id_smart_fader() == p4_ctrl_id_smart_fader());
+    assert(s3_ctrl_id_smart_fader() == CTRL_ID_SMART_FADER);
 
     uint8_t frame[CTRL_FRAME_LEN];
     ctrl_event_t ev;

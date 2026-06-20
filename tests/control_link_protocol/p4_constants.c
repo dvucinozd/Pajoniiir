@@ -15,5 +15,7 @@ int p4_ctrl_ev_browse(void) { return CTRL_EV_BROWSE; }
 int p4_ctrl_ev_state(void) { return CTRL_EV_STATE; }
 int p4_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
 int p4_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }
+int p4_ctrl_id_smart_cfx(void) { return CTRL_ID_SMART_CFX; }
+int p4_ctrl_id_smart_fader(void) { return CTRL_ID_SMART_FADER; }
 int p4_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int p4_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

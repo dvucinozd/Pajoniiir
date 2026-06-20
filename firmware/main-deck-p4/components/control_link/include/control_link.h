@@ -85,6 +85,8 @@ typedef enum {
 #define CTRL_NS_SYSTEM  0x70
 
 #define CTRL_ID_FLX4_CONNECTION (CTRL_NS_SYSTEM | 0x00)
+#define CTRL_ID_SMART_CFX       (CTRL_NS_SYSTEM | 0x01)
+#define CTRL_ID_SMART_FADER     (CTRL_NS_SYSTEM | 0x02)
 
 typedef enum {
     CTRL_FLX4_DISCONNECTED = 0,

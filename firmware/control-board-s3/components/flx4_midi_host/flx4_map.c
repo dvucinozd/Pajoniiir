@@ -17,6 +17,8 @@
 #define FLX4_BTN_LOAD_D2       0x47
 #define FLX4_BTN_PFL           0x54
 #define FLX4_BTN_BROWSE_PRESS  0x41
+#define FLX4_BTN_SMART_CFX     0x00
+#define FLX4_BTN_SMART_FADER   0x01
 
 #define FLX4_CC_JOG_SIDE_BEND  0x21
 #define FLX4_CC_JOG_SCRATCH    0x22
@@ -178,6 +180,12 @@ bool flx4_map_message(flx4_map_state_t *state,
     case FLX4_STATUS_D2_BTN:
         return map_deck_button(msg->status, msg->data1, msg->data2, out);
     case FLX4_STATUS_GLOBAL_BTN:
+        if (msg->data1 == FLX4_BTN_SMART_CFX) {
+            return emit_button(out, CTRL_ID_SMART_CFX, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_SMART_FADER) {
+            return emit_button(out, CTRL_ID_SMART_FADER, msg->data2 > 0 ? 1 : 0);
+        }
         if (msg->data1 == FLX4_BTN_BROWSE_PRESS) {
             return emit_button(out, CTRL_ID_BROWSE_PRESS, msg->data2 > 0 ? 1 : 0);
         }
