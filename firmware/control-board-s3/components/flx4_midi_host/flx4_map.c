@@ -13,6 +13,10 @@
 #define FLX4_BTN_PLAY          0x0B
 #define FLX4_BTN_CUE           0x0C
 #define FLX4_BTN_JOG_TOUCH     0x36
+#define FLX4_BTN_SHIFT         0x3F
+#define FLX4_BTN_CUE_SHIFT     0x48
+#define FLX4_BTN_SYNC          0x58
+#define FLX4_BTN_TEMPO_RANGE   0x60
 #define FLX4_BTN_LOAD_D1       0x46
 #define FLX4_BTN_LOAD_D2       0x47
 #define FLX4_BTN_PFL           0x54
@@ -105,6 +109,14 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PLAY : CTRL_ID_DECK2_PLAY, pressed);
     case FLX4_BTN_CUE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_CUE : CTRL_ID_DECK2_CUE, pressed);
+    case FLX4_BTN_SHIFT:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_SHIFT : CTRL_ID_DECK2_SHIFT, pressed);
+    case FLX4_BTN_CUE_SHIFT:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_TO_START : CTRL_ID_DECK2_TO_START, pressed);
+    case FLX4_BTN_SYNC:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_SYNC : CTRL_ID_DECK2_SYNC, pressed);
+    case FLX4_BTN_TEMPO_RANGE:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_TEMPO_RANGE : CTRL_ID_DECK2_TEMPO_RANGE, pressed);
     case FLX4_BTN_JOG_TOUCH:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_JOG_TOUCH : CTRL_ID_DECK2_JOG_TOUCH, pressed);
     case FLX4_BTN_PFL:

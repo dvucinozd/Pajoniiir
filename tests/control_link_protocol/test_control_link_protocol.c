@@ -21,6 +21,10 @@ int p4_ctrl_type_state(void);
 int p4_ctrl_id_flx4_connection(void);
 int p4_ctrl_id_smart_cfx(void);
 int p4_ctrl_id_smart_fader(void);
+int p4_ctrl_id_deck1_shift(void);
+int p4_ctrl_id_deck2_to_start(void);
+int p4_ctrl_id_deck1_sync(void);
+int p4_ctrl_id_deck2_tempo_range(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -48,6 +52,10 @@ int s3_ctrl_type_state(void);
 int s3_ctrl_id_flx4_connection(void);
 int s3_ctrl_id_smart_cfx(void);
 int s3_ctrl_id_smart_fader(void);
+int s3_ctrl_id_deck1_shift(void);
+int s3_ctrl_id_deck2_to_start(void);
+int s3_ctrl_id_deck1_sync(void);
+int s3_ctrl_id_deck2_tempo_range(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -195,6 +203,18 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(ev.type == CTRL_EV_PITCH);
     assert(ev.deck == CTRL_DECK_1);
     assert(ev.control == CTRL_DECK_CTL_TEMPO);
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 1, 24);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_SHIFT);
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TO_START, 1, 25);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.deck == CTRL_DECK_2);
+    assert(ev.control == CTRL_DECK_CTL_TO_START);
 }
 
 static void test_s3_and_p4_deck_aware_ids_match(void)
@@ -207,6 +227,14 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_browse_delta() == CTRL_ID_BROWSE_DELTA);
     assert(s3_ctrl_id_load_deck2() == CTRL_ID_LOAD_DECK2);
     assert(s3_ctrl_id_browse_press() == CTRL_ID_BROWSE_PRESS);
+    assert(s3_ctrl_id_deck1_shift() == p4_ctrl_id_deck1_shift());
+    assert(s3_ctrl_id_deck1_shift() == CTRL_ID_DECK1_SHIFT);
+    assert(s3_ctrl_id_deck2_to_start() == p4_ctrl_id_deck2_to_start());
+    assert(s3_ctrl_id_deck2_to_start() == CTRL_ID_DECK2_TO_START);
+    assert(s3_ctrl_id_deck1_sync() == p4_ctrl_id_deck1_sync());
+    assert(s3_ctrl_id_deck1_sync() == CTRL_ID_DECK1_SYNC);
+    assert(s3_ctrl_id_deck2_tempo_range() == p4_ctrl_id_deck2_tempo_range());
+    assert(s3_ctrl_id_deck2_tempo_range() == CTRL_ID_DECK2_TEMPO_RANGE);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

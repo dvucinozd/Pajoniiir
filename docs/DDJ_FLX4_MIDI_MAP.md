@@ -33,8 +33,8 @@ P4 DSP/settings behavior is deferred.
 | Play/Pause | Deck 2 | `0x91` | `0x0B` | same midino, deck from status |
 | Cue | Deck 1 | `0x90` | `0x0C` | back cue / cue default |
 | Cue | Deck 2 | `0x91` | `0x0C` | same midino, deck from status |
-| Beat Sync | Deck 1 | `0x90` | `0x58` | document only for MVP; implementation later |
-| Beat Sync | Deck 2 | `0x91` | `0x58` | document only for MVP; implementation later |
+| Beat Sync | Deck 1 | `0x90` | `0x58` | semantic input mapped; sync engine behavior deferred |
+| Beat Sync | Deck 2 | `0x91` | `0x58` | semantic input mapped; sync engine behavior deferred |
 | Load | Deck 1 | `0x96` | `0x46` | global button status, deck from midino |
 | Load | Deck 2 | `0x96` | `0x47` | global button status, deck from midino |
 | Browse rotate | Library | `0xB6` | `0x40` | signed 7-bit relative encoder: `0x01` = +1 step, `0x7F` = -1 step |
@@ -145,11 +145,11 @@ Status legend:
 | Browse + Shift rotate | `0xB6/0x64` | relative encoder | shifted global | `CTRL_ID_BROWSE_SHIFT_DELTA` proposed | UI waveform zoom | Pending | Not captured |
 | Browse + Shift press | `0x96/0x42` | press/release | shifted global | `CTRL_ID_BROWSE_SHIFT_PRESS` proposed | UI Library/navigation | Pending | Not captured |
 | Load Deck 1 / Deck 2 | `0x96/0x46`, `0x96/0x47` | press/release | global, deck from midino | `CTRL_ID_LOAD_DECK1`, `CTRL_ID_LOAD_DECK2` | UI Library | Implemented | Verified 2026-06-14 / 2026-06-20 |
-| Shift Deck 1 / Deck 2 | `0x90/0x3F`, `0x91/0x3F` | press/release | deck-local modifier | `CTRL_ID_DECK1_SHIFT`, `CTRL_ID_DECK2_SHIFT` proposed | P4 input mode state | Pending | Not captured |
+| Shift Deck 1 / Deck 2 | `0x90/0x3F`, `0x91/0x3F` | press/release | deck-local modifier | `CTRL_ID_DECK1_SHIFT`, `CTRL_ID_DECK2_SHIFT` | P4 input mode state | Mapped only | Verified 2026-06-20 |
 | Play/Pause Deck 1 / Deck 2 | `0x90/0x0B`, `0x91/0x0B` | press/release | deck-local | `CTRL_ID_DECK1_PLAY`, `CTRL_ID_DECK2_PLAY` | `deck_core` | Implemented | Verified 2026-06-14 |
 | Play + Shift / Censor | `0x90/0x0E`, `0x91/0x0E` | press/release | shifted deck-local | `CTRL_ID_DECK1_CENSOR`, `CTRL_ID_DECK2_CENSOR` proposed | `deck_core` transport | Deferred | Not captured |
 | Cue Deck 1 / Deck 2 | `0x90/0x0C`, `0x91/0x0C` | press/release | deck-local | `CTRL_ID_DECK1_CUE`, `CTRL_ID_DECK2_CUE` | `deck_core` | Implemented | Verified 2026-06-14 |
-| Cue + Shift / track start | `0x90/0x48`, `0x91/0x48` | press/release | shifted deck-local | `CTRL_ID_DECK1_TO_START`, `CTRL_ID_DECK2_TO_START` proposed | `deck_core` seek | Pending | Not captured |
+| Cue + Shift / track start | `0x90/0x48`, `0x91/0x48` | press/release | shifted deck-local | `CTRL_ID_DECK1_TO_START`, `CTRL_ID_DECK2_TO_START` | `deck_core` seek | Implemented | Verified end-to-end 2026-06-20 |
 | Jog platter scratch | `0xB0/0x22`, `0xB1/0x22` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_SCRATCH`, `CTRL_ID_DECK2_JOG_SCRATCH` | `deck_core` / audio seek | Implemented MVP input | Verified 2026-06-14 |
 | Jog platter bend | `0xB0/0x23`, `0xB1/0x23` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_BEND`, `CTRL_ID_DECK2_JOG_BEND` | `deck_core` / tempo bend | Implemented MVP input | Verified 2026-06-14 |
 | Jog side bend | `0xB0/0x21`, `0xB1/0x21` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_BEND`, `CTRL_ID_DECK2_JOG_BEND` | `deck_core` / tempo bend | Implemented MVP input | Verified 2026-06-14 |
@@ -157,9 +157,9 @@ Status legend:
 | Jog + Shift search | `0xB0/0x29`, `0xB1/0x29` | relative/encoder CC | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH`, `CTRL_ID_DECK2_JOG_SEARCH` proposed | `deck_core` seek | Pending | Not captured |
 | Jog touch + Shift highspeed | `0x90/0x67`, `0x91/0x67` | press/release | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH_TOUCH`, `CTRL_ID_DECK2_JOG_SEARCH_TOUCH` proposed | `deck_core` jog mode | Pending | Not captured |
 | Tempo fader | D1 `0xB0/0x00+0x20`, D2 `0xB1/0x00+0x20` | 14-bit MSB+LSB | deck-local | `CTRL_ID_DECK1_TEMPO`, `CTRL_ID_DECK2_TEMPO` | audio pitch/resampler | Implemented MVP input | Verified 2026-06-14 |
-| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` proposed | beat/sync model | Pending | MVP address verified; behavior deferred |
+| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Mapped only | MVP address verified; behavior deferred |
 | Beat Sync long press / master | `0x90/0x5C`, `0x91/0x5C` | press/release or long-press semantic | deck-local | `CTRL_ID_DECK1_SYNC_MASTER`, `CTRL_ID_DECK2_SYNC_MASTER` proposed | beat/sync model | Deferred | Not captured |
-| Beat Sync + Shift / tempo range | `0x90/0x60`, `0x91/0x60` | press/release | shifted deck-local | `CTRL_ID_DECK1_TEMPO_RANGE`, `CTRL_ID_DECK2_TEMPO_RANGE` proposed | deck settings | Pending | Not captured |
+| Beat Sync + Shift / tempo range | `0x90/0x60`, `0x91/0x60` | press/release | shifted deck-local | `CTRL_ID_DECK1_TEMPO_RANGE`, `CTRL_ID_DECK2_TEMPO_RANGE` | deck settings | Mapped only | Verified 2026-06-20; behavior deferred |
 | Loop In / 4 Beat | `0x90/0x10`, `0x91/0x10` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_IN`, `CTRL_ID_DECK2_LOOP_IN` proposed | `deck_core` loop | Pending | Not captured |
 | Loop Out | `0x90/0x11`, `0x91/0x11` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_OUT`, `CTRL_ID_DECK2_LOOP_OUT` proposed | `deck_core` loop | Pending | Not captured |
 | Reloop/Exit | `0x90/0x4D`, `0x91/0x4D` | press/release | deck-local | `CTRL_ID_DECK1_RELOOP_EXIT`, `CTRL_ID_DECK2_RELOOP_EXIT` proposed | `deck_core` loop | Pending | Not captured |

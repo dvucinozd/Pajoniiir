@@ -282,6 +282,57 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
     }
 }
 
+static bool on_deck_extension_button(const ctrl_event_t *ev)
+{
+    if (!ev || ev->type != CTRL_EV_BUTTON || !control_link_id_is_deck(ev->id)) {
+        return false;
+    }
+
+    uint8_t deck = deck_index_for_event(ev);
+    bool pressed = ev->value != 0;
+    deck_state_t *state = &s_decks[normalize_deck(deck)];
+    bool uses_audio = deck_uses_audio_engine(deck);
+
+    switch (control_link_id_control(ev->id)) {
+    case CTRL_DECK_CTL_SHIFT:
+        ESP_LOGD(TAG, "deck %u shift -> %s", (unsigned)deck + 1,
+                 pressed ? "pressed" : "released");
+        return true;
+
+    case CTRL_DECK_CTL_TO_START:
+        if (!pressed) {
+            return true;
+        }
+        if (uses_audio) {
+            audio_engine_deck_pause(deck);
+            audio_engine_deck_seek(deck, 0);
+        }
+        state->playing = false;
+        state->position_ms = 0;
+        state->cue_point_ms = 0;
+        ESP_LOGI(TAG, "deck %u cue+shift -> track start", (unsigned)deck + 1);
+        sync_leds(deck);
+        return true;
+
+    case CTRL_DECK_CTL_SYNC:
+        if (pressed) {
+            ESP_LOGD(TAG, "deck %u sync pressed (sync engine deferred)",
+                     (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_TEMPO_RANGE:
+        if (pressed) {
+            ESP_LOGD(TAG, "deck %u tempo range pressed (range state deferred)",
+                     (unsigned)deck + 1);
+        }
+        return true;
+
+    default:
+        return false;
+    }
+}
+
 static void on_jog(uint8_t deck, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
@@ -409,6 +460,10 @@ static void deck_task(void *arg)
 
         if (event_is_mixer_control(&ev)) {
             on_mixer_control(ev.id, ev.value);
+            continue;
+        }
+
+        if (on_deck_extension_button(&ev)) {
             continue;
         }
 
@@ -567,6 +622,10 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 
     if (event_is_mixer_control(ev)) {
         on_mixer_control(ev->id, ev->value);
+        return;
+    }
+
+    if (on_deck_extension_button(ev)) {
         return;
     }
 

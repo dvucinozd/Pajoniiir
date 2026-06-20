@@ -65,6 +65,33 @@ static void test_smart_control_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_FADER, 0);
 }
 
+static void test_deck_transport_extension_buttons(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x3F, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x3F, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_SHIFT, 0);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x48, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_TO_START, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x48, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TO_START, 1);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x58, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SYNC, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x58, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_SYNC, 1);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x60, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_TEMPO_RANGE, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x60, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TEMPO_RANGE, 1);
+}
+
 static void test_jog_and_browse_relative_controls(void)
 {
     flx4_map_state_t state;
@@ -114,13 +141,14 @@ static void test_unsupported_messages_are_ignored(void)
 
     assert(!flx4_map_message(NULL, MSG(0x90, 0x0B, 0x7F), &ev));
     assert(!flx4_map_message(&state, NULL, &ev));
-    assert(!flx4_map_message(&state, MSG(0x90, 0x58, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x0E, 0x7F), &ev));
 }
 
 int main(void)
 {
     test_transport_load_and_pfl_buttons();
     test_smart_control_buttons();
+    test_deck_transport_extension_buttons();
     test_jog_and_browse_relative_controls();
     test_14bit_controls_emit_after_both_halves();
     test_unsupported_messages_are_ignored();

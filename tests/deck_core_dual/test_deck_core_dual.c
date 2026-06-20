@@ -12,6 +12,7 @@ int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
 esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_deck_seek_count[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -92,6 +93,7 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_deck_play_result[deck] = ESP_OK;
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;
+        audio_engine_stub_deck_seek_count[deck] = 0;
     }
 }
 
@@ -190,6 +192,29 @@ static void test_browser_namespace_routes_browse_delta(void)
     assert(s_browse_delta == 3);
 }
 
+static void test_cue_shift_jumps_requested_deck_to_track_start(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_playing[CTRL_DECK_1] = true;
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = true;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 12345;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 67890;
+
+    ctrl_event_t deck1_to_start = deck_button(CTRL_ID_DECK1_TO_START);
+    ctrl_event_t deck2_to_start = deck_button(CTRL_ID_DECK2_TO_START);
+
+    deck_core_test_apply_event(&deck1_to_start);
+    deck_core_test_apply_event(&deck2_to_start);
+
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 0);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).playing);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+}
+
 static void test_browser_press_toggles_library_view_without_loading_deck(void)
 {
     deck_core_test_reset();
@@ -256,6 +281,7 @@ int main(void)
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();
+    test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();
     test_browser_press_toggles_library_view_without_loading_deck();

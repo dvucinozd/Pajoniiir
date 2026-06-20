@@ -22,6 +22,7 @@ static inline uint32_t audio_engine_position_ms(void) { return 0; }
 extern esp_err_t audio_engine_stub_deck_play_result[2];
 extern bool audio_engine_stub_deck_playing[2];
 extern uint32_t audio_engine_stub_deck_position_ms[2];
+extern int audio_engine_stub_deck_seek_count[2];
 
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
@@ -47,8 +48,10 @@ static inline esp_err_t audio_engine_deck_stop(uint8_t deck)
 
 static inline esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
 {
-    (void)position_ms;
-    return deck == 0 ? ESP_OK : ESP_ERR_NOT_SUPPORTED;
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_deck_seek_count[deck]++;
+    audio_engine_stub_deck_position_ms[deck] = position_ms;
+    return ESP_OK;
 }
 
 static inline void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)

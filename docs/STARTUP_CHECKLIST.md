@@ -122,6 +122,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   and mapped as semantic input-only button events.
 - [x] Build the extended control inventory from the vendored Mixxx XML.
 - [ ] Add deck modifiers and transport extensions with P4-owned semantics.
+  First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and
+  Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
+  behavior; Sync/tempo-range behavior remains deferred.
 - [ ] Add supported mixer/monitoring controls and 14-bit range tests.
 - [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and
   Key Shift behavior before adding new performance features.

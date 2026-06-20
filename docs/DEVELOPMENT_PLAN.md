@@ -506,6 +506,11 @@ Implementation order:
      playback state on the S3;
    - defer controls whose standalone behavior is not defined rather than
      copying a Mixxx script callback name as behavior.
+   - first firmware slice maps Shift, Cue+Shift track-start, Beat Sync, and
+     Beat Sync+Shift tempo-range IDs end to end. Cue+Shift has P4 behavior
+     and seeks the addressed deck to 0 ms while pausing it. Sync and tempo
+     range are intentionally semantic input only until the P4 beat/sync and
+     tempo-range models are defined.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
