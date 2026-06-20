@@ -12,3 +12,7 @@ int p4_btn_load(void) { return BTN_LOAD; }
 int p4_btn_count(void) { return BTN_COUNT; }
 int p4_ctrl_ev_jog(void) { return CTRL_EV_JOG; }
 int p4_ctrl_ev_browse(void) { return CTRL_EV_BROWSE; }
+int p4_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
+int p4_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }
+int p4_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
+int p4_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

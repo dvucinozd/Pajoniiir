@@ -21,3 +21,7 @@ int s3_ctrl_id_crossfader(void) { return CTRL_ID_CROSSFADER; }
 int s3_ctrl_id_browse_delta(void) { return CTRL_ID_BROWSE_DELTA; }
 int s3_ctrl_id_load_deck2(void) { return CTRL_ID_LOAD_DECK2; }
 int s3_ctrl_id_browse_press(void) { return CTRL_ID_BROWSE_PRESS; }
+int s3_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
+int s3_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }
+int s3_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
+int s3_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

@@ -16,6 +16,10 @@ int p4_btn_load(void);
 int p4_btn_count(void);
 int p4_ctrl_ev_jog(void);
 int p4_ctrl_ev_browse(void);
+int p4_ctrl_type_state(void);
+int p4_ctrl_id_flx4_connection(void);
+int p4_ctrl_flx4_disconnected(void);
+int p4_ctrl_flx4_connected(void);
 
 int s3_btn_eject(void);
 int s3_btn_track_prev(void);
@@ -37,6 +41,10 @@ int s3_ctrl_id_crossfader(void);
 int s3_ctrl_id_browse_delta(void);
 int s3_ctrl_id_load_deck2(void);
 int s3_ctrl_id_browse_press(void);
+int s3_ctrl_type_state(void);
+int s3_ctrl_id_flx4_connection(void);
+int s3_ctrl_flx4_disconnected(void);
+int s3_ctrl_flx4_connected(void);
 
 static void build_frame(uint8_t frame[CTRL_FRAME_LEN],
                         uint8_t type, uint8_t id, int16_t value, uint8_t seq)
@@ -193,6 +201,18 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_browse_press() == CTRL_ID_BROWSE_PRESS);
 }
 
+static void test_s3_and_p4_flx4_connection_state_ids_match(void)
+{
+    assert(s3_ctrl_type_state() == p4_ctrl_type_state());
+    assert(s3_ctrl_type_state() == CTRL_TYPE_STATE);
+    assert(s3_ctrl_id_flx4_connection() == p4_ctrl_id_flx4_connection());
+    assert(s3_ctrl_id_flx4_connection() == CTRL_ID_FLX4_CONNECTION);
+    assert(s3_ctrl_flx4_disconnected() == p4_ctrl_flx4_disconnected());
+    assert(s3_ctrl_flx4_disconnected() == CTRL_FLX4_DISCONNECTED);
+    assert(s3_ctrl_flx4_connected() == p4_ctrl_flx4_connected());
+    assert(s3_ctrl_flx4_connected() == CTRL_FLX4_CONNECTED);
+}
+
 static void test_led_command_values_and_bad_checksum(void)
 {
     uint8_t frame[CTRL_FRAME_LEN];
@@ -215,6 +235,7 @@ int main(void)
     test_encoder_ids_route_to_jog_and_browse();
     test_firmware_decodes_deck_aware_flx4_ids();
     test_s3_and_p4_deck_aware_ids_match();
+    test_s3_and_p4_flx4_connection_state_ids_match();
     test_led_command_values_and_bad_checksum();
     puts("control_link_protocol tests passed");
     return 0;
