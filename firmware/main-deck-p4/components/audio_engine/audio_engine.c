@@ -916,6 +916,7 @@ static void ae_output_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
+        int64_t block_start_us = esp_timer_get_time();
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
@@ -990,17 +991,16 @@ static void ae_output_task(void *arg)
                 out[i * 2 + 1] = master_frame.right;
             }
         }
-        int64_t write_start_us = esp_timer_get_time();
         if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             AE_UNLOCK();
         }
-        int64_t write_elapsed_us = esp_timer_get_time() - write_start_us;
+        int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
         uint32_t block_delay_ms = audio_output_remaining_delay_ms(
             s_output_sample_rate,
-            write_elapsed_us > 0 ? (uint32_t)write_elapsed_us : 0u);
+            block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
         if (block_delay_ms > 0u) {
             vTaskDelay(pdMS_TO_TICKS(block_delay_ms));
         } else {

@@ -111,6 +111,11 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("on_button(DECK_CORE_COMPAT_DECK, (button_id_t)ev.id")
 
+Assert-FileDoesNotContain `
+    -Name "audio output pacing includes render time" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("write_elapsed_us")
+
 $tests = @(
     @{
         Name = "audio_engine"
