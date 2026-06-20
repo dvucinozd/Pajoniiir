@@ -120,7 +120,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   through S3 FLX4 connection state and P4 forced LED snapshots.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
-- [ ] Build the extended control inventory from the vendored Mixxx XML.
+- [x] Build the extended control inventory from the vendored Mixxx XML.
 - [ ] Add deck modifiers and transport extensions with P4-owned semantics.
 - [ ] Add supported mixer/monitoring controls and 14-bit range tests.
 - [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and

@@ -139,12 +139,17 @@ TODO:
   not a per-deck or dual-active gain reduction. Single-deck level must remain
   unchanged, normal two-deck material must keep its perceived level, and only
   true summed peaks should be shaped to avoid hard int16 clipping.
+- Use a post-sum curve or limiter that is transparent below the actual int16
+  headroom boundary. Do not reintroduce the rejected dual-active gain drop.
 - Add limiter tests for unchanged normal sums, unchanged single-deck peaks,
   positive/negative overload handling, and overload counter reporting.
 - Keep lightweight limiter intervention telemetry so sustained clipping can be
   distinguished from occasional peak protection. If limiter activity is
   constant, add a user-facing master trim later instead of silently lowering
   deck levels.
+- After limiter/headroom work is stable, clean up the Overview waveform
+  cache/render path and diagnostic leftovers. Treat this as performance
+  cleanup, not as a prerequisite for Phase 7 controller input expansion.
 
 Exit criteria:
 
@@ -487,21 +492,28 @@ Implementation order:
    - physically capture SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`);
    - map each button as a momentary semantic press/release event;
    - defer P4 DSP/settings behavior until a separate audio feature design.
-4. **Deck modifiers and transport extensions**
+4. **Extended controller inventory** ✅
+   - inventory created in `docs/DDJ_FLX4_MIDI_MAP.md` from 281 XML input
+     controls and 112 XML output candidates;
+   - grouped large pad-mode ranges so implementation can add compact semantic
+     pad action events instead of hundreds of one-off IDs;
+   - marked unsupported Mixxx-only behavior as deferred until standalone P4
+     behavior exists.
+5. **Deck modifiers and transport extensions**
    - add Shift, Beat Sync, tempo-range, vinyl, and other deck transport
      buttons that have a clear standalone P4 behavior;
    - send modifier press/release events to the P4 instead of keeping hidden
      playback state on the S3;
    - defer controls whose standalone behavior is not defined rather than
      copying a Mixxx script callback name as behavior.
-5. **Mixer and monitoring controls**
+6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
    - add explicit P4 mixer parameters, clamping, snapshots, persistence only
      where already consistent with settings ownership, and LED/state feedback
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
-6. **Performance pads and pad modes**
+7. **Performance pads and pad modes**
    - inventory Hot Cue, Beat Loop, Beat Jump, Sampler, Key Shift, and their
      shifted MIDI ranges from the XML;
    - first connect modes already implemented by the P4 touchscreen: Hot Cue,
@@ -509,12 +521,12 @@ Implementation order:
    - represent pad mode and pad action as separate P4-owned semantic state;
    - leave Sampler and unsupported stem/effect script behaviors disabled until
      a standalone P4 feature definition exists.
-7. **Effects controls**
+8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
    - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
      expose no-op controls as completed functionality.
-8. **LED feedback expansion**
+9. **LED feedback expansion**
    - derive candidate output status/midino values from the XML output section;
    - drive LEDs only from P4-confirmed state through the existing S3 MIDI Out
      queue;
