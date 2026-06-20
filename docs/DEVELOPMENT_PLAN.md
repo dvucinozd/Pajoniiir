@@ -131,6 +131,28 @@ Tasks:
 - add clipping-safe summing; math layer done
 - produce cue/PFL buffer path after master mix is stable.
 
+TODO:
+
+- Add a transparent master limiter/soft-clip stage after Deck 1/Deck 2 summing,
+  not a per-deck or dual-active gain reduction. Single-deck level must remain
+  unchanged, normal two-deck material must keep its perceived level, and only
+  true summed peaks should be shaped to avoid hard int16 clipping.
+- Add limiter tests for unchanged normal sums, unchanged single-deck peaks,
+  positive/negative overload handling, and overload counter reporting.
+- Keep lightweight limiter intervention telemetry so sustained clipping can be
+  distinguished from occasional peak protection. If limiter activity is
+  constant, add a user-facing master trim later instead of silently lowering
+  deck levels.
+- Investigate the short UI/audio timing spike around the end of MP3
+  preload/frame-index build. A runtime probe on 2026-06-20 showed healthy
+  steady-state resources with both decks active (`uf+0/0`, PCM rings around
+  5.3k-6.6k frames, output block average about 1.2 ms for a 5.8 ms audio
+  period, ~149 KB free internal heap, ~11.8 MB free PSRAM), but one transient
+  block spike around 15 ms during/after Deck 2 preload/index completion.
+  Narrow the audio mutex around `build_seek_table()` or split frame indexing
+  work so it cannot briefly interfere with output position updates or UI
+  smoothness.
+
 Exit criteria:
 
 - two loaded MP3s decode without watchdog resets;
