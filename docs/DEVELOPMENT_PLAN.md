@@ -116,9 +116,9 @@ Exit criteria:
 
 ## Phase 4: Dual Audio Engine And Mixer
 
-Status: master mix, channel fader/crossfader gains, and cue/PFL selection are
-implemented for the current two-deck P4 path. Transparent limiting and the
-MP3 preload/index timing spike remain follow-up work.
+Status: master mix, channel fader/crossfader gains, cue/PFL selection, and
+dual-deck P4 audio scheduling are implemented for the current two-deck P4 path.
+Transparent limiting remains follow-up work.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -145,15 +145,6 @@ TODO:
   distinguished from occasional peak protection. If limiter activity is
   constant, add a user-facing master trim later instead of silently lowering
   deck levels.
-- Investigate the short UI/audio timing spike around the end of MP3
-  preload/frame-index build. A runtime probe on 2026-06-20 showed healthy
-  steady-state resources with both decks active (`uf+0/0`, PCM rings around
-  5.3k-6.6k frames, output block average about 1.2 ms for a 5.8 ms audio
-  period, ~149 KB free internal heap, ~11.8 MB free PSRAM), but one transient
-  block spike around 15 ms during/after Deck 2 preload/index completion.
-  Narrow the audio mutex around `build_seek_table()` or split frame indexing
-  work so it cannot briefly interfere with output position updates or UI
-  smoothness.
 
 Exit criteria:
 
@@ -212,6 +203,14 @@ Validation note, 2026-06-08:
 - Deck 2-first playback no longer depends on whichever deck loaded first owning
   output. `deck_core` only marks a deck playing after the backend accepts play,
   and USB removal now calls `audio_engine_stop_all()`.
+- Dual-deck playback scheduling was stabilized on hardware on 2026-06-20 after
+  runtime instrumentation showed healthy PCM ring fill and memory margins but
+  output timing disruption during active preload/index work. The fix keeps
+  active-output preload chunks to 32 KB, builds MP3 seek tables off to the side
+  before publishing them under a short engine lock, removes the extra
+  software delay after `esp_codec_dev_write()`, and throttles preload
+  diagnostics to periodic summaries. User hardware confirmation reported
+  normal audio and waveform behavior with both decks playing.
 
 Validation note, 2026-06-14:
 

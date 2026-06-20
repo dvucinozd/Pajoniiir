@@ -118,6 +118,18 @@ Assert-FileDoesNotContain `
 
 $tests = @(
     @{
+        Name = "audio_diag"
+        Dir = "tests/audio_diag"
+        Target = "test_audio_diag.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_diag.exe",
+            "test_audio_diag.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c"
+        )
+    },
+    @{
         Name = "audio_engine"
         Dir = "tests/audio_engine"
         Target = "test_audio_engine.exe"
@@ -130,6 +142,7 @@ $tests = @(
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
@@ -163,6 +176,18 @@ $tests = @(
             "-o", "test_audio_fw_runtime.exe",
             "test_audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
+        )
+    },
+    @{
+        Name = "audio_fw_preload"
+        Dir = "tests/audio_fw_preload"
+        Target = "test_audio_fw_preload.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_fw_preload.exe",
+            "test_audio_fw_preload.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c"
         )
     },
     @{

@@ -48,11 +48,21 @@ static void test_begin_load_keeps_path_but_clears_progress(void)
     assert(!slot.load_done);
 }
 
+static void test_chunk_size_is_smaller_when_output_is_active(void)
+{
+    assert(audio_fw_preload_chunk_bytes(1024u * 1024u, false) == 256u * 1024u);
+    assert(audio_fw_preload_chunk_bytes(1024u * 1024u, true) == 32u * 1024u);
+    assert(audio_fw_preload_chunk_bytes(4096u, false) == 4096u);
+    assert(audio_fw_preload_chunk_bytes(4096u, true) == 4096u);
+    assert(audio_fw_preload_chunk_bytes(0u, true) == 0u);
+}
+
 int main(void)
 {
     test_reset_clears_transient_state();
     test_set_path_copies_and_terminates();
     test_begin_load_keeps_path_but_clears_progress();
+    test_chunk_size_is_smaller_when_output_is_active();
     puts("audio_fw_preload tests passed");
     return 0;
 }

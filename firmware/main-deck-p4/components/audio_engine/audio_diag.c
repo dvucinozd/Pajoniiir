@@ -1,0 +1,74 @@
+#include "audio_diag.h"
+
+void audio_diag_counter_init(audio_diag_counter_t *counter,
+                             uint32_t report_samples)
+{
+    if (!counter) {
+        return;
+    }
+    counter->report_samples = report_samples > 0
+                            ? report_samples
+                            : AUDIO_DIAG_DEFAULT_REPORT_SAMPLES;
+    counter->sample_count = 0;
+    counter->total_us = 0;
+    counter->max_us = 0;
+    counter->last_us = 0;
+}
+
+bool audio_diag_record(audio_diag_counter_t *counter,
+                       uint32_t duration_us,
+                       audio_diag_report_t *out_report)
+{
+    if (!counter) {
+        return false;
+    }
+    if (counter->report_samples == 0) {
+        audio_diag_counter_init(counter, 0);
+    }
+
+    counter->sample_count++;
+    counter->total_us += duration_us;
+    counter->last_us = duration_us;
+    if (duration_us > counter->max_us) {
+        counter->max_us = duration_us;
+    }
+
+    if (counter->sample_count < counter->report_samples) {
+        return false;
+    }
+
+    if (out_report) {
+        out_report->samples = counter->sample_count;
+        out_report->last_us = counter->last_us;
+        out_report->avg_us = (uint32_t)(counter->total_us / counter->sample_count);
+        out_report->max_us = counter->max_us;
+    }
+
+    uint32_t report_samples = counter->report_samples;
+    audio_diag_counter_init(counter, report_samples);
+    return true;
+}
+
+void audio_diag_late_counter_init(audio_diag_late_counter_t *counter,
+                                  uint32_t threshold_us)
+{
+    if (!counter) {
+        return;
+    }
+    counter->threshold_us = threshold_us;
+    counter->count = 0;
+    counter->max_us = 0;
+}
+
+bool audio_diag_late_record(audio_diag_late_counter_t *counter,
+                            uint32_t duration_us)
+{
+    if (!counter || counter->threshold_us == 0 || duration_us < counter->threshold_us) {
+        return false;
+    }
+    counter->count++;
+    if (duration_us > counter->max_us) {
+        counter->max_us = duration_us;
+    }
+    return true;
+}

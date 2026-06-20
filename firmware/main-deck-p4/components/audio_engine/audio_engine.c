@@ -12,6 +12,7 @@
 #include "minimp3.h"
 
 #include "audio_engine.h"
+#include "audio_diag.h"
 #include "audio_fw_preload.h"
 #include "audio_fw_runtime.h"
 #include "audio_fw_task_context.h"
@@ -63,6 +64,7 @@ static const char *TAG = "audio";
 #   include "freertos/semphr.h"
 #   include "freertos/idf_additions.h"
 #   include "esp_heap_caps.h"
+#   include "esp_system.h"
 #   include "esp_timer.h"
 #   include "bsp_jc4880.h"
 #   include "esp_codec_dev.h"
@@ -447,15 +449,15 @@ static void build_seek_table(audio_engine_state_t *eng)
 
     uint32_t cap = 20000; /* initial capacity for ~8-10 mins track */
 #if AE_FW
-    eng->seek_table = heap_caps_malloc(cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+    uint32_t *seek_table = heap_caps_malloc(cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
 #else
-    eng->seek_table = malloc(cap * sizeof(uint32_t));
+    uint32_t *seek_table = malloc(cap * sizeof(uint32_t));
 #endif
-    if (!eng->seek_table) {
+    if (!seek_table) {
         ESP_LOGE(TAG, "Failed to allocate seek table memory!");
         return;
     }
-    eng->seek_table_len = 0;
+    uint32_t seek_table_len = 0;
 
     size_t pos = 0;
     size_t size = eng->file_size;
@@ -480,6 +482,11 @@ static void build_seek_table(audio_engine_state_t *eng)
     const uint8_t *buf = eng->file_buf ? eng->file_buf : scan_buf;
     if (!buf) {
         if (scan_buf) free(scan_buf);
+#if AE_FW
+        heap_caps_free(seek_table);
+#else
+        free(seek_table);
+#endif
         return;
     }
 
@@ -494,21 +501,21 @@ static void build_seek_table(audio_engine_state_t *eng)
                 continue;
             }
 
-            if (eng->seek_table_len >= cap) {
+            if (seek_table_len >= cap) {
                 cap *= 2;
 #if AE_FW
-                uint32_t *new_table = heap_caps_realloc(eng->seek_table, cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
+                uint32_t *new_table = heap_caps_realloc(seek_table, cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
 #else
-                uint32_t *new_table = realloc(eng->seek_table, cap * sizeof(uint32_t));
+                uint32_t *new_table = realloc(seek_table, cap * sizeof(uint32_t));
 #endif
                 if (!new_table) {
                     ESP_LOGE(TAG, "Failed to reallocate seek table!");
                     break;
                 }
-                eng->seek_table = new_table;
+                seek_table = new_table;
             }
 
-            eng->seek_table[eng->seek_table_len++] = (uint32_t)pos;
+            seek_table[seek_table_len++] = (uint32_t)pos;
             pos += frame_bytes;
         } else {
             pos++;
@@ -520,8 +527,20 @@ static void build_seek_table(audio_engine_state_t *eng)
     }
 
     int64_t dt_us = ae_now_us() - t0;
+    AE_LOCK();
+    uint32_t *old_table = eng->seek_table;
+    eng->seek_table = seek_table;
+    eng->seek_table_len = seek_table_len;
+    AE_UNLOCK();
+    if (old_table) {
+#if AE_FW
+        heap_caps_free(old_table);
+#else
+        free(old_table);
+#endif
+    }
     ESP_LOGI(TAG, "Indexed %u MP3 frames in %lld ms", 
-             (unsigned)eng->seek_table_len, (long long)(dt_us / 1000));
+             (unsigned)seek_table_len, (long long)(dt_us / 1000));
 }
 
 /*
@@ -645,10 +664,143 @@ static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRA
 
 #define AE_FIRST_CHUNK_BYTES (96u * 1024u)  /* min loaded before the decoder starts */
 #define AE_LOAD_GATE_MARGIN  (32u * 1024u)  /* keep the decoder this far behind the loader */
+#define AE_DIAG_OUTPUT_REPORT_BLOCKS 300u
+#define AE_DIAG_DECODE_REPORT_FRAMES 120u
+#define AE_DIAG_PRELOAD_REPORT_CHUNKS 64u
+
+static audio_diag_counter_t s_diag_output_blocks;
+static audio_diag_late_counter_t s_diag_output_late;
+static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
+static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
 
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate);
 static esp_err_t audio_output_service_ensure_started(void);
 static esp_err_t audio_output_service_stop(void);
+
+static void ae_diag_reset(void)
+{
+    audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
+    audio_diag_late_counter_init(&s_diag_output_late, 1u);
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
+        audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
+    }
+}
+
+static void ae_diag_log_memory(const char *phase, uint8_t deck)
+{
+    ESP_LOGI(TAG,
+             "diag %s D%u: heap=%u internal=%u psram=%u",
+             phase ? phase : "mem",
+             (unsigned)(deck + 1u),
+             (unsigned)esp_get_free_heap_size(),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+}
+
+static void ae_diag_record_decode(uint8_t deck,
+                                  uint32_t decode_us,
+                                  int samples,
+                                  uint32_t ring_used,
+                                  size_t file_pos,
+                                  size_t loaded_bytes,
+                                  bool load_done)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || samples <= 0) {
+        return;
+    }
+
+    audio_diag_report_t report;
+    if (audio_diag_record(&s_diag_decode_frames[deck], decode_us, &report)) {
+        ESP_LOGI(TAG,
+                 "diag decode D%u: last=%u us avg=%u us max=%u us samples=%u ring=%u/%u file=%u loaded=%u done=%u",
+                 (unsigned)(deck + 1u),
+                 (unsigned)report.last_us,
+                 (unsigned)report.avg_us,
+                 (unsigned)report.max_us,
+                 (unsigned)report.samples,
+                 (unsigned)ring_used,
+                 (unsigned)AUDIO_PCM_RING_FRAMES,
+                 (unsigned)file_pos,
+                 (unsigned)loaded_bytes,
+                 load_done ? 1u : 0u);
+    }
+}
+
+static void ae_diag_record_preload_chunk(uint8_t deck,
+                                         uint32_t chunk_us,
+                                         size_t got,
+                                         size_t off,
+                                         size_t total)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || got == 0) {
+        return;
+    }
+    audio_diag_report_t report;
+    if (audio_diag_record(&s_diag_preload_chunks[deck], chunk_us, &report)) {
+        ESP_LOGI(TAG,
+                 "diag preload D%u: last=%u us avg=%u us max=%u us chunks=%u bytes=%u off=%u/%u heap=%u psram=%u",
+                 (unsigned)(deck + 1u),
+                 (unsigned)report.last_us,
+                 (unsigned)report.avg_us,
+                 (unsigned)report.max_us,
+                 (unsigned)report.samples,
+                 (unsigned)got,
+                 (unsigned)off,
+                 (unsigned)total,
+                 (unsigned)esp_get_free_heap_size(),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    }
+}
+
+static void ae_diag_record_output_block(uint32_t block_us,
+                                        uint32_t period_us,
+                                        uint32_t consumed0,
+                                        uint32_t consumed1,
+                                        bool active0,
+                                        bool active1)
+{
+    audio_diag_report_t report;
+    if (audio_diag_record(&s_diag_output_blocks, block_us, &report)) {
+        ESP_LOGI(TAG,
+                 "diag output: last=%u us avg=%u us max=%u us samples=%u active=%u/%u consumed=%u/%u ring=%u/%u %u/%u late=%u late_max=%u us heap=%u internal=%u psram=%u",
+                 (unsigned)report.last_us,
+                 (unsigned)report.avg_us,
+                 (unsigned)report.max_us,
+                 (unsigned)report.samples,
+                 active0 ? 1u : 0u,
+                 active1 ? 1u : 0u,
+                 (unsigned)consumed0,
+                 (unsigned)consumed1,
+                 (unsigned)audio_pcm_ring_used(&s_pcm_rings[0]),
+                 (unsigned)AUDIO_PCM_RING_FRAMES,
+                 (unsigned)audio_pcm_ring_used(&s_pcm_rings[1]),
+                 (unsigned)AUDIO_PCM_RING_FRAMES,
+                 (unsigned)s_diag_output_late.count,
+                 (unsigned)s_diag_output_late.max_us,
+                 (unsigned)esp_get_free_heap_size(),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    }
+
+    if (period_us > 0) {
+        s_diag_output_late.threshold_us = period_us;
+    }
+    if (period_us > 0 && audio_diag_late_record(&s_diag_output_late, block_us)) {
+        ESP_LOGW(TAG,
+                 "diag output late: block=%u us period=%u us active=%u/%u ring=%u/%u %u/%u late_count=%u late_max=%u us",
+                 (unsigned)block_us,
+                 (unsigned)period_us,
+                 active0 ? 1u : 0u,
+                 active1 ? 1u : 0u,
+                 (unsigned)audio_pcm_ring_used(&s_pcm_rings[0]),
+                 (unsigned)AUDIO_PCM_RING_FRAMES,
+                 (unsigned)audio_pcm_ring_used(&s_pcm_rings[1]),
+                 (unsigned)AUDIO_PCM_RING_FRAMES,
+                 (unsigned)s_diag_output_late.count,
+                 (unsigned)s_diag_output_late.max_us);
+    }
+}
 
 /* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark;
  * build the frame seek table once the whole file is in. Parks
@@ -696,6 +848,7 @@ static void ae_loader_task(void *arg)
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NO MEM");
         goto park;
     }
+    ae_diag_log_memory("preload-alloc", ctx->deck);
 
     AE_LOCK();
     eng->file_buf  = fw->buf;
@@ -707,13 +860,16 @@ static void ae_loader_task(void *arg)
     int64_t t0  = esp_timer_get_time();
     size_t  off = 0;
     while (off < (size_t)fsz && runtime->run) {
-        size_t want = (size_t)fsz - off;
-        if (want > (256u * 1024u)) want = 256u * 1024u;
+        size_t want = audio_fw_preload_chunk_bytes((size_t)fsz - off,
+                                                   audio_fw_output_task_running());
+        int64_t chunk_start_us = esp_timer_get_time();
         size_t got = fread(fw->buf + off, 1, want, src);
+        uint32_t chunk_us = (uint32_t)(esp_timer_get_time() - chunk_start_us);
         if (got == 0) break;
         off += got;
         fw->loaded_bytes = off;                               /* publish watermark */
         eng->load_progress = (uint8_t)(off * 100u / (size_t)fsz);
+        ae_diag_record_preload_chunk(ctx->deck, chunk_us, got, off, (size_t)fsz);
     }
     fclose(src);
     media_io_gate_end();
@@ -722,9 +878,8 @@ static void ae_loader_task(void *arg)
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
-        AE_LOCK();
+        ae_diag_log_memory("preload-done", ctx->deck);
         build_seek_table(eng);        /* full file in PSRAM → frame-accurate IFI seeks */
-        AE_UNLOCK();
         fw->load_done = true;
         eng->load_progress = 100;
     }
@@ -772,12 +927,21 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
+        int64_t decode_start_us = esp_timer_get_time();
         int n = decode_one_frame(eng, fw, decode_pcm);
+        uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         if (n > 0) {
             eng->frames_since_seek += (uint64_t)n;
             for (int i = 0; i < n; i++) {
                 audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
             }
+            ae_diag_record_decode(ctx->deck,
+                                  decode_us,
+                                  n,
+                                  audio_pcm_ring_used(pcm_ring),
+                                  eng->file_pos,
+                                  fw->loaded_bytes,
+                                  fw->load_done);
         }
         AE_UNLOCK();
         attempts++;
@@ -843,7 +1007,9 @@ static void ae_decode_task(void *arg)
             continue;
         }
         AE_LOCK();
+        int64_t decode_start_us = esp_timer_get_time();
         int  samples = decode_one_frame(eng, fw, decode_pcm);
+        uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
             if (eng->loop_active && eng->sample_rate > 0) {
@@ -856,6 +1022,7 @@ static void ae_decode_task(void *arg)
             }
         }
         bool eof = eng->eof;
+        size_t file_pos = eng->file_pos;
         AE_UNLOCK();
 
         if (eof && samples <= 0) {
@@ -864,6 +1031,14 @@ static void ae_decode_task(void *arg)
             continue;
         }
         if (samples <= 0) continue;
+
+        ae_diag_record_decode(ctx->deck,
+                              decode_us,
+                              samples,
+                              audio_pcm_ring_used(pcm_ring),
+                              file_pos,
+                              fw->loaded_bytes,
+                              fw->load_done);
 
         for (int i = 0; i < samples && runtime->run; i++) {
             while (audio_pcm_ring_free(pcm_ring) == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
@@ -998,6 +1173,14 @@ static void ae_output_task(void *arg)
             AE_UNLOCK();
         }
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
+        uint32_t block_period_ms = audio_output_block_period_ms(s_output_sample_rate);
+        uint32_t block_period_us = block_period_ms * 1000u;
+        ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
+                                    block_period_us,
+                                    consumed[deck0_index],
+                                    consumed[deck1_index],
+                                    deck0.active,
+                                    deck1.active);
         uint32_t block_delay_ms = audio_output_remaining_delay_ms(
             s_output_sample_rate,
             block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
@@ -1084,6 +1267,7 @@ esp_err_t audio_engine_init(void)
     reset_all_fw_preloads();
     reset_all_fw_runtimes();
     reset_all_fw_task_contexts();
+    ae_diag_reset();
 #endif
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;

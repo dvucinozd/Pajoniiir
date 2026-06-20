@@ -168,6 +168,7 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | Check | Result | Notes |
 | --- | --- | --- |
 | MP3 decode + ES8311 output | **PASS** | minimp3 → `esp_codec_dev`/I2S; plays from `/usb`; 44.1 & 48 kHz |
+| Dual-deck audio scheduling | **PASS** | 2026-06-20 P4 run: both decks playing with normal audio and waveform after active-output preload chunks were reduced to 32 KB, seek-table publication was moved to a short lock, codec write pacing was allowed to own timing, and preload diagnostics were throttled |
 | Stability under load | **PASS** | MUST preload MP3 to PSRAM + decode via `fmemopen`; streaming from USB during playback trips a USB-DWC channel assert (`usb_dwc_hal.c:502`) → reboot |
 | Decode task stack | Note | minimp3 needs ~26 KB → dedicated 32 KB decode task |
 | Output routing switch | **PASS** | SETTINGS speaker⟷RCA toggle drives PA (GPIO11); RCA mode mutes speaker (PA off), clean line-level on DAC_OUT_P/N |
@@ -225,6 +226,15 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 - ✅ Load-to-play latency (P5): "LOADING NN%" indicator + progressive preload (loader task +
   gated decoder) → playback starts ~0.3 s instead of 1–6 s. USB read measured ~1 MB/s; hidden
   by streaming the rest in the background. Verified on hardware (clean audio, no underrun).
+- ✅ **Dual-deck audio scheduling fix (2026-06-20):** when Deck 2 was started
+  while Deck 1 was already playing, audio could slow/pop and the waveform
+  could become non-fluid. COM15 diagnostics showed full PCM rings and enough
+  heap/PSRAM, so the root cause was scheduling/pacing rather than decoder
+  underflow. The fix reduced active-output preload chunks from 256 KB to 32 KB,
+  built MP3 seek tables outside the long engine lock before a short publish,
+  removed the extra output-task delay after `esp_codec_dev_write()`, and
+  changed aggressive preload logging to periodic summaries. Hardware retest
+  confirmed normal audio and waveform with both decks playing.
 - ✅ `bsp_sd_init()` SDMMC (config/cache): `/sd` mounts on the JC4880 TF slot. Root cause of the
   earlier timeout was `SDMMC_HOST_DEFAULT()` selecting slot 1 while this board is wired to slot 0.
 - Line-level output: verify ES8311 DAC → RCA line level.

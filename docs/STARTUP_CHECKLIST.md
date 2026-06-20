@@ -67,6 +67,9 @@
   2026-06-20.
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
   press/release events. P4 Smart DSP/settings behavior remains deferred.
+- P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
+  preload/output pacing pass: both decks can play with normal audio and normal
+  waveform motion.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active

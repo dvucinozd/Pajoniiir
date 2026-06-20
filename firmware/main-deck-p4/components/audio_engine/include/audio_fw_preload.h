@@ -16,3 +16,4 @@ typedef struct {
 void audio_fw_preload_reset(audio_fw_preload_t *slot);
 void audio_fw_preload_begin_load(audio_fw_preload_t *slot);
 void audio_fw_preload_set_path(audio_fw_preload_t *slot, const char *path);
+size_t audio_fw_preload_chunk_bytes(size_t remaining_bytes, bool output_active);

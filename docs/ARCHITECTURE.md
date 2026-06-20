@@ -66,6 +66,11 @@ Current P4 audio ownership rule:
   resampler, lifecycle status, and last-error state;
 - one shared firmware output service owns codec open/close and consumes both
   deck PCM rings through the output mixer;
+- the shared output service relies on codec/I2S write pacing and does not add a
+  second FreeRTOS delay after each output block;
+- MP3 preload uses smaller read chunks while audio output is active, and MP3
+  seek table construction publishes the finished table with a short lock so
+  loader/index work cannot hold the audio engine mutex for the full scan;
 - stopping or reloading one deck must not close the codec while another deck is
   still loaded or playing;
 - USB removal uses `audio_engine_stop_all()` to tear down both decks and the
