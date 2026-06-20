@@ -108,6 +108,31 @@ S3 crash that previously made the second press appear ineffective.
 | Duplicate LED frame | S3 suppresses duplicate raw output after successful send | host-tested 2026-06-20 | `flx4_led_snapshot` verifies normal diff publication suppresses unchanged values after a successful send. |
 | Dropped LED frame | Next forced snapshot corrects the controller | host-tested 2026-06-20 | `flx4_led_snapshot` keeps failed sends invalid for retry, and a forced reconnect snapshot republishes all six MVP LED values including off states. |
 
+## Salvage Branch Hardware Verification
+
+Verification date: 2026-06-20
+
+Firmware branch: `codex/flx4-extended-controls-salvage`
+
+Firmware commit: `b848b5c`
+
+COM ports:
+
+- S3: COM3
+- P4: COM15
+
+Result: pass, confirmed by operator.
+
+Observed behavior:
+
+- S3 firmware published DDJ-FLX4 USB connection state from the USB MIDI host
+  lifecycle.
+- P4 firmware handled the connected state by forcing a P4-owned LED snapshot.
+- FLX4 reconnect restored the MVP LED state without changing playback or deck
+  state.
+- The implemented forced snapshot scope is intentionally limited to the MVP
+  LED set: Deck 1/2 Play, Cue, and PFL.
+
 ## Promotion Gate
 
 Before adding or enabling a production entry in `flx4_led_map()`:

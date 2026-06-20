@@ -61,3 +61,26 @@ SMART FADER:
 
 After capture, the S3 production translator configuration was rebuilt and
 flashed back to COM3.
+
+## Salvage Branch Hardware Verification
+
+Verification date: 2026-06-20
+
+Firmware branch: `codex/flx4-extended-controls-salvage`
+
+Firmware commit: `b848b5c`
+
+COM ports:
+
+- S3: COM3
+- P4: COM15
+
+Result: pass, confirmed by operator.
+
+Observed behavior:
+
+- SMART CFX and SMART FADER raw input mapping was included in the flashed S3
+  translator firmware.
+- This salvage slice intentionally maps only momentary semantic button
+  press/release input. It does not enable P4 Smart CFX or Smart Fader DSP,
+  settings, or LED state behavior.
