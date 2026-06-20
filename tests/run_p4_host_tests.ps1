@@ -183,6 +183,18 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_output_timing"
+        Dir = "tests/audio_output_timing"
+        Target = "test_audio_output_timing.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_output_timing.exe",
+            "test_audio_output_timing.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_timing.c"
+        )
+    },
+    @{
         Name = "deck_core_dual"
         Dir = "tests/deck_core_dual"
         Target = "test_deck_core_dual.exe"

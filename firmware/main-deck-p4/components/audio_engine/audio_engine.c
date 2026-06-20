@@ -18,6 +18,7 @@
 #include "audio_fw_task_plan.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
+#include "audio_output_timing.h"
 #include "audio_pcm_ring.h"
 #include "audio_resampler.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
@@ -910,10 +911,17 @@ static void ae_output_task(void *arg)
 {
     (void)arg;
     int16_t out[AE_OUT_FRAMES * 2];
+    TickType_t next_wake = 0;
+    bool pace_armed = false;
     while (s_output_run) {
         if (!s_output_codec_open) {
+            pace_armed = false;
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
+        }
+        if (!pace_armed) {
+            next_wake = xTaskGetTickCount();
+            pace_armed = true;
         }
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
@@ -994,6 +1002,12 @@ static void ae_output_task(void *arg)
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             AE_UNLOCK();
+        }
+        uint32_t block_delay_ms = audio_output_block_period_ms(s_output_sample_rate);
+        if (block_delay_ms > 0u) {
+            vTaskDelayUntil(&next_wake, pdMS_TO_TICKS(block_delay_ms));
+        } else {
+            taskYIELD();
         }
     }
     if (s_output_codec_open) {
