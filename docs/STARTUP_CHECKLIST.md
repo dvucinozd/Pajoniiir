@@ -104,7 +104,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 
 ## Next Controller Expansion
 
-- [ ] Add Browse press (`0x96/0x41`) end to end as the first remaining MVP gap.
+- [x] Browse press (`0x96/0x41`) is routed end to end as a P4
+  Library/Overview toggle. Load 1 and Load 2 remain the only deck-load
+  buttons, and Browse rotate moves the selected row one detent at a time.
 - [ ] Build the extended control inventory from the vendored Mixxx XML.
 - [ ] Add deck modifiers and transport extensions with P4-owned semantics.
 - [ ] Add supported mixer/monitoring controls and 14-bit range tests.
