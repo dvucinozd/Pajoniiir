@@ -8,6 +8,7 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
 
 SRCS    = test_deck_core_dual.c \
           control_link_stub.c \
+          ../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c \
           ../../firmware/main-deck-p4/components/deck_core/deck_core.c
 
 TARGET  = test_deck_core_dual

@@ -90,3 +90,9 @@ static inline esp_err_t audio_engine_toggle_pfl(uint8_t deck)
     audio_engine_stub_pfl_toggle_count[deck]++;
     return ESP_OK;
 }
+
+static inline bool audio_engine_get_pfl_enabled(uint8_t deck)
+{
+    if (deck >= 2) return false;
+    return (audio_engine_stub_pfl_toggle_count[deck] % 2) != 0;
+}

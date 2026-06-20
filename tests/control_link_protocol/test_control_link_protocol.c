@@ -16,6 +16,7 @@ int p4_btn_load(void);
 int p4_btn_count(void);
 int p4_ctrl_ev_jog(void);
 int p4_ctrl_ev_browse(void);
+int p4_ctrl_ev_state(void);
 int p4_ctrl_type_state(void);
 int p4_ctrl_id_flx4_connection(void);
 int p4_ctrl_flx4_disconnected(void);
@@ -91,6 +92,9 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
         return true;
     case CTRL_TYPE_HEARTBEAT:
         ev->type = CTRL_EV_HEARTBEAT;
+        return true;
+    case CTRL_TYPE_STATE:
+        ev->type = CTRL_EV_STATE;
         return true;
     default:
         return false;
@@ -205,12 +209,21 @@ static void test_s3_and_p4_flx4_connection_state_ids_match(void)
 {
     assert(s3_ctrl_type_state() == p4_ctrl_type_state());
     assert(s3_ctrl_type_state() == CTRL_TYPE_STATE);
+    assert(p4_ctrl_ev_state() == CTRL_EV_STATE);
     assert(s3_ctrl_id_flx4_connection() == p4_ctrl_id_flx4_connection());
     assert(s3_ctrl_id_flx4_connection() == CTRL_ID_FLX4_CONNECTION);
     assert(s3_ctrl_flx4_disconnected() == p4_ctrl_flx4_disconnected());
     assert(s3_ctrl_flx4_disconnected() == CTRL_FLX4_DISCONNECTED);
     assert(s3_ctrl_flx4_connected() == p4_ctrl_flx4_connected());
     assert(s3_ctrl_flx4_connected() == CTRL_FLX4_CONNECTED);
+
+    uint8_t frame[CTRL_FRAME_LEN];
+    ctrl_event_t ev;
+    build_frame(frame, CTRL_TYPE_STATE, CTRL_ID_FLX4_CONNECTION, CTRL_FLX4_CONNECTED, 31);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_STATE);
+    assert(ev.id == CTRL_ID_FLX4_CONNECTION);
+    assert(ev.value == CTRL_FLX4_CONNECTED);
 }
 
 static void test_led_command_values_and_bad_checksum(void)

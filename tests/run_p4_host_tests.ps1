@@ -218,7 +218,21 @@ $tests = @(
             "-o", "test_deck_core_dual.exe",
             "test_deck_core_dual.c",
             "control_link_stub.c",
+            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+        )
+    },
+    @{
+        Name = "flx4_led_snapshot"
+        Dir = "tests/flx4_led_snapshot"
+        Target = "test_flx4_led_snapshot.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-o", "test_flx4_led_snapshot.exe",
+            "test_flx4_led_snapshot.c",
+            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
         )
     },
     @{

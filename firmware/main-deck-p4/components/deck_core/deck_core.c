@@ -1,5 +1,6 @@
 #include "deck_core.h"
 #include "control_link.h"
+#include "flx4_led_snapshot.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -24,6 +25,7 @@ extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((
 static QueueHandle_t    s_queue;
 static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
+static flx4_led_publisher_t s_flx4_led_publisher;
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
@@ -97,6 +99,55 @@ static void sync_leds(uint8_t deck)
     deck_state_t *state = &s_decks[deck];
     control_link_send_led(LED_PLAY, state->playing ? 1 : 0);
     control_link_send_led(LED_CUE,  (state->position_ms == state->cue_point_ms) ? 1 : 0);
+}
+
+static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, void *ctx)
+{
+    (void)ctx;
+    control_link_send_led_deck(led, state, deck);
+    return ESP_OK;
+}
+
+static void publish_flx4_led_snapshot(bool force)
+{
+    flx4_led_snapshot_input_t input = { 0 };
+
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        deck_state_t state = deck_core_get_deck_state(deck);
+        input.cue[deck] = state.position_ms == state.cue_point_ms ? 1 : 0;
+        input.play[deck] = state.playing ? 1 : 0;
+        input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
+    }
+
+    esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,
+                                              &input,
+                                              force,
+                                              send_snapshot_led,
+                                              NULL);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "FLX4 LED snapshot publish failed: %s", esp_err_to_name(rc));
+    } else {
+        ESP_LOGI(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
+    }
+}
+
+static void on_state_event(const ctrl_event_t *ev)
+{
+    if (!ev) {
+        return;
+    }
+    if (ev->id != CTRL_ID_FLX4_CONNECTION) {
+        ESP_LOGW(TAG, "unknown state id %u", (unsigned)ev->id);
+        return;
+    }
+    if (ev->value == CTRL_FLX4_CONNECTED) {
+        ESP_LOGI(TAG, "FLX4 connected; forcing LED snapshot");
+        publish_flx4_led_snapshot(true);
+    } else if (ev->value == CTRL_FLX4_DISCONNECTED) {
+        ESP_LOGI(TAG, "FLX4 disconnected");
+    } else {
+        ESP_LOGW(TAG, "unknown FLX4 connection state %d", ev->value);
+    }
 }
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
@@ -349,6 +400,11 @@ static void deck_task(void *arg)
             continue;
         }
 
+        if (ev.type == CTRL_EV_STATE) {
+            on_state_event(&ev);
+            continue;
+        }
+
         uint8_t deck = deck_index_for_event(&ev);
 
         if (event_is_mixer_control(&ev)) {
@@ -375,6 +431,9 @@ static void deck_task(void *arg)
             xSemaphoreGive(s_mutex);
             ESP_LOGD(TAG, "S3 heartbeat seq=%d", ev.seq);
             break;
+        case CTRL_EV_STATE:
+            on_state_event(&ev);
+            break;
         }
     }
 }
@@ -386,6 +445,7 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    flx4_led_publisher_init(&s_flx4_led_publisher);
 
     s_mutex = xSemaphoreCreateMutex();
     if (!s_mutex) return ESP_ERR_NO_MEM;
@@ -479,6 +539,7 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    flx4_led_publisher_init(&s_flx4_led_publisher);
     s_last_heartbeat_tick = 0;
 }
 
@@ -494,6 +555,11 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         } else {
             on_button(DECK_CORE_COMPAT_DECK, button_for_event(ev), ev->value != 0);
         }
+        return;
+    }
+
+    if (ev->type == CTRL_EV_STATE) {
+        on_state_event(ev);
         return;
     }
 
@@ -519,6 +585,9 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         break;
     case CTRL_EV_HEARTBEAT:
         s_last_heartbeat_tick = xTaskGetTickCount();
+        break;
+    case CTRL_EV_STATE:
+        on_state_event(ev);
         break;
     }
 }

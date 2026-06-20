@@ -146,6 +146,9 @@ static void dispatch_frame(const uint8_t *f)
     case CTRL_TYPE_HEARTBEAT:
         ev.type = CTRL_EV_HEARTBEAT;
         break;
+    case CTRL_TYPE_STATE:
+        ev.type = CTRL_EV_STATE;
+        break;
     default:
         ESP_LOGW(TAG, "unknown frame type 0x%02x", f[1]);
         return;

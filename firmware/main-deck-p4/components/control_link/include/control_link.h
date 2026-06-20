@@ -148,6 +148,7 @@ typedef enum {
     CTRL_EV_BROWSE,
     CTRL_EV_PITCH,
     CTRL_EV_HEARTBEAT,
+    CTRL_EV_STATE,
 } ctrl_event_type_t;
 
 typedef struct {
