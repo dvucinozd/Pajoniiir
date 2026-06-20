@@ -32,6 +32,7 @@ Responsibilities:
 - combine MSB/LSB pairs for 14-bit controls before forwarding when practical;
 - coalesce high-rate jog and analog values locally so stale motion does not
   flood the UART queue;
+- publish DDJ-FLX4 USB connection/disconnection state to the P4;
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
 - emit FLX4 MIDI LED feedback.
@@ -55,7 +56,9 @@ Responsibilities:
   implemented, cue/PFL selection;
 - decode audio and write master/cue buffers to hardware;
 - render UI state;
-- send LED feedback commands to the S3.
+- send LED feedback commands to the S3;
+- force a P4-owned MVP LED snapshot after an FLX4 reconnect so physical LEDs
+  recover without S3 owning playback state.
 
 Current P4 audio ownership rule:
 
@@ -77,10 +80,13 @@ Current P4 audio ownership rule:
 5. P4 calls audio engine/mixer APIs.
 6. P4 sends LED feedback back over `control_link`.
 7. S3 emits the matching MIDI LED message to the FLX4.
+8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
+   republishes the current Play/Cue/PFL snapshot.
 
 Current S3 firmware modes:
 
-- default DDJ-FLX4 host mode: raw USB MIDI logger for hardware capture;
+- default DDJ-FLX4 host mode: USB MIDI host for raw logging, translator input,
+  connection-state publication, and MIDI LED output;
 - DDJ-FLX4 translator mode: raw MIDI input mapped to deck-aware `0xA5`
   semantic frames, enabled by `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
 - inherited CDJ panel compatibility mode: direct GPIO panel input plus TinyUSB

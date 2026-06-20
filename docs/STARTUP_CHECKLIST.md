@@ -38,11 +38,12 @@
 
 - `master` includes the P4 dual-deck UI refactor, the 2026-06-13 Deck 2
   Overview waveform jitter fix, the S3 review fixes for FLX4 host/translator
-  mode, and the enabled S3 UART translation configuration.
-- Branch `codex/p4-review-fixes` adds P4 review fixes: per-deck audio status,
+  mode, the enabled S3 UART translation configuration, FLX4 reconnect LED
+  resynchronization, and raw Smart CFX/Smart Fader input mapping.
+- The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
-  regression runner.
+  regression runner are now part of `master`.
 - S3 review fixes include a host regression runner, hardened DDJ-FLX4 USB MIDI
   descriptor handling, deck-aware S3 `control_link` constants, an XML-derived
   FLX4 MIDI mapper, translator-mode UART coalescing, and safer legacy CDJ panel
@@ -61,6 +62,11 @@
   split into focused modules.
 - S3 DDJ-FLX4 raw MIDI capture and translation are verified and completed.
 - S3 and P4 Phase 5 LED feedback (Play, Cue, PFL) is verified and completed.
+- S3 publishes FLX4 USB connection state and P4 forces a complete MVP
+  Play/Cue/PFL LED snapshot after reconnect; hardware verification passed on
+  2026-06-20.
+- SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
+  press/release events. P4 Smart DSP/settings behavior remains deferred.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active
@@ -107,6 +113,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] Browse press (`0x96/0x41`) is routed end to end as a P4
   Library/Overview toggle. Load 1 and Load 2 remain the only deck-load
   buttons, and Browse rotate moves the selected row one detent at a time.
+- [x] MVP Play/Cue/PFL LED reconnect resynchronization is routed end to end
+  through S3 FLX4 connection state and P4 forced LED snapshots.
+- [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
+  and mapped as semantic input-only button events.
 - [ ] Build the extended control inventory from the vendored Mixxx XML.
 - [ ] Add deck modifiers and transport extensions with P4-owned semantics.
 - [ ] Add supported mixer/monitoring controls and 14-bit range tests.

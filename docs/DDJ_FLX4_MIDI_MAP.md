@@ -13,6 +13,10 @@ addresses, but the standalone behavior must be defined as a semantic S3 event
 and P4-owned state transition. Hardware capture remains the acceptance test for
 each newly delivered control group, and any difference must be recorded here.
 
+Additional physical capture on 2026-06-20 verified SMART CFX and SMART FADER
+button inputs. They are implemented as input-only semantic press/release events;
+P4 DSP/settings behavior is deferred.
+
 ## Deck Channels
 
 | Deck | Button status | CC status |
@@ -35,6 +39,8 @@ each newly delivered control group, and any difference must be recorded here.
 | Load | Deck 2 | `0x96` | `0x47` | global button status, deck from midino |
 | Browse rotate | Library | `0xB6` | `0x40` | signed 7-bit relative encoder: `0x01` = +1 step, `0x7F` = -1 step |
 | Browse press | Library | `0x96` | `0x41` | toggles the P4 UI between Library and Overview; does not load a deck |
+| Smart CFX | Global | `0x96` | `0x00` | press `0x7F`, release `0x00`; input-only semantic event |
+| Smart Fader | Global | `0x96` | `0x01` | press `0x7F`, release `0x00`; input-only semantic event |
 
 ## Jogs
 
@@ -86,6 +92,8 @@ hardcoded ad hoc in parser logic.
 #define FLX4_BTN_LOAD_DECK1      0x46
 #define FLX4_BTN_LOAD_DECK2      0x47
 #define FLX4_BTN_PFL             0x54
+#define FLX4_BTN_SMART_CFX       0x00
+#define FLX4_BTN_SMART_FADER     0x01
 
 #define FLX4_CC_JOG_SIDE_BEND    0x21
 #define FLX4_CC_JOG_SCRATCH      0x22

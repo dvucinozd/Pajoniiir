@@ -3,7 +3,7 @@
 Status: physical capture in progress; MVP reconnect resynchronization verified.
 
 Purpose: record verified MIDI OUT messages sent to the DDJ-FLX4 for every LED
-that Section 6 may drive from P4-owned state. Do not promote any row to a
+that Phase 7 may drive from P4-owned state. Do not promote any row to a
 production S3 mapping until the raw USB status, address, values, and reconnect
 behavior are captured on the physical controller.
 
@@ -35,11 +35,11 @@ behavior are captured on the physical controller.
 | Control LED | Deck | P4 owner/state | USB status | Note/CC | Off value | On value | Blink/alternate value | Refresh required | Verification status | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Play/Pause | 1 | deck_core playing | `0x90` | note `0x0B` | `0x00` | `0x7F` green | pending | pending | physically verified 2026-06-20 | S3 probe console sent off/on/off; Deck 1 PLAY LED followed each value. |
-| Play/Pause | 2 | deck_core playing | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during Section 6 reconnect sweep. |
-| Cue | 1 | deck_core cue state | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during Section 6 reconnect sweep. |
-| Cue | 2 | deck_core cue state | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during Section 6 reconnect sweep. |
-| Headphone Cue/PFL | 1 | audio_engine monitoring | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during Section 6 reconnect sweep. |
-| Headphone Cue/PFL | 2 | audio_engine monitoring | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during Section 6 reconnect sweep. |
+| Play/Pause | 2 | deck_core playing | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during the extended LED reconnect sweep. |
+| Cue | 1 | deck_core cue state | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during the extended LED reconnect sweep. |
+| Cue | 2 | deck_core cue state | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during the extended LED reconnect sweep. |
+| Headphone Cue/PFL | 1 | audio_engine monitoring | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during the extended LED reconnect sweep. |
+| Headphone Cue/PFL | 2 | audio_engine monitoring | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | captured in MVP | verified MVP | Reconfirm during the extended LED reconnect sweep. |
 | Vinyl | 1 | deck_core vinyl mode | not present | not present | not present | not present | not present | not applicable | physically inspected 2026-06-20 | FLX4 has no dedicated Vinyl button/LED; Vinyl behavior defaults enabled. |
 | Vinyl | 2 | deck_core vinyl mode | not present | not present | not present | not present | not present | not applicable | physically inspected 2026-06-20 | FLX4 has no dedicated Vinyl button/LED; Vinyl behavior defaults enabled. |
 | Sync enabled | 1 | beat_sync controller | `0x90` | note `0x58` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | BEAT SYNC Deck 1 LED followed off/on/off probe. |
@@ -101,7 +101,7 @@ S3 crash that previously made the second press appear ineffective.
 
 | Scenario | Expected result | Result | Notes |
 | --- | --- | --- | --- |
-| USB unplug/reinsert while stopped | P4-confirmed snapshot is restored | pass for transport CUE D1/D2 2026-06-20 | Both decks were paused with their transport CUE LED active. After separate reconnect runs, each CUE LED returned automatically and its deck remained stopped. P4 logged a fresh forced snapshot after each reconnect. Extended Section 6 LED groups remain outside this MVP result. |
+| USB unplug/reinsert while stopped | P4-confirmed snapshot is restored | pass for transport CUE D1/D2 2026-06-20 | Both decks were paused with their transport CUE LED active. After separate reconnect runs, each CUE LED returned automatically and its deck remained stopped. P4 logged a fresh forced snapshot after each reconnect. Extended Phase 7 LED groups remain outside this MVP result. |
 | USB unplug/reinsert while playing | P4-confirmed snapshot is restored without changing playback state | pass for Play/PFL D1/D2 2026-06-20 | Both decks were exercised while playing with headphone CUE/PFL active. Playback continued without interruption and PLAY/PFL LEDs returned without a button press. Captured logs show S3 disconnect/connect publications followed by P4 `FLX4 connected; LED snapshot requested` and `forcing complete FLX4 LED snapshot`. |
 | S3 reset while P4 keeps state | Full snapshot is resent after heartbeat recovery | pass for Play D1 2026-06-20 | S3 was hard-reset over COM3 while P4 kept Deck 1 playing. Playback continued and the PLAY LED returned automatically. P4 logged a new connection-state request and forced snapshot after S3 re-enumerated the controller. |
 | P4 reset while S3 stays connected | LEDs return to P4 boot/default state | pass 2026-06-20 | P4 was reset over COM15 while Deck 1 was playing and its PLAY LED was on. P4 rebooted cleanly, returned to its empty/paused boot state, and the physical Deck 1 PLAY LED turned off. S3 remained stable. |
@@ -115,6 +115,8 @@ Verification date: 2026-06-20
 Firmware branch: `codex/flx4-extended-controls-salvage`
 
 Firmware commit: `b848b5c`
+
+Merged-to-master commit: `9df574c`
 
 COM ports:
 

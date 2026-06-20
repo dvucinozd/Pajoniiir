@@ -17,6 +17,11 @@ CDJ100S/P4 standalone context from the imported project.
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) - current bootstrap/hardware checklist
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) - remaining technical risks
 
+## Validation Records
+
+- [`validation/FLX4_SMART_INPUT_CAPTURE.md`](validation/FLX4_SMART_INPUT_CAPTURE.md) - physical SMART CFX / SMART FADER MIDI input capture and integration notes
+- [`validation/FLX4_LED_MIDI_OUT_CAPTURE.md`](validation/FLX4_LED_MIDI_OUT_CAPTURE.md) - physical LED MIDI output capture and reconnect resynchronization notes
+
 ## Analysis & Decisions
 
 - [`source-xdj100sx-analysis.md`](source-xdj100sx-analysis.md) — upstream XDJ100SX project: what it contains, which parts are reusable, MIDI contract

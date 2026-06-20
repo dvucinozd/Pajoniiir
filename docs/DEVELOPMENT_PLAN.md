@@ -101,9 +101,9 @@ Validation note, 2026-06-08:
   transport and pitch state.
 - Browser namespace routing now accepts `CTRL_ID_BROWSE_DELTA`,
   `CTRL_ID_LOAD_DECK1`, and `CTRL_ID_LOAD_DECK2`. Deck 1 load delegates to the
-  UI library load flow; Deck 2 now targets the deck-aware UI load flow and is
-  limited by the current producer-only Deck 2 audio backend. Browse press
-  toggles Library/Overview and does not load either deck.
+  UI library load flow; Deck 2 targets the deck-aware UI load flow and the
+  current shared output mixer path. Browse press toggles Library/Overview and
+  does not load either deck.
 - Later P4 UI/audio work verified Deck 1 and Deck 2 snapshots, active target
   selection, Deck 2 transport position sync, and deck-local Overview metadata
   for the local touchscreen path.
@@ -116,8 +116,9 @@ Exit criteria:
 
 ## Phase 4: Dual Audio Engine And Mixer
 
-Status: master mix path implemented for the P4 local path; cue/PFL audio output
-buffer remains pending.
+Status: master mix, channel fader/crossfader gains, and cue/PFL selection are
+implemented for the current two-deck P4 path. Transparent limiting and the
+MP3 preload/index timing spike remain follow-up work.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -125,11 +126,12 @@ Tasks:
 
 - add deck-aware audio API boundary; done
 - split single global `s_eng` into per-deck engine state; started
-- run two decode producers;
-- add a mixer/output consumer;
+- run two decode producers; done for the current two-deck path
+- add a mixer/output consumer; done
 - implement channel volume and crossfader gains; math layer done
 - add clipping-safe summing; math layer done
-- produce cue/PFL buffer path after master mix is stable.
+- produce cue/PFL buffer path after master mix is stable; implemented for the
+  current Stereo Master / Split Mono routing path.
 
 TODO:
 
@@ -446,7 +448,11 @@ Validation note, 2026-06-10:
 
 ## Phase 7: Extended DDJ-FLX4 Control Surface
 
-Status: planned.
+Status: in progress. The MVP control path, Browse press, Play/Cue/PFL LED
+feedback, FLX4 reconnect LED resynchronization, and raw Smart CFX/Smart Fader
+input mapping are implemented and hardware-verified. Larger transport
+extensions, mixer EQ/filter controls, performance pads, beat sync, sampler,
+and Smart CFX/Fader DSP remain deferred.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -470,25 +476,33 @@ Mapping policy:
 
 Implementation order:
 
-1. **Close MVP input gaps**
+1. **Close MVP input gaps** ✅
    - map Browse press (`0x96/0x41`) to a Library/Overview toggle semantic event;
    - verify press/release handling and ensure Browse rotate remains relative;
    - add S3 mapper, control-link, and P4 browser-routing tests.
-2. **Deck modifiers and transport extensions**
+2. **MVP LED reconnect resynchronization** ✅
+   - publish FLX4 USB connection state from S3 to P4;
+   - force a P4-owned LED snapshot after reconnect;
+   - verify Play/Cue/PFL LED recovery without changing playback or deck state.
+3. **Smart CFX / Smart Fader raw input mapping** ✅
+   - physically capture SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`);
+   - map each button as a momentary semantic press/release event;
+   - defer P4 DSP/settings behavior until a separate audio feature design.
+4. **Deck modifiers and transport extensions**
    - add Shift, Beat Sync, tempo-range, vinyl, and other deck transport
      buttons that have a clear standalone P4 behavior;
    - send modifier press/release events to the P4 instead of keeping hidden
      playback state on the S3;
    - defer controls whose standalone behavior is not defined rather than
      copying a Mixxx script callback name as behavior.
-3. **Mixer and monitoring controls**
+5. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
    - add explicit P4 mixer parameters, clamping, snapshots, persistence only
      where already consistent with settings ownership, and LED/state feedback
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
-4. **Performance pads and pad modes**
+6. **Performance pads and pad modes**
    - inventory Hot Cue, Beat Loop, Beat Jump, Sampler, Key Shift, and their
      shifted MIDI ranges from the XML;
    - first connect modes already implemented by the P4 touchscreen: Hot Cue,
@@ -496,12 +510,12 @@ Implementation order:
    - represent pad mode and pad action as separate P4-owned semantic state;
    - leave Sampler and unsupported stem/effect script behaviors disabled until
      a standalone P4 feature definition exists.
-5. **Effects controls**
+7. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
    - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
      expose no-op controls as completed functionality.
-6. **LED feedback expansion**
+8. **LED feedback expansion**
    - derive candidate output status/midino values from the XML output section;
    - drive LEDs only from P4-confirmed state through the existing S3 MIDI Out
      queue;
@@ -532,10 +546,10 @@ Validation per control group:
 
 Exit criteria:
 
-- every implemented physical control has a documented XML-derived mapping,
+- every implemented physical control has a documented XML-derived or raw-captured mapping,
   semantic event, P4 owner, automated test, and hardware acceptance result;
-- Browse press and all selected control groups work end to end from FLX4 to
-  S3, through `0xA5`, to P4 behavior;
+- Browse press, Smart CFX, Smart Fader, and all selected control groups work
+  end to end from FLX4 to S3, through `0xA5`, to P4 behavior;
 - S3 contains no authoritative playback, mixer, pad-mode, or effect state;
 - LEDs recover to P4-confirmed state after S3 or FLX4 reconnect;
 - documentation distinguishes implemented, deferred, and unsupported Mixxx

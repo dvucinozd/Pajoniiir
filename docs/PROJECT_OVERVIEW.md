@@ -70,11 +70,18 @@ The fork is no longer only the imported single-deck baseline:
   invalidation so status chrome does not create continuous redraw pressure.
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue.
+- S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a complete
+  MVP LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
+  Play/Cue/PFL LED recovery without playback or deck-state changes.
+- Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
+  semantic button events. Their P4 DSP/settings behavior is intentionally not
+  implemented yet.
 
 ## Non-Goals For The First Milestone
 
 - Full Mixxx feature parity.
 - Beat sync or master tempo/key lock.
+- Smart CFX/Fader audio DSP.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.

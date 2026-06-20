@@ -10,12 +10,19 @@
 
 ---
 
+## Final Outcome
+
+- Completed and merged to `master` on 2026-06-20.
+- Final master integration commit: `9df574c docs: record FLX4 salvage hardware verification`.
+- The original `codex/flx4-extended-controls` branch was not merged directly; verified slices were salvaged through `codex/flx4-extended-controls-salvage` and then fast-forwarded into `master`.
+
+---
+
 ## Baseline Facts
 
-- Current safe base: `master` at `148a868 fix(audio): include render time in output pacing`.
-- Source branch: `origin/codex/flx4-extended-controls` at `d17eb99 docs: record Smart controls MIDI input capture`.
-- `codex/flx4-extended-controls` is not merged into `master`.
-- Direct merge is rejected because it conflicts with current:
+- Plan creation safe base: `master` at `148a868 fix(audio): include render time in output pacing`.
+- Plan creation source branch: `origin/codex/flx4-extended-controls` at `d17eb99 docs: record Smart controls MIDI input capture`.
+- At plan creation, direct merge was rejected because it conflicted with:
   - Browse press Library/Overview toggle behavior.
   - S3 FLX4 LED fallback crash guard.
   - P4 `audio_output_timing` pacing fix.

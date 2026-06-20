@@ -6,6 +6,9 @@ Capture date: 2026-06-20
 
 Repository state: branch `codex/flx4-extended-controls`, commit `843232a`
 
+Final integration note: the input mapping was salvaged and merged to `master`
+on 2026-06-20 at commit `9df574c`.
+
 Capture path:
 
 ```text
@@ -69,6 +72,8 @@ Verification date: 2026-06-20
 Firmware branch: `codex/flx4-extended-controls-salvage`
 
 Firmware commit: `b848b5c`
+
+Merged-to-master commit: `9df574c`
 
 COM ports:
 

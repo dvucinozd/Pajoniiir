@@ -100,9 +100,11 @@ two-deck LVGL UI with Pioneered-style Overview chrome, centered beat/phase
 indicators, fixed-segment timers, and bounded title/timer invalidation.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
-mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture, dual-deck
-headphone cue/PFL routing, and active physical FLX4 LED feedback (Play, Cue, PFL)
-are fully implemented. The porting steps are tracked in
+mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture,
+Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
+LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
+Smart CFX/Smart Fader input mapping are implemented. Smart CFX/Fader DSP and
+settings behavior remain deferred. The porting steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target
@@ -117,13 +119,17 @@ two-deck standalone path:
    this for the local UI/control path.
 4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented).
 5. P4 sends transport and mixer LED feedback (Play, Cue, PFL) back to the S3, and S3 sends the matching MIDI LED messages to the FLX4 (implemented).
+6. S3 publishes FLX4 USB connection state and P4 forces a P4-owned MVP LED
+   snapshot after reconnect so Play/Cue/PFL LEDs recover without changing
+   playback state (implemented).
 
 ## Extended Controller Plan
 
-The remaining useful FLX4 controls will use the vendored Mixxx XML for MIDI
-status, midino, message encoding, deck/shift channels, and 14-bit pairing. The
-MVP hardware capture matched those definitions exactly. Mixxx JavaScript logic
-will not run on either ESP32: the S3 emits semantic events and the P4 owns all
-deck, mixer, pad-mode, effect, playback, and LED state. Implementation order and
+The remaining useful FLX4 controls use the vendored Mixxx XML for MIDI status,
+midino, message encoding, deck/shift channels, and 14-bit pairing. The MVP
+hardware capture matched those definitions exactly, and the Smart CFX/Fader
+buttons were separately raw-captured on 2026-06-20. Mixxx JavaScript logic will
+not run on either ESP32: the S3 emits semantic events and the P4 owns all deck,
+mixer, pad-mode, effect, playback, and LED state. Implementation order and
 acceptance criteria are defined in Phase 7 of
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
