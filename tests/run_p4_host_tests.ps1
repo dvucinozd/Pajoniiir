@@ -106,6 +106,11 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("remain_ms / 10u")
 
+Assert-FileDoesNotContain `
+    -Name "deck_core UI-only buttons use semantic button mapping" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("on_button(DECK_CORE_COMPAT_DECK, (button_id_t)ev.id")
+
 $tests = @(
     @{
         Name = "audio_engine"

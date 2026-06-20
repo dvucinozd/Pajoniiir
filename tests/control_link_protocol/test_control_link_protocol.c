@@ -36,6 +36,7 @@ int s3_ctrl_id_ch1_volume(void);
 int s3_ctrl_id_crossfader(void);
 int s3_ctrl_id_browse_delta(void);
 int s3_ctrl_id_load_deck2(void);
+int s3_ctrl_id_browse_press(void);
 
 static void build_frame(uint8_t frame[CTRL_FRAME_LEN],
                         uint8_t type, uint8_t id, int16_t value, uint8_t seq)
@@ -189,6 +190,7 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_crossfader() == CTRL_ID_CROSSFADER);
     assert(s3_ctrl_id_browse_delta() == CTRL_ID_BROWSE_DELTA);
     assert(s3_ctrl_id_load_deck2() == CTRL_ID_LOAD_DECK2);
+    assert(s3_ctrl_id_browse_press() == CTRL_ID_BROWSE_PRESS);
 }
 
 static void test_led_command_values_and_bad_checksum(void)

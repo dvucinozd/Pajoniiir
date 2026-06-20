@@ -16,6 +16,7 @@
 #define FLX4_BTN_LOAD_D1       0x46
 #define FLX4_BTN_LOAD_D2       0x47
 #define FLX4_BTN_PFL           0x54
+#define FLX4_BTN_BROWSE_PRESS  0x41
 
 #define FLX4_CC_JOG_SIDE_BEND  0x21
 #define FLX4_CC_JOG_SCRATCH    0x22
@@ -83,6 +84,15 @@ static int16_t relative_delta(uint8_t value)
     return (int16_t)value - 64;
 }
 
+static int16_t relative_twos_complement_delta(uint8_t value)
+{
+    value &= 0x7F;
+    if (value == 0x00 || value == 0x40) {
+        return 0;
+    }
+    return value < 0x40 ? (int16_t)value : (int16_t)value - 0x80;
+}
+
 static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_control_event_t *out)
 {
     const bool deck1 = status == FLX4_STATUS_D1_BTN;
@@ -145,7 +155,7 @@ static bool map_master_cc(flx4_map_state_t *state,
 {
     switch (data1) {
     case FLX4_CC_BROWSE:
-        return emit_encoder(out, CTRL_ID_BROWSE_DELTA, relative_delta(data2));
+        return emit_encoder(out, CTRL_ID_BROWSE_DELTA, relative_twos_complement_delta(data2));
     case FLX4_CC_CROSSFADER_MSB:
         return update_14bit(&state->crossfader, true, data2, out, CTRL_ID_CROSSFADER);
     case FLX4_CC_CROSSFADER_LSB:
@@ -168,6 +178,9 @@ bool flx4_map_message(flx4_map_state_t *state,
     case FLX4_STATUS_D2_BTN:
         return map_deck_button(msg->status, msg->data1, msg->data2, out);
     case FLX4_STATUS_GLOBAL_BTN:
+        if (msg->data1 == FLX4_BTN_BROWSE_PRESS) {
+            return emit_button(out, CTRL_ID_BROWSE_PRESS, msg->data2 > 0 ? 1 : 0);
+        }
         if (msg->data1 == FLX4_BTN_LOAD_D1) {
             return emit_button(out, CTRL_ID_LOAD_DECK1, msg->data2 > 0 ? 1 : 0);
         }

@@ -37,6 +37,10 @@ static void test_transport_load_and_pfl_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK1, 1);
     assert(flx4_map_message(&state, MSG(0x96, 0x47, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK2, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_PRESS, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_PRESS, 0);
 
     assert(flx4_map_message(&state, MSG(0x90, 0x54, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PFL, 1);
@@ -59,9 +63,11 @@ static void test_jog_and_browse_relative_controls(void)
     assert(flx4_map_message(&state, MSG(0x90, 0x36, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1);
 
-    assert(flx4_map_message(&state, MSG(0xB6, 0x40, 62), &ev));
-    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, -2);
-    assert(!flx4_map_message(&state, MSG(0xB6, 0x40, 64), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x40, 0x01), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, 1);
+    assert(flx4_map_message(&state, MSG(0xB6, 0x40, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, -1);
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x40, 0x00), &ev));
 }
 
 static void test_14bit_controls_emit_after_both_halves(void)
@@ -91,7 +97,6 @@ static void test_unsupported_messages_are_ignored(void)
 
     assert(!flx4_map_message(NULL, MSG(0x90, 0x0B, 0x7F), &ev));
     assert(!flx4_map_message(&state, NULL, &ev));
-    assert(!flx4_map_message(&state, MSG(0x96, 0x41, 0x7F), &ev));
     assert(!flx4_map_message(&state, MSG(0x90, 0x58, 0x7F), &ev));
 }
 

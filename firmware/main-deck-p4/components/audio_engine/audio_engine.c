@@ -911,17 +911,10 @@ static void ae_output_task(void *arg)
 {
     (void)arg;
     int16_t out[AE_OUT_FRAMES * 2];
-    TickType_t next_wake = 0;
-    bool pace_armed = false;
     while (s_output_run) {
         if (!s_output_codec_open) {
-            pace_armed = false;
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
-        }
-        if (!pace_armed) {
-            next_wake = xTaskGetTickCount();
-            pace_armed = true;
         }
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
@@ -997,15 +990,19 @@ static void ae_output_task(void *arg)
                 out[i * 2 + 1] = master_frame.right;
             }
         }
+        int64_t write_start_us = esp_timer_get_time();
         if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             AE_UNLOCK();
         }
-        uint32_t block_delay_ms = audio_output_block_period_ms(s_output_sample_rate);
+        int64_t write_elapsed_us = esp_timer_get_time() - write_start_us;
+        uint32_t block_delay_ms = audio_output_remaining_delay_ms(
+            s_output_sample_rate,
+            write_elapsed_us > 0 ? (uint32_t)write_elapsed_us : 0u);
         if (block_delay_ms > 0u) {
-            vTaskDelayUntil(&next_wake, pdMS_TO_TICKS(block_delay_ms));
+            vTaskDelay(pdMS_TO_TICKS(block_delay_ms));
         } else {
             taskYIELD();
         }

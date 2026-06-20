@@ -29,6 +29,7 @@ static QueueHandle_t   s_uart_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
+static bool s_panel_led_fallback_enabled;
 
 // ─── Frame helpers ────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ static void handle_p4_frame(const uint8_t *f)
         }
 
         // 2. Fallback to local panel LEDs (compatibility / tests)
-        if (id < LED_COUNT) {
+        if (s_panel_led_fallback_enabled && id < LED_COUNT) {
             if (state == 2) {
                 panel_led_blink((led_id_t)id, 500);
             } else {
@@ -157,7 +158,7 @@ static void uart_rx_task(void *arg)
 
 esp_err_t control_link_init(QueueHandle_t panel_event_queue)
 {
-    (void)panel_event_queue;
+    s_panel_led_fallback_enabled = panel_event_queue != NULL;
 
     uart_config_t ucfg = {
         .baud_rate           = UART_BAUD,

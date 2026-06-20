@@ -15,10 +15,20 @@ static void test_block_period_ms_rejects_zero_sample_rate(void)
     assert(audio_output_block_period_ms(0) == 0u);
 }
 
+static void test_remaining_delay_accounts_for_write_time(void)
+{
+    assert(audio_output_remaining_delay_ms(48000, 0) == 6u);
+    assert(audio_output_remaining_delay_ms(48000, 5000) == 1u);
+    assert(audio_output_remaining_delay_ms(48000, 5334) == 0u);
+    assert(audio_output_remaining_delay_ms(48000, 7000) == 0u);
+    assert(audio_output_remaining_delay_ms(0, 0) == 0u);
+}
+
 int main(void)
 {
     test_block_period_ms_uses_ceil_division();
     test_block_period_ms_rejects_zero_sample_rate();
+    test_remaining_delay_accounts_for_write_time();
     puts("audio_output_timing tests passed");
     return 0;
 }

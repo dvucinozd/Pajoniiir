@@ -2,8 +2,9 @@
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| S3 USB host cannot reliably power or enumerate DDJ-FLX4 | Blocks controller input | Firmware raw logger boots, but 2026-06-08 capture saw no enumeration; next validation must verify S3 OTG port, powered hub orientation, 5 V VBUS, and shared ground |
-| Mixxx XML differs from actual hardware messages | Wrong mappings and unstable controls | Keep S3 default firmware in raw logger mode; verify every MVP control with hardware capture before enabling translator mode by default |
+| S3 USB host power or enumeration regresses | Blocks controller input | Enumeration and a 30-minute stability run passed on 2026-06-14; preserve raw logger diagnostics and recheck OTG port, powered hub orientation, 5 V VBUS, and shared ground after USB host changes |
+| An extended Mixxx XML entry differs from actual hardware | Wrong mapping for a non-MVP control | MVP capture matched the XML exactly, so use XML addresses as implementation seeds; hardware-smoke each delivered control group and record any exception in `DDJ_FLX4_MIDI_MAP.md` |
+| Mixxx `Script-Binding` names are mistaken for standalone behavior | Incorrect state ownership or controls that behave differently from Mixxx | Use script-bound XML entries only for MIDI addresses; define semantic events explicitly and keep runtime deck/mixer/pad/effect state on the P4 |
 | Analog controls generate noisy high-rate events | UART queue pressure and jitter | S3 translator coalesces high-rate jog/tempo/fader values; legacy panel path accumulates pending jog/browse motion and caps compatibility MIDI bursts |
 | Existing 7-byte control frame becomes too tight | Protocol churn | Use deck-aware ID namespace for MVP; only version frame if a real blocker appears |
 | Dual MP3 decode exceeds CPU or memory budget | Audio dropouts/watchdog resets | P4 now has per-deck producer/mixer plumbing; continue measuring with two real tracks before adding cue output or heavier UI work |

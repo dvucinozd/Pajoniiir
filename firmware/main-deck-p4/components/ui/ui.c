@@ -301,11 +301,11 @@ static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *m
 
 // ─── Event Callbacks ─────────────────────────────────────────────────────────
 
-// Switch screens when a footer button is tapped
-static void footer_btn_event_cb(lv_event_t *e) {
-    lv_obj_t *btn = lv_event_get_target(e);
-    int target_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
-
+static void ui_switch_tab(int target_idx)
+{
+    if (target_idx < 0 || target_idx >= 7) {
+        return;
+    }
     // Update visibility of screens
     for (int i = 0; i < 7; i++) {
         if (i == target_idx) {
@@ -325,6 +325,13 @@ static void footer_btn_event_cb(lv_event_t *e) {
     }
     s_active_tab = target_idx;
     ESP_LOGD(TAG, "Switched to tab %d (%s)", target_idx, s_tab_names[target_idx]);
+}
+
+// Switch screens when a footer button is tapped
+static void footer_btn_event_cb(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    int target_idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    ui_switch_tab(target_idx);
 }
 
 static uint8_t ui_deck_control_id(uint8_t deck, uint8_t deck1_id, uint8_t deck2_id)
@@ -988,6 +995,30 @@ void ui_update(void) {
         }
     }
 #endif
+}
+
+esp_err_t ui_show_library(void)
+{
+    if (!s_root_container || !s_screens[1]) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    ui_switch_tab(1);
+    ui_lvgl_unlock();
+    return ESP_OK;
+}
+
+esp_err_t ui_toggle_library_view(void)
+{
+    if (!s_root_container || !s_screens[0] || !s_screens[1]) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    ui_switch_tab(s_active_tab == 1 ? 0 : 1);
+    ui_lvgl_unlock();
+    return ESP_OK;
 }
 
 void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms)

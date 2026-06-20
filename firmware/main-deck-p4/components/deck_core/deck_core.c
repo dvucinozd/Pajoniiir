@@ -15,6 +15,8 @@ static const char *TAG = "deck";
 #define SEARCH_STEP_MS  5000
 
 extern bool ui_is_library_active(void) __attribute__((weak));
+extern esp_err_t ui_show_library(void) __attribute__((weak));
+extern esp_err_t ui_toggle_library_view(void) __attribute__((weak));
 extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
 extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
@@ -70,7 +72,8 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
-    if (ev && (ev->id == CTRL_ID_LOAD_DECK1 || ev->id == CTRL_ID_LOAD_DECK2)) {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
+               ev->id == CTRL_ID_LOAD_DECK2)) {
         return BTN_LOAD;
     }
     if (ev && control_link_id_is_deck(ev->id)) {
@@ -257,6 +260,19 @@ static void on_browse(int16_t delta)
     }
 }
 
+static void on_browse_press(void)
+{
+    if (ui_toggle_library_view) {
+        esp_err_t rc = ui_toggle_library_view();
+        ESP_LOGD(TAG, "browse press -> library/overview toggle: %s", esp_err_to_name(rc));
+    } else if (ui_show_library) {
+        esp_err_t rc = ui_show_library();
+        ESP_LOGD(TAG, "browse press -> library fallback: %s", esp_err_to_name(rc));
+    } else {
+        ESP_LOGW(TAG, "browse press unsupported: UI API unavailable");
+    }
+}
+
 static void on_pitch(uint8_t deck, int16_t raw)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
@@ -308,7 +324,10 @@ static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
     if (ev->type != CTRL_EV_BUTTON || ev->value == 0) {
         return false;
     }
-    return ev->id == BTN_LOAD || ev->id == BTN_TRACK_PREV || ev->id == BTN_TRACK_NEXT;
+    return ev->id == BTN_LOAD ||
+           ev->id == BTN_TRACK_PREV ||
+           ev->id == BTN_TRACK_NEXT ||
+           ev->id == CTRL_ID_BROWSE_PRESS;
 }
 
 // ─── Main task ────────────────────────────────────────────────────────────────
@@ -322,8 +341,10 @@ static void deck_task(void *arg)
         if (event_uses_ui_without_deck_state(&ev)) {
             if (ev.type == CTRL_EV_BROWSE) {
                 on_browse(ev.value);
+            } else if (ev.id == CTRL_ID_BROWSE_PRESS) {
+                on_browse_press();
             } else {
-                on_button(DECK_CORE_COMPAT_DECK, (button_id_t)ev.id, ev.value != 0);
+                on_button(DECK_CORE_COMPAT_DECK, button_for_event(&ev), ev.value != 0);
             }
             continue;
         }
@@ -464,6 +485,17 @@ void deck_core_test_reset(void)
 void deck_core_test_apply_event(const ctrl_event_t *ev)
 {
     if (!ev) return;
+
+    if (event_uses_ui_without_deck_state(ev)) {
+        if (ev->type == CTRL_EV_BROWSE) {
+            on_browse(ev->value);
+        } else if (ev->id == CTRL_ID_BROWSE_PRESS) {
+            on_browse_press();
+        } else {
+            on_button(DECK_CORE_COMPAT_DECK, button_for_event(ev), ev->value != 0);
+        }
+        return;
+    }
 
     uint8_t deck = deck_index_for_event(ev);
 

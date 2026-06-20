@@ -77,6 +77,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/midi_compat/midi_compat.c") `
     -Patterns @("MIDI_COMPAT_MAX_ENCODER_BURST")
 
+Assert-FileContains `
+    -Name "flx4 led feedback skips uninitialised legacy panel fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("s_panel_led_fallback_enabled", "panel_event_queue != NULL", "if (s_panel_led_fallback_enabled && id < LED_COUNT)")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"

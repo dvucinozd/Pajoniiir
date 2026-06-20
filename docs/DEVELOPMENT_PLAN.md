@@ -73,8 +73,8 @@ Validation note, 2026-06-14:
 
 ## Phase 3: P4 Deck-Aware Control Link And Deck Core
 
-Status: substantially complete for the local P4 path; S3 real input remains
-pending until FLX4 raw MIDI capture is proven.
+Status: substantially complete. Physical FLX4 MVP input and S3 translation
+were verified on 2026-06-14.
 
 Goal: split the single-deck state model into two deck instances.
 
@@ -102,7 +102,8 @@ Validation note, 2026-06-08:
 - Browser namespace routing now accepts `CTRL_ID_BROWSE_DELTA`,
   `CTRL_ID_LOAD_DECK1`, and `CTRL_ID_LOAD_DECK2`. Deck 1 load delegates to the
   UI library load flow; Deck 2 now targets the deck-aware UI load flow and is
-  limited by the current producer-only Deck 2 audio backend.
+  limited by the current producer-only Deck 2 audio backend. Browse press
+  toggles Library/Overview and does not load either deck.
 - Later P4 UI/audio work verified Deck 1 and Deck 2 snapshots, active target
   selection, Deck 2 transport position sync, and deck-local Overview metadata
   for the local touchscreen path.
@@ -420,3 +421,100 @@ Validation note, 2026-06-10:
   - Removed centiseconds from time representation and applied `hh:mm:ss` format across the physical screen (Overview status, deck panels, and Performance tabs) and the mobile web controller interface.
   - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
   - Applied CPU Core Affinity (Task Pinning): pinned the main `lvgl` graphics task to **Core 1** and the HTTP web server task to **Core 0** (with `config.core_id = 0`), isolating waveform drawing from network interrupts and web socket processing.
+
+## Phase 7: Extended DDJ-FLX4 Control Surface
+
+Status: planned.
+
+Goal: implement the remaining useful DDJ-FLX4 controls without importing
+Mixxx runtime logic or moving authoritative state away from the P4.
+
+Mapping policy:
+
+- use `docs/reference/Pioneer-DDJ-FLX4.midi.xml` as the source for MIDI
+  status, midino, message type, deck channel, shift channel, and 14-bit
+  MSB/LSB pairing;
+- treat the 2026-06-14 physical capture, where all MVP controls matched the
+  XML, as sufficient evidence to seed the remaining mappings from the XML;
+- use raw hardware capture as an acceptance check for each delivered control
+  group, not as a prerequisite for writing every mapping constant;
+- do not execute or reproduce Mixxx JavaScript state logic on the S3. XML
+  entries marked `Script-Binding` provide MIDI addresses only;
+- keep the S3 limited to USB MIDI parsing, input normalization, coalescing,
+  and semantic event forwarding. The P4 owns deck, mixer, pad mode, effect,
+  playback, and LED state;
+- preserve the existing `0xA5` frame and extend its semantic ID namespace
+  unless a measured payload limitation requires a protocol version change.
+
+Implementation order:
+
+1. **Close MVP input gaps**
+   - map Browse press (`0x96/0x41`) to a Library/Overview toggle semantic event;
+   - verify press/release handling and ensure Browse rotate remains relative;
+   - add S3 mapper, control-link, and P4 browser-routing tests.
+2. **Deck modifiers and transport extensions**
+   - add Shift, Beat Sync, tempo-range, vinyl, and other deck transport
+     buttons that have a clear standalone P4 behavior;
+   - send modifier press/release events to the P4 instead of keeping hidden
+     playback state on the S3;
+   - defer controls whose standalone behavior is not defined rather than
+     copying a Mixxx script callback name as behavior.
+3. **Mixer and monitoring controls**
+   - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
+     master controls using the XML 14-bit definitions;
+   - add explicit P4 mixer parameters, clamping, snapshots, persistence only
+     where already consistent with settings ownership, and LED/state feedback
+     where the controller exposes it;
+   - coalesce high-rate analog events using the existing latest-value policy.
+4. **Performance pads and pad modes**
+   - inventory Hot Cue, Beat Loop, Beat Jump, Sampler, Key Shift, and their
+     shifted MIDI ranges from the XML;
+   - first connect modes already implemented by the P4 touchscreen: Hot Cue,
+     Beat Loop, Beat Jump, and Key Shift;
+   - represent pad mode and pad action as separate P4-owned semantic state;
+   - leave Sampler and unsupported stem/effect script behaviors disabled until
+     a standalone P4 feature definition exists.
+5. **Effects controls**
+   - map only controls backed by a defined P4 effect engine and parameter
+     model;
+   - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
+     expose no-op controls as completed functionality.
+6. **LED feedback expansion**
+   - derive candidate output status/midino values from the XML output section;
+   - drive LEDs only from P4-confirmed state through the existing S3 MIDI Out
+     queue;
+   - verify reconnect resynchronization and mode/pad LED behavior on hardware.
+
+Required artifacts:
+
+- extend `docs/DDJ_FLX4_MIDI_MAP.md` with an inventory table containing
+  physical control, XML status/midino, message encoding, semantic ID, P4 owner,
+  implementation status, and hardware verification status;
+- add constants and parser cases in
+  `firmware/control-board-s3/components/flx4_midi_host/`;
+- extend matching IDs in both S3 and P4 `control_link.h` files;
+- add P4 routing/state behavior only in the component that owns the feature;
+- extend `tests/flx4_midi_host`, `tests/control_link_protocol`, and the
+  relevant P4 host test suite before each control group is enabled.
+
+Validation per control group:
+
+- S3 host tests pass, including press/release, deck/shift channel separation,
+  relative encoder direction, and 14-bit MSB/LSB assembly;
+- P4 host tests pass for semantic routing and authoritative state changes;
+- both ESP-IDF targets build when the shared protocol changes;
+- physical FLX4 smoke capture confirms the expected MIDI addresses and value
+  ranges, with differences recorded in `docs/DDJ_FLX4_MIDI_MAP.md`;
+- unsupported or unverified controls remain explicitly marked and do not
+  silently emit a different action.
+
+Exit criteria:
+
+- every implemented physical control has a documented XML-derived mapping,
+  semantic event, P4 owner, automated test, and hardware acceptance result;
+- Browse press and all selected control groups work end to end from FLX4 to
+  S3, through `0xA5`, to P4 behavior;
+- S3 contains no authoritative playback, mixer, pad-mode, or effect state;
+- LEDs recover to P4-confirmed state after S3 or FLX4 reconnect;
+- documentation distinguishes implemented, deferred, and unsupported Mixxx
+  mappings.

@@ -15,6 +15,8 @@ void      ui_refresh_library(void);   // rebuild LIBRARY tab after USB (re)mount
 void      ui_trigger_library_refresh(void); // thread-safe trigger for main LVGL thread
 void      ui_notify_usb_removed(void); // thread-safe notification from USB storage task
 bool      ui_is_library_active(void);
+esp_err_t ui_show_library(void);
+esp_err_t ui_toggle_library_view(void);
 esp_err_t ui_library_select_delta(int delta);
 esp_err_t ui_library_load_selected(void);
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck);

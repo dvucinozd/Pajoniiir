@@ -5,6 +5,7 @@
 
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
+static int s_toggle_library_view_calls;
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
@@ -22,6 +23,12 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 esp_err_t ui_library_select_delta(int delta)
 {
     s_browse_delta += delta;
+    return ESP_OK;
+}
+
+esp_err_t ui_toggle_library_view(void)
+{
+    s_toggle_library_view_calls++;
     return ESP_OK;
 }
 
@@ -183,6 +190,26 @@ static void test_browser_namespace_routes_browse_delta(void)
     assert(s_browse_delta == 3);
 }
 
+static void test_browser_press_toggles_library_view_without_loading_deck(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_load_calls[CTRL_DECK_1] = 0;
+    s_load_calls[CTRL_DECK_2] = 0;
+    s_toggle_library_view_calls = 0;
+
+    ctrl_event_t browse_press = browser_button(CTRL_ID_BROWSE_PRESS);
+    ctrl_event_t browse_release = browse_press;
+    browse_release.value = 0;
+
+    deck_core_test_apply_event(&browse_press);
+    deck_core_test_apply_event(&browse_release);
+
+    assert(s_toggle_library_view_calls == 1);
+    assert(s_load_calls[CTRL_DECK_1] == 0);
+    assert(s_load_calls[CTRL_DECK_2] == 0);
+}
+
 static void test_mixer_namespace_routes_volume_and_crossfader(void)
 {
     deck_core_test_reset();
@@ -231,6 +258,7 @@ int main(void)
     test_decks_track_pitch_independently();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();
+    test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     puts("deck_core_dual tests passed");

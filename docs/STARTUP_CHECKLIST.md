@@ -101,3 +101,19 @@ Required output from the spike:
 
 After the capture, `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` was enabled. S3 now successfully emits
 deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
+
+## Next Controller Expansion
+
+- [ ] Add Browse press (`0x96/0x41`) end to end as the first remaining MVP gap.
+- [ ] Build the extended control inventory from the vendored Mixxx XML.
+- [ ] Add deck modifiers and transport extensions with P4-owned semantics.
+- [ ] Add supported mixer/monitoring controls and 14-bit range tests.
+- [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and
+  Key Shift behavior before adding new performance features.
+- [ ] Expand LED feedback only from P4-confirmed state.
+- [ ] Hardware-smoke each delivered control group and record exceptions from
+  the XML mapping.
+
+See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the
+implementation seed because the physical MVP capture matched them exactly;
+Mixxx JavaScript behavior is not imported.

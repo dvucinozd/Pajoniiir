@@ -117,3 +117,13 @@ two-deck standalone path:
    this for the local UI/control path.
 4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented).
 5. P4 sends transport and mixer LED feedback (Play, Cue, PFL) back to the S3, and S3 sends the matching MIDI LED messages to the FLX4 (implemented).
+
+## Extended Controller Plan
+
+The remaining useful FLX4 controls will use the vendored Mixxx XML for MIDI
+status, midino, message encoding, deck/shift channels, and 14-bit pairing. The
+MVP hardware capture matched those definitions exactly. Mixxx JavaScript logic
+will not run on either ESP32: the S3 emits semantic events and the P4 owns all
+deck, mixer, pad-mode, effect, playback, and LED state. Implementation order and
+acceptance criteria are defined in Phase 7 of
+[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

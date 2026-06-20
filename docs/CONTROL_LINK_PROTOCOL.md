@@ -81,6 +81,7 @@ test.
 | `0x40` | Browse delta | signed delta |
 | `0x41` | Load Deck 1 | `0` release, `1` press |
 | `0x42` | Load Deck 2 | `0` release, `1` press |
+| `0x43` | Browse press | `0` release, `1` press; toggles Library/Overview |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
