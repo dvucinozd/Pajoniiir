@@ -5,11 +5,27 @@
 
 static flx4_midi_message_cb_t s_message_cb;
 static void *s_message_cb_ctx;
+static bool s_connection_state_valid;
+static bool s_connection_state_connected;
 
 void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx)
 {
     s_message_cb = cb;
     s_message_cb_ctx = user_ctx;
+}
+
+static bool should_publish_connection_state(bool connected)
+{
+    if (!s_connection_state_valid) {
+        s_connection_state_valid = true;
+        s_connection_state_connected = connected;
+        return connected;
+    }
+    if (s_connection_state_connected == connected) {
+        return false;
+    }
+    s_connection_state_connected = connected;
+    return true;
 }
 
 static uint8_t cin_payload_len(uint8_t cin)
@@ -208,6 +224,25 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
 }
 
 #if defined(FLX4_MIDI_HOST_PC_TEST)
+void flx4_midi_host_test_reset_connection_state(void)
+{
+    s_connection_state_valid = false;
+    s_connection_state_connected = false;
+}
+
+bool flx4_midi_host_test_publish_connection_state(
+    bool connected,
+    flx4_midi_host_test_connection_event_t *out)
+{
+    if (!out || !should_publish_connection_state(connected)) {
+        return false;
+    }
+    out->type = 0x82;
+    out->id = 0x70;
+    out->value = connected ? 1 : 0;
+    return true;
+}
+
 esp_err_t flx4_midi_host_init(void)
 {
     return ESP_OK;
@@ -222,6 +257,7 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 #include "esp_check.h"
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
+#include "control_link.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -237,6 +273,22 @@ static const char *TAG = "flx4_host";
 #define MIDI_CLIENT_TASK_PRIO   5
 #define CLIENT_NUM_EVENT_MSG    5
 #define MIDI_TRANSFER_BYTES     64
+
+static void publish_connection_state(bool connected)
+{
+    if (!should_publish_connection_state(connected)) {
+        return;
+    }
+
+    const int16_t value = connected ? CTRL_FLX4_CONNECTED : CTRL_FLX4_DISCONNECTED;
+    esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE, CTRL_ID_FLX4_CONNECTION, value);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "publish FLX4 connection state failed: %s", esp_err_to_name(rc));
+    } else {
+        ESP_LOGI(TAG, "published FLX4 connection state: %s",
+                 connected ? "connected" : "disconnected");
+    }
+}
 
 typedef struct {
     usb_host_client_handle_t client_hdl;
@@ -488,6 +540,7 @@ static void close_device(flx4_host_state_t *host)
     host->out_ep_mps = 0;
     host->transfer_active = false;
     host->out_transfer_active = false;
+    publish_connection_state(false);
     ESP_LOGW(TAG, "DDJ-FLX4 device closed/disconnected");
 }
 
@@ -554,7 +607,11 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
 
     ESP_LOGI(TAG, "MIDI OUT endpoint 0x%02X registered", host->out_ep_addr);
 
-    return start_midi_in_transfer(host);
+    esp_err_t rc = start_midi_in_transfer(host);
+    if (rc == ESP_OK) {
+        publish_connection_state(true);
+    }
+    return rc;
 }
 
 static void client_event_cb(const usb_host_client_event_msg_t *event_msg, void *arg)

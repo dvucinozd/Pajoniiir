@@ -86,6 +86,30 @@ static void test_rejects_truncated_descriptor(void)
                                                  &in_ep_mps));
 }
 
+static void test_connection_state_publications_are_edge_triggered(void)
+{
+    flx4_midi_host_test_connection_event_t ev = { 0 };
+
+    flx4_midi_host_test_reset_connection_state();
+
+    assert(!flx4_midi_host_test_publish_connection_state(false, &ev));
+
+    assert(flx4_midi_host_test_publish_connection_state(true, &ev));
+    assert(ev.type == 0x82);
+    assert(ev.id == 0x70);
+    assert(ev.value == 1);
+
+    assert(!flx4_midi_host_test_publish_connection_state(true, &ev));
+
+    assert(flx4_midi_host_test_publish_connection_state(false, &ev));
+    assert(ev.type == 0x82);
+    assert(ev.id == 0x70);
+    assert(ev.value == 0);
+
+    assert(!flx4_midi_host_test_publish_connection_state(false, &ev));
+    assert(!flx4_midi_host_test_publish_connection_state(true, NULL));
+}
+
 int main(void)
 {
     test_parse_note_on_packet();
@@ -93,6 +117,7 @@ int main(void)
     test_rejects_reserved_or_null_arguments();
     test_finds_midi_streaming_in_endpoint();
     test_rejects_truncated_descriptor();
+    test_connection_state_publications_are_edge_triggered();
     puts("flx4_midi_host tests passed");
     return 0;
 }
