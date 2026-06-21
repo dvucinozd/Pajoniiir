@@ -24,6 +24,16 @@
 static const char *TAG = "anlz";
 #define ANLZ_MAX_BEATS 0xFFFFu
 
+#ifdef ANLZ_STANDALONE_TEST
+static bool anlz_join_path(char *out, size_t out_size, const char *parent, const char *child)
+{
+    if (!out || out_size == 0 || !parent || !child) return false;
+
+    int written = snprintf(out, out_size, "%s/%s", parent, child);
+    return written >= 0 && (size_t)written < out_size;
+}
+#endif
+
 /* ── Big-endian read helpers ─────────────────────────────────────────────── */
 
 static inline uint16_t read_be16(FILE *fp)
@@ -517,7 +527,7 @@ esp_err_t anlz_walk_usbanlz(const char      *usbanlz_root,
         if (p_entry->d_name[0] == '.') continue;
 
         char l1[512];
-        snprintf(l1, sizeof(l1), "%s/%s", usbanlz_root, p_entry->d_name);
+        if (!anlz_join_path(l1, sizeof(l1), usbanlz_root, p_entry->d_name)) continue;
 
         DIR *l1_dir = opendir(l1);
         if (!l1_dir) continue;
@@ -527,10 +537,10 @@ esp_err_t anlz_walk_usbanlz(const char      *usbanlz_root,
             if (l2_entry->d_name[0] == '.') continue;
 
             char l2[512];
-            snprintf(l2, sizeof(l2), "%s/%s", l1, l2_entry->d_name);
+            if (!anlz_join_path(l2, sizeof(l2), l1, l2_entry->d_name)) continue;
 
             char dat[520];
-            snprintf(dat, sizeof(dat), "%s/ANLZ0000.DAT", l2);
+            if (!anlz_join_path(dat, sizeof(dat), l2, "ANLZ0000.DAT")) continue;
 
             FILE *fp = fopen(dat, "rb");
             if (!fp) continue;

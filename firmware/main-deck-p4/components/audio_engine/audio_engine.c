@@ -72,16 +72,12 @@ static const char *TAG = "audio";
 #   define AE_FW 0
 #endif
 
+#if AE_FW
 static int64_t ae_now_us(void)
 {
-#if AE_FW
     return esp_timer_get_time();
-#elif AE_PC
-    return (int64_t)clock() * 1000000LL / (int64_t)CLOCKS_PER_SEC;
-#else
-    return 0;
-#endif
 }
+#endif
 
 /* ── PCM ring buffers (stereo int16 PCM frames) ───────────────────────────── *
  *
@@ -471,6 +467,7 @@ static int decode_one_frame(
  * build_seek_table — fast frame scanning by reading headers in PSRAM/file.
  * Does NOT decode PCM audio to ensure sub-millisecond execution.
  */
+#if AE_FW
 static void build_seek_table(audio_engine_state_t *eng)
 {
     if (!eng->file_buf && !eng->fp) return;
@@ -675,6 +672,7 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
     ESP_LOGI(TAG, "Estimate seek %u ms → byte %u/%u (no PVBR/index)",
              (unsigned)position_ms, (unsigned)target_byte, (unsigned)eng->file_size);
 }
+#endif /* AE_FW */
 
 
 
@@ -1385,7 +1383,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
     if (pvbr_400) {
         bool any_nonzero = false;
-        for (int i = 1; i < AUDIO_PVBR_LEN; i++) {
+        for (uint32_t i = 1u; i < AUDIO_PVBR_LEN; i++) {
             if (pvbr_400[i] > 0) {
                 any_nonzero = true;
                 break;
