@@ -129,6 +129,7 @@ esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
+uint16_t audio_engine_get_deck_peak(uint8_t deck);
 
 typedef struct {
     uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
@@ -206,4 +207,5 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
  */
 #if defined(AUDIO_ENGINE_PC_TEST)
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
+void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 #endif

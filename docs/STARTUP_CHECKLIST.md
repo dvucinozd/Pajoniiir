@@ -126,6 +126,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
   behavior; Sync/tempo-range behavior remains deferred.
 - [ ] Add supported mixer/monitoring controls and 14-bit range tests.
+  Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
+  loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
+  are mapped/tested in firmware. Hardware capture remains pending for controls
+  not explicitly marked verified in the MIDI map.
 - [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and
   Key Shift behavior before adding new performance features.
 - [ ] Expand LED feedback only from P4-confirmed state.

@@ -177,6 +177,7 @@ static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
+static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -195,6 +196,33 @@ static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_ini
 #   define AE_UNLOCK() do {} while (0)
 #endif
 
+
+static uint16_t sample_abs_u16(int16_t sample)
+{
+    return sample == INT16_MIN ? 32768u : (uint16_t)(sample < 0 ? -sample : sample);
+}
+
+static uint16_t frame_peak(audio_mixer_frame_t frame)
+{
+    uint16_t left = sample_abs_u16(frame.left);
+    uint16_t right = sample_abs_u16(frame.right);
+    return left > right ? left : right;
+}
+
+static void record_deck_peak_value(uint8_t deck, uint16_t peak)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
+    if (peak > s_deck_peak[deck]) {
+        s_deck_peak[deck] = peak;
+    }
+}
+
+#if defined(AUDIO_ENGINE_PC_TEST)
+static void record_deck_peak(uint8_t deck, audio_mixer_frame_t frame)
+{
+    record_deck_peak_value(deck, frame_peak(frame));
+}
+#endif
 
 
 #if AE_FW
@@ -1121,6 +1149,7 @@ static void ae_output_task(void *arg)
         }
 
         uint32_t consumed[AUDIO_ENGINE_DECK_COUNT] = { 0 };
+        uint16_t block_peak[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         float pfl_gain0 = s_pfl_enabled[deck0_index] ? 1.0f : 0.0f;
         float pfl_gain1 = s_pfl_enabled[deck1_index] ? 1.0f : 0.0f;
         uint8_t mode = s_cue_mode;
@@ -1146,6 +1175,11 @@ static void ae_output_task(void *arg)
                                               &frame_consumed1);
             }
 
+            uint16_t peak0 = frame_peak(frame0);
+            uint16_t peak1 = frame_peak(frame1);
+            if (peak0 > block_peak[deck0_index]) block_peak[deck0_index] = peak0;
+            if (peak1 > block_peak[deck1_index]) block_peak[deck1_index] = peak1;
+
             consumed[deck0_index] += frame_consumed0;
             consumed[deck1_index] += frame_consumed1;
 
@@ -1170,6 +1204,8 @@ static void ae_output_task(void *arg)
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
+            record_deck_peak_value(deck0_index, block_peak[deck0_index]);
+            record_deck_peak_value(deck1_index, block_peak[deck1_index]);
             AE_UNLOCK();
         }
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
@@ -1272,6 +1308,7 @@ esp_err_t audio_engine_init(void)
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
         s_pfl_enabled[i] = false;
+        s_deck_peak[i] = 0;
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 
@@ -1916,6 +1953,25 @@ bool audio_engine_deck_is_playing(uint8_t deck)
 #endif
     return s_engines[deck].playing && !s_engines[deck].paused;
 }
+
+uint16_t audio_engine_get_deck_peak(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return 0;
+    AE_LOCK();
+    uint16_t peak = s_deck_peak[deck];
+    s_deck_peak[deck] = 0;
+    AE_UNLOCK();
+    return peak;
+}
+
+#if defined(AUDIO_ENGINE_PC_TEST)
+void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right)
+{
+    AE_LOCK();
+    record_deck_peak(deck, (audio_mixer_frame_t){ .left = left, .right = right });
+    AE_UNLOCK();
+}
+#endif
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
 {

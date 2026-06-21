@@ -165,6 +165,22 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
 }
 
+static void test_deck_peak_meter_api_returns_and_resets_peak(void)
+{
+    puts("\n[Test 4b] Deck peak meter API");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets peak meter state");
+    EXPECT(audio_engine_get_deck_peak(0) == 0, "deck 0 peak defaults to zero");
+    EXPECT(audio_engine_get_deck_peak(2) == 0, "invalid deck peak reads as zero");
+
+    audio_engine_test_record_deck_peak(0, -1234, 8000);
+    audio_engine_test_record_deck_peak(0, 3000, -2000);
+    audio_engine_test_record_deck_peak(1, 1000, -9000);
+
+    EXPECT(audio_engine_get_deck_peak(0) == 8000, "deck 0 peak returns max absolute sample");
+    EXPECT(audio_engine_get_deck_peak(0) == 0, "deck 0 peak resets after read");
+    EXPECT(audio_engine_get_deck_peak(1) == 9000, "deck 1 peak is independent");
+}
+
 /* ── Test 5: per-deck transition API guards ─────────────────────────────── */
 static void test_pfl_state_api(void)
 {
@@ -421,6 +437,7 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
+    test_deck_peak_meter_api_returns_and_resets_peak();
     test_pfl_state_api();
     test_cue_mode_api();
     test_deck_api();

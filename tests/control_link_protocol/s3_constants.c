@@ -29,5 +29,10 @@ int s3_ctrl_id_deck1_shift(void) { return CTRL_ID_DECK1_SHIFT; }
 int s3_ctrl_id_deck2_to_start(void) { return CTRL_ID_DECK2_TO_START; }
 int s3_ctrl_id_deck1_sync(void) { return CTRL_ID_DECK1_SYNC; }
 int s3_ctrl_id_deck2_tempo_range(void) { return CTRL_ID_DECK2_TEMPO_RANGE; }
+int s3_ctrl_id_deck2_pad_action(void) { return CTRL_ID_DECK2_PAD_ACTION; }
+int s3_ctrl_id_ch1_trim(void) { return CTRL_ID_CH1_TRIM; }
+int s3_ctrl_id_headphone_mix(void) { return CTRL_ID_HEADPHONE_MIX; }
+int s3_ctrl_id_browse_shift_delta(void) { return CTRL_ID_BROWSE_SHIFT_DELTA; }
+int s3_led_vu_meter(void) { return LED_VU_METER; }
 int s3_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int s3_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

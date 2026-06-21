@@ -25,6 +25,11 @@ int p4_ctrl_id_deck1_shift(void);
 int p4_ctrl_id_deck2_to_start(void);
 int p4_ctrl_id_deck1_sync(void);
 int p4_ctrl_id_deck2_tempo_range(void);
+int p4_ctrl_id_deck2_pad_action(void);
+int p4_ctrl_id_ch1_trim(void);
+int p4_ctrl_id_headphone_mix(void);
+int p4_ctrl_id_browse_shift_delta(void);
+int p4_led_vu_meter(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -56,6 +61,11 @@ int s3_ctrl_id_deck1_shift(void);
 int s3_ctrl_id_deck2_to_start(void);
 int s3_ctrl_id_deck1_sync(void);
 int s3_ctrl_id_deck2_tempo_range(void);
+int s3_ctrl_id_deck2_pad_action(void);
+int s3_ctrl_id_ch1_trim(void);
+int s3_ctrl_id_headphone_mix(void);
+int s3_ctrl_id_browse_shift_delta(void);
+int s3_led_vu_meter(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -215,10 +225,28 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(ev.type == CTRL_EV_BUTTON);
     assert(ev.deck == CTRL_DECK_2);
     assert(ev.control == CTRL_DECK_CTL_TO_START);
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
+                CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 6, true, true), 26);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.deck == CTRL_DECK_2);
+    assert(ev.control == CTRL_DECK_CTL_PAD_ACTION);
+    assert(CTRL_PAD_ACTION_PAD(ev.value) == 6);
+    assert(CTRL_PAD_ACTION_MODE(ev.value) == CTRL_PAD_MODE_BEAT_JUMP);
+    assert(CTRL_PAD_ACTION_SHIFTED(ev.value));
+    assert(CTRL_PAD_ACTION_PRESSED(ev.value));
 }
 
 static void test_s3_and_p4_deck_aware_ids_match(void)
 {
+    assert(CTRL_ID_DECK1_PLAY == 0x10);
+    assert(CTRL_ID_DECK1_PAD_ACTION == 0x25);
+    assert(CTRL_ID_DECK2_PLAY == 0x30);
+    assert(CTRL_ID_DECK2_PAD_ACTION == 0x45);
+    assert(CTRL_ID_CH1_VOLUME == 0x50);
+    assert(CTRL_ID_BROWSE_DELTA == 0x60);
+
     assert(s3_ctrl_id_deck1_play() == CTRL_ID_DECK1_PLAY);
     assert(s3_ctrl_id_deck2_cue() == CTRL_ID_DECK2_CUE);
     assert(s3_ctrl_id_deck1_tempo() == CTRL_ID_DECK1_TEMPO);
@@ -235,6 +263,16 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_deck1_sync() == CTRL_ID_DECK1_SYNC);
     assert(s3_ctrl_id_deck2_tempo_range() == p4_ctrl_id_deck2_tempo_range());
     assert(s3_ctrl_id_deck2_tempo_range() == CTRL_ID_DECK2_TEMPO_RANGE);
+    assert(s3_ctrl_id_deck2_pad_action() == p4_ctrl_id_deck2_pad_action());
+    assert(s3_ctrl_id_deck2_pad_action() == CTRL_ID_DECK2_PAD_ACTION);
+    assert(s3_ctrl_id_ch1_trim() == p4_ctrl_id_ch1_trim());
+    assert(s3_ctrl_id_ch1_trim() == CTRL_ID_CH1_TRIM);
+    assert(s3_ctrl_id_headphone_mix() == p4_ctrl_id_headphone_mix());
+    assert(s3_ctrl_id_headphone_mix() == CTRL_ID_HEADPHONE_MIX);
+    assert(s3_ctrl_id_browse_shift_delta() == p4_ctrl_id_browse_shift_delta());
+    assert(s3_ctrl_id_browse_shift_delta() == CTRL_ID_BROWSE_SHIFT_DELTA);
+    assert(s3_led_vu_meter() == p4_led_vu_meter());
+    assert(p4_led_vu_meter() == LED_VU_METER);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

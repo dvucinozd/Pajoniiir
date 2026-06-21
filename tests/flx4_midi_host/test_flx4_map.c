@@ -92,6 +92,57 @@ static void test_deck_transport_extension_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TEMPO_RANGE, 1);
 }
 
+static void test_loop_and_beat_jump_buttons(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x10, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_LOOP_IN, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x11, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_LOOP_OUT, 1);
+    assert(flx4_map_message(&state, MSG(0x90, 0x4D, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_RELOOP_EXIT, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x51, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_LOOP_HALVE, 1);
+    assert(flx4_map_message(&state, MSG(0x90, 0x53, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_LOOP_DOUBLE, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x3E, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_BEAT_JUMP_BACK, 1);
+    assert(flx4_map_message(&state, MSG(0x90, 0x3D, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_BEAT_JUMP_FORWARD, 1);
+}
+
+static void test_pad_modes_and_pad_actions(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x1B, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_MODE_HOT_CUE, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x6D, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP, 1);
+    assert(flx4_map_message(&state, MSG(0x90, 0x20, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x6F, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT, 1);
+
+    assert(flx4_map_message(&state, MSG(0x97, 0x03, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 3, false, true));
+    assert(flx4_map_message(&state, MSG(0x9A, 0x75, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_KEY_SHIFT, 5, true, false));
+    assert(flx4_map_message(&state, MSG(0x99, 0x62, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 2, false, true));
+    assert(flx4_map_message(&state, MSG(0x98, 0x27, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 7, true, true));
+}
+
 static void test_jog_and_browse_relative_controls(void)
 {
     flx4_map_state_t state;
@@ -131,6 +182,22 @@ static void test_14bit_controls_emit_after_both_halves(void)
     assert(!flx4_map_message(&state, MSG(0xB6, 0x1F, 0x20), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x3F, 0x02), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CROSSFADER, (int16_t)((0x20 << 7) | 0x02));
+
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x04, 0x10), &ev));
+    assert(flx4_map_message(&state, MSG(0xB0, 0x24, 0x20), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));
+
+    assert(!flx4_map_message(&state, MSG(0xB1, 0x07, 0x11), &ev));
+    assert(flx4_map_message(&state, MSG(0xB1, 0x27, 0x21), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH2_EQ_HIGH, (int16_t)((0x11 << 7) | 0x21));
+
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x17, 0x12), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x37, 0x22), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH1_FILTER, (int16_t)((0x12 << 7) | 0x22));
+
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x13), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x23), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x13 << 7) | 0x23));
 }
 
 static void test_unsupported_messages_are_ignored(void)
@@ -149,6 +216,8 @@ int main(void)
     test_transport_load_and_pfl_buttons();
     test_smart_control_buttons();
     test_deck_transport_extension_buttons();
+    test_loop_and_beat_jump_buttons();
+    test_pad_modes_and_pad_actions();
     test_jog_and_browse_relative_controls();
     test_14bit_controls_emit_after_both_halves();
     test_unsupported_messages_are_ignored();

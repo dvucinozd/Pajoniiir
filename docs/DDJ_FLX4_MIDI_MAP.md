@@ -161,16 +161,16 @@ Status legend:
 | Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Mapped only | MVP address verified; behavior deferred |
 | Beat Sync long press / master | `0x90/0x5C`, `0x91/0x5C` | press/release or long-press semantic | deck-local | `CTRL_ID_DECK1_SYNC_MASTER`, `CTRL_ID_DECK2_SYNC_MASTER` proposed | beat/sync model | Deferred | Not captured |
 | Beat Sync + Shift / tempo range | `0x90/0x60`, `0x91/0x60` | press/release | shifted deck-local | `CTRL_ID_DECK1_TEMPO_RANGE`, `CTRL_ID_DECK2_TEMPO_RANGE` | deck settings | Mapped only | Verified 2026-06-20; behavior deferred |
-| Loop In / 4 Beat | `0x90/0x10`, `0x91/0x10` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_IN`, `CTRL_ID_DECK2_LOOP_IN` proposed | `deck_core` loop | Pending | Not captured |
-| Loop Out | `0x90/0x11`, `0x91/0x11` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_OUT`, `CTRL_ID_DECK2_LOOP_OUT` proposed | `deck_core` loop | Pending | Not captured |
-| Reloop/Exit | `0x90/0x4D`, `0x91/0x4D` | press/release | deck-local | `CTRL_ID_DECK1_RELOOP_EXIT`, `CTRL_ID_DECK2_RELOOP_EXIT` proposed | `deck_core` loop | Pending | Not captured |
+| Loop In / 4 Beat | `0x90/0x10`, `0x91/0x10` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_IN`, `CTRL_ID_DECK2_LOOP_IN` | `deck_core` loop | Mapped only | Not captured |
+| Loop Out | `0x90/0x11`, `0x91/0x11` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_OUT`, `CTRL_ID_DECK2_LOOP_OUT` | `deck_core` loop | Mapped only | Not captured |
+| Reloop/Exit | `0x90/0x4D`, `0x91/0x4D` | press/release | deck-local | `CTRL_ID_DECK1_RELOOP_EXIT`, `CTRL_ID_DECK2_RELOOP_EXIT` | `deck_core` loop | Mapped only | Not captured |
 | Reloop/Exit + Shift | `0x90/0x50`, `0x91/0x50` | press/release | shifted deck-local | `CTRL_ID_DECK1_RELOOP_STOP`, `CTRL_ID_DECK2_RELOOP_STOP` proposed | `deck_core` loop | Deferred | Not captured |
 | Shift + Loop In adjust | `0x90/0x4C`, `0x91/0x4C` | press/release | shifted deck-local | `CTRL_ID_DECK1_LOOP_ADJUST_IN`, `CTRL_ID_DECK2_LOOP_ADJUST_IN` proposed | loop edit mode | Deferred | Not captured |
 | Shift + Loop Out adjust | `0x90/0x4E`, `0x91/0x4E` | press/release | shifted deck-local | `CTRL_ID_DECK1_LOOP_ADJUST_OUT`, `CTRL_ID_DECK2_LOOP_ADJUST_OUT` proposed | loop edit mode | Deferred | Not captured |
-| Cue/Loop Call Left / halve loop | `0x90/0x51`, `0x91/0x51` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_HALVE`, `CTRL_ID_DECK2_LOOP_HALVE` proposed | `deck_core` loop | Pending | Not captured |
-| Cue/Loop Call Right / double loop | `0x90/0x53`, `0x91/0x53` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_DOUBLE`, `CTRL_ID_DECK2_LOOP_DOUBLE` proposed | `deck_core` loop | Pending | Not captured |
-| Cue/Loop Call Left + Shift / jump back | `0x90/0x3E`, `0x91/0x3E` | press/release | shifted deck-local | `CTRL_ID_DECK1_BEAT_JUMP_BACK`, `CTRL_ID_DECK2_BEAT_JUMP_BACK` proposed | beat jump | Pending | Not captured |
-| Cue/Loop Call Right + Shift / jump forward | `0x90/0x3D`, `0x91/0x3D` | press/release | shifted deck-local | `CTRL_ID_DECK1_BEAT_JUMP_FORWARD`, `CTRL_ID_DECK2_BEAT_JUMP_FORWARD` proposed | beat jump | Pending | Not captured |
+| Cue/Loop Call Left / halve loop | `0x90/0x51`, `0x91/0x51` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_HALVE`, `CTRL_ID_DECK2_LOOP_HALVE` | `deck_core` loop | Mapped only | Not captured |
+| Cue/Loop Call Right / double loop | `0x90/0x53`, `0x91/0x53` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_DOUBLE`, `CTRL_ID_DECK2_LOOP_DOUBLE` | `deck_core` loop | Mapped only | Not captured |
+| Cue/Loop Call Left + Shift / jump back | `0x90/0x3E`, `0x91/0x3E` | press/release | shifted deck-local | `CTRL_ID_DECK1_BEAT_JUMP_BACK`, `CTRL_ID_DECK2_BEAT_JUMP_BACK` | beat jump | Mapped only | Not captured |
+| Cue/Loop Call Right + Shift / jump forward | `0x90/0x3D`, `0x91/0x3D` | press/release | shifted deck-local | `CTRL_ID_DECK1_BEAT_JUMP_FORWARD`, `CTRL_ID_DECK2_BEAT_JUMP_FORWARD` | beat jump | Mapped only | Not captured |
 | Shift + channel CUE / quantize | `0x90/0x68`, `0x91/0x68` | press/release | shifted deck-local | `CTRL_ID_DECK1_QUANTIZE`, `CTRL_ID_DECK2_QUANTIZE` proposed | deck quantize state | Deferred | Not captured |
 
 ### Mixer, Monitoring, And Effects Inventory
@@ -179,13 +179,13 @@ Status legend:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Channel fader | D1 `0xB0/0x13+0x33`, D2 `0xB1/0x13+0x33` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_VOLUME`, `CTRL_ID_CH2_VOLUME` | audio mixer | Implemented | Verified 2026-06-14 |
 | Crossfader | `0xB6/0x1F+0x3F` | 14-bit MSB+LSB | global mixer | `CTRL_ID_CROSSFADER` | audio mixer | Implemented | Verified 2026-06-14 |
-| Trim / pregain | D1 `0xB0/0x04+0x24`, D2 `0xB1/0x04+0x24` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_TRIM`, `CTRL_ID_CH2_TRIM` proposed | audio mixer | Pending | MVP address documented; not implemented |
-| EQ High | D1 `0xB0/0x07+0x27`, D2 `0xB1/0x07+0x27` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_HIGH`, `CTRL_ID_CH2_EQ_HIGH` proposed | EQ/DSP | Deferred | Not captured |
-| EQ Mid | D1 `0xB0/0x0B+0x2B`, D2 `0xB1/0x0B+0x2B` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_MID`, `CTRL_ID_CH2_EQ_MID` proposed | EQ/DSP | Deferred | Not captured |
-| EQ Low | D1 `0xB0/0x0F+0x2F`, D2 `0xB1/0x0F+0x2F` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_LOW`, `CTRL_ID_CH2_EQ_LOW` proposed | EQ/DSP | Deferred | Not captured |
+| Trim / pregain | D1 `0xB0/0x04+0x24`, D2 `0xB1/0x04+0x24` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_TRIM`, `CTRL_ID_CH2_TRIM` | audio mixer | Mapped only | Not captured |
+| EQ High | D1 `0xB0/0x07+0x27`, D2 `0xB1/0x07+0x27` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_HIGH`, `CTRL_ID_CH2_EQ_HIGH` | EQ/DSP | Mapped only | Not captured |
+| EQ Mid | D1 `0xB0/0x0B+0x2B`, D2 `0xB1/0x0B+0x2B` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_MID`, `CTRL_ID_CH2_EQ_MID` | EQ/DSP | Mapped only | Not captured |
+| EQ Low | D1 `0xB0/0x0F+0x2F`, D2 `0xB1/0x0F+0x2F` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_LOW`, `CTRL_ID_CH2_EQ_LOW` | EQ/DSP | Mapped only | Not captured |
 | Headphone cue/PFL | `0x90/0x54`, `0x91/0x54` | press/release | deck-local | `CTRL_ID_DECK1_PFL`, `CTRL_ID_DECK2_PFL` | mixer/cue routing | Implemented | Verified 2026-06-14 / 2026-06-20 |
-| Headphones mix | `0xB6/0x0C+0x2C` | 14-bit MSB+LSB | global monitor | `CTRL_ID_HEADPHONE_MIX` proposed | cue routing/settings | Pending | Not captured |
-| Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` proposed | filter/DSP | Deferred | Not captured |
+| Headphones mix | `0xB6/0x0C+0x2C` | 14-bit MSB+LSB | global monitor | `CTRL_ID_HEADPHONE_MIX` | cue routing/settings | Mapped only | Not captured |
+| Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` | filter/DSP | Mapped only | Not captured |
 | Smart CFX | `0x96/0x00` | press/release | global | `CTRL_ID_SMART_CFX` | future Smart CFX state | Mapped only | Verified 2026-06-20 |
 | Smart Fader | `0x96/0x01` | press/release | global | `CTRL_ID_SMART_FADER` | future Smart Fader state | Mapped only | Verified 2026-06-20 |
 | Beat FX select next / previous | `0x94/0x63`, `0x94/0x64` | press/release | FX section | `CTRL_ID_BEAT_FX_SELECT_NEXT`, `CTRL_ID_BEAT_FX_SELECT_PREV` proposed | Beat FX model | Deferred | Not captured |
@@ -199,30 +199,30 @@ Status legend:
 
 | Physical control | XML status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hot Cue mode | `0x90/0x1B`, `0x91/0x1B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_HOT_CUE`, `CTRL_ID_DECK2_PAD_MODE_HOT_CUE` proposed | P4 pad mode state | Pending | Not captured |
+| Hot Cue mode | `0x90/0x1B`, `0x91/0x1B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_HOT_CUE`, `CTRL_ID_DECK2_PAD_MODE_HOT_CUE` | P4 pad mode state | Mapped only | Not captured |
 | Keyboard/Stems mode | `0x90/0x69`, `0x91/0x69` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEYBOARD`, `CTRL_ID_DECK2_PAD_MODE_KEYBOARD` proposed | unsupported stems model | Deferred | Not captured |
 | Pad FX1 mode | `0x90/0x1E`, `0x91/0x1E` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_FX1`, `CTRL_ID_DECK2_PAD_MODE_FX1` proposed | pad FX model | Deferred | Not captured |
 | Pad FX2 mode | `0x90/0x6B`, `0x91/0x6B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_FX2`, `CTRL_ID_DECK2_PAD_MODE_FX2` proposed | pad FX model | Deferred | Not captured |
-| Beat Jump mode | `0x90/0x20`, `0x91/0x20` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP` proposed | P4 pad mode state | Pending | Not captured |
-| Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` proposed | P4 pad mode state | Pending | Not captured |
+| Beat Jump mode | `0x90/0x20`, `0x91/0x20` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP` | P4 pad mode state | Mapped only | Not captured |
+| Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` | P4 pad mode state | Mapped only | Not captured |
 | Sampler mode | `0x90/0x22`, `0x91/0x22` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_SAMPLER`, `CTRL_ID_DECK2_PAD_MODE_SAMPLER` proposed | sampler model | Deferred | Not captured |
-| Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` proposed | P4 pad mode state | Pending | Not captured |
+| Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` | P4 pad mode state | Mapped only | Not captured |
 
 ### Performance Pad Action Inventory
 
 | Physical control | XML status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hot Cue pads 1-8 | D1 `0x97/0x00..0x07`, D2 `0x99/0x00..0x07` | press/release | active Hot Cue mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad proposed | P4 hot cue state | Pending | Not captured |
-| Hot Cue clear pads 1-8 | D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | press/release | shifted Hot Cue mode | same pad action ID with shift flag proposed | P4 hot cue state | Pending | Not captured |
+| Hot Cue pads 1-8 | D1 `0x97/0x00..0x07`, D2 `0x99/0x00..0x07` | press/release | active Hot Cue mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 hot cue state | Mapped only | Not captured |
+| Hot Cue clear pads 1-8 | D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | press/release | shifted Hot Cue mode | same pad action ID with shift flag | P4 hot cue state | Mapped only | Not captured |
 | Keyboard/Stems pads 1-8 | D1 `0x97/0x40..0x47`, D2 `0x99/0x40..0x47` | press/release | active Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
 | Keyboard/Stems shifted pads 1-8 | D1 `0x98/0x40..0x47`, D2 `0x9A/0x40..0x47` | press/release | shifted Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
-| Beat Loop pads 1-8 | D1 `0x97/0x60..0x67`, D2 `0x99/0x60..0x67` | press/release | active Beat Loop mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad proposed | P4 loop engine | Pending | Not captured |
-| Beat Jump pads 1-8 | D1 `0x97/0x20..0x27`, D2 `0x99/0x20..0x27` | press/release | active Beat Jump mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad proposed | P4 beat jump | Pending | Not captured |
-| Beat Jump shifted size pads | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | press/release | shifted Beat Jump mode | pad action with size inc/dec proposed | P4 beat jump size state | Pending | Not captured |
+| Beat Loop pads 1-8 | D1 `0x97/0x60..0x67`, D2 `0x99/0x60..0x67` | press/release | active Beat Loop mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 loop engine | Mapped only | Not captured |
+| Beat Jump pads 1-8 | D1 `0x97/0x20..0x27`, D2 `0x99/0x20..0x27` | press/release | active Beat Jump mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 beat jump | Mapped only | Not captured |
+| Beat Jump shifted size pads | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | press/release | shifted Beat Jump mode | pad action with size inc/dec | P4 beat jump size state | Mapped only | Not captured |
 | Sampler pads 1-8 left/right | left `0x97/0x30..0x37`, right `0x99/0x30..0x37` | press/release | active Sampler mode | sampler pad action candidate | sampler model | Deferred | Not captured |
 | Sampler shifted pads 1-8 left/right | left `0x98/0x30..0x37`, right `0x9A/0x30..0x37` | press/release | shifted Sampler mode | sampler pad action candidate | sampler model | Deferred | Not captured |
-| Key Shift pads 1-8 | D1 `0x97/0x70..0x77`, D2 `0x99/0x70..0x77` | press/release | active Key Shift mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad proposed | P4 key shift | Pending | Not captured |
-| Key Shift shifted pads 1-8 | D1 `0x98/0x70..0x77`, D2 `0x9A/0x70..0x77` | press/release | shifted Key Shift mode | same pad action ID with shift flag proposed | P4 key shift | Pending | Not captured |
+| Key Shift pads 1-8 | D1 `0x97/0x70..0x77`, D2 `0x99/0x70..0x77` | press/release | active Key Shift mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 key shift | Mapped only | Not captured |
+| Key Shift shifted pads 1-8 | D1 `0x98/0x70..0x77`, D2 `0x9A/0x70..0x77` | press/release | shifted Key Shift mode | same pad action ID with shift flag | P4 key shift | Mapped only | Not captured |
 
 ### Candidate LED Output Inventory
 
@@ -237,8 +237,8 @@ Status legend:
 | Beat Loop pad LEDs | normal D1 `0x97/0x60..0x67`, normal D2 `0x99/0x60..0x67`; shifted mirror D1 `0x98/0x60..0x67`, D2 `0x9A/0x60..0x67` | loop size active | P4 loop state | Candidate LED | Not captured |
 | Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML | P4 beat jump/pad mode state | Candidate LED | Not captured |
 | Sampler pad LEDs | left normal `0x97/0x30..0x37`, left shifted `0x98/0x30..0x37`, right normal `0x99/0x30..0x37`, right shifted `0x9A/0x30..0x37` | sampler slot loaded in XML | sampler model | Deferred | Not captured |
-| Channel 1 VU meter (5 LEDs) | `0xB0/0x02` | channel 1 level (0-127) | P4 audio mixer | Pending | Not captured |
-| Channel 2 VU meter (5 LEDs) | `0xB1/0x02` | channel 2 level (0-127) | P4 audio mixer | Pending | Not captured |
+| Channel 1 VU meter (5 LEDs) | `0xB0/0x02` | channel 1 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
+| Channel 2 VU meter (5 LEDs) | `0xB1/0x02` | channel 2 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
 
 ## Hardware Acceptance
 

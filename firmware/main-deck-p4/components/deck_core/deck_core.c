@@ -6,6 +6,9 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#if !defined(DECK_CORE_PC_TEST)
+#include "esp_timer.h"
+#endif
 #include <inttypes.h>
 #include <string.h>
 
@@ -29,6 +32,9 @@ static flx4_led_publisher_t s_flx4_led_publisher;
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
+#if !defined(DECK_CORE_PC_TEST)
+static esp_timer_handle_t s_vu_timer;
+#endif
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -69,7 +75,18 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
                   ev->id == CTRL_ID_CH2_VOLUME ||
                   ev->id == CTRL_ID_CROSSFADER ||
                   ev->id == CTRL_ID_DECK1_PFL ||
-                  ev->id == CTRL_ID_DECK2_PFL);
+                  ev->id == CTRL_ID_DECK2_PFL ||
+                  ev->id == CTRL_ID_CH1_TRIM ||
+                  ev->id == CTRL_ID_CH2_TRIM ||
+                  ev->id == CTRL_ID_CH1_EQ_HIGH ||
+                  ev->id == CTRL_ID_CH2_EQ_HIGH ||
+                  ev->id == CTRL_ID_CH1_EQ_MID ||
+                  ev->id == CTRL_ID_CH2_EQ_MID ||
+                  ev->id == CTRL_ID_CH1_EQ_LOW ||
+                  ev->id == CTRL_ID_CH2_EQ_LOW ||
+                  ev->id == CTRL_ID_CH1_FILTER ||
+                  ev->id == CTRL_ID_CH2_FILTER ||
+                  ev->id == CTRL_ID_HEADPHONE_MIX);
 }
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
@@ -282,6 +299,23 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
     }
 }
 
+#if !defined(DECK_CORE_PC_TEST)
+static uint8_t peak_to_midi_level(uint16_t peak)
+{
+    uint32_t level = ((uint32_t)peak * 127u) / 32768u;
+    return (uint8_t)(level > 127u ? 127u : level);
+}
+
+static void vu_timer_cb(void *arg)
+{
+    (void)arg;
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        uint8_t level = peak_to_midi_level(audio_engine_get_deck_peak(deck));
+        control_link_send_led_deck(LED_VU_METER, level, deck);
+    }
+}
+#endif
+
 static bool on_deck_extension_button(const ctrl_event_t *ev)
 {
     if (!ev || ev->type != CTRL_EV_BUTTON || !control_link_id_is_deck(ev->id)) {
@@ -326,6 +360,57 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             ESP_LOGD(TAG, "deck %u tempo range pressed (range state deferred)",
                      (unsigned)deck + 1);
         }
+        return true;
+
+    case CTRL_DECK_CTL_LOOP_IN:
+    case CTRL_DECK_CTL_LOOP_OUT:
+    case CTRL_DECK_CTL_RELOOP_EXIT:
+    case CTRL_DECK_CTL_LOOP_HALVE:
+    case CTRL_DECK_CTL_LOOP_DOUBLE:
+    case CTRL_DECK_CTL_BEAT_JUMP_BACK:
+    case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
+        if (pressed) {
+            ESP_LOGD(TAG, "deck %u extension control %u pressed (behavior deferred)",
+                     (unsigned)deck + 1,
+                     (unsigned)control_link_id_control(ev->id));
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_HOT_CUE:
+        if (pressed) {
+            state->perf_mode = PERF_MODE_HOT_CUE;
+            ESP_LOGI(TAG, "deck %u pad mode -> HOT_CUE", (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_BEAT_LOOP:
+        if (pressed) {
+            state->perf_mode = PERF_MODE_LOOP_ROLL;
+            ESP_LOGI(TAG, "deck %u pad mode -> BEAT_LOOP", (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_BEAT_JUMP:
+        if (pressed) {
+            state->perf_mode = PERF_MODE_BEAT_JUMP;
+            ESP_LOGI(TAG, "deck %u pad mode -> BEAT_JUMP", (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT:
+        if (pressed) {
+            state->perf_mode = PERF_MODE_KEY_SHIFT;
+            ESP_LOGI(TAG, "deck %u pad mode -> KEY_SHIFT", (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_ACTION:
+        ESP_LOGD(TAG, "deck %u pad action mode=%u pad=%u shifted=%u pressed=%u",
+                 (unsigned)deck + 1,
+                 (unsigned)CTRL_PAD_ACTION_MODE(ev->value),
+                 (unsigned)CTRL_PAD_ACTION_PAD(ev->value),
+                 CTRL_PAD_ACTION_SHIFTED(ev->value) ? 1u : 0u,
+                 CTRL_PAD_ACTION_PRESSED(ev->value) ? 1u : 0u);
         return true;
 
     default:
@@ -409,6 +494,20 @@ static void on_mixer_control(uint8_t id, int16_t raw)
         if (raw != 0) {
             audio_engine_toggle_pfl(CTRL_DECK_2);
         }
+        break;
+    case CTRL_ID_CH1_TRIM:
+    case CTRL_ID_CH2_TRIM:
+    case CTRL_ID_CH1_EQ_HIGH:
+    case CTRL_ID_CH2_EQ_HIGH:
+    case CTRL_ID_CH1_EQ_MID:
+    case CTRL_ID_CH2_EQ_MID:
+    case CTRL_ID_CH1_EQ_LOW:
+    case CTRL_ID_CH2_EQ_LOW:
+    case CTRL_ID_CH1_FILTER:
+    case CTRL_ID_CH2_FILTER:
+    case CTRL_ID_HEADPHONE_MIX:
+        ESP_LOGD(TAG, "mixer control id=0x%02X raw=%u (DSP behavior deferred)",
+                 (unsigned)id, (unsigned)value);
         break;
     default:
         break;
@@ -515,6 +614,24 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
         s_mutex = NULL;
         return ESP_ERR_NO_MEM;
     }
+
+#if !defined(DECK_CORE_PC_TEST)
+    if (!s_vu_timer) {
+        const esp_timer_create_args_t vu_timer_args = {
+            .callback = vu_timer_cb,
+            .name = "flx4_vu",
+        };
+        esp_err_t timer_rc = esp_timer_create(&vu_timer_args, &s_vu_timer);
+        if (timer_rc != ESP_OK) {
+            vQueueDelete(s_queue);
+            s_queue = NULL;
+            vSemaphoreDelete(s_mutex);
+            s_mutex = NULL;
+            return timer_rc;
+        }
+    }
+    ESP_ERROR_CHECK(esp_timer_start_periodic(s_vu_timer, 30000));
+#endif
 
     *ctrl_event_queue_out = s_queue;
     ESP_LOGI(TAG, "deck core ready");

@@ -509,6 +509,12 @@ Implementation order:
      and seeks the addressed deck to 0 ms while pausing it. Sync and tempo
      range are intentionally semantic input only until the P4 beat/sync and
      tempo-range models are defined.
+   - second firmware slice expands the 7-byte control-link namespace to 32
+     deck-local controls per deck, maps loop, beat-jump, pad mode/action, trim,
+     EQ, filter, and headphone-mix semantic inputs, and adds P4-driven FLX4 VU
+     meter output. These mappings are software-regression covered but remain
+     hardware-capture pending unless individually marked verified in
+     `docs/DDJ_FLX4_MIDI_MAP.md`.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;

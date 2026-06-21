@@ -17,6 +17,8 @@ typedef enum {
     PERF_MODE_COUNT,
 } perf_mode_t;
 
+#define PERF_MODE_BEAT_LOOP PERF_MODE_LOOP_ROLL
+
 // ─── Deck state (read-only snapshot for UI / audio_engine) ───────────────────
 
 #define DECK_CORE_DECK_COUNT 2

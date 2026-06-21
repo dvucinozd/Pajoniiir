@@ -81,6 +81,16 @@ static void handle_p4_frame(const uint8_t *f)
     if (type == CTRL_TYPE_LED) {
         // 1. Forward to DDJ-FLX4 via USB MIDI
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
+            if (id == LED_VU_METER) {
+                uint8_t status = (deck == CTRL_DECK_1) ? 0xB0 : 0xB1;
+                uint8_t packet[4] = { 0x0B, status, 0x02, (uint8_t)(state & 0x7F) };
+
+                #if !defined(FLX4_MIDI_HOST_PC_TEST)
+                flx4_midi_host_send_packet(packet);
+                #endif
+                return;
+            }
+
             uint8_t note = 0;
             bool valid_led = true;
             switch (id) {

@@ -275,6 +275,34 @@ static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
     assert(audio_engine_stub_pfl_toggle_count[CTRL_DECK_2] == 1);
 }
 
+static void test_pad_mode_buttons_update_requested_deck_mode(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck1_mode = deck_button(CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP);
+    ctrl_event_t deck2_mode = deck_button(CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT);
+    deck_core_test_apply_event(&deck1_mode);
+    deck_core_test_apply_event(&deck2_mode);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_BEAT_LOOP);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_KEY_SHIFT);
+}
+
+static void test_pad_action_is_consumed_without_transport_side_effects(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK2_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(PERF_MODE_HOT_CUE, 2, true, true);
+
+    deck_core_test_apply_event(&pad);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+}
+
 int main(void)
 {
     test_decks_track_transport_independently();
@@ -287,6 +315,8 @@ int main(void)
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_pfl_toggle_on_press();
+    test_pad_mode_buttons_update_requested_deck_mode();
+    test_pad_action_is_consumed_without_transport_side_effects();
     puts("deck_core_dual tests passed");
     return 0;
 }

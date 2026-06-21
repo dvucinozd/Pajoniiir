@@ -20,6 +20,12 @@ typedef struct {
 typedef struct {
     flx4_14bit_state_t tempo[2];
     flx4_14bit_state_t channel_volume[2];
+    flx4_14bit_state_t trim[2];
+    flx4_14bit_state_t eq_high[2];
+    flx4_14bit_state_t eq_mid[2];
+    flx4_14bit_state_t eq_low[2];
+    flx4_14bit_state_t filter[2];
+    flx4_14bit_state_t headphone_mix;
     flx4_14bit_state_t crossfader;
 } flx4_map_state_t;
 
