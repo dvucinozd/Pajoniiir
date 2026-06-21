@@ -44,6 +44,7 @@ static void init_deck_state(deck_state_t *state)
 {
     memset(state, 0, sizeof(*state));
     state->pitch = PITCH_CENTER;
+    state->pad_mode = CTRL_PAD_MODE_HOT_CUE;
 }
 
 static uint8_t normalize_deck(uint8_t deck)
@@ -208,6 +209,8 @@ static void publish_flx4_led_snapshot(bool force)
         input.cue[deck] = state.position_ms == state.cue_point_ms ? 1 : 0;
         input.play[deck] = state.playing ? 1 : 0;
         input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
+        input.sync[deck] = state.sync_enabled ? 1 : 0;
+        input.pad_mode[deck] = state.pad_mode;
     }
 
     esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,
@@ -423,9 +426,12 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_SYNC:
-        if (should_log_deferred_button(ev->id, ev->value)) {
-            ESP_LOGI(TAG, "deck %u sync pressed (sync engine deferred)",
-                     (unsigned)deck + 1);
+        if (pressed) {
+            state->sync_enabled = !state->sync_enabled;
+            ESP_LOGI(TAG, "deck %u sync -> %s (sync engine deferred)",
+                     (unsigned)deck + 1,
+                     state->sync_enabled ? "ON" : "OFF");
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
@@ -453,56 +459,72 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     case CTRL_DECK_CTL_PAD_MODE_HOT_CUE:
         if (pressed) {
             state->perf_mode = PERF_MODE_HOT_CUE;
+            state->pad_mode = CTRL_PAD_MODE_HOT_CUE;
             ESP_LOGI(TAG, "deck %u pad mode -> HOT_CUE", (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_KEYBOARD:
         if (pressed) {
+            state->pad_mode = CTRL_PAD_MODE_KEYBOARD;
             ESP_LOGI(TAG, "deck %u pad mode -> KEYBOARD (behavior deferred)",
                      (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_PAD_FX1:
         if (pressed) {
+            state->pad_mode = CTRL_PAD_MODE_PAD_FX1;
             ESP_LOGI(TAG, "deck %u pad mode -> PAD_FX1 (behavior deferred)",
                      (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_PAD_FX2:
         if (pressed) {
+            state->pad_mode = CTRL_PAD_MODE_PAD_FX2;
             ESP_LOGI(TAG, "deck %u pad mode -> PAD_FX2 (behavior deferred)",
                      (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_BEAT_LOOP:
         if (pressed) {
             state->perf_mode = PERF_MODE_LOOP_ROLL;
+            state->pad_mode = CTRL_PAD_MODE_BEAT_LOOP;
             ESP_LOGI(TAG, "deck %u pad mode -> BEAT_LOOP", (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_BEAT_JUMP:
         if (pressed) {
             state->perf_mode = PERF_MODE_BEAT_JUMP;
+            state->pad_mode = CTRL_PAD_MODE_BEAT_JUMP;
             ESP_LOGI(TAG, "deck %u pad mode -> BEAT_JUMP", (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT:
         if (pressed) {
             state->perf_mode = PERF_MODE_KEY_SHIFT;
+            state->pad_mode = CTRL_PAD_MODE_KEY_SHIFT;
             ESP_LOGI(TAG, "deck %u pad mode -> KEY_SHIFT", (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_SAMPLER:
         if (pressed) {
+            state->pad_mode = CTRL_PAD_MODE_SAMPLER;
             ESP_LOGI(TAG, "deck %u pad mode -> SAMPLER (behavior deferred)",
                      (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
         }
         return true;
 

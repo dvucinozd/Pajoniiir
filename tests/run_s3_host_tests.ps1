@@ -115,6 +115,22 @@ $tests = @(
         )
     },
     @{
+        Name = "flx4_led_midi"
+        Dir = "tests/flx4_midi_host"
+        Target = "test_flx4_led_midi.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            "-DFLX4_MIDI_HOST_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/control-board-s3/components/panel_io/include",
+            "-o", "test_flx4_led_midi.exe",
+            "test_flx4_led_midi.c",
+            "../../firmware/control-board-s3/components/control_link/flx4_led_midi.c"
+        )
+    },
+    @{
         Name = "control_link_protocol"
         Dir = "tests/control_link_protocol"
         Target = "test_control_link_protocol.exe"

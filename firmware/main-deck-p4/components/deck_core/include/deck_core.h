@@ -30,6 +30,8 @@ typedef struct {
     uint32_t      cue_point_ms;
     int16_t       pitch;          // 0–16383, center = 8192, from S3 ADC
     perf_mode_t   perf_mode;
+    ctrl_pad_mode_t pad_mode;
+    bool          sync_enabled;
     bool          master_tempo;
     bool          control_link_connected;
     uint32_t      last_heartbeat_age_ms;

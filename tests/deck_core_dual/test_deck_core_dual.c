@@ -275,6 +275,27 @@ static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
     assert(audio_engine_stub_pfl_toggle_count[CTRL_DECK_2] == 1);
 }
 
+static void test_sync_button_toggles_requested_deck_sync_led_state(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
+    ctrl_event_t deck2_sync = deck_button(CTRL_ID_DECK2_SYNC);
+
+    deck_core_test_apply_event(&deck1_sync);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+
+    deck_core_test_apply_event(&deck2_sync);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+
+    deck_core_test_apply_event(&deck1_sync);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+}
+
 static void test_pad_mode_buttons_update_requested_deck_mode(void)
 {
     deck_core_test_reset();
@@ -287,6 +308,8 @@ static void test_pad_mode_buttons_update_requested_deck_mode(void)
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_BEAT_LOOP);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_KEY_SHIFT);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pad_mode == CTRL_PAD_MODE_BEAT_LOOP);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_KEY_SHIFT);
 }
 
 static void test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects(void)
@@ -302,6 +325,8 @@ static void test_deferred_pad_mode_buttons_are_consumed_without_transport_side_e
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_HOT_CUE);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_HOT_CUE);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pad_mode == CTRL_PAD_MODE_PAD_FX1);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_SAMPLER);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_1).playing);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
     assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
@@ -367,6 +392,7 @@ int main(void)
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_pfl_toggle_on_press();
+    test_sync_button_toggles_requested_deck_sync_led_state();
     test_pad_mode_buttons_update_requested_deck_mode();
     test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects();
     test_pad_action_is_consumed_without_transport_side_effects();

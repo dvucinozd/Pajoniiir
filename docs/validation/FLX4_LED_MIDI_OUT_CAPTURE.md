@@ -135,6 +135,35 @@ Observed behavior:
 - The implemented forced snapshot scope is intentionally limited to the MVP
   LED set: Deck 1/2 Play, Cue, and PFL.
 
+## Phase 7 Pad Mode and Beat Sync LED Smoke Checklist
+
+Status: firmware implemented, software-tested, flashed; physical smoke pending.
+
+Firmware branch: `codex/phase7-extended-controls-vu`
+
+Scope:
+
+- P4 owns `deck_core.pad_mode` and emits one selected pad-mode LED per deck.
+- P4 owns `deck_core.sync_enabled` as a placeholder Beat Sync toggle until the
+  real beat-sync engine exists.
+- S3 maps P4 LED frames to XML-derived FLX4 MIDI OUT messages.
+
+Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
+
+| Step | Action | Expected result | Result | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | Press Deck 1 `HOT CUE` | Deck 1 Hot Cue mode LED on; other Deck 1 mode LEDs off | pending | |
+| 2 | Press Deck 1 `PAD FX1` | Deck 1 Pad FX1 mode LED on; other Deck 1 mode LEDs off | pending | |
+| 3 | Press Deck 1 `BEAT JUMP` | Deck 1 Beat Jump mode LED on; other Deck 1 mode LEDs off | pending | |
+| 4 | Press Deck 1 `SAMPLER` | Deck 1 Sampler mode LED on; other Deck 1 mode LEDs off | pending | |
+| 5 | Press Deck 1 shifted secondary modes | Keyboard, Pad FX2, Beat Loop, and Key Shift LEDs follow the selected shifted mode | pending | Use Shift + matching physical mode button. |
+| 6 | Repeat steps 1-5 on Deck 2 | Deck 2 LEDs follow independently from Deck 1 | pending | |
+| 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pending | Placeholder state only; tempo/audio must not change. |
+| 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pending | |
+| 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pending | |
+| 10 | With non-default pad mode and Beat Sync enabled, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED and Beat Sync LED | pending | Playback/deck state must not change. |
+| 11 | With non-default pad mode and Beat Sync enabled, reset S3 only | P4 reconnect snapshot restores selected pad mode LED and Beat Sync LED after S3 recovery | pending | P4 state remains authoritative. |
+
 ## Promotion Gate
 
 Before adding or enabling a production entry in `flx4_led_map()`:

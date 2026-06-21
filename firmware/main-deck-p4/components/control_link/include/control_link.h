@@ -60,6 +60,16 @@ typedef enum {
     LED_PFL,
     LED_VU_METER,
     LED_COUNT,
+    LED_PAD_MODE_HOT_CUE = LED_COUNT,
+    LED_PAD_MODE_KEYBOARD,
+    LED_PAD_MODE_PAD_FX1,
+    LED_PAD_MODE_PAD_FX2,
+    LED_PAD_MODE_BEAT_JUMP,
+    LED_PAD_MODE_BEAT_LOOP,
+    LED_PAD_MODE_SAMPLER,
+    LED_PAD_MODE_KEY_SHIFT,
+    LED_SYNC,
+    LED_REMOTE_COUNT,
 } led_id_t;
 
 // ─── DDJ-FLX4 deck-aware semantic IDs ────────────────────────────────────────

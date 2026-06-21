@@ -560,6 +560,11 @@ Implementation order:
    - derive candidate output status/midino values from the XML output section;
    - drive LEDs only from P4-confirmed state through the existing S3 MIDI Out
      queue;
+   - first slice implemented in firmware: P4-owned per-deck pad mode LED
+     snapshot and S3 XML-derived MIDI OUT translation for Hot Cue, Keyboard,
+     Pad FX1, Pad FX2, Beat Jump, Beat Loop, Sampler, and Key Shift;
+   - Beat Sync LED feedback is implemented as a P4-owned per-deck placeholder
+     toggle (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - verify reconnect resynchronization and mode/pad LED behavior on hardware.
 
 Required artifacts:

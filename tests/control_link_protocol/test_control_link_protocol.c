@@ -30,6 +30,9 @@ int p4_ctrl_id_ch1_trim(void);
 int p4_ctrl_id_headphone_mix(void);
 int p4_ctrl_id_browse_shift_delta(void);
 int p4_led_vu_meter(void);
+int p4_led_pad_mode_hot_cue(void);
+int p4_led_pad_mode_key_shift(void);
+int p4_led_sync(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -66,6 +69,9 @@ int s3_ctrl_id_ch1_trim(void);
 int s3_ctrl_id_headphone_mix(void);
 int s3_ctrl_id_browse_shift_delta(void);
 int s3_led_vu_meter(void);
+int s3_led_pad_mode_hot_cue(void);
+int s3_led_pad_mode_key_shift(void);
+int s3_led_sync(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -273,6 +279,12 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_browse_shift_delta() == CTRL_ID_BROWSE_SHIFT_DELTA);
     assert(s3_led_vu_meter() == p4_led_vu_meter());
     assert(p4_led_vu_meter() == LED_VU_METER);
+    assert(s3_led_pad_mode_hot_cue() == p4_led_pad_mode_hot_cue());
+    assert(p4_led_pad_mode_hot_cue() == LED_PAD_MODE_HOT_CUE);
+    assert(s3_led_pad_mode_key_shift() == p4_led_pad_mode_key_shift());
+    assert(p4_led_pad_mode_key_shift() == LED_PAD_MODE_KEY_SHIFT);
+    assert(s3_led_sync() == p4_led_sync());
+    assert(p4_led_sync() == LED_SYNC);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

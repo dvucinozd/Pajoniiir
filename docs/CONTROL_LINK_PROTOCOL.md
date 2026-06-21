@@ -126,6 +126,15 @@ packed into the high byte of the 16-bit value by `control_link_send_led_deck()`:
 | `0x01` | Play |
 | `0x04` | PFL |
 | `0x05` | VU meter level |
+| `0x06` | Pad mode: Hot Cue |
+| `0x07` | Pad mode: Keyboard/Stems |
+| `0x08` | Pad mode: Pad FX1 |
+| `0x09` | Pad mode: Pad FX2 |
+| `0x0A` | Pad mode: Beat Jump |
+| `0x0B` | Pad mode: Beat Loop |
+| `0x0C` | Pad mode: Sampler |
+| `0x0D` | Pad mode: Key Shift |
+| `0x0E` | Beat Sync enabled |
 
 ```text
 value low byte:  LED state, 0 off / 1 on / 2 blink
@@ -148,6 +157,18 @@ P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 complete MVP LED snapshot for Deck 1/2 Cue, Play, and PFL. Host tests verify
 normal diff suppression, failed-send retry, and forced reconnect publication.
+
+Pad mode LEDs are also P4-owned. `deck_core` stores controller `pad_mode`
+separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,
+`PAD_FX2`, `KEYBOARD`, and `SAMPLER` can still drive LED state without implying
+that their pad behavior is implemented. The S3 maps these LED IDs to the
+XML-derived FLX4 MIDI output notes and sends exactly one active pad-mode LED per
+deck in the P4 snapshot.
+
+Beat Sync LED feedback is P4-owned as a placeholder state until the real
+beat-sync engine exists. Pressing Beat Sync toggles `deck_core.sync_enabled` for
+the requested deck, P4 republishes the LED snapshot, and S3 maps `LED_SYNC` to
+USB MIDI note `0x58` on `0x90`/`0x91`.
 
 ## Future Protocol Versioning
 

@@ -71,6 +71,16 @@ typedef enum {
 #define CTRL_NS_SYSTEM  0x70
 
 #define LED_VU_METER 5
+#define LED_PAD_MODE_HOT_CUE 6
+#define LED_PAD_MODE_KEYBOARD 7
+#define LED_PAD_MODE_PAD_FX1 8
+#define LED_PAD_MODE_PAD_FX2 9
+#define LED_PAD_MODE_BEAT_JUMP 10
+#define LED_PAD_MODE_BEAT_LOOP 11
+#define LED_PAD_MODE_SAMPLER 12
+#define LED_PAD_MODE_KEY_SHIFT 13
+#define LED_SYNC 14
+#define LED_REMOTE_COUNT 15
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,
