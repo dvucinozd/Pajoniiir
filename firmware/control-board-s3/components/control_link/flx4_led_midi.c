@@ -21,6 +21,12 @@ static bool note_for_led(uint8_t led, uint8_t *note)
     case LED_SYNC:
         *note = 0x58;
         return true;
+    case LED_LOOP_IN:
+        *note = 0x10;
+        return true;
+    case LED_LOOP_OUT:
+        *note = 0x11;
+        return true;
     case LED_PAD_MODE_HOT_CUE:
         *note = 0x1B;
         return true;

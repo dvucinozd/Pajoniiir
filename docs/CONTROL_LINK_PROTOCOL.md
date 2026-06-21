@@ -135,6 +135,8 @@ packed into the high byte of the 16-bit value by `control_link_send_led_deck()`:
 | `0x0C` | Pad mode: Sampler |
 | `0x0D` | Pad mode: Key Shift |
 | `0x0E` | Beat Sync enabled |
+| `0x0F` | Loop In indicator |
+| `0x10` | Loop Out indicator |
 
 ```text
 value low byte:  LED state, 0 off / 1 on / 2 blink
@@ -169,6 +171,12 @@ Beat Sync LED feedback is P4-owned as a placeholder state until the real
 beat-sync engine exists. Pressing Beat Sync toggles `deck_core.sync_enabled` for
 the requested deck, P4 republishes the LED snapshot, and S3 maps `LED_SYNC` to
 USB MIDI note `0x58` on `0x90`/`0x91`.
+
+Loop In and Loop Out LED feedback is also P4-owned. P4 reads the authoritative
+per-deck audio loop state through `audio_engine_deck_get_loop_state()`. When a
+loop is active, P4 sends both `LED_LOOP_IN` and `LED_LOOP_OUT` on for that deck;
+when no loop is active, both are off. S3 maps those LED IDs to USB MIDI notes
+`0x10` and `0x11` on `0x90`/`0x91`.
 
 ## Future Protocol Versioning
 

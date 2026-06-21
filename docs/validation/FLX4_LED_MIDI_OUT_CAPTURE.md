@@ -135,9 +135,10 @@ Observed behavior:
 - The implemented forced snapshot scope is intentionally limited to the MVP
   LED set: Deck 1/2 Play, Cue, and PFL.
 
-## Phase 7 Pad Mode and Beat Sync LED Smoke Checklist
+## Phase 7 Pad Mode, Beat Sync, and Loop LED Smoke Checklist
 
-Status: firmware implemented, software-tested, flashed; physical smoke pending.
+Status: firmware implemented, software-tested, build-verified; physical smoke
+pending.
 
 Firmware branch: `codex/phase7-extended-controls-vu`
 
@@ -146,6 +147,8 @@ Scope:
 - P4 owns `deck_core.pad_mode` and emits one selected pad-mode LED per deck.
 - P4 owns `deck_core.sync_enabled` as a placeholder Beat Sync toggle until the
   real beat-sync engine exists.
+- P4 owns active-loop LED feedback through `audio_engine_deck_get_loop_state()`;
+  active loops light both Loop In and Loop Out LEDs on the affected deck.
 - S3 maps P4 LED frames to XML-derived FLX4 MIDI OUT messages.
 
 Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
@@ -161,8 +164,11 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pending | Placeholder state only; tempo/audio must not change. |
 | 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pending | |
 | 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pending | |
-| 10 | With non-default pad mode and Beat Sync enabled, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED and Beat Sync LED | pending | Playback/deck state must not change. |
-| 11 | With non-default pad mode and Beat Sync enabled, reset S3 only | P4 reconnect snapshot restores selected pad mode LED and Beat Sync LED after S3 recovery | pending | P4 state remains authoritative. |
+| 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pending | Current firmware uses one active-loop state for both LEDs. |
+| 11 | Clear the Deck 1 loop | Deck 1 Loop In and Loop Out LEDs turn off | pending | |
+| 12 | Repeat steps 10-11 on Deck 2 | Deck 2 Loop In/Out LEDs follow independently from Deck 1 | pending | |
+| 13 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pending | Playback/deck state must not change. |
+| 14 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pending | P4 state remains authoritative. |
 
 ## Promotion Gate
 

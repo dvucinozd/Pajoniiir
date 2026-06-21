@@ -33,6 +33,8 @@ int p4_led_vu_meter(void);
 int p4_led_pad_mode_hot_cue(void);
 int p4_led_pad_mode_key_shift(void);
 int p4_led_sync(void);
+int p4_led_loop_in(void);
+int p4_led_loop_out(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -72,6 +74,8 @@ int s3_led_vu_meter(void);
 int s3_led_pad_mode_hot_cue(void);
 int s3_led_pad_mode_key_shift(void);
 int s3_led_sync(void);
+int s3_led_loop_in(void);
+int s3_led_loop_out(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -285,6 +289,10 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(p4_led_pad_mode_key_shift() == LED_PAD_MODE_KEY_SHIFT);
     assert(s3_led_sync() == p4_led_sync());
     assert(p4_led_sync() == LED_SYNC);
+    assert(s3_led_loop_in() == p4_led_loop_in());
+    assert(p4_led_loop_in() == LED_LOOP_IN);
+    assert(s3_led_loop_out() == p4_led_loop_out());
+    assert(p4_led_loop_out() == LED_LOOP_OUT);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

@@ -12,6 +12,7 @@ typedef struct {
     uint8_t pfl[2];
     uint8_t sync[2];
     uint8_t pad_mode[2];
+    uint8_t loop_active[2];
 } flx4_led_snapshot_input_t;
 
 typedef esp_err_t (*flx4_led_send_fn_t)(led_id_t led,
@@ -20,8 +21,8 @@ typedef esp_err_t (*flx4_led_send_fn_t)(led_id_t led,
                                        void *ctx);
 
 typedef struct {
-    uint8_t last[2][12];
-    bool valid[2][12];
+    uint8_t last[2][14];
+    bool valid[2][14];
 } flx4_led_publisher_t;
 
 void flx4_led_publisher_init(flx4_led_publisher_t *publisher);

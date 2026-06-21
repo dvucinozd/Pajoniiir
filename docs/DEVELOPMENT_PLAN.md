@@ -565,6 +565,8 @@ Implementation order:
      Pad FX1, Pad FX2, Beat Jump, Beat Loop, Sampler, and Key Shift;
    - Beat Sync LED feedback is implemented as a P4-owned per-deck placeholder
      toggle (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
+   - Loop In/Out LED feedback is implemented from P4-owned per-deck audio loop
+     state; active loops light both Loop In and Loop Out LEDs for that deck;
    - verify reconnect resynchronization and mode/pad LED behavior on hardware.
 
 Required artifacts:

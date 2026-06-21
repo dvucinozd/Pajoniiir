@@ -37,5 +37,7 @@ int s3_led_vu_meter(void) { return LED_VU_METER; }
 int s3_led_pad_mode_hot_cue(void) { return LED_PAD_MODE_HOT_CUE; }
 int s3_led_pad_mode_key_shift(void) { return LED_PAD_MODE_KEY_SHIFT; }
 int s3_led_sync(void) { return LED_SYNC; }
+int s3_led_loop_in(void) { return LED_LOOP_IN; }
+int s3_led_loop_out(void) { return LED_LOOP_OUT; }
 int s3_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int s3_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

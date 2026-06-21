@@ -240,6 +240,8 @@ is direct or shifted.
 | Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled placeholder state | P4 `deck_core.sync_enabled` | Implemented output | Pending hardware smoke; output probe verified 2026-06-20 |
 | PFL LEDs | `0x90/0x54`, `0x91/0x54` | PFL enabled | P4 mixer/cue routing | Implemented | Verified 2026-06-20 reconnect |
 | Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Pending hardware smoke |
+| Loop In LEDs | `0x90/0x10`, `0x91/0x10` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Pending hardware smoke; output probe verified 2026-06-20 |
+| Loop Out LEDs | `0x90/0x11`, `0x91/0x11` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Pending hardware smoke; output probe verified 2026-06-20 |
 | Hot Cue pad LEDs | normal D1 `0x97/0x00..0x07`, normal D2 `0x99/0x00..0x07`; shifted mirror D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | hot cue exists/active | P4 hot cue state | Candidate LED | Not captured |
 | Beat Loop pad LEDs | normal D1 `0x97/0x60..0x67`, normal D2 `0x99/0x60..0x67`; shifted mirror D1 `0x98/0x60..0x67`, D2 `0x9A/0x60..0x67` | loop size active | P4 loop state | Candidate LED | Not captured |
 | Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML | P4 beat jump/pad mode state | Candidate LED | Not captured |

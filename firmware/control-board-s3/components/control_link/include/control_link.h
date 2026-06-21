@@ -80,7 +80,9 @@ typedef enum {
 #define LED_PAD_MODE_SAMPLER 12
 #define LED_PAD_MODE_KEY_SHIFT 13
 #define LED_SYNC 14
-#define LED_REMOTE_COUNT 15
+#define LED_LOOP_IN 15
+#define LED_LOOP_OUT 16
+#define LED_REMOTE_COUNT 17
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,

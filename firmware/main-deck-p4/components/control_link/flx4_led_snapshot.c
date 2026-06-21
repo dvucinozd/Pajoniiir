@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-static const led_id_t s_led_ids[12] = {
+static const led_id_t s_led_ids[14] = {
     LED_CUE,
     LED_PLAY,
     LED_PFL,
@@ -15,6 +15,8 @@ static const led_id_t s_led_ids[12] = {
     LED_PAD_MODE_BEAT_LOOP,
     LED_PAD_MODE_SAMPLER,
     LED_PAD_MODE_KEY_SHIFT,
+    LED_LOOP_IN,
+    LED_LOOP_OUT,
 };
 
 static const uint8_t s_pad_modes[8] = {
@@ -41,8 +43,14 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
         return input->pfl[deck];
     case 3:
         return input->sync[deck];
+    case 12:
+    case 13:
+        return input->loop_active[deck];
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);
+        if (pad_index >= 8u) {
+            return 0;
+        }
         return input->pad_mode[deck] == s_pad_modes[pad_index] ? 1u : 0u;
     }
     }
@@ -68,7 +76,7 @@ esp_err_t flx4_led_publisher_publish(
 
     esp_err_t first_error = ESP_OK;
     for (uint8_t deck = 0; deck < 2; deck++) {
-        for (uint8_t index = 0; index < 12; index++) {
+        for (uint8_t index = 0; index < 14; index++) {
             uint8_t value = snapshot_value(input, deck, index);
             if (!force &&
                 publisher->valid[deck][index] &&

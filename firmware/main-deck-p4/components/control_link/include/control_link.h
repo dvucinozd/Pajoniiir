@@ -69,6 +69,8 @@ typedef enum {
     LED_PAD_MODE_SAMPLER,
     LED_PAD_MODE_KEY_SHIFT,
     LED_SYNC,
+    LED_LOOP_IN,
+    LED_LOOP_OUT,
     LED_REMOTE_COUNT,
 } led_id_t;
 

@@ -13,6 +13,7 @@ esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_deck_seek_count[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_loop_active[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -94,6 +95,7 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;
         audio_engine_stub_deck_seek_count[deck] = 0;
+        audio_engine_stub_loop_active[deck] = false;
     }
 }
 

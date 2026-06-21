@@ -211,6 +211,13 @@ static void publish_flx4_led_snapshot(bool force)
         input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
+
+        bool loop_active = false;
+        uint32_t loop_start = 0;
+        uint32_t loop_end = 0;
+        if (audio_engine_deck_get_loop_state(deck, &loop_active, &loop_start, &loop_end) == ESP_OK) {
+            input.loop_active[deck] = loop_active ? 1 : 0;
+        }
     }
 
     esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,

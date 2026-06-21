@@ -23,6 +23,7 @@ extern esp_err_t audio_engine_stub_deck_play_result[2];
 extern bool audio_engine_stub_deck_playing[2];
 extern uint32_t audio_engine_stub_deck_position_ms[2];
 extern int audio_engine_stub_deck_seek_count[2];
+extern bool audio_engine_stub_loop_active[2];
 
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
@@ -68,6 +69,18 @@ static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)
 static inline bool audio_engine_deck_is_playing(uint8_t deck)
 {
     return deck < 2 ? audio_engine_stub_deck_playing[deck] : false;
+}
+
+static inline esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
+                                                        bool *active,
+                                                        uint32_t *start_ms,
+                                                        uint32_t *end_ms)
+{
+    if (deck >= 2 || !active || !start_ms || !end_ms) return ESP_ERR_INVALID_ARG;
+    *active = audio_engine_stub_loop_active[deck];
+    *start_ms = *active ? 1000u : 0u;
+    *end_ms = *active ? 2000u : 0u;
+    return ESP_OK;
 }
 
 extern int audio_engine_stub_channel_volume[2];

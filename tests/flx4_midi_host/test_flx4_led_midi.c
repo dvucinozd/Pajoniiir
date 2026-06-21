@@ -29,6 +29,10 @@ static void test_transport_and_mode_led_packets(void)
     expect_packet(LED_PFL, 1, CTRL_DECK_2, 0x09, 0x91, 0x54, 0x7F);
     expect_packet(LED_SYNC, 1, CTRL_DECK_1, 0x09, 0x90, 0x58, 0x7F);
     expect_packet(LED_SYNC, 0, CTRL_DECK_2, 0x09, 0x91, 0x58, 0x00);
+    expect_packet(LED_LOOP_IN, 1, CTRL_DECK_1, 0x09, 0x90, 0x10, 0x7F);
+    expect_packet(LED_LOOP_IN, 0, CTRL_DECK_2, 0x09, 0x91, 0x10, 0x00);
+    expect_packet(LED_LOOP_OUT, 1, CTRL_DECK_1, 0x09, 0x90, 0x11, 0x7F);
+    expect_packet(LED_LOOP_OUT, 0, CTRL_DECK_2, 0x09, 0x91, 0x11, 0x00);
 
     expect_packet(LED_PAD_MODE_HOT_CUE, 1, CTRL_DECK_1, 0x09, 0x90, 0x1B, 0x7F);
     expect_packet(LED_PAD_MODE_KEYBOARD, 1, CTRL_DECK_2, 0x09, 0x91, 0x69, 0x7F);
