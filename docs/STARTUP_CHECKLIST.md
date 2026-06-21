@@ -137,8 +137,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
   behavior; Sync/tempo-range behavior remains deferred. Final Phase 7 smoke
   verified loop in/out, reloop/exit, loop halve/double, and beat-jump
-  back/forward inputs on both decks. Loop In/Out, Reloop/Exit, and loop
-  halve/double now have P4 behavior; beat-jump behavior remains deferred.
+  back/forward inputs on both decks. Loop In/Out, Reloop/Exit, loop
+  halve/double, and Beat Jump buttons/pads now have P4 behavior; Beat Jump
+  hardware behavior smoke remains pending.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
@@ -149,8 +150,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
   implemented in P4 for per-track store/recall and shifted clear; Deck 1
   hardware behavior smoke passed, while Deck 2 behavior smoke remains pending.
-  Actual Beat Loop, Beat Jump, Sampler,
-  Key Shift, and Pad FX behavior remains a separate P4 feature task.
+  Beat Jump pad behavior is implemented in P4 and remains pending for hardware
+  behavior smoke. Actual Beat Loop, Sampler, Key Shift, and Pad FX behavior
+  remains a separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync LED placeholder state, and
