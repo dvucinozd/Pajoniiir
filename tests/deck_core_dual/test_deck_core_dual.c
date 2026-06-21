@@ -14,6 +14,10 @@ bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_deck_seek_count[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_loop_active[DECK_CORE_DECK_COUNT];
+uint32_t audio_engine_stub_loop_start_ms[DECK_CORE_DECK_COUNT];
+uint32_t audio_engine_stub_loop_end_ms[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_loop_set_count[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_loop_clear_count[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -96,6 +100,10 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_deck_position_ms[deck] = 0;
         audio_engine_stub_deck_seek_count[deck] = 0;
         audio_engine_stub_loop_active[deck] = false;
+        audio_engine_stub_loop_start_ms[deck] = 0;
+        audio_engine_stub_loop_end_ms[deck] = 0;
+        audio_engine_stub_loop_set_count[deck] = 0;
+        audio_engine_stub_loop_clear_count[deck] = 0;
     }
 }
 
@@ -298,6 +306,76 @@ static void test_sync_button_toggles_requested_deck_sync_led_state(void)
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
 }
 
+static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 1000;
+
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK2_LOOP_IN);
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK2_LOOP_OUT);
+
+    deck_core_test_apply_event(&loop_in);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 2600;
+    deck_core_test_apply_event(&loop_out);
+
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(audio_engine_stub_loop_active[CTRL_DECK_2]);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 2600);
+    assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
+}
+
+static void test_reloop_exit_clears_and_restores_last_requested_deck_loop(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 500;
+
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK1_LOOP_IN);
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK1_LOOP_OUT);
+    ctrl_event_t reloop_exit = deck_button(CTRL_ID_DECK1_RELOOP_EXIT);
+
+    deck_core_test_apply_event(&loop_in);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 2500;
+    deck_core_test_apply_event(&loop_out);
+    deck_core_test_apply_event(&reloop_exit);
+
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(audio_engine_stub_loop_clear_count[CTRL_DECK_1] == 1);
+
+    deck_core_test_apply_event(&reloop_exit);
+
+    assert(audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 500);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 2500);
+    assert(audio_engine_stub_loop_set_count[CTRL_DECK_1] == 2);
+}
+
+static void test_loop_halve_and_double_resize_active_loop(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_loop_active[CTRL_DECK_2] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 1000;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_2] = 5000;
+
+    ctrl_event_t halve = deck_button(CTRL_ID_DECK2_LOOP_HALVE);
+    ctrl_event_t double_loop = deck_button(CTRL_ID_DECK2_LOOP_DOUBLE);
+
+    deck_core_test_apply_event(&halve);
+
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 3000);
+    assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
+
+    deck_core_test_apply_event(&double_loop);
+
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
+    assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 2);
+}
+
 static void test_pad_mode_buttons_update_requested_deck_mode(void)
 {
     deck_core_test_reset();
@@ -395,6 +473,9 @@ int main(void)
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_sync_button_toggles_requested_deck_sync_led_state();
+    test_loop_in_out_sets_requested_deck_loop_from_audio_position();
+    test_reloop_exit_clears_and_restores_last_requested_deck_loop();
+    test_loop_halve_and_double_resize_active_loop();
     test_pad_mode_buttons_update_requested_deck_mode();
     test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects();
     test_pad_action_is_consumed_without_transport_side_effects();

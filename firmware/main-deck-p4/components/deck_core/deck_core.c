@@ -38,7 +38,19 @@ static esp_timer_handle_t s_vu_timer;
 static uint16_t          s_deferred_mixer_last[256];
 static bool              s_deferred_mixer_seen[256];
 
+typedef struct {
+    bool pending_in;
+    uint32_t pending_start_ms;
+    bool last_valid;
+    uint32_t last_start_ms;
+    uint32_t last_end_ms;
+} deck_loop_shadow_t;
+
+static deck_loop_shadow_t s_loop_shadow[DECK_CORE_DECK_COUNT];
+
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
+
+static void publish_flx4_led_snapshot(bool force);
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -162,6 +174,133 @@ static bool should_log_deferred_button(uint8_t id, int16_t value)
         return CTRL_PAD_ACTION_PRESSED(value);
     }
     return value != 0;
+}
+
+static uint32_t current_deck_position_ms(uint8_t deck, const deck_state_t *state)
+{
+    if (deck_uses_audio_engine(deck)) {
+        return audio_engine_deck_position_ms(deck);
+    }
+    return state ? state->position_ms : 0u;
+}
+
+static void remember_last_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || end_ms <= start_ms) {
+        return;
+    }
+    s_loop_shadow[deck].last_valid = true;
+    s_loop_shadow[deck].last_start_ms = start_ms;
+    s_loop_shadow[deck].last_end_ms = end_ms;
+}
+
+static bool read_active_loop(uint8_t deck, bool *active, uint32_t *start_ms, uint32_t *end_ms)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !active || !start_ms || !end_ms) {
+        return false;
+    }
+    return audio_engine_deck_get_loop_state(deck, active, start_ms, end_ms) == ESP_OK;
+}
+
+static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || end_ms <= start_ms) {
+        return;
+    }
+    esp_err_t rc = audio_engine_deck_set_loop(deck, start_ms, end_ms);
+    if (rc == ESP_OK) {
+        remember_last_loop(deck, start_ms, end_ms);
+        ESP_LOGI(TAG, "deck %u loop set %lu-%lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned long)start_ms,
+                 (unsigned long)end_ms);
+        publish_flx4_led_snapshot(false);
+    } else {
+        ESP_LOGW(TAG, "deck %u loop set failed: %s",
+                 (unsigned)deck + 1,
+                 esp_err_to_name(rc));
+    }
+}
+
+static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    deck_loop_shadow_t *shadow = &s_loop_shadow[deck];
+    uint32_t position_ms = current_deck_position_ms(deck, state);
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+
+    switch (control) {
+    case CTRL_DECK_CTL_LOOP_IN:
+        shadow->pending_in = true;
+        shadow->pending_start_ms = position_ms;
+        ESP_LOGI(TAG, "deck %u loop in -> %lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned long)position_ms);
+        return;
+
+    case CTRL_DECK_CTL_LOOP_OUT:
+        if (shadow->pending_in && position_ms > shadow->pending_start_ms) {
+            set_deck_loop(deck, shadow->pending_start_ms, position_ms);
+            shadow->pending_in = false;
+        } else {
+            ESP_LOGW(TAG, "deck %u loop out ignored: invalid in/out %lu/%lu ms",
+                     (unsigned)deck + 1,
+                     (unsigned long)shadow->pending_start_ms,
+                     (unsigned long)position_ms);
+        }
+        return;
+
+    case CTRL_DECK_CTL_RELOOP_EXIT:
+        if (!read_active_loop(deck, &active, &start_ms, &end_ms)) {
+            return;
+        }
+        if (active) {
+            remember_last_loop(deck, start_ms, end_ms);
+            esp_err_t rc = audio_engine_deck_clear_loop(deck);
+            if (rc == ESP_OK) {
+                ESP_LOGI(TAG, "deck %u loop exit", (unsigned)deck + 1);
+                publish_flx4_led_snapshot(false);
+            } else {
+                ESP_LOGW(TAG, "deck %u loop exit failed: %s",
+                         (unsigned)deck + 1,
+                         esp_err_to_name(rc));
+            }
+        } else if (shadow->last_valid) {
+            set_deck_loop(deck, shadow->last_start_ms, shadow->last_end_ms);
+        }
+        return;
+
+    case CTRL_DECK_CTL_LOOP_HALVE:
+    case CTRL_DECK_CTL_LOOP_DOUBLE:
+        if (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active || end_ms <= start_ms) {
+            return;
+        }
+        {
+            uint32_t duration = end_ms - start_ms;
+            uint32_t next_duration = duration;
+            if (control == CTRL_DECK_CTL_LOOP_HALVE) {
+                if (duration < 2u) {
+                    return;
+                }
+                next_duration = duration / 2u;
+            } else {
+                if (duration > UINT32_MAX - start_ms || duration > (UINT32_MAX - start_ms) / 2u) {
+                    return;
+                }
+                next_duration = duration * 2u;
+            }
+            set_deck_loop(deck, start_ms, start_ms + next_duration);
+        }
+        return;
+
+    default:
+        return;
+    }
 }
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
@@ -454,6 +593,11 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     case CTRL_DECK_CTL_RELOOP_EXIT:
     case CTRL_DECK_CTL_LOOP_HALVE:
     case CTRL_DECK_CTL_LOOP_DOUBLE:
+        if (pressed) {
+            on_loop_control(deck, control_link_id_control(ev->id), state);
+        }
+        return true;
+
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
         if (should_log_deferred_button(ev->id, ev->value)) {
@@ -835,6 +979,7 @@ void deck_core_reset_deck(uint8_t deck)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
+    memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -845,6 +990,7 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
     flx4_led_publisher_init(&s_flx4_led_publisher);

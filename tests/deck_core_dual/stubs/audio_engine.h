@@ -24,6 +24,10 @@ extern bool audio_engine_stub_deck_playing[2];
 extern uint32_t audio_engine_stub_deck_position_ms[2];
 extern int audio_engine_stub_deck_seek_count[2];
 extern bool audio_engine_stub_loop_active[2];
+extern uint32_t audio_engine_stub_loop_start_ms[2];
+extern uint32_t audio_engine_stub_loop_end_ms[2];
+extern int audio_engine_stub_loop_set_count[2];
+extern int audio_engine_stub_loop_clear_count[2];
 
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
@@ -78,8 +82,28 @@ static inline esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
 {
     if (deck >= 2 || !active || !start_ms || !end_ms) return ESP_ERR_INVALID_ARG;
     *active = audio_engine_stub_loop_active[deck];
-    *start_ms = *active ? 1000u : 0u;
-    *end_ms = *active ? 2000u : 0u;
+    *start_ms = audio_engine_stub_loop_start_ms[deck];
+    *end_ms = audio_engine_stub_loop_end_ms[deck];
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_deck_set_loop(uint8_t deck,
+                                                   uint32_t start_ms,
+                                                   uint32_t end_ms)
+{
+    if (deck >= 2 || end_ms <= start_ms) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_loop_active[deck] = true;
+    audio_engine_stub_loop_start_ms[deck] = start_ms;
+    audio_engine_stub_loop_end_ms[deck] = end_ms;
+    audio_engine_stub_loop_set_count[deck]++;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
+{
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_loop_active[deck] = false;
+    audio_engine_stub_loop_clear_count[deck]++;
     return ESP_OK;
 }
 

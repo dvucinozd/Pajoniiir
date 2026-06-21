@@ -532,7 +532,10 @@ Implementation order:
      with both decks playing.
    - final Phase 7 input smoke verified loop in/out, reloop/exit, loop
      halve/double, and beat-jump back/forward semantic routing on both decks;
-     actual loop and beat-jump playback behavior remains a P4 feature task.
+   - P4 loop behavior is implemented for Loop In/Out, Reloop/Exit, and
+     halve/double using the per-deck `audio_engine` loop API; beat-jump
+     playback behavior remains deferred until the beat-grid/BPM model is
+     defined.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;

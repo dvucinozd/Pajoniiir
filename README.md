@@ -109,11 +109,12 @@ LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
 Smart CFX/Smart Fader input mapping are implemented. The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
-under dual-deck playback. Extended deck, mixer, monitoring, pad-mode,
+under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
 pad-action, and VU-meter input/output mapping is implemented and smoke-verified
-where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Beat sync, tempo range, loop,
-beat-jump, sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remain
-P4 feature work, not S3 mapping work. The porting steps are tracked in
+where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, and
+loop halve/double now have P4 behavior. Beat sync, tempo range, beat-jump,
+sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remain P4 feature
+work, not S3 mapping work. The porting steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target

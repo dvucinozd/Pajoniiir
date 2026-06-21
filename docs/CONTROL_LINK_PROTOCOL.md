@@ -73,7 +73,8 @@ test.
 | `0x17` | Deck 1 Cue+Shift track start | `0` release, `1` press |
 | `0x18` | Deck 1 Beat Sync | `0` release, `1` press; P4 sync behavior deferred |
 | `0x19` | Deck 1 Tempo Range | `0` release, `1` press; behavior deferred |
-| `0x1A`-`0x20` | Deck 1 loop / beat-jump buttons | `0` release, `1` press; behavior deferred |
+| `0x1A`-`0x1E` | Deck 1 loop buttons | `0` release, `1` press; Loop In/Out, Reloop/Exit, halve, and double are implemented |
+| `0x1F`-`0x20` | Deck 1 beat-jump buttons | `0` release, `1` press; behavior deferred |
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
