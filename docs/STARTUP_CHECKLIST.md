@@ -146,9 +146,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   `docs/DDJ_FLX4_MIDI_MAP.md`.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
-  smoke-verified where noted in the MIDI map. Actual Hot Cue, Beat Loop,
-  Beat Jump, Sampler, Key Shift, and Pad FX behavior remains a separate P4
-  feature task.
+  smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
+  implemented in P4 for per-track store/recall and shifted clear; hardware
+  behavior smoke remains pending. Actual Beat Loop, Beat Jump, Sampler,
+  Key Shift, and Pad FX behavior remains a separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync LED placeholder state, and

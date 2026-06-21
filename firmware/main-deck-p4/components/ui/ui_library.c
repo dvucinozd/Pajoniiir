@@ -1195,6 +1195,14 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
     return ESP_OK;
 }
 
+uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !s_deck_loaded_track_valid[deck]) {
+        return 0;
+    }
+    return s_deck_loaded_track_key[deck];
+}
+
 void ui_library_update(const ui_frame_context_t *ctx)
 {
     int active_tab = ctx ? ctx->active_tab : 0;

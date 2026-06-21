@@ -20,6 +20,7 @@ esp_err_t ui_toggle_library_view(void);
 esp_err_t ui_library_select_delta(int delta);
 esp_err_t ui_library_load_selected(void);
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
+uint32_t  ui_library_loaded_track_key_for_deck(uint8_t deck);
 
 // LVGL is not thread-safe. Any task other than the internal LVGL handler must
 // wrap LVGL API calls in ui_lvgl_lock()/ui_lvgl_unlock(). No-ops on the PC sim.

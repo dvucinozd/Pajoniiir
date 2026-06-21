@@ -100,6 +100,7 @@ bool ui_is_library_active(void);
 esp_err_t ui_library_select_delta(int delta);
 esp_err_t ui_library_load_selected(void);
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
+uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck);
 void ui_library_update(const ui_frame_context_t *ctx);
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms);
 uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm);

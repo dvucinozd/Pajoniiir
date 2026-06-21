@@ -1,11 +1,13 @@
 #include "deck_core.h"
 #include "control_link.h"
+#include "hot_cue_store.h"
 #include <assert.h>
 #include <stdio.h>
 
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
 static int s_toggle_library_view_calls;
+static uint32_t s_loaded_track_key[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
@@ -30,6 +32,12 @@ esp_err_t ui_library_select_delta(int delta)
 {
     s_browse_delta += delta;
     return ESP_OK;
+}
+
+uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
+{
+    assert(deck < DECK_CORE_DECK_COUNT);
+    return s_loaded_track_key[deck];
 }
 
 esp_err_t ui_toggle_library_view(void)
@@ -95,6 +103,7 @@ static ctrl_event_t mixer_button(uint8_t id, int16_t value)
 static void reset_audio_engine_stub(void)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        s_loaded_track_key[deck] = 0;
         audio_engine_stub_deck_play_result[deck] = ESP_OK;
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;
@@ -105,6 +114,13 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_loop_set_count[deck] = 0;
         audio_engine_stub_loop_clear_count[deck] = 0;
     }
+}
+
+static void clear_test_hot_cues(void)
+{
+    (void)hot_cue_store_clear(1001);
+    (void)hot_cue_store_clear(2002);
+    (void)hot_cue_store_clear(3003);
 }
 
 static void test_decks_track_transport_independently(void)
@@ -435,6 +451,83 @@ static void test_pad_action_is_consumed_without_transport_side_effects(void)
     assert(!CTRL_PAD_ACTION_SHIFTED(pad.value));
 }
 
+static void test_hot_cue_pad_stores_empty_slot_at_requested_deck_position(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    clear_test_hot_cues();
+    s_loaded_track_key[CTRL_DECK_1] = 1001;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 12345;
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 2, false, true);
+
+    deck_core_test_apply_event(&pad);
+
+    hot_cue_store_blob_t blob = {0};
+    assert(hot_cue_store_load(1001, &blob) == ESP_OK);
+    assert((blob.valid_mask & (1u << 2)) != 0);
+    assert(blob.slots[2].pos_ms == 12345);
+    assert(blob.slots[2].end_ms == 0);
+    assert(blob.slots[2].type == HOT_CUE_STORE_TYPE_SINGLE);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+}
+
+static void test_hot_cue_pad_recalls_existing_slot_on_requested_deck(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    clear_test_hot_cues();
+    s_loaded_track_key[CTRL_DECK_2] = 2002;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 30000;
+
+    hot_cue_store_blob_t blob = {0};
+    blob.valid_mask = (1u << 4);
+    blob.slots[4].pos_ms = 5555;
+    blob.slots[4].type = HOT_CUE_STORE_TYPE_SINGLE;
+    assert(hot_cue_store_save(2002, &blob) == ESP_OK);
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK2_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 4, false, true);
+
+    deck_core_test_apply_event(&pad);
+
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 5555);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).position_ms == 5555);
+}
+
+static void test_shift_hot_cue_pad_clears_requested_slot(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    clear_test_hot_cues();
+    s_loaded_track_key[CTRL_DECK_1] = 3003;
+
+    hot_cue_store_blob_t blob = {0};
+    blob.valid_mask = (1u << 1) | (1u << 6);
+    blob.slots[1].pos_ms = 1111;
+    blob.slots[1].type = HOT_CUE_STORE_TYPE_SINGLE;
+    blob.slots[6].pos_ms = 6666;
+    blob.slots[6].type = HOT_CUE_STORE_TYPE_SINGLE;
+    assert(hot_cue_store_save(3003, &blob) == ESP_OK);
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 1, true, true);
+
+    deck_core_test_apply_event(&pad);
+
+    hot_cue_store_blob_t loaded = {0};
+    assert(hot_cue_store_load(3003, &loaded) == ESP_OK);
+    assert((loaded.valid_mask & (1u << 1)) == 0);
+    assert((loaded.valid_mask & (1u << 6)) != 0);
+    assert(loaded.slots[1].pos_ms == 0);
+    assert(loaded.slots[1].type == 0);
+    assert(loaded.slots[6].pos_ms == 6666);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+}
+
 static void test_smoke_log_policy_rates_limits_deferred_analog_controls(void)
 {
     deck_core_test_reset();
@@ -479,6 +572,9 @@ int main(void)
     test_pad_mode_buttons_update_requested_deck_mode();
     test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects();
     test_pad_action_is_consumed_without_transport_side_effects();
+    test_hot_cue_pad_stores_empty_slot_at_requested_deck_position();
+    test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
+    test_shift_hot_cue_pad_clears_requested_slot();
     test_smoke_log_policy_rates_limits_deferred_analog_controls();
     test_smoke_log_policy_logs_deferred_buttons_only_on_press();
     puts("deck_core_dual tests passed");

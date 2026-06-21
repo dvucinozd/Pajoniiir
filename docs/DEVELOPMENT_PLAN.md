@@ -550,6 +550,10 @@ Implementation order:
    - connect P4-owned semantic pad-mode inputs for Hot Cue, Beat Loop,
      Beat Jump, Key Shift, Keyboard/Stems, Pad FX1, Pad FX2, and Sampler;
    - represent pad mode and pad action as separate P4-owned semantic state;
+   - Hot Cue pad behavior is implemented in P4: pad 1-8 stores the current
+     deck position into an empty per-track slot or recalls an existing slot via
+     `audio_engine_deck_seek()`, while shifted Hot Cue pads clear the matching
+     slot;
    - hardware smoke verified sampler pads 1-8 on both decks, key-shift pads
      1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
      pads. Sampler, stem, key-shift, pad-FX, beat-loop, and beat-jump playback

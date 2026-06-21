@@ -6,6 +6,7 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#include "hot_cue_store.h"
 #if !defined(DECK_CORE_PC_TEST)
 #include "esp_timer.h"
 #endif
@@ -24,6 +25,7 @@ extern esp_err_t ui_toggle_library_view(void) __attribute__((weak));
 extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
 extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
+extern uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck) __attribute__((weak));
 
 static QueueHandle_t    s_queue;
 static SemaphoreHandle_t s_mutex;
@@ -182,6 +184,102 @@ static uint32_t current_deck_position_ms(uint8_t deck, const deck_state_t *state
         return audio_engine_deck_position_ms(deck);
     }
     return state ? state->position_ms : 0u;
+}
+
+static uint32_t loaded_track_key_for_deck(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !ui_library_loaded_track_key_for_deck) {
+        return 0;
+    }
+    return ui_library_loaded_track_key_for_deck(deck);
+}
+
+static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || pad >= HOT_CUE_STORE_SLOT_COUNT || !state) {
+        return;
+    }
+
+    uint32_t track_key = loaded_track_key_for_deck(deck);
+    if (track_key == 0) {
+        ESP_LOGW(TAG, "deck %u hot cue pad %u ignored: no loaded track key",
+                 (unsigned)deck + 1,
+                 (unsigned)pad + 1);
+        return;
+    }
+
+    hot_cue_store_blob_t blob = {0};
+    esp_err_t rc = hot_cue_store_load(track_key, &blob);
+    if (rc == ESP_ERR_NOT_FOUND) {
+        memset(&blob, 0, sizeof(blob));
+    } else if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "deck %u hot cue load failed: %s",
+                 (unsigned)deck + 1,
+                 esp_err_to_name(rc));
+        return;
+    }
+
+    uint32_t bit = (1u << pad);
+    if (shifted) {
+        if ((blob.valid_mask & bit) == 0) {
+            ESP_LOGI(TAG, "deck %u hot cue %u clear ignored: empty",
+                     (unsigned)deck + 1,
+                     (unsigned)pad + 1);
+            return;
+        }
+        blob.valid_mask &= ~bit;
+        memset(&blob.slots[pad], 0, sizeof(blob.slots[pad]));
+        rc = hot_cue_store_save(track_key, &blob);
+        if (rc == ESP_OK) {
+            ESP_LOGI(TAG, "deck %u hot cue %u cleared",
+                     (unsigned)deck + 1,
+                     (unsigned)pad + 1);
+        } else {
+            ESP_LOGW(TAG, "deck %u hot cue %u clear failed: %s",
+                     (unsigned)deck + 1,
+                     (unsigned)pad + 1,
+                     esp_err_to_name(rc));
+        }
+        return;
+    }
+
+    if ((blob.valid_mask & bit) != 0) {
+        uint32_t pos_ms = blob.slots[pad].pos_ms;
+        rc = audio_engine_deck_seek(deck, pos_ms);
+        if (rc == ESP_OK) {
+            state->position_ms = pos_ms;
+            ESP_LOGI(TAG, "deck %u hot cue %u recall -> %lu ms",
+                     (unsigned)deck + 1,
+                     (unsigned)pad + 1,
+                     (unsigned long)pos_ms);
+        } else {
+            ESP_LOGW(TAG, "deck %u hot cue %u recall failed: %s",
+                     (unsigned)deck + 1,
+                     (unsigned)pad + 1,
+                     esp_err_to_name(rc));
+        }
+        return;
+    }
+
+    uint32_t pos_ms = current_deck_position_ms(deck, state);
+    blob.valid_mask |= bit;
+    blob.slots[pad] = (hot_cue_store_slot_t) {
+        .pos_ms = pos_ms,
+        .end_ms = 0,
+        .type = HOT_CUE_STORE_TYPE_SINGLE,
+    };
+    rc = hot_cue_store_save(track_key, &blob);
+    if (rc == ESP_OK) {
+        ESP_LOGI(TAG, "deck %u hot cue %u set -> %lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned)pad + 1,
+                 (unsigned long)pos_ms);
+    } else {
+        ESP_LOGW(TAG, "deck %u hot cue %u set failed: %s",
+                 (unsigned)deck + 1,
+                 (unsigned)pad + 1,
+                 esp_err_to_name(rc));
+    }
 }
 
 static void remember_last_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
@@ -680,7 +778,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_PAD_ACTION:
-        if (should_log_deferred_button(ev->id, ev->value)) {
+        if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
+            CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_HOT_CUE) {
+            handle_hot_cue_pad_action(deck,
+                                      CTRL_PAD_ACTION_PAD(ev->value),
+                                      CTRL_PAD_ACTION_SHIFTED(ev->value),
+                                      state);
+        } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
                      (unsigned)deck + 1,
                      (unsigned)CTRL_PAD_ACTION_MODE(ev->value),
