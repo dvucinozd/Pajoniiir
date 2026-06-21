@@ -455,14 +455,17 @@ Validation note, 2026-06-10:
 
 ## Phase 7: Extended DDJ-FLX4 Control Surface
 
-Status: in progress. The MVP control path, Browse press, Play/Cue/PFL LED
-feedback, FLX4 reconnect LED resynchronization, and raw Smart CFX/Smart Fader
-input mapping are implemented and hardware-verified. Larger transport
-extensions, mixer EQ/filter controls, performance pads, beat sync, sampler,
-and Smart CFX/Fader DSP remain deferred. The current Phase 7 branch also has
-software-tested extended control/VU mappings and hardware-verified S3 MIDI host
-responsiveness under dual-deck playback after VU feedback backpressure and raw
-MIDI log-flood mitigation.
+Status: input mapping and hardware inventory are substantially complete. The
+MVP control path, Browse press, Play/Cue/PFL LED feedback, FLX4 reconnect LED
+resynchronization, Smart CFX/Smart Fader input mapping, extended deck
+transport inputs, mixer/monitoring analog inputs, pad-mode inputs, pad-action
+ranges, and P4-driven VU output are implemented and software-tested. Hardware
+smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
+`PAD FX1`, `BEAT JUMP`, `SAMPLER`), shifted secondary pad modes, sampler,
+beat-loop, key-shift, beat-jump, and loop-control input routing as documented
+in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for beat sync, tempo range, loops,
+beat jump, sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader remains
+deferred unless separately marked implemented.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -527,6 +530,9 @@ Implementation order:
      packet logs are now DEBUG-only in translator mode, VU meter packets are
      dropped when the OUT queue has backlog, and Play/Pause stayed responsive
      with both decks playing.
+   - final Phase 7 input smoke verified loop in/out, reloop/exit, loop
+     halve/double, and beat-jump back/forward semantic routing on both decks;
+     actual loop and beat-jump playback behavior remains a P4 feature task.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
@@ -535,13 +541,16 @@ Implementation order:
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
 7. **Performance pads and pad modes**
-   - inventory Hot Cue, Beat Loop, Beat Jump, Sampler, Key Shift, and their
-     shifted MIDI ranges from the XML;
-   - first connect modes already implemented by the P4 touchscreen: Hot Cue,
-     Beat Loop, Beat Jump, and Key Shift;
+   - inventory the four direct physical pad mode buttons (`HOT CUE`, `PAD FX1`,
+     `BEAT JUMP`, `SAMPLER`) plus shifted secondary modes (`Keyboard/Stems`,
+     `Pad FX2`, `Beat Loop`, `Key Shift`) and their MIDI ranges from the XML;
+   - connect P4-owned semantic pad-mode inputs for Hot Cue, Beat Loop,
+     Beat Jump, Key Shift, Keyboard/Stems, Pad FX1, Pad FX2, and Sampler;
    - represent pad mode and pad action as separate P4-owned semantic state;
-   - leave Sampler and unsupported stem/effect script behaviors disabled until
-     a standalone P4 feature definition exists.
+   - hardware smoke verified sampler pads 1-8 on both decks, key-shift pads
+     1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
+     pads. Sampler, stem, key-shift, pad-FX, beat-loop, and beat-jump playback
+     behavior remains deferred until standalone P4 feature definitions exist.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;

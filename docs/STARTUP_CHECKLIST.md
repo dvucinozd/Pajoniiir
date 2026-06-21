@@ -132,19 +132,24 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
 - [x] Build the extended control inventory from the vendored Mixxx XML.
-- [ ] Add deck modifiers and transport extensions with P4-owned semantics.
+- [x] Add deck modifiers and transport extensions with P4-owned semantics.
   First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and
   Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
-  behavior; Sync/tempo-range behavior remains deferred.
-- [ ] Add supported mixer/monitoring controls and 14-bit range tests.
+  behavior; Sync/tempo-range behavior remains deferred. Final Phase 7 smoke
+  verified loop in/out, reloop/exit, loop halve/double, and beat-jump
+  back/forward inputs on both decks; loop/beat-jump behavior remains deferred.
+- [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
-  are mapped/tested in firmware. Hardware capture remains pending for controls
-  not explicitly marked verified in the MIDI map.
-- [ ] Connect FLX4 pad modes to existing P4 Hot Cue, Beat Loop, Beat Jump, and
-  Key Shift behavior before adding new performance features.
+  are mapped/tested in firmware. Hardware capture status is tracked per row in
+  `docs/DDJ_FLX4_MIDI_MAP.md`.
+- [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
+  The four physical mode buttons and shifted secondary modes are mapped and
+  smoke-verified where noted in the MIDI map. Actual Hot Cue, Beat Loop,
+  Beat Jump, Sampler, Key Shift, and Pad FX behavior remains a separate P4
+  feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
-- [ ] Final hardware-smoke testing of the integrated control surface and record any exceptions from the XML mapping.
+- [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the
 implementation seed because the physical MVP capture matched them exactly;
