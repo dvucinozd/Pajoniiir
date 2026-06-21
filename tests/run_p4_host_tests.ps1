@@ -230,6 +230,20 @@ $tests = @(
         )
     },
     @{
+        Name = "beat_jump"
+        Dir = "tests/beat_jump"
+        Target = "test_beat_jump.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../deck_core_dual/stubs",
+            "-I../../firmware/main-deck-p4/components/beat_jump/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_beat_jump.exe",
+            "test_beat_jump.c",
+            "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c"
+        )
+    },
+    @{
         Name = "deck_core_dual"
         Dir = "tests/deck_core_dual"
         Target = "test_deck_core_dual.exe"
