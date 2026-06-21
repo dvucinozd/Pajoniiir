@@ -8,6 +8,11 @@ static bool note_for_led(uint8_t led, uint8_t *note)
         return false;
     }
 
+    if (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) {
+        *note = (uint8_t)(0x60u + (led - LED_BEAT_LOOP_PAD_1));
+        return true;
+    }
+
     switch (led) {
     case LED_PLAY:
         *note = 0x0B;
@@ -79,7 +84,11 @@ bool flx4_led_midi_build_packet(uint8_t led,
     }
 
     packet[0] = 0x09;
-    packet[1] = (deck == CTRL_DECK_1) ? 0x90 : 0x91;
+    if (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) {
+        packet[1] = (deck == CTRL_DECK_1) ? 0x97 : 0x99;
+    } else {
+        packet[1] = (deck == CTRL_DECK_1) ? 0x90 : 0x91;
+    }
     packet[2] = note;
     packet[3] = (state != 0) ? 0x7F : 0x00;
     return true;
