@@ -205,6 +205,29 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
     return left > right ? left : right;
 }
 
+#if AE_FW
+static float ae_clamp_gain(float gain)
+{
+    if (gain < 0.0f) return 0.0f;
+    if (gain > 1.0f) return 1.0f;
+    return gain;
+}
+
+static int32_t ae_round_to_i32(float sample)
+{
+    return (int32_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
+}
+
+static int32_t ae_mix_raw_sample(int16_t deck0,
+                                 int16_t deck1,
+                                 float deck0_gain,
+                                 float deck1_gain)
+{
+    return ae_round_to_i32(((float)deck0 * ae_clamp_gain(deck0_gain)) +
+                           ((float)deck1 * ae_clamp_gain(deck1_gain)));
+}
+#endif
+
 static void record_deck_peak_value(uint8_t deck, uint16_t peak)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
@@ -698,6 +721,7 @@ static audio_diag_counter_t s_diag_output_blocks;
 static audio_diag_late_counter_t s_diag_output_late;
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
 static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
+static audio_mixer_limiter_stats_t s_diag_limiter_stats;
 
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate);
 static esp_err_t audio_output_service_ensure_started(void);
@@ -707,6 +731,7 @@ static void ae_diag_reset(void)
 {
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
+    s_diag_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
         audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
@@ -784,12 +809,13 @@ static void ae_diag_record_output_block(uint32_t block_us,
                                         uint32_t consumed0,
                                         uint32_t consumed1,
                                         bool active0,
-                                        bool active1)
+                                        bool active1,
+                                        const audio_mixer_limiter_stats_t *limiter_stats)
 {
     audio_diag_report_t report;
     if (audio_diag_record(&s_diag_output_blocks, block_us, &report)) {
         ESP_LOGI(TAG,
-                 "diag output: last=%u us avg=%u us max=%u us samples=%u active=%u/%u consumed=%u/%u ring=%u/%u %u/%u late=%u late_max=%u us heap=%u internal=%u psram=%u",
+                 "diag output: last=%u us avg=%u us max=%u us samples=%u active=%u/%u consumed=%u/%u ring=%u/%u %u/%u limiter=%u +%u -%u peak=%d late=%u late_max=%u us heap=%u internal=%u psram=%u",
                  (unsigned)report.last_us,
                  (unsigned)report.avg_us,
                  (unsigned)report.max_us,
@@ -802,6 +828,10 @@ static void ae_diag_record_output_block(uint32_t block_us,
                  (unsigned)AUDIO_PCM_RING_FRAMES,
                  (unsigned)audio_pcm_ring_used(&s_pcm_rings[1]),
                  (unsigned)AUDIO_PCM_RING_FRAMES,
+                 limiter_stats ? (unsigned)limiter_stats->limited_samples : 0u,
+                 limiter_stats ? (unsigned)limiter_stats->positive_overloads : 0u,
+                 limiter_stats ? (unsigned)limiter_stats->negative_overloads : 0u,
+                 limiter_stats ? (int)limiter_stats->peak_input_abs : 0,
                  (unsigned)s_diag_output_late.count,
                  (unsigned)s_diag_output_late.max_us,
                  (unsigned)esp_get_free_heap_size(),
@@ -1148,6 +1178,7 @@ static void ae_output_task(void *arg)
 
         uint32_t consumed[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         uint16_t block_peak[AUDIO_ENGINE_DECK_COUNT] = { 0 };
+        audio_mixer_limiter_stats_t block_limiter_stats = { 0 };
         float pfl_gain0 = s_pfl_enabled[deck0_index] ? 1.0f : 0.0f;
         float pfl_gain1 = s_pfl_enabled[deck1_index] ? 1.0f : 0.0f;
         uint8_t mode = s_cue_mode;
@@ -1182,8 +1213,12 @@ static void ae_output_task(void *arg)
             consumed[deck1_index] += frame_consumed1;
 
             audio_mixer_frame_t master_frame = {
-                .left = audio_mixer_mix_sample(frame0.left, frame1.left, deck0.gain, deck1.gain),
-                .right = audio_mixer_mix_sample(frame0.right, frame1.right, deck0.gain, deck1.gain),
+                .left = audio_mixer_limit_master_sample(
+                    ae_mix_raw_sample(frame0.left, frame1.left, deck0.gain, deck1.gain),
+                    &block_limiter_stats),
+                .right = audio_mixer_limit_master_sample(
+                    ae_mix_raw_sample(frame0.right, frame1.right, deck0.gain, deck1.gain),
+                    &block_limiter_stats),
             };
 
             if (mode == 1) { // Split Mono
@@ -1204,6 +1239,12 @@ static void ae_output_task(void *arg)
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             record_deck_peak_value(deck0_index, block_peak[deck0_index]);
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
+            s_diag_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
+            s_diag_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
+            s_diag_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
+            if (block_limiter_stats.peak_input_abs > s_diag_limiter_stats.peak_input_abs) {
+                s_diag_limiter_stats.peak_input_abs = block_limiter_stats.peak_input_abs;
+            }
             AE_UNLOCK();
         }
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
@@ -1214,7 +1255,8 @@ static void ae_output_task(void *arg)
                                     consumed[deck0_index],
                                     consumed[deck1_index],
                                     deck0.active,
-                                    deck1.active);
+                                    deck1.active,
+                                    &s_diag_limiter_stats);
         uint32_t block_delay_ms = audio_output_remaining_delay_ms(
             s_output_sample_rate,
             block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);

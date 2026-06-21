@@ -42,6 +42,59 @@ int16_t audio_mixer_mix_sample(int16_t deck1,
     return (int16_t)(mixed >= 0.0f ? mixed + 0.5f : mixed - 0.5f);
 }
 
+static int16_t round_to_i16(float sample)
+{
+    if (sample > 32767.0f) return 32767;
+    if (sample < -32768.0f) return -32768;
+    return (int16_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
+}
+
+static int32_t sample_abs_i32(int32_t sample)
+{
+    return sample < 0 ? -sample : sample;
+}
+
+static int16_t limit_positive_sample(int32_t sample)
+{
+    const float threshold = 32767.0f;
+    float overshoot = (float)sample - threshold;
+    float shaped = threshold - (threshold / (overshoot + threshold + 1.0f));
+    return round_to_i16(shaped);
+}
+
+static int16_t limit_negative_sample(int32_t sample)
+{
+    const float threshold = 32768.0f;
+    float overshoot = (float)(-sample) - threshold;
+    float shaped = -threshold + (threshold / (overshoot + threshold + 1.0f));
+    return round_to_i16(shaped);
+}
+
+int16_t audio_mixer_limit_master_sample(int32_t mixed,
+                                        audio_mixer_limiter_stats_t *stats)
+{
+    int32_t abs_mixed = sample_abs_i32(mixed);
+    if (stats && abs_mixed > stats->peak_input_abs) {
+        stats->peak_input_abs = abs_mixed;
+    }
+
+    if (mixed > 32767) {
+        if (stats) {
+            stats->limited_samples++;
+            stats->positive_overloads++;
+        }
+        return limit_positive_sample(mixed);
+    }
+    if (mixed < -32768) {
+        if (stats) {
+            stats->limited_samples++;
+            stats->negative_overloads++;
+        }
+        return limit_negative_sample(mixed);
+    }
+    return (int16_t)mixed;
+}
+
 audio_mixer_frame_t audio_mixer_apply_gain(audio_mixer_frame_t frame, float gain)
 {
     return (audio_mixer_frame_t) {

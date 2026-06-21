@@ -8,7 +8,7 @@
 | Analog controls generate noisy high-rate events | UART queue pressure and jitter | S3 translator coalesces high-rate jog/tempo/fader values; legacy panel path accumulates pending jog/browse motion and caps compatibility MIDI bursts |
 | Existing 7-byte control frame becomes too tight | Protocol churn | Use deck-aware ID namespace for MVP; only version frame if a real blocker appears |
 | Dual MP3 decode exceeds CPU or memory budget | Audio dropouts/watchdog resets | P4 now has per-deck producer/mixer plumbing and shared output pacing; continue measuring with two real tracks before adding heavier DSP/UI work |
-| Dual output summing clips with loud two-deck material | Audible distortion | Add transparent post-sum limiter/soft-clip and telemetry; do not silently reduce deck levels |
+| Dual output summing clips with loud two-deck material | Audible distortion | Transparent post-sum limiter/soft-clip and telemetry are implemented; monitor limiter activity during hardware smoke tests and add explicit master trim later if sustained limiting is observed |
 | MP3 preload/frame-index work briefly blocks audio/UI timing | Waveform or output timing spike | Split or narrow the seek-table/indexing critical section; prior probe showed healthy steady state but one transient block spike around preload completion |
 | Dual output clocking or I2S routing is unstable | Cue/master output not usable | Master and cue/PFL routing are implemented for the current path; keep hardware smoke tests before adding heavier DSP |
 | ES8311/speaker amplifier path is unsafe for headphone/line output | Hardware damage | Inspect schematic and bench-measure before wiring headphones or RCA |

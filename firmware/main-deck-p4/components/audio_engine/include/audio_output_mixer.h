@@ -17,4 +17,5 @@ typedef struct {
 audio_mixer_frame_t audio_output_mixer_next(const audio_output_mixer_deck_t *deck0,
                                             const audio_output_mixer_deck_t *deck1,
                                             uint32_t *out_deck0_consumed,
-                                            uint32_t *out_deck1_consumed);
+                                            uint32_t *out_deck1_consumed,
+                                            audio_mixer_limiter_stats_t *limiter_stats);

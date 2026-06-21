@@ -70,6 +70,9 @@
 - P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
+- P4 master output now uses a transparent post-sum limiter with lightweight
+  limiter telemetry in the output diagnostic log. Single-deck level and normal
+  two-deck sums remain unchanged; only true int16 overloads are shaped.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active

@@ -118,7 +118,8 @@ Exit criteria:
 
 Status: master mix, channel fader/crossfader gains, cue/PFL selection, and
 dual-deck P4 audio scheduling are implemented for the current two-deck P4 path.
-Transparent limiting remains follow-up work.
+Transparent post-sum limiting and limiter telemetry are implemented for the
+current master output path.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -130,26 +131,18 @@ Tasks:
 - add a mixer/output consumer; done
 - implement channel volume and crossfader gains; math layer done
 - add clipping-safe summing; math layer done
+- add transparent post-sum limiting and limiter telemetry; done
 - produce cue/PFL buffer path after master mix is stable; implemented for the
   current Stereo Master / Split Mono routing path.
 
 TODO:
 
-- Add a transparent master limiter/soft-clip stage after Deck 1/Deck 2 summing,
-  not a per-deck or dual-active gain reduction. Single-deck level must remain
-  unchanged, normal two-deck material must keep its perceived level, and only
-  true summed peaks should be shaped to avoid hard int16 clipping.
-- Use a post-sum curve or limiter that is transparent below the actual int16
-  headroom boundary. Do not reintroduce the rejected dual-active gain drop.
-- Add limiter tests for unchanged normal sums, unchanged single-deck peaks,
-  positive/negative overload handling, and overload counter reporting.
-- Keep lightweight limiter intervention telemetry so sustained clipping can be
-  distinguished from occasional peak protection. If limiter activity is
-  constant, add a user-facing master trim later instead of silently lowering
-  deck levels.
-- After limiter/headroom work is stable, clean up the Overview waveform
-  cache/render path and diagnostic leftovers. Treat this as performance
-  cleanup, not as a prerequisite for Phase 7 controller input expansion.
+- Monitor the limiter telemetry during two-deck hardware smoke tests. If
+  limiter activity is constant, add a user-facing master trim later instead of
+  silently lowering deck levels.
+- Clean up the Overview waveform cache/render path and diagnostic leftovers.
+  Treat this as performance cleanup, not as a prerequisite for Phase 7
+  controller input expansion.
 
 Exit criteria:
 
