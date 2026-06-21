@@ -2,7 +2,9 @@
 
 #include <string.h>
 
-static const led_id_t s_led_ids[14] = {
+#define FLX4_LED_SNAPSHOT_COUNT 22u
+
+static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_CUE,
     LED_PLAY,
     LED_PFL,
@@ -17,6 +19,14 @@ static const led_id_t s_led_ids[14] = {
     LED_PAD_MODE_KEY_SHIFT,
     LED_LOOP_IN,
     LED_LOOP_OUT,
+    LED_BEAT_LOOP_PAD_1,
+    LED_BEAT_LOOP_PAD_2,
+    LED_BEAT_LOOP_PAD_3,
+    LED_BEAT_LOOP_PAD_4,
+    LED_BEAT_LOOP_PAD_5,
+    LED_BEAT_LOOP_PAD_6,
+    LED_BEAT_LOOP_PAD_7,
+    LED_BEAT_LOOP_PAD_8,
 };
 
 static const uint8_t s_pad_modes[8] = {
@@ -29,6 +39,35 @@ static const uint8_t s_pad_modes[8] = {
     CTRL_PAD_MODE_SAMPLER,
     CTRL_PAD_MODE_KEY_SHIFT,
 };
+
+static const uint32_t s_beat_loop_durations_ms[8] = {
+    16, 32, 63, 125, 250, 500, 1000, 2000,
+};
+
+static bool duration_matches(uint32_t actual_ms, uint32_t expected_ms)
+{
+    uint32_t tolerance_ms = expected_ms / 16u;
+    if (tolerance_ms < 2u) {
+        tolerance_ms = 2u;
+    }
+    uint32_t delta = actual_ms > expected_ms ? actual_ms - expected_ms : expected_ms - actual_ms;
+    return delta <= tolerance_ms;
+}
+
+static uint8_t beat_loop_pad_value(const flx4_led_snapshot_input_t *input,
+                                   uint8_t deck,
+                                   uint8_t pad)
+{
+    if (input->pad_mode[deck] != CTRL_PAD_MODE_BEAT_LOOP ||
+        !input->loop_active[deck] ||
+        input->loop_end_ms[deck] <= input->loop_start_ms[deck] ||
+        pad >= 8u) {
+        return 0;
+    }
+
+    uint32_t duration_ms = input->loop_end_ms[deck] - input->loop_start_ms[deck];
+    return duration_matches(duration_ms, s_beat_loop_durations_ms[pad]) ? 1u : 0u;
+}
 
 static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
                               uint8_t deck,
@@ -46,6 +85,15 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 12:
     case 13:
         return input->loop_active[deck];
+    case 14:
+    case 15:
+    case 16:
+    case 17:
+    case 18:
+    case 19:
+    case 20:
+    case 21:
+        return beat_loop_pad_value(input, deck, (uint8_t)(index - 14u));
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);
         if (pad_index >= 8u) {
@@ -76,7 +124,7 @@ esp_err_t flx4_led_publisher_publish(
 
     esp_err_t first_error = ESP_OK;
     for (uint8_t deck = 0; deck < 2; deck++) {
-        for (uint8_t index = 0; index < 14; index++) {
+        for (uint8_t index = 0; index < FLX4_LED_SNAPSHOT_COUNT; index++) {
             uint8_t value = snapshot_value(input, deck, index);
             if (!force &&
                 publisher->valid[deck][index] &&

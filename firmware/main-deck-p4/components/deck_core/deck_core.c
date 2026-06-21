@@ -555,6 +555,8 @@ static void publish_flx4_led_snapshot(bool force)
         uint32_t loop_end = 0;
         if (audio_engine_deck_get_loop_state(deck, &loop_active, &loop_start, &loop_end) == ESP_OK) {
             input.loop_active[deck] = loop_active ? 1 : 0;
+            input.loop_start_ms[deck] = loop_start;
+            input.loop_end_ms[deck] = loop_end;
         }
     }
 
