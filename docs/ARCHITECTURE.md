@@ -57,7 +57,7 @@ Responsibilities:
 - decode audio and write master/cue buffers to hardware;
 - render UI state;
 - send LED feedback commands to the S3;
-- force a P4-owned MVP LED snapshot after an FLX4 reconnect so physical LEDs
+- force a P4-owned LED snapshot after an FLX4 reconnect so physical LEDs
   recover without S3 owning playback state.
 
 Current P4 audio ownership rule:
@@ -86,7 +86,7 @@ Current P4 audio ownership rule:
 6. P4 sends LED feedback back over `control_link`.
 7. S3 emits the matching MIDI LED message to the FLX4.
 8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
-   republishes the current Play/Cue/PFL snapshot.
+   republishes the current P4-owned LED snapshot.
 
 Current S3 firmware modes:
 
@@ -119,13 +119,9 @@ firmware/control-board-s3/components/flx4_midi_host/
   flx4_map.c
 ```
 
-Expected P4 additions:
-
-```text
-firmware/main-deck-p4/components/mixer/
-  include/mixer.h
-  mixer.c
-```
+Current P4 mixer/audio surfaces live in `audio_engine` helpers such as
+`audio_output_mixer`, deck-local runtime/preload/task-context modules, and the
+shared output service. A separate `mixer/` component is not currently required.
 
 ## State Ownership
 

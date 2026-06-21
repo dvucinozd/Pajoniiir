@@ -58,7 +58,8 @@ The fork is no longer only the imported single-deck baseline:
   UI operations through deck-aware APIs.
 - P4 audio has per-deck engine/ring/resampler/preload/runtime/task context
   storage, a shared output mixer, channel fader/crossfader gain handling, and
-  Deck 2 producer support. Cue/PFL output is still state-only.
+  Deck 2 producer support. Stereo Master and Split Mono cue/PFL routing are
+  implemented for the current output path.
 - P4 LVGL UI is dual-deck: Overview, Library load paths, performance target
   selection, Settings, status/header, and waveform rendering are split into
   smaller UI modules.
@@ -69,13 +70,21 @@ The fork is no longer only the imported single-deck baseline:
   indicators, fixed-segment blue-strip timers, and bounded title/timer
   invalidation so status chrome does not create continuous redraw pressure.
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
-  control-link feedback and the S3 USB MIDI Out queue.
-- S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a complete
-  MVP LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
-  Play/Cue/PFL LED recovery without playback or deck-state changes.
+  control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
+  pad-mode LEDs, Beat Sync placeholder LEDs, Loop In/Out LEDs from active loop
+  state, and VU meter output.
+- S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a P4-owned
+  LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
+  Play/Cue/PFL LED recovery without playback or deck-state changes; extended
+  pad-mode/sync/loop reconnect smoke remains pending.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
   semantic button events. Their P4 DSP/settings behavior is intentionally not
   implemented yet.
+- Hot Cue pad behavior is implemented on P4: an empty pad stores the current
+  per-track deck position, an occupied pad recalls it with audio seek, and
+  Shift + pad clears the slot. Deck 1 hardware behavior smoke passed on
+  2026-06-21; Deck 2 behavior uses the same deck-local path and remains marked
+  for hardware smoke.
 
 ## Non-Goals For The First Milestone
 

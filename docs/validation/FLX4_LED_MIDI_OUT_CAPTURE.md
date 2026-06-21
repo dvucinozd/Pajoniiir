@@ -1,11 +1,13 @@
 # FLX4 LED MIDI OUT Capture Runbook
 
-Status: physical capture in progress; MVP reconnect resynchronization verified.
+Status: MVP reconnect resynchronization verified. Phase 7 LED addresses are
+seeded from the verified Mixxx XML and then promoted with host tests plus
+hardware smoke/capture notes recorded here.
 
-Purpose: record verified MIDI OUT messages sent to the DDJ-FLX4 for every LED
-that Phase 7 may drive from P4-owned state. Do not promote any row to a
-production S3 mapping until the raw USB status, address, values, and reconnect
-behavior are captured on the physical controller.
+Purpose: record MIDI OUT messages sent to the DDJ-FLX4 for every LED that
+Phase 7 may drive from P4-owned state. XML-derived rows may be implemented
+when covered by S3/P4 host tests, but each delivered LED group still needs a
+hardware acceptance note here; reconnect behavior is tracked separately.
 
 ## Required Setup
 
@@ -62,8 +64,8 @@ behavior are captured on the physical controller.
 | Sampler mode | 2 | performance mode / sampler UI | `0x91` | note `0x22` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | SAMPLER mode LED followed off/on/off probe; replaces Key Shift UI scope. |
 | Beat Loop mode | 1 | performance mode | `0x90` | note `0x6D` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | BEAT LOOP mode LED followed off/on/off probe. |
 | Beat Loop mode | 2 | performance mode | `0x91` | note `0x6D` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | BEAT LOOP mode LED followed off/on/off probe. |
-| Performance pads | 1 | cue/loop/pad/sampler state | pending | pending | pending | pending | pending | pending | raw capture required | Capture each pad index and mode separately. |
-| Performance pads | 2 | cue/loop/pad/sampler state | pending | pending | pending | pending | pending | pending | raw capture required | Capture each pad index and mode separately. |
+| Performance pads | 1 | cue/loop/pad/sampler state | pending | pending | pending | pending | pending | pending | XML candidate / acceptance pending | Verify each implemented pad LED group separately. |
+| Performance pads | 2 | cue/loop/pad/sampler state | pending | pending | pending | pending | pending | pending | XML candidate / acceptance pending | Verify each implemented pad LED group separately. |
 | Beat FX On/Off | global/deck | audio_fx rack | `0x94` | note `0x47` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | Beat FX ON/OFF LED followed off/on/off probe. |
 | Pad FX1 mode | 1 | deck FX mode / rack | `0x90` | note `0x1E` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | PAD FX1 mode LED followed off/on/off probe. |
 | Pad FX1 mode | 2 | deck FX mode / rack | `0x91` | note `0x1E` | `0x00` | `0x7F` | pending | pending | channel-pair accepted 2026-06-20 | Accepted from physically verified Deck 1 address and established Deck 2 status-channel pattern. |
@@ -137,7 +139,9 @@ Observed behavior:
 
 ## Phase 7 Pad Mode, Beat Sync, and Loop LED Smoke Checklist
 
-Status: firmware implemented, software-tested, build-verified; physical smoke
+Status: firmware implemented, software-tested, build-verified. Pad-mode,
+Beat Sync, Loop In/Out, and Hot Cue behavior smoke have partial hardware pass
+coverage as recorded below; extended reconnect resynchronization remains
 pending.
 
 Firmware branch: `codex/phase7-extended-controls-vu`
@@ -155,15 +159,15 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 
 | Step | Action | Expected result | Result | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | Press Deck 1 `HOT CUE` | Deck 1 Hot Cue mode LED on; other Deck 1 mode LEDs off | pending | |
-| 2 | Press Deck 1 `PAD FX1` | Deck 1 Pad FX1 mode LED on; other Deck 1 mode LEDs off | pending | |
-| 3 | Press Deck 1 `BEAT JUMP` | Deck 1 Beat Jump mode LED on; other Deck 1 mode LEDs off | pending | |
-| 4 | Press Deck 1 `SAMPLER` | Deck 1 Sampler mode LED on; other Deck 1 mode LEDs off | pending | |
-| 5 | Press Deck 1 shifted secondary modes | Keyboard, Pad FX2, Beat Loop, and Key Shift LEDs follow the selected shifted mode | pending | Use Shift + matching physical mode button. |
-| 6 | Repeat steps 1-5 on Deck 2 | Deck 2 LEDs follow independently from Deck 1 | pending | |
-| 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pending | Placeholder state only; tempo/audio must not change. |
-| 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pending | |
-| 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pending | |
+| 1 | Press Deck 1 `HOT CUE` | Deck 1 Hot Cue mode LED on; other Deck 1 mode LEDs off | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
+| 2 | Press Deck 1 `PAD FX1` | Deck 1 Pad FX1 mode LED on; other Deck 1 mode LEDs off | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
+| 3 | Press Deck 1 `BEAT JUMP` | Deck 1 Beat Jump mode LED on; other Deck 1 mode LEDs off | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
+| 4 | Press Deck 1 `SAMPLER` | Deck 1 Sampler mode LED on; other Deck 1 mode LEDs off | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
+| 5 | Press Deck 1 shifted secondary modes | Keyboard, Pad FX2, Beat Loop, and Key Shift LEDs follow the selected shifted mode | pass 2026-06-21 | Use Shift + matching physical mode button; operator confirmed LEDs followed selected state. |
+| 6 | Repeat steps 1-5 on Deck 2 | Deck 2 LEDs follow independently from Deck 1 | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
+| 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pass 2026-06-21 | Placeholder state only; tempo/audio must not change. |
+| 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pass 2026-06-21 | Placeholder state only; tempo/audio must not change. |
+| 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
 | 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pass 2026-06-21 | Current firmware uses one active-loop state for both LEDs. |
 | 11 | Clear the Deck 1 loop | Deck 1 Loop In and Loop Out LEDs turn off | pass 2026-06-21 | |
 | 12 | Repeat steps 10-11 on Deck 2 | Deck 2 Loop In/Out LEDs follow independently from Deck 1 | pass 2026-06-21 | |
@@ -206,9 +210,14 @@ itself.
 
 Before adding or enabling a production entry in `flx4_led_map()`:
 
-1. The row above has physical raw values, not XML-only candidates.
+1. The row above has either physically captured raw values or XML-derived
+   values from `docs/reference/Pioneer-DDJ-FLX4.midi.xml` that are covered by
+   host tests.
 2. A table-driven S3 host test asserts the exact three-byte MIDI output.
 3. A P4 snapshot test proves the semantic LED is derived only from P4-owned
    state.
-4. Reconnect behavior is captured or explicitly marked unsupported.
-5. `docs/DDJ_FLX4_MIDI_MAP.md` is updated with the verified values.
+4. Hardware smoke/capture status is recorded, or explicitly marked pending for
+   post-implementation acceptance.
+5. Reconnect behavior is captured or explicitly marked pending/unsupported.
+6. `docs/DDJ_FLX4_MIDI_MAP.md` is updated with the current implementation and
+   verification status.

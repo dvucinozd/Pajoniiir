@@ -158,8 +158,11 @@ period. S3 forwards this as USB MIDI CC `0x02` on `0xB0` for Deck/Channel 1 and
 
 P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
-complete MVP LED snapshot for Deck 1/2 Cue, Play, and PFL. Host tests verify
-normal diff suppression, failed-send retry, and forced reconnect publication.
+P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
+placeholder state, and active Loop In/Out state. Host tests verify normal diff
+suppression, failed-send retry, and forced reconnect publication. Transport
+reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
+reconnect smoke remains an acceptance item.
 
 Pad mode LEDs are also P4-owned. `deck_core` stores controller `pad_mode`
 separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,

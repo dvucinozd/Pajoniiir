@@ -111,10 +111,11 @@ treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
 under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
 pad-action, and VU-meter input/output mapping is implemented and smoke-verified
-where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, and
-loop halve/double now have P4 behavior. Beat sync, tempo range, beat-jump,
-sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remain P4 feature
-work, not S3 mapping work. The porting steps are tracked in
+where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
+halve/double, and Hot Cue pad store/recall/clear now have P4 behavior. Beat
+sync, tempo range, beat-jump, sampler, pad FX, EQ/filter DSP, and Smart
+CFX/Fader behavior remain P4 feature work, not S3 mapping work. The porting
+steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target
@@ -131,8 +132,9 @@ two-deck standalone path:
 5. P4 sends transport, mixer, pad-mode, Beat Sync, and Loop In/Out LED feedback
    (Play, Cue, PFL, selected pad mode, sync-enabled placeholder, active loop
    indicators) back to the S3, and S3 sends the matching MIDI LED messages to
-   the FLX4 (implemented; pad-mode, Beat Sync, and Loop In/Out LED hardware
-   smoke pending).
+   the FLX4 (implemented; pad-mode, Beat Sync, and Loop In/Out LED smoke has
+   passed where recorded in the validation notes; extended reconnect smoke is
+   still pending).
 6. S3 publishes FLX4 USB connection state and P4 forces a P4-owned MVP LED
    snapshot after reconnect so Play/Cue/PFL LEDs recover without changing
    playback state (implemented).

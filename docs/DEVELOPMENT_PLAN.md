@@ -197,9 +197,10 @@ Validation note, 2026-06-08:
 - The P4 Library screen exposes `LOAD D1` and `LOAD D2` buttons. `LOAD D1`
   updates the active waveform/header and compatibility output path; `LOAD D2`
   exercises the deck-local producer path for the shared output mixer.
-- `audio_engine` now stores per-deck PFL state, and `deck_core` routes
+- `audio_engine` stores per-deck PFL state, and `deck_core` routes
   `CTRL_ID_DECK1_PFL` and `CTRL_ID_DECK2_PFL` press events into deck-specific
-  PFL toggles. The actual cue/headphone audio buffer path remains pending.
+  PFL toggles. Stereo Master and Split Mono cue/PFL routing are implemented
+  for the current output path.
 - Deck 2-first playback no longer depends on whichever deck loaded first owning
   output. `deck_core` only marks a deck playing after the backend accepts play,
   and USB removal now calls `audio_engine_stop_all()`.
@@ -463,9 +464,10 @@ ranges, and P4-driven VU output are implemented and software-tested. Hardware
 smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 `PAD FX1`, `BEAT JUMP`, `SAMPLER`), shifted secondary pad modes, sampler,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
-in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for beat sync, tempo range, loops,
-beat jump, sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader remains
-deferred unless separately marked implemented.
+in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
+loop halve/double, and Hot Cue store/recall/clear is implemented. Beat sync,
+tempo range, beat jump, sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader
+behavior remains deferred unless separately marked implemented.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -553,7 +555,9 @@ Implementation order:
    - Hot Cue pad behavior is implemented in P4: pad 1-8 stores the current
      deck position into an empty per-track slot or recalls an existing slot via
      `audio_engine_deck_seek()`, while shifted Hot Cue pads clear the matching
-     slot;
+     slot. Deck 1 set/recall/shift-clear hardware smoke passed on
+     2026-06-21; Deck 2 behavior uses the same deck-local implementation and
+     remains pending for hardware smoke;
    - hardware smoke verified sampler pads 1-8 on both decks, key-shift pads
      1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
      pads. Sampler, stem, key-shift, pad-FX, beat-loop, and beat-jump playback
@@ -574,7 +578,9 @@ Implementation order:
      toggle (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - Loop In/Out LED feedback is implemented from P4-owned per-deck audio loop
      state; active loops light both Loop In and Loop Out LEDs for that deck;
-   - verify reconnect resynchronization and mode/pad LED behavior on hardware.
+   - pad-mode, Beat Sync, and Loop In/Out LEDs have hardware smoke coverage as
+     recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; extended
+     reconnect resynchronization remains pending.
 
 Required artifacts:
 

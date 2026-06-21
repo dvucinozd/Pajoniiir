@@ -205,14 +205,14 @@ is direct or shifted.
 
 | Physical control | XML status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hot Cue mode | `0x90/0x1B`, `0x91/0x1B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_HOT_CUE`, `CTRL_ID_DECK2_PAD_MODE_HOT_CUE` | P4 pad mode state | Mapped only | Verified 2026-06-21 |
-| Shift + Hot Cue / Keyboard-Stems mode | `0x90/0x69`, `0x91/0x69` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEYBOARD`, `CTRL_ID_DECK2_PAD_MODE_KEYBOARD` | unsupported stems model | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
-| Pad FX1 mode | `0x90/0x1E`, `0x91/0x1E` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX1`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX1` | pad FX model | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
-| Shift + Pad FX1 / Pad FX2 mode | `0x90/0x6B`, `0x91/0x6B` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX2`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX2` | pad FX model | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
-| Beat Jump mode | `0x90/0x20`, `0x91/0x20` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP` | P4 pad mode state | Mapped only | Verified 2026-06-21 |
-| Shift + Beat Jump / Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` | P4 pad mode state | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
-| Sampler mode | `0x90/0x22`, `0x91/0x22` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_SAMPLER`, `CTRL_ID_DECK2_PAD_MODE_SAMPLER` | sampler model | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
-| Shift + Sampler / Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` | P4 pad mode state | Mapped only | Verified D1/D2 2026-06-21; behavior deferred |
+| Hot Cue mode | `0x90/0x1B`, `0x91/0x1B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_HOT_CUE`, `CTRL_ID_DECK2_PAD_MODE_HOT_CUE` | P4 pad mode state | Implemented state | Verified 2026-06-21; LED/state smoke passed 2026-06-21 |
+| Shift + Hot Cue / Keyboard-Stems mode | `0x90/0x69`, `0x91/0x69` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEYBOARD`, `CTRL_ID_DECK2_PAD_MODE_KEYBOARD` | P4 pad mode state / unsupported stems model | Implemented state | Verified D1/D2 2026-06-21; stems behavior deferred |
+| Pad FX1 mode | `0x90/0x1E`, `0x91/0x1E` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX1`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX1` | P4 pad mode state / pad FX model | Implemented state | Verified D1/D2 2026-06-21; pad FX behavior deferred |
+| Shift + Pad FX1 / Pad FX2 mode | `0x90/0x6B`, `0x91/0x6B` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX2`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX2` | P4 pad mode state / pad FX model | Implemented state | Verified D1/D2 2026-06-21; pad FX behavior deferred |
+| Beat Jump mode | `0x90/0x20`, `0x91/0x20` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP` | P4 pad mode state | Implemented state | Verified 2026-06-21; LED/state smoke passed 2026-06-21 |
+| Shift + Beat Jump / Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` | P4 pad mode state | Implemented state | Verified D1/D2 2026-06-21; beat-loop pad behavior deferred |
+| Sampler mode | `0x90/0x22`, `0x91/0x22` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_SAMPLER`, `CTRL_ID_DECK2_PAD_MODE_SAMPLER` | P4 pad mode state / sampler model | Implemented state | Verified D1/D2 2026-06-21; sampler behavior deferred |
+| Shift + Sampler / Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` | P4 pad mode state | Implemented state | Verified D1/D2 2026-06-21; key-shift behavior deferred |
 
 ### Performance Pad Action Inventory
 
@@ -237,9 +237,9 @@ is direct or shifted.
 | Play LEDs | `0x90/0x0B`, `0x91/0x0B` | deck playing | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
 | Play/Cue shifted alternate LEDs | `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for DDJ-FFL4 | Deferred | Not captured |
 | Cue LEDs | `0x90/0x0C`, `0x91/0x0C` | cue state | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
-| Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled placeholder state | P4 `deck_core.sync_enabled` | Implemented output | Pending hardware smoke; output probe verified 2026-06-20 |
+| Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled placeholder state | P4 `deck_core.sync_enabled` | Implemented output | Hardware smoke passed 2026-06-21; output probe verified 2026-06-20 |
 | PFL LEDs | `0x90/0x54`, `0x91/0x54` | PFL enabled | P4 mixer/cue routing | Implemented | Verified 2026-06-20 reconnect |
-| Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Pending hardware smoke |
+| Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Hardware smoke passed 2026-06-21 |
 | Loop In LEDs | `0x90/0x10`, `0x91/0x10` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Behavior smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20 |
 | Loop Out LEDs | `0x90/0x11`, `0x91/0x11` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Behavior smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20 |
 | Hot Cue pad LEDs | normal D1 `0x97/0x00..0x07`, normal D2 `0x99/0x00..0x07`; shifted mirror D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | hot cue exists/active | P4 hot cue state | Candidate LED | Not captured |
