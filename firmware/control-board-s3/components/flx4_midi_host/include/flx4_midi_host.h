@@ -64,6 +64,11 @@ esp_err_t flx4_midi_host_init(void);
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 
+bool flx4_midi_host_is_vu_meter_packet(const uint8_t packet[4]);
+bool flx4_midi_host_should_drop_out_packet(const uint8_t packet[4],
+                                           uint32_t queue_spaces,
+                                           uint32_t queue_capacity);
+
 #if defined(FLX4_MIDI_HOST_PC_TEST)
 typedef struct {
     uint8_t type;

@@ -110,6 +110,33 @@ static void test_connection_state_publications_are_edge_triggered(void)
     assert(!flx4_midi_host_test_publish_connection_state(true, NULL));
 }
 
+static void test_vu_meter_packets_are_low_priority(void)
+{
+    const uint8_t d1_vu[4] = { 0x0B, 0xB0, 0x02, 0x40 };
+    const uint8_t d2_vu[4] = { 0x0B, 0xB1, 0x02, 0x7F };
+    const uint8_t play_led[4] = { 0x09, 0x90, 0x0B, 0x7F };
+    const uint8_t non_vu_cc[4] = { 0x0B, 0xB0, 0x03, 0x40 };
+
+    assert(flx4_midi_host_is_vu_meter_packet(d1_vu));
+    assert(flx4_midi_host_is_vu_meter_packet(d2_vu));
+    assert(!flx4_midi_host_is_vu_meter_packet(play_led));
+    assert(!flx4_midi_host_is_vu_meter_packet(non_vu_cc));
+}
+
+static void test_vu_meter_packets_drop_when_out_queue_has_backlog(void)
+{
+    const uint8_t d1_vu[4] = { 0x0B, 0xB0, 0x02, 0x40 };
+    const uint8_t play_led[4] = { 0x09, 0x90, 0x0B, 0x7F };
+
+    assert(!flx4_midi_host_should_drop_out_packet(d1_vu, 32, 32));
+    assert(flx4_midi_host_should_drop_out_packet(d1_vu, 31, 32));
+    assert(flx4_midi_host_should_drop_out_packet(d1_vu, 0, 32));
+
+    assert(!flx4_midi_host_should_drop_out_packet(play_led, 0, 32));
+    assert(!flx4_midi_host_should_drop_out_packet(NULL, 0, 32));
+    assert(!flx4_midi_host_should_drop_out_packet(d1_vu, 32, 0));
+}
+
 int main(void)
 {
     test_parse_note_on_packet();
@@ -118,6 +145,8 @@ int main(void)
     test_finds_midi_streaming_in_endpoint();
     test_rejects_truncated_descriptor();
     test_connection_state_publications_are_edge_triggered();
+    test_vu_meter_packets_are_low_priority();
+    test_vu_meter_packets_drop_when_out_queue_has_backlog();
     puts("flx4_midi_host tests passed");
     return 0;
 }

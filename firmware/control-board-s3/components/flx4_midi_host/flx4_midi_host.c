@@ -223,6 +223,36 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
     return found_in && found_out;
 }
 
+bool flx4_midi_host_is_vu_meter_packet(const uint8_t packet[4])
+{
+    if (!packet) {
+        return false;
+    }
+
+    const uint8_t cin = packet[0] & 0x0F;
+    const uint8_t status = packet[1];
+    const uint8_t controller = packet[2];
+
+    return cin == FLX4_USB_MIDI_CIN_CONTROL_CHANGE &&
+           (status == 0xB0 || status == 0xB1) &&
+           controller == 0x02;
+}
+
+bool flx4_midi_host_should_drop_out_packet(const uint8_t packet[4],
+                                           uint32_t queue_spaces,
+                                           uint32_t queue_capacity)
+{
+    if (!packet || queue_capacity == 0) {
+        return false;
+    }
+
+    if (!flx4_midi_host_is_vu_meter_packet(packet)) {
+        return false;
+    }
+
+    return queue_spaces < queue_capacity;
+}
+
 #if defined(FLX4_MIDI_HOST_PC_TEST)
 void flx4_midi_host_test_reset_connection_state(void)
 {
@@ -273,6 +303,7 @@ static const char *TAG = "flx4_host";
 #define MIDI_CLIENT_TASK_PRIO   5
 #define CLIENT_NUM_EVENT_MSG    5
 #define MIDI_TRANSFER_BYTES     64
+#define MIDI_OUT_QUEUE_DEPTH    32
 
 static void publish_connection_state(bool connected)
 {
@@ -323,7 +354,7 @@ static void log_midi_packet(const uint8_t packet[4])
         return;
     }
 
-    ESP_LOGI(TAG,
+    ESP_LOGD(TAG,
              "USB-MIDI cable=%u cin=0x%X len=%u status=0x%02X data1=0x%02X data2=0x%02X",
              msg.cable, msg.cin, msg.len, msg.status, msg.data1, msg.data2);
     if (s_message_cb) {
@@ -729,7 +760,7 @@ esp_err_t flx4_midi_host_init(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "DDJ-FLX4 USB MIDI host raw logger started");
+    ESP_LOGI(TAG, "DDJ-FLX4 USB MIDI host started");
     return ESP_OK;
 }
 
@@ -749,7 +780,17 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
         goto exit;
     }
 
+    const uint32_t queue_spaces = (uint32_t)uxQueueSpacesAvailable(s_midi_out_queue);
+    const bool drop_silently =
+        flx4_midi_host_should_drop_out_packet(packet, queue_spaces, MIDI_OUT_QUEUE_DEPTH);
+    if (drop_silently) {
+        goto exit;
+    }
+
     if (xQueueSend(s_midi_out_queue, packet, 0) != pdTRUE) {
+        if (flx4_midi_host_is_vu_meter_packet(packet)) {
+            goto exit;
+        }
         ESP_LOGW(TAG, "MIDI OUT queue full, dropping packet");
         ret = ESP_ERR_TIMEOUT;
         goto exit;
