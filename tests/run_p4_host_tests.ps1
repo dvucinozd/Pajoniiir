@@ -255,6 +255,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_deck_core_dual.exe",
             "test_deck_core_dual.c",
             "control_link_stub.c",

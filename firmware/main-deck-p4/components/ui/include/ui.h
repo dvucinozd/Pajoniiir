@@ -6,6 +6,7 @@
 //   overview | library | hotcues | beatloop | beatjump | keyshift | settings
 
 #include "esp_err.h"
+#include "rekordbox_anlz.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -21,6 +22,7 @@ esp_err_t ui_library_select_delta(int delta);
 esp_err_t ui_library_load_selected(void);
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck);
 uint32_t  ui_library_loaded_track_key_for_deck(uint8_t deck);
+const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck);
 
 // LVGL is not thread-safe. Any task other than the internal LVGL handler must
 // wrap LVGL API calls in ui_lvgl_lock()/ui_lvgl_unlock(). No-ops on the PC sim.

@@ -190,6 +190,11 @@ static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
     return ui_deck_anlz_store_get(&s_deck_anlz_store, idx);
 }
 
+const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck)
+{
+    return ui_deck_anlz(deck);
+}
+
 static const anlz_metadata_t *ui_performance_anlz(void)
 {
     return ui_deck_anlz(ui_controls_active_deck(&s_controls));

@@ -1,6 +1,7 @@
 #include "deck_core.h"
 #include "control_link.h"
 #include "hot_cue_store.h"
+#include "rekordbox_anlz.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -8,6 +9,8 @@ static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
 static int s_toggle_library_view_calls;
 static uint32_t s_loaded_track_key[DECK_CORE_DECK_COUNT];
+static const anlz_metadata_t *s_loaded_anlz[DECK_CORE_DECK_COUNT];
+static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
@@ -38,6 +41,18 @@ uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
     return s_loaded_track_key[deck];
+}
+
+const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck)
+{
+    assert(deck < DECK_CORE_DECK_COUNT);
+    return s_loaded_anlz[deck];
+}
+
+uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm)
+{
+    assert(deck < DECK_CORE_DECK_COUNT);
+    return s_loaded_bpm[deck] > 0 ? s_loaded_bpm[deck] : fallback_bpm;
 }
 
 esp_err_t ui_toggle_library_view(void)
@@ -104,6 +119,8 @@ static void reset_audio_engine_stub(void)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         s_loaded_track_key[deck] = 0;
+        s_loaded_anlz[deck] = NULL;
+        s_loaded_bpm[deck] = 0;
         audio_engine_stub_deck_play_result[deck] = ESP_OK;
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;

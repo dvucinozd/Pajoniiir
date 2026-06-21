@@ -5,7 +5,8 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -Istubs \
            -I../../firmware/main-deck-p4/components/deck_core/include \
            -I../../firmware/main-deck-p4/components/control_link/include \
-           -I../../firmware/main-deck-p4/components/hot_cue_store/include
+           -I../../firmware/main-deck-p4/components/hot_cue_store/include \
+           -I../../firmware/main-deck-p4/components/library/include
 
 SRCS    = test_deck_core_dual.c \
           control_link_stub.c \
