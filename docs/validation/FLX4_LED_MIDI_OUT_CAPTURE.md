@@ -164,14 +164,14 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pending | Placeholder state only; tempo/audio must not change. |
 | 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pending | |
 | 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pending | |
-| 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pending | Current firmware uses one active-loop state for both LEDs. |
-| 11 | Clear the Deck 1 loop | Deck 1 Loop In and Loop Out LEDs turn off | pending | |
-| 12 | Repeat steps 10-11 on Deck 2 | Deck 2 Loop In/Out LEDs follow independently from Deck 1 | pending | |
-| 13 | Press Deck 1 `LOOP IN`, advance playback, then press `LOOP OUT` | Deck 1 enters active loop and Loop In/Out LEDs turn on | pending | P4 behavior is host-tested; hardware smoke verifies controller path. |
-| 14 | Press Deck 1 `RELOOP/EXIT` while loop is active | Active loop clears and Loop In/Out LEDs turn off | pending | |
-| 15 | Press Deck 1 `RELOOP/EXIT` again | Last loop is restored and Loop In/Out LEDs turn on | pending | |
-| 16 | Press Deck 1 loop halve/double buttons while loop is active | Active loop length halves/doubles without changing loop start | pending | |
-| 17 | Repeat steps 13-16 on Deck 2 | Deck 2 loop behavior and LEDs follow independently from Deck 1 | pending | |
+| 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pass 2026-06-21 | Current firmware uses one active-loop state for both LEDs. |
+| 11 | Clear the Deck 1 loop | Deck 1 Loop In and Loop Out LEDs turn off | pass 2026-06-21 | |
+| 12 | Repeat steps 10-11 on Deck 2 | Deck 2 Loop In/Out LEDs follow independently from Deck 1 | pass 2026-06-21 | |
+| 13 | Press Deck 1 `LOOP IN`, advance playback, then press `LOOP OUT` | Deck 1 enters active loop and Loop In/Out LEDs turn on | pass 2026-06-21 | P4 log captured `deck 1 loop in`, `deck 1 loop set`, and FLX4 LED snapshot publication; operator confirmed LEDs followed state. |
+| 14 | Press Deck 1 `RELOOP/EXIT` while loop is active | Active loop clears and Loop In/Out LEDs turn off | pass 2026-06-21 | P4 log captured `deck 1 loop exit`; operator confirmed LEDs followed state. |
+| 15 | Press Deck 1 `RELOOP/EXIT` again | Last loop is restored and Loop In/Out LEDs turn on | pass 2026-06-21 | P4 log captured restored loop with the previous in/out boundaries. |
+| 16 | Press Deck 1 loop halve/double buttons while loop is active | Active loop length halves/doubles without changing loop start | pass 2026-06-21 | One output late diagnostic appeared on a very short Deck 1 loop (`late_max=15668 us`); audio remained running and this is tracked as a watch item. |
+| 17 | Repeat steps 13-16 on Deck 2 | Deck 2 loop behavior and LEDs follow independently from Deck 1 | pass 2026-06-21 | P4 log captured independent Deck 2 loop set/exit/restore/halve events. |
 | 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pending | Playback/deck state must not change. |
 | 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pending | P4 state remains authoritative. |
 
