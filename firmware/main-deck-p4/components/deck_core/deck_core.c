@@ -341,6 +341,25 @@ static bool beat_jump_shift_for_pad(uint8_t pad, int *out_shift)
     return true;
 }
 
+typedef struct {
+    uint16_t numerator;
+    uint16_t denominator;
+} beat_loop_length_t;
+
+static const beat_loop_length_t s_beat_loop_pad_lengths[8] = {
+    {1, 32}, {1, 16}, {1, 8}, {1, 4},
+    {1, 2}, {1, 1}, {2, 1}, {4, 1},
+};
+
+static bool beat_loop_length_for_pad(uint8_t pad, beat_loop_length_t *out_length)
+{
+    if (!out_length || pad >= 8) {
+        return false;
+    }
+    *out_length = s_beat_loop_pad_lengths[pad];
+    return true;
+}
+
 static void remember_last_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
 {
     if (deck >= DECK_CORE_DECK_COUNT || end_ms <= start_ms) {
@@ -377,6 +396,29 @@ static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
                  (unsigned)deck + 1,
                  esp_err_to_name(rc));
     }
+}
+
+static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    beat_loop_length_t length = {0};
+    if (!beat_loop_length_for_pad(pad, &length)) {
+        return;
+    }
+
+    uint32_t start_ms = current_deck_position_ms(deck, state);
+    uint32_t duration_ms = beat_loop_calculate_duration_ms(start_ms,
+                                                           loaded_bpm_for_deck(deck),
+                                                           length.numerator,
+                                                           length.denominator,
+                                                           loaded_anlz_for_deck(deck));
+    if (duration_ms == 0 || start_ms > UINT32_MAX - duration_ms) {
+        return;
+    }
+    set_deck_loop(deck, start_ms, start_ms + duration_ms);
 }
 
 static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_state_t *state)
@@ -850,6 +892,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             if (beat_jump_shift_for_pad(CTRL_PAD_ACTION_PAD(ev->value), &beat_shift)) {
                 handle_beat_jump(deck, beat_shift, state);
             }
+        } else if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
+                   CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_LOOP &&
+                   !CTRL_PAD_ACTION_SHIFTED(ev->value)) {
+            handle_beat_loop_pad_action(deck, CTRL_PAD_ACTION_PAD(ev->value), state);
         } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
                      (unsigned)deck + 1,
