@@ -197,16 +197,22 @@ Status legend:
 
 ### Performance Pad Mode Inventory
 
+The DDJ-FLX4 has four direct physical pad mode buttons: `HOT CUE`, `PAD FX1`,
+`BEAT JUMP`, and `SAMPLER`. Secondary modes are reached with `SHIFT` plus one
+of those four buttons. The Mixxx XML still lists each secondary mode as its own
+MIDI note, so this table keeps the XML addresses but labels whether the control
+is direct or shifted.
+
 | Physical control | XML status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Hot Cue mode | `0x90/0x1B`, `0x91/0x1B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_HOT_CUE`, `CTRL_ID_DECK2_PAD_MODE_HOT_CUE` | P4 pad mode state | Mapped only | Verified 2026-06-21 |
-| Keyboard/Stems mode | `0x90/0x69`, `0x91/0x69` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEYBOARD`, `CTRL_ID_DECK2_PAD_MODE_KEYBOARD` proposed | unsupported stems model | Deferred | Not captured |
-| Pad FX1 mode | `0x90/0x1E`, `0x91/0x1E` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_FX1`, `CTRL_ID_DECK2_PAD_MODE_FX1` proposed | pad FX model | Deferred | Physical top-row label observed; no P4 behavior/event in 2026-06-21 smoke |
-| Pad FX2 mode | `0x90/0x6B`, `0x91/0x6B` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_FX2`, `CTRL_ID_DECK2_PAD_MODE_FX2` proposed | pad FX model | Deferred | Not captured |
+| Shift + Hot Cue / Keyboard-Stems mode | `0x90/0x69`, `0x91/0x69` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEYBOARD`, `CTRL_ID_DECK2_PAD_MODE_KEYBOARD` | unsupported stems model | Mapped only | Not captured |
+| Pad FX1 mode | `0x90/0x1E`, `0x91/0x1E` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX1`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX1` | pad FX model | Mapped only | Awaiting post-fix smoke |
+| Shift + Pad FX1 / Pad FX2 mode | `0x90/0x6B`, `0x91/0x6B` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_PAD_FX2`, `CTRL_ID_DECK2_PAD_MODE_PAD_FX2` | pad FX model | Mapped only | Awaiting post-fix smoke |
 | Beat Jump mode | `0x90/0x20`, `0x91/0x20` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP` | P4 pad mode state | Mapped only | Verified 2026-06-21 |
-| Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` | P4 pad mode state | Mapped only | Partial 2026-06-21 smoke event observed on D1 |
-| Sampler mode | `0x90/0x22`, `0x91/0x22` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_SAMPLER`, `CTRL_ID_DECK2_PAD_MODE_SAMPLER` proposed | sampler model | Deferred | Physical top-row label observed; no P4 behavior/event in 2026-06-21 smoke |
-| Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` | P4 pad mode state | Mapped only | Not captured |
+| Shift + Beat Jump / Beat Loop mode | `0x90/0x6D`, `0x91/0x6D` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP`, `CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP` | P4 pad mode state | Mapped only | Partial 2026-06-21 smoke event observed on D1 |
+| Sampler mode | `0x90/0x22`, `0x91/0x22` | press/release | deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_SAMPLER`, `CTRL_ID_DECK2_PAD_MODE_SAMPLER` | sampler model | Mapped only | Awaiting post-fix smoke |
+| Shift + Sampler / Key Shift mode | `0x90/0x6F`, `0x91/0x6F` | press/release | shifted deck-local mode select | `CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT`, `CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT` | P4 pad mode state | Mapped only | Not captured |
 
 ### Performance Pad Action Inventory
 
@@ -219,8 +225,8 @@ Status legend:
 | Beat Loop pads 1-8 | D1 `0x97/0x60..0x67`, D2 `0x99/0x60..0x67` | press/release | active Beat Loop mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 loop engine | Mapped only | Not captured |
 | Beat Jump pads 1-8 | D1 `0x97/0x20..0x27`, D2 `0x99/0x20..0x27` | press/release | active Beat Jump mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 beat jump | Mapped only | Partial D1/D2 pad smoke 2026-06-21; behavior deferred |
 | Beat Jump shifted size pads | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | press/release | shifted Beat Jump mode | pad action with size inc/dec | P4 beat jump size state | Mapped only | Not captured |
-| Sampler pads 1-8 left/right | left `0x97/0x30..0x37`, right `0x99/0x30..0x37` | press/release | active Sampler mode | sampler pad action candidate | sampler model | Deferred | Not captured |
-| Sampler shifted pads 1-8 left/right | left `0x98/0x30..0x37`, right `0x9A/0x30..0x37` | press/release | shifted Sampler mode | sampler pad action candidate | sampler model | Deferred | Not captured |
+| Sampler pads 1-8 left/right | left `0x97/0x30..0x37`, right `0x99/0x30..0x37` | press/release | active Sampler mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | sampler model | Mapped only | Awaiting post-fix smoke |
+| Sampler shifted pads 1-8 left/right | left `0x98/0x30..0x37`, right `0x9A/0x30..0x37` | press/release | shifted Sampler mode | same pad action ID with shift flag | sampler model | Mapped only | Awaiting post-fix smoke |
 | Key Shift pads 1-8 | D1 `0x97/0x70..0x77`, D2 `0x99/0x70..0x77` | press/release | active Key Shift mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 key shift | Mapped only | Not captured |
 | Key Shift shifted pads 1-8 | D1 `0x98/0x70..0x77`, D2 `0x9A/0x70..0x77` | press/release | shifted Key Shift mode | same pad action ID with shift flag | P4 key shift | Mapped only | Not captured |
 

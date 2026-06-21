@@ -74,15 +74,16 @@ test.
 | `0x18` | Deck 1 Beat Sync | `0` release, `1` press; P4 sync behavior deferred |
 | `0x19` | Deck 1 Tempo Range | `0` release, `1` press; behavior deferred |
 | `0x1A`-`0x20` | Deck 1 loop / beat-jump buttons | `0` release, `1` press; behavior deferred |
-| `0x21`-`0x24` | Deck 1 pad mode select | `0` release, `1` press |
+| `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
+| `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
 | `0x32` | Deck 2 Jog scratch delta | signed delta |
 | `0x33` | Deck 2 Jog bend delta | signed delta |
 | `0x34` | Deck 2 Jog touch | `0` release, `1` touch |
 | `0x35` | Deck 2 Tempo | `0..16383` |
-| `0x36`-`0x45` | Deck 2 extension controls | same control order as Deck 1 |
+| `0x36`-`0x49` | Deck 2 extension controls | same control order as Deck 1 |
 | `0x50` | Channel 1 volume | `0..16383` |
 | `0x51` | Channel 2 volume | `0..16383` |
 | `0x52` | Crossfader | `0..16383` |
@@ -102,6 +103,14 @@ In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
 channel fader, and crossfader events are locally coalesced before UART send;
 button edges and load/PFL events remain FIFO.
+
+Pad action values are packed into the signed 16-bit `value` field:
+
+- bits `0..2`: pad index `0..7`;
+- bits `3..5`: pad mode `0..7` (`HOT_CUE`, `BEAT_LOOP`, `BEAT_JUMP`,
+  `KEY_SHIFT`, `KEYBOARD`, `PAD_FX1`, `PAD_FX2`, `SAMPLER`);
+- bit `6`: shifted pad action;
+- bit `7`: pressed state.
 
 ## LED Feedback
 

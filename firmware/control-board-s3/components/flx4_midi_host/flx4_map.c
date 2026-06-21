@@ -29,8 +29,12 @@
 #define FLX4_BTN_BEAT_JUMP_BACK 0x3E
 #define FLX4_BTN_BEAT_JUMP_FORWARD 0x3D
 #define FLX4_BTN_PAD_HOT_CUE   0x1B
+#define FLX4_BTN_PAD_KEYBOARD  0x69
+#define FLX4_BTN_PAD_FX1       0x1E
+#define FLX4_BTN_PAD_FX2       0x6B
 #define FLX4_BTN_PAD_BEAT_LOOP 0x6D
 #define FLX4_BTN_PAD_BEAT_JUMP 0x20
+#define FLX4_BTN_PAD_SAMPLER   0x22
 #define FLX4_BTN_PAD_KEY_SHIFT 0x6F
 #define FLX4_BTN_LOAD_D1       0x46
 #define FLX4_BTN_LOAD_D2       0x47
@@ -170,10 +174,18 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_BEAT_JUMP_FORWARD : CTRL_ID_DECK2_BEAT_JUMP_FORWARD, pressed);
     case FLX4_BTN_PAD_HOT_CUE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_HOT_CUE : CTRL_ID_DECK2_PAD_MODE_HOT_CUE, pressed);
+    case FLX4_BTN_PAD_KEYBOARD:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_KEYBOARD : CTRL_ID_DECK2_PAD_MODE_KEYBOARD, pressed);
+    case FLX4_BTN_PAD_FX1:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_PAD_FX1 : CTRL_ID_DECK2_PAD_MODE_PAD_FX1, pressed);
+    case FLX4_BTN_PAD_FX2:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_PAD_FX2 : CTRL_ID_DECK2_PAD_MODE_PAD_FX2, pressed);
     case FLX4_BTN_PAD_BEAT_LOOP:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP : CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP, pressed);
     case FLX4_BTN_PAD_BEAT_JUMP:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP : CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP, pressed);
+    case FLX4_BTN_PAD_SAMPLER:
+        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_SAMPLER : CTRL_ID_DECK2_PAD_MODE_SAMPLER, pressed);
     case FLX4_BTN_PAD_KEY_SHIFT:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT : CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT, pressed);
     case FLX4_BTN_JOG_TOUCH:
@@ -287,6 +299,12 @@ static bool map_pad_message(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     } else if (data1 >= 0x20 && data1 <= 0x27) {
         mode = CTRL_PAD_MODE_BEAT_JUMP;
         pad = data1 - 0x20;
+    } else if (data1 >= 0x30 && data1 <= 0x37) {
+        mode = CTRL_PAD_MODE_SAMPLER;
+        pad = data1 - 0x30;
+    } else if (data1 >= 0x40 && data1 <= 0x47) {
+        mode = CTRL_PAD_MODE_KEYBOARD;
+        pad = data1 - 0x40;
     } else if (data1 >= 0x60 && data1 <= 0x67) {
         mode = CTRL_PAD_MODE_BEAT_LOOP;
         pad = data1 - 0x60;

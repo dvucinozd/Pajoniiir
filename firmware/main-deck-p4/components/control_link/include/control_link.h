@@ -93,6 +93,10 @@ typedef enum {
     CTRL_DECK_CTL_PAD_MODE_BEAT_JUMP,
     CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT,
     CTRL_DECK_CTL_PAD_ACTION,
+    CTRL_DECK_CTL_PAD_MODE_KEYBOARD,
+    CTRL_DECK_CTL_PAD_MODE_PAD_FX1,
+    CTRL_DECK_CTL_PAD_MODE_PAD_FX2,
+    CTRL_DECK_CTL_PAD_MODE_SAMPLER,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -106,17 +110,21 @@ typedef enum {
     CTRL_PAD_MODE_BEAT_LOOP = 1,
     CTRL_PAD_MODE_BEAT_JUMP = 2,
     CTRL_PAD_MODE_KEY_SHIFT = 3,
+    CTRL_PAD_MODE_KEYBOARD = 4,
+    CTRL_PAD_MODE_PAD_FX1 = 5,
+    CTRL_PAD_MODE_PAD_FX2 = 6,
+    CTRL_PAD_MODE_SAMPLER = 7,
 } ctrl_pad_mode_t;
 
 #define CTRL_PAD_ACTION_VALUE(mode, pad, shifted, pressed) \
     ((int16_t)((((pad) & 0x07)      ) | \
-               (((mode) & 0x03) << 3) | \
-               ((shifted) ? 0x20 : 0x00) | \
-               ((pressed) ? 0x40 : 0x00)))
+               (((mode) & 0x07) << 3) | \
+               ((shifted) ? 0x40 : 0x00) | \
+               ((pressed) ? 0x80 : 0x00)))
 #define CTRL_PAD_ACTION_PAD(value)     ((uint8_t)((value) & 0x07))
-#define CTRL_PAD_ACTION_MODE(value)    ((uint8_t)(((value) >> 3) & 0x03))
-#define CTRL_PAD_ACTION_SHIFTED(value) (((value) & 0x20) != 0)
-#define CTRL_PAD_ACTION_PRESSED(value) (((value) & 0x40) != 0)
+#define CTRL_PAD_ACTION_MODE(value)    ((uint8_t)(((value) >> 3) & 0x07))
+#define CTRL_PAD_ACTION_SHIFTED(value) (((value) & 0x40) != 0)
+#define CTRL_PAD_ACTION_PRESSED(value) (((value) & 0x80) != 0)
 
 #define CTRL_ID_FLX4_CONNECTION (CTRL_NS_SYSTEM | 0x00)
 #define CTRL_ID_SMART_CFX       (CTRL_NS_SYSTEM | 0x01)
@@ -149,6 +157,10 @@ typedef enum {
 #define CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP    (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_BEAT_JUMP)
 #define CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT    (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT)
 #define CTRL_ID_DECK1_PAD_ACTION            (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_ACTION)
+#define CTRL_ID_DECK1_PAD_MODE_KEYBOARD     (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_KEYBOARD)
+#define CTRL_ID_DECK1_PAD_MODE_PAD_FX1      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_PAD_FX1)
+#define CTRL_ID_DECK1_PAD_MODE_PAD_FX2      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_PAD_FX2)
+#define CTRL_ID_DECK1_PAD_MODE_SAMPLER      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -172,6 +184,10 @@ typedef enum {
 #define CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP    (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_BEAT_JUMP)
 #define CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT    (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT)
 #define CTRL_ID_DECK2_PAD_ACTION            (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_ACTION)
+#define CTRL_ID_DECK2_PAD_MODE_KEYBOARD     (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_KEYBOARD)
+#define CTRL_ID_DECK2_PAD_MODE_PAD_FX1      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_PAD_FX1)
+#define CTRL_ID_DECK2_PAD_MODE_PAD_FX2      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_PAD_FX2)
+#define CTRL_ID_DECK2_PAD_MODE_SAMPLER      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)

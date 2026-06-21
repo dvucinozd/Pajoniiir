@@ -457,6 +457,27 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         }
         return true;
 
+    case CTRL_DECK_CTL_PAD_MODE_KEYBOARD:
+        if (pressed) {
+            ESP_LOGI(TAG, "deck %u pad mode -> KEYBOARD (behavior deferred)",
+                     (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_PAD_FX1:
+        if (pressed) {
+            ESP_LOGI(TAG, "deck %u pad mode -> PAD_FX1 (behavior deferred)",
+                     (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_PAD_FX2:
+        if (pressed) {
+            ESP_LOGI(TAG, "deck %u pad mode -> PAD_FX2 (behavior deferred)",
+                     (unsigned)deck + 1);
+        }
+        return true;
+
     case CTRL_DECK_CTL_PAD_MODE_BEAT_LOOP:
         if (pressed) {
             state->perf_mode = PERF_MODE_LOOP_ROLL;
@@ -475,6 +496,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         if (pressed) {
             state->perf_mode = PERF_MODE_KEY_SHIFT;
             ESP_LOGI(TAG, "deck %u pad mode -> KEY_SHIFT", (unsigned)deck + 1);
+        }
+        return true;
+
+    case CTRL_DECK_CTL_PAD_MODE_SAMPLER:
+        if (pressed) {
+            ESP_LOGI(TAG, "deck %u pad mode -> SAMPLER (behavior deferred)",
+                     (unsigned)deck + 1);
         }
         return true;
 

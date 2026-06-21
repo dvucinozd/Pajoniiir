@@ -289,6 +289,27 @@ static void test_pad_mode_buttons_update_requested_deck_mode(void)
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_KEY_SHIFT);
 }
 
+static void test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck1_pad_fx = deck_button(CTRL_ID_DECK1_PAD_MODE_PAD_FX1);
+    ctrl_event_t deck2_sampler = deck_button(CTRL_ID_DECK2_PAD_MODE_SAMPLER);
+
+    deck_core_test_apply_event(&deck1_pad_fx);
+    deck_core_test_apply_event(&deck2_sampler);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_HOT_CUE);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_HOT_CUE);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).playing);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
+    assert(!audio_engine_stub_deck_playing[CTRL_DECK_2]);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+}
+
 static void test_pad_action_is_consumed_without_transport_side_effects(void)
 {
     deck_core_test_reset();
@@ -301,6 +322,12 @@ static void test_pad_action_is_consumed_without_transport_side_effects(void)
 
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+
+    pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_SAMPLER, 4, false, true);
+    assert(CTRL_PAD_ACTION_MODE(pad.value) == CTRL_PAD_MODE_SAMPLER);
+    assert(CTRL_PAD_ACTION_PAD(pad.value) == 4);
+    assert(CTRL_PAD_ACTION_PRESSED(pad.value));
+    assert(!CTRL_PAD_ACTION_SHIFTED(pad.value));
 }
 
 static void test_smoke_log_policy_rates_limits_deferred_analog_controls(void)
@@ -341,6 +368,7 @@ int main(void)
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_pad_mode_buttons_update_requested_deck_mode();
+    test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects();
     test_pad_action_is_consumed_without_transport_side_effects();
     test_smoke_log_policy_rates_limits_deferred_analog_controls();
     test_smoke_log_policy_logs_deferred_buttons_only_on_press();
