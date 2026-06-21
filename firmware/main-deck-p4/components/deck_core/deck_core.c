@@ -54,6 +54,15 @@ typedef struct {
 
 static deck_loop_shadow_t s_loop_shadow[DECK_CORE_DECK_COUNT];
 
+typedef struct {
+    bool active;
+    bool previous_active;
+    uint32_t previous_start_ms;
+    uint32_t previous_end_ms;
+} deck_shifted_loop_roll_t;
+
+static deck_shifted_loop_roll_t s_shifted_loop_roll[DECK_CORE_DECK_COUNT];
+
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
@@ -419,6 +428,57 @@ static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t 
         return;
     }
     set_deck_loop(deck, start_ms, start_ms + duration_ms);
+}
+
+static void handle_shifted_beat_loop_press(uint8_t deck, uint8_t pad, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (!read_active_loop(deck, &active, &start_ms, &end_ms)) {
+        return;
+    }
+
+    deck_shifted_loop_roll_t *roll = &s_shifted_loop_roll[deck];
+    roll->active = true;
+    roll->previous_active = active;
+    roll->previous_start_ms = start_ms;
+    roll->previous_end_ms = end_ms;
+
+    handle_beat_loop_pad_action(deck, pad, state);
+}
+
+static void handle_shifted_beat_loop_release(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) {
+        return;
+    }
+
+    deck_shifted_loop_roll_t *roll = &s_shifted_loop_roll[deck];
+    if (!roll->active) {
+        return;
+    }
+
+    if (roll->previous_active && roll->previous_end_ms > roll->previous_start_ms) {
+        set_deck_loop(deck, roll->previous_start_ms, roll->previous_end_ms);
+    } else {
+        esp_err_t rc = audio_engine_deck_clear_loop(deck);
+        if (rc == ESP_OK) {
+            ESP_LOGI(TAG, "deck %u shifted beat loop released -> clear loop",
+                     (unsigned)deck + 1);
+            publish_flx4_led_snapshot(false);
+        } else {
+            ESP_LOGW(TAG, "deck %u shifted beat loop clear failed: %s",
+                     (unsigned)deck + 1,
+                     esp_err_to_name(rc));
+        }
+    }
+
+    memset(roll, 0, sizeof(*roll));
 }
 
 static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_state_t *state)
@@ -898,6 +958,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
                    CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_LOOP &&
                    !CTRL_PAD_ACTION_SHIFTED(ev->value)) {
             handle_beat_loop_pad_action(deck, CTRL_PAD_ACTION_PAD(ev->value), state);
+        } else if (CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_LOOP &&
+                   CTRL_PAD_ACTION_SHIFTED(ev->value)) {
+            if (CTRL_PAD_ACTION_PRESSED(ev->value)) {
+                handle_shifted_beat_loop_press(deck, CTRL_PAD_ACTION_PAD(ev->value), state);
+            } else {
+                handle_shifted_beat_loop_release(deck);
+            }
         } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
                      (unsigned)deck + 1,
@@ -1198,6 +1265,7 @@ void deck_core_reset_deck(uint8_t deck)
     uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
     memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
+    memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -1209,6 +1277,7 @@ void deck_core_test_reset(void)
         init_deck_state(&s_decks[i]);
     }
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
+    memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
     flx4_led_publisher_init(&s_flx4_led_publisher);
