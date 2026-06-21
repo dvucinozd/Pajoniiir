@@ -465,9 +465,10 @@ smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 `PAD FX1`, `BEAT JUMP`, `SAMPLER`), shifted secondary pad modes, sampler,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
-loop halve/double, Beat Jump buttons/pads, and Hot Cue store/recall/clear is
-implemented. Beat sync, tempo range, sampler, pad FX, EQ/filter DSP, and Smart
-CFX/Fader behavior remains deferred unless separately marked implemented.
+loop halve/double, Beat Loop pads, Beat Jump buttons/pads, and Hot Cue
+store/recall/clear is implemented. Beat sync, tempo range, sampler, pad FX,
+EQ/filter DSP, and Smart CFX/Fader behavior remains deferred unless separately
+marked implemented.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -534,11 +535,12 @@ Implementation order:
      with both decks playing.
    - final Phase 7 input smoke verified loop in/out, reloop/exit, loop
      halve/double, and beat-jump back/forward semantic routing on both decks;
-   - P4 loop behavior is implemented for Loop In/Out, Reloop/Exit, and
-     halve/double using the per-deck `audio_engine` loop API. Beat Jump
-     behavior is implemented for shifted cue/loop call buttons and Beat Jump
-     pads using beatgrid/BPM target calculation. Beat Sync and tempo-range
-     behavior remain deferred.
+   - P4 loop behavior is implemented for Loop In/Out, Reloop/Exit,
+     halve/double, and Beat Loop pads using the per-deck `audio_engine` loop
+     API plus beatgrid/BPM duration calculation. Beat Jump behavior is
+     implemented for shifted cue/loop call buttons and Beat Jump pads using
+     beatgrid/BPM target calculation. Beat Sync and tempo-range behavior remain
+     deferred.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
@@ -561,10 +563,10 @@ Implementation order:
      remains pending for hardware smoke;
    - hardware smoke verified sampler pads 1-8 on both decks, key-shift pads
      1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
-     pads. Beat Jump pad behavior is implemented in P4 using beatgrid/BPM
-     target calculation and remains pending for hardware behavior smoke.
-     Sampler, stem, key-shift, pad-FX, and beat-loop playback behavior remains
-     deferred until standalone P4 feature definitions exist.
+     pads. Beat Loop and Beat Jump pad behavior is implemented in P4 using
+     beatgrid/BPM calculation and remains pending for hardware behavior smoke.
+     Sampler, stem, key-shift, and pad-FX behavior remains deferred until
+     standalone P4 feature definitions exist.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
