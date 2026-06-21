@@ -105,6 +105,7 @@ hardcoded ad hoc in parser logic.
 #define FLX4_CC_CROSSFADER_MSB   0x1F
 #define FLX4_CC_CROSSFADER_LSB   0x3F
 #define FLX4_CC_BROWSE           0x40
+#define FLX4_CC_VU_METER         0x02
 ```
 
 ## Extended Mapping Rules
@@ -236,6 +237,8 @@ Status legend:
 | Beat Loop pad LEDs | normal D1 `0x97/0x60..0x67`, normal D2 `0x99/0x60..0x67`; shifted mirror D1 `0x98/0x60..0x67`, D2 `0x9A/0x60..0x67` | loop size active | P4 loop state | Candidate LED | Not captured |
 | Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML | P4 beat jump/pad mode state | Candidate LED | Not captured |
 | Sampler pad LEDs | left normal `0x97/0x30..0x37`, left shifted `0x98/0x30..0x37`, right normal `0x99/0x30..0x37`, right shifted `0x9A/0x30..0x37` | sampler slot loaded in XML | sampler model | Deferred | Not captured |
+| Channel 1 VU meter (5 LEDs) | `0xB0/0x02` | channel 1 level (0-127) | P4 audio mixer | Pending | Not captured |
+| Channel 2 VU meter (5 LEDs) | `0xB1/0x02` | channel 2 level (0-127) | P4 audio mixer | Pending | Not captured |
 
 ## Hardware Acceptance
 
