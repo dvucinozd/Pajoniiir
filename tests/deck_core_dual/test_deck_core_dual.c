@@ -303,6 +303,31 @@ static void test_pad_action_is_consumed_without_transport_side_effects(void)
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
 }
 
+static void test_smoke_log_policy_rates_limits_deferred_analog_controls(void)
+{
+    deck_core_test_reset();
+
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 0));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 100));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 512));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 1024));
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 2048));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 3000));
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 4096));
+
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_VOLUME, 2048));
+}
+
+static void test_smoke_log_policy_logs_deferred_buttons_only_on_press(void)
+{
+    assert(deck_core_test_should_log_deferred_button(CTRL_ID_DECK1_SYNC, 1));
+    assert(!deck_core_test_should_log_deferred_button(CTRL_ID_DECK1_SYNC, 0));
+    assert(deck_core_test_should_log_deferred_button(CTRL_ID_DECK2_PAD_ACTION,
+                                                     CTRL_PAD_ACTION_VALUE(PERF_MODE_HOT_CUE, 3, false, true)));
+    assert(!deck_core_test_should_log_deferred_button(CTRL_ID_DECK2_PAD_ACTION,
+                                                      CTRL_PAD_ACTION_VALUE(PERF_MODE_HOT_CUE, 3, false, false)));
+}
+
 int main(void)
 {
     test_decks_track_transport_independently();
@@ -317,6 +342,8 @@ int main(void)
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_pad_mode_buttons_update_requested_deck_mode();
     test_pad_action_is_consumed_without_transport_side_effects();
+    test_smoke_log_policy_rates_limits_deferred_analog_controls();
+    test_smoke_log_policy_logs_deferred_buttons_only_on_press();
     puts("deck_core_dual tests passed");
     return 0;
 }

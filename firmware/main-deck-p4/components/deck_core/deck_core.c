@@ -35,6 +35,10 @@ static TickType_t        s_last_heartbeat_tick;
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
+static uint16_t          s_deferred_mixer_last[256];
+static bool              s_deferred_mixer_seen[256];
+
+#define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -87,6 +91,76 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
                   ev->id == CTRL_ID_CH1_FILTER ||
                   ev->id == CTRL_ID_CH2_FILTER ||
                   ev->id == CTRL_ID_HEADPHONE_MIX);
+}
+
+static bool is_deferred_mixer_control(uint8_t id)
+{
+    switch (id) {
+    case CTRL_ID_CH1_TRIM:
+    case CTRL_ID_CH2_TRIM:
+    case CTRL_ID_CH1_EQ_HIGH:
+    case CTRL_ID_CH2_EQ_HIGH:
+    case CTRL_ID_CH1_EQ_MID:
+    case CTRL_ID_CH2_EQ_MID:
+    case CTRL_ID_CH1_EQ_LOW:
+    case CTRL_ID_CH2_EQ_LOW:
+    case CTRL_ID_CH1_FILTER:
+    case CTRL_ID_CH2_FILTER:
+    case CTRL_ID_HEADPHONE_MIX:
+        return true;
+    default:
+        return false;
+    }
+}
+
+#if !defined(DECK_CORE_PC_TEST)
+static const char *deferred_mixer_control_name(uint8_t id)
+{
+    switch (id) {
+    case CTRL_ID_CH1_TRIM: return "CH1_TRIM";
+    case CTRL_ID_CH2_TRIM: return "CH2_TRIM";
+    case CTRL_ID_CH1_EQ_HIGH: return "CH1_EQ_HIGH";
+    case CTRL_ID_CH2_EQ_HIGH: return "CH2_EQ_HIGH";
+    case CTRL_ID_CH1_EQ_MID: return "CH1_EQ_MID";
+    case CTRL_ID_CH2_EQ_MID: return "CH2_EQ_MID";
+    case CTRL_ID_CH1_EQ_LOW: return "CH1_EQ_LOW";
+    case CTRL_ID_CH2_EQ_LOW: return "CH2_EQ_LOW";
+    case CTRL_ID_CH1_FILTER: return "CH1_FILTER";
+    case CTRL_ID_CH2_FILTER: return "CH2_FILTER";
+    case CTRL_ID_HEADPHONE_MIX: return "HEADPHONE_MIX";
+    default: return "UNKNOWN";
+    }
+}
+#endif
+
+static bool should_log_deferred_mixer_value(uint8_t id, uint16_t value)
+{
+    if (!is_deferred_mixer_control(id)) {
+        return false;
+    }
+
+    if (!s_deferred_mixer_seen[id]) {
+        s_deferred_mixer_seen[id] = true;
+        s_deferred_mixer_last[id] = value;
+        return true;
+    }
+
+    uint16_t last = s_deferred_mixer_last[id];
+    uint16_t delta = value > last ? value - last : last - value;
+    if (delta < DECK_CORE_DEFERRED_MIXER_LOG_STEP) {
+        return false;
+    }
+
+    s_deferred_mixer_last[id] = value;
+    return true;
+}
+
+static bool should_log_deferred_button(uint8_t id, int16_t value)
+{
+    if (id == CTRL_ID_DECK1_PAD_ACTION || id == CTRL_ID_DECK2_PAD_ACTION) {
+        return CTRL_PAD_ACTION_PRESSED(value);
+    }
+    return value != 0;
 }
 
 static button_id_t button_for_event(const ctrl_event_t *ev)
@@ -349,15 +423,15 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_SYNC:
-        if (pressed) {
-            ESP_LOGD(TAG, "deck %u sync pressed (sync engine deferred)",
+        if (should_log_deferred_button(ev->id, ev->value)) {
+            ESP_LOGI(TAG, "deck %u sync pressed (sync engine deferred)",
                      (unsigned)deck + 1);
         }
         return true;
 
     case CTRL_DECK_CTL_TEMPO_RANGE:
-        if (pressed) {
-            ESP_LOGD(TAG, "deck %u tempo range pressed (range state deferred)",
+        if (should_log_deferred_button(ev->id, ev->value)) {
+            ESP_LOGI(TAG, "deck %u tempo range pressed (range state deferred)",
                      (unsigned)deck + 1);
         }
         return true;
@@ -369,8 +443,8 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     case CTRL_DECK_CTL_LOOP_DOUBLE:
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
-        if (pressed) {
-            ESP_LOGD(TAG, "deck %u extension control %u pressed (behavior deferred)",
+        if (should_log_deferred_button(ev->id, ev->value)) {
+            ESP_LOGI(TAG, "deck %u extension control %u pressed (behavior deferred)",
                      (unsigned)deck + 1,
                      (unsigned)control_link_id_control(ev->id));
         }
@@ -405,12 +479,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_PAD_ACTION:
-        ESP_LOGD(TAG, "deck %u pad action mode=%u pad=%u shifted=%u pressed=%u",
-                 (unsigned)deck + 1,
-                 (unsigned)CTRL_PAD_ACTION_MODE(ev->value),
-                 (unsigned)CTRL_PAD_ACTION_PAD(ev->value),
-                 CTRL_PAD_ACTION_SHIFTED(ev->value) ? 1u : 0u,
-                 CTRL_PAD_ACTION_PRESSED(ev->value) ? 1u : 0u);
+        if (should_log_deferred_button(ev->id, ev->value)) {
+            ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
+                     (unsigned)deck + 1,
+                     (unsigned)CTRL_PAD_ACTION_MODE(ev->value),
+                     (unsigned)CTRL_PAD_ACTION_PAD(ev->value),
+                     CTRL_PAD_ACTION_SHIFTED(ev->value) ? 1u : 0u);
+        }
         return true;
 
     default:
@@ -506,8 +581,10 @@ static void on_mixer_control(uint8_t id, int16_t raw)
     case CTRL_ID_CH1_FILTER:
     case CTRL_ID_CH2_FILTER:
     case CTRL_ID_HEADPHONE_MIX:
-        ESP_LOGD(TAG, "mixer control id=0x%02X raw=%u (DSP behavior deferred)",
-                 (unsigned)id, (unsigned)value);
+        if (should_log_deferred_mixer_value(id, value)) {
+            ESP_LOGI(TAG, "mixer control %s raw=%u (DSP behavior deferred)",
+                     deferred_mixer_control_name(id), (unsigned)value);
+        }
         break;
     default:
         break;
@@ -711,6 +788,8 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
+    memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
     flx4_led_publisher_init(&s_flx4_led_publisher);
     s_last_heartbeat_tick = 0;
 }
@@ -776,5 +855,15 @@ deck_state_t deck_core_test_get_deck_state(uint8_t deck)
         s_decks[idx].position_ms = audio_engine_deck_position_ms(idx);
     }
     return s_decks[idx];
+}
+
+bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value)
+{
+    return should_log_deferred_mixer_value(id, value);
+}
+
+bool deck_core_test_should_log_deferred_button(uint8_t id, int16_t value)
+{
+    return should_log_deferred_button(id, value);
 }
 #endif

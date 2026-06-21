@@ -62,4 +62,6 @@ void deck_core_reset_deck(uint8_t deck);
 void deck_core_test_reset(void);
 void deck_core_test_apply_event(const ctrl_event_t *ev);
 deck_state_t deck_core_test_get_deck_state(uint8_t deck);
+bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value);
+bool deck_core_test_should_log_deferred_button(uint8_t id, int16_t value);
 #endif
