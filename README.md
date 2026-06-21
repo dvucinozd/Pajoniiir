@@ -98,14 +98,19 @@ substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
 library load paths, shared output/mixer audio plumbing, hardware-verified
 dual-deck audio scheduling/waveform stability, and a refactored two-deck LVGL
 UI with Pioneered-style Overview chrome, centered beat/phase indicators,
-fixed-segment timers, and bounded title/timer invalidation.
+fixed-segment timers, bounded title/timer invalidation, and calibrated audio
+output diagnostics that no longer report normal codec-write pacing as late
+blocks.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
 mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture,
 Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
 LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
-Smart CFX/Smart Fader input mapping are implemented. Smart CFX/Fader DSP and
-settings behavior remain deferred. The porting steps are tracked in
+Smart CFX/Smart Fader input mapping are implemented. The S3 USB MIDI host now
+treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
+floods during normal translator operation, preserving controller responsiveness
+under dual-deck playback. Smart CFX/Fader DSP and settings behavior remain
+deferred. The porting steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## MVP Target

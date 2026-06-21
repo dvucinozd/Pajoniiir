@@ -119,7 +119,9 @@ Exit criteria:
 Status: master mix, channel fader/crossfader gains, cue/PFL selection, and
 dual-deck P4 audio scheduling are implemented for the current two-deck P4 path.
 Transparent post-sum limiting and limiter telemetry are implemented for the
-current master output path.
+current master output path. The P4 audio output late-warning diagnostic is
+calibrated to report true outliers instead of normal blocking
+`esp_codec_dev_write()` pacing.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -209,6 +211,14 @@ Validation note, 2026-06-08:
   software delay after `esp_codec_dev_write()`, and throttles preload
   diagnostics to periodic summaries. User hardware confirmation reported
   normal audio and waveform behavior with both decks playing.
+- Audio output diagnostic warning spam was fixed on hardware on 2026-06-21.
+  The previous `diag output late` warning compared a block including
+  blocking codec/I2S write time against a rounded 256-frame nominal period,
+  causing normal ~10 ms codec pacing to look like a late block. The output
+  timing helper now exposes a precise microsecond block period and a
+  2x-period late-warning threshold. Hardware smoke with both decks playing
+  reported `DIAG_OUTPUT_LATE_COUNT=0`, healthy ring fill, and stable decode
+  timing while retaining aggregate `diag output` telemetry.
 
 Validation note, 2026-06-14:
 
@@ -449,7 +459,10 @@ Status: in progress. The MVP control path, Browse press, Play/Cue/PFL LED
 feedback, FLX4 reconnect LED resynchronization, and raw Smart CFX/Smart Fader
 input mapping are implemented and hardware-verified. Larger transport
 extensions, mixer EQ/filter controls, performance pads, beat sync, sampler,
-and Smart CFX/Fader DSP remain deferred.
+and Smart CFX/Fader DSP remain deferred. The current Phase 7 branch also has
+software-tested extended control/VU mappings and hardware-verified S3 MIDI host
+responsiveness under dual-deck playback after VU feedback backpressure and raw
+MIDI log-flood mitigation.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -508,6 +521,12 @@ Implementation order:
      meter output. These mappings are software-regression covered but remain
      hardware-capture pending unless individually marked verified in
      `docs/DDJ_FLX4_MIDI_MAP.md`.
+   - S3 MIDI host robustness was verified on hardware on 2026-06-21 after a
+     controller-responsiveness regression was traced to high-rate raw MIDI INFO
+     logging and low-priority VU feedback filling the USB MIDI OUT queue. Raw
+     packet logs are now DEBUG-only in translator mode, VU meter packets are
+     dropped when the OUT queue has backlog, and Play/Pause stayed responsive
+     with both decks playing.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;

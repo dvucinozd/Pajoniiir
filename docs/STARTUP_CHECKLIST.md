@@ -73,6 +73,14 @@
 - P4 master output now uses a transparent post-sum limiter with lightweight
   limiter telemetry in the output diagnostic log. Single-deck level and normal
   two-deck sums remain unchanged; only true int16 overloads are shaped.
+- S3 USB MIDI host responsiveness was hardware-verified on 2026-06-21 after
+  FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
+  raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both
+  decks can play while controller Play/Pause remains responsive.
+- P4 audio output diagnostics were calibrated on 2026-06-21: normal blocking
+  `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
+  warnings. A dual-deck hardware run reported zero late warnings while keeping
+  aggregate output, limiter, heap, internal SRAM, and PSRAM telemetry.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active
@@ -87,8 +95,8 @@ USB MIDI logger and the software translator path. Built with
 
 ## P4 Overview Waveform Smoke Test
 
-- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-06-16 after
-  Overview timer/beat/phase polish.
+- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-06-21 after
+  P4 audio late-warning threshold calibration.
 - [ ] Start serial monitor and keep it running for at least 60 seconds while
   Deck 1 and Deck 2 are both loaded and playing.
 - [ ] Confirm no panic, watchdog timeout, brownout, or unexpected reset appears

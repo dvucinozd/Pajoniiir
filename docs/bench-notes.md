@@ -169,6 +169,7 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | --- | --- | --- |
 | MP3 decode + ES8311 output | **PASS** | minimp3 → `esp_codec_dev`/I2S; plays from `/usb`; 44.1 & 48 kHz |
 | Dual-deck audio scheduling | **PASS** | 2026-06-20 P4 run: both decks playing with normal audio and waveform after active-output preload chunks were reduced to 32 KB, seek-table publication was moved to a short lock, codec write pacing was allowed to own timing, and preload diagnostics were throttled |
+| Audio output diagnostics | **PASS** | 2026-06-21 P4 run: `diag output late` warning spam removed by using a precise µs block period and a 2x-period outlier threshold. Dual-deck smoke reported `DIAG_OUTPUT_LATE_COUNT=0`, healthy rings, and stable decode timing. |
 | Stability under load | **PASS** | MUST preload MP3 to PSRAM + decode via `fmemopen`; streaming from USB during playback trips a USB-DWC channel assert (`usb_dwc_hal.c:502`) → reboot |
 | Decode task stack | Note | minimp3 needs ~26 KB → dedicated 32 KB decode task |
 | Output routing switch | **PASS** | SETTINGS speaker⟷RCA toggle drives PA (GPIO11); RCA mode mutes speaker (PA off), clean line-level on DAC_OUT_P/N |
@@ -235,6 +236,18 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
   removed the extra output-task delay after `esp_codec_dev_write()`, and
   changed aggressive preload logging to periodic summaries. Hardware retest
   confirmed normal audio and waveform with both decks playing.
+- ✅ **S3 MIDI host responsiveness fix (2026-06-21):** when both decks were
+  playing, controller input could stop responding until the S3 was restarted.
+  Logs showed USB MIDI transfer errors plus MIDI OUT queue pressure. Raw USB
+  MIDI packet logs are now DEBUG-only in translator mode, and FLX4 VU meter
+  packets are dropped when the USB MIDI OUT queue has backlog. Hardware retest
+  confirmed Play/Pause remains responsive with both decks running.
+- ✅ **P4 audio diagnostic spam fix (2026-06-21):** normal blocking
+  `esp_codec_dev_write()` pacing was previously compared against a rounded
+  256-frame period and emitted continuous `diag output late` warnings even
+  with healthy rings. The warning now uses a precise microsecond period and a
+  2x-period outlier threshold. Hardware retest with both decks playing reported
+  zero late warnings while aggregate output telemetry remained available.
 - ✅ `bsp_sd_init()` SDMMC (config/cache): `/sd` mounts on the JC4880 TF slot. Root cause of the
   earlier timeout was `SDMMC_HOST_DEFAULT()` selecting slot 1 while this board is wired to slot 0.
 - Line-level output: verify ES8311 DAC → RCA line level.
