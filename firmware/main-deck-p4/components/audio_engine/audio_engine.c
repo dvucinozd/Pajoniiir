@@ -805,7 +805,7 @@ static void ae_diag_record_preload_chunk(uint8_t deck,
 }
 
 static void ae_diag_record_output_block(uint32_t block_us,
-                                        uint32_t period_us,
+                                        uint32_t late_threshold_us,
                                         uint32_t consumed0,
                                         uint32_t consumed1,
                                         bool active0,
@@ -839,14 +839,14 @@ static void ae_diag_record_output_block(uint32_t block_us,
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     }
 
-    if (period_us > 0) {
-        s_diag_output_late.threshold_us = period_us;
+    if (late_threshold_us > 0) {
+        s_diag_output_late.threshold_us = late_threshold_us;
     }
-    if (period_us > 0 && audio_diag_late_record(&s_diag_output_late, block_us)) {
+    if (late_threshold_us > 0 && audio_diag_late_record(&s_diag_output_late, block_us)) {
         ESP_LOGW(TAG,
-                 "diag output late: block=%u us period=%u us active=%u/%u ring=%u/%u %u/%u late_count=%u late_max=%u us",
+                 "diag output late: block=%u us threshold=%u us active=%u/%u ring=%u/%u %u/%u late_count=%u late_max=%u us",
                  (unsigned)block_us,
-                 (unsigned)period_us,
+                 (unsigned)late_threshold_us,
                  active0 ? 1u : 0u,
                  active1 ? 1u : 0u,
                  (unsigned)audio_pcm_ring_used(&s_pcm_rings[0]),
@@ -1248,10 +1248,10 @@ static void ae_output_task(void *arg)
             AE_UNLOCK();
         }
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
-        uint32_t block_period_ms = audio_output_block_period_ms(s_output_sample_rate);
-        uint32_t block_period_us = block_period_ms * 1000u;
+        uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
+        uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
-                                    block_period_us,
+                                    late_warning_us > 0u ? late_warning_us : block_period_us,
                                     consumed[deck0_index],
                                     consumed[deck1_index],
                                     deck0.active,

@@ -15,6 +15,22 @@ static void test_block_period_ms_rejects_zero_sample_rate(void)
     assert(audio_output_block_period_ms(0) == 0u);
 }
 
+static void test_block_period_us_uses_precise_ceil_division(void)
+{
+    assert(audio_output_block_period_us(48000) == 5334u);
+    assert(audio_output_block_period_us(44100) == 5805u);
+    assert(audio_output_block_period_us(32000) == 8000u);
+    assert(audio_output_block_period_us(0) == 0u);
+}
+
+static void test_late_warning_threshold_allows_codec_write_pacing_slack(void)
+{
+    assert(audio_output_late_warning_threshold_us(48000) == 10668u);
+    assert(audio_output_late_warning_threshold_us(44100) == 11610u);
+    assert(audio_output_late_warning_threshold_us(32000) == 16000u);
+    assert(audio_output_late_warning_threshold_us(0) == 0u);
+}
+
 static void test_remaining_delay_is_disabled_when_codec_write_paces_output(void)
 {
     assert(audio_output_remaining_delay_ms(48000, 0) == 0u);
@@ -28,6 +44,8 @@ int main(void)
 {
     test_block_period_ms_uses_ceil_division();
     test_block_period_ms_rejects_zero_sample_rate();
+    test_block_period_us_uses_precise_ceil_division();
+    test_late_warning_threshold_allows_codec_write_pacing_slack();
     test_remaining_delay_is_disabled_when_codec_write_paces_output();
     puts("audio_output_timing tests passed");
     return 0;
