@@ -545,6 +545,107 @@ static void test_shift_hot_cue_pad_clears_requested_slot(void)
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
 }
 
+static anlz_beat_t s_beat_jump_beats[] = {
+    {.time_ms = 1000, .beat_phase = 0, .bpm_x100 = 12000},
+    {.time_ms = 2000, .beat_phase = 1, .bpm_x100 = 12000},
+    {.time_ms = 3000, .beat_phase = 2, .bpm_x100 = 12000},
+    {.time_ms = 4000, .beat_phase = 3, .bpm_x100 = 12000},
+    {.time_ms = 5000, .beat_phase = 0, .bpm_x100 = 12000},
+    {.time_ms = 6000, .beat_phase = 1, .bpm_x100 = 12000},
+    {.time_ms = 7000, .beat_phase = 2, .bpm_x100 = 12000},
+    {.time_ms = 8000, .beat_phase = 3, .bpm_x100 = 12000},
+    {.time_ms = 9000, .beat_phase = 0, .bpm_x100 = 12000},
+    {.time_ms = 10000, .beat_phase = 1, .bpm_x100 = 12000},
+};
+
+static anlz_metadata_t beat_jump_meta(void)
+{
+    return (anlz_metadata_t) {
+        .beats = s_beat_jump_beats,
+        .beat_count = (uint16_t)(sizeof(s_beat_jump_beats) / sizeof(s_beat_jump_beats[0])),
+        .bpm = 120,
+    };
+}
+
+static void test_beat_jump_buttons_seek_by_one_beat_on_requested_deck(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    static anlz_metadata_t meta;
+    meta = beat_jump_meta();
+    s_loaded_anlz[CTRL_DECK_2] = &meta;
+    s_loaded_bpm[CTRL_DECK_2] = 120;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 4200;
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = true;
+
+    ctrl_event_t back = deck_button(CTRL_ID_DECK2_BEAT_JUMP_BACK);
+    ctrl_event_t forward = deck_button(CTRL_ID_DECK2_BEAT_JUMP_FORWARD);
+
+    deck_core_test_apply_event(&back);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 3000);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+
+    deck_core_test_apply_event(&forward);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 2);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 4000);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+}
+
+static void test_beat_jump_pad_maps_pad_index_to_jump_size(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_loaded_bpm[CTRL_DECK_1] = 120;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
+
+    ctrl_event_t pad4 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad4.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 3, false, true);
+    deck_core_test_apply_event(&pad4);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 18000);
+
+    ctrl_event_t pad5 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad5.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 4, false, true);
+    deck_core_test_apply_event(&pad5);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 2);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 20000);
+}
+
+static void test_beat_jump_release_event_does_not_seek(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_loaded_bpm[CTRL_DECK_1] = 120;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
+
+    ctrl_event_t release = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    release.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 4, false, false);
+    deck_core_test_apply_event(&release);
+
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 20000);
+}
+
+static void test_beat_jump_clamps_to_beatgrid_edges(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    static anlz_metadata_t meta;
+    meta = beat_jump_meta();
+    s_loaded_anlz[CTRL_DECK_1] = &meta;
+    s_loaded_bpm[CTRL_DECK_1] = 120;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1200;
+
+    ctrl_event_t pad1 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad1.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 0, false, true);
+    deck_core_test_apply_event(&pad1);
+
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1000);
+}
+
 static void test_smoke_log_policy_rates_limits_deferred_analog_controls(void)
 {
     deck_core_test_reset();
@@ -592,6 +693,10 @@ int main(void)
     test_hot_cue_pad_stores_empty_slot_at_requested_deck_position();
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();
+    test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
+    test_beat_jump_pad_maps_pad_index_to_jump_size();
+    test_beat_jump_release_event_does_not_seek();
+    test_beat_jump_clamps_to_beatgrid_edges();
     test_smoke_log_policy_rates_limits_deferred_analog_controls();
     test_smoke_log_policy_logs_deferred_buttons_only_on_press();
     puts("deck_core_dual tests passed");

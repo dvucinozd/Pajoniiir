@@ -6,7 +6,9 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#include "beat_jump.h"
 #include "hot_cue_store.h"
+#include "rekordbox_anlz.h"
 #if !defined(DECK_CORE_PC_TEST)
 #include "esp_timer.h"
 #endif
@@ -26,6 +28,8 @@ extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
 extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
 extern uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck) __attribute__((weak));
+extern const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck) __attribute__((weak));
+extern uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm) __attribute__((weak));
 
 static QueueHandle_t    s_queue;
 static SemaphoreHandle_t s_mutex;
@@ -280,6 +284,61 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
                  (unsigned)pad + 1,
                  esp_err_to_name(rc));
     }
+}
+
+static const int s_beat_jump_pad_shifts[8] = {
+    -32, -16, -8, -4, 4, 8, 16, 32,
+};
+
+static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !ui_get_deck_anlz_metadata) {
+        return NULL;
+    }
+    return ui_get_deck_anlz_metadata(deck);
+}
+
+static uint16_t loaded_bpm_for_deck(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !ui_library_deck_bpm) {
+        return 120u;
+    }
+    return ui_library_deck_bpm(deck, 120u);
+}
+
+static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state || beat_shift == 0) {
+        return;
+    }
+
+    uint32_t position_ms = current_deck_position_ms(deck, state);
+    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
+    uint16_t bpm = loaded_bpm_for_deck(deck);
+    uint32_t target_ms = beat_jump_calculate_target_ms(position_ms, bpm, beat_shift, meta);
+
+    esp_err_t rc = audio_engine_deck_seek(deck, target_ms);
+    if (rc == ESP_OK) {
+        state->position_ms = target_ms;
+        ESP_LOGI(TAG, "deck %u beat jump %+d -> %lu ms",
+                 (unsigned)deck + 1,
+                 beat_shift,
+                 (unsigned long)target_ms);
+    } else {
+        ESP_LOGW(TAG, "deck %u beat jump %+d failed: %s",
+                 (unsigned)deck + 1,
+                 beat_shift,
+                 esp_err_to_name(rc));
+    }
+}
+
+static bool beat_jump_shift_for_pad(uint8_t pad, int *out_shift)
+{
+    if (!out_shift || pad >= 8) {
+        return false;
+    }
+    *out_shift = s_beat_jump_pad_shifts[pad];
+    return true;
 }
 
 static void remember_last_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
@@ -698,10 +757,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
-        if (should_log_deferred_button(ev->id, ev->value)) {
-            ESP_LOGI(TAG, "deck %u extension control %u pressed (behavior deferred)",
-                     (unsigned)deck + 1,
-                     (unsigned)control_link_id_control(ev->id));
+        if (pressed) {
+            handle_beat_jump(deck,
+                             control_link_id_control(ev->id) == CTRL_DECK_CTL_BEAT_JUMP_BACK ? -1 : 1,
+                             state);
         }
         return true;
 
@@ -784,6 +843,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
                                       CTRL_PAD_ACTION_PAD(ev->value),
                                       CTRL_PAD_ACTION_SHIFTED(ev->value),
                                       state);
+        } else if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
+                   CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_JUMP &&
+                   !CTRL_PAD_ACTION_SHIFTED(ev->value)) {
+            int beat_shift = 0;
+            if (beat_jump_shift_for_pad(CTRL_PAD_ACTION_PAD(ev->value), &beat_shift)) {
+                handle_beat_jump(deck, beat_shift, state);
+            }
         } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
                      (unsigned)deck + 1,
