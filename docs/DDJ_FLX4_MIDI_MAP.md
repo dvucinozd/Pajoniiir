@@ -218,8 +218,8 @@ is direct or shifted.
 
 | Physical control | XML status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Hot Cue pads 1-8 | D1 `0x97/0x00..0x07`, D2 `0x99/0x00..0x07` | press/release | active Hot Cue mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 hot cue state | Implemented behavior | Verified D1/D2 pads 1-8 2026-06-21; behavior smoke pending |
-| Hot Cue clear pads 1-8 | D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | press/release | shifted Hot Cue mode | same pad action ID with shift flag | P4 hot cue state | Implemented behavior | Not captured; XML-derived mapping, behavior smoke pending |
+| Hot Cue pads 1-8 | D1 `0x97/0x00..0x07`, D2 `0x99/0x00..0x07` | press/release | active Hot Cue mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 hot cue state | Implemented behavior | Verified D1/D2 pads 1-8 2026-06-21; D1 set/recall behavior smoke pass 2026-06-21 |
+| Hot Cue clear pads 1-8 | D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | press/release | shifted Hot Cue mode | same pad action ID with shift flag | P4 hot cue state | Implemented behavior | D1 shifted clear behavior smoke pass 2026-06-21; D2 clear smoke pending |
 | Keyboard/Stems pads 1-8 | D1 `0x97/0x40..0x47`, D2 `0x99/0x40..0x47` | press/release | active Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
 | Keyboard/Stems shifted pads 1-8 | D1 `0x98/0x40..0x47`, D2 `0x9A/0x40..0x47` | press/release | shifted Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
 | Beat Loop pads 1-8 | D1 `0x97/0x60..0x67`, D2 `0x99/0x60..0x67` | press/release | active Beat Loop mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 loop engine | Mapped only | Verified D1/D2 pads 1-8 2026-06-21; behavior deferred |

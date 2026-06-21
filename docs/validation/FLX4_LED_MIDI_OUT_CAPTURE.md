@@ -175,6 +175,33 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pending | Playback/deck state must not change. |
 | 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pending | P4 state remains authoritative. |
 
+## Phase 7 Hot Cue Pad Behavior Smoke
+
+Firmware: P4 app version `b0858e2` on branch
+`codex/phase7-extended-controls-vu`.
+
+Status: Deck 1 set/recall/shift-clear behavior passed on hardware
+2026-06-21. Deck 2 behavior uses the same semantic path and host tests cover
+deck-local routing, but Deck 2 hardware behavior smoke remains pending.
+
+Observed P4 log evidence:
+
+- Track loaded on Deck 1 with track key `0x000000A3`.
+- `deck 1 pad mode -> HOT_CUE`
+- `deck 1 hot cue 1 set -> 5932 ms`
+- `deck 1 hot cue 2 set -> 5346 ms`
+- `deck 1 hot cue 2 recall -> 5346 ms`
+- `Index seek 5346 ms -> frame 205/9078`
+- `deck 1 hot cue 1 recall -> 5932 ms`
+- `Index seek 5932 ms -> frame 227/9078`
+- `deck 1 hot cue 1 cleared`
+- `deck 1 hot cue 1 set -> 26870 ms`
+- `Index seek 26870 ms -> frame 1029/9078`
+
+Operator note: Shift + `HOT CUE` mode button selects `KEYBOARD` mode; shifted
+Hot Cue clear requires staying in `HOT_CUE` mode and pressing Shift + the pad
+itself.
+
 ## Promotion Gate
 
 Before adding or enabling a production entry in `flx4_led_map()`:
