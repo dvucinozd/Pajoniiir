@@ -34,6 +34,23 @@ static anlz_metadata_t s_current_meta;
 static bool            s_current_meta_valid = false;
 static int             s_ui_track_idx = 0;
 
+static void library_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 static esp_err_t ensure_library_mutex(void)
 {
     if (s_library_mutex) return ESP_OK;
@@ -98,8 +115,7 @@ static void library_build_anlz_paths(const library_track_t *track,
         snprintf(dat_path, dat_len, "%s", track->anlz_path);
     }
 
-    strncpy(ext_path, dat_path, ext_len - 1);
-    ext_path[ext_len - 1] = '\0';
+    library_copy_str(ext_path, ext_len, dat_path);
     char *dot = strrchr(ext_path, '.');
     if (dot) {
         snprintf(dot, ext_len - (size_t)(dot - ext_path), ".EXT");
@@ -170,11 +186,11 @@ esp_err_t library_init(void)
         library_track_t *lt = &build_index[build_count];
         memset(lt, 0, sizeof(*lt));
 
-        strncpy(lt->path,      pt.file_path, LIBRARY_PATH_MAX - 1);
-        strncpy(lt->anlz_path, pt.anlz_path, LIBRARY_PATH_MAX - 1);
-        strncpy(lt->title,     pt.title,     LIBRARY_STR_MAX  - 1);
-        strncpy(lt->artist,    pt.artist,    LIBRARY_STR_MAX  - 1);
-        strncpy(lt->album,     pt.album,     LIBRARY_STR_MAX  - 1);
+        library_copy_str(lt->path,      sizeof(lt->path),      pt.file_path);
+        library_copy_str(lt->anlz_path, sizeof(lt->anlz_path), pt.anlz_path);
+        library_copy_str(lt->title,     sizeof(lt->title),     pt.title);
+        library_copy_str(lt->artist,    sizeof(lt->artist),    pt.artist);
+        library_copy_str(lt->album,     sizeof(lt->album),     pt.album);
         lt->track_id = pt.track_id;
         lt->bpm      = pt.bpm;
         lt->duration_ms = (uint32_t)pt.duration_s * 1000u;
@@ -183,7 +199,7 @@ esp_err_t library_init(void)
             "8A", "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A",
             "8B", "9B", "10B", "11B", "12B", "1B", "2B", "3B", "4B", "5B", "6B", "7B"
         };
-        strncpy(lt->key, camelot_keys[lt->track_id % 24], sizeof(lt->key) - 1);
+        library_copy_str(lt->key, sizeof(lt->key), camelot_keys[lt->track_id % 24]);
 
         build_count++;
     }

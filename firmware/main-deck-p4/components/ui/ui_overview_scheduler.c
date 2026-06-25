@@ -33,8 +33,9 @@ bool ui_overview_scheduler_try_consume_main_redraw(ui_overview_scheduler_t *sche
 uint8_t ui_overview_scheduler_budget_for_playing_decks(bool deck_a_playing,
                                                        bool deck_b_playing)
 {
-    (void)deck_a_playing;
-    (void)deck_b_playing;
+    if (deck_a_playing && deck_b_playing) {
+        return 2u;
+    }
     return 1u;
 }
 

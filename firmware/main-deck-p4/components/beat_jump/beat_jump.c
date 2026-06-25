@@ -1,5 +1,6 @@
 #include "beat_jump.h"
 
+#include <stdbool.h>
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -72,4 +73,70 @@ uint32_t beat_loop_calculate_duration_ms(uint32_t position_ms,
     uint32_t denominator = beat_denominator > 0 ? beat_denominator : 1u;
     uint64_t duration = ((uint64_t)beat_len_ms * numerator + denominator - 1u) / denominator;
     return duration > 0 ? (uint32_t)duration : 1u;
+}
+
+static bool nearest_beat_index(uint32_t position_ms,
+                               const anlz_metadata_t *meta,
+                               uint16_t *out_idx)
+{
+    if (!meta || !meta->beats || meta->beat_count == 0 || !out_idx) {
+        return false;
+    }
+
+    uint16_t closest_idx = 0;
+    uint32_t min_diff = UINT32_MAX;
+    for (uint16_t i = 0; i < meta->beat_count; i++) {
+        uint32_t beat_ms = meta->beats[i].time_ms;
+        uint32_t diff = position_ms > beat_ms ? position_ms - beat_ms : beat_ms - position_ms;
+        if (diff < min_diff) {
+            min_diff = diff;
+            closest_idx = i;
+        }
+    }
+
+    *out_idx = closest_idx;
+    return true;
+}
+
+bool beat_phase_align_target_ms(uint32_t target_position_ms,
+                                const anlz_metadata_t *target_meta,
+                                uint32_t reference_position_ms,
+                                const anlz_metadata_t *reference_meta,
+                                uint32_t *out_target_ms)
+{
+    if (!out_target_ms ||
+        !target_meta || !target_meta->beats || target_meta->beat_count == 0 ||
+        !reference_meta || !reference_meta->beats || reference_meta->beat_count == 0) {
+        return false;
+    }
+
+    uint16_t reference_idx = 0;
+    if (!nearest_beat_index(reference_position_ms, reference_meta, &reference_idx)) {
+        return false;
+    }
+
+    uint16_t target_phase = reference_meta->beats[reference_idx].beat_phase;
+    bool found = false;
+    uint32_t min_diff = UINT32_MAX;
+    uint32_t best_ms = target_position_ms;
+
+    for (uint16_t i = 0; i < target_meta->beat_count; i++) {
+        if (target_meta->beats[i].beat_phase != target_phase) {
+            continue;
+        }
+        uint32_t beat_ms = target_meta->beats[i].time_ms;
+        uint32_t diff = target_position_ms > beat_ms ? target_position_ms - beat_ms : beat_ms - target_position_ms;
+        if (!found || diff < min_diff) {
+            found = true;
+            min_diff = diff;
+            best_ms = beat_ms;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    *out_target_ms = best_ms;
+    return true;
 }

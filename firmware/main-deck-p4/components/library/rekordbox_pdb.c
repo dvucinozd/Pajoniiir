@@ -25,6 +25,23 @@
 
 static const char *TAG = "pdb";
 
+static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 /* ── PDB format constants ─────────────────────────────────────────────────── */
 
 /* Table type IDs */
@@ -387,16 +404,16 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
 #undef READ_STR
 
     /* Title: prefer tagged title, fall back to filename */
-    strncpy(t->title,
-            title[0] != '\0' ? title : filename,
-            PDB_STR_MAX - 1u);
+    pdb_copy_str(t->title,
+                 sizeof(t->title),
+                 title[0] != '\0' ? title : filename);
 
     /* Resolve artist/album names */
     const char *a = lookup_name(p->artists, p->artist_count, artist_id);
-    if (a) strncpy(t->artist, a, PDB_STR_MAX - 1u);
+    if (a) pdb_copy_str(t->artist, sizeof(t->artist), a);
 
     const char *al = lookup_name(p->albums, p->album_count, album_id);
-    if (al) strncpy(t->album, al, PDB_STR_MAX - 1u);
+    if (al) pdb_copy_str(t->album, sizeof(t->album), al);
 
     ctx->count++;
     return true;

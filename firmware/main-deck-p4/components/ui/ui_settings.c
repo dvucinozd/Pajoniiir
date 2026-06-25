@@ -60,6 +60,23 @@ static uint32_t s_cache_sd_total_mib = UINT32_MAX;
 static uint32_t s_cache_sd_last_poll_ms = 0;
 static ui_settings_text_cache_t s_cache_sd_text;
 
+static void ui_settings_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 static void ui_settings_label_set_text_cached(lv_obj_t *label,
                                               ui_settings_text_cache_t *cache,
                                               const char *text)
@@ -72,7 +89,7 @@ static void ui_settings_label_set_text_cached(lv_obj_t *label,
         return;
     }
     lv_label_set_text(label, safe_text);
-    snprintf(cache->text, sizeof(cache->text), "%s", safe_text);
+    ui_settings_copy_str(cache->text, sizeof(cache->text), safe_text);
     cache->valid = true;
 }
 
@@ -466,8 +483,8 @@ static void ui_settings_update_sd_status_label(bool force)
     if (s_cache_sd_state != 1 ||
         s_cache_sd_free_mib != free_mib ||
         s_cache_sd_total_mib != total_mib) {
-        char free_buf[16];
-        char total_buf[16];
+        char free_buf[24];
+        char total_buf[24];
         char text[80];
         ui_settings_format_storage_size(status.free_bytes, free_buf, sizeof(free_buf));
         ui_settings_format_storage_size(status.total_bytes, total_buf, sizeof(total_buf));

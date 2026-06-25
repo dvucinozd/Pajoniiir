@@ -81,6 +81,10 @@
   `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
   warnings. A dual-deck hardware run reported zero late warnings while keeping
   aggregate output, limiter, heap, internal SRAM, and PSRAM telemetry.
+- P4 firmware defaults now select performance optimization and disable LVGL
+  examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
+  predates 2026-06-25, regenerate or align it before flashing so it does not
+  keep `CONFIG_COMPILER_OPTIMIZATION_DEBUG`.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active
@@ -127,6 +131,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] Browse press (`0x96/0x41`) is routed end to end as a P4
   Library/Overview toggle. Load 1 and Load 2 remain the only deck-load
   buttons, and Browse rotate moves the selected row one detent at a time.
+  Hardware smoke on 2026-06-25 verified the Browse path after increasing the
+  `deck` task stack to cover the current controller-triggered Library UI call
+  chain.
 - [x] MVP Play/Cue/PFL LED reconnect resynchronization is routed end to end
   through S3 FLX4 connection state and P4 forced LED snapshots.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
@@ -135,8 +142,13 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] Add deck modifiers and transport extensions with P4-owned semantics.
   First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and
   Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
-  behavior; Sync remains a placeholder state and Tempo Range cycles deck-local
-  `±6%`, `±10%`, and `±16%` fader ranges. Final Phase 7 smoke
+  behavior; Beat Sync applies one-shot BPM match to the other deck using
+  precise ANLZ BPM when available and an internal ±20% safe clamp independent
+  of the selected manual Tempo Range. It phase-aligns to the nearest matching
+  beat phase only when the target deck is paused and both beatgrids are available. Playing-deck
+  phase seek is skipped to avoid audio ring underruns; it does not yet
+  continuously follow. Tempo
+  Range cycles deck-local `±6%`, `±10%`, and `±16%` fader ranges. Final Phase 7 smoke
   verified loop in/out, reloop/exit, loop halve/double, and beat-jump
   back/forward inputs on both decks. Loop In/Out, Reloop/Exit, loop
   halve/double, normal/shifted Beat Loop pads, and Beat Jump buttons/pads now
@@ -157,7 +169,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   and Pad FX behavior remains a separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
-  across direct and shifted modes, Beat Sync LED placeholder state, and
+  across direct and shifted modes, Beat Sync enabled state, and
   Loop In/Out LEDs derived from active P4 audio loop state. Beat Loop normal
   pad LED output is implemented from P4 loop state and selected Beat Loop pad
   mode; shifted mirror pad LED output remains deferred. Pad-mode, Beat Sync,

@@ -5,6 +5,23 @@
 #include <stdio.h>
 #include <string.h>
 
+static void ui_library_copy_str(char *dest, size_t dest_size, const char *src)
+{
+    if (!dest || dest_size == 0) {
+        return;
+    }
+    dest[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dest_size && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
 static void ui_library_truncate_str(char *dest, size_t dest_size, const char *src, size_t max_len)
 {
     if (!dest || dest_size == 0) {
@@ -25,7 +42,7 @@ static void ui_library_truncate_str(char *dest, size_t dest_size, const char *sr
 
     size_t len = strlen(src);
     if (len <= limit) {
-        snprintf(dest, dest_size, "%s", src);
+        ui_library_copy_str(dest, dest_size, src);
         return;
     }
 

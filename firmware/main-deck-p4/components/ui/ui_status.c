@@ -63,6 +63,23 @@ static uint32_t s_cache_elapsed_seconds = UINT32_MAX;
 static uint32_t s_cache_remain_seconds = UINT32_MAX;
 static bool s_cache_time_loading = false;
 
+static void ui_status_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 static void ui_status_label_set_text_cached(lv_obj_t *label,
                                             ui_status_text_cache_t *cache,
                                             const char *text)
@@ -75,7 +92,7 @@ static void ui_status_label_set_text_cached(lv_obj_t *label,
         return;
     }
     lv_label_set_text(label, safe_text);
-    snprintf(cache->text, sizeof(cache->text), "%s", safe_text);
+    ui_status_copy_str(cache->text, sizeof(cache->text), safe_text);
     cache->valid = true;
 }
 

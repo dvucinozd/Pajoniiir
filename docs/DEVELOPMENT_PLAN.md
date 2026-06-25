@@ -453,6 +453,24 @@ Validation note, 2026-06-10:
   - Removed centiseconds from time representation and applied `hh:mm:ss` format across the physical screen (Overview status, deck panels, and Performance tabs) and the mobile web controller interface.
   - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
   - Applied CPU Core Affinity (Task Pinning): pinned the main `lvgl` graphics task to **Core 1** and the HTTP web server task to **Core 0** (with `config.core_id = 0`), isolating waveform drawing from network interrupts and web socket processing.
+- **Dual-deck waveform and P4 build-performance pass (2026-06-25)**:
+  - The Overview scheduler now gives two main waveform redraw budget tokens when
+    both decks are playing. This keeps the upper and lower main waveforms on the
+    same UI cadence instead of alternating one deck per tick.
+  - P4 `sdkconfig.defaults` now selects performance optimization and disables
+    LVGL examples/demos. If a local ignored `sdkconfig` already exists, it must
+    be regenerated or aligned before flashing.
+  - Switching to the performance build exposed latent `-O2 -Werror`
+    string-truncation warnings. These were fixed in the library, media catalog,
+    and UI cache-copy paths with explicit bounded-copy helpers rather than by
+    suppressing compiler diagnostics.
+  - Hardware smoke after the performance build exposed a `deck` task stack
+    protection fault when Browse entered the Library UI. The root cause was the
+    controller event path calling `ui_show_library -> ui_library_fill_row ->
+    media_catalog_get_row` on the `deck` task stack. The stabilizing fix raises
+    the `deck` task stack from 4096 to 8192 bytes. A future architectural cleanup
+    should move controller-triggered UI navigation onto the LVGL/UI task context
+    instead of doing table work on the deck-control task.
 
 ## Phase 7: Extended DDJ-FLX4 Control Surface
 
@@ -466,8 +484,8 @@ smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
-Tempo Range, and Hot Cue store/recall/clear is implemented. Beat sync, sampler,
-pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remains deferred unless
+Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and Hot Cue store/recall/clear is
+implemented. Sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remains deferred unless
 separately marked implemented.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
@@ -518,10 +536,21 @@ Implementation order:
      copying a Mixxx script callback name as behavior.
    - first firmware slice maps Shift, Cue+Shift track-start, Beat Sync, and
      Beat Sync+Shift tempo-range IDs end to end. Cue+Shift has P4 behavior
-     and seeks the addressed deck to 0 ms while pausing it. Sync remains a
-     toggled placeholder LED state, while Tempo Range now cycles deck-local
-     `±6%`, `±10%`, and `±16%` fader ranges and reapplies the current fader
-     value to the audio engine.
+     and seeks the addressed deck to 0 ms while pausing it. Beat Sync now
+     toggles deck-local sync state and, when enabled, applies a one-shot BPM
+     match to the other deck by setting effective pitch percent. Sync uses
+     precise ANLZ `bpm_x100` when available and can exceed the selected Tempo
+     Range up to the audio engine's internal ±20% safe clamp, because selected
+     Tempo Range is a manual fader scale, not a sync accuracy limit. When the
+     target deck is paused and both decks have
+     beatgrids, it also seeks the target deck to the nearest beat whose
+     `beat_phase` matches the reference deck's nearest beat. Phase-align seek
+     is intentionally skipped while the target deck is playing because hardware
+     logs showed a playing seek can drain the deck ring buffer and produce an
+     output-late warning. This does not yet implement continuous following.
+     Tempo Range cycles deck-local `±6%`, `±10%`, and
+     `±16%` fader ranges and reapplies the current fader value to the audio
+     engine.
    - second firmware slice expands the 7-byte control-link namespace to 32
      deck-local controls per deck, maps loop, beat-jump, pad mode/action, trim,
      EQ, filter, and headphone-mix semantic inputs, and adds P4-driven FLX4 VU

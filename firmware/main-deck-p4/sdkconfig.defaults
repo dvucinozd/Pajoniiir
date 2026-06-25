@@ -20,6 +20,12 @@ CONFIG_FREERTOS_HZ=1000
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
+# ── Build optimization ────────────────────────────────────────────────────────
+# The P4 is doing real-time audio, LVGL rendering and PPA blits concurrently.
+# Use performance optimization for firmware builds; debug optimization leaves
+# too little UI headroom and can make the dual-deck overview waveform stutter.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
 # ── SPIRAM (32MB HEX/16-line PSRAM on JC4880P443C_I_W) ───────────────────────
 # Enables external PSRAM so large buffers (PDB index, ANLZ waveforms, the MIPI
 # DSI frame buffer) fit. CONFIG_SPIRAM_USE_MALLOC lets malloc() fall back to PSRAM.
@@ -56,6 +62,9 @@ CONFIG_FATFS_MAX_LFN=255
 # Render natively in RGB565 to match the ST7701S panel frame buffer (16bpp, per
 # the JC4880 vendor demo), avoiding a per-frame color conversion in the flush path.
 CONFIG_LV_COLOR_DEPTH_16=y
+# Do not compile LVGL examples/demos into the firmware image.
+# CONFIG_LV_BUILD_EXAMPLES is not set
+# CONFIG_LV_BUILD_DEMOS is not set
 
 # ── LVGL fonts used by the UI ─────────────────────────────────────────────────
 # Enable the Montserrat font sizes referenced in ui.c

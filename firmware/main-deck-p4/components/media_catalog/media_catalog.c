@@ -18,8 +18,12 @@ static void copy_str(char *dst, size_t dst_len, const char *src)
     if (!src) {
         return;
     }
-    strncpy(dst, src, dst_len - 1);
-    dst[dst_len - 1] = '\0';
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
 }
 
 static void ext_path_from_dat(const char *dat_path, char *out, size_t out_len)

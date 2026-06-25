@@ -22,6 +22,8 @@ static const char *TAG = "deck";
 #define PITCH_CENTER    8192
 #define SEARCH_STEP_MS  5000
 #define DEFAULT_TEMPO_RANGE_PERCENT 10u
+#define BEAT_SYNC_MAX_PERCENT 20u
+#define DECK_TASK_STACK_BYTES 8192u
 
 extern bool ui_is_library_active(void) __attribute__((weak));
 extern esp_err_t ui_show_library(void) __attribute__((weak));
@@ -69,6 +71,8 @@ static deck_shifted_loop_roll_t s_shifted_loop_roll[DECK_CORE_DECK_COUNT];
 
 static void publish_flx4_led_snapshot(bool force);
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
+static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
+static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck);
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -128,6 +132,80 @@ static uint16_t next_tempo_range_percent(uint16_t current)
     default:
         return 6;
     }
+}
+
+static uint16_t deck_base_bpm(uint8_t deck)
+{
+    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
+    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
+        return (uint16_t)((meta->beats[0].bpm_x100 + 50u) / 100u);
+    }
+    if (ui_library_deck_bpm) {
+        uint16_t bpm = ui_library_deck_bpm(deck, 120);
+        return bpm > 0 ? bpm : 120;
+    }
+    return 120;
+}
+
+static uint32_t deck_base_bpm_x100(uint8_t deck)
+{
+    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
+    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
+        return meta->beats[0].bpm_x100;
+    }
+    return (uint32_t)deck_base_bpm(deck) * 100u;
+}
+
+static float deck_effective_bpm(uint8_t deck, const deck_state_t *state)
+{
+    float bpm = (float)deck_base_bpm_x100(deck) / 100.0f;
+    return bpm * (1.0f + deck_core_pitch_percent(state) / 100.0f);
+}
+
+static int16_t clamp_centipercent_to_range(int32_t centipercent, uint16_t range_percent)
+{
+    int32_t max = (int32_t)range_percent * 100;
+    if (centipercent > max) {
+        return (int16_t)max;
+    }
+    if (centipercent < -max) {
+        return (int16_t)-max;
+    }
+    return (int16_t)centipercent;
+}
+
+static int16_t centipercent_for_bpm_match(uint8_t deck, uint8_t reference_deck)
+{
+    uint32_t target_base_x100 = deck_base_bpm_x100(deck);
+    if (target_base_x100 == 0) {
+        target_base_x100 = 12000u;
+    }
+    float reference_bpm = deck_effective_bpm(reference_deck, &s_decks[reference_deck]);
+    float target_base_bpm = (float)target_base_x100 / 100.0f;
+    float target_percent = ((reference_bpm / target_base_bpm) - 1.0f) * 100.0f;
+    int32_t centipercent = (int32_t)(target_percent * 100.0f +
+                                    (target_percent >= 0.0f ? 0.5f : -0.5f));
+    return clamp_centipercent_to_range(centipercent, BEAT_SYNC_MAX_PERCENT);
+}
+
+static bool beat_sync_requires_clamp(uint8_t deck, uint8_t reference_deck, int16_t applied_centipercent)
+{
+    uint32_t target_base_x100 = deck_base_bpm_x100(deck);
+    if (target_base_x100 == 0) {
+        target_base_x100 = 12000u;
+    }
+    float reference_bpm = deck_effective_bpm(reference_deck, &s_decks[reference_deck]);
+    float target_base_bpm = (float)target_base_x100 / 100.0f;
+    float required_percent = ((reference_bpm / target_base_bpm) - 1.0f) * 100.0f;
+    int32_t required_centipercent = (int32_t)(required_percent * 100.0f +
+                                             (required_percent >= 0.0f ? 0.5f : -0.5f));
+    return required_centipercent != applied_centipercent;
+}
+
+static float deck_synced_bpm_after_pitch(uint8_t deck, int16_t pitch_centipercent)
+{
+    float bpm = (float)deck_base_bpm_x100(deck) / 100.0f;
+    return bpm * (1.0f + ((float)pitch_centipercent / 10000.0f));
 }
 
 static bool event_is_mixer_control(const ctrl_event_t *ev)
@@ -863,20 +941,32 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 
     case CTRL_DECK_CTL_SYNC:
         if (pressed) {
-            state->sync_enabled = !state->sync_enabled;
-            ESP_LOGI(TAG, "deck %u sync -> %s (sync engine deferred)",
+            bool applied = false;
+            if (state->sync_enabled) {
+                state->sync_enabled = false;
+            } else {
+                applied = apply_beat_sync(deck, state);
+            }
+            (void)applied;
+            ESP_LOGI(TAG, "deck %u sync -> %s%s",
                      (unsigned)deck + 1,
-                     state->sync_enabled ? "ON" : "OFF");
+                     state->sync_enabled ? "ON" : "OFF",
+                     applied ? "" : " (tempo unchanged)");
             publish_flx4_led_snapshot(false);
         }
         return true;
 
     case CTRL_DECK_CTL_TEMPO_RANGE:
         if (pressed) {
+            bool sync_was_enabled = state->sync_enabled;
+            state->sync_enabled = false;
             state->tempo_range_percent = next_tempo_range_percent(state->tempo_range_percent);
             apply_deck_pitch(deck, state);
             ESP_LOGI(TAG, "deck %u tempo range -> ±%u%%",
                      (unsigned)deck + 1, (unsigned)state->tempo_range_percent);
+            if (sync_was_enabled) {
+                publish_flx4_led_snapshot(false);
+            }
         }
         return true;
 
@@ -1055,6 +1145,8 @@ static void on_browse_press(void)
 static void on_pitch(uint8_t deck, int16_t raw)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
+    bool sync_was_enabled = state->sync_enabled;
+    state->sync_enabled = false;
     state->pitch = raw;
     apply_deck_pitch(deck, state);
     int pitch_abs = abs(state->pitch_centipercent);
@@ -1065,6 +1157,9 @@ static void on_pitch(uint8_t deck, int16_t raw)
              state->pitch_centipercent >= 0 ? '+' : '-',
              pitch_abs / 100,
              pitch_abs % 100);
+    if (sync_was_enabled) {
+        publish_flx4_led_snapshot(false);
+    }
 }
 
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state)
@@ -1077,6 +1172,72 @@ static void apply_deck_pitch(uint8_t deck, deck_state_t *state)
     if (deck_uses_audio_engine(deck)) {
         audio_engine_deck_set_pitch_percent(deck, deck_core_pitch_percent(state));
     }
+}
+
+static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
+{
+    if (!state || deck >= DECK_CORE_DECK_COUNT) {
+        return false;
+    }
+
+    uint8_t reference_deck = (deck == CTRL_DECK_1) ? CTRL_DECK_2 : CTRL_DECK_1;
+    int16_t target_centipercent = centipercent_for_bpm_match(deck, reference_deck);
+    bool changed = state->pitch_centipercent != target_centipercent || !state->sync_enabled;
+
+    state->sync_enabled = true;
+    state->pitch_centipercent = target_centipercent;
+    if (deck_uses_audio_engine(deck)) {
+        audio_engine_deck_set_pitch_percent(deck, deck_core_pitch_percent(state));
+    }
+
+    bool phase_aligned = false;
+    uint32_t aligned_ms = current_deck_position_ms(deck, state);
+    const anlz_metadata_t *target_meta = loaded_anlz_for_deck(deck);
+    const anlz_metadata_t *reference_meta = loaded_anlz_for_deck(reference_deck);
+    uint32_t reference_position_ms = current_deck_position_ms(reference_deck,
+                                                             &s_decks[reference_deck]);
+    bool phase_target_available = beat_phase_align_target_ms(aligned_ms,
+                                                            target_meta,
+                                                            reference_position_ms,
+                                                            reference_meta,
+                                                            &aligned_ms);
+    bool deck_playing_now = deck_uses_audio_engine(deck)
+        ? audio_engine_deck_is_playing(deck)
+        : state->playing;
+    if (phase_target_available && !deck_playing_now) {
+        esp_err_t seek_rc = audio_engine_deck_seek(deck, aligned_ms);
+        if (seek_rc == ESP_OK) {
+            state->position_ms = aligned_ms;
+            phase_aligned = true;
+        } else {
+            ESP_LOGW(TAG, "deck %u beat sync phase-align seek failed: %s",
+                     (unsigned)deck + 1,
+                     esp_err_to_name(seek_rc));
+        }
+    } else if (phase_target_available) {
+        ESP_LOGI(TAG, "deck %u beat sync phase-align skipped while playing (target %lu ms)",
+                 (unsigned)deck + 1,
+                 (unsigned long)aligned_ms);
+    }
+
+    uint16_t base = deck_base_bpm(deck);
+    float reference_bpm = deck_effective_bpm(reference_deck, &s_decks[reference_deck]);
+    float synced_bpm = deck_synced_bpm_after_pitch(deck, state->pitch_centipercent);
+    bool sync_clamped = beat_sync_requires_clamp(deck, reference_deck, state->pitch_centipercent);
+    (void)phase_aligned;
+    ESP_LOGI(TAG, "deck %u beat sync target %.2f BPM from deck %u, base %u BPM, actual %.2f BPM, pitch %c%d.%02d%%%s, phase %s%lu ms",
+             (unsigned)deck + 1,
+             (double)reference_bpm,
+             (unsigned)reference_deck + 1,
+             (unsigned)base,
+             (double)synced_bpm,
+             state->pitch_centipercent >= 0 ? '+' : '-',
+             abs(state->pitch_centipercent) / 100,
+             abs(state->pitch_centipercent) % 100,
+             sync_clamped ? " (clamped)" : "",
+             phase_aligned ? "aligned -> " : "unchanged @ ",
+             (unsigned long)aligned_ms);
+    return changed;
 }
 
 static void on_mixer_control(uint8_t id, int16_t raw)
@@ -1217,7 +1378,7 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     s_queue = xQueueCreate(CTRL_QUEUE_LEN, sizeof(ctrl_event_t));
     if (!s_queue) return ESP_ERR_NO_MEM;
 
-    if (xTaskCreate(deck_task, "deck", 4096, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(deck_task, "deck", DECK_TASK_STACK_BYTES, NULL, 5, NULL) != pdPASS) {
         vQueueDelete(s_queue);
         s_queue = NULL;
         vSemaphoreDelete(s_mutex);

@@ -135,6 +135,23 @@ static uint8_t ui_deck_index(uint8_t deck)
     return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
 }
 
+static void ui_copy_str(char *dst, size_t dst_len, const char *src)
+{
+    if (!dst || dst_len == 0) {
+        return;
+    }
+    dst[0] = '\0';
+    if (!src) {
+        return;
+    }
+    size_t i = 0;
+    while (i + 1u < dst_len && src[i] != '\0') {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
+
 static void ui_deck_track_info_clear(uint8_t deck)
 {
     uint8_t idx = ui_deck_index(deck);
@@ -150,10 +167,12 @@ static void ui_deck_track_info_set(uint8_t deck,
     uint8_t idx = ui_deck_index(deck);
     ui_deck_track_info_t *info = &s_deck_track_info[idx];
     memset(info, 0, sizeof(*info));
-    snprintf(info->title, sizeof(info->title), "%s",
-             title && title[0] ? title : "Unknown Title");
-    snprintf(info->artist, sizeof(info->artist), "%s",
-             artist && artist[0] ? artist : "Unknown Artist");
+    ui_copy_str(info->title,
+                sizeof(info->title),
+                title && title[0] ? title : "Unknown Title");
+    ui_copy_str(info->artist,
+                sizeof(info->artist),
+                artist && artist[0] ? artist : "Unknown Artist");
     info->bpm = bpm;
     info->duration_ms = duration_ms;
     info->valid = true;
@@ -1030,10 +1049,14 @@ void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, cha
 {
     uint8_t idx = ui_deck_index(deck);
     if (out_title && title_max > 0) {
-        snprintf(out_title, title_max, "%s", s_deck_track_info[idx].title[0] ? s_deck_track_info[idx].title : "No Track");
+        ui_copy_str(out_title,
+                    title_max,
+                    s_deck_track_info[idx].title[0] ? s_deck_track_info[idx].title : "No Track");
     }
     if (out_artist && artist_max > 0) {
-        snprintf(out_artist, artist_max, "%s", s_deck_track_info[idx].artist[0] ? s_deck_track_info[idx].artist : "Unknown Artist");
+        ui_copy_str(out_artist,
+                    artist_max,
+                    s_deck_track_info[idx].artist[0] ? s_deck_track_info[idx].artist : "Unknown Artist");
     }
     if (out_bpm) {
         *out_bpm = s_deck_track_info[idx].bpm;
