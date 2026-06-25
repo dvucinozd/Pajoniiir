@@ -219,7 +219,7 @@ static float ui_status_pitch_percent(const deck_state_t *state)
         return 0.0f;
     }
 #ifndef WIN32
-    return audio_engine_raw_pitch_to_percent(state->pitch);
+    return deck_core_pitch_percent(state);
 #else
     return ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
 #endif

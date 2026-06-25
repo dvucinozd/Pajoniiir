@@ -112,9 +112,10 @@ floods during normal translator operation, preserving controller responsiveness
 under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
 pad-action, and VU-meter input/output mapping is implemented and smoke-verified
 where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
-halve/double, and Hot Cue pad store/recall/clear now have P4 behavior. Beat
-sync, tempo range, beat-jump, sampler, pad FX, EQ/filter DSP, and Smart
-CFX/Fader behavior remain P4 feature work, not S3 mapping work. The porting
+halve/double, Beat Jump, normal/shifted Beat Loop pads, Tempo Range, and Hot
+Cue pad store/recall/clear now have P4 behavior. Beat sync, sampler, pad FX,
+EQ/filter DSP, and Smart CFX/Fader behavior remain P4 feature work, not S3
+mapping work. The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 

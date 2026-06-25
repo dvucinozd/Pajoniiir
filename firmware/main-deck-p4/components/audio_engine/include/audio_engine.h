@@ -101,6 +101,7 @@ esp_err_t audio_engine_seek(uint32_t position_ms);
  */
 void audio_engine_set_pitch(int16_t raw_pitch);
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch);
+void audio_engine_set_pitch_percent(float percent);
 
 /*
  * Current audible playback position in the track (milliseconds), based on
@@ -127,6 +128,7 @@ esp_err_t audio_engine_deck_pause(uint8_t deck);
 esp_err_t audio_engine_deck_stop(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
+void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 uint16_t audio_engine_get_deck_peak(uint8_t deck);

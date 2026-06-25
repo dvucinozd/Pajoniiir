@@ -28,6 +28,8 @@ extern uint32_t audio_engine_stub_loop_start_ms[2];
 extern uint32_t audio_engine_stub_loop_end_ms[2];
 extern int audio_engine_stub_loop_set_count[2];
 extern int audio_engine_stub_loop_clear_count[2];
+extern float audio_engine_stub_pitch_percent[2];
+extern int audio_engine_stub_pitch_percent_set_count[2];
 
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
@@ -63,6 +65,13 @@ static inline void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
 {
     (void)deck;
     (void)raw_pitch;
+}
+
+static inline void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent)
+{
+    if (deck >= 2) return;
+    audio_engine_stub_pitch_percent[deck] = percent;
+    audio_engine_stub_pitch_percent_set_count[deck]++;
 }
 
 static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)

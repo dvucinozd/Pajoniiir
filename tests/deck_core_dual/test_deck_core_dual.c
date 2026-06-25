@@ -23,6 +23,8 @@ uint32_t audio_engine_stub_loop_start_ms[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_loop_end_ms[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_loop_set_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_loop_clear_count[DECK_CORE_DECK_COUNT];
+float audio_engine_stub_pitch_percent[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_pitch_percent_set_count[DECK_CORE_DECK_COUNT];
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -130,6 +132,8 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_loop_end_ms[deck] = 0;
         audio_engine_stub_loop_set_count[deck] = 0;
         audio_engine_stub_loop_clear_count[deck] = 0;
+        audio_engine_stub_pitch_percent[deck] = 0.0f;
+        audio_engine_stub_pitch_percent_set_count[deck] = 0;
     }
 }
 
@@ -203,6 +207,103 @@ static void test_decks_track_pitch_independently(void)
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).pitch == 7000);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).pitch == 9600);
+}
+
+static void test_tempo_range_defaults_to_ten_percent(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    deck_state_t deck1 = deck_core_test_get_deck_state(CTRL_DECK_1);
+    deck_state_t deck2 = deck_core_test_get_deck_state(CTRL_DECK_2);
+
+    assert(deck1.tempo_range_percent == 10);
+    assert(deck2.tempo_range_percent == 10);
+    assert(deck1.pitch_centipercent == 0);
+    assert(deck2.pitch_centipercent == 0);
+}
+
+static void test_tempo_range_button_cycles_requested_deck_only(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck1_range = deck_button(CTRL_ID_DECK1_TEMPO_RANGE);
+    ctrl_event_t deck2_range = deck_button(CTRL_ID_DECK2_TEMPO_RANGE);
+
+    deck_core_test_apply_event(&deck1_range);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 16);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).tempo_range_percent == 10);
+
+    deck_core_test_apply_event(&deck1_range);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 6);
+
+    deck_core_test_apply_event(&deck1_range);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 10);
+
+    deck_core_test_apply_event(&deck2_range);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 10);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).tempo_range_percent == 16);
+}
+
+static void test_tempo_range_release_does_not_cycle(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t release = deck_button(CTRL_ID_DECK1_TEMPO_RANGE);
+    release.value = 0;
+    deck_core_test_apply_event(&release);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 10);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_1] == 0);
+}
+
+static void test_pitch_mapping_uses_selected_tempo_range(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t deck1_min = deck_pitch(CTRL_ID_DECK1_TEMPO, 0);
+    ctrl_event_t deck2_max = deck_pitch(CTRL_ID_DECK2_TEMPO, 16383);
+
+    deck_core_test_apply_event(&deck1_min);
+    deck_core_test_apply_event(&deck2_max);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pitch_centipercent == 1000);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pitch_centipercent == -999);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] > 9.99f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] < 10.01f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] < -9.98f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] > -10.01f);
+
+    ctrl_event_t range = deck_button(CTRL_ID_DECK1_TEMPO_RANGE);
+    deck_core_test_apply_event(&range);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 16);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pitch_centipercent == 1600);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] > 15.99f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] < 16.01f);
+}
+
+static void test_tempo_range_change_reapplies_current_pitch(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t pitch = deck_pitch(CTRL_ID_DECK1_TEMPO, 4096);
+    ctrl_event_t range = deck_button(CTRL_ID_DECK1_TEMPO_RANGE);
+
+    deck_core_test_apply_event(&pitch);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pitch_centipercent == 500);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_1] == 1);
+
+    deck_core_test_apply_event(&range);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).tempo_range_percent == 16);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).pitch_centipercent == 800);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_1] == 2);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] > 7.99f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_1] < 8.01f);
 }
 
 static void test_browser_namespace_routes_load_to_requested_deck(void)
@@ -781,6 +882,11 @@ int main(void)
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();
     test_decks_track_pitch_independently();
+    test_tempo_range_defaults_to_ten_percent();
+    test_tempo_range_button_cycles_requested_deck_only();
+    test_tempo_range_release_does_not_cycle();
+    test_pitch_mapping_uses_selected_tempo_range();
+    test_tempo_range_change_reapplies_current_pitch();
     test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();

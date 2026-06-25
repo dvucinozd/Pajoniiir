@@ -1594,7 +1594,7 @@ static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
 
     float pitch_pct;
 #ifndef WIN32
-    pitch_pct = audio_engine_raw_pitch_to_percent(state->pitch);
+    pitch_pct = deck_core_pitch_percent(state);
 #else
     pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
 #endif
@@ -1671,7 +1671,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
     float pitch_pct;
 #ifndef WIN32
-    pitch_pct = audio_engine_raw_pitch_to_percent(state->pitch);
+    pitch_pct = deck_core_pitch_percent(state);
 #else
     pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
 #endif

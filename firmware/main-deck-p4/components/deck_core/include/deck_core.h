@@ -29,6 +29,8 @@ typedef struct {
     uint32_t      position_ms;
     uint32_t      cue_point_ms;
     int16_t       pitch;          // 0–16383, center = 8192, from S3 ADC
+    int16_t       pitch_centipercent; // effective tempo adjust in 0.01% units
+    uint16_t      tempo_range_percent; // selected tempo fader range, e.g. 6/10/16
     perf_mode_t   perf_mode;
     ctrl_pad_mode_t pad_mode;
     bool          sync_enabled;
@@ -36,6 +38,11 @@ typedef struct {
     bool          control_link_connected;
     uint32_t      last_heartbeat_age_ms;
 } deck_state_t;
+
+static inline float deck_core_pitch_percent(const deck_state_t *state)
+{
+    return state ? ((float)state->pitch_centipercent / 100.0f) : 0.0f;
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 

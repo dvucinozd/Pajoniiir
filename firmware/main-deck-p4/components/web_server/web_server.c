@@ -123,8 +123,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
 
-    float p1 = audio_engine_raw_pitch_to_percent(state1.pitch);
-    float p2 = audio_engine_raw_pitch_to_percent(state2.pitch);
+    float p1 = deck_core_pitch_percent(&state1);
+    float p2 = deck_core_pitch_percent(&state2);
 
     uint32_t current_bpm1 = bpm1_val * (1.0f + p1 / 100.0f);
     uint32_t current_bpm2 = bpm2_val * (1.0f + p2 / 100.0f);

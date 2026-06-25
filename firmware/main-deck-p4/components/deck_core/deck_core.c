@@ -13,6 +13,7 @@
 #include "esp_timer.h"
 #endif
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "deck";
@@ -20,6 +21,7 @@ static const char *TAG = "deck";
 #define CTRL_QUEUE_LEN  32
 #define PITCH_CENTER    8192
 #define SEARCH_STEP_MS  5000
+#define DEFAULT_TEMPO_RANGE_PERCENT 10u
 
 extern bool ui_is_library_active(void) __attribute__((weak));
 extern esp_err_t ui_show_library(void) __attribute__((weak));
@@ -66,11 +68,14 @@ static deck_shifted_loop_roll_t s_shifted_loop_roll[DECK_CORE_DECK_COUNT];
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
+static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 
 static void init_deck_state(deck_state_t *state)
 {
     memset(state, 0, sizeof(*state));
     state->pitch = PITCH_CENTER;
+    state->pitch_centipercent = 0;
+    state->tempo_range_percent = DEFAULT_TEMPO_RANGE_PERCENT;
     state->pad_mode = CTRL_PAD_MODE_HOT_CUE;
 }
 
@@ -99,6 +104,30 @@ static uint8_t deck_index_for_event(const ctrl_event_t *ev)
 static bool deck_uses_audio_engine(uint8_t deck)
 {
     return deck < DECK_CORE_DECK_COUNT;
+}
+
+static int16_t tempo_centipercent_from_raw(int16_t raw, uint16_t range_percent)
+{
+    int32_t clamped = raw;
+    if (clamped < 0) {
+        clamped = 0;
+    } else if (clamped > 16383) {
+        clamped = 16383;
+    }
+    int32_t centi_range = (int32_t)range_percent * 100;
+    return (int16_t)(((int32_t)PITCH_CENTER - clamped) * centi_range / PITCH_CENTER);
+}
+
+static uint16_t next_tempo_range_percent(uint16_t current)
+{
+    switch (current) {
+    case 6:
+        return 10;
+    case 10:
+        return 16;
+    default:
+        return 6;
+    }
 }
 
 static bool event_is_mixer_control(const ctrl_event_t *ev)
@@ -843,9 +872,11 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_TEMPO_RANGE:
-        if (should_log_deferred_button(ev->id, ev->value)) {
-            ESP_LOGI(TAG, "deck %u tempo range pressed (range state deferred)",
-                     (unsigned)deck + 1);
+        if (pressed) {
+            state->tempo_range_percent = next_tempo_range_percent(state->tempo_range_percent);
+            apply_deck_pitch(deck, state);
+            ESP_LOGI(TAG, "deck %u tempo range -> ±%u%%",
+                     (unsigned)deck + 1, (unsigned)state->tempo_range_percent);
         }
         return true;
 
@@ -1025,11 +1056,27 @@ static void on_pitch(uint8_t deck, int16_t raw)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     state->pitch = raw;
-    if (deck_uses_audio_engine(deck)) {
-        audio_engine_deck_set_pitch(deck, raw);
+    apply_deck_pitch(deck, state);
+    int pitch_abs = abs(state->pitch_centipercent);
+    ESP_LOGD(TAG, "deck %u pitch %d range ±%u%% effective %c%d.%02d%%",
+             (unsigned)deck + 1,
+             raw,
+             (unsigned)state->tempo_range_percent,
+             state->pitch_centipercent >= 0 ? '+' : '-',
+             pitch_abs / 100,
+             pitch_abs % 100);
+}
+
+static void apply_deck_pitch(uint8_t deck, deck_state_t *state)
+{
+    if (!state) {
+        return;
     }
-    ESP_LOGD(TAG, "deck %u pitch %d (center %d, offset %+d)",
-             (unsigned)deck + 1, raw, PITCH_CENTER, raw - PITCH_CENTER);
+    state->pitch_centipercent = tempo_centipercent_from_raw(state->pitch,
+                                                           state->tempo_range_percent);
+    if (deck_uses_audio_engine(deck)) {
+        audio_engine_deck_set_pitch_percent(deck, deck_core_pitch_percent(state));
+    }
 }
 
 static void on_mixer_control(uint8_t id, int16_t raw)

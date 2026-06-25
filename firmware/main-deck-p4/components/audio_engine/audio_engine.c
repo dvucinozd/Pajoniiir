@@ -1726,18 +1726,28 @@ void audio_engine_set_pitch(int16_t raw_pitch)
     audio_engine_deck_set_pitch(AUDIO_ENGINE_COMPAT_DECK, raw_pitch);
 }
 
-static void audio_engine_set_pitch_for_deck(uint8_t deck, int16_t raw_pitch)
+static void audio_engine_set_pitch_percent_for_deck(uint8_t deck, float percent)
 {
-    float factor = 1.0f + ((8192.0f - (float)raw_pitch) / 8192.0f) * 0.10f;
+    float factor = 1.0f + (percent / 100.0f);
     /* Clamp to ±20% to stay sane even if fader value is out of range */
     if (factor < 0.80f) factor = 0.80f;
     if (factor > 1.20f) factor = 1.20f;
     s_engines[deck].pitch_factor = factor;
 }
 
+static void audio_engine_set_pitch_for_deck(uint8_t deck, int16_t raw_pitch)
+{
+    audio_engine_set_pitch_percent_for_deck(deck, audio_engine_raw_pitch_to_percent(raw_pitch));
+}
+
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch)
 {
     return ((8192.0f - (float)raw_pitch) / 8192.0f) * 10.0f;
+}
+
+void audio_engine_set_pitch_percent(float percent)
+{
+    audio_engine_deck_set_pitch_percent(AUDIO_ENGINE_COMPAT_DECK, percent);
 }
 
 /* ── audio_engine_position_ms ─────────────────────────────────────────────── */
@@ -1974,6 +1984,15 @@ void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch)
     if (!deck_transport_supported(deck)) return;
 #endif
     audio_engine_set_pitch_for_deck(deck, raw_pitch);
+}
+
+void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent)
+{
+    if (!deck_is_valid(deck)) return;
+#if AE_FW
+    if (!deck_transport_supported(deck)) return;
+#endif
+    audio_engine_set_pitch_percent_for_deck(deck, percent);
 }
 
 uint32_t audio_engine_deck_position_ms(uint8_t deck)

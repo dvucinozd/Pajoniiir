@@ -465,8 +465,8 @@ smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 `PAD FX1`, `BEAT JUMP`, `SAMPLER`), shifted secondary pad modes, sampler,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
-loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads, and
-Hot Cue store/recall/clear is implemented. Beat sync, tempo range, sampler,
+loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
+Tempo Range, and Hot Cue store/recall/clear is implemented. Beat sync, sampler,
 pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remains deferred unless
 separately marked implemented.
 
@@ -518,9 +518,10 @@ Implementation order:
      copying a Mixxx script callback name as behavior.
    - first firmware slice maps Shift, Cue+Shift track-start, Beat Sync, and
      Beat Sync+Shift tempo-range IDs end to end. Cue+Shift has P4 behavior
-     and seeks the addressed deck to 0 ms while pausing it. Sync and tempo
-     range are intentionally semantic input only until the P4 beat/sync and
-     tempo-range models are defined.
+     and seeks the addressed deck to 0 ms while pausing it. Sync remains a
+     toggled placeholder LED state, while Tempo Range now cycles deck-local
+     `±6%`, `±10%`, and `±16%` fader ranges and reapplies the current fader
+     value to the audio engine.
    - second firmware slice expands the 7-byte control-link namespace to 32
      deck-local controls per deck, maps loop, beat-jump, pad mode/action, trim,
      EQ, filter, and headphone-mix semantic inputs, and adds P4-driven FLX4 VU
@@ -535,6 +536,9 @@ Implementation order:
      with both decks playing.
    - final Phase 7 input smoke verified loop in/out, reloop/exit, loop
      halve/double, and beat-jump back/forward semantic routing on both decks;
+   - Tempo Range behavior was hardware-smoked on 2026-06-25: Shift+Beat Sync
+     cycles deck-local `±6%`, `±10%`, and `±16%` ranges and the tempo fader
+     affects playback with the selected range;
    - P4 loop behavior is implemented for Loop In/Out, Reloop/Exit,
      halve/double, normal Beat Loop pads, and shifted momentary Beat Loop pads
      using the per-deck `audio_engine` loop API plus beatgrid/BPM duration

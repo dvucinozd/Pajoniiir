@@ -135,12 +135,13 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] Add deck modifiers and transport extensions with P4-owned semantics.
   First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and
   Beat Sync+Shift tempo-range semantic inputs. Cue+Shift has P4 seek-to-start
-  behavior; Sync/tempo-range behavior remains deferred. Final Phase 7 smoke
+  behavior; Sync remains a placeholder state and Tempo Range cycles deck-local
+  `±6%`, `±10%`, and `±16%` fader ranges. Final Phase 7 smoke
   verified loop in/out, reloop/exit, loop halve/double, and beat-jump
   back/forward inputs on both decks. Loop In/Out, Reloop/Exit, loop
   halve/double, normal/shifted Beat Loop pads, and Beat Jump buttons/pads now
-  have P4 behavior; Beat Loop and Beat Jump hardware behavior smoke remains
-  pending.
+  have P4 behavior; Tempo Range hardware behavior smoke passed on 2026-06-25,
+  while Beat Loop and Beat Jump hardware behavior smoke remains pending.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output

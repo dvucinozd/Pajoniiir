@@ -110,8 +110,14 @@ static void test_pitch(void)
     audio_engine_set_pitch(16383); /* -10% slower */
     EXPECT(true, "set_pitch(16383) no crash");
 
+    audio_engine_set_pitch_percent(16.0f);
+    EXPECT(true, "set_pitch_percent(+16%) no crash");
+
+    audio_engine_deck_set_pitch_percent(1, -6.0f);
+    EXPECT(true, "deck 1 set_pitch_percent(-6%) no crash");
+
     /* Reset to normal */
-    audio_engine_set_pitch(8192);
+    audio_engine_set_pitch_percent(0.0f);
 }
 
 static int nearf(float actual, float expected)
