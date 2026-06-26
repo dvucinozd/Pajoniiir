@@ -142,6 +142,10 @@ TODO:
 - Monitor the limiter telemetry during two-deck hardware smoke tests. If
   limiter activity is constant, add a user-facing master trim later instead of
   silently lowering deck levels.
+- Software master trim is now implemented in the audio engine as a non-boosting
+  `0.0–1.0` global output scalar with default unity. It is currently an API and
+  snapshot field only; add a UI/settings control later if hardware tests show
+  constant limiter activity or audible clipping with normal mixer levels.
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
   Treat this as performance cleanup, not as a prerequisite for Phase 7
   controller input expansion.
@@ -239,6 +243,10 @@ Validation note, 2026-06-08:
   audio loader/decode/output tasks are pinned to CPU0 while LVGL remains on
   CPU1. A 60-second COM15 measurement with both decks playing reported
   `late=0 late_max=0 us`, stable ring fill, and stable decode timing.
+  Direct TRS headphones on the DAC board's 3.5 mm connector produced no sound
+  and are not treated as a failed DAC result because the module exposes
+  line-level outputs, not a headphone amplifier. RCA/3.5 mm into active
+  AUX/LINE IN remains pending.
 
 Validation note, 2026-06-14:
 

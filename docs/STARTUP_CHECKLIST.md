@@ -106,6 +106,13 @@
   dual-deck run reported `late=0 late_max=0 us` with stable ring fill. The
   local `firmware/main-deck-p4/sdkconfig` used for this hardware test is
   intentionally ignored and should not be committed.
+- PCM5102A final output acceptance is still pending: test RCA or 3.5 mm TRS
+  into an active AUX/LINE IN input. Direct passive TRS headphones on the DAC
+  board are not a valid pass/fail signal because the board is a line-out DAC,
+  not a headphone amplifier.
+- P4 audio engine now exposes a non-boosting software master trim API and
+  mixer snapshot field. Default remains unity, so current playback level is
+  unchanged until a future UI/settings path deliberately lowers it.
 - P4 firmware defaults now select performance optimization and disable LVGL
   examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
   predates 2026-06-25, regenerate or align it before flashing so it does not

@@ -76,6 +76,10 @@ Current P4 audio ownership rule:
   reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
   starting playback; the ES8311 monitor path and PCM5102A main path must stay
   sample-rate aligned;
+- the audio engine exposes a non-boosting software master trim scalar
+  (`0.0–1.0`, default `1.0`) before the output mixer/limiter path, so later UI
+  work can reduce constant limiter activity without changing deck fader or
+  crossfader semantics;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3

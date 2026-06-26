@@ -91,6 +91,21 @@ Runtime notes after hardware bring-up:
 - 2026-06-27 COM15 hardware measurement with both decks playing reported
   stable decode timing, full PCM rings, and `late=0 late_max=0 us` after the
   PCM5102A sample-rate reconfiguration fix.
+- The PCM5102A board's RCA and 3.5 mm TRS connectors should be treated as
+  line-level outputs. Direct passive headphones are not a valid acceptance test:
+  they can be silent or distorted because this module is not a headphone amp.
+  Final audio smoke should use RCA or 3.5 mm TRS into an active AUX/LINE IN,
+  mixer, amplifier, or audio interface input.
+
+Pending PCM5102A line-out acceptance test:
+
+1. Connect PCM5102A RCA or 3.5 mm TRS to an active AUX/LINE IN input.
+2. Verify Deck 1 alone, Deck 2 alone, and both decks together.
+3. Confirm left/right channel order, normal speed, no popping, and no obvious
+   clipping at conservative gain.
+4. If line out is silent, capture boot/playback logs and confirm both
+   `PCM5102A main out ready` and `PCM5102A main out open @ ... Hz`; then verify
+   BCK/LRCK/DATA wiring.
 
 Rejected DAC pin proposal:
 

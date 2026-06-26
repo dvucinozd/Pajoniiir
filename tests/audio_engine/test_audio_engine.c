@@ -139,6 +139,7 @@ static void test_mixer_state_api(void)
     audio_engine_get_output_gains(&deck1, &deck2);
     EXPECT(nearf(deck1, 1.0f), "default deck 0 gain is unity");
     EXPECT(nearf(deck2, 1.0f), "default deck 1 gain is unity");
+    EXPECT(nearf(audio_engine_get_master_trim(), 1.0f), "default master trim is unity");
 
     EXPECT(audio_engine_set_channel_volume(0, 8192) == ESP_OK,
            "deck 0 channel volume accepts center raw value");
@@ -162,11 +163,22 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(deck1, 0.0f), "crossfader right mutes deck 0");
     EXPECT(nearf(deck2, 1.0f), "crossfader right keeps deck 1");
 
+    EXPECT(audio_engine_set_master_trim(0.5f) == ESP_OK, "master trim accepts attenuation");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 0.0f), "master trim keeps muted deck muted");
+    EXPECT(nearf(deck2, 0.5f), "master trim attenuates audible deck gain");
+    EXPECT(audio_engine_set_master_trim(2.0f) == ESP_OK, "master trim clamps boost to unity");
+    EXPECT(nearf(audio_engine_get_master_trim(), 1.0f), "master trim never boosts above unity");
+    EXPECT(audio_engine_set_master_trim(-1.0f) == ESP_OK, "master trim clamps negative gain to mute");
+    EXPECT(nearf(audio_engine_get_master_trim(), 0.0f), "master trim clamps negative gain to zero");
+    EXPECT(audio_engine_set_master_trim(1.0f) == ESP_OK, "master trim can restore unity");
+
     audio_engine_mixer_snapshot_t snapshot;
     audio_engine_get_mixer_snapshot(&snapshot);
     EXPECT(snapshot.channel_volume[0] == 8192, "snapshot captures deck 0 raw channel fader");
     EXPECT(snapshot.channel_volume[1] == 16383, "snapshot captures deck 1 raw channel fader");
     EXPECT(snapshot.crossfader == 16383, "snapshot captures raw crossfader");
+    EXPECT(nearf(snapshot.master_trim, 1.0f), "snapshot captures master trim");
     EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
 }

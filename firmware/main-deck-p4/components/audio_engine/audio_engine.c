@@ -172,6 +172,7 @@ static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
     AUDIO_MIXER_CONTROL_MAX,
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
+static float            s_master_trim = 1.0f;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
@@ -1360,6 +1361,7 @@ esp_err_t audio_engine_init(void)
         s_deck_peak[i] = 0;
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
+    s_master_trim = 1.0f;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 
@@ -2066,6 +2068,22 @@ esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
     return ESP_OK;
 }
 
+esp_err_t audio_engine_set_master_trim(float gain)
+{
+    if (gain < 0.0f) {
+        gain = 0.0f;
+    } else if (gain > 1.0f) {
+        gain = 1.0f;
+    }
+    s_master_trim = gain;
+    return ESP_OK;
+}
+
+float audio_engine_get_master_trim(void)
+{
+    return s_master_trim;
+}
+
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
 {
     float xf0 = 1.0f;
@@ -2073,10 +2091,10 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     audio_mixer_crossfader_gains(s_crossfader, &xf0, &xf1);
 
     if (deck0_gain) {
-        *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) * xf0;
+        *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) * xf0 * s_master_trim;
     }
     if (deck1_gain) {
-        *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) * xf1;
+        *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) * xf1 * s_master_trim;
     }
 }
 
@@ -2102,6 +2120,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->channel_volume[0] = s_channel_volume[0];
     out_snapshot->channel_volume[1] = s_channel_volume[1];
     out_snapshot->crossfader = s_crossfader;
+    out_snapshot->master_trim = s_master_trim;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
