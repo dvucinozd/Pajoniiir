@@ -219,7 +219,7 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
                                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
                         TAG, "set pin");
 
-    if (xTaskCreate(uart_rx_task, "ctrl_rx", 2048, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(uart_rx_task, "ctrl_rx", 4096, NULL, 5, NULL) != pdPASS) {
         uart_driver_delete(UART_PORT);
         return ESP_ERR_NO_MEM;
     }

@@ -1,5 +1,8 @@
 idf_component_register(
     SRCS "ui.c"
+         "splash_screen.c"
+         "Musieer_80.c"
+         "Musieer_48.c"
          "ui_library.c"
          "ui_overview.c"
          "ui_lvgl_backend.c"

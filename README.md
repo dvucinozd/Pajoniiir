@@ -100,7 +100,8 @@ dual-deck audio scheduling/waveform stability, and a refactored two-deck LVGL
 UI with Pioneered-style Overview chrome, centered beat/phase indicators,
 fixed-segment timers, bounded title/timer invalidation, and calibrated audio
 output diagnostics that no longer report normal codec-write pacing as late
-blocks.
+blocks. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
+Musieer font) before loading the main dual-deck UI.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
 mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture,

@@ -471,6 +471,17 @@ Validation note, 2026-06-10:
     the `deck` task stack from 4096 to 8192 bytes. A future architectural cleanup
     should move controller-triggered UI navigation onto the LVGL/UI task context
     instead of doing table work on the deck-control task.
+- **Splash screen port (2026-06-26)**:
+  - Ported the P4 LVGL splash screen from `origin/codex/splash-screen` onto the
+    current Phase 7 branch without merging the older branch state. The P4 UI now
+    builds the main screen, shows a temporary black splash screen with
+    `PajoNiiiR` rendered in `Musieer_80`, then returns to the already-built main
+    screen after three seconds.
+  - Added a static regression guard in `tests/splash_port/test_splash_port.ps1`
+    so future branch merges do not accidentally drop the splash source, CMake
+    entries, `ui.c` callback wiring, or the `ctrl_rx` stack increase.
+  - Carried forward the `ctrl_rx` stack increase from 2048 to 4096 bytes from
+    the splash branch. This is separate from the later `deck` task stack fix.
 
 ## Phase 7: Extended DDJ-FLX4 Control Surface
 

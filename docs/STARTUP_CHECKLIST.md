@@ -85,6 +85,10 @@
   examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
   predates 2026-06-25, regenerate or align it before flashing so it does not
   keep `CONFIG_COMPILER_OPTIMIZATION_DEBUG`.
+- P4 now includes the ported LVGL splash screen from the former
+  `codex/splash-screen` branch. Boot shows `PajoNiiiR` in `Musieer_80` for
+  roughly three seconds, then returns to the already-built main dual-deck UI.
+  The `ctrl_rx` UART task stack is 4096 bytes in the same stabilization slice.
 - P4 captive portal web server and mobile controller interface are stabilized,
   optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
   path; the old Settings `link_mode` selector has been removed from active

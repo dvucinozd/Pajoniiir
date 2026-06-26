@@ -17,6 +17,7 @@
 #include "ui_performance_tabs.h"
 #include "ui_settings.h"
 #include "ui_status.h"
+#include "splash_screen.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +59,7 @@
 static const char *TAG = "ui";
 
 // ─── UI State and Variables ──────────────────────────────────────────────────
+static lv_obj_t *s_main_screen = NULL;
 static lv_obj_t *s_root_container = NULL;
 static lv_obj_t *s_header_container = NULL;
 static lv_obj_t *s_footer_container = NULL;
@@ -710,6 +712,14 @@ static void ui_perf_log_us(const char *label, const ui_overview_perf_report_t *r
 
 #endif
 
+static void ui_splash_screen_finished_cb(void)
+{
+    ESP_LOGI(TAG, "Splash screen finished, loading main UI...");
+    if (s_main_screen) {
+        lv_screen_load(s_main_screen);
+    }
+}
+
 esp_err_t ui_init(void) {
     ESP_LOGI(TAG, "Initializing LVGL DJ UI layout (800x480 landscape)...");
     ui_deck_anlz_store_init(&s_deck_anlz_store);
@@ -817,8 +827,11 @@ esp_err_t ui_init(void) {
     };
     ui_library_init(&library_config);
 
-    // Create central base root container
-    s_root_container = lv_obj_create(lv_screen_active());
+    // Create central base root container on the main screen.  The splash
+    // screen temporarily becomes active during boot, so keep an explicit
+    // handle for returning to the already-built main UI.
+    s_main_screen = lv_screen_active();
+    s_root_container = lv_obj_create(s_main_screen);
     lv_obj_remove_style_all(s_root_container);
     lv_obj_add_style(s_root_container, &s_style_root, LV_PART_MAIN);
     lv_obj_set_size(s_root_container, 800, 480);
@@ -856,6 +869,8 @@ esp_err_t ui_init(void) {
 
     // Register self-running LVGL timer to periodically refresh the UI states
     lv_timer_create(ui_timer_cb, UI_UPDATE_PERIOD_MS, NULL);
+
+    splash_screen_show(ui_splash_screen_finished_cb);
 
 #ifndef WIN32
     // Start the LVGL handler task last, once all widgets exist.
