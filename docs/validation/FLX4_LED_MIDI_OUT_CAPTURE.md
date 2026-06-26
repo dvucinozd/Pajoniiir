@@ -143,7 +143,7 @@ Status: firmware implemented, software-tested, build-verified. Pad-mode,
 Beat Sync, Loop In/Out, and Hot Cue behavior smoke have partial hardware pass
 coverage as recorded below. S3 reset recovery after an extended Phase 7 LED
 snapshot is fixed and smoke-verified as of 2026-06-26; full manual FLX4 USB
-replug LED-state acceptance remains pending.
+replug LED-state acceptance passed on 2026-06-26.
 
 Firmware branch: `codex/phase7-extended-controls-vu`
 
@@ -177,8 +177,14 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 15 | Press Deck 1 `RELOOP/EXIT` again | Last loop is restored and Loop In/Out LEDs turn on | pass 2026-06-21 | P4 log captured restored loop with the previous in/out boundaries. |
 | 16 | Press Deck 1 loop halve/double buttons while loop is active | Active loop length halves/doubles without changing loop start | pass 2026-06-21 | One output late diagnostic appeared on a very short Deck 1 loop (`late_max=15668 us`); audio remained running and this is tracked as a watch item. |
 | 17 | Repeat steps 13-16 on Deck 2 | Deck 2 loop behavior and LEDs follow independently from Deck 1 | pass 2026-06-21 | P4 log captured independent Deck 2 loop set/exit/restore/halve events. |
-| 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pending | Playback/deck state must not change. |
-| 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | partial pass 2026-06-26 | Regression fixed: S3 no longer stack-overflows in `ctrl_rx` during the extended LED snapshot, S3 re-enumerated FLX4, and operator confirmed the controller became responsive again. Dedicated visual LED-state confirmation remains to be repeated. |
+| 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pass 2026-06-26 | S3 logged FLX4 disconnect/reconnect, P4 forced an LED snapshot, no S3 stack overflow/reboot loop occurred, and operator confirmed LEDs returned. Playback/deck state did not change. |
+| 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pass 2026-06-26 | Regression fixed: S3 no longer stack-overflows in `ctrl_rx` during the extended LED snapshot, S3 re-enumerated FLX4, and operator confirmed the controller became responsive again. |
+
+Loop In/Out LED behavior note from 2026-06-26 acceptance: pressing `IN` alone
+sets the loop-in marker but does not light the physical Loop In LED. After
+pressing `OUT`, the loop becomes active and both Loop In and Loop Out LEDs turn
+on. This matches the current P4-owned LED model, where both LEDs are driven
+from `audio_engine` active-loop state rather than from a pending loop-in marker.
 
 ### 2026-06-26 Extended LED Snapshot Regression
 
@@ -214,8 +220,8 @@ Firmware: P4 app version `b0858e2` on branch
 `codex/phase7-extended-controls-vu`.
 
 Status: Deck 1 set/recall/shift-clear behavior passed on hardware
-2026-06-21. Deck 2 behavior uses the same semantic path and host tests cover
-deck-local routing, but Deck 2 hardware behavior smoke remains pending.
+2026-06-21. Deck 2 shifted Hot Cue clear behavior passed on hardware
+2026-06-26.
 
 Observed P4 log evidence:
 

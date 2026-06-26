@@ -93,7 +93,8 @@
   snapshot. The MIDI OUT queue now covers the full non-VU snapshot burst,
   full-queue warnings are rate-limited, and `ctrl_rx` has a 4096-byte stack.
   Post-fix S3 reset recovery re-enumerated FLX4 and the operator confirmed the
-  controller was responsive.
+  controller was responsive. Full manual FLX4 USB replug also restored the
+  P4-owned LED state without an S3 reboot loop.
 - P4 audio output diagnostics were calibrated on 2026-06-21: normal blocking
   `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
   warnings. A dual-deck hardware run reported zero late warnings while keeping
@@ -184,7 +185,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
   implemented in P4 for per-track store/recall and shifted clear; Deck 1
-  hardware behavior smoke passed, while Deck 2 behavior smoke remains pending.
+  hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
+  passed on 2026-06-26.
   Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4
   and remains pending for hardware behavior smoke. Actual Sampler, Key Shift,
   and Pad FX behavior remains a separate P4 feature task.
@@ -195,9 +197,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   pad LED output is implemented from P4 loop state and selected Beat Loop pad
   mode; shifted mirror pad LED output remains deferred. Pad-mode, Beat Sync,
   and Loop In/Out LED hardware smoke has passed where recorded in
-  `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; Beat Loop pad LED hardware
-  smoke and full manual USB replug LED-state acceptance remain pending. S3
-  reset recovery after the extended reconnect snapshot no longer crashes.
+  `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
+  LED-state acceptance passed on 2026-06-26. Beat Loop pad LED hardware smoke
+  remains pending, and S3 reset recovery after the extended reconnect snapshot
+  no longer crashes.
 - [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the
