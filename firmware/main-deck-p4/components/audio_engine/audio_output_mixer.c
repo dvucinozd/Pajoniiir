@@ -113,5 +113,6 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
     return (audio_output_mix_result_t) {
         .master = master,
         .headphone = headphone,
+        .deck_frame = { frame0, frame1 },
     };
 }

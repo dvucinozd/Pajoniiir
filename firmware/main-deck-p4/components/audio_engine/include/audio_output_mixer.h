@@ -23,6 +23,7 @@ typedef enum {
 typedef struct {
     audio_mixer_frame_t master;
     audio_mixer_frame_t headphone;
+    audio_mixer_frame_t deck_frame[2];
 } audio_output_mix_result_t;
 
 audio_mixer_frame_t audio_output_mixer_next(const audio_output_mixer_deck_t *deck0,
