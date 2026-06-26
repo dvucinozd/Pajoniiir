@@ -80,7 +80,8 @@ Current P4 audio ownership rule:
   (`0.0–1.0`, default `1.0`) before the output mixer/limiter path. The P4
   Settings screen exposes it as a conservative preset cycle (`0 dB`, `-3 dB`,
   `-6 dB`) so limiter activity can be reduced without changing deck fader or
-  crossfader semantics;
+  crossfader semantics. The selected preset is persisted through
+  `app_settings`/NVS and reapplied during P4 boot after `audio_engine_init()`;
 - limiter telemetry is accumulated in the audio mixer snapshot as cumulative
   limited sample counts, positive/negative overload counts, and peak pre-limit
   input. The P4 status indicator reports `CLIP n` only when the limited-sample

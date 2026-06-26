@@ -117,7 +117,8 @@
 - P4 audio engine now exposes a non-boosting software master trim API and
   mixer snapshot field. The Settings tab has a preset button cycling `0 dB`,
   `-3 dB`, and `-6 dB`. Default remains unity, so current playback level is
-  unchanged until the operator deliberately lowers it.
+  unchanged until the operator deliberately lowers it. The selected preset is
+  persisted through NVS and reapplied during P4 boot after `audio_engine_init()`.
 - P4 firmware defaults now select performance optimization and disable LVGL
   examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
   predates 2026-06-25, regenerate or align it before flashing so it does not

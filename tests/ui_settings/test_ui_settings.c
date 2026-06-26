@@ -21,6 +21,11 @@ static void test_master_trim_presets_are_non_boosting_and_cycle(void)
     assert(ui_settings_master_trim_next_preset(1) == 2);
     assert(ui_settings_master_trim_next_preset(2) == 0);
     assert(ui_settings_master_trim_next_preset(99) == 0);
+    assert(ui_settings_master_trim_sanitize_preset(0) == 0);
+    assert(ui_settings_master_trim_sanitize_preset(1) == 1);
+    assert(ui_settings_master_trim_sanitize_preset(2) == 2);
+    assert(ui_settings_master_trim_sanitize_preset(3) == 0);
+    assert(ui_settings_master_trim_sanitize_preset(255) == 0);
 
     assert(ui_settings_master_trim_gain(0) > 0.999f);
     assert(ui_settings_master_trim_gain(0) <= 1.0f);

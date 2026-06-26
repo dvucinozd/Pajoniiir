@@ -4,6 +4,7 @@
 #include "library.h"
 #include "audio_engine.h"
 #include "ui.h"
+#include "ui_settings.h"
 #include "usb_storage.h"
 #include "app_settings.h"
 #include "media_io_gate.h"
@@ -83,7 +84,9 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(audio_engine_init());
-    audio_engine_set_cue_mode(app_settings_get().cue_mode);
+    app_settings_t settings = app_settings_get();
+    audio_engine_set_cue_mode(settings.cue_mode);
+    audio_engine_set_master_trim(ui_settings_master_trim_gain(settings.master_trim_preset));
 
     // ── UI ───────────────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(ui_init());

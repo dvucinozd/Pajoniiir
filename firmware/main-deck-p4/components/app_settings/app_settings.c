@@ -12,6 +12,7 @@ static app_settings_t s_cfg = {
     .backlight_pct = 80,
     .time_remain   = 0,
     .cue_mode      = 0,   /* stereo master */
+    .master_trim_preset = 0, /* 0 dB */
 };
 
 
@@ -47,11 +48,13 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(h, "backlight", &v) == ESP_OK) s_cfg.backlight_pct = v;
         if (nvs_get_u8(h, "time_rem",  &v) == ESP_OK) s_cfg.time_remain   = v;
         if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
+        if (nvs_get_u8(h, "master_trim", &v) == ESP_OK && v <= 2) s_cfg.master_trim_preset = v;
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u",
+    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u",
              s_cfg.audio_out ? "off" : "on",
-             s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.cue_mode);
+             s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.cue_mode,
+             s_cfg.master_trim_preset);
     return ESP_OK;
 }
 
@@ -87,4 +90,12 @@ void app_settings_set_cue_mode(uint8_t mode)
     if (s_cfg.cue_mode == mode) return;
     s_cfg.cue_mode = mode;
     save_u8("cue_mode", mode);
+}
+
+void app_settings_set_master_trim_preset(uint8_t preset)
+{
+    if (preset > 2) preset = 0;
+    if (s_cfg.master_trim_preset == preset) return;
+    s_cfg.master_trim_preset = preset;
+    save_u8("master_trim", preset);
 }

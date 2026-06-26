@@ -38,6 +38,11 @@ uint8_t ui_settings_master_trim_preset_count(void)
     return (uint8_t)(sizeof(s_master_trim_presets) / sizeof(s_master_trim_presets[0]));
 }
 
+uint8_t ui_settings_master_trim_sanitize_preset(uint8_t preset)
+{
+    return preset < ui_settings_master_trim_preset_count() ? preset : 0u;
+}
+
 uint8_t ui_settings_master_trim_next_preset(uint8_t current)
 {
     uint8_t count = ui_settings_master_trim_preset_count();
@@ -49,17 +54,13 @@ uint8_t ui_settings_master_trim_next_preset(uint8_t current)
 
 float ui_settings_master_trim_gain(uint8_t preset)
 {
-    if (preset >= ui_settings_master_trim_preset_count()) {
-        preset = 0u;
-    }
+    preset = ui_settings_master_trim_sanitize_preset(preset);
     return s_master_trim_presets[preset].gain;
 }
 
 const char *ui_settings_master_trim_label(uint8_t preset)
 {
-    if (preset >= ui_settings_master_trim_preset_count()) {
-        preset = 0u;
-    }
+    preset = ui_settings_master_trim_sanitize_preset(preset);
     return s_master_trim_presets[preset].label;
 }
 
@@ -267,6 +268,7 @@ static void master_trim_event_cb(lv_event_t *event)
     s_master_trim_preset = ui_settings_master_trim_next_preset(s_master_trim_preset);
     float gain = ui_settings_master_trim_gain(s_master_trim_preset);
     audio_engine_set_master_trim(gain);
+    app_settings_set_master_trim_preset(s_master_trim_preset);
     if (s_label_master_trim) {
         lv_label_set_text(s_label_master_trim, ui_settings_master_trim_label(s_master_trim_preset));
     }
@@ -312,9 +314,12 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     app_settings_t cfg = app_settings_get();
     int bl_init = cfg.backlight_pct;
     bool monitor_speaker_init = (cfg.audio_out == 0);
+    s_master_trim_preset = ui_settings_master_trim_sanitize_preset(cfg.master_trim_preset);
+    audio_engine_set_master_trim(ui_settings_master_trim_gain(s_master_trim_preset));
 #else
     int bl_init = 80;
     bool monitor_speaker_init = true;
+    s_master_trim_preset = 0;
 #endif
 
     const int left_x = 30;
