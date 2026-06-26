@@ -82,8 +82,10 @@
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
 - P4 master output now uses a transparent post-sum limiter with lightweight
-  limiter telemetry in the output diagnostic log. Single-deck level and normal
-  two-deck sums remain unchanged; only true int16 overloads are shaped.
+  limiter telemetry in both the output diagnostic log and the audio mixer
+  snapshot. Single-deck level and normal two-deck sums remain unchanged; only
+  true int16 overloads are shaped. The P4 status indicator briefly shows
+  `CLIP n` when the limiter counter increases.
 - S3 USB MIDI host responsiveness was hardware-verified on 2026-06-21 after
   FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
   raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both

@@ -119,9 +119,11 @@ Exit criteria:
 Status: master mix, channel fader/crossfader gains, cue/PFL selection, and
 dual-deck P4 audio scheduling are implemented for the current two-deck P4 path.
 Transparent post-sum limiting and limiter telemetry are implemented for the
-current master output path. The P4 audio output late-warning diagnostic is
-calibrated to report true outliers instead of normal blocking
-`esp_codec_dev_write()` pacing.
+current master output path. Limiter counters are accumulated in the audio
+mixer snapshot and surfaced in the P4 status indicator as `CLIP n` when the
+counter increases. The P4 audio output late-warning diagnostic is calibrated
+to report true outliers instead of normal blocking `esp_codec_dev_write()`
+pacing.
 
 Goal: play two tracks and mix them into a master output.
 
@@ -140,7 +142,7 @@ Tasks:
 TODO:
 
 - Monitor the limiter telemetry during two-deck hardware smoke tests. If
-  limiter activity is constant, add a user-facing master trim later instead of
+  limiter activity is constant, use the user-facing master trim rather than
   silently lowering deck levels.
 - Software master trim is now implemented in the audio engine as a non-boosting
   `0.0–1.0` global output scalar with default unity. The Settings screen exposes
@@ -148,8 +150,10 @@ TODO:
   preset mapping. Use it only if hardware tests show constant limiter activity
   or audible clipping with normal mixer levels.
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
-  Treat this as performance cleanup, not as a prerequisite for Phase 7
-  controller input expansion.
+  The current cache is already host-guarded for OFFSET/EDGE updates, no
+  steady-path `memmove`, and bounded edge column rendering; further cleanup
+  should be driven by hardware timing captures rather than blind renderer
+  refactors.
 - Before adding PCM5102A hardware support, follow
   `docs/superpowers/plans/2026-06-26-pcm5102a-migration-readiness.md`: create
   a P4 pinout inventory, fix the output sample-rate strategy, split logical

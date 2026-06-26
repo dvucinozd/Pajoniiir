@@ -81,6 +81,11 @@ Current P4 audio ownership rule:
   Settings screen exposes it as a conservative preset cycle (`0 dB`, `-3 dB`,
   `-6 dB`) so limiter activity can be reduced without changing deck fader or
   crossfader semantics;
+- limiter telemetry is accumulated in the audio mixer snapshot as cumulative
+  limited sample counts, positive/negative overload counts, and peak pre-limit
+  input. The P4 status indicator reports `CLIP n` only when the limited-sample
+  counter increases, so normal transport status remains stable when no new
+  clipping occurs;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3

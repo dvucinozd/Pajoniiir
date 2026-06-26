@@ -1,8 +1,10 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
+#include "audio_mixer.h"
 #include "deck_core.h"
 
 #ifdef __cplusplus
@@ -25,6 +27,10 @@ void ui_status_format_transport_text(ui_status_transport_text_t *out,
                                      const deck_state_t *state,
                                      bool loading,
                                      uint8_t load_pct);
+bool ui_status_format_limiter_text(char *out,
+                                   size_t out_len,
+                                   const audio_mixer_limiter_stats_t *current,
+                                   uint32_t previous_limited_samples);
 
 #ifndef UI_STATUS_HOST_TEST
 

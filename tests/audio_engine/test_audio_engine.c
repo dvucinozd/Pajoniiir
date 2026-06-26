@@ -181,6 +181,24 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(snapshot.master_trim, 1.0f), "snapshot captures master trim");
     EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
+
+    audio_mixer_limiter_stats_t limiter_stats = {
+        .limited_samples = 7,
+        .positive_overloads = 4,
+        .negative_overloads = 3,
+        .peak_input_abs = 50000,
+    };
+    audio_engine_test_record_limiter_stats(&limiter_stats);
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.limiter.limited_samples == 7, "snapshot captures limiter sample count");
+    EXPECT(snapshot.limiter.positive_overloads == 4, "snapshot captures positive overload count");
+    EXPECT(snapshot.limiter.negative_overloads == 3, "snapshot captures negative overload count");
+    EXPECT(snapshot.limiter.peak_input_abs == 50000, "snapshot captures limiter peak input");
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets limiter telemetry");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.limiter.limited_samples == 0, "limiter sample count resets on init");
+    EXPECT(snapshot.limiter.peak_input_abs == 0, "limiter peak resets on init");
 }
 
 static void test_deck_peak_meter_api_returns_and_resets_peak(void)

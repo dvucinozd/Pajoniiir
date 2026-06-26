@@ -177,6 +177,7 @@ static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
+static audio_mixer_limiter_stats_t s_limiter_stats;
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -702,7 +703,6 @@ static audio_diag_counter_t s_diag_output_blocks;
 static audio_diag_late_counter_t s_diag_output_late;
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
 static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
-static audio_mixer_limiter_stats_t s_diag_limiter_stats;
 
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate);
 static esp_err_t audio_output_service_ensure_started(void);
@@ -712,7 +712,7 @@ static void ae_diag_reset(void)
 {
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
-    s_diag_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
         audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
@@ -1248,11 +1248,11 @@ static void ae_output_task(void *arg)
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             record_deck_peak_value(deck0_index, block_peak[deck0_index]);
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
-            s_diag_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
-            s_diag_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
-            s_diag_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
-            if (block_limiter_stats.peak_input_abs > s_diag_limiter_stats.peak_input_abs) {
-                s_diag_limiter_stats.peak_input_abs = block_limiter_stats.peak_input_abs;
+            s_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
+            s_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
+            s_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
+            if (block_limiter_stats.peak_input_abs > s_limiter_stats.peak_input_abs) {
+                s_limiter_stats.peak_input_abs = block_limiter_stats.peak_input_abs;
             }
             AE_UNLOCK();
         }
@@ -1265,7 +1265,7 @@ static void ae_output_task(void *arg)
                                     consumed[deck1_index],
                                     deck0.active,
                                     deck1.active,
-                                    &s_diag_limiter_stats);
+                                    &s_limiter_stats);
         uint32_t block_delay_ms = audio_output_remaining_delay_ms(
             s_output_sample_rate,
             block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
@@ -1364,6 +1364,7 @@ esp_err_t audio_engine_init(void)
     s_master_trim = 1.0f;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
+    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
 
 #if AE_FW
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
@@ -2047,6 +2048,19 @@ void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t righ
     record_deck_peak(deck, (audio_mixer_frame_t){ .left = left, .right = right });
     AE_UNLOCK();
 }
+
+void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats)
+{
+    if (!stats) return;
+    AE_LOCK();
+    s_limiter_stats.limited_samples += stats->limited_samples;
+    s_limiter_stats.positive_overloads += stats->positive_overloads;
+    s_limiter_stats.negative_overloads += stats->negative_overloads;
+    if (stats->peak_input_abs > s_limiter_stats.peak_input_abs) {
+        s_limiter_stats.peak_input_abs = stats->peak_input_abs;
+    }
+    AE_UNLOCK();
+}
 #endif
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
@@ -2125,6 +2139,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
     out_snapshot->pfl_enabled[1] = s_pfl_enabled[1];
+    out_snapshot->limiter = s_limiter_stats;
 }
 
 esp_err_t audio_engine_set_cue_mode(uint8_t mode)

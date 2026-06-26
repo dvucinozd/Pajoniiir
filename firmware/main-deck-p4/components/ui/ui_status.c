@@ -30,6 +30,23 @@ void ui_status_format_transport_text(ui_status_transport_text_t *out,
     out->kind = playing ? UI_STATUS_TRANSPORT_PLAY : UI_STATUS_TRANSPORT_PAUSE;
 }
 
+bool ui_status_format_limiter_text(char *out,
+                                   size_t out_len,
+                                   const audio_mixer_limiter_stats_t *current,
+                                   uint32_t previous_limited_samples)
+{
+    if (!out || out_len == 0 || !current) {
+        return false;
+    }
+    if (current->limited_samples == 0 ||
+        current->limited_samples <= previous_limited_samples) {
+        return false;
+    }
+
+    snprintf(out, out_len, "CLIP %u", (unsigned)current->limited_samples);
+    return true;
+}
+
 #ifndef UI_STATUS_HOST_TEST
 
 #include "ui_active_deck_leds.h"
@@ -62,6 +79,7 @@ static int s_cache_bpm_centi = INT_MIN;
 static uint32_t s_cache_elapsed_seconds = UINT32_MAX;
 static uint32_t s_cache_remain_seconds = UINT32_MAX;
 static bool s_cache_time_loading = false;
+static uint32_t s_last_limiter_limited_samples = 0;
 
 static void ui_status_copy_str(char *dst, size_t dst_len, const char *src)
 {
@@ -168,6 +186,7 @@ void ui_status_invalidate(void)
     s_cache_status_text.valid = false;
     s_cache_status_color.valid = false;
     s_cache_remain_color.valid = false;
+    s_last_limiter_limited_samples = 0;
     ui_status_invalidate_header();
 }
 
@@ -328,7 +347,20 @@ static void ui_status_update_transport(const ui_frame_context_t *ctx)
     if (transport.kind == UI_STATUS_TRANSPORT_LOADING) {
         s_status_override_until_ms = 0;
         ui_status_set_indicator(transport.text, COL_ACCENT);
+        s_last_limiter_limited_samples = ctx->mixer_snapshot.limiter.limited_samples;
     } else if (!ui_status_has_override()) {
+        char limiter_text[16];
+        if (ctx->mixer_snapshot.limiter.limited_samples < s_last_limiter_limited_samples) {
+            s_last_limiter_limited_samples = ctx->mixer_snapshot.limiter.limited_samples;
+        }
+        if (ui_status_format_limiter_text(limiter_text,
+                                          sizeof(limiter_text),
+                                          &ctx->mixer_snapshot.limiter,
+                                          s_last_limiter_limited_samples)) {
+            s_last_limiter_limited_samples = ctx->mixer_snapshot.limiter.limited_samples;
+            ui_status_set_indicator(limiter_text, COL_RED);
+            return;
+        }
         ui_status_set_indicator(transport.text,
                                 transport.kind == UI_STATUS_TRANSPORT_PLAY ? COL_GREEN : COL_AMBER);
     }

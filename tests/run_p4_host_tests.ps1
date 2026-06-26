@@ -306,6 +306,23 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_status"
+        Dir = "tests/ui_status"
+        Target = "test_ui_status.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DUI_STATUS_HOST_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../deck_core_dual/stubs",
+            "-o", "test_ui_status.exe",
+            "test_ui_status.c",
+            "../../firmware/main-deck-p4/components/ui/ui_status.c"
+        )
+    },
+    @{
         Name = "web_api_helpers"
         Dir = "tests/web_api_helpers"
         Target = "test_web_api_helpers.exe"
