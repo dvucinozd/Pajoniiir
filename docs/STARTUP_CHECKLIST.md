@@ -58,7 +58,9 @@
 - P4 Overview waveform path includes RGB565 circular-strip scrolling:
   steady main waveform motion should report `UI_OVERVIEW_WAVE_CACHE_OFFSET`
   with zero rendered columns, while occasional edge updates render bounded
-  batches instead of moving the whole waveform buffer.
+  batches instead of moving the whole waveform buffer. With UI diagnostics
+  enabled, the Overview cache log reports cumulative `FULL`, `OFFSET`, `EDGE`,
+  and `NONE` counts plus total rendered columns/blits.
 - Current P4 Overview polish keeps title/timer LVGL invalidation bounded,
   stabilizes the blue-strip remaining-time display with fixed timer segments,
   centers beat-match/phase indicators around the main playhead, removes weak

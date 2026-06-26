@@ -41,6 +41,19 @@ static void report_reset(ui_overview_wave_cache_report_t *report)
     };
 }
 
+static void record_stats(ui_overview_wave_cache_t *cache,
+                         const ui_overview_wave_cache_report_t *report)
+{
+    if (!cache || !report) {
+        return;
+    }
+    if (report->kind < UI_OVERVIEW_WAVE_CACHE_KIND_COUNT) {
+        cache->stats.update_count[report->kind]++;
+    }
+    cache->stats.total_columns_rendered += report->columns_rendered;
+    cache->stats.total_blits += report->blit_count;
+}
+
 static void build_blit_segments(ui_overview_wave_cache_t *cache,
                                 ui_overview_wave_cache_report_t *report)
 {
@@ -100,6 +113,31 @@ void ui_overview_wave_cache_reset(ui_overview_wave_cache_t *cache)
     cache->margin_px = margin_px;
     cache->palette = palette;
     cache->palette_count = palette_count;
+}
+
+void ui_overview_wave_cache_reset_stats(ui_overview_wave_cache_t *cache)
+{
+    if (!cache) {
+        return;
+    }
+    memset(&cache->stats, 0, sizeof(cache->stats));
+}
+
+void ui_overview_wave_cache_get_stats(const ui_overview_wave_cache_t *cache,
+                                      ui_overview_wave_cache_stats_t *out_stats)
+{
+    if (!out_stats) {
+        return;
+    }
+    memset(out_stats, 0, sizeof(*out_stats));
+    if (!cache) {
+        return;
+    }
+    memcpy(out_stats->update_count,
+           cache->stats.update_count,
+           sizeof(out_stats->update_count));
+    out_stats->total_columns_rendered = cache->stats.total_columns_rendered;
+    out_stats->total_blits = cache->stats.total_blits;
 }
 
 bool ui_overview_wave_cache_bind_strip(ui_overview_wave_cache_t *cache,
@@ -412,6 +450,11 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
         !source || !source->samples || source->sample_count == 0 ||
         source->kind == UI_WAVEFORM_SOURCE_NONE ||
         duration_ms == 0 || window_ms == 0) {
+        if (cache) {
+            ui_overview_wave_cache_report_t none_report;
+            report_reset(&none_report);
+            record_stats(cache, &none_report);
+        }
         return false;
     }
 
@@ -421,11 +464,13 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
 
     if (full || cache->margin_px <= 0) {
         if (!full && cache->center_ms == center_ms) {
+            record_stats(cache, &report);
             return false;
         }
         rebuild_full(cache, source, duration_ms, meta,
                      center_ms, window_ms, &report);
         cache_store_key(cache, source, duration_ms, meta, center_ms, window_ms);
+        record_stats(cache, &report);
         if (out_report) {
             *out_report = report;
         }
@@ -448,6 +493,7 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
             return true;
         }
 #endif
+        record_stats(cache, &report);
         return false;
     }
 
@@ -485,6 +531,7 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
     }
 
     cache_store_key(cache, source, duration_ms, meta, center_ms, window_ms);
+    record_stats(cache, &report);
     if (out_report) {
         *out_report = report;
     }

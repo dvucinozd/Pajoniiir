@@ -318,6 +318,57 @@ static void test_missing_source_returns_false_without_blit(void)
     assert(!report.blit_required);
 }
 
+static void test_stats_count_update_kinds_columns_and_blits(void)
+{
+    uint8_t samples[256];
+    for (int i = 0; i < 256; i++) {
+        samples[i] = (uint8_t)(0x20u + (i & 0x0Fu));
+    }
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_HIGH,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    uint16_t pixels[TEST_STRIP_W * TEST_H] = {0};
+    ui_overview_wave_cache_t cache = {0};
+    ui_overview_wave_cache_report_t report;
+
+    ui_overview_wave_cache_reset(&cache);
+    assert(ui_overview_wave_cache_bind_strip(&cache, pixels,
+                                             TEST_STRIP_W,
+                                             TEST_STRIP_W,
+                                             TEST_VIEW_W,
+                                             TEST_H,
+                                             TEST_MARGIN_W,
+                                             palette,
+                                             sizeof(palette) / sizeof(palette[0])));
+
+    assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
+                                         10000, 8000, &report));
+    assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
+                                         10500, 8000, &report));
+    assert(ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
+                                         10000 + TEST_EDGE_TRIGGER_MS, 8000, &report));
+    uint16_t edge_columns = report.columns_rendered;
+    assert(!ui_overview_wave_cache_update(&cache, &source, 64000, NULL,
+                                          10000 + TEST_EDGE_TRIGGER_MS, 8000, &report));
+
+    ui_overview_wave_cache_stats_t stats;
+    ui_overview_wave_cache_get_stats(&cache, &stats);
+    assert(stats.update_count[UI_OVERVIEW_WAVE_CACHE_FULL] == 1);
+    assert(stats.update_count[UI_OVERVIEW_WAVE_CACHE_OFFSET] == 1);
+    assert(stats.update_count[UI_OVERVIEW_WAVE_CACHE_EDGE] == 1);
+    assert(stats.update_count[UI_OVERVIEW_WAVE_CACHE_NONE] == 1);
+    assert(stats.total_columns_rendered == (uint32_t)TEST_STRIP_W + (uint32_t)edge_columns);
+    assert(stats.total_blits >= 3);
+
+    ui_overview_wave_cache_reset_stats(&cache);
+    ui_overview_wave_cache_get_stats(&cache, &stats);
+    assert(stats.update_count[UI_OVERVIEW_WAVE_CACHE_FULL] == 0);
+    assert(stats.total_columns_rendered == 0);
+    assert(stats.total_blits == 0);
+}
+
 int main(void)
 {
     test_initial_update_renders_full_view();
@@ -329,6 +380,7 @@ int main(void)
     test_subpixel_advance_accumulates_until_visible_scroll();
     test_large_jump_forces_full_redraw();
     test_missing_source_returns_false_without_blit();
+    test_stats_count_update_kinds_columns_and_blits();
     puts("ui_overview_wave_cache tests passed");
     return 0;
 }

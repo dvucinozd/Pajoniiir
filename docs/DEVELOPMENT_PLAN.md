@@ -153,7 +153,9 @@ TODO:
   The current cache is already host-guarded for OFFSET/EDGE updates, no
   steady-path `memmove`, and bounded edge column rendering; further cleanup
   should be driven by hardware timing captures rather than blind renderer
-  refactors.
+  refactors. The cache also exposes per-instance profiling counters for
+  `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus total rendered columns and
+  blits; the existing Overview diagnostics log includes those totals.
 - Before adding PCM5102A hardware support, follow
   `docs/superpowers/plans/2026-06-26-pcm5102a-migration-readiness.md`: create
   a P4 pinout inventory, fix the output sample-rate strategy, split logical

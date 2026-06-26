@@ -17,6 +17,7 @@ typedef enum {
     UI_OVERVIEW_WAVE_CACHE_SCROLL,
     UI_OVERVIEW_WAVE_CACHE_OFFSET,
     UI_OVERVIEW_WAVE_CACHE_EDGE,
+    UI_OVERVIEW_WAVE_CACHE_KIND_COUNT,
 } ui_overview_wave_cache_update_kind_t;
 
 #define UI_OVERVIEW_WAVE_CACHE_MAX_BLITS 2
@@ -52,6 +53,11 @@ typedef struct {
     uint32_t source_generation;
     const uint16_t *palette;
     size_t palette_count;
+    struct {
+        uint32_t update_count[UI_OVERVIEW_WAVE_CACHE_KIND_COUNT];
+        uint32_t total_columns_rendered;
+        uint32_t total_blits;
+    } stats;
 } ui_overview_wave_cache_t;
 
 typedef struct {
@@ -64,7 +70,16 @@ typedef struct {
     ui_overview_wave_cache_blit_t blit[UI_OVERVIEW_WAVE_CACHE_MAX_BLITS];
 } ui_overview_wave_cache_report_t;
 
+typedef struct {
+    uint32_t update_count[UI_OVERVIEW_WAVE_CACHE_KIND_COUNT];
+    uint32_t total_columns_rendered;
+    uint32_t total_blits;
+} ui_overview_wave_cache_stats_t;
+
 void ui_overview_wave_cache_reset(ui_overview_wave_cache_t *cache);
+void ui_overview_wave_cache_reset_stats(ui_overview_wave_cache_t *cache);
+void ui_overview_wave_cache_get_stats(const ui_overview_wave_cache_t *cache,
+                                      ui_overview_wave_cache_stats_t *out_stats);
 
 bool ui_overview_wave_cache_bind(ui_overview_wave_cache_t *cache,
                                  uint16_t *pixels,
