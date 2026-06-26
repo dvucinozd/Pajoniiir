@@ -181,10 +181,12 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pass 2026-06-26 | Regression fixed: S3 no longer stack-overflows in `ctrl_rx` during the extended LED snapshot, S3 re-enumerated FLX4, and operator confirmed the controller became responsive again. |
 
 Loop In/Out LED behavior note from 2026-06-26 acceptance: pressing `IN` alone
-sets the loop-in marker but does not light the physical Loop In LED. After
-pressing `OUT`, the loop becomes active and both Loop In and Loop Out LEDs turn
-on. This matches the current P4-owned LED model, where both LEDs are driven
-from `audio_engine` active-loop state rather than from a pending loop-in marker.
+sets the loop-in marker but does not light the physical Loop In LED. This does
+not count as Loop In marker LED acceptance. After pressing `OUT`, the loop
+becomes active and both Loop In and Loop Out LEDs turn on. The current firmware
+therefore only confirms LED feedback for active-loop state; whether the `IN`
+marker should light before an active loop exists remains a pending behavior
+decision.
 
 ### 2026-06-26 Extended LED Snapshot Regression
 
