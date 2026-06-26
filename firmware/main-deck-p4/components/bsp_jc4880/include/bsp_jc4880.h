@@ -14,6 +14,7 @@
 #include "esp_lcd_types.h"
 #include "esp_lcd_touch.h"
 #include "driver/i2c_master.h"
+#include "driver/i2s_types.h"
 #include "esp_codec_dev.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -79,3 +80,8 @@ esp_err_t bsp_audio_set_monitor_route(bsp_monitor_route_t route);
 bsp_monitor_route_t bsp_audio_get_monitor_route(void);
 esp_err_t bsp_audio_set_speaker_pa_enabled(bool enabled);
 bool bsp_audio_get_speaker_pa_enabled(void);
+
+// PCM5102A main stereo output. The I2S handle is non-NULL only when
+// CONFIG_BSP_PCM5102A_MAIN_OUT is enabled and bsp_audio_init() succeeded.
+i2s_chan_handle_t bsp_audio_get_main_i2s_tx(void);
+esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate);

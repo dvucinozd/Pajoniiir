@@ -1,0 +1,10 @@
+menu "DDJ-FFL4 JC4880 BSP"
+
+config BSP_PCM5102A_MAIN_OUT
+    bool "Enable PCM5102A main I2S output"
+    default n
+    help
+        Enable the second I2S TX channel for the external PCM5102A MAIN OUT DAC.
+        Keep disabled until GPIO50/GPIO52/GPIO51 are bench-verified on JP1.
+
+endmenu
