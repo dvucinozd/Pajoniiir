@@ -52,6 +52,9 @@ The fork is no longer only the imported single-deck baseline:
 - Extended controls will use XML status/midino and encoding as implementation
   seeds. Mixxx script callbacks are not runtime logic; the P4 remains
   authoritative for standalone behavior and state.
+- The official Pioneer MIDI message list is vendored beside the Mixxx XML and
+  is used as the secondary reference for LED outputs and documented conflicts;
+  current implementation still treats the XML as the proven input source.
 - The DDJ control-link namespace is deck-aware, and the P4 parser carries deck
   and control fields for DDJ events while preserving legacy frames.
 - P4 `deck_core` now stores independent Deck 1/Deck 2 state and routes local
@@ -71,8 +74,8 @@ The fork is no longer only the imported single-deck baseline:
   invalidation so status chrome does not create continuous redraw pressure.
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
-  pad-mode LEDs, Beat Sync placeholder LEDs, Loop In/Out LEDs from active loop
-  state, and VU meter output.
+  pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from active loop state,
+  normal Beat Loop pad LEDs, and VU meter output.
 - S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a P4-owned
   LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
   Play/Cue/PFL LED recovery without playback or deck-state changes; extended
@@ -85,11 +88,21 @@ The fork is no longer only the imported single-deck baseline:
   Shift + pad clears the slot. Deck 1 hardware behavior smoke passed on
   2026-06-21; Deck 2 behavior uses the same deck-local path and remains marked
   for hardware smoke.
+- Phase 7 extended controller work is merged into `master` as of 2026-06-26.
+  Implemented P4 behavior now includes Loop In/Out, Reloop/Exit, loop
+  halve/double, Beat Jump buttons/pads, normal and shifted Beat Loop pads,
+  Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
+  Hot Cue store/recall/clear.
+- The stale Codex branches from completed work were cleaned up after the Phase
+  7 merge. The only intentionally preserved non-master work is
+  `codex/flx4-extended-controls`, an older dirty Smart/DSP experimental
+  branch that needs separate review before reuse or deletion.
 
 ## Non-Goals For The First Milestone
 
 - Full Mixxx feature parity.
-- Beat sync or master tempo/key lock.
+- Continuous beat following, master tempo/key lock, or full Rekordbox-style
+  sync state.
 - Smart CFX/Fader audio DSP.
 - Four-deck support.
 - Rekordbox library editing.

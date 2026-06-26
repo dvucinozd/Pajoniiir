@@ -71,10 +71,10 @@ test.
 | `0x15` | Deck 1 Tempo | `0..16383` |
 | `0x16` | Deck 1 Shift | `0` release, `1` press |
 | `0x17` | Deck 1 Cue+Shift track start | `0` release, `1` press |
-| `0x18` | Deck 1 Beat Sync | `0` release, `1` press; P4 sync behavior deferred |
-| `0x19` | Deck 1 Tempo Range | `0` release, `1` press; behavior deferred |
+| `0x18` | Deck 1 Beat Sync | `0` release, `1` press; toggles P4 sync-enabled state and applies one-shot BPM match; paused decks also phase-align to a matching beat when beatgrids are available |
+| `0x19` | Deck 1 Tempo Range | `0` release, `1` press; cycles deck-local `±6%`, `±10%`, and `±16%` manual fader ranges |
 | `0x1A`-`0x1E` | Deck 1 loop buttons | `0` release, `1` press; Loop In/Out, Reloop/Exit, halve, and double are implemented |
-| `0x1F`-`0x20` | Deck 1 beat-jump buttons | `0` release, `1` press; behavior deferred |
+| `0x1F`-`0x20` | Deck 1 beat-jump buttons | `0` release, `1` press; beat-jump back/forward behavior is implemented |
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
@@ -159,7 +159,7 @@ period. S3 forwards this as USB MIDI CC `0x02` on `0xB0` for Deck/Channel 1 and
 P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
-placeholder state, and active Loop In/Out state. Host tests verify normal diff
+enabled state, and active Loop In/Out state. Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
 reconnect smoke remains an acceptance item.
@@ -171,10 +171,10 @@ that their pad behavior is implemented. The S3 maps these LED IDs to the
 XML-derived FLX4 MIDI output notes and sends exactly one active pad-mode LED per
 deck in the P4 snapshot.
 
-Beat Sync LED feedback is P4-owned as a placeholder state until the real
-beat-sync engine exists. Pressing Beat Sync toggles `deck_core.sync_enabled` for
-the requested deck, P4 republishes the LED snapshot, and S3 maps `LED_SYNC` to
-USB MIDI note `0x58` on `0x90`/`0x91`.
+Beat Sync LED feedback is P4-owned from `deck_core.sync_enabled`. Pressing Beat
+Sync toggles the target deck's sync state, applies the current one-shot BPM
+match/paused-deck phase-align behavior, republishes the LED snapshot, and S3
+maps `LED_SYNC` to USB MIDI note `0x58` on `0x90`/`0x91`.
 
 Loop In and Loop Out LED feedback is also P4-owned. P4 reads the authoritative
 per-deck audio loop state through `audio_engine_deck_get_loop_state()`. When a

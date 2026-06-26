@@ -495,9 +495,18 @@ smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
-Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and Hot Cue store/recall/clear is
-implemented. Sampler, pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remains deferred unless
-separately marked implemented.
+Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
+Hot Cue store/recall/clear is implemented. Sampler, pad FX, EQ/filter DSP, and
+Smart CFX/Fader behavior remains deferred unless separately marked
+implemented.
+
+Integration status as of 2026-06-26: the Phase 7 implementation branch and the
+P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
+targets passed before the merge, and the merged `master` was pushed. Stale
+completed Codex branches were removed locally and remotely. The only preserved
+non-master branch is the old `codex/flx4-extended-controls` worktree, which is
+dirty and contains experimental Smart/DSP changes that require a separate
+review before reuse or deletion.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -584,7 +593,8 @@ Implementation order:
      using the per-deck `audio_engine` loop API plus beatgrid/BPM duration
      calculation. Beat Jump behavior is implemented for shifted cue/loop call
      buttons and Beat Jump pads using beatgrid/BPM target calculation. Beat
-     Sync and tempo-range behavior remain deferred.
+     Sync BPM-match-on-press with paused-deck phase align and Tempo Range
+     cycling are implemented; continuous sync following remains out of scope.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
@@ -626,8 +636,8 @@ Implementation order:
    - Beat Loop pad LED output is implemented for the normal pad LED notes and
      derived from P4 loop state plus selected Beat Loop pad mode; shifted mirror
      LED notes remain deferred;
-   - Beat Sync LED feedback is implemented as a P4-owned per-deck placeholder
-     toggle (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
+   - Beat Sync LED feedback is implemented as a P4-owned per-deck sync-enabled
+     state (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - Loop In/Out LED feedback is implemented from P4-owned per-deck audio loop
      state; active loops light both Loop In and Loop Out LEDs for that deck;
    - pad-mode, Beat Sync, and Loop In/Out LEDs have hardware smoke coverage as

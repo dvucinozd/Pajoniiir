@@ -52,6 +52,8 @@ Key project documents:
 - Original upstream README: [docs/reference/CDJ100S-XXX-README.md](docs/reference/CDJ100S-XXX-README.md)
 - Mixxx DDJ-FLX4 MIDI mapping XML:
   [docs/reference/Pioneer-DDJ-FLX4.midi.xml](docs/reference/Pioneer-DDJ-FLX4.midi.xml)
+- Official Pioneer DDJ-FLX4 MIDI message list:
+  [docs/reference/DDJ-FLX4_MIDI_message_List.md](docs/reference/DDJ-FLX4_MIDI_message_List.md)
 - Existing upstream technical docs remain under [docs/](docs/) and should be
   treated as the baseline implementation reference unless superseded by the
   DDJ-FFL4 documents.
@@ -92,6 +94,14 @@ S3 host regression tests on Windows:
 ```powershell
 .\tests\run_s3_host_tests.ps1
 ```
+
+Current `master` is the integration branch for the Phase 7 extended-control
+work. The former `codex/phase7-extended-controls-vu` and `codex/splash-screen`
+scopes have been merged, verified, pushed, and the stale remote/local branches
+were removed on 2026-06-26. One old experimental branch,
+`codex/flx4-extended-controls`, is intentionally still preserved outside
+`master` because it contains dirty Smart/DSP work that needs a separate review
+before any merge/delete decision.
 
 Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
 substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
@@ -135,7 +145,7 @@ two-deck standalone path:
    this for the local UI/control path.
 4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented and hardware-verified for dual-deck playback).
 5. P4 sends transport, mixer, pad-mode, Beat Sync, and Loop In/Out LED feedback
-   (Play, Cue, PFL, selected pad mode, sync-enabled placeholder, active loop
+   (Play, Cue, PFL, selected pad mode, sync-enabled state, active loop
    indicators) back to the S3, and S3 sends the matching MIDI LED messages to
    the FLX4 (implemented; pad-mode, Beat Sync, and Loop In/Out LED smoke has
    passed where recorded in the validation notes; extended reconnect smoke is
@@ -147,9 +157,12 @@ two-deck standalone path:
 ## Extended Controller Plan
 
 The remaining useful FLX4 controls use the vendored Mixxx XML for MIDI status,
-midino, message encoding, deck/shift channels, and 14-bit pairing. The XML mapping
-is accepted as the authoritative source for all remaining controls due to its 100%
-accuracy. Pre-implementation physical capture is bypassed to speed up development; S3
-emits semantic events and P4 owns all deck, mixer, pad-mode, effect, playback, and
-LED state directly from the XML seed. Implementation order and acceptance criteria
-are defined in Phase 7 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+midino, message encoding, deck/shift channels, and 14-bit pairing, with the
+official Pioneer MIDI message list used as an additional reference for output
+LEDs and XML/official-list conflicts. The XML mapping is accepted as the
+authoritative source for remaining input controls due to its 100% accuracy in
+our hardware tests. Pre-implementation physical capture is bypassed to speed up
+development; S3 emits semantic events and P4 owns all deck, mixer, pad-mode,
+effect, playback, and LED state directly from the XML seed. Implementation
+order and acceptance criteria are defined in Phase 7 of
+[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

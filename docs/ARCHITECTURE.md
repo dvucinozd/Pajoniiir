@@ -35,7 +35,7 @@ Responsibilities:
 - publish DDJ-FLX4 USB connection/disconnection state to the P4;
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
-- emit FLX4 MIDI LED feedback.
+- emit FLX4 MIDI LED feedback using XML/official-list output addresses.
 
 The S3 must not:
 
@@ -54,6 +54,9 @@ Responsibilities:
 - own two `deck_core` state instances;
 - own the mixer state: channel faders, crossfader, pregain, EQ/filter when
   implemented, cue/PFL selection;
+- own controller behavior that changes playback state, including Hot Cue,
+  Loop, Beat Jump, Tempo Range, and the current one-shot Beat Sync/paused-deck
+  phase-align behavior;
 - decode audio and write master/cue buffers to hardware;
 - render UI state;
 - send LED feedback commands to the S3;
@@ -87,6 +90,12 @@ Current P4 audio ownership rule:
 7. S3 emits the matching MIDI LED message to the FLX4.
 8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
    republishes the current P4-owned LED snapshot.
+
+The MIDI map is not an authority for behavior. `docs/reference/Pioneer-DDJ-FLX4.midi.xml`
+is the proven source for input status/midino values, and
+`docs/reference/DDJ-FLX4_MIDI_message_List.md` is the additional official
+reference for output LEDs and known XML/official-list conflicts. P4 behavior is
+implemented explicitly in the owning P4 component.
 
 Current S3 firmware modes:
 

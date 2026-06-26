@@ -39,7 +39,14 @@
 - `master` includes the P4 dual-deck UI refactor, the 2026-06-13 Deck 2
   Overview waveform jitter fix, the S3 review fixes for FLX4 host/translator
   mode, the enabled S3 UART translation configuration, FLX4 reconnect LED
-  resynchronization, and raw Smart CFX/Smart Fader input mapping.
+  resynchronization, raw Smart CFX/Smart Fader input mapping, the P4 splash
+  screen port, the official DDJ-FLX4 MIDI message list, and the merged Phase 7
+  extended-control surface.
+- Phase 7 was merged into `master` and pushed on 2026-06-26. Completed stale
+  Codex branches were removed locally and remotely after the merge.
+- Remaining non-master branch: `codex/flx4-extended-controls`. It is an older
+  dirty experimental Smart/DSP worktree and should be reviewed separately
+  before any merge/delete decision.
 - The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
@@ -48,7 +55,7 @@
   descriptor handling, deck-aware S3 `control_link` constants, an XML-derived
   FLX4 MIDI mapper, translator-mode UART coalescing, and safer legacy CDJ panel
   queue behavior.
-- P4 Overview waveform performance branch adds RGB565 circular-strip scrolling:
+- P4 Overview waveform path includes RGB565 circular-strip scrolling:
   steady main waveform motion should report `UI_OVERVIEW_WAVE_CACHE_OFFSET`
   with zero rendered columns, while occasional edge updates render bounded
   batches instead of moving the whole waveform buffer.
@@ -67,6 +74,10 @@
   2026-06-20.
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
   press/release events. P4 Smart DSP/settings behavior remains deferred.
+- Official DDJ-FLX4 MIDI message list coverage is documented in
+  `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
+  `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
+  input source.
 - P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
