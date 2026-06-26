@@ -607,6 +607,7 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
         ESP_LOGI(TAG, "deck %u loop in -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned long)position_ms);
+        publish_flx4_led_snapshot(false);
         return;
 
     case CTRL_DECK_CTL_LOOP_OUT:
@@ -716,6 +717,7 @@ static void publish_flx4_led_snapshot(bool force)
         input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
+        input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1 : 0;
 
         bool loop_active = false;
         uint32_t loop_start = 0;

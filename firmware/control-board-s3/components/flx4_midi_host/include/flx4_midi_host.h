@@ -64,6 +64,8 @@ esp_err_t flx4_midi_host_init(void);
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 
+bool flx4_midi_host_refresh_connection_state(void);
+
 size_t flx4_midi_host_midi_out_queue_capacity(void);
 
 bool flx4_midi_host_is_vu_meter_packet(const uint8_t packet[4]);
@@ -81,5 +83,7 @@ typedef struct {
 void flx4_midi_host_test_reset_connection_state(void);
 bool flx4_midi_host_test_publish_connection_state(
     bool connected,
+    flx4_midi_host_test_connection_event_t *out);
+bool flx4_midi_host_test_publish_connection_refresh(
     flx4_midi_host_test_connection_event_t *out);
 #endif

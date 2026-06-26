@@ -112,6 +112,26 @@ static void test_connection_state_publications_are_edge_triggered(void)
     assert(!flx4_midi_host_test_publish_connection_state(true, NULL));
 }
 
+static void test_connected_state_can_be_refreshed_after_edge_publication(void)
+{
+    flx4_midi_host_test_connection_event_t ev = { 0 };
+
+    flx4_midi_host_test_reset_connection_state();
+    assert(!flx4_midi_host_test_publish_connection_refresh(&ev));
+
+    assert(flx4_midi_host_test_publish_connection_state(true, &ev));
+    assert(!flx4_midi_host_test_publish_connection_state(true, &ev));
+
+    memset(&ev, 0, sizeof(ev));
+    assert(flx4_midi_host_test_publish_connection_refresh(&ev));
+    assert(ev.type == 0x82);
+    assert(ev.id == 0x70);
+    assert(ev.value == 1);
+
+    assert(flx4_midi_host_test_publish_connection_state(false, &ev));
+    assert(!flx4_midi_host_test_publish_connection_refresh(&ev));
+}
+
 static void test_vu_meter_packets_are_low_priority(void)
 {
     const uint8_t d1_vu[4] = { 0x0B, 0xB0, 0x02, 0x40 };
@@ -160,6 +180,7 @@ int main(void)
     test_finds_midi_streaming_in_endpoint();
     test_rejects_truncated_descriptor();
     test_connection_state_publications_are_edge_triggered();
+    test_connected_state_can_be_refreshed_after_edge_publication();
     test_vu_meter_packets_are_low_priority();
     test_vu_meter_packets_drop_when_out_queue_has_backlog();
     test_midi_out_queue_capacity_covers_phase7_forced_snapshot();

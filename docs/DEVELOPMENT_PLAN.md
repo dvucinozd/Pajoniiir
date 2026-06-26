@@ -638,11 +638,14 @@ Implementation order:
      LED notes remain deferred;
    - Beat Sync LED feedback is implemented as a P4-owned per-deck sync-enabled
      state (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
-   - Loop In/Out LED feedback is implemented from P4-owned per-deck audio loop
-     state; active loops light both Loop In and Loop Out LEDs for that deck;
+   - Loop In/Out LED feedback is implemented from P4-owned loop marker/loop
+     state; Loop In lights immediately after the pending marker is set, and
+     active loops light both Loop In and Loop Out LEDs for that deck;
    - pad-mode, Beat Sync, and Loop In/Out LEDs have hardware smoke coverage as
      recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; extended
-     reconnect resynchronization remains pending.
+     reconnect resynchronization is implemented for FLX4 USB replug, S3 reset,
+     and P4 reboot recovery through the S3 heartbeat connected-state refresh;
+     P4-reset hardware smoke passed on 2026-06-26.
 
 Required artifacts:
 

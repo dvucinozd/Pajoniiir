@@ -164,6 +164,13 @@ suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
 reconnect smoke remains an acceptance item.
 
+In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
+after each heartbeat while the USB MIDI device remains open. This is
+level-triggered recovery in addition to edge-triggered USB connect/disconnect:
+if P4 reboots while S3 and the FLX4 stay powered, the next heartbeat refresh
+lets the freshly booted P4 force its LED snapshot without requiring a controller
+replug.
+
 Pad mode LEDs are also P4-owned. `deck_core` stores controller `pad_mode`
 separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,
 `PAD_FX2`, `KEYBOARD`, and `SAMPLER` can still drive LED state without implying
@@ -176,11 +183,12 @@ Sync toggles the target deck's sync state, applies the current one-shot BPM
 match/paused-deck phase-align behavior, republishes the LED snapshot, and S3
 maps `LED_SYNC` to USB MIDI note `0x58` on `0x90`/`0x91`.
 
-Loop In and Loop Out LED feedback is also P4-owned. P4 reads the authoritative
-per-deck audio loop state through `audio_engine_deck_get_loop_state()`. When a
-loop is active, P4 sends both `LED_LOOP_IN` and `LED_LOOP_OUT` on for that deck;
-when no loop is active, both are off. S3 maps those LED IDs to USB MIDI notes
-`0x10` and `0x11` on `0x90`/`0x91`.
+Loop In and Loop Out LED feedback is also P4-owned. P4 combines the deck-core
+pending loop-in marker with the authoritative per-deck audio loop state from
+`audio_engine_deck_get_loop_state()`. `LED_LOOP_IN` turns on as soon as Loop In
+sets a pending marker and remains on while an active loop exists. `LED_LOOP_OUT`
+turns on only after Loop Out closes an active loop. S3 maps those LED IDs to USB
+MIDI notes `0x10` and `0x11` on `0x90`/`0x91`.
 
 ## Future Protocol Versioning
 

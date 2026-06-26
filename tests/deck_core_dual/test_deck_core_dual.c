@@ -25,6 +25,9 @@ int audio_engine_stub_loop_set_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_loop_clear_count[DECK_CORE_DECK_COUNT];
 float audio_engine_stub_pitch_percent[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pitch_percent_set_count[DECK_CORE_DECK_COUNT];
+extern int control_link_stub_led_count;
+void control_link_stub_reset_leds(void);
+int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -675,6 +678,23 @@ static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
     assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
 }
 
+static void test_loop_in_marker_publishes_loop_in_led_before_loop_out(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 1000;
+
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK2_LOOP_IN);
+    deck_core_test_apply_event(&loop_in);
+
+    assert(control_link_stub_led_count > 0);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_2]);
+    assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 0);
+    assert(control_link_stub_last_led_state(LED_LOOP_IN, CTRL_DECK_2) == 1);
+    assert(control_link_stub_last_led_state(LED_LOOP_OUT, CTRL_DECK_2) == 0);
+}
+
 static void test_reloop_exit_clears_and_restores_last_requested_deck_loop(void)
 {
     deck_core_test_reset();
@@ -1119,6 +1139,7 @@ int main(void)
     test_sync_skips_phase_align_seek_while_target_deck_is_playing();
     test_sync_without_beatgrid_keeps_phase_position_unchanged();
     test_loop_in_out_sets_requested_deck_loop_from_audio_position();
+    test_loop_in_marker_publishes_loop_in_led_before_loop_out();
     test_reloop_exit_clears_and_restores_last_requested_deck_loop();
     test_loop_halve_and_double_resize_active_loop();
     test_beat_loop_pad_sets_loop_on_requested_deck();

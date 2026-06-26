@@ -83,6 +83,7 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 3:
         return input->sync[deck];
     case 12:
+        return input->loop_in_marker[deck] || input->loop_active[deck];
     case 13:
         return input->loop_active[deck];
     case 14:

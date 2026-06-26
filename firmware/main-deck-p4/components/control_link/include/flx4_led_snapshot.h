@@ -12,6 +12,7 @@ typedef struct {
     uint8_t pfl[2];
     uint8_t sync[2];
     uint8_t pad_mode[2];
+    uint8_t loop_in_marker[2];
     uint8_t loop_active[2];
     uint32_t loop_start_ms[2];
     uint32_t loop_end_ms[2];

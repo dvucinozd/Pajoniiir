@@ -145,14 +145,16 @@ two-deck standalone path:
    this for the local UI/control path.
 4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented and hardware-verified for dual-deck playback).
 5. P4 sends transport, mixer, pad-mode, Beat Sync, and Loop In/Out LED feedback
-   (Play, Cue, PFL, selected pad mode, sync-enabled state, active loop
-   indicators) back to the S3, and S3 sends the matching MIDI LED messages to
+   (Play, Cue, PFL, selected pad mode, sync-enabled state, pending Loop In
+   marker, and active loop indicators) back to the S3, and S3 sends the matching MIDI LED messages to
    the FLX4 (implemented; pad-mode, Beat Sync, and Loop In/Out LED smoke has
    passed where recorded in the validation notes; extended reconnect smoke is
    still pending).
 6. S3 publishes FLX4 USB connection state and P4 forces a P4-owned MVP LED
    snapshot after reconnect so Play/Cue/PFL LEDs recover without changing
-   playback state (implemented).
+   playback state. S3 also refreshes the already-connected FLX4 state after
+   heartbeat so a P4-only reboot can recover without physically replugging the
+   controller (implemented; hardware smoke passed 2026-06-26).
 
 ## Extended Controller Plan
 

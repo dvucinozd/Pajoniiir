@@ -48,6 +48,9 @@ static void heartbeat_task(void *arg)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(5000));
         control_link_send_heartbeat();
+#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+        (void)flx4_midi_host_refresh_connection_state();
+#endif
     }
 }
 #endif

@@ -35,6 +35,11 @@ static bool should_publish_connection_state(bool connected)
     return true;
 }
 
+static bool should_refresh_connection_state(void)
+{
+    return s_connection_state_valid && s_connection_state_connected;
+}
+
 static uint8_t cin_payload_len(uint8_t cin)
 {
     switch (cin) {
@@ -280,6 +285,23 @@ bool flx4_midi_host_test_publish_connection_state(
     return true;
 }
 
+bool flx4_midi_host_test_publish_connection_refresh(
+    flx4_midi_host_test_connection_event_t *out)
+{
+    if (!out || !should_refresh_connection_state()) {
+        return false;
+    }
+    out->type = 0x82;
+    out->id = 0x70;
+    out->value = 1;
+    return true;
+}
+
+bool flx4_midi_host_refresh_connection_state(void)
+{
+    return should_refresh_connection_state();
+}
+
 esp_err_t flx4_midi_host_init(void)
 {
     return ESP_OK;
@@ -326,6 +348,22 @@ static void publish_connection_state(bool connected)
         ESP_LOGI(TAG, "published FLX4 connection state: %s",
                  connected ? "connected" : "disconnected");
     }
+}
+
+bool flx4_midi_host_refresh_connection_state(void)
+{
+    if (!should_refresh_connection_state()) {
+        return false;
+    }
+
+    esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE,
+                                              CTRL_ID_FLX4_CONNECTION,
+                                              CTRL_FLX4_CONNECTED);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "refresh FLX4 connection state failed: %s", esp_err_to_name(rc));
+        return false;
+    }
+    return true;
 }
 
 typedef struct {

@@ -193,14 +193,16 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and
-  Loop In/Out LEDs derived from active P4 audio loop state. Beat Loop normal
-  pad LED output is implemented from P4 loop state and selected Beat Loop pad
-  mode; shifted mirror pad LED output remains deferred. Pad-mode, Beat Sync,
-  and Loop In/Out LED hardware smoke has passed where recorded in
-  `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
-  LED-state acceptance passed on 2026-06-26. Beat Loop pad LED hardware smoke
-  remains pending, and S3 reset recovery after the extended reconnect snapshot
-  no longer crashes.
+  Loop In/Out LEDs derived from P4 pending loop-in marker and active audio loop
+  state. Beat Loop normal pad LED output is implemented from P4 loop state and
+  selected Beat Loop pad mode; shifted mirror pad LED output remains deferred.
+  Pad-mode, Beat Sync, and active Loop In/Out LED hardware smoke has passed
+  where recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual
+  USB replug LED-state acceptance passed on 2026-06-26. Beat Loop pad LED
+  hardware smoke remains pending, S3 reset recovery after the extended reconnect
+  snapshot no longer crashes, and P4-only reset recovery is implemented through
+  S3 heartbeat connected-state refresh with hardware smoke passed on
+  2026-06-26.
 - [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the

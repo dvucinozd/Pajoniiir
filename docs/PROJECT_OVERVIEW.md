@@ -74,12 +74,14 @@ The fork is no longer only the imported single-deck baseline:
   invalidation so status chrome does not create continuous redraw pressure.
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
-  pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from active loop state,
-  normal Beat Loop pad LEDs, and VU meter output.
+  pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from pending marker and
+  active loop state, normal Beat Loop pad LEDs, and VU meter output.
 - S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a P4-owned
   LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
   Play/Cue/PFL LED recovery without playback or deck-state changes; extended
-  pad-mode/sync/loop reconnect smoke remains pending.
+  pad-mode/sync/loop reconnect smoke has covered USB replug and S3 reset, and
+  P4-only reset recovery is implemented through S3 heartbeat connected-state
+  refresh with hardware smoke passed on 2026-06-26.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
   semantic button events. Their P4 DSP/settings behavior is intentionally not
   implemented yet.

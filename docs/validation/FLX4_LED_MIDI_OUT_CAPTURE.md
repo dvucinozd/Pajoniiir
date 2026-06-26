@@ -152,8 +152,9 @@ Scope:
 - P4 owns `deck_core.pad_mode` and emits one selected pad-mode LED per deck.
 - P4 owns `deck_core.sync_enabled` as a placeholder Beat Sync toggle until the
   real beat-sync engine exists.
-- P4 owns active-loop LED feedback through `audio_engine_deck_get_loop_state()`;
-  active loops light both Loop In and Loop Out LEDs on the affected deck.
+- P4 owns loop LED feedback through `deck_core` pending loop-in marker state
+  plus `audio_engine_deck_get_loop_state()`. Loop In lights after `IN` sets a
+  marker; active loops light both Loop In and Loop Out LEDs on the affected deck.
 - S3 maps P4 LED frames to XML-derived FLX4 MIDI OUT messages.
 
 Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
@@ -169,7 +170,7 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 7 | Press Deck 1 `BEAT SYNC` once | Deck 1 Beat Sync LED turns on | pass 2026-06-21 | Placeholder state only; tempo/audio must not change. |
 | 8 | Press Deck 1 `BEAT SYNC` again | Deck 1 Beat Sync LED turns off | pass 2026-06-21 | Placeholder state only; tempo/audio must not change. |
 | 9 | Repeat steps 7-8 on Deck 2 | Deck 2 Beat Sync LED toggles independently from Deck 1 | pass 2026-06-21 | Operator confirmed LEDs followed selected state. |
-| 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pass 2026-06-21 | Current firmware uses one active-loop state for both LEDs. |
+| 10 | Create or load an active Deck 1 loop from the P4 UI/API | Deck 1 Loop In and Loop Out LEDs turn on | pass 2026-06-21 | Active-loop LED behavior confirmed. |
 | 11 | Clear the Deck 1 loop | Deck 1 Loop In and Loop Out LEDs turn off | pass 2026-06-21 | |
 | 12 | Repeat steps 10-11 on Deck 2 | Deck 2 Loop In/Out LEDs follow independently from Deck 1 | pass 2026-06-21 | |
 | 13 | Press Deck 1 `LOOP IN`, advance playback, then press `LOOP OUT` | Deck 1 enters active loop and Loop In/Out LEDs turn on | pass 2026-06-21 | P4 log captured `deck 1 loop in`, `deck 1 loop set`, and FLX4 LED snapshot publication; operator confirmed LEDs followed state. |
@@ -179,14 +180,19 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 17 | Repeat steps 13-16 on Deck 2 | Deck 2 loop behavior and LEDs follow independently from Deck 1 | pass 2026-06-21 | P4 log captured independent Deck 2 loop set/exit/restore/halve events. |
 | 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pass 2026-06-26 | S3 logged FLX4 disconnect/reconnect, P4 forced an LED snapshot, no S3 stack overflow/reboot loop occurred, and operator confirmed LEDs returned. Playback/deck state did not change. |
 | 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pass 2026-06-26 | Regression fixed: S3 no longer stack-overflows in `ctrl_rx` during the extended LED snapshot, S3 re-enumerated FLX4, and operator confirmed the controller became responsive again. |
+| 20 | Reset P4 only while S3 and FLX4 remain powered/connected | P4 recovers FLX4 connected state on the next S3 heartbeat refresh and forces its LED snapshot without requiring FLX4 replug | pass 2026-06-26 | Firmware implemented 2026-06-26: S3 refreshes connected FLX4 state after heartbeat when the USB MIDI host still has the device open. Operator confirmed controller recovered normally after P4-only reset. |
 
-Loop In/Out LED behavior note from 2026-06-26 acceptance: pressing `IN` alone
-sets the loop-in marker but does not light the physical Loop In LED. This does
-not count as Loop In marker LED acceptance. After pressing `OUT`, the loop
-becomes active and both Loop In and Loop Out LEDs turn on. The current firmware
-therefore only confirms LED feedback for active-loop state; whether the `IN`
-marker should light before an active loop exists remains a pending behavior
-decision.
+Loop In marker LED behavior note from 2026-06-26 acceptance: the user clarified
+that pressing `IN` alone should light the physical Loop In LED before `OUT`
+closes the loop. Firmware now represents that as P4-owned pending marker state:
+after `IN`, Loop In LED is on and Loop Out LED remains off; after `OUT`, both
+LEDs are on for the active loop. Host tests cover this behavior, and operator
+hardware smoke passed on both decks on 2026-06-26.
+
+P4-reset recovery note: S3 connection publication remains edge-triggered for
+physical USB connect/disconnect, but translator-mode heartbeat now also refreshes
+the connected state while the FLX4 is already open. This covers the case where
+P4 reboots independently and would otherwise miss the original USB connect event.
 
 ### 2026-06-26 Extended LED Snapshot Regression
 
