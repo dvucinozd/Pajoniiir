@@ -10,7 +10,7 @@
 #include "esp_err.h"
 
 typedef struct {
-    uint8_t audio_out;      // 0 = onboard speaker, 1 = RCA line-out (bsp_audio_out_t)
+    uint8_t audio_out;      // legacy NVS key: 0 = monitor speaker PA on, 1 = headphones / speaker PA off
     uint8_t backlight_pct;  // 10..100
     uint8_t time_remain;    // 0 = elapsed time, 1 = remaining time
     uint8_t cue_mode;       // 0 = stereo master, 1 = split mono (L=master, R=cue)
