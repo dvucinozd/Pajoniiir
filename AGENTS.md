@@ -70,9 +70,16 @@ Zadnje provjereno okruzenje:
 - ESP-IDF v5.5
 - Python: `C:\Espressif\python_env\idf5.5_py3.11_env\Scripts`
 - Git iz Espressif toolchaina: `C:\Espressif\tools\idf-git\2.44.0\cmd`
+- Host-test GCC: `C:\msys64\ucrt64\bin`
 
 Napomena: `idf.py` nije nuzno dostupan prije pokretanja
 `Initialize-Idf.ps1`.
+
+Za host testove koji traze `gcc`/`make`, ako nisu vec u `PATH`, koristi:
+
+```powershell
+$env:Path = "C:\msys64\ucrt64\bin;$env:Path"
+```
 
 ## Build naredbe
 
