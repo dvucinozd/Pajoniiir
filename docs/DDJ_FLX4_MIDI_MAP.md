@@ -3,10 +3,18 @@
 Source file:
 [docs/reference/Pioneer-DDJ-FLX4.midi.xml](reference/Pioneer-DDJ-FLX4.midi.xml)
 
+Additional official controller MIDI list:
+[docs/reference/DDJ-FLX4_MIDI_message_List.md](reference/DDJ-FLX4_MIDI_message_List.md)
+
 The XML is a Mixxx controller preset. Physical capture on 2026-06-14 confirmed
 that all MVP control addresses and encodings below match the connected
 DDJ-FLX4. Remaining controls may therefore use the XML as the implementation
 seed for status, midino, message type, deck/shift channel, and 14-bit pairing.
+The official Pioneer MIDI message list is also tracked as a reference for
+controller-visible input/output notes, especially illumination and settings
+rows that are not present in the Mixxx XML. If the official list, XML, and
+hardware smoke disagree, record the conflict here and do not implement behavior
+until the hardware path is verified.
 
 The XML is not executable runtime logic. `Script-Binding` entries identify MIDI
 addresses, but the standalone behavior must be defined as a semantic S3 event
@@ -158,7 +166,7 @@ Status legend:
 | Jog + Shift search | `0xB0/0x29`, `0xB1/0x29` | relative/encoder CC | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH`, `CTRL_ID_DECK2_JOG_SEARCH` proposed | `deck_core` seek | Pending | Not captured |
 | Jog touch + Shift highspeed | `0x90/0x67`, `0x91/0x67` | press/release | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH_TOUCH`, `CTRL_ID_DECK2_JOG_SEARCH_TOUCH` proposed | `deck_core` jog mode | Pending | Not captured |
 | Tempo fader | D1 `0xB0/0x00+0x20`, D2 `0xB1/0x00+0x20` | 14-bit MSB+LSB | deck-local | `CTRL_ID_DECK1_TEMPO`, `CTRL_ID_DECK2_TEMPO` | audio pitch/resampler | Implemented with selected tempo range | Verified 2026-06-14; range behavior smoke passed 2026-06-25 |
-| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Implemented: BPM match to the other deck using precise ANLZ BPM when available, internally clamped to ±20%; phase-align seek to nearest matching beat phase only when the target deck is paused and both beatgrids are available | Verified 2026-06-21; behavior smoke pending |
+| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release in XML; official list notes Beat Sync is sent on button release rather than press | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Implemented: BPM match to the other deck using precise ANLZ BPM when available, internally clamped to ±20%; phase-align seek to nearest matching beat phase only when the target deck is paused and both beatgrids are available | Verified 2026-06-21; behavior smoke pending |
 | Beat Sync long press / master | `0x90/0x5C`, `0x91/0x5C` | press/release or long-press semantic | deck-local | `CTRL_ID_DECK1_SYNC_MASTER`, `CTRL_ID_DECK2_SYNC_MASTER` proposed | beat/sync model | Deferred | Not captured |
 | Beat Sync + Shift / tempo range | `0x90/0x60`, `0x91/0x60` | press/release | shifted deck-local | `CTRL_ID_DECK1_TEMPO_RANGE`, `CTRL_ID_DECK2_TEMPO_RANGE` | deck settings | Implemented: cycles `±6%`, `±10%`, `±16%` per deck; default `±10%` | Verified 2026-06-20 / 2026-06-21; range behavior smoke passed 2026-06-25 |
 | Loop In / 4 Beat | `0x90/0x10`, `0x91/0x10` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_IN`, `CTRL_ID_DECK2_LOOP_IN` | `deck_core` loop | Implemented | Verified D1/D2 2026-06-21; P4 behavior smoke passed 2026-06-21 |
@@ -166,7 +174,7 @@ Status legend:
 | Reloop/Exit | `0x90/0x4D`, `0x91/0x4D` | press/release | deck-local | `CTRL_ID_DECK1_RELOOP_EXIT`, `CTRL_ID_DECK2_RELOOP_EXIT` | `deck_core` loop | Implemented | Verified D1/D2 2026-06-21; P4 behavior smoke passed 2026-06-21 |
 | Reloop/Exit + Shift | `0x90/0x50`, `0x91/0x50` | press/release | shifted deck-local | `CTRL_ID_DECK1_RELOOP_STOP`, `CTRL_ID_DECK2_RELOOP_STOP` proposed | `deck_core` loop | Deferred | Not captured |
 | Shift + Loop In adjust | `0x90/0x4C`, `0x91/0x4C` | press/release | shifted deck-local | `CTRL_ID_DECK1_LOOP_ADJUST_IN`, `CTRL_ID_DECK2_LOOP_ADJUST_IN` proposed | loop edit mode | Deferred | Not captured |
-| Shift + Loop Out adjust | `0x90/0x4E`, `0x91/0x4E` | press/release | shifted deck-local | `CTRL_ID_DECK1_LOOP_ADJUST_OUT`, `CTRL_ID_DECK2_LOOP_ADJUST_OUT` proposed | loop edit mode | Deferred | Not captured |
+| Shift + Loop Out adjust | XML: `0x90/0x4E`, `0x91/0x4E`; official list input says D2 `0x91/0x4F` but official output says D2 `0x91/0x4E` | press/release | shifted deck-local | `CTRL_ID_DECK1_LOOP_ADJUST_OUT`, `CTRL_ID_DECK2_LOOP_ADJUST_OUT` proposed | loop edit mode | Deferred | Not captured; resolve D2 `0x4E`/`0x4F` conflict before implementation |
 | Cue/Loop Call Left / halve loop | `0x90/0x51`, `0x91/0x51` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_HALVE`, `CTRL_ID_DECK2_LOOP_HALVE` | `deck_core` loop | Implemented | Verified D1/D2 2026-06-21; P4 behavior smoke passed 2026-06-21 |
 | Cue/Loop Call Right / double loop | `0x90/0x53`, `0x91/0x53` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_DOUBLE`, `CTRL_ID_DECK2_LOOP_DOUBLE` | `deck_core` loop | Implemented | Verified D1/D2 2026-06-21; P4 behavior smoke passed 2026-06-21 |
 | Cue/Loop Call Left + Shift / jump back | `0x90/0x3E`, `0x91/0x3E` | press/release | shifted deck-local | `CTRL_ID_DECK1_BEAT_JUMP_BACK`, `CTRL_ID_DECK2_BEAT_JUMP_BACK` | `deck_core` beat jump | Implemented | Verified 2026-06-21; behavior smoke pending |
@@ -192,7 +200,7 @@ Status legend:
 | Beat FX beat left / right | `0x94/0x4A`, `0x94/0x4B` | press/release | FX section | `CTRL_ID_BEAT_FX_BEAT_DEC`, `CTRL_ID_BEAT_FX_BEAT_INC` proposed | Beat FX model | Deferred | Not captured |
 | Beat FX channel select | CH1 `0x94/0x10`, CH2 `0x95/0x11` | press/release | FX channel selector | `CTRL_ID_BEAT_FX_TARGET` proposed | Beat FX model | Deferred | Not captured |
 | Beat FX level/depth | `0xB4/0x02` | CC MSB in XML | FX section | `CTRL_ID_BEAT_FX_DEPTH` proposed | Beat FX model | Deferred | Not captured |
-| Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release | FX channel selector | `CTRL_ID_BEAT_FX_ON` proposed | Beat FX model | Deferred | Not captured |
+| Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release; official list notes FX ON/OFF blinks on NOTE ON and stays lit on NOTE OFF | FX channel selector | `CTRL_ID_BEAT_FX_ON` proposed | Beat FX model | Deferred | Not captured |
 | Beat FX on/off + Shift | CH1/global `0x94/0x43`, CH2 `0x95/0x43` | press/release | shifted FX channel selector | `CTRL_ID_BEAT_FX_CLEAR` proposed | Beat FX model | Deferred | Not captured |
 
 ### Performance Pad Mode Inventory
@@ -220,6 +228,8 @@ is direct or shifted.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Hot Cue pads 1-8 | D1 `0x97/0x00..0x07`, D2 `0x99/0x00..0x07` | press/release | active Hot Cue mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | P4 hot cue state | Implemented behavior | Verified D1/D2 pads 1-8 2026-06-21; D1 set/recall behavior smoke pass 2026-06-21 |
 | Hot Cue clear pads 1-8 | D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | press/release | shifted Hot Cue mode | same pad action ID with shift flag | P4 hot cue state | Implemented behavior | D1 shifted clear behavior smoke pass 2026-06-21; D2 clear smoke pending |
+| Pad FX1 pads | official list documents pad 8: D1 input `0xB0/0x17`, D2 input `0xB0/0x17`, LED/output D1 `0x97/0x17`, D2 `0x99/0x17`; shifted output D1 `0x98/0x17`, D2 `0x9A/0x17` | official row is CC-like for input, note-like for output | active Pad FX1 mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | P4 pad FX model | Deferred | Official-list only; XML does not expose a full Pad FX pad-action range, so capture/reconciliation required |
+| Pad FX2 pads | official list documents pad 8: D1 output `0x97/0x57`, D2 output `0x99/0x57`; shifted output D1 `0x98/0x57`, D2 `0x9A/0x57` | note output; input extraction from official markdown is ambiguous | shifted Pad FX2 mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | P4 pad FX model | Deferred | Official-list only; capture/reconciliation required before behavior or LEDs |
 | Keyboard/Stems pads 1-8 | D1 `0x97/0x40..0x47`, D2 `0x99/0x40..0x47` | press/release | active Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
 | Keyboard/Stems shifted pads 1-8 | D1 `0x98/0x40..0x47`, D2 `0x9A/0x40..0x47` | press/release | shifted Keyboard mode | `CTRL_ID_DECK*_PAD_ACTION` candidate | stems model | Deferred | Not captured |
 | Beat Loop pads 1-8 | D1 `0x97/0x60..0x67`, D2 `0x99/0x60..0x67` | press/release | active Beat Loop mode | `CTRL_ID_DECK1_PAD_ACTION`, `CTRL_ID_DECK2_PAD_ACTION` with mode+pad | `deck_core` beat loop | Implemented | Verified D1/D2 pads 1-8 2026-06-21; behavior smoke pending |
@@ -233,22 +243,43 @@ is direct or shifted.
 
 ### Candidate LED Output Inventory
 
-| LED/output group | XML status/midino | Source state | S3/P4 state owner | Status | HW verification |
+| LED/output group | Output status/midino | Source state | S3/P4 state owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- |
 | Play LEDs | `0x90/0x0B`, `0x91/0x0B` | deck playing | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
-| Play/Cue shifted alternate LEDs | `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for DDJ-FFL4 | Deferred | Not captured |
+| Play + Shift / Censor LEDs | official list: `0x90/0x0E`, `0x91/0x0E` | future shifted transport state | P4 `deck_core` | Candidate LED | Official-list only; not captured |
+| Play/Cue shifted alternate LEDs | XML output: `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for DDJ-FFL4 | Deferred | Not captured |
 | Cue LEDs | `0x90/0x0C`, `0x91/0x0C` | cue state | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
+| Cue + Shift / track-start LEDs | official list: `0x90/0x48`, `0x91/0x48` | future shifted cue/track-start indicator | P4 `deck_core` | Candidate LED | Official-list only; not captured |
 | Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled state | P4 `deck_core.sync_enabled` | Implemented output | Hardware smoke passed 2026-06-21; output probe verified 2026-06-20 |
 | PFL LEDs | `0x90/0x54`, `0x91/0x54` | PFL enabled | P4 mixer/cue routing | Implemented | Verified 2026-06-20 reconnect |
 | Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Hardware smoke passed 2026-06-21 |
 | Loop In LEDs | `0x90/0x10`, `0x91/0x10` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Behavior smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20 |
+| Shift + Loop In adjust LEDs | official list: `0x90/0x4C`, `0x91/0x4C` | future loop adjust-in mode | P4 loop edit state | Candidate LED | Official-list only; not captured |
 | Loop Out LEDs | `0x90/0x11`, `0x91/0x11` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Behavior smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20 |
+| Shift + Loop Out adjust LEDs | official list output: `0x90/0x4E`, `0x91/0x4E` | future loop adjust-out mode | P4 loop edit state | Candidate LED | Official-list only; note D2 input conflict with official-list `0x4F` |
 | Hot Cue pad LEDs | normal D1 `0x97/0x00..0x07`, normal D2 `0x99/0x00..0x07`; shifted mirror D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | hot cue exists/active | P4 hot cue state | Candidate LED | Not captured |
+| Pad FX1 pad LEDs | official list pad-8 example: normal D1 `0x97/0x17`, normal D2 `0x99/0x17`; shifted mirror D1 `0x98/0x17`, D2 `0x9A/0x17` | future Pad FX1 slot/effect state | P4 pad FX model | Candidate LED | Official-list only; capture required |
+| Keyboard/Stems pad LEDs | official list pad-8 example: normal D1 `0x97/0x47`, normal D2 `0x99/0x47`; shifted mirror D1 `0x98/0x47`, D2 `0x9A/0x47` | future keyboard/stems state | P4 keyboard/stems model | Candidate LED | Official-list only; capture required |
+| Pad FX2 pad LEDs | official list pad-8 example: normal D1 `0x97/0x57`, normal D2 `0x99/0x57`; shifted mirror D1 `0x98/0x57`, D2 `0x9A/0x57` | future Pad FX2 slot/effect state | P4 pad FX model | Candidate LED | Official-list only; capture required |
 | Beat Loop pad LEDs | normal D1 `0x97/0x60..0x67`, normal D2 `0x99/0x60..0x67`; shifted mirror D1 `0x98/0x60..0x67`, D2 `0x9A/0x60..0x67` | active mapped loop size while Beat Loop mode selected | P4 loop state and pad mode | Implemented output for normal pad LEDs; shifted mirror LEDs deferred | Hardware LED smoke pending |
+| Beat Jump pad LEDs | official list pad-8 example: normal D1 `0x97/0x27`, normal D2 `0x99/0x27`; shifted mirror D1 `0x98/0x27`, D2 `0x9A/0x27` | future beat-jump pad state | P4 beat jump/pad mode state | Candidate LED | Official-list only; capture required |
 | Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML | P4 beat jump/pad mode state | Candidate LED | Not captured |
 | Sampler pad LEDs | left normal `0x97/0x30..0x37`, left shifted `0x98/0x30..0x37`, right normal `0x99/0x30..0x37`, right shifted `0x9A/0x30..0x37` | sampler slot loaded in XML | sampler model | Deferred | Not captured |
+| Key Shift pad LEDs | official list pad-8 example: normal D1 `0x97/0x77`, normal D2 `0x99/0x77`; shifted mirror D1 `0x98/0x77`, D2 `0x9A/0x77` | future key-shift state | P4 key shift model | Candidate LED | Official-list only; capture required |
+| Loaded / Track Load Illumination | official list: D1 `0x9F/0x00`, D2 `0x9F/0x01` | deck has loaded track | P4 deck/library state | Candidate LED | Official-list only; not captured |
 | Channel 1 VU meter (5 LEDs) | `0xB0/0x02` | channel 1 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
 | Channel 2 VU meter (5 LEDs) | `0xB1/0x02` | channel 2 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
+
+### Official Settings / Device Mode Inventory
+
+These rows come from `DDJ-FLX4_MIDI_message_List.md`. They are controller
+configuration messages rather than normal performance controls. Do not map them
+to live P4 behavior without hardware smoke because some official-list rows
+overlap with XML live-control addresses.
+
+| Setting | Official status/midino | Encoding | Deck/shift | Semantic ID | P4 owner | Status | HW verification |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Vinyl mode on/off | official list: D1 `0xB0/0x17`, D2 `0xB0/0x17` | CC value `0x00` off, `0x7F` on; default on | deck setting; official note says it is changed by MIDI OUT from DJ app, not from unit | proposed `CTRL_ID_DECK*_VINYL_MODE_SETTING` | S3/controller settings bridge | Deferred | Official-list only; conflicts with XML Filter CH1 `0xB6/0x17+0x37`, capture/reconciliation required |
 
 ## Hardware Acceptance
 
