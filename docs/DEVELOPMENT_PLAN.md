@@ -150,6 +150,11 @@ TODO:
   a P4 pinout inventory, fix the output sample-rate strategy, split logical
   `master_out[]`/`hp_out[]` buffers, harden BSP audio init, and only then select
   approved P4 GPIOs for the PCM5102A.
+- For the concrete DAC bring-up sequence, follow
+  `docs/superpowers/plans/2026-06-26-pcm5102a-main-out-es8311-monitor.md`:
+  use GPIO50/GPIO52/GPIO51 as the bench-verification candidate set, reject the
+  GPIO22/GPIO23/GPIO24/GPIO25 proposal because GPIO23 is LCD backlight PWM, and
+  route PCM5102A as MAIN OUT while keeping ES8311 as monitor/headphones/speaker.
 
 Exit criteria:
 
