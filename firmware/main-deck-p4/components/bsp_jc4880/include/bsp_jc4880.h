@@ -14,6 +14,7 @@
 #include "esp_lcd_types.h"
 #include "esp_lcd_touch.h"
 #include "driver/i2c_master.h"
+#include "driver/i2s_types.h"
 #include "esp_codec_dev.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -58,10 +59,10 @@ i2c_master_bus_handle_t bsp_get_i2c_bus(void);
 // PCM frames via esp_codec_dev_write().
 esp_codec_dev_handle_t bsp_audio_get_codec_dev(void);
 
-// Audio output routing. The ES8311 DAC line output (DAC_OUT_P/N) feeds both the
-// onboard speaker power-amp (enabled by GPIO11) and the RCA line-out tap.
-//   SPEAKER — power amp ON  (audible on the onboard speaker)
-//   RCA     — power amp OFF (clean line-level only, for the RCA jacks / mixer)
+// Legacy ES8311 output routing. The ES8311 DAC output feeds the board monitor
+// path; GPIO11 controls the onboard speaker power amp.
+//   SPEAKER — monitor speaker PA ON
+//   RCA     — compatibility name for PA OFF / headphones or external monitor tap
 typedef enum {
     BSP_AUDIO_OUT_SPEAKER = 0,
     BSP_AUDIO_OUT_RCA,
@@ -69,3 +70,18 @@ typedef enum {
 
 void            bsp_audio_set_output(bsp_audio_out_t out);
 bsp_audio_out_t bsp_audio_get_output(void);
+
+typedef enum {
+    BSP_MONITOR_ROUTE_HEADPHONES = 0,
+    BSP_MONITOR_ROUTE_SPEAKER,
+} bsp_monitor_route_t;
+
+esp_err_t bsp_audio_set_monitor_route(bsp_monitor_route_t route);
+bsp_monitor_route_t bsp_audio_get_monitor_route(void);
+esp_err_t bsp_audio_set_speaker_pa_enabled(bool enabled);
+bool bsp_audio_get_speaker_pa_enabled(void);
+
+// PCM5102A main stereo output. The I2S handle is non-NULL only when
+// CONFIG_BSP_PCM5102A_MAIN_OUT is enabled and bsp_audio_init() succeeded.
+i2s_chan_handle_t bsp_audio_get_main_i2s_tx(void);
+esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate);

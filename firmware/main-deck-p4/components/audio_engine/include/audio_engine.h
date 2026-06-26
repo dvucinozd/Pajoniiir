@@ -145,6 +145,16 @@ esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
 esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);
+
+typedef enum {
+    AUDIO_HEADPHONE_MODE_MASTER_MONO = 0,
+    AUDIO_HEADPHONE_MODE_CUE_MONO,
+    AUDIO_HEADPHONE_MODE_SPLIT_MONO,
+} audio_headphone_mode_t;
+
+esp_err_t audio_engine_set_headphone_mode(audio_headphone_mode_t mode);
+audio_headphone_mode_t audio_engine_get_headphone_mode(void);
+
 esp_err_t audio_engine_set_cue_mode(uint8_t mode);
 uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);

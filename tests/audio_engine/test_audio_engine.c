@@ -223,15 +223,28 @@ static void test_cue_mode_api(void)
 
     EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets cue mode");
     EXPECT(audio_engine_get_cue_mode() == 0, "default cue mode is 0 (stereo)");
+    EXPECT(audio_engine_get_headphone_mode() == AUDIO_HEADPHONE_MODE_MASTER_MONO,
+           "default headphone mode is master mono");
 
     EXPECT(audio_engine_set_cue_mode(1) == ESP_OK, "set_cue_mode(1) returns ESP_OK");
     EXPECT(audio_engine_get_cue_mode() == 1, "cue mode is 1 (split mono)");
+    EXPECT(audio_engine_get_headphone_mode() == AUDIO_HEADPHONE_MODE_SPLIT_MONO,
+           "cue mode split maps to headphone split mono");
 
     EXPECT(audio_engine_set_cue_mode(2) == ESP_ERR_INVALID_ARG, "invalid cue mode returns INVALID_ARG");
     EXPECT(audio_engine_get_cue_mode() == 1, "cue mode remains unchanged on invalid argument");
 
     EXPECT(audio_engine_set_cue_mode(0) == ESP_OK, "set_cue_mode(0) returns ESP_OK");
     EXPECT(audio_engine_get_cue_mode() == 0, "cue mode is 0 (stereo)");
+    EXPECT(audio_engine_set_headphone_mode(AUDIO_HEADPHONE_MODE_CUE_MONO) == ESP_OK,
+           "set_headphone_mode(CUE_MONO) returns ESP_OK");
+    EXPECT(audio_engine_get_headphone_mode() == AUDIO_HEADPHONE_MODE_CUE_MONO,
+           "headphone mode stores cue mono");
+    EXPECT(audio_engine_get_cue_mode() == 1, "cue compatibility mode is split/non-master");
+    EXPECT(audio_engine_set_headphone_mode((audio_headphone_mode_t)99) == ESP_ERR_INVALID_ARG,
+           "invalid headphone mode returns INVALID_ARG");
+    EXPECT(audio_engine_get_headphone_mode() == AUDIO_HEADPHONE_MODE_CUE_MONO,
+           "invalid headphone mode leaves previous mode");
 }
 
 /* ── Test 6: per-deck transition API guards ─────────────────────────────── */

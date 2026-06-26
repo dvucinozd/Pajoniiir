@@ -8,7 +8,7 @@ static const char *TAG = "settings";
 
 /* Defaults match the firmware's out-of-the-box behaviour. */
 static app_settings_t s_cfg = {
-    .audio_out     = 0,   /* speaker */
+    .audio_out     = 0,   /* built-in monitor speaker */
     .backlight_pct = 80,
     .time_remain   = 0,
     .cue_mode      = 0,   /* stereo master */
@@ -49,8 +49,9 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "loaded: audio_out=%u backlight=%u time_remain=%u cue_mode=%u",
-             s_cfg.audio_out, s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.cue_mode);
+    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u",
+             s_cfg.audio_out ? "off" : "on",
+             s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.cue_mode);
     return ESP_OK;
 }
 

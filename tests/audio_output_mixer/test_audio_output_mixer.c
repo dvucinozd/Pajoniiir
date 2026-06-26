@@ -191,6 +191,64 @@ static void test_master_limiter_shapes_overloads_and_reports_telemetry(void)
     assert(stats.peak_input_abs == 60000);
 }
 
+static void test_full_mix_keeps_master_stereo_when_cue_is_enabled(void)
+{
+    audio_mixer_frame_t deck0_frames[] = {
+        { .left = 1000, .right = 3000 },
+        { .left = 1000, .right = 3000 },
+    };
+    audio_mixer_frame_t deck1_frames[] = {
+        { .left = 7000, .right = 9000 },
+        { .left = 7000, .right = 9000 },
+    };
+    source_t deck0_source = { .frames = deck0_frames, .count = 2, .index = 0 };
+    source_t deck1_source = { .frames = deck1_frames, .count = 2, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_state_t deck1_resampler;
+    audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
+    audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
+
+    prime_output_mixer(&deck0, &deck1);
+    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+                                                                 false, true,
+                                                                 AUDIO_OUTPUT_HEADPHONE_CUE_MONO,
+                                                                 NULL, NULL, NULL);
+
+    assert(out.master.left == 8000);
+    assert(out.master.right == 12000);
+    assert(out.headphone.left == 8000);
+    assert(out.headphone.right == 8000);
+}
+
+static void test_full_mix_split_monitor_uses_master_left_and_pfl_right(void)
+{
+    audio_mixer_frame_t deck0_frames[] = {
+        { .left = 1000, .right = 3000 },
+        { .left = 1000, .right = 3000 },
+    };
+    audio_mixer_frame_t deck1_frames[] = {
+        { .left = 7000, .right = 9000 },
+        { .left = 7000, .right = 9000 },
+    };
+    source_t deck0_source = { .frames = deck0_frames, .count = 2, .index = 0 };
+    source_t deck1_source = { .frames = deck1_frames, .count = 2, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_state_t deck1_resampler;
+    audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
+    audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
+
+    prime_output_mixer(&deck0, &deck1);
+    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+                                                                 false, true,
+                                                                 AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO,
+                                                                 NULL, NULL, NULL);
+
+    assert(out.master.left == 8000);
+    assert(out.master.right == 12000);
+    assert(out.headphone.left == 10000);
+    assert(out.headphone.right == 8000);
+}
+
 int main(void)
 {
     test_mixes_two_active_decks_with_output_gains();
@@ -198,6 +256,8 @@ int main(void)
     test_master_limiter_leaves_single_deck_unchanged();
     test_master_limiter_leaves_normal_two_deck_sum_unchanged();
     test_master_limiter_shapes_overloads_and_reports_telemetry();
+    test_full_mix_keeps_master_stereo_when_cue_is_enabled();
+    test_full_mix_split_monitor_uses_master_left_and_pfl_right();
     puts("audio_output_mixer tests passed");
     return 0;
 }

@@ -38,8 +38,8 @@ Recommended MVP hardware plan:
 
 | Output | Hardware | Notes |
 | --- | --- | --- |
-| Master | external PCM5102A or similar I2S DAC | use spare verified P4 GPIOs for BCLK/LRCK/DOUT or a second I2S path |
-| Cue/PFL | onboard ES8311 path | verify electrical safety before using board speaker output wiring |
+| Master | external PCM5102A or similar I2S DAC | use the JP1 candidate set GPIO50/GPIO52/GPIO51 only after bench verification |
+| Cue/PFL | onboard ES8311 path | ES8311 remains the monitor/headphones/onboard-speaker path |
 
 Important: do not short a BTL speaker amplifier output to ground. The ES8311
 and amplifier path must be inspected before wiring headphones or line outputs.
@@ -51,11 +51,19 @@ Inherited confirmed UART:
 - P4 GPIO28: UART RX from S3 TX.
 - P4 GPIO29: UART TX to S3 RX.
 
-Candidate external DAC pins from the project note:
+PCM5102A MAIN OUT candidate pins:
 
-- GPIO30
-- GPIO31
-- GPIO32
+| PCM5102A signal | ESP32-P4 JC4880 JP1 candidate |
+| --- | --- |
+| BCK/BCLK | GPIO50 / JP1 pin 9 |
+| LRCK/WS | GPIO52 / JP1 pin 5 |
+| DIN | GPIO51 / JP1 pin 7 |
+| SCK/MCLK | not connected for first bring-up |
+
+Rejected DAC pin proposal:
+
+- GPIO22/GPIO23/GPIO24/GPIO25 must not be used for this DAC plan.
+- GPIO23 is already LCD backlight PWM.
 
 These must be verified against the JC4880 schematic, board examples, and actual
 ESP-IDF I2S peripheral routing before committing PCB or harness work.

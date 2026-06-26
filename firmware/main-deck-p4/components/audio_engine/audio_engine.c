@@ -68,6 +68,7 @@ static const char *TAG = "audio";
 #   include "esp_timer.h"
 #   include "bsp_jc4880.h"
 #   include "esp_codec_dev.h"
+#   include "driver/i2s_common.h"
 #else
 #   define AE_FW 0
 #endif
@@ -173,6 +174,7 @@ static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
+static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
@@ -205,29 +207,6 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
     return left > right ? left : right;
 }
 
-#if AE_FW
-static float ae_clamp_gain(float gain)
-{
-    if (gain < 0.0f) return 0.0f;
-    if (gain > 1.0f) return 1.0f;
-    return gain;
-}
-
-static int32_t ae_round_to_i32(float sample)
-{
-    return (int32_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
-}
-
-static int32_t ae_mix_raw_sample(int16_t deck0,
-                                 int16_t deck1,
-                                 float deck0_gain,
-                                 float deck1_gain)
-{
-    return ae_round_to_i32(((float)deck0 * ae_clamp_gain(deck0_gain)) +
-                           ((float)deck1 * ae_clamp_gain(deck1_gain)));
-}
-#endif
-
 static void record_deck_peak_value(uint8_t deck, uint16_t peak)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
@@ -246,6 +225,7 @@ static void record_deck_peak(uint8_t deck, audio_mixer_frame_t frame)
 
 #if AE_FW
 static esp_codec_dev_handle_t s_codec       = NULL;  /* owned by bsp_jc4880 */
+static i2s_chan_handle_t      s_main_i2s_tx = NULL;  /* optional PCM5102A MAIN OUT */
 static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task gives on exit */
 static SemaphoreHandle_t      s_output_done = NULL;
 static TaskHandle_t           s_output_task = NULL;
@@ -1138,10 +1118,41 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     return ESP_OK;
 }
 
+static audio_output_headphone_mode_t output_headphone_mode(void)
+{
+    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO) {
+        return AUDIO_OUTPUT_HEADPHONE_MASTER_MONO;
+    }
+    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_CUE_MONO) {
+        return AUDIO_OUTPUT_HEADPHONE_CUE_MONO;
+    }
+    return AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO;
+}
+
+static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
+{
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (!s_main_i2s_tx) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    size_t written = 0;
+    esp_err_t rc = i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY);
+    if (rc != ESP_OK) {
+        return rc;
+    }
+    return written == bytes ? ESP_OK : ESP_FAIL;
+#else
+    (void)frames;
+    (void)bytes;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
 static void ae_output_task(void *arg)
 {
     (void)arg;
-    int16_t out[AE_OUT_FRAMES * 2];
+    int16_t master_out[AE_OUT_FRAMES * 2];
+    int16_t hp_out[AE_OUT_FRAMES * 2];
     while (s_output_run) {
         if (!s_output_codec_open) {
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -1179,61 +1190,41 @@ static void ae_output_task(void *arg)
         uint32_t consumed[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         uint16_t block_peak[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         audio_mixer_limiter_stats_t block_limiter_stats = { 0 };
-        float pfl_gain0 = s_pfl_enabled[deck0_index] ? 1.0f : 0.0f;
-        float pfl_gain1 = s_pfl_enabled[deck1_index] ? 1.0f : 0.0f;
-        uint8_t mode = s_cue_mode;
 
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
-            audio_mixer_frame_t frame0 = { 0 };
-            audio_mixer_frame_t frame1 = { 0 };
 
-            if (deck0.active && deck0.resampler) {
-                frame0 = audio_resampler_next(deck0.resampler,
-                                              deck0.pitch_factor,
-                                              deck0.pop_source,
-                                              deck0.source_ctx,
-                                              &frame_consumed0);
-            }
-            if (deck1.active && deck1.resampler) {
-                frame1 = audio_resampler_next(deck1.resampler,
-                                              deck1.pitch_factor,
-                                              deck1.pop_source,
-                                              deck1.source_ctx,
-                                              &frame_consumed1);
-            }
+            audio_output_mix_result_t mix = audio_output_mixer_next_full(
+                &deck0,
+                &deck1,
+                s_pfl_enabled[deck0_index],
+                s_pfl_enabled[deck1_index],
+                output_headphone_mode(),
+                &frame_consumed0,
+                &frame_consumed1,
+                &block_limiter_stats);
 
-            uint16_t peak0 = frame_peak(frame0);
-            uint16_t peak1 = frame_peak(frame1);
+            uint16_t peak0 = frame_peak(mix.deck_frame[0]);
+            uint16_t peak1 = frame_peak(mix.deck_frame[1]);
             if (peak0 > block_peak[deck0_index]) block_peak[deck0_index] = peak0;
             if (peak1 > block_peak[deck1_index]) block_peak[deck1_index] = peak1;
 
             consumed[deck0_index] += frame_consumed0;
             consumed[deck1_index] += frame_consumed1;
 
-            audio_mixer_frame_t master_frame = {
-                .left = audio_mixer_limit_master_sample(
-                    ae_mix_raw_sample(frame0.left, frame1.left, deck0.gain, deck1.gain),
-                    &block_limiter_stats),
-                .right = audio_mixer_limit_master_sample(
-                    ae_mix_raw_sample(frame0.right, frame1.right, deck0.gain, deck1.gain),
-                    &block_limiter_stats),
-            };
-
-            if (mode == 1) { // Split Mono
-                audio_mixer_frame_t pfl_frame = {
-                    .left = audio_mixer_mix_sample(frame0.left, frame1.left, pfl_gain0, pfl_gain1),
-                    .right = audio_mixer_mix_sample(frame0.right, frame1.right, pfl_gain0, pfl_gain1),
-                };
-                out[i * 2    ] = audio_mixer_mix_sample(master_frame.left, master_frame.right, 0.5f, 0.5f);
-                out[i * 2 + 1] = audio_mixer_mix_sample(pfl_frame.left, pfl_frame.right, 0.5f, 0.5f);
-            } else { // Stereo Master
-                out[i * 2    ] = master_frame.left;
-                out[i * 2 + 1] = master_frame.right;
-            }
+            master_out[i * 2] = mix.master.left;
+            master_out[i * 2 + 1] = mix.master.right;
+            hp_out[i * 2] = mix.headphone.left;
+            hp_out[i * 2 + 1] = mix.headphone.right;
         }
-        if (esp_codec_dev_write(s_codec, out, (int)sizeof(out)) == ESP_OK) {
+        int16_t *es8311_out = (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO)
+            ? master_out
+            : hp_out;
+        esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+        esp_err_t hp_rc = esp_codec_dev_write(s_codec, es8311_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
+
+        if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
@@ -1351,6 +1342,8 @@ esp_err_t audio_engine_init(void)
         s_deck_peak[i] = 0;
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
+    s_cue_mode = 0;
+    s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 
 #if AE_FW
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
@@ -1360,6 +1353,7 @@ esp_err_t audio_engine_init(void)
         ESP_LOGE(TAG, "audio_engine_init: codec not ready (call bsp_audio_init first)");
         return ESP_ERR_INVALID_STATE;
     }
+    s_main_i2s_tx = bsp_audio_get_main_i2s_tx();
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
     if (!s_tasks_done) {
         s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
@@ -2097,12 +2091,26 @@ esp_err_t audio_engine_set_cue_mode(uint8_t mode)
 {
     if (mode > 1) return ESP_ERR_INVALID_ARG;
     s_cue_mode = mode;
+    s_headphone_mode = mode ? AUDIO_HEADPHONE_MODE_SPLIT_MONO : AUDIO_HEADPHONE_MODE_MASTER_MONO;
     return ESP_OK;
 }
 
 uint8_t audio_engine_get_cue_mode(void)
 {
     return s_cue_mode;
+}
+
+esp_err_t audio_engine_set_headphone_mode(audio_headphone_mode_t mode)
+{
+    if (mode > AUDIO_HEADPHONE_MODE_SPLIT_MONO) return ESP_ERR_INVALID_ARG;
+    s_headphone_mode = mode;
+    s_cue_mode = mode == AUDIO_HEADPHONE_MODE_MASTER_MONO ? 0 : 1;
+    return ESP_OK;
+}
+
+audio_headphone_mode_t audio_engine_get_headphone_mode(void)
+{
+    return s_headphone_mode;
 }
 
 

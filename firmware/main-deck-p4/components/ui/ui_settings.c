@@ -197,18 +197,23 @@ static void slider_brightness_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Backlight brightness set to %d%%", val);
 }
 
+static const char *monitor_route_label(bool speaker_enabled)
+{
+    return speaker_enabled ? "BUILT-IN SPEAKER" : "HEADPHONES";
+}
+
 static void audio_out_event_cb(lv_event_t *event)
 {
     lv_obj_t *sw = lv_event_get_target(event);
-    bool rca = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    bool speaker_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
 #ifndef WIN32
-    bsp_audio_set_output(rca ? BSP_AUDIO_OUT_RCA : BSP_AUDIO_OUT_SPEAKER);
-    app_settings_set_audio_out(rca ? 1 : 0);
+    bsp_audio_set_output(speaker_enabled ? BSP_AUDIO_OUT_SPEAKER : BSP_AUDIO_OUT_RCA);
+    app_settings_set_audio_out(speaker_enabled ? 0 : 1);
 #endif
     if (s_label_audio_out) {
-        lv_label_set_text(s_label_audio_out, rca ? "RCA LINE-OUT" : "SPEAKER");
+        lv_label_set_text(s_label_audio_out, monitor_route_label(speaker_enabled));
     }
-    ESP_LOGI(TAG, "Audio output: %s", rca ? "RCA line-out" : "Speaker");
+    ESP_LOGI(TAG, "Monitor speaker: %s", speaker_enabled ? "on" : "off");
 }
 
 #ifndef WIN32
@@ -248,10 +253,10 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #ifndef WIN32
     app_settings_t cfg = app_settings_get();
     int bl_init = cfg.backlight_pct;
-    bool rca_init = (cfg.audio_out != 0);
+    bool monitor_speaker_init = (cfg.audio_out == 0);
 #else
     int bl_init = 80;
-    bool rca_init = false;
+    bool monitor_speaker_init = true;
 #endif
 
     const int left_x = 30;
@@ -269,18 +274,18 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                      &lv_font_montserrat_14, 270, 44);
     lv_label_set_text_fmt(s_label_brightness_val, "%d%%", bl_init);
 
-    lv_obj_t *audio_section = ui_settings_section(screen, left_x, 118, left_w, 86, "AUDIO OUTPUT");
+    lv_obj_t *audio_section = ui_settings_section(screen, left_x, 118, left_w, 86, "MONITOR SPEAKER");
     lv_obj_t *sw_audio = lv_switch_create(audio_section);
     lv_obj_set_pos(sw_audio, 16, 42);
     lv_obj_add_event_cb(sw_audio, audio_out_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     s_label_audio_out = ui_settings_value_label(audio_section,
-                                                rca_init ? "RCA LINE-OUT" : "SPEAKER",
+                                                monitor_route_label(monitor_speaker_init),
                                                 COL_GREEN,
                                                 &lv_font_montserrat_16,
                                                 104,
                                                 44);
-    if (rca_init) {
+    if (monitor_speaker_init) {
         lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
     }
 

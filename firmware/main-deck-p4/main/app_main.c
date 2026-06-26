@@ -60,7 +60,7 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_sd_init());
     sd_diag_log_init();
 
-    // Apply the saved audio output routing + backlight brightness.
+    // Apply the saved monitor speaker route + backlight brightness.
     bsp_audio_set_output(app_settings_get().audio_out ? BSP_AUDIO_OUT_RCA
                                                       : BSP_AUDIO_OUT_SPEAKER);
     bsp_display_set_backlight(app_settings_get().backlight_pct);

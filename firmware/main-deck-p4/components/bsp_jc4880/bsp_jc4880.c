@@ -49,6 +49,13 @@ static const char *TAG = "bsp";
 #define BSP_I2S_DIN_GPIO        GPIO_NUM_48   // codec ADC → ESP (mic, unused for playback)
 #define BSP_AUDIO_PA_GPIO       GPIO_NUM_11   // power-amp enable
 
+// ── Main Out: PCM5102A on JP1 candidate pins ────────────────────────────────
+#define BSP_PCM5102_I2S_NUM        I2S_NUM_1
+#define BSP_PCM5102_BCLK_GPIO      GPIO_NUM_50
+#define BSP_PCM5102_WS_GPIO        GPIO_NUM_52
+#define BSP_PCM5102_DOUT_GPIO      GPIO_NUM_51
+#define BSP_PCM5102_MCLK_GPIO      I2S_GPIO_UNUSED
+
 // Vendor P4 function board BSP powers the uSD slot through on-chip LDO channel 4.
 #define BSP_SD_LDO_CHAN         4
 
@@ -76,8 +83,12 @@ static esp_ldo_channel_handle_t s_mipi_ldo = NULL;
 static i2c_master_bus_handle_t  s_i2c_bus  = NULL;
 static esp_lcd_touch_handle_t   s_touch    = NULL;
 static i2s_chan_handle_t        s_i2s_tx   = NULL;
+static i2s_chan_handle_t        s_i2s_tx_pcm5102 = NULL;
 static esp_codec_dev_handle_t   s_codec    = NULL;
 static bsp_audio_out_t          s_audio_out = BSP_AUDIO_OUT_SPEAKER;  // default: onboard speaker
+static bool                     s_audio_pa_gpio_ready = false;
+static bool                     s_speaker_pa_enabled = false;
+static bsp_monitor_route_t      s_monitor_route = BSP_MONITOR_ROUTE_SPEAKER;
 static sdmmc_card_t            *s_sd_card  = NULL;
 static sd_pwr_ctrl_handle_t     s_sd_pwr   = NULL;
 
@@ -310,9 +321,67 @@ esp_codec_dev_handle_t bsp_audio_get_codec_dev(void)
     return s_codec;
 }
 
+i2s_chan_handle_t bsp_audio_get_main_i2s_tx(void)
+{
+    return s_i2s_tx_pcm5102;
+}
+
+static esp_err_t bsp_audio_pa_gpio_init_once(void)
+{
+    if (s_audio_pa_gpio_ready) {
+        return ESP_OK;
+    }
+
+    gpio_config_t pa_cfg = {
+        .mode         = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = 1ULL << BSP_AUDIO_PA_GPIO,
+    };
+    ESP_RETURN_ON_ERROR(gpio_config(&pa_cfg), TAG, "speaker PA gpio config failed");
+    s_audio_pa_gpio_ready = true;
+    return ESP_OK;
+}
+
+static esp_err_t bsp_audio_init_i2s_pcm5102(void)
+{
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (s_i2s_tx_pcm5102) {
+        return ESP_OK;
+    }
+
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BSP_PCM5102_I2S_NUM, I2S_ROLE_MASTER);
+    chan_cfg.auto_clear = true;
+    ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_i2s_tx_pcm5102, NULL), TAG, "pcm5102 i2s_new_channel failed");
+
+    i2s_std_config_t std_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(44100),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = BSP_PCM5102_MCLK_GPIO,
+            .bclk = BSP_PCM5102_BCLK_GPIO,
+            .ws = BSP_PCM5102_WS_GPIO,
+            .dout = BSP_PCM5102_DOUT_GPIO,
+            .din = I2S_GPIO_UNUSED,
+            .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
+        },
+    };
+    ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx_pcm5102, &std_cfg), TAG, "pcm5102 i2s std init failed");
+    ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 i2s enable failed");
+    ESP_LOGI(TAG, "PCM5102A main out ready: BCLK=%d WS=%d DOUT=%d",
+             BSP_PCM5102_BCLK_GPIO, BSP_PCM5102_WS_GPIO, BSP_PCM5102_DOUT_GPIO);
+#endif
+    return ESP_OK;
+}
+
 esp_err_t bsp_audio_init(void)
 {
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
+
+    if (s_codec && s_i2s_tx) {
+        ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG, "speaker PA gpio init failed");
+        ESP_RETURN_ON_ERROR(bsp_audio_set_monitor_route(s_monitor_route), TAG, "monitor route restore failed");
+        ESP_RETURN_ON_ERROR(bsp_audio_init_i2s_pcm5102(), TAG, "PCM5102A restore failed");
+        return ESP_OK;
+    }
 
     // ── I2S TX channel (master, standard Philips, 16-bit stereo) ─────────────
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(BSP_I2S_NUM, I2S_ROLE_MASTER);
@@ -385,30 +454,82 @@ esp_err_t bsp_audio_init(void)
 
     esp_codec_dev_set_out_vol(s_codec, 70.0);   // default volume (0..100)
 
-    // BSP-owned power-amp enable (GPIO11): drives the onboard speaker; off = RCA line-out only.
-    gpio_config_t pa_cfg = {
-        .mode         = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << BSP_AUDIO_PA_GPIO,
-    };
-    ESP_ERROR_CHECK(gpio_config(&pa_cfg));
-    gpio_set_level(BSP_AUDIO_PA_GPIO, s_audio_out == BSP_AUDIO_OUT_SPEAKER ? 1 : 0);
+    // BSP-owned power-amp enable (GPIO11): drives the onboard monitor speaker.
+    ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG, "speaker PA gpio init failed");
+    ESP_RETURN_ON_ERROR(bsp_audio_set_monitor_route(s_monitor_route), TAG, "monitor route init failed");
+    ESP_RETURN_ON_ERROR(bsp_audio_init_i2s_pcm5102(), TAG, "PCM5102A init failed");
 
-    ESP_LOGI(TAG, "ES8311 audio ready (I2S MCLK=%d BCLK=%d WS=%d DOUT=%d, PA=%d, out=%s)",
+    ESP_LOGI(TAG, "ES8311 monitor ready (I2S MCLK=%d BCLK=%d WS=%d DOUT=%d, PA=%d, route=%s)",
              BSP_I2S_MCLK_GPIO, BSP_I2S_BCLK_GPIO, BSP_I2S_WS_GPIO, BSP_I2S_DOUT_GPIO, BSP_AUDIO_PA_GPIO,
-             s_audio_out == BSP_AUDIO_OUT_SPEAKER ? "speaker" : "rca");
+             s_monitor_route == BSP_MONITOR_ROUTE_SPEAKER ? "built-in speaker" : "headphones");
     return ESP_OK;
+}
+
+esp_err_t bsp_audio_set_speaker_pa_enabled(bool enabled)
+{
+    ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG, "speaker PA gpio init failed");
+    gpio_set_level(BSP_AUDIO_PA_GPIO, enabled ? 1 : 0);
+    s_speaker_pa_enabled = enabled;
+    ESP_LOGI(TAG, "monitor speaker PA %s", enabled ? "on" : "off");
+    return ESP_OK;
+}
+
+bool bsp_audio_get_speaker_pa_enabled(void)
+{
+    return s_speaker_pa_enabled;
+}
+
+esp_err_t bsp_audio_set_monitor_route(bsp_monitor_route_t route)
+{
+    switch (route) {
+    case BSP_MONITOR_ROUTE_HEADPHONES:
+        ESP_RETURN_ON_ERROR(bsp_audio_set_speaker_pa_enabled(false), TAG, "speaker PA off failed");
+        s_monitor_route = route;
+        ESP_LOGI(TAG, "monitor route → headphones");
+        return ESP_OK;
+    case BSP_MONITOR_ROUTE_SPEAKER:
+        ESP_RETURN_ON_ERROR(bsp_audio_set_speaker_pa_enabled(true), TAG, "speaker PA on failed");
+        s_monitor_route = route;
+        ESP_LOGI(TAG, "monitor route → built-in speaker");
+        return ESP_OK;
+    default:
+        return ESP_ERR_INVALID_ARG;
+    }
+}
+
+bsp_monitor_route_t bsp_audio_get_monitor_route(void)
+{
+    return s_monitor_route;
 }
 
 void bsp_audio_set_output(bsp_audio_out_t out)
 {
     s_audio_out = out;
-    gpio_set_level(BSP_AUDIO_PA_GPIO, out == BSP_AUDIO_OUT_SPEAKER ? 1 : 0);
-    ESP_LOGI(TAG, "audio output → %s", out == BSP_AUDIO_OUT_SPEAKER ? "speaker (PA on)" : "RCA line-out (PA off)");
+    (void)bsp_audio_set_monitor_route(out == BSP_AUDIO_OUT_SPEAKER
+                                      ? BSP_MONITOR_ROUTE_SPEAKER
+                                      : BSP_MONITOR_ROUTE_HEADPHONES);
 }
 
 bsp_audio_out_t bsp_audio_get_output(void)
 {
     return s_audio_out;
+}
+
+esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate)
+{
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (!s_i2s_tx_pcm5102 || sample_rate == 0u) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ESP_RETURN_ON_ERROR(i2s_channel_disable(s_i2s_tx_pcm5102), TAG, "pcm5102 disable failed");
+    i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
+    ESP_RETURN_ON_ERROR(i2s_channel_reconfig_std_clock(s_i2s_tx_pcm5102, &clk_cfg), TAG, "pcm5102 clock reconfig failed");
+    ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 enable failed");
+    return ESP_OK;
+#else
+    (void)sample_rate;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 esp_err_t bsp_sd_init(void)
