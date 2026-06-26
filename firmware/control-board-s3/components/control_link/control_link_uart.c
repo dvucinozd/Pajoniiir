@@ -25,6 +25,7 @@ static const char *TAG = "ctrl_link";
 #define RX_BUF_SIZE  256
 #define TX_BUF_SIZE  256
 #define RX_QUEUE_LEN 10
+#define CTRL_RX_TASK_STACK 4096
 
 static QueueHandle_t   s_uart_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
@@ -160,7 +161,7 @@ esp_err_t control_link_init(QueueHandle_t panel_event_queue)
                                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
                         TAG, "set pin");
 
-    if (xTaskCreate(uart_rx_task, "ctrl_rx", 2048, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(uart_rx_task, "ctrl_rx", CTRL_RX_TASK_STACK, NULL, 5, NULL) != pdPASS) {
         uart_driver_delete(UART_PORT);
         return ESP_ERR_NO_MEM;
     }

@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+size_t flx4_midi_host_midi_out_queue_capacity(void);
+
 static void test_parse_note_on_packet(void)
 {
     const uint8_t packet[4] = { 0x09, 0x90, 0x0B, 0x7F };
@@ -137,6 +139,19 @@ static void test_vu_meter_packets_drop_when_out_queue_has_backlog(void)
     assert(!flx4_midi_host_should_drop_out_packet(d1_vu, 32, 0));
 }
 
+static void test_midi_out_queue_capacity_covers_phase7_forced_snapshot(void)
+{
+    const size_t deck_transport_leds = 4; // Play, Cue, PFL, Sync
+    const size_t deck_pad_mode_leds = 8;
+    const size_t deck_loop_leds = 2;
+    const size_t deck_beat_loop_pad_leds = 8;
+    const size_t forced_snapshot_packets =
+        2 * (deck_transport_leds + deck_pad_mode_leds +
+             deck_loop_leds + deck_beat_loop_pad_leds);
+
+    assert(flx4_midi_host_midi_out_queue_capacity() >= forced_snapshot_packets);
+}
+
 int main(void)
 {
     test_parse_note_on_packet();
@@ -147,6 +162,7 @@ int main(void)
     test_connection_state_publications_are_edge_triggered();
     test_vu_meter_packets_are_low_priority();
     test_vu_meter_packets_drop_when_out_queue_has_backlog();
+    test_midi_out_queue_capacity_covers_phase7_forced_snapshot();
     puts("flx4_midi_host tests passed");
     return 0;
 }

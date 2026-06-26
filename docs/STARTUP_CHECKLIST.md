@@ -88,6 +88,12 @@
   FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
   raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both
   decks can play while controller Play/Pause remains responsive.
+- S3 extended LED snapshot recovery was fixed on 2026-06-26 after hardware
+  smoke exposed a `ctrl_rx` stack overflow during the wider Phase 7 forced LED
+  snapshot. The MIDI OUT queue now covers the full non-VU snapshot burst,
+  full-queue warnings are rate-limited, and `ctrl_rx` has a 4096-byte stack.
+  Post-fix S3 reset recovery re-enumerated FLX4 and the operator confirmed the
+  controller was responsive.
 - P4 audio output diagnostics were calibrated on 2026-06-21: normal blocking
   `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
   warnings. A dual-deck hardware run reported zero late warnings while keeping
@@ -190,7 +196,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   mode; shifted mirror pad LED output remains deferred. Pad-mode, Beat Sync,
   and Loop In/Out LED hardware smoke has passed where recorded in
   `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; Beat Loop pad LED hardware
-  smoke and extended reconnect resynchronization remain pending.
+  smoke and full manual USB replug LED-state acceptance remain pending. S3
+  reset recovery after the extended reconnect snapshot no longer crashes.
 - [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the

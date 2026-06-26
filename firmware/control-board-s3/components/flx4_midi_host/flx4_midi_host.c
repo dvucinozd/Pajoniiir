@@ -8,6 +8,13 @@ static void *s_message_cb_ctx;
 static bool s_connection_state_valid;
 static bool s_connection_state_connected;
 
+#define FLX4_MIDI_OUT_QUEUE_DEPTH 64u
+
+size_t flx4_midi_host_midi_out_queue_capacity(void)
+{
+    return FLX4_MIDI_OUT_QUEUE_DEPTH;
+}
+
 void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx)
 {
     s_message_cb = cb;
@@ -303,7 +310,7 @@ static const char *TAG = "flx4_host";
 #define MIDI_CLIENT_TASK_PRIO   5
 #define CLIENT_NUM_EVENT_MSG    5
 #define MIDI_TRANSFER_BYTES     64
-#define MIDI_OUT_QUEUE_DEPTH    32
+#define MIDI_OUT_QUEUE_DEPTH    ((uint32_t)FLX4_MIDI_OUT_QUEUE_DEPTH)
 
 static void publish_connection_state(bool connected)
 {
@@ -344,6 +351,8 @@ typedef struct {
 static flx4_host_state_t s_host;
 static QueueHandle_t s_midi_out_queue = NULL;
 static SemaphoreHandle_t s_midi_out_mutex = NULL;
+static uint32_t s_midi_out_full_drop_count;
+static TickType_t s_last_midi_out_full_warn;
 
 static void log_midi_packet(const uint8_t packet[4])
 {
@@ -729,7 +738,7 @@ static void midi_client_task(void *arg)
 
 esp_err_t flx4_midi_host_init(void)
 {
-    s_midi_out_queue = xQueueCreate(32, 4);
+    s_midi_out_queue = xQueueCreate((UBaseType_t)MIDI_OUT_QUEUE_DEPTH, 4);
     if (!s_midi_out_queue) {
         return ESP_ERR_NO_MEM;
     }
@@ -791,7 +800,13 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
         if (flx4_midi_host_is_vu_meter_packet(packet)) {
             goto exit;
         }
-        ESP_LOGW(TAG, "MIDI OUT queue full, dropping packet");
+        s_midi_out_full_drop_count++;
+        TickType_t now = xTaskGetTickCount();
+        if (now - s_last_midi_out_full_warn >= pdMS_TO_TICKS(1000)) {
+            s_last_midi_out_full_warn = now;
+            ESP_LOGW(TAG, "MIDI OUT queue full, dropping packet, drops=%" PRIu32,
+                     s_midi_out_full_drop_count);
+        }
         ret = ESP_ERR_TIMEOUT;
         goto exit;
     }

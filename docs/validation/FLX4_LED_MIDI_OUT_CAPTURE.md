@@ -141,8 +141,9 @@ Observed behavior:
 
 Status: firmware implemented, software-tested, build-verified. Pad-mode,
 Beat Sync, Loop In/Out, and Hot Cue behavior smoke have partial hardware pass
-coverage as recorded below; extended reconnect resynchronization remains
-pending.
+coverage as recorded below. S3 reset recovery after an extended Phase 7 LED
+snapshot is fixed and smoke-verified as of 2026-06-26; full manual FLX4 USB
+replug LED-state acceptance remains pending.
 
 Firmware branch: `codex/phase7-extended-controls-vu`
 
@@ -177,7 +178,35 @@ Run this checklist after a fresh S3/P4 flash and FLX4 power cycle:
 | 16 | Press Deck 1 loop halve/double buttons while loop is active | Active loop length halves/doubles without changing loop start | pass 2026-06-21 | One output late diagnostic appeared on a very short Deck 1 loop (`late_max=15668 us`); audio remained running and this is tracked as a watch item. |
 | 17 | Repeat steps 13-16 on Deck 2 | Deck 2 loop behavior and LEDs follow independently from Deck 1 | pass 2026-06-21 | P4 log captured independent Deck 2 loop set/exit/restore/halve events. |
 | 18 | With non-default pad mode, Beat Sync enabled, and active loop state, unplug/reinsert FLX4 USB | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs | pending | Playback/deck state must not change. |
-| 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | pending | P4 state remains authoritative. |
+| 19 | With non-default pad mode, Beat Sync enabled, and active loop state, reset S3 only | P4 reconnect snapshot restores selected pad mode LED, Beat Sync LED, and Loop In/Out LEDs after S3 recovery | partial pass 2026-06-26 | Regression fixed: S3 no longer stack-overflows in `ctrl_rx` during the extended LED snapshot, S3 re-enumerated FLX4, and operator confirmed the controller became responsive again. Dedicated visual LED-state confirmation remains to be repeated. |
+
+### 2026-06-26 Extended LED Snapshot Regression
+
+Hardware smoke on `master` commit `eee2e90` exposed an S3 reboot loop during
+extended reconnect snapshot publication:
+
+- P4 remained stable and repeatedly logged `FLX4 connected; forcing LED
+  snapshot` followed by `forced FLX4 LED snapshot published`.
+- S3 published `FLX4 connection state: connected`, then logged repeated
+  `MIDI OUT queue full, dropping packet`, then crashed with `stack overflow in
+  task ctrl_rx`.
+- Root cause: the Phase 7 forced snapshot can publish 44 non-VU LED packets
+  for two decks. The S3 MIDI OUT queue capacity was 32 packets, and the
+  full-queue warning path ran synchronously in the 2048-byte `ctrl_rx` task.
+
+Fix flashed and smoke-verified on 2026-06-26:
+
+- S3 MIDI OUT queue capacity raised to 64 packets and covered by a host test
+  sized against the Phase 7 forced snapshot.
+- `ctrl_rx` task stack raised to 4096 bytes and statically guarded by the S3
+  host regression runner.
+- Full-queue warning log is rate-limited so a transient backlog cannot create
+  a log storm on the UART RX task.
+- Post-fix S3 reset capture showed boot, USB MIDI endpoint registration,
+  `listening for raw USB-MIDI packets`, and `published FLX4 connection state:
+  connected` with no stack overflow, no reboot loop, and no MIDI OUT
+  queue-full spam. Operator confirmed the controller was responsive after the
+  recovery.
 
 ## Phase 7 Hot Cue Pad Behavior Smoke
 

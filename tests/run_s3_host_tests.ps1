@@ -82,6 +82,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
     -Patterns @("s_panel_led_fallback_enabled", "panel_event_queue != NULL", "if (s_panel_led_fallback_enabled && id < LED_COUNT)")
 
+Assert-FileContains `
+    -Name "control link rx stack covers extended led bursts" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("CTRL_RX_TASK_STACK", "4096", 'xTaskCreate(uart_rx_task, "ctrl_rx", CTRL_RX_TASK_STACK')
+
 $tests = @(
     @{
         Name = "flx4_midi_host"

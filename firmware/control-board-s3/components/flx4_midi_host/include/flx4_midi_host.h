@@ -64,6 +64,8 @@ esp_err_t flx4_midi_host_init(void);
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 
+size_t flx4_midi_host_midi_out_queue_capacity(void);
+
 bool flx4_midi_host_is_vu_meter_packet(const uint8_t packet[4]);
 bool flx4_midi_host_should_drop_out_packet(const uint8_t packet[4],
                                            uint32_t queue_spaces,
