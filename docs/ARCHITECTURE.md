@@ -77,8 +77,9 @@ Current P4 audio ownership rule:
   starting playback; the ES8311 monitor path and PCM5102A main path must stay
   sample-rate aligned;
 - the audio engine exposes a non-boosting software master trim scalar
-  (`0.0–1.0`, default `1.0`) before the output mixer/limiter path, so later UI
-  work can reduce constant limiter activity without changing deck fader or
+  (`0.0–1.0`, default `1.0`) before the output mixer/limiter path. The P4
+  Settings screen exposes it as a conservative preset cycle (`0 dB`, `-3 dB`,
+  `-6 dB`) so limiter activity can be reduced without changing deck fader or
   crossfader semantics;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;

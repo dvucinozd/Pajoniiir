@@ -143,9 +143,10 @@ TODO:
   limiter activity is constant, add a user-facing master trim later instead of
   silently lowering deck levels.
 - Software master trim is now implemented in the audio engine as a non-boosting
-  `0.0–1.0` global output scalar with default unity. It is currently an API and
-  snapshot field only; add a UI/settings control later if hardware tests show
-  constant limiter activity or audible clipping with normal mixer levels.
+  `0.0–1.0` global output scalar with default unity. The Settings screen exposes
+  it as a preset button cycling `0 dB`, `-3 dB`, and `-6 dB`, with host-tested
+  preset mapping. Use it only if hardware tests show constant limiter activity
+  or audible clipping with normal mixer levels.
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
   Treat this as performance cleanup, not as a prerequisite for Phase 7
   controller input expansion.

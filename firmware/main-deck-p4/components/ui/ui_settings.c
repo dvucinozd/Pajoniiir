@@ -22,6 +22,47 @@ const char *ui_settings_cue_mode_name(uint8_t mode)
     }
 }
 
+typedef struct {
+    const char *label;
+    float gain;
+} ui_settings_master_trim_preset_t;
+
+static const ui_settings_master_trim_preset_t s_master_trim_presets[] = {
+    { "MASTER: 0 dB", 1.0f },
+    { "MASTER: -3 dB", 0.7079458f },
+    { "MASTER: -6 dB", 0.5011872f },
+};
+
+uint8_t ui_settings_master_trim_preset_count(void)
+{
+    return (uint8_t)(sizeof(s_master_trim_presets) / sizeof(s_master_trim_presets[0]));
+}
+
+uint8_t ui_settings_master_trim_next_preset(uint8_t current)
+{
+    uint8_t count = ui_settings_master_trim_preset_count();
+    if (current >= count || count == 0u) {
+        return 0u;
+    }
+    return (uint8_t)((current + 1u) % count);
+}
+
+float ui_settings_master_trim_gain(uint8_t preset)
+{
+    if (preset >= ui_settings_master_trim_preset_count()) {
+        preset = 0u;
+    }
+    return s_master_trim_presets[preset].gain;
+}
+
+const char *ui_settings_master_trim_label(uint8_t preset)
+{
+    if (preset >= ui_settings_master_trim_preset_count()) {
+        preset = 0u;
+    }
+    return s_master_trim_presets[preset].label;
+}
+
 #ifndef UI_SETTINGS_HOST_TEST
 
 #include "esp_log.h"
@@ -29,6 +70,7 @@ const char *ui_settings_cue_mode_name(uint8_t mode)
 
 #ifndef WIN32
 #include "app_settings.h"
+#include "audio_engine.h"
 #include "bsp_jc4880.h"
 #include "esp_timer.h"
 #endif
@@ -50,6 +92,8 @@ static ui_settings_widgets_t s_widgets;
 static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
+static lv_obj_t *s_label_master_trim = NULL;
+static uint8_t s_master_trim_preset = 0;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -217,6 +261,20 @@ static void audio_out_event_cb(lv_event_t *event)
 }
 
 #ifndef WIN32
+static void master_trim_event_cb(lv_event_t *event)
+{
+    (void)event;
+    s_master_trim_preset = ui_settings_master_trim_next_preset(s_master_trim_preset);
+    float gain = ui_settings_master_trim_gain(s_master_trim_preset);
+    audio_engine_set_master_trim(gain);
+    if (s_label_master_trim) {
+        lv_label_set_text(s_label_master_trim, ui_settings_master_trim_label(s_master_trim_preset));
+    }
+    ESP_LOGI(TAG, "Master trim set: %s (gain %.3f)",
+             ui_settings_master_trim_label(s_master_trim_preset),
+             (double)gain);
+}
+
 static void cue_mode_event_cb(lv_event_t *event)
 {
     (void)event;
@@ -288,6 +346,34 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     if (monitor_speaker_init) {
         lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
     }
+
+    lv_obj_t *master_section = ui_settings_section(screen, left_x, 216, left_w, 86, "MASTER OUTPUT");
+    lv_obj_t *btn_master_trim = lv_button_create(master_section);
+    lv_obj_remove_style_all(btn_master_trim);
+    if (s_config.btn_secondary) {
+        lv_obj_add_style(btn_master_trim, s_config.btn_secondary, LV_PART_MAIN);
+    }
+    if (s_config.pressed) {
+        lv_obj_add_style(btn_master_trim, s_config.pressed, LV_STATE_PRESSED);
+    }
+    lv_obj_set_size(btn_master_trim, 168, 32);
+    lv_obj_set_pos(btn_master_trim, 16, 40);
+#ifndef WIN32
+    lv_obj_add_event_cb(btn_master_trim, master_trim_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    s_label_master_trim = lv_label_create(btn_master_trim);
+    lv_label_set_text(s_label_master_trim, ui_settings_master_trim_label(s_master_trim_preset));
+    lv_obj_set_style_text_font(s_label_master_trim, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_master_trim, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(s_label_master_trim, LV_ALIGN_CENTER, 0, 0);
+
+    ui_settings_value_label(master_section,
+                            "Use if limiter/clipping is constant",
+                            COL_TEXT_DIM,
+                            &lv_font_montserrat_12,
+                            198,
+                            48);
 
     // CDJ Link UI elements have been removed as per user request
 

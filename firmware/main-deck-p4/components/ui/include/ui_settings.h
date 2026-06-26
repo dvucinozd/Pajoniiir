@@ -7,6 +7,10 @@ bool ui_settings_should_poll(uint32_t now_ms,
                              uint32_t last_poll_ms,
                              bool force,
                              uint32_t interval_ms);
+uint8_t ui_settings_master_trim_preset_count(void);
+uint8_t ui_settings_master_trim_next_preset(uint8_t current);
+float ui_settings_master_trim_gain(uint8_t preset);
+const char *ui_settings_master_trim_label(uint8_t preset);
 
 #ifndef UI_SETTINGS_HOST_TEST
 

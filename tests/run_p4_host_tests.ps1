@@ -293,6 +293,19 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_settings"
+        Dir = "tests/ui_settings"
+        Target = "test_ui_settings.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DUI_SETTINGS_HOST_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_settings.exe",
+            "test_ui_settings.c",
+            "../../firmware/main-deck-p4/components/ui/ui_settings.c"
+        )
+    },
+    @{
         Name = "web_api_helpers"
         Dir = "tests/web_api_helpers"
         Target = "test_web_api_helpers.exe"
