@@ -78,6 +78,20 @@ P4 I2S DOUT signal. `LRCK` is the same signal as I2S `WS`.
 No MCLK/SCK pin is exposed on this module, so firmware keeps PCM5102A MCLK as
 `I2S_GPIO_UNUSED` for first bring-up.
 
+Runtime notes after hardware bring-up:
+
+- PCM5102A uses the P4 I2S1 channel as MAIN OUT when
+  `CONFIG_BSP_PCM5102A_MAIN_OUT=y` is enabled in the local P4 build config.
+- ES8311 remains the monitor/onboard-speaker path and continues to receive the
+  monitor/headphone buffer.
+- The audio engine must reconfigure the PCM5102A I2S clock to the current track
+  sample rate when opening the shared output service. Leaving PCM5102A at its
+  44.1 kHz BSP default while playing a 48 kHz track causes slow/popping audio
+  and output-late diagnostics.
+- 2026-06-27 COM15 hardware measurement with both decks playing reported
+  stable decode timing, full PCM rings, and `late=0 late_max=0 us` after the
+  PCM5102A sample-rate reconfiguration fix.
+
 Rejected DAC pin proposal:
 
 - GPIO22/GPIO23/GPIO24/GPIO25 must not be used for this DAC plan.

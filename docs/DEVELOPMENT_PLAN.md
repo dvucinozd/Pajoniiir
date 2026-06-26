@@ -230,6 +230,15 @@ Validation note, 2026-06-08:
   2x-period late-warning threshold. Hardware smoke with both decks playing
   reported `DIAG_OUTPUT_LATE_COUNT=0`, healthy ring fill, and stable decode
   timing while retaining aggregate `diag output` telemetry.
+- PCM5102A MAIN OUT bring-up was hardware-smoked on 2026-06-27 with the
+  photographed PCM5102MK/PCM5102A board wired to GPIO50/GPIO52/GPIO51. The
+  root cause of slow/popping dual-deck playback after enabling the DAC was a
+  PCM5102A I2S1 clock left at the BSP 44.1 kHz default while the first loaded
+  track opened the shared ES8311 codec at 48 kHz. The audio output service now
+  reconfigures PCM5102A to the loaded track sample rate before playback, and
+  audio loader/decode/output tasks are pinned to CPU0 while LVGL remains on
+  CPU1. A 60-second COM15 measurement with both decks playing reported
+  `late=0 late_max=0 us`, stable ring fill, and stable decode timing.
 
 Validation note, 2026-06-14:
 

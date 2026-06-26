@@ -1093,6 +1093,8 @@ cleanup:
  * The codec/I2S writes block on DMA, which paces real-time playback. */
 #define AE_OUT_FRAMES 256
 #define AE_OUTPUT_TASK_STACK 8192
+/* Keep real-time audio producer/output work off the LVGL core. */
+#define AE_AUDIO_TASK_CORE 0
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 {
     if (sample_rate == 0) return ESP_ERR_INVALID_ARG;
@@ -1102,6 +1104,20 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
         AE_UNLOCK();
         return ESP_OK;
     }
+
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (s_main_i2s_tx) {
+        /* PCM5102A starts at the BSP default clock; align it to the loaded
+         * track before the first blocking I2S write or playback will be paced
+         * at the wrong sample rate. */
+        esp_err_t main_rc = bsp_audio_main_i2s_set_sample_rate(sample_rate);
+        if (main_rc != ESP_OK) {
+            AE_UNLOCK();
+            return main_rc;
+        }
+        ESP_LOGI(TAG, "PCM5102A main out open @ %u Hz", (unsigned)sample_rate);
+    }
+#endif
 
     esp_codec_dev_sample_info_t fs = {
         .bits_per_sample = 16,
@@ -1277,7 +1293,8 @@ static esp_err_t audio_output_service_ensure_started(void)
         }
     }
     s_output_run = true;
-    if (xTaskCreate(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, NULL, 6, &s_output_task) != pdPASS) {
+    if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, NULL, 6,
+                                &s_output_task, AE_AUDIO_TASK_CORE) != pdPASS) {
         s_output_run = false;
         s_output_task = NULL;
         return ESP_ERR_NO_MEM;
@@ -1479,25 +1496,28 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         }
     }
     if (task_plan.start_loader) {
-        if (xTaskCreate(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
-                        (TaskHandle_t *)&runtime->loader_task) == pdPASS) {
+        if (xTaskCreatePinnedToCore(ae_loader_task, "ae_loader", 4096, task_ctx, 5,
+                                    (TaskHandle_t *)&runtime->loader_task,
+                                    AE_AUDIO_TASK_CORE) == pdPASS) {
             audio_fw_runtime_mark_task_started(runtime);
         } else {
             ESP_LOGE(TAG, "failed to create ae_loader task");
         }
     }
     if (task_plan.start_decode) {
-        if (xTaskCreateWithCaps(ae_decode_task, "ae_decode", 49152, task_ctx, 5,
-                                (TaskHandle_t *)&runtime->decode_task,
-                                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
+        if (xTaskCreatePinnedToCoreWithCaps(ae_decode_task, "ae_decode", 49152, task_ctx, 5,
+                                            (TaskHandle_t *)&runtime->decode_task,
+                                            AE_AUDIO_TASK_CORE,
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS) {
             audio_fw_runtime_mark_task_started(runtime);
         } else {
             ESP_LOGE(TAG, "failed to create ae_decode task");
         }
     }
     if (task_plan.start_output) {
-        if (xTaskCreate(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, task_ctx, 6,
-                        (TaskHandle_t *)&runtime->output_task) == pdPASS) {
+        if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, task_ctx, 6,
+                                    (TaskHandle_t *)&runtime->output_task,
+                                    AE_AUDIO_TASK_CORE) == pdPASS) {
             audio_fw_runtime_mark_task_started(runtime);
         } else {
             ESP_LOGE(TAG, "failed to create ae_output task");

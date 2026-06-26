@@ -110,7 +110,10 @@ dual-deck audio scheduling/waveform stability, and a refactored two-deck LVGL
 UI with Pioneered-style Overview chrome, centered beat/phase indicators,
 fixed-segment timers, bounded title/timer invalidation, and calibrated audio
 output diagnostics that no longer report normal codec-write pacing as late
-blocks. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
+blocks. PCM5102A MAIN OUT bring-up is implemented behind the local
+`CONFIG_BSP_PCM5102A_MAIN_OUT` build option; the external DAC I2S clock is
+reconfigured to the loaded track sample rate, ES8311 remains the monitor/speaker
+path, and audio tasks are pinned away from the LVGL core. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
 Musieer font) before loading the main dual-deck UI.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the

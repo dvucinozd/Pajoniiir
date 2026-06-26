@@ -69,6 +69,13 @@ Current P4 audio ownership rule:
   resampler, lifecycle status, and last-error state;
 - one shared firmware output service owns codec open/close and consumes both
   deck PCM rings through the output mixer;
+- the LVGL task is pinned to CPU1, while the P4 audio loader, decode, and shared
+  output tasks are pinned to CPU0 so UI rendering and real-time audio do not
+  share the same core;
+- when `CONFIG_BSP_PCM5102A_MAIN_OUT` is enabled, the shared output service
+  reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
+  starting playback; the ES8311 monitor path and PCM5102A main path must stay
+  sample-rate aligned;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3

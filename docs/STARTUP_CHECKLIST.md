@@ -99,6 +99,13 @@
   `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
   warnings. A dual-deck hardware run reported zero late warnings while keeping
   aggregate output, limiter, heap, internal SRAM, and PSRAM telemetry.
+- P4 PCM5102A MAIN OUT bring-up passed a 2026-06-27 COM15 measurement with the
+  external DAC enabled locally. The PCM5102A I2S1 clock is now reconfigured to
+  the loaded track sample rate when the shared output service opens, audio
+  loader/decode/output tasks run on CPU0, LVGL remains on CPU1, and a
+  dual-deck run reported `late=0 late_max=0 us` with stable ring fill. The
+  local `firmware/main-deck-p4/sdkconfig` used for this hardware test is
+  intentionally ignored and should not be committed.
 - P4 firmware defaults now select performance optimization and disable LVGL
   examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
   predates 2026-06-25, regenerate or align it before flashing so it does not
