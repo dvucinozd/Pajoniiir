@@ -68,6 +68,7 @@ static const char *TAG = "audio";
 #   include "esp_timer.h"
 #   include "bsp_jc4880.h"
 #   include "esp_codec_dev.h"
+#   include "driver/i2s_common.h"
 #else
 #   define AE_FW 0
 #endif
@@ -224,6 +225,7 @@ static void record_deck_peak(uint8_t deck, audio_mixer_frame_t frame)
 
 #if AE_FW
 static esp_codec_dev_handle_t s_codec       = NULL;  /* owned by bsp_jc4880 */
+static i2s_chan_handle_t      s_main_i2s_tx = NULL;  /* optional PCM5102A MAIN OUT */
 static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task gives on exit */
 static SemaphoreHandle_t      s_output_done = NULL;
 static TaskHandle_t           s_output_task = NULL;
@@ -1127,6 +1129,25 @@ static audio_output_headphone_mode_t output_headphone_mode(void)
     return AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO;
 }
 
+static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
+{
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (!s_main_i2s_tx) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    size_t written = 0;
+    esp_err_t rc = i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY);
+    if (rc != ESP_OK) {
+        return rc;
+    }
+    return written == bytes ? ESP_OK : ESP_FAIL;
+#else
+    (void)frames;
+    (void)bytes;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
 static void ae_output_task(void *arg)
 {
     (void)arg;
@@ -1200,7 +1221,10 @@ static void ae_output_task(void *arg)
         int16_t *es8311_out = (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO)
             ? master_out
             : hp_out;
-        if (esp_codec_dev_write(s_codec, es8311_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t))) == ESP_OK) {
+        esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+        esp_err_t hp_rc = esp_codec_dev_write(s_codec, es8311_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
+
+        if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
@@ -1329,6 +1353,7 @@ esp_err_t audio_engine_init(void)
         ESP_LOGE(TAG, "audio_engine_init: codec not ready (call bsp_audio_init first)");
         return ESP_ERR_INVALID_STATE;
     }
+    s_main_i2s_tx = bsp_audio_get_main_i2s_tx();
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
     if (!s_tasks_done) {
         s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
