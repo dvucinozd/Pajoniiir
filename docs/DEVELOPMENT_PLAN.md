@@ -145,6 +145,11 @@ TODO:
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
   Treat this as performance cleanup, not as a prerequisite for Phase 7
   controller input expansion.
+- Before adding PCM5102A hardware support, follow
+  `docs/superpowers/plans/2026-06-26-pcm5102a-migration-readiness.md`: create
+  a P4 pinout inventory, fix the output sample-rate strategy, split logical
+  `master_out[]`/`hp_out[]` buffers, harden BSP audio init, and only then select
+  approved P4 GPIOs for the PCM5102A.
 
 Exit criteria:
 
