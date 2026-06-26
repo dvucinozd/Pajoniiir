@@ -943,16 +943,19 @@ Add final wiring to `docs/HARDWARE_WIRING.md`:
 ```markdown
 ## PCM5102A MAIN OUT
 
-| PCM5102A | ESP32-P4 JC4880 JP1 |
-| --- | --- |
-| VIN/VCC | 3.3 V |
-| GND | GND |
-| BCK | GPIO50 / JP1 pin 9 |
-| LRCK/WS | GPIO52 / JP1 pin 5 |
-| DIN | GPIO51 / JP1 pin 7 |
-| SCK/MCLK | not connected |
+Photographed PCM5102MK/PCM5102A board header:
+
+| PCM board header | Signal meaning | ESP32-P4 JC4880 JP1 |
+| --- | --- | --- |
+| VCC | DAC board power | 3.3 V first; use 5 V only if this exact module requires it |
+| GND | ground | GND |
+| GND | optional second ground return | GND |
+| LRCK | I2S WS / left-right clock | GPIO52 / JP1 pin 5 |
+| DATA | I2S serial data input, driven by P4 DOUT | GPIO51 / JP1 pin 7 |
+| BCK | I2S bit clock | GPIO50 / JP1 pin 9 |
 
 PCM5102A is MAIN OUT. ES8311 remains monitor/headphones/onboard speaker.
+This module does not expose MCLK/SCK, so firmware keeps MCLK unused.
 GPIO22/GPIO23/GPIO24/GPIO25 are not used for this DAC.
 ```
 

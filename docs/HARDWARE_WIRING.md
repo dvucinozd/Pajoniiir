@@ -51,14 +51,32 @@ Inherited confirmed UART:
 - P4 GPIO28: UART RX from S3 TX.
 - P4 GPIO29: UART TX to S3 RX.
 
-PCM5102A MAIN OUT candidate pins:
+PCM5102A MAIN OUT candidate pins for the photographed PCM5102MK/PCM5102A
+breakout board. The board header silkscreen is:
 
-| PCM5102A signal | ESP32-P4 JC4880 JP1 candidate |
-| --- | --- |
-| BCK/BCLK | GPIO50 / JP1 pin 9 |
-| LRCK/WS | GPIO52 / JP1 pin 5 |
-| DIN | GPIO51 / JP1 pin 7 |
-| SCK/MCLK | not connected for first bring-up |
+```text
+VCC
+GND
+GND
+LRCK
+DATA
+BCK
+```
+
+`DATA` on this module is the DAC serial data input and must be driven by the
+P4 I2S DOUT signal. `LRCK` is the same signal as I2S `WS`.
+
+| PCM board header | Signal meaning | ESP32-P4 JC4880 JP1 candidate |
+| --- | --- | --- |
+| VCC | DAC board power | 3.3 V first; use 5 V only if this exact module requires it |
+| GND | ground | GND |
+| GND | ground | GND, optional second return |
+| LRCK | I2S word select / left-right clock | GPIO52 / JP1 pin 5 |
+| DATA | I2S serial data into DAC | GPIO51 / JP1 pin 7 |
+| BCK | I2S bit clock | GPIO50 / JP1 pin 9 |
+
+No MCLK/SCK pin is exposed on this module, so firmware keeps PCM5102A MCLK as
+`I2S_GPIO_UNUSED` for first bring-up.
 
 Rejected DAC pin proposal:
 
