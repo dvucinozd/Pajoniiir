@@ -17,6 +17,8 @@
 
 static const char *TAG = "main";
 
+#define HEARTBEAT_TASK_STACK 3072
+
 // ─── Router task ──────────────────────────────────────────────────────────────
 // Reads panel events and fans them out to both the MIDI compat layer and the
 // UART control link to the ESP32-P4 main deck board.
@@ -180,7 +182,7 @@ void app_main(void)
     ESP_ERROR_CHECK(flx4_midi_host_init());
     ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", 1024, NULL, 3, NULL) == pdPASS
+    ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #else
     ESP_LOGI(TAG, "mode: DDJ-FLX4 USB MIDI host raw logger");
@@ -195,7 +197,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(xTaskCreate(router_task, "router", 3072, NULL, 6, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", 1024, NULL, 3, NULL) == pdPASS
+    ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #endif
 

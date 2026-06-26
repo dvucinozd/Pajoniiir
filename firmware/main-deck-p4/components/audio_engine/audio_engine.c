@@ -1089,9 +1089,10 @@ cleanup:
     vTaskDeleteWithCaps(NULL);
 }
 
-/* Consumer: pitch-resample from the ring and write PCM to the ES8311.
- * esp_codec_dev_write() blocks on the I2S DMA, which paces real-time playback. */
+/* Consumer: pitch-resample from the ring and write PCM to the physical outputs.
+ * The codec/I2S writes block on DMA, which paces real-time playback. */
 #define AE_OUT_FRAMES 256
+#define AE_OUTPUT_TASK_STACK 8192
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 {
     if (sample_rate == 0) return ESP_ERR_INVALID_ARG;
@@ -1276,7 +1277,7 @@ static esp_err_t audio_output_service_ensure_started(void)
         }
     }
     s_output_run = true;
-    if (xTaskCreate(ae_output_task, "ae_output", 4096, NULL, 6, &s_output_task) != pdPASS) {
+    if (xTaskCreate(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, NULL, 6, &s_output_task) != pdPASS) {
         s_output_run = false;
         s_output_task = NULL;
         return ESP_ERR_NO_MEM;
@@ -1495,7 +1496,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         }
     }
     if (task_plan.start_output) {
-        if (xTaskCreate(ae_output_task, "ae_output", 4096, task_ctx, 6,
+        if (xTaskCreate(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, task_ctx, 6,
                         (TaskHandle_t *)&runtime->output_task) == pdPASS) {
             audio_fw_runtime_mark_task_started(runtime);
         } else {
