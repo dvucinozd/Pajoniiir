@@ -87,6 +87,11 @@ Current P4 audio ownership rule:
   input. The P4 status indicator reports `CLIP n` only when the limited-sample
   counter increases, so normal transport status remains stable when no new
   clipping occurs;
+- the audio engine exposes a central diagnostics snapshot with output codec
+  state/sample-rate, late-output counters, per-deck ring fill and active flags,
+  limiter counters, and heap/internal/PSRAM free space. `/api/status` includes
+  these values under `diagnostics` so hardware smoke tests can read one
+  structured report instead of scraping log lines;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3

@@ -150,6 +150,11 @@ TODO:
   preset mapping, persists the selected preset through NVS, and reapplies it
   during P4 boot after `audio_engine_init()`. Use it only if hardware tests show
   constant limiter activity or audible clipping with normal mixer levels.
+- P4 audio diagnostics are now available as a central audio-engine snapshot:
+  output codec state/sample-rate, output late count/max/threshold, per-deck ring
+  fill and active flags, limiter counters, and heap/internal/PSRAM free space.
+  `/api/status` exposes the same data under `diagnostics` for structured smoke
+  captures.
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
   The current cache is already host-guarded for OFFSET/EDGE updates, no
   steady-path `memmove`, and bounded edge column rendering; further cleanup

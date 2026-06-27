@@ -2142,6 +2142,32 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->limiter = s_limiter_stats;
 }
 
+void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot)
+{
+    if (!out_snapshot) return;
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+
+    AE_LOCK();
+    out_snapshot->ring_capacity = AUDIO_PCM_RING_FRAMES;
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        audio_engine_state_t *eng = &s_engines[deck];
+        out_snapshot->deck_active[deck] = eng->playing && !eng->paused;
+        out_snapshot->ring_used[deck] = audio_pcm_ring_used(&s_pcm_rings[deck]);
+    }
+    out_snapshot->limiter = s_limiter_stats;
+#if AE_FW
+    out_snapshot->output_codec_open = s_output_codec_open;
+    out_snapshot->output_sample_rate = s_output_sample_rate;
+    out_snapshot->output_late_count = s_diag_output_late.count;
+    out_snapshot->output_late_max_us = s_diag_output_late.max_us;
+    out_snapshot->output_late_threshold_us = s_diag_output_late.threshold_us;
+    out_snapshot->heap_free = esp_get_free_heap_size();
+    out_snapshot->internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    out_snapshot->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+#endif
+    AE_UNLOCK();
+}
+
 esp_err_t audio_engine_set_cue_mode(uint8_t mode)
 {
     if (mode > 1) return ESP_ERR_INVALID_ARG;

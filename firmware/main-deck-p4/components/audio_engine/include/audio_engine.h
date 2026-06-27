@@ -143,6 +143,21 @@ typedef struct {
     audio_mixer_limiter_stats_t limiter;
 } audio_engine_mixer_snapshot_t;
 
+typedef struct {
+    bool output_codec_open;
+    uint32_t output_sample_rate;
+    uint32_t output_late_count;
+    uint32_t output_late_max_us;
+    uint32_t output_late_threshold_us;
+    bool deck_active[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t ring_capacity;
+    audio_mixer_limiter_stats_t limiter;
+    uint32_t heap_free;
+    uint32_t internal_free;
+    uint32_t psram_free;
+} audio_engine_diagnostics_snapshot_t;
+
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 esp_err_t audio_engine_set_master_trim(float gain);
@@ -163,6 +178,7 @@ audio_headphone_mode_t audio_engine_get_headphone_mode(void);
 esp_err_t audio_engine_set_cue_mode(uint8_t mode);
 uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
+void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot);
 
 /*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).

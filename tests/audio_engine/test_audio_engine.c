@@ -12,6 +12,7 @@
 
 /* AUDIO_ENGINE_PC_TEST is defined via -D in the Makefile */
 #include "audio_engine.h"
+#include "audio_pcm_ring.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -215,6 +216,52 @@ static void test_deck_peak_meter_api_returns_and_resets_peak(void)
     EXPECT(audio_engine_get_deck_peak(0) == 8000, "deck 0 peak returns max absolute sample");
     EXPECT(audio_engine_get_deck_peak(0) == 0, "deck 0 peak resets after read");
     EXPECT(audio_engine_get_deck_peak(1) == 9000, "deck 1 peak is independent");
+}
+
+static void test_diagnostics_snapshot_reports_audio_health_state(void)
+{
+    puts("\n[Test 4c] Diagnostics snapshot API");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets diagnostics snapshot");
+
+    audio_engine_diagnostics_snapshot_t diag;
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.ring_capacity == AUDIO_PCM_RING_FRAMES, "diagnostics reports ring capacity");
+    EXPECT(diag.ring_used[0] == 0, "diagnostics ring 0 starts empty");
+    EXPECT(diag.ring_used[1] == 0, "diagnostics ring 1 starts empty");
+    EXPECT(!diag.deck_active[0], "diagnostics deck 0 starts inactive");
+    EXPECT(!diag.deck_active[1], "diagnostics deck 1 starts inactive");
+    EXPECT(diag.limiter.limited_samples == 0, "diagnostics limiter starts clear");
+
+    audio_mixer_limiter_stats_t limiter_stats = {
+        .limited_samples = 9,
+        .positive_overloads = 6,
+        .negative_overloads = 3,
+        .peak_input_abs = 48000,
+    };
+    audio_engine_test_record_limiter_stats(&limiter_stats);
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.limiter.limited_samples == 9, "diagnostics includes limiter sample count");
+    EXPECT(diag.limiter.positive_overloads == 6, "diagnostics includes positive overload count");
+    EXPECT(diag.limiter.negative_overloads == 3, "diagnostics includes negative overload count");
+    EXPECT(diag.limiter.peak_input_abs == 48000, "diagnostics includes limiter peak");
+
+    const char *path = "dummy_diag_audio.mp3";
+    FILE *fp = fopen(path, "wb");
+    EXPECT(fp != NULL, "dummy diagnostics audio file created");
+    if (fp) {
+        fputc(0, fp);
+        fclose(fp);
+    }
+    EXPECT(audio_engine_deck_load(0, path, NULL, 10000) == ESP_OK,
+           "deck 0 dummy diagnostics load returns ESP_OK");
+    EXPECT(audio_engine_deck_load(1, path, NULL, 10000) == ESP_OK,
+           "deck 1 dummy diagnostics load returns ESP_OK");
+    EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 diagnostics play returns ESP_OK");
+    EXPECT(audio_engine_deck_play(1) == ESP_OK, "deck 1 diagnostics play returns ESP_OK");
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.deck_active[0], "diagnostics captures deck 0 active");
+    EXPECT(diag.deck_active[1], "diagnostics captures deck 1 active");
+    remove(path);
 }
 
 /* ── Test 5: per-deck transition API guards ─────────────────────────────── */
@@ -487,6 +534,7 @@ int main(int argc, char *argv[])
     test_pitch();
     test_mixer_state_api();
     test_deck_peak_meter_api_returns_and_resets_peak();
+    test_diagnostics_snapshot_reports_audio_health_state();
     test_pfl_state_api();
     test_cue_mode_api();
     test_deck_api();

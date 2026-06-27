@@ -116,7 +116,8 @@ reconfigured to the loaded track sample rate, ES8311 remains the monitor/speaker
 path, audio tasks are pinned away from the LVGL core, and a non-boosting master
 trim control is available in Settings for clipping/limiter tuning and is
 persisted in NVS. Limiter telemetry is also exposed through the mixer snapshot
-and the P4 status indicator shows `CLIP n` only when new limiting occurs. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
+and central diagnostics snapshot; `/api/status` mirrors diagnostics for smoke
+captures, and the P4 status indicator shows `CLIP n` only when new limiting occurs. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
 Musieer font) before loading the main dual-deck UI.
 The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
 translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the

@@ -82,10 +82,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     audio_engine_deck_status_t deck1 = {0};
     audio_engine_deck_status_t deck2 = {0};
     audio_engine_mixer_snapshot_t mixer = {0};
+    audio_engine_diagnostics_snapshot_t diagnostics = {0};
 
     audio_engine_deck_get_status(0, &deck1);
     audio_engine_deck_get_status(1, &deck2);
     audio_engine_get_mixer_snapshot(&mixer);
+    audio_engine_get_diagnostics_snapshot(&diagnostics);
 
     char title1[64] = {0};
     char artist1[64] = {0};
@@ -129,13 +131,13 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     uint32_t current_bpm1 = bpm1_val * (1.0f + p1 / 100.0f);
     uint32_t current_bpm2 = bpm2_val * (1.0f + p2 / 100.0f);
 
-    char *json = malloc(1024);
+    char *json = malloc(1536);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;
     }
 
-    snprintf(json, 1024,
+    snprintf(json, 1536,
              "{"
              "\"deck1\":{"
              "\"title\":\"%s\","
@@ -163,12 +165,48 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"crossfader\":%u,"
              "\"pfl1\":%s,"
              "\"pfl2\":%s"
+             "},"
+             "\"diagnostics\":{"
+             "\"output_codec_open\":%s,"
+             "\"output_sample_rate\":%u,"
+             "\"output_late_count\":%u,"
+             "\"output_late_max_us\":%u,"
+             "\"output_late_threshold_us\":%u,"
+             "\"ring_capacity\":%u,"
+             "\"ring_used1\":%u,"
+             "\"ring_used2\":%u,"
+             "\"deck_active1\":%s,"
+             "\"deck_active2\":%s,"
+             "\"limiter_samples\":%u,"
+             "\"limiter_positive\":%u,"
+             "\"limiter_negative\":%u,"
+             "\"limiter_peak\":%d,"
+             "\"heap_free\":%u,"
+             "\"internal_free\":%u,"
+             "\"psram_free\":%u"
              "}"
              "}",
              title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, state1.playing ? "true" : "false", state_text1,
              title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, state2.playing ? "true" : "false", state_text2,
              mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
-             mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false");
+             mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
+             diagnostics.output_codec_open ? "true" : "false",
+             (unsigned)diagnostics.output_sample_rate,
+             (unsigned)diagnostics.output_late_count,
+             (unsigned)diagnostics.output_late_max_us,
+             (unsigned)diagnostics.output_late_threshold_us,
+             (unsigned)diagnostics.ring_capacity,
+             (unsigned)diagnostics.ring_used[0],
+             (unsigned)diagnostics.ring_used[1],
+             diagnostics.deck_active[0] ? "true" : "false",
+             diagnostics.deck_active[1] ? "true" : "false",
+             (unsigned)diagnostics.limiter.limited_samples,
+             (unsigned)diagnostics.limiter.positive_overloads,
+             (unsigned)diagnostics.limiter.negative_overloads,
+             (int)diagnostics.limiter.peak_input_abs,
+             (unsigned)diagnostics.heap_free,
+             (unsigned)diagnostics.internal_free,
+             (unsigned)diagnostics.psram_free);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");

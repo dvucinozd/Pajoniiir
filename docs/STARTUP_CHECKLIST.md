@@ -102,7 +102,9 @@
 - P4 audio output diagnostics were calibrated on 2026-06-21: normal blocking
   `esp_codec_dev_write()` pacing no longer emits per-block `diag output late`
   warnings. A dual-deck hardware run reported zero late warnings while keeping
-  aggregate output, limiter, heap, internal SRAM, and PSRAM telemetry.
+  aggregate output, limiter, heap, internal SRAM, and PSRAM telemetry. The
+  audio engine also exposes these values through a central diagnostics snapshot,
+  and `/api/status` mirrors them under `diagnostics` for smoke captures.
 - P4 PCM5102A MAIN OUT bring-up passed a 2026-06-27 COM15 measurement with the
   external DAC enabled locally. The PCM5102A I2S1 clock is now reconfigured to
   the loaded track sample rate when the shared output service opens, audio
