@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "audio_eq.h"
 #include "audio_mixer.h"
 
 #if defined(AUDIO_ENGINE_PC_TEST)
@@ -137,6 +138,7 @@ uint16_t audio_engine_get_deck_peak(uint8_t deck);
 typedef struct {
     uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
     uint16_t crossfader;
+    uint16_t eq[AUDIO_ENGINE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
@@ -160,6 +162,8 @@ typedef struct {
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
+esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw);
+uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

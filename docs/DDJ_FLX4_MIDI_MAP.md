@@ -188,9 +188,9 @@ Status legend:
 | Channel fader | D1 `0xB0/0x13+0x33`, D2 `0xB1/0x13+0x33` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_VOLUME`, `CTRL_ID_CH2_VOLUME` | audio mixer | Implemented | Verified 2026-06-14 |
 | Crossfader | `0xB6/0x1F+0x3F` | 14-bit MSB+LSB | global mixer | `CTRL_ID_CROSSFADER` | audio mixer | Implemented | Verified 2026-06-14 |
 | Trim / pregain | D1 `0xB0/0x04+0x24`, D2 `0xB1/0x04+0x24` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_TRIM`, `CTRL_ID_CH2_TRIM` | audio mixer | Mapped only | Verified 2026-06-21; DSP behavior deferred |
-| EQ High | D1 `0xB0/0x07+0x27`, D2 `0xB1/0x07+0x27` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_HIGH`, `CTRL_ID_CH2_EQ_HIGH` | EQ/DSP | Mapped only | Verified 2026-06-21; DSP behavior deferred |
-| EQ Mid | D1 `0xB0/0x0B+0x2B`, D2 `0xB1/0x0B+0x2B` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_MID`, `CTRL_ID_CH2_EQ_MID` | EQ/DSP | Mapped only | Verified 2026-06-21; DSP behavior deferred |
-| EQ Low | D1 `0xB0/0x0F+0x2F`, D2 `0xB1/0x0F+0x2F` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_LOW`, `CTRL_ID_CH2_EQ_LOW` | EQ/DSP | Mapped only | Verified 2026-06-21; DSP behavior deferred |
+| EQ High | D1 `0xB0/0x07+0x27`, D2 `0xB1/0x07+0x27` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_HIGH`, `CTRL_ID_CH2_EQ_HIGH` | EQ/DSP | Implemented | Verified 2026-06-21; DSP implemented in P4 |
+| EQ Mid | D1 `0xB0/0x0B+0x2B`, D2 `0xB1/0x0B+0x2B` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_MID`, `CTRL_ID_CH2_EQ_MID` | EQ/DSP | Implemented | Verified 2026-06-21; DSP implemented in P4 |
+| EQ Low | D1 `0xB0/0x0F+0x2F`, D2 `0xB1/0x0F+0x2F` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_LOW`, `CTRL_ID_CH2_EQ_LOW` | EQ/DSP | Implemented | Verified 2026-06-21; DSP implemented in P4 |
 | Headphone cue/PFL | `0x90/0x54`, `0x91/0x54` | press/release | deck-local | `CTRL_ID_DECK1_PFL`, `CTRL_ID_DECK2_PFL` | mixer/cue routing | Implemented | Verified 2026-06-14 / 2026-06-20 |
 | Headphones mix | `0xB6/0x0C+0x2C` | 14-bit MSB+LSB | global monitor | `CTRL_ID_HEADPHONE_MIX` | cue routing/settings | Mapped only | Verified 2026-06-21; DSP behavior deferred |
 | Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` | filter/DSP | Mapped only | Verified 2026-06-21; DSP behavior deferred |

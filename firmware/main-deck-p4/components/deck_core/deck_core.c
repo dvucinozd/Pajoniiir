@@ -1266,14 +1266,26 @@ static void on_mixer_control(uint8_t id, int16_t raw)
             audio_engine_toggle_pfl(CTRL_DECK_2);
         }
         break;
+    case CTRL_ID_CH1_EQ_HIGH:
+        audio_engine_set_eq(CTRL_DECK_1, AUDIO_EQ_BAND_HIGH, value);
+        break;
+    case CTRL_ID_CH2_EQ_HIGH:
+        audio_engine_set_eq(CTRL_DECK_2, AUDIO_EQ_BAND_HIGH, value);
+        break;
+    case CTRL_ID_CH1_EQ_MID:
+        audio_engine_set_eq(CTRL_DECK_1, AUDIO_EQ_BAND_MID, value);
+        break;
+    case CTRL_ID_CH2_EQ_MID:
+        audio_engine_set_eq(CTRL_DECK_2, AUDIO_EQ_BAND_MID, value);
+        break;
+    case CTRL_ID_CH1_EQ_LOW:
+        audio_engine_set_eq(CTRL_DECK_1, AUDIO_EQ_BAND_LOW, value);
+        break;
+    case CTRL_ID_CH2_EQ_LOW:
+        audio_engine_set_eq(CTRL_DECK_2, AUDIO_EQ_BAND_LOW, value);
+        break;
     case CTRL_ID_CH1_TRIM:
     case CTRL_ID_CH2_TRIM:
-    case CTRL_ID_CH1_EQ_HIGH:
-    case CTRL_ID_CH2_EQ_HIGH:
-    case CTRL_ID_CH1_EQ_MID:
-    case CTRL_ID_CH2_EQ_MID:
-    case CTRL_ID_CH1_EQ_LOW:
-    case CTRL_ID_CH2_EQ_LOW:
     case CTRL_ID_CH1_FILTER:
     case CTRL_ID_CH2_FILTER:
     case CTRL_ID_HEADPHONE_MIX:

@@ -536,7 +536,8 @@ beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
-Hot Cue store/recall/clear is implemented. Sampler, pad FX, EQ/filter DSP, and
+Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
+per deck in the P4 audio path. Sampler, pad FX, filter DSP, and
 Smart CFX/Fader behavior remains deferred unless separately marked
 implemented.
 
@@ -642,6 +643,11 @@ Implementation order:
      where already consistent with settings ownership, and LED/state feedback
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
+   - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
+     verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
+     mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before
+     channel fader/crossfader summing. Center raw `8192` is unity, minimum is
+     band kill, and maximum is a conservative `+6 dB` boost.
 7. **Performance pads and pad modes**
    - inventory the four direct physical pad mode buttons (`HOT CUE`, `PAD FX1`,
      `BEAT JUMP`, `SAMPLER`) plus shifted secondary modes (`Keyboard/Stems`,

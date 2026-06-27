@@ -183,6 +183,26 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
 
+    EXPECT(audio_engine_get_eq(0, AUDIO_EQ_BAND_LOW) == AUDIO_EQ_RAW_CENTER,
+           "deck 0 low EQ defaults to center");
+    EXPECT(audio_engine_set_eq(0, AUDIO_EQ_BAND_LOW, 4096) == ESP_OK,
+           "deck 0 low EQ accepts raw value");
+    EXPECT(audio_engine_set_eq(1, AUDIO_EQ_BAND_HIGH, AUDIO_EQ_RAW_MAX) == ESP_OK,
+           "deck 1 high EQ accepts max raw value");
+    EXPECT(audio_engine_get_eq(0, AUDIO_EQ_BAND_LOW) == 4096,
+           "deck 0 low EQ stores raw value");
+    EXPECT(audio_engine_get_eq(1, AUDIO_EQ_BAND_HIGH) == AUDIO_EQ_RAW_MAX,
+           "deck 1 high EQ stores raw value");
+    EXPECT(audio_engine_set_eq(2, AUDIO_EQ_BAND_LOW, 0) == ESP_ERR_INVALID_ARG,
+           "invalid EQ deck returns INVALID_ARG");
+    EXPECT(audio_engine_set_eq(0, AUDIO_EQ_BAND_COUNT, 0) == ESP_ERR_INVALID_ARG,
+           "invalid EQ band returns INVALID_ARG");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.eq[0][AUDIO_EQ_BAND_LOW] == 4096,
+           "snapshot captures deck 0 low EQ raw value");
+    EXPECT(snapshot.eq[1][AUDIO_EQ_BAND_HIGH] == AUDIO_EQ_RAW_MAX,
+           "snapshot captures deck 1 high EQ raw value");
+
     audio_mixer_limiter_stats_t limiter_stats = {
         .limited_samples = 7,
         .positive_overloads = 4,

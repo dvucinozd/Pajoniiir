@@ -60,8 +60,8 @@ The fork is no longer only the imported single-deck baseline:
 - P4 `deck_core` now stores independent Deck 1/Deck 2 state and routes local
   UI operations through deck-aware APIs.
 - P4 audio has per-deck engine/ring/resampler/preload/runtime/task context
-  storage, a shared output mixer, channel fader/crossfader gain handling, and
-  Deck 2 producer support. Stereo Master and Split Mono cue/PFL routing are
+  storage, a shared output mixer, channel fader/crossfader gain handling,
+  deck-local three-band EQ, and Deck 2 producer support. Stereo Master and Split Mono cue/PFL routing are
   implemented for the current output path.
 - P4 LVGL UI is dual-deck: Overview, Library load paths, performance target
   selection, Settings, status/header, and waveform rendering are split into

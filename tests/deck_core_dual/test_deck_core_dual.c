@@ -1,6 +1,7 @@
 #include "deck_core.h"
 #include "control_link.h"
 #include "hot_cue_store.h"
+#include "audio_engine.h"
 #include "rekordbox_anlz.h"
 #include <assert.h>
 #include <stdio.h>
@@ -14,6 +15,8 @@ static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_eq_raw[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
+int audio_engine_stub_eq_set_count[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
 esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
@@ -401,6 +404,39 @@ static void test_mixer_namespace_routes_volume_and_crossfader(void)
     assert(audio_engine_stub_channel_volume[CTRL_DECK_1] == 7000);
     assert(audio_engine_stub_channel_volume[CTRL_DECK_2] == 9000);
     assert(audio_engine_stub_crossfader == 8192);
+}
+
+static void test_mixer_namespace_routes_eq_controls(void)
+{
+    for (int deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        for (int band = 0; band < AUDIO_EQ_BAND_COUNT; band++) {
+            audio_engine_stub_eq_raw[deck][band] = -1;
+            audio_engine_stub_eq_set_count[deck][band] = 0;
+        }
+    }
+
+    ctrl_event_t ch1_low = mixer_value(CTRL_ID_CH1_EQ_LOW, 1000);
+    ctrl_event_t ch1_mid = mixer_value(CTRL_ID_CH1_EQ_MID, 2000);
+    ctrl_event_t ch1_high = mixer_value(CTRL_ID_CH1_EQ_HIGH, 3000);
+    ctrl_event_t ch2_low = mixer_value(CTRL_ID_CH2_EQ_LOW, 4000);
+    ctrl_event_t ch2_mid = mixer_value(CTRL_ID_CH2_EQ_MID, 5000);
+    ctrl_event_t ch2_high = mixer_value(CTRL_ID_CH2_EQ_HIGH, 6000);
+
+    deck_core_test_apply_event(&ch1_low);
+    deck_core_test_apply_event(&ch1_mid);
+    deck_core_test_apply_event(&ch1_high);
+    deck_core_test_apply_event(&ch2_low);
+    deck_core_test_apply_event(&ch2_mid);
+    deck_core_test_apply_event(&ch2_high);
+
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_1][AUDIO_EQ_BAND_LOW] == 1000);
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_1][AUDIO_EQ_BAND_MID] == 2000);
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_1][AUDIO_EQ_BAND_HIGH] == 3000);
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_2][AUDIO_EQ_BAND_LOW] == 4000);
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_2][AUDIO_EQ_BAND_MID] == 5000);
+    assert(audio_engine_stub_eq_raw[CTRL_DECK_2][AUDIO_EQ_BAND_HIGH] == 6000);
+    assert(audio_engine_stub_eq_set_count[CTRL_DECK_1][AUDIO_EQ_BAND_LOW] == 1);
+    assert(audio_engine_stub_eq_set_count[CTRL_DECK_2][AUDIO_EQ_BAND_HIGH] == 1);
 }
 
 static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
@@ -1127,6 +1163,7 @@ int main(void)
     test_browser_namespace_routes_browse_delta();
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
+    test_mixer_namespace_routes_eq_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_matches_requested_deck_to_other_deck_bpm();

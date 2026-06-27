@@ -4,6 +4,13 @@
 #include <stdint.h>
 #include "esp_err.h"
 
+typedef enum {
+    AUDIO_EQ_BAND_LOW = 0,
+    AUDIO_EQ_BAND_MID,
+    AUDIO_EQ_BAND_HIGH,
+    AUDIO_EQ_BAND_COUNT,
+} audio_eq_band_t;
+
 static inline bool audio_engine_is_playing(void) { return false; }
 static inline esp_err_t audio_engine_play(void) { return ESP_OK; }
 static inline esp_err_t audio_engine_pause(void) { return ESP_OK; }
@@ -119,6 +126,8 @@ static inline esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
 extern int audio_engine_stub_channel_volume[2];
 extern int audio_engine_stub_crossfader;
 extern int audio_engine_stub_pfl_toggle_count[2];
+extern int audio_engine_stub_eq_raw[2][AUDIO_EQ_BAND_COUNT];
+extern int audio_engine_stub_eq_set_count[2][AUDIO_EQ_BAND_COUNT];
 
 static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
 {
@@ -130,6 +139,14 @@ static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t r
 static inline esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
 {
     audio_engine_stub_crossfader = raw_crossfader;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
+{
+    if (deck >= 2 || band >= AUDIO_EQ_BAND_COUNT) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_eq_raw[deck][band] = raw;
+    audio_engine_stub_eq_set_count[deck][band]++;
     return ESP_OK;
 }
 

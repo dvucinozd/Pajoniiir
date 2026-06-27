@@ -87,6 +87,10 @@ Current P4 audio ownership rule:
   input. The P4 status indicator reports `CLIP n` only when the limited-sample
   counter increases, so normal transport status remains stable when no new
   clipping occurs;
+- deck-local three-band EQ is applied in the P4 `audio_output_mixer` path
+  before channel fader/crossfader summing. Raw FLX4 EQ values are kept in the
+  mixer snapshot and exposed through `/api/status`; center is unity, minimum is
+  band kill, and maximum is a conservative boost;
 - the audio engine exposes a central diagnostics snapshot with output codec
   state/sample-rate, late-output counters, per-deck ring fill and active flags,
   limiter counters, and heap/internal/PSRAM free space. `/api/status` includes

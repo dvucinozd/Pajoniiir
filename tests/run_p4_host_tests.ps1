@@ -143,6 +143,7 @@ $tests = @(
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
@@ -151,6 +152,19 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_eq"
+        Dir = "tests/audio_eq"
+        Target = "test_audio_eq.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_eq.exe",
+            "test_audio_eq.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "-lm"
         )
     },
@@ -213,6 +227,7 @@ $tests = @(
             "-o", "test_audio_output_mixer.exe",
             "test_audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c"
         )

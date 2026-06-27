@@ -132,10 +132,12 @@ pad-action, and VU-meter input/output mapping is implemented and smoke-verified
 where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
 halve/double, Beat Jump, normal/shifted Beat Loop pads, Tempo Range, Beat Sync
 BPM-match-on-press with paused-deck phase align, and Hot Cue pad
-store/recall/clear now have P4 behavior. The P4 firmware default is now a
+store/recall/clear now have P4 behavior. Three-band channel EQ is implemented
+in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
+The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-pad FX, EQ/filter DSP, and Smart CFX/Fader behavior remain P4 feature work, not
+pad FX, filter DSP, and Smart CFX/Fader behavior remain P4 feature work, not
 S3 mapping work. The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

@@ -178,6 +178,7 @@ static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static audio_mixer_limiter_stats_t s_limiter_stats;
+static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -1187,6 +1188,7 @@ static void ae_output_task(void *arg)
             .active = deck_output_active(deck0_index),
             .pitch_factor = s_engines[deck0_index].pitch_factor,
             .gain = deck0_gain,
+            .eq = &s_deck_eq[deck0_index],
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck0_index),
@@ -1195,6 +1197,7 @@ static void ae_output_task(void *arg)
             .active = deck_output_active(deck1_index),
             .pitch_factor = s_engines[deck1_index].pitch_factor,
             .gain = deck1_gain,
+            .eq = &s_deck_eq[deck1_index],
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
@@ -1359,6 +1362,7 @@ esp_err_t audio_engine_init(void)
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
         s_pfl_enabled[i] = false;
         s_deck_peak[i] = 0;
+        audio_eq_init(&s_deck_eq[i], 44100u);
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
@@ -2082,6 +2086,23 @@ esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
     return ESP_OK;
 }
 
+esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
+{
+    if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    audio_eq_set_band_raw(&s_deck_eq[deck], band, raw);
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band)
+{
+    if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
+        return AUDIO_EQ_RAW_CENTER;
+    }
+    return audio_eq_get_band_raw(&s_deck_eq[deck], band);
+}
+
 esp_err_t audio_engine_set_master_trim(float gain)
 {
     if (gain < 0.0f) {
@@ -2134,6 +2155,11 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->channel_volume[0] = s_channel_volume[0];
     out_snapshot->channel_volume[1] = s_channel_volume[1];
     out_snapshot->crossfader = s_crossfader;
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        for (uint8_t band = 0; band < AUDIO_EQ_BAND_COUNT; band++) {
+            out_snapshot->eq[deck][band] = audio_eq_get_band_raw(&s_deck_eq[deck], (audio_eq_band_t)band);
+        }
+    }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;
