@@ -91,6 +91,11 @@ Current P4 audio ownership rule:
   before channel fader/crossfader summing. Raw FLX4 EQ values are kept in the
   mixer snapshot and exposed through `/api/status`; center is unity, minimum is
   band kill, and maximum is a conservative boost;
+- Smart CFX and Smart Fader are P4-owned global states. Smart CFX enables the
+  deck-local filter DSP driven by the verified FLX4 filter knobs. Smart Fader
+  keeps the physical crossfader authoritative but squares the fade-out side of
+  the crossfader curve for a conservative transition assist. Both states drive
+  FLX4 LEDs and are included in the mixer snapshot/status API;
 - the audio engine exposes a central diagnostics snapshot with output codec
   state/sample-rate, late-output counters, per-deck ring fill and active flags,
   limiter counters, and heap/internal/PSRAM free space. `/api/status` includes

@@ -128,6 +128,10 @@ extern int audio_engine_stub_crossfader;
 extern int audio_engine_stub_pfl_toggle_count[2];
 extern int audio_engine_stub_eq_raw[2][AUDIO_EQ_BAND_COUNT];
 extern int audio_engine_stub_eq_set_count[2][AUDIO_EQ_BAND_COUNT];
+extern int audio_engine_stub_filter_raw[2];
+extern int audio_engine_stub_filter_set_count[2];
+extern bool audio_engine_stub_smart_cfx_enabled;
+extern bool audio_engine_stub_smart_fader_enabled;
 
 static inline esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume)
 {
@@ -150,11 +154,41 @@ static inline esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, 
     return ESP_OK;
 }
 
+static inline esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw)
+{
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_filter_raw[deck] = raw;
+    audio_engine_stub_filter_set_count[deck]++;
+    return ESP_OK;
+}
+
 static inline esp_err_t audio_engine_toggle_pfl(uint8_t deck)
 {
     if (deck >= 2) return ESP_ERR_INVALID_ARG;
     audio_engine_stub_pfl_toggle_count[deck]++;
     return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_toggle_smart_cfx(void)
+{
+    audio_engine_stub_smart_cfx_enabled = !audio_engine_stub_smart_cfx_enabled;
+    return ESP_OK;
+}
+
+static inline bool audio_engine_get_smart_cfx_enabled(void)
+{
+    return audio_engine_stub_smart_cfx_enabled;
+}
+
+static inline esp_err_t audio_engine_toggle_smart_fader(void)
+{
+    audio_engine_stub_smart_fader_enabled = !audio_engine_stub_smart_fader_enabled;
+    return ESP_OK;
+}
+
+static inline bool audio_engine_get_smart_fader_enabled(void)
+{
+    return audio_engine_stub_smart_fader_enabled;
 }
 
 static inline bool audio_engine_get_pfl_enabled(uint8_t deck)

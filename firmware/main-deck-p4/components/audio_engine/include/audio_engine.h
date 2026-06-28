@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "audio_eq.h"
+#include "audio_filter.h"
 #include "audio_mixer.h"
 
 #if defined(AUDIO_ENGINE_PC_TEST)
@@ -139,9 +140,12 @@ typedef struct {
     uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
     uint16_t crossfader;
     uint16_t eq[AUDIO_ENGINE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
+    uint16_t filter[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
+    bool smart_cfx_enabled;
+    bool smart_fader_enabled;
     audio_mixer_limiter_stats_t limiter;
 } audio_engine_mixer_snapshot_t;
 
@@ -164,11 +168,17 @@ esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw);
 uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band);
+esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw_filter);
+uint16_t audio_engine_get_filter(uint8_t deck);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
 esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);
+esp_err_t audio_engine_toggle_smart_cfx(void);
+bool audio_engine_get_smart_cfx_enabled(void);
+esp_err_t audio_engine_toggle_smart_fader(void);
+bool audio_engine_get_smart_fader_enabled(void);
 
 typedef enum {
     AUDIO_HEADPHONE_MODE_MASTER_MONO = 0,

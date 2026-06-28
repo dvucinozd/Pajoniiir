@@ -71,8 +71,8 @@ hardware acceptance note here; reconnect behavior is tracked separately.
 | Pad FX1 mode | 2 | deck FX mode / rack | `0x91` | note `0x1E` | `0x00` | `0x7F` | pending | pending | channel-pair accepted 2026-06-20 | Accepted from physically verified Deck 1 address and established Deck 2 status-channel pattern. |
 | Pad FX2 mode | 1 | deck FX mode / rack | `0x90` | note `0x6B` | `0x00` | `0x7F` blinking | blinking | pending | physically verified 2026-06-20 | Shift/PAD FX2 uses the physical PAD FX LED in blinking mode. |
 | Pad FX2 mode | 2 | deck FX mode / rack | `0x91` | note `0x6B` | `0x00` | `0x7F` blinking | blinking | pending | channel-pair accepted 2026-06-20 | Accepted from physically verified Deck 1 address and established Deck 2 status-channel pattern. |
-| Smart CFX | global/deck | smart_cfx router | `0x96` | note `0x00` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | S3 probe console sent off/on/off after exiting demo illumination; SMART CFX LED followed each value. |
-| Smart Fader | global | smart_fader controller | `0x96` | note `0x01` | `0x00` | `0x7F` | pending | pending | physically verified 2026-06-20 | S3 probe console sent off/on/off after exiting demo illumination; SMART FADER LED followed each value. |
+| Smart CFX | global | smart_cfx router | `0x96` | note `0x00` | `0x00` | `0x7F` | implemented | hardware smoke pending | physically verified 2026-06-20 | S3 probe console sent off/on/off after exiting demo illumination; SMART CFX LED followed each value. P4 now toggles this LED from Smart CFX state. |
+| Smart Fader | global | smart_fader controller | `0x96` | note `0x01` | `0x00` | `0x7F` | implemented | hardware smoke pending | physically verified 2026-06-20 | S3 probe console sent off/on/off after exiting demo illumination; SMART FADER LED followed each value. P4 now toggles this LED from Smart Fader state. |
 
 ## Reconnect Sweep
 

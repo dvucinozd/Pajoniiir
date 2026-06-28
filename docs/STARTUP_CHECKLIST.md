@@ -75,7 +75,8 @@
   Play/Cue/PFL LED snapshot after reconnect; hardware verification passed on
   2026-06-20.
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
-  press/release events. P4 Smart DSP/settings behavior remains deferred.
+  press/release events. P4 owns their toggle state, LED feedback, status
+  exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -203,9 +204,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
   are mapped/tested in firmware. Hardware capture status is tracked per row in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
-  Three-band EQ now has P4 DSP behavior for both decks; trim, filter, and
-  headphone-mix remain mapped/state work until their standalone P4 behavior is
-  implemented.
+  Three-band EQ now has P4 DSP behavior for both decks. Filter is used by Smart
+  CFX while enabled; trim and headphone-mix remain mapped/state work until
+  their standalone P4 behavior is implemented.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is

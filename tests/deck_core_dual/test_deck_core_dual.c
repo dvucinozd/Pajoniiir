@@ -17,6 +17,10 @@ int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_eq_raw[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
 int audio_engine_stub_eq_set_count[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
+int audio_engine_stub_filter_raw[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_filter_set_count[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_smart_cfx_enabled;
+bool audio_engine_stub_smart_fader_enabled;
 esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
@@ -140,7 +144,11 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_loop_clear_count[deck] = 0;
         audio_engine_stub_pitch_percent[deck] = 0.0f;
         audio_engine_stub_pitch_percent_set_count[deck] = 0;
+        audio_engine_stub_filter_raw[deck] = -1;
+        audio_engine_stub_filter_set_count[deck] = 0;
     }
+    audio_engine_stub_smart_cfx_enabled = false;
+    audio_engine_stub_smart_fader_enabled = false;
 }
 
 static void clear_test_hot_cues(void)
@@ -439,6 +447,22 @@ static void test_mixer_namespace_routes_eq_controls(void)
     assert(audio_engine_stub_eq_set_count[CTRL_DECK_2][AUDIO_EQ_BAND_HIGH] == 1);
 }
 
+static void test_mixer_namespace_routes_filter_controls(void)
+{
+    reset_audio_engine_stub();
+
+    ctrl_event_t ch1_filter = mixer_value(CTRL_ID_CH1_FILTER, 1234);
+    ctrl_event_t ch2_filter = mixer_value(CTRL_ID_CH2_FILTER, 5678);
+
+    deck_core_test_apply_event(&ch1_filter);
+    deck_core_test_apply_event(&ch2_filter);
+
+    assert(audio_engine_stub_filter_raw[CTRL_DECK_1] == 1234);
+    assert(audio_engine_stub_filter_raw[CTRL_DECK_2] == 5678);
+    assert(audio_engine_stub_filter_set_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_filter_set_count[CTRL_DECK_2] == 1);
+}
+
 static void test_mixer_namespace_routes_pfl_toggle_on_press(void)
 {
     deck_core_test_reset();
@@ -712,6 +736,42 @@ static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
     assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1000);
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 2600);
     assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
+}
+
+static void test_smart_buttons_toggle_audio_state_and_leds(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    ctrl_event_t smart_cfx_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_CFX,
+        .value = 1,
+    };
+    ctrl_event_t smart_cfx_release = smart_cfx_press;
+    smart_cfx_release.value = 0;
+    ctrl_event_t smart_fader_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_FADER,
+        .value = 1,
+    };
+
+    deck_core_test_apply_event(&smart_cfx_press);
+    assert(audio_engine_stub_smart_cfx_enabled);
+    assert(control_link_stub_last_led_state(LED_SMART_CFX, CTRL_DECK_1) == 1);
+
+    deck_core_test_apply_event(&smart_cfx_release);
+    assert(audio_engine_stub_smart_cfx_enabled);
+    assert(control_link_stub_last_led_state(LED_SMART_CFX, CTRL_DECK_1) == 1);
+
+    deck_core_test_apply_event(&smart_cfx_press);
+    assert(!audio_engine_stub_smart_cfx_enabled);
+    assert(control_link_stub_last_led_state(LED_SMART_CFX, CTRL_DECK_1) == 0);
+
+    deck_core_test_apply_event(&smart_fader_press);
+    assert(audio_engine_stub_smart_fader_enabled);
+    assert(control_link_stub_last_led_state(LED_SMART_FADER, CTRL_DECK_1) == 1);
 }
 
 static void test_loop_in_marker_publishes_loop_in_led_before_loop_out(void)
@@ -1164,7 +1224,9 @@ int main(void)
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_eq_controls();
+    test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();
+    test_smart_buttons_toggle_audio_state_and_leds();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_matches_requested_deck_to_other_deck_bpm();
     test_sync_uses_other_deck_effective_bpm();

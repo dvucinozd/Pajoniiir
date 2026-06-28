@@ -22,6 +22,7 @@ CFLAGS  = -Wall -Wextra -std=c99 \
 
 AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_eq.c \
+            ../../firmware/main-deck-p4/components/audio_engine/audio_filter.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c \

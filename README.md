@@ -124,7 +124,10 @@ translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
 mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture,
 Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
 LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
-Smart CFX/Smart Fader input mapping are implemented. The S3 USB MIDI host now
+Smart CFX/Smart Fader input mapping and P4-owned state/LED behavior are
+implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
+knobs; Smart Fader applies a conservative crossfader transition-assist curve.
+The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
 under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
@@ -137,8 +140,8 @@ in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-pad FX, filter DSP, and Smart CFX/Fader behavior remain P4 feature work, not
-S3 mapping work. The porting
+pad FX and deeper Beat FX behavior remain P4 feature work, not S3 mapping work.
+The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 

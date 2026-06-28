@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "audio_eq.h"
+#include "audio_filter.h"
 #include "audio_mixer.h"
 #include "audio_resampler.h"
 
@@ -11,6 +12,8 @@ typedef struct {
     float pitch_factor;
     float gain;
     audio_eq_state_t *eq;
+    audio_filter_state_t *filter;
+    bool filter_enabled;
     audio_resampler_state_t *resampler;
     audio_resampler_pop_fn pop_source;
     void *source_ctx;

@@ -47,8 +47,8 @@ P4 DSP/settings behavior is deferred.
 | Load | Deck 2 | `0x96` | `0x47` | global button status, deck from midino |
 | Browse rotate | Library | `0xB6` | `0x40` | signed 7-bit relative encoder: `0x01` = +1 step, `0x7F` = -1 step |
 | Browse press | Library | `0x96` | `0x41` | toggles the P4 UI between Library and Overview; does not load a deck |
-| Smart CFX | Global | `0x96` | `0x00` | press `0x7F`, release `0x00`; input-only semantic event |
-| Smart Fader | Global | `0x96` | `0x01` | press `0x7F`, release `0x00`; input-only semantic event |
+| Smart CFX | Global | `0x96` | `0x00` | press `0x7F`, release `0x00`; toggles P4 Smart CFX state |
+| Smart Fader | Global | `0x96` | `0x01` | press `0x7F`, release `0x00`; toggles P4 Smart Fader state |
 
 ## Jogs
 
@@ -194,8 +194,8 @@ Status legend:
 | Headphone cue/PFL | `0x90/0x54`, `0x91/0x54` | press/release | deck-local | `CTRL_ID_DECK1_PFL`, `CTRL_ID_DECK2_PFL` | mixer/cue routing | Implemented | Verified 2026-06-14 / 2026-06-20 |
 | Headphones mix | `0xB6/0x0C+0x2C` | 14-bit MSB+LSB | global monitor | `CTRL_ID_HEADPHONE_MIX` | cue routing/settings | Mapped only | Verified 2026-06-21; DSP behavior deferred |
 | Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` | filter/DSP | Mapped only | Verified 2026-06-21; DSP behavior deferred |
-| Smart CFX | `0x96/0x00` | press/release | global | `CTRL_ID_SMART_CFX` | future Smart CFX state | Mapped only | Verified 2026-06-20 |
-| Smart Fader | `0x96/0x01` | press/release | global | `CTRL_ID_SMART_FADER` | future Smart Fader state | Mapped only | Verified 2026-06-20 |
+| Smart CFX | `0x96/0x00` | press/release | global | `CTRL_ID_SMART_CFX` | P4 Smart CFX filter DSP + LED | Implemented | Verified 2026-06-20 input/LED address; hardware DSP smoke pending |
+| Smart Fader | `0x96/0x01` | press/release | global | `CTRL_ID_SMART_FADER` | P4 Smart Fader transition assist + LED | Implemented | Verified 2026-06-20 input/LED address; hardware behavior smoke pending |
 | Beat FX select next / previous | `0x94/0x63`, `0x94/0x64` | press/release | FX section | `CTRL_ID_BEAT_FX_SELECT_NEXT`, `CTRL_ID_BEAT_FX_SELECT_PREV` proposed | Beat FX model | Deferred | Not captured |
 | Beat FX beat left / right | `0x94/0x4A`, `0x94/0x4B` | press/release | FX section | `CTRL_ID_BEAT_FX_BEAT_DEC`, `CTRL_ID_BEAT_FX_BEAT_INC` proposed | Beat FX model | Deferred | Not captured |
 | Beat FX channel select | CH1 `0x94/0x10`, CH2 `0x95/0x11` | press/release | FX channel selector | `CTRL_ID_BEAT_FX_TARGET` proposed | Beat FX model | Deferred | Not captured |

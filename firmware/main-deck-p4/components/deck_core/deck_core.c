@@ -233,14 +233,6 @@ static bool is_deferred_mixer_control(uint8_t id)
     switch (id) {
     case CTRL_ID_CH1_TRIM:
     case CTRL_ID_CH2_TRIM:
-    case CTRL_ID_CH1_EQ_HIGH:
-    case CTRL_ID_CH2_EQ_HIGH:
-    case CTRL_ID_CH1_EQ_MID:
-    case CTRL_ID_CH2_EQ_MID:
-    case CTRL_ID_CH1_EQ_LOW:
-    case CTRL_ID_CH2_EQ_LOW:
-    case CTRL_ID_CH1_FILTER:
-    case CTRL_ID_CH2_FILTER:
     case CTRL_ID_HEADPHONE_MIX:
         return true;
     default:
@@ -254,14 +246,6 @@ static const char *deferred_mixer_control_name(uint8_t id)
     switch (id) {
     case CTRL_ID_CH1_TRIM: return "CH1_TRIM";
     case CTRL_ID_CH2_TRIM: return "CH2_TRIM";
-    case CTRL_ID_CH1_EQ_HIGH: return "CH1_EQ_HIGH";
-    case CTRL_ID_CH2_EQ_HIGH: return "CH2_EQ_HIGH";
-    case CTRL_ID_CH1_EQ_MID: return "CH1_EQ_MID";
-    case CTRL_ID_CH2_EQ_MID: return "CH2_EQ_MID";
-    case CTRL_ID_CH1_EQ_LOW: return "CH1_EQ_LOW";
-    case CTRL_ID_CH2_EQ_LOW: return "CH2_EQ_LOW";
-    case CTRL_ID_CH1_FILTER: return "CH1_FILTER";
-    case CTRL_ID_CH2_FILTER: return "CH2_FILTER";
     case CTRL_ID_HEADPHONE_MIX: return "HEADPHONE_MIX";
     default: return "UNKNOWN";
     }
@@ -709,6 +693,8 @@ static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, vo
 static void publish_flx4_led_snapshot(bool force)
 {
     flx4_led_snapshot_input_t input = { 0 };
+    input.smart_cfx = audio_engine_get_smart_cfx_enabled() ? 1u : 0u;
+    input.smart_fader = audio_engine_get_smart_fader_enabled() ? 1u : 0u;
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         deck_state_t state = deck_core_get_deck_state(deck);
@@ -757,6 +743,30 @@ static void on_state_event(const ctrl_event_t *ev)
         ESP_LOGI(TAG, "FLX4 disconnected");
     } else {
         ESP_LOGW(TAG, "unknown FLX4 connection state %d", ev->value);
+    }
+}
+
+static bool on_system_button(const ctrl_event_t *ev)
+{
+    if (!ev || ev->type != CTRL_EV_BUTTON || ev->value == 0) {
+        return false;
+    }
+
+    switch (ev->id) {
+    case CTRL_ID_SMART_CFX:
+        audio_engine_toggle_smart_cfx();
+        control_link_send_led_deck(LED_SMART_CFX,
+                                   audio_engine_get_smart_cfx_enabled() ? 1u : 0u,
+                                   CTRL_DECK_1);
+        return true;
+    case CTRL_ID_SMART_FADER:
+        audio_engine_toggle_smart_fader();
+        control_link_send_led_deck(LED_SMART_FADER,
+                                   audio_engine_get_smart_fader_enabled() ? 1u : 0u,
+                                   CTRL_DECK_1);
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -1284,10 +1294,14 @@ static void on_mixer_control(uint8_t id, int16_t raw)
     case CTRL_ID_CH2_EQ_LOW:
         audio_engine_set_eq(CTRL_DECK_2, AUDIO_EQ_BAND_LOW, value);
         break;
+    case CTRL_ID_CH1_FILTER:
+        audio_engine_set_filter(CTRL_DECK_1, value);
+        break;
+    case CTRL_ID_CH2_FILTER:
+        audio_engine_set_filter(CTRL_DECK_2, value);
+        break;
     case CTRL_ID_CH1_TRIM:
     case CTRL_ID_CH2_TRIM:
-    case CTRL_ID_CH1_FILTER:
-    case CTRL_ID_CH2_FILTER:
     case CTRL_ID_HEADPHONE_MIX:
         if (should_log_deferred_mixer_value(id, value)) {
             ESP_LOGI(TAG, "mixer control %s raw=%u (DSP behavior deferred)",
@@ -1337,6 +1351,10 @@ static void deck_task(void *arg)
 
         if (ev.type == CTRL_EV_STATE) {
             on_state_event(&ev);
+            continue;
+        }
+
+        if (on_system_button(&ev)) {
             continue;
         }
 
@@ -1523,6 +1541,10 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 
     if (ev->type == CTRL_EV_STATE) {
         on_state_event(ev);
+        return;
+    }
+
+    if (on_system_button(ev)) {
         return;
     }
 

@@ -13,6 +13,7 @@
 
 #include "audio_engine.h"
 #include "audio_diag.h"
+#include "audio_filter.h"
 #include "audio_fw_preload.h"
 #include "audio_fw_runtime.h"
 #include "audio_fw_task_context.h"
@@ -179,6 +180,9 @@ static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MON
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static audio_mixer_limiter_stats_t s_limiter_stats;
 static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
+static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
+static bool             s_smart_cfx_enabled;
+static bool             s_smart_fader_enabled;
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -1189,6 +1193,8 @@ static void ae_output_task(void *arg)
             .pitch_factor = s_engines[deck0_index].pitch_factor,
             .gain = deck0_gain,
             .eq = &s_deck_eq[deck0_index],
+            .filter = &s_deck_filter[deck0_index],
+            .filter_enabled = s_smart_cfx_enabled,
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck0_index),
@@ -1198,6 +1204,8 @@ static void ae_output_task(void *arg)
             .pitch_factor = s_engines[deck1_index].pitch_factor,
             .gain = deck1_gain,
             .eq = &s_deck_eq[deck1_index],
+            .filter = &s_deck_filter[deck1_index],
+            .filter_enabled = s_smart_cfx_enabled,
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
@@ -1363,12 +1371,15 @@ esp_err_t audio_engine_init(void)
         s_pfl_enabled[i] = false;
         s_deck_peak[i] = 0;
         audio_eq_init(&s_deck_eq[i], 44100u);
+        audio_filter_init(&s_deck_filter[i], 44100u);
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
     s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    s_smart_cfx_enabled = false;
+    s_smart_fader_enabled = false;
 
 #if AE_FW
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
@@ -2103,6 +2114,23 @@ uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band)
     return audio_eq_get_band_raw(&s_deck_eq[deck], band);
 }
 
+esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw_filter)
+{
+    if (!deck_is_valid(deck)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    audio_filter_set_raw(&s_deck_filter[deck], raw_filter);
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_filter(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) {
+        return AUDIO_FILTER_RAW_CENTER;
+    }
+    return audio_filter_get_raw(&s_deck_filter[deck]);
+}
+
 esp_err_t audio_engine_set_master_trim(float gain)
 {
     if (gain < 0.0f) {
@@ -2124,6 +2152,13 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     float xf0 = 1.0f;
     float xf1 = 1.0f;
     audio_mixer_crossfader_gains(s_crossfader, &xf0, &xf1);
+    if (s_smart_fader_enabled) {
+        if (s_crossfader < AUDIO_MIXER_CONTROL_CENTER) {
+            xf1 *= xf1;
+        } else if (s_crossfader > AUDIO_MIXER_CONTROL_CENTER) {
+            xf0 *= xf0;
+        }
+    }
 
     if (deck0_gain) {
         *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) * xf0 * s_master_trim;
@@ -2146,6 +2181,28 @@ bool audio_engine_get_pfl_enabled(uint8_t deck)
     return s_pfl_enabled[deck];
 }
 
+esp_err_t audio_engine_toggle_smart_cfx(void)
+{
+    s_smart_cfx_enabled = !s_smart_cfx_enabled;
+    return ESP_OK;
+}
+
+bool audio_engine_get_smart_cfx_enabled(void)
+{
+    return s_smart_cfx_enabled;
+}
+
+esp_err_t audio_engine_toggle_smart_fader(void)
+{
+    s_smart_fader_enabled = !s_smart_fader_enabled;
+    return ESP_OK;
+}
+
+bool audio_engine_get_smart_fader_enabled(void)
+{
+    return s_smart_fader_enabled;
+}
+
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot)
 {
     if (!out_snapshot) return;
@@ -2159,12 +2216,15 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         for (uint8_t band = 0; band < AUDIO_EQ_BAND_COUNT; band++) {
             out_snapshot->eq[deck][band] = audio_eq_get_band_raw(&s_deck_eq[deck], (audio_eq_band_t)band);
         }
+        out_snapshot->filter[deck] = audio_filter_get_raw(&s_deck_filter[deck]);
     }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
     out_snapshot->pfl_enabled[1] = s_pfl_enabled[1];
+    out_snapshot->smart_cfx_enabled = s_smart_cfx_enabled;
+    out_snapshot->smart_fader_enabled = s_smart_fader_enabled;
     out_snapshot->limiter = s_limiter_stats;
 }
 

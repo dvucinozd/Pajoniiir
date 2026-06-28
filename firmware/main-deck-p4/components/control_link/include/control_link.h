@@ -79,6 +79,8 @@ typedef enum {
     LED_BEAT_LOOP_PAD_6,
     LED_BEAT_LOOP_PAD_7,
     LED_BEAT_LOOP_PAD_8,
+    LED_SMART_CFX,
+    LED_SMART_FADER,
     LED_REMOTE_COUNT,
 } led_id_t;
 

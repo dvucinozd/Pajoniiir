@@ -169,6 +169,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"eq2_low\":%u,"
              "\"eq2_mid\":%u,"
              "\"eq2_high\":%u,"
+             "\"filter1\":%u,"
+             "\"filter2\":%u,"
+             "\"smart_cfx\":%s,"
+             "\"smart_fader\":%s,"
              "\"pfl1\":%s,"
              "\"pfl2\":%s"
              "},"
@@ -197,6 +201,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
              mixer.eq[0][AUDIO_EQ_BAND_LOW], mixer.eq[0][AUDIO_EQ_BAND_MID], mixer.eq[0][AUDIO_EQ_BAND_HIGH],
              mixer.eq[1][AUDIO_EQ_BAND_LOW], mixer.eq[1][AUDIO_EQ_BAND_MID], mixer.eq[1][AUDIO_EQ_BAND_HIGH],
+             mixer.filter[0], mixer.filter[1],
+             mixer.smart_cfx_enabled ? "true" : "false",
+             mixer.smart_fader_enabled ? "true" : "false",
              mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
              diagnostics.output_codec_open ? "true" : "false",
              (unsigned)diagnostics.output_sample_rate,

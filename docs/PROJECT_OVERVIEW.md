@@ -83,8 +83,8 @@ The fork is no longer only the imported single-deck baseline:
   P4-only reset recovery is implemented through S3 heartbeat connected-state
   refresh with hardware smoke passed on 2026-06-26.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
-  semantic button events. Their P4 DSP/settings behavior is intentionally not
-  implemented yet.
+  semantic button events. P4 now owns their state, LED feedback, status
+  exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Hot Cue pad behavior is implemented on P4: an empty pad stores the current
   per-track deck position, an occupied pad recalls it with audio seek, and
   Shift + pad clears the slot. Deck 1 hardware behavior smoke passed on
@@ -105,7 +105,8 @@ The fork is no longer only the imported single-deck baseline:
 - Full Mixxx feature parity.
 - Continuous beat following, master tempo/key lock, or full Rekordbox-style
   sync state.
-- Smart CFX/Fader audio DSP.
+- Deeper Beat FX and pad FX audio DSP beyond the current Smart CFX filter and
+  Smart Fader transition-assist V1 behavior.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.

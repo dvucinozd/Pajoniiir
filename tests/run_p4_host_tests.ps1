@@ -144,6 +144,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
@@ -165,6 +166,19 @@ $tests = @(
             "-o", "test_audio_eq.exe",
             "test_audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_filter"
+        Dir = "tests/audio_filter"
+        Target = "test_audio_filter.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_filter.exe",
+            "test_audio_filter.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "-lm"
         )
     },
@@ -228,6 +242,7 @@ $tests = @(
             "test_audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c"
         )

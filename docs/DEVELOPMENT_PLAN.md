@@ -537,9 +537,10 @@ in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
 Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
-per deck in the P4 audio path. Sampler, pad FX, filter DSP, and
-Smart CFX/Fader behavior remains deferred unless separately marked
-implemented.
+per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
+the FLX4 filter knobs, and Smart Fader now toggles a conservative crossfader
+transition-assist curve. Sampler, pad FX, and deeper Beat FX behavior remains
+deferred unless separately marked implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
@@ -580,7 +581,10 @@ Implementation order:
 3. **Smart CFX / Smart Fader raw input mapping** ✅
    - physically capture SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`);
    - map each button as a momentary semantic press/release event;
-   - defer P4 DSP/settings behavior until a separate audio feature design.
+   - P4 behavior now toggles Smart CFX/Smart Fader state, drives the verified
+     Smart LEDs, exposes state through the mixer snapshot/status API, applies
+     Smart CFX filter DSP from the channel filter knobs, and applies a safe
+     Smart Fader transition-assist crossfader curve.
 4. **Extended controller inventory** ✅
    - inventory created in `docs/DDJ_FLX4_MIDI_MAP.md` from 281 XML input
      controls and 112 XML output candidates;

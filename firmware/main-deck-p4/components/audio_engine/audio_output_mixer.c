@@ -36,6 +36,15 @@ static audio_mixer_frame_t apply_deck_eq(const audio_output_mixer_deck_t *deck,
     return audio_eq_process_frame(deck->eq, frame);
 }
 
+static audio_mixer_frame_t apply_deck_filter(const audio_output_mixer_deck_t *deck,
+                                             audio_mixer_frame_t frame)
+{
+    if (!deck || !deck->filter) {
+        return frame;
+    }
+    return audio_filter_process_frame(deck->filter, deck->filter_enabled, frame);
+}
+
 audio_mixer_frame_t audio_output_mixer_next(const audio_output_mixer_deck_t *deck0,
                                             const audio_output_mixer_deck_t *deck1,
                                             uint32_t *out_deck0_consumed,
@@ -44,8 +53,8 @@ audio_mixer_frame_t audio_output_mixer_next(const audio_output_mixer_deck_t *dec
 {
     uint32_t consumed0 = 0u;
     uint32_t consumed1 = 0u;
-    audio_mixer_frame_t frame0 = apply_deck_eq(deck0, next_deck_frame(deck0, &consumed0));
-    audio_mixer_frame_t frame1 = apply_deck_eq(deck1, next_deck_frame(deck1, &consumed1));
+    audio_mixer_frame_t frame0 = apply_deck_filter(deck0, apply_deck_eq(deck0, next_deck_frame(deck0, &consumed0)));
+    audio_mixer_frame_t frame1 = apply_deck_filter(deck1, apply_deck_eq(deck1, next_deck_frame(deck1, &consumed1)));
 
     if (out_deck0_consumed) *out_deck0_consumed = consumed0;
     if (out_deck1_consumed) *out_deck1_consumed = consumed1;
@@ -79,8 +88,8 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
 {
     uint32_t consumed0 = 0u;
     uint32_t consumed1 = 0u;
-    audio_mixer_frame_t frame0 = apply_deck_eq(deck0, next_deck_frame(deck0, &consumed0));
-    audio_mixer_frame_t frame1 = apply_deck_eq(deck1, next_deck_frame(deck1, &consumed1));
+    audio_mixer_frame_t frame0 = apply_deck_filter(deck0, apply_deck_eq(deck0, next_deck_frame(deck0, &consumed0)));
+    audio_mixer_frame_t frame1 = apply_deck_filter(deck1, apply_deck_eq(deck1, next_deck_frame(deck1, &consumed1)));
 
     if (out_deck0_consumed) *out_deck0_consumed = consumed0;
     if (out_deck1_consumed) *out_deck1_consumed = consumed1;

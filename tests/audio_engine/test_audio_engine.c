@@ -197,11 +197,43 @@ static void test_mixer_state_api(void)
            "invalid EQ deck returns INVALID_ARG");
     EXPECT(audio_engine_set_eq(0, AUDIO_EQ_BAND_COUNT, 0) == ESP_ERR_INVALID_ARG,
            "invalid EQ band returns INVALID_ARG");
+    EXPECT(audio_engine_get_filter(0) == AUDIO_FILTER_RAW_CENTER,
+           "deck 0 filter defaults to center");
+    EXPECT(audio_engine_set_filter(0, 2048) == ESP_OK,
+           "deck 0 filter accepts raw value");
+    EXPECT(audio_engine_set_filter(1, 12000) == ESP_OK,
+           "deck 1 filter accepts raw value");
+    EXPECT(audio_engine_get_filter(0) == 2048,
+           "deck 0 filter stores raw value");
+    EXPECT(audio_engine_set_filter(2, 8192) == ESP_ERR_INVALID_ARG,
+           "invalid filter deck returns INVALID_ARG");
+    EXPECT(!audio_engine_get_smart_cfx_enabled(), "Smart CFX defaults off");
+    EXPECT(audio_engine_toggle_smart_cfx() == ESP_OK, "Smart CFX toggles on");
+    EXPECT(audio_engine_get_smart_cfx_enabled(), "Smart CFX state reads on");
+    EXPECT(!audio_engine_get_smart_fader_enabled(), "Smart Fader defaults off");
+    EXPECT(audio_engine_toggle_smart_fader() == ESP_OK, "Smart Fader toggles on");
+    EXPECT(audio_engine_get_smart_fader_enabled(), "Smart Fader state reads on");
     audio_engine_get_mixer_snapshot(&snapshot);
     EXPECT(snapshot.eq[0][AUDIO_EQ_BAND_LOW] == 4096,
            "snapshot captures deck 0 low EQ raw value");
     EXPECT(snapshot.eq[1][AUDIO_EQ_BAND_HIGH] == AUDIO_EQ_RAW_MAX,
            "snapshot captures deck 1 high EQ raw value");
+    EXPECT(snapshot.filter[0] == 2048, "snapshot captures deck 0 filter raw value");
+    EXPECT(snapshot.filter[1] == 12000, "snapshot captures deck 1 filter raw value");
+    EXPECT(snapshot.smart_cfx_enabled, "snapshot captures Smart CFX state");
+    EXPECT(snapshot.smart_fader_enabled, "snapshot captures Smart Fader state");
+    EXPECT(audio_engine_set_channel_volume(0, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
+           "deck 0 channel volume restores max for Smart Fader assist test");
+    EXPECT(audio_engine_set_channel_volume(1, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
+           "deck 1 channel volume restores max for Smart Fader assist test");
+    EXPECT(audio_engine_set_crossfader(AUDIO_MIXER_CONTROL_CENTER / 2u) == ESP_OK,
+           "crossfader accepts left-side Smart Fader assist test value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 1.0f), "Smart Fader keeps open side at unity");
+    EXPECT(deck2 > 0.24f && deck2 < 0.26f,
+           "Smart Fader squares fade-out side for cleaner transition");
+    EXPECT(audio_engine_set_crossfader(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "crossfader restores center after Smart Fader assist test");
 
     audio_mixer_limiter_stats_t limiter_stats = {
         .limited_samples = 7,
