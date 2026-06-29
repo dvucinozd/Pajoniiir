@@ -51,6 +51,37 @@ static inline uint32_t read_be32(FILE *fp)
            ((uint32_t)b[2] <<  8) |  (uint32_t)b[3];
 }
 
+static bool utf8_append_codepoint(char *dst, size_t dst_sz, size_t *out_i, uint32_t cp)
+{
+    if (!dst || dst_sz == 0 || !out_i || cp == 0u) {
+        return false;
+    }
+    size_t i = *out_i;
+    if (cp <= 0x7Fu) {
+        if (i + 1u >= dst_sz) return false;
+        dst[i++] = (char)cp;
+    } else if (cp <= 0x7FFu) {
+        if (i + 2u >= dst_sz) return false;
+        dst[i++] = (char)(0xC0u | (cp >> 6));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else if (cp <= 0xFFFFu) {
+        if (i + 3u >= dst_sz) return false;
+        dst[i++] = (char)(0xE0u | (cp >> 12));
+        dst[i++] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else if (cp <= 0x10FFFFu) {
+        if (i + 4u >= dst_sz) return false;
+        dst[i++] = (char)(0xF0u | (cp >> 18));
+        dst[i++] = (char)(0x80u | ((cp >> 12) & 0x3Fu));
+        dst[i++] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else {
+        return false;
+    }
+    *out_i = i;
+    return true;
+}
+
 /* ── Token search ────────────────────────────────────────────────────────── */
 
 /* Scan forward from the current position looking for a matching 4-byte tag.
@@ -81,9 +112,8 @@ static bool find_tag(FILE *fp, uint32_t target)
  *   4B  path_length  (number of bytes of UTF-16 BE data that follow, incl. NUL)
  *   N×2B  UTF-16 BE characters
  *
- * We extract printable ASCII characters (high byte == 0x00, low byte 0x20–0x7E)
- * to produce a clean UTF-8/ASCII path.  Non-ASCII track names are substituted
- * with '?'; directory separators '\' are converted to '/'.
+ * We convert UTF-16 BE to UTF-8 so FatFs can open non-ASCII Rekordbox paths.
+ * Directory separators '\' are converted to '/'.
  */
 static esp_err_t parse_ppth(FILE *fp, anlz_metadata_t *out)
 {
@@ -108,23 +138,26 @@ static esp_err_t parse_ppth(FILE *fp, anlz_metadata_t *out)
         return ESP_ERR_INVALID_SIZE;
     }
 
-    /* Read UTF-16 BE pairs, keep printable ASCII characters only */
+    /* Read UTF-16 BE pairs and emit UTF-8 */
     size_t out_idx = 0;
     for (uint32_t i = 0; i + 1 < data_len; i += 2) {
         uint8_t hi = (uint8_t)fgetc(fp);
         uint8_t lo = (uint8_t)fgetc(fp);
-        if (hi == 0x00 && lo == 0x00) break; /* NUL terminator */
-        if (out_idx >= ANLZ_PATH_MAX - 1) break;
+        uint16_t wc = (uint16_t)(((uint16_t)hi << 8u) | (uint16_t)lo);
+        if (wc == 0u) break; /* NUL terminator */
 
-        if (hi == 0x00) {
-            /* ASCII-range code point */
-            char c = (char)lo;
-            if (c == '\\') c = '/'; /* Windows path separator → POSIX */
-            out->audio_path[out_idx++] = c;
-        } else {
-            /* Non-BMP or high Unicode — substitute */
-            out->audio_path[out_idx++] = '?';
+        uint32_t cp = wc;
+        if (wc >= 0xD800u && wc <= 0xDBFFu && i + 3u < data_len) {
+            uint8_t hi2 = (uint8_t)fgetc(fp);
+            uint8_t lo2 = (uint8_t)fgetc(fp);
+            uint16_t wc2 = (uint16_t)(((uint16_t)hi2 << 8u) | (uint16_t)lo2);
+            if (wc2 >= 0xDC00u && wc2 <= 0xDFFFu) {
+                cp = 0x10000u + ((((uint32_t)wc - 0xD800u) << 10) | ((uint32_t)wc2 - 0xDC00u));
+                i += 2;
+            }
         }
+        if (cp == '\\') cp = '/';
+        if (!utf8_append_codepoint(out->audio_path, ANLZ_PATH_MAX, &out_idx, cp)) break;
     }
     out->audio_path[out_idx] = '\0';
 

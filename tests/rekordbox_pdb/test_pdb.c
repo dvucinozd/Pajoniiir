@@ -57,6 +57,33 @@ static void test_api_contracts(void)
     PASS();
 }
 
+static void test_devicesql_utf16_to_utf8(void)
+{
+    printf("\n=== DeviceSQL UTF-16 decoding tests ===\n");
+
+    const uint16_t codepoints[] = {
+        '/', 'C', 'o', 'n', 't', 'e', 'n', 't', 's', '/',
+        0x5468, 0x9632, 0x7FA9, 0x548C,
+        '/', 't', 'e', 's', 't', '.', 'm', 'p', '3', 0
+    };
+    uint8_t raw[4 + sizeof(codepoints)] = {0};
+    raw[0] = 0x90; /* long string, UTF-16, little-endian */
+    uint16_t total_len = (uint16_t)sizeof(raw);
+    raw[1] = (uint8_t)(total_len & 0xFF);
+    raw[2] = (uint8_t)(total_len >> 8);
+    raw[3] = 0;
+    for (size_t i = 0; i < sizeof(codepoints) / sizeof(codepoints[0]); i++) {
+        raw[4 + i * 2] = (uint8_t)(codepoints[i] & 0xFF);
+        raw[5 + i * 2] = (uint8_t)(codepoints[i] >> 8);
+    }
+
+    char decoded[128];
+    TEST("UTF-16 DeviceSQL preserves non-ASCII as UTF-8");
+    CHECK(pdb_test_decode_devicesql_string(raw, sizeof(raw), decoded, sizeof(decoded)) == ESP_OK &&
+          strcmp(decoded, "/Contents/\xE5\x91\xA8\xE9\x98\xB2\xE7\xBE\xA9\xE5\x92\x8C/test.mp3") == 0,
+          decoded);
+}
+
 /* ── Real-file integration test ──────────────────────────────────────────── */
 
 static void test_real_file(const char *pdb_path, int limit)
@@ -144,6 +171,7 @@ int main(int argc, char *argv[])
 
     /* Always run API contract tests */
     test_api_contracts();
+    test_devicesql_utf16_to_utf8();
 
     /* Real-file test if a path is provided */
     if (argc >= 2) {

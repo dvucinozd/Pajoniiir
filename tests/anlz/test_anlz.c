@@ -65,6 +65,7 @@ static void w_str(FILE *fp, const char *s) { fputs(s, fp); }
  */
 static const char *SYNTH_DAT = "test_synth.dat";
 static const char *SYNTH_EXT = "test_synth.ext";
+static const char *SYNTH_UNICODE_DAT = "test_unicode_ppth.dat";
 
 static void build_synthetic_dat(void)
 {
@@ -176,6 +177,34 @@ static void build_synthetic_ext(void)
     (void)w_str; /* suppress unused warning */
 }
 
+static void build_unicode_ppth_dat(void)
+{
+    FILE *fp = fopen(SYNTH_UNICODE_DAT, "wb");
+    if (!fp) { perror("fopen unicode.dat"); exit(1); }
+
+    const uint16_t path_units[] = {
+        '/', 'C', 'o', 'n', 't', 'e', 'n', 't', 's', '/',
+        0x5468, 0x9632, 0x7FA9, 0x548C,
+        '/', 'U', 'n', 'k', 'n', 'o', 'w', 'n', 'A', 'l', 'b', 'u', 'm', '/',
+        'C', 'a', 'r', 'i', 'b', 'b', 'e', 'a', 'n', ' ', 'B', 'l', 'u', 'e', '.', 'm', 'p', '3',
+        0
+    };
+    uint32_t path_bytes = (uint32_t)(sizeof(path_units));
+    uint32_t ppth_header = 20;
+    uint32_t ppth_segment = ppth_header + path_bytes;
+
+    w_tag(fp, ANLZ_TAG_PPTH);
+    w_be32(fp, ppth_header);
+    w_be32(fp, ppth_segment);
+    w_be32(fp, 0);
+    w_be32(fp, path_bytes);
+    for (size_t i = 0; i < sizeof(path_units) / sizeof(path_units[0]); i++) {
+        w_be16(fp, path_units[i]);
+    }
+
+    fclose(fp);
+}
+
 /* ── Unit tests (synthetic files) ─────────────────────────────────────────── */
 
 static void run_unit_tests(void)
@@ -183,8 +212,10 @@ static void run_unit_tests(void)
     printf("\n=== Building synthetic test files ===\n");
     build_synthetic_dat();
     build_synthetic_ext();
+    build_unicode_ppth_dat();
     printf("  Created: %s\n", SYNTH_DAT);
     printf("  Created: %s\n", SYNTH_EXT);
+    printf("  Created: %s\n", SYNTH_UNICODE_DAT);
 
     printf("\n=== anlz_parse_dat() ===\n");
     anlz_metadata_t meta;
@@ -267,6 +298,20 @@ static void run_unit_tests(void)
     CHECK(meta.waveform_high && meta.waveform_high[0] == 0, "wrong value");
 
     printf("\n=== anlz_free() ===\n");
+    anlz_free(&meta);
+
+    printf("\n=== anlz_parse_dat() Unicode PPTH ===\n");
+    memset(&meta, 0, sizeof(meta));
+    rc = anlz_parse_dat(SYNTH_UNICODE_DAT, &meta);
+
+    TEST("parse_dat Unicode PPTH returns ESP_OK");
+    CHECK(rc == ESP_OK, "unexpected error");
+
+    TEST("Unicode PPTH path preserved as UTF-8");
+    CHECK(strcmp(meta.audio_path,
+                 "/Contents/\xE5\x91\xA8\xE9\x98\xB2\xE7\xBE\xA9\xE5\x92\x8C/UnknownAlbum/Caribbean Blue.mp3") == 0,
+          meta.audio_path);
+
     anlz_free(&meta);
 
     TEST("beats = NULL after free");

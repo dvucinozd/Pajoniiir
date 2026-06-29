@@ -111,6 +111,11 @@ int pdb_track_count(const pdb_t *pdb);
  */
 esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out);
 
+#ifdef REKORDBOX_PDB_STANDALONE_TEST
+esp_err_t pdb_test_decode_devicesql_string(const uint8_t *data, size_t data_len,
+                                           char *dst, size_t dst_sz);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

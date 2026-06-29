@@ -57,6 +57,10 @@ CONFIG_USB_HOST_HUBS_SUPPORTED=y
 # "rekordbox/export.pdb" and "Contents/.../*.mp3" can't be opened. Enable LFN.
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
+# Rekordbox exports can contain non-ASCII artist/file names. The library parser
+# emits UTF-8 paths, so FatFs must accept UTF-8 API strings for LFN lookup.
+# CONFIG_FATFS_API_ENCODING_ANSI_OEM is not set
+CONFIG_FATFS_API_ENCODING_UTF_8=y
 
 # ── LVGL rendering ────────────────────────────────────────────────────────────
 # Render natively in RGB565 to match the ST7701S panel frame buffer (16bpp, per

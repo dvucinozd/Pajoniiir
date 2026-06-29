@@ -98,6 +98,44 @@ static inline uint32_t rd_le32(const uint8_t *p)
            ((uint32_t)p[3] << 24u);
 }
 
+static bool utf8_append_codepoint(char *dst, size_t dst_sz, size_t *out_i, uint32_t cp)
+{
+    if (!dst || dst_sz == 0 || !out_i || cp == 0u) {
+        return false;
+    }
+    size_t i = *out_i;
+    if (cp <= 0x7Fu) {
+        if (i + 1u >= dst_sz) return false;
+        dst[i++] = (char)cp;
+    } else if (cp <= 0x7FFu) {
+        if (i + 2u >= dst_sz) return false;
+        dst[i++] = (char)(0xC0u | (cp >> 6));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else if (cp <= 0xFFFFu) {
+        if (i + 3u >= dst_sz) return false;
+        dst[i++] = (char)(0xE0u | (cp >> 12));
+        dst[i++] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else if (cp <= 0x10FFFFu) {
+        if (i + 4u >= dst_sz) return false;
+        dst[i++] = (char)(0xF0u | (cp >> 18));
+        dst[i++] = (char)(0x80u | ((cp >> 12) & 0x3Fu));
+        dst[i++] = (char)(0x80u | ((cp >> 6) & 0x3Fu));
+        dst[i++] = (char)(0x80u | (cp & 0x3Fu));
+    } else {
+        return false;
+    }
+    *out_i = i;
+    return true;
+}
+
+static uint16_t read_utf16_unit(const uint8_t *p, bool le)
+{
+    return le
+        ? (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8u))
+        : (uint16_t)(((uint16_t)p[0] << 8u) | (uint16_t)p[1]);
+}
+
 /* ── DeviceSQL string decoder ─────────────────────────────────────────────
  *
  * Decodes a DeviceSQL string at abs_off in data[0..data_len).
@@ -153,16 +191,23 @@ static size_t decode_devicesql(const uint8_t *data, size_t data_len,
     bool le   = (flag & 0x80u) != 0u;   /* E bit: little-endian */
 
     if (wide) {
-        /* UTF-16 → ASCII: strip high byte, replace non-ASCII with '?' */
+        /* DeviceSQL UTF-16 → UTF-8. FatFs LFN expects UTF-8 paths. */
         size_t nchars = data_bytes / 2u;
         size_t out_i  = 0u;
         const uint8_t *p = data + data_start;
         for (size_t i = 0u; i < nchars && out_i < dst_sz - 1u; i++) {
-            uint16_t wc = le
-                ? (uint16_t)((uint16_t)p[i*2u] | ((uint16_t)p[i*2u+1u] << 8u))
-                : (uint16_t)(((uint16_t)p[i*2u] << 8u) | (uint16_t)p[i*2u+1u]);
+            uint16_t wc = read_utf16_unit(p + i * 2u, le);
             if (wc == 0u) break;
-            dst[out_i++] = (wc < 0x80u) ? (char)(uint8_t)wc : '?';
+            uint32_t cp = wc;
+            if (wc >= 0xD800u && wc <= 0xDBFFu && i + 1u < nchars) {
+                uint16_t lo = read_utf16_unit(p + (i + 1u) * 2u, le);
+                if (lo >= 0xDC00u && lo <= 0xDFFFu) {
+                    cp = 0x10000u + ((((uint32_t)wc - 0xD800u) << 10) | ((uint32_t)lo - 0xDC00u));
+                    i++;
+                }
+            }
+            if (cp == '\\') cp = '/';
+            if (!utf8_append_codepoint(dst, dst_sz, &out_i, cp)) break;
         }
         dst[out_i] = '\0';
     } else {
@@ -175,6 +220,18 @@ static size_t decode_devicesql(const uint8_t *data, size_t data_len,
 
     return total_len > 0u ? total_len : 1u;
 }
+
+#ifdef REKORDBOX_PDB_STANDALONE_TEST
+esp_err_t pdb_test_decode_devicesql_string(const uint8_t *data, size_t data_len,
+                                           char *dst, size_t dst_sz)
+{
+    if (!data || !dst || dst_sz == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    decode_devicesql(data, data_len, 0, dst, dst_sz);
+    return ESP_OK;
+}
+#endif
 
 /* ── Name-table entry ────────────────────────────────────────────────────── */
 
