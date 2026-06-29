@@ -1,7 +1,6 @@
 #include "web_server.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
-#include "esp_wifi.h"
 #include "audio_engine.h"
 #include "media_catalog.h"
 #include "ui.h"

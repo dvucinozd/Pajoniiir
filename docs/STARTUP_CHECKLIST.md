@@ -84,6 +84,11 @@
 - P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
+- USB library import currently requires a mountable FAT/FAT32 filesystem.
+  AlphaTheta/rekordbox OneLibrary-style exports can be exFAT; a 2026-06-29 PC
+  validation showed the legacy `export.pdb` and `USBANLZ` data were still
+  readable, but P4 failed before parsing at `msc_host_vfs_register: ERROR`.
+  Firmware exFAT support is a pending implementation item.
 - P4 master output now uses a transparent post-sum limiter with lightweight
   limiter telemetry in both the output diagnostic log and the audio mixer
   snapshot. Single-deck level and normal two-deck sums remain unchanged; only
@@ -130,10 +135,10 @@
   `codex/splash-screen` branch. Boot shows `PajoNiiiR` in `Musieer_80` for
   roughly three seconds, then returns to the already-built main dual-deck UI.
   The `ctrl_rx` UART task stack is 4096 bytes in the same stabilization slice.
-- P4 captive portal web server and mobile controller interface are stabilized,
-  optimized, and completed. P4 starts the hosted Wi-Fi AP directly for this
-  path; the old Settings `link_mode` selector has been removed from active
-  firmware.
+- ESP-Hosted Wi-Fi is disabled in active P4 firmware as of 2026-06-29. The
+  local `wifi_link` component remains as a no-op status shim, but P4 no longer
+  links `esp_hosted`/`esp_wifi_remote` or starts the hosted AP during boot. The
+  old Settings `link_mode` selector remains removed from active firmware.
 
 ## First Firmware Task
 

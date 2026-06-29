@@ -101,10 +101,10 @@ Python/toolchain paths until the local Espressif export environment is repaired.
 
 | Test | Firmware/example | Expected | Result | Notes |
 | --- | --- | --- | --- | --- |
-| ESP32-C6 hosted Wi-Fi firmware | P4 MVP build | P4 initializes hosted Wi-Fi without error | **PENDING** | Verify C6 image compatibility before judging AP behavior |
-| Web UI SoftAP | P4 startup | SoftAP starts without a user-selectable link mode | **PENDING** | P4 now starts hosted AP unconditionally for web UI/captive portal |
-| Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PENDING** | Current user-facing network path |
-| Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PENDING** | Uses bounds-checked DNS reply builder |
+| ESP32-C6 hosted Wi-Fi firmware | Historical P4 build | P4 initializes hosted Wi-Fi without error | **PARKED** | Active DDJ-FFL4 firmware disabled ESP-Hosted on 2026-06-29; re-enable only if a Wi-Fi product path returns |
+| Web UI SoftAP | Historical P4 startup | SoftAP starts without a user-selectable link mode | **PARKED** | Hosted AP is no longer started by active firmware |
+| Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PARKED** | Web server code remains, but no hosted AP is active |
+| Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PARKED** | DNS code remains for future re-enable |
 | Concurrent web load | Browser double-click/load spam | Second `/api/load` is rejected while load worker is busy | **PENDING** | Prevents concurrent P4 track load workers |
 | Remote cache re-enable | Future CDJ Link build | STA/join, UDP discovery, remote library fetch and SD cache are revalidated | **PARKED** | The old Settings link mode and Library JOINED selector are removed from the current MVP |
 
@@ -186,7 +186,7 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | P4 flash target | **PASS** | `COM15`, ESP32-P4 rev v1.3, MAC `80:f1:b2:d0:b4:9b` |
 | ESP-Hosted SDIO pins | **PASS** | Log confirms slot 1, 4-bit, CLK 18, CMD 19, D0-D3 14-17, C6 reset 54 |
 | Host transport init | **PASS** | C6 identified as `esp32c6`; SDIO card init successful; transport active |
-| SoftAP host mode | **PASS / HISTORICAL** | Previous build used NVS `link_mode=1` to start SoftAP on `192.168.4.1`; current firmware starts host AP directly for web UI/captive portal |
+| SoftAP host mode | **PASS / HISTORICAL** | Previous builds started SoftAP on `192.168.4.1`; active DDJ-FFL4 firmware disables ESP-Hosted and does not start the AP |
 | Remote library snapshot | **PASS** | USB mounted and `cdj_link_server` built snapshot: 308 tracks, 73320 bytes |
 | Windows Wi-Fi scan | **PASS** | PC sees the `CDJ100S-<id>` SoftAP at strong signal; WPA2 profile connects with `cdj100slink` |
 | HTTP hello/library | **PASS** | `GET /v1/hello.txt` returns `CDJLINK1`; `GET /v1/library.bin` returns 73320 bytes with 308 records in ~0.13 s from a Windows Wi-Fi client |
@@ -197,10 +197,18 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | C6 firmware version | **FIXED** | Upgraded onboard C6 over `COM12` to ESP-Hosted slave `2.12.8` using USB-TTL on `PROG_C6`. Boot log now identifies `esp32c6`, reports `Transport active`, and no longer prints the Host/Co-proc version mismatch warning. |
 | C6 slave firmware build | **PASS** | Built and flashed `firmware/main-deck-p4/managed_components/espressif__esp_hosted/slave/build/network_adapter.bin`; stable flashing required P4 held in bootloader and C6 flashing at 115200 baud because 460800 stopped responding through the jumper wiring. |
 | SD cache mount | **FIXED** | `/sd` now mounts on boot with the inserted `SA32G` 29.5 GB card: 4-bit SDMMC, 20 MHz. Root cause was missing vendor SD power control: on-chip LDO channel 4 must be attached to `host.pwr_ctrl_handle` before `esp_vfs_fat_sdmmc_mount()`. |
+| Active ESP-Hosted runtime | **DISABLED** | 2026-06-29 boot loop root cause was ESP-Hosted static task creation before `app_main()`. Active firmware now builds without `esp_hosted`/`esp_wifi_remote`; boot capture reached `all subsystems ready`, and repeated FLX4 connection heartbeats no longer resend forced LED snapshots. |
 
 ---
 
 ## Open Items
+- ⚠️ **exFAT USB support required:** AlphaTheta/rekordbox OneLibrary-style USB
+  exports can be formatted as exFAT. A 2026-06-29 PC validation showed the stick
+  still carried a readable legacy `export.pdb` and valid `USBANLZ` analysis
+  files, but P4 logs failed at mount time with `msc_host_vfs_register: ERROR`
+  before `library_init()` could open the database. Current ESP-IDF FatFs is
+  built with `FF_FS_EXFAT=0`; firmware needs explicit exFAT support or users must
+  keep using FAT32-exported sticks.
 - ✅ **Control path verified on hardware (touch):** PLAY/PAUSE, CUE, hot cues, beat jump, loop, and
   live header/waveform tracking all work via `deck_core` → `audio_engine`. CUE is now an on-screen
   button (OVERVIEW, right of the upper waveform); the physical S3 CUE will reuse the same path.

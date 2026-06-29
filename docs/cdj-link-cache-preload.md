@@ -3,11 +3,11 @@
 ## Scope
 
 Status: this is a parked design/bench record, not the active DDJ-FFL4 MVP UI
-flow. The current P4 firmware always starts hosted Wi-Fi SoftAP for the local
-web UI/captive portal and no longer exposes a Settings Link Mode selector or a
-Library `JOINED` source selector. The `cdj_link_*`, `remote_cache` and remote
-`media_catalog` code paths remain available for a future re-enable pass, but
-they are not wired into startup or user-facing UI in the current MVP.
+flow. Active P4 firmware disabled ESP-Hosted Wi-Fi on 2026-06-29 and no longer
+starts the hosted SoftAP, Settings Link Mode selector, or Library `JOINED`
+source selector. The `cdj_link_*`, `remote_cache` and remote `media_catalog`
+code paths remain design/bench material for a future re-enable pass, but they
+are not wired into startup or user-facing UI in the current MVP.
 
 V1 implements a remote USB library between two CDJ100S players. One player owns the USB stick and runs as the host. The joined player browses the host library, downloads the selected track assets to its local SD card, then plays the cached MP3 locally through the existing `audio_engine`.
 
@@ -22,9 +22,9 @@ V1 deliberately does not stream live audio and does not implement beat-sync, pha
 
 The host advertises itself with UDP beacons on port `42424`. The joined player stores the most recent peer in RAM and expires it after 5 seconds without a beacon.
 
-Current MVP topology is narrower: the P4 starts hosted SoftAP mode for the
-mobile controller web UI and captive DNS only. STA/join mode and remote library
-selection are disabled until this design is deliberately re-enabled.
+Current MVP topology is narrower: the P4 does not start hosted Wi-Fi at all.
+STA/join mode, remote library selection, and captive web access are disabled
+until this design is deliberately re-enabled.
 
 ## Cache Layout
 
@@ -97,8 +97,9 @@ File endpoints send fixed `Content-Length` responses and pipeline USB reads with
 
 ## Firmware Components
 
-- `wifi_link`: hosted Wi-Fi init and link status. Current startup uses host
-  SoftAP mode unconditionally for web UI/captive portal.
+- `wifi_link`: active firmware keeps this as a no-op status shim returning
+  `ESP_ERR_NOT_SUPPORTED`; the historical hosted Wi-Fi init code is parked for
+  a future re-enable pass.
 - `cdj_link_protocol`: binary library, manifest and discovery structures.
 - `media_io_gate`: single global gate for USB file reads.
 - `cdj_link_server`: host library snapshot and binary file endpoints, parked

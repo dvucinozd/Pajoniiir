@@ -127,6 +127,15 @@ static ctrl_event_t mixer_button(uint8_t id, int16_t value)
     };
 }
 
+static ctrl_event_t flx4_connection_state(int16_t value)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_STATE,
+        .id = CTRL_ID_FLX4_CONNECTION,
+        .value = value,
+    };
+}
+
 static void reset_audio_engine_stub(void)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
@@ -774,6 +783,22 @@ static void test_smart_buttons_toggle_audio_state_and_leds(void)
     assert(control_link_stub_last_led_state(LED_SMART_FADER, CTRL_DECK_1) == 1);
 }
 
+static void test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    ctrl_event_t connected = flx4_connection_state(CTRL_FLX4_CONNECTED);
+
+    deck_core_test_apply_event(&connected);
+    int first_snapshot_led_count = control_link_stub_led_count;
+    assert(first_snapshot_led_count > 0);
+
+    deck_core_test_apply_event(&connected);
+    assert(control_link_stub_led_count == first_snapshot_led_count);
+}
+
 static void test_loop_in_marker_publishes_loop_in_led_before_loop_out(void)
 {
     deck_core_test_reset();
@@ -1227,6 +1252,7 @@ int main(void)
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_smart_buttons_toggle_audio_state_and_leds();
+    test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_matches_requested_deck_to_other_deck_bpm();
     test_sync_uses_other_deck_effective_bpm();

@@ -42,6 +42,8 @@ static flx4_led_publisher_t s_flx4_led_publisher;
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
+static bool              s_flx4_connection_state_valid;
+static bool              s_flx4_connected;
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
@@ -737,10 +739,18 @@ static void on_state_event(const ctrl_event_t *ev)
         return;
     }
     if (ev->value == CTRL_FLX4_CONNECTED) {
-        ESP_LOGI(TAG, "FLX4 connected; forcing LED snapshot");
-        publish_flx4_led_snapshot(true);
+        if (!s_flx4_connection_state_valid || !s_flx4_connected) {
+            ESP_LOGI(TAG, "FLX4 connected; forcing LED snapshot");
+            publish_flx4_led_snapshot(true);
+        }
+        s_flx4_connection_state_valid = true;
+        s_flx4_connected = true;
     } else if (ev->value == CTRL_FLX4_DISCONNECTED) {
-        ESP_LOGI(TAG, "FLX4 disconnected");
+        if (!s_flx4_connection_state_valid || s_flx4_connected) {
+            ESP_LOGI(TAG, "FLX4 disconnected");
+        }
+        s_flx4_connection_state_valid = true;
+        s_flx4_connected = false;
     } else {
         ESP_LOGW(TAG, "unknown FLX4 connection state %d", ev->value);
     }
@@ -1522,6 +1532,8 @@ void deck_core_test_reset(void)
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
     flx4_led_publisher_init(&s_flx4_led_publisher);
     s_last_heartbeat_tick = 0;
+    s_flx4_connection_state_valid = false;
+    s_flx4_connected = false;
 }
 
 void deck_core_test_apply_event(const ctrl_event_t *ev)

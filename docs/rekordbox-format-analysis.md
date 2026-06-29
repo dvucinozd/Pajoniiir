@@ -8,6 +8,13 @@ Rekordbox USB drives contain analyzed metadata for each track. We can read this 
 
 **Medium: USB drive** (not SD card). Rekordbox formats the USB drive with a specific folder structure. The P4 reads tracks and metadata from this USB via the USB host interface.
 
+**Filesystem support note (2026-06-29):** A newer AlphaTheta/rekordbox
+OneLibrary-style USB was validated on PC with 15 tracks. It still included
+`PIONEER/rekordbox/export.pdb` and `PIONEER/USBANLZ`, and those files parsed
+successfully. The stick itself was exFAT; current P4 firmware cannot mount it
+because ESP-IDF FatFs is built with `FF_FS_EXFAT=0`, so exFAT support is a
+firmware backlog item. FAT32 remains the supported workaround until implemented.
+
 ---
 
 ## Folder Structure on USB Drive
@@ -17,7 +24,7 @@ USB:/
   PIONEER/
     rekordbox/
       export.pdb         ← Pioneer Hardware Database (title, artist, anlz path, ...)
-      exportLibrary.db   ← SQLite/SQLCipher — Rekordbox 6 encrypted database (NOT USED)
+      exportLibrary.db   ← encrypted / OneLibrary database (NOT USED; export.pdb is primary when present)
     USBANLZ/
       P000/
         00000832/

@@ -69,8 +69,8 @@ event source feeding the same `deck_core` → `audio_engine`.
       shared destructive visual language.
     - [x] Settings: reorganized into an operational two-column screen with
       controls on the left and live system/link status on the right. The old
-      CDJ Link role selector was removed; P4 now starts the hosted web UI AP
-      directly.
+      CDJ Link role selector was removed; hosted Wi-Fi is currently disabled in
+      active DDJ-FFL4 firmware.
     - [x] Beat Jump: retained the dedicated screen and existing jump values while
       replacing the explanatory header with clear backward/forward lanes and
       restrained red/green performance buttons.
@@ -83,9 +83,20 @@ event source feeding the same `deck_core` → `audio_engine`.
     - [x] Empty/loading/error states: normalized Library and load/cache status
       vocabulary with consistent action, success, warning and error colors.
 
-- **P7 — Hosted Wi-Fi + remote USB library: 🟡 web AP active, remote library parked.**
-  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP support. Current startup uses host AP
-    unconditionally for the local web UI/captive portal.
+- **P7 — Hosted Wi-Fi + remote USB library: 🟡 parked.**
+  - [ ] **exFAT USB support for newer AlphaTheta/rekordbox exports.** A
+    2026-06-29 OneLibrary-style USB exported by current AlphaTheta/rekordbox
+    tooling was formatted as exFAT and still contained a valid legacy
+    `PIONEER/rekordbox/export.pdb` plus `PIONEER/USBANLZ` data. PC-side
+    validation parsed the PDB/ANLZ data, but P4 failed before library parsing
+    at USB mount time (`msc_host_vfs_register: ERROR`) because ESP-IDF FatFs is
+    built with `FF_FS_EXFAT=0`. Implement firmware exFAT support via a controlled
+    FatFs override/patch or component strategy. FAT32 remains the current
+    supported workaround.
+  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP support was brought up and
+    bench-validated historically, then disabled in active DDJ-FFL4 firmware on
+    2026-06-29 because the controller/audio MVP does not need ESP-Hosted and it
+    can consume scarce internal RAM before `app_main()`.
   - [ ] STA scan/join path for `CDJ100S-*` is retained as component code but not exposed
     through Settings or Library UI in the current DDJ-FFL4 MVP.
   - [x] `cdj_link_protocol`: packed binary library records, manifests and UDP discovery packet,
@@ -102,12 +113,12 @@ event source feeding the same `deck_core` → `audio_engine`.
   - [x] UI: removed the old Settings link mode control and Library `JOINED` selector from
     active firmware. Shared loaded-track metadata for overview, waveform, hot cues and beat
     indicator remains in the local USB load path.
-  - [x] Hardware host bring-up: ESP32-C6 hosted firmware updated to `2.12.8`; SoftAP starts,
-    `library.bin` serves 308 tracks, and host MP3 endpoint reached ~0.96 MB/s best-case to a
-    Wi-Fi client, with stability still under validation.
-  - [ ] Future remote-link re-enable: restore an explicit UX for STA/join, restart the client
-    discovery path, and revalidate second-P4 SD cache write speed, USB busy behavior and
-    power-cycle cache reuse on two boards.
+  - [x] Hardware host bring-up: ESP32-C6 hosted firmware updated to `2.12.8`; historical
+    SoftAP tests served `library.bin` with 308 tracks and reached ~0.96 MB/s best-case
+    to a Wi-Fi client.
+  - [ ] Future remote-link re-enable: restore the ESP-Hosted dependency and an explicit
+    UX for host/STA/join, restart the client discovery path, and revalidate second-P4 SD
+    cache write speed, USB busy behavior and power-cycle cache reuse on two boards.
 
 > **Status note (2026-05-22): P1–P4 verified on hardware** via touch. PLAY/PAUSE, hot cues
 > (real PCOB positions), beat jump, and header/waveform position-tracking all work. Loop was
