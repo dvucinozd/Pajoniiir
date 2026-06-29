@@ -8,12 +8,14 @@ Rekordbox USB drives contain analyzed metadata for each track. We can read this 
 
 **Medium: USB drive** (not SD card). Rekordbox formats the USB drive with a specific folder structure. The P4 reads tracks and metadata from this USB via the USB host interface.
 
-**Filesystem support note (2026-06-29):** A newer AlphaTheta/rekordbox
-OneLibrary-style USB was validated on PC with 15 tracks. It still included
-`PIONEER/rekordbox/export.pdb` and `PIONEER/USBANLZ`, and those files parsed
-successfully. The stick itself was exFAT; current P4 firmware cannot mount it
-because ESP-IDF FatFs is built with `FF_FS_EXFAT=0`, so exFAT support is a
-firmware backlog item. FAT32 remains the supported workaround until implemented.
+**Filesystem support note (2026-06-29):** Newer AlphaTheta/rekordbox
+OneLibrary-style USB exports still include `PIONEER/rekordbox/export.pdb` and
+`PIONEER/USBANLZ`, and those files parse successfully on PC. The current P4 USB
+MSC/FatFs path supports FAT32 only when the disk uses an MBR partition table. It
+does not mount exFAT (`FF_FS_EXFAT=0`) and failed with FatFs
+`FR_NO_FILESYSTEM` on the tested FAT32-on-GPT stick. After converting the same
+stick to MBR + FAT32 and re-exporting, P4 read the USB library. exFAT and GPT
+support remain firmware backlog items.
 
 ---
 

@@ -119,6 +119,15 @@ static void storage_task(void *arg)
                 ESP_LOGE(TAG, "msc_host_install_device: %s", esp_err_to_name(rc));
                 continue;
             }
+            msc_host_device_info_t info;
+            if (msc_host_get_device_info(s_msc_dev, &info) == ESP_OK) {
+                uint64_t mb = ((uint64_t)info.sector_size * info.sector_count) / (1024 * 1024);
+                ESP_LOGI(TAG, "USB MSC device: %llu MB, sector=%u bytes (VID:0x%04X PID:0x%04X)",
+                         mb,
+                         (unsigned)info.sector_size,
+                         info.idVendor,
+                         info.idProduct);
+            }
             const esp_vfs_fat_mount_config_t mount_cfg = {
                 .format_if_mount_failed = false,
                 .max_files              = 5,
@@ -127,11 +136,12 @@ static void storage_task(void *arg)
             rc = msc_host_vfs_register(s_msc_dev, USB_STORAGE_MOUNT_POINT, &mount_cfg, &s_vfs);
             if (rc != ESP_OK) {
                 ESP_LOGE(TAG, "msc_host_vfs_register: %s", esp_err_to_name(rc));
+                ESP_LOGE(TAG, "USB mount failed; supported media is FAT32 with an MBR partition table. "
+                              "exFAT and FAT32-on-GPT are not supported by the current firmware.");
                 msc_host_uninstall_device(s_msc_dev);
                 s_msc_dev = NULL;
                 continue;
             }
-            msc_host_device_info_t info;
             if (msc_host_get_device_info(s_msc_dev, &info) == ESP_OK) {
                 uint64_t mb = ((uint64_t)info.sector_size * info.sector_count) / (1024 * 1024);
                 ESP_LOGI(TAG, "mounted: %llu MB (VID:0x%04X PID:0x%04X)", mb, info.idVendor, info.idProduct);

@@ -202,13 +202,14 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 ---
 
 ## Open Items
-- ⚠️ **exFAT USB support required:** AlphaTheta/rekordbox OneLibrary-style USB
-  exports can be formatted as exFAT. A 2026-06-29 PC validation showed the stick
-  still carried a readable legacy `export.pdb` and valid `USBANLZ` analysis
-  files, but P4 logs failed at mount time with `msc_host_vfs_register: ERROR`
-  before `library_init()` could open the database. Current ESP-IDF FatFs is
-  built with `FF_FS_EXFAT=0`; firmware needs explicit exFAT support or users must
-  keep using FAT32-exported sticks.
+- ⚠️ **USB filesystem/layout support:** AlphaTheta/rekordbox OneLibrary-style
+  exports can be exFAT, and Windows FAT32 formatting can leave the disk as GPT.
+  On 2026-06-29 PC validation showed the stick carried a readable legacy
+  `export.pdb` and valid `USBANLZ` analysis files, but P4 failed before
+  `library_init()` at mount time. Diagnostic build showed FatFs
+  `FR_NO_FILESYSTEM` for FAT32-on-GPT. Converting the same stick to MBR + FAT32
+  made P4 read the USB. Current supported path is FAT32 with an MBR partition
+  table; exFAT and GPT support remain firmware backlog items.
 - ✅ **Control path verified on hardware (touch):** PLAY/PAUSE, CUE, hot cues, beat jump, loop, and
   live header/waveform tracking all work via `deck_core` → `audio_engine`. CUE is now an on-screen
   button (OVERVIEW, right of the upper waveform); the physical S3 CUE will reuse the same path.

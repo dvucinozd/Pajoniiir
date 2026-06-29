@@ -84,11 +84,12 @@
 - P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
-- USB library import currently requires a mountable FAT/FAT32 filesystem.
-  AlphaTheta/rekordbox OneLibrary-style exports can be exFAT; a 2026-06-29 PC
-  validation showed the legacy `export.pdb` and `USBANLZ` data were still
-  readable, but P4 failed before parsing at `msc_host_vfs_register: ERROR`.
-  Firmware exFAT support is a pending implementation item.
+- USB library import currently requires FAT32 on an MBR-partitioned USB stick.
+  AlphaTheta/rekordbox OneLibrary-style exports still provide readable legacy
+  `export.pdb` and `USBANLZ` data, but P4 failed before parsing on exFAT and on
+  FAT32-on-GPT (`FR_NO_FILESYSTEM`/`msc_host_vfs_register: ERROR`). Converting
+  the same stick to MBR + FAT32 made P4 read the USB. Firmware exFAT/GPT support
+  is a pending implementation item.
 - P4 master output now uses a transparent post-sum limiter with lightweight
   limiter telemetry in both the output diagnostic log and the audio mixer
   snapshot. Single-deck level and normal two-deck sums remain unchanged; only

@@ -84,15 +84,17 @@ event source feeding the same `deck_core` → `audio_engine`.
       vocabulary with consistent action, success, warning and error colors.
 
 - **P7 — Hosted Wi-Fi + remote USB library: 🟡 parked.**
-  - [ ] **exFAT USB support for newer AlphaTheta/rekordbox exports.** A
+  - [ ] **exFAT/GPT USB support for newer AlphaTheta/rekordbox exports.** A
     2026-06-29 OneLibrary-style USB exported by current AlphaTheta/rekordbox
-    tooling was formatted as exFAT and still contained a valid legacy
-    `PIONEER/rekordbox/export.pdb` plus `PIONEER/USBANLZ` data. PC-side
-    validation parsed the PDB/ANLZ data, but P4 failed before library parsing
-    at USB mount time (`msc_host_vfs_register: ERROR`) because ESP-IDF FatFs is
-    built with `FF_FS_EXFAT=0`. Implement firmware exFAT support via a controlled
-    FatFs override/patch or component strategy. FAT32 remains the current
-    supported workaround.
+    tooling still contained a valid legacy `PIONEER/rekordbox/export.pdb` plus
+    `PIONEER/USBANLZ` data. PC-side validation parsed the PDB/ANLZ data, but P4
+    failed before library parsing at USB mount time when the stick was exFAT or
+    FAT32-on-GPT. ESP-IDF FatFs is built with `FF_FS_EXFAT=0`, and the current
+    MSC/FatFs path does not mount the tested GPT FAT32 layout. Implement firmware
+    exFAT/GPT support via a controlled FatFs/MSC override or component strategy.
+    FAT32 with an MBR partition table is the current supported workaround and was
+    hardware-confirmed by the user after converting the same stick from GPT to
+    MBR.
   - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP support was brought up and
     bench-validated historically, then disabled in active DDJ-FFL4 firmware on
     2026-06-29 because the controller/audio MVP does not need ESP-Hosted and it
