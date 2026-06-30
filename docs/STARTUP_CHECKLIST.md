@@ -90,11 +90,12 @@
   FAT32-on-GPT (`FR_NO_FILESYSTEM`/`msc_host_vfs_register: ERROR`). Converting
   the same stick to MBR + FAT32 made P4 read the USB. Firmware exFAT/GPT support
   is a pending implementation item.
-- P4 master output now uses a transparent post-sum limiter with lightweight
-  limiter telemetry in both the output diagnostic log and the audio mixer
-  snapshot. Single-deck level and normal two-deck sums remain unchanged; only
-  true int16 overloads are shaped. The P4 status indicator briefly shows
-  `CLIP n` when the limiter counter increases.
+- P4 master output now uses a transparent soft-knee post-sum limiter with
+  lightweight limiter telemetry in both the output diagnostic log and the audio
+  mixer snapshot. Material below roughly ±30000 PCM units remains unchanged;
+  hotter post-sum peaks are compressed toward the int16 ceiling instead of
+  hard-clipped. The P4 status indicator briefly shows `CLIP n` when the limiter
+  counter increases.
 - S3 USB MIDI host responsiveness was hardware-verified on 2026-06-21 after
   FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
   raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both

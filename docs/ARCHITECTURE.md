@@ -82,11 +82,14 @@ Current P4 audio ownership rule:
   `-6 dB`) so limiter activity can be reduced without changing deck fader or
   crossfader semantics. The selected preset is persisted through
   `app_settings`/NVS and reapplied during P4 boot after `audio_engine_init()`;
-- limiter telemetry is accumulated in the audio mixer snapshot as cumulative
-  limited sample counts, positive/negative overload counts, and peak pre-limit
-  input. The P4 status indicator reports `CLIP n` only when the limited-sample
-  counter increases, so normal transport status remains stable when no new
-  clipping occurs;
+- the post-sum master limiter uses a soft knee above roughly ±30000 PCM units:
+  ordinary material below the knee is unchanged, while hot dual-deck sums are
+  compressed toward the int16 ceiling instead of being hard-clipped. Limiter
+  telemetry is accumulated in the audio mixer snapshot as cumulative limited
+  sample counts, positive/negative overload counts, and peak pre-limit input.
+  The P4 status indicator reports `CLIP n` only when the limited-sample counter
+  increases, so normal transport status remains stable when no new limiting
+  occurs;
 - deck-local three-band EQ is applied in the P4 `audio_output_mixer` path
   before channel fader/crossfader summing. Raw FLX4 EQ values are kept in the
   mixer snapshot and exposed through `/api/status`; center is unity, minimum is

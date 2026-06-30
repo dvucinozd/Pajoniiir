@@ -130,6 +130,18 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_mixer"
+        Dir = "tests/audio_mixer"
+        Target = "test_audio_mixer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_mixer.exe",
+            "test_audio_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c"
+        )
+    },
+    @{
         Name = "audio_engine"
         Dir = "tests/audio_engine"
         Target = "test_audio_engine.exe"

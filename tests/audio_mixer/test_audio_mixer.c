@@ -75,6 +75,28 @@ static void test_apply_gain_scales_stereo_frame(void)
     assert(out.right == 0);
 }
 
+static void test_master_limiter_soft_knee_is_transparent_until_hot_peak(void)
+{
+    audio_mixer_limiter_stats_t stats = { 0 };
+
+    assert(audio_mixer_limit_master_sample(29999, &stats) == 29999);
+    assert(audio_mixer_limit_master_sample(-29999, &stats) == -29999);
+    assert(stats.limited_samples == 0);
+    assert(stats.peak_input_abs == 29999);
+
+    int16_t hot_pos = audio_mixer_limit_master_sample(32000, &stats);
+    int16_t hot_neg = audio_mixer_limit_master_sample(-32000, &stats);
+
+    assert(hot_pos > 29999);
+    assert(hot_pos < 32000);
+    assert(hot_neg < -29999);
+    assert(hot_neg > -32000);
+    assert(stats.limited_samples == 2);
+    assert(stats.positive_overloads == 1);
+    assert(stats.negative_overloads == 1);
+    assert(stats.peak_input_abs == 32000);
+}
+
 int main(void)
 {
     test_fader_gain_clamps_to_unit_range();
@@ -82,6 +104,7 @@ int main(void)
     test_mixer_saturates_instead_of_wrapping();
     test_stereo_frame_uses_channel_and_crossfader_gains();
     test_apply_gain_scales_stereo_frame();
+    test_master_limiter_soft_knee_is_transparent_until_hot_peak();
     puts("audio_mixer tests passed");
     return 0;
 }

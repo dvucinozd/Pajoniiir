@@ -119,11 +119,13 @@ Exit criteria:
 Status: master mix, channel fader/crossfader gains, cue/PFL selection, and
 dual-deck P4 audio scheduling are implemented for the current two-deck P4 path.
 Transparent post-sum limiting and limiter telemetry are implemented for the
-current master output path. Limiter counters are accumulated in the audio
-mixer snapshot and surfaced in the P4 status indicator as `CLIP n` when the
-counter increases. The P4 audio output late-warning diagnostic is calibrated
-to report true outliers instead of normal blocking `esp_codec_dev_write()`
-pacing.
+current master output path. The limiter is a soft-knee post-sum stage: samples
+below roughly ±30000 PCM units are unchanged, while hotter summed peaks are
+compressed toward the int16 ceiling instead of hard-clipped. Limiter counters
+are accumulated in the audio mixer snapshot and surfaced in the P4 status
+indicator as `CLIP n` when the counter increases. The P4 audio output
+late-warning diagnostic is calibrated to report true outliers instead of normal
+blocking `esp_codec_dev_write()` pacing.
 
 Goal: play two tracks and mix them into a master output.
 
