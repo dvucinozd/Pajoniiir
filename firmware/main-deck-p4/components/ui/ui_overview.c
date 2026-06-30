@@ -14,6 +14,7 @@
 #include "ui_overview_renderer.h"
 #include "ui_overview_scheduler.h"
 #include "ui_overview_wave_cache.h"
+#include "ui_overview_window.h"
 #include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
 #include <limits.h>
@@ -132,9 +133,6 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
 #define OVERVIEW_BEAT_PULSES_Y 144
 #define OVERVIEW_BEAT_PULSES_X (OVERVIEW_WAVE_CENTER_X - 33)
-#define OVERVIEW_MAIN_VISIBLE_BEATS 16u
-#define OVERVIEW_MAIN_MIN_WINDOW_MS 4000u
-#define OVERVIEW_MAIN_MAX_WINDOW_MS 30000u
 #define OVERVIEW_PHASE_W 240
 #define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - (OVERVIEW_PHASE_W / 2))
 #define OVERVIEW_PHASE_Y 150
@@ -816,28 +814,13 @@ lv_obj_t *ui_overview_create(lv_obj_t *parent) {
 
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta)
 {
-    uint32_t beat_ms = 0;
+    uint16_t bpm_x100 = 0;
     if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
-        beat_ms = 6000000u / meta->beats[0].bpm_x100;
-    } else {
-        uint16_t bpm = s_overview_deck_bpm[ui_overview_deck_index(deck)];
-        if (bpm > 0) {
-            beat_ms = 60000u / bpm;
-        }
+        bpm_x100 = meta->beats[0].bpm_x100;
     }
-
-    if (beat_ms == 0) {
-        beat_ms = 500u;
-    }
-
-    uint32_t window_ms = beat_ms * OVERVIEW_MAIN_VISIBLE_BEATS;
-    if (window_ms < OVERVIEW_MAIN_MIN_WINDOW_MS) {
-        window_ms = OVERVIEW_MAIN_MIN_WINDOW_MS;
-    }
-    if (window_ms > OVERVIEW_MAIN_MAX_WINDOW_MS) {
-        window_ms = OVERVIEW_MAIN_MAX_WINDOW_MS;
-    }
-    return window_ms;
+    return ui_overview_window_ms_from_bpm_x100(
+        bpm_x100,
+        s_overview_deck_bpm[ui_overview_deck_index(deck)]);
 }
 
 #ifndef WIN32

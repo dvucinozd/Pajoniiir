@@ -141,6 +141,13 @@
   `-3 dB`, and `-6 dB`. Default remains unity, so current playback level is
   unchanged until the operator deliberately lowers it. The selected preset is
   persisted through NVS and reapplied during P4 boot after `audio_engine_init()`.
+- Mixed sample-rate dual-deck playback is fixed as of 2026-07-01. A hardware
+  repro showed that France Gall + Comanchero were both 44.1 kHz and played with
+  fluid waveforms, while Men At Work + Caribbean Blue mixed 44.1 kHz and
+  48 kHz and previously caused waveform stutter. The output mixer now applies
+  each deck's `source_sample_rate / output_sample_rate` ratio on top of pitch,
+  and hardware smoke confirmed audio OK, fluid waveform, normal Caribbean Blue
+  playback, and no reboot.
 - P4 firmware defaults now select performance optimization and disable LVGL
   examples/demos. If an ignored local `firmware/main-deck-p4/sdkconfig`
   predates 2026-06-25, regenerate or align it before flashing so it does not

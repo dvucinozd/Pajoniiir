@@ -184,6 +184,14 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"ring_capacity\":%u,"
              "\"ring_used1\":%u,"
              "\"ring_used2\":%u,"
+             "\"deck_sample_rate1\":%u,"
+             "\"deck_sample_rate2\":%u,"
+             "\"deck_channels1\":%u,"
+             "\"deck_channels2\":%u,"
+             "\"deck_file_bytes1\":%u,"
+             "\"deck_file_bytes2\":%u,"
+             "\"deck_load_progress1\":%u,"
+             "\"deck_load_progress2\":%u,"
              "\"deck_active1\":%s,"
              "\"deck_active2\":%s,"
              "\"limiter_samples\":%u,"
@@ -212,6 +220,14 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              (unsigned)diagnostics.ring_capacity,
              (unsigned)diagnostics.ring_used[0],
              (unsigned)diagnostics.ring_used[1],
+             (unsigned)diagnostics.deck_sample_rate[0],
+             (unsigned)diagnostics.deck_sample_rate[1],
+             (unsigned)diagnostics.deck_channels[0],
+             (unsigned)diagnostics.deck_channels[1],
+             (unsigned)diagnostics.deck_file_bytes[0],
+             (unsigned)diagnostics.deck_file_bytes[1],
+             (unsigned)diagnostics.deck_load_progress[0],
+             (unsigned)diagnostics.deck_load_progress[1],
              diagnostics.deck_active[0] ? "true" : "false",
              diagnostics.deck_active[1] ? "true" : "false",
              (unsigned)diagnostics.limiter.limited_samples,

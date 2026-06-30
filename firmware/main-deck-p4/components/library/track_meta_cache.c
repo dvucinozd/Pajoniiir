@@ -13,7 +13,7 @@ static const char *TAG = "track_meta_cache";
 static const char *CACHE_ROOT = "/sd/trackcache";
 
 #define TRACK_META_CACHE_MAGIC   0x31434D54u /* "TMC1" */
-#define TRACK_META_CACHE_VERSION 1u
+#define TRACK_META_CACHE_VERSION 2u
 #define TRACK_META_CACHE_FLAGS_LOW  0x01u
 #define TRACK_META_CACHE_FLAGS_VBR  0x02u
 #define TRACK_META_CACHE_FLAGS_HIGH 0x04u
@@ -159,6 +159,11 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
     bool ok = read_exact(fp, &header, sizeof(header)) &&
               header_matches(&header, track_key, dat_size, dat_mtime, ext_size, ext_mtime);
     if (!ok) {
+        fclose(fp);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    if (include_high_waveform && ext_size > 0 &&
+        !(header.flags & TRACK_META_CACHE_FLAGS_HIGH)) {
         fclose(fp);
         return ESP_ERR_INVALID_RESPONSE;
     }

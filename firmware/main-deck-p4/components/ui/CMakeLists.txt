@@ -11,6 +11,7 @@ idf_component_register(
          "ui_deck_anlz_store.c"
          "ui_mixer_view.c"
          "ui_overview_motion.c"
+         "ui_overview_window.c"
          "ui_overlay_map.c"
          "ui_overview_perf.c"
          "ui_overview_scheduler.c"

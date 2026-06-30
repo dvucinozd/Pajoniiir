@@ -1001,6 +1001,14 @@ static void ae_decode_task(void *arg)
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "CODEC OPEN ERR");
         goto cleanup;
     }
+    ESP_LOGI(TAG,
+             "track format D%u: %u Hz %d ch file=%u bytes loaded=%u done=%u",
+             (unsigned)ctx->deck,
+             (unsigned)eng->sample_rate,
+             eng->channels,
+             (unsigned)eng->file_size,
+             (unsigned)fw->loaded_bytes,
+             fw->load_done ? 1u : 0u);
     ESP_LOGI(TAG, "producer ready @ %u Hz, shared output mixer eligible", (unsigned)eng->sample_rate);
     eng->load_progress = 100;
     eng->loading       = false;   /* P5a: track is now playable */
@@ -1191,6 +1199,8 @@ static void ae_output_task(void *arg)
         audio_output_mixer_deck_t deck0 = {
             .active = deck_output_active(deck0_index),
             .pitch_factor = s_engines[deck0_index].pitch_factor,
+            .source_sample_rate = s_engines[deck0_index].sample_rate,
+            .output_sample_rate = s_output_sample_rate,
             .gain = deck0_gain,
             .eq = &s_deck_eq[deck0_index],
             .filter = &s_deck_filter[deck0_index],
@@ -1202,6 +1212,8 @@ static void ae_output_task(void *arg)
         audio_output_mixer_deck_t deck1 = {
             .active = deck_output_active(deck1_index),
             .pitch_factor = s_engines[deck1_index].pitch_factor,
+            .source_sample_rate = s_engines[deck1_index].sample_rate,
+            .output_sample_rate = s_output_sample_rate,
             .gain = deck1_gain,
             .eq = &s_deck_eq[deck1_index],
             .filter = &s_deck_filter[deck1_index],
@@ -1447,6 +1459,10 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         return ESP_ERR_NOT_FOUND;
     }
     eng->fp = fp;
+    fseek(fp, 0, SEEK_END);
+    long pc_file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    eng->file_size = pc_file_size > 0 ? (size_t)pc_file_size : 0u;
 #endif
 
     eng->duration_ms = duration_ms;
@@ -1466,7 +1482,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
             eng->has_pvbr = true;
             ESP_LOGI(TAG, "PVBR seek table loaded and verified (has non-zero values)");
         } else {
-            ESP_LOGW(TAG, "PVBR table contains only zeros! Disabling PVBR seek, using linear fallback.");
+            ESP_LOGI(TAG, "PVBR table contains only zeros; using linear seek fallback");
             memset(eng->pvbr, 0, sizeof eng->pvbr);
             eng->has_pvbr = false;
         }
@@ -1487,8 +1503,8 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     mp3dec_init(&eng->dec);
     audio_pcm_ring_reset(ring);
 
-    ESP_LOGI(TAG, "Loaded: %s  dur=%u ms  pvbr=%s",
-             mp3_path, (unsigned)duration_ms, pvbr_400 ? "yes" : "no");
+    ESP_LOGI(TAG, "track load D%u: %s dur=%u ms pvbr=%s",
+             (unsigned)deck, mp3_path, (unsigned)duration_ms, pvbr_400 ? "yes" : "no");
 
 #if AE_FW
     audio_fw_runtime_t *runtime = &s_fw_runtimes[deck];
@@ -2239,6 +2255,11 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         audio_engine_state_t *eng = &s_engines[deck];
         out_snapshot->deck_active[deck] = eng->playing && !eng->paused;
         out_snapshot->ring_used[deck] = audio_pcm_ring_used(&s_pcm_rings[deck]);
+        out_snapshot->deck_sample_rate[deck] = eng->sample_rate;
+        out_snapshot->deck_channels[deck] = (uint8_t)((eng->channels > 0) ? eng->channels : 0);
+        out_snapshot->deck_file_bytes[deck] = (uint32_t)eng->file_size;
+        out_snapshot->deck_load_progress[deck] =
+            (eng->loaded || eng->loading) ? eng->load_progress : 0u;
     }
     out_snapshot->limiter = s_limiter_stats;
 #if AE_FW

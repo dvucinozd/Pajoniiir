@@ -90,6 +90,37 @@ static void test_inactive_deck_does_not_consume_source(void)
     assert(deck1_source.index == 0);
 }
 
+static void test_deck_sample_rate_ratio_affects_source_consumption(void)
+{
+    audio_mixer_frame_t frames[200];
+    for (size_t i = 0; i < 200; i++) {
+        frames[i] = (audio_mixer_frame_t){ .left = 1000, .right = 1000 };
+    }
+    source_t source = { .frames = frames, .count = 200, .index = 0 };
+    audio_resampler_state_t resampler;
+    audio_resampler_reset(&resampler);
+    audio_output_mixer_deck_t deck = {
+        .active = true,
+        .pitch_factor = 1.0f,
+        .source_sample_rate = 48000,
+        .output_sample_rate = 44100,
+        .gain = 1.0f,
+        .resampler = &resampler,
+        .pop_source = pop_source,
+        .source_ctx = &source,
+    };
+
+    uint32_t total_consumed = 0;
+    for (int i = 0; i < 147; i++) {
+        uint32_t consumed = 0;
+        audio_output_mixer_next(&deck, NULL, &consumed, NULL, NULL);
+        total_consumed += consumed;
+    }
+
+    assert(total_consumed == 160);
+    assert(source.index == 160);
+}
+
 static audio_output_mixer_deck_t make_deck(source_t *source,
                                            audio_resampler_state_t *resampler,
                                            float gain)
@@ -253,6 +284,7 @@ int main(void)
 {
     test_mixes_two_active_decks_with_output_gains();
     test_inactive_deck_does_not_consume_source();
+    test_deck_sample_rate_ratio_affects_source_consumption();
     test_master_limiter_leaves_single_deck_unchanged();
     test_master_limiter_leaves_normal_two_deck_sum_unchanged();
     test_master_limiter_shapes_overloads_and_reports_telemetry();

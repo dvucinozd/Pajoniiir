@@ -403,6 +403,18 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_overview_window"
+        Dir = "tests/ui_overview_window"
+        Target = "test_ui_overview_window.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_overview_window.exe",
+            "test_ui_overview_window.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_window.c"
+        )
+    },
+    @{
         Name = "ui_overview_scheduler"
         Dir = "tests/ui_overview_scheduler"
         Target = "test_ui_overview_scheduler.exe"

@@ -158,6 +158,10 @@ typedef struct {
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;
+    uint32_t deck_sample_rate[AUDIO_ENGINE_DECK_COUNT];
+    uint8_t deck_channels[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t deck_file_bytes[AUDIO_ENGINE_DECK_COUNT];
+    uint8_t deck_load_progress[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
     uint32_t heap_free;
     uint32_t internal_free;

@@ -20,8 +20,13 @@ static audio_mixer_frame_t next_deck_frame(const audio_output_mixer_deck_t *deck
         return (audio_mixer_frame_t){ 0 };
     }
 
+    float effective_pitch = deck->pitch_factor;
+    if (deck->source_sample_rate > 0u && deck->output_sample_rate > 0u) {
+        effective_pitch *= (float)deck->source_sample_rate / (float)deck->output_sample_rate;
+    }
+
     return audio_resampler_next(deck->resampler,
-                                deck->pitch_factor,
+                                effective_pitch,
                                 deck->pop_source,
                                 deck->source_ctx,
                                 out_consumed);

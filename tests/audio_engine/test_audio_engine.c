@@ -282,6 +282,14 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.ring_used[1] == 0, "diagnostics ring 1 starts empty");
     EXPECT(!diag.deck_active[0], "diagnostics deck 0 starts inactive");
     EXPECT(!diag.deck_active[1], "diagnostics deck 1 starts inactive");
+    EXPECT(diag.deck_sample_rate[0] == 0, "diagnostics deck 0 sample rate starts unknown");
+    EXPECT(diag.deck_sample_rate[1] == 0, "diagnostics deck 1 sample rate starts unknown");
+    EXPECT(diag.deck_channels[0] == 0, "diagnostics deck 0 channel count starts unknown");
+    EXPECT(diag.deck_channels[1] == 0, "diagnostics deck 1 channel count starts unknown");
+    EXPECT(diag.deck_file_bytes[0] == 0, "diagnostics deck 0 file size starts empty");
+    EXPECT(diag.deck_file_bytes[1] == 0, "diagnostics deck 1 file size starts empty");
+    EXPECT(diag.deck_load_progress[0] == 0, "diagnostics deck 0 load progress starts empty");
+    EXPECT(diag.deck_load_progress[1] == 0, "diagnostics deck 1 load progress starts empty");
     EXPECT(diag.limiter.limited_samples == 0, "diagnostics limiter starts clear");
 
     audio_mixer_limiter_stats_t limiter_stats = {
@@ -313,6 +321,10 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     audio_engine_get_diagnostics_snapshot(&diag);
     EXPECT(diag.deck_active[0], "diagnostics captures deck 0 active");
     EXPECT(diag.deck_active[1], "diagnostics captures deck 1 active");
+    EXPECT(diag.deck_file_bytes[0] > 0, "diagnostics captures deck 0 file size");
+    EXPECT(diag.deck_file_bytes[1] > 0, "diagnostics captures deck 1 file size");
+    EXPECT(diag.deck_load_progress[0] == 100, "diagnostics captures deck 0 load progress");
+    EXPECT(diag.deck_load_progress[1] == 100, "diagnostics captures deck 1 load progress");
     remove(path);
 }
 

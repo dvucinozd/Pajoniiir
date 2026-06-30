@@ -159,9 +159,9 @@ TODO:
   constant limiter activity or audible clipping with normal mixer levels.
 - P4 audio diagnostics are now available as a central audio-engine snapshot:
   output codec state/sample-rate, output late count/max/threshold, per-deck ring
-  fill and active flags, limiter counters, and heap/internal/PSRAM free space.
-  `/api/status` exposes the same data under `diagnostics` for structured smoke
-  captures.
+  fill and active flags, per-deck decoded format/load metadata, limiter
+  counters, and heap/internal/PSRAM free space. `/api/status` exposes the same
+  data under `diagnostics` for structured smoke captures.
 - Clean up the Overview waveform cache/render path and diagnostic leftovers.
   The current cache is already host-guarded for OFFSET/EDGE updates, no
   steady-path `memmove`, and bounded edge column rendering; further cleanup
@@ -170,12 +170,21 @@ TODO:
   follow-up measurement. 2026-06-30 RCA smoke confirmed audio is healthy while
   the operator still saw waveform stutter, so the next investigation should
   treat waveform fluidity as a UI/render scheduling issue, not an audio decode
-  or PCM5102A issue. The first follow-up caps Overview main waveform rendering
-  to one deck per 16 ms UI tick when both decks are playing, relying on the
-  existing alternating deck order to keep both decks fair while avoiding two
-  large PPA waveform blits in the same frame.
+  or PCM5102A issue. The first follow-up tried one deck per 16 ms UI tick, but
+  hardware testing showed that the perceived stutter remained once the audio
+  path was healthy. The scheduler now allows both playing deck waveforms to
+  redraw in the same UI tick so each deck keeps full visual cadence.
   `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus total rendered columns and
   blits; the existing Overview diagnostics log includes those totals.
+- Mixed 44.1/48 kHz dual-deck playback was fixed on 2026-07-01. Hardware
+  diagnosis showed the OK pair France Gall + Comanchero were both 44.1 kHz,
+  while the failing Men At Work + Caribbean Blue pair mixed 44.1 kHz and
+  48 kHz. The output mixer now folds `source_sample_rate / output_sample_rate`
+  into each deck's effective resampler step instead of using `pitch_factor`
+  alone. Host regression coverage asserts that a 48 kHz deck on a 44.1 kHz
+  output consumes 160 source frames per 147 output frames. Hardware smoke after
+  the fix confirmed audio OK, fluid waveform, normal Caribbean Blue playback,
+  and no reboot.
 - Before adding PCM5102A hardware support, follow
   `docs/superpowers/plans/2026-06-26-pcm5102a-migration-readiness.md`: create
   a P4 pinout inventory, fix the output sample-rate strategy, split logical

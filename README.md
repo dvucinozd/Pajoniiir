@@ -115,8 +115,10 @@ blocks. PCM5102A MAIN OUT bring-up is implemented behind the local
 photographed PCM5102MK/PCM5102A board; both RCA line out and the board's 3.5 mm
 output were confirmed on 2026-06-30. The external DAC I2S clock is reconfigured
 to the loaded track sample rate, ES8311 remains the monitor/speaker path, audio
-tasks are pinned away from the LVGL core, and a non-boosting master trim control
-is available in Settings for clipping/limiter tuning and is persisted in NVS.
+tasks are pinned away from the LVGL core, mixed 44.1/48 kHz dual-deck playback
+is handled by per-deck source/output sample-rate compensation in the output
+mixer, and a non-boosting master trim control is available in Settings for
+clipping/limiter tuning and is persisted in NVS.
 Limiter telemetry is also exposed through the mixer snapshot and central
 diagnostics snapshot; `/api/status` mirrors diagnostics for smoke captures, and
 the P4 status indicator shows `CLIP n` only when new limiting occurs. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the

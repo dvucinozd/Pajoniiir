@@ -10,6 +10,8 @@
 typedef struct {
     bool active;
     float pitch_factor;
+    uint32_t source_sample_rate;
+    uint32_t output_sample_rate;
     float gain;
     audio_eq_state_t *eq;
     audio_filter_state_t *filter;
