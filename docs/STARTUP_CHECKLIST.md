@@ -102,6 +102,10 @@
   reported `active=1/1`, `late=0 late_max=0 us`, healthy rings, and limiter
   counts only during hot summed peaks. Waveform stutter was still observed and
   remains the next UI/render performance item.
+- Follow-up waveform scheduling change caps Overview main waveform redraw to
+  one deck per 16 ms UI tick when both decks are playing. The scheduler still
+  alternates deck order, so each playing deck gets regular updates while the UI
+  avoids issuing two large PPA waveform blits in the same frame.
 - S3 USB MIDI host responsiveness was hardware-verified on 2026-06-21 after
   FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
   raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both

@@ -170,7 +170,10 @@ TODO:
   follow-up measurement. 2026-06-30 RCA smoke confirmed audio is healthy while
   the operator still saw waveform stutter, so the next investigation should
   treat waveform fluidity as a UI/render scheduling issue, not an audio decode
-  or PCM5102A issue.
+  or PCM5102A issue. The first follow-up caps Overview main waveform rendering
+  to one deck per 16 ms UI tick when both decks are playing, relying on the
+  existing alternating deck order to keep both decks fair while avoiding two
+  large PPA waveform blits in the same frame.
   `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus total rendered columns and
   blits; the existing Overview diagnostics log includes those totals.
 - Before adding PCM5102A hardware support, follow
@@ -506,10 +509,14 @@ Validation note, 2026-06-10:
   - Removed centiseconds from time representation and applied `hh:mm:ss` format across the physical screen (Overview status, deck panels, and Performance tabs) and the mobile web controller interface.
   - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
   - Applied CPU Core Affinity (Task Pinning): pinned the main `lvgl` graphics task to **Core 1** and the HTTP web server task to **Core 0** (with `config.core_id = 0`), isolating waveform drawing from network interrupts and web socket processing.
-- **Dual-deck waveform and P4 build-performance pass (2026-06-25)**:
-  - The Overview scheduler now gives two main waveform redraw budget tokens when
-    both decks are playing. This keeps the upper and lower main waveforms on the
-    same UI cadence instead of alternating one deck per tick.
+- **Dual-deck waveform and P4 build-performance pass (2026-06-25; revised
+  2026-06-30)**:
+  - The Overview scheduler originally gave two main waveform redraw budget
+    tokens when both decks were playing. After the 2026-06-30 RCA/audio smoke
+    confirmed audio stability but visible waveform stutter, the scheduler was
+    revised back to one main waveform redraw token per UI tick with alternating
+    deck order. This caps per-frame PPA waveform work while still giving both
+    decks regular updates.
   - P4 `sdkconfig.defaults` now selects performance optimization and disables
     LVGL examples/demos. If a local ignored `sdkconfig` already exists, it must
     be regenerated or aligned before flashing.
