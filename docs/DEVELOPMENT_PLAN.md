@@ -256,10 +256,12 @@ Validation note, 2026-06-08:
   audio loader/decode/output tasks are pinned to CPU0 while LVGL remains on
   CPU1. A 60-second COM15 measurement with both decks playing reported
   `late=0 late_max=0 us`, stable ring fill, and stable decode timing.
-  Direct TRS headphones on the DAC board's 3.5 mm connector produced no sound
-  and are not treated as a failed DAC result because the module exposes
-  line-level outputs, not a headphone amplifier. RCA/3.5 mm into active
-  AUX/LINE IN remains pending.
+  Follow-up hardware smoke on 2026-06-30 confirmed the module's RCA output and
+  onboard 3.5 mm output both carry audio. The corresponding COM15 logs are
+  `logs/p4_pcm5102a_boot_probe_20260630_123558.log` and
+  `logs/p4_pcm5102a_rca_smoke_20260630_123632.log`; the runtime log showed
+  `PCM5102A main out open @ 44100 Hz`, `late=0`, and no limiter activity for
+  the single-deck RCA test window.
 
 Validation note, 2026-06-14:
 

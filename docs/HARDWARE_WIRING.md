@@ -91,21 +91,23 @@ Runtime notes after hardware bring-up:
 - 2026-06-27 COM15 hardware measurement with both decks playing reported
   stable decode timing, full PCM rings, and `late=0 late_max=0 us` after the
   PCM5102A sample-rate reconfiguration fix.
-- The PCM5102A board's RCA and 3.5 mm TRS connectors should be treated as
-  line-level outputs. Direct passive headphones are not a valid acceptance test:
-  they can be silent or distorted because this module is not a headphone amp.
-  Final audio smoke should use RCA or 3.5 mm TRS into an active AUX/LINE IN,
-  mixer, amplifier, or audio interface input.
+- The PCM5102A board's RCA and 3.5 mm connectors were hardware-smoked on
+  2026-06-30 and both produced audio. Treat both as DAC board outputs for MAIN
+  OUT validation; for final level/noise judgment prefer RCA or 3.5 mm into an
+  active AUX/LINE IN, mixer, amplifier, or audio interface input.
 
-Pending PCM5102A line-out acceptance test:
+PCM5102A line-out acceptance result:
 
-1. Connect PCM5102A RCA or 3.5 mm TRS to an active AUX/LINE IN input.
-2. Verify Deck 1 alone, Deck 2 alone, and both decks together.
-3. Confirm left/right channel order, normal speed, no popping, and no obvious
-   clipping at conservative gain.
-4. If line out is silent, capture boot/playback logs and confirm both
-   `PCM5102A main out ready` and `PCM5102A main out open @ ... Hz`; then verify
-   BCK/LRCK/DATA wiring.
+1. 2026-06-30 boot probe confirmed `PCM5102A main out ready: BCLK=50 WS=52
+   DOUT=51`, USB library load, and FLX4 reconnect:
+   `logs/p4_pcm5102a_boot_probe_20260630_123558.log`.
+2. 2026-06-30 RCA smoke confirmed playback through the PCM5102A board's RCA
+   output and onboard 3.5 mm output. The capture showed
+   `PCM5102A main out open @ 44100 Hz`, `late=0`, and no limiter activity for
+   the Deck 1 test window:
+   `logs/p4_pcm5102a_rca_smoke_20260630_123632.log`.
+3. Remaining audio acceptance work is gain staging, dual-deck summed level, and
+   limiter behavior; not basic PCM5102A wiring or I2S bring-up.
 
 Rejected DAC pin proposal:
 

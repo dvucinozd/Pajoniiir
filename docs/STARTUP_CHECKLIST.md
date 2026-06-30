@@ -119,10 +119,12 @@
   dual-deck run reported `late=0 late_max=0 us` with stable ring fill. The
   local `firmware/main-deck-p4/sdkconfig` used for this hardware test is
   intentionally ignored and should not be committed.
-- PCM5102A final output acceptance is still pending: test RCA or 3.5 mm TRS
-  into an active AUX/LINE IN input. Direct passive TRS headphones on the DAC
-  board are not a valid pass/fail signal because the board is a line-out DAC,
-  not a headphone amplifier.
+- PCM5102A final output acceptance passed on 2026-06-30: the photographed
+  PCM5102MK/PCM5102A board produced audio from both RCA and its onboard 3.5 mm
+  output. The matching COM15 smoke capture is
+  `logs/p4_pcm5102a_rca_smoke_20260630_123632.log`, after boot probe
+  `logs/p4_pcm5102a_boot_probe_20260630_123558.log`. Next audio work should
+  focus on gain staging and limiter polish rather than DAC bring-up.
 - P4 audio engine now exposes a non-boosting software master trim API and
   mixer snapshot field. The Settings tab has a preset button cycling `0 dB`,
   `-3 dB`, and `-6 dB`. Default remains unity, so current playback level is

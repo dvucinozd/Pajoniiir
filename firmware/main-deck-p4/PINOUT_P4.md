@@ -83,3 +83,4 @@ still work with the DAC connected but idle.
 | Date | Check | Result |
 | --- | --- | --- |
 | 2026-06-26 | GPIO50/GPIO52/GPIO51 assigned as PCM5102A candidate set | Not bench-verified |
+| 2026-06-30 | PCM5102A board wired on GPIO50/GPIO52/GPIO51; RCA and onboard 3.5 mm outputs tested during playback | Pass |
