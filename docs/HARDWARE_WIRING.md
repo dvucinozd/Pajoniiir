@@ -88,6 +88,10 @@ Runtime notes after hardware bring-up:
   sample rate when opening the shared output service. Leaving PCM5102A at its
   44.1 kHz BSP default while playing a 48 kHz track causes slow/popping audio
   and output-late diagnostics.
+- Mixed sample-rate dual-deck playback is supported in the audio mixer path:
+  each deck's resampler applies `source_sample_rate / output_sample_rate` on
+  top of pitch, so a 48 kHz track can play correctly while the shared output is
+  clocked at 44.1 kHz.
 - 2026-06-27 COM15 hardware measurement with both decks playing reported
   stable decode timing, full PCM rings, and `late=0 late_max=0 us` after the
   PCM5102A sample-rate reconfiguration fix.

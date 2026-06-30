@@ -519,13 +519,16 @@ Validation note, 2026-06-10:
   - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
   - Applied CPU Core Affinity (Task Pinning): pinned the main `lvgl` graphics task to **Core 1** and the HTTP web server task to **Core 0** (with `config.core_id = 0`), isolating waveform drawing from network interrupts and web socket processing.
 - **Dual-deck waveform and P4 build-performance pass (2026-06-25; revised
-  2026-06-30)**:
+  2026-07-01)**:
   - The Overview scheduler originally gave two main waveform redraw budget
     tokens when both decks were playing. After the 2026-06-30 RCA/audio smoke
     confirmed audio stability but visible waveform stutter, the scheduler was
-    revised back to one main waveform redraw token per UI tick with alternating
-    deck order. This caps per-frame PPA waveform work while still giving both
-    decks regular updates.
+    briefly revised back to one main waveform redraw token per UI tick with
+    alternating deck order. Follow-up hardware testing showed that visual
+    stutter remained and the real failing case was mixed 44.1/48 kHz
+    dual-deck playback. After the per-deck audio resampler fix, the scheduler
+    again allows both playing deck waveforms to redraw in the same UI tick so
+    each deck keeps full visual cadence.
   - P4 `sdkconfig.defaults` now selects performance optimization and disables
     LVGL examples/demos. If a local ignored `sdkconfig` already exists, it must
     be regenerated or aligned before flashing.
