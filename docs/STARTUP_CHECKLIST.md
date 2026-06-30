@@ -96,6 +96,12 @@
   hotter post-sum peaks are compressed toward the int16 ceiling instead of
   hard-clipped. The P4 status indicator briefly shows `CLIP n` when the limiter
   counter increases.
+- 2026-06-30 dual-deck RCA smoke on commit `a6cbae8` passed for audio: Deck 1
+  alone OK, Deck 1 + Deck 2 OK, RCA audio OK, and `CLIP` only occasional. The
+  COM15 capture `logs/p4_dual_deck_soft_limiter_smoke_20260630_214519.log`
+  reported `active=1/1`, `late=0 late_max=0 us`, healthy rings, and limiter
+  counts only during hot summed peaks. Waveform stutter was still observed and
+  remains the next UI/render performance item.
 - S3 USB MIDI host responsiveness was hardware-verified on 2026-06-21 after
   FLX4 VU feedback was made low-priority under USB MIDI OUT queue backlog and
   raw USB MIDI packet logs were demoted to DEBUG in translator mode. Both

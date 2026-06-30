@@ -143,8 +143,13 @@ Tasks:
 
 TODO:
 
-- Monitor the limiter telemetry during two-deck hardware smoke tests. If
-  limiter activity is constant, use the user-facing master trim rather than
+- Monitor the limiter telemetry during two-deck hardware smoke tests. 2026-06-30
+  RCA smoke with soft-knee limiter passed subjectively (`Deck 1 OK`, `Deck 1 +
+  Deck 2 OK`, RCA audio OK, `CLIP` only occasional) and objectively showed
+  `active=1/1`, `late=0 late_max=0 us`, healthy PCM rings, and limiter activity
+  rising only on hot summed peaks (`peak=36710`, `limiter=164`) in
+  `logs/p4_dual_deck_soft_limiter_smoke_20260630_214519.log`. If future tests
+  show constant limiter activity, use the user-facing master trim rather than
   silently lowering deck levels.
 - Software master trim is now implemented in the audio engine as a non-boosting
   `0.0–1.0` global output scalar with default unity. The Settings screen exposes
@@ -162,6 +167,10 @@ TODO:
   steady-path `memmove`, and bounded edge column rendering; further cleanup
   should be driven by hardware timing captures rather than blind renderer
   refactors. The cache also exposes per-instance profiling counters for
+  follow-up measurement. 2026-06-30 RCA smoke confirmed audio is healthy while
+  the operator still saw waveform stutter, so the next investigation should
+  treat waveform fluidity as a UI/render scheduling issue, not an audio decode
+  or PCM5102A issue.
   `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus total rendered columns and
   blits; the existing Overview diagnostics log includes those totals.
 - Before adding PCM5102A hardware support, follow
