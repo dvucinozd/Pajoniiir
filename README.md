@@ -134,7 +134,8 @@ knobs; Smart Fader applies a conservative crossfader transition-assist curve.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
-deferred.
+deferred. The P4 Overview screen shows the current Beat FX effect, beat size,
+target, depth, and on/off state from the same authoritative state snapshot.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness

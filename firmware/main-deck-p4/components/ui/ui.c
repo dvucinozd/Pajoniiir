@@ -927,6 +927,7 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     ctx->deck_state[CTRL_DECK_2] = deck_core_get_deck_state(CTRL_DECK_2);
     ctx->active_deck = ui_controls_active_deck(&s_controls);
     ctx->active_state = ctx->deck_state[ui_deck_index(ctx->active_deck)];
+    ctx->beat_fx_state = deck_core_get_beat_fx_state();
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ctx->deck_duration_ms[deck] = ui_deck_duration_ms(deck);

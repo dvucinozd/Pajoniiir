@@ -79,8 +79,9 @@
   exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX audio DSP remains
-  pending. Use `/api/status.beat_fx` for hardware smoke verification instead of
-  raw serial logging.
+  pending. The Overview Beat FX panel renders the same P4-owned state, and
+  `/api/status.beat_fx` remains available for hardware smoke verification
+  instead of raw serial logging when a network transport is present.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -165,7 +166,10 @@
 - ESP-Hosted Wi-Fi is disabled in active P4 firmware as of 2026-06-29. The
   local `wifi_link` component remains as a no-op status shim, but P4 no longer
   links `esp_hosted`/`esp_wifi_remote` or starts the hosted AP during boot. The
-  old Settings `link_mode` selector remains removed from active firmware.
+  HTTP status server now starts independently of `wifi_link`; captive DNS starts
+  only when Wi-Fi/AP init succeeds, so browser access still requires a real
+  network interface. The old Settings `link_mode` selector remains removed from
+  active firmware.
 
 ## First Firmware Task
 

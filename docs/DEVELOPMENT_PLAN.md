@@ -573,9 +573,12 @@ per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
 the FLX4 filter knobs, and Smart Fader now toggles a conservative crossfader
 transition-assist curve. Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
-clear/reset. `/api/status` exposes the P4 Beat FX snapshot for smoke testing
-without serial log spam; Beat FX audio DSP remains deferred. Sampler and pad FX
-behavior remains deferred unless separately marked implemented.
+clear/reset. The Overview right-side Beat FX panel renders that P4-owned
+snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
+testing without serial log spam. The HTTP server starts independently of the
+disabled `wifi_link` shim; captive DNS remains conditional on a real Wi-Fi/AP
+transport. Beat FX audio DSP remains deferred. Sampler and pad FX behavior
+remains deferred unless separately marked implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF

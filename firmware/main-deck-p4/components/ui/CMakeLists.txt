@@ -23,6 +23,7 @@ idf_component_register(
          "ui_position_interpolator.c"
          "ui_waveform_model.c"
          "ui_beat_indicator.c"
+         "ui_beat_fx_format.c"
          "ui_settings.c"
          "ui_status.c"
     INCLUDE_DIRS "include"

@@ -66,12 +66,16 @@ void app_main(void)
                                                       : BSP_AUDIO_OUT_SPEAKER);
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
-    // ── Wi-Fi AP for web UI / captive portal ────────────────────────────────
+    // ── Web UI / status API transport ───────────────────────────────────────
     esp_err_t wifi_rc = wifi_link_init();
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init(host): %s", esp_err_to_name(wifi_rc));
-    } else {
-        ESP_ERROR_CHECK(web_server_start());
+    }
+    esp_err_t web_rc = web_server_start();
+    if (web_rc != ESP_OK) {
+        ESP_LOGW(TAG, "web_server_start: %s", esp_err_to_name(web_rc));
+    }
+    if (wifi_rc == ESP_OK) {
         ESP_ERROR_CHECK(dns_server_start());
     }
 

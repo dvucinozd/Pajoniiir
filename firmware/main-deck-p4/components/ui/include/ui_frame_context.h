@@ -57,6 +57,7 @@ typedef struct {
     const anlz_metadata_t *active_meta;
     ui_beat_indicator_state_t active_beat_state;
     bool active_beat_state_valid;
+    deck_core_beat_fx_state_t beat_fx_state;
 
     bool overview_slow_update;
 

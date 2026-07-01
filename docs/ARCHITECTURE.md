@@ -104,6 +104,10 @@ Current P4 audio ownership rule:
   limiter counters, and heap/internal/PSRAM free space. `/api/status` includes
   these values under `diagnostics` so hardware smoke tests can read one
   structured report instead of scraping log lines;
+- Beat FX state is P4-owned and read by both the physical Overview UI and
+  `/api/status`. Active firmware keeps ESP-Hosted Wi-Fi disabled; the HTTP
+  server is started independently of `wifi_link`, while captive DNS starts only
+  when a real Wi-Fi/AP transport is available;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3

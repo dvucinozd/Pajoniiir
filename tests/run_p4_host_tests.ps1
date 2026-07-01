@@ -365,6 +365,21 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_beat_fx_format"
+        Dir = "tests/ui_beat_fx_format"
+        Target = "test_ui_beat_fx_format.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../deck_core_dual/stubs",
+            "-o", "test_ui_beat_fx_format.exe",
+            "test_ui_beat_fx_format.c",
+            "../../firmware/main-deck-p4/components/ui/ui_beat_fx_format.c"
+        )
+    },
+    @{
         Name = "web_api_helpers"
         Dir = "tests/web_api_helpers"
         Target = "test_web_api_helpers.exe"
