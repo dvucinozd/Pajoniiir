@@ -143,6 +143,9 @@ typedef struct {
     uint16_t filter[AUDIO_ENGINE_DECK_COUNT];
     uint16_t beat_fx_filter_raw[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
+    bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
+    bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
@@ -164,6 +167,9 @@ typedef struct {
     uint8_t deck_channels[AUDIO_ENGINE_DECK_COUNT];
     uint32_t deck_file_bytes[AUDIO_ENGINE_DECK_COUNT];
     uint8_t deck_load_progress[AUDIO_ENGINE_DECK_COUNT];
+    bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
+    bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
     uint32_t heap_free;
     uint32_t internal_free;
@@ -186,6 +192,10 @@ typedef enum {
 esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
                                           uint8_t depth,
                                           bool enabled);
+esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
+                                        uint8_t depth,
+                                        uint32_t delay_ms,
+                                        bool enabled);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

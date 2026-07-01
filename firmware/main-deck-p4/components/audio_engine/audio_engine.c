@@ -13,6 +13,7 @@
 
 #include "audio_engine.h"
 #include "audio_diag.h"
+#include "audio_delay_fx.h"
 #include "audio_filter.h"
 #include "audio_fw_preload.h"
 #include "audio_fw_runtime.h"
@@ -99,6 +100,7 @@ static void reset_all_pcm_rings(void)
 }
 
 static bool deck_is_valid(uint8_t deck);
+static void init_beat_fx_echo_buffers(void);
 
 /* ── Engine state ─────────────────────────────────────────────────────────── */
 typedef struct {
@@ -183,8 +185,16 @@ static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_beat_fx_filter[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
+static audio_delay_fx_t s_beat_fx_echo[AUDIO_ENGINE_DECK_COUNT];
+static int16_t         *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
+static int16_t         *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static bool             s_beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
 static bool             s_smart_fader_enabled;
+
+#define AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS 1000u
+#define AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE 48000u
 
 /* ── Mutex + decode thread ────────────────────────────────────────────────── *
  * Mutex: present in all PC builds (no-op in single-threaded PC_TEST).
@@ -1209,6 +1219,8 @@ static void ae_output_task(void *arg)
             .filter_enabled = s_smart_cfx_enabled,
             .beat_fx_filter = &s_beat_fx_filter[deck0_index],
             .beat_fx_filter_enabled = s_beat_fx_filter_enabled[deck0_index],
+            .beat_fx_echo = &s_beat_fx_echo[deck0_index],
+            .beat_fx_echo_enabled = s_beat_fx_echo_enabled[deck0_index],
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck0_index),
@@ -1224,6 +1236,8 @@ static void ae_output_task(void *arg)
             .filter_enabled = s_smart_cfx_enabled,
             .beat_fx_filter = &s_beat_fx_filter[deck1_index],
             .beat_fx_filter_enabled = s_beat_fx_filter_enabled[deck1_index],
+            .beat_fx_echo = &s_beat_fx_echo[deck1_index],
+            .beat_fx_echo_enabled = s_beat_fx_echo_enabled[deck1_index],
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
@@ -1393,6 +1407,7 @@ esp_err_t audio_engine_init(void)
         audio_filter_init(&s_beat_fx_filter[i], 44100u);
         s_beat_fx_filter_enabled[i] = false;
     }
+    init_beat_fx_echo_buffers();
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
     s_cue_mode = 0;
@@ -2088,6 +2103,41 @@ void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t righ
     AE_UNLOCK();
 }
 
+static uint32_t beat_fx_echo_capacity_frames(void)
+{
+    return (AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE *
+            AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS) / 1000u;
+}
+
+static int16_t *beat_fx_echo_alloc_buffer(uint32_t frames)
+{
+#if AE_FW
+    return (int16_t *)heap_caps_calloc(frames, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    return (int16_t *)calloc(frames, sizeof(int16_t));
+#endif
+}
+
+static void init_beat_fx_echo_buffers(void)
+{
+    uint32_t frames = beat_fx_echo_capacity_frames();
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        if (!s_beat_fx_echo_left[deck]) {
+            s_beat_fx_echo_left[deck] = beat_fx_echo_alloc_buffer(frames);
+        }
+        if (!s_beat_fx_echo_right[deck]) {
+            s_beat_fx_echo_right[deck] = beat_fx_echo_alloc_buffer(frames);
+        }
+        audio_delay_fx_init(&s_beat_fx_echo[deck],
+                            s_beat_fx_echo_left[deck],
+                            s_beat_fx_echo_right[deck],
+                            frames,
+                            AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
+        s_beat_fx_echo_enabled[deck] = false;
+        s_beat_fx_echo_delay_ms[deck] = 0;
+    }
+}
+
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats)
 {
     if (!stats) return;
@@ -2204,6 +2254,53 @@ esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
     return ESP_OK;
 }
 
+static uint16_t beat_fx_echo_wet_from_depth(uint8_t depth)
+{
+    return (uint16_t)(((uint32_t)depth * 19660u) / 127u);
+}
+
+static uint16_t beat_fx_echo_feedback_from_depth(uint8_t depth)
+{
+    return (uint16_t)(((uint32_t)depth * 14745u) / 127u);
+}
+
+esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
+                                        uint8_t depth,
+                                        uint32_t delay_ms,
+                                        bool enabled)
+{
+    if (target != AUDIO_ENGINE_BEAT_FX_TARGET_CH1 &&
+        target != AUDIO_ENGINE_BEAT_FX_TARGET_CH2 &&
+        target != AUDIO_ENGINE_BEAT_FX_TARGET_BOTH) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (delay_ms == 0u) {
+        delay_ms = 1u;
+    }
+    if (delay_ms > AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS) {
+        delay_ms = AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS;
+    }
+
+    bool active = enabled && depth > 0u;
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        bool deck_enabled = active &&
+                            beat_fx_target_includes_deck(target, deck) &&
+                            audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
+        s_beat_fx_echo_enabled[deck] = deck_enabled;
+        s_beat_fx_echo_delay_ms[deck] = deck_enabled ? delay_ms : 0u;
+        audio_delay_fx_configure(&s_beat_fx_echo[deck], &(audio_delay_fx_config_t) {
+            .enabled = deck_enabled,
+            .delay_ms = delay_ms,
+            .wet_q15 = beat_fx_echo_wet_from_depth(depth),
+            .feedback_q15 = beat_fx_echo_feedback_from_depth(depth),
+        });
+        if (!deck_enabled) {
+            audio_delay_fx_reset(&s_beat_fx_echo[deck]);
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t audio_engine_set_master_trim(float gain)
 {
     if (gain < 0.0f) {
@@ -2292,6 +2389,9 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->filter[deck] = audio_filter_get_raw(&s_deck_filter[deck]);
         out_snapshot->beat_fx_filter_raw[deck] = audio_filter_get_raw(&s_beat_fx_filter[deck]);
         out_snapshot->beat_fx_filter_enabled[deck] = s_beat_fx_filter_enabled[deck];
+        out_snapshot->beat_fx_echo_enabled[deck] = s_beat_fx_echo_enabled[deck];
+        out_snapshot->beat_fx_echo_delay_ms[deck] = s_beat_fx_echo_delay_ms[deck];
+        out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
     }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->output_gain[0] = gain0;
@@ -2319,6 +2419,9 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         out_snapshot->deck_file_bytes[deck] = (uint32_t)eng->file_size;
         out_snapshot->deck_load_progress[deck] =
             (eng->loaded || eng->loading) ? eng->load_progress : 0u;
+        out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
+        out_snapshot->beat_fx_echo_enabled[deck] = s_beat_fx_echo_enabled[deck];
+        out_snapshot->beat_fx_echo_delay_ms[deck] = s_beat_fx_echo_delay_ms[deck];
     }
     out_snapshot->limiter = s_limiter_stats;
 #if AE_FW

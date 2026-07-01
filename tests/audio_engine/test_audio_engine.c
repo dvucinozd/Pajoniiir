@@ -241,6 +241,25 @@ static void test_mixer_state_api(void)
     audio_engine_get_mixer_snapshot(&snapshot);
     EXPECT(!snapshot.beat_fx_filter_enabled[0], "Beat FX filter disabled clears deck 0");
     EXPECT(!snapshot.beat_fx_filter_enabled[1], "Beat FX filter disabled clears deck 1");
+    EXPECT(!snapshot.beat_fx_echo_enabled[0], "Beat FX echo defaults off for deck 0");
+    EXPECT(!snapshot.beat_fx_echo_enabled[1], "Beat FX echo defaults off for deck 1");
+    EXPECT(audio_engine_set_beat_fx_echo(AUDIO_ENGINE_BEAT_FX_TARGET_CH1,
+                                         64,
+                                         500,
+                                         true) == ESP_OK,
+           "Beat FX echo accepts CH1 target");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.beat_fx_echo_enabled[0], "Beat FX echo enables targeted deck 0");
+    EXPECT(!snapshot.beat_fx_echo_enabled[1], "Beat FX echo leaves untargeted deck 1 off");
+    EXPECT(snapshot.beat_fx_echo_delay_ms[0] == 500, "Beat FX echo stores delay ms");
+    EXPECT(audio_engine_set_beat_fx_echo(AUDIO_ENGINE_BEAT_FX_TARGET_BOTH,
+                                         0,
+                                         250,
+                                         true) == ESP_OK,
+           "Beat FX echo depth zero bypasses both decks");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.beat_fx_echo_enabled[0], "Beat FX echo zero depth disables deck 0");
+    EXPECT(!snapshot.beat_fx_echo_enabled[1], "Beat FX echo zero depth disables deck 1");
     EXPECT(audio_engine_set_channel_volume(0, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
            "deck 0 channel volume restores max for Smart Fader assist test");
     EXPECT(audio_engine_set_channel_volume(1, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
