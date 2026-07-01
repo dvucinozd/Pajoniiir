@@ -696,8 +696,9 @@ Implementation order:
      halve/double, normal Beat Loop pads, and shifted momentary Beat Loop pads
      using the per-deck `audio_engine` loop API plus beatgrid/BPM duration
      calculation. Beat Jump behavior is implemented for shifted cue/loop call
-     buttons and Beat Jump pads using beatgrid/BPM target calculation. Beat
-     Sync BPM-match-on-press with paused-deck phase align and Tempo Range
+     buttons and Beat Jump pads using beatgrid/BPM target calculation; Beat
+     Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
+     Beat Sync BPM-match-on-press with paused-deck phase align and Tempo Range
      cycling are implemented; continuous sync following remains out of scope.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed

@@ -250,8 +250,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   back/forward inputs on both decks. Loop In/Out, Reloop/Exit, loop
   halve/double, normal/shifted Beat Loop pads, and Beat Jump buttons/pads now
   have P4 behavior; Tempo Range hardware behavior smoke passed on 2026-06-25,
-  normal Beat Loop hardware behavior smoke passed on 2026-07-01, while shifted
-  Beat Loop and Beat Jump hardware behavior smoke remains pending.
+  normal and shifted Beat Loop hardware behavior smoke passed on 2026-07-01,
+  and Beat Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
@@ -267,8 +267,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
   passed on 2026-06-26.
   Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4.
-  Normal Beat Loop hardware behavior smoke passed on 2026-07-01; shifted Beat
-  Loop and Beat Jump remain pending for hardware behavior smoke. Pad FX has a
+  Normal and shifted Beat Loop hardware behavior smoke passed on 2026-07-01;
+  Beat Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
+  Pad FX has a
   host-tested P4 DSP slice and official-PDF-backed FLX4 Pad FX pad input
   mapping; hardware smoke passed on 2026-07-01 for pad behavior, Echo tail, and
   normal Pad FX pad LEDs. Actual Sampler and Key Shift behavior remains a
