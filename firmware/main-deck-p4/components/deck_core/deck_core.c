@@ -738,6 +738,7 @@ static void publish_flx4_led_snapshot(bool force)
     flx4_led_snapshot_input_t input = { 0 };
     input.smart_cfx = audio_engine_get_smart_cfx_enabled() ? 1u : 0u;
     input.smart_fader = audio_engine_get_smart_fader_enabled() ? 1u : 0u;
+    input.beat_fx_on = s_beat_fx.enabled ? 1u : 0u;
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         deck_state_t state = deck_core_get_deck_state(deck);
@@ -862,6 +863,9 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             s_beat_fx.enabled = !s_beat_fx.enabled;
             sync_beat_fx_audio_state();
+            control_link_send_led_deck(LED_BEAT_FX_ON,
+                                       s_beat_fx.enabled ? 1u : 0u,
+                                       CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx -> %s", s_beat_fx.enabled ? "ON" : "OFF");
         }
         return true;
@@ -869,6 +873,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             init_beat_fx_state();
             sync_beat_fx_audio_state();
+            control_link_send_led_deck(LED_BEAT_FX_ON, 0u, CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx reset");
         }
         return true;

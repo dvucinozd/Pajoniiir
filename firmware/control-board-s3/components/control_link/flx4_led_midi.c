@@ -62,6 +62,9 @@ static bool note_for_led(uint8_t led, uint8_t *note)
     case LED_SMART_FADER:
         *note = 0x01;
         return true;
+    case LED_BEAT_FX_ON:
+        *note = 0x47;
+        return true;
     default:
         return false;
     }
@@ -92,6 +95,8 @@ bool flx4_led_midi_build_packet(uint8_t led,
     packet[0] = 0x09;
     if (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x97 : 0x99;
+    } else if (led == LED_BEAT_FX_ON) {
+        packet[1] = (deck == CTRL_DECK_1) ? 0x94 : 0x95;
     } else if (led == LED_SMART_CFX || led == LED_SMART_FADER) {
         packet[1] = 0x96;
     } else {

@@ -92,7 +92,8 @@ typedef enum {
 #define LED_BEAT_LOOP_PAD_8 24
 #define LED_SMART_CFX 25
 #define LED_SMART_FADER 26
-#define LED_REMOTE_COUNT 27
+#define LED_BEAT_FX_ON 27
+#define LED_REMOTE_COUNT 28
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,

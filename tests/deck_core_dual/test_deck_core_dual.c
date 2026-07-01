@@ -874,15 +874,19 @@ static void test_beat_fx_public_snapshot_matches_state_controls(void)
 static void test_beat_fx_on_toggles_on_press_only_and_clear_resets(void)
 {
     deck_core_test_reset();
+    control_link_stub_reset_leds();
 
     ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
     ctrl_event_t release = beat_fx_button(CTRL_ID_BEAT_FX_ON, 0);
     deck_core_test_apply_event(&on);
     assert(deck_core_test_get_beat_fx_state().enabled);
+    assert(control_link_stub_last_led_state(LED_BEAT_FX_ON, CTRL_DECK_1) == 1);
     deck_core_test_apply_event(&release);
     assert(deck_core_test_get_beat_fx_state().enabled);
+    assert(control_link_stub_last_led_state(LED_BEAT_FX_ON, CTRL_DECK_1) == 1);
     deck_core_test_apply_event(&on);
     assert(!deck_core_test_get_beat_fx_state().enabled);
+    assert(control_link_stub_last_led_state(LED_BEAT_FX_ON, CTRL_DECK_1) == 0);
 
     ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
     ctrl_event_t depth = beat_fx_depth(12);
@@ -900,6 +904,7 @@ static void test_beat_fx_on_toggles_on_press_only_and_clear_resets(void)
     assert(state.target == CTRL_BEAT_FX_TARGET_BOTH);
     assert(state.depth == 64);
     assert(!state.enabled);
+    assert(control_link_stub_last_led_state(LED_BEAT_FX_ON, CTRL_DECK_1) == 0);
 }
 
 static void test_beat_fx_filter_state_updates_audio_engine(void)

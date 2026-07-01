@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#define FLX4_LED_SNAPSHOT_COUNT 24u
+#define FLX4_LED_SNAPSHOT_COUNT 25u
 
 static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_CUE,
@@ -29,6 +29,7 @@ static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_BEAT_LOOP_PAD_8,
     LED_SMART_CFX,
     LED_SMART_FADER,
+    LED_BEAT_FX_ON,
 };
 
 static const uint8_t s_pad_modes[8] = {
@@ -101,6 +102,8 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
         return input->smart_cfx;
     case 23:
         return input->smart_fader;
+    case 24:
+        return input->beat_fx_on;
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);
         if (pad_index >= 8u) {
@@ -133,7 +136,9 @@ esp_err_t flx4_led_publisher_publish(
     for (uint8_t deck = 0; deck < 2; deck++) {
         for (uint8_t index = 0; index < FLX4_LED_SNAPSHOT_COUNT; index++) {
             if (deck == CTRL_DECK_2 &&
-                (s_led_ids[index] == LED_SMART_CFX || s_led_ids[index] == LED_SMART_FADER)) {
+                (s_led_ids[index] == LED_SMART_CFX ||
+                 s_led_ids[index] == LED_SMART_FADER ||
+                 s_led_ids[index] == LED_BEAT_FX_ON)) {
                 continue;
             }
             uint8_t value = snapshot_value(input, deck, index);

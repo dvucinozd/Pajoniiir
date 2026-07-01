@@ -46,6 +46,9 @@ static void test_transport_and_mode_led_packets(void)
     expect_packet(LED_SMART_CFX, 0, CTRL_DECK_1, 0x09, 0x96, 0x00, 0x00);
     expect_packet(LED_SMART_FADER, 1, CTRL_DECK_1, 0x09, 0x96, 0x01, 0x7F);
     expect_packet(LED_SMART_FADER, 0, CTRL_DECK_1, 0x09, 0x96, 0x01, 0x00);
+    expect_packet(LED_BEAT_FX_ON, 1, CTRL_DECK_1, 0x09, 0x94, 0x47, 0x7F);
+    expect_packet(LED_BEAT_FX_ON, 0, CTRL_DECK_1, 0x09, 0x94, 0x47, 0x00);
+    expect_packet(LED_BEAT_FX_ON, 1, CTRL_DECK_2, 0x09, 0x95, 0x47, 0x7F);
 }
 
 static void test_beat_loop_pad_led_packets(void)

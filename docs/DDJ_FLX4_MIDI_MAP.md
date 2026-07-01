@@ -200,7 +200,7 @@ Status legend:
 | Beat FX beat left / right | `0x94/0x4A`, `0x94/0x4B` | press/release | FX section | `CTRL_ID_BEAT_FX_BEAT_DEC`, `CTRL_ID_BEAT_FX_BEAT_INC` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke pending |
 | Beat FX channel select | CH1 `0x94/0x10`, CH2 `0x95/0x11` | press-only semantic target select | FX channel selector | `CTRL_ID_BEAT_FX_TARGET` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke pending |
 | Beat FX level/depth | `0xB4/0x02` | 7-bit CC MSB in XML | FX section | `CTRL_ID_BEAT_FX_DEPTH` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke pending |
-| Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release; press toggles P4 Beat FX enabled state | FX channel selector | `CTRL_ID_BEAT_FX_ON` | P4 Beat FX state model | Implemented state/mapping; FILTER DSP implemented; Echo/delay deferred | Host-tested from XML; hardware smoke pending |
+| Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release; press toggles P4 Beat FX enabled state | FX channel selector | `CTRL_ID_BEAT_FX_ON` / `LED_BEAT_FX_ON` | P4 Beat FX state model + LED feedback | Implemented state/mapping; FILTER DSP implemented; ON/OFF LED follows P4 state; Echo/delay deferred | Host-tested from XML; LED feedback host-tested; hardware smoke pending |
 | Beat FX on/off + Shift | CH1/global `0x94/0x43`, CH2 `0x95/0x43` | press/release | shifted FX channel selector | `CTRL_ID_BEAT_FX_CLEAR` | P4 Beat FX state reset | Implemented state/mapping; audio DSP deferred | Host-tested from XML; hardware smoke pending |
 
 ### Performance Pad Mode Inventory
