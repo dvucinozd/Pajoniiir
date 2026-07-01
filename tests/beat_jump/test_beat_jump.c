@@ -100,7 +100,7 @@ static void test_phase_align_uses_reference_beat_phase(void)
     uint32_t out = 0;
 
     assert(beat_phase_align_target_ms(2600, &target, 8900, &reference, &out));
-    assert(out == 2000);
+    assert(out == 1962);
 }
 
 static void test_phase_align_fails_without_both_beatgrids(void)

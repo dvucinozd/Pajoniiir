@@ -116,6 +116,9 @@ bool beat_phase_align_target_ms(uint32_t target_position_ms,
     }
 
     uint16_t target_phase = reference_meta->beats[reference_idx].beat_phase;
+    int64_t reference_offset_ms =
+        (int64_t)reference_position_ms -
+        (int64_t)reference_meta->beats[reference_idx].time_ms;
     bool found = false;
     uint32_t min_diff = UINT32_MAX;
     uint32_t best_ms = target_position_ms;
@@ -124,7 +127,12 @@ bool beat_phase_align_target_ms(uint32_t target_position_ms,
         if (target_meta->beats[i].beat_phase != target_phase) {
             continue;
         }
-        uint32_t beat_ms = target_meta->beats[i].time_ms;
+        int64_t candidate_ms =
+            (int64_t)target_meta->beats[i].time_ms + reference_offset_ms;
+        if (candidate_ms < 0) {
+            candidate_ms = 0;
+        }
+        uint32_t beat_ms = (uint32_t)candidate_ms;
         uint32_t diff = target_position_ms > beat_ms ? target_position_ms - beat_ms : beat_ms - target_position_ms;
         if (!found || diff < min_diff) {
             found = true;

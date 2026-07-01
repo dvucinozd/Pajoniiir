@@ -816,8 +816,8 @@ static void test_sync_phase_aligns_to_matching_reference_beat_phase(void)
     assert(deck1.sync_enabled);
     assert(deck1.pitch_centipercent == 667);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 2000);
-    assert(deck1.position_ms == 2000);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1962);
+    assert(deck1.position_ms == 1962);
 }
 
 static void test_sync_phase_aligns_while_target_deck_is_playing(void)
@@ -851,8 +851,8 @@ static void test_sync_phase_aligns_while_target_deck_is_playing(void)
     assert(deck1.sync_enabled);
     assert(deck1.pitch_centipercent == 667);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 2000);
-    assert(deck1.position_ms == 2000);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 1962);
+    assert(deck1.position_ms == 1962);
 }
 
 static void test_sync_without_beatgrid_keeps_phase_position_unchanged(void)

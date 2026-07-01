@@ -89,6 +89,50 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     }
 }
 
+function Assert-OverviewMainRenderCommitGuard {
+    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    Write-Host "==> static overview main waveform commits only after successful render"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $start = $text.IndexOf("static void ui_render_overview_main_waveform")
+    if ($start -lt 0) {
+        throw "ui_render_overview_main_waveform not found"
+    }
+    $end = $text.IndexOf("/* Render the overview waveform", $start)
+    if ($end -lt 0) {
+        throw "ui_render_overview_main_waveform end marker not found"
+    }
+    $body = $text.Substring($start, $end - $start)
+    $commit = $body.IndexOf("panel->last_wave_center_ms = center_ms")
+    if ($commit -lt 0) {
+        throw "ui_render_overview_main_waveform does not commit last_wave_center_ms"
+    }
+    $guard = $body.LastIndexOf("if (!main_wave_rendered)", $commit)
+    if ($guard -lt 0) {
+        throw "ui_render_overview_main_waveform can mark a waveform rendered after a skipped/failed blit"
+    }
+}
+
+function Assert-OverviewLoadDefersMainWaveRender {
+    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    Write-Host "==> static overview load defers main waveform render to scheduler"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $start = $text.IndexOf("void ui_overview_load_waveform_data")
+    if ($start -lt 0) {
+        throw "ui_overview_load_waveform_data not found"
+    }
+    $end = $text.IndexOf("void ui_overview_update_cue_markers", $start)
+    if ($end -lt 0) {
+        throw "ui_overview_load_waveform_data end marker not found"
+    }
+    $body = $text.Substring($start, $end - $start)
+    if ($body.Contains("ui_render_overview_main_waveform")) {
+        throw "ui_overview_load_waveform_data direct-renders the main waveform during track load"
+    }
+    if (-not $body.Contains("ui_overview_arm_all_wave_reblits")) {
+        throw "ui_overview_load_waveform_data must re-arm all deck waveform overlays after any track load"
+    }
+}
+
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -110,6 +154,8 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
 Assert-OverviewInactiveGuardBeforeCacheUpdate
+Assert-OverviewMainRenderCommitGuard
+Assert-OverviewLoadDefersMainWaveRender
 
 Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c") `

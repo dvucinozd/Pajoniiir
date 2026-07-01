@@ -254,6 +254,18 @@ static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
 static uint8_t s_overview_zoom_step = 2u;
+#ifndef WIN32
+static uint8_t s_overview_wave_load_reblit_remaining[DECK_CORE_DECK_COUNT];
+#endif
+
+#ifndef WIN32
+static void ui_overview_arm_all_wave_reblits(void)
+{
+    for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
+        s_overview_wave_load_reblit_remaining[i] = 3u;
+    }
+}
+#endif
 
 static void ui_overview_invalidate_mini_wave_range(const ui_overview_deck_panel_t *panel,
                                                    int x0,
@@ -1149,6 +1161,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     if (!panel) {
         return;
     }
+    bool main_wave_rendered = false;
 
 #ifndef WIN32
     uint8_t idx = ui_overview_deck_index(deck);
@@ -1183,6 +1196,10 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                                   &cache_report,
                                                   &blit_perf)) {
             return;
+        }
+        main_wave_rendered = true;
+        if (idx < DECK_CORE_DECK_COUNT && s_overview_wave_load_reblit_remaining[idx] > 0) {
+            s_overview_wave_load_reblit_remaining[idx]--;
         }
         if (ui_diagnostics_enabled()) {
             ui_overview_perf_report_t report;
@@ -1227,7 +1244,11 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                                 center_ms, window_ms,
                                                 ui_overview_deck_index(deck) == 0);
     lv_obj_invalidate(panel->wave_canvas);
+    main_wave_rendered = true;
 #endif
+    if (!main_wave_rendered) {
+        return;
+    }
     panel->last_wave_center_ms = center_ms;
     panel->last_wave_window_ms = window_ms;
 }
@@ -1257,16 +1278,11 @@ void ui_overview_load_waveform_data(uint8_t deck,
     panel->last_remain_bucket = UINT32_MAX;
 #ifndef WIN32
     ui_overview_wave_cache_reset(&s_overview_wave_cache[idx]);
+    ui_overview_arm_all_wave_reblits();
 #endif
     ui_waveform_source_t wave_source =
         ui_waveform_source_select(meta, waveform_low, has_waveform);
     bool wave_valid = wave_source.kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0;
-
-    uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
-    if (ui_overview_main_wave_ready(panel)) {
-        ui_render_overview_main_waveform(panel, deck, &wave_source, duration_ms, meta,
-                                         0, window_ms);
-    }
 
     if (panel->mini_wave_canvas && panel->mini_wave_buf) {
         uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
@@ -1533,7 +1549,8 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
         panel->last_playhead_x = main_playhead_x;
     }
 
-    const anlz_metadata_t *meta = s_overview_deck_meta[ui_overview_deck_index(deck)];
+    uint8_t idx = ui_overview_deck_index(deck);
+    const anlz_metadata_t *meta = s_overview_deck_meta[idx];
     uint32_t window_ms = ui_overview_main_window_ms(deck, meta);
     uint32_t center_ms = position_ms > duration_ms ? duration_ms : position_ms;
     center_ms = ui_overview_motion_snap_center_ms(center_ms, window_ms, OVERVIEW_CV_W);
@@ -1547,6 +1564,17 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
                                                         window_ms,
                                                         source.kind,
                                                         playing);
+#ifndef WIN32
+    if (idx < DECK_CORE_DECK_COUNT &&
+        s_overview_wave_load_reblit_remaining[idx] > 0 &&
+        source.kind != UI_WAVEFORM_SOURCE_NONE &&
+        ui_overview_main_wave_ready(panel)) {
+        ui_overview_wave_cache_reset(&s_overview_wave_cache[idx]);
+        panel->last_wave_center_ms = UINT32_MAX;
+        panel->last_wave_window_ms = 0;
+        redraw_main = true;
+    }
+#endif
 
     if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {

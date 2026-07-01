@@ -44,11 +44,13 @@ static void test_zoom_delta_moves_in_coarse_steps_and_clamps(void)
 
 static void test_zoom_step_scales_bpm_window_without_exceeding_bounds(void)
 {
-    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 0) == 4000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 0) == 2000u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 1) == 4000u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 2) == 6000u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 3) == 8000u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 4) == 12000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12800, 0, 0) == 1872u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12800, 0, 1) == 3744u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(3000, 0, 4) == 30000u);
 }
 
