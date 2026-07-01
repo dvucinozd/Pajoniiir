@@ -2286,6 +2286,11 @@ esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
         bool deck_enabled = active &&
                             beat_fx_target_includes_deck(target, deck) &&
                             audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
+        if (active &&
+            beat_fx_target_includes_deck(target, deck) &&
+            !audio_delay_fx_is_allocated(&s_beat_fx_echo[deck])) {
+            ESP_LOGW(TAG, "beat fx echo deck %u buffer not allocated", (unsigned)deck);
+        }
         s_beat_fx_echo_enabled[deck] = deck_enabled;
         s_beat_fx_echo_delay_ms[deck] = deck_enabled ? delay_ms : 0u;
         audio_delay_fx_configure(&s_beat_fx_echo[deck], &(audio_delay_fx_config_t) {

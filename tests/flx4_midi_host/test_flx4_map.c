@@ -88,6 +88,19 @@ static void test_beat_fx_controls(void)
     assert(!flx4_map_message(&state, MSG(0x94, 0x10, 0x00), &ev));
     assert(flx4_map_message(&state, MSG(0x95, 0x11, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH2);
+    assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_BOTH);
+    assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH2);
+
+    flx4_map_init(&state);
+    assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    assert(flx4_map_message(&state, MSG(0x95, 0x11, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_BOTH);
+    assert(flx4_map_message(&state, MSG(0x95, 0x11, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    assert(!flx4_map_message(&state, MSG(0x94, 0x10, 0x00), &ev));
 
     assert(flx4_map_message(&state, MSG(0xB4, 0x02, 0x40), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_BEAT_FX_DEPTH, 64);

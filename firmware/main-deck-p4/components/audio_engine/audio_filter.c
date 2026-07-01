@@ -1,7 +1,8 @@
 #include "audio_filter.h"
 
 #define AUDIO_FILTER_PI             3.14159265358979323846f
-#define AUDIO_FILTER_CUTOFF_HZ      950.0f
+#define AUDIO_FILTER_MIN_CUTOFF_HZ  950.0f
+#define AUDIO_FILTER_MAX_CUTOFF_HZ  18000.0f
 #define AUDIO_FILTER_CENTER_DEAD_RAW 96u
 
 static float one_pole_alpha(float cutoff_hz, uint32_t sample_rate_hz)
@@ -33,7 +34,7 @@ void audio_filter_init(audio_filter_state_t *filter, uint32_t sample_rate_hz)
 {
     if (!filter) return;
     filter->raw = AUDIO_FILTER_RAW_CENTER;
-    filter->alpha = one_pole_alpha(AUDIO_FILTER_CUTOFF_HZ, sample_rate_hz);
+    filter->sample_rate_hz = sample_rate_hz ? sample_rate_hz : 44100u;
     audio_filter_reset(filter);
 }
 
@@ -61,10 +62,25 @@ static bool raw_is_center(uint16_t raw)
 
 static float process_sample(audio_filter_state_t *filter, float sample, uint8_t channel)
 {
-    filter->lp1[channel] += filter->alpha * (sample - filter->lp1[channel]);
-    filter->lp2[channel] += filter->alpha * (filter->lp1[channel] - filter->lp2[channel]);
+    uint16_t raw = filter->raw;
+    uint16_t distance = raw < AUDIO_FILTER_RAW_CENTER
+        ? AUDIO_FILTER_RAW_CENTER - raw
+        : raw - AUDIO_FILTER_RAW_CENTER;
+    if (distance > AUDIO_FILTER_RAW_CENTER) {
+        distance = AUDIO_FILTER_RAW_CENTER;
+    }
 
-    if (filter->raw < AUDIO_FILTER_RAW_CENTER) {
+    float intensity = (float)distance / (float)AUDIO_FILTER_RAW_CENTER;
+    float open = 1.0f - intensity;
+    float cutoff = AUDIO_FILTER_MIN_CUTOFF_HZ +
+                   (AUDIO_FILTER_MAX_CUTOFF_HZ - AUDIO_FILTER_MIN_CUTOFF_HZ) *
+                   open * open;
+    float alpha = one_pole_alpha(cutoff, filter->sample_rate_hz);
+
+    filter->lp1[channel] += alpha * (sample - filter->lp1[channel]);
+    filter->lp2[channel] += alpha * (filter->lp1[channel] - filter->lp2[channel]);
+
+    if (raw < AUDIO_FILTER_RAW_CENTER) {
         return filter->lp2[channel];
     }
     return sample - filter->lp2[channel];

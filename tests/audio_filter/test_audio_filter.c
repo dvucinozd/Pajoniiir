@@ -54,6 +54,17 @@ static void test_left_raw_low_pass_reduces_treble_more_than_bass(void)
     assert(filtered_bass > normal_bass * 0.75f);
 }
 
+static void test_left_raw_low_pass_depth_is_gradual(void)
+{
+    float normal_treble = rms_after_filter(8000.0f, AUDIO_FILTER_RAW_CENTER, true);
+    float gentle_treble = rms_after_filter(8000.0f, AUDIO_FILTER_RAW_CENTER - 512u, true);
+    float strong_treble = rms_after_filter(8000.0f, AUDIO_FILTER_RAW_MIN, true);
+
+    assert(gentle_treble > strong_treble * 2.0f);
+    assert(gentle_treble > normal_treble * 0.55f);
+    assert(gentle_treble < normal_treble * 0.98f);
+}
+
 static void test_right_raw_high_pass_reduces_bass_more_than_treble(void)
 {
     float filtered_bass = rms_after_filter(100.0f, AUDIO_FILTER_RAW_MAX, true);
@@ -70,6 +81,7 @@ int main(void)
     test_disabled_filter_is_bypass_even_with_extreme_raw();
     test_center_filter_is_bypass_when_enabled();
     test_left_raw_low_pass_reduces_treble_more_than_bass();
+    test_left_raw_low_pass_depth_is_gradual();
     test_right_raw_high_pass_reduces_bass_more_than_treble();
     puts("audio_filter tests passed");
     return 0;

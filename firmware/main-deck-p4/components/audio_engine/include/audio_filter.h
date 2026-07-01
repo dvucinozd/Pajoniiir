@@ -10,7 +10,7 @@
 
 typedef struct {
     uint16_t raw;
-    float alpha;
+    uint32_t sample_rate_hz;
     float lp1[2];
     float lp2[2];
 } audio_filter_state_t;
