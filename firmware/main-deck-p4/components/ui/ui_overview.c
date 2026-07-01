@@ -739,19 +739,19 @@ static void ui_create_overview_fx_panel(lv_obj_t *parent)
     ui_fx_panel_label(s_overview_fx_panel, "BEAT", row_x, 90, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
     s_overview_fx.beat = ui_fx_panel_label(s_overview_fx_panel, "1", row_x, 107, row_w,
-                                           &lv_font_montserrat_12, COL_TEXT);
+                                           &lv_font_montserrat_16, COL_TEXT);
 
     ui_fx_panel_label(s_overview_fx_panel, "TARGET", row_x, 144, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
     s_overview_fx.target = ui_fx_panel_label(s_overview_fx_panel, "BOTH", row_x, 161, row_w,
-                                             &lv_font_montserrat_12, COL_TEXT);
+                                             &lv_font_montserrat_16, COL_TEXT);
 
     ui_fx_panel_label(s_overview_fx_panel, "DEPTH", row_x, 198, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
     s_overview_fx.depth = ui_fx_panel_label(s_overview_fx_panel, "50%", row_x, 215, row_w,
-                                            &lv_font_montserrat_12, COL_TEXT);
+                                            &lv_font_montserrat_16, COL_TEXT);
 
-    s_overview_fx.enabled_bar = ui_overview_bar(s_overview_fx_panel, row_x, 264, row_w, 30,
+    s_overview_fx.enabled_bar = ui_overview_bar(s_overview_fx_panel, row_x, 258, row_w, 40,
                                                 COL_BG);
     lv_obj_set_style_border_width(s_overview_fx.enabled_bar, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_overview_fx.enabled_bar, COL_BORDER, LV_PART_MAIN);
@@ -777,6 +777,9 @@ static void ui_update_overview_fx_panel(const deck_core_beat_fx_state_t *state)
 
     const bool on = state && state->enabled;
     ui_obj_set_text_color_if_changed(s_overview_fx.effect, on ? COL_ACCENT : COL_TEXT);
+    ui_obj_set_text_color_if_changed(s_overview_fx.beat, on ? COL_TEXT : COL_TEXT_DIM);
+    ui_obj_set_text_color_if_changed(s_overview_fx.target, on ? COL_ACCENT : COL_TEXT_DIM);
+    ui_obj_set_text_color_if_changed(s_overview_fx.depth, on ? COL_TEXT : COL_TEXT_DIM);
     ui_obj_set_text_color_if_changed(s_overview_fx.enabled, on ? COL_BG : COL_TEXT_DIM);
     ui_obj_set_bg_color_if_changed(s_overview_fx.enabled_bar, on ? COL_ACCENT : COL_BG);
     ui_obj_set_bg_opa_if_changed(s_overview_fx.enabled_bar, on ? LV_OPA_COVER : LV_OPA_TRANSP);

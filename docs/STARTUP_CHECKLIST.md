@@ -82,12 +82,12 @@
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
   first fixed-delay DSP slice with P4-owned delay buffers, target-aware routing,
   and `/api/status.diagnostics.beat_fx_echo` telemetry; live BPM-synced delay
-  time remains deferred. The Overview Beat FX panel renders
-  the same P4-owned state, and `/api/status.beat_fx` remains available for
-  hardware smoke verification instead of raw serial logging when a network
-  transport is present. Hardware smoke passed on 2026-07-01 for the Beat FX
-  FILTER and Echo behavior, gradual depth response, CH1/CH2/1&2 target
-  routing, and physical ON/OFF LED feedback.
+  time remains deferred. The Overview Beat FX panel renders the same P4-owned
+  state with larger value text and active-state highlighting, and
+  `/api/status.beat_fx` remains available for hardware smoke verification
+  instead of raw serial logging when a network transport is present. Hardware
+  smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
+  depth response, CH1/CH2/1&2 target routing, and physical ON/OFF LED feedback.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
