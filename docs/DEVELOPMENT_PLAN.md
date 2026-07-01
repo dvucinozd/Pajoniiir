@@ -572,7 +572,8 @@ Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
 per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
 the FLX4 filter knobs with a softened raw-to-effective macro curve and
 hardware-smoked HI/LOW behavior; Smart Fader now toggles a conservative
-crossfader transition-assist curve. Beat FX section mapping and the first P4-owned state
+crossfader transition-assist curve with hardware smoke passed on 2026-07-01.
+Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
 clear/reset. The Overview right-side Beat FX panel renders that P4-owned
 snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
@@ -589,7 +590,8 @@ allocation/enabled/delay telemetry. Beat-size mapping derives delay time from
 the target deck effective BPM, falls back to 120 BPM when BPM is unavailable,
 and caps delay at 1000 ms to match the current delay-line budget. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
-response, CH1/CH2/1&2 target routing, and the ON/OFF LED following P4 state.
+response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size changes, and
+the ON/OFF LED following P4 state.
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
 delay primitives. Full FLX4 Pad FX physical pad input mapping is implemented
@@ -644,7 +646,8 @@ Implementation order:
      Smart LEDs, exposes state through the mixer snapshot/status API, applies
      Smart CFX filter DSP from the channel filter knobs with raw/effective
      snapshot separation and hardware-smoked HI/LOW sweep behavior, and applies
-     a safe Smart Fader transition-assist crossfader curve.
+     a safe Smart Fader transition-assist crossfader curve with hardware smoke
+     passed on 2026-07-01.
 4. **Extended controller inventory** ✅
    - inventory created in `docs/DDJ_FLX4_MIDI_MAP.md` from 281 XML input
      controls and 112 XML output candidates;

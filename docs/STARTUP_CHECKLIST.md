@@ -78,7 +78,7 @@
   press/release events. P4 owns their toggle state, LED feedback, status
   exposure, Smart CFX filter DSP with a softened raw/effective macro curve,
   balanced HI-side filter behavior verified on hardware, and Smart Fader
-  transition-assist behavior.
+  transition-assist behavior. Smart Fader hardware smoke passed on 2026-07-01.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
@@ -90,7 +90,8 @@
   `/api/status.beat_fx` remains available for hardware smoke verification
   instead of raw serial logging when a network transport is present. Hardware
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
-  depth response, CH1/CH2/1&2 target routing, and physical ON/OFF LED feedback.
+  depth response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size
+  changes, and physical ON/OFF LED feedback.
 - Pad FX DSP first slice is implemented in P4 and host-tested through
   `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical FLX4 Pad FX pad input
   mapping is implemented from the official MIDI message PDF (`0x10..0x17` for

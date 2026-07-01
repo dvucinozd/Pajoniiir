@@ -132,7 +132,7 @@ Smart CFX/Smart Fader input mapping and P4-owned state/LED behavior are
 implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
 knobs with a softened raw-to-effective macro curve and a hardware-smoked
 musical HI side that preserves perceived level; Smart Fader applies a
-conservative crossfader transition-assist curve.
+conservative crossfader transition-assist curve with hardware smoke passed.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
@@ -145,7 +145,8 @@ depth, and on/off state from the same authoritative state snapshot; the
 right-side Beat FX panel uses larger value text and active-state highlighting
 for better hardware readability. Hardware smoke on 2026-07-01 confirmed Beat
 FX FILTER and Echo behavior, gradual depth response, CH1/CH2/1&2 target
-routing, and the physical ON/OFF LED follows the P4-owned enabled state.
+routing, BPM-synced Echo beat-size changes, and the physical ON/OFF LED follows
+the P4-owned enabled state.
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, using the existing filter and delay
 primitives. Physical FLX4 Pad FX pad input mapping is implemented from the
