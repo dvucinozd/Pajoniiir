@@ -586,8 +586,10 @@ deck_core routes the existing Echo state into the audio engine, depth controls
 wet/feedback amount, and `/api/status.diagnostics.beat_fx_echo` exposes
 allocation/enabled/delay telemetry. Current beat-size mapping intentionally uses
 a fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
-`2/4=1000 ms`); live BPM-synced delay calculation and hardware smoke remain
-pending. Sampler and pad FX behavior remains deferred unless separately marked
+`2/4=1000 ms`); live BPM-synced delay calculation remains deferred. Hardware
+smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
+response, CH1/CH2/1&2 target routing, and the ON/OFF LED following P4 state.
+Sampler and pad FX behavior remains deferred unless separately marked
 implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the

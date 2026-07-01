@@ -138,11 +138,12 @@ incremental: FILTER now drives a conservative target-aware low-pass DSP from
 the Beat FX depth control, and Echo/delay now has a first fixed-delay DSP slice
 with target-aware routing and diagnostics. Echo beat sizes currently map to a
 fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
-`2/4=1000 ms`); live BPM-synced delay time and hardware smoke remain pending.
+`2/4=1000 ms`); live BPM-synced delay time remains deferred.
 The P4 Overview screen shows the current Beat FX effect, beat size, target,
 depth, and on/off state from the same authoritative state snapshot. Hardware
-smoke on 2026-07-01 confirmed the Beat FX section behavior and the physical
-ON/OFF LED follows the P4-owned enabled state.
+smoke on 2026-07-01 confirmed Beat FX FILTER and Echo behavior, gradual depth
+response, CH1/CH2/1&2 target routing, and the physical ON/OFF LED follows the
+P4-owned enabled state.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness

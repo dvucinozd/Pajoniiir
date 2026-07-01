@@ -1148,7 +1148,7 @@ Manual checks with FLX4 connected:
 
 Use existing COM15 monitor/capture workflow. Save under `logs/`, but do not commit logs unless explicitly requested.
 
-- [ ] **Step 6: If hardware smoke passes, close docs**
+- [x] **Step 6: If hardware smoke passes, close docs**
 
 Update:
 
@@ -1156,9 +1156,11 @@ Update:
 - `docs/DEVELOPMENT_PLAN.md`
 - `docs/DDJ_FLX4_MIDI_MAP.md`
 
-Replace the Echo first-slice smoke status with “hardware smoke passed” and the actual date shown by the workstation clock at the time of the successful smoke run.
+Echo first-slice smoke status was closed on 2026-07-01 after hardware smoke
+confirmed audible Echo, gradual FILTER depth response, and CH1/CH2/BOTH target
+routing. Live BPM-synced delay calculation remains deferred.
 
-- [ ] **Step 7: Final commit and push**
+- [ ] **Step 7: Final docs commit and push**
 
 ```powershell
 git diff --check

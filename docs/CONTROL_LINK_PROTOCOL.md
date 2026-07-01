@@ -103,7 +103,7 @@ test.
 | `0x74` | Beat FX select previous | `0` release, `1` press; press cycles P4 Beat FX effect backward |
 | `0x75` | Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down |
 | `0x76` | Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up |
-| `0x77` | Beat FX target | `0` CH1, `1` CH2, `2` both; sent as press/value semantic |
+| `0x77` | Beat FX target | `0` CH1, `1` CH2, `2` both; S3 derives `2` when both FLX4 target selector signals are active |
 | `0x78` | Beat FX depth | `0..127`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB4/0x02` |
 | `0x79` | Beat FX on/off | `0` release, `1` press; press toggles P4 Beat FX enabled state |
 | `0x7A` | Beat FX clear | `0` release, `1` press; press resets P4 Beat FX state to defaults |
