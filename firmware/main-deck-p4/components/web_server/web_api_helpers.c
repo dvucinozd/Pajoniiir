@@ -74,3 +74,26 @@ int web_api_format_beat_fx_json(char *dst,
                     depth,
                     enabled ? "true" : "false");
 }
+
+int web_api_format_beat_fx_echo_diag_json(char *dst,
+                                          size_t dst_size,
+                                          bool allocated1,
+                                          bool allocated2,
+                                          bool enabled1,
+                                          bool enabled2,
+                                          unsigned delay_ms1,
+                                          unsigned delay_ms2)
+{
+    if (!dst || dst_size == 0) {
+        return 0;
+    }
+    return snprintf(dst,
+                    dst_size,
+                    "\"beat_fx_echo\":{\"allocated1\":%s,\"allocated2\":%s,\"enabled1\":%s,\"enabled2\":%s,\"delay_ms1\":%u,\"delay_ms2\":%u}",
+                    allocated1 ? "true" : "false",
+                    allocated2 ? "true" : "false",
+                    enabled1 ? "true" : "false",
+                    enabled2 ? "true" : "false",
+                    delay_ms1,
+                    delay_ms2);
+}

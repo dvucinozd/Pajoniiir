@@ -79,12 +79,14 @@
   exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
-  implemented as a target-aware low-pass slice; Echo/delay remains pending. The
-  Overview Beat FX panel renders the same P4-owned state, and
-  `/api/status.beat_fx` remains available for hardware smoke verification
-  instead of raw serial logging when a network transport is present. Hardware
-  smoke passed on 2026-07-01 for the Beat FX section behavior and physical
-  ON/OFF LED feedback.
+  implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
+  first fixed-delay DSP slice with P4-owned delay buffers, target-aware routing,
+  and `/api/status.diagnostics.beat_fx_echo` telemetry; live BPM-synced delay
+  time and hardware smoke remain pending. The Overview Beat FX panel renders
+  the same P4-owned state, and `/api/status.beat_fx` remains available for
+  hardware smoke verification instead of raw serial logging when a network
+  transport is present. Hardware smoke passed on 2026-07-01 for the Beat FX
+  section behavior and physical ON/OFF LED feedback.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative

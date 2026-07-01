@@ -43,12 +43,30 @@ static void test_beat_fx_json_formats_status_block(void)
     assert(strcmp(out, "\"beat_fx\":{\"effect\":2,\"beat\":3,\"target\":1,\"depth\":42,\"enabled\":true}") == 0);
 }
 
+static void test_beat_fx_echo_diag_json_formats_status_block(void)
+{
+    char out[160];
+
+    int n = web_api_format_beat_fx_echo_diag_json(out,
+                                                  sizeof(out),
+                                                  true,
+                                                  false,
+                                                  true,
+                                                  false,
+                                                  250,
+                                                  500);
+
+    assert(n > 0);
+    assert(strcmp(out, "\"beat_fx_echo\":{\"allocated1\":true,\"allocated2\":false,\"enabled1\":true,\"enabled2\":false,\"delay_ms1\":250,\"delay_ms2\":500}") == 0);
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
     test_json_escape_truncates_and_terminates();
     test_json_escape_accepts_null_and_zero_buffer();
     test_beat_fx_json_formats_status_block();
+    test_beat_fx_echo_diag_json_formats_status_block();
 
     puts("web_api_helpers tests passed");
     return 0;

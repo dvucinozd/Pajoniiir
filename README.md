@@ -135,11 +135,14 @@ Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
 incremental: FILTER now drives a conservative target-aware low-pass DSP from
-the Beat FX depth control, while Echo/delay remains deferred. The P4 Overview
-screen shows the current Beat FX effect, beat size, target, depth, and on/off
-state from the same authoritative state snapshot. Hardware smoke on 2026-07-01
-confirmed the Beat FX section behavior and the physical ON/OFF LED follows the
-P4-owned enabled state.
+the Beat FX depth control, and Echo/delay now has a first fixed-delay DSP slice
+with target-aware routing and diagnostics. Echo beat sizes currently map to a
+fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
+`2/4=1000 ms`); live BPM-synced delay time and hardware smoke remain pending.
+The P4 Overview screen shows the current Beat FX effect, beat size, target,
+depth, and on/off state from the same authoritative state snapshot. Hardware
+smoke on 2026-07-01 confirmed the Beat FX section behavior and the physical
+ON/OFF LED follows the P4-owned enabled state.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
@@ -153,7 +156,8 @@ in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-pad FX and Beat FX audio DSP remain P4 feature work, not S3 mapping work.
+pad FX and remaining Beat FX DSP polish remain P4 feature work, not S3 mapping
+work.
 The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

@@ -101,9 +101,10 @@ Current P4 audio ownership rule:
   FLX4 LEDs and are included in the mixer snapshot/status API;
 - the audio engine exposes a central diagnostics snapshot with output codec
   state/sample-rate, late-output counters, per-deck ring fill and active flags,
-  limiter counters, and heap/internal/PSRAM free space. `/api/status` includes
-  these values under `diagnostics` so hardware smoke tests can read one
-  structured report instead of scraping log lines;
+  limiter counters, Beat FX Echo allocation/enabled/delay state, and
+  heap/internal/PSRAM free space. `/api/status` includes these values under
+  `diagnostics` so hardware smoke tests can read one structured report instead
+  of scraping log lines;
 - Beat FX state is P4-owned and read by both the physical Overview UI and
   `/api/status`. Active firmware keeps ESP-Hosted Wi-Fi disabled, so the HTTP
   server and captive DNS are not started until a real Wi-Fi/AP transport

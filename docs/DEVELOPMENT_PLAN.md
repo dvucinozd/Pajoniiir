@@ -581,8 +581,14 @@ server and captive DNS remain disabled while the `wifi_link` shim returns
 TCP/IP stack causes a boot-time lwIP assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
-Echo/delay remains deferred. Sampler and pad FX behavior remains deferred unless
-separately marked implemented.
+Beat FX Echo/delay has a first fixed-delay DSP slice: P4 owns the delay lines,
+deck_core routes the existing Echo state into the audio engine, depth controls
+wet/feedback amount, and `/api/status.diagnostics.beat_fx_echo` exposes
+allocation/enabled/delay telemetry. Current beat-size mapping intentionally uses
+a fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
+`2/4=1000 ms`); live BPM-synced delay calculation and hardware smoke remain
+pending. Sampler and pad FX behavior remains deferred unless separately marked
+implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF

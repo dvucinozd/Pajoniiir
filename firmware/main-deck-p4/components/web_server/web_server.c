@@ -138,14 +138,23 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                 (int)beat_fx.target,
                                 (unsigned)beat_fx.depth,
                                 beat_fx.enabled);
+    char beat_fx_echo_diag_json[160] = {0};
+    web_api_format_beat_fx_echo_diag_json(beat_fx_echo_diag_json,
+                                          sizeof(beat_fx_echo_diag_json),
+                                          diagnostics.beat_fx_echo_allocated[0],
+                                          diagnostics.beat_fx_echo_allocated[1],
+                                          diagnostics.beat_fx_echo_enabled[0],
+                                          diagnostics.beat_fx_echo_enabled[1],
+                                          (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
+                                          (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
 
-    char *json = malloc(1792);
+    char *json = malloc(2048);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;
     }
 
-    snprintf(json, 1792,
+    snprintf(json, 2048,
              "{"
              "\"deck1\":{"
              "\"title\":\"%s\","
@@ -208,6 +217,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"limiter_positive\":%u,"
              "\"limiter_negative\":%u,"
              "\"limiter_peak\":%d,"
+             "%s,"
              "\"heap_free\":%u,"
              "\"internal_free\":%u,"
              "\"psram_free\":%u"
@@ -245,6 +255,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              (unsigned)diagnostics.limiter.positive_overloads,
              (unsigned)diagnostics.limiter.negative_overloads,
              (int)diagnostics.limiter.peak_input_abs,
+             beat_fx_echo_diag_json,
              (unsigned)diagnostics.heap_free,
              (unsigned)diagnostics.internal_free,
              (unsigned)diagnostics.psram_free);
