@@ -16,6 +16,8 @@ typedef struct {
     uint8_t loop_active[2];
     uint32_t loop_start_ms[2];
     uint32_t loop_end_ms[2];
+    uint8_t beat_loop_pad_active[2];
+    uint8_t beat_loop_active_pad[2];
     uint8_t hot_cue_exists_mask[2];
     uint8_t pad_fx_active[2];
     uint8_t pad_fx_active_mode[2];

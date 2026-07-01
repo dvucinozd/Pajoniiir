@@ -1102,6 +1102,27 @@ static void test_beat_loop_pad_maps_pad_index_to_loop_length(void)
     assert(audio_engine_stub_loop_set_count[CTRL_DECK_1] == 2);
 }
 
+static void test_beat_loop_pad_led_tracks_pad_at_non_120_bpm(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+    s_loaded_bpm[CTRL_DECK_1] = 100;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
+
+    ctrl_event_t mode = deck_button(CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP);
+    deck_core_test_apply_event(&mode);
+    control_link_stub_reset_leds();
+
+    ctrl_event_t pad6 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad6.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 5, false, true);
+    deck_core_test_apply_event(&pad6);
+
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 20000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 20600);
+    assert(control_link_stub_last_led_state(LED_BEAT_LOOP_PAD_6, CTRL_DECK_1) == 1);
+}
+
 static void test_beat_loop_release_event_does_not_set_loop(void)
 {
     deck_core_test_reset();
@@ -1562,6 +1583,7 @@ int main(void)
     test_loop_halve_and_double_resize_active_loop();
     test_beat_loop_pad_sets_loop_on_requested_deck();
     test_beat_loop_pad_maps_pad_index_to_loop_length();
+    test_beat_loop_pad_led_tracks_pad_at_non_120_bpm();
     test_beat_loop_release_event_does_not_set_loop();
     test_shifted_beat_loop_release_restores_previous_loop();
     test_shifted_beat_loop_release_clears_when_no_previous_loop();

@@ -747,8 +747,10 @@ Implementation order:
      snapshot and S3 XML-derived MIDI OUT translation for Hot Cue, Keyboard,
      Pad FX1, Pad FX2, Beat Jump, Beat Loop, Sampler, and Key Shift;
    - Beat Loop pad LED output is implemented for the normal pad LED notes and
-     derived from P4 loop state plus selected Beat Loop pad mode; shifted mirror
-     LED notes remain deferred;
+     derived from P4-owned active Beat Loop pad state plus selected Beat Loop
+     pad mode; shifted mirror LED notes remain deferred. A 2026-07-01 fix
+     removed the previous 120-BPM duration-inference dependency, and hardware
+     LED smoke passed on both decks;
    - Beat Sync LED feedback is implemented as a P4-owned per-deck sync-enabled
      state (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - Loop In/Out LED feedback is implemented from P4-owned loop marker/loop

@@ -250,7 +250,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   back/forward inputs on both decks. Loop In/Out, Reloop/Exit, loop
   halve/double, normal/shifted Beat Loop pads, and Beat Jump buttons/pads now
   have P4 behavior; Tempo Range hardware behavior smoke passed on 2026-06-25,
-  while Beat Loop and Beat Jump hardware behavior smoke remains pending.
+  normal Beat Loop hardware behavior smoke passed on 2026-07-01, while shifted
+  Beat Loop and Beat Jump hardware behavior smoke remains pending.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
@@ -265,12 +266,13 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   implemented in P4 for per-track store/recall and shifted clear; Deck 1
   hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
   passed on 2026-06-26.
-  Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4
-  and remains pending for hardware behavior smoke. Pad FX has a host-tested P4
-  DSP slice and official-PDF-backed FLX4 Pad FX pad input mapping; hardware
-  smoke passed on 2026-07-01 for pad behavior, Echo tail, and normal Pad FX pad
-  LEDs. Actual Sampler and Key Shift behavior remains a separate P4 feature
-  task.
+  Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4.
+  Normal Beat Loop hardware behavior smoke passed on 2026-07-01; shifted Beat
+  Loop and Beat Jump remain pending for hardware behavior smoke. Pad FX has a
+  host-tested P4 DSP slice and official-PDF-backed FLX4 Pad FX pad input
+  mapping; hardware smoke passed on 2026-07-01 for pad behavior, Echo tail, and
+  normal Pad FX pad LEDs. Actual Sampler and Key Shift behavior remains a
+  separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and
@@ -278,15 +280,16 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   state. Hot Cue normal pad LED output is implemented from P4 hot-cue-store
   slot state while Hot Cue mode is selected; hardware LED smoke passed on
   2026-07-01.
-  Beat Loop normal pad LED output is implemented from P4 loop state and
-  selected Beat Loop pad mode; shifted mirror pad LED output remains deferred.
+  Beat Loop normal pad LED output is implemented from P4-owned active Beat Loop
+  pad state plus selected Beat Loop pad mode; shifted mirror pad LED output
+  remains deferred. A 2026-07-01 regression fix removed the previous 120-BPM
+  duration-inference dependency, and hardware LED smoke passed on both decks.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
   hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke
   passed on 2026-07-01. Pad-mode, Beat Sync, and active Loop In/Out LED
   hardware smoke has passed where recorded in
   `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
-  LED-state acceptance passed on 2026-06-26. Beat Loop pad LED hardware smoke
-  remains pending, S3 reset recovery after the extended reconnect snapshot no
+  LED-state acceptance passed on 2026-06-26. S3 reset recovery after the extended reconnect snapshot no
   longer crashes, and P4-only reset recovery is implemented through S3 heartbeat
   connected-state refresh with hardware smoke passed on 2026-06-26.
 - [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.

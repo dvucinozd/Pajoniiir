@@ -67,33 +67,18 @@ static const uint8_t s_pad_modes[8] = {
     CTRL_PAD_MODE_KEY_SHIFT,
 };
 
-static const uint32_t s_beat_loop_durations_ms[8] = {
-    16, 32, 63, 125, 250, 500, 1000, 2000,
-};
-
-static bool duration_matches(uint32_t actual_ms, uint32_t expected_ms)
-{
-    uint32_t tolerance_ms = expected_ms / 16u;
-    if (tolerance_ms < 2u) {
-        tolerance_ms = 2u;
-    }
-    uint32_t delta = actual_ms > expected_ms ? actual_ms - expected_ms : expected_ms - actual_ms;
-    return delta <= tolerance_ms;
-}
-
 static uint8_t beat_loop_pad_value(const flx4_led_snapshot_input_t *input,
                                    uint8_t deck,
                                    uint8_t pad)
 {
     if (input->pad_mode[deck] != CTRL_PAD_MODE_BEAT_LOOP ||
         !input->loop_active[deck] ||
-        input->loop_end_ms[deck] <= input->loop_start_ms[deck] ||
+        !input->beat_loop_pad_active[deck] ||
+        input->beat_loop_active_pad[deck] != pad ||
         pad >= 8u) {
         return 0;
     }
-
-    uint32_t duration_ms = input->loop_end_ms[deck] - input->loop_start_ms[deck];
-    return duration_matches(duration_ms, s_beat_loop_durations_ms[pad]) ? 1u : 0u;
+    return 1u;
 }
 
 static uint8_t pad_fx_pad_value(const flx4_led_snapshot_input_t *input,

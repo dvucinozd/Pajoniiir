@@ -222,7 +222,9 @@ static void test_beat_loop_mode_lights_matching_loop_length_pad(void)
     input.pad_mode[1] = CTRL_PAD_MODE_HOT_CUE;
     input.loop_active[0] = 1;
     input.loop_start_ms[0] = 10000;
-    input.loop_end_ms[0] = 10500;
+    input.loop_end_ms[0] = 10600;
+    input.beat_loop_pad_active[0] = 1;
+    input.beat_loop_active_pad[0] = 5;
 
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, true,
@@ -257,6 +259,8 @@ static void test_beat_loop_pad_leds_are_off_outside_beat_loop_mode(void)
     input.loop_active[0] = 1;
     input.loop_start_ms[0] = 10000;
     input.loop_end_ms[0] = 10500;
+    input.beat_loop_pad_active[0] = 1;
+    input.beat_loop_active_pad[0] = 5;
 
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, true,
