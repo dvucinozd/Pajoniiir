@@ -570,8 +570,9 @@ loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
 Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
 per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
-the FLX4 filter knobs with a softened raw-to-effective macro curve, and Smart
-Fader now toggles a conservative crossfader transition-assist curve. Beat FX section mapping and the first P4-owned state
+the FLX4 filter knobs with a softened raw-to-effective macro curve and
+hardware-smoked HI/LOW behavior; Smart Fader now toggles a conservative
+crossfader transition-assist curve. Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
 clear/reset. The Overview right-side Beat FX panel renders that P4-owned
 snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
@@ -642,8 +643,8 @@ Implementation order:
    - P4 behavior now toggles Smart CFX/Smart Fader state, drives the verified
      Smart LEDs, exposes state through the mixer snapshot/status API, applies
      Smart CFX filter DSP from the channel filter knobs with raw/effective
-     snapshot separation, and applies a safe Smart Fader transition-assist
-     crossfader curve.
+     snapshot separation and hardware-smoked HI/LOW sweep behavior, and applies
+     a safe Smart Fader transition-assist crossfader curve.
 4. **Extended controller inventory** ✅
    - inventory created in `docs/DDJ_FLX4_MIDI_MAP.md` from 281 XML input
      controls and 112 XML output candidates;

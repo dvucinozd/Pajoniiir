@@ -3,6 +3,8 @@
 #define AUDIO_FILTER_PI             3.14159265358979323846f
 #define AUDIO_FILTER_MIN_CUTOFF_HZ  950.0f
 #define AUDIO_FILTER_MAX_CUTOFF_HZ  18000.0f
+#define AUDIO_FILTER_HI_MAX_CUTOFF_HZ 3500.0f
+#define AUDIO_FILTER_HI_DRY_MIX     0.25f
 #define AUDIO_FILTER_CENTER_DEAD_RAW 96u
 
 static float one_pole_alpha(float cutoff_hz, uint32_t sample_rate_hz)
@@ -71,10 +73,15 @@ static float process_sample(audio_filter_state_t *filter, float sample, uint8_t 
     }
 
     float intensity = (float)distance / (float)AUDIO_FILTER_RAW_CENTER;
-    float open = 1.0f - intensity;
-    float cutoff = AUDIO_FILTER_MIN_CUTOFF_HZ +
-                   (AUDIO_FILTER_MAX_CUTOFF_HZ - AUDIO_FILTER_MIN_CUTOFF_HZ) *
-                   open * open;
+    float cutoff = AUDIO_FILTER_MIN_CUTOFF_HZ;
+    if (raw < AUDIO_FILTER_RAW_CENTER) {
+        float open = 1.0f - intensity;
+        cutoff += (AUDIO_FILTER_MAX_CUTOFF_HZ - AUDIO_FILTER_MIN_CUTOFF_HZ) *
+                  open * open;
+    } else {
+        cutoff += (AUDIO_FILTER_HI_MAX_CUTOFF_HZ - AUDIO_FILTER_MIN_CUTOFF_HZ) *
+                  intensity * intensity;
+    }
     float alpha = one_pole_alpha(cutoff, filter->sample_rate_hz);
 
     filter->lp1[channel] += alpha * (sample - filter->lp1[channel]);
@@ -83,7 +90,9 @@ static float process_sample(audio_filter_state_t *filter, float sample, uint8_t 
     if (raw < AUDIO_FILTER_RAW_CENTER) {
         return filter->lp2[channel];
     }
-    return sample - filter->lp2[channel];
+    float high_pass = sample - filter->lp2[channel];
+    return (high_pass * (1.0f - AUDIO_FILTER_HI_DRY_MIX)) +
+           (sample * AUDIO_FILTER_HI_DRY_MIX);
 }
 
 audio_mixer_frame_t audio_filter_process_frame(audio_filter_state_t *filter,

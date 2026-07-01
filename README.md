@@ -130,7 +130,8 @@ Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
 LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
 Smart CFX/Smart Fader input mapping and P4-owned state/LED behavior are
 implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
-knobs with a softened raw-to-effective macro curve; Smart Fader applies a
+knobs with a softened raw-to-effective macro curve and a hardware-smoked
+musical HI side that preserves perceived level; Smart Fader applies a
 conservative crossfader transition-assist curve.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,

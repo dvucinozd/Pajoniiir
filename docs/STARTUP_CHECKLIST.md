@@ -77,7 +77,8 @@
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
   press/release events. P4 owns their toggle state, LED feedback, status
   exposure, Smart CFX filter DSP with a softened raw/effective macro curve,
-  and Smart Fader transition-assist behavior.
+  balanced HI-side filter behavior verified on hardware, and Smart Fader
+  transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
@@ -258,8 +259,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   are mapped/tested in firmware. Hardware capture status is tracked per row in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
   Three-band EQ now has P4 DSP behavior for both decks. Filter is used by Smart
-  CFX while enabled; trim and headphone-mix remain mapped/state work until
-  their standalone P4 behavior is implemented.
+  CFX while enabled, with HI/LOW hardware smoke passed on 2026-07-01; trim and
+  headphone-mix remain mapped/state work until their standalone P4 behavior is
+  implemented.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
