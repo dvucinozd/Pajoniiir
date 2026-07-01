@@ -61,14 +61,16 @@ static void test_regular_beats_are_not_overview_grid_guides(void)
     assert(column_count == 0);
 }
 
-static void test_zoom_grid_styles_regular_beats_as_subtle_guides(void)
+static void test_zoom_grid_styles_regular_beats_as_dim_background_guides(void)
 {
     ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(2);
 
     assert(style.palette_index == 8u);
     assert(style.line_width_px == 1);
-    assert(style.y0_permille > 0);
-    assert(style.y1_permille < 1000);
+    assert(style.y0_permille == 0);
+    assert(style.y1_permille == 1000);
+    assert(style.cap_palette_index == 9u);
+    assert(style.cap_height_px == 4);
 }
 
 static void test_zoom_grid_styles_downbeats_as_full_height_markers(void)
@@ -85,7 +87,7 @@ int main(void)
 {
     test_dense_beat_grid_becomes_sparse_overview_guides();
     test_regular_beats_are_not_overview_grid_guides();
-    test_zoom_grid_styles_regular_beats_as_subtle_guides();
+    test_zoom_grid_styles_regular_beats_as_dim_background_guides();
     test_zoom_grid_styles_downbeats_as_full_height_markers();
 
     puts("ui_overview_grid tests passed");

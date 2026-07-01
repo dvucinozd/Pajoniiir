@@ -9,6 +9,9 @@
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
 static int s_toggle_library_view_calls;
+static bool s_ui_library_active;
+static bool s_ui_overview_active;
+static int s_overview_zoom_delta;
 static uint32_t s_loaded_track_key[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_loaded_anlz[DECK_CORE_DECK_COUNT];
 static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
@@ -63,6 +66,22 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 esp_err_t ui_library_select_delta(int delta)
 {
     s_browse_delta += delta;
+    return ESP_OK;
+}
+
+bool ui_is_library_active(void)
+{
+    return s_ui_library_active;
+}
+
+bool ui_is_overview_active(void)
+{
+    return s_ui_overview_active;
+}
+
+esp_err_t ui_overview_zoom_delta(int delta)
+{
+    s_overview_zoom_delta += delta;
     return ESP_OK;
 }
 
@@ -404,11 +423,46 @@ static void test_browser_namespace_routes_browse_delta(void)
     deck_core_test_reset();
     reset_audio_engine_stub();
     s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = true;
 
     ctrl_event_t browse = browse_delta(3);
     deck_core_test_apply_event(&browse);
 
     assert(s_browse_delta == 3);
+    assert(s_overview_zoom_delta == 0);
+}
+
+static void test_browse_delta_zooms_overview_when_library_is_not_active(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = false;
+    s_ui_overview_active = true;
+
+    ctrl_event_t browse = browse_delta(-2);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 0);
+    assert(s_overview_zoom_delta == -2);
+}
+
+static void test_browse_delta_ignores_non_library_non_overview_tabs(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = false;
+    s_ui_overview_active = false;
+
+    ctrl_event_t browse = browse_delta(1);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 0);
+    assert(s_overview_zoom_delta == 0);
 }
 
 static void test_cue_shift_jumps_requested_deck_to_track_start(void)
@@ -766,7 +820,7 @@ static void test_sync_phase_aligns_to_matching_reference_beat_phase(void)
     assert(deck1.position_ms == 2000);
 }
 
-static void test_sync_skips_phase_align_seek_while_target_deck_is_playing(void)
+static void test_sync_phase_aligns_while_target_deck_is_playing(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
@@ -796,8 +850,9 @@ static void test_sync_skips_phase_align_seek_while_target_deck_is_playing(void)
     deck_state_t deck1 = deck_core_test_get_deck_state(CTRL_DECK_1);
     assert(deck1.sync_enabled);
     assert(deck1.pitch_centipercent == 667);
-    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 2600);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 2000);
+    assert(deck1.position_ms == 2000);
 }
 
 static void test_sync_without_beatgrid_keeps_phase_position_unchanged(void)
@@ -1625,6 +1680,8 @@ int main(void)
     test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_namespace_routes_browse_delta();
+    test_browse_delta_zooms_overview_when_library_is_not_active();
+    test_browse_delta_ignores_non_library_non_overview_tabs();
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_trim_to_pregain();
@@ -1649,7 +1706,7 @@ int main(void)
     test_sync_toggle_off_does_not_reapply_pitch();
     test_manual_pitch_disables_sync_state();
     test_sync_phase_aligns_to_matching_reference_beat_phase();
-    test_sync_skips_phase_align_seek_while_target_deck_is_playing();
+    test_sync_phase_aligns_while_target_deck_is_playing();
     test_sync_without_beatgrid_keeps_phase_position_unchanged();
     test_loop_in_out_sets_requested_deck_loop_from_audio_position();
     test_loop_in_marker_publishes_loop_in_led_before_loop_out();

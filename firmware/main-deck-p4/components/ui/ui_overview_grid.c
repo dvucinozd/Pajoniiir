@@ -49,16 +49,20 @@ ui_overview_grid_style_t ui_overview_grid_style_for_phase(uint16_t beat_phase)
 {
     if ((beat_phase % 4u) == 0u) {
         return (ui_overview_grid_style_t){
-            .palette_index = 8,
+            .palette_index = 4,
+            .cap_palette_index = 0,
             .line_width_px = 2,
+            .cap_height_px = 0,
             .y0_permille = 0,
             .y1_permille = 1000,
         };
     }
 
     return (ui_overview_grid_style_t){
-        .palette_index = 3,
+        .palette_index = 8,
+        .cap_palette_index = 9,
         .line_width_px = 1,
+        .cap_height_px = 4,
         .y0_permille = 0,
         .y1_permille = 1000,
     };

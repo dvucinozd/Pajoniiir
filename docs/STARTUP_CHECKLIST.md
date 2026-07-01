@@ -259,8 +259,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   behavior; Beat Sync applies one-shot BPM match to the other deck using
   precise ANLZ BPM when available and an internal ±20% safe clamp independent
   of the selected manual Tempo Range. It phase-aligns to the nearest matching
-  beat phase only when the target deck is paused and both beatgrids are available. Playing-deck
-  phase seek is skipped to avoid audio ring underruns; it does not yet
+  beat phase when both beatgrids are available, including while the target deck
+  is playing. 2026-07-01 hardware smoke confirmed that Beat Sync aligns the
+  Overview beat-match guide lines after the one-shot seek; it does not yet
   continuously follow. Tempo
   Range cycles deck-local `±6%`, `±10%`, and `±16%` fader ranges. Final Phase 7 smoke
   verified loop in/out, reloop/exit, loop halve/double, and beat-jump

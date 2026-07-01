@@ -30,9 +30,11 @@ static const char *TAG = "deck";
 #define BEAT_FX_ECHO_MAX_DELAY_MS 1000u
 
 extern bool ui_is_library_active(void) __attribute__((weak));
+extern bool ui_is_overview_active(void) __attribute__((weak));
 extern esp_err_t ui_show_library(void) __attribute__((weak));
 extern esp_err_t ui_toggle_library_view(void) __attribute__((weak));
 extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
+extern esp_err_t ui_overview_zoom_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
 extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
 extern uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck) __attribute__((weak));
@@ -1402,9 +1404,14 @@ static void on_jog(uint8_t deck, int16_t delta)
 static void on_browse(int16_t delta)
 {
     if (delta == 0) return;
-    if (ui_library_select_delta) {
+    bool library_active = !ui_is_library_active || ui_is_library_active();
+    bool overview_active = ui_is_overview_active && ui_is_overview_active();
+    if (library_active && ui_library_select_delta) {
         esp_err_t rc = ui_library_select_delta(delta);
         ESP_LOGD(TAG, "browse %+d → %s", delta, esp_err_to_name(rc));
+    } else if (!library_active && overview_active && ui_overview_zoom_delta) {
+        esp_err_t rc = ui_overview_zoom_delta(delta);
+        ESP_LOGD(TAG, "overview zoom %+d → %s", delta, esp_err_to_name(rc));
     } else {
         ESP_LOGW(TAG, "browse unsupported: UI API unavailable");
     }
@@ -1482,10 +1489,7 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
                                                             reference_position_ms,
                                                             reference_meta,
                                                             &aligned_ms);
-    bool deck_playing_now = deck_uses_audio_engine(deck)
-        ? audio_engine_deck_is_playing(deck)
-        : state->playing;
-    if (phase_target_available && !deck_playing_now) {
+    if (phase_target_available) {
         esp_err_t seek_rc = audio_engine_deck_seek(deck, aligned_ms);
         if (seek_rc == ESP_OK) {
             state->position_ms = aligned_ms;
@@ -1495,10 +1499,6 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
                      (unsigned)deck + 1,
                      esp_err_to_name(seek_rc));
         }
-    } else if (phase_target_available) {
-        ESP_LOGI(TAG, "deck %u beat sync phase-align skipped while playing (target %lu ms)",
-                 (unsigned)deck + 1,
-                 (unsigned long)aligned_ms);
     }
 
     uint16_t base = deck_base_bpm(deck);

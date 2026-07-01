@@ -36,6 +36,7 @@ typedef struct {
 void ui_overview_init(const ui_overview_config_t *config);
 lv_obj_t *ui_overview_create(lv_obj_t *parent);
 void ui_overview_set_performance_target(uint8_t active_deck);
+esp_err_t ui_overview_zoom_delta(int delta);
 
 void ui_overview_load_waveform_data(uint8_t deck,
                                     uint32_t duration_ms,

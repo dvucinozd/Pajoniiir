@@ -66,6 +66,29 @@ function Invoke-Step {
     }
 }
 
+function Assert-OverviewInactiveGuardBeforeCacheUpdate {
+    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
+    Write-Host "==> static overview inactive tab does not validate waveform cache"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $start = $text.IndexOf("static void ui_render_overview_main_waveform")
+    if ($start -lt 0) {
+        throw "ui_render_overview_main_waveform not found"
+    }
+    $end = $text.IndexOf("#else", $start)
+    if ($end -lt 0) {
+        throw "ui_render_overview_main_waveform WIN32 split not found"
+    }
+    $body = $text.Substring($start, $end - $start)
+    $guard = $body.IndexOf("s_overview_active_tab != 0")
+    $update = $body.IndexOf("ui_overview_wave_cache_update")
+    if ($update -lt 0) {
+        throw "ui_overview_wave_cache_update not found in ui_render_overview_main_waveform"
+    }
+    if ($guard -lt 0 -or $guard -gt $update) {
+        throw "ui_render_overview_main_waveform can validate waveform cache while overview tab is inactive"
+    }
+}
+
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -85,6 +108,8 @@ Assert-FileDoesNotContain `
     -Name "overview runtime avoids full RGB565 redraw" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
+
+Assert-OverviewInactiveGuardBeforeCacheUpdate
 
 Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview_wave_cache.c") `
@@ -483,6 +508,20 @@ $tests = @(
             "-o", "test_ui_overview_scheduler.exe",
             "test_ui_overview_scheduler.c",
             "../../firmware/main-deck-p4/components/ui/ui_overview_scheduler.c"
+        )
+    },
+    @{
+        Name = "ui_overview_grid"
+        Dir = "tests/ui_overview_grid"
+        Target = "test_ui_overview_grid.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_overview_grid.exe",
+            "test_ui_overview_grid.c",
+            "../../firmware/main-deck-p4/components/ui/ui_overview_grid.c"
         )
     },
     @{

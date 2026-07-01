@@ -1037,6 +1037,11 @@ void ui_update(void) {
 #endif
 }
 
+bool ui_is_overview_active(void)
+{
+    return s_active_tab == 0;
+}
+
 esp_err_t ui_show_library(void)
 {
     if (!s_root_container || !s_screens[1]) {

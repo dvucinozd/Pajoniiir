@@ -49,6 +49,60 @@ static void test_main_renderer_keeps_downbeat_grid_on_top(void)
     assert(pixels[9 * 8 + 4] == 4);
 }
 
+static void test_main_renderer_keeps_regular_beat_grid_behind_waveform(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    anlz_beat_t beats[] = {
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+    };
+    anlz_metadata_t meta = {
+        .beats = beats,
+        .beat_count = 1,
+    };
+    uint8_t pixels[8 * 12] = {0};
+
+    ui_overview_renderer_draw_main(pixels, 8, 8, 12, &source, 8000, &meta, 4000, 8000);
+
+    assert(pixels[0 * 8 + 2] == 9);
+    assert(pixels[1 * 8 + 2] == 9);
+    assert(pixels[11 * 8 + 2] == 8);
+    assert(pixels[6 * 8 + 2] != 8);
+}
+
+static void test_main_renderer_can_draw_regular_beat_cap_at_bottom(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    anlz_beat_t beats[] = {
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+    };
+    anlz_metadata_t meta = {
+        .beats = beats,
+        .beat_count = 1,
+    };
+    uint8_t pixels[8 * 12] = {0};
+
+    ui_overview_renderer_draw_main_with_options(pixels, 8, 8, 12, &source, 8000,
+                                                &meta, 4000, 8000, true);
+
+    assert(pixels[0 * 8 + 2] == 8);
+    assert(pixels[8 * 8 + 2] == 9);
+    assert(pixels[11 * 8 + 2] == 9);
+    assert(pixels[7 * 8 + 2] != 8);
+    assert(pixels[6 * 8 + 2] != 8);
+}
+
 static void test_main_renderer_draws_center_playhead(void)
 {
     uint8_t samples[16];
@@ -95,6 +149,73 @@ static void test_main_rgb565_renderer_maps_palette_directly(void)
     }
     assert(pixels[0 * 8 + 4] == palette[4]);
     assert(pixels[9 * 8 + 4] == palette[4]);
+}
+
+static void test_main_rgb565_renderer_keeps_regular_beat_grid_behind_waveform(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    anlz_beat_t beats[] = {
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+    };
+    anlz_metadata_t meta = {
+        .beats = beats,
+        .beat_count = 1,
+    };
+    const uint16_t palette[] = {
+        0x0000, 0xF16E, 0x235F, 0x475C, 0xE71D,
+        0x1F32, 0xFD66, 0x9ADF, 0x3989, 0xF800,
+    };
+    uint16_t pixels[8 * 12] = {0};
+
+    ui_overview_renderer_draw_main_rgb565(pixels, 8, 8, 12, &source, 8000,
+                                          &meta, 4000, 8000, palette,
+                                          sizeof(palette) / sizeof(palette[0]));
+
+    assert(pixels[0 * 8 + 2] == palette[9]);
+    assert(pixels[1 * 8 + 2] == palette[9]);
+    assert(pixels[11 * 8 + 2] == palette[8]);
+    assert(pixels[6 * 8 + 2] != palette[8]);
+}
+
+static void test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    anlz_beat_t beats[] = {
+        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+    };
+    anlz_metadata_t meta = {
+        .beats = beats,
+        .beat_count = 1,
+    };
+    const uint16_t palette[] = {
+        0x0000, 0xF16E, 0x235F, 0x475C, 0xE71D,
+        0x1F32, 0xFD66, 0x9ADF, 0x3989, 0xF800,
+    };
+    uint16_t pixels[8 * 12] = {0};
+
+    ui_overview_renderer_draw_main_rgb565_with_options(pixels, 8, 8, 12,
+                                                       &source, 8000, &meta,
+                                                       4000, 8000, palette,
+                                                       sizeof(palette) / sizeof(palette[0]),
+                                                       true);
+
+    assert(pixels[0 * 8 + 2] == palette[8]);
+    assert(pixels[8 * 8 + 2] == palette[9]);
+    assert(pixels[11 * 8 + 2] == palette[9]);
+    assert(pixels[7 * 8 + 2] != palette[8]);
+    assert(pixels[6 * 8 + 2] != palette[8]);
 }
 
 static void test_main_rgb565_renderer_can_draw_column_range_without_clearing_all(void)
@@ -148,7 +269,8 @@ static void test_main_rgb565_renderer_can_draw_logical_columns_to_destination_sp
                                                       40, 4, 8, 64,
                                                       &source, 8000, NULL,
                                                       4000, 8000, palette,
-                                                      sizeof(palette) / sizeof(palette[0]));
+                                                      sizeof(palette) / sizeof(palette[0]),
+                                                      false);
 
     assert(pixels[(10 / 2) * 64 + 4] == 0xAAAA);
     assert(pixels[(10 / 2) * 64 + 40] != 0xAAAA);
@@ -295,9 +417,13 @@ int main(void)
 {
     test_main_renderer_clears_and_draws_waveform_columns();
     test_main_renderer_keeps_downbeat_grid_on_top();
+    test_main_renderer_keeps_regular_beat_grid_behind_waveform();
+    test_main_renderer_can_draw_regular_beat_cap_at_bottom();
     test_main_renderer_draws_center_playhead();
     test_main_renderer_spreads_isolated_transient_to_neighbor_columns();
     test_main_rgb565_renderer_maps_palette_directly();
+    test_main_rgb565_renderer_keeps_regular_beat_grid_behind_waveform();
+    test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom();
     test_main_rgb565_renderer_can_draw_column_range_without_clearing_all();
     test_main_rgb565_renderer_can_draw_logical_columns_to_destination_span();
     test_mini_renderer_clears_and_draws_full_track_waveform();

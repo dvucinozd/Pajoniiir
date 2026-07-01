@@ -102,6 +102,7 @@ void ui_overview_wave_cache_reset(ui_overview_wave_cache_t *cache)
     int margin_px = cache->margin_px;
     const uint16_t *palette = cache->palette;
     size_t palette_count = cache->palette_count;
+    bool regular_beat_cap_bottom = cache->regular_beat_cap_bottom;
 
     memset(cache, 0, sizeof(*cache));
     cache->pixels = pixels;
@@ -113,6 +114,7 @@ void ui_overview_wave_cache_reset(ui_overview_wave_cache_t *cache)
     cache->margin_px = margin_px;
     cache->palette = palette;
     cache->palette_count = palette_count;
+    cache->regular_beat_cap_bottom = regular_beat_cap_bottom;
 }
 
 void ui_overview_wave_cache_reset_stats(ui_overview_wave_cache_t *cache)
@@ -186,6 +188,19 @@ bool ui_overview_wave_cache_bind(ui_overview_wave_cache_t *cache,
                                              0,
                                              palette,
                                              palette_count);
+}
+
+void ui_overview_wave_cache_set_regular_beat_cap_bottom(ui_overview_wave_cache_t *cache,
+                                                        bool enabled)
+{
+    if (!cache) {
+        return;
+    }
+    if (cache->regular_beat_cap_bottom == enabled) {
+        return;
+    }
+    cache->regular_beat_cap_bottom = enabled;
+    cache->valid = false;
 }
 
 static bool source_matches(const ui_overview_wave_cache_t *cache,
@@ -283,7 +298,8 @@ static void render_physical_span(ui_overview_wave_cache_t *cache,
                                                           strip_center_ms(cache),
                                                           strip_window_ms(cache),
                                                           cache->palette,
-                                                          cache->palette_count);
+                                                          cache->palette_count,
+                                                          cache->regular_beat_cap_bottom);
         physical_x += chunk;
         logical_x += chunk;
         column_count -= chunk;

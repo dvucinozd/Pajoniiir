@@ -405,12 +405,25 @@ Validation note, 2026-06-10:
   grid lines. The lower mini waveform remains the full-track overview/position
   strip, and tap-to-seek/cue markers now use the visible zoom-window coordinate
   system.
+- Browse rotate now controls a shared coarse zoom level for both main Overview
+  waveforms when the Overview tab is active. The steps are 8, 12, 16, 24, and
+  32 beats; the default remains 16 beats. Browse rotate still navigates the
+  Library table when the Library tab is active and is ignored on other tabs.
 - Follow-up polish enlarges the main waveform canvas and maps Rekordbox waveform
   color hints plus amplitude fallback into a Pioneered-like palette: hot pink,
   blue, cyan, green, amber, purple, and white downbeat/grid markers.
-- Beat-grid clarity pass separates grid colors from waveform colors: downbeats
-  remain bright full-height markers, while regular beat guides are short, dim
-  grey lines so they aid beatmatching without hiding transients.
+- Beat-grid clarity pass separates grid colors from waveform colors: regular
+  beat-match guides are full-height dim background lines drawn behind the
+  waveform with a small red cap, while downbeats remain foreground reference
+  markers. Deck 1 draws the regular beat cap at the bottom and Deck 2 at the
+  top, making the paired beat-match guides easier to read. This keeps
+  beat-match alignment visible without bright lines shimmering across waveform
+  transients on wider zoom levels.
+- Loading a track from Library no longer validates the large waveform cache
+  while Overview is inactive. The cache update is deferred until Overview can
+  also blit the RGB565 strip, so returning to Overview after a load shows the
+  large waveform immediately instead of waiting for the next playback/progress
+  redraw.
 - Overview now includes a compact D2-vs-D1 phase meter between the main
   waveforms. It uses the shared beat-grid/BPM helper, shows signed beat offset,
   and turns green when the two decks are within the current lock tolerance.
@@ -509,7 +522,11 @@ Validation note, 2026-06-10:
   jitter on hardware.
 - **Overview waveform fix and visual polish (2026-06-16)**:
   - Fixed Deck 2 waveform stuttering (zapinjanje) and disappearing beatgrid lines during play state. The bug was traced to a fallback to `library_get_current_anlz()` inside `ui_deck_anlz` which caused cross-deck metadata corruption. Removed the fallback entirely; decks now strictly use their isolated and cloned snapshots in `s_deck_anlz_store`.
-  - Redefined `s_overview_wave_rgb565_palette` and LVGL canvas palettes to dim the beatgrid lines: normal beats (index 3) are now dark cyan (`#1D5F5E`) and downbeats (index 8) are dark grey (`#5A5D64`). Playhead (index 4) remains bright white/grey for clarity.
+  - Redefined `s_overview_wave_rgb565_palette` and LVGL canvas palettes for
+    distinct waveform/grid colors. Later waveform-zoom polish draws regular
+    beat-grid guides as dim background lines with red top caps behind the
+    waveform to avoid shimmer on wider zoom levels; playhead/downbeat reference
+    markers remain high contrast in the foreground.
   - Moved the lower deck waveform vertical position (`OVERVIEW_DECK2_WAVE_Y`) to **142**, resulting in a tight **1px** vertical gap between both decks' waveforms to create a "touching" alignment effect.
   - Relocated beat pulse indicators (flashing boxes) below the lower waveform (Y=288 for Deck 1 and Y=300 for Deck 2) to prevent overlapping with the shifted waveform.
   - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the DECK 1 and DECK 2 labels.
@@ -671,12 +688,11 @@ Implementation order:
      precise ANLZ `bpm_x100` when available and can exceed the selected Tempo
      Range up to the audio engine's internal ±20% safe clamp, because selected
      Tempo Range is a manual fader scale, not a sync accuracy limit. When the
-     target deck is paused and both decks have
-     beatgrids, it also seeks the target deck to the nearest beat whose
-     `beat_phase` matches the reference deck's nearest beat. Phase-align seek
-     is intentionally skipped while the target deck is playing because hardware
-     logs showed a playing seek can drain the deck ring buffer and produce an
-     output-late warning. This does not yet implement continuous following.
+     both decks have beatgrids, it also seeks the target deck to the nearest
+     beat whose `beat_phase` matches the reference deck's nearest beat. A
+     2026-07-01 hardware smoke pass confirmed the one-shot phase-align seek
+     while the target deck is playing, and the Overview beat-match guide lines
+     align after Beat Sync. This does not yet implement continuous following.
      Tempo Range cycles deck-local `±6%`, `±10%`, and
      `±16%` fader ranges and reapplies the current fader value to the audio
      engine.

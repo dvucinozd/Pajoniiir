@@ -229,6 +229,7 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
     UI_RGB565(0xFF, 0xB3, 0x38),
     UI_RGB565(0x9B, 0x5C, 0xFF),
     UI_RGB565(0x5A, 0x5D, 0x64),
+    UI_RGB565(0xFF, 0x17, 0x44),
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
@@ -252,6 +253,7 @@ static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
 static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
+static uint8_t s_overview_zoom_step = 2u;
 
 static void ui_overview_invalidate_mini_wave_range(const ui_overview_deck_panel_t *panel,
                                                    int x0,
@@ -581,6 +583,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 9, lv_color32_make(0xFF, 0x17, 0x44, 0xFF));
 
         lv_image_dsc_t *dsc = lv_canvas_get_image(panel->wave_canvas);
         if (dsc && dsc->header.stride > 0) panel->wave_stride_px = (int)dsc->header.stride;
@@ -638,6 +641,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_canvas_set_palette(panel->mini_wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 9, lv_color32_make(0xFF, 0x17, 0x44, 0xFF));
         lv_image_dsc_t *mini_dsc = lv_canvas_get_image(panel->mini_wave_canvas);
         if (mini_dsc && mini_dsc->header.stride > 0) {
             panel->mini_wave_stride_px = (int)mini_dsc->header.stride;
@@ -860,9 +864,33 @@ static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *
     if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
         bpm_x100 = meta->beats[0].bpm_x100;
     }
-    return ui_overview_window_ms_from_bpm_x100(
+    return ui_overview_window_ms_from_bpm_x100_for_zoom(
         bpm_x100,
-        s_overview_deck_bpm[ui_overview_deck_index(deck)]);
+        s_overview_deck_bpm[ui_overview_deck_index(deck)],
+        s_overview_zoom_step);
+}
+
+esp_err_t ui_overview_zoom_delta(int delta)
+{
+    if (delta == 0) {
+        return ESP_OK;
+    }
+
+    uint8_t next = ui_overview_zoom_apply_delta(s_overview_zoom_step, delta);
+    if (next == s_overview_zoom_step) {
+        return ESP_OK;
+    }
+
+    s_overview_zoom_step = next;
+    for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
+        s_overview_decks[i].last_wave_center_ms = UINT32_MAX;
+        s_overview_decks[i].last_wave_window_ms = 0;
+    }
+
+    ESP_LOGI(TAG,
+             "overview waveform zoom: %u beats",
+             (unsigned)ui_overview_zoom_visible_beats_for_step(s_overview_zoom_step));
+    return ESP_OK;
 }
 
 #ifndef WIN32
@@ -884,6 +912,8 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
                                                     sizeof(s_overview_wave_rgb565_palette) /
                                                         sizeof(s_overview_wave_rgb565_palette[0]));
         }
+        ui_overview_wave_cache_set_regular_beat_cap_bottom(&s_overview_wave_cache[idx],
+                                                           idx == 0);
         return true;
     }
 
@@ -916,6 +946,8 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
                                             s_overview_wave_rgb565_palette,
                                             sizeof(s_overview_wave_rgb565_palette) /
                                                 sizeof(s_overview_wave_rgb565_palette[0]));
+    ui_overview_wave_cache_set_regular_beat_cap_bottom(&s_overview_wave_cache[idx],
+                                                       idx == 0);
     return true;
 }
 
@@ -1120,6 +1152,9 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
 
 #ifndef WIN32
     uint8_t idx = ui_overview_deck_index(deck);
+    if (s_overview_active_tab != 0) {
+        return;
+    }
     if (idx < DECK_CORE_DECK_COUNT &&
         ui_overview_scheduler_direct_overlay_allowed(idx) &&
         ui_overview_wave_overlay_ensure_buffer(idx)) {
@@ -1187,8 +1222,10 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
     const int H = OVERVIEW_CV_H;
     uint8_t *buf = panel->wave_buf + 256 * sizeof(lv_color32_t);
     const int S = panel->wave_stride_px;
-    ui_overview_renderer_draw_main(buf, S, W, H, source, duration_ms, meta,
-                                   center_ms, window_ms);
+    ui_overview_renderer_draw_main_with_options(buf, S, W, H, source,
+                                                duration_ms, meta,
+                                                center_ms, window_ms,
+                                                ui_overview_deck_index(deck) == 0);
     lv_obj_invalidate(panel->wave_canvas);
 #endif
     panel->last_wave_center_ms = center_ms;

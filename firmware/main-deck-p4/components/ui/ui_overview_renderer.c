@@ -64,7 +64,10 @@ static void draw_zoom_grid(uint8_t *pixels,
                            int height_px,
                            int64_t window_start_ms,
                            uint32_t window_span_ms,
-                           const anlz_metadata_t *meta)
+                           const anlz_metadata_t *meta,
+                           bool downbeats_only,
+                           bool regular_beat_cap_bottom,
+                           bool caps_only)
 {
     if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0 ||
         window_span_ms == 0) {
@@ -74,6 +77,10 @@ static void draw_zoom_grid(uint8_t *pixels,
     if (meta && meta->beats && meta->beat_count > 0) {
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
+            bool downbeat = (meta->beats[b].beat_phase % 4u) == 0u;
+            if (downbeats_only && !downbeat) {
+                continue;
+            }
             int64_t beat_ms = meta->beats[b].time_ms;
             if (beat_ms < window_start_ms ||
                 beat_ms > window_start_ms + (int64_t)window_span_ms) {
@@ -88,27 +95,57 @@ static void draw_zoom_grid(uint8_t *pixels,
 
             ui_overview_grid_style_t style =
                 ui_overview_grid_style_for_phase(meta->beats[b].beat_phase);
+            if (caps_only && style.cap_palette_index == 0) {
+                continue;
+            }
             int y0 = (height_px * style.y0_permille) / 1000;
             int y1 = (height_px * style.y1_permille) / 1000;
             if (y1 <= y0) y1 = y0 + 1;
             if (y1 > height_px) y1 = height_px;
             for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
-                for (int y = y0; y < y1; y++) {
-                    pixels[y * stride_px + x + lx] = style.palette_index;
+                if (!caps_only) {
+                    for (int y = y0; y < y1; y++) {
+                        pixels[y * stride_px + x + lx] = style.palette_index;
+                    }
+                }
+                if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
+                    int cap_h = style.cap_height_px;
+                    if (cap_h > height_px) cap_h = height_px;
+                    int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
+                    for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
+                        pixels[y * stride_px + x + lx] = style.cap_palette_index;
+                    }
                 }
             }
         }
         return;
     }
 
+    if (downbeats_only) {
+        return;
+    }
+
     ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
+    if (caps_only && style.cap_palette_index == 0) {
+        return;
+    }
     int y0 = (height_px * style.y0_permille) / 1000;
     int y1 = (height_px * style.y1_permille) / 1000;
     if (y1 <= y0) y1 = y0 + 1;
     if (y1 > height_px) y1 = height_px;
     for (int x = width_px / 4; x < width_px; x += width_px / 4) {
-        for (int y = y0; y < y1; y++) {
-            pixels[y * stride_px + x] = style.palette_index;
+        if (!caps_only) {
+            for (int y = y0; y < y1; y++) {
+                pixels[y * stride_px + x] = style.palette_index;
+            }
+        }
+        if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
+            int cap_h = style.cap_height_px;
+            if (cap_h > height_px) cap_h = height_px;
+            int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
+            for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
+                pixels[y * stride_px + x] = style.cap_palette_index;
+            }
         }
     }
 }
@@ -180,7 +217,10 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
                                               uint32_t window_span_ms,
                                               const anlz_metadata_t *meta,
                                               const uint16_t *palette,
-                                              size_t palette_count)
+                                              size_t palette_count,
+                                              bool downbeats_only,
+                                              bool regular_beat_cap_bottom,
+                                              bool caps_only)
 {
     if (!pixels || stride_px <= 0 || height_px <= 0 || logical_width_px <= 0 ||
         dest_x_px < 0 || logical_x_px < 0 || column_count <= 0 ||
@@ -203,6 +243,10 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
 
         int last_x = -1000;
         for (uint16_t b = 0; b < meta->beat_count; b++) {
+            bool downbeat = (meta->beats[b].beat_phase % 4u) == 0u;
+            if (downbeats_only && !downbeat) {
+                continue;
+            }
             int64_t beat_ms = meta->beats[b].time_ms;
             if (beat_ms < range_start_ms) {
                 continue;
@@ -219,12 +263,17 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
 
             ui_overview_grid_style_t style =
                 ui_overview_grid_style_for_phase(meta->beats[b].beat_phase);
+            if (caps_only && style.cap_palette_index == 0) {
+                continue;
+            }
             int y0 = (height_px * style.y0_permille) / 1000;
             int y1 = (height_px * style.y1_permille) / 1000;
             if (y1 <= y0) y1 = y0 + 1;
             if (y1 > height_px) y1 = height_px;
             uint16_t color = rgb565_palette_color(palette, palette_count,
                                                    style.palette_index);
+            uint16_t cap_color = rgb565_palette_color(palette, palette_count,
+                                                       style.cap_palette_index);
             for (int lx = 0; lx < style.line_width_px && x + lx < logical_width_px; lx++) {
                 int gx = x + lx;
                 if (gx < logical_x_px || gx >= logical_end_x) {
@@ -234,21 +283,40 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
                 if (dest_x < 0 || dest_x >= stride_px) {
                     continue;
                 }
-                for (int y = y0; y < y1; y++) {
-                    pixels[y * stride_px + dest_x] = color;
+                if (!caps_only) {
+                    for (int y = y0; y < y1; y++) {
+                        pixels[y * stride_px + dest_x] = color;
+                    }
+                }
+                if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
+                    int cap_h = style.cap_height_px;
+                    if (cap_h > height_px) cap_h = height_px;
+                    int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
+                    for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
+                        pixels[y * stride_px + dest_x] = cap_color;
+                    }
                 }
             }
         }
         return;
     }
 
+    if (downbeats_only) {
+        return;
+    }
+
     ui_overview_grid_style_t style = ui_overview_grid_style_for_phase(1);
+    if (caps_only && style.cap_palette_index == 0) {
+        return;
+    }
     int y0 = (height_px * style.y0_permille) / 1000;
     int y1 = (height_px * style.y1_permille) / 1000;
     if (y1 <= y0) y1 = y0 + 1;
     if (y1 > height_px) y1 = height_px;
     uint16_t color = rgb565_palette_color(palette, palette_count,
                                            style.palette_index);
+    uint16_t cap_color = rgb565_palette_color(palette, palette_count,
+                                               style.cap_palette_index);
     int step_x = logical_width_px / 4;
     if (step_x < 1) {
         step_x = 1;
@@ -261,8 +329,18 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
         if (dest_x < 0 || dest_x >= stride_px) {
             continue;
         }
-        for (int y = y0; y < y1; y++) {
-            pixels[y * stride_px + dest_x] = color;
+        if (!caps_only) {
+            for (int y = y0; y < y1; y++) {
+                pixels[y * stride_px + dest_x] = color;
+            }
+        }
+        if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
+            int cap_h = style.cap_height_px;
+            if (cap_h > height_px) cap_h = height_px;
+            int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
+            for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
+                pixels[y * stride_px + dest_x] = cap_color;
+            }
         }
     }
 }
@@ -316,6 +394,23 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
                                     uint32_t center_ms,
                                     uint32_t window_ms)
 {
+    ui_overview_renderer_draw_main_with_options(pixels, stride_px, width_px,
+                                                height_px, source,
+                                                duration_ms, meta, center_ms,
+                                                window_ms, false);
+}
+
+void ui_overview_renderer_draw_main_with_options(uint8_t *pixels,
+                                                 int stride_px,
+                                                 int width_px,
+                                                 int height_px,
+                                                 const ui_waveform_source_t *source,
+                                                 uint32_t duration_ms,
+                                                 const anlz_metadata_t *meta,
+                                                 uint32_t center_ms,
+                                                 uint32_t window_ms,
+                                                 bool regular_beat_cap_bottom)
+{
     if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
         return;
     }
@@ -324,7 +419,8 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
 
     memset(pixels, 0, (size_t)stride_px * height_px * sizeof(uint8_t));
     draw_zoom_grid(pixels, stride_px, width_px, height_px,
-                   window_start_ms, window_ms, meta);
+                   window_start_ms, window_ms, meta, false,
+                   regular_beat_cap_bottom, false);
 
     if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && duration_ms > 0) {
         for (int x = 0; x < width_px; x++) {
@@ -346,7 +442,11 @@ void ui_overview_renderer_draw_main(uint8_t *pixels,
     }
 
     draw_zoom_grid(pixels, stride_px, width_px, height_px,
-                   window_start_ms, window_ms, meta);
+                   window_start_ms, window_ms, meta, false,
+                   regular_beat_cap_bottom, true);
+    draw_zoom_grid(pixels, stride_px, width_px, height_px,
+                   window_start_ms, window_ms, meta, true,
+                   regular_beat_cap_bottom, false);
     draw_center_playhead(pixels, stride_px, width_px, height_px);
 }
 
@@ -363,7 +463,8 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                                                        uint32_t center_ms,
                                                        uint32_t window_ms,
                                                        const uint16_t *palette,
-                                                       size_t palette_count)
+                                                       size_t palette_count,
+                                                       bool regular_beat_cap_bottom)
 {
     if (!pixels || stride_px <= 0 || height_px <= 0 ||
         logical_width_px <= 0 || column_count <= 0 ||
@@ -401,6 +502,12 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                          background);
 
     int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+    draw_zoom_grid_rgb565_column_span(pixels, stride_px, height_px,
+                                      dest_x_px, logical_x_px, column_count,
+                                      logical_width_px, window_start_ms,
+                                      window_ms, meta, palette, palette_count,
+                                      false, regular_beat_cap_bottom, false);
+
     if (source && source->kind != UI_WAVEFORM_SOURCE_NONE && source->samples &&
         source->sample_count > 0 && duration_ms > 0 && window_ms > 0) {
         for (int i = 0; i < column_count; i++) {
@@ -428,7 +535,13 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
     draw_zoom_grid_rgb565_column_span(pixels, stride_px, height_px,
                                       dest_x_px, logical_x_px, column_count,
                                       logical_width_px, window_start_ms,
-                                      window_ms, meta, palette, palette_count);
+                                      window_ms, meta, palette, palette_count,
+                                      false, regular_beat_cap_bottom, true);
+    draw_zoom_grid_rgb565_column_span(pixels, stride_px, height_px,
+                                      dest_x_px, logical_x_px, column_count,
+                                      logical_width_px, window_start_ms,
+                                      window_ms, meta, palette, palette_count,
+                                      true, regular_beat_cap_bottom, false);
 }
 
 void ui_overview_renderer_draw_main_rgb565_columns(uint16_t *pixels,
@@ -451,7 +564,8 @@ void ui_overview_renderer_draw_main_rgb565_columns(uint16_t *pixels,
                                                       width_px, source,
                                                       duration_ms, meta,
                                                       center_ms, window_ms,
-                                                      palette, palette_count);
+                                                      palette, palette_count,
+                                                      false);
 }
 
 void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
@@ -465,6 +579,27 @@ void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
                                            uint32_t window_ms,
                                            const uint16_t *palette,
                                            size_t palette_count)
+{
+    ui_overview_renderer_draw_main_rgb565_with_options(pixels, stride_px,
+                                                       width_px, height_px,
+                                                       source, duration_ms,
+                                                       meta, center_ms,
+                                                       window_ms, palette,
+                                                       palette_count, false);
+}
+
+void ui_overview_renderer_draw_main_rgb565_with_options(uint16_t *pixels,
+                                                        int stride_px,
+                                                        int width_px,
+                                                        int height_px,
+                                                        const ui_waveform_source_t *source,
+                                                        uint32_t duration_ms,
+                                                        const anlz_metadata_t *meta,
+                                                        uint32_t center_ms,
+                                                        uint32_t window_ms,
+                                                        const uint16_t *palette,
+                                                        size_t palette_count,
+                                                        bool regular_beat_cap_bottom)
 {
     if (!pixels || stride_px <= 0 || width_px <= 0 || height_px <= 0) {
         return;
@@ -482,6 +617,21 @@ void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
                                                   source, duration_ms, meta,
                                                   center_ms, window_ms,
                                                   palette, palette_count);
+    if (regular_beat_cap_bottom) {
+        /*
+         * The column helper defaults to the Deck-2/top-cap convention.
+         * Re-render through the option-aware span path when Deck 1 needs
+         * bottom caps.
+         */
+        ui_overview_renderer_draw_main_rgb565_column_span(pixels, stride_px,
+                                                          height_px, 0, 0,
+                                                          width_px, width_px,
+                                                          source, duration_ms,
+                                                          meta, center_ms,
+                                                          window_ms, palette,
+                                                          palette_count,
+                                                          true);
+    }
     draw_center_playhead_rgb565(pixels, stride_px, width_px, height_px,
                                 palette, palette_count);
 }

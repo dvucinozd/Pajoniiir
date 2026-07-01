@@ -179,7 +179,7 @@ under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
 pad-action, and VU-meter input/output mapping is implemented and smoke-verified
 where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
 halve/double, Beat Jump, normal/shifted Beat Loop pads, Tempo Range, Beat Sync
-BPM-match-on-press with paused-deck phase align, and Hot Cue pad
+BPM-match-on-press with one-shot phase align while playing, and Hot Cue pad
 store/recall/clear now have P4 behavior. Three-band channel EQ is implemented
 in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
