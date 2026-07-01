@@ -52,7 +52,7 @@
 - Modify: `docs/DEVELOPMENT_PLAN.md`
 - Modify: `docs/STARTUP_CHECKLIST.md`
 
-- [x] Mark Beat FX first-slice state/mapping implemented, DSP echo deferred, hardware smoke pending.
+- [x] Mark Beat FX first-slice state/mapping implemented, FILTER DSP and ON/OFF LED hardware-smoke verified 2026-07-01, Echo/delay DSP deferred.
 - [x] Run `tests/run_p4_host_tests.ps1`.
 - [x] Run S3 host tests.
 - [x] Build P4 and S3 if both sides changed.

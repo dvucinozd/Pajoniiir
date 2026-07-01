@@ -580,6 +580,7 @@ server and captive DNS remain disabled while the `wifi_link` shim returns
 `ESP_ERR_NOT_SUPPORTED`; starting `esp_http_server` without an initialized
 TCP/IP stack causes a boot-time lwIP assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
+ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
 Echo/delay remains deferred. Sampler and pad FX behavior remains deferred unless
 separately marked implemented.
 
@@ -732,11 +733,13 @@ Implementation order:
    - Loop In/Out LED feedback is implemented from P4-owned loop marker/loop
      state; Loop In lights immediately after the pending marker is set, and
      active loops light both Loop In and Loop Out LEDs for that deck;
-   - pad-mode, Beat Sync, and Loop In/Out LEDs have hardware smoke coverage as
-     recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; extended
-     reconnect resynchronization is implemented for FLX4 USB replug, S3 reset,
-     and P4 reboot recovery through the S3 heartbeat connected-state refresh;
-     P4-reset hardware smoke passed on 2026-06-26.
+   - Beat FX ON/OFF LED feedback is implemented from P4-owned Beat FX enabled
+     state and clear/reset forces it off;
+   - pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LEDs have hardware
+     smoke coverage as recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`;
+     extended reconnect resynchronization is implemented for FLX4 USB replug,
+     S3 reset, and P4 reboot recovery through the S3 heartbeat connected-state
+     refresh; P4-reset hardware smoke passed on 2026-06-26.
 
 Required artifacts:
 

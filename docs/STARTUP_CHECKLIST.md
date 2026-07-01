@@ -82,7 +82,9 @@
   implemented as a target-aware low-pass slice; Echo/delay remains pending. The
   Overview Beat FX panel renders the same P4-owned state, and
   `/api/status.beat_fx` remains available for hardware smoke verification
-  instead of raw serial logging when a network transport is present.
+  instead of raw serial logging when a network transport is present. Hardware
+  smoke passed on 2026-07-01 for the Beat FX section behavior and physical
+  ON/OFF LED feedback.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -259,13 +261,14 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Loop In/Out LEDs derived from P4 pending loop-in marker and active audio loop
   state. Beat Loop normal pad LED output is implemented from P4 loop state and
   selected Beat Loop pad mode; shifted mirror pad LED output remains deferred.
-  Pad-mode, Beat Sync, and active Loop In/Out LED hardware smoke has passed
-  where recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual
-  USB replug LED-state acceptance passed on 2026-06-26. Beat Loop pad LED
-  hardware smoke remains pending, S3 reset recovery after the extended reconnect
-  snapshot no longer crashes, and P4-only reset recovery is implemented through
-  S3 heartbeat connected-state refresh with hardware smoke passed on
-  2026-06-26.
+  Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
+  hardware smoke passed on 2026-07-01. Pad-mode, Beat Sync, and active Loop
+  In/Out LED hardware smoke has passed where recorded in
+  `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
+  LED-state acceptance passed on 2026-06-26. Beat Loop pad LED hardware smoke
+  remains pending, S3 reset recovery after the extended reconnect snapshot no
+  longer crashes, and P4-only reset recovery is implemented through S3 heartbeat
+  connected-state refresh with hardware smoke passed on 2026-06-26.
 - [x] Final hardware-smoke testing of the integrated Phase 7 input surface and record any exceptions from the XML mapping.
 
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the

@@ -137,7 +137,9 @@ on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
 incremental: FILTER now drives a conservative target-aware low-pass DSP from
 the Beat FX depth control, while Echo/delay remains deferred. The P4 Overview
 screen shows the current Beat FX effect, beat size, target, depth, and on/off
-state from the same authoritative state snapshot.
+state from the same authoritative state snapshot. Hardware smoke on 2026-07-01
+confirmed the Beat FX section behavior and the physical ON/OFF LED follows the
+P4-owned enabled state.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
@@ -167,12 +169,14 @@ two-deck standalone path:
 3. P4 maintains two independent deck states. Current P4 firmware already does
    this for the local UI/control path.
 4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented and hardware-verified for dual-deck playback).
-5. P4 sends transport, mixer, pad-mode, Beat Sync, and Loop In/Out LED feedback
+5. P4 sends transport, mixer, pad-mode, Beat Sync, Loop In/Out, and Beat FX
+   ON/OFF LED feedback
    (Play, Cue, PFL, selected pad mode, sync-enabled state, pending Loop In
-   marker, and active loop indicators) back to the S3, and S3 sends the matching MIDI LED messages to
-   the FLX4 (implemented; pad-mode, Beat Sync, and Loop In/Out LED smoke has
-   passed where recorded in the validation notes; extended reconnect smoke is
-   still pending).
+   marker, active loop indicators, and Beat FX enabled state) back to the S3,
+   and S3 sends the matching MIDI LED messages to the FLX4 (implemented;
+   pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LED smoke has passed
+   where recorded in the validation notes; extended reconnect smoke is still
+   pending).
 6. S3 publishes FLX4 USB connection state and P4 forces a P4-owned MVP LED
    snapshot after reconnect so Play/Cue/PFL LEDs recover without changing
    playback state. S3 also refreshes the already-connected FLX4 state after
