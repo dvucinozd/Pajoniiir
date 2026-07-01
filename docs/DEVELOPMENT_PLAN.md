@@ -406,8 +406,8 @@ Validation note, 2026-06-10:
   strip, and tap-to-seek/cue markers now use the visible zoom-window coordinate
   system.
 - Browse rotate now controls a shared coarse zoom level for both main Overview
-  waveforms when the Overview tab is active. The steps are 8, 12, 16, 24, and
-  32 beats; the default remains 16 beats. Browse rotate still navigates the
+  waveforms when the Overview tab is active. The steps are 4, 8, 12, 16, and
+  24 beats; the default remains 16 beats. Browse rotate still navigates the
   Library table when the Library tab is active and is ignored on other tabs.
 - Follow-up polish enlarges the main waveform canvas and maps Rekordbox waveform
   color hints plus amplitude fallback into a Pioneered-like palette: hot pink,

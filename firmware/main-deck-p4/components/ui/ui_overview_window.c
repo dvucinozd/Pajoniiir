@@ -1,12 +1,12 @@
 #include "ui_overview_window.h"
 
 static const uint8_t s_zoom_visible_beats[UI_OVERVIEW_ZOOM_STEP_COUNT] = {
-    8u, 12u, 16u, 24u, 32u
+    4u, 8u, 12u, 16u, 24u
 };
 
 uint8_t ui_overview_zoom_step_default(void)
 {
-    return 2u;
+    return 3u;
 }
 
 uint8_t ui_overview_zoom_apply_delta(uint8_t step, int delta)

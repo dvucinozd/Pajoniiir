@@ -29,26 +29,26 @@ static void test_extremely_slow_tracks_are_capped(void)
 
 static void test_zoom_delta_moves_in_coarse_steps_and_clamps(void)
 {
-    assert(ui_overview_zoom_step_default() == 2u);
-    assert(ui_overview_zoom_visible_beats_for_step(0) == 8u);
-    assert(ui_overview_zoom_visible_beats_for_step(1) == 12u);
-    assert(ui_overview_zoom_visible_beats_for_step(2) == 16u);
-    assert(ui_overview_zoom_visible_beats_for_step(3) == 24u);
-    assert(ui_overview_zoom_visible_beats_for_step(4) == 32u);
+    assert(ui_overview_zoom_step_default() == 3u);
+    assert(ui_overview_zoom_visible_beats_for_step(0) == 4u);
+    assert(ui_overview_zoom_visible_beats_for_step(1) == 8u);
+    assert(ui_overview_zoom_visible_beats_for_step(2) == 12u);
+    assert(ui_overview_zoom_visible_beats_for_step(3) == 16u);
+    assert(ui_overview_zoom_visible_beats_for_step(4) == 24u);
 
-    assert(ui_overview_zoom_apply_delta(2, 1) == 3u);
-    assert(ui_overview_zoom_apply_delta(2, -1) == 1u);
-    assert(ui_overview_zoom_apply_delta(2, 9) == 4u);
-    assert(ui_overview_zoom_apply_delta(2, -9) == 0u);
+    assert(ui_overview_zoom_apply_delta(3, 1) == 4u);
+    assert(ui_overview_zoom_apply_delta(3, -1) == 2u);
+    assert(ui_overview_zoom_apply_delta(3, 9) == 4u);
+    assert(ui_overview_zoom_apply_delta(3, -9) == 0u);
 }
 
 static void test_zoom_step_scales_bpm_window_without_exceeding_bounds(void)
 {
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 0) == 4000u);
-    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 1) == 6000u);
-    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 2) == 8000u);
-    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 3) == 12000u);
-    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 4) == 16000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 1) == 4000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 2) == 6000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 3) == 8000u);
+    assert(ui_overview_window_ms_from_bpm_x100_for_zoom(12000, 0, 4) == 12000u);
     assert(ui_overview_window_ms_from_bpm_x100_for_zoom(3000, 0, 4) == 30000u);
 }
 
