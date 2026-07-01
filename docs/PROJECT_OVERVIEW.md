@@ -98,8 +98,8 @@ The fork is no longer only the imported single-deck baseline:
   Hot Cue store/recall/clear. Pad FX now has a first P4-owned DSP slice behind
   PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, physical FLX4 Pad FX pad input
   mapping from the official MIDI message PDF, Echo release-tail behavior, and
-  host-tested momentary Pad FX pad LED feedback. Hardware LED smoke remains
-  pending.
+  host-tested momentary Pad FX pad LED feedback. Pad FX behavior and normal pad
+  LED hardware smoke passed on 2026-07-01.
 - The stale Codex branches from completed work were cleaned up after the Phase
   7 merge. The only intentionally preserved non-master work is
   `codex/flx4-extended-controls`, an older dirty Smart/DSP experimental

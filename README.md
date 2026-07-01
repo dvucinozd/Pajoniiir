@@ -168,7 +168,7 @@ in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-Key Shift, Pad FX hardware smoke, and remaining Beat FX DSP polish remain
+Key Shift, and remaining Beat FX DSP polish remain
 P4/controller feature work, not S3 MVP mapping work.
 The porting
 steps are tracked in

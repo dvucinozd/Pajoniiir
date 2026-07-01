@@ -97,7 +97,7 @@
   keep a host-tested release tail instead of clearing the delay buffer
   immediately. Pad FX1/Pad FX2 normal pad LEDs are implemented as P4-owned
   momentary press feedback and host-tested from the official PDF; hardware LED
-  smoke remains pending.
+  smoke passed on 2026-07-01.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -268,8 +268,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4
   and remains pending for hardware behavior smoke. Pad FX has a host-tested P4
   DSP slice and official-PDF-backed FLX4 Pad FX pad input mapping; hardware
-  smoke remains pending. Actual Sampler and Key Shift behavior remains a
-  separate P4 feature task.
+  smoke passed on 2026-07-01 for pad behavior, Echo tail, and normal Pad FX pad
+  LEDs. Actual Sampler and Key Shift behavior remains a separate P4 feature
+  task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and
@@ -277,8 +278,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   state. Beat Loop normal pad LED output is implemented from P4 loop state and
   selected Beat Loop pad mode; shifted mirror pad LED output remains deferred.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
-  hardware smoke passed on 2026-07-01. Pad-mode, Beat Sync, and active Loop
-  In/Out LED hardware smoke has passed where recorded in
+  hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke
+  passed on 2026-07-01. Pad-mode, Beat Sync, and active Loop In/Out LED
+  hardware smoke has passed where recorded in
   `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
   LED-state acceptance passed on 2026-06-26. Beat Loop pad LED hardware smoke
   remains pending, S3 reset recovery after the extended reconnect snapshot no

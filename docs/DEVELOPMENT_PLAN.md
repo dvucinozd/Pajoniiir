@@ -596,6 +596,7 @@ from the official Pioneer/AlphaTheta MIDI message PDF because the XML reference
 does not expose a complete Pad FX pad range. Hardware smoke on 2026-07-01
 confirmed Pad FX filter pads and Echo pad routing; short Echo presses now keep
 a host-tested release tail instead of clearing the delay buffer immediately.
+Normal Pad FX pad LED hardware smoke also passed on 2026-07-01.
 Sampler, stem, and key-shift behavior remains deferred until
 standalone P4 feature definitions exist.
 
@@ -729,8 +730,9 @@ Implementation order:
      behavior is implemented in P4 using beatgrid/BPM calculation and remains
      pending for hardware behavior smoke. Pad FX has a first host-tested P4 DSP
      slice and physical input mapping from the official MIDI message PDF for
-     PAD_FX1/PAD_FX2 pad actions; hardware smoke remains pending. Sampler,
-     stem, and key-shift behavior remains deferred until standalone P4 feature
+     PAD_FX1/PAD_FX2 pad actions; hardware smoke passed on 2026-07-01 for pad
+     behavior, Echo tail, and normal Pad FX pad LEDs. Sampler, stem, and
+     key-shift behavior remains deferred until standalone P4 feature
      definitions exist.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
