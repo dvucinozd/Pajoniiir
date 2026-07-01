@@ -72,6 +72,12 @@ The fork is no longer only the imported single-deck baseline:
 - The current Overview UI uses Pioneered-style deck strips, centered beat/phase
   indicators, fixed-segment blue-strip timers, and bounded title/timer
   invalidation so status chrome does not create continuous redraw pressure.
+- Overview waveform loading and zoom are stabilized for the current dual-deck
+  path: Browse rotate controls a shared 4/8/12/16/24-beat main-waveform zoom
+  while Overview is active, track load defers main waveform rendering to the
+  Overview scheduler, and both deck overlays are briefly reblitted after any
+  load so one deck's direct overlay does not disappear when the other deck is
+  loaded.
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
   pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from pending marker and
@@ -95,8 +101,11 @@ The fork is no longer only the imported single-deck baseline:
 - Phase 7 extended controller work is merged into `master` as of 2026-06-26.
   Implemented P4 behavior now includes Loop In/Out, Reloop/Exit, loop
   halve/double, Beat Jump buttons/pads, normal and shifted Beat Loop pads,
-  Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
-  Hot Cue store/recall/clear. Pad FX now has a first P4-owned DSP slice behind
+  Tempo Range, Beat Sync BPM-match-on-press with one-shot phase align while
+  playing, and Hot Cue store/recall/clear. Beat Sync preserves the reference
+  deck's signed intra-beat offset so the Overview beat-match guide lines align
+  after the one-shot seek; continuous beat following remains out of scope. Pad
+  FX now has a first P4-owned DSP slice behind
   PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, physical FLX4 Pad FX pad input
   mapping from the official MIDI message PDF, Echo release-tail behavior, and
   host-tested momentary Pad FX pad LED feedback. Pad FX behavior and normal pad

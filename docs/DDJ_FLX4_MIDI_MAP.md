@@ -41,8 +41,8 @@ P4 DSP/settings behavior is deferred.
 | Play/Pause | Deck 2 | `0x91` | `0x0B` | same midino, deck from status |
 | Cue | Deck 1 | `0x90` | `0x0C` | back cue / cue default |
 | Cue | Deck 2 | `0x91` | `0x0C` | same midino, deck from status |
-| Beat Sync | Deck 1 | `0x90` | `0x58` | semantic input mapped; P4 BPM-match-on-press plus paused-deck phase-align behavior implemented |
-| Beat Sync | Deck 2 | `0x91` | `0x58` | semantic input mapped; P4 BPM-match-on-press plus paused-deck phase-align behavior implemented |
+| Beat Sync | Deck 1 | `0x90` | `0x58` | semantic input mapped; P4 BPM-match-on-press plus one-shot signed intra-beat phase-align behavior implemented |
+| Beat Sync | Deck 2 | `0x91` | `0x58` | semantic input mapped; P4 BPM-match-on-press plus one-shot signed intra-beat phase-align behavior implemented |
 | Load | Deck 1 | `0x96` | `0x46` | global button status, deck from midino |
 | Load | Deck 2 | `0x96` | `0x47` | global button status, deck from midino |
 | Browse rotate | Library | `0xB6` | `0x40` | signed 7-bit relative encoder: `0x01` = +1 step, `0x7F` = -1 step |
@@ -167,7 +167,7 @@ Status legend:
 | Jog + Shift search | `0xB0/0x29`, `0xB1/0x29` | relative/encoder CC | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH`, `CTRL_ID_DECK2_JOG_SEARCH` proposed | `deck_core` seek | Pending | Not captured |
 | Jog touch + Shift highspeed | `0x90/0x67`, `0x91/0x67` | press/release | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH_TOUCH`, `CTRL_ID_DECK2_JOG_SEARCH_TOUCH` proposed | `deck_core` jog mode | Pending | Not captured |
 | Tempo fader | D1 `0xB0/0x00+0x20`, D2 `0xB1/0x00+0x20` | 14-bit MSB+LSB | deck-local | `CTRL_ID_DECK1_TEMPO`, `CTRL_ID_DECK2_TEMPO` | audio pitch/resampler | Implemented with selected tempo range | Verified 2026-06-14; range behavior smoke passed 2026-06-25 |
-| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release in XML; official list notes Beat Sync is sent on button release rather than press | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Implemented: BPM match to the other deck using precise ANLZ BPM when available, internally clamped to ±20%; one-shot phase-align seek to nearest matching beat phase when both beatgrids are available, including while the target deck is playing | Verified 2026-06-21; BPM-match behavior smoke passed 2026-06-25; playing-deck phase-align and waveform beat-match-line alignment hardware smoke passed 2026-07-01; continuous following not implemented |
+| Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release in XML; official list notes Beat Sync is sent on button release rather than press | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Implemented: BPM match to the other deck using precise ANLZ BPM when available, internally clamped to ±20%; one-shot phase-align seek to a matching beat while preserving the reference deck's signed intra-beat offset when both beatgrids are available, including while the target deck is playing | Verified 2026-06-21; BPM-match behavior smoke passed 2026-06-25; playing-deck phase-align and waveform beat-match-line alignment hardware smoke passed 2026-07-01; continuous following not implemented |
 | Beat Sync long press / master | `0x90/0x5C`, `0x91/0x5C` | press/release or long-press semantic | deck-local | `CTRL_ID_DECK1_SYNC_MASTER`, `CTRL_ID_DECK2_SYNC_MASTER` proposed | beat/sync model | Deferred | Not captured |
 | Beat Sync + Shift / tempo range | `0x90/0x60`, `0x91/0x60` | press/release | shifted deck-local | `CTRL_ID_DECK1_TEMPO_RANGE`, `CTRL_ID_DECK2_TEMPO_RANGE` | deck settings | Implemented: cycles `±6%`, `±10%`, `±16%` per deck; default `±10%` | Verified 2026-06-20 / 2026-06-21; range behavior smoke passed 2026-06-25 |
 | Loop In / 4 Beat | `0x90/0x10`, `0x91/0x10` | press/release | deck-local | `CTRL_ID_DECK1_LOOP_IN`, `CTRL_ID_DECK2_LOOP_IN` | `deck_core` loop | Implemented | Verified D1/D2 2026-06-21; P4 behavior smoke passed 2026-06-21 |

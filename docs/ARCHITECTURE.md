@@ -55,8 +55,8 @@ Responsibilities:
 - own the mixer state: channel faders, crossfader, pregain, EQ/filter when
   implemented, cue/PFL selection;
 - own controller behavior that changes playback state, including Hot Cue,
-  Loop, Beat Jump, Tempo Range, and the current one-shot Beat Sync/paused-deck
-  phase-align behavior;
+  Loop, Beat Jump, Tempo Range, and the current one-shot Beat Sync signed
+  intra-beat phase-align behavior;
 - decode audio and write master/cue buffers to hardware;
 - render UI state;
 - send LED feedback commands to the S3;
@@ -118,6 +118,19 @@ Current P4 audio ownership rule:
   still loaded or playing;
 - USB removal uses `audio_engine_stop_all()` to tear down both decks and the
   shared output service.
+
+Current P4 Overview waveform ownership rule:
+
+- the Library/load path publishes deck-local waveform and beat-grid metadata,
+  but it does not directly render the large main waveform;
+- the Overview scheduler owns main-waveform render/blit timing, including the
+  shared Browse-rotate zoom window used by both deck panels;
+- the large main waveforms use direct RGB565/PPA overlays for performance, so a
+  track load arms a short reblit of both deck overlays to recover from LVGL
+  flushes that can overwrite an already-rendered deck overlay;
+- Beat Sync phase-align uses deck-core beat-grid state and preserves the
+  reference deck's signed intra-beat offset before the Overview guide lines are
+  redrawn.
 
 ## Data Flow
 

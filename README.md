@@ -180,8 +180,16 @@ pad-action, and VU-meter input/output mapping is implemented and smoke-verified
 where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
 halve/double, Beat Jump, normal/shifted Beat Loop pads, Tempo Range, Beat Sync
 BPM-match-on-press with one-shot phase align while playing, and Hot Cue pad
-store/recall/clear now have P4 behavior. Three-band channel EQ is implemented
-in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
+store/recall/clear now have P4 behavior. Beat Sync phase-align now preserves
+the reference deck's signed intra-beat offset, so the Overview beat-match guide
+lines align after the one-shot seek instead of landing merely near the same
+beat phase. Overview waveform zoom is controlled by Browse rotate on the
+Overview tab in shared coarse steps of 4, 8, 12, 16, and 24 beats, with
+16 beats as the default. Main waveform loading is deferred to the Overview
+scheduler, and both deck overlays are briefly reblitted after any track load so
+Deck 1 and Deck 2 waveforms remain visible without requiring a touch redraw.
+Three-band channel EQ is implemented in the P4 audio path for both decks using
+the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,

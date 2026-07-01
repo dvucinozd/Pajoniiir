@@ -419,11 +419,14 @@ Validation note, 2026-06-10:
   top, making the paired beat-match guides easier to read. This keeps
   beat-match alignment visible without bright lines shimmering across waveform
   transients on wider zoom levels.
-- Loading a track from Library no longer validates the large waveform cache
-  while Overview is inactive. The cache update is deferred until Overview can
-  also blit the RGB565 strip, so returning to Overview after a load shows the
-  large waveform immediately instead of waiting for the next playback/progress
-  redraw.
+- Loading a track from Library no longer direct-renders the large main waveform
+  from the load path. The cache update is deferred to the regular Overview
+  scheduler, which can render and blit the RGB565 strip in the same UI path.
+  After any track load, both deck overlays are armed for a short reblit window
+  so LVGL flushes from one deck cannot leave the other deck's direct overlay
+  blank. Hardware smoke on 2026-07-01 confirmed that loading Deck 1 shows its
+  main waveform without touching the screen, loading Deck 2 keeps both main
+  waveforms visible, and later playback/zoom redraws continue normally.
 - Overview now includes a compact D2-vs-D1 phase meter between the main
   waveforms. It uses the shared beat-grid/BPM helper, shows signed beat offset,
   and turns green when the two decks are within the current lock tolerance.
@@ -584,8 +587,9 @@ smoke on 2026-06-21 verified the direct DDJ-FLX4 pad mode buttons (`HOT CUE`,
 beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
-Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
-Hot Cue store/recall/clear is implemented. Trim/pregain and three-band EQ DSP
+Tempo Range, Beat Sync BPM-match-on-press with one-shot phase align while
+playing, and Hot Cue store/recall/clear is implemented. Trim/pregain and
+three-band EQ DSP
 are implemented per deck in the P4 audio path. Smart CFX now toggles P4-owned
 filter DSP from the FLX4 filter knobs with a softened raw-to-effective macro
 curve and hardware-smoked HI/LOW behavior; Smart Fader now toggles a
@@ -687,12 +691,13 @@ Implementation order:
      match to the other deck by setting effective pitch percent. Sync uses
      precise ANLZ `bpm_x100` when available and can exceed the selected Tempo
      Range up to the audio engine's internal ±20% safe clamp, because selected
-     Tempo Range is a manual fader scale, not a sync accuracy limit. When the
-     both decks have beatgrids, it also seeks the target deck to the nearest
-     beat whose `beat_phase` matches the reference deck's nearest beat. A
-     2026-07-01 hardware smoke pass confirmed the one-shot phase-align seek
-     while the target deck is playing, and the Overview beat-match guide lines
-     align after Beat Sync. This does not yet implement continuous following.
+     Tempo Range is a manual fader scale, not a sync accuracy limit. When both
+     decks have beatgrids, it seeks the target deck to a matching beat while
+     preserving the reference deck's signed offset inside that beat, rather
+     than only matching the nearest `beat_phase`. A 2026-07-01 hardware smoke
+     pass confirmed the one-shot phase-align seek while the target deck is
+     playing, and the Overview beat-match guide lines align after Beat Sync.
+     This does not yet implement continuous following.
      Tempo Range cycles deck-local `±6%`, `±10%`, and
      `±16%` fader ranges and reapplies the current fader value to the audio
      engine.
@@ -719,8 +724,9 @@ Implementation order:
      calculation. Beat Jump behavior is implemented for shifted cue/loop call
      buttons and Beat Jump pads using beatgrid/BPM target calculation; Beat
      Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
-     Beat Sync BPM-match-on-press with paused-deck phase align and Tempo Range
-     cycling are implemented; continuous sync following remains out of scope.
+     Beat Sync BPM-match-on-press with signed intra-beat phase align and Tempo
+     Range cycling are implemented; continuous sync following remains out of
+     scope.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;

@@ -71,7 +71,7 @@ test.
 | `0x15` | Deck 1 Tempo | `0..16383` |
 | `0x16` | Deck 1 Shift | `0` release, `1` press |
 | `0x17` | Deck 1 Cue+Shift track start | `0` release, `1` press |
-| `0x18` | Deck 1 Beat Sync | `0` release, `1` press; toggles P4 sync-enabled state and applies one-shot BPM match; paused decks also phase-align to a matching beat when beatgrids are available |
+| `0x18` | Deck 1 Beat Sync | `0` release, `1` press; toggles P4 sync-enabled state and applies one-shot BPM match; decks phase-align to a matching beat while preserving the reference deck's signed intra-beat offset when beatgrids are available |
 | `0x19` | Deck 1 Tempo Range | `0` release, `1` press; cycles deck-local `±6%`, `±10%`, and `±16%` manual fader ranges |
 | `0x1A`-`0x1E` | Deck 1 loop buttons | `0` release, `1` press; Loop In/Out, Reloop/Exit, halve, and double are implemented |
 | `0x1F`-`0x20` | Deck 1 beat-jump buttons | `0` release, `1` press; beat-jump back/forward behavior is implemented |
@@ -203,8 +203,8 @@ holding the pad LED on.
 
 Beat Sync LED feedback is P4-owned from `deck_core.sync_enabled`. Pressing Beat
 Sync toggles the target deck's sync state, applies the current one-shot BPM
-match/paused-deck phase-align behavior, republishes the LED snapshot, and S3
-maps `LED_SYNC` to USB MIDI note `0x58` on `0x90`/`0x91`.
+match and signed intra-beat phase-align behavior, republishes the LED snapshot,
+and S3 maps `LED_SYNC` to USB MIDI note `0x58` on `0x90`/`0x91`.
 
 Loop In and Loop Out LED feedback is also P4-owned. P4 combines the deck-core
 pending loop-in marker with the authoritative per-deck audio loop state from

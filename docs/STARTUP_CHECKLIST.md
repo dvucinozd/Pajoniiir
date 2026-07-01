@@ -61,6 +61,12 @@
   batches instead of moving the whole waveform buffer. With UI diagnostics
   enabled, the Overview cache log reports cumulative `FULL`, `OFFSET`, `EDGE`,
   and `NONE` counts plus total rendered columns/blits.
+- Current Overview waveform load path defers main-waveform render/blit to the
+  Overview scheduler and briefly reblits both deck overlays after any track
+  load. 2026-07-01 hardware smoke confirmed that Deck 1 waveform appears after
+  load without touching the screen, Deck 2 load does not blank Deck 1, both
+  waveforms remain visible, and Browse-rotate zoom uses the shared
+  4/8/12/16/24-beat steps.
 - Current P4 Overview polish keeps title/timer LVGL invalidation bounded,
   stabilizes the blue-strip remaining-time display with fixed timer segments,
   centers beat-match/phase indicators around the main playhead, removes weak
@@ -213,16 +219,23 @@ USB MIDI logger and the software translator path. Built with
 
 ## P4 Overview Waveform Smoke Test
 
-- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-06-21 after
-  P4 audio late-warning threshold calibration.
-- [ ] Start serial monitor and keep it running for at least 60 seconds while
-  Deck 1 and Deck 2 are both loaded and playing.
+- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-07-01 after the
+  overview waveform load/reblit and Beat Sync phase-align fixes.
+- [x] Load Deck 1 from Library and confirm the main waveform appears without
+  touching the screen.
+- [x] Load Deck 2 and confirm the Deck 2 waveform appears while the Deck 1
+  waveform remains visible.
+- [x] Confirm Browse rotate changes both main Overview waveforms through the
+  shared 4/8/12/16/24-beat zoom steps on the Overview tab.
+- [x] Press Beat Sync with both decks loaded and confirm the Overview
+  beat-match guide lines align after the one-shot seek.
+- [ ] During the next diagnostic capture, keep the serial monitor running for
+  at least 60 seconds while Deck 1 and Deck 2 are both loaded and playing.
 - [ ] Confirm no panic, watchdog timeout, brownout, or unexpected reset appears
-  in the log.
-- [ ] Confirm steady logs are mostly `kind=OFFSET` with `cols=0`; `EDGE`
-  should appear only occasionally with bounded column counts.
-- [ ] Record `cache_us`, `ppa_us`, and `ui_update interval` values in
-  `docs/DEVELOPMENT_PLAN.md` after a representative dual-deck run.
+  in that capture.
+- [ ] If UI diagnostics are enabled, confirm steady logs are mostly
+  `kind=OFFSET` with `cols=0`; `EDGE` should appear only occasionally with
+  bounded column counts.
 
 S3 status: USB host was successfully brought up on native OTG port. By increasing
 `CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512`, the large configuration descriptors
@@ -259,9 +272,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   behavior; Beat Sync applies one-shot BPM match to the other deck using
   precise ANLZ BPM when available and an internal ±20% safe clamp independent
   of the selected manual Tempo Range. It phase-aligns to the nearest matching
-  beat phase when both beatgrids are available, including while the target deck
-  is playing. 2026-07-01 hardware smoke confirmed that Beat Sync aligns the
-  Overview beat-match guide lines after the one-shot seek; it does not yet
+  beat while preserving the reference deck's signed intra-beat offset when both
+  beatgrids are available, including while the target deck is playing.
+  2026-07-01 hardware smoke confirmed that Beat Sync aligns the Overview
+  beat-match guide lines after the one-shot seek; it does not yet
   continuously follow. Tempo
   Range cycles deck-local `±6%`, `±10%`, and `±16%` fader ranges. Final Phase 7 smoke
   verified loop in/out, reloop/exit, loop halve/double, and beat-jump
