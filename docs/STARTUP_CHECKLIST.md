@@ -275,7 +275,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and
   Loop In/Out LEDs derived from P4 pending loop-in marker and active audio loop
-  state. Beat Loop normal pad LED output is implemented from P4 loop state and
+  state. Hot Cue normal pad LED output is implemented from P4 hot-cue-store
+  slot state while Hot Cue mode is selected; hardware LED smoke remains pending.
+  Beat Loop normal pad LED output is implemented from P4 loop state and
   selected Beat Loop pad mode; shifted mirror pad LED output remains deferred.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
   hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke

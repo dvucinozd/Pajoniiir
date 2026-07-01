@@ -155,6 +155,8 @@ confirmed Pad FX filter pads and Echo routing; short Echo presses keep a
 host-tested release tail so the delay is audible after pad release. Pad FX1 and
 Pad FX2 normal pad LEDs now follow P4-owned momentary pad press state; shifted
 mirror pad LEDs remain deferred.
+Hot Cue normal pad LEDs now follow P4-owned hot cue slot state while Hot Cue
+mode is selected; shifted mirror pad LEDs remain deferred.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness

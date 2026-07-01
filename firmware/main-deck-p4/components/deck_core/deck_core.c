@@ -374,6 +374,20 @@ static uint32_t loaded_track_key_for_deck(uint8_t deck)
     return ui_library_loaded_track_key_for_deck(deck);
 }
 
+static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
+{
+    uint32_t track_key = loaded_track_key_for_deck(deck);
+    if (track_key == 0) {
+        return 0;
+    }
+
+    hot_cue_store_blob_t blob = {0};
+    if (hot_cue_store_load(track_key, &blob) != ESP_OK) {
+        return 0;
+    }
+    return (uint8_t)(blob.valid_mask & 0xFFu);
+}
+
 static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || pad >= HOT_CUE_STORE_SLOT_COUNT || !state) {
@@ -414,6 +428,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
             ESP_LOGI(TAG, "deck %u hot cue %u cleared",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
+            publish_flx4_led_snapshot(false);
         } else {
             ESP_LOGW(TAG, "deck %u hot cue %u clear failed: %s",
                      (unsigned)deck + 1,
@@ -454,6 +469,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
                  (unsigned)deck + 1,
                  (unsigned)pad + 1,
                  (unsigned long)pos_ms);
+        publish_flx4_led_snapshot(false);
     } else {
         ESP_LOGW(TAG, "deck %u hot cue %u set failed: %s",
                  (unsigned)deck + 1,
@@ -781,6 +797,7 @@ static void publish_flx4_led_snapshot(bool force)
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
         input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1 : 0;
+        input.hot_cue_exists_mask[deck] = hot_cue_exists_mask_for_deck(deck);
         input.pad_fx_active[deck] = s_pad_fx_led[deck].active ? 1u : 0u;
         input.pad_fx_active_mode[deck] = s_pad_fx_led[deck].mode;
         input.pad_fx_active_pad[deck] = s_pad_fx_led[deck].pad;
