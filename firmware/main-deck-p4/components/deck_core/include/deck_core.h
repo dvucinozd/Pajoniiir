@@ -39,6 +39,30 @@ typedef struct {
     uint32_t      last_heartbeat_age_ms;
 } deck_state_t;
 
+typedef enum {
+    DECK_CORE_BEAT_FX_NONE = 0,
+    DECK_CORE_BEAT_FX_FILTER,
+    DECK_CORE_BEAT_FX_ECHO,
+    DECK_CORE_BEAT_FX_COUNT,
+} deck_core_beat_fx_effect_t;
+
+typedef enum {
+    DECK_CORE_BEAT_FX_BEAT_1_4 = 0,
+    DECK_CORE_BEAT_FX_BEAT_1_2,
+    DECK_CORE_BEAT_FX_BEAT_1,
+    DECK_CORE_BEAT_FX_BEAT_2,
+    DECK_CORE_BEAT_FX_BEAT_4,
+    DECK_CORE_BEAT_FX_BEAT_COUNT,
+} deck_core_beat_fx_beat_t;
+
+typedef struct {
+    deck_core_beat_fx_effect_t effect;
+    deck_core_beat_fx_beat_t beat;
+    ctrl_beat_fx_target_t target;
+    uint8_t depth;
+    bool enabled;
+} deck_core_beat_fx_state_t;
+
 static inline float deck_core_pitch_percent(const deck_state_t *state)
 {
     return state ? ((float)state->pitch_centipercent / 100.0f) : 0.0f;
@@ -71,6 +95,7 @@ void deck_core_reset_deck(uint8_t deck);
 void deck_core_test_reset(void);
 void deck_core_test_apply_event(const ctrl_event_t *ev);
 deck_state_t deck_core_test_get_deck_state(uint8_t deck);
+deck_core_beat_fx_state_t deck_core_test_get_beat_fx_state(void);
 bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value);
 bool deck_core_test_should_log_deferred_button(uint8_t id, int16_t value);
 #endif

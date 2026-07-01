@@ -39,6 +39,7 @@ static QueueHandle_t    s_queue;
 static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
 static flx4_led_publisher_t s_flx4_led_publisher;
+static deck_core_beat_fx_state_t s_beat_fx;
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
@@ -83,6 +84,15 @@ static void init_deck_state(deck_state_t *state)
     state->pitch_centipercent = 0;
     state->tempo_range_percent = DEFAULT_TEMPO_RANGE_PERCENT;
     state->pad_mode = CTRL_PAD_MODE_HOT_CUE;
+}
+
+static void init_beat_fx_state(void)
+{
+    s_beat_fx.effect = DECK_CORE_BEAT_FX_FILTER;
+    s_beat_fx.beat = DECK_CORE_BEAT_FX_BEAT_1;
+    s_beat_fx.target = CTRL_BEAT_FX_TARGET_BOTH;
+    s_beat_fx.depth = 64;
+    s_beat_fx.enabled = false;
 }
 
 static uint8_t normalize_deck(uint8_t deck)
@@ -278,6 +288,15 @@ static bool should_log_deferred_mixer_value(uint8_t id, uint16_t value)
 
 static bool should_log_deferred_button(uint8_t id, int16_t value)
 {
+    if (id == CTRL_ID_BEAT_FX_SELECT_NEXT ||
+        id == CTRL_ID_BEAT_FX_SELECT_PREV ||
+        id == CTRL_ID_BEAT_FX_BEAT_DEC ||
+        id == CTRL_ID_BEAT_FX_BEAT_INC ||
+        id == CTRL_ID_BEAT_FX_TARGET ||
+        id == CTRL_ID_BEAT_FX_ON ||
+        id == CTRL_ID_BEAT_FX_CLEAR) {
+        return value != 0;
+    }
     if (id == CTRL_ID_DECK1_PAD_ACTION || id == CTRL_ID_DECK2_PAD_ACTION) {
         return CTRL_PAD_ACTION_PRESSED(value);
     }
@@ -758,26 +777,92 @@ static void on_state_event(const ctrl_event_t *ev)
 
 static bool on_system_button(const ctrl_event_t *ev)
 {
-    if (!ev || ev->type != CTRL_EV_BUTTON || ev->value == 0) {
+    if (!ev || ev->type != CTRL_EV_BUTTON) {
         return false;
     }
 
     switch (ev->id) {
     case CTRL_ID_SMART_CFX:
+        if (ev->value == 0) {
+            return true;
+        }
         audio_engine_toggle_smart_cfx();
         control_link_send_led_deck(LED_SMART_CFX,
                                    audio_engine_get_smart_cfx_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
     case CTRL_ID_SMART_FADER:
+        if (ev->value == 0) {
+            return true;
+        }
         audio_engine_toggle_smart_fader();
         control_link_send_led_deck(LED_SMART_FADER,
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
+    case CTRL_ID_BEAT_FX_SELECT_NEXT:
+        if (ev->value != 0) {
+            s_beat_fx.effect = (deck_core_beat_fx_effect_t)((s_beat_fx.effect + 1) %
+                                                            DECK_CORE_BEAT_FX_COUNT);
+            ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_SELECT_PREV:
+        if (ev->value != 0) {
+            s_beat_fx.effect = s_beat_fx.effect == 0
+                ? (deck_core_beat_fx_effect_t)(DECK_CORE_BEAT_FX_COUNT - 1)
+                : (deck_core_beat_fx_effect_t)(s_beat_fx.effect - 1);
+            ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_BEAT_DEC:
+        if (ev->value != 0 && s_beat_fx.beat > DECK_CORE_BEAT_FX_BEAT_1_4) {
+            s_beat_fx.beat = (deck_core_beat_fx_beat_t)(s_beat_fx.beat - 1);
+            ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_BEAT_INC:
+        if (ev->value != 0 && s_beat_fx.beat < DECK_CORE_BEAT_FX_BEAT_4) {
+            s_beat_fx.beat = (deck_core_beat_fx_beat_t)(s_beat_fx.beat + 1);
+            ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_TARGET:
+        if (ev->value >= CTRL_BEAT_FX_TARGET_CH1 && ev->value <= CTRL_BEAT_FX_TARGET_BOTH) {
+            s_beat_fx.target = (ctrl_beat_fx_target_t)ev->value;
+            ESP_LOGI(TAG, "beat fx target -> %d", (int)s_beat_fx.target);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_ON:
+        if (ev->value != 0) {
+            s_beat_fx.enabled = !s_beat_fx.enabled;
+            ESP_LOGI(TAG, "beat fx -> %s", s_beat_fx.enabled ? "ON" : "OFF");
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_CLEAR:
+        if (ev->value != 0) {
+            init_beat_fx_state();
+            ESP_LOGI(TAG, "beat fx reset");
+        }
+        return true;
     default:
         return false;
     }
+}
+
+static bool on_system_value(const ctrl_event_t *ev)
+{
+    if (!ev || ev->type != CTRL_EV_PITCH || ev->id != CTRL_ID_BEAT_FX_DEPTH) {
+        return false;
+    }
+    int16_t depth = ev->value;
+    if (depth < 0) {
+        depth = 0;
+    } else if (depth > 127) {
+        depth = 127;
+    }
+    s_beat_fx.depth = (uint8_t)depth;
+    return true;
 }
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
@@ -1368,6 +1453,10 @@ static void deck_task(void *arg)
             continue;
         }
 
+        if (on_system_value(&ev)) {
+            continue;
+        }
+
         uint8_t deck = deck_index_for_event(&ev);
 
         if (event_is_mixer_control(&ev)) {
@@ -1412,6 +1501,7 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    init_beat_fx_state();
     flx4_led_publisher_init(&s_flx4_led_publisher);
 
     s_mutex = xSemaphoreCreateMutex();
@@ -1526,6 +1616,7 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    init_beat_fx_state();
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
@@ -1557,6 +1648,10 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
     }
 
     if (on_system_button(ev)) {
+        return;
+    }
+
+    if (on_system_value(ev)) {
         return;
     }
 
@@ -1601,6 +1696,11 @@ deck_state_t deck_core_test_get_deck_state(uint8_t deck)
         s_decks[idx].position_ms = audio_engine_deck_position_ms(idx);
     }
     return s_decks[idx];
+}
+
+deck_core_beat_fx_state_t deck_core_test_get_beat_fx_state(void)
+{
+    return s_beat_fx;
 }
 
 bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value)

@@ -25,6 +25,8 @@ int s3_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
 int s3_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }
 int s3_ctrl_id_smart_cfx(void) { return CTRL_ID_SMART_CFX; }
 int s3_ctrl_id_smart_fader(void) { return CTRL_ID_SMART_FADER; }
+int s3_ctrl_id_beat_fx_select_next(void) { return CTRL_ID_BEAT_FX_SELECT_NEXT; }
+int s3_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
 int s3_ctrl_id_deck1_shift(void) { return CTRL_ID_DECK1_SHIFT; }
 int s3_ctrl_id_deck2_to_start(void) { return CTRL_ID_DECK2_TO_START; }
 int s3_ctrl_id_deck1_sync(void) { return CTRL_ID_DECK1_SYNC; }

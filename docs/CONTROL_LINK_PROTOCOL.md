@@ -97,8 +97,16 @@ test.
 | `0x63` | Browse press | `0` release, `1` press; toggles Library/Overview |
 | `0x64` | Browse+Shift delta | signed delta; behavior deferred |
 | `0x70` | FLX4 connection state | `0` disconnected, `1` connected; sent with `CTRL_TYPE_STATE` |
-| `0x71` | Smart CFX | `0` release, `1` press; input only, P4 DSP deferred |
-| `0x72` | Smart Fader | `0` release, `1` press; input only, P4 DSP deferred |
+| `0x71` | Smart CFX | `0` release, `1` press; press toggles P4 Smart CFX state |
+| `0x72` | Smart Fader | `0` release, `1` press; press toggles P4 Smart Fader state |
+| `0x73` | Beat FX select next | `0` release, `1` press; press cycles P4 Beat FX effect forward |
+| `0x74` | Beat FX select previous | `0` release, `1` press; press cycles P4 Beat FX effect backward |
+| `0x75` | Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down |
+| `0x76` | Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up |
+| `0x77` | Beat FX target | `0` CH1, `1` CH2, `2` both; sent as press/value semantic |
+| `0x78` | Beat FX depth | `0..127`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB4/0x02` |
+| `0x79` | Beat FX on/off | `0` release, `1` press; press toggles P4 Beat FX enabled state |
+| `0x7A` | Beat FX clear | `0` release, `1` press; press resets P4 Beat FX state to defaults |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,

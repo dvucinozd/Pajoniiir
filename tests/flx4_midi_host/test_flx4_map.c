@@ -65,6 +65,41 @@ static void test_smart_control_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_FADER, 0);
 }
 
+static void test_beat_fx_controls(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x94, 0x63, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x63, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_SELECT_NEXT, 0);
+    assert(flx4_map_message(&state, MSG(0x94, 0x64, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_SELECT_PREV, 1);
+
+    assert(flx4_map_message(&state, MSG(0x94, 0x4A, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x4B, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC, 1);
+
+    assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    assert(!flx4_map_message(&state, MSG(0x94, 0x10, 0x00), &ev));
+    assert(flx4_map_message(&state, MSG(0x95, 0x11, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH2);
+
+    assert(flx4_map_message(&state, MSG(0xB4, 0x02, 0x40), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_BEAT_FX_DEPTH, 64);
+
+    assert(flx4_map_message(&state, MSG(0x94, 0x47, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_ON, 1);
+    assert(flx4_map_message(&state, MSG(0x95, 0x47, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_ON, 0);
+    assert(flx4_map_message(&state, MSG(0x94, 0x43, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_CLEAR, 1);
+}
+
 static void test_deck_transport_extension_buttons(void)
 {
     flx4_map_state_t state;
@@ -225,6 +260,7 @@ int main(void)
 {
     test_transport_load_and_pfl_buttons();
     test_smart_control_buttons();
+    test_beat_fx_controls();
     test_deck_transport_extension_buttons();
     test_loop_and_beat_jump_buttons();
     test_pad_modes_and_pad_actions();

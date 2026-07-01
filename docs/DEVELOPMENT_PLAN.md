@@ -571,8 +571,10 @@ Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
 Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
 per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
 the FLX4 filter knobs, and Smart Fader now toggles a conservative crossfader
-transition-assist curve. Sampler, pad FX, and deeper Beat FX behavior remains
-deferred unless separately marked implemented.
+transition-assist curve. Beat FX section mapping and the first P4-owned state
+model are implemented for effect select, beat size, target, depth, on/off, and
+clear/reset; Beat FX audio DSP remains deferred. Sampler and pad FX behavior
+remains deferred unless separately marked implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF

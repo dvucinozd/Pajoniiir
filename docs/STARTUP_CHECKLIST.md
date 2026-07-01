@@ -77,6 +77,9 @@
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
   press/release events. P4 owns their toggle state, LED feedback, status
   exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
+- Beat FX section mapping and P4-owned state are implemented for effect select,
+  beat size, target, depth, on/off, and clear/reset. Beat FX audio DSP remains
+  pending.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative

@@ -6,12 +6,15 @@
 #define FLX4_STATUS_D1_BTN     0x90
 #define FLX4_STATUS_D2_BTN     0x91
 #define FLX4_STATUS_GLOBAL_BTN 0x96
+#define FLX4_STATUS_BEAT_FX_CH1 0x94
+#define FLX4_STATUS_BEAT_FX_CH2 0x95
 #define FLX4_STATUS_PAD_D1     0x97
 #define FLX4_STATUS_PAD_D1_SHIFT 0x98
 #define FLX4_STATUS_PAD_D2     0x99
 #define FLX4_STATUS_PAD_D2_SHIFT 0x9A
 #define FLX4_STATUS_D1_CC      0xB0
 #define FLX4_STATUS_D2_CC      0xB1
+#define FLX4_STATUS_BEAT_FX_CC 0xB4
 #define FLX4_STATUS_MASTER_CC  0xB6
 
 #define FLX4_BTN_PLAY          0x0B
@@ -42,6 +45,14 @@
 #define FLX4_BTN_BROWSE_PRESS  0x41
 #define FLX4_BTN_SMART_CFX     0x00
 #define FLX4_BTN_SMART_FADER   0x01
+#define FLX4_BTN_BEAT_FX_TARGET_CH1 0x10
+#define FLX4_BTN_BEAT_FX_TARGET_CH2 0x11
+#define FLX4_BTN_BEAT_FX_CLEAR 0x43
+#define FLX4_BTN_BEAT_FX_ON    0x47
+#define FLX4_BTN_BEAT_FX_BEAT_DEC 0x4A
+#define FLX4_BTN_BEAT_FX_BEAT_INC 0x4B
+#define FLX4_BTN_BEAT_FX_SELECT_NEXT 0x63
+#define FLX4_BTN_BEAT_FX_SELECT_PREV 0x64
 
 #define FLX4_CC_JOG_SIDE_BEND  0x21
 #define FLX4_CC_JOG_SCRATCH    0x22
@@ -67,6 +78,7 @@
 #define FLX4_CC_CROSSFADER_MSB 0x1F
 #define FLX4_CC_CROSSFADER_LSB 0x3F
 #define FLX4_CC_BROWSE         0x40
+#define FLX4_CC_BEAT_FX_DEPTH  0x02
 
 void flx4_map_init(flx4_map_state_t *state)
 {
@@ -257,6 +269,49 @@ static bool map_deck_cc(flx4_map_state_t *state,
     }
 }
 
+static bool map_beat_fx_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_control_event_t *out)
+{
+    uint8_t pressed = data2 > 0 ? 1 : 0;
+
+    switch (data1) {
+    case FLX4_BTN_BEAT_FX_SELECT_NEXT:
+        return emit_button(out, CTRL_ID_BEAT_FX_SELECT_NEXT, pressed);
+    case FLX4_BTN_BEAT_FX_SELECT_PREV:
+        return emit_button(out, CTRL_ID_BEAT_FX_SELECT_PREV, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_DEC:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_DEC, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_INC:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_INC, pressed);
+    case FLX4_BTN_BEAT_FX_ON:
+        return emit_button(out, CTRL_ID_BEAT_FX_ON, pressed);
+    case FLX4_BTN_BEAT_FX_CLEAR:
+        return emit_button(out, CTRL_ID_BEAT_FX_CLEAR, pressed);
+    case FLX4_BTN_BEAT_FX_TARGET_CH1:
+        if (status != FLX4_STATUS_BEAT_FX_CH1 || !pressed) {
+            return false;
+        }
+        return emit_button_value(out, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    case FLX4_BTN_BEAT_FX_TARGET_CH2:
+        if (status != FLX4_STATUS_BEAT_FX_CH2 || !pressed) {
+            return false;
+        }
+        return emit_button_value(out, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH2);
+    default:
+        return false;
+    }
+}
+
+static bool map_beat_fx_cc(uint8_t data1, uint8_t data2, flx4_control_event_t *out)
+{
+    if (data1 != FLX4_CC_BEAT_FX_DEPTH) {
+        return false;
+    }
+    out->type = CTRL_TYPE_PITCH;
+    out->id = CTRL_ID_BEAT_FX_DEPTH;
+    out->value = (int16_t)(data2 & 0x7F);
+    return true;
+}
+
 static bool map_master_cc(flx4_map_state_t *state,
                           uint8_t data1,
                           uint8_t data2,
@@ -329,6 +384,9 @@ bool flx4_map_message(flx4_map_state_t *state,
     }
 
     switch (msg->status) {
+    case FLX4_STATUS_BEAT_FX_CH1:
+    case FLX4_STATUS_BEAT_FX_CH2:
+        return map_beat_fx_button(msg->status, msg->data1, msg->data2, out);
     case FLX4_STATUS_D1_BTN:
     case FLX4_STATUS_D2_BTN:
         return map_deck_button(msg->status, msg->data1, msg->data2, out);
@@ -357,6 +415,8 @@ bool flx4_map_message(flx4_map_state_t *state,
     case FLX4_STATUS_D1_CC:
     case FLX4_STATUS_D2_CC:
         return map_deck_cc(state, msg->status, msg->data1, msg->data2, out);
+    case FLX4_STATUS_BEAT_FX_CC:
+        return map_beat_fx_cc(msg->data1, msg->data2, out);
     case FLX4_STATUS_MASTER_CC:
         return map_master_cc(state, msg->data1, msg->data2, out);
     default:
