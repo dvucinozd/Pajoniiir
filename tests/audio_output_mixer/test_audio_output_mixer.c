@@ -1,3 +1,4 @@
+#include "audio_delay_fx.h"
 #include "audio_output_mixer.h"
 #include <assert.h>
 #include <stdio.h>
@@ -322,6 +323,50 @@ static void test_beat_fx_filter_applies_only_to_target_deck(void)
     assert(bypass_abs > 64 * 10000);
 }
 
+static void test_beat_fx_echo_applies_only_to_target_deck(void)
+{
+    audio_mixer_frame_t deck0_frames[8] = {
+        { .left = 10000, .right = 10000 },
+    };
+    audio_mixer_frame_t deck1_frames[8] = {
+        { .left = 7000, .right = 7000 },
+    };
+    source_t deck0_source = { .frames = deck0_frames, .count = 8, .index = 0 };
+    source_t deck1_source = { .frames = deck1_frames, .count = 8, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_state_t deck1_resampler;
+    audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
+    audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
+
+    int16_t echo_l[16] = { 0 };
+    int16_t echo_r[16] = { 0 };
+    audio_delay_fx_t echo;
+    audio_delay_fx_init(&echo, echo_l, echo_r, 16u, 1000u);
+    audio_delay_fx_configure(&echo, &(audio_delay_fx_config_t) {
+        .enabled = true,
+        .delay_ms = 2,
+        .wet_q15 = 16384,
+        .feedback_q15 = 0,
+    });
+    deck0.beat_fx_echo = &echo;
+    deck0.beat_fx_echo_enabled = true;
+
+    prime_output_mixer(&deck0, &deck1);
+    (void)audio_output_mixer_next_full(&deck0, &deck1, false, false,
+                                       AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                                       NULL, NULL, NULL);
+    (void)audio_output_mixer_next_full(&deck0, &deck1, false, false,
+                                       AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                                       NULL, NULL, NULL);
+    audio_output_mix_result_t delayed = audio_output_mixer_next_full(&deck0, &deck1,
+                                                                     false, false,
+                                                                     AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                                                                     NULL, NULL, NULL);
+
+    assert(delayed.deck_frame[0].left > 0);
+    assert(delayed.deck_frame[1].left == 0);
+}
+
 int main(void)
 {
     test_mixes_two_active_decks_with_output_gains();
@@ -333,6 +378,7 @@ int main(void)
     test_full_mix_keeps_master_stereo_when_cue_is_enabled();
     test_full_mix_split_monitor_uses_master_left_and_pfl_right();
     test_beat_fx_filter_applies_only_to_target_deck();
+    test_beat_fx_echo_applies_only_to_target_deck();
     puts("audio_output_mixer tests passed");
     return 0;
 }

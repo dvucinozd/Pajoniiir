@@ -160,6 +160,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
@@ -267,6 +268,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c"
         )

@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "audio_delay_fx.h"
 #include "audio_eq.h"
 #include "audio_filter.h"
 #include "audio_mixer.h"
@@ -18,6 +19,8 @@ typedef struct {
     bool filter_enabled;
     audio_filter_state_t *beat_fx_filter;
     bool beat_fx_filter_enabled;
+    audio_delay_fx_t *beat_fx_echo;
+    bool beat_fx_echo_enabled;
     audio_resampler_state_t *resampler;
     audio_resampler_pop_fn pop_source;
     void *source_ctx;
