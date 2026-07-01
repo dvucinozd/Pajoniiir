@@ -134,6 +134,11 @@ extern int audio_engine_stub_beat_fx_filter_target;
 extern int audio_engine_stub_beat_fx_filter_depth;
 extern bool audio_engine_stub_beat_fx_filter_enabled;
 extern int audio_engine_stub_beat_fx_filter_set_count;
+extern int audio_engine_stub_beat_fx_echo_target;
+extern int audio_engine_stub_beat_fx_echo_depth;
+extern uint32_t audio_engine_stub_beat_fx_echo_delay_ms;
+extern bool audio_engine_stub_beat_fx_echo_enabled;
+extern int audio_engine_stub_beat_fx_echo_set_count;
 extern bool audio_engine_stub_smart_cfx_enabled;
 extern bool audio_engine_stub_smart_fader_enabled;
 
@@ -180,6 +185,19 @@ static inline esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_tar
     audio_engine_stub_beat_fx_filter_depth = (int)depth;
     audio_engine_stub_beat_fx_filter_enabled = enabled;
     audio_engine_stub_beat_fx_filter_set_count++;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
+                                                      uint8_t depth,
+                                                      uint32_t delay_ms,
+                                                      bool enabled)
+{
+    audio_engine_stub_beat_fx_echo_target = (int)target;
+    audio_engine_stub_beat_fx_echo_depth = (int)depth;
+    audio_engine_stub_beat_fx_echo_delay_ms = delay_ms;
+    audio_engine_stub_beat_fx_echo_enabled = enabled;
+    audio_engine_stub_beat_fx_echo_set_count++;
     return ESP_OK;
 }
 

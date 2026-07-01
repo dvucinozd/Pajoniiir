@@ -108,13 +108,38 @@ static audio_engine_beat_fx_target_t beat_fx_audio_target(ctrl_beat_fx_target_t 
     }
 }
 
+static uint32_t beat_fx_delay_ms(deck_core_beat_fx_beat_t beat)
+{
+    switch (beat) {
+    case DECK_CORE_BEAT_FX_BEAT_1_4:
+        return 125u;
+    case DECK_CORE_BEAT_FX_BEAT_1_2:
+        return 250u;
+    case DECK_CORE_BEAT_FX_BEAT_1:
+        return 500u;
+    case DECK_CORE_BEAT_FX_BEAT_2:
+    case DECK_CORE_BEAT_FX_BEAT_4:
+        return 1000u;
+    default:
+        return 500u;
+    }
+}
+
 static void sync_beat_fx_audio_state(void)
 {
+    audio_engine_beat_fx_target_t target = beat_fx_audio_target(s_beat_fx.target);
     bool filter_enabled = s_beat_fx.enabled &&
                           s_beat_fx.effect == DECK_CORE_BEAT_FX_FILTER;
-    audio_engine_set_beat_fx_filter(beat_fx_audio_target(s_beat_fx.target),
+    bool echo_enabled = s_beat_fx.enabled &&
+                        s_beat_fx.effect == DECK_CORE_BEAT_FX_ECHO;
+
+    audio_engine_set_beat_fx_filter(target,
                                     s_beat_fx.depth,
                                     filter_enabled);
+    audio_engine_set_beat_fx_echo(target,
+                                  s_beat_fx.depth,
+                                  beat_fx_delay_ms(s_beat_fx.beat),
+                                  echo_enabled);
 }
 
 static uint8_t normalize_deck(uint8_t deck)
