@@ -79,6 +79,11 @@
   exposure, Smart CFX filter DSP with a softened raw/effective macro curve,
   balanced HI-side filter behavior verified on hardware, and Smart Fader
   transition-assist behavior. Smart Fader hardware smoke passed on 2026-07-01.
+- Trim/pregain routes the FLX4 deck-local Trim knobs into P4 audio output gain
+  as a bounded pregain scalar: center is unity, left attenuates, and right
+  boosts up to +6 dB before the existing post-sum limiter. Host tests cover the
+  audio gain curve, mixer snapshot, `/api/status` exposure, and deck_core
+  routing; hardware smoke remains pending.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
@@ -260,10 +265,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
   are mapped/tested in firmware. Hardware capture status is tracked per row in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
-  Three-band EQ now has P4 DSP behavior for both decks. Filter is used by Smart
-  CFX while enabled, with HI/LOW hardware smoke passed on 2026-07-01; trim and
-  headphone-mix remain mapped/state work until their standalone P4 behavior is
-  implemented.
+  Trim/pregain and three-band EQ now have P4 DSP behavior for both decks.
+  Filter is used by Smart CFX while enabled, with HI/LOW hardware smoke passed
+  on 2026-07-01; headphone-mix remains mapped/state work until its standalone
+  P4 behavior is implemented.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is

@@ -13,6 +13,7 @@ static uint32_t s_loaded_track_key[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_loaded_anlz[DECK_CORE_DECK_COUNT];
 static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_eq_raw[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
@@ -185,6 +186,7 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_loop_clear_count[deck] = 0;
         audio_engine_stub_pitch_percent[deck] = 0.0f;
         audio_engine_stub_pitch_percent_set_count[deck] = 0;
+        audio_engine_stub_pregain[deck] = -1;
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
     }
@@ -467,6 +469,21 @@ static void test_mixer_namespace_routes_volume_and_crossfader(void)
     assert(audio_engine_stub_channel_volume[CTRL_DECK_1] == 7000);
     assert(audio_engine_stub_channel_volume[CTRL_DECK_2] == 9000);
     assert(audio_engine_stub_crossfader == 8192);
+}
+
+static void test_mixer_namespace_routes_trim_to_pregain(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t trim1 = mixer_value(CTRL_ID_CH1_TRIM, 6000);
+    ctrl_event_t trim2 = mixer_value(CTRL_ID_CH2_TRIM, 12000);
+
+    deck_core_test_apply_event(&trim1);
+    deck_core_test_apply_event(&trim2);
+
+    assert(audio_engine_stub_pregain[CTRL_DECK_1] == 6000);
+    assert(audio_engine_stub_pregain[CTRL_DECK_2] == 12000);
 }
 
 static void test_mixer_namespace_routes_eq_controls(void)
@@ -1542,15 +1559,17 @@ static void test_smoke_log_policy_rates_limits_deferred_analog_controls(void)
 {
     deck_core_test_reset();
 
-    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 0));
-    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 100));
-    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 512));
-    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 1024));
-    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 2048));
-    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 3000));
-    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 4096));
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 0));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 100));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 512));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 1024));
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 2048));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 3000));
+    assert(deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 4096));
 
     assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_VOLUME, 2048));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH1_TRIM, 0));
+    assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_CH2_TRIM, 0));
 }
 
 static void test_smoke_log_policy_logs_deferred_buttons_only_on_press(void)
@@ -1579,6 +1598,7 @@ int main(void)
     test_browser_namespace_routes_browse_delta();
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
+    test_mixer_namespace_routes_trim_to_pregain();
     test_mixer_namespace_routes_eq_controls();
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();

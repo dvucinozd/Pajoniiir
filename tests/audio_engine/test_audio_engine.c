@@ -141,6 +141,26 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(deck1, 1.0f), "default deck 0 gain is unity");
     EXPECT(nearf(deck2, 1.0f), "default deck 1 gain is unity");
     EXPECT(nearf(audio_engine_get_master_trim(), 1.0f), "default master trim is unity");
+    EXPECT(audio_engine_get_pregain(0) == AUDIO_MIXER_CONTROL_CENTER,
+           "deck 0 pregain defaults to center");
+    EXPECT(audio_engine_get_pregain(1) == AUDIO_MIXER_CONTROL_CENTER,
+           "deck 1 pregain defaults to center");
+    EXPECT(audio_engine_set_pregain(2, AUDIO_MIXER_CONTROL_CENTER) == ESP_ERR_INVALID_ARG,
+           "invalid pregain deck returns INVALID_ARG");
+    EXPECT(audio_engine_set_pregain(0, AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "deck 0 pregain accepts center raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(nearf(deck1, 1.0f), "center pregain leaves deck 0 gain at unity");
+    EXPECT(audio_engine_set_pregain(0, 0) == ESP_OK,
+           "deck 0 pregain accepts minimum raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(deck1 > 0.24f && deck1 < 0.26f, "minimum pregain attenuates deck 0 to quarter gain");
+    EXPECT(audio_engine_set_pregain(0, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
+           "deck 0 pregain accepts maximum raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(deck1 > 1.99f && deck1 < 2.01f, "maximum pregain boosts deck 0 to +6 dB scalar");
+    EXPECT(audio_engine_set_pregain(0, AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "deck 0 pregain restores center before other mixer tests");
 
     EXPECT(audio_engine_set_channel_volume(0, 8192) == ESP_OK,
            "deck 0 channel volume accepts center raw value");
@@ -179,6 +199,14 @@ static void test_mixer_state_api(void)
     EXPECT(snapshot.channel_volume[0] == 8192, "snapshot captures deck 0 raw channel fader");
     EXPECT(snapshot.channel_volume[1] == 16383, "snapshot captures deck 1 raw channel fader");
     EXPECT(snapshot.crossfader == 16383, "snapshot captures raw crossfader");
+    EXPECT(snapshot.pregain[0] == AUDIO_MIXER_CONTROL_CENTER,
+           "snapshot captures deck 0 pregain raw value");
+    EXPECT(snapshot.pregain[1] == AUDIO_MIXER_CONTROL_CENTER,
+           "snapshot captures deck 1 pregain raw value");
+    EXPECT(nearf(snapshot.pregain_gain[0], 1.0f),
+           "snapshot captures deck 0 pregain scalar");
+    EXPECT(nearf(snapshot.pregain_gain[1], 1.0f),
+           "snapshot captures deck 1 pregain scalar");
     EXPECT(nearf(snapshot.master_trim, 1.0f), "snapshot captures master trim");
     EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");

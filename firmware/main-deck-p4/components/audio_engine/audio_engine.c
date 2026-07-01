@@ -105,6 +105,20 @@ static bool deck_is_valid(uint8_t deck);
 static void init_beat_fx_echo_buffers(void);
 static void init_pad_fx_buffers(void);
 
+static float pregain_gain_from_raw(uint16_t raw)
+{
+    if (raw > AUDIO_MIXER_CONTROL_MAX) {
+        raw = AUDIO_MIXER_CONTROL_MAX;
+    }
+    if (raw <= AUDIO_MIXER_CONTROL_CENTER) {
+        float t = (float)raw / (float)AUDIO_MIXER_CONTROL_CENTER;
+        return 0.25f + (0.75f * t);
+    }
+    float t = (float)(raw - AUDIO_MIXER_CONTROL_CENTER) /
+              (float)(AUDIO_MIXER_CONTROL_MAX - AUDIO_MIXER_CONTROL_CENTER);
+    return 1.0f + t;
+}
+
 /* ── Engine state ─────────────────────────────────────────────────────────── */
 typedef struct {
     FILE    *fp;
@@ -176,6 +190,10 @@ static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
 static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
     AUDIO_MIXER_CONTROL_MAX,
     AUDIO_MIXER_CONTROL_MAX,
+};
+static uint16_t         s_pregain[AUDIO_ENGINE_DECK_COUNT] = {
+    AUDIO_MIXER_CONTROL_CENTER,
+    AUDIO_MIXER_CONTROL_CENTER,
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static float            s_master_trim = 1.0f;
@@ -1428,6 +1446,7 @@ esp_err_t audio_engine_init(void)
 #endif
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         s_channel_volume[i] = AUDIO_MIXER_CONTROL_MAX;
+        s_pregain[i] = AUDIO_MIXER_CONTROL_CENTER;
         s_pfl_enabled[i] = false;
         s_deck_peak[i] = 0;
         audio_eq_init(&s_deck_eq[i], 44100u);
@@ -2226,6 +2245,22 @@ esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader)
     return ESP_OK;
 }
 
+esp_err_t audio_engine_set_pregain(uint8_t deck, uint16_t raw_pregain)
+{
+    if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
+    if (raw_pregain > AUDIO_MIXER_CONTROL_MAX) {
+        raw_pregain = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_pregain[deck] = raw_pregain;
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_pregain(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return AUDIO_MIXER_CONTROL_CENTER;
+    return s_pregain[deck];
+}
+
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
 {
     if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
@@ -2415,10 +2450,16 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     }
 
     if (deck0_gain) {
-        *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) * xf0 * s_master_trim;
+        *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) *
+                      pregain_gain_from_raw(s_pregain[0]) *
+                      xf0 *
+                      s_master_trim;
     }
     if (deck1_gain) {
-        *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) * xf1 * s_master_trim;
+        *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) *
+                      pregain_gain_from_raw(s_pregain[1]) *
+                      xf1 *
+                      s_master_trim;
     }
 }
 
@@ -2467,6 +2508,10 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->channel_volume[0] = s_channel_volume[0];
     out_snapshot->channel_volume[1] = s_channel_volume[1];
     out_snapshot->crossfader = s_crossfader;
+    out_snapshot->pregain[0] = s_pregain[0];
+    out_snapshot->pregain[1] = s_pregain[1];
+    out_snapshot->pregain_gain[0] = pregain_gain_from_raw(s_pregain[0]);
+    out_snapshot->pregain_gain[1] = pregain_gain_from_raw(s_pregain[1]);
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         for (uint8_t band = 0; band < AUDIO_EQ_BAND_COUNT; band++) {
             out_snapshot->eq[deck][band] = audio_eq_get_band_raw(&s_deck_eq[deck], (audio_eq_band_t)band);

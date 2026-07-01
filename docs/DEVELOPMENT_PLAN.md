@@ -568,11 +568,12 @@ beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
-Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
-per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
-the FLX4 filter knobs with a softened raw-to-effective macro curve and
-hardware-smoked HI/LOW behavior; Smart Fader now toggles a conservative
-crossfader transition-assist curve with hardware smoke passed on 2026-07-01.
+Hot Cue store/recall/clear is implemented. Trim/pregain and three-band EQ DSP
+are implemented per deck in the P4 audio path. Smart CFX now toggles P4-owned
+filter DSP from the FLX4 filter knobs with a softened raw-to-effective macro
+curve and hardware-smoked HI/LOW behavior; Smart Fader now toggles a
+conservative crossfader transition-assist curve with hardware smoke passed on
+2026-07-01.
 Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
 clear/reset. The Overview right-side Beat FX panel renders that P4-owned
@@ -711,6 +712,11 @@ Implementation order:
      where already consistent with settings ownership, and LED/state feedback
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
+   - trim/pregain is implemented for Deck 1 and Deck 2: S3 forwards the
+     verified 14-bit FLX4 Trim controls, P4 stores raw per-deck pregain state
+     in the mixer snapshot and `/api/status`, and output gain applies a bounded
+     pregain scalar before the existing post-sum limiter. Center raw `8192` is
+     unity, minimum is `0.25x`, and maximum is a conservative `+6 dB` boost.
    - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
      mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before

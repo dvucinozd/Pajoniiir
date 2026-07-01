@@ -133,6 +133,9 @@ implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
 knobs with a softened raw-to-effective macro curve and a hardware-smoked
 musical HI side that preserves perceived level; Smart Fader applies a
 conservative crossfader transition-assist curve with hardware smoke passed.
+Trim/pregain now routes the FLX4 deck-local Trim knobs into P4 audio output
+gain as a bounded pregain scalar: center is unity, left attenuates, and right
+boosts up to +6 dB before the existing post-sum limiter.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still

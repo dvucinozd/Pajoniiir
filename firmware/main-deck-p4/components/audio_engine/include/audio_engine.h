@@ -140,6 +140,8 @@ uint16_t audio_engine_get_deck_peak(uint8_t deck);
 typedef struct {
     uint16_t channel_volume[AUDIO_ENGINE_DECK_COUNT];
     uint16_t crossfader;
+    uint16_t pregain[AUDIO_ENGINE_DECK_COUNT];
+    float pregain_gain[AUDIO_ENGINE_DECK_COUNT];
     uint16_t eq[AUDIO_ENGINE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
     uint16_t filter[AUDIO_ENGINE_DECK_COUNT];
     uint16_t smart_cfx_filter_effective[AUDIO_ENGINE_DECK_COUNT];
@@ -183,6 +185,8 @@ typedef struct {
 
 esp_err_t audio_engine_set_channel_volume(uint8_t deck, uint16_t raw_volume);
 esp_err_t audio_engine_set_crossfader(uint16_t raw_crossfader);
+esp_err_t audio_engine_set_pregain(uint8_t deck, uint16_t raw_pregain);
+uint16_t audio_engine_get_pregain(uint8_t deck);
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw);
 uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band);
 esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw_filter);

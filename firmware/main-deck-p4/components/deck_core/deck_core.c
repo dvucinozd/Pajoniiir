@@ -358,8 +358,6 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
 static bool is_deferred_mixer_control(uint8_t id)
 {
     switch (id) {
-    case CTRL_ID_CH1_TRIM:
-    case CTRL_ID_CH2_TRIM:
     case CTRL_ID_HEADPHONE_MIX:
         return true;
     default:
@@ -371,8 +369,6 @@ static bool is_deferred_mixer_control(uint8_t id)
 static const char *deferred_mixer_control_name(uint8_t id)
 {
     switch (id) {
-    case CTRL_ID_CH1_TRIM: return "CH1_TRIM";
-    case CTRL_ID_CH2_TRIM: return "CH2_TRIM";
     case CTRL_ID_HEADPHONE_MIX: return "HEADPHONE_MIX";
     default: return "UNKNOWN";
     }
@@ -1581,7 +1577,11 @@ static void on_mixer_control(uint8_t id, int16_t raw)
         audio_engine_set_filter(CTRL_DECK_2, value);
         break;
     case CTRL_ID_CH1_TRIM:
+        audio_engine_set_pregain(CTRL_DECK_1, value);
+        break;
     case CTRL_ID_CH2_TRIM:
+        audio_engine_set_pregain(CTRL_DECK_2, value);
+        break;
     case CTRL_ID_HEADPHONE_MIX:
         if (should_log_deferred_mixer_value(id, value)) {
             ESP_LOGI(TAG, "mixer control %s raw=%u (DSP behavior deferred)",
