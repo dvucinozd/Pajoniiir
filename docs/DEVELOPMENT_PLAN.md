@@ -725,6 +725,12 @@ Implementation order:
      runtime non-persistent master volume, exposes it in `/api/status`, and
      multiplies it with the persistent Settings master trim in the output gain
      path. Hardware smoke passed on 2026-07-01.
+   - headphones mix is implemented for the P4 monitor path: S3 forwards the
+     14-bit FLX4 Headphones Mix control (`B6 0C/2C`), P4 stores the raw value
+     in the mixer snapshot and `/api/status`, and the ES8311 monitor/headphone
+     buffer blends cue/PFL with stereo master (`0` = cue/PFL, `16383` =
+     master). This intentionally does not drive the original FLX4 headphone
+     jack; that remains a separate USB Audio Class or analog bridge phase.
    - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
      mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before

@@ -141,6 +141,12 @@ The physical FLX4 Master Level knob is mapped from the official MIDI PDF
 multiplies the persistent Settings master trim, so the controller knob provides
 day-to-day level control while the UI trim remains a saved limiter/headroom
 setting.
+Headphones Mix now routes the FLX4 14-bit Headphones Mix control into the P4
+monitor DSP: raw minimum is cue/PFL, raw maximum is stereo master, and the
+middle blends cue with master on the ES8311 monitor/headphone buffer. This does
+not output audio through the original FLX4 headphone jack; that would require a
+separate USB Audio Class host/streaming phase or an analog bridge from the P4
+monitor output.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still

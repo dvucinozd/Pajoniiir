@@ -274,10 +274,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output
   are mapped/tested in firmware. Hardware capture status is tracked per row in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
-  Trim/pregain and three-band EQ now have P4 DSP behavior for both decks.
+  Trim/pregain, three-band EQ, and Headphones Mix now have P4 DSP behavior.
   Filter is used by Smart CFX while enabled, with HI/LOW hardware smoke passed
-  on 2026-07-01; headphone-mix remains mapped/state work until its standalone
-  P4 behavior is implemented.
+  on 2026-07-01. Headphones Mix is host-tested for the P4 ES8311 monitor path;
+  the original FLX4 headphone jack remains out of scope until a USB Audio Class
+  or analog bridge phase is added.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is

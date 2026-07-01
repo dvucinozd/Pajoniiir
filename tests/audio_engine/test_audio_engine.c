@@ -491,6 +491,29 @@ static void test_cue_mode_api(void)
            "invalid headphone mode leaves previous mode");
 }
 
+/* ── Test 5c: Headphone mix state API ───────────────────────────────────── */
+static void test_headphone_mix_api(void)
+{
+    printf("\n[Test 5c] Headphone Mix API\n");
+
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets headphone mix");
+    EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_MAX,
+           "headphone mix defaults to full master for legacy monitor behavior");
+    EXPECT(audio_engine_set_headphone_mix(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "headphone mix accepts center raw value");
+    EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_CENTER,
+           "headphone mix stores center raw value");
+    EXPECT(audio_engine_set_headphone_mix(AUDIO_MIXER_CONTROL_MAX + 1000u) == ESP_OK,
+           "headphone mix clamps raw values above max");
+    EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_MAX,
+           "headphone mix clamps to max");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.headphone_mix == AUDIO_MIXER_CONTROL_MAX,
+           "snapshot captures headphone mix raw value");
+}
+
 /* ── Test 6: per-deck transition API guards ─────────────────────────────── */
 static void test_deck_api(void)
 {
@@ -704,6 +727,7 @@ int main(int argc, char *argv[])
     test_diagnostics_snapshot_reports_audio_health_state();
     test_pfl_state_api();
     test_cue_mode_api();
+    test_headphone_mix_api();
     test_deck_api();
     test_deck_status_is_independent();
     test_deck_states_are_independent();

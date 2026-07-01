@@ -198,6 +198,7 @@ static uint16_t         s_pregain[AUDIO_ENGINE_DECK_COUNT] = {
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static float            s_master_trim = 1.0f;
 static uint16_t         s_master_volume = AUDIO_MIXER_CONTROL_MAX;
+static uint16_t         s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
@@ -1309,6 +1310,7 @@ static void ae_output_task(void *arg)
                 s_pfl_enabled[deck0_index],
                 s_pfl_enabled[deck1_index],
                 output_headphone_mode(),
+                s_headphone_mix,
                 &frame_consumed0,
                 &frame_consumed1,
                 &block_limiter_stats);
@@ -1326,9 +1328,7 @@ static void ae_output_task(void *arg)
             hp_out[i * 2] = mix.headphone.left;
             hp_out[i * 2 + 1] = mix.headphone.right;
         }
-        int16_t *es8311_out = (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO)
-            ? master_out
-            : hp_out;
+        int16_t *es8311_out = hp_out;
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
         esp_err_t hp_rc = esp_codec_dev_write(s_codec, es8311_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
 
@@ -1462,6 +1462,7 @@ esp_err_t audio_engine_init(void)
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
     s_master_volume = AUDIO_MIXER_CONTROL_MAX;
+    s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
     s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
@@ -2277,6 +2278,20 @@ uint16_t audio_engine_get_master_volume(void)
     return s_master_volume;
 }
 
+esp_err_t audio_engine_set_headphone_mix(uint16_t raw_mix)
+{
+    if (raw_mix > AUDIO_MIXER_CONTROL_MAX) {
+        raw_mix = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_headphone_mix = raw_mix;
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_headphone_mix(void)
+{
+    return s_headphone_mix;
+}
+
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
 {
     if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
@@ -2546,6 +2561,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->master_volume = s_master_volume;
+    out_snapshot->headphone_mix = s_headphone_mix;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];

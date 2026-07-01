@@ -52,8 +52,10 @@ static bool              s_flx4_connected;
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
+#if defined(DECK_CORE_PC_TEST)
 static uint16_t          s_deferred_mixer_last[256];
 static bool              s_deferred_mixer_seen[256];
+#endif
 
 typedef struct {
     bool pending_in;
@@ -356,25 +358,14 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
                   ev->id == CTRL_ID_MASTER_VOLUME);
 }
 
+#if defined(DECK_CORE_PC_TEST)
 static bool is_deferred_mixer_control(uint8_t id)
 {
     switch (id) {
-    case CTRL_ID_HEADPHONE_MIX:
-        return true;
     default:
         return false;
     }
 }
-
-#if !defined(DECK_CORE_PC_TEST)
-static const char *deferred_mixer_control_name(uint8_t id)
-{
-    switch (id) {
-    case CTRL_ID_HEADPHONE_MIX: return "HEADPHONE_MIX";
-    default: return "UNKNOWN";
-    }
-}
-#endif
 
 static bool should_log_deferred_mixer_value(uint8_t id, uint16_t value)
 {
@@ -397,6 +388,7 @@ static bool should_log_deferred_mixer_value(uint8_t id, uint16_t value)
     s_deferred_mixer_last[id] = value;
     return true;
 }
+#endif
 
 static bool should_log_deferred_button(uint8_t id, int16_t value)
 {
@@ -1587,10 +1579,7 @@ static void on_mixer_control(uint8_t id, int16_t raw)
         audio_engine_set_master_volume(value);
         break;
     case CTRL_ID_HEADPHONE_MIX:
-        if (should_log_deferred_mixer_value(id, value)) {
-            ESP_LOGI(TAG, "mixer control %s raw=%u (DSP behavior deferred)",
-                     deferred_mixer_control_name(id), (unsigned)value);
-        }
+        audio_engine_set_headphone_mix(value);
         break;
     default:
         break;
@@ -1817,8 +1806,10 @@ void deck_core_test_reset(void)
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_beat_loop_led, 0, sizeof(s_beat_loop_led));
+#if defined(DECK_CORE_PC_TEST)
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
+#endif
     flx4_led_publisher_init(&s_flx4_led_publisher);
     s_last_heartbeat_tick = 0;
     s_flx4_connection_state_valid = false;

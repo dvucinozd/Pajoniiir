@@ -41,6 +41,14 @@ Recommended MVP hardware plan:
 | Master | external PCM5102A or similar I2S DAC | use the JP1 candidate set GPIO50/GPIO52/GPIO51 only after bench verification |
 | Cue/PFL | onboard ES8311 path | ES8311 remains the monitor/headphones/onboard-speaker path |
 
+Headphones Mix DSP is implemented in the P4 monitor path: FLX4 Headphones Mix
+raw `0` is cue/PFL, raw `16383` is master, and intermediate values blend cue
+with stereo master. This drives the ES8311 monitor/headphone buffer. It does
+not drive the physical DDJ-FLX4 headphone jack, because the current S3 USB host
+path enumerates the controller for MIDI only. Using the original FLX4 headphone
+jack would require a separate USB Audio Class host/streaming phase or a hardware
+analog monitor-output bridge to a headphone jack.
+
 Important: do not short a BTL speaker amplifier output to ground. The ES8311
 and amplifier path must be inspected before wiring headphones or line outputs.
 
