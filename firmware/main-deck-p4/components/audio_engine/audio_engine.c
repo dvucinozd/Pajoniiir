@@ -2095,14 +2095,6 @@ uint16_t audio_engine_get_deck_peak(uint8_t deck)
     return peak;
 }
 
-#if defined(AUDIO_ENGINE_PC_TEST)
-void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right)
-{
-    AE_LOCK();
-    record_deck_peak(deck, (audio_mixer_frame_t){ .left = left, .right = right });
-    AE_UNLOCK();
-}
-
 static uint32_t beat_fx_echo_capacity_frames(void)
 {
     return (AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE *
@@ -2136,6 +2128,14 @@ static void init_beat_fx_echo_buffers(void)
         s_beat_fx_echo_enabled[deck] = false;
         s_beat_fx_echo_delay_ms[deck] = 0;
     }
+}
+
+#if defined(AUDIO_ENGINE_PC_TEST)
+void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right)
+{
+    AE_LOCK();
+    record_deck_peak(deck, (audio_mixer_frame_t){ .left = left, .right = right });
+    AE_UNLOCK();
 }
 
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats)
