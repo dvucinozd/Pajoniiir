@@ -222,6 +222,15 @@ static void test_mixer_state_api(void)
     EXPECT(snapshot.filter[1] == 12000, "snapshot captures deck 1 filter raw value");
     EXPECT(snapshot.smart_cfx_enabled, "snapshot captures Smart CFX state");
     EXPECT(snapshot.smart_fader_enabled, "snapshot captures Smart Fader state");
+    EXPECT(audio_engine_set_filter(0, AUDIO_FILTER_RAW_CENTER - 512u) == ESP_OK,
+           "Smart CFX accepts near-center filter raw");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.filter[0] == AUDIO_FILTER_RAW_CENTER - 512u,
+           "snapshot keeps raw Smart CFX filter value");
+    EXPECT(snapshot.smart_cfx_filter_effective[0] > snapshot.filter[0],
+           "Smart CFX softens near-center low-pass travel");
+    EXPECT(snapshot.smart_cfx_filter_effective[0] < AUDIO_FILTER_RAW_CENTER,
+           "Smart CFX remains on low-pass side");
     EXPECT(!snapshot.beat_fx_filter_enabled[0], "Beat FX filter defaults off for deck 0");
     EXPECT(!snapshot.beat_fx_filter_enabled[1], "Beat FX filter defaults off for deck 1");
     EXPECT(audio_engine_set_beat_fx_filter(AUDIO_ENGINE_BEAT_FX_TARGET_CH2, 127, true) == ESP_OK,
@@ -260,6 +269,23 @@ static void test_mixer_state_api(void)
     audio_engine_get_mixer_snapshot(&snapshot);
     EXPECT(!snapshot.beat_fx_echo_enabled[0], "Beat FX echo zero depth disables deck 0");
     EXPECT(!snapshot.beat_fx_echo_enabled[1], "Beat FX echo zero depth disables deck 1");
+    EXPECT(!snapshot.pad_fx_active[0], "Pad FX defaults off for deck 0");
+    EXPECT(!snapshot.pad_fx_active[1], "Pad FX defaults off for deck 1");
+    EXPECT(audio_engine_set_pad_fx(0, AUDIO_PAD_FX_MODE_PAD_FX1, 0, true) == ESP_OK,
+           "Pad FX accepts deck 0 filter pad press");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.pad_fx_active[0], "Pad FX activates targeted deck 0");
+    EXPECT(!snapshot.pad_fx_active[1], "Pad FX leaves deck 1 untouched");
+    EXPECT(snapshot.pad_fx_kind[0] == AUDIO_PAD_FX_KIND_FILTER,
+           "Pad FX snapshot reports filter kind");
+    EXPECT(audio_engine_set_pad_fx(0, AUDIO_PAD_FX_MODE_PAD_FX1, 0, false) == ESP_OK,
+           "Pad FX accepts matching pad release");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.pad_fx_active[0], "Pad FX release clears active deck 0");
+    EXPECT(audio_engine_set_pad_fx(2, AUDIO_PAD_FX_MODE_PAD_FX1, 0, true) == ESP_ERR_INVALID_ARG,
+           "Pad FX invalid deck returns INVALID_ARG");
+    EXPECT(audio_engine_set_pad_fx(0, (audio_pad_fx_mode_t)99, 0, true) == ESP_ERR_INVALID_ARG,
+           "Pad FX invalid mode returns INVALID_ARG");
     EXPECT(audio_engine_set_channel_volume(0, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
            "deck 0 channel volume restores max for Smart Fader assist test");
     EXPECT(audio_engine_set_channel_volume(1, AUDIO_MIXER_CONTROL_MAX) == ESP_OK,

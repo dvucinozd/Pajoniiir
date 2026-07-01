@@ -76,7 +76,8 @@
   2026-06-20.
 - SMART CFX and SMART FADER raw inputs are mapped as momentary semantic
   press/release events. P4 owns their toggle state, LED feedback, status
-  exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
+  exposure, Smart CFX filter DSP with a softened raw/effective macro curve,
+  and Smart Fader transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
@@ -88,6 +89,10 @@
   instead of raw serial logging when a network transport is present. Hardware
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
   depth response, CH1/CH2/1&2 target routing, and physical ON/OFF LED feedback.
+- Pad FX DSP first slice is implemented in P4 and host-tested through
+  synthetic/control-link `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical
+  FLX4 Pad FX pad input mapping remains a separate smoke/capture gate because
+  the XML reference does not expose a complete Pad FX pad-action range.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -256,8 +261,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
   passed on 2026-06-26.
   Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4
-  and remains pending for hardware behavior smoke. Actual Sampler, Key Shift,
-  and Pad FX behavior remains a separate P4 feature task.
+  and remains pending for hardware behavior smoke. Pad FX has a host-tested P4
+  DSP slice behind synthetic/control-link PAD_FX1/PAD_FX2 actions, but actual
+  FLX4 Pad FX pad input mapping remains pending. Actual Sampler and Key Shift
+  behavior remains a separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and

@@ -84,7 +84,8 @@ The fork is no longer only the imported single-deck baseline:
   refresh with hardware smoke passed on 2026-06-26.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
   semantic button events. P4 now owns their state, LED feedback, status
-  exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
+  exposure, Smart CFX filter DSP with softened raw/effective control travel,
+  and Smart Fader transition-assist behavior.
 - Hot Cue pad behavior is implemented on P4: an empty pad stores the current
   per-track deck position, an occupied pad recalls it with audio seek, and
   Shift + pad clears the slot. Deck 1 hardware behavior smoke passed on
@@ -94,7 +95,9 @@ The fork is no longer only the imported single-deck baseline:
   Implemented P4 behavior now includes Loop In/Out, Reloop/Exit, loop
   halve/double, Beat Jump buttons/pads, normal and shifted Beat Loop pads,
   Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
-  Hot Cue store/recall/clear.
+  Hot Cue store/recall/clear. Pad FX now has a first P4-owned DSP slice behind
+  synthetic/control-link PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, while the
+  physical FLX4 Pad FX pad input mapping remains gated by capture/reconciliation.
 - The stale Codex branches from completed work were cleaned up after the Phase
   7 merge. The only intentionally preserved non-master work is
   `codex/flx4-extended-controls`, an older dirty Smart/DSP experimental
@@ -105,9 +108,9 @@ The fork is no longer only the imported single-deck baseline:
 - Full Mixxx feature parity.
 - Continuous beat following, master tempo/key lock, or full Rekordbox-style
   sync state.
-- Deeper Beat FX and pad FX audio DSP beyond the current Smart CFX filter,
-  Smart Fader transition-assist V1 behavior, Beat FX FILTER, and first
-  fixed-delay Echo slice.
+- Deeper Beat FX and physical Pad FX pad mapping beyond the current Smart CFX
+  filter curve, Smart Fader transition-assist V1 behavior, Beat FX FILTER,
+  first fixed-delay Echo slice, and host-tested Pad FX DSP slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.

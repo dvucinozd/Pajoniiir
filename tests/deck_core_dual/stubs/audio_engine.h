@@ -139,6 +139,11 @@ extern int audio_engine_stub_beat_fx_echo_depth;
 extern uint32_t audio_engine_stub_beat_fx_echo_delay_ms;
 extern bool audio_engine_stub_beat_fx_echo_enabled;
 extern int audio_engine_stub_beat_fx_echo_set_count;
+extern int audio_engine_stub_pad_fx_deck;
+extern int audio_engine_stub_pad_fx_mode;
+extern int audio_engine_stub_pad_fx_pad;
+extern bool audio_engine_stub_pad_fx_active;
+extern int audio_engine_stub_pad_fx_set_count;
 extern bool audio_engine_stub_smart_cfx_enabled;
 extern bool audio_engine_stub_smart_fader_enabled;
 
@@ -198,6 +203,25 @@ static inline esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_targe
     audio_engine_stub_beat_fx_echo_delay_ms = delay_ms;
     audio_engine_stub_beat_fx_echo_enabled = enabled;
     audio_engine_stub_beat_fx_echo_set_count++;
+    return ESP_OK;
+}
+
+typedef enum {
+    AUDIO_PAD_FX_MODE_PAD_FX1 = 0,
+    AUDIO_PAD_FX_MODE_PAD_FX2 = 1,
+} audio_pad_fx_mode_t;
+
+static inline esp_err_t audio_engine_set_pad_fx(uint8_t deck,
+                                                audio_pad_fx_mode_t mode,
+                                                uint8_t pad,
+                                                bool active)
+{
+    if (deck >= 2) return ESP_ERR_INVALID_ARG;
+    audio_engine_stub_pad_fx_deck = (int)deck;
+    audio_engine_stub_pad_fx_mode = (int)mode;
+    audio_engine_stub_pad_fx_pad = (int)pad;
+    audio_engine_stub_pad_fx_active = active;
+    audio_engine_stub_pad_fx_set_count++;
     return ESP_OK;
 }
 

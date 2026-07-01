@@ -570,8 +570,8 @@ loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
 Hot Cue store/recall/clear is implemented. Three-band EQ DSP is implemented
 per deck in the P4 audio path. Smart CFX now toggles P4-owned filter DSP from
-the FLX4 filter knobs, and Smart Fader now toggles a conservative crossfader
-transition-assist curve. Beat FX section mapping and the first P4-owned state
+the FLX4 filter knobs with a softened raw-to-effective macro curve, and Smart
+Fader now toggles a conservative crossfader transition-assist curve. Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
 clear/reset. The Overview right-side Beat FX panel renders that P4-owned
 snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
@@ -589,8 +589,12 @@ a fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
 `2/4=1000 ms`); live BPM-synced delay calculation remains deferred. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
 response, CH1/CH2/1&2 target routing, and the ON/OFF LED following P4 state.
-Sampler and pad FX behavior remains deferred unless separately marked
-implemented.
+Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
+`CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
+delay primitives. Full FLX4 Pad FX physical pad input mapping remains gated by
+raw capture or a reconciled official message list because the XML reference
+does not expose a complete Pad FX pad range. Sampler, stem, and key-shift
+behavior remains deferred until standalone P4 feature definitions exist.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
@@ -633,8 +637,9 @@ Implementation order:
    - map each button as a momentary semantic press/release event;
    - P4 behavior now toggles Smart CFX/Smart Fader state, drives the verified
      Smart LEDs, exposes state through the mixer snapshot/status API, applies
-     Smart CFX filter DSP from the channel filter knobs, and applies a safe
-     Smart Fader transition-assist crossfader curve.
+     Smart CFX filter DSP from the channel filter knobs with raw/effective
+     snapshot separation, and applies a safe Smart Fader transition-assist
+     crossfader curve.
 4. **Extended controller inventory** ✅
    - inventory created in `docs/DDJ_FLX4_MIDI_MAP.md` from 281 XML input
      controls and 112 XML output candidates;
@@ -719,7 +724,9 @@ Implementation order:
      1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
      pads. Normal and shifted Beat Loop pad behavior plus Beat Jump pad
      behavior is implemented in P4 using beatgrid/BPM calculation and remains
-     pending for hardware behavior smoke. Sampler, stem, key-shift, and pad-FX
+     pending for hardware behavior smoke. Pad FX has a first host-tested P4 DSP
+     slice for synthetic/control-link PAD_FX1/PAD_FX2 pad actions, but physical
+     FLX4 Pad FX pad input mapping remains gated. Sampler, stem, and key-shift
      behavior remains deferred until standalone P4 feature definitions exist.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter

@@ -1251,6 +1251,20 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             } else {
                 handle_shifted_beat_loop_release(deck);
             }
+        } else if (CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX1 ||
+                   CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX2) {
+            audio_pad_fx_mode_t mode =
+                CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX2
+                    ? AUDIO_PAD_FX_MODE_PAD_FX2
+                    : AUDIO_PAD_FX_MODE_PAD_FX1;
+            esp_err_t rc = audio_engine_set_pad_fx(deck,
+                                                   mode,
+                                                   CTRL_PAD_ACTION_PAD(ev->value),
+                                                   CTRL_PAD_ACTION_PRESSED(ev->value));
+            if (rc != ESP_OK) {
+                ESP_LOGW(TAG, "deck %u pad fx route failed: %d",
+                         (unsigned)deck + 1, (int)rc);
+            }
         } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
                      (unsigned)deck + 1,

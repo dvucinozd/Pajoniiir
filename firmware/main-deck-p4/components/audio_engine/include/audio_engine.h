@@ -27,6 +27,7 @@
 #include "audio_eq.h"
 #include "audio_filter.h"
 #include "audio_mixer.h"
+#include "audio_pad_fx.h"
 
 #if defined(AUDIO_ENGINE_PC_TEST)
     /* Stand-alone PC test build: provide ESP-IDF types without IDF headers */
@@ -141,11 +142,14 @@ typedef struct {
     uint16_t crossfader;
     uint16_t eq[AUDIO_ENGINE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
     uint16_t filter[AUDIO_ENGINE_DECK_COUNT];
+    uint16_t smart_cfx_filter_effective[AUDIO_ENGINE_DECK_COUNT];
     uint16_t beat_fx_filter_raw[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
     uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
+    bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
+    audio_pad_fx_kind_t pad_fx_kind[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
@@ -170,6 +174,7 @@ typedef struct {
     bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
     uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
+    bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
     uint32_t heap_free;
     uint32_t internal_free;
@@ -196,6 +201,10 @@ esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
                                         uint8_t depth,
                                         uint32_t delay_ms,
                                         bool enabled);
+esp_err_t audio_engine_set_pad_fx(uint8_t deck,
+                                  audio_pad_fx_mode_t mode,
+                                  uint8_t pad,
+                                  bool active);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

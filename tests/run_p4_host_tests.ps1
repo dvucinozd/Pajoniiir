@@ -157,10 +157,12 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
@@ -193,6 +195,18 @@ $tests = @(
             "test_audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "-lm"
+        )
+    },
+    @{
+        Name = "audio_smart_cfx"
+        Dir = "tests/audio_smart_cfx"
+        Target = "test_audio_smart_cfx.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_smart_cfx.exe",
+            "test_audio_smart_cfx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c"
         )
     },
     @{
@@ -257,6 +271,21 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_pad_fx"
+        Dir = "tests/audio_pad_fx"
+        Target = "test_audio_pad_fx.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_pad_fx.exe",
+            "test_audio_pad_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_output_mixer"
         Dir = "tests/audio_output_mixer"
         Target = "test_audio_output_mixer.exe"
@@ -269,6 +298,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c"
         )

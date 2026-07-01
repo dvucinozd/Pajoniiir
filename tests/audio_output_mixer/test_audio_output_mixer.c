@@ -367,6 +367,39 @@ static void test_beat_fx_echo_applies_only_to_target_deck(void)
     assert(delayed.deck_frame[1].left == 0);
 }
 
+static void test_pad_fx_applies_before_beat_fx_layer(void)
+{
+    audio_mixer_frame_t deck0_frames[64];
+    for (size_t i = 0; i < 64; i++) {
+        int16_t sample = (i & 1u) ? 12000 : -12000;
+        deck0_frames[i] = (audio_mixer_frame_t){ .left = sample, .right = sample };
+    }
+
+    source_t deck0_source = { .frames = deck0_frames, .count = 64, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
+    audio_pad_fx_state_t pad_fx;
+    audio_pad_fx_init(&pad_fx, 44100u);
+    audio_pad_fx_set(&pad_fx, (audio_pad_fx_config_t) {
+        .mode = AUDIO_PAD_FX_MODE_PAD_FX2,
+        .pad = 0,
+        .active = true,
+    });
+    deck0.pad_fx = &pad_fx;
+
+    int64_t processed_abs = 0;
+    for (int i = 0; i < 64; i++) {
+        audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, NULL,
+                                                                     false, false,
+                                                                     AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                                                                     NULL, NULL, NULL);
+        processed_abs += out.deck_frame[0].left < 0 ? -out.deck_frame[0].left : out.deck_frame[0].left;
+    }
+
+    assert(processed_abs < 64 * 12000);
+    assert(audio_pad_fx_is_active(&pad_fx));
+}
+
 int main(void)
 {
     test_mixes_two_active_decks_with_output_gains();
@@ -379,6 +412,7 @@ int main(void)
     test_full_mix_split_monitor_uses_master_left_and_pfl_right();
     test_beat_fx_filter_applies_only_to_target_deck();
     test_beat_fx_echo_applies_only_to_target_deck();
+    test_pad_fx_applies_before_beat_fx_layer();
     puts("audio_output_mixer tests passed");
     return 0;
 }

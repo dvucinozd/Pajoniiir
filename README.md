@@ -130,7 +130,8 @@ Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
 LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
 Smart CFX/Smart Fader input mapping and P4-owned state/LED behavior are
 implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
-knobs; Smart Fader applies a conservative crossfader transition-assist curve.
+knobs with a softened raw-to-effective macro curve; Smart Fader applies a
+conservative crossfader transition-assist curve.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
@@ -145,6 +146,11 @@ right-side Beat FX panel uses larger value text and active-state highlighting
 for better hardware readability. Hardware smoke on 2026-07-01 confirmed Beat
 FX FILTER and Echo behavior, gradual depth response, CH1/CH2/1&2 target
 routing, and the physical ON/OFF LED follows the P4-owned enabled state.
+Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
+PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, using the existing filter and delay
+primitives. Physical FLX4 Pad FX pad input mapping remains gated by raw capture
+or a reconciled official message list because the XML reference does not expose
+a complete Pad FX pad range.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
@@ -158,8 +164,8 @@ in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-pad FX and remaining Beat FX DSP polish remain P4 feature work, not S3 mapping
-work.
+Key Shift, physical Pad FX pad input mapping, and remaining Beat FX DSP polish
+remain P4/controller feature work, not S3 MVP mapping work.
 The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
