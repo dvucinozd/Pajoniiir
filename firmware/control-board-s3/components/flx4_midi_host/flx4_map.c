@@ -71,6 +71,8 @@
 #define FLX4_CC_EQ_LOW_LSB     0x2F
 #define FLX4_CC_HEADPHONE_MIX_MSB 0x0C
 #define FLX4_CC_HEADPHONE_MIX_LSB 0x2C
+#define FLX4_CC_MASTER_LEVEL_MSB  0x08
+#define FLX4_CC_MASTER_LEVEL_LSB  0x28
 #define FLX4_CC_FILTER_CH1_MSB 0x17
 #define FLX4_CC_FILTER_CH1_LSB 0x37
 #define FLX4_CC_FILTER_CH2_MSB 0x18
@@ -348,6 +350,10 @@ static bool map_master_cc(flx4_map_state_t *state,
         return update_14bit(&state->headphone_mix, true, data2, out, CTRL_ID_HEADPHONE_MIX);
     case FLX4_CC_HEADPHONE_MIX_LSB:
         return update_14bit(&state->headphone_mix, false, data2, out, CTRL_ID_HEADPHONE_MIX);
+    case FLX4_CC_MASTER_LEVEL_MSB:
+        return update_14bit(&state->master_volume, true, data2, out, CTRL_ID_MASTER_VOLUME);
+    case FLX4_CC_MASTER_LEVEL_LSB:
+        return update_14bit(&state->master_volume, false, data2, out, CTRL_ID_MASTER_VOLUME);
     case FLX4_CC_FILTER_CH1_MSB:
         return update_14bit(&state->filter[CTRL_DECK_1], true, data2, out, CTRL_ID_CH1_FILTER);
     case FLX4_CC_FILTER_CH1_LSB:

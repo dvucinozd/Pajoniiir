@@ -125,6 +125,7 @@ static inline esp_err_t audio_engine_deck_clear_loop(uint8_t deck)
 
 extern int audio_engine_stub_channel_volume[2];
 extern int audio_engine_stub_pregain[2];
+extern int audio_engine_stub_master_volume;
 extern int audio_engine_stub_crossfader;
 extern int audio_engine_stub_pfl_toggle_count[2];
 extern int audio_engine_stub_eq_raw[2][AUDIO_EQ_BAND_COUNT];
@@ -165,6 +166,12 @@ static inline esp_err_t audio_engine_set_pregain(uint8_t deck, uint16_t raw_preg
 {
     if (deck >= 2) return ESP_ERR_INVALID_ARG;
     audio_engine_stub_pregain[deck] = raw_pregain;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_master_volume(uint16_t raw_volume)
+{
+    audio_engine_stub_master_volume = raw_volume;
     return ESP_OK;
 }
 

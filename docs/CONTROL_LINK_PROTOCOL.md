@@ -107,6 +107,7 @@ test.
 | `0x78` | Beat FX depth | `0..127`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB4/0x02` |
 | `0x79` | Beat FX on/off | `0` release, `1` press; press toggles P4 Beat FX enabled state |
 | `0x7A` | Beat FX clear | `0` release, `1` press; press resets P4 Beat FX state to defaults |
+| `0x7B` | Master volume | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 Master Level `0xB6/0x08+0x28`; P4 applies it as runtime non-boosting master output volume |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,

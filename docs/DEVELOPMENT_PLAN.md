@@ -720,6 +720,11 @@ Implementation order:
      Hardware smoke on 2026-07-01 confirmed the full Trim travel after the
      output mixer clamp was widened to pass pregain boost into the master
      limiter.
+   - master level is implemented from the official FLX4 MIDI PDF (`B6 08/28`):
+     S3 maps the 14-bit control to `CTRL_ID_MASTER_VOLUME`, P4 stores it as
+     runtime non-persistent master volume, exposes it in `/api/status`, and
+     multiplies it with the persistent Settings master trim in the output gain
+     path. Hardware smoke passed on 2026-07-01.
    - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
      mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before

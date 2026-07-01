@@ -151,6 +151,7 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_DEPTH       (CTRL_NS_SYSTEM | 0x08)
 #define CTRL_ID_BEAT_FX_ON          (CTRL_NS_SYSTEM | 0x09)
 #define CTRL_ID_BEAT_FX_CLEAR       (CTRL_NS_SYSTEM | 0x0A)
+#define CTRL_ID_MASTER_VOLUME       (CTRL_NS_SYSTEM | 0x0B)
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,

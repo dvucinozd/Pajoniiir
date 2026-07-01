@@ -254,6 +254,10 @@ static void test_14bit_controls_emit_after_both_halves(void)
     assert(flx4_map_message(&state, MSG(0xB6, 0x3F, 0x02), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CROSSFADER, (int16_t)((0x20 << 7) | 0x02));
 
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x08, 0x21), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x28, 0x43), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_MASTER_VOLUME, (int16_t)((0x21 << 7) | 0x43));
+
     assert(!flx4_map_message(&state, MSG(0xB0, 0x04, 0x10), &ev));
     assert(flx4_map_message(&state, MSG(0xB0, 0x24, 0x20), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));

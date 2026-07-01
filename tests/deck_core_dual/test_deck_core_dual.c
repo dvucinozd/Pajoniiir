@@ -14,6 +14,7 @@ static const anlz_metadata_t *s_loaded_anlz[DECK_CORE_DECK_COUNT];
 static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_master_volume;
 int audio_engine_stub_crossfader;
 int audio_engine_stub_pfl_toggle_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_eq_raw[DECK_CORE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
@@ -190,6 +191,7 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
     }
+    audio_engine_stub_master_volume = -1;
     audio_engine_stub_beat_fx_filter_target = -1;
     audio_engine_stub_beat_fx_filter_depth = -1;
     audio_engine_stub_beat_fx_filter_enabled = false;
@@ -484,6 +486,18 @@ static void test_mixer_namespace_routes_trim_to_pregain(void)
 
     assert(audio_engine_stub_pregain[CTRL_DECK_1] == 6000);
     assert(audio_engine_stub_pregain[CTRL_DECK_2] == 12000);
+}
+
+static void test_mixer_namespace_routes_master_volume(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t master = mixer_value(CTRL_ID_MASTER_VOLUME, 10000);
+
+    deck_core_test_apply_event(&master);
+
+    assert(audio_engine_stub_master_volume == 10000);
 }
 
 static void test_mixer_namespace_routes_eq_controls(void)
@@ -1599,6 +1613,7 @@ int main(void)
     test_browser_press_toggles_library_view_without_loading_deck();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_trim_to_pregain();
+    test_mixer_namespace_routes_master_volume();
     test_mixer_namespace_routes_eq_controls();
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();

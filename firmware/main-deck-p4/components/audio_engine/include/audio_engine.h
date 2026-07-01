@@ -154,6 +154,7 @@ typedef struct {
     audio_pad_fx_kind_t pad_fx_kind[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
+    uint16_t master_volume;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
     bool smart_cfx_enabled;
     bool smart_fader_enabled;
@@ -209,6 +210,8 @@ esp_err_t audio_engine_set_pad_fx(uint8_t deck,
                                   audio_pad_fx_mode_t mode,
                                   uint8_t pad,
                                   bool active);
+esp_err_t audio_engine_set_master_volume(uint16_t raw_volume);
+uint16_t audio_engine_get_master_volume(void);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

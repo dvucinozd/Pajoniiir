@@ -136,6 +136,11 @@ conservative crossfader transition-assist curve with hardware smoke passed.
 Trim/pregain now routes the FLX4 deck-local Trim knobs into P4 audio output
 gain as a bounded pregain scalar: center is unity, left attenuates, and right
 boosts up to +6 dB before the existing post-sum limiter.
+The physical FLX4 Master Level knob is mapped from the official MIDI PDF
+(`0xB6/0x08+0x28`) to a P4-owned runtime master volume. It is non-boosting and
+multiplies the persistent Settings master trim, so the controller knob provides
+day-to-day level control while the UI trim remains a saved limiter/headroom
+setting.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still

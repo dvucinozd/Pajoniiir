@@ -86,6 +86,13 @@
   routing. Hardware smoke on 2026-07-01 confirmed both deck Trim knobs
   attenuate below center and boost above center after allowing pregain gain
   through the output mixer before the master limiter.
+- Master Level is mapped from the official FLX4 MIDI PDF as `0xB6/0x08+0x28`.
+  S3 forwards it as `CTRL_ID_MASTER_VOLUME`, and P4 applies it as a runtime
+  non-boosting master volume before the existing persistent Settings master
+  trim. Host tests cover the mapping, shared control-link ID, deck_core routing,
+  audio gain path, and `/api/status.mixer.master_volume`. Hardware smoke on
+  2026-07-01 confirmed full-range control from mute/low level through normal
+  master output.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a

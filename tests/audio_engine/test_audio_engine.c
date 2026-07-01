@@ -141,6 +141,8 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(deck1, 1.0f), "default deck 0 gain is unity");
     EXPECT(nearf(deck2, 1.0f), "default deck 1 gain is unity");
     EXPECT(nearf(audio_engine_get_master_trim(), 1.0f), "default master trim is unity");
+    EXPECT(audio_engine_get_master_volume() == AUDIO_MIXER_CONTROL_MAX,
+           "default controller master volume is max");
     EXPECT(audio_engine_get_pregain(0) == AUDIO_MIXER_CONTROL_CENTER,
            "deck 0 pregain defaults to center");
     EXPECT(audio_engine_get_pregain(1) == AUDIO_MIXER_CONTROL_CENTER,
@@ -193,6 +195,13 @@ static void test_mixer_state_api(void)
     EXPECT(audio_engine_set_master_trim(-1.0f) == ESP_OK, "master trim clamps negative gain to mute");
     EXPECT(nearf(audio_engine_get_master_trim(), 0.0f), "master trim clamps negative gain to zero");
     EXPECT(audio_engine_set_master_trim(1.0f) == ESP_OK, "master trim can restore unity");
+    EXPECT(audio_engine_set_master_volume(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "controller master volume accepts center raw value");
+    audio_engine_get_output_gains(&deck1, &deck2);
+    EXPECT(deck2 > 0.49f && deck2 < 0.51f,
+           "controller master volume attenuates audible deck gain");
+    EXPECT(audio_engine_set_master_volume(AUDIO_MIXER_CONTROL_MAX) == ESP_OK,
+           "controller master volume restores full raw value");
 
     audio_engine_mixer_snapshot_t snapshot;
     audio_engine_get_mixer_snapshot(&snapshot);
@@ -208,6 +217,8 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(snapshot.pregain_gain[1], 1.0f),
            "snapshot captures deck 1 pregain scalar");
     EXPECT(nearf(snapshot.master_trim, 1.0f), "snapshot captures master trim");
+    EXPECT(snapshot.master_volume == AUDIO_MIXER_CONTROL_MAX,
+           "snapshot captures controller master volume raw value");
     EXPECT(nearf(snapshot.output_gain[0], 0.0f), "snapshot captures deck 0 output gain");
     EXPECT(nearf(snapshot.output_gain[1], 1.0f), "snapshot captures deck 1 output gain");
 

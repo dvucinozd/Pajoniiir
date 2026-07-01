@@ -180,6 +180,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"volume1\":%u,"
              "\"volume2\":%u,"
              "\"crossfader\":%u,"
+             "\"master_volume\":%u,"
              "\"pregain1\":%u,"
              "\"pregain2\":%u,"
              "\"pregain_gain1\":%.3f,"
@@ -230,6 +231,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, state1.playing ? "true" : "false", state_text1,
              title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, state2.playing ? "true" : "false", state_text2,
              mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
+             mixer.master_volume,
              mixer.pregain[0], mixer.pregain[1],
              (double)mixer.pregain_gain[0], (double)mixer.pregain_gain[1],
              mixer.eq[0][AUDIO_EQ_BAND_LOW], mixer.eq[0][AUDIO_EQ_BAND_MID], mixer.eq[0][AUDIO_EQ_BAND_HIGH],

@@ -352,7 +352,8 @@ static bool event_is_mixer_control(const ctrl_event_t *ev)
                   ev->id == CTRL_ID_CH2_EQ_LOW ||
                   ev->id == CTRL_ID_CH1_FILTER ||
                   ev->id == CTRL_ID_CH2_FILTER ||
-                  ev->id == CTRL_ID_HEADPHONE_MIX);
+                  ev->id == CTRL_ID_HEADPHONE_MIX ||
+                  ev->id == CTRL_ID_MASTER_VOLUME);
 }
 
 static bool is_deferred_mixer_control(uint8_t id)
@@ -1581,6 +1582,9 @@ static void on_mixer_control(uint8_t id, int16_t raw)
         break;
     case CTRL_ID_CH2_TRIM:
         audio_engine_set_pregain(CTRL_DECK_2, value);
+        break;
+    case CTRL_ID_MASTER_VOLUME:
+        audio_engine_set_master_volume(value);
         break;
     case CTRL_ID_HEADPHONE_MIX:
         if (should_log_deferred_mixer_value(id, value)) {

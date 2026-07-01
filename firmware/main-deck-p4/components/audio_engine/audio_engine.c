@@ -197,6 +197,7 @@ static uint16_t         s_pregain[AUDIO_ENGINE_DECK_COUNT] = {
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static float            s_master_trim = 1.0f;
+static uint16_t         s_master_volume = AUDIO_MIXER_CONTROL_MAX;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
@@ -1460,6 +1461,7 @@ esp_err_t audio_engine_init(void)
     init_pad_fx_buffers();
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
+    s_master_volume = AUDIO_MIXER_CONTROL_MAX;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
     s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
@@ -2261,6 +2263,20 @@ uint16_t audio_engine_get_pregain(uint8_t deck)
     return s_pregain[deck];
 }
 
+esp_err_t audio_engine_set_master_volume(uint16_t raw_volume)
+{
+    if (raw_volume > AUDIO_MIXER_CONTROL_MAX) {
+        raw_volume = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_master_volume = raw_volume;
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_master_volume(void)
+{
+    return s_master_volume;
+}
+
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
 {
     if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
@@ -2453,12 +2469,14 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
         *deck0_gain = audio_mixer_fader_gain(s_channel_volume[0]) *
                       pregain_gain_from_raw(s_pregain[0]) *
                       xf0 *
+                      audio_mixer_fader_gain(s_master_volume) *
                       s_master_trim;
     }
     if (deck1_gain) {
         *deck1_gain = audio_mixer_fader_gain(s_channel_volume[1]) *
                       pregain_gain_from_raw(s_pregain[1]) *
                       xf1 *
+                      audio_mixer_fader_gain(s_master_volume) *
                       s_master_trim;
     }
 }
@@ -2527,6 +2545,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->pad_fx_kind[deck] = audio_pad_fx_kind(&s_pad_fx[deck]);
     }
     out_snapshot->master_trim = s_master_trim;
+    out_snapshot->master_volume = s_master_volume;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;
     out_snapshot->pfl_enabled[0] = s_pfl_enabled[0];
