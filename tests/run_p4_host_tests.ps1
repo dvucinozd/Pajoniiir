@@ -244,6 +244,18 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_delay_fx"
+        Dir = "tests/audio_delay_fx"
+        Target = "test_audio_delay_fx.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_delay_fx.exe",
+            "test_audio_delay_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c"
+        )
+    },
+    @{
         Name = "audio_output_mixer"
         Dir = "tests/audio_output_mixer"
         Target = "test_audio_output_mixer.exe"
