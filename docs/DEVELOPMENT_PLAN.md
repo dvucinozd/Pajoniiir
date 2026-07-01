@@ -591,10 +591,13 @@ smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
 response, CH1/CH2/1&2 target routing, and the ON/OFF LED following P4 state.
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
-delay primitives. Full FLX4 Pad FX physical pad input mapping remains gated by
-raw capture or a reconciled official message list because the XML reference
-does not expose a complete Pad FX pad range. Sampler, stem, and key-shift
-behavior remains deferred until standalone P4 feature definitions exist.
+delay primitives. Full FLX4 Pad FX physical pad input mapping is implemented
+from the official Pioneer/AlphaTheta MIDI message PDF because the XML reference
+does not expose a complete Pad FX pad range. Hardware smoke on 2026-07-01
+confirmed Pad FX filter pads and Echo pad routing; short Echo presses now keep
+a host-tested release tail instead of clearing the delay buffer immediately.
+Sampler, stem, and key-shift behavior remains deferred until
+standalone P4 feature definitions exist.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
@@ -725,9 +728,10 @@ Implementation order:
      pads. Normal and shifted Beat Loop pad behavior plus Beat Jump pad
      behavior is implemented in P4 using beatgrid/BPM calculation and remains
      pending for hardware behavior smoke. Pad FX has a first host-tested P4 DSP
-     slice for synthetic/control-link PAD_FX1/PAD_FX2 pad actions, but physical
-     FLX4 Pad FX pad input mapping remains gated. Sampler, stem, and key-shift
-     behavior remains deferred until standalone P4 feature definitions exist.
+     slice and physical input mapping from the official MIDI message PDF for
+     PAD_FX1/PAD_FX2 pad actions; hardware smoke remains pending. Sampler,
+     stem, and key-shift behavior remains deferred until standalone P4 feature
+     definitions exist.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;

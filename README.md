@@ -148,9 +148,11 @@ FX FILTER and Echo behavior, gradual depth response, CH1/CH2/1&2 target
 routing, and the physical ON/OFF LED follows the P4-owned enabled state.
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, using the existing filter and delay
-primitives. Physical FLX4 Pad FX pad input mapping remains gated by raw capture
-or a reconciled official message list because the XML reference does not expose
-a complete Pad FX pad range.
+primitives. Physical FLX4 Pad FX pad input mapping is implemented from the
+official Pioneer/AlphaTheta MIDI message PDF: Pad FX1 uses `0x10..0x17` and Pad
+FX2 uses `0x50..0x57` on the existing deck pad statuses. Hardware smoke
+confirmed Pad FX filter pads and Echo routing; short Echo presses keep a
+host-tested release tail so the delay is audible after pad release.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
@@ -164,8 +166,8 @@ in the P4 audio path for both decks using the verified FLX4 14-bit EQ controls.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-Key Shift, physical Pad FX pad input mapping, and remaining Beat FX DSP polish
-remain P4/controller feature work, not S3 MVP mapping work.
+Key Shift, Pad FX hardware smoke, and remaining Beat FX DSP polish remain
+P4/controller feature work, not S3 MVP mapping work.
 The porting
 steps are tracked in
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).

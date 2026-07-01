@@ -371,6 +371,9 @@ static bool map_pad_message(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     if (data1 <= 0x07) {
         mode = CTRL_PAD_MODE_HOT_CUE;
         pad = data1;
+    } else if (data1 >= 0x10 && data1 <= 0x17) {
+        mode = CTRL_PAD_MODE_PAD_FX1;
+        pad = data1 - 0x10;
     } else if (data1 >= 0x20 && data1 <= 0x27) {
         mode = CTRL_PAD_MODE_BEAT_JUMP;
         pad = data1 - 0x20;
@@ -380,6 +383,9 @@ static bool map_pad_message(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     } else if (data1 >= 0x40 && data1 <= 0x47) {
         mode = CTRL_PAD_MODE_KEYBOARD;
         pad = data1 - 0x40;
+    } else if (data1 >= 0x50 && data1 <= 0x57) {
+        mode = CTRL_PAD_MODE_PAD_FX2;
+        pad = data1 - 0x50;
     } else if (data1 >= 0x60 && data1 <= 0x67) {
         mode = CTRL_PAD_MODE_BEAT_LOOP;
         pad = data1 - 0x60;

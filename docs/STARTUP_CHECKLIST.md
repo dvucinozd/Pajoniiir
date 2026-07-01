@@ -90,9 +90,12 @@
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
   depth response, CH1/CH2/1&2 target routing, and physical ON/OFF LED feedback.
 - Pad FX DSP first slice is implemented in P4 and host-tested through
-  synthetic/control-link `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical
-  FLX4 Pad FX pad input mapping remains a separate smoke/capture gate because
-  the XML reference does not expose a complete Pad FX pad-action range.
+  `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical FLX4 Pad FX pad input
+  mapping is implemented from the official MIDI message PDF (`0x10..0x17` for
+  Pad FX1 and `0x50..0x57` for Pad FX2 on `0x97`/`0x99` deck pad statuses);
+  2026-07-01 smoke confirmed filter pads and Echo routing. Short Echo presses
+  keep a host-tested release tail instead of clearing the delay buffer
+  immediately; post-flash hardware confirmation remains pending.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative
@@ -262,9 +265,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   passed on 2026-06-26.
   Normal and shifted Beat Loop plus Beat Jump pad behavior is implemented in P4
   and remains pending for hardware behavior smoke. Pad FX has a host-tested P4
-  DSP slice behind synthetic/control-link PAD_FX1/PAD_FX2 actions, but actual
-  FLX4 Pad FX pad input mapping remains pending. Actual Sampler and Key Shift
-  behavior remains a separate P4 feature task.
+  DSP slice and official-PDF-backed FLX4 Pad FX pad input mapping; hardware
+  smoke remains pending. Actual Sampler and Key Shift behavior remains a
+  separate P4 feature task.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and

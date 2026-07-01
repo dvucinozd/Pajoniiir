@@ -29,7 +29,9 @@ typedef struct {
     audio_delay_fx_t echo;
     audio_pad_fx_config_t config;
     audio_pad_fx_kind_t kind;
+    uint32_t echo_tail_frames_remaining;
     bool active;
+    bool echo_tail_active;
 } audio_pad_fx_state_t;
 
 void audio_pad_fx_init(audio_pad_fx_state_t *fx, uint32_t sample_rate_hz);

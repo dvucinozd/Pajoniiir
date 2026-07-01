@@ -199,6 +199,19 @@ static void test_pad_modes_and_pad_actions(void)
     assert(flx4_map_message(&state, MSG(0x98, 0x45, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
                  CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_KEYBOARD, 5, true, true));
+
+    assert(flx4_map_message(&state, MSG(0x97, 0x10, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 0, false, true));
+    assert(flx4_map_message(&state, MSG(0x97, 0x57, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX2, 7, false, true));
+    assert(flx4_map_message(&state, MSG(0x99, 0x12, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 2, false, true));
+    assert(flx4_map_message(&state, MSG(0x99, 0x50, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
+                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX2, 0, false, false));
 }
 
 static void test_jog_and_browse_relative_controls(void)

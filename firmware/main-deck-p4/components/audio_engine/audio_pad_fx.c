@@ -10,6 +10,21 @@ typedef struct {
     uint16_t echo_feedback_q15;
 } audio_pad_fx_preset_t;
 
+static int16_t clamp_i16(int32_t value)
+{
+    if (value > 32767) return 32767;
+    if (value < -32768) return -32768;
+    return (int16_t)value;
+}
+
+static audio_mixer_frame_t mix_clamped(audio_mixer_frame_t a, audio_mixer_frame_t b)
+{
+    return (audio_mixer_frame_t) {
+        .left = clamp_i16((int32_t)a.left + (int32_t)b.left),
+        .right = clamp_i16((int32_t)a.right + (int32_t)b.right),
+    };
+}
+
 static audio_pad_fx_preset_t preset_for(audio_pad_fx_mode_t mode, uint8_t pad)
 {
     if (mode == AUDIO_PAD_FX_MODE_PAD_FX2) {
@@ -100,6 +115,8 @@ void audio_pad_fx_reset(audio_pad_fx_state_t *fx)
 {
     if (!fx) return;
     fx->active = false;
+    fx->echo_tail_active = false;
+    fx->echo_tail_frames_remaining = 0;
     fx->kind = AUDIO_PAD_FX_KIND_NONE;
     fx->config.active = false;
     audio_filter_set_raw(&fx->filter, AUDIO_FILTER_RAW_CENTER);
@@ -116,6 +133,13 @@ void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config)
         if (fx->active &&
             fx->config.mode == config.mode &&
             fx->config.pad == config.pad) {
+            if (fx->kind == AUDIO_PAD_FX_KIND_ECHO && audio_delay_fx_is_allocated(&fx->echo)) {
+                fx->active = false;
+                fx->config.active = false;
+                fx->echo_tail_active = true;
+                fx->echo_tail_frames_remaining = fx->echo.sample_rate ? fx->echo.sample_rate : 44100u;
+                return;
+            }
             audio_pad_fx_reset(fx);
         }
         return;
@@ -126,6 +150,8 @@ void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config)
     fx->kind = preset.kind;
     fx->active = preset.kind != AUDIO_PAD_FX_KIND_NONE;
     fx->config.active = fx->active;
+    fx->echo_tail_active = false;
+    fx->echo_tail_frames_remaining = 0;
 
     if (preset.kind == AUDIO_PAD_FX_KIND_FILTER) {
         audio_filter_set_raw(&fx->filter, preset.filter_raw);
@@ -147,15 +173,25 @@ void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config)
 audio_mixer_frame_t audio_pad_fx_process_frame(audio_pad_fx_state_t *fx,
                                                audio_mixer_frame_t in)
 {
-    if (!fx || !fx->active) {
+    if (!fx) {
         return in;
     }
 
-    if (fx->kind == AUDIO_PAD_FX_KIND_FILTER) {
+    if (fx->active && fx->kind == AUDIO_PAD_FX_KIND_FILTER) {
         return audio_filter_process_frame(&fx->filter, true, in);
     }
-    if (fx->kind == AUDIO_PAD_FX_KIND_ECHO) {
+    if (fx->active && fx->kind == AUDIO_PAD_FX_KIND_ECHO) {
         return audio_delay_fx_process_frame(&fx->echo, in);
+    }
+    if (fx->echo_tail_active) {
+        audio_mixer_frame_t tail = audio_delay_fx_process_frame(&fx->echo, (audio_mixer_frame_t) { 0 });
+        if (fx->echo_tail_frames_remaining > 0u) {
+            fx->echo_tail_frames_remaining--;
+        }
+        if (fx->echo_tail_frames_remaining == 0u) {
+            audio_pad_fx_reset(fx);
+        }
+        return mix_clamped(in, tail);
     }
     return in;
 }
