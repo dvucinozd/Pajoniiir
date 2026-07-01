@@ -1276,6 +1276,27 @@ static void test_pad_fx2_pad_action_routes_to_audio_engine(void)
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
 }
 
+static void test_pad_fx_pad_action_updates_momentary_pad_led(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    ctrl_event_t mode = deck_button(CTRL_ID_DECK1_PAD_MODE_PAD_FX1);
+    deck_core_test_apply_event(&mode);
+    control_link_stub_reset_leds();
+
+    ctrl_event_t press = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    press.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 2, false, true);
+    deck_core_test_apply_event(&press);
+    assert(control_link_stub_last_led_state(LED_PAD_FX1_PAD_3, CTRL_DECK_1) == 1);
+
+    ctrl_event_t release = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    release.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 2, false, false);
+    deck_core_test_apply_event(&release);
+    assert(control_link_stub_last_led_state(LED_PAD_FX1_PAD_3, CTRL_DECK_1) == 0);
+}
+
 static void test_hot_cue_pad_stores_empty_slot_at_requested_deck_position(void)
 {
     deck_core_test_reset();
@@ -1529,6 +1550,7 @@ int main(void)
     test_pad_action_is_consumed_without_transport_side_effects();
     test_pad_fx1_pad_action_routes_to_audio_engine();
     test_pad_fx2_pad_action_routes_to_audio_engine();
+    test_pad_fx_pad_action_updates_momentary_pad_led();
     test_hot_cue_pad_stores_empty_slot_at_requested_deck_position();
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();

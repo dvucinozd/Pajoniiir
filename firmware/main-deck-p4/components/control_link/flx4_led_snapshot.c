@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#define FLX4_LED_SNAPSHOT_COUNT 25u
+#define FLX4_LED_SNAPSHOT_COUNT 41u
 
 static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_CUE,
@@ -27,6 +27,22 @@ static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_BEAT_LOOP_PAD_6,
     LED_BEAT_LOOP_PAD_7,
     LED_BEAT_LOOP_PAD_8,
+    LED_PAD_FX1_PAD_1,
+    LED_PAD_FX1_PAD_2,
+    LED_PAD_FX1_PAD_3,
+    LED_PAD_FX1_PAD_4,
+    LED_PAD_FX1_PAD_5,
+    LED_PAD_FX1_PAD_6,
+    LED_PAD_FX1_PAD_7,
+    LED_PAD_FX1_PAD_8,
+    LED_PAD_FX2_PAD_1,
+    LED_PAD_FX2_PAD_2,
+    LED_PAD_FX2_PAD_3,
+    LED_PAD_FX2_PAD_4,
+    LED_PAD_FX2_PAD_5,
+    LED_PAD_FX2_PAD_6,
+    LED_PAD_FX2_PAD_7,
+    LED_PAD_FX2_PAD_8,
     LED_SMART_CFX,
     LED_SMART_FADER,
     LED_BEAT_FX_ON,
@@ -72,6 +88,21 @@ static uint8_t beat_loop_pad_value(const flx4_led_snapshot_input_t *input,
     return duration_matches(duration_ms, s_beat_loop_durations_ms[pad]) ? 1u : 0u;
 }
 
+static uint8_t pad_fx_pad_value(const flx4_led_snapshot_input_t *input,
+                                uint8_t deck,
+                                uint8_t mode,
+                                uint8_t pad)
+{
+    if (!input->pad_fx_active[deck] ||
+        input->pad_fx_active_mode[deck] != mode ||
+        input->pad_fx_active_pad[deck] != pad ||
+        input->pad_mode[deck] != mode ||
+        pad >= 8u) {
+        return 0;
+    }
+    return 1u;
+}
+
 static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
                               uint8_t deck,
                               uint8_t index)
@@ -99,10 +130,28 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 21:
         return beat_loop_pad_value(input, deck, (uint8_t)(index - 14u));
     case 22:
-        return input->smart_cfx;
     case 23:
-        return input->smart_fader;
     case 24:
+    case 25:
+    case 26:
+    case 27:
+    case 28:
+    case 29:
+        return pad_fx_pad_value(input, deck, CTRL_PAD_MODE_PAD_FX1, (uint8_t)(index - 22u));
+    case 30:
+    case 31:
+    case 32:
+    case 33:
+    case 34:
+    case 35:
+    case 36:
+    case 37:
+        return pad_fx_pad_value(input, deck, CTRL_PAD_MODE_PAD_FX2, (uint8_t)(index - 30u));
+    case 38:
+        return input->smart_cfx;
+    case 39:
+        return input->smart_fader;
+    case 40:
         return input->beat_fx_on;
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);

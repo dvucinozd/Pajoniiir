@@ -70,6 +70,14 @@ typedef struct {
 
 static deck_shifted_loop_roll_t s_shifted_loop_roll[DECK_CORE_DECK_COUNT];
 
+typedef struct {
+    bool active;
+    uint8_t mode;
+    uint8_t pad;
+} deck_pad_fx_led_state_t;
+
+static deck_pad_fx_led_state_t s_pad_fx_led[DECK_CORE_DECK_COUNT];
+
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
@@ -773,6 +781,9 @@ static void publish_flx4_led_snapshot(bool force)
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
         input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1 : 0;
+        input.pad_fx_active[deck] = s_pad_fx_led[deck].active ? 1u : 0u;
+        input.pad_fx_active_mode[deck] = s_pad_fx_led[deck].mode;
+        input.pad_fx_active_pad[deck] = s_pad_fx_led[deck].pad;
 
         bool loop_active = false;
         uint32_t loop_start = 0;
@@ -1253,17 +1264,31 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             }
         } else if (CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX1 ||
                    CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX2) {
+            uint8_t pad_fx_mode = CTRL_PAD_ACTION_MODE(ev->value);
+            uint8_t pad_fx_pad = CTRL_PAD_ACTION_PAD(ev->value);
+            bool pad_fx_pressed = CTRL_PAD_ACTION_PRESSED(ev->value);
             audio_pad_fx_mode_t mode =
-                CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_PAD_FX2
+                pad_fx_mode == CTRL_PAD_MODE_PAD_FX2
                     ? AUDIO_PAD_FX_MODE_PAD_FX2
                     : AUDIO_PAD_FX_MODE_PAD_FX1;
             esp_err_t rc = audio_engine_set_pad_fx(deck,
                                                    mode,
-                                                   CTRL_PAD_ACTION_PAD(ev->value),
-                                                   CTRL_PAD_ACTION_PRESSED(ev->value));
+                                                   pad_fx_pad,
+                                                   pad_fx_pressed);
             if (rc != ESP_OK) {
                 ESP_LOGW(TAG, "deck %u pad fx route failed: %d",
                          (unsigned)deck + 1, (int)rc);
+            } else {
+                if (pad_fx_pressed) {
+                    s_pad_fx_led[deck].active = true;
+                    s_pad_fx_led[deck].mode = pad_fx_mode;
+                    s_pad_fx_led[deck].pad = pad_fx_pad;
+                } else if (s_pad_fx_led[deck].active &&
+                           s_pad_fx_led[deck].mode == pad_fx_mode &&
+                           s_pad_fx_led[deck].pad == pad_fx_pad) {
+                    s_pad_fx_led[deck].active = false;
+                }
+                publish_flx4_led_snapshot(false);
             }
         } else if (should_log_deferred_button(ev->id, ev->value)) {
             ESP_LOGI(TAG, "deck %u pad action mode=%u pad=%u shifted=%u (behavior deferred)",
@@ -1683,6 +1708,7 @@ void deck_core_reset_deck(uint8_t deck)
     init_deck_state(&s_decks[idx]);
     memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
     memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
+    memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -1696,6 +1722,7 @@ void deck_core_test_reset(void)
     init_beat_fx_state();
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
+    memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
     flx4_led_publisher_init(&s_flx4_led_publisher);

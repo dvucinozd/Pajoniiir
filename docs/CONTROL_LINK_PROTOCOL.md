@@ -167,8 +167,9 @@ period. S3 forwards this as USB MIDI CC `0x02` on `0xB0` for Deck/Channel 1 and
 P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
-enabled state, active Loop In/Out state, Smart CFX/Fader state, and the global
-Beat FX ON/OFF enabled state. Host tests verify normal diff
+enabled state, active Loop In/Out state, Beat Loop pad state, momentary Pad FX
+pad state, Smart CFX/Fader state, and the global Beat FX ON/OFF enabled state.
+Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
 reconnect smoke remains an acceptance item.
@@ -192,6 +193,12 @@ separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,
 that their pad behavior is implemented. The S3 maps these LED IDs to the
 XML-derived FLX4 MIDI output notes and sends exactly one active pad-mode LED per
 deck in the P4 snapshot.
+
+Pad FX pad LED feedback is also P4-owned. `deck_core` stores the current
+momentary Pad FX pad press per deck and publishes normal Pad FX1/Pad FX2 pad
+LEDs through the same snapshot path. The LEDs follow the physical press/release
+state only; Pad FX Echo audio tails intentionally continue after release without
+holding the pad LED on.
 
 Beat Sync LED feedback is P4-owned from `deck_core.sync_enabled`. Pressing Beat
 Sync toggles the target deck's sync state, applies the current one-shot BPM

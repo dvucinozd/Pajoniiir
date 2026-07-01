@@ -59,6 +59,19 @@ static void test_beat_loop_pad_led_packets(void)
     expect_packet(LED_BEAT_LOOP_PAD_8, 0, CTRL_DECK_2, 0x09, 0x99, 0x67, 0x00);
 }
 
+static void test_pad_fx_pad_led_packets(void)
+{
+    expect_packet(LED_PAD_FX1_PAD_1, 1, CTRL_DECK_1, 0x09, 0x97, 0x10, 0x7F);
+    expect_packet(LED_PAD_FX1_PAD_8, 0, CTRL_DECK_1, 0x09, 0x97, 0x17, 0x00);
+    expect_packet(LED_PAD_FX1_PAD_1, 1, CTRL_DECK_2, 0x09, 0x99, 0x10, 0x7F);
+    expect_packet(LED_PAD_FX1_PAD_8, 0, CTRL_DECK_2, 0x09, 0x99, 0x17, 0x00);
+
+    expect_packet(LED_PAD_FX2_PAD_1, 1, CTRL_DECK_1, 0x09, 0x97, 0x50, 0x7F);
+    expect_packet(LED_PAD_FX2_PAD_8, 0, CTRL_DECK_1, 0x09, 0x97, 0x57, 0x00);
+    expect_packet(LED_PAD_FX2_PAD_1, 1, CTRL_DECK_2, 0x09, 0x99, 0x50, 0x7F);
+    expect_packet(LED_PAD_FX2_PAD_8, 0, CTRL_DECK_2, 0x09, 0x99, 0x57, 0x00);
+}
+
 static void test_vu_and_rejects(void)
 {
     expect_packet(LED_VU_METER, 0x40, CTRL_DECK_1, 0x0B, 0xB0, 0x02, 0x40);
@@ -75,6 +88,7 @@ int main(void)
 {
     test_transport_and_mode_led_packets();
     test_beat_loop_pad_led_packets();
+    test_pad_fx_pad_led_packets();
     test_vu_and_rejects();
     puts("flx4_led_midi tests passed");
     return 0;

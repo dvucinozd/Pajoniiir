@@ -12,6 +12,14 @@ static bool note_for_led(uint8_t led, uint8_t *note)
         *note = (uint8_t)(0x60u + (led - LED_BEAT_LOOP_PAD_1));
         return true;
     }
+    if (led >= LED_PAD_FX1_PAD_1 && led <= LED_PAD_FX1_PAD_8) {
+        *note = (uint8_t)(0x10u + (led - LED_PAD_FX1_PAD_1));
+        return true;
+    }
+    if (led >= LED_PAD_FX2_PAD_1 && led <= LED_PAD_FX2_PAD_8) {
+        *note = (uint8_t)(0x50u + (led - LED_PAD_FX2_PAD_1));
+        return true;
+    }
 
     switch (led) {
     case LED_PLAY:
@@ -93,7 +101,9 @@ bool flx4_led_midi_build_packet(uint8_t led,
     }
 
     packet[0] = 0x09;
-    if (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) {
+    if ((led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) ||
+        (led >= LED_PAD_FX1_PAD_1 && led <= LED_PAD_FX1_PAD_8) ||
+        (led >= LED_PAD_FX2_PAD_1 && led <= LED_PAD_FX2_PAD_8)) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x97 : 0x99;
     } else if (led == LED_BEAT_FX_ON) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x94 : 0x95;

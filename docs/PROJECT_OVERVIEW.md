@@ -96,9 +96,10 @@ The fork is no longer only the imported single-deck baseline:
   halve/double, Beat Jump buttons/pads, normal and shifted Beat Loop pads,
   Tempo Range, Beat Sync BPM-match-on-press with paused-deck phase align, and
   Hot Cue store/recall/clear. Pad FX now has a first P4-owned DSP slice behind
-  PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, and physical FLX4 Pad FX pad input
-  mapping is implemented from the official MIDI message PDF. Hardware smoke
-  remains pending.
+  PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, physical FLX4 Pad FX pad input
+  mapping from the official MIDI message PDF, Echo release-tail behavior, and
+  host-tested momentary Pad FX pad LED feedback. Hardware LED smoke remains
+  pending.
 - The stale Codex branches from completed work were cleaned up after the Phase
   7 merge. The only intentionally preserved non-master work is
   `codex/flx4-extended-controls`, an older dirty Smart/DSP experimental
@@ -111,7 +112,7 @@ The fork is no longer only the imported single-deck baseline:
   sync state.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
   filter curve, Smart Fader transition-assist V1 behavior, Beat FX FILTER,
-  first fixed-delay Echo slice, and host-tested Pad FX DSP/input slice.
+  first fixed-delay Echo slice, and host-tested Pad FX DSP/input/LED slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.

@@ -95,7 +95,9 @@
   Pad FX1 and `0x50..0x57` for Pad FX2 on `0x97`/`0x99` deck pad statuses);
   2026-07-01 smoke confirmed filter pads and Echo routing. Short Echo presses
   keep a host-tested release tail instead of clearing the delay buffer
-  immediately; post-flash hardware confirmation remains pending.
+  immediately. Pad FX1/Pad FX2 normal pad LEDs are implemented as P4-owned
+  momentary press feedback and host-tested from the official PDF; hardware LED
+  smoke remains pending.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative

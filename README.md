@@ -152,7 +152,9 @@ primitives. Physical FLX4 Pad FX pad input mapping is implemented from the
 official Pioneer/AlphaTheta MIDI message PDF: Pad FX1 uses `0x10..0x17` and Pad
 FX2 uses `0x50..0x57` on the existing deck pad statuses. Hardware smoke
 confirmed Pad FX filter pads and Echo routing; short Echo presses keep a
-host-tested release tail so the delay is audible after pad release.
+host-tested release tail so the delay is audible after pad release. Pad FX1 and
+Pad FX2 normal pad LEDs now follow P4-owned momentary pad press state; shifted
+mirror pad LEDs remain deferred.
 The S3 USB MIDI host now
 treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
 floods during normal translator operation, preserving controller responsiveness
