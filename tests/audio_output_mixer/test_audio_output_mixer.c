@@ -192,6 +192,25 @@ static void test_master_limiter_leaves_normal_two_deck_sum_unchanged(void)
     assert(stats.limited_samples == 0);
 }
 
+static void test_deck_gain_allows_pregain_boost_before_limiter(void)
+{
+    audio_mixer_frame_t deck0_frames[] = {
+        { .left = 9000, .right = -9000 },
+        { .left = 9000, .right = -9000 },
+    };
+    source_t deck0_source = { .frames = deck0_frames, .count = 2, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 2.0f);
+    audio_mixer_limiter_stats_t stats = { 0 };
+
+    prime_output_mixer(&deck0, NULL);
+    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, NULL, NULL, NULL, &stats);
+
+    assert(out.left == 18000);
+    assert(out.right == -18000);
+    assert(stats.limited_samples == 0);
+}
+
 static void test_master_limiter_shapes_overloads_and_reports_telemetry(void)
 {
     audio_mixer_frame_t deck0_frames[] = {
@@ -407,6 +426,7 @@ int main(void)
     test_deck_sample_rate_ratio_affects_source_consumption();
     test_master_limiter_leaves_single_deck_unchanged();
     test_master_limiter_leaves_normal_two_deck_sum_unchanged();
+    test_deck_gain_allows_pregain_boost_before_limiter();
     test_master_limiter_shapes_overloads_and_reports_telemetry();
     test_full_mix_keeps_master_stereo_when_cue_is_enabled();
     test_full_mix_split_monitor_uses_master_left_and_pfl_right();

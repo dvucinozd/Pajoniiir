@@ -3,7 +3,7 @@
 static float clamp_gain(float gain)
 {
     if (gain < 0.0f) return 0.0f;
-    if (gain > 1.0f) return 1.0f;
+    if (gain > 2.0f) return 2.0f;
     return gain;
 }
 

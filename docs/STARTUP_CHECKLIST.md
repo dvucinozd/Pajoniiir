@@ -83,7 +83,9 @@
   as a bounded pregain scalar: center is unity, left attenuates, and right
   boosts up to +6 dB before the existing post-sum limiter. Host tests cover the
   audio gain curve, mixer snapshot, `/api/status` exposure, and deck_core
-  routing; hardware smoke remains pending.
+  routing. Hardware smoke on 2026-07-01 confirmed both deck Trim knobs
+  attenuate below center and boost above center after allowing pregain gain
+  through the output mixer before the master limiter.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a

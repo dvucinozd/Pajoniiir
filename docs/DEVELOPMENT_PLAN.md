@@ -717,6 +717,9 @@ Implementation order:
      in the mixer snapshot and `/api/status`, and output gain applies a bounded
      pregain scalar before the existing post-sum limiter. Center raw `8192` is
      unity, minimum is `0.25x`, and maximum is a conservative `+6 dB` boost.
+     Hardware smoke on 2026-07-01 confirmed the full Trim travel after the
+     output mixer clamp was widened to pass pregain boost into the master
+     limiter.
    - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
      mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before
