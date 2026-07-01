@@ -179,6 +179,10 @@ if P4 reboots while S3 and the FLX4 stay powered, the next heartbeat refresh
 lets the freshly booted P4 force its LED snapshot without requiring a controller
 replug.
 
+The current P4 Beat FX snapshot is exposed through `/api/status` under
+`beat_fx` for low-rate hardware smoke verification without raw MIDI logging.
+The object contains `effect`, `beat`, `target`, `depth`, and `enabled`.
+
 Pad mode LEDs are also P4-owned. `deck_core` stores controller `pad_mode`
 separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,
 `PAD_FX2`, `KEYBOARD`, and `SAMPLER` can still drive LED state without implying

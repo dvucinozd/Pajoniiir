@@ -79,7 +79,8 @@
   exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX audio DSP remains
-  pending.
+  pending. Use `/api/status.beat_fx` for hardware smoke verification instead of
+  raw serial logging.
 - Official DDJ-FLX4 MIDI message list coverage is documented in
   `docs/reference/DDJ-FLX4_MIDI_message_List.md` and cross-referenced from
   `docs/DDJ_FLX4_MIDI_MAP.md`; the Mixxx XML remains the proven authoritative

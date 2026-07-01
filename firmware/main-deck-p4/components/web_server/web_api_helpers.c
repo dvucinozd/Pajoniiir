@@ -1,5 +1,7 @@
 #include "web_api_helpers.h"
 
+#include <stdio.h>
+
 static void append_json_char(char c, char *dst, size_t dst_size, size_t *written)
 {
     if (dst && *written + 1u < dst_size) {
@@ -50,4 +52,25 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
     }
 
     return written;
+}
+
+int web_api_format_beat_fx_json(char *dst,
+                                size_t dst_size,
+                                int effect,
+                                int beat,
+                                int target,
+                                unsigned depth,
+                                bool enabled)
+{
+    if (!dst || dst_size == 0) {
+        return 0;
+    }
+    return snprintf(dst,
+                    dst_size,
+                    "\"beat_fx\":{\"effect\":%d,\"beat\":%d,\"target\":%d,\"depth\":%u,\"enabled\":%s}",
+                    effect,
+                    beat,
+                    target,
+                    depth,
+                    enabled ? "true" : "false");
 }

@@ -123,20 +123,29 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
+    deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
 
     float p1 = deck_core_pitch_percent(&state1);
     float p2 = deck_core_pitch_percent(&state2);
 
     uint32_t current_bpm1 = bpm1_val * (1.0f + p1 / 100.0f);
     uint32_t current_bpm2 = bpm2_val * (1.0f + p2 / 100.0f);
+    char beat_fx_json[128] = {0};
+    web_api_format_beat_fx_json(beat_fx_json,
+                                sizeof(beat_fx_json),
+                                (int)beat_fx.effect,
+                                (int)beat_fx.beat,
+                                (int)beat_fx.target,
+                                (unsigned)beat_fx.depth,
+                                beat_fx.enabled);
 
-    char *json = malloc(1536);
+    char *json = malloc(1792);
     if (!json) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;
     }
 
-    snprintf(json, 1536,
+    snprintf(json, 1792,
              "{"
              "\"deck1\":{"
              "\"title\":\"%s\","
@@ -175,6 +184,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"pfl1\":%s,"
              "\"pfl2\":%s"
              "},"
+             "%s,"
              "\"diagnostics\":{"
              "\"output_codec_open\":%s,"
              "\"output_sample_rate\":%u,"
@@ -212,6 +222,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              mixer.smart_cfx_enabled ? "true" : "false",
              mixer.smart_fader_enabled ? "true" : "false",
              mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
+             beat_fx_json,
              diagnostics.output_codec_open ? "true" : "false",
              (unsigned)diagnostics.output_sample_rate,
              (unsigned)diagnostics.output_late_count,

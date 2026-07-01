@@ -844,6 +844,25 @@ static void test_beat_fx_defaults_and_state_controls(void)
     assert(state.depth == 127);
 }
 
+static void test_beat_fx_public_snapshot_matches_state_controls(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t target = beat_fx_button(CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    ctrl_event_t depth = beat_fx_depth(42);
+    ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+    deck_core_test_apply_event(&target);
+    deck_core_test_apply_event(&depth);
+    deck_core_test_apply_event(&on);
+
+    deck_core_beat_fx_state_t state = deck_core_get_beat_fx_state();
+    assert(state.effect == DECK_CORE_BEAT_FX_FILTER);
+    assert(state.beat == DECK_CORE_BEAT_FX_BEAT_1);
+    assert(state.target == CTRL_BEAT_FX_TARGET_CH1);
+    assert(state.depth == 42);
+    assert(state.enabled);
+}
+
 static void test_beat_fx_on_toggles_on_press_only_and_clear_resets(void)
 {
     deck_core_test_reset();
@@ -1345,6 +1364,7 @@ int main(void)
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_smart_buttons_toggle_audio_state_and_leds();
     test_beat_fx_defaults_and_state_controls();
+    test_beat_fx_public_snapshot_matches_state_controls();
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();

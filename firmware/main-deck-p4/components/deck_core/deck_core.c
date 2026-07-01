@@ -1594,6 +1594,11 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
     return snap;
 }
 
+deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
+{
+    return s_beat_fx;
+}
+
 void deck_core_reset(void)
 {
     deck_core_reset_deck(DECK_CORE_COMPAT_DECK);
@@ -1700,7 +1705,7 @@ deck_state_t deck_core_test_get_deck_state(uint8_t deck)
 
 deck_core_beat_fx_state_t deck_core_test_get_beat_fx_state(void)
 {
-    return s_beat_fx;
+    return deck_core_get_beat_fx_state();
 }
 
 bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value)
