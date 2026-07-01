@@ -95,6 +95,28 @@ static void init_beat_fx_state(void)
     s_beat_fx.enabled = false;
 }
 
+static audio_engine_beat_fx_target_t beat_fx_audio_target(ctrl_beat_fx_target_t target)
+{
+    switch (target) {
+    case CTRL_BEAT_FX_TARGET_CH1:
+        return AUDIO_ENGINE_BEAT_FX_TARGET_CH1;
+    case CTRL_BEAT_FX_TARGET_CH2:
+        return AUDIO_ENGINE_BEAT_FX_TARGET_CH2;
+    case CTRL_BEAT_FX_TARGET_BOTH:
+    default:
+        return AUDIO_ENGINE_BEAT_FX_TARGET_BOTH;
+    }
+}
+
+static void sync_beat_fx_audio_state(void)
+{
+    bool filter_enabled = s_beat_fx.enabled &&
+                          s_beat_fx.effect == DECK_CORE_BEAT_FX_FILTER;
+    audio_engine_set_beat_fx_filter(beat_fx_audio_target(s_beat_fx.target),
+                                    s_beat_fx.depth,
+                                    filter_enabled);
+}
+
 static uint8_t normalize_deck(uint8_t deck)
 {
     return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
@@ -804,6 +826,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             s_beat_fx.effect = (deck_core_beat_fx_effect_t)((s_beat_fx.effect + 1) %
                                                             DECK_CORE_BEAT_FX_COUNT);
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
         }
         return true;
@@ -812,6 +835,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             s_beat_fx.effect = s_beat_fx.effect == 0
                 ? (deck_core_beat_fx_effect_t)(DECK_CORE_BEAT_FX_COUNT - 1)
                 : (deck_core_beat_fx_effect_t)(s_beat_fx.effect - 1);
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
         }
         return true;
@@ -830,18 +854,21 @@ static bool on_system_button(const ctrl_event_t *ev)
     case CTRL_ID_BEAT_FX_TARGET:
         if (ev->value >= CTRL_BEAT_FX_TARGET_CH1 && ev->value <= CTRL_BEAT_FX_TARGET_BOTH) {
             s_beat_fx.target = (ctrl_beat_fx_target_t)ev->value;
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx target -> %d", (int)s_beat_fx.target);
         }
         return true;
     case CTRL_ID_BEAT_FX_ON:
         if (ev->value != 0) {
             s_beat_fx.enabled = !s_beat_fx.enabled;
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx -> %s", s_beat_fx.enabled ? "ON" : "OFF");
         }
         return true;
     case CTRL_ID_BEAT_FX_CLEAR:
         if (ev->value != 0) {
             init_beat_fx_state();
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx reset");
         }
         return true;
@@ -862,6 +889,7 @@ static bool on_system_value(const ctrl_event_t *ev)
         depth = 127;
     }
     s_beat_fx.depth = (uint8_t)depth;
+    sync_beat_fx_audio_state();
     return true;
 }
 

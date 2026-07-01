@@ -181,6 +181,8 @@ static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static audio_mixer_limiter_stats_t s_limiter_stats;
 static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
+static audio_filter_state_t s_beat_fx_filter[AUDIO_ENGINE_DECK_COUNT];
+static bool             s_beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
 static bool             s_smart_fader_enabled;
 
@@ -1205,6 +1207,8 @@ static void ae_output_task(void *arg)
             .eq = &s_deck_eq[deck0_index],
             .filter = &s_deck_filter[deck0_index],
             .filter_enabled = s_smart_cfx_enabled,
+            .beat_fx_filter = &s_beat_fx_filter[deck0_index],
+            .beat_fx_filter_enabled = s_beat_fx_filter_enabled[deck0_index],
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck0_index),
@@ -1218,6 +1222,8 @@ static void ae_output_task(void *arg)
             .eq = &s_deck_eq[deck1_index],
             .filter = &s_deck_filter[deck1_index],
             .filter_enabled = s_smart_cfx_enabled,
+            .beat_fx_filter = &s_beat_fx_filter[deck1_index],
+            .beat_fx_filter_enabled = s_beat_fx_filter_enabled[deck1_index],
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
@@ -1384,6 +1390,8 @@ esp_err_t audio_engine_init(void)
         s_deck_peak[i] = 0;
         audio_eq_init(&s_deck_eq[i], 44100u);
         audio_filter_init(&s_deck_filter[i], 44100u);
+        audio_filter_init(&s_beat_fx_filter[i], 44100u);
+        s_beat_fx_filter_enabled[i] = false;
     }
     s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
     s_master_trim = 1.0f;
@@ -2147,6 +2155,55 @@ uint16_t audio_engine_get_filter(uint8_t deck)
     return audio_filter_get_raw(&s_deck_filter[deck]);
 }
 
+static uint16_t beat_fx_filter_raw_from_depth(uint8_t depth)
+{
+    if (depth == 0u) {
+        return AUDIO_FILTER_RAW_CENTER;
+    }
+    uint32_t sweep = ((uint32_t)AUDIO_FILTER_RAW_CENTER * (uint32_t)depth + 63u) / 127u;
+    if (sweep > AUDIO_FILTER_RAW_CENTER) {
+        sweep = AUDIO_FILTER_RAW_CENTER;
+    }
+    return (uint16_t)(AUDIO_FILTER_RAW_CENTER - sweep);
+}
+
+static bool beat_fx_target_includes_deck(audio_engine_beat_fx_target_t target, uint8_t deck)
+{
+    switch (target) {
+    case AUDIO_ENGINE_BEAT_FX_TARGET_CH1:
+        return deck == 0u;
+    case AUDIO_ENGINE_BEAT_FX_TARGET_CH2:
+        return deck == 1u;
+    case AUDIO_ENGINE_BEAT_FX_TARGET_BOTH:
+        return deck < AUDIO_ENGINE_DECK_COUNT;
+    default:
+        return false;
+    }
+}
+
+esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
+                                          uint8_t depth,
+                                          bool enabled)
+{
+    if (target != AUDIO_ENGINE_BEAT_FX_TARGET_CH1 &&
+        target != AUDIO_ENGINE_BEAT_FX_TARGET_CH2 &&
+        target != AUDIO_ENGINE_BEAT_FX_TARGET_BOTH) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t raw = beat_fx_filter_raw_from_depth(depth);
+    bool active = enabled && depth > 0u;
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        bool deck_enabled = active && beat_fx_target_includes_deck(target, deck);
+        s_beat_fx_filter_enabled[deck] = deck_enabled;
+        audio_filter_set_raw(&s_beat_fx_filter[deck], deck_enabled ? raw : AUDIO_FILTER_RAW_CENTER);
+        if (!deck_enabled) {
+            audio_filter_reset(&s_beat_fx_filter[deck]);
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t audio_engine_set_master_trim(float gain)
 {
     if (gain < 0.0f) {
@@ -2233,6 +2290,8 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
             out_snapshot->eq[deck][band] = audio_eq_get_band_raw(&s_deck_eq[deck], (audio_eq_band_t)band);
         }
         out_snapshot->filter[deck] = audio_filter_get_raw(&s_deck_filter[deck]);
+        out_snapshot->beat_fx_filter_raw[deck] = audio_filter_get_raw(&s_beat_fx_filter[deck]);
+        out_snapshot->beat_fx_filter_enabled[deck] = s_beat_fx_filter_enabled[deck];
     }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->output_gain[0] = gain0;

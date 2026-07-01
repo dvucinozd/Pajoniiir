@@ -141,6 +141,8 @@ typedef struct {
     uint16_t crossfader;
     uint16_t eq[AUDIO_ENGINE_DECK_COUNT][AUDIO_EQ_BAND_COUNT];
     uint16_t filter[AUDIO_ENGINE_DECK_COUNT];
+    uint16_t beat_fx_filter_raw[AUDIO_ENGINE_DECK_COUNT];
+    bool beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
@@ -174,6 +176,16 @@ esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw);
 uint16_t audio_engine_get_eq(uint8_t deck, audio_eq_band_t band);
 esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw_filter);
 uint16_t audio_engine_get_filter(uint8_t deck);
+
+typedef enum {
+    AUDIO_ENGINE_BEAT_FX_TARGET_CH1 = 0,
+    AUDIO_ENGINE_BEAT_FX_TARGET_CH2 = 1,
+    AUDIO_ENGINE_BEAT_FX_TARGET_BOTH = 2,
+} audio_engine_beat_fx_target_t;
+
+esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
+                                          uint8_t depth,
+                                          bool enabled);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

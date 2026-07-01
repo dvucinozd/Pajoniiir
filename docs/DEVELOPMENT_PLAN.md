@@ -577,8 +577,9 @@ clear/reset. The Overview right-side Beat FX panel renders that P4-owned
 snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
 testing without serial log spam. The HTTP server starts independently of the
 disabled `wifi_link` shim; captive DNS remains conditional on a real Wi-Fi/AP
-transport. Beat FX audio DSP remains deferred. Sampler and pad FX behavior
-remains deferred unless separately marked implemented.
+transport. Beat FX FILTER now applies a conservative target-aware low-pass DSP
+from the Beat FX depth control; Beat FX Echo/delay remains deferred. Sampler and
+pad FX behavior remains deferred unless separately marked implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF

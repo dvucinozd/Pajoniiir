@@ -16,6 +16,8 @@ typedef struct {
     audio_eq_state_t *eq;
     audio_filter_state_t *filter;
     bool filter_enabled;
+    audio_filter_state_t *beat_fx_filter;
+    bool beat_fx_filter_enabled;
     audio_resampler_state_t *resampler;
     audio_resampler_pop_fn pop_source;
     void *source_ctx;

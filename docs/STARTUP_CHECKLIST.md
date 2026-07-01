@@ -78,8 +78,9 @@
   press/release events. P4 owns their toggle state, LED feedback, status
   exposure, Smart CFX filter DSP, and Smart Fader transition-assist behavior.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
-  beat size, target, depth, on/off, and clear/reset. Beat FX audio DSP remains
-  pending. The Overview Beat FX panel renders the same P4-owned state, and
+  beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
+  implemented as a target-aware low-pass slice; Echo/delay remains pending. The
+  Overview Beat FX panel renders the same P4-owned state, and
   `/api/status.beat_fx` remains available for hardware smoke verification
   instead of raw serial logging when a network transport is present.
 - Official DDJ-FLX4 MIDI message list coverage is documented in

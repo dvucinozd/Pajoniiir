@@ -130,6 +130,10 @@ extern int audio_engine_stub_eq_raw[2][AUDIO_EQ_BAND_COUNT];
 extern int audio_engine_stub_eq_set_count[2][AUDIO_EQ_BAND_COUNT];
 extern int audio_engine_stub_filter_raw[2];
 extern int audio_engine_stub_filter_set_count[2];
+extern int audio_engine_stub_beat_fx_filter_target;
+extern int audio_engine_stub_beat_fx_filter_depth;
+extern bool audio_engine_stub_beat_fx_filter_enabled;
+extern int audio_engine_stub_beat_fx_filter_set_count;
 extern bool audio_engine_stub_smart_cfx_enabled;
 extern bool audio_engine_stub_smart_fader_enabled;
 
@@ -159,6 +163,23 @@ static inline esp_err_t audio_engine_set_filter(uint8_t deck, uint16_t raw)
     if (deck >= 2) return ESP_ERR_INVALID_ARG;
     audio_engine_stub_filter_raw[deck] = raw;
     audio_engine_stub_filter_set_count[deck]++;
+    return ESP_OK;
+}
+
+typedef enum {
+    AUDIO_ENGINE_BEAT_FX_TARGET_CH1 = 0,
+    AUDIO_ENGINE_BEAT_FX_TARGET_CH2 = 1,
+    AUDIO_ENGINE_BEAT_FX_TARGET_BOTH = 2,
+} audio_engine_beat_fx_target_t;
+
+static inline esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
+                                                        uint8_t depth,
+                                                        bool enabled)
+{
+    audio_engine_stub_beat_fx_filter_target = (int)target;
+    audio_engine_stub_beat_fx_filter_depth = (int)depth;
+    audio_engine_stub_beat_fx_filter_enabled = enabled;
+    audio_engine_stub_beat_fx_filter_set_count++;
     return ESP_OK;
 }
 
