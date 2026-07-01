@@ -166,11 +166,11 @@
   The `ctrl_rx` UART task stack is 4096 bytes in the same stabilization slice.
 - ESP-Hosted Wi-Fi is disabled in active P4 firmware as of 2026-06-29. The
   local `wifi_link` component remains as a no-op status shim, but P4 no longer
-  links `esp_hosted`/`esp_wifi_remote` or starts the hosted AP during boot. The
-  HTTP status server now starts independently of `wifi_link`; captive DNS starts
-  only when Wi-Fi/AP init succeeds, so browser access still requires a real
-  network interface. The old Settings `link_mode` selector remains removed from
-  active firmware.
+  links `esp_hosted`/`esp_wifi_remote` or starts the hosted AP during boot.
+  HTTP status and captive DNS startup are gated behind successful Wi-Fi/AP init
+  because `esp_http_server` asserts in lwIP if started before the TCP/IP stack.
+  Browser access still requires a real network interface. The old Settings
+  `link_mode` selector remains removed from active firmware.
 
 ## First Firmware Task
 

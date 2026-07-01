@@ -575,11 +575,13 @@ transition-assist curve. Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
 clear/reset. The Overview right-side Beat FX panel renders that P4-owned
 snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
-testing without serial log spam. The HTTP server starts independently of the
-disabled `wifi_link` shim; captive DNS remains conditional on a real Wi-Fi/AP
-transport. Beat FX FILTER now applies a conservative target-aware low-pass DSP
-from the Beat FX depth control; Beat FX Echo/delay remains deferred. Sampler and
-pad FX behavior remains deferred unless separately marked implemented.
+testing without serial log spam when a network transport is present. The HTTP
+server and captive DNS remain disabled while the `wifi_link` shim returns
+`ESP_ERR_NOT_SUPPORTED`; starting `esp_http_server` without an initialized
+TCP/IP stack causes a boot-time lwIP assertion on P4. Beat FX FILTER now applies
+a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
+Echo/delay remains deferred. Sampler and pad FX behavior remains deferred unless
+separately marked implemented.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF

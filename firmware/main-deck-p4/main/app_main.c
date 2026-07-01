@@ -71,11 +71,8 @@ void app_main(void)
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init(host): %s", esp_err_to_name(wifi_rc));
     }
-    esp_err_t web_rc = web_server_start();
-    if (web_rc != ESP_OK) {
-        ESP_LOGW(TAG, "web_server_start: %s", esp_err_to_name(web_rc));
-    }
     if (wifi_rc == ESP_OK) {
+        ESP_ERROR_CHECK(web_server_start());
         ESP_ERROR_CHECK(dns_server_start());
     }
 
