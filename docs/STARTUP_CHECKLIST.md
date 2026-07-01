@@ -82,9 +82,10 @@
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
   implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
-  first fixed-delay DSP slice with P4-owned delay buffers, target-aware routing,
-  and `/api/status.diagnostics.beat_fx_echo` telemetry; live BPM-synced delay
-  time remains deferred. The Overview Beat FX panel renders the same P4-owned
+  BPM-synced DSP slice with P4-owned delay buffers, target-aware routing, and
+  `/api/status.diagnostics.beat_fx_echo` telemetry; delay time is derived from
+  target deck effective BPM with a 120 BPM fallback and 1000 ms cap. The
+  Overview Beat FX panel renders the same P4-owned
   state with larger value text and active-state highlighting, and
   `/api/status.beat_fx` remains available for hardware smoke verification
   instead of raw serial logging when a network transport is present. Hardware

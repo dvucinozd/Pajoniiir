@@ -137,10 +137,9 @@ Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
 incremental: FILTER now drives a conservative target-aware low-pass DSP from
-the Beat FX depth control, and Echo/delay now has a first fixed-delay DSP slice
-with target-aware routing and diagnostics. Echo beat sizes currently map to a
-fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
-`2/4=1000 ms`); live BPM-synced delay time remains deferred.
+the Beat FX depth control, and Echo/delay now has a BPM-synced DSP slice with
+target-aware routing and diagnostics. Echo beat sizes derive delay time from
+the target deck effective BPM, with a 120 BPM fallback and 1000 ms safety cap.
 The P4 Overview screen shows the current Beat FX effect, beat size, target,
 depth, and on/off state from the same authoritative state snapshot; the
 right-side Beat FX panel uses larger value text and active-state highlighting

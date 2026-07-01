@@ -24,6 +24,10 @@ static const char *TAG = "deck";
 #define DEFAULT_TEMPO_RANGE_PERCENT 10u
 #define BEAT_SYNC_MAX_PERCENT 20u
 #define DECK_TASK_STACK_BYTES 8192u
+#define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
+#define BEAT_FX_ECHO_MIN_BPM 40.0f
+#define BEAT_FX_ECHO_MAX_BPM 300.0f
+#define BEAT_FX_ECHO_MAX_DELAY_MS 1000u
 
 extern bool ui_is_library_active(void) __attribute__((weak));
 extern esp_err_t ui_show_library(void) __attribute__((weak));
@@ -91,6 +95,7 @@ static void publish_flx4_led_snapshot(bool force);
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
 static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck);
+static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -123,21 +128,69 @@ static audio_engine_beat_fx_target_t beat_fx_audio_target(ctrl_beat_fx_target_t 
     }
 }
 
-static uint32_t beat_fx_delay_ms(deck_core_beat_fx_beat_t beat)
+static bool beat_fx_beat_ratio(deck_core_beat_fx_beat_t beat,
+                               uint16_t *out_numerator,
+                               uint16_t *out_denominator)
 {
     switch (beat) {
     case DECK_CORE_BEAT_FX_BEAT_1_4:
-        return 125u;
+        *out_numerator = 1u;
+        *out_denominator = 4u;
+        return true;
     case DECK_CORE_BEAT_FX_BEAT_1_2:
-        return 250u;
+        *out_numerator = 1u;
+        *out_denominator = 2u;
+        return true;
     case DECK_CORE_BEAT_FX_BEAT_1:
-        return 500u;
+        *out_numerator = 1u;
+        *out_denominator = 1u;
+        return true;
     case DECK_CORE_BEAT_FX_BEAT_2:
+        *out_numerator = 2u;
+        *out_denominator = 1u;
+        return true;
     case DECK_CORE_BEAT_FX_BEAT_4:
-        return 1000u;
+        *out_numerator = 4u;
+        *out_denominator = 1u;
+        return true;
     default:
+        return false;
+    }
+}
+
+static float beat_fx_target_bpm(ctrl_beat_fx_target_t target)
+{
+    uint8_t deck = CTRL_DECK_1;
+    if (target == CTRL_BEAT_FX_TARGET_CH2) {
+        deck = CTRL_DECK_2;
+    }
+
+    float bpm = deck_effective_bpm(deck, &s_decks[deck]);
+    if (bpm < BEAT_FX_ECHO_MIN_BPM || bpm > BEAT_FX_ECHO_MAX_BPM) {
+        return BEAT_FX_ECHO_FALLBACK_BPM;
+    }
+    return bpm;
+}
+
+static uint32_t beat_fx_delay_ms(deck_core_beat_fx_beat_t beat,
+                                 ctrl_beat_fx_target_t target)
+{
+    uint16_t numerator = 1u;
+    uint16_t denominator = 1u;
+    if (!beat_fx_beat_ratio(beat, &numerator, &denominator) || denominator == 0u) {
         return 500u;
     }
+
+    float bpm = beat_fx_target_bpm(target);
+    float delay = (60000.0f * (float)numerator) / (bpm * (float)denominator);
+    uint32_t delay_ms = (uint32_t)(delay + 0.5f);
+    if (delay_ms < 1u) {
+        delay_ms = 1u;
+    }
+    if (delay_ms > BEAT_FX_ECHO_MAX_DELAY_MS) {
+        delay_ms = BEAT_FX_ECHO_MAX_DELAY_MS;
+    }
+    return delay_ms;
 }
 
 static void sync_beat_fx_audio_state(void)
@@ -153,7 +206,7 @@ static void sync_beat_fx_audio_state(void)
                                     filter_enabled);
     audio_engine_set_beat_fx_echo(target,
                                   s_beat_fx.depth,
-                                  beat_fx_delay_ms(s_beat_fx.beat),
+                                  beat_fx_delay_ms(s_beat_fx.beat, s_beat_fx.target),
                                   echo_enabled);
 }
 

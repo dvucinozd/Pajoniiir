@@ -980,6 +980,28 @@ static void test_beat_fx_echo_state_updates_audio_engine(void)
     assert(!audio_engine_stub_beat_fx_echo_enabled);
 }
 
+static void test_beat_fx_echo_delay_uses_target_deck_bpm(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_loaded_bpm[CTRL_DECK_1] = 100;
+
+    ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    ctrl_event_t target = beat_fx_button(CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    ctrl_event_t depth = beat_fx_depth(96);
+    ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&target);
+    deck_core_test_apply_event(&depth);
+    deck_core_test_apply_event(&on);
+
+    assert(audio_engine_stub_beat_fx_echo_set_count > 0);
+    assert(audio_engine_stub_beat_fx_echo_target == AUDIO_ENGINE_BEAT_FX_TARGET_CH1);
+    assert(audio_engine_stub_beat_fx_echo_delay_ms == 600);
+    assert(audio_engine_stub_beat_fx_echo_enabled);
+}
+
 static void test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot(void)
 {
     deck_core_test_reset();
@@ -1566,6 +1588,7 @@ int main(void)
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();
     test_beat_fx_filter_state_updates_audio_engine();
     test_beat_fx_echo_state_updates_audio_engine();
+    test_beat_fx_echo_delay_uses_target_deck_bpm();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_matches_requested_deck_to_other_deck_bpm();

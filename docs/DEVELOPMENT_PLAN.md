@@ -582,12 +582,12 @@ server and captive DNS remain disabled while the `wifi_link` shim returns
 TCP/IP stack causes a boot-time lwIP assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
-Beat FX Echo/delay has a first fixed-delay DSP slice: P4 owns the delay lines,
+Beat FX Echo/delay has a BPM-synced DSP slice: P4 owns the delay lines,
 deck_core routes the existing Echo state into the audio engine, depth controls
 wet/feedback amount, and `/api/status.diagnostics.beat_fx_echo` exposes
-allocation/enabled/delay telemetry. Current beat-size mapping intentionally uses
-a fixed 120 BPM-style delay table (`1/4=125 ms`, `1/2=250 ms`, `1=500 ms`,
-`2/4=1000 ms`); live BPM-synced delay calculation remains deferred. Hardware
+allocation/enabled/delay telemetry. Beat-size mapping derives delay time from
+the target deck effective BPM, falls back to 120 BPM when BPM is unavailable,
+and caps delay at 1000 ms to match the current delay-line budget. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
 response, CH1/CH2/1&2 target routing, and the ON/OFF LED following P4 state.
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
