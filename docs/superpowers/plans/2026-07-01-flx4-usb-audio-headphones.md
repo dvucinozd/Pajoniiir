@@ -424,7 +424,7 @@ git commit -m "test: capture flx4 usb audio descriptors"
 - Create: `tests/flx4_usb_audio/Makefile`
 - Modify: `tests/run_s3_host_tests.ps1`
 
-- [ ] **Step 1: Write the descriptor parser API**
+- [x] **Step 1: Write the descriptor parser API**
 
 Create `flx4_uac_descriptors.h`:
 
@@ -460,7 +460,7 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
                                       flx4_uac_playback_format_t *out);
 ```
 
-- [ ] **Step 2: Write failing parser tests**
+- [x] **Step 2: Write failing parser tests**
 
 Create `tests/flx4_usb_audio/test_flx4_uac_descriptors.c`:
 
@@ -542,7 +542,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement the parser**
+- [x] **Step 3: Implement the parser**
 
 Implement `flx4_uac_descriptors.c` with these parsing rules:
 
@@ -669,7 +669,7 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
 }
 ```
 
-- [ ] **Step 4: Add Makefile and test runner entry**
+- [x] **Step 4: Add Makefile and test runner entry**
 
 Create `tests/flx4_usb_audio/Makefile`:
 
@@ -694,7 +694,7 @@ Add to `tests/run_s3_host_tests.ps1`:
 @{ Name = "flx4_usb_audio"; Path = "tests\flx4_usb_audio" }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 

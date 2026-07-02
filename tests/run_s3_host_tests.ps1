@@ -150,6 +150,18 @@ $tests = @(
             "s3_constants.c",
             "p4_constants.c"
         )
+    },
+    @{
+        Name = "flx4_usb_audio"
+        Dir = "tests/flx4_usb_audio"
+        Target = "test_flx4_uac_descriptors.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
+            "-o", "test_flx4_uac_descriptors.exe",
+            "test_flx4_uac_descriptors.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c"
+        )
     }
 )
 
