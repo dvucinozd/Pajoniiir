@@ -1252,7 +1252,7 @@ git commit -m "feat: add dedicated p4 to s3 monitor pcm link"
 - Modify: `firmware/control-board-s3/main/app_main.c`
 - Create: `docs/validation/FLX4_USB_AUDIO_TONE_SMOKE.md`
 
-- [ ] **Step 1: Add USB Audio runtime API**
+- [x] **Step 1: Add USB Audio runtime API**
 
 `flx4_usb_audio.h`:
 
@@ -1285,7 +1285,7 @@ void flx4_usb_audio_stop(void);
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out);
 ```
 
-- [ ] **Step 2: Configure audio interface**
+- [x] **Step 2: Configure audio interface**
 
 In `flx4_usb_audio_configure()`:
 
@@ -1305,7 +1305,7 @@ usb_host_transfer_alloc(max_payload_per_urb, packets_per_urb, &transfer);
 
 5. Do not start transfers until `flx4_usb_audio_start_tone()` or `flx4_usb_audio_start_ring()` is called.
 
-- [ ] **Step 3: Implement tone mode before P4 link integration**
+- [x] **Step 3: Implement tone mode before P4 link integration**
 
 Tone mode proves FLX4 UAC streaming independently from P4 transport:
 

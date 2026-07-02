@@ -1,0 +1,21 @@
+menu "DDJ-FLX4 USB Audio"
+
+config DDJ_FLX4_USB_AUDIO_HEADPHONES
+    bool "Enable DDJ-FLX4 USB Audio headphones streamer"
+    default n
+    depends on DDJ_FLX4_HOST_MODE
+    help
+        Enables the experimental USB Audio Class playback path for routing the
+        P4 monitor/headphones mix to the physical DDJ-FLX4 headphones output.
+        Keep disabled until tone smoke and end-to-end smoke are accepted.
+
+config DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2
+    bool "Route FLX4 USB audio tone to channels 1/2 instead of headphone candidate channels"
+    default n
+    depends on DDJ_FLX4_USB_AUDIO_HEADPHONES
+    help
+        Diagnostic channel-mapping switch for tone smoke. Default keeps
+        channels 1/2 silent and routes the synthetic tone to channels 3/4 when
+        the selected FLX4 playback format is four-channel.
+
+endmenu

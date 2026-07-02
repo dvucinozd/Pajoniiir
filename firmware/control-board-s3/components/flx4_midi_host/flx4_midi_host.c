@@ -349,6 +349,7 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "control_link.h"
+#include "flx4_usb_audio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -704,6 +705,19 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
     ESP_LOGI(TAG, "active config value=%u interfaces=%u total_len=%u",
              cfg->bConfigurationValue, cfg->bNumInterfaces, cfg->wTotalLength);
     log_config_descriptor_hex((const uint8_t *)cfg, cfg->wTotalLength);
+
+#if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
+    esp_err_t audio_rc = flx4_usb_audio_configure(host->client_hdl,
+                                                  host->dev_hdl,
+                                                  (const uint8_t *)cfg,
+                                                  cfg->wTotalLength);
+    if (audio_rc == ESP_OK) {
+        ESP_LOGI(TAG, "FLX4 USB Audio playback interface configured");
+    } else {
+        ESP_LOGW(TAG, "FLX4 USB Audio configure failed, MIDI will continue: %s",
+                 esp_err_to_name(audio_rc));
+    }
+#endif
 
     if (!find_midi_streaming_endpoints(cfg,
                                        &host->interface_num,
