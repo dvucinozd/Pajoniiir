@@ -1,0 +1,21 @@
+# FLX4 USB headphones end-to-end product profile (Task 8 Step 2).
+# Simultaneous outputs: PCM5102A RCA MAIN (I2S unit 1, paces the output loop)
+# + FLX4 USB headphones CUE fed by the monitor link (I2S unit 0). ES8311 is
+# disabled to free unit 0. Physical link wiring (GPIO32/34/35) is unchanged
+# from Step 1 -- only the internal I2S unit moves from 1 to 0.
+# Build: idf.py -B build_flx4_hp_e2e -D SDKCONFIG="build_flx4_hp_e2e/sdkconfig" \
+#   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.flx4_hp_e2e" build
+CONFIG_MONITOR_PCM_LINK_ENABLED=y
+CONFIG_MONITOR_PCM_LINK_I2S_UNIT=0
+# No bench tone: the audio engine publishes real hp_out.
+
+# PCM5102A RCA MAIN OUT on unit 1; ES8311 monitor off to free unit 0.
+CONFIG_BSP_PCM5102A_MAIN_OUT=y
+# CONFIG_BSP_ES8311_MONITOR is not set
+
+# Local working-sdkconfig UI settings kept for parity.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+
+# Surface the monitor link INFO diagnostics (P4 default log level is WARN).
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y

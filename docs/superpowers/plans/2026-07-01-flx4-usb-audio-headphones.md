@@ -257,7 +257,7 @@ Responsibilities:
 - Create: `docs/validation/FLX4_USB_AUDIO_DESCRIPTOR_CAPTURE.md`
 - Create: `tests/flx4_usb_audio/fixtures/flx4_config_descriptor.bin`
 
-- [ ] **Step 1: Add a descriptor dump mode behind a Kconfig flag**
+- [x] **Step 1: Add a descriptor dump mode behind a Kconfig flag**
 
 Add to `firmware/control-board-s3/components/flx4_midi_host/Kconfig`:
 
@@ -271,7 +271,7 @@ config DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
         attach. Use only during descriptor capture because the output is noisy.
 ```
 
-- [ ] **Step 2: Log the active config descriptor in deterministic 16-byte rows**
+- [x] **Step 2: Log the active config descriptor in deterministic 16-byte rows**
 
 Add a helper near the other descriptor helpers in `flx4_midi_host.c`:
 
@@ -313,7 +313,7 @@ Call it immediately after `usb_host_get_active_config_descriptor()` succeeds:
 log_config_descriptor_hex((const uint8_t *)cfg, cfg->wTotalLength);
 ```
 
-- [ ] **Step 3: Build and flash S3 descriptor build**
+- [x] **Step 3: Build and flash S3 descriptor build**
 
 Run:
 
@@ -341,7 +341,7 @@ Expected:
 - `FLX4_CFG` rows appear.
 - MIDI input still logs or translates normally after descriptor dump.
 
-- [ ] **Step 4: Save descriptor fixture**
+- [x] **Step 4: Save descriptor fixture**
 
 Convert the `FLX4_CFG` rows from the monitor output into binary:
 
@@ -367,7 +367,7 @@ Expected:
 - The printed byte count equals the descriptor's `wTotalLength`.
 - The first two bytes are `09 02`.
 
-- [ ] **Step 5: Document the descriptor findings**
+- [x] **Step 5: Document the descriptor findings**
 
 Create `docs/validation/FLX4_USB_AUDIO_DESCRIPTOR_CAPTURE.md` with this structure filled from the actual capture:
 
@@ -424,7 +424,7 @@ git commit -m "test: capture flx4 usb audio descriptors"
 - Create: `tests/flx4_usb_audio/Makefile`
 - Modify: `tests/run_s3_host_tests.ps1`
 
-- [ ] **Step 1: Write the descriptor parser API**
+- [x] **Step 1: Write the descriptor parser API**
 
 Create `flx4_uac_descriptors.h`:
 
@@ -460,7 +460,7 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
                                       flx4_uac_playback_format_t *out);
 ```
 
-- [ ] **Step 2: Write failing parser tests**
+- [x] **Step 2: Write failing parser tests**
 
 Create `tests/flx4_usb_audio/test_flx4_uac_descriptors.c`:
 
@@ -542,7 +542,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement the parser**
+- [x] **Step 3: Implement the parser**
 
 Implement `flx4_uac_descriptors.c` with these parsing rules:
 
@@ -669,7 +669,7 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
 }
 ```
 
-- [ ] **Step 4: Add Makefile and test runner entry**
+- [x] **Step 4: Add Makefile and test runner entry**
 
 Create `tests/flx4_usb_audio/Makefile`:
 
@@ -694,7 +694,7 @@ Add to `tests/run_s3_host_tests.ps1`:
 @{ Name = "flx4_usb_audio"; Path = "tests\flx4_usb_audio" }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run:
 
@@ -727,7 +727,7 @@ git commit -m "test: add flx4 usb audio descriptor parser"
 - Create: `tests/flx4_usb_audio/test_flx4_uac_packetizer.c`
 - Modify: `tests/flx4_usb_audio/Makefile`
 
-- [ ] **Step 1: Add packetizer API**
+- [x] **Step 1: Add packetizer API**
 
 Create `flx4_uac_packetizer.h`:
 
@@ -753,7 +753,7 @@ uint16_t flx4_uac_packetizer_next_frames(flx4_uac_packetizer_t *p);
 size_t flx4_uac_packetizer_next_bytes(flx4_uac_packetizer_t *p);
 ```
 
-- [ ] **Step 2: Add failing tests for 48 kHz and 44.1 kHz**
+- [x] **Step 2: Add failing tests for 48 kHz and 44.1 kHz**
 
 Create `test_flx4_uac_packetizer.c`:
 
@@ -810,7 +810,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement packetizer**
+- [x] **Step 3: Implement packetizer**
 
 Create `flx4_uac_packetizer.c`:
 
@@ -846,7 +846,7 @@ size_t flx4_uac_packetizer_next_bytes(flx4_uac_packetizer_t *p)
 }
 ```
 
-- [ ] **Step 4: Run packetizer tests**
+- [x] **Step 4: Run packetizer tests**
 
 Run:
 
@@ -882,7 +882,7 @@ git commit -m "test: add flx4 usb audio packet scheduler"
 - Create: `tests/monitor_pcm_link/Makefile`
 - Modify: `tests/run_p4_host_tests.ps1`
 
-- [ ] **Step 1: Define a non-blocking monitor sink**
+- [x] **Step 1: Define a non-blocking monitor sink**
 
 Create `monitor_pcm_link.h`:
 
@@ -909,7 +909,7 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
 void monitor_pcm_link_get_stats(monitor_pcm_link_stats_t *out);
 ```
 
-- [ ] **Step 2: Write host tests for non-blocking behavior**
+- [x] **Step 2: Write host tests for non-blocking behavior**
 
 Create `tests/monitor_pcm_link/test_monitor_pcm_link.c`:
 
@@ -942,7 +942,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement disabled-safe first slice**
+- [x] **Step 3: Implement disabled-safe first slice**
 
 Create `monitor_pcm_link.c`:
 
@@ -986,7 +986,7 @@ void monitor_pcm_link_get_stats(monitor_pcm_link_stats_t *out)
 }
 ```
 
-- [ ] **Step 4: Run P4 host tests**
+- [x] **Step 4: Run P4 host tests**
 
 Run:
 
@@ -1020,7 +1020,7 @@ git commit -m "test: add nonblocking monitor pcm link facade"
 - Modify: `firmware/main-deck-p4/components/web_server/web_server.c`
 - Modify: `tests/audio_engine/test_audio_engine.c`
 
-- [ ] **Step 1: Add monitor link dependency**
+- [x] **Step 1: Add monitor link dependency**
 
 In `audio_engine/CMakeLists.txt`, add `monitor_pcm_link` to `REQUIRES`:
 
@@ -1028,7 +1028,7 @@ In `audio_engine/CMakeLists.txt`, add `monitor_pcm_link` to `REQUIRES`:
 REQUIRES log bsp_jc4880 esp_codec_dev esp_timer media_io_gate monitor_pcm_link
 ```
 
-- [ ] **Step 2: Initialize monitor link in `audio_engine_init()`**
+- [x] **Step 2: Initialize monitor link in `audio_engine_init()`**
 
 Add include:
 
@@ -1042,7 +1042,7 @@ Inside `audio_engine_init()`, after `s_output_sample_rate = 0;` and before loggi
 ESP_RETURN_ON_ERROR(monitor_pcm_link_init(), TAG, "monitor_pcm_link_init failed");
 ```
 
-- [ ] **Step 3: Set link format when output codec opens**
+- [x] **Step 3: Set link format when output codec opens**
 
 In `audio_output_service_open_codec(uint32_t sample_rate)`, after `s_output_sample_rate = sample_rate;`:
 
@@ -1050,7 +1050,7 @@ In `audio_output_service_open_codec(uint32_t sample_rate)`, after `s_output_samp
 (void)monitor_pcm_link_set_format(sample_rate, 2u, 16u);
 ```
 
-- [ ] **Step 4: Publish `hp_out` after it is filled**
+- [x] **Step 4: Publish `hp_out` after it is filled**
 
 In `ae_output_task()`, after:
 
@@ -1067,7 +1067,7 @@ and before ES8311 write:
 
 This call must stay before or after `esp_codec_dev_write()` only if it is non-blocking. If future transport implementation can block, it must move to a lower-priority publisher task fed by a lock-free/ring queue.
 
-- [ ] **Step 5: Expose diagnostics**
+- [x] **Step 5: Expose diagnostics**
 
 Extend `audio_engine_diagnostics_snapshot_t`:
 
@@ -1093,7 +1093,7 @@ In `web_server.c`, expose under `diagnostics`:
 "usb_headphones":{"submitted_blocks":%u,"dropped_blocks":%u,"submitted_frames":%u}
 ```
 
-- [ ] **Step 6: Run verification**
+- [x] **Step 6: Run verification**
 
 Run:
 
@@ -1142,7 +1142,7 @@ git commit -m "feat: publish monitor pcm blocks from audio engine"
 - Modify: `firmware/control-board-s3/components/p4_audio_link/Kconfig`
 - Create: `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`
 
-- [ ] **Step 1: Select physical transport**
+- [x] **Step 1: Select physical transport**
 
 Use this decision table:
 
@@ -1155,7 +1155,7 @@ Use this decision table:
 
 Record the decision in `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`.
 
-- [ ] **Step 2: Define common PCM block header**
+- [x] **Step 2: Define common PCM block header**
 
 Use the same binary header on both P4 and S3:
 
@@ -1176,7 +1176,7 @@ PCM payload:
 int16 little-endian interleaved stereo: L0 R0 L1 R1 ...
 ```
 
-- [ ] **Step 3: Implement S3 receiver ring**
+- [x] **Step 3: Implement S3 receiver ring**
 
 `p4_audio_link.c` must expose:
 
@@ -1204,7 +1204,7 @@ Ring policy:
 - If consumer underruns, return silence and increment `underruns`.
 - Keep stats update atomic enough for diagnostics; do not log per block.
 
-- [ ] **Step 4: Implement P4 sender**
+- [x] **Step 4: Implement P4 sender**
 
 `monitor_pcm_link_write_nonblocking()` must enqueue the latest `hp_out` block to the selected physical transport. Rules:
 
@@ -1213,7 +1213,7 @@ Ring policy:
 - Do not call blocking SPI/UART APIs inside P4 audio output task.
 - A separate P4 transport task may block on the hardware peripheral after taking blocks from the monitor PCM queue.
 
-- [ ] **Step 5: Bench transport without USB Audio**
+- [x] **Step 5: Bench transport without USB Audio**
 
 P4 test mode:
 
@@ -1252,7 +1252,7 @@ git commit -m "feat: add dedicated p4 to s3 monitor pcm link"
 - Modify: `firmware/control-board-s3/main/app_main.c`
 - Create: `docs/validation/FLX4_USB_AUDIO_TONE_SMOKE.md`
 
-- [ ] **Step 1: Add USB Audio runtime API**
+- [x] **Step 1: Add USB Audio runtime API**
 
 `flx4_usb_audio.h`:
 
@@ -1285,7 +1285,7 @@ void flx4_usb_audio_stop(void);
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out);
 ```
 
-- [ ] **Step 2: Configure audio interface**
+- [x] **Step 2: Configure audio interface**
 
 In `flx4_usb_audio_configure()`:
 
@@ -1305,7 +1305,7 @@ usb_host_transfer_alloc(max_payload_per_urb, packets_per_urb, &transfer);
 
 5. Do not start transfers until `flx4_usb_audio_start_tone()` or `flx4_usb_audio_start_ring()` is called.
 
-- [ ] **Step 3: Implement tone mode before P4 link integration**
+- [x] **Step 3: Implement tone mode before P4 link integration**
 
 Tone mode proves FLX4 UAC streaming independently from P4 transport:
 
@@ -1321,7 +1321,7 @@ config DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2
     default n
 ```
 
-- [ ] **Step 4: Hardware smoke tone mode**
+- [x] **Step 4: Hardware smoke tone mode**
 
 Flash S3 and connect headphones to the DDJ-FLX4.
 
@@ -1373,7 +1373,7 @@ git commit -m "feat: stream usb audio tone to flx4"
 - Modify: `firmware/main-deck-p4/components/audio_engine/audio_engine.c`
 - Modify: `firmware/main-deck-p4/components/web_server/web_server.c`
 
-- [ ] **Step 1: Feed UAC packets from S3 P4 audio ring**
+- [x] **Step 1: Feed UAC packets from S3 P4 audio ring**
 
 In the USB Audio transfer fill routine:
 
@@ -1397,7 +1397,7 @@ Channel mapping:
   - channels 1/2: P4 `hp_out`;
   - channels 3/4: silence.
 
-- [ ] **Step 2: Add startup sequencing**
+- [x] **Step 2: Add startup sequencing**
 
 Startup order:
 
@@ -1407,7 +1407,7 @@ Startup order:
 4. P4 monitor PCM link publishes blocks when output service is open.
 5. S3 starts USB Audio ring mode after `p4_audio_link` reports valid sample rate and at least 20 ms of buffered frames.
 
-- [ ] **Step 3: Handle sample-rate changes**
+- [x] **Step 3: Handle sample-rate changes** (first slice: rate matched at ring autostart; seamless mid-stream 44.1<->48 switch deferred)
 
 When S3 observes a P4 audio link block with a sample rate different from the current USB Audio streaming rate:
 
@@ -1423,7 +1423,7 @@ If FLX4 does not expose the requested sample rate:
 - keep USB Audio at 48 kHz;
 - create a separate P4 or S3 sample-rate conversion plan before accepting that scenario for product use.
 
-- [ ] **Step 4: Hardware smoke end-to-end**
+- [x] **Step 4: Hardware smoke end-to-end** (recorded in docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md)
 
 Test matrix:
 

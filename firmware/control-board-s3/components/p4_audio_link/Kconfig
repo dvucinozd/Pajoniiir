@@ -1,0 +1,37 @@
+menu "P4 audio link"
+
+config P4_AUDIO_LINK_ENABLED
+    bool "Enable P4-to-S3 monitor PCM link receiver"
+    default n
+    depends on DDJ_FLX4_HOST_MODE
+    help
+        Enables the dedicated P4-to-S3 monitor PCM receiver used by the FLX4
+        USB Audio headphones path: an I2S slave RX that deframes P4HP blocks
+        into the frame ring. GPIO15-GPIO18 are only safe while
+        DDJ_FLX4_HOST_MODE keeps the legacy panel_io jog/browse pins inactive.
+
+config P4_AUDIO_LINK_BCLK_GPIO
+    int "P4 audio link I2S BCLK input GPIO"
+    default 15
+    depends on P4_AUDIO_LINK_ENABLED
+
+config P4_AUDIO_LINK_WS_GPIO
+    int "P4 audio link I2S WS/LRCK input GPIO"
+    default 16
+    depends on P4_AUDIO_LINK_ENABLED
+
+config P4_AUDIO_LINK_DIN_GPIO
+    int "P4 audio link I2S DIN GPIO"
+    default 17
+    depends on P4_AUDIO_LINK_ENABLED
+
+config P4_AUDIO_LINK_BENCH_CONSUMER
+    bool "Drain the P4 audio link ring at bench pace"
+    default n
+    depends on P4_AUDIO_LINK_ENABLED
+    help
+        Bench-only consumer that keeps the frame ring near half fill so a
+        healthy link reports zero overruns and underruns. The product path
+        replaces this with the FLX4 USB Audio packet consumer.
+
+endmenu

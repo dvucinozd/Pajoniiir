@@ -11,6 +11,10 @@
 #include "wifi_link.h"
 #include "web_server.h"
 #include "sd_diag_log.h"
+#include "sdkconfig.h"
+#if CONFIG_MONITOR_PCM_LINK_ENABLED
+#include "monitor_pcm_link.h"
+#endif
 #include "freertos/task.h"
 #include "esp_log.h"
 
@@ -43,6 +47,13 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
+
+#if CONFIG_MONITOR_PCM_LINK_ENABLED
+    // Acquire the monitor link I2S unit before the heavy subsystems come up:
+    // on rev v1.3 (eco2) silicon, claiming a fresh I2S unit late in boot with
+    // DSI/PSRAM/USB traffic active has hard-frozen the HP bus.
+    ESP_ERROR_CHECK(monitor_pcm_link_start_transport());
+#endif
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────
     app_settings_init();   // also initialises NVS; falls back to defaults

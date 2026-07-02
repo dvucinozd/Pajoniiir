@@ -223,6 +223,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"limiter_positive\":%u,"
              "\"limiter_negative\":%u,"
              "\"limiter_peak\":%d,"
+             "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u},"
              "%s,"
              "\"heap_free\":%u,"
              "\"internal_free\":%u,"
@@ -265,6 +266,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              (unsigned)diagnostics.limiter.positive_overloads,
              (unsigned)diagnostics.limiter.negative_overloads,
              (int)diagnostics.limiter.peak_input_abs,
+             (unsigned)diagnostics.usb_headphone_submitted_blocks,
+             (unsigned)diagnostics.usb_headphone_dropped_blocks,
+             (unsigned)diagnostics.usb_headphone_submitted_frames,
              beat_fx_echo_diag_json,
              (unsigned)diagnostics.heap_free,
              (unsigned)diagnostics.internal_free,

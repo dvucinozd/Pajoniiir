@@ -222,6 +222,8 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
+            "-I../control_link_protocol/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
@@ -239,6 +241,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
+            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c",
             "-lm"
         )
     },
@@ -384,6 +387,19 @@ $tests = @(
             "-o", "test_audio_output_timing.exe",
             "test_audio_output_timing.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_timing.c"
+        )
+    },
+    @{
+        Name = "monitor_pcm_link"
+        Dir = "tests/monitor_pcm_link"
+        Target = "test_monitor_pcm_link.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
+            "-o", "test_monitor_pcm_link.exe",
+            "test_monitor_pcm_link.c",
+            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c"
         )
     },
     @{

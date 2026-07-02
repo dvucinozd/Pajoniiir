@@ -58,6 +58,12 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
                                         uint8_t *out_ep_addr,
                                         uint16_t *out_ep_mps);
 
+bool flx4_midi_format_descriptor_hex_row(const uint8_t *data,
+                                         size_t len,
+                                         size_t offset,
+                                         char *out,
+                                         size_t out_len);
+
 void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx);
 
 esp_err_t flx4_midi_host_init(void);

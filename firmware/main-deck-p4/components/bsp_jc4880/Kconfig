@@ -7,4 +7,13 @@ config BSP_PCM5102A_MAIN_OUT
         Enable the second I2S TX channel for the external PCM5102A MAIN OUT DAC.
         Keep disabled until GPIO50/GPIO52/GPIO51 are bench-verified on JP1.
 
+config BSP_ES8311_MONITOR
+    bool "Enable ES8311 onboard monitor codec"
+    default y
+    help
+        Bring up the ES8311 codec on I2S unit 0 for the onboard monitor
+        speaker/headphones path. Disable to free I2S unit 0 for the FLX4 USB
+        headphones monitor link (product config: PCM5102A MAIN on unit 1 +
+        monitor link on unit 0, cue/monitor delivered over USB to the FLX4).
+
 endmenu

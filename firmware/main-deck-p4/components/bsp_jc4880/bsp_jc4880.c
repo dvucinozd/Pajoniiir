@@ -376,6 +376,14 @@ esp_err_t bsp_audio_init(void)
 {
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
 
+#if !CONFIG_BSP_ES8311_MONITOR
+    /* ES8311 monitor disabled: I2S unit 0 is left free for the FLX4 USB
+       monitor link. Only bring up the PCM5102A MAIN OUT DAC (its own guard
+       makes this a no-op when PCM5102A is also disabled). */
+    ESP_RETURN_ON_ERROR(bsp_audio_init_i2s_pcm5102(), TAG, "PCM5102A init failed");
+    ESP_LOGI(TAG, "ES8311 monitor disabled; I2S unit 0 free for FLX4 monitor link");
+    return ESP_OK;
+#else
     if (s_codec && s_i2s_tx) {
         ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG, "speaker PA gpio init failed");
         ESP_RETURN_ON_ERROR(bsp_audio_set_monitor_route(s_monitor_route), TAG, "monitor route restore failed");
@@ -463,6 +471,7 @@ esp_err_t bsp_audio_init(void)
              BSP_I2S_MCLK_GPIO, BSP_I2S_BCLK_GPIO, BSP_I2S_WS_GPIO, BSP_I2S_DOUT_GPIO, BSP_AUDIO_PA_GPIO,
              s_monitor_route == BSP_MONITOR_ROUTE_SPEAKER ? "built-in speaker" : "headphones");
     return ESP_OK;
+#endif /* CONFIG_BSP_ES8311_MONITOR */
 }
 
 esp_err_t bsp_audio_set_speaker_pa_enabled(bool enabled)

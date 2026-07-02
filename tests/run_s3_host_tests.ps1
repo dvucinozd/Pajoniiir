@@ -150,6 +150,59 @@ $tests = @(
             "s3_constants.c",
             "p4_constants.c"
         )
+    },
+    @{
+        Name = "flx4_usb_audio"
+        Dir = "tests/flx4_usb_audio"
+        Target = "test_flx4_uac_descriptors.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
+            "-o", "test_flx4_uac_descriptors.exe",
+            "test_flx4_uac_descriptors.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c"
+        )
+    },
+    @{
+        Name = "flx4_uac_packetizer"
+        Dir = "tests/flx4_usb_audio"
+        Target = "test_flx4_uac_packetizer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
+            "-o", "test_flx4_uac_packetizer.exe",
+            "test_flx4_uac_packetizer.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_packetizer.c"
+        )
+    },
+    @{
+        Name = "flx4_usb_audio_runtime"
+        Dir = "tests/flx4_usb_audio"
+        Target = "test_flx4_usb_audio.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DFLX4_USB_AUDIO_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
+            "-o", "test_flx4_usb_audio.exe",
+            "test_flx4_usb_audio.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_packetizer.c"
+        )
+    },
+    @{
+        Name = "p4_audio_link"
+        Dir = "tests/p4_audio_link"
+        Target = "test_p4_audio_link.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/p4_audio_link/include",
+            "-o", "test_p4_audio_link.exe",
+            "test_p4_audio_link.c",
+            "../../firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c"
+        )
     }
 )
 
