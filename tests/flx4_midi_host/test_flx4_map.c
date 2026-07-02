@@ -181,6 +181,40 @@ static void test_deck_transport_extension_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TEMPO_RANGE, 1);
 }
 
+static void test_shifted_extended_deck_actions(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x0E, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x0E, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, false));
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x5C, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_SYNC_MASTER, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x5C, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_SYNC_MASTER, false));
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x50, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RELOOP_STOP, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x4C, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true));
+    assert(flx4_map_message(&state, MSG(0x90, 0x4E, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x68, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true));
+}
+
 static void test_loop_and_beat_jump_buttons(void)
 {
     flx4_map_state_t state;
@@ -275,6 +309,12 @@ static void test_jog_and_browse_relative_controls(void)
     assert(flx4_map_message(&state, MSG(0xB6, 0x40, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, -1);
     assert(!flx4_map_message(&state, MSG(0xB6, 0x40, 0x00), &ev));
+
+    assert(flx4_map_message(&state, MSG(0xB6, 0x64, 0x01), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, 1);
+    assert(flx4_map_message(&state, MSG(0xB6, 0x64, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, -1);
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x64, 0x00), &ev));
 }
 
 static void test_jog_search_and_master_cue_controls(void)
@@ -300,6 +340,11 @@ static void test_jog_search_and_master_cue_controls(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
     assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
+
+    assert(flx4_map_message(&state, MSG(0x96, 0x42, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_SHIFT_PRESS, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x42, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_SHIFT_PRESS, 0);
 }
 
 static void test_14bit_controls_emit_after_both_halves(void)
@@ -423,7 +468,7 @@ static void test_unsupported_messages_are_ignored(void)
 
     assert(!flx4_map_message(NULL, MSG(0x90, 0x0B, 0x7F), &ev));
     assert(!flx4_map_message(&state, NULL, &ev));
-    assert(!flx4_map_message(&state, MSG(0x90, 0x0E, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x6E, 0x7F), &ev));
 }
 
 int main(void)
@@ -432,6 +477,7 @@ int main(void)
     test_smart_control_buttons();
     test_beat_fx_controls();
     test_deck_transport_extension_buttons();
+    test_shifted_extended_deck_actions();
     test_loop_and_beat_jump_buttons();
     test_pad_modes_and_pad_actions();
     test_jog_and_browse_relative_controls();
