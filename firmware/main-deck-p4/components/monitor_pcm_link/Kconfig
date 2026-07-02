@@ -22,6 +22,16 @@ config MONITOR_PCM_LINK_DOUT_GPIO
     default 35
     depends on MONITOR_PCM_LINK_ENABLED
 
+config MONITOR_PCM_LINK_I2S_UNIT
+    int "Monitor PCM link I2S unit (0-1)"
+    default 1
+    range 0 1
+    depends on MONITOR_PCM_LINK_ENABLED
+    help
+        I2S peripheral unit that drives the monitor link. Unit 2 freezes on the
+        rev v1.3 (eco2) P4. Use unit 1 for the bench (ES8311 keeps unit 0); use
+        unit 0 for the product config (ES8311 disabled, PCM5102A MAIN on unit 1).
+
 config MONITOR_PCM_LINK_BENCH_TONE
     bool "Generate deterministic 1 kHz bench tone through the monitor PCM link"
     default n

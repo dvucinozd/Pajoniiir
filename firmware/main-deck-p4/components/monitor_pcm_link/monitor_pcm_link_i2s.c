@@ -138,12 +138,12 @@ esp_err_t monitor_pcm_link_start_transport(void)
        diagnostics (requires CONFIG_LOG_MAXIMUM_LEVEL >= INFO). */
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
-    /* Explicit unit 1: the ES8311 BSP hardcodes I2S_NUM_0, and I2S_NUM_AUTO
-       here would steal it because this transport now starts first. Unit 2 is
-       avoided because acquiring it froze rev v1.3 (eco2) silicon. The bench
-       profile keeps PCM5102A off so unit 1 is free; the Task 8 product
-       integration owns the final unit budget. */
-    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+    /* Explicit unit (never I2S_NUM_AUTO): this transport starts before
+       bsp_audio_init, so AUTO would steal whichever unit the DACs need. Unit 2
+       froze rev v1.3 (eco2) silicon. Bench uses unit 1 (ES8311 keeps unit 0);
+       product uses unit 0 (ES8311 disabled, PCM5102A MAIN on unit 1). */
+    i2s_chan_config_t chan_cfg =
+        I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t)CONFIG_MONITOR_PCM_LINK_I2S_UNIT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true; /* DMA sends zero filler when the queue idles */
 
     esp_err_t rc = i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);

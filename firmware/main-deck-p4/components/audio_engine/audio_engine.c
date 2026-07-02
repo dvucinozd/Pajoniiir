@@ -1193,14 +1193,16 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     }
 #endif
 
-    esp_codec_dev_sample_info_t fs = {
-        .bits_per_sample = 16,
-        .channel         = 2,
-        .sample_rate     = sample_rate,
-    };
-    if (esp_codec_dev_open(s_codec, &fs) != 0) {
-        AE_UNLOCK();
-        return ESP_FAIL;
+    if (s_codec) {
+        esp_codec_dev_sample_info_t fs = {
+            .bits_per_sample = 16,
+            .channel         = 2,
+            .sample_rate     = sample_rate,
+        };
+        if (esp_codec_dev_open(s_codec, &fs) != 0) {
+            AE_UNLOCK();
+            return ESP_FAIL;
+        }
     }
     s_output_codec_open = true;
     s_output_sample_rate = sample_rate;
@@ -1339,9 +1341,13 @@ static void ae_output_task(void *arg)
             hp_out[i * 2 + 1] = mix.headphone.right;
         }
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
-        int16_t *es8311_out = hp_out;
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
-        esp_err_t hp_rc = esp_codec_dev_write(s_codec, es8311_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
+        /* When ES8311 is disabled the loop paces on the PCM5102A blocking
+           write above; hp_out still reaches the FLX4 phones over the link. */
+        esp_err_t hp_rc = ESP_ERR_NOT_SUPPORTED;
+        if (s_codec) {
+            hp_rc = esp_codec_dev_write(s_codec, hp_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
+        }
 
         if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
             AE_LOCK();
@@ -1377,7 +1383,7 @@ static void ae_output_task(void *arg)
         }
     }
     if (s_output_codec_open) {
-        esp_codec_dev_close(s_codec);
+        if (s_codec) esp_codec_dev_close(s_codec);
         s_output_codec_open = false;
         s_output_sample_rate = 0;
     }
@@ -1408,7 +1414,7 @@ static esp_err_t audio_output_service_stop(void)
 {
     if (!s_output_task) {
         if (s_output_codec_open) {
-            esp_codec_dev_close(s_codec);
+            if (s_codec) esp_codec_dev_close(s_codec);
             s_output_codec_open = false;
             s_output_sample_rate = 0;
         }
@@ -1490,11 +1496,11 @@ esp_err_t audio_engine_init(void)
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
      * The I2S clock is configured per-track in audio_engine_load via codec_open. */
     s_codec = bsp_audio_get_codec_dev();
-    if (!s_codec) {
-        ESP_LOGE(TAG, "audio_engine_init: codec not ready (call bsp_audio_init first)");
+    s_main_i2s_tx = bsp_audio_get_main_i2s_tx();
+    if (!s_codec && !s_main_i2s_tx) {
+        ESP_LOGE(TAG, "audio_engine_init: no audio output ready (call bsp_audio_init first)");
         return ESP_ERR_INVALID_STATE;
     }
-    s_main_i2s_tx = bsp_audio_get_main_i2s_tx();
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
     if (!s_tasks_done) {
         s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
@@ -1503,7 +1509,8 @@ esp_err_t audio_engine_init(void)
         s_output_done = xSemaphoreCreateCounting(1, 0);
     }
     if (!s_file_mutex || !s_tasks_done || !s_output_done) return ESP_ERR_NO_MEM;
-    ESP_LOGI(TAG, "audio_engine_init: ES8311 codec ready");
+    ESP_LOGI(TAG, "audio_engine_init: output ready (ES8311=%s, PCM5102A=%s)",
+             s_codec ? "on" : "off", s_main_i2s_tx ? "on" : "off");
 #endif
 
     return ESP_OK;
@@ -1680,7 +1687,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
             xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
         }
         if (runtime->codec_open) {
-            esp_codec_dev_close(s_codec);
+            if (s_codec) esp_codec_dev_close(s_codec);
             runtime->codec_open = false;
         }
         if (fw->buf) {
