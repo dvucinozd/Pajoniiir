@@ -8,9 +8,9 @@ Channels: tone on channels 3/4, channels 1/2 silent
 Bits: 16
 Audible on headphones: yes — 1 kHz tone confirmed on the FLX4 3.5 mm headphones jack
 Audible on FLX4 RCA: not measured this pass (channels 1/2 were driven silent)
-MIDI responsive while streaming: MIDI interface claimed and OUT traffic active during
-streaming (one queue drop during the reconnect burst); interactive Play/Pause/Browse
-exercise deferred to the end-to-end smoke
+MIDI responsive while streaming: yes — interactive controls confirmed responsive
+while the tone streamed (MIDI interface claimed, OUT traffic active; one queue
+drop during the reconnect burst only)
 USB skipped packets: 0 over 25 s observation
 USB underrun packets: 0 over 25 s observation
 Packet pacing: submitted +5000/5 s (exactly 1000 packets/s), bytes +1,920,000/5 s
