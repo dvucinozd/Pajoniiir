@@ -1213,7 +1213,7 @@ Ring policy:
 - Do not call blocking SPI/UART APIs inside P4 audio output task.
 - A separate P4 transport task may block on the hardware peripheral after taking blocks from the monitor PCM queue.
 
-- [ ] **Step 5: Bench transport without USB Audio**
+- [x] **Step 5: Bench transport without USB Audio**
 
 P4 test mode:
 
@@ -1321,7 +1321,7 @@ config DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2
     default n
 ```
 
-- [ ] **Step 4: Hardware smoke tone mode**
+- [x] **Step 4: Hardware smoke tone mode**
 
 Flash S3 and connect headphones to the DDJ-FLX4.
 
@@ -1373,7 +1373,7 @@ git commit -m "feat: stream usb audio tone to flx4"
 - Modify: `firmware/main-deck-p4/components/audio_engine/audio_engine.c`
 - Modify: `firmware/main-deck-p4/components/web_server/web_server.c`
 
-- [ ] **Step 1: Feed UAC packets from S3 P4 audio ring**
+- [x] **Step 1: Feed UAC packets from S3 P4 audio ring**
 
 In the USB Audio transfer fill routine:
 
@@ -1397,7 +1397,7 @@ Channel mapping:
   - channels 1/2: P4 `hp_out`;
   - channels 3/4: silence.
 
-- [ ] **Step 2: Add startup sequencing**
+- [x] **Step 2: Add startup sequencing**
 
 Startup order:
 
@@ -1407,7 +1407,7 @@ Startup order:
 4. P4 monitor PCM link publishes blocks when output service is open.
 5. S3 starts USB Audio ring mode after `p4_audio_link` reports valid sample rate and at least 20 ms of buffered frames.
 
-- [ ] **Step 3: Handle sample-rate changes**
+- [x] **Step 3: Handle sample-rate changes** (first slice: rate matched at ring autostart; seamless mid-stream 44.1<->48 switch deferred)
 
 When S3 observes a P4 audio link block with a sample rate different from the current USB Audio streaming rate:
 
@@ -1423,7 +1423,7 @@ If FLX4 does not expose the requested sample rate:
 - keep USB Audio at 48 kHz;
 - create a separate P4 or S3 sample-rate conversion plan before accepting that scenario for product use.
 
-- [ ] **Step 4: Hardware smoke end-to-end**
+- [x] **Step 4: Hardware smoke end-to-end** (recorded in docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md)
 
 Test matrix:
 

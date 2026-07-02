@@ -159,20 +159,25 @@ Current S3 firmware modes:
 - inherited CDJ panel compatibility mode: direct GPIO panel input plus TinyUSB
   MIDI device compatibility when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
 
-Planned FLX4 USB headphones path:
+FLX4 USB headphones path (**hardware-validated 2026-07-02**,
+`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
-- P4 remains the monitor/cue mix owner and publishes stereo 16-bit `hp_out`
-  blocks through `monitor_pcm_link`.
-- The dedicated P4-to-S3 monitor PCM payload uses `P4HP` blocks with sequence
-  numbers and CRC32; it is intentionally separate from the `0xA5` UART control
-  protocol.
-- S3 receives those blocks through the future dedicated physical PCM transport
-  into `p4_audio_link`, then the USB Audio streamer can packetize the ring for
-  the FLX4 headphones endpoint.
-- The selected first bench candidate is I2S: P4 GPIO32/GPIO34/GPIO35 to S3
-  GPIO15/GPIO16/GPIO17, with GPIO49/GPIO18 reserved only if flow/debug is
-  needed. Runtime enablement remains gated by the hardware bench documented in
-  `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`.
+- P4 owns the monitor/cue mix and publishes stereo 16-bit `hp_out` blocks
+  through `monitor_pcm_link` (I2S TX master, unit 0).
+- The dedicated P4-to-S3 monitor PCM payload uses `P4HP` blocks (sequence
+  numbers + CRC32) over I2S, intentionally separate from the `0xA5` UART control
+  protocol. Pins: P4 GPIO32/GPIO34/GPIO35 -> S3 GPIO15/GPIO16/GPIO17, 64 kHz
+  stereo slots.
+- S3 `p4_audio_link` (I2S slave RX) deframes into a 4096-frame ring; the
+  `flx4_usb_audio` UAC streamer drains the ring into isochronous OUT transfers,
+  mapping P4 `hp_out` onto the FLX4 4-channel format's headphone pair
+  (channels 3/4). Ring streaming autostarts once ~20 ms is buffered and matches
+  the FLX4 endpoint rate to the P4 output rate (44.1 / 48 kHz).
+- Output topology (P4 has 2 usable I2S units; unit 2 freezes on eco2):
+  **PCM5102A RCA = MAIN OUT (unit 1, paces the loop)**, **FLX4 USB = CUE/MONITOR
+  (link on unit 0)**, **ES8311 onboard monitor disabled** to free unit 0. Both
+  outputs run simultaneously. S3 stays the FLX4 USB host and keeps MIDI
+  responsive while streaming audio.
 
 ## Main Code Surfaces
 

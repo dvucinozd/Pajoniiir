@@ -59,32 +59,38 @@ Inherited confirmed UART:
 - P4 GPIO28: UART RX from S3 TX.
 - P4 GPIO29: UART TX to S3 RX.
 
-P4-to-S3 monitor PCM link candidate for the future FLX4 USB Audio headphones
-phase:
+P4-to-S3 monitor PCM link for the FLX4 USB Audio headphones path
+(**hardware-validated 2026-07-02**, `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`
+and `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
-| Signal | ESP32-P4 candidate | ESP32-S3 side | Direction | Notes |
+| Signal | ESP32-P4 (JP1 pin) | ESP32-S3 side | Direction | Notes |
 | --- | --- | --- | --- | --- |
-| I2S BCLK | GPIO32 | GPIO15 | P4 -> S3 | clock for monitor PCM stream |
-| I2S WS/LRCK | GPIO34 | GPIO16 | P4 -> S3 | stereo frame sync |
-| I2S DOUT | GPIO35 | GPIO17 | P4 -> S3 | P4 `hp_out` monitor PCM data |
-| READY/FLOW/debug | GPIO49 | GPIO18 | S3 -> P4 or P4 -> S3 | optional; reserve for flow-control, IRQ, or diagnostics |
-| GND | GND | GND | shared | required |
+| I2S BCLK | GPIO32 (JP1 pin 17) | GPIO15 | P4 -> S3 | clock for monitor PCM stream |
+| I2S WS/LRCK | GPIO34 (JP1 pin 15) | GPIO16 | P4 -> S3 | stereo frame sync |
+| I2S DOUT | GPIO35 (JP1 pin 13) | GPIO17 | P4 -> S3 | P4 `hp_out` monitor PCM data |
+| GND | GND (JP1 pin 14) | GND | shared | required; use JP1 pin 14 next to the signal pins |
+| READY/FLOW/debug | GPIO49 (JP1 pin 11) | GPIO18 | optional | not needed; leave disconnected |
 
-Initial recommendation: use GPIO32/GPIO34/GPIO35 as P4 I2S TX into S3 I2S RX.
-Reserve GPIO49 and do not use it unless the bench run shows a real need for
-flow control or a debug/ready signal. The S3 candidate set GPIO15/GPIO16/GPIO17
-with optional GPIO18 avoids S3 USB GPIO19/GPIO20, existing control UART
-GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, GPIO48 reserved
-for future LED work, and the PSRAM-sensitive GPIO35-GPIO37 range. GPIO15-GPIO18
-are legacy CDJ jog/browse encoder pins and are acceptable only in the current
-`CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is not active.
+The S3 set GPIO15/GPIO16/GPIO17 avoids S3 USB GPIO19/GPIO20, control UART
+GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, and GPIO48
+(reserved for future LED work). GPIO15-GPIO18 are legacy CDJ jog/browse encoder
+pins, acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io`
+is inactive.
 
-The software block format for this candidate is now implemented as `P4HP`
-frames: P4 `monitor_pcm_link` serializes stereo 16-bit monitor PCM with
-sequence numbers and CRC32, and S3 `p4_audio_link` receives those blocks into a
-4096-frame ring. The physical I2S bench result is still pending and must be
-recorded in `docs/validation/P4_S3_AUDIO_LINK_BENCH.md` before enabling this
-transport by default.
+**Transport details (validated):** P4 `monitor_pcm_link` is an I2S TX master
+that streams `P4HP` framed blocks (stereo 16-bit monitor PCM, sequence numbers,
+CRC32). S3 `p4_audio_link` is an I2S slave RX that deframes into a 4096-frame
+ring. The pipe runs at **64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
+slots corrupted over the jumper harness. The TX task writes at line rate (real
+blocks or explicit zero filler) so the continuously-transmitting DMA never laps
+the writer mid-block. 80 s bench: 0 gaps / 0 CRC / 0 under/overruns.
+
+**Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
+`i2s_new_channel`, leaving units 0 and 1. Product config: **monitor link on
+unit 0** (`CONFIG_MONITOR_PCM_LINK_I2S_UNIT=0`), **PCM5102A RCA MAIN on unit 1**,
+and **ES8311 onboard monitor disabled** (`CONFIG_BSP_ES8311_MONITOR=n`) to free
+unit 0. The FLX4 USB headphones are the CUE/MONITOR output; the local ES8311
+monitor is dropped. Build both boards with the `sdkconfig.flx4_hp_e2e` profiles.
 
 PCM5102A MAIN OUT candidate pins for the photographed PCM5102MK/PCM5102A
 breakout board. The board header silkscreen is:

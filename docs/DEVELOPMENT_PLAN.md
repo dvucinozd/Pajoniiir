@@ -195,6 +195,12 @@ TODO:
   use GPIO50/GPIO52/GPIO51 as the bench-verification candidate set, reject the
   GPIO22/GPIO23/GPIO24/GPIO25 proposal because GPIO23 is LCD backlight PWM, and
   route PCM5102A as MAIN OUT while keeping ES8311 as monitor/headphones/speaker.
+- **Superseded for the product build (2026-07-02):** the FLX4 USB headphones
+  are the CUE/MONITOR output, so ES8311 is dropped there. Final topology:
+  PCM5102A RCA = MAIN OUT (I2S unit 1), FLX4 USB = cue (monitor link on unit 0),
+  ES8311 disabled to free unit 0 (only 2 usable I2S units on eco2 P4). See
+  `docs/superpowers/plans/2026-07-01-flx4-usb-audio-headphones.md` and
+  `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md` (hardware-validated).
 
 Exit criteria:
 
