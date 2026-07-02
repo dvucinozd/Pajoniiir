@@ -237,10 +237,12 @@ static uint8_t normalize_deck(uint8_t deck)
 
 static uint8_t deck_index_for_event(const ctrl_event_t *ev)
 {
-    if (ev && ev->id == CTRL_ID_LOAD_DECK1) {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK1)) {
         return CTRL_DECK_1;
     }
-    if (ev && ev->id == CTRL_ID_LOAD_DECK2) {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK2 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK2)) {
         return CTRL_DECK_2;
     }
     if (ev && control_link_id_is_deck(ev->id)) {
@@ -933,7 +935,9 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
     if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
-               ev->id == CTRL_ID_LOAD_DECK2)) {
+               ev->id == CTRL_ID_LOAD_DECK2 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK1 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK2)) {
         return BTN_LOAD;
     }
     if (ev && control_link_id_is_deck(ev->id)) {

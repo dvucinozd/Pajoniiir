@@ -76,8 +76,20 @@ static void test_transport_load_and_pfl_buttons(void)
 
     assert(flx4_map_message(&state, MSG(0x96, 0x46, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK1, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x46, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK1, 0);
     assert(flx4_map_message(&state, MSG(0x96, 0x47, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK2, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x47, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK2, 0);
+    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK1, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK1, 0);
+    assert(flx4_map_message(&state, MSG(0x96, 0x7A, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK2, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x7A, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK2, 0);
     assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_PRESS, 1);
     assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x00), &ev));

@@ -99,6 +99,8 @@ test.
 | `0x63` | Browse press | `0` release, `1` press; toggles Library/Overview |
 | `0x64` | Browse+Shift delta | signed delta; accelerated Library navigation or Overview zoom |
 | `0x65` | Browse+Shift press | `0` release, `1` press; press forces Library view |
+| `0x66` | Shift+Load Deck 1 | `0` release, `1` press; currently uses same P4 selected-browser-track load path as normal Load Deck 1 |
+| `0x67` | Shift+Load Deck 2 | `0` release, `1` press; currently uses same P4 selected-browser-track load path as normal Load Deck 2 |
 | `0x70` | FLX4 connection state | `0` disconnected, `1` connected; sent with `CTRL_TYPE_STATE` |
 | `0x71` | Smart CFX | `0` release, `1` press; press toggles P4 Smart CFX state |
 | `0x72` | Smart Fader | `0` release, `1` press; press toggles P4 Smart Fader state |

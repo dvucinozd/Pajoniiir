@@ -299,6 +299,8 @@ typedef enum {
 #define CTRL_ID_BROWSE_PRESS      (CTRL_NS_BROWSER | 0x03)
 #define CTRL_ID_BROWSE_SHIFT_DELTA (CTRL_NS_BROWSER | 0x04)
 #define CTRL_ID_BROWSE_SHIFT_PRESS (CTRL_NS_BROWSER | 0x05)
+#define CTRL_ID_SHIFT_LOAD_DECK1  (CTRL_NS_BROWSER | 0x06)
+#define CTRL_ID_SHIFT_LOAD_DECK2  (CTRL_NS_BROWSER | 0x07)
 
 static inline bool control_link_id_is_deck(uint8_t id)
 {

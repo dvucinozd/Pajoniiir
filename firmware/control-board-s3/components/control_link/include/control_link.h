@@ -266,6 +266,8 @@ typedef enum {
 #define CTRL_ID_BROWSE_PRESS      (CTRL_NS_BROWSER | 0x03)
 #define CTRL_ID_BROWSE_SHIFT_DELTA (CTRL_NS_BROWSER | 0x04)
 #define CTRL_ID_BROWSE_SHIFT_PRESS (CTRL_NS_BROWSER | 0x05)
+#define CTRL_ID_SHIFT_LOAD_DECK1  (CTRL_NS_BROWSER | 0x06)
+#define CTRL_ID_SHIFT_LOAD_DECK2  (CTRL_NS_BROWSER | 0x07)
 
 // Initialise UART1 and start RX task.
 // panel_event_queue: the queue returned by panel_io_init().

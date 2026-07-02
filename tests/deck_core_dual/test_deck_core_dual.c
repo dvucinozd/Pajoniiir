@@ -459,6 +459,29 @@ static void test_browser_namespace_routes_load_to_requested_deck(void)
     assert(s_load_calls[CTRL_DECK_2] == 2);
 }
 
+static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_load_calls[CTRL_DECK_1] = 0;
+    s_load_calls[CTRL_DECK_2] = 0;
+
+    ctrl_event_t load_deck1 = browser_button(CTRL_ID_SHIFT_LOAD_DECK1);
+    ctrl_event_t release_deck1 = load_deck1;
+    ctrl_event_t load_deck2 = browser_button(CTRL_ID_SHIFT_LOAD_DECK2);
+    ctrl_event_t release_deck2 = load_deck2;
+    release_deck1.value = 0;
+    release_deck2.value = 0;
+
+    deck_core_test_apply_event(&load_deck1);
+    deck_core_test_apply_event(&release_deck1);
+    deck_core_test_apply_event(&load_deck2);
+    deck_core_test_apply_event(&release_deck2);
+
+    assert(s_load_calls[CTRL_DECK_1] == 1);
+    assert(s_load_calls[CTRL_DECK_2] == 1);
+}
+
 static void test_browser_namespace_routes_browse_delta(void)
 {
     deck_core_test_reset();
@@ -1962,6 +1985,7 @@ int main(void)
     test_tempo_range_change_reapplies_current_pitch();
     test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
+    test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only();
     test_browser_namespace_routes_browse_delta();
     test_browse_delta_zooms_overview_when_library_is_not_active();
     test_browse_delta_ignores_non_library_non_overview_tabs();

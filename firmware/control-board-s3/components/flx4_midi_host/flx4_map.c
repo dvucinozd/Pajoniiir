@@ -47,6 +47,8 @@
 #define FLX4_BTN_PAD_KEY_SHIFT 0x6F
 #define FLX4_BTN_LOAD_D1       0x46
 #define FLX4_BTN_LOAD_D2       0x47
+#define FLX4_BTN_LOAD_D1_SHIFT 0x68
+#define FLX4_BTN_LOAD_D2_SHIFT 0x7A
 #define FLX4_BTN_PFL           0x54
 #define FLX4_BTN_BROWSE_PRESS  0x41
 #define FLX4_BTN_BROWSE_SHIFT_PRESS 0x42
@@ -498,6 +500,12 @@ bool flx4_map_message(flx4_map_state_t *state,
         }
         if (msg->data1 == FLX4_BTN_LOAD_D2) {
             return emit_button(out, CTRL_ID_LOAD_DECK2, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_LOAD_D1_SHIFT) {
+            return emit_button(out, CTRL_ID_SHIFT_LOAD_DECK1, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_LOAD_D2_SHIFT) {
+            return emit_button(out, CTRL_ID_SHIFT_LOAD_DECK2, msg->data2 > 0 ? 1 : 0);
         }
         if (msg->data1 == FLX4_BTN_MASTER_CUE ||
             msg->data1 == FLX4_BTN_MASTER_CUE_SHIFT) {

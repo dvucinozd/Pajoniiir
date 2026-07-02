@@ -20,6 +20,8 @@ int s3_ctrl_id_ch1_volume(void) { return CTRL_ID_CH1_VOLUME; }
 int s3_ctrl_id_crossfader(void) { return CTRL_ID_CROSSFADER; }
 int s3_ctrl_id_browse_delta(void) { return CTRL_ID_BROWSE_DELTA; }
 int s3_ctrl_id_load_deck2(void) { return CTRL_ID_LOAD_DECK2; }
+int s3_ctrl_id_shift_load_deck1(void) { return CTRL_ID_SHIFT_LOAD_DECK1; }
+int s3_ctrl_id_shift_load_deck2(void) { return CTRL_ID_SHIFT_LOAD_DECK2; }
 int s3_ctrl_id_browse_press(void) { return CTRL_ID_BROWSE_PRESS; }
 int s3_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
 int s3_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }

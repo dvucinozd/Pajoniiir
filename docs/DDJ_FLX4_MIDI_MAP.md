@@ -45,6 +45,8 @@ P4 DSP/settings behavior is deferred.
 | Beat Sync | Deck 2 | `0x91` | `0x58` | semantic input mapped; P4 BPM-match-on-press plus one-shot signed intra-beat phase-align behavior implemented |
 | Load | Deck 1 | `0x96` | `0x46` | global button status, deck from midino |
 | Load | Deck 2 | `0x96` | `0x47` | global button status, deck from midino |
+| Load + Shift | Deck 1 | `0x96` | `0x68` | distinct semantic ID; P4 currently loads selected browser track like normal Load |
+| Load + Shift | Deck 2 | `0x96` | `0x7A` | distinct semantic ID; P4 currently loads selected browser track like normal Load |
 | Browse rotate | Library | `0xB6` | `0x40` | signed 7-bit relative encoder: `0x01` = +1 step, `0x7F` = -1 step |
 | Browse press | Library | `0x96` | `0x41` | toggles the P4 UI between Library and Overview; does not load a deck |
 | Smart CFX | Global | `0x96` | `0x00` | press `0x7F`, release `0x00`; toggles P4 Smart CFX state |
@@ -155,6 +157,7 @@ Status legend:
 | Browse + Shift rotate | `0xB6/0x64` | relative encoder | shifted global | `CTRL_ID_BROWSE_SHIFT_DELTA` | UI Library / Overview accelerated navigation | Implemented | Host-tested from XML; hardware smoke pending |
 | Browse + Shift press | `0x96/0x42` | press/release | shifted global | `CTRL_ID_BROWSE_SHIFT_PRESS` | UI Library force-open | Implemented | Host-tested from XML; hardware smoke pending |
 | Load Deck 1 / Deck 2 | `0x96/0x46`, `0x96/0x47` | press/release | global, deck from midino | `CTRL_ID_LOAD_DECK1`, `CTRL_ID_LOAD_DECK2` | UI Library | Implemented | Verified 2026-06-14 / 2026-06-20 |
+| Shift + Load Deck 1 / Deck 2 | `0x96/0x68`, `0x96/0x7A` | press/release | shifted global, deck from midino | `CTRL_ID_SHIFT_LOAD_DECK1`, `CTRL_ID_SHIFT_LOAD_DECK2` | UI Library | Implemented; currently same load behavior as normal Load with distinct observability IDs | Host-tested from official PDF/XML; hardware smoke pending |
 | Shift Deck 1 / Deck 2 | `0x90/0x3F`, `0x91/0x3F` | press/release | deck-local modifier | `CTRL_ID_DECK1_SHIFT`, `CTRL_ID_DECK2_SHIFT` | P4 input mode state | Mapped only | Verified 2026-06-20 |
 | Play/Pause Deck 1 / Deck 2 | `0x90/0x0B`, `0x91/0x0B` | press/release | deck-local | `CTRL_ID_DECK1_PLAY`, `CTRL_ID_DECK2_PLAY` | `deck_core` | Implemented | Verified 2026-06-14 |
 | Play + Shift / Censor | `0x90/0x0E`, `0x91/0x0E` | press/release | shifted deck-local | `CTRL_ID_DECK*_EXT_ACTION` / `CTRL_DECK_EXT_ACTION_CENSOR` | `deck_core` slip-censor MVP | Implemented MVP | Host-tested from XML; hardware smoke pending |

@@ -32,6 +32,8 @@ int p4_ctrl_id_deck1_jog_search(void) { return CTRL_ID_DECK1_JOG_SEARCH; }
 int p4_ctrl_id_deck2_jog_search_touch(void) { return CTRL_ID_DECK2_JOG_SEARCH_TOUCH; }
 int p4_ctrl_id_browse_shift_delta(void) { return CTRL_ID_BROWSE_SHIFT_DELTA; }
 int p4_ctrl_id_browse_shift_press(void) { return CTRL_ID_BROWSE_SHIFT_PRESS; }
+int p4_ctrl_id_shift_load_deck1(void) { return CTRL_ID_SHIFT_LOAD_DECK1; }
+int p4_ctrl_id_shift_load_deck2(void) { return CTRL_ID_SHIFT_LOAD_DECK2; }
 int p4_ctrl_id_deck1_ext_action(void) { return CTRL_ID_DECK1_EXT_ACTION; }
 int p4_ctrl_id_deck2_ext_action(void) { return CTRL_ID_DECK2_EXT_ACTION; }
 int p4_ctrl_deck_ext_action_censor(void) { return CTRL_DECK_EXT_ACTION_CENSOR; }
