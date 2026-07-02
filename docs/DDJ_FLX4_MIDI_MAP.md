@@ -205,6 +205,12 @@ Status legend:
 | Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release; press toggles P4 Beat FX enabled state | FX channel selector | `CTRL_ID_BEAT_FX_ON` / `LED_BEAT_FX_ON` | P4 Beat FX state model + LED feedback | Implemented state/mapping; FILTER DSP implemented with gradual depth response; Echo/delay BPM-synced DSP slice implemented; ON/OFF LED follows P4 state | Host-tested from XML; LED feedback host-tested; FILTER/Echo hardware smoke passed 2026-07-01; BPM-sync and beat-size hardware smoke passed 2026-07-01 |
 | Beat FX on/off + Shift | CH1/global `0x94/0x43`, CH2 `0x95/0x43` | press/release | shifted FX channel selector | `CTRL_ID_BEAT_FX_CLEAR` | P4 Beat FX state reset | Implemented state/mapping; clears FILTER/Echo DSP state | Host-tested from XML; hardware smoke passed 2026-07-01 |
 
+Snapshot/reconnect note: S3 now replays the last known absolute input values
+for the mixer/monitoring/effect-depth rows above after a heartbeat-driven FLX4
+connection refresh. This is a known-value cache, not a physical USB query:
+unknown controls are skipped, tempo faders are excluded, and buttons/toggles
+are not replayed.
+
 ### Performance Pad Mode Inventory
 
 The DDJ-FLX4 has four direct physical pad mode buttons: `HOT CUE`, `PAD FX1`,

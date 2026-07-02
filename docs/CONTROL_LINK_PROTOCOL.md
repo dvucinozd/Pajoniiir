@@ -182,6 +182,16 @@ if P4 reboots while S3 and the FLX4 stay powered, the next heartbeat refresh
 lets the freshly booted P4 force its LED snapshot without requiring a controller
 replug.
 
+After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
+the last known FLX4 absolute input snapshot to P4. The replay covers only
+controls whose current value S3 has actually observed as a complete value:
+channel faders, crossfader, trim/pregain, EQ high/mid/low, channel filter,
+Master Level, Headphones Mix, and Beat FX Level/Depth. S3 does not fabricate
+defaults for unknown physical positions, and the USB MIDI class does not expose
+a generic "read all knobs now" request. Tempo faders, buttons, pad actions,
+PFL, browse, and jog inputs are deliberately excluded from this snapshot phase
+because replaying them could create false user actions or disable Beat Sync.
+
 The current P4 Beat FX snapshot is exposed through `/api/status` under
 `beat_fx` for low-rate hardware smoke verification without raw MIDI logging.
 The object contains `effect`, `beat`, `target`, `depth`, and `enabled`.

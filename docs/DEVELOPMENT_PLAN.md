@@ -734,6 +734,11 @@ Implementation order:
      where already consistent with settings ownership, and LED/state feedback
      where the controller exposes it;
    - coalesce high-rate analog events using the existing latest-value policy.
+   - S3 now keeps a known-value snapshot for absolute mixer/monitor/effect
+     controls and replays it to P4 after heartbeat-driven FLX4 connection
+     refresh. This covers channel faders, crossfader, trim, EQ, filters,
+     Master Level, Headphones Mix, and Beat FX Level/Depth, but deliberately
+     excludes tempo faders and buttons/toggles.
    - trim/pregain is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 Trim controls, P4 stores raw per-deck pregain state
      in the mixer snapshot and `/api/status`, and output gain applies a bounded

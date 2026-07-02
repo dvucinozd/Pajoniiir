@@ -2,6 +2,7 @@
 #include "control_link.h"
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #define MSG(status_, data1_, data2_) (&(flx4_midi_message_t) { \
     .cable = 0, \
@@ -17,6 +18,46 @@ static void expect_event(const flx4_control_event_t *ev, uint8_t type, uint8_t i
     assert(ev->type == type);
     assert(ev->id == id);
     assert(ev->value == value);
+}
+
+typedef struct {
+    flx4_control_event_t events[32];
+    size_t count;
+} snapshot_capture_t;
+
+static bool capture_snapshot_event(uint8_t type, uint8_t id, int16_t value, void *ctx)
+{
+    snapshot_capture_t *capture = (snapshot_capture_t *)ctx;
+    assert(capture->count < (sizeof(capture->events) / sizeof(capture->events[0])));
+    capture->events[capture->count].type = type;
+    capture->events[capture->count].id = id;
+    capture->events[capture->count].value = value;
+    capture->count++;
+    return true;
+}
+
+static int find_snapshot_event(const snapshot_capture_t *capture, uint8_t id)
+{
+    for (size_t i = 0; i < capture->count; i++) {
+        if (capture->events[i].id == id) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static void expect_snapshot_event(const snapshot_capture_t *capture,
+                                  uint8_t id,
+                                  int16_t value)
+{
+    int idx = find_snapshot_event(capture, id);
+    assert(idx >= 0);
+    expect_event(&capture->events[idx], CTRL_TYPE_PITCH, id, value);
+}
+
+static void expect_no_snapshot_event(const snapshot_capture_t *capture, uint8_t id)
+{
+    assert(find_snapshot_event(capture, id) < 0);
 }
 
 static void test_transport_load_and_pfl_buttons(void)
@@ -275,6 +316,80 @@ static void test_14bit_controls_emit_after_both_halves(void)
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x13 << 7) | 0x23));
 }
 
+static void test_snapshot_emits_known_absolute_controls_only(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    snapshot_capture_t capture;
+    flx4_map_init(&state);
+    memset(&capture, 0, sizeof(capture));
+
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x04, 0x10), &ev));
+    assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
+
+    assert(flx4_map_message(&state, MSG(0xB0, 0x24, 0x20), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));
+    assert(!flx4_map_message(&state, MSG(0xB1, 0x13, 0x21), &ev));
+    assert(flx4_map_message(&state, MSG(0xB1, 0x33, 0x22), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH2_VOLUME, (int16_t)((0x21 << 7) | 0x22));
+    assert(flx4_map_message(&state, MSG(0xB1, 0x33, 0x23), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_CH2_VOLUME, (int16_t)((0x21 << 7) | 0x23));
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x1F, 0x30), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x3F, 0x31), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x08, 0x40), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x28, 0x41), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x50), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x51), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x17, 0x60), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x37, 0x61), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x07, 0x62), &ev));
+    assert(flx4_map_message(&state, MSG(0xB0, 0x27, 0x63), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x0B, 0x64), &ev));
+    assert(flx4_map_message(&state, MSG(0xB0, 0x2B, 0x65), &ev));
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x0F, 0x66), &ev));
+    assert(flx4_map_message(&state, MSG(0xB0, 0x2F, 0x67), &ev));
+    assert(flx4_map_message(&state, MSG(0xB0, 0x00, 0x12), &ev) == false);
+    assert(flx4_map_message(&state, MSG(0xB0, 0x20, 0x34), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_DECK1_TEMPO, (int16_t)((0x12 << 7) | 0x34));
+    assert(flx4_map_message(&state, MSG(0x90, 0x54, 0x7F), &ev));
+    assert(flx4_map_message(&state, MSG(0x96, 0x00, 0x7F), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x40, 0x01), &ev));
+
+    size_t emitted = flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture);
+    assert(emitted == capture.count);
+    assert(emitted == 9);
+    expect_snapshot_event(&capture, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));
+    expect_snapshot_event(&capture, CTRL_ID_CH2_VOLUME, (int16_t)((0x21 << 7) | 0x23));
+    expect_snapshot_event(&capture, CTRL_ID_CROSSFADER, (int16_t)((0x30 << 7) | 0x31));
+    expect_snapshot_event(&capture, CTRL_ID_MASTER_VOLUME, (int16_t)((0x40 << 7) | 0x41));
+    expect_snapshot_event(&capture, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x50 << 7) | 0x51));
+    expect_snapshot_event(&capture, CTRL_ID_CH1_FILTER, (int16_t)((0x60 << 7) | 0x61));
+    expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_HIGH, (int16_t)((0x62 << 7) | 0x63));
+    expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_MID, (int16_t)((0x64 << 7) | 0x65));
+    expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_LOW, (int16_t)((0x66 << 7) | 0x67));
+    expect_no_snapshot_event(&capture, CTRL_ID_DECK1_TEMPO);
+    expect_no_snapshot_event(&capture, CTRL_ID_DECK1_PFL);
+    expect_no_snapshot_event(&capture, CTRL_ID_SMART_CFX);
+    expect_no_snapshot_event(&capture, CTRL_ID_BROWSE_DELTA);
+    expect_no_snapshot_event(&capture, CTRL_ID_BEAT_FX_DEPTH);
+}
+
+static void test_snapshot_emits_beat_fx_depth_after_observed(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    snapshot_capture_t capture;
+    flx4_map_init(&state);
+    memset(&capture, 0, sizeof(capture));
+
+    assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
+    assert(flx4_map_message(&state, MSG(0xB4, 0x02, 0x46), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_BEAT_FX_DEPTH, 0x46);
+
+    assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 1);
+    expect_snapshot_event(&capture, CTRL_ID_BEAT_FX_DEPTH, 0x46);
+}
+
 static void test_unsupported_messages_are_ignored(void)
 {
     flx4_map_state_t state;
@@ -296,6 +411,8 @@ int main(void)
     test_pad_modes_and_pad_actions();
     test_jog_and_browse_relative_controls();
     test_14bit_controls_emit_after_both_halves();
+    test_snapshot_emits_known_absolute_controls_only();
+    test_snapshot_emits_beat_fx_depth_after_observed();
     test_unsupported_messages_are_ignored();
     puts("flx4_map tests passed");
     return 0;

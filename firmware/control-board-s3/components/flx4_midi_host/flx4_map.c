@@ -140,6 +140,15 @@ static bool update_14bit(flx4_14bit_state_t *slot,
     return true;
 }
 
+static bool get_14bit_value(const flx4_14bit_state_t *slot, int16_t *out)
+{
+    if (!slot || !out || !slot->msb_valid || !slot->lsb_valid) {
+        return false;
+    }
+    *out = (int16_t)(((uint16_t)(slot->msb & 0x7F) << 7) | (slot->lsb & 0x7F));
+    return true;
+}
+
 static int16_t relative_delta(uint8_t value)
 {
     return (int16_t)value - 64;
@@ -323,14 +332,19 @@ static bool map_beat_fx_button(flx4_map_state_t *state,
     }
 }
 
-static bool map_beat_fx_cc(uint8_t data1, uint8_t data2, flx4_control_event_t *out)
+static bool map_beat_fx_cc(flx4_map_state_t *state,
+                           uint8_t data1,
+                           uint8_t data2,
+                           flx4_control_event_t *out)
 {
     if (data1 != FLX4_CC_BEAT_FX_DEPTH) {
         return false;
     }
+    state->beat_fx_depth = data2 & 0x7F;
+    state->beat_fx_depth_valid = true;
     out->type = CTRL_TYPE_PITCH;
     out->id = CTRL_ID_BEAT_FX_DEPTH;
-    out->value = (int16_t)(data2 & 0x7F);
+    out->value = (int16_t)state->beat_fx_depth;
     return true;
 }
 
@@ -448,10 +462,81 @@ bool flx4_map_message(flx4_map_state_t *state,
     case FLX4_STATUS_D2_CC:
         return map_deck_cc(state, msg->status, msg->data1, msg->data2, out);
     case FLX4_STATUS_BEAT_FX_CC:
-        return map_beat_fx_cc(msg->data1, msg->data2, out);
+        return map_beat_fx_cc(state, msg->data1, msg->data2, out);
     case FLX4_STATUS_MASTER_CC:
         return map_master_cc(state, msg->data1, msg->data2, out);
     default:
         return false;
     }
+}
+
+static bool emit_snapshot_14bit(const flx4_14bit_state_t *slot,
+                                uint8_t id,
+                                flx4_map_snapshot_emit_cb_t cb,
+                                void *ctx,
+                                size_t *count)
+{
+    int16_t value;
+    if (!get_14bit_value(slot, &value)) {
+        return true;
+    }
+    if (!cb(CTRL_TYPE_PITCH, id, value, ctx)) {
+        return false;
+    }
+    (*count)++;
+    return true;
+}
+
+size_t flx4_map_emit_snapshot(const flx4_map_state_t *state,
+                              flx4_map_snapshot_emit_cb_t cb,
+                              void *ctx)
+{
+    if (!state || !cb) {
+        return 0;
+    }
+
+    size_t count = 0;
+
+    if (!emit_snapshot_14bit(&state->channel_volume[CTRL_DECK_1],
+                             CTRL_ID_CH1_VOLUME, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->channel_volume[CTRL_DECK_2],
+                             CTRL_ID_CH2_VOLUME, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->crossfader,
+                             CTRL_ID_CROSSFADER, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->trim[CTRL_DECK_1],
+                             CTRL_ID_CH1_TRIM, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->trim[CTRL_DECK_2],
+                             CTRL_ID_CH2_TRIM, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_high[CTRL_DECK_1],
+                             CTRL_ID_CH1_EQ_HIGH, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_high[CTRL_DECK_2],
+                             CTRL_ID_CH2_EQ_HIGH, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_mid[CTRL_DECK_1],
+                             CTRL_ID_CH1_EQ_MID, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_mid[CTRL_DECK_2],
+                             CTRL_ID_CH2_EQ_MID, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_low[CTRL_DECK_1],
+                             CTRL_ID_CH1_EQ_LOW, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->eq_low[CTRL_DECK_2],
+                             CTRL_ID_CH2_EQ_LOW, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->filter[CTRL_DECK_1],
+                             CTRL_ID_CH1_FILTER, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->filter[CTRL_DECK_2],
+                             CTRL_ID_CH2_FILTER, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->master_volume,
+                             CTRL_ID_MASTER_VOLUME, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->headphone_mix,
+                             CTRL_ID_HEADPHONE_MIX, cb, ctx, &count)) {
+        return count;
+    }
+
+    if (state->beat_fx_depth_valid) {
+        if (!cb(CTRL_TYPE_PITCH, CTRL_ID_BEAT_FX_DEPTH,
+                (int16_t)(state->beat_fx_depth & 0x7F), ctx)) {
+            return count;
+        }
+        count++;
+    }
+
+    return count;
 }

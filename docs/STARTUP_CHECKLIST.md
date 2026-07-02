@@ -263,6 +263,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   chain.
 - [x] MVP Play/Cue/PFL LED reconnect resynchronization is routed end to end
   through S3 FLX4 connection state and P4 forced LED snapshots.
+- [ ] Hardware smoke S3-to-P4 input snapshot replay: move Master Level, channel
+  faders, crossfader, Trim, EQ, Filter/CFX, Headphones Mix, and Beat FX Depth;
+  reboot only P4 while S3/FLX4 remain powered; confirm P4 reapplies the known
+  values without moving the controls again. Tempo faders and buttons/toggles
+  are intentionally out of scope for this smoke.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
 - [x] Build the extended control inventory from the vendored Mixxx XML.

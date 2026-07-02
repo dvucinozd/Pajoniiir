@@ -27,6 +27,10 @@ static const char *TAG = "main";
 static QueueHandle_t s_panel_queue;
 #endif
 
+#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+static void flx4_replay_known_input_snapshot(void);
+#endif
+
 #if !CONFIG_DDJ_FLX4_HOST_MODE
 static void router_task(void *arg)
 {
@@ -51,7 +55,9 @@ static void heartbeat_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(5000));
         control_link_send_heartbeat();
 #if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
-        (void)flx4_midi_host_refresh_connection_state();
+        if (flx4_midi_host_refresh_connection_state()) {
+            flx4_replay_known_input_snapshot();
+        }
 #endif
     }
 }
@@ -66,6 +72,35 @@ static uint32_t s_flx4_dropped_count;
 static uint32_t s_flx4_coalesced_count;
 static uint32_t s_flx4_unsupported_count;
 static TickType_t s_flx4_last_warn;
+
+typedef struct {
+    size_t sent;
+    size_t failed;
+} flx4_snapshot_replay_ctx_t;
+
+static bool flx4_send_snapshot_event(uint8_t type, uint8_t id, int16_t value, void *ctx)
+{
+    flx4_snapshot_replay_ctx_t *replay = (flx4_snapshot_replay_ctx_t *)ctx;
+    esp_err_t rc = control_link_send_semantic(type, id, value);
+    if (rc == ESP_OK) {
+        replay->sent++;
+    } else {
+        replay->failed++;
+    }
+    return true;
+}
+
+static void flx4_replay_known_input_snapshot(void)
+{
+    flx4_snapshot_replay_ctx_t replay = { 0 };
+    size_t known = flx4_map_emit_snapshot(&s_flx4_map,
+                                          flx4_send_snapshot_event,
+                                          &replay);
+    if (known > 0 || replay.failed > 0) {
+        ESP_LOGD(TAG, "FLX4 input snapshot replay known=%u sent=%u failed=%u",
+                 (unsigned)known, (unsigned)replay.sent, (unsigned)replay.failed);
+    }
+}
 
 static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
 {
