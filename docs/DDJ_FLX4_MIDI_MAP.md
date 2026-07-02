@@ -164,8 +164,8 @@ Status legend:
 | Jog platter bend | `0xB0/0x23`, `0xB1/0x23` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_BEND`, `CTRL_ID_DECK2_JOG_BEND` | `deck_core` / tempo bend | Implemented MVP input | Verified 2026-06-14 |
 | Jog side bend | `0xB0/0x21`, `0xB1/0x21` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_BEND`, `CTRL_ID_DECK2_JOG_BEND` | `deck_core` / tempo bend | Implemented MVP input | Verified 2026-06-14 |
 | Jog touch | `0x90/0x36`, `0x91/0x36` | press/release | deck-local | `CTRL_ID_DECK1_JOG_TOUCH`, `CTRL_ID_DECK2_JOG_TOUCH` | `deck_core` jog mode | Implemented MVP input | Verified 2026-06-14 |
-| Jog + Shift search | `0xB0/0x29`, `0xB1/0x29` | relative/encoder CC; `0x40` neutral, above/below center is signed delta | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH`, `CTRL_ID_DECK2_JOG_SEARCH` | `deck_core` relative seek, 1000 ms per encoder step | Implemented | Host-tested from XML; hardware smoke pending |
-| Jog touch + Shift highspeed | `0x90/0x67`, `0x91/0x67` | press/release | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH_TOUCH`, `CTRL_ID_DECK2_JOG_SEARCH_TOUCH` | reserved jog-search touch/highspeed state | Mapped only | Host-tested from XML; hardware smoke pending |
+| Jog + Shift search | `0xB0/0x29`, `0xB1/0x29` | relative/encoder CC; `0x40` neutral, above/below center is signed delta | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH`, `CTRL_ID_DECK2_JOG_SEARCH` | `deck_core` relative seek, 1000 ms per encoder step | Implemented | Host-tested from XML; hardware smoke passed D1/D2 2026-07-02 |
+| Jog touch + Shift highspeed | `0x90/0x67`, `0x91/0x67` | press/release | shifted deck-local | `CTRL_ID_DECK1_JOG_SEARCH_TOUCH`, `CTRL_ID_DECK2_JOG_SEARCH_TOUCH` | reserved jog-search touch/highspeed state | Mapped only | Host-tested from XML; hardware smoke passed with Jog Search slice 2026-07-02 |
 | Tempo fader | D1 `0xB0/0x00+0x20`, D2 `0xB1/0x00+0x20` | 14-bit MSB+LSB | deck-local | `CTRL_ID_DECK1_TEMPO`, `CTRL_ID_DECK2_TEMPO` | audio pitch/resampler | Implemented with selected tempo range | Verified 2026-06-14; range behavior smoke passed 2026-06-25 |
 | Beat Sync | `0x90/0x58`, `0x91/0x58` | press/release in XML; official list notes Beat Sync is sent on button release rather than press | deck-local | `CTRL_ID_DECK1_SYNC`, `CTRL_ID_DECK2_SYNC` | beat/sync model | Implemented: BPM match to the other deck using precise ANLZ BPM when available, internally clamped to ±20%; one-shot phase-align seek to a matching beat while preserving the reference deck's signed intra-beat offset when both beatgrids are available, including while the target deck is playing | Verified 2026-06-21; BPM-match behavior smoke passed 2026-06-25; playing-deck phase-align and waveform beat-match-line alignment hardware smoke passed 2026-07-01; continuous following not implemented |
 | Beat Sync long press / master | `0x90/0x5C`, `0x91/0x5C` | press/release or long-press semantic | deck-local | `CTRL_ID_DECK1_SYNC_MASTER`, `CTRL_ID_DECK2_SYNC_MASTER` proposed | beat/sync model | Deferred | Not captured |
@@ -195,7 +195,7 @@ Status legend:
 | EQ Low | D1 `0xB0/0x0F+0x2F`, D2 `0xB1/0x0F+0x2F` | 14-bit MSB+LSB | deck-local | `CTRL_ID_CH1_EQ_LOW`, `CTRL_ID_CH2_EQ_LOW` | EQ/DSP | Implemented | Verified 2026-06-21; DSP implemented in P4 |
 | Headphone cue/PFL | `0x90/0x54`, `0x91/0x54` | press/release | deck-local | `CTRL_ID_DECK1_PFL`, `CTRL_ID_DECK2_PFL` | mixer/cue routing | Implemented | Verified 2026-06-14 / 2026-06-20 |
 | Headphones mix | `0xB6/0x0C+0x2C` | 14-bit MSB+LSB | global monitor | `CTRL_ID_HEADPHONE_MIX` | cue routing/settings | Implemented | Verified 2026-06-21; P4 monitor/headphone DSP host-tested 2026-07-01; hardware smoke pending |
-| Master Cue | official MIDI list: normal `0x96/0x63`, shifted `0x96/0x68`; LED output `0x96/0x63` | press/release; press toggles, release ignored | global monitor | `CTRL_ID_MASTER_CUE` / `LED_MASTER_CUE` | P4 monitor master-cue gate + reconnect-safe LED snapshot | Implemented | Host-tested from official MIDI list; hardware smoke pending |
+| Master Cue | official MIDI list: normal `0x96/0x63`, shifted `0x96/0x68`; LED output `0x96/0x63` | press/release; press toggles, release ignored | global monitor | `CTRL_ID_MASTER_CUE` / `LED_MASTER_CUE` | P4 monitor master-cue gate + reconnect-safe LED snapshot | Implemented | Host-tested from official MIDI list; hardware smoke passed 2026-07-02 |
 | Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` | filter/DSP | Implemented behind Smart CFX | Verified 2026-06-21; DSP behavior enabled when Smart CFX is on |
 | Smart CFX | `0x96/0x00` | press/release | global | `CTRL_ID_SMART_CFX` | P4 Smart CFX filter DSP + LED | Implemented with softened macro curve and balanced HI side | Verified 2026-06-20 input/LED address; curve host-tested 2026-07-01; HI/LOW hardware DSP smoke passed 2026-07-01 |
 | Smart Fader | `0x96/0x01` | press/release | global | `CTRL_ID_SMART_FADER` | P4 Smart Fader transition assist + LED | Implemented | Verified 2026-06-20 input/LED address; hardware behavior smoke passed 2026-07-01 |
@@ -267,7 +267,7 @@ notes `0x10..0x17` and Pad FX2 pads as notes `0x50..0x57` on the existing Deck
 | Cue + Shift / track-start LEDs | official list: `0x90/0x48`, `0x91/0x48` | future shifted cue/track-start indicator | P4 `deck_core` | Candidate LED | Official-list only; not captured |
 | Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled state | P4 `deck_core.sync_enabled` | Implemented output | Hardware smoke passed 2026-06-21; output probe verified 2026-06-20 |
 | PFL LEDs | `0x90/0x54`, `0x91/0x54` | PFL enabled | P4 mixer/cue routing | Implemented | Verified 2026-06-20 reconnect |
-| Master Cue LED | official MIDI list: `0x96/0x63` | P4 monitor master-cue enabled state | P4 `audio_engine` / `deck_core` snapshot | Implemented output | Host-tested; hardware smoke pending |
+| Master Cue LED | official MIDI list: `0x96/0x63` | P4 monitor master-cue enabled state | P4 `audio_engine` / `deck_core` snapshot | Implemented output | Host-tested; hardware smoke passed 2026-07-02 |
 | Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Hardware smoke passed 2026-06-21 |
 | Loop In LEDs | `0x90/0x10`, `0x91/0x10` | loop-in marker exists or active audio loop exists | P4 `deck_core` pending loop-in marker plus `audio_engine` loop state | Implemented output | Active-loop smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20; Loop In marker LED smoke passed D1/D2 2026-06-26 |
 | Shift + Loop In adjust LEDs | official list: `0x90/0x4C`, `0x91/0x4C` | future loop adjust-in mode | P4 loop edit state | Candidate LED | Official-list only; not captured |
@@ -308,7 +308,7 @@ capture and verify:
 - mode-dependent pad messages;
 - LED output values and reconnect resynchronization.
 
-Pending smoke for the 2026-07-02 Jog Search / Master Cue slice:
+Hardware smoke passed for the 2026-07-02 Jog Search / Master Cue slice:
 
 - Shift + Jog rotate on Deck 1 and Deck 2 seeks by one-second steps in both
   directions and clamps at track start.

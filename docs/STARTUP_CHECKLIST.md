@@ -290,7 +290,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   normal and shifted Beat Loop hardware behavior smoke passed on 2026-07-01,
   and Beat Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
   Shifted Jog Search is now implemented as a 1000 ms per-step deck seek from
-  the XML mapping; hardware smoke is pending. Vinyl mode is intentionally out
+  the XML mapping; hardware smoke passed on 2026-07-02. Vinyl mode is intentionally out
   of scope as of 2026-07-02.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
@@ -303,7 +303,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   the original FLX4 headphone jack remains out of scope until a USB Audio Class
   or analog bridge phase is added. MASTER CUE is implemented from the official
   MIDI list as a P4-owned monitor master-cue gate with LED feedback; hardware
-  smoke is pending.
+  smoke passed on 2026-07-02.
 - [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
   The four physical mode buttons and shifted secondary modes are mapped and
   smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
@@ -332,7 +332,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
   hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke
   passed on 2026-07-01. Master Cue LED output is implemented from P4 monitor
-  state and is included in reconnect snapshots. Pad-mode, Beat Sync, and active Loop In/Out LED
+  state and is included in reconnect snapshots; hardware smoke passed on
+  2026-07-02. Pad-mode, Beat Sync, and active Loop In/Out LED
   hardware smoke has passed where recorded in
   `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`; full manual USB replug
   LED-state acceptance passed on 2026-06-26. S3 reset recovery after the extended reconnect snapshot no
