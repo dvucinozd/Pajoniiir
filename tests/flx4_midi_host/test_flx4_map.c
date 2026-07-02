@@ -338,8 +338,10 @@ static void test_jog_search_and_master_cue_controls(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
     assert(flx4_map_message(&state, MSG(0x96, 0x63, 0x00), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
-    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
+    assert(flx4_map_message(&state, MSG(0x96, 0x78, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x78, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
 
     assert(flx4_map_message(&state, MSG(0x96, 0x42, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_SHIFT_PRESS, 1);
