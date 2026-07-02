@@ -277,6 +277,31 @@ static void test_jog_and_browse_relative_controls(void)
     assert(!flx4_map_message(&state, MSG(0xB6, 0x40, 0x00), &ev));
 }
 
+static void test_jog_search_and_master_cue_controls(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0xB0, 0x29, 0x41), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_DECK1_JOG_SEARCH, 1);
+    assert(flx4_map_message(&state, MSG(0xB1, 0x29, 0x3F), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_DECK2_JOG_SEARCH, -1);
+    assert(!flx4_map_message(&state, MSG(0xB0, 0x29, 0x40), &ev));
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x67, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_SEARCH_TOUCH, 1);
+    assert(flx4_map_message(&state, MSG(0x91, 0x67, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_JOG_SEARCH_TOUCH, 0);
+
+    assert(flx4_map_message(&state, MSG(0x96, 0x63, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x63, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
+    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
+}
+
 static void test_14bit_controls_emit_after_both_halves(void)
 {
     flx4_map_state_t state;
@@ -410,6 +435,7 @@ int main(void)
     test_loop_and_beat_jump_buttons();
     test_pad_modes_and_pad_actions();
     test_jog_and_browse_relative_controls();
+    test_jog_search_and_master_cue_controls();
     test_14bit_controls_emit_after_both_halves();
     test_snapshot_emits_known_absolute_controls_only();
     test_snapshot_emits_beat_fx_depth_after_observed();

@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#define FLX4_LED_SNAPSHOT_COUNT 49u
+#define FLX4_LED_SNAPSHOT_COUNT 50u
 
 static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_CUE,
@@ -46,6 +46,7 @@ static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_SMART_CFX,
     LED_SMART_FADER,
     LED_BEAT_FX_ON,
+    LED_MASTER_CUE,
     LED_HOT_CUE_PAD_1,
     LED_HOT_CUE_PAD_2,
     LED_HOT_CUE_PAD_3,
@@ -157,6 +158,7 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 40:
         return input->beat_fx_on;
     case 41:
+        return input->master_cue;
     case 42:
     case 43:
     case 44:
@@ -164,7 +166,8 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 46:
     case 47:
     case 48:
-        return hot_cue_pad_value(input, deck, (uint8_t)(index - 41u));
+    case 49:
+        return hot_cue_pad_value(input, deck, (uint8_t)(index - 42u));
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);
         if (pad_index >= 8u) {
@@ -199,7 +202,8 @@ esp_err_t flx4_led_publisher_publish(
             if (deck == CTRL_DECK_2 &&
                 (s_led_ids[index] == LED_SMART_CFX ||
                  s_led_ids[index] == LED_SMART_FADER ||
-                 s_led_ids[index] == LED_BEAT_FX_ON)) {
+                 s_led_ids[index] == LED_BEAT_FX_ON ||
+                 s_led_ids[index] == LED_MASTER_CUE)) {
                 continue;
             }
             uint8_t value = snapshot_value(input, deck, index);

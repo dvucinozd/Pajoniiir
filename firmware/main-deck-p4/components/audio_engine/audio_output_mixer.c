@@ -129,6 +129,7 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
                                                        bool deck1_pfl,
                                                        audio_output_headphone_mode_t headphone_mode,
                                                        uint16_t headphone_mix,
+                                                       bool master_cue_enabled,
                                                        uint32_t *out_deck0_consumed,
                                                        uint32_t *out_deck1_consumed,
                                                        audio_mixer_limiter_stats_t *limiter_stats)
@@ -166,13 +167,14 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
         .right = audio_mixer_mix_sample(frame0.right, frame1.right, pfl_gain0, pfl_gain1),
     };
 
-    int16_t master_mono = mono_from_frame(master);
+    audio_mixer_frame_t monitor_master = master_cue_enabled ? master : (audio_mixer_frame_t){ 0 };
+    int16_t master_mono = master_cue_enabled ? mono_from_frame(master) : 0;
     int16_t pfl_mono = mono_from_frame(pfl);
     float master_mix = normalized_headphone_master_mix(headphone_mix);
     float cue_mix = 1.0f - master_mix;
     audio_mixer_frame_t headphone = {
-        .left = audio_mixer_mix_sample(master.left, pfl_mono, master_mix, cue_mix),
-        .right = audio_mixer_mix_sample(master.right, pfl_mono, master_mix, cue_mix),
+        .left = audio_mixer_mix_sample(monitor_master.left, pfl_mono, master_mix, cue_mix),
+        .right = audio_mixer_mix_sample(monitor_master.right, pfl_mono, master_mix, cue_mix),
     };
 
     if (headphone_mode == AUDIO_OUTPUT_HEADPHONE_CUE_MONO) {

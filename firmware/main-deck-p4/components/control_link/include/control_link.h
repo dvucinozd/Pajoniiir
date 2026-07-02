@@ -106,6 +106,7 @@ typedef enum {
     LED_HOT_CUE_PAD_6,
     LED_HOT_CUE_PAD_7,
     LED_HOT_CUE_PAD_8,
+    LED_MASTER_CUE,
     LED_REMOTE_COUNT,
 } led_id_t;
 
@@ -144,6 +145,8 @@ typedef enum {
     CTRL_DECK_CTL_PAD_MODE_PAD_FX1,
     CTRL_DECK_CTL_PAD_MODE_PAD_FX2,
     CTRL_DECK_CTL_PAD_MODE_SAMPLER,
+    CTRL_DECK_CTL_JOG_SEARCH,
+    CTRL_DECK_CTL_JOG_SEARCH_TOUCH,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -185,6 +188,7 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_ON          (CTRL_NS_SYSTEM | 0x09)
 #define CTRL_ID_BEAT_FX_CLEAR       (CTRL_NS_SYSTEM | 0x0A)
 #define CTRL_ID_MASTER_VOLUME       (CTRL_NS_SYSTEM | 0x0B)
+#define CTRL_ID_MASTER_CUE          (CTRL_NS_SYSTEM | 0x0C)
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
@@ -223,6 +227,8 @@ typedef enum {
 #define CTRL_ID_DECK1_PAD_MODE_PAD_FX1      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_PAD_FX1)
 #define CTRL_ID_DECK1_PAD_MODE_PAD_FX2      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_PAD_FX2)
 #define CTRL_ID_DECK1_PAD_MODE_SAMPLER      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
+#define CTRL_ID_DECK1_JOG_SEARCH            (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH)
+#define CTRL_ID_DECK1_JOG_SEARCH_TOUCH      (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -250,6 +256,8 @@ typedef enum {
 #define CTRL_ID_DECK2_PAD_MODE_PAD_FX1      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_PAD_FX1)
 #define CTRL_ID_DECK2_PAD_MODE_PAD_FX2      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_PAD_FX2)
 #define CTRL_ID_DECK2_PAD_MODE_SAMPLER      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
+#define CTRL_ID_DECK2_JOG_SEARCH            (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH)
+#define CTRL_ID_DECK2_JOG_SEARCH_TOUCH      (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
@@ -298,7 +306,9 @@ static inline bool control_link_id_is_deck_jog(uint8_t id)
 {
     if (!control_link_id_is_deck(id)) return false;
     uint8_t ctl = control_link_id_control(id);
-    return ctl == CTRL_DECK_CTL_JOG_SCRATCH || ctl == CTRL_DECK_CTL_JOG_BEND;
+    return ctl == CTRL_DECK_CTL_JOG_SCRATCH ||
+           ctl == CTRL_DECK_CTL_JOG_BEND ||
+           ctl == CTRL_DECK_CTL_JOG_SEARCH;
 }
 
 // ─── Parsed event (what deck_core receives) ───────────────────────────────────

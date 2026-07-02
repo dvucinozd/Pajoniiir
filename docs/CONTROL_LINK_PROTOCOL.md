@@ -169,7 +169,8 @@ P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
 enabled state, active Loop In/Out state, Beat Loop pad state, momentary Pad FX
-pad state, Smart CFX/Fader state, and the global Beat FX ON/OFF enabled state.
+pad state, Smart CFX/Fader state, the global Beat FX ON/OFF enabled state, and
+the global Master Cue monitor state.
 Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
@@ -197,6 +198,13 @@ The current P4 Beat FX snapshot is exposed through `/api/status` under
 The object contains `effect`, `beat`, `target`, `depth`, and `enabled`.
 The same `enabled` state also drives the physical FLX4 Beat FX ON/OFF LED via
 `LED_BEAT_FX_ON`; S3 maps it to USB MIDI note `0x47` on `0x94`/`0x95`.
+
+The physical FLX4 MASTER CUE button is mapped from the official MIDI list to
+`CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x68`). P4 owns the monitor
+state: a button press toggles whether the master side contributes to the
+headphone/monitor mix, while the main/RCA master output remains unchanged.
+The P4 LED snapshot includes `LED_MASTER_CUE`; S3 maps it to output note
+`0x63` on `0x96`.
 
 Pad mode LEDs are also P4-owned. `deck_core` stores controller `pad_mode`
 separately from the legacy `perf_mode`, so deferred modes such as `PAD_FX1`,

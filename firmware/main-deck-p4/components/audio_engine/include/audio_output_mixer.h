@@ -52,6 +52,7 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
                                                        bool deck1_pfl,
                                                        audio_output_headphone_mode_t headphone_mode,
                                                        uint16_t headphone_mix,
+                                                       bool master_cue_enabled,
                                                        uint32_t *out_deck0_consumed,
                                                        uint32_t *out_deck1_consumed,
                                                        audio_mixer_limiter_stats_t *limiter_stats);

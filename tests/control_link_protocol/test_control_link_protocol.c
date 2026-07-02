@@ -31,6 +31,9 @@ int p4_ctrl_id_deck2_pad_action(void);
 int p4_ctrl_id_ch1_trim(void);
 int p4_ctrl_id_headphone_mix(void);
 int p4_ctrl_id_master_volume(void);
+int p4_ctrl_id_master_cue(void);
+int p4_ctrl_id_deck1_jog_search(void);
+int p4_ctrl_id_deck2_jog_search_touch(void);
 int p4_ctrl_id_browse_shift_delta(void);
 int p4_led_vu_meter(void);
 int p4_led_pad_mode_hot_cue(void);
@@ -38,6 +41,7 @@ int p4_led_pad_mode_key_shift(void);
 int p4_led_sync(void);
 int p4_led_loop_in(void);
 int p4_led_loop_out(void);
+int p4_led_master_cue(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -75,6 +79,9 @@ int s3_ctrl_id_deck2_pad_action(void);
 int s3_ctrl_id_ch1_trim(void);
 int s3_ctrl_id_headphone_mix(void);
 int s3_ctrl_id_master_volume(void);
+int s3_ctrl_id_master_cue(void);
+int s3_ctrl_id_deck1_jog_search(void);
+int s3_ctrl_id_deck2_jog_search_touch(void);
 int s3_ctrl_id_browse_shift_delta(void);
 int s3_led_vu_meter(void);
 int s3_led_pad_mode_hot_cue(void);
@@ -82,6 +89,7 @@ int s3_led_pad_mode_key_shift(void);
 int s3_led_sync(void);
 int s3_led_loop_in(void);
 int s3_led_loop_out(void);
+int s3_led_master_cue(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -224,26 +232,32 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(ev.deck == CTRL_DECK_2);
     assert(ev.control == CTRL_DECK_CTL_JOG_SCRATCH);
 
-    build_frame(frame, CTRL_TYPE_PITCH, CTRL_ID_DECK1_TEMPO, 9000, 23);
+    build_frame(frame, CTRL_TYPE_ENCODER, CTRL_ID_DECK1_JOG_SEARCH, 3, 23);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_JOG);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_JOG_SEARCH);
+
+    build_frame(frame, CTRL_TYPE_PITCH, CTRL_ID_DECK1_TEMPO, 9000, 24);
     assert(decode_p4_frame(frame, &ev));
     assert(ev.type == CTRL_EV_PITCH);
     assert(ev.deck == CTRL_DECK_1);
     assert(ev.control == CTRL_DECK_CTL_TEMPO);
 
-    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 1, 24);
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 1, 25);
     assert(decode_p4_frame(frame, &ev));
     assert(ev.type == CTRL_EV_BUTTON);
     assert(ev.deck == CTRL_DECK_1);
     assert(ev.control == CTRL_DECK_CTL_SHIFT);
 
-    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TO_START, 1, 25);
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TO_START, 1, 26);
     assert(decode_p4_frame(frame, &ev));
     assert(ev.type == CTRL_EV_BUTTON);
     assert(ev.deck == CTRL_DECK_2);
     assert(ev.control == CTRL_DECK_CTL_TO_START);
 
     build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
-                CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 6, true, true), 26);
+                CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 6, true, true), 27);
     assert(decode_p4_frame(frame, &ev));
     assert(ev.type == CTRL_EV_BUTTON);
     assert(ev.deck == CTRL_DECK_2);
@@ -287,6 +301,12 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_headphone_mix() == CTRL_ID_HEADPHONE_MIX);
     assert(s3_ctrl_id_master_volume() == p4_ctrl_id_master_volume());
     assert(s3_ctrl_id_master_volume() == CTRL_ID_MASTER_VOLUME);
+    assert(s3_ctrl_id_master_cue() == p4_ctrl_id_master_cue());
+    assert(s3_ctrl_id_master_cue() == CTRL_ID_MASTER_CUE);
+    assert(s3_ctrl_id_deck1_jog_search() == p4_ctrl_id_deck1_jog_search());
+    assert(s3_ctrl_id_deck1_jog_search() == CTRL_ID_DECK1_JOG_SEARCH);
+    assert(s3_ctrl_id_deck2_jog_search_touch() == p4_ctrl_id_deck2_jog_search_touch());
+    assert(s3_ctrl_id_deck2_jog_search_touch() == CTRL_ID_DECK2_JOG_SEARCH_TOUCH);
     assert(s3_ctrl_id_browse_shift_delta() == p4_ctrl_id_browse_shift_delta());
     assert(s3_ctrl_id_browse_shift_delta() == CTRL_ID_BROWSE_SHIFT_DELTA);
     assert(s3_led_vu_meter() == p4_led_vu_meter());
@@ -301,6 +321,8 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(p4_led_loop_in() == LED_LOOP_IN);
     assert(s3_led_loop_out() == p4_led_loop_out());
     assert(p4_led_loop_out() == LED_LOOP_OUT);
+    assert(s3_led_master_cue() == p4_led_master_cue());
+    assert(p4_led_master_cue() == LED_MASTER_CUE);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

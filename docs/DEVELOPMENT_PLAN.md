@@ -727,6 +727,10 @@ Implementation order:
      Beat Sync BPM-match-on-press with signed intra-beat phase align and Tempo
      Range cycling are implemented; continuous sync following remains out of
      scope.
+   - Shifted Jog Search is implemented from the XML mapping as a deck-local
+     relative seek at 1000 ms per encoder step. Jog Search touch/highspeed is
+     mapped as a semantic input but does not yet alter the seek multiplier.
+     Host tests cover mapping and P4 seek behavior; hardware smoke is pending.
 6. **Mixer and monitoring controls**
    - add trim, three-band EQ, filter, headphone mix, and other XML-exposed
      master controls using the XML 14-bit definitions;
@@ -758,6 +762,12 @@ Implementation order:
      buffer blends cue/PFL with stereo master (`0` = cue/PFL, `16383` =
      master). This intentionally does not drive the original FLX4 headphone
      jack; that remains a separate USB Audio Class or analog bridge phase.
+   - physical MASTER CUE is implemented from the official MIDI list
+     (`96 63`, shifted `96 68`) as a P4-owned monitor master-cue gate.
+     The main/RCA master output is unchanged; only the monitor/headphone master
+     contribution is toggled. `LED_MASTER_CUE` is included in the reconnect-safe
+     LED snapshot. Host tests cover input mapping, DSP gating, deck_core
+     routing, and LED output; hardware smoke is pending.
    - three-band EQ is implemented for Deck 1 and Deck 2: S3 forwards the
      verified 14-bit FLX4 EQ controls, P4 stores raw per-band state in the
      mixer snapshot, and `audio_output_mixer` applies the deck-local EQ before
@@ -810,6 +820,8 @@ Implementation order:
      active loops light both Loop In and Loop Out LEDs for that deck;
    - Beat FX ON/OFF LED feedback is implemented from P4-owned Beat FX enabled
      state and clear/reset forces it off;
+   - Master Cue LED feedback is implemented from P4-owned monitor state and is
+     included in reconnect snapshots;
    - pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LEDs have hardware
      smoke coverage as recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`;
      extended reconnect resynchronization is implemented for FLX4 USB replug,

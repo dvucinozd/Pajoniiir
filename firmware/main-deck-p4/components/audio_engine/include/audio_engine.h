@@ -156,6 +156,7 @@ typedef struct {
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;
+    bool master_cue_enabled;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
     bool smart_cfx_enabled;
     bool smart_fader_enabled;
@@ -224,6 +225,8 @@ esp_err_t audio_engine_toggle_smart_cfx(void);
 bool audio_engine_get_smart_cfx_enabled(void);
 esp_err_t audio_engine_toggle_smart_fader(void);
 bool audio_engine_get_smart_fader_enabled(void);
+esp_err_t audio_engine_toggle_master_cue(void);
+bool audio_engine_get_master_cue_enabled(void);
 
 typedef enum {
     AUDIO_HEADPHONE_MODE_MASTER_MONO = 0,

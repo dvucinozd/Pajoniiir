@@ -53,10 +53,14 @@
 #define FLX4_BTN_BEAT_FX_BEAT_INC 0x4B
 #define FLX4_BTN_BEAT_FX_SELECT_NEXT 0x63
 #define FLX4_BTN_BEAT_FX_SELECT_PREV 0x64
+#define FLX4_BTN_MASTER_CUE     0x63
+#define FLX4_BTN_MASTER_CUE_SHIFT 0x68
+#define FLX4_BTN_JOG_SEARCH_TOUCH 0x67
 
 #define FLX4_CC_JOG_SIDE_BEND  0x21
 #define FLX4_CC_JOG_SCRATCH    0x22
 #define FLX4_CC_JOG_BEND       0x23
+#define FLX4_CC_JOG_SEARCH     0x29
 #define FLX4_CC_TEMPO_MSB      0x00
 #define FLX4_CC_TEMPO_LSB      0x20
 #define FLX4_CC_CH_VOL_MSB     0x13
@@ -213,6 +217,10 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT : CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT, pressed);
     case FLX4_BTN_JOG_TOUCH:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_JOG_TOUCH : CTRL_ID_DECK2_JOG_TOUCH, pressed);
+    case FLX4_BTN_JOG_SEARCH_TOUCH:
+        return emit_button(out,
+                           deck1 ? CTRL_ID_DECK1_JOG_SEARCH_TOUCH : CTRL_ID_DECK2_JOG_SEARCH_TOUCH,
+                           pressed);
     case FLX4_BTN_PFL:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PFL : CTRL_ID_DECK2_PFL, pressed);
     default:
@@ -238,6 +246,10 @@ static bool map_deck_cc(flx4_map_state_t *state,
     case FLX4_CC_JOG_SIDE_BEND:
         return emit_encoder(out,
                             deck1 ? CTRL_ID_DECK1_JOG_BEND : CTRL_ID_DECK2_JOG_BEND,
+                            relative_delta(data2));
+    case FLX4_CC_JOG_SEARCH:
+        return emit_encoder(out,
+                            deck1 ? CTRL_ID_DECK1_JOG_SEARCH : CTRL_ID_DECK2_JOG_SEARCH,
                             relative_delta(data2));
     case FLX4_CC_TEMPO_MSB:
         return update_14bit(&state->tempo[deck], true, data2, out,
@@ -451,6 +463,10 @@ bool flx4_map_message(flx4_map_state_t *state,
         }
         if (msg->data1 == FLX4_BTN_LOAD_D2) {
             return emit_button(out, CTRL_ID_LOAD_DECK2, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_MASTER_CUE ||
+            msg->data1 == FLX4_BTN_MASTER_CUE_SHIFT) {
+            return emit_button(out, CTRL_ID_MASTER_CUE, msg->data2 > 0 ? 1 : 0);
         }
         return false;
     case FLX4_STATUS_PAD_D1:

@@ -21,6 +21,7 @@ static const char *TAG = "deck";
 #define CTRL_QUEUE_LEN  32
 #define PITCH_CENTER    8192
 #define SEARCH_STEP_MS  5000
+#define JOG_SEARCH_STEP_MS 1000
 #define DEFAULT_TEMPO_RANGE_PERCENT 10u
 #define BEAT_SYNC_MAX_PERCENT 20u
 #define DECK_TASK_STACK_BYTES 8192u
@@ -848,6 +849,7 @@ static void publish_flx4_led_snapshot(bool force)
     input.smart_cfx = audio_engine_get_smart_cfx_enabled() ? 1u : 0u;
     input.smart_fader = audio_engine_get_smart_fader_enabled() ? 1u : 0u;
     input.beat_fx_on = s_beat_fx.enabled ? 1u : 0u;
+    input.master_cue = audio_engine_get_master_cue_enabled() ? 1u : 0u;
 
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         deck_state_t state = deck_core_get_deck_state(deck);
@@ -936,6 +938,15 @@ static bool on_system_button(const ctrl_event_t *ev)
         audio_engine_toggle_smart_fader();
         control_link_send_led_deck(LED_SMART_FADER,
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
+                                   CTRL_DECK_1);
+        return true;
+    case CTRL_ID_MASTER_CUE:
+        if (ev->value == 0) {
+            return true;
+        }
+        audio_engine_toggle_master_cue();
+        control_link_send_led_deck(LED_MASTER_CUE,
+                                   audio_engine_get_master_cue_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
     case CTRL_ID_BEAT_FX_SELECT_NEXT:
@@ -1401,6 +1412,34 @@ static void on_jog(uint8_t deck, int16_t delta)
     }
 }
 
+static void on_jog_search(uint8_t deck, int16_t delta)
+{
+    if (delta == 0) {
+        return;
+    }
+
+    deck_state_t *state = &s_decks[normalize_deck(deck)];
+    bool uses_audio = deck_uses_audio_engine(deck);
+    uint32_t current = uses_audio ? audio_engine_deck_position_ms(deck) : state->position_ms;
+    int64_t target = (int64_t)current + ((int64_t)delta * (int64_t)JOG_SEARCH_STEP_MS);
+    if (target < 0) {
+        target = 0;
+    }
+
+    esp_err_t rc = uses_audio ? audio_engine_deck_seek(deck, (uint32_t)target) : ESP_OK;
+    if (rc == ESP_OK) {
+        state->position_ms = (uint32_t)target;
+        ESP_LOGD(TAG, "deck %u jog search %+d -> %lu ms",
+                 (unsigned)deck + 1,
+                 (int)delta,
+                 (unsigned long)state->position_ms);
+    } else {
+        ESP_LOGW(TAG, "deck %u jog search failed: %s",
+                 (unsigned)deck + 1,
+                 esp_err_to_name(rc));
+    }
+}
+
 static void on_browse(int16_t delta)
 {
     if (delta == 0) return;
@@ -1651,7 +1690,11 @@ static void deck_task(void *arg)
             on_button(deck, button_for_event(&ev), ev.value != 0);
             break;
         case CTRL_EV_JOG:
-            on_jog(deck, ev.value);
+            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
+                on_jog_search(deck, ev.value);
+            } else {
+                on_jog(deck, ev.value);
+            }
             break;
         case CTRL_EV_BROWSE:
             on_browse(ev.value);
@@ -1860,7 +1903,11 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         on_button(deck, button_for_event(ev), ev->value != 0);
         break;
     case CTRL_EV_JOG:
-        on_jog(deck, ev->value);
+        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
+            on_jog_search(deck, ev->value);
+        } else {
+            on_jog(deck, ev->value);
+        }
         break;
     case CTRL_EV_BROWSE:
         on_browse(ev->value);

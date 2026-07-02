@@ -514,6 +514,20 @@ static void test_headphone_mix_api(void)
            "snapshot captures headphone mix raw value");
 }
 
+static void test_master_cue_api_defaults_on_and_toggles(void)
+{
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets master cue");
+    EXPECT(audio_engine_get_master_cue_enabled(), "master cue defaults enabled");
+    EXPECT(audio_engine_toggle_master_cue() == ESP_OK, "toggle master cue returns ESP_OK");
+    EXPECT(!audio_engine_get_master_cue_enabled(), "master cue toggles off");
+    EXPECT(audio_engine_toggle_master_cue() == ESP_OK, "second toggle master cue returns ESP_OK");
+    EXPECT(audio_engine_get_master_cue_enabled(), "master cue toggles back on");
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.master_cue_enabled, "snapshot captures master cue enabled state");
+}
+
 /* ── Test 6: per-deck transition API guards ─────────────────────────────── */
 static void test_deck_api(void)
 {
@@ -728,6 +742,7 @@ int main(int argc, char *argv[])
     test_pfl_state_api();
     test_cue_mode_api();
     test_headphone_mix_api();
+    test_master_cue_api_defaults_on_and_toggles();
     test_deck_api();
     test_deck_status_is_independent();
     test_deck_states_are_independent();

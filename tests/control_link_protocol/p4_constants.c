@@ -27,6 +27,9 @@ int p4_ctrl_id_deck2_pad_action(void) { return CTRL_ID_DECK2_PAD_ACTION; }
 int p4_ctrl_id_ch1_trim(void) { return CTRL_ID_CH1_TRIM; }
 int p4_ctrl_id_headphone_mix(void) { return CTRL_ID_HEADPHONE_MIX; }
 int p4_ctrl_id_master_volume(void) { return CTRL_ID_MASTER_VOLUME; }
+int p4_ctrl_id_master_cue(void) { return CTRL_ID_MASTER_CUE; }
+int p4_ctrl_id_deck1_jog_search(void) { return CTRL_ID_DECK1_JOG_SEARCH; }
+int p4_ctrl_id_deck2_jog_search_touch(void) { return CTRL_ID_DECK2_JOG_SEARCH_TOUCH; }
 int p4_ctrl_id_browse_shift_delta(void) { return CTRL_ID_BROWSE_SHIFT_DELTA; }
 int p4_led_vu_meter(void) { return LED_VU_METER; }
 int p4_led_pad_mode_hot_cue(void) { return LED_PAD_MODE_HOT_CUE; }
@@ -34,5 +37,6 @@ int p4_led_pad_mode_key_shift(void) { return LED_PAD_MODE_KEY_SHIFT; }
 int p4_led_sync(void) { return LED_SYNC; }
 int p4_led_loop_in(void) { return LED_LOOP_IN; }
 int p4_led_loop_out(void) { return LED_LOOP_OUT; }
+int p4_led_master_cue(void) { return LED_MASTER_CUE; }
 int p4_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int p4_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

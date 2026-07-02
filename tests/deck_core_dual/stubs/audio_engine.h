@@ -127,6 +127,8 @@ extern int audio_engine_stub_channel_volume[2];
 extern int audio_engine_stub_pregain[2];
 extern int audio_engine_stub_master_volume;
 extern int audio_engine_stub_headphone_mix;
+extern int audio_engine_stub_master_cue_toggle_count;
+extern bool audio_engine_stub_master_cue_enabled;
 extern int audio_engine_stub_crossfader;
 extern int audio_engine_stub_pfl_toggle_count[2];
 extern int audio_engine_stub_eq_raw[2][AUDIO_EQ_BAND_COUNT];
@@ -180,6 +182,18 @@ static inline esp_err_t audio_engine_set_headphone_mix(uint16_t raw_mix)
 {
     audio_engine_stub_headphone_mix = raw_mix;
     return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_toggle_master_cue(void)
+{
+    audio_engine_stub_master_cue_enabled = !audio_engine_stub_master_cue_enabled;
+    audio_engine_stub_master_cue_toggle_count++;
+    return ESP_OK;
+}
+
+static inline bool audio_engine_get_master_cue_enabled(void)
+{
+    return audio_engine_stub_master_cue_enabled;
 }
 
 static inline esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
