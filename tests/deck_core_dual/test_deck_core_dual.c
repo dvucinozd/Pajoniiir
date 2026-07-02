@@ -128,6 +128,15 @@ static ctrl_event_t deck_button(uint8_t id)
     };
 }
 
+static ctrl_event_t deck_ext_action(uint8_t deck, uint8_t action, bool pressed)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_1 ? CTRL_ID_DECK1_EXT_ACTION : CTRL_ID_DECK2_EXT_ACTION,
+        .value = CTRL_DECK_EXT_VALUE(action, pressed),
+    };
+}
+
 static ctrl_event_t browser_button(uint8_t id)
 {
     return (ctrl_event_t) {
@@ -786,6 +795,37 @@ static void test_sync_button_toggles_requested_deck_sync_led_state(void)
     deck_core_test_apply_event(&deck1_sync);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+}
+
+static void test_sync_master_marks_requested_deck_as_reference(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t master = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, true);
+    deck_core_test_apply_event(&master);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).sync_master);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).sync_master);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
+}
+
+static void test_sync_uses_selected_master_deck_as_reference(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_loaded_bpm[CTRL_DECK_1] = 100;
+    s_loaded_bpm[CTRL_DECK_2] = 125;
+    audio_engine_stub_pitch_percent[CTRL_DECK_1] = 0.0f;
+
+    ctrl_event_t master = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, true);
+    ctrl_event_t deck2_sync = deck_button(CTRL_ID_DECK2_SYNC);
+    deck_core_test_apply_event(&master);
+    deck_core_test_apply_event(&deck2_sync);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] < -19.99f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] > -20.01f);
 }
 
 static void test_sync_matches_requested_deck_to_other_deck_bpm(void)
@@ -1833,6 +1873,8 @@ int main(void)
     test_beat_fx_echo_delay_uses_target_deck_bpm();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();
+    test_sync_master_marks_requested_deck_as_reference();
+    test_sync_uses_selected_master_deck_as_reference();
     test_sync_matches_requested_deck_to_other_deck_bpm();
     test_sync_uses_other_deck_effective_bpm();
     test_sync_can_exceed_selected_tempo_range_up_to_safe_limit();

@@ -54,6 +54,7 @@ static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
+static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
@@ -101,6 +102,8 @@ static deck_beat_loop_led_state_t s_beat_loop_led[DECK_CORE_DECK_COUNT];
 static void publish_flx4_led_snapshot(bool force);
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
+static uint8_t beat_sync_reference_deck(uint8_t deck);
+static void set_sync_master(uint8_t deck, deck_state_t *state);
 static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck);
 static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
 
@@ -1248,6 +1251,18 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         }
         return true;
 
+    case CTRL_DECK_CTL_EXT_ACTION:
+        if (!pressed) {
+            return true;
+        }
+        switch (CTRL_DECK_EXT_ACTION(ev->value)) {
+        case CTRL_DECK_EXT_ACTION_SYNC_MASTER:
+            set_sync_master(deck, state);
+            return true;
+        default:
+            return true;
+        }
+
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
         if (pressed) {
@@ -1525,7 +1540,7 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
         return false;
     }
 
-    uint8_t reference_deck = (deck == CTRL_DECK_1) ? CTRL_DECK_2 : CTRL_DECK_1;
+    uint8_t reference_deck = beat_sync_reference_deck(deck);
     int16_t target_centipercent = centipercent_for_bpm_match(deck, reference_deck);
     bool changed = state->pitch_centipercent != target_centipercent || !state->sync_enabled;
 
@@ -1576,6 +1591,29 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
              phase_aligned ? "aligned -> " : "unchanged @ ",
              (unsigned long)aligned_ms);
     return changed;
+}
+
+static uint8_t beat_sync_reference_deck(uint8_t deck)
+{
+    if (s_sync_master_deck < DECK_CORE_DECK_COUNT && s_sync_master_deck != deck) {
+        return s_sync_master_deck;
+    }
+    return deck == CTRL_DECK_1 ? CTRL_DECK_2 : CTRL_DECK_1;
+}
+
+static void set_sync_master(uint8_t deck, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    s_sync_master_deck = deck;
+    for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
+        s_decks[i].sync_master = i == deck;
+    }
+    state->sync_enabled = false;
+    ESP_LOGI(TAG, "deck %u sync master", (unsigned)deck + 1);
+    publish_flx4_led_snapshot(false);
 }
 
 static void on_mixer_control(uint8_t id, int16_t raw)
@@ -1851,6 +1889,9 @@ void deck_core_reset_deck(uint8_t deck)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
+    if (s_sync_master_deck == idx) {
+        s_sync_master_deck = CTRL_DECK_NONE;
+    }
     memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
     memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
     memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
@@ -1865,6 +1906,7 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    s_sync_master_deck = CTRL_DECK_NONE;
     init_beat_fx_state();
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
