@@ -1,6 +1,7 @@
 #include "flx4_midi_host.h"
 
 #include <inttypes.h>
+#include <stdio.h>
 #include <string.h>
 
 static flx4_midi_message_cb_t s_message_cb;
@@ -235,6 +236,37 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
     return found_in && found_out;
 }
 
+bool flx4_midi_format_descriptor_hex_row(const uint8_t *data,
+                                         size_t len,
+                                         size_t offset,
+                                         char *out,
+                                         size_t out_len)
+{
+    if (!data || !out || offset >= len || out_len < (16u * 3u)) {
+        return false;
+    }
+
+    size_t chunk = len - offset;
+    if (chunk > 16u) {
+        chunk = 16u;
+    }
+
+    size_t pos = 0u;
+    for (size_t i = 0; i < chunk; ++i) {
+        int written = snprintf(&out[pos],
+                               out_len - pos,
+                               "%02X%s",
+                               data[offset + i],
+                               (i + 1u < chunk) ? " " : "");
+        if (written <= 0 || (size_t)written >= out_len - pos) {
+            out[0] = '\0';
+            return false;
+        }
+        pos += (size_t)written;
+    }
+    return true;
+}
+
 bool flx4_midi_host_is_vu_meter_packet(const uint8_t packet[4])
 {
     if (!packet) {
@@ -391,6 +423,25 @@ static QueueHandle_t s_midi_out_queue = NULL;
 static SemaphoreHandle_t s_midi_out_mutex = NULL;
 static uint32_t s_midi_out_full_drop_count;
 static TickType_t s_last_midi_out_full_warn;
+
+static void log_config_descriptor_hex(const uint8_t *data, size_t len)
+{
+#if CONFIG_DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
+    if (!data || len == 0u) {
+        ESP_LOGW(TAG, "FLX4 config descriptor: empty");
+        return;
+    }
+    for (size_t offset = 0; offset < len; offset += 16u) {
+        char line[16u * 3u + 1u] = { 0 };
+        if (flx4_midi_format_descriptor_hex_row(data, len, offset, line, sizeof(line))) {
+            ESP_LOGI(TAG, "FLX4_CFG %04u: %s", (unsigned)offset, line);
+        }
+    }
+#else
+    (void)data;
+    (void)len;
+#endif
+}
 
 static void log_midi_packet(const uint8_t packet[4])
 {
@@ -652,6 +703,7 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
                         TAG, "config descriptor");
     ESP_LOGI(TAG, "active config value=%u interfaces=%u total_len=%u",
              cfg->bConfigurationValue, cfg->bNumInterfaces, cfg->wTotalLength);
+    log_config_descriptor_hex((const uint8_t *)cfg, cfg->wTotalLength);
 
     if (!find_midi_streaming_endpoints(cfg,
                                        &host->interface_num,

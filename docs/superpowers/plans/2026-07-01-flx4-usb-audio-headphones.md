@@ -257,7 +257,7 @@ Responsibilities:
 - Create: `docs/validation/FLX4_USB_AUDIO_DESCRIPTOR_CAPTURE.md`
 - Create: `tests/flx4_usb_audio/fixtures/flx4_config_descriptor.bin`
 
-- [ ] **Step 1: Add a descriptor dump mode behind a Kconfig flag**
+- [x] **Step 1: Add a descriptor dump mode behind a Kconfig flag**
 
 Add to `firmware/control-board-s3/components/flx4_midi_host/Kconfig`:
 
@@ -271,7 +271,7 @@ config DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
         attach. Use only during descriptor capture because the output is noisy.
 ```
 
-- [ ] **Step 2: Log the active config descriptor in deterministic 16-byte rows**
+- [x] **Step 2: Log the active config descriptor in deterministic 16-byte rows**
 
 Add a helper near the other descriptor helpers in `flx4_midi_host.c`:
 
@@ -313,7 +313,7 @@ Call it immediately after `usb_host_get_active_config_descriptor()` succeeds:
 log_config_descriptor_hex((const uint8_t *)cfg, cfg->wTotalLength);
 ```
 
-- [ ] **Step 3: Build and flash S3 descriptor build**
+- [x] **Step 3: Build and flash S3 descriptor build**
 
 Run:
 
@@ -341,7 +341,7 @@ Expected:
 - `FLX4_CFG` rows appear.
 - MIDI input still logs or translates normally after descriptor dump.
 
-- [ ] **Step 4: Save descriptor fixture**
+- [x] **Step 4: Save descriptor fixture**
 
 Convert the `FLX4_CFG` rows from the monitor output into binary:
 
@@ -367,7 +367,7 @@ Expected:
 - The printed byte count equals the descriptor's `wTotalLength`.
 - The first two bytes are `09 02`.
 
-- [ ] **Step 5: Document the descriptor findings**
+- [x] **Step 5: Document the descriptor findings**
 
 Create `docs/validation/FLX4_USB_AUDIO_DESCRIPTOR_CAPTURE.md` with this structure filled from the actual capture:
 

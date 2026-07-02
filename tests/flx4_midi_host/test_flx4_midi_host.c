@@ -172,6 +172,28 @@ static void test_midi_out_queue_capacity_covers_phase7_forced_snapshot(void)
     assert(flx4_midi_host_midi_out_queue_capacity() >= forced_snapshot_packets);
 }
 
+static void test_descriptor_hex_row_formatter_is_deterministic(void)
+{
+    const uint8_t bytes[] = {
+        0x09, 0x02, 0x4B, 0x00, 0x03, 0x01, 0x00, 0x80,
+        0xFA, 0x09, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01,
+        0x00, 0x00,
+    };
+    char line[16u * 3u + 1u] = { 0 };
+
+    assert(flx4_midi_format_descriptor_hex_row(bytes, sizeof(bytes), 0, line, sizeof(line)));
+    assert(strcmp(line, "09 02 4B 00 03 01 00 80 FA 09 04 00 00 00 01 01") == 0);
+
+    memset(line, 0, sizeof(line));
+    assert(flx4_midi_format_descriptor_hex_row(bytes, sizeof(bytes), 16, line, sizeof(line)));
+    assert(strcmp(line, "00 00") == 0);
+
+    assert(!flx4_midi_format_descriptor_hex_row(bytes, sizeof(bytes), sizeof(bytes), line, sizeof(line)));
+    assert(!flx4_midi_format_descriptor_hex_row(NULL, sizeof(bytes), 0, line, sizeof(line)));
+    assert(!flx4_midi_format_descriptor_hex_row(bytes, sizeof(bytes), 0, NULL, sizeof(line)));
+    assert(!flx4_midi_format_descriptor_hex_row(bytes, sizeof(bytes), 0, line, 4));
+}
+
 int main(void)
 {
     test_parse_note_on_packet();
@@ -184,6 +206,7 @@ int main(void)
     test_vu_meter_packets_are_low_priority();
     test_vu_meter_packets_drop_when_out_queue_has_backlog();
     test_midi_out_queue_capacity_covers_phase7_forced_snapshot();
+    test_descriptor_hex_row_formatter_is_deterministic();
     puts("flx4_midi_host tests passed");
     return 0;
 }
