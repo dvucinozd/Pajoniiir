@@ -35,6 +35,15 @@ int p4_ctrl_id_master_cue(void);
 int p4_ctrl_id_deck1_jog_search(void);
 int p4_ctrl_id_deck2_jog_search_touch(void);
 int p4_ctrl_id_browse_shift_delta(void);
+int p4_ctrl_id_browse_shift_press(void);
+int p4_ctrl_id_deck1_ext_action(void);
+int p4_ctrl_id_deck2_ext_action(void);
+int p4_ctrl_deck_ext_action_censor(void);
+int p4_ctrl_deck_ext_action_sync_master(void);
+int p4_ctrl_deck_ext_action_reloop_stop(void);
+int p4_ctrl_deck_ext_action_loop_adjust_in(void);
+int p4_ctrl_deck_ext_action_loop_adjust_out(void);
+int p4_ctrl_deck_ext_action_quantize(void);
 int p4_led_vu_meter(void);
 int p4_led_pad_mode_hot_cue(void);
 int p4_led_pad_mode_key_shift(void);
@@ -83,6 +92,15 @@ int s3_ctrl_id_master_cue(void);
 int s3_ctrl_id_deck1_jog_search(void);
 int s3_ctrl_id_deck2_jog_search_touch(void);
 int s3_ctrl_id_browse_shift_delta(void);
+int s3_ctrl_id_browse_shift_press(void);
+int s3_ctrl_id_deck1_ext_action(void);
+int s3_ctrl_id_deck2_ext_action(void);
+int s3_ctrl_deck_ext_action_censor(void);
+int s3_ctrl_deck_ext_action_sync_master(void);
+int s3_ctrl_deck_ext_action_reloop_stop(void);
+int s3_ctrl_deck_ext_action_loop_adjust_in(void);
+int s3_ctrl_deck_ext_action_loop_adjust_out(void);
+int s3_ctrl_deck_ext_action_quantize(void);
 int s3_led_vu_meter(void);
 int s3_led_pad_mode_hot_cue(void);
 int s3_led_pad_mode_key_shift(void);
@@ -128,7 +146,9 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
             ev->type = CTRL_EV_JOG;
             return true;
         }
-        if (ev->id == 1 || ev->id == CTRL_ID_BROWSE_DELTA) {
+        if (ev->id == 1 ||
+            ev->id == CTRL_ID_BROWSE_DELTA ||
+            ev->id == CTRL_ID_BROWSE_SHIFT_DELTA) {
             ev->type = CTRL_EV_BROWSE;
             return true;
         }
@@ -203,6 +223,12 @@ static void test_encoder_ids_route_to_jog_and_browse(void)
     assert(ev.id == CTRL_ID_BROWSE_DELTA);
     assert(ev.value == -2);
 
+    build_frame(frame, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, 4, 12);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BROWSE);
+    assert(ev.id == CTRL_ID_BROWSE_SHIFT_DELTA);
+    assert(ev.value == 4);
+
     build_frame(frame, CTRL_TYPE_ENCODER, 2, 1, 11);
     assert(!decode_p4_frame(frame, &ev));
 }
@@ -266,6 +292,15 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(CTRL_PAD_ACTION_MODE(ev.value) == CTRL_PAD_MODE_BEAT_JUMP);
     assert(CTRL_PAD_ACTION_SHIFTED(ev.value));
     assert(CTRL_PAD_ACTION_PRESSED(ev.value));
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, true), 28);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_EXT_ACTION);
+    assert(CTRL_DECK_EXT_ACTION(ev.value) == CTRL_DECK_EXT_ACTION_CENSOR);
+    assert(CTRL_DECK_EXT_PRESSED(ev.value));
 }
 
 static void test_s3_and_p4_deck_aware_ids_match(void)
@@ -309,6 +344,22 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_deck2_jog_search_touch() == CTRL_ID_DECK2_JOG_SEARCH_TOUCH);
     assert(s3_ctrl_id_browse_shift_delta() == p4_ctrl_id_browse_shift_delta());
     assert(s3_ctrl_id_browse_shift_delta() == CTRL_ID_BROWSE_SHIFT_DELTA);
+    assert(s3_ctrl_id_browse_shift_press() == p4_ctrl_id_browse_shift_press());
+    assert(s3_ctrl_id_browse_shift_press() == CTRL_ID_BROWSE_SHIFT_PRESS);
+    assert(s3_ctrl_id_deck1_ext_action() == p4_ctrl_id_deck1_ext_action());
+    assert(s3_ctrl_id_deck1_ext_action() == CTRL_ID_DECK1_EXT_ACTION);
+    assert(s3_ctrl_id_deck2_ext_action() == p4_ctrl_id_deck2_ext_action());
+    assert(s3_ctrl_id_deck2_ext_action() == CTRL_ID_DECK2_EXT_ACTION);
+    assert(s3_ctrl_deck_ext_action_censor() == p4_ctrl_deck_ext_action_censor());
+    assert(s3_ctrl_deck_ext_action_sync_master() == p4_ctrl_deck_ext_action_sync_master());
+    assert(s3_ctrl_deck_ext_action_reloop_stop() == p4_ctrl_deck_ext_action_reloop_stop());
+    assert(s3_ctrl_deck_ext_action_loop_adjust_in() == p4_ctrl_deck_ext_action_loop_adjust_in());
+    assert(s3_ctrl_deck_ext_action_loop_adjust_out() == p4_ctrl_deck_ext_action_loop_adjust_out());
+    assert(s3_ctrl_deck_ext_action_quantize() == p4_ctrl_deck_ext_action_quantize());
+    assert(CTRL_DECK_EXT_ACTION(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true)) ==
+           CTRL_DECK_EXT_ACTION_QUANTIZE);
+    assert(CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true)));
+    assert(!CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, false)));
     assert(s3_led_vu_meter() == p4_led_vu_meter());
     assert(p4_led_vu_meter() == LED_VU_METER);
     assert(s3_led_pad_mode_hot_cue() == p4_led_pad_mode_hot_cue());

@@ -64,6 +64,7 @@ typedef enum {
     CTRL_DECK_CTL_PAD_MODE_SAMPLER,
     CTRL_DECK_CTL_JOG_SEARCH,
     CTRL_DECK_CTL_JOG_SEARCH_TOUCH,
+    CTRL_DECK_CTL_EXT_ACTION,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -143,6 +144,20 @@ typedef enum {
 #define CTRL_PAD_ACTION_SHIFTED(value) (((value) & 0x40) != 0)
 #define CTRL_PAD_ACTION_PRESSED(value) (((value) & 0x80) != 0)
 
+typedef enum {
+    CTRL_DECK_EXT_ACTION_CENSOR = 0,
+    CTRL_DECK_EXT_ACTION_SYNC_MASTER,
+    CTRL_DECK_EXT_ACTION_RELOOP_STOP,
+    CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN,
+    CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT,
+    CTRL_DECK_EXT_ACTION_QUANTIZE,
+} ctrl_deck_ext_action_t;
+
+#define CTRL_DECK_EXT_VALUE(action, pressed) \
+    ((int16_t)(((action) & 0x7F) | ((pressed) ? 0x80 : 0x00)))
+#define CTRL_DECK_EXT_ACTION(value) ((uint8_t)((value) & 0x7F))
+#define CTRL_DECK_EXT_PRESSED(value) (((value) & 0x80) != 0)
+
 #define CTRL_ID_FLX4_CONNECTION (CTRL_NS_SYSTEM | 0x00)
 #define CTRL_ID_SMART_CFX       (CTRL_NS_SYSTEM | 0x01)
 #define CTRL_ID_SMART_FADER     (CTRL_NS_SYSTEM | 0x02)
@@ -196,6 +211,7 @@ typedef enum {
 #define CTRL_ID_DECK1_PAD_MODE_SAMPLER      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 #define CTRL_ID_DECK1_JOG_SEARCH            (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK1_JOG_SEARCH_TOUCH      (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
+#define CTRL_ID_DECK1_EXT_ACTION            (CTRL_NS_DECK1 + CTRL_DECK_CTL_EXT_ACTION)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -225,6 +241,7 @@ typedef enum {
 #define CTRL_ID_DECK2_PAD_MODE_SAMPLER      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 #define CTRL_ID_DECK2_JOG_SEARCH            (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK2_JOG_SEARCH_TOUCH      (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
+#define CTRL_ID_DECK2_EXT_ACTION            (CTRL_NS_DECK2 + CTRL_DECK_CTL_EXT_ACTION)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
@@ -248,6 +265,7 @@ typedef enum {
 #define CTRL_ID_LOAD_DECK2        (CTRL_NS_BROWSER | 0x02)
 #define CTRL_ID_BROWSE_PRESS      (CTRL_NS_BROWSER | 0x03)
 #define CTRL_ID_BROWSE_SHIFT_DELTA (CTRL_NS_BROWSER | 0x04)
+#define CTRL_ID_BROWSE_SHIFT_PRESS (CTRL_NS_BROWSER | 0x05)
 
 // Initialise UART1 and start RX task.
 // panel_event_queue: the queue returned by panel_io_init().
