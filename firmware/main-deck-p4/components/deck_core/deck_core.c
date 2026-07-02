@@ -647,6 +647,67 @@ static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
     }
 }
 
+static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
+{
+    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
+    if (!meta || !meta->beats || meta->beat_count == 0) {
+        return position_ms;
+    }
+
+    uint32_t best_ms = meta->beats[0].time_ms;
+    uint32_t best_delta = best_ms > position_ms ? best_ms - position_ms : position_ms - best_ms;
+    for (uint16_t i = 1; i < meta->beat_count; i++) {
+        uint32_t beat_ms = meta->beats[i].time_ms;
+        uint32_t delta = beat_ms > position_ms ? beat_ms - position_ms : position_ms - beat_ms;
+        if (delta < best_delta) {
+            best_delta = delta;
+            best_ms = beat_ms;
+        }
+    }
+    return best_ms;
+}
+
+static uint32_t quantized_deck_position_ms(uint8_t deck, const deck_state_t *state)
+{
+    uint32_t position_ms = current_deck_position_ms(deck, state);
+    if (!state || !state->quantize_enabled) {
+        return position_ms;
+    }
+    return nearest_beat_ms(deck, position_ms);
+}
+
+static void stop_and_forget_loop(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) {
+        return;
+    }
+    (void)audio_engine_deck_clear_loop(deck);
+    memset(&s_loop_shadow[deck], 0, sizeof(s_loop_shadow[deck]));
+    memset(&s_shifted_loop_roll[deck], 0, sizeof(s_shifted_loop_roll[deck]));
+    memset(&s_beat_loop_led[deck], 0, sizeof(s_beat_loop_led[deck]));
+    ESP_LOGI(TAG, "deck %u loop stop", (unsigned)deck + 1);
+    publish_flx4_led_snapshot(false);
+}
+
+static void adjust_loop_boundary(uint8_t deck, bool adjust_in, deck_state_t *state)
+{
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active) {
+        return;
+    }
+
+    uint32_t position_ms = quantized_deck_position_ms(deck, state);
+    if (adjust_in) {
+        if (position_ms < end_ms) {
+            set_deck_loop(deck, position_ms, end_ms);
+        }
+    } else if (position_ms > start_ms) {
+        set_deck_loop(deck, start_ms, position_ms);
+    }
+}
+
 static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
@@ -732,7 +793,7 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
     }
 
     deck_loop_shadow_t *shadow = &s_loop_shadow[deck];
-    uint32_t position_ms = current_deck_position_ms(deck, state);
+    uint32_t position_ms = quantized_deck_position_ms(deck, state);
     bool active = false;
     uint32_t start_ms = 0;
     uint32_t end_ms = 0;
@@ -1252,16 +1313,35 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         return true;
 
     case CTRL_DECK_CTL_EXT_ACTION:
-        if (!pressed) {
+    {
+        uint8_t action = CTRL_DECK_EXT_ACTION(ev->value);
+        bool ext_pressed = CTRL_DECK_EXT_PRESSED(ev->value);
+        if (!ext_pressed) {
             return true;
         }
-        switch (CTRL_DECK_EXT_ACTION(ev->value)) {
+        switch (action) {
         case CTRL_DECK_EXT_ACTION_SYNC_MASTER:
             set_sync_master(deck, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_RELOOP_STOP:
+            stop_and_forget_loop(deck);
+            return true;
+        case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN:
+            adjust_loop_boundary(deck, true, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT:
+            adjust_loop_boundary(deck, false, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_QUANTIZE:
+            state->quantize_enabled = !state->quantize_enabled;
+            ESP_LOGI(TAG, "deck %u quantize -> %s",
+                     (unsigned)deck + 1,
+                     state->quantize_enabled ? "ON" : "OFF");
             return true;
         default:
             return true;
         }
+    }
 
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:

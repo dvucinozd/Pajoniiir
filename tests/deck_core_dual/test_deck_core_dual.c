@@ -59,6 +59,8 @@ extern int control_link_stub_led_count;
 void control_link_stub_reset_leds(void);
 int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
+static anlz_metadata_t beat_jump_meta(void);
+
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
@@ -1062,6 +1064,88 @@ static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
     assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
 }
 
+static void test_quantize_toggle_updates_requested_deck_only(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t quantize = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_QUANTIZE, true);
+    ctrl_event_t release = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_QUANTIZE, false);
+    deck_core_test_apply_event(&quantize);
+    deck_core_test_apply_event(&release);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).quantize_enabled);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).quantize_enabled);
+}
+
+static void test_reloop_shift_stop_clears_active_and_remembered_loop(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1000;
+
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK1_LOOP_IN);
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK1_LOOP_OUT);
+    ctrl_event_t stop = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_RELOOP_STOP, true);
+    ctrl_event_t reloop = deck_button(CTRL_ID_DECK1_RELOOP_EXIT);
+
+    deck_core_test_apply_event(&loop_in);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 4000;
+    deck_core_test_apply_event(&loop_out);
+    assert(audio_engine_stub_loop_active[CTRL_DECK_1]);
+
+    deck_core_test_apply_event(&stop);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(audio_engine_stub_loop_clear_count[CTRL_DECK_1] == 1);
+
+    deck_core_test_apply_event(&reloop);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+}
+
+static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_loop_active[CTRL_DECK_2] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 1000;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_2] = 5000;
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 2000;
+    ctrl_event_t adjust_in = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true);
+    deck_core_test_apply_event(&adjust_in);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 7000;
+    ctrl_event_t adjust_out = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true);
+    deck_core_test_apply_event(&adjust_out);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 7000);
+}
+
+static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    static anlz_metadata_t meta;
+    meta = beat_jump_meta();
+    s_loaded_anlz[CTRL_DECK_1] = &meta;
+
+    ctrl_event_t quantize = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_QUANTIZE, true);
+    deck_core_test_apply_event(&quantize);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1850;
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK1_LOOP_IN);
+    deck_core_test_apply_event(&loop_in);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 4230;
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK1_LOOP_OUT);
+    deck_core_test_apply_event(&loop_out);
+
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 4000);
+}
+
 static void test_smart_buttons_toggle_audio_state_and_leds(void)
 {
     deck_core_test_reset();
@@ -1885,6 +1969,10 @@ int main(void)
     test_sync_phase_aligns_while_target_deck_is_playing();
     test_sync_without_beatgrid_keeps_phase_position_unchanged();
     test_loop_in_out_sets_requested_deck_loop_from_audio_position();
+    test_quantize_toggle_updates_requested_deck_only();
+    test_reloop_shift_stop_clears_active_and_remembered_loop();
+    test_loop_adjust_in_and_out_update_active_loop_boundaries();
+    test_quantized_loop_in_out_snaps_to_nearest_beat();
     test_loop_in_marker_publishes_loop_in_led_before_loop_out();
     test_reloop_exit_clears_and_restores_last_requested_deck_loop();
     test_loop_halve_and_double_resize_active_loop();
