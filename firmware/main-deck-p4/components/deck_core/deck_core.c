@@ -746,6 +746,7 @@ static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
         ESP_LOGI(TAG, "deck %u censor press -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned long)repeat);
+        publish_flx4_led_snapshot(false);
         return;
     }
 
@@ -767,6 +768,7 @@ static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
     ESP_LOGI(TAG, "deck %u censor release -> %lu ms",
              (unsigned)deck + 1,
              (unsigned long)target);
+    publish_flx4_led_snapshot(false);
 }
 
 static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t *state)
@@ -987,6 +989,7 @@ static void publish_flx4_led_snapshot(bool force)
         input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
+        input.censor_active[deck] = state.censor_active ? 1u : 0u;
         input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1 : 0;
         input.beat_loop_pad_active[deck] = s_beat_loop_led[deck].active ? 1u : 0u;
         input.beat_loop_active_pad[deck] = s_beat_loop_led[deck].pad;

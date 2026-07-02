@@ -80,6 +80,24 @@ static bool note_for_led(uint8_t led, uint8_t *note)
     case LED_MASTER_CUE:
         *note = 0x63;
         return true;
+    case LED_CENSOR:
+        *note = 0x0E;
+        return true;
+    case LED_CUE_SHIFT:
+        *note = 0x48;
+        return true;
+    case LED_LOOP_ADJUST_IN:
+        *note = 0x4C;
+        return true;
+    case LED_LOOP_ADJUST_OUT:
+        *note = 0x4E;
+        return true;
+    case LED_TRACK_LOAD_DECK1:
+        *note = 0x00;
+        return true;
+    case LED_TRACK_LOAD_DECK2:
+        *note = 0x01;
+        return true;
     default:
         return false;
     }
@@ -115,6 +133,8 @@ bool flx4_led_midi_build_packet(uint8_t led,
         packet[1] = (deck == CTRL_DECK_1) ? 0x97 : 0x99;
     } else if (led == LED_BEAT_FX_ON) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x94 : 0x95;
+    } else if (led == LED_TRACK_LOAD_DECK1 || led == LED_TRACK_LOAD_DECK2) {
+        packet[1] = 0x9F;
     } else if (led == LED_SMART_CFX || led == LED_SMART_FADER || led == LED_MASTER_CUE) {
         packet[1] = 0x96;
     } else {

@@ -168,6 +168,17 @@ packed into the high byte of the 16-bit value by `control_link_send_led_deck()`:
 | `0x0E` | Beat Sync enabled |
 | `0x0F` | Loop In indicator |
 | `0x10` | Loop Out indicator |
+| `0x34` | Master Cue monitor indicator |
+| `0x35` | Censor active indicator |
+| `0x36` | Cue+Shift / track-start output candidate |
+| `0x37` | Loop Adjust In output candidate |
+| `0x38` | Loop Adjust Out output candidate |
+| `0x39` | Track Load Deck 1 illumination output candidate |
+| `0x3A` | Track Load Deck 2 illumination output candidate |
+
+`LED_REMOTE_COUNT` is `59`. Existing values through `LED_MASTER_CUE` remain
+stable; the new FLX4 official/PDF output IDs are appended after
+`LED_MASTER_CUE`.
 
 ```text
 value low byte:  LED state, 0 off / 1 on / 2 blink
@@ -190,12 +201,20 @@ P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
 enabled state, active Loop In/Out state, Beat Loop pad state, momentary Pad FX
-pad state, Smart CFX/Fader state, the global Beat FX ON/OFF enabled state, and
-the global Master Cue monitor state.
+pad state, Censor active state, Smart CFX/Fader state, the global Beat FX
+ON/OFF enabled state, and the global Master Cue monitor state.
 Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
 reconnect smoke remains an acceptance item.
+
+The new Censor LED is snapshot-driven from P4 `deck_state_t.censor_active`.
+The Cue+Shift / track-start, Loop Adjust In, Loop Adjust Out, and Track Load
+illumination IDs are mapped by S3 to the official FLX4 output packets for
+future P4 use, but they are not part of the reconnect-safe snapshot until P4
+owns a real persistent or momentary state for those indicators. Beat Jump and
+Sampler pad LED output candidates remain deferred-state candidates; no sampler
+model or beat-jump LED selection state is currently published.
 
 In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
 after each heartbeat while the USB MIDI device remains open. This is

@@ -121,7 +121,13 @@ typedef enum {
 #define LED_HOT_CUE_PAD_7 50
 #define LED_HOT_CUE_PAD_8 51
 #define LED_MASTER_CUE 52
-#define LED_REMOTE_COUNT 53
+#define LED_CENSOR 53
+#define LED_CUE_SHIFT 54
+#define LED_LOOP_ADJUST_IN 55
+#define LED_LOOP_ADJUST_OUT 56
+#define LED_TRACK_LOAD_DECK1 57
+#define LED_TRACK_LOAD_DECK2 58
+#define LED_REMOTE_COUNT 59
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,

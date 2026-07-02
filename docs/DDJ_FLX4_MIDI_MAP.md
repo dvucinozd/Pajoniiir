@@ -151,6 +151,10 @@ Status legend:
 - **Deferred:** address is recorded, but standalone P4 behavior is not defined.
 - **Candidate LED:** XML output address is recorded; P4-driven LED feedback is
   not implemented unless explicitly noted.
+- **Mapped output only:** S3 can emit the official LED packet, but P4 does not
+  yet publish reconnect-safe state for that indicator.
+- **Implemented snapshot output:** P4 owns the state and includes the LED in the
+  reconnect-safe FLX4 snapshot.
 
 ### Transport, Browser, Jog, And Loop Inventory
 
@@ -273,28 +277,28 @@ notes `0x10..0x17` and Pad FX2 pads as notes `0x50..0x57` on the existing Deck
 | LED/output group | Output status/midino | Source state | S3/P4 state owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- |
 | Play LEDs | `0x90/0x0B`, `0x91/0x0B` | deck playing | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
-| Play + Shift / Censor LEDs | official list: `0x90/0x0E`, `0x91/0x0E` | future shifted transport state | P4 `deck_core` | Candidate LED | Official-list only; not captured |
+| Play + Shift / Censor LEDs | official list/PDF output: `0x90/0x0E`, `0x91/0x0E` | P4 `deck_state_t.censor_active` | P4 `deck_core` snapshot | Implemented snapshot output | Host-tested from official packet; hardware smoke pending |
 | Play/Cue shifted alternate LEDs | XML output: `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for DDJ-FFL4 | Deferred | Not captured |
 | Cue LEDs | `0x90/0x0C`, `0x91/0x0C` | cue state | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
-| Cue + Shift / track-start LEDs | official list: `0x90/0x48`, `0x91/0x48` | future shifted cue/track-start indicator | P4 `deck_core` | Candidate LED | Official-list only; not captured |
+| Cue + Shift / track-start LEDs | official list/PDF output: `0x90/0x48`, `0x91/0x48` | no persistent P4 LED state yet; track-start action is momentary | P4 `deck_core` action exists, no snapshot field | Mapped output only; snapshot deferred | Host-tested packet mapping from official list; hardware smoke pending |
 | Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled state | P4 `deck_core.sync_enabled` | Implemented output | Hardware smoke passed 2026-06-21; output probe verified 2026-06-20 |
 | PFL LEDs | `0x90/0x54`, `0x91/0x54` | PFL enabled | P4 mixer/cue routing | Implemented | Verified 2026-06-20 reconnect |
 | Master Cue LED | official MIDI list: `0x96/0x63` | P4 monitor master-cue enabled state | P4 `audio_engine` / `deck_core` snapshot | Implemented output | Host-tested; hardware smoke passed 2026-07-02 |
 | Pad mode LEDs | direct: Hot Cue `0x1B`, Pad FX1 `0x1E`, Beat Jump `0x20`, Sampler `0x22`; shifted: Keyboard `0x69`, Pad FX2 `0x6B`, Beat Loop `0x6D`, Key Shift `0x6F` on `0x90`/`0x91` | selected controller pad mode | P4 `deck_core.pad_mode` | Implemented output | Hardware smoke passed 2026-06-21 |
 | Loop In LEDs | `0x90/0x10`, `0x91/0x10` | loop-in marker exists or active audio loop exists | P4 `deck_core` pending loop-in marker plus `audio_engine` loop state | Implemented output | Active-loop smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20; Loop In marker LED smoke passed D1/D2 2026-06-26 |
-| Shift + Loop In adjust LEDs | official list: `0x90/0x4C`, `0x91/0x4C` | future loop adjust-in mode | P4 loop edit state | Candidate LED | Official-list only; not captured |
+| Shift + Loop In adjust LEDs | official list/PDF output: `0x90/0x4C`, `0x91/0x4C` | no persistent loop-adjust active state; current action adjusts boundary immediately | P4 loop edit action exists, no snapshot field | Mapped output only; snapshot deferred | Host-tested packet mapping from official list; hardware smoke pending |
 | Loop Out LEDs | `0x90/0x11`, `0x91/0x11` | active audio loop exists | P4 `audio_engine` loop state | Implemented output | Behavior smoke passed D1/D2 2026-06-21; output probe verified 2026-06-20; remains off while only Loop In marker is pending |
-| Shift + Loop Out adjust LEDs | official list output: `0x90/0x4E`, `0x91/0x4E` | future loop adjust-out mode | P4 loop edit state | Candidate LED | Official-list only; note D2 input conflict with official-list `0x4F` |
+| Shift + Loop Out adjust LEDs | official list/PDF output: `0x90/0x4E`, `0x91/0x4E` | no persistent loop-adjust active state; current action adjusts boundary immediately | P4 loop edit action exists, no snapshot field | Mapped output only; snapshot deferred | Host-tested packet mapping from official output `0x4E`; D2 input conflict with official-list `0x4F` remains smoke-pending |
 | Hot Cue pad LEDs | normal D1 `0x97/0x00..0x07`, normal D2 `0x99/0x00..0x07`; shifted mirror D1 `0x98/0x00..0x07`, D2 `0x9A/0x00..0x07` | hot cue slot exists while Hot Cue mode is selected | P4 hot cue store state | Implemented output for normal pad LEDs; shifted mirror LEDs deferred | Host-tested from official PDF/XML-derived ranges; hardware LED smoke passed 2026-07-01 |
 | Pad FX1 pad LEDs | normal D1 `0x97/0x10..0x17`, normal D2 `0x99/0x10..0x17`; shifted mirror D1 `0x98/0x10..0x17`, D2 `0x9A/0x10..0x17` | momentary active Pad FX1 pad while Pad FX1 mode is selected | P4 `deck_core` Pad FX momentary state | Implemented output for normal pad LEDs; shifted mirror LEDs deferred | Host-tested from official PDF; hardware LED smoke passed 2026-07-01 |
 | Keyboard/Stems pad LEDs | official list pad-8 example: normal D1 `0x97/0x47`, normal D2 `0x99/0x47`; shifted mirror D1 `0x98/0x47`, D2 `0x9A/0x47` | future keyboard/stems state | P4 keyboard/stems model | Candidate LED | Official-list only; capture required |
 | Pad FX2 pad LEDs | normal D1 `0x97/0x50..0x57`, normal D2 `0x99/0x50..0x57`; shifted mirror D1 `0x98/0x50..0x57`, D2 `0x9A/0x50..0x57` | momentary active Pad FX2 pad while Pad FX2 mode is selected | P4 `deck_core` Pad FX momentary state | Implemented output for normal pad LEDs; shifted mirror LEDs deferred | Host-tested from official PDF; hardware LED smoke passed 2026-07-01 |
 | Beat Loop pad LEDs | normal D1 `0x97/0x60..0x67`, normal D2 `0x99/0x60..0x67`; shifted mirror D1 `0x98/0x60..0x67`, D2 `0x9A/0x60..0x67` | P4-owned active Beat Loop pad while Beat Loop mode is selected | P4 loop state, selected Beat Loop pad, and pad mode | Implemented output for normal pad LEDs; shifted mirror LEDs deferred | Hardware LED smoke passed 2026-07-01 on both decks; fixed to track P4 pad state instead of 120-BPM duration inference |
-| Beat Jump pad LEDs | official list pad-8 example: normal D1 `0x97/0x27`, normal D2 `0x99/0x27`; shifted mirror D1 `0x98/0x27`, D2 `0x9A/0x27` | future beat-jump pad state | P4 beat jump/pad mode state | Candidate LED | Official-list only; capture required |
-| Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML | P4 beat jump/pad mode state | Candidate LED | Not captured |
-| Sampler pad LEDs | left normal `0x97/0x30..0x37`, left shifted `0x98/0x30..0x37`, right normal `0x99/0x30..0x37`, right shifted `0x9A/0x30..0x37` | sampler slot loaded in XML | sampler model | Deferred | Not captured |
+| Beat Jump pad LEDs | official list pad-8 example: normal D1 `0x97/0x27`, normal D2 `0x99/0x27`; shifted mirror D1 `0x98/0x27`, D2 `0x9A/0x27` | no P4-owned beat-jump LED selection state yet | P4 beat jump behavior exists, LED state not stored | Deferred-state output candidate; not mapped | Official-list only; hardware smoke deferred |
+| Beat Jump shifted helper LEDs | D1 `0x98/0x26..0x27`, D2 `0x9A/0x26..0x27` | track loaded in XML; no matching DDJ-FFL4 P4 state | P4 beat jump behavior exists, LED state not stored | Deferred-state output candidate; not mapped | Official-list/XML reference only; hardware smoke deferred |
+| Sampler pad LEDs | left normal `0x97/0x30..0x37`, left shifted `0x98/0x30..0x37`, right normal `0x99/0x30..0x37`, right shifted `0x9A/0x30..0x37` | sampler slot loaded in XML | sampler model not implemented | Deferred-state output candidate; not mapped | Official-list/XML reference only; behavior and hardware smoke deferred |
 | Key Shift pad LEDs | official list pad-8 example: normal D1 `0x97/0x77`, normal D2 `0x99/0x77`; shifted mirror D1 `0x98/0x77`, D2 `0x9A/0x77` | future key-shift state | P4 key shift model | Candidate LED | Official-list only; capture required |
-| Loaded / Track Load Illumination | official list: D1 `0x9F/0x00`, D2 `0x9F/0x01` | deck has loaded track | P4 deck/library state | Candidate LED | Official-list only; not captured |
+| Loaded / Track Load Illumination | official list/PDF output: D1 `0x9F/0x00`, D2 `0x9F/0x01` | deck loaded/library state is not currently published into FLX4 LED snapshot | future P4 deck/library state | Mapped output only; snapshot deferred | Host-tested packet mapping from official list; hardware smoke pending |
 | Channel 1 VU meter (5 LEDs) | `0xB0/0x02` | channel 1 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
 | Channel 2 VU meter (5 LEDs) | `0xB1/0x02` | channel 2 level (0-127) | P4 audio peak timer | Implemented output | Not captured |
 

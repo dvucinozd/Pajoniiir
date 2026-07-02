@@ -24,6 +24,14 @@ static void expect_packet(uint8_t led,
 
 static void test_transport_and_mode_led_packets(void)
 {
+    assert(LED_CENSOR == LED_MASTER_CUE + 1);
+    assert(LED_CUE_SHIFT == LED_CENSOR + 1);
+    assert(LED_LOOP_ADJUST_IN == LED_CUE_SHIFT + 1);
+    assert(LED_LOOP_ADJUST_OUT == LED_LOOP_ADJUST_IN + 1);
+    assert(LED_TRACK_LOAD_DECK1 == LED_LOOP_ADJUST_OUT + 1);
+    assert(LED_TRACK_LOAD_DECK2 == LED_TRACK_LOAD_DECK1 + 1);
+    assert(LED_REMOTE_COUNT == LED_TRACK_LOAD_DECK2 + 1);
+
     expect_packet(LED_PLAY, 1, CTRL_DECK_1, 0x09, 0x90, 0x0B, 0x7F);
     expect_packet(LED_CUE, 0, CTRL_DECK_2, 0x09, 0x91, 0x0C, 0x00);
     expect_packet(LED_PFL, 1, CTRL_DECK_2, 0x09, 0x91, 0x54, 0x7F);
@@ -51,6 +59,33 @@ static void test_transport_and_mode_led_packets(void)
     expect_packet(LED_BEAT_FX_ON, 1, CTRL_DECK_2, 0x09, 0x95, 0x47, 0x7F);
     expect_packet(LED_MASTER_CUE, 1, CTRL_DECK_1, 0x09, 0x96, 0x63, 0x7F);
     expect_packet(LED_MASTER_CUE, 0, CTRL_DECK_1, 0x09, 0x96, 0x63, 0x00);
+
+    expect_packet(LED_CENSOR, 1, CTRL_DECK_1, 0x09, 0x90, 0x0E, 0x7F);
+    expect_packet(LED_CENSOR, 0, CTRL_DECK_1, 0x09, 0x90, 0x0E, 0x00);
+    expect_packet(LED_CENSOR, 1, CTRL_DECK_2, 0x09, 0x91, 0x0E, 0x7F);
+    expect_packet(LED_CENSOR, 0, CTRL_DECK_2, 0x09, 0x91, 0x0E, 0x00);
+
+    expect_packet(LED_CUE_SHIFT, 1, CTRL_DECK_1, 0x09, 0x90, 0x48, 0x7F);
+    expect_packet(LED_CUE_SHIFT, 0, CTRL_DECK_1, 0x09, 0x90, 0x48, 0x00);
+    expect_packet(LED_CUE_SHIFT, 1, CTRL_DECK_2, 0x09, 0x91, 0x48, 0x7F);
+    expect_packet(LED_CUE_SHIFT, 0, CTRL_DECK_2, 0x09, 0x91, 0x48, 0x00);
+
+    expect_packet(LED_LOOP_ADJUST_IN, 1, CTRL_DECK_1, 0x09, 0x90, 0x4C, 0x7F);
+    expect_packet(LED_LOOP_ADJUST_IN, 0, CTRL_DECK_1, 0x09, 0x90, 0x4C, 0x00);
+    expect_packet(LED_LOOP_ADJUST_IN, 1, CTRL_DECK_2, 0x09, 0x91, 0x4C, 0x7F);
+    expect_packet(LED_LOOP_ADJUST_IN, 0, CTRL_DECK_2, 0x09, 0x91, 0x4C, 0x00);
+
+    expect_packet(LED_LOOP_ADJUST_OUT, 1, CTRL_DECK_1, 0x09, 0x90, 0x4E, 0x7F);
+    expect_packet(LED_LOOP_ADJUST_OUT, 0, CTRL_DECK_1, 0x09, 0x90, 0x4E, 0x00);
+    expect_packet(LED_LOOP_ADJUST_OUT, 1, CTRL_DECK_2, 0x09, 0x91, 0x4E, 0x7F);
+    expect_packet(LED_LOOP_ADJUST_OUT, 0, CTRL_DECK_2, 0x09, 0x91, 0x4E, 0x00);
+
+    expect_packet(LED_TRACK_LOAD_DECK1, 1, CTRL_DECK_1, 0x09, 0x9F, 0x00, 0x7F);
+    expect_packet(LED_TRACK_LOAD_DECK1, 0, CTRL_DECK_1, 0x09, 0x9F, 0x00, 0x00);
+    expect_packet(LED_TRACK_LOAD_DECK1, 1, CTRL_DECK_2, 0x09, 0x9F, 0x00, 0x7F);
+    expect_packet(LED_TRACK_LOAD_DECK2, 1, CTRL_DECK_1, 0x09, 0x9F, 0x01, 0x7F);
+    expect_packet(LED_TRACK_LOAD_DECK2, 0, CTRL_DECK_1, 0x09, 0x9F, 0x01, 0x00);
+    expect_packet(LED_TRACK_LOAD_DECK2, 1, CTRL_DECK_2, 0x09, 0x9F, 0x01, 0x7F);
 }
 
 static void test_beat_loop_pad_led_packets(void)

@@ -1192,6 +1192,7 @@ static void test_censor_press_repeats_previous_audio_window(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
+    control_link_stub_reset_leds();
     audio_engine_stub_deck_playing[CTRL_DECK_1] = true;
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 5000;
 
@@ -1201,12 +1202,14 @@ static void test_censor_press_repeats_previous_audio_window(void)
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).censor_active);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 4000);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_1) == 1);
 }
 
 static void test_censor_release_returns_to_stored_position_when_paused(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
+    control_link_stub_reset_leds();
     audio_engine_stub_deck_playing[CTRL_DECK_2] = false;
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 3000;
 
@@ -1217,6 +1220,7 @@ static void test_censor_release_returns_to_stored_position_when_paused(void)
 
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).censor_active);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 3000);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_2) == 0);
 }
 
 static void test_smart_buttons_toggle_audio_state_and_leds(void)

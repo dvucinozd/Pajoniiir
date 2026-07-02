@@ -49,7 +49,7 @@ static void test_initial_forced_snapshot_sends_all_mvp_leds(void)
     input.pad_mode[0] = CTRL_PAD_MODE_HOT_CUE;
     input.pad_mode[1] = CTRL_PAD_MODE_HOT_CUE;
 
-    assert(log.count == 96);
+    assert(log.count == 98);
     assert(log.led[0] == LED_CUE && log.deck[0] == 0 && log.state[0] == 0);
     assert(log.led[1] == LED_PLAY && log.deck[1] == 0 && log.state[1] == 0);
     assert(log.led[2] == LED_PFL && log.deck[2] == 0 && log.state[2] == 0);
@@ -62,11 +62,13 @@ static void test_initial_forced_snapshot_sends_all_mvp_leds(void)
     assert(log.led[39] == LED_SMART_FADER && log.deck[39] == 0 && log.state[39] == 0);
     assert(log.led[40] == LED_BEAT_FX_ON && log.deck[40] == 0 && log.state[40] == 0);
     assert(log.led[41] == LED_MASTER_CUE && log.deck[41] == 0 && log.state[41] == 0);
-    assert(log.led[50] == LED_CUE && log.deck[50] == 1 && log.state[50] == 0);
-    assert(log.led[51] == LED_PLAY && log.deck[51] == 1 && log.state[51] == 0);
-    assert(log.led[52] == LED_PFL && log.deck[52] == 1 && log.state[52] == 0);
-    assert(log.led[53] == LED_SYNC && log.deck[53] == 1 && log.state[53] == 0);
-    assert(log.led[54] == LED_PAD_MODE_HOT_CUE && log.deck[54] == 1 && log.state[54] == 1);
+    assert(log.led[50] == LED_CENSOR && log.deck[50] == 0 && log.state[50] == 0);
+    assert(log.led[51] == LED_CUE && log.deck[51] == 1 && log.state[51] == 0);
+    assert(log.led[52] == LED_PLAY && log.deck[52] == 1 && log.state[52] == 0);
+    assert(log.led[53] == LED_PFL && log.deck[53] == 1 && log.state[53] == 0);
+    assert(log.led[54] == LED_SYNC && log.deck[54] == 1 && log.state[54] == 0);
+    assert(log.led[55] == LED_PAD_MODE_HOT_CUE && log.deck[55] == 1 && log.state[55] == 1);
+    assert(log.led[97] == LED_CENSOR && log.deck[97] == 1 && log.state[97] == 0);
 }
 
 static void test_normal_publish_suppresses_unchanged_values(void)
@@ -81,10 +83,10 @@ static void test_normal_publish_suppresses_unchanged_values(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 }
 
 static void test_changed_play_sends_only_changed_play_led(void)
@@ -99,15 +101,15 @@ static void test_changed_play_sends_only_changed_play_led(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.play[0] = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
-    assert(log.led[96] == LED_PLAY);
-    assert(log.deck[96] == 0);
-    assert(log.state[96] == 1);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_PLAY);
+    assert(log.deck[98] == 0);
+    assert(log.state[98] == 1);
 }
 
 static void test_changed_sync_sends_only_changed_sync_led(void)
@@ -122,15 +124,15 @@ static void test_changed_sync_sends_only_changed_sync_led(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.sync[0] = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
-    assert(log.led[96] == LED_SYNC);
-    assert(log.deck[96] == 0);
-    assert(log.state[96] == 1);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_SYNC);
+    assert(log.deck[98] == 0);
+    assert(log.state[98] == 1);
 }
 
 static void test_changed_loop_state_sends_loop_in_and_out_for_deck(void)
@@ -145,18 +147,18 @@ static void test_changed_loop_state_sends_loop_in_and_out_for_deck(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.loop_active[1] = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 98);
-    assert(log.led[96] == LED_LOOP_IN);
-    assert(log.deck[96] == 1);
-    assert(log.state[96] == 1);
-    assert(log.led[97] == LED_LOOP_OUT);
-    assert(log.deck[97] == 1);
-    assert(log.state[97] == 1);
+    assert(log.count == 100);
+    assert(log.led[98] == LED_LOOP_IN);
+    assert(log.deck[98] == 1);
+    assert(log.state[98] == 1);
+    assert(log.led[99] == LED_LOOP_OUT);
+    assert(log.deck[99] == 1);
+    assert(log.state[99] == 1);
 }
 
 static void test_loop_in_marker_lights_loop_in_without_loop_out(void)
@@ -171,15 +173,15 @@ static void test_loop_in_marker_lights_loop_in_without_loop_out(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.loop_in_marker[0] = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
-    assert(log.led[96] == LED_LOOP_IN);
-    assert(log.deck[96] == 0);
-    assert(log.state[96] == 1);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_LOOP_IN);
+    assert(log.deck[98] == 0);
+    assert(log.state[98] == 1);
 }
 
 static void test_changed_beat_fx_on_sends_only_global_led(void)
@@ -194,23 +196,23 @@ static void test_changed_beat_fx_on_sends_only_global_led(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.beat_fx_on = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
-    assert(log.led[96] == LED_BEAT_FX_ON);
-    assert(log.deck[96] == CTRL_DECK_1);
-    assert(log.state[96] == 1);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_BEAT_FX_ON);
+    assert(log.deck[98] == CTRL_DECK_1);
+    assert(log.state[98] == 1);
 
     input.beat_fx_on = 0;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 98);
-    assert(log.led[97] == LED_BEAT_FX_ON);
-    assert(log.deck[97] == CTRL_DECK_1);
-    assert(log.state[97] == 0);
+    assert(log.count == 100);
+    assert(log.led[99] == LED_BEAT_FX_ON);
+    assert(log.deck[99] == CTRL_DECK_1);
+    assert(log.state[99] == 0);
 }
 
 static void test_changed_master_cue_sends_only_global_led(void)
@@ -225,15 +227,46 @@ static void test_changed_master_cue_sends_only_global_led(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.master_cue = 1;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
-    assert(log.led[96] == LED_MASTER_CUE);
-    assert(log.deck[96] == CTRL_DECK_1);
-    assert(log.state[96] == 1);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_MASTER_CUE);
+    assert(log.deck[98] == CTRL_DECK_1);
+    assert(log.state[98] == 1);
+}
+
+static void test_changed_censor_sends_only_changed_deck_led(void)
+{
+    flx4_led_publisher_t publisher;
+    flx4_led_snapshot_input_t input = { 0 };
+    send_log_t log = { 0 };
+
+    input.pad_mode[0] = CTRL_PAD_MODE_HOT_CUE;
+    input.pad_mode[1] = CTRL_PAD_MODE_HOT_CUE;
+
+    flx4_led_publisher_init(&publisher);
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 98);
+
+    input.censor_active[1] = 1;
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 99);
+    assert(log.led[98] == LED_CENSOR);
+    assert(log.deck[98] == CTRL_DECK_2);
+    assert(log.state[98] == 1);
+
+    input.censor_active[1] = 0;
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 100);
+    assert(log.led[99] == LED_CENSOR);
+    assert(log.deck[99] == CTRL_DECK_2);
+    assert(log.state[99] == 0);
 }
 
 static void test_beat_loop_mode_lights_matching_loop_length_pad(void)
@@ -431,18 +464,18 @@ static void test_changed_pad_mode_sends_old_off_and_new_on_for_deck(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     input.pad_mode[1] = CTRL_PAD_MODE_SAMPLER;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 98);
-    assert(log.led[96] == LED_PAD_MODE_HOT_CUE);
-    assert(log.deck[96] == 1);
-    assert(log.state[96] == 0);
-    assert(log.led[97] == LED_PAD_MODE_SAMPLER);
-    assert(log.deck[97] == 1);
-    assert(log.state[97] == 1);
+    assert(log.count == 100);
+    assert(log.led[98] == LED_PAD_MODE_HOT_CUE);
+    assert(log.deck[98] == 1);
+    assert(log.state[98] == 0);
+    assert(log.led[99] == LED_PAD_MODE_SAMPLER);
+    assert(log.deck[99] == 1);
+    assert(log.state[99] == 1);
 }
 
 static void test_failed_send_retries_on_next_normal_publish(void)
@@ -458,14 +491,14 @@ static void test_failed_send_retries_on_next_normal_publish(void)
     log.fail_on_call = 2;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_FAIL);
-    assert(log.count == 96);
+    assert(log.count == 98);
     assert(log.failed_led == LED_PLAY);
     assert(log.failed_deck == 0);
 
     log.fail_on_call = 0;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 97);
+    assert(log.count == 99);
     assert(log.saw_retry);
 }
 
@@ -485,7 +518,7 @@ static void test_forced_reconnect_snapshot_sends_all_values_including_off(void)
     flx4_led_publisher_init(&publisher);
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
 
     memset(&log, 0, sizeof(log));
     input.pad_mode[0] = CTRL_PAD_MODE_HOT_CUE;
@@ -497,15 +530,15 @@ static void test_forced_reconnect_snapshot_sends_all_values_including_off(void)
     input.pfl[1] = 0;
     assert(flx4_led_publisher_publish(&publisher, &input, true,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 96);
+    assert(log.count == 98);
     assert(log.state[0] == 0);
     assert(log.led[3] == LED_SYNC && log.state[3] == 1);
-    assert(log.state[51] == 0);
     assert(log.state[52] == 0);
+    assert(log.state[53] == 0);
     assert(log.led[4] == LED_PAD_MODE_HOT_CUE && log.state[4] == 1);
-    assert(log.led[54] == LED_PAD_MODE_HOT_CUE && log.state[54] == 1);
-    assert(log.led[62] == LED_LOOP_IN && log.state[62] == 0);
-    assert(log.led[63] == LED_LOOP_OUT && log.state[63] == 0);
+    assert(log.led[55] == LED_PAD_MODE_HOT_CUE && log.state[55] == 1);
+    assert(log.led[63] == LED_LOOP_IN && log.state[63] == 0);
+    assert(log.led[64] == LED_LOOP_OUT && log.state[64] == 0);
 }
 
 int main(void)
@@ -516,6 +549,7 @@ int main(void)
     test_changed_sync_sends_only_changed_sync_led();
     test_changed_beat_fx_on_sends_only_global_led();
     test_changed_master_cue_sends_only_global_led();
+    test_changed_censor_sends_only_changed_deck_led();
     test_changed_loop_state_sends_loop_in_and_out_for_deck();
     test_loop_in_marker_lights_loop_in_without_loop_out();
     test_beat_loop_mode_lights_matching_loop_length_pad();
