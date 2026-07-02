@@ -882,7 +882,7 @@ git commit -m "test: add flx4 usb audio packet scheduler"
 - Create: `tests/monitor_pcm_link/Makefile`
 - Modify: `tests/run_p4_host_tests.ps1`
 
-- [ ] **Step 1: Define a non-blocking monitor sink**
+- [x] **Step 1: Define a non-blocking monitor sink**
 
 Create `monitor_pcm_link.h`:
 
@@ -909,7 +909,7 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
 void monitor_pcm_link_get_stats(monitor_pcm_link_stats_t *out);
 ```
 
-- [ ] **Step 2: Write host tests for non-blocking behavior**
+- [x] **Step 2: Write host tests for non-blocking behavior**
 
 Create `tests/monitor_pcm_link/test_monitor_pcm_link.c`:
 
@@ -942,7 +942,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement disabled-safe first slice**
+- [x] **Step 3: Implement disabled-safe first slice**
 
 Create `monitor_pcm_link.c`:
 
@@ -986,7 +986,7 @@ void monitor_pcm_link_get_stats(monitor_pcm_link_stats_t *out)
 }
 ```
 
-- [ ] **Step 4: Run P4 host tests**
+- [x] **Step 4: Run P4 host tests**
 
 Run:
 

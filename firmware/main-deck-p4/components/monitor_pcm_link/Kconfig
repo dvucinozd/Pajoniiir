@@ -1,0 +1,11 @@
+menu "Monitor PCM link"
+
+config MONITOR_PCM_LINK_ENABLED
+    bool "Enable monitor PCM link transport"
+    default n
+    help
+        Enables the future P4-to-S3 monitor PCM transport. The first
+        implementation slice is disabled-safe and only exposes a non-blocking
+        facade plus counters.
+
+endmenu

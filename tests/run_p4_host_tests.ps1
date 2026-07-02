@@ -387,6 +387,19 @@ $tests = @(
         )
     },
     @{
+        Name = "monitor_pcm_link"
+        Dir = "tests/monitor_pcm_link"
+        Target = "test_monitor_pcm_link.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
+            "-o", "test_monitor_pcm_link.exe",
+            "test_monitor_pcm_link.c",
+            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c"
+        )
+    },
+    @{
         Name = "beat_jump"
         Dir = "tests/beat_jump"
         Target = "test_beat_jump.exe"
