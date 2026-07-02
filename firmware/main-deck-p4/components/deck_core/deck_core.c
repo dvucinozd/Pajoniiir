@@ -24,6 +24,8 @@ static const char *TAG = "deck";
 #define JOG_SEARCH_STEP_MS 1000
 #define DEFAULT_TEMPO_RANGE_PERCENT 10u
 #define BEAT_SYNC_MAX_PERCENT 20u
+#define BROWSE_SHIFT_LIBRARY_MULTIPLIER 10
+#define BROWSE_SHIFT_OVERVIEW_MULTIPLIER 4
 #define DECK_TASK_STACK_BYTES 8192u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
@@ -1440,17 +1442,20 @@ static void on_jog_search(uint8_t deck, int16_t delta)
     }
 }
 
-static void on_browse(int16_t delta)
+static void on_browse_event(uint8_t id, int16_t delta)
 {
     if (delta == 0) return;
+    bool shifted = id == CTRL_ID_BROWSE_SHIFT_DELTA;
     bool library_active = !ui_is_library_active || ui_is_library_active();
     bool overview_active = ui_is_overview_active && ui_is_overview_active();
     if (library_active && ui_library_select_delta) {
-        esp_err_t rc = ui_library_select_delta(delta);
-        ESP_LOGD(TAG, "browse %+d → %s", delta, esp_err_to_name(rc));
+        int scaled = shifted ? delta * BROWSE_SHIFT_LIBRARY_MULTIPLIER : delta;
+        esp_err_t rc = ui_library_select_delta(scaled);
+        ESP_LOGD(TAG, "browse %+d -> %s", scaled, esp_err_to_name(rc));
     } else if (!library_active && overview_active && ui_overview_zoom_delta) {
-        esp_err_t rc = ui_overview_zoom_delta(delta);
-        ESP_LOGD(TAG, "overview zoom %+d → %s", delta, esp_err_to_name(rc));
+        int scaled = shifted ? delta * BROWSE_SHIFT_OVERVIEW_MULTIPLIER : delta;
+        esp_err_t rc = ui_overview_zoom_delta(scaled);
+        ESP_LOGD(TAG, "overview zoom %+d -> %s", scaled, esp_err_to_name(rc));
     } else {
         ESP_LOGW(TAG, "browse unsupported: UI API unavailable");
     }
@@ -1466,6 +1471,19 @@ static void on_browse_press(void)
         ESP_LOGD(TAG, "browse press -> library fallback: %s", esp_err_to_name(rc));
     } else {
         ESP_LOGW(TAG, "browse press unsupported: UI API unavailable");
+    }
+}
+
+static void on_browse_shift_press(void)
+{
+    if (ui_show_library) {
+        esp_err_t rc = ui_show_library();
+        ESP_LOGD(TAG, "browse shift press -> library: %s", esp_err_to_name(rc));
+    } else if (ui_toggle_library_view) {
+        esp_err_t rc = ui_toggle_library_view();
+        ESP_LOGD(TAG, "browse shift press fallback -> toggle: %s", esp_err_to_name(rc));
+    } else {
+        ESP_LOGW(TAG, "browse shift press unsupported: UI API unavailable");
     }
 }
 
@@ -1639,7 +1657,8 @@ static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
     return ev->id == BTN_LOAD ||
            ev->id == BTN_TRACK_PREV ||
            ev->id == BTN_TRACK_NEXT ||
-           ev->id == CTRL_ID_BROWSE_PRESS;
+           ev->id == CTRL_ID_BROWSE_PRESS ||
+           ev->id == CTRL_ID_BROWSE_SHIFT_PRESS;
 }
 
 // ─── Main task ────────────────────────────────────────────────────────────────
@@ -1652,9 +1671,11 @@ static void deck_task(void *arg)
 
         if (event_uses_ui_without_deck_state(&ev)) {
             if (ev.type == CTRL_EV_BROWSE) {
-                on_browse(ev.value);
+                on_browse_event(ev.id, ev.value);
             } else if (ev.id == CTRL_ID_BROWSE_PRESS) {
                 on_browse_press();
+            } else if (ev.id == CTRL_ID_BROWSE_SHIFT_PRESS) {
+                if (ev.value != 0) on_browse_shift_press();
             } else {
                 on_button(DECK_CORE_COMPAT_DECK, button_for_event(&ev), ev.value != 0);
             }
@@ -1697,7 +1718,7 @@ static void deck_task(void *arg)
             }
             break;
         case CTRL_EV_BROWSE:
-            on_browse(ev.value);
+            on_browse_event(ev.id, ev.value);
             break;
         case CTRL_EV_PITCH:
             on_pitch(deck, ev.value);
@@ -1865,9 +1886,11 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 
     if (event_uses_ui_without_deck_state(ev)) {
         if (ev->type == CTRL_EV_BROWSE) {
-            on_browse(ev->value);
+            on_browse_event(ev->id, ev->value);
         } else if (ev->id == CTRL_ID_BROWSE_PRESS) {
             on_browse_press();
+        } else if (ev->id == CTRL_ID_BROWSE_SHIFT_PRESS) {
+            if (ev->value != 0) on_browse_shift_press();
         } else {
             on_button(DECK_CORE_COMPAT_DECK, button_for_event(ev), ev->value != 0);
         }
@@ -1910,7 +1933,7 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         }
         break;
     case CTRL_EV_BROWSE:
-        on_browse(ev->value);
+        on_browse_event(ev->id, ev->value);
         break;
     case CTRL_EV_PITCH:
         on_pitch(deck, ev->value);

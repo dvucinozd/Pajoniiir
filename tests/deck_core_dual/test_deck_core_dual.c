@@ -8,6 +8,7 @@
 
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
+static int s_show_library_calls;
 static int s_toggle_library_view_calls;
 static bool s_ui_library_active;
 static bool s_ui_overview_active;
@@ -87,6 +88,13 @@ esp_err_t ui_overview_zoom_delta(int delta)
     return ESP_OK;
 }
 
+esp_err_t ui_show_library(void)
+{
+    s_show_library_calls++;
+    s_ui_library_active = true;
+    return ESP_OK;
+}
+
 uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
@@ -134,6 +142,15 @@ static ctrl_event_t browse_delta(int16_t delta)
     return (ctrl_event_t) {
         .type = CTRL_EV_BROWSE,
         .id = CTRL_ID_BROWSE_DELTA,
+        .value = delta,
+    };
+}
+
+static ctrl_event_t browse_shift_delta(int16_t delta)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_BROWSE,
+        .id = CTRL_ID_BROWSE_SHIFT_DELTA,
         .value = delta,
     };
 }
@@ -478,6 +495,37 @@ static void test_browse_delta_ignores_non_library_non_overview_tabs(void)
     assert(s_overview_zoom_delta == 0);
 }
 
+static void test_shift_browse_delta_accelerates_library_navigation(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = true;
+
+    ctrl_event_t browse = browse_shift_delta(2);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 20);
+    assert(s_overview_zoom_delta == 0);
+}
+
+static void test_shift_browse_delta_accelerates_overview_zoom(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = false;
+    s_ui_overview_active = true;
+
+    ctrl_event_t browse = browse_shift_delta(-2);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 0);
+    assert(s_overview_zoom_delta == -8);
+}
+
 static void test_cue_shift_jumps_requested_deck_to_track_start(void)
 {
     deck_core_test_reset();
@@ -519,6 +567,25 @@ static void test_browser_press_toggles_library_view_without_loading_deck(void)
     assert(s_toggle_library_view_calls == 1);
     assert(s_load_calls[CTRL_DECK_1] == 0);
     assert(s_load_calls[CTRL_DECK_2] == 0);
+}
+
+static void test_shift_browse_press_forces_library_view(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_show_library_calls = 0;
+    s_toggle_library_view_calls = 0;
+    s_ui_library_active = false;
+
+    ctrl_event_t press = browser_button(CTRL_ID_BROWSE_SHIFT_PRESS);
+    ctrl_event_t release = press;
+    release.value = 0;
+    deck_core_test_apply_event(&press);
+    deck_core_test_apply_event(&release);
+
+    assert(s_show_library_calls == 1);
+    assert(s_toggle_library_view_calls == 0);
+    assert(s_ui_library_active);
 }
 
 static void test_mixer_namespace_routes_volume_and_crossfader(void)
@@ -1743,7 +1810,10 @@ int main(void)
     test_browser_namespace_routes_browse_delta();
     test_browse_delta_zooms_overview_when_library_is_not_active();
     test_browse_delta_ignores_non_library_non_overview_tabs();
+    test_shift_browse_delta_accelerates_library_navigation();
+    test_shift_browse_delta_accelerates_overview_zoom();
     test_browser_press_toggles_library_view_without_loading_deck();
+    test_shift_browse_press_forces_library_view();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_trim_to_pregain();
     test_mixer_namespace_routes_master_volume();
