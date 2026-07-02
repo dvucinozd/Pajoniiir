@@ -181,6 +181,9 @@ typedef struct {
     uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
     bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
+    uint32_t usb_headphone_submitted_blocks;
+    uint32_t usb_headphone_dropped_blocks;
+    uint32_t usb_headphone_submitted_frames;
     uint32_t heap_free;
     uint32_t internal_free;
     uint32_t psram_free;

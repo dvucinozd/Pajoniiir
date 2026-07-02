@@ -1020,7 +1020,7 @@ git commit -m "test: add nonblocking monitor pcm link facade"
 - Modify: `firmware/main-deck-p4/components/web_server/web_server.c`
 - Modify: `tests/audio_engine/test_audio_engine.c`
 
-- [ ] **Step 1: Add monitor link dependency**
+- [x] **Step 1: Add monitor link dependency**
 
 In `audio_engine/CMakeLists.txt`, add `monitor_pcm_link` to `REQUIRES`:
 
@@ -1028,7 +1028,7 @@ In `audio_engine/CMakeLists.txt`, add `monitor_pcm_link` to `REQUIRES`:
 REQUIRES log bsp_jc4880 esp_codec_dev esp_timer media_io_gate monitor_pcm_link
 ```
 
-- [ ] **Step 2: Initialize monitor link in `audio_engine_init()`**
+- [x] **Step 2: Initialize monitor link in `audio_engine_init()`**
 
 Add include:
 
@@ -1042,7 +1042,7 @@ Inside `audio_engine_init()`, after `s_output_sample_rate = 0;` and before loggi
 ESP_RETURN_ON_ERROR(monitor_pcm_link_init(), TAG, "monitor_pcm_link_init failed");
 ```
 
-- [ ] **Step 3: Set link format when output codec opens**
+- [x] **Step 3: Set link format when output codec opens**
 
 In `audio_output_service_open_codec(uint32_t sample_rate)`, after `s_output_sample_rate = sample_rate;`:
 
@@ -1050,7 +1050,7 @@ In `audio_output_service_open_codec(uint32_t sample_rate)`, after `s_output_samp
 (void)monitor_pcm_link_set_format(sample_rate, 2u, 16u);
 ```
 
-- [ ] **Step 4: Publish `hp_out` after it is filled**
+- [x] **Step 4: Publish `hp_out` after it is filled**
 
 In `ae_output_task()`, after:
 
@@ -1067,7 +1067,7 @@ and before ES8311 write:
 
 This call must stay before or after `esp_codec_dev_write()` only if it is non-blocking. If future transport implementation can block, it must move to a lower-priority publisher task fed by a lock-free/ring queue.
 
-- [ ] **Step 5: Expose diagnostics**
+- [x] **Step 5: Expose diagnostics**
 
 Extend `audio_engine_diagnostics_snapshot_t`:
 
@@ -1093,7 +1093,7 @@ In `web_server.c`, expose under `diagnostics`:
 "usb_headphones":{"submitted_blocks":%u,"dropped_blocks":%u,"submitted_frames":%u}
 ```
 
-- [ ] **Step 6: Run verification**
+- [x] **Step 6: Run verification**
 
 Run:
 

@@ -394,6 +394,9 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.deck_load_progress[0] == 0, "diagnostics deck 0 load progress starts empty");
     EXPECT(diag.deck_load_progress[1] == 0, "diagnostics deck 1 load progress starts empty");
     EXPECT(diag.limiter.limited_samples == 0, "diagnostics limiter starts clear");
+    EXPECT(diag.usb_headphone_submitted_blocks == 0, "diagnostics USB headphone submitted blocks start clear");
+    EXPECT(diag.usb_headphone_dropped_blocks == 0, "diagnostics USB headphone dropped blocks start clear");
+    EXPECT(diag.usb_headphone_submitted_frames == 0, "diagnostics USB headphone submitted frames start clear");
 
     audio_mixer_limiter_stats_t limiter_stats = {
         .limited_samples = 9,
