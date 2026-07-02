@@ -101,6 +101,22 @@ static void test_transport_load_and_pfl_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PFL, 1);
 }
 
+static void test_fader_start_generated_messages_are_ignored(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(!flx4_map_message(&state, MSG(0x90, 0x66, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x66, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x52, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x52, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x66, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x66, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x52, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x52, 0x00), &ev));
+}
+
 static void test_smart_control_buttons(void)
 {
     flx4_map_state_t state;
@@ -521,6 +537,7 @@ static void test_unsupported_messages_are_ignored(void)
 int main(void)
 {
     test_transport_load_and_pfl_buttons();
+    test_fader_start_generated_messages_are_ignored();
     test_smart_control_buttons();
     test_shifted_smart_control_buttons();
     test_beat_fx_controls();
