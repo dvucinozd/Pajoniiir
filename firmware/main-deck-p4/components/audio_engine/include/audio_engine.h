@@ -156,6 +156,7 @@ typedef struct {
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;
+    uint16_t headphone_level;
     bool master_cue_enabled;
     bool pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
     bool smart_cfx_enabled;
@@ -219,6 +220,8 @@ esp_err_t audio_engine_set_master_volume(uint16_t raw_volume);
 uint16_t audio_engine_get_master_volume(void);
 esp_err_t audio_engine_set_headphone_mix(uint16_t raw_mix);
 uint16_t audio_engine_get_headphone_mix(void);
+esp_err_t audio_engine_set_headphone_level(uint16_t raw_level);
+uint16_t audio_engine_get_headphone_level(void);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);

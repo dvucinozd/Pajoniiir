@@ -24,6 +24,9 @@ static const char *TAG = "deck";
 #define JOG_SEARCH_STEP_MS 1000
 #define DEFAULT_TEMPO_RANGE_PERCENT 10u
 #define BEAT_SYNC_MAX_PERCENT 20u
+#define BROWSE_SHIFT_LIBRARY_MULTIPLIER 10
+#define BROWSE_SHIFT_OVERVIEW_MULTIPLIER 4
+#define CENSOR_REPEAT_BACK_MS 1000u
 #define DECK_TASK_STACK_BYTES 8192u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
@@ -52,6 +55,7 @@ static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
+static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
@@ -94,11 +98,22 @@ typedef struct {
 
 static deck_beat_loop_led_state_t s_beat_loop_led[DECK_CORE_DECK_COUNT];
 
+typedef struct {
+    bool active;
+    bool was_playing;
+    uint32_t origin_ms;
+    TickType_t press_tick;
+} deck_censor_shadow_t;
+
+static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
+
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
+static uint8_t beat_sync_reference_deck(uint8_t deck);
+static void set_sync_master(uint8_t deck, deck_state_t *state);
 static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck);
 static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
 
@@ -222,10 +237,12 @@ static uint8_t normalize_deck(uint8_t deck)
 
 static uint8_t deck_index_for_event(const ctrl_event_t *ev)
 {
-    if (ev && ev->id == CTRL_ID_LOAD_DECK1) {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK1)) {
         return CTRL_DECK_1;
     }
-    if (ev && ev->id == CTRL_ID_LOAD_DECK2) {
+    if (ev && (ev->id == CTRL_ID_LOAD_DECK2 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK2)) {
         return CTRL_DECK_2;
     }
     if (ev && control_link_id_is_deck(ev->id)) {
@@ -399,6 +416,8 @@ static bool should_log_deferred_button(uint8_t id, int16_t value)
         id == CTRL_ID_BEAT_FX_SELECT_PREV ||
         id == CTRL_ID_BEAT_FX_BEAT_DEC ||
         id == CTRL_ID_BEAT_FX_BEAT_INC ||
+        id == CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT ||
+        id == CTRL_ID_BEAT_FX_BEAT_INC_SHIFT ||
         id == CTRL_ID_BEAT_FX_TARGET ||
         id == CTRL_ID_BEAT_FX_ON ||
         id == CTRL_ID_BEAT_FX_CLEAR) {
@@ -642,6 +661,127 @@ static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
     }
 }
 
+static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
+{
+    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
+    if (!meta || !meta->beats || meta->beat_count == 0) {
+        return position_ms;
+    }
+
+    uint32_t best_ms = meta->beats[0].time_ms;
+    uint32_t best_delta = best_ms > position_ms ? best_ms - position_ms : position_ms - best_ms;
+    for (uint16_t i = 1; i < meta->beat_count; i++) {
+        uint32_t beat_ms = meta->beats[i].time_ms;
+        uint32_t delta = beat_ms > position_ms ? beat_ms - position_ms : position_ms - beat_ms;
+        if (delta < best_delta) {
+            best_delta = delta;
+            best_ms = beat_ms;
+        }
+    }
+    return best_ms;
+}
+
+static uint32_t quantized_deck_position_ms(uint8_t deck, const deck_state_t *state)
+{
+    uint32_t position_ms = current_deck_position_ms(deck, state);
+    if (!state || !state->quantize_enabled) {
+        return position_ms;
+    }
+    return nearest_beat_ms(deck, position_ms);
+}
+
+static void stop_and_forget_loop(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) {
+        return;
+    }
+    (void)audio_engine_deck_clear_loop(deck);
+    memset(&s_loop_shadow[deck], 0, sizeof(s_loop_shadow[deck]));
+    memset(&s_shifted_loop_roll[deck], 0, sizeof(s_shifted_loop_roll[deck]));
+    memset(&s_beat_loop_led[deck], 0, sizeof(s_beat_loop_led[deck]));
+    ESP_LOGI(TAG, "deck %u loop stop", (unsigned)deck + 1);
+    publish_flx4_led_snapshot(false);
+}
+
+static void adjust_loop_boundary(uint8_t deck, bool adjust_in, deck_state_t *state)
+{
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active) {
+        return;
+    }
+
+    uint32_t position_ms = quantized_deck_position_ms(deck, state);
+    if (adjust_in) {
+        if (position_ms < end_ms) {
+            set_deck_loop(deck, position_ms, end_ms);
+        }
+    } else if (position_ms > start_ms) {
+        set_deck_loop(deck, start_ms, position_ms);
+    }
+}
+
+/*
+ * Censor approximation. Real Pioneer censor plays the track in reverse while
+ * held and, on release, resumes exactly where the untouched timeline would be
+ * (so beat alignment is preserved). We approximate that without a reverse
+ * decoder: on press we seek back CENSOR_REPEAT_BACK_MS and keep playing
+ * FORWARD, and on release we snap to the "real" position (origin + time held)
+ * so sync is not lost. Consequences of the approximation: playback is forward,
+ * not reversed; the CENSOR_REPEAT_BACK_MS window plays once and does not loop;
+ * and if held longer than that window the audible content diverges from a true
+ * censor even though the release position stays correct.
+ */
+static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    deck_censor_shadow_t *shadow = &s_censor_shadow[deck];
+    if (pressed) {
+        if (shadow->active) {
+            return;
+        }
+        uint32_t origin = current_deck_position_ms(deck, state);
+        uint32_t repeat = origin > CENSOR_REPEAT_BACK_MS ? origin - CENSOR_REPEAT_BACK_MS : 0u;
+        shadow->active = true;
+        shadow->was_playing = audio_engine_deck_is_playing(deck);
+        shadow->origin_ms = origin;
+        shadow->press_tick = xTaskGetTickCount();
+        state->censor_active = true;
+        if (audio_engine_deck_seek(deck, repeat) == ESP_OK) {
+            state->position_ms = repeat;
+        }
+        ESP_LOGI(TAG, "deck %u censor press -> %lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned long)repeat);
+        publish_flx4_led_snapshot(false);
+        return;
+    }
+
+    if (!shadow->active) {
+        return;
+    }
+
+    uint32_t target = shadow->origin_ms;
+    if (shadow->was_playing) {
+        TickType_t elapsed_ticks = xTaskGetTickCount() - shadow->press_tick;
+        uint32_t elapsed_ms = (uint32_t)(elapsed_ticks * portTICK_PERIOD_MS);
+        target += elapsed_ms;
+    }
+    if (audio_engine_deck_seek(deck, target) == ESP_OK) {
+        state->position_ms = target;
+    }
+    state->censor_active = false;
+    memset(shadow, 0, sizeof(*shadow));
+    ESP_LOGI(TAG, "deck %u censor release -> %lu ms",
+             (unsigned)deck + 1,
+             (unsigned long)target);
+    publish_flx4_led_snapshot(false);
+}
+
 static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
@@ -727,7 +867,7 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
     }
 
     deck_loop_shadow_t *shadow = &s_loop_shadow[deck];
-    uint32_t position_ms = current_deck_position_ms(deck, state);
+    uint32_t position_ms = quantized_deck_position_ms(deck, state);
     bool active = false;
     uint32_t start_ms = 0;
     uint32_t end_ms = 0;
@@ -810,7 +950,9 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
     if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
-               ev->id == CTRL_ID_LOAD_DECK2)) {
+               ev->id == CTRL_ID_LOAD_DECK2 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK1 ||
+               ev->id == CTRL_ID_SHIFT_LOAD_DECK2)) {
         return BTN_LOAD;
     }
     if (ev && control_link_id_is_deck(ev->id)) {
@@ -858,6 +1000,7 @@ static void publish_flx4_led_snapshot(bool force)
         input.pfl[deck] = audio_engine_get_pfl_enabled(deck) ? 1 : 0;
         input.sync[deck] = state.sync_enabled ? 1 : 0;
         input.pad_mode[deck] = state.pad_mode;
+        input.censor_active[deck] = state.censor_active ? 1u : 0u;
         input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1 : 0;
         input.beat_loop_pad_active[deck] = s_beat_loop_led[deck].active ? 1u : 0u;
         input.beat_loop_active_pad[deck] = s_beat_loop_led[deck].pad;
@@ -940,6 +1083,9 @@ static bool on_system_button(const ctrl_event_t *ev)
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
+    case CTRL_ID_SMART_CFX_SHIFT:
+    case CTRL_ID_SMART_FADER_SHIFT:
+        return true;
     case CTRL_ID_MASTER_CUE:
         if (ev->value == 0) {
             return true;
@@ -978,6 +1124,36 @@ static bool on_system_button(const ctrl_event_t *ev)
             ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
         }
         return true;
+    case CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT:
+        if (ev->value != 0) {
+            deck_core_beat_fx_beat_t next = s_beat_fx.beat;
+            if (next > DECK_CORE_BEAT_FX_BEAT_1_2) {
+                next = (deck_core_beat_fx_beat_t)(next - 2);
+            } else {
+                next = DECK_CORE_BEAT_FX_BEAT_1_4;
+            }
+            if (next != s_beat_fx.beat) {
+                s_beat_fx.beat = next;
+                sync_beat_fx_audio_state();
+                ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+            }
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_BEAT_INC_SHIFT:
+        if (ev->value != 0) {
+            deck_core_beat_fx_beat_t next = s_beat_fx.beat;
+            if (next < DECK_CORE_BEAT_FX_BEAT_2) {
+                next = (deck_core_beat_fx_beat_t)(next + 2);
+            } else {
+                next = DECK_CORE_BEAT_FX_BEAT_4;
+            }
+            if (next != s_beat_fx.beat) {
+                s_beat_fx.beat = next;
+                sync_beat_fx_audio_state();
+                ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+            }
+        }
+        return true;
     case CTRL_ID_BEAT_FX_TARGET:
         if (ev->value >= CTRL_BEAT_FX_TARGET_CH1 && ev->value <= CTRL_BEAT_FX_TARGET_BOTH) {
             s_beat_fx.target = (ctrl_beat_fx_target_t)ev->value;
@@ -1010,9 +1186,19 @@ static bool on_system_button(const ctrl_event_t *ev)
 
 static bool on_system_value(const ctrl_event_t *ev)
 {
-    if (!ev || ev->type != CTRL_EV_PITCH || ev->id != CTRL_ID_BEAT_FX_DEPTH) {
+    if (!ev || ev->type != CTRL_EV_PITCH) {
         return false;
     }
+
+    if (ev->id == CTRL_ID_HEADPHONE_LEVEL) {
+        audio_engine_set_headphone_level(ev->value < 0 ? 0u : (uint16_t)ev->value);
+        return true;
+    }
+
+    if (ev->id != CTRL_ID_BEAT_FX_DEPTH) {
+        return false;
+    }
+
     int16_t depth = ev->value;
     if (depth < 0) {
         depth = 0;
@@ -1246,6 +1432,41 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         }
         return true;
 
+    case CTRL_DECK_CTL_EXT_ACTION:
+    {
+        uint8_t action = CTRL_DECK_EXT_ACTION(ev->value);
+        bool ext_pressed = CTRL_DECK_EXT_PRESSED(ev->value);
+        if (action == CTRL_DECK_EXT_ACTION_CENSOR) {
+            handle_censor(deck, ext_pressed, state);
+            return true;
+        }
+        if (!ext_pressed) {
+            return true;
+        }
+        switch (action) {
+        case CTRL_DECK_EXT_ACTION_SYNC_MASTER:
+            set_sync_master(deck, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_RELOOP_STOP:
+            stop_and_forget_loop(deck);
+            return true;
+        case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN:
+            adjust_loop_boundary(deck, true, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT:
+            adjust_loop_boundary(deck, false, state);
+            return true;
+        case CTRL_DECK_EXT_ACTION_QUANTIZE:
+            state->quantize_enabled = !state->quantize_enabled;
+            ESP_LOGI(TAG, "deck %u quantize -> %s",
+                     (unsigned)deck + 1,
+                     state->quantize_enabled ? "ON" : "OFF");
+            return true;
+        default:
+            return true;
+        }
+    }
+
     case CTRL_DECK_CTL_BEAT_JUMP_BACK:
     case CTRL_DECK_CTL_BEAT_JUMP_FORWARD:
         if (pressed) {
@@ -1440,17 +1661,20 @@ static void on_jog_search(uint8_t deck, int16_t delta)
     }
 }
 
-static void on_browse(int16_t delta)
+static void on_browse_event(uint8_t id, int16_t delta)
 {
     if (delta == 0) return;
+    bool shifted = id == CTRL_ID_BROWSE_SHIFT_DELTA;
     bool library_active = !ui_is_library_active || ui_is_library_active();
     bool overview_active = ui_is_overview_active && ui_is_overview_active();
     if (library_active && ui_library_select_delta) {
-        esp_err_t rc = ui_library_select_delta(delta);
-        ESP_LOGD(TAG, "browse %+d → %s", delta, esp_err_to_name(rc));
+        int scaled = shifted ? delta * BROWSE_SHIFT_LIBRARY_MULTIPLIER : delta;
+        esp_err_t rc = ui_library_select_delta(scaled);
+        ESP_LOGD(TAG, "browse %+d -> %s", scaled, esp_err_to_name(rc));
     } else if (!library_active && overview_active && ui_overview_zoom_delta) {
-        esp_err_t rc = ui_overview_zoom_delta(delta);
-        ESP_LOGD(TAG, "overview zoom %+d → %s", delta, esp_err_to_name(rc));
+        int scaled = shifted ? delta * BROWSE_SHIFT_OVERVIEW_MULTIPLIER : delta;
+        esp_err_t rc = ui_overview_zoom_delta(scaled);
+        ESP_LOGD(TAG, "overview zoom %+d -> %s", scaled, esp_err_to_name(rc));
     } else {
         ESP_LOGW(TAG, "browse unsupported: UI API unavailable");
     }
@@ -1466,6 +1690,19 @@ static void on_browse_press(void)
         ESP_LOGD(TAG, "browse press -> library fallback: %s", esp_err_to_name(rc));
     } else {
         ESP_LOGW(TAG, "browse press unsupported: UI API unavailable");
+    }
+}
+
+static void on_browse_shift_press(void)
+{
+    if (ui_show_library) {
+        esp_err_t rc = ui_show_library();
+        ESP_LOGD(TAG, "browse shift press -> library: %s", esp_err_to_name(rc));
+    } else if (ui_toggle_library_view) {
+        esp_err_t rc = ui_toggle_library_view();
+        ESP_LOGD(TAG, "browse shift press fallback -> toggle: %s", esp_err_to_name(rc));
+    } else {
+        ESP_LOGW(TAG, "browse shift press unsupported: UI API unavailable");
     }
 }
 
@@ -1507,7 +1744,7 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
         return false;
     }
 
-    uint8_t reference_deck = (deck == CTRL_DECK_1) ? CTRL_DECK_2 : CTRL_DECK_1;
+    uint8_t reference_deck = beat_sync_reference_deck(deck);
     int16_t target_centipercent = centipercent_for_bpm_match(deck, reference_deck);
     bool changed = state->pitch_centipercent != target_centipercent || !state->sync_enabled;
 
@@ -1558,6 +1795,29 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
              phase_aligned ? "aligned -> " : "unchanged @ ",
              (unsigned long)aligned_ms);
     return changed;
+}
+
+static uint8_t beat_sync_reference_deck(uint8_t deck)
+{
+    if (s_sync_master_deck < DECK_CORE_DECK_COUNT && s_sync_master_deck != deck) {
+        return s_sync_master_deck;
+    }
+    return deck == CTRL_DECK_1 ? CTRL_DECK_2 : CTRL_DECK_1;
+}
+
+static void set_sync_master(uint8_t deck, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    s_sync_master_deck = deck;
+    for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
+        s_decks[i].sync_master = i == deck;
+    }
+    state->sync_enabled = false;
+    ESP_LOGI(TAG, "deck %u sync master", (unsigned)deck + 1);
+    publish_flx4_led_snapshot(false);
 }
 
 static void on_mixer_control(uint8_t id, int16_t raw)
@@ -1639,7 +1899,8 @@ static bool event_uses_ui_without_deck_state(const ctrl_event_t *ev)
     return ev->id == BTN_LOAD ||
            ev->id == BTN_TRACK_PREV ||
            ev->id == BTN_TRACK_NEXT ||
-           ev->id == CTRL_ID_BROWSE_PRESS;
+           ev->id == CTRL_ID_BROWSE_PRESS ||
+           ev->id == CTRL_ID_BROWSE_SHIFT_PRESS;
 }
 
 // ─── Main task ────────────────────────────────────────────────────────────────
@@ -1652,9 +1913,11 @@ static void deck_task(void *arg)
 
         if (event_uses_ui_without_deck_state(&ev)) {
             if (ev.type == CTRL_EV_BROWSE) {
-                on_browse(ev.value);
+                on_browse_event(ev.id, ev.value);
             } else if (ev.id == CTRL_ID_BROWSE_PRESS) {
                 on_browse_press();
+            } else if (ev.id == CTRL_ID_BROWSE_SHIFT_PRESS) {
+                if (ev.value != 0) on_browse_shift_press();
             } else {
                 on_button(DECK_CORE_COMPAT_DECK, button_for_event(&ev), ev.value != 0);
             }
@@ -1697,7 +1960,7 @@ static void deck_task(void *arg)
             }
             break;
         case CTRL_EV_BROWSE:
-            on_browse(ev.value);
+            on_browse_event(ev.id, ev.value);
             break;
         case CTRL_EV_PITCH:
             on_pitch(deck, ev.value);
@@ -1830,10 +2093,14 @@ void deck_core_reset_deck(uint8_t deck)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
+    if (s_sync_master_deck == idx) {
+        s_sync_master_deck = CTRL_DECK_NONE;
+    }
     memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
     memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
     memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
     memset(&s_beat_loop_led[idx], 0, sizeof(s_beat_loop_led[idx]));
+    memset(&s_censor_shadow[idx], 0, sizeof(s_censor_shadow[idx]));
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -1844,11 +2111,13 @@ void deck_core_test_reset(void)
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
+    s_sync_master_deck = CTRL_DECK_NONE;
     init_beat_fx_state();
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_beat_loop_led, 0, sizeof(s_beat_loop_led));
+    memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
 #if defined(DECK_CORE_PC_TEST)
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
@@ -1865,9 +2134,11 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
 
     if (event_uses_ui_without_deck_state(ev)) {
         if (ev->type == CTRL_EV_BROWSE) {
-            on_browse(ev->value);
+            on_browse_event(ev->id, ev->value);
         } else if (ev->id == CTRL_ID_BROWSE_PRESS) {
             on_browse_press();
+        } else if (ev->id == CTRL_ID_BROWSE_SHIFT_PRESS) {
+            if (ev->value != 0) on_browse_shift_press();
         } else {
             on_button(DECK_CORE_COMPAT_DECK, button_for_event(ev), ev->value != 0);
         }
@@ -1910,7 +2181,7 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         }
         break;
     case CTRL_EV_BROWSE:
-        on_browse(ev->value);
+        on_browse_event(ev->id, ev->value);
         break;
     case CTRL_EV_PITCH:
         on_pitch(deck, ev->value);

@@ -76,8 +76,20 @@ static void test_transport_load_and_pfl_buttons(void)
 
     assert(flx4_map_message(&state, MSG(0x96, 0x46, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK1, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x46, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK1, 0);
     assert(flx4_map_message(&state, MSG(0x96, 0x47, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK2, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x47, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_LOAD_DECK2, 0);
+    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK1, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK1, 0);
+    assert(flx4_map_message(&state, MSG(0x96, 0x7A, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK2, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x7A, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SHIFT_LOAD_DECK2, 0);
     assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_PRESS, 1);
     assert(flx4_map_message(&state, MSG(0x96, 0x41, 0x00), &ev));
@@ -87,6 +99,22 @@ static void test_transport_load_and_pfl_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PFL, 1);
     assert(flx4_map_message(&state, MSG(0x91, 0x54, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PFL, 1);
+}
+
+static void test_fader_start_generated_messages_are_ignored(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(!flx4_map_message(&state, MSG(0x90, 0x66, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x66, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x52, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x52, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x66, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x66, 0x00), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x52, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x91, 0x52, 0x00), &ev));
 }
 
 static void test_smart_control_buttons(void)
@@ -106,6 +134,23 @@ static void test_smart_control_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_FADER, 0);
 }
 
+static void test_shifted_smart_control_buttons(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x96, 0x08, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_CFX_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x08, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_CFX_SHIFT, 0);
+
+    assert(flx4_map_message(&state, MSG(0x96, 0x09, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_FADER_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x09, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_SMART_FADER_SHIFT, 0);
+}
+
 static void test_beat_fx_controls(void)
 {
     flx4_map_state_t state;
@@ -123,6 +168,15 @@ static void test_beat_fx_controls(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC, 1);
     assert(flx4_map_message(&state, MSG(0x94, 0x4B, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC, 1);
+
+    assert(flx4_map_message(&state, MSG(0x94, 0x66, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x66, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 0);
+    assert(flx4_map_message(&state, MSG(0x94, 0x6B, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x6B, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 0);
 
     assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
@@ -179,6 +233,40 @@ static void test_deck_transport_extension_buttons(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_TEMPO_RANGE, 1);
     assert(flx4_map_message(&state, MSG(0x91, 0x60, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_TEMPO_RANGE, 1);
+}
+
+static void test_shifted_extended_deck_actions(void)
+{
+    flx4_map_state_t state;
+    flx4_control_event_t ev;
+    flx4_map_init(&state);
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x0E, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x0E, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, false));
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x5C, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_SYNC_MASTER, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x5C, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_SYNC_MASTER, false));
+
+    assert(flx4_map_message(&state, MSG(0x90, 0x50, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RELOOP_STOP, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x4C, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true));
+    assert(flx4_map_message(&state, MSG(0x90, 0x4E, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true));
+    assert(flx4_map_message(&state, MSG(0x91, 0x68, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_EXT_ACTION,
+                 CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true));
 }
 
 static void test_loop_and_beat_jump_buttons(void)
@@ -275,6 +363,12 @@ static void test_jog_and_browse_relative_controls(void)
     assert(flx4_map_message(&state, MSG(0xB6, 0x40, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, -1);
     assert(!flx4_map_message(&state, MSG(0xB6, 0x40, 0x00), &ev));
+
+    assert(flx4_map_message(&state, MSG(0xB6, 0x64, 0x01), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, 1);
+    assert(flx4_map_message(&state, MSG(0xB6, 0x64, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, -1);
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x64, 0x00), &ev));
 }
 
 static void test_jog_search_and_master_cue_controls(void)
@@ -298,8 +392,15 @@ static void test_jog_search_and_master_cue_controls(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
     assert(flx4_map_message(&state, MSG(0x96, 0x63, 0x00), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
-    assert(flx4_map_message(&state, MSG(0x96, 0x68, 0x7F), &ev));
+    assert(flx4_map_message(&state, MSG(0x96, 0x78, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x78, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_MASTER_CUE, 0);
+
+    assert(flx4_map_message(&state, MSG(0x96, 0x42, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_SHIFT_PRESS, 1);
+    assert(flx4_map_message(&state, MSG(0x96, 0x42, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BROWSE_SHIFT_PRESS, 0);
 }
 
 static void test_14bit_controls_emit_after_both_halves(void)
@@ -339,6 +440,10 @@ static void test_14bit_controls_emit_after_both_halves(void)
     assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x13), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x23), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x13 << 7) | 0x23));
+
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0D, 0x14), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2D, 0x24), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_LEVEL, (int16_t)((0x14 << 7) | 0x24));
 }
 
 static void test_snapshot_emits_known_absolute_controls_only(void)
@@ -350,6 +455,8 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
     memset(&capture, 0, sizeof(capture));
 
     assert(!flx4_map_message(&state, MSG(0xB0, 0x04, 0x10), &ev));
+    assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0D, 0x52), &ev));
     assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
 
     assert(flx4_map_message(&state, MSG(0xB0, 0x24, 0x20), &ev));
@@ -365,6 +472,7 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
     assert(flx4_map_message(&state, MSG(0xB6, 0x28, 0x41), &ev));
     assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x50), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x51), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2D, 0x53), &ev));
     assert(!flx4_map_message(&state, MSG(0xB6, 0x17, 0x60), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x37, 0x61), &ev));
     assert(!flx4_map_message(&state, MSG(0xB0, 0x07, 0x62), &ev));
@@ -382,19 +490,19 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
 
     size_t emitted = flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture);
     assert(emitted == capture.count);
-    assert(emitted == 9);
+    assert(emitted == 10);
     expect_snapshot_event(&capture, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));
     expect_snapshot_event(&capture, CTRL_ID_CH2_VOLUME, (int16_t)((0x21 << 7) | 0x23));
     expect_snapshot_event(&capture, CTRL_ID_CROSSFADER, (int16_t)((0x30 << 7) | 0x31));
     expect_snapshot_event(&capture, CTRL_ID_MASTER_VOLUME, (int16_t)((0x40 << 7) | 0x41));
     expect_snapshot_event(&capture, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x50 << 7) | 0x51));
+    expect_snapshot_event(&capture, CTRL_ID_HEADPHONE_LEVEL, (int16_t)((0x52 << 7) | 0x53));
     expect_snapshot_event(&capture, CTRL_ID_CH1_FILTER, (int16_t)((0x60 << 7) | 0x61));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_HIGH, (int16_t)((0x62 << 7) | 0x63));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_MID, (int16_t)((0x64 << 7) | 0x65));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_LOW, (int16_t)((0x66 << 7) | 0x67));
     expect_no_snapshot_event(&capture, CTRL_ID_DECK1_TEMPO);
     expect_no_snapshot_event(&capture, CTRL_ID_DECK1_PFL);
-    expect_no_snapshot_event(&capture, CTRL_ID_SMART_CFX);
     expect_no_snapshot_event(&capture, CTRL_ID_BROWSE_DELTA);
     expect_no_snapshot_event(&capture, CTRL_ID_BEAT_FX_DEPTH);
 }
@@ -423,15 +531,18 @@ static void test_unsupported_messages_are_ignored(void)
 
     assert(!flx4_map_message(NULL, MSG(0x90, 0x0B, 0x7F), &ev));
     assert(!flx4_map_message(&state, NULL, &ev));
-    assert(!flx4_map_message(&state, MSG(0x90, 0x0E, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x6E, 0x7F), &ev));
 }
 
 int main(void)
 {
     test_transport_load_and_pfl_buttons();
+    test_fader_start_generated_messages_are_ignored();
     test_smart_control_buttons();
+    test_shifted_smart_control_buttons();
     test_beat_fx_controls();
     test_deck_transport_extension_buttons();
+    test_shifted_extended_deck_actions();
     test_loop_and_beat_jump_buttons();
     test_pad_modes_and_pad_actions();
     test_jog_and_browse_relative_controls();

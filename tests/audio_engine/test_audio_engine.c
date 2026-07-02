@@ -12,6 +12,7 @@
 
 /* AUDIO_ENGINE_PC_TEST is defined via -D in the Makefile */
 #include "audio_engine.h"
+#include "audio_output_mixer.h"
 #include "audio_pcm_ring.h"
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +28,22 @@ static int s_fail = 0;
         if (cond) { printf("  PASS: %s\n", msg); s_pass++; } \
         else       { printf("  FAIL: %s  (line %d)\n", msg, __LINE__); s_fail++; } \
     } while (0)
+
+typedef struct {
+    const audio_mixer_frame_t *frames;
+    uint32_t count;
+    uint32_t index;
+} mixer_source_t;
+
+static bool pop_mixer_source(void *ctx, audio_mixer_frame_t *out_frame)
+{
+    mixer_source_t *source = (mixer_source_t *)ctx;
+    if (!source || !out_frame || source->index >= source->count) {
+        return false;
+    }
+    *out_frame = source->frames[source->index++];
+    return true;
+}
 
 /* Check that a WAV file has a valid 44-byte RIFF/WAVE/fmt /data header */
 static int wav_is_valid(const char *path, uint32_t *out_sample_rate,
@@ -497,24 +514,73 @@ static void test_cue_mode_api(void)
 /* ── Test 5c: Headphone mix state API ───────────────────────────────────── */
 static void test_headphone_mix_api(void)
 {
-    printf("\n[Test 5c] Headphone Mix API\n");
+    printf("\n[Test 5c] Headphone monitor APIs\n");
 
     EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets headphone mix");
     EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_MAX,
            "headphone mix defaults to full master for legacy monitor behavior");
+    EXPECT(audio_engine_get_headphone_level() == AUDIO_MIXER_CONTROL_MAX,
+           "headphone level defaults to max output");
     EXPECT(audio_engine_set_headphone_mix(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
            "headphone mix accepts center raw value");
     EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_CENTER,
            "headphone mix stores center raw value");
+    EXPECT(audio_engine_set_headphone_level(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
+           "headphone level accepts center raw value");
+    EXPECT(audio_engine_get_headphone_level() == AUDIO_MIXER_CONTROL_CENTER,
+           "headphone level stores center raw value");
     EXPECT(audio_engine_set_headphone_mix(AUDIO_MIXER_CONTROL_MAX + 1000u) == ESP_OK,
            "headphone mix clamps raw values above max");
     EXPECT(audio_engine_get_headphone_mix() == AUDIO_MIXER_CONTROL_MAX,
            "headphone mix clamps to max");
+    EXPECT(audio_engine_set_headphone_level(AUDIO_MIXER_CONTROL_MAX + 1000u) == ESP_OK,
+           "headphone level clamps raw values above max");
+    EXPECT(audio_engine_get_headphone_level() == AUDIO_MIXER_CONTROL_MAX,
+           "headphone level clamps to max");
 
     audio_engine_mixer_snapshot_t snapshot;
     audio_engine_get_mixer_snapshot(&snapshot);
     EXPECT(snapshot.headphone_mix == AUDIO_MIXER_CONTROL_MAX,
            "snapshot captures headphone mix raw value");
+    EXPECT(snapshot.headphone_level == AUDIO_MIXER_CONTROL_MAX,
+           "snapshot captures headphone level raw value");
+}
+
+static void test_headphone_level_scales_headphone_not_master_output(void)
+{
+    printf("\n[Test 5d] Headphone Level output scalar\n");
+
+    audio_mixer_frame_t deck0_frames[] = {
+        { .left = 10000, .right = 12000 },
+        { .left = 10000, .right = 12000 },
+    };
+    mixer_source_t deck0_source = { .frames = deck0_frames, .count = 2, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_reset(&deck0_resampler);
+    audio_output_mixer_deck_t deck0 = {
+        .active = true,
+        .pitch_factor = 1.0f,
+        .gain = 1.0f,
+        .resampler = &deck0_resampler,
+        .pop_source = pop_mixer_source,
+        .source_ctx = &deck0_source,
+    };
+
+    (void)audio_output_mixer_next(&deck0, NULL, NULL, NULL, NULL);
+
+    audio_output_mix_result_t out =
+        audio_output_mixer_next_full_with_headphone_level(&deck0, NULL,
+                                                          false, false,
+                                                          AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                                                          AUDIO_MIXER_CONTROL_MAX,
+                                                          AUDIO_MIXER_CONTROL_CENTER,
+                                                          true,
+                                                          NULL, NULL, NULL);
+
+    EXPECT(out.master.left == 10000 && out.master.right == 12000,
+           "headphone level leaves master output unchanged");
+    EXPECT(out.headphone.left == 5000 && out.headphone.right == 6000,
+           "headphone level scales only headphone output");
 }
 
 static void test_master_cue_api_defaults_on_and_toggles(void)
@@ -745,6 +811,7 @@ int main(int argc, char *argv[])
     test_pfl_state_api();
     test_cue_mode_api();
     test_headphone_mix_api();
+    test_headphone_level_scales_headphone_not_master_output();
     test_master_cue_api_defaults_on_and_toggles();
     test_deck_api();
     test_deck_status_is_independent();

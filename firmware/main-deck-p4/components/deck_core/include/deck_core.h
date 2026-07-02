@@ -34,6 +34,9 @@ typedef struct {
     perf_mode_t   perf_mode;
     ctrl_pad_mode_t pad_mode;
     bool          sync_enabled;
+    bool          sync_master;
+    bool          quantize_enabled;
+    bool          censor_active;
     bool          master_tempo;
     bool          control_link_connected;
     uint32_t      last_heartbeat_age_ms;

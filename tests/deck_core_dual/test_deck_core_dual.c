@@ -8,6 +8,7 @@
 
 static int s_load_calls[DECK_CORE_DECK_COUNT];
 static int s_browse_delta;
+static int s_show_library_calls;
 static int s_toggle_library_view_calls;
 static bool s_ui_library_active;
 static bool s_ui_overview_active;
@@ -19,6 +20,7 @@ int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_master_volume;
 int audio_engine_stub_headphone_mix;
+int audio_engine_stub_headphone_level;
 int audio_engine_stub_master_cue_toggle_count;
 bool audio_engine_stub_master_cue_enabled;
 int audio_engine_stub_crossfader;
@@ -58,6 +60,8 @@ extern int control_link_stub_led_count;
 void control_link_stub_reset_leds(void);
 int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
+static anlz_metadata_t beat_jump_meta(void);
+
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
@@ -84,6 +88,13 @@ bool ui_is_overview_active(void)
 esp_err_t ui_overview_zoom_delta(int delta)
 {
     s_overview_zoom_delta += delta;
+    return ESP_OK;
+}
+
+esp_err_t ui_show_library(void)
+{
+    s_show_library_calls++;
+    s_ui_library_active = true;
     return ESP_OK;
 }
 
@@ -120,6 +131,15 @@ static ctrl_event_t deck_button(uint8_t id)
     };
 }
 
+static ctrl_event_t deck_ext_action(uint8_t deck, uint8_t action, bool pressed)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_1 ? CTRL_ID_DECK1_EXT_ACTION : CTRL_ID_DECK2_EXT_ACTION,
+        .value = CTRL_DECK_EXT_VALUE(action, pressed),
+    };
+}
+
 static ctrl_event_t browser_button(uint8_t id)
 {
     return (ctrl_event_t) {
@@ -134,6 +154,15 @@ static ctrl_event_t browse_delta(int16_t delta)
     return (ctrl_event_t) {
         .type = CTRL_EV_BROWSE,
         .id = CTRL_ID_BROWSE_DELTA,
+        .value = delta,
+    };
+}
+
+static ctrl_event_t browse_shift_delta(int16_t delta)
+{
+    return (ctrl_event_t) {
+        .type = CTRL_EV_BROWSE,
+        .id = CTRL_ID_BROWSE_SHIFT_DELTA,
         .value = delta,
     };
 }
@@ -224,6 +253,7 @@ static void reset_audio_engine_stub(void)
     }
     audio_engine_stub_master_volume = -1;
     audio_engine_stub_headphone_mix = -1;
+    audio_engine_stub_headphone_level = -1;
     audio_engine_stub_master_cue_toggle_count = 0;
     audio_engine_stub_master_cue_enabled = true;
     audio_engine_stub_beat_fx_filter_target = -1;
@@ -431,6 +461,29 @@ static void test_browser_namespace_routes_load_to_requested_deck(void)
     assert(s_load_calls[CTRL_DECK_2] == 2);
 }
 
+static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_load_calls[CTRL_DECK_1] = 0;
+    s_load_calls[CTRL_DECK_2] = 0;
+
+    ctrl_event_t load_deck1 = browser_button(CTRL_ID_SHIFT_LOAD_DECK1);
+    ctrl_event_t release_deck1 = load_deck1;
+    ctrl_event_t load_deck2 = browser_button(CTRL_ID_SHIFT_LOAD_DECK2);
+    ctrl_event_t release_deck2 = load_deck2;
+    release_deck1.value = 0;
+    release_deck2.value = 0;
+
+    deck_core_test_apply_event(&load_deck1);
+    deck_core_test_apply_event(&release_deck1);
+    deck_core_test_apply_event(&load_deck2);
+    deck_core_test_apply_event(&release_deck2);
+
+    assert(s_load_calls[CTRL_DECK_1] == 1);
+    assert(s_load_calls[CTRL_DECK_2] == 1);
+}
+
 static void test_browser_namespace_routes_browse_delta(void)
 {
     deck_core_test_reset();
@@ -478,6 +531,37 @@ static void test_browse_delta_ignores_non_library_non_overview_tabs(void)
     assert(s_overview_zoom_delta == 0);
 }
 
+static void test_shift_browse_delta_accelerates_library_navigation(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = true;
+
+    ctrl_event_t browse = browse_shift_delta(2);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 20);
+    assert(s_overview_zoom_delta == 0);
+}
+
+static void test_shift_browse_delta_accelerates_overview_zoom(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_browse_delta = 0;
+    s_overview_zoom_delta = 0;
+    s_ui_library_active = false;
+    s_ui_overview_active = true;
+
+    ctrl_event_t browse = browse_shift_delta(-2);
+    deck_core_test_apply_event(&browse);
+
+    assert(s_browse_delta == 0);
+    assert(s_overview_zoom_delta == -8);
+}
+
 static void test_cue_shift_jumps_requested_deck_to_track_start(void)
 {
     deck_core_test_reset();
@@ -519,6 +603,25 @@ static void test_browser_press_toggles_library_view_without_loading_deck(void)
     assert(s_toggle_library_view_calls == 1);
     assert(s_load_calls[CTRL_DECK_1] == 0);
     assert(s_load_calls[CTRL_DECK_2] == 0);
+}
+
+static void test_shift_browse_press_forces_library_view(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_show_library_calls = 0;
+    s_toggle_library_view_calls = 0;
+    s_ui_library_active = false;
+
+    ctrl_event_t press = browser_button(CTRL_ID_BROWSE_SHIFT_PRESS);
+    ctrl_event_t release = press;
+    release.value = 0;
+    deck_core_test_apply_event(&press);
+    deck_core_test_apply_event(&release);
+
+    assert(s_show_library_calls == 1);
+    assert(s_toggle_library_view_calls == 0);
+    assert(s_ui_library_active);
 }
 
 static void test_mixer_namespace_routes_volume_and_crossfader(void)
@@ -580,6 +683,23 @@ static void test_mixer_namespace_routes_headphone_mix(void)
 
     assert(audio_engine_stub_headphone_mix == 4096);
     assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 4096));
+}
+
+static void test_system_namespace_routes_headphone_level(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t headphone_level = {
+        .type = CTRL_EV_PITCH,
+        .id = CTRL_ID_HEADPHONE_LEVEL,
+        .value = 6144,
+    };
+    deck_core_test_apply_event(&headphone_level);
+
+    assert(audio_engine_stub_headphone_level == 6144);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_2] == 0);
 }
 
 static void test_system_namespace_routes_master_cue_toggle_on_press(void)
@@ -719,6 +839,37 @@ static void test_sync_button_toggles_requested_deck_sync_led_state(void)
     deck_core_test_apply_event(&deck1_sync);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+}
+
+static void test_sync_master_marks_requested_deck_as_reference(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t master = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, true);
+    deck_core_test_apply_event(&master);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).sync_master);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).sync_master);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).sync_enabled);
+}
+
+static void test_sync_uses_selected_master_deck_as_reference(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_loaded_bpm[CTRL_DECK_1] = 100;
+    s_loaded_bpm[CTRL_DECK_2] = 125;
+    audio_engine_stub_pitch_percent[CTRL_DECK_1] = 0.0f;
+
+    ctrl_event_t master = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, true);
+    ctrl_event_t deck2_sync = deck_button(CTRL_ID_DECK2_SYNC);
+    deck_core_test_apply_event(&master);
+    deck_core_test_apply_event(&deck2_sync);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).sync_enabled);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] < -19.99f);
+    assert(audio_engine_stub_pitch_percent[CTRL_DECK_2] > -20.01f);
 }
 
 static void test_sync_matches_requested_deck_to_other_deck_bpm(void)
@@ -955,6 +1106,123 @@ static void test_loop_in_out_sets_requested_deck_loop_from_audio_position(void)
     assert(audio_engine_stub_loop_set_count[CTRL_DECK_2] == 1);
 }
 
+static void test_quantize_toggle_updates_requested_deck_only(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t quantize = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_QUANTIZE, true);
+    ctrl_event_t release = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_QUANTIZE, false);
+    deck_core_test_apply_event(&quantize);
+    deck_core_test_apply_event(&release);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).quantize_enabled);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).quantize_enabled);
+}
+
+static void test_reloop_shift_stop_clears_active_and_remembered_loop(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1000;
+
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK1_LOOP_IN);
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK1_LOOP_OUT);
+    ctrl_event_t stop = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_RELOOP_STOP, true);
+    ctrl_event_t reloop = deck_button(CTRL_ID_DECK1_RELOOP_EXIT);
+
+    deck_core_test_apply_event(&loop_in);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 4000;
+    deck_core_test_apply_event(&loop_out);
+    assert(audio_engine_stub_loop_active[CTRL_DECK_1]);
+
+    deck_core_test_apply_event(&stop);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(audio_engine_stub_loop_clear_count[CTRL_DECK_1] == 1);
+
+    deck_core_test_apply_event(&reloop);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+}
+
+static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_loop_active[CTRL_DECK_2] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 1000;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_2] = 5000;
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 2000;
+    ctrl_event_t adjust_in = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true);
+    deck_core_test_apply_event(&adjust_in);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 7000;
+    ctrl_event_t adjust_out = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true);
+    deck_core_test_apply_event(&adjust_out);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 7000);
+}
+
+static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    static anlz_metadata_t meta;
+    meta = beat_jump_meta();
+    s_loaded_anlz[CTRL_DECK_1] = &meta;
+
+    ctrl_event_t quantize = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_QUANTIZE, true);
+    deck_core_test_apply_event(&quantize);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1850;
+    ctrl_event_t loop_in = deck_button(CTRL_ID_DECK1_LOOP_IN);
+    deck_core_test_apply_event(&loop_in);
+
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 4230;
+    ctrl_event_t loop_out = deck_button(CTRL_ID_DECK1_LOOP_OUT);
+    deck_core_test_apply_event(&loop_out);
+
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 2000);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 4000);
+}
+
+static void test_censor_press_repeats_previous_audio_window(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+    audio_engine_stub_deck_playing[CTRL_DECK_1] = true;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 5000;
+
+    ctrl_event_t press = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_CENSOR, true);
+    deck_core_test_apply_event(&press);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).censor_active);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 4000);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_1) == 1);
+}
+
+static void test_censor_release_returns_to_stored_position_when_paused(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = false;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 3000;
+
+    ctrl_event_t press = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, true);
+    ctrl_event_t release = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, false);
+    deck_core_test_apply_event(&press);
+    deck_core_test_apply_event(&release);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).censor_active);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 3000);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_2) == 0);
+}
+
 static void test_smart_buttons_toggle_audio_state_and_leds(void)
 {
     deck_core_test_reset();
@@ -989,6 +1257,43 @@ static void test_smart_buttons_toggle_audio_state_and_leds(void)
     deck_core_test_apply_event(&smart_fader_press);
     assert(audio_engine_stub_smart_fader_enabled);
     assert(control_link_stub_last_led_state(LED_SMART_FADER, CTRL_DECK_1) == 1);
+}
+
+static void test_shifted_smart_buttons_are_noop_placeholders(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    audio_engine_stub_smart_cfx_enabled = true;
+    audio_engine_stub_smart_fader_enabled = true;
+
+    ctrl_event_t smart_cfx_shift_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_CFX_SHIFT,
+        .value = 1,
+    };
+    ctrl_event_t smart_cfx_shift_release = smart_cfx_shift_press;
+    smart_cfx_shift_release.value = 0;
+    ctrl_event_t smart_fader_shift_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_FADER_SHIFT,
+        .value = 1,
+    };
+    ctrl_event_t smart_fader_shift_release = smart_fader_shift_press;
+    smart_fader_shift_release.value = 0;
+
+    deck_core_test_apply_event(&smart_cfx_shift_press);
+    deck_core_test_apply_event(&smart_cfx_shift_release);
+    deck_core_test_apply_event(&smart_fader_shift_press);
+    deck_core_test_apply_event(&smart_fader_shift_release);
+
+    assert(audio_engine_stub_smart_cfx_enabled);
+    assert(audio_engine_stub_smart_fader_enabled);
+    assert(control_link_stub_led_count == 0);
+    assert(s_load_calls[CTRL_DECK_1] == 0);
+    assert(s_load_calls[CTRL_DECK_2] == 0);
+    assert(s_toggle_library_view_calls == 0);
 }
 
 static void test_beat_fx_defaults_and_state_controls(void)
@@ -1051,6 +1356,40 @@ static void test_beat_fx_public_snapshot_matches_state_controls(void)
     assert(state.target == CTRL_BEAT_FX_TARGET_CH1);
     assert(state.depth == 42);
     assert(state.enabled);
+}
+
+static void test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t inc_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    deck_core_test_apply_event(&inc_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
+    deck_core_test_apply_event(&inc_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
+
+    ctrl_event_t dec_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 1);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1_4);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1_4);
+}
+
+static void test_shifted_beat_fx_beat_button_release_does_not_change_state(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t release_inc = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 0);
+    deck_core_test_apply_event(&release_inc);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1);
+
+    ctrl_event_t inc_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    ctrl_event_t release_dec = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 0);
+    deck_core_test_apply_event(&inc_shift);
+    deck_core_test_apply_event(&release_dec);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
 }
 
 static void test_beat_fx_on_toggles_on_press_only_and_clear_resets(void)
@@ -1740,14 +2079,19 @@ int main(void)
     test_tempo_range_change_reapplies_current_pitch();
     test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
+    test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only();
     test_browser_namespace_routes_browse_delta();
     test_browse_delta_zooms_overview_when_library_is_not_active();
     test_browse_delta_ignores_non_library_non_overview_tabs();
+    test_shift_browse_delta_accelerates_library_navigation();
+    test_shift_browse_delta_accelerates_overview_zoom();
     test_browser_press_toggles_library_view_without_loading_deck();
+    test_shift_browse_press_forces_library_view();
     test_mixer_namespace_routes_volume_and_crossfader();
     test_mixer_namespace_routes_trim_to_pregain();
     test_mixer_namespace_routes_master_volume();
     test_mixer_namespace_routes_headphone_mix();
+    test_system_namespace_routes_headphone_level();
     test_system_namespace_routes_master_cue_toggle_on_press();
     test_jog_search_encoder_seeks_relative_to_deck_position();
     test_jog_search_encoder_clamps_at_track_start();
@@ -1755,14 +2099,19 @@ int main(void)
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_smart_buttons_toggle_audio_state_and_leds();
+    test_shifted_smart_buttons_are_noop_placeholders();
     test_beat_fx_defaults_and_state_controls();
     test_beat_fx_public_snapshot_matches_state_controls();
+    test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate();
+    test_shifted_beat_fx_beat_button_release_does_not_change_state();
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();
     test_beat_fx_filter_state_updates_audio_engine();
     test_beat_fx_echo_state_updates_audio_engine();
     test_beat_fx_echo_delay_uses_target_deck_bpm();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();
+    test_sync_master_marks_requested_deck_as_reference();
+    test_sync_uses_selected_master_deck_as_reference();
     test_sync_matches_requested_deck_to_other_deck_bpm();
     test_sync_uses_other_deck_effective_bpm();
     test_sync_can_exceed_selected_tempo_range_up_to_safe_limit();
@@ -1773,6 +2122,12 @@ int main(void)
     test_sync_phase_aligns_while_target_deck_is_playing();
     test_sync_without_beatgrid_keeps_phase_position_unchanged();
     test_loop_in_out_sets_requested_deck_loop_from_audio_position();
+    test_quantize_toggle_updates_requested_deck_only();
+    test_reloop_shift_stop_clears_active_and_remembered_loop();
+    test_loop_adjust_in_and_out_update_active_loop_boundaries();
+    test_quantized_loop_in_out_snaps_to_nearest_beat();
+    test_censor_press_repeats_previous_audio_window();
+    test_censor_release_returns_to_stored_position_when_paused();
     test_loop_in_marker_publishes_loop_in_led_before_loop_out();
     test_reloop_exit_clears_and_restores_last_requested_deck_loop();
     test_loop_halve_and_double_resize_active_loop();

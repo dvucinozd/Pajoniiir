@@ -21,8 +21,12 @@ int p4_ctrl_type_state(void);
 int p4_ctrl_id_flx4_connection(void);
 int p4_ctrl_id_smart_cfx(void);
 int p4_ctrl_id_smart_fader(void);
+int p4_ctrl_id_smart_cfx_shift(void);
+int p4_ctrl_id_smart_fader_shift(void);
 int p4_ctrl_id_beat_fx_select_next(void);
 int p4_ctrl_id_beat_fx_clear(void);
+int p4_ctrl_id_beat_fx_beat_dec_shift(void);
+int p4_ctrl_id_beat_fx_beat_inc_shift(void);
 int p4_ctrl_id_deck1_shift(void);
 int p4_ctrl_id_deck2_to_start(void);
 int p4_ctrl_id_deck1_sync(void);
@@ -30,11 +34,23 @@ int p4_ctrl_id_deck2_tempo_range(void);
 int p4_ctrl_id_deck2_pad_action(void);
 int p4_ctrl_id_ch1_trim(void);
 int p4_ctrl_id_headphone_mix(void);
+int p4_ctrl_id_headphone_level(void);
 int p4_ctrl_id_master_volume(void);
 int p4_ctrl_id_master_cue(void);
 int p4_ctrl_id_deck1_jog_search(void);
 int p4_ctrl_id_deck2_jog_search_touch(void);
 int p4_ctrl_id_browse_shift_delta(void);
+int p4_ctrl_id_browse_shift_press(void);
+int p4_ctrl_id_shift_load_deck1(void);
+int p4_ctrl_id_shift_load_deck2(void);
+int p4_ctrl_id_deck1_ext_action(void);
+int p4_ctrl_id_deck2_ext_action(void);
+int p4_ctrl_deck_ext_action_censor(void);
+int p4_ctrl_deck_ext_action_sync_master(void);
+int p4_ctrl_deck_ext_action_reloop_stop(void);
+int p4_ctrl_deck_ext_action_loop_adjust_in(void);
+int p4_ctrl_deck_ext_action_loop_adjust_out(void);
+int p4_ctrl_deck_ext_action_quantize(void);
 int p4_led_vu_meter(void);
 int p4_led_pad_mode_hot_cue(void);
 int p4_led_pad_mode_key_shift(void);
@@ -64,13 +80,19 @@ int s3_ctrl_id_ch1_volume(void);
 int s3_ctrl_id_crossfader(void);
 int s3_ctrl_id_browse_delta(void);
 int s3_ctrl_id_load_deck2(void);
+int s3_ctrl_id_shift_load_deck1(void);
+int s3_ctrl_id_shift_load_deck2(void);
 int s3_ctrl_id_browse_press(void);
 int s3_ctrl_type_state(void);
 int s3_ctrl_id_flx4_connection(void);
 int s3_ctrl_id_smart_cfx(void);
 int s3_ctrl_id_smart_fader(void);
+int s3_ctrl_id_smart_cfx_shift(void);
+int s3_ctrl_id_smart_fader_shift(void);
 int s3_ctrl_id_beat_fx_select_next(void);
 int s3_ctrl_id_beat_fx_clear(void);
+int s3_ctrl_id_beat_fx_beat_dec_shift(void);
+int s3_ctrl_id_beat_fx_beat_inc_shift(void);
 int s3_ctrl_id_deck1_shift(void);
 int s3_ctrl_id_deck2_to_start(void);
 int s3_ctrl_id_deck1_sync(void);
@@ -78,11 +100,21 @@ int s3_ctrl_id_deck2_tempo_range(void);
 int s3_ctrl_id_deck2_pad_action(void);
 int s3_ctrl_id_ch1_trim(void);
 int s3_ctrl_id_headphone_mix(void);
+int s3_ctrl_id_headphone_level(void);
 int s3_ctrl_id_master_volume(void);
 int s3_ctrl_id_master_cue(void);
 int s3_ctrl_id_deck1_jog_search(void);
 int s3_ctrl_id_deck2_jog_search_touch(void);
 int s3_ctrl_id_browse_shift_delta(void);
+int s3_ctrl_id_browse_shift_press(void);
+int s3_ctrl_id_deck1_ext_action(void);
+int s3_ctrl_id_deck2_ext_action(void);
+int s3_ctrl_deck_ext_action_censor(void);
+int s3_ctrl_deck_ext_action_sync_master(void);
+int s3_ctrl_deck_ext_action_reloop_stop(void);
+int s3_ctrl_deck_ext_action_loop_adjust_in(void);
+int s3_ctrl_deck_ext_action_loop_adjust_out(void);
+int s3_ctrl_deck_ext_action_quantize(void);
 int s3_led_vu_meter(void);
 int s3_led_pad_mode_hot_cue(void);
 int s3_led_pad_mode_key_shift(void);
@@ -128,7 +160,9 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
             ev->type = CTRL_EV_JOG;
             return true;
         }
-        if (ev->id == 1 || ev->id == CTRL_ID_BROWSE_DELTA) {
+        if (ev->id == 1 ||
+            ev->id == CTRL_ID_BROWSE_DELTA ||
+            ev->id == CTRL_ID_BROWSE_SHIFT_DELTA) {
             ev->type = CTRL_EV_BROWSE;
             return true;
         }
@@ -203,6 +237,12 @@ static void test_encoder_ids_route_to_jog_and_browse(void)
     assert(ev.id == CTRL_ID_BROWSE_DELTA);
     assert(ev.value == -2);
 
+    build_frame(frame, CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_SHIFT_DELTA, 4, 12);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BROWSE);
+    assert(ev.id == CTRL_ID_BROWSE_SHIFT_DELTA);
+    assert(ev.value == 4);
+
     build_frame(frame, CTRL_TYPE_ENCODER, 2, 1, 11);
     assert(!decode_p4_frame(frame, &ev));
 }
@@ -266,6 +306,15 @@ static void test_firmware_decodes_deck_aware_flx4_ids(void)
     assert(CTRL_PAD_ACTION_MODE(ev.value) == CTRL_PAD_MODE_BEAT_JUMP);
     assert(CTRL_PAD_ACTION_SHIFTED(ev.value));
     assert(CTRL_PAD_ACTION_PRESSED(ev.value));
+
+    build_frame(frame, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION,
+                CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, true), 28);
+    assert(decode_p4_frame(frame, &ev));
+    assert(ev.type == CTRL_EV_BUTTON);
+    assert(ev.deck == CTRL_DECK_1);
+    assert(ev.control == CTRL_DECK_CTL_EXT_ACTION);
+    assert(CTRL_DECK_EXT_ACTION(ev.value) == CTRL_DECK_EXT_ACTION_CENSOR);
+    assert(CTRL_DECK_EXT_PRESSED(ev.value));
 }
 
 static void test_s3_and_p4_deck_aware_ids_match(void)
@@ -299,6 +348,10 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_ch1_trim() == CTRL_ID_CH1_TRIM);
     assert(s3_ctrl_id_headphone_mix() == p4_ctrl_id_headphone_mix());
     assert(s3_ctrl_id_headphone_mix() == CTRL_ID_HEADPHONE_MIX);
+    assert(s3_ctrl_id_headphone_level() == p4_ctrl_id_headphone_level());
+    assert(s3_ctrl_id_headphone_level() == CTRL_ID_HEADPHONE_LEVEL);
+    assert(s3_ctrl_id_headphone_level() != s3_ctrl_id_smart_cfx());
+    assert(s3_ctrl_id_headphone_level() == 0x7D);
     assert(s3_ctrl_id_master_volume() == p4_ctrl_id_master_volume());
     assert(s3_ctrl_id_master_volume() == CTRL_ID_MASTER_VOLUME);
     assert(s3_ctrl_id_master_cue() == p4_ctrl_id_master_cue());
@@ -309,6 +362,28 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(s3_ctrl_id_deck2_jog_search_touch() == CTRL_ID_DECK2_JOG_SEARCH_TOUCH);
     assert(s3_ctrl_id_browse_shift_delta() == p4_ctrl_id_browse_shift_delta());
     assert(s3_ctrl_id_browse_shift_delta() == CTRL_ID_BROWSE_SHIFT_DELTA);
+    assert(s3_ctrl_id_browse_shift_press() == p4_ctrl_id_browse_shift_press());
+    assert(s3_ctrl_id_browse_shift_press() == CTRL_ID_BROWSE_SHIFT_PRESS);
+    assert(s3_ctrl_id_shift_load_deck1() == p4_ctrl_id_shift_load_deck1());
+    assert(s3_ctrl_id_shift_load_deck1() == CTRL_ID_SHIFT_LOAD_DECK1);
+    assert(s3_ctrl_id_shift_load_deck1() == 0x66);
+    assert(s3_ctrl_id_shift_load_deck2() == p4_ctrl_id_shift_load_deck2());
+    assert(s3_ctrl_id_shift_load_deck2() == CTRL_ID_SHIFT_LOAD_DECK2);
+    assert(s3_ctrl_id_shift_load_deck2() == 0x67);
+    assert(s3_ctrl_id_deck1_ext_action() == p4_ctrl_id_deck1_ext_action());
+    assert(s3_ctrl_id_deck1_ext_action() == CTRL_ID_DECK1_EXT_ACTION);
+    assert(s3_ctrl_id_deck2_ext_action() == p4_ctrl_id_deck2_ext_action());
+    assert(s3_ctrl_id_deck2_ext_action() == CTRL_ID_DECK2_EXT_ACTION);
+    assert(s3_ctrl_deck_ext_action_censor() == p4_ctrl_deck_ext_action_censor());
+    assert(s3_ctrl_deck_ext_action_sync_master() == p4_ctrl_deck_ext_action_sync_master());
+    assert(s3_ctrl_deck_ext_action_reloop_stop() == p4_ctrl_deck_ext_action_reloop_stop());
+    assert(s3_ctrl_deck_ext_action_loop_adjust_in() == p4_ctrl_deck_ext_action_loop_adjust_in());
+    assert(s3_ctrl_deck_ext_action_loop_adjust_out() == p4_ctrl_deck_ext_action_loop_adjust_out());
+    assert(s3_ctrl_deck_ext_action_quantize() == p4_ctrl_deck_ext_action_quantize());
+    assert(CTRL_DECK_EXT_ACTION(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true)) ==
+           CTRL_DECK_EXT_ACTION_QUANTIZE);
+    assert(CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true)));
+    assert(!CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, false)));
     assert(s3_led_vu_meter() == p4_led_vu_meter());
     assert(p4_led_vu_meter() == LED_VU_METER);
     assert(s3_led_pad_mode_hot_cue() == p4_led_pad_mode_hot_cue());
@@ -340,12 +415,29 @@ static void test_s3_and_p4_flx4_connection_state_ids_match(void)
     assert(s3_ctrl_id_smart_cfx() == CTRL_ID_SMART_CFX);
     assert(s3_ctrl_id_smart_fader() == p4_ctrl_id_smart_fader());
     assert(s3_ctrl_id_smart_fader() == CTRL_ID_SMART_FADER);
+    assert(s3_ctrl_id_smart_cfx_shift() == p4_ctrl_id_smart_cfx_shift());
+    assert(s3_ctrl_id_smart_cfx_shift() == CTRL_ID_SMART_CFX_SHIFT);
+    assert(s3_ctrl_id_smart_cfx_shift() == 0x7E);
+    assert(s3_ctrl_id_smart_fader_shift() == p4_ctrl_id_smart_fader_shift());
+    assert(s3_ctrl_id_smart_fader_shift() == CTRL_ID_SMART_FADER_SHIFT);
+    assert(s3_ctrl_id_smart_fader_shift() == 0x7F);
+    assert(s3_ctrl_id_smart_cfx_shift() != s3_ctrl_id_smart_cfx());
+    assert(s3_ctrl_id_smart_fader_shift() != s3_ctrl_id_smart_fader());
     assert(s3_ctrl_id_beat_fx_select_next() == p4_ctrl_id_beat_fx_select_next());
     assert(s3_ctrl_id_beat_fx_select_next() == CTRL_ID_BEAT_FX_SELECT_NEXT);
     assert(s3_ctrl_id_beat_fx_select_next() == 0x73);
     assert(s3_ctrl_id_beat_fx_clear() == p4_ctrl_id_beat_fx_clear());
     assert(s3_ctrl_id_beat_fx_clear() == CTRL_ID_BEAT_FX_CLEAR);
     assert(s3_ctrl_id_beat_fx_clear() == 0x7A);
+    assert(s3_ctrl_id_beat_fx_beat_dec_shift() == p4_ctrl_id_beat_fx_beat_dec_shift());
+    assert(s3_ctrl_id_beat_fx_beat_dec_shift() == CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT);
+    assert(s3_ctrl_id_beat_fx_beat_dec_shift() == 0x83);
+    assert(s3_ctrl_id_beat_fx_beat_inc_shift() == p4_ctrl_id_beat_fx_beat_inc_shift());
+    assert(s3_ctrl_id_beat_fx_beat_inc_shift() == CTRL_ID_BEAT_FX_BEAT_INC_SHIFT);
+    assert(s3_ctrl_id_beat_fx_beat_inc_shift() == 0x84);
+    assert(s3_ctrl_id_beat_fx_beat_dec_shift() != s3_ctrl_id_beat_fx_select_next());
+    assert(s3_ctrl_id_beat_fx_beat_inc_shift() != s3_ctrl_id_beat_fx_clear());
+    assert(s3_ctrl_id_beat_fx_beat_dec_shift() != s3_ctrl_id_beat_fx_beat_inc_shift());
 
     uint8_t frame[CTRL_FRAME_LEN];
     ctrl_event_t ev;

@@ -123,12 +123,22 @@ static float normalized_headphone_master_mix(uint16_t raw)
     return (float)raw / (float)AUDIO_MIXER_CONTROL_MAX;
 }
 
-audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_deck_t *deck0,
+static float normalized_headphone_level(uint16_t raw)
+{
+    if (raw >= AUDIO_MIXER_CONTROL_MAX) {
+        return 1.0f;
+    }
+    return (float)raw / (float)AUDIO_MIXER_CONTROL_MAX;
+}
+
+audio_output_mix_result_t audio_output_mixer_next_full_with_headphone_level(
+                                                       const audio_output_mixer_deck_t *deck0,
                                                        const audio_output_mixer_deck_t *deck1,
                                                        bool deck0_pfl,
                                                        bool deck1_pfl,
                                                        audio_output_headphone_mode_t headphone_mode,
                                                        uint16_t headphone_mix,
+                                                       uint16_t headphone_level,
                                                        bool master_cue_enabled,
                                                        uint32_t *out_deck0_consumed,
                                                        uint32_t *out_deck1_consumed,
@@ -185,9 +195,37 @@ audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_
         headphone.right = pfl_mono;
     }
 
+    float headphone_gain = normalized_headphone_level(headphone_level);
+    headphone.left = audio_mixer_mix_sample(headphone.left, 0, headphone_gain, 0.0f);
+    headphone.right = audio_mixer_mix_sample(headphone.right, 0, headphone_gain, 0.0f);
+
     return (audio_output_mix_result_t) {
         .master = master,
         .headphone = headphone,
         .deck_frame = { frame0, frame1 },
     };
+}
+
+audio_output_mix_result_t audio_output_mixer_next_full(const audio_output_mixer_deck_t *deck0,
+                                                       const audio_output_mixer_deck_t *deck1,
+                                                       bool deck0_pfl,
+                                                       bool deck1_pfl,
+                                                       audio_output_headphone_mode_t headphone_mode,
+                                                       uint16_t headphone_mix,
+                                                       bool master_cue_enabled,
+                                                       uint32_t *out_deck0_consumed,
+                                                       uint32_t *out_deck1_consumed,
+                                                       audio_mixer_limiter_stats_t *limiter_stats)
+{
+    return audio_output_mixer_next_full_with_headphone_level(deck0,
+                                                            deck1,
+                                                            deck0_pfl,
+                                                            deck1_pfl,
+                                                            headphone_mode,
+                                                            headphone_mix,
+                                                            AUDIO_MIXER_CONTROL_MAX,
+                                                            master_cue_enabled,
+                                                            out_deck0_consumed,
+                                                            out_deck1_consumed,
+                                                            limiter_stats);
 }

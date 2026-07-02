@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#define FLX4_LED_SNAPSHOT_COUNT 50u
+#define FLX4_LED_SNAPSHOT_COUNT 51u
 
 static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_CUE,
@@ -55,6 +55,7 @@ static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
     LED_HOT_CUE_PAD_6,
     LED_HOT_CUE_PAD_7,
     LED_HOT_CUE_PAD_8,
+    LED_CENSOR,
 };
 
 static const uint8_t s_pad_modes[8] = {
@@ -168,6 +169,8 @@ static uint8_t snapshot_value(const flx4_led_snapshot_input_t *input,
     case 48:
     case 49:
         return hot_cue_pad_value(input, deck, (uint8_t)(index - 42u));
+    case 50:
+        return input->censor_active[deck] ? 1u : 0u;
     default: {
         uint8_t pad_index = (uint8_t)(index - 4u);
         if (pad_index >= 8u) {

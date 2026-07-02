@@ -50,7 +50,7 @@ Suggested namespaces:
 | Deck 2 | `0x30`-`0x4F` | transport, jog, tempo, loop, pad mode/action |
 | Mixer | `0x50`-`0x5F` | channel faders, crossfader, PFL, trim/EQ/filter monitor controls |
 | Browser | `0x60`-`0x6F` | browse/load/navigation |
-| System | `0x70`-`0x7F` | heartbeat, diagnostics |
+| System | `0x70`-`0x7F` | heartbeat, diagnostics, global system/audio controls |
 
 The S3 and P4 headers carry matching constants for this layout. Host tests
 verify that the shared MVP IDs, Smart control IDs, and FLX4 connection state
@@ -78,6 +78,7 @@ test.
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
+| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
 | `0x32` | Deck 2 Jog scratch delta | signed delta |
@@ -85,6 +86,7 @@ test.
 | `0x34` | Deck 2 Jog touch | `0` release, `1` touch |
 | `0x35` | Deck 2 Tempo | `0..16383` |
 | `0x36`-`0x49` | Deck 2 extension controls | same control order as Deck 1 |
+| `0x4C` | Deck 2 extended action | same packed format as Deck 1 |
 | `0x50` | Channel 1 volume | `0..16383` |
 | `0x51` | Channel 2 volume | `0..16383` |
 | `0x52` | Crossfader | `0..16383` |
@@ -95,7 +97,10 @@ test.
 | `0x61` | Load Deck 1 | `0` release, `1` press |
 | `0x62` | Load Deck 2 | `0` release, `1` press |
 | `0x63` | Browse press | `0` release, `1` press; toggles Library/Overview |
-| `0x64` | Browse+Shift delta | signed delta; behavior deferred |
+| `0x64` | Browse+Shift delta | signed delta; accelerated Library navigation or Overview zoom |
+| `0x65` | Browse+Shift press | `0` release, `1` press; press forces Library view |
+| `0x66` | Shift+Load Deck 1 | `0` release, `1` press; currently uses same P4 selected-browser-track load path as normal Load Deck 1 |
+| `0x67` | Shift+Load Deck 2 | `0` release, `1` press; currently uses same P4 selected-browser-track load path as normal Load Deck 2 |
 | `0x70` | FLX4 connection state | `0` disconnected, `1` connected; sent with `CTRL_TYPE_STATE` |
 | `0x71` | Smart CFX | `0` release, `1` press; press toggles P4 Smart CFX state |
 | `0x72` | Smart Fader | `0` release, `1` press; press toggles P4 Smart Fader state |
@@ -108,11 +113,22 @@ test.
 | `0x79` | Beat FX on/off | `0` release, `1` press; press toggles P4 Beat FX enabled state |
 | `0x7A` | Beat FX clear | `0` release, `1` press; press resets P4 Beat FX state to defaults |
 | `0x7B` | Master volume | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 Master Level `0xB6/0x08+0x28`; P4 applies it as runtime non-boosting master output volume |
+| `0x7D` | Headphone Level | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB6/0x0D+0x2D`; P4 scales only headphone/monitor output |
+| `0x7E` | Shift+Smart CFX | `0` release, `1` press; P4 consumes as no-op placeholder until standalone behavior is defined |
+| `0x7F` | Shift+Smart Fader | `0` release, `1` press; P4 consumes as no-op placeholder until standalone behavior is defined |
+| `0x83` | Shift+Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down by two enum positions with min saturation |
+| `0x84` | Shift+Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up by two enum positions with max saturation |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
 channel fader, and crossfader events are locally coalesced before UART send;
 button edges and load/PFL events remain FIFO.
+
+`CTRL_ID_HEADPHONE_LEVEL`, `CTRL_ID_SMART_CFX_SHIFT`,
+`CTRL_ID_SMART_FADER_SHIFT`, `CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT`, and
+`CTRL_ID_BEAT_FX_BEAT_INC_SHIFT` are literal `0x7D`, `0x7E`, `0x7F`, `0x83`,
+and `0x84` values in both firmware targets because the current namespace
+encoding aliases `CTRL_NS_SYSTEM | offset` values above `0x0F`.
 
 Pad action values are packed into the signed 16-bit `value` field:
 
@@ -120,6 +136,11 @@ Pad action values are packed into the signed 16-bit `value` field:
 - bits `3..5`: pad mode `0..7` (`HOT_CUE`, `BEAT_LOOP`, `BEAT_JUMP`,
   `KEY_SHIFT`, `KEYBOARD`, `PAD_FX1`, `PAD_FX2`, `SAMPLER`);
 - bit `6`: shifted pad action;
+- bit `7`: pressed state.
+
+Deck extended action values are packed into the signed 16-bit `value` field:
+
+- bits `0..6`: `CTRL_DECK_EXT_ACTION_*`;
 - bit `7`: pressed state.
 
 ## LED Feedback
@@ -147,6 +168,17 @@ packed into the high byte of the 16-bit value by `control_link_send_led_deck()`:
 | `0x0E` | Beat Sync enabled |
 | `0x0F` | Loop In indicator |
 | `0x10` | Loop Out indicator |
+| `0x34` | Master Cue monitor indicator |
+| `0x35` | Censor active indicator |
+| `0x36` | Cue+Shift / track-start output candidate |
+| `0x37` | Loop Adjust In output candidate |
+| `0x38` | Loop Adjust Out output candidate |
+| `0x39` | Track Load Deck 1 illumination output candidate |
+| `0x3A` | Track Load Deck 2 illumination output candidate |
+
+`LED_REMOTE_COUNT` is `59`. Existing values through `LED_MASTER_CUE` remain
+stable; the new FLX4 official/PDF output IDs are appended after
+`LED_MASTER_CUE`.
 
 ```text
 value low byte:  LED state, 0 off / 1 on / 2 blink
@@ -169,12 +201,20 @@ P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
 enabled state, active Loop In/Out state, Beat Loop pad state, momentary Pad FX
-pad state, Smart CFX/Fader state, the global Beat FX ON/OFF enabled state, and
-the global Master Cue monitor state.
+pad state, Censor active state, Smart CFX/Fader state, the global Beat FX
+ON/OFF enabled state, and the global Master Cue monitor state.
 Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
 reconnect smoke remains an acceptance item.
+
+The new Censor LED is snapshot-driven from P4 `deck_state_t.censor_active`.
+The Cue+Shift / track-start, Loop Adjust In, Loop Adjust Out, and Track Load
+illumination IDs are mapped by S3 to the official FLX4 output packets for
+future P4 use, but they are not part of the reconnect-safe snapshot until P4
+owns a real persistent or momentary state for those indicators. Beat Jump and
+Sampler pad LED output candidates remain deferred-state candidates; no sampler
+model or beat-jump LED selection state is currently published.
 
 In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
 after each heartbeat while the USB MIDI device remains open. This is
@@ -187,11 +227,12 @@ After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
 the last known FLX4 absolute input snapshot to P4. The replay covers only
 controls whose current value S3 has actually observed as a complete value:
 channel faders, crossfader, trim/pregain, EQ high/mid/low, channel filter,
-Master Level, Headphones Mix, and Beat FX Level/Depth. S3 does not fabricate
-defaults for unknown physical positions, and the USB MIDI class does not expose
-a generic "read all knobs now" request. Tempo faders, buttons, pad actions,
-PFL, browse, and jog inputs are deliberately excluded from this snapshot phase
-because replaying them could create false user actions or disable Beat Sync.
+Master Level, Headphones Mix, Headphone Level, and Beat FX Level/Depth. S3 does
+not fabricate defaults for unknown physical positions, and the USB MIDI class
+does not expose a generic "read all knobs now" request. Tempo faders, buttons,
+pad actions, PFL, browse, and jog inputs are deliberately excluded from this
+snapshot phase because replaying them could create false user actions or disable
+Beat Sync.
 
 The current P4 Beat FX snapshot is exposed through `/api/status` under
 `beat_fx` for low-rate hardware smoke verification without raw MIDI logging.
@@ -200,7 +241,7 @@ The same `enabled` state also drives the physical FLX4 Beat FX ON/OFF LED via
 `LED_BEAT_FX_ON`; S3 maps it to USB MIDI note `0x47` on `0x94`/`0x95`.
 
 The physical FLX4 MASTER CUE button is mapped from the official MIDI list to
-`CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x68`). P4 owns the monitor
+`CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x78`). P4 owns the monitor
 state: a button press toggles whether the master side contributes to the
 headphone/monitor mix, while the main/RCA master output remains unchanged.
 The P4 LED snapshot includes `LED_MASTER_CUE`; S3 maps it to output note

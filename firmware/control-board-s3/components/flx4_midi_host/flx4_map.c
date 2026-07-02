@@ -18,19 +18,25 @@
 #define FLX4_STATUS_MASTER_CC  0xB6
 
 #define FLX4_BTN_PLAY          0x0B
+#define FLX4_BTN_CENSOR        0x0E
 #define FLX4_BTN_CUE           0x0C
 #define FLX4_BTN_JOG_TOUCH     0x36
 #define FLX4_BTN_SHIFT         0x3F
 #define FLX4_BTN_CUE_SHIFT     0x48
 #define FLX4_BTN_SYNC          0x58
+#define FLX4_BTN_SYNC_MASTER   0x5C
 #define FLX4_BTN_TEMPO_RANGE   0x60
 #define FLX4_BTN_LOOP_IN       0x10
 #define FLX4_BTN_LOOP_OUT      0x11
 #define FLX4_BTN_RELOOP_EXIT   0x4D
+#define FLX4_BTN_RELOOP_STOP   0x50
+#define FLX4_BTN_LOOP_ADJUST_IN 0x4C
+#define FLX4_BTN_LOOP_ADJUST_OUT 0x4E
 #define FLX4_BTN_LOOP_HALVE    0x51
 #define FLX4_BTN_LOOP_DOUBLE   0x53
 #define FLX4_BTN_BEAT_JUMP_BACK 0x3E
 #define FLX4_BTN_BEAT_JUMP_FORWARD 0x3D
+#define FLX4_BTN_QUANTIZE      0x68
 #define FLX4_BTN_PAD_HOT_CUE   0x1B
 #define FLX4_BTN_PAD_KEYBOARD  0x69
 #define FLX4_BTN_PAD_FX1       0x1E
@@ -41,20 +47,27 @@
 #define FLX4_BTN_PAD_KEY_SHIFT 0x6F
 #define FLX4_BTN_LOAD_D1       0x46
 #define FLX4_BTN_LOAD_D2       0x47
+#define FLX4_BTN_LOAD_D1_SHIFT 0x68
+#define FLX4_BTN_LOAD_D2_SHIFT 0x7A
 #define FLX4_BTN_PFL           0x54
 #define FLX4_BTN_BROWSE_PRESS  0x41
+#define FLX4_BTN_BROWSE_SHIFT_PRESS 0x42
 #define FLX4_BTN_SMART_CFX     0x00
 #define FLX4_BTN_SMART_FADER   0x01
+#define FLX4_BTN_SMART_CFX_SHIFT 0x08
+#define FLX4_BTN_SMART_FADER_SHIFT 0x09
 #define FLX4_BTN_BEAT_FX_TARGET_CH1 0x10
 #define FLX4_BTN_BEAT_FX_TARGET_CH2 0x11
 #define FLX4_BTN_BEAT_FX_CLEAR 0x43
 #define FLX4_BTN_BEAT_FX_ON    0x47
 #define FLX4_BTN_BEAT_FX_BEAT_DEC 0x4A
 #define FLX4_BTN_BEAT_FX_BEAT_INC 0x4B
+#define FLX4_BTN_BEAT_FX_BEAT_DEC_SHIFT 0x66
+#define FLX4_BTN_BEAT_FX_BEAT_INC_SHIFT 0x6B
 #define FLX4_BTN_BEAT_FX_SELECT_NEXT 0x63
 #define FLX4_BTN_BEAT_FX_SELECT_PREV 0x64
 #define FLX4_BTN_MASTER_CUE     0x63
-#define FLX4_BTN_MASTER_CUE_SHIFT 0x68
+#define FLX4_BTN_MASTER_CUE_SHIFT 0x78
 #define FLX4_BTN_JOG_SEARCH_TOUCH 0x67
 
 #define FLX4_CC_JOG_SIDE_BEND  0x21
@@ -75,6 +88,8 @@
 #define FLX4_CC_EQ_LOW_LSB     0x2F
 #define FLX4_CC_HEADPHONE_MIX_MSB 0x0C
 #define FLX4_CC_HEADPHONE_MIX_LSB 0x2C
+#define FLX4_CC_HEADPHONE_LEVEL_MSB 0x0D
+#define FLX4_CC_HEADPHONE_LEVEL_LSB 0x2D
 #define FLX4_CC_MASTER_LEVEL_MSB  0x08
 #define FLX4_CC_MASTER_LEVEL_LSB  0x28
 #define FLX4_CC_FILTER_CH1_MSB 0x17
@@ -84,6 +99,7 @@
 #define FLX4_CC_CROSSFADER_MSB 0x1F
 #define FLX4_CC_CROSSFADER_LSB 0x3F
 #define FLX4_CC_BROWSE         0x40
+#define FLX4_CC_BROWSE_SHIFT   0x64
 #define FLX4_CC_BEAT_FX_DEPTH  0x02
 
 void flx4_map_init(flx4_map_state_t *state)
@@ -107,6 +123,16 @@ static bool emit_button_value(flx4_control_event_t *out, uint8_t id, int16_t val
     out->id = id;
     out->value = value;
     return true;
+}
+
+static bool emit_deck_ext_action(flx4_control_event_t *out,
+                                 bool deck1,
+                                 uint8_t action,
+                                 uint8_t pressed)
+{
+    return emit_button_value(out,
+                             deck1 ? CTRL_ID_DECK1_EXT_ACTION : CTRL_ID_DECK2_EXT_ACTION,
+                             CTRL_DECK_EXT_VALUE(action, pressed != 0));
 }
 
 static bool emit_encoder(flx4_control_event_t *out, uint8_t id, int16_t value)
@@ -175,6 +201,8 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     switch (data1) {
     case FLX4_BTN_PLAY:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PLAY : CTRL_ID_DECK2_PLAY, pressed);
+    case FLX4_BTN_CENSOR:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_CENSOR, pressed);
     case FLX4_BTN_CUE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_CUE : CTRL_ID_DECK2_CUE, pressed);
     case FLX4_BTN_SHIFT:
@@ -183,6 +211,8 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_TO_START : CTRL_ID_DECK2_TO_START, pressed);
     case FLX4_BTN_SYNC:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_SYNC : CTRL_ID_DECK2_SYNC, pressed);
+    case FLX4_BTN_SYNC_MASTER:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, pressed);
     case FLX4_BTN_TEMPO_RANGE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_TEMPO_RANGE : CTRL_ID_DECK2_TEMPO_RANGE, pressed);
     case FLX4_BTN_LOOP_IN:
@@ -191,6 +221,12 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_LOOP_OUT : CTRL_ID_DECK2_LOOP_OUT, pressed);
     case FLX4_BTN_RELOOP_EXIT:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_RELOOP_EXIT : CTRL_ID_DECK2_RELOOP_EXIT, pressed);
+    case FLX4_BTN_RELOOP_STOP:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_RELOOP_STOP, pressed);
+    case FLX4_BTN_LOOP_ADJUST_IN:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, pressed);
+    case FLX4_BTN_LOOP_ADJUST_OUT:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, pressed);
     case FLX4_BTN_LOOP_HALVE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_LOOP_HALVE : CTRL_ID_DECK2_LOOP_HALVE, pressed);
     case FLX4_BTN_LOOP_DOUBLE:
@@ -199,6 +235,8 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         return emit_button(out, deck1 ? CTRL_ID_DECK1_BEAT_JUMP_BACK : CTRL_ID_DECK2_BEAT_JUMP_BACK, pressed);
     case FLX4_BTN_BEAT_JUMP_FORWARD:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_BEAT_JUMP_FORWARD : CTRL_ID_DECK2_BEAT_JUMP_FORWARD, pressed);
+    case FLX4_BTN_QUANTIZE:
+        return emit_deck_ext_action(out, deck1, CTRL_DECK_EXT_ACTION_QUANTIZE, pressed);
     case FLX4_BTN_PAD_HOT_CUE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_HOT_CUE : CTRL_ID_DECK2_PAD_MODE_HOT_CUE, pressed);
     case FLX4_BTN_PAD_KEYBOARD:
@@ -323,6 +361,10 @@ static bool map_beat_fx_button(flx4_map_state_t *state,
         return emit_button(out, CTRL_ID_BEAT_FX_BEAT_DEC, pressed);
     case FLX4_BTN_BEAT_FX_BEAT_INC:
         return emit_button(out, CTRL_ID_BEAT_FX_BEAT_INC, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_DEC_SHIFT:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_INC_SHIFT:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, pressed);
     case FLX4_BTN_BEAT_FX_ON:
         return emit_button(out, CTRL_ID_BEAT_FX_ON, pressed);
     case FLX4_BTN_BEAT_FX_CLEAR:
@@ -368,6 +410,8 @@ static bool map_master_cc(flx4_map_state_t *state,
     switch (data1) {
     case FLX4_CC_BROWSE:
         return emit_encoder(out, CTRL_ID_BROWSE_DELTA, relative_twos_complement_delta(data2));
+    case FLX4_CC_BROWSE_SHIFT:
+        return emit_encoder(out, CTRL_ID_BROWSE_SHIFT_DELTA, relative_twos_complement_delta(data2));
     case FLX4_CC_CROSSFADER_MSB:
         return update_14bit(&state->crossfader, true, data2, out, CTRL_ID_CROSSFADER);
     case FLX4_CC_CROSSFADER_LSB:
@@ -376,6 +420,10 @@ static bool map_master_cc(flx4_map_state_t *state,
         return update_14bit(&state->headphone_mix, true, data2, out, CTRL_ID_HEADPHONE_MIX);
     case FLX4_CC_HEADPHONE_MIX_LSB:
         return update_14bit(&state->headphone_mix, false, data2, out, CTRL_ID_HEADPHONE_MIX);
+    case FLX4_CC_HEADPHONE_LEVEL_MSB:
+        return update_14bit(&state->headphone_level, true, data2, out, CTRL_ID_HEADPHONE_LEVEL);
+    case FLX4_CC_HEADPHONE_LEVEL_LSB:
+        return update_14bit(&state->headphone_level, false, data2, out, CTRL_ID_HEADPHONE_LEVEL);
     case FLX4_CC_MASTER_LEVEL_MSB:
         return update_14bit(&state->master_volume, true, data2, out, CTRL_ID_MASTER_VOLUME);
     case FLX4_CC_MASTER_LEVEL_LSB:
@@ -455,14 +503,29 @@ bool flx4_map_message(flx4_map_state_t *state,
         if (msg->data1 == FLX4_BTN_SMART_FADER) {
             return emit_button(out, CTRL_ID_SMART_FADER, msg->data2 > 0 ? 1 : 0);
         }
+        if (msg->data1 == FLX4_BTN_SMART_CFX_SHIFT) {
+            return emit_button(out, CTRL_ID_SMART_CFX_SHIFT, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_SMART_FADER_SHIFT) {
+            return emit_button(out, CTRL_ID_SMART_FADER_SHIFT, msg->data2 > 0 ? 1 : 0);
+        }
         if (msg->data1 == FLX4_BTN_BROWSE_PRESS) {
             return emit_button(out, CTRL_ID_BROWSE_PRESS, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_BROWSE_SHIFT_PRESS) {
+            return emit_button(out, CTRL_ID_BROWSE_SHIFT_PRESS, msg->data2 > 0 ? 1 : 0);
         }
         if (msg->data1 == FLX4_BTN_LOAD_D1) {
             return emit_button(out, CTRL_ID_LOAD_DECK1, msg->data2 > 0 ? 1 : 0);
         }
         if (msg->data1 == FLX4_BTN_LOAD_D2) {
             return emit_button(out, CTRL_ID_LOAD_DECK2, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_LOAD_D1_SHIFT) {
+            return emit_button(out, CTRL_ID_SHIFT_LOAD_DECK1, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_LOAD_D2_SHIFT) {
+            return emit_button(out, CTRL_ID_SHIFT_LOAD_DECK2, msg->data2 > 0 ? 1 : 0);
         }
         if (msg->data1 == FLX4_BTN_MASTER_CUE ||
             msg->data1 == FLX4_BTN_MASTER_CUE_SHIFT) {
@@ -542,7 +605,9 @@ size_t flx4_map_emit_snapshot(const flx4_map_state_t *state,
         !emit_snapshot_14bit(&state->master_volume,
                              CTRL_ID_MASTER_VOLUME, cb, ctx, &count) ||
         !emit_snapshot_14bit(&state->headphone_mix,
-                             CTRL_ID_HEADPHONE_MIX, cb, ctx, &count)) {
+                             CTRL_ID_HEADPHONE_MIX, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->headphone_level,
+                             CTRL_ID_HEADPHONE_LEVEL, cb, ctx, &count)) {
         return count;
     }
 

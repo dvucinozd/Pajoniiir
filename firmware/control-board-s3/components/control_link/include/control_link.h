@@ -64,6 +64,7 @@ typedef enum {
     CTRL_DECK_CTL_PAD_MODE_SAMPLER,
     CTRL_DECK_CTL_JOG_SEARCH,
     CTRL_DECK_CTL_JOG_SEARCH_TOUCH,
+    CTRL_DECK_CTL_EXT_ACTION,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -120,7 +121,19 @@ typedef enum {
 #define LED_HOT_CUE_PAD_7 50
 #define LED_HOT_CUE_PAD_8 51
 #define LED_MASTER_CUE 52
-#define LED_REMOTE_COUNT 53
+/* LED_CENSOR is state-driven: the P4 publishes it through the periodic FLX4 LED
+ * snapshot (flx4_led_snapshot.c) from deck_state_t.censor_active. */
+#define LED_CENSOR 53
+/* The LEDs below are output-only capability: their MIDI note mapping exists in
+ * flx4_led_midi.c and is packet-tested, but no P4 deck handler drives them yet.
+ * They are reserved for the momentary press/release feedback described in the
+ * gap-closure plan and are intentionally NOT part of the state snapshot. */
+#define LED_CUE_SHIFT 54
+#define LED_LOOP_ADJUST_IN 55
+#define LED_LOOP_ADJUST_OUT 56
+#define LED_TRACK_LOAD_DECK1 57
+#define LED_TRACK_LOAD_DECK2 58
+#define LED_REMOTE_COUNT 59
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,
@@ -143,6 +156,20 @@ typedef enum {
 #define CTRL_PAD_ACTION_SHIFTED(value) (((value) & 0x40) != 0)
 #define CTRL_PAD_ACTION_PRESSED(value) (((value) & 0x80) != 0)
 
+typedef enum {
+    CTRL_DECK_EXT_ACTION_CENSOR = 0,
+    CTRL_DECK_EXT_ACTION_SYNC_MASTER,
+    CTRL_DECK_EXT_ACTION_RELOOP_STOP,
+    CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN,
+    CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT,
+    CTRL_DECK_EXT_ACTION_QUANTIZE,
+} ctrl_deck_ext_action_t;
+
+#define CTRL_DECK_EXT_VALUE(action, pressed) \
+    ((int16_t)(((action) & 0x7F) | ((pressed) ? 0x80 : 0x00)))
+#define CTRL_DECK_EXT_ACTION(value) ((uint8_t)((value) & 0x7F))
+#define CTRL_DECK_EXT_PRESSED(value) (((value) & 0x80) != 0)
+
 #define CTRL_ID_FLX4_CONNECTION (CTRL_NS_SYSTEM | 0x00)
 #define CTRL_ID_SMART_CFX       (CTRL_NS_SYSTEM | 0x01)
 #define CTRL_ID_SMART_FADER     (CTRL_NS_SYSTEM | 0x02)
@@ -156,6 +183,21 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_CLEAR       (CTRL_NS_SYSTEM | 0x0A)
 #define CTRL_ID_MASTER_VOLUME       (CTRL_NS_SYSTEM | 0x0B)
 #define CTRL_ID_MASTER_CUE          (CTRL_NS_SYSTEM | 0x0C)
+/*
+ * Global (deck-less) semantic IDs. The system namespace CTRL_NS_SYSTEM = 0x70
+ * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
+ * Once 0x7F is used the namespace is full; any further global IDs live as flat
+ * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
+ * reserved as headroom, so 0x83/0x84 are the current overflow allocations.
+ * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
+ * control_link_protocol host test asserts the two sides agree.
+ */
+#define CTRL_ID_HEADPHONE_LEVEL     0x7D  /* CTRL_NS_SYSTEM | 0x0D */
+#define CTRL_ID_SMART_CFX_SHIFT     0x7E  /* CTRL_NS_SYSTEM | 0x0E */
+#define CTRL_ID_SMART_FADER_SHIFT   0x7F  /* CTRL_NS_SYSTEM | 0x0F -- namespace full */
+/* Flat global overflow region (no namespace); 0x80..0x82 reserved for future use. */
+#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
+#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
@@ -196,6 +238,7 @@ typedef enum {
 #define CTRL_ID_DECK1_PAD_MODE_SAMPLER      (CTRL_NS_DECK1 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 #define CTRL_ID_DECK1_JOG_SEARCH            (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK1_JOG_SEARCH_TOUCH      (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
+#define CTRL_ID_DECK1_EXT_ACTION            (CTRL_NS_DECK1 + CTRL_DECK_CTL_EXT_ACTION)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -225,6 +268,7 @@ typedef enum {
 #define CTRL_ID_DECK2_PAD_MODE_SAMPLER      (CTRL_NS_DECK2 + CTRL_DECK_CTL_PAD_MODE_SAMPLER)
 #define CTRL_ID_DECK2_JOG_SEARCH            (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK2_JOG_SEARCH_TOUCH      (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
+#define CTRL_ID_DECK2_EXT_ACTION            (CTRL_NS_DECK2 + CTRL_DECK_CTL_EXT_ACTION)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
@@ -248,6 +292,9 @@ typedef enum {
 #define CTRL_ID_LOAD_DECK2        (CTRL_NS_BROWSER | 0x02)
 #define CTRL_ID_BROWSE_PRESS      (CTRL_NS_BROWSER | 0x03)
 #define CTRL_ID_BROWSE_SHIFT_DELTA (CTRL_NS_BROWSER | 0x04)
+#define CTRL_ID_BROWSE_SHIFT_PRESS (CTRL_NS_BROWSER | 0x05)
+#define CTRL_ID_SHIFT_LOAD_DECK1  (CTRL_NS_BROWSER | 0x06)
+#define CTRL_ID_SHIFT_LOAD_DECK2  (CTRL_NS_BROWSER | 0x07)
 
 // Initialise UART1 and start RX task.
 // panel_event_queue: the queue returned by panel_io_init().
