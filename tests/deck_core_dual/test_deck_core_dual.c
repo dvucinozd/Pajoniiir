@@ -1146,6 +1146,37 @@ static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 4000);
 }
 
+static void test_censor_press_repeats_previous_audio_window(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_playing[CTRL_DECK_1] = true;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 5000;
+
+    ctrl_event_t press = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_CENSOR, true);
+    deck_core_test_apply_event(&press);
+
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).censor_active);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 4000);
+}
+
+static void test_censor_release_returns_to_stored_position_when_paused(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    audio_engine_stub_deck_playing[CTRL_DECK_2] = false;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 3000;
+
+    ctrl_event_t press = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, true);
+    ctrl_event_t release = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, false);
+    deck_core_test_apply_event(&press);
+    deck_core_test_apply_event(&release);
+
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_2).censor_active);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 3000);
+}
+
 static void test_smart_buttons_toggle_audio_state_and_leds(void)
 {
     deck_core_test_reset();
@@ -1973,6 +2004,8 @@ int main(void)
     test_reloop_shift_stop_clears_active_and_remembered_loop();
     test_loop_adjust_in_and_out_update_active_loop_boundaries();
     test_quantized_loop_in_out_snaps_to_nearest_beat();
+    test_censor_press_repeats_previous_audio_window();
+    test_censor_release_returns_to_stored_position_when_paused();
     test_loop_in_marker_publishes_loop_in_led_before_loop_out();
     test_reloop_exit_clears_and_restores_last_requested_deck_loop();
     test_loop_halve_and_double_resize_active_loop();

@@ -26,6 +26,7 @@ static const char *TAG = "deck";
 #define BEAT_SYNC_MAX_PERCENT 20u
 #define BROWSE_SHIFT_LIBRARY_MULTIPLIER 10
 #define BROWSE_SHIFT_OVERVIEW_MULTIPLIER 4
+#define CENSOR_REPEAT_BACK_MS 1000u
 #define DECK_TASK_STACK_BYTES 8192u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
@@ -96,6 +97,15 @@ typedef struct {
 } deck_beat_loop_led_state_t;
 
 static deck_beat_loop_led_state_t s_beat_loop_led[DECK_CORE_DECK_COUNT];
+
+typedef struct {
+    bool active;
+    bool was_playing;
+    uint32_t origin_ms;
+    TickType_t press_tick;
+} deck_censor_shadow_t;
+
+static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
 
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
@@ -708,6 +718,53 @@ static void adjust_loop_boundary(uint8_t deck, bool adjust_in, deck_state_t *sta
     }
 }
 
+static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    deck_censor_shadow_t *shadow = &s_censor_shadow[deck];
+    if (pressed) {
+        if (shadow->active) {
+            return;
+        }
+        uint32_t origin = current_deck_position_ms(deck, state);
+        uint32_t repeat = origin > CENSOR_REPEAT_BACK_MS ? origin - CENSOR_REPEAT_BACK_MS : 0u;
+        shadow->active = true;
+        shadow->was_playing = audio_engine_deck_is_playing(deck);
+        shadow->origin_ms = origin;
+        shadow->press_tick = xTaskGetTickCount();
+        state->censor_active = true;
+        if (audio_engine_deck_seek(deck, repeat) == ESP_OK) {
+            state->position_ms = repeat;
+        }
+        ESP_LOGI(TAG, "deck %u censor press -> %lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned long)repeat);
+        return;
+    }
+
+    if (!shadow->active) {
+        return;
+    }
+
+    uint32_t target = shadow->origin_ms;
+    if (shadow->was_playing) {
+        TickType_t elapsed_ticks = xTaskGetTickCount() - shadow->press_tick;
+        uint32_t elapsed_ms = (uint32_t)(elapsed_ticks * portTICK_PERIOD_MS);
+        target += elapsed_ms;
+    }
+    if (audio_engine_deck_seek(deck, target) == ESP_OK) {
+        state->position_ms = target;
+    }
+    state->censor_active = false;
+    memset(shadow, 0, sizeof(*shadow));
+    ESP_LOGI(TAG, "deck %u censor release -> %lu ms",
+             (unsigned)deck + 1,
+             (unsigned long)target);
+}
+
 static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
@@ -1316,6 +1373,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     {
         uint8_t action = CTRL_DECK_EXT_ACTION(ev->value);
         bool ext_pressed = CTRL_DECK_EXT_PRESSED(ev->value);
+        if (action == CTRL_DECK_EXT_ACTION_CENSOR) {
+            handle_censor(deck, ext_pressed, state);
+            return true;
+        }
         if (!ext_pressed) {
             return true;
         }
@@ -1976,6 +2037,7 @@ void deck_core_reset_deck(uint8_t deck)
     memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
     memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
     memset(&s_beat_loop_led[idx], 0, sizeof(s_beat_loop_led[idx]));
+    memset(&s_censor_shadow[idx], 0, sizeof(s_censor_shadow[idx]));
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -1992,6 +2054,7 @@ void deck_core_test_reset(void)
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_beat_loop_led, 0, sizeof(s_beat_loop_led));
+    memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
 #if defined(DECK_CORE_PC_TEST)
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
