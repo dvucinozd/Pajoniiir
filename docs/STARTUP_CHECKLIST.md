@@ -290,7 +290,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   normal and shifted Beat Loop hardware behavior smoke passed on 2026-07-01,
   and Beat Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
   Shifted Jog Search is now implemented as a 1000 ms per-step deck seek from
-  the XML mapping; hardware smoke passed on 2026-07-02. Vinyl mode is intentionally out
+  the XML mapping; hardware smoke passed on 2026-07-02. Browse+Shift
+  rotate/press, Beat Sync master, Reloop/Exit+Shift stop, Loop Adjust In/Out,
+  Quantize, and Play+Shift slip-censor MVP are implemented from the XML mapping
+  with host-test coverage; hardware smoke remains pending for this shifted
+  control group. Vinyl mode is intentionally out
   of scope as of 2026-07-02.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,

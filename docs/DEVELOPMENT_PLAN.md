@@ -588,7 +588,10 @@ beat-loop, key-shift, beat-jump, and loop-control input routing as documented
 in `docs/DDJ_FLX4_MIDI_MAP.md`. P4 behavior for Loop In/Out, Reloop/Exit,
 loop halve/double, normal/shifted Beat Loop pads, Beat Jump buttons/pads,
 Tempo Range, Beat Sync BPM-match-on-press with one-shot phase align while
-playing, and Hot Cue store/recall/clear is implemented. Trim/pregain and
+playing, Sync Master selection, Browse+Shift accelerated navigation,
+Reloop/Exit+Shift loop stop/forget, Loop Adjust In/Out, Quantize for loop
+boundaries, slip-censor MVP, and Hot Cue store/recall/clear are implemented.
+Trim/pregain and
 three-band EQ DSP
 are implemented per deck in the P4 audio path. Smart CFX now toggles P4-owned
 filter DSP from the FLX4 filter knobs with a softened raw-to-effective macro
@@ -725,8 +728,13 @@ Implementation order:
      buttons and Beat Jump pads using beatgrid/BPM target calculation; Beat
      Jump pad hardware behavior smoke passed on both decks on 2026-07-01.
      Beat Sync BPM-match-on-press with signed intra-beat phase align and Tempo
-     Range cycling are implemented; continuous sync following remains out of
-     scope.
+     Range cycling are implemented; Sync Master selection is implemented from
+     the shifted/long-press XML control. Continuous sync following remains out
+     of scope.
+   - Browse+Shift rotate/press, Reloop/Exit+Shift stop, Loop Adjust In/Out,
+     Quantize, and Play+Shift slip-censor MVP are implemented in firmware from
+     the Mixxx XML mapping. Host tests cover S3 mapping and P4 behavior;
+     hardware smoke remains pending for this shifted control group.
    - Shifted Jog Search is implemented from the XML mapping as a deck-local
      relative seek at 1000 ms per encoder step. Jog Search touch/highspeed is
      mapped as a semantic input but does not yet alter the seek multiplier.

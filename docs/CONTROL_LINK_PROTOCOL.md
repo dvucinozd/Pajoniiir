@@ -78,6 +78,7 @@ test.
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
+| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
 | `0x32` | Deck 2 Jog scratch delta | signed delta |
@@ -85,6 +86,7 @@ test.
 | `0x34` | Deck 2 Jog touch | `0` release, `1` touch |
 | `0x35` | Deck 2 Tempo | `0..16383` |
 | `0x36`-`0x49` | Deck 2 extension controls | same control order as Deck 1 |
+| `0x4C` | Deck 2 extended action | same packed format as Deck 1 |
 | `0x50` | Channel 1 volume | `0..16383` |
 | `0x51` | Channel 2 volume | `0..16383` |
 | `0x52` | Crossfader | `0..16383` |
@@ -95,7 +97,8 @@ test.
 | `0x61` | Load Deck 1 | `0` release, `1` press |
 | `0x62` | Load Deck 2 | `0` release, `1` press |
 | `0x63` | Browse press | `0` release, `1` press; toggles Library/Overview |
-| `0x64` | Browse+Shift delta | signed delta; behavior deferred |
+| `0x64` | Browse+Shift delta | signed delta; accelerated Library navigation or Overview zoom |
+| `0x65` | Browse+Shift press | `0` release, `1` press; press forces Library view |
 | `0x70` | FLX4 connection state | `0` disconnected, `1` connected; sent with `CTRL_TYPE_STATE` |
 | `0x71` | Smart CFX | `0` release, `1` press; press toggles P4 Smart CFX state |
 | `0x72` | Smart Fader | `0` release, `1` press; press toggles P4 Smart Fader state |
@@ -120,6 +123,11 @@ Pad action values are packed into the signed 16-bit `value` field:
 - bits `3..5`: pad mode `0..7` (`HOT_CUE`, `BEAT_LOOP`, `BEAT_JUMP`,
   `KEY_SHIFT`, `KEYBOARD`, `PAD_FX1`, `PAD_FX2`, `SAMPLER`);
 - bit `6`: shifted pad action;
+- bit `7`: pressed state.
+
+Deck extended action values are packed into the signed 16-bit `value` field:
+
+- bits `0..6`: `CTRL_DECK_EXT_ACTION_*`;
 - bit `7`: pressed state.
 
 ## LED Feedback
