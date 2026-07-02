@@ -241,7 +241,7 @@ The same `enabled` state also drives the physical FLX4 Beat FX ON/OFF LED via
 `LED_BEAT_FX_ON`; S3 maps it to USB MIDI note `0x47` on `0x94`/`0x95`.
 
 The physical FLX4 MASTER CUE button is mapped from the official MIDI list to
-`CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x68`). P4 owns the monitor
+`CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x78`). P4 owns the monitor
 state: a button press toggles whether the master side contributes to the
 headphone/monitor mix, while the main/RCA master output remains unchanged.
 The P4 LED snapshot includes `LED_MASTER_CUE`; S3 maps it to output note
