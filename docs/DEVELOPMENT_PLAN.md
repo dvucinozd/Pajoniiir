@@ -772,7 +772,8 @@ Implementation order:
      master). This intentionally does not drive the original FLX4 headphone
      jack; that remains a separate USB Audio Class or analog bridge phase.
    - physical MASTER CUE is implemented from the official MIDI list
-     (`96 63`, shifted `96 68`) as a P4-owned monitor master-cue gate.
+     (`96 63`, shifted `96 78`) as a P4-owned monitor master-cue gate.
+     The official `96 68` message is Shift+Load Deck 1, not Master Cue.
      The main/RCA master output is unchanged; only the monitor/headphone master
      contribution is toggled. `LED_MASTER_CUE` is included in the reconnect-safe
      LED snapshot. Host tests cover input mapping, DSP gating, deck_core
