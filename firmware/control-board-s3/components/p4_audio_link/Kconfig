@@ -1,0 +1,12 @@
+menu "P4 audio link"
+
+config P4_AUDIO_LINK_ENABLED
+    bool "Enable P4-to-S3 monitor PCM link receiver"
+    default n
+    depends on DDJ_FLX4_HOST_MODE
+    help
+        Enables the future dedicated P4-to-S3 monitor PCM receiver used by the
+        FLX4 USB Audio headphones path. Keep disabled until the I2S bench pass
+        proves S3 USB MIDI remains responsive while the PCM link runs.
+
+endmenu

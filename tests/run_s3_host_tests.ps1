@@ -174,6 +174,19 @@ $tests = @(
             "test_flx4_uac_packetizer.c",
             "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_packetizer.c"
         )
+    },
+    @{
+        Name = "p4_audio_link"
+        Dir = "tests/p4_audio_link"
+        Target = "test_p4_audio_link.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/p4_audio_link/include",
+            "-o", "test_p4_audio_link.exe",
+            "test_p4_audio_link.c",
+            "../../firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c"
+        )
     }
 )
 

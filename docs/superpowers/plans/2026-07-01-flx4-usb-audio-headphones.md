@@ -1142,7 +1142,7 @@ git commit -m "feat: publish monitor pcm blocks from audio engine"
 - Modify: `firmware/control-board-s3/components/p4_audio_link/Kconfig`
 - Create: `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`
 
-- [ ] **Step 1: Select physical transport**
+- [x] **Step 1: Select physical transport**
 
 Use this decision table:
 
@@ -1155,7 +1155,7 @@ Use this decision table:
 
 Record the decision in `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`.
 
-- [ ] **Step 2: Define common PCM block header**
+- [x] **Step 2: Define common PCM block header**
 
 Use the same binary header on both P4 and S3:
 
@@ -1176,7 +1176,7 @@ PCM payload:
 int16 little-endian interleaved stereo: L0 R0 L1 R1 ...
 ```
 
-- [ ] **Step 3: Implement S3 receiver ring**
+- [x] **Step 3: Implement S3 receiver ring**
 
 `p4_audio_link.c` must expose:
 
@@ -1204,7 +1204,7 @@ Ring policy:
 - If consumer underruns, return silence and increment `underruns`.
 - Keep stats update atomic enough for diagnostics; do not log per block.
 
-- [ ] **Step 4: Implement P4 sender**
+- [x] **Step 4: Implement P4 sender**
 
 `monitor_pcm_link_write_nonblocking()` must enqueue the latest `hp_out` block to the selected physical transport. Rules:
 

@@ -79,6 +79,13 @@ for future LED work, and the PSRAM-sensitive GPIO35-GPIO37 range. GPIO15-GPIO18
 are legacy CDJ jog/browse encoder pins and are acceptable only in the current
 `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is not active.
 
+The software block format for this candidate is now implemented as `P4HP`
+frames: P4 `monitor_pcm_link` serializes stereo 16-bit monitor PCM with
+sequence numbers and CRC32, and S3 `p4_audio_link` receives those blocks into a
+4096-frame ring. The physical I2S bench result is still pending and must be
+recorded in `docs/validation/P4_S3_AUDIO_LINK_BENCH.md` before enabling this
+transport by default.
+
 PCM5102A MAIN OUT candidate pins for the photographed PCM5102MK/PCM5102A
 breakout board. The board header silkscreen is:
 
