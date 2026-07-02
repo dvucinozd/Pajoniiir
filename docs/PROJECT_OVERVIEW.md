@@ -110,10 +110,25 @@ The fork is no longer only the imported single-deck baseline:
   mapping from the official MIDI message PDF, Echo release-tail behavior, and
   host-tested momentary Pad FX pad LED feedback. Pad FX behavior and normal pad
   LED hardware smoke passed on 2026-07-01.
-- The stale Codex branches from completed work were cleaned up after the Phase
-  7 merge. The only intentionally preserved non-master work is
-  `codex/flx4-extended-controls`, an older dirty Smart/DSP experimental
-  branch that needs separate review before reuse or deletion.
+- The DDJ-FLX4 headphone jack now outputs the P4 cue/monitor mix over USB Audio
+  Class. The S3 stays the FLX4 USB host and streams the P4 `hp_out` bus to the
+  controller's physical headphones output, while PCM5102A remains the RCA MAIN
+  OUT, so CUE/MONITOR (USB headphones) and MASTER (RCA) run simultaneously. The
+  P4 ships the monitor PCM to the S3 over an inter-board I2S link, and ES8311 was
+  dropped to free an I2S unit (the P4 usable I2S budget is two units on eco2
+  silicon). Merged to `master` and hardware-verified end-to-end on 2026-07-02.
+- The seven official DDJ-FLX4 MIDI gaps were closed against the official Pioneer
+  MIDI message list: Censor, Sync (set-master), Quantize, Loop Adjust In/Out,
+  Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls.
+  The S3 maps the new physical MIDI notes to semantic control-link events and the
+  P4 owns the resulting state/audio/LED behavior. Censor is an approximation
+  (forward seek-back, sync-correct on release) rather than a true reverse.
+  Merged to `master` on 2026-07-02; host suites pass, hardware smoke pending.
+- The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
+  merged to `master` and deleted after the 2026-07-02 work. Some older
+  experimental Codex branches (for example `codex/flx4-extended-controls`)
+  remain outside `master` and still need separate review before reuse or
+  deletion.
 
 ## Non-Goals For The First Milestone
 

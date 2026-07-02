@@ -95,11 +95,10 @@ S3 host regression tests on Windows:
 .\tests\run_s3_host_tests.ps1
 ```
 
-Current `master` is the integration branch for the Phase 7 extended-control
-work. The former `codex/phase7-extended-controls-vu` and `codex/splash-screen`
-scopes have been merged, verified, pushed, and the stale remote/local branches
-were removed on 2026-06-26. One old experimental branch,
-`codex/flx4-extended-controls`, is intentionally still preserved outside
+Current `master` carries the Phase 7 extended-control work plus the 2026-07-02
+FLX4 USB headphones and official-MIDI-gap-closure features; those feature
+branches were merged, verified, pushed, and deleted. One old experimental
+branch, `codex/flx4-extended-controls`, is intentionally still preserved outside
 `master` because it contains dirty Smart/DSP work that needs a separate review
 before any merge/delete decision.
 
@@ -141,12 +140,16 @@ The physical FLX4 Master Level knob is mapped from the official MIDI PDF
 multiplies the persistent Settings master trim, so the controller knob provides
 day-to-day level control while the UI trim remains a saved limiter/headroom
 setting.
-Headphones Mix now routes the FLX4 14-bit Headphones Mix control into the P4
-monitor DSP: raw minimum is cue/PFL, raw maximum is stereo master, and the
-middle blends cue with master on the ES8311 monitor/headphone buffer. This does
-not output audio through the original FLX4 headphone jack; that would require a
-separate USB Audio Class host/streaming phase or an analog bridge from the P4
-monitor output.
+Headphones Mix routes the FLX4 14-bit Headphones Mix control into the P4 monitor
+DSP: raw minimum is cue/PFL, raw maximum is stereo master, and the middle blends
+cue with master on the monitor/headphone buffer. As of 2026-07-02 that monitor
+mix is also streamed back out through the DDJ-FLX4's own headphone jack over USB
+Audio Class: the P4 ships the `hp_out` bus to the S3 over an inter-board I2S
+link and the S3 (still the FLX4 USB host) plays it to the controller headphones,
+while PCM5102A stays the RCA MAIN OUT so CUE/MONITOR and MASTER run at once.
+ES8311 was dropped to free a P4 I2S unit for that link. The FLX4 Headphones
+Level knob (official `0xB6/0x0D+0x2D`) is mapped to a P4-owned headphone output
+gain.
 Beat FX section mapping and a P4-owned Beat FX state model are implemented
 from the official FLX4 XML reference: effect select, beat size, target, depth,
 on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
@@ -190,6 +193,12 @@ scheduler, and both deck overlays are briefly reblitted after any track load so
 Deck 1 and Deck 2 waveforms remain visible without requiring a touch redraw.
 Three-band channel EQ is implemented in the P4 audio path for both decks using
 the verified FLX4 14-bit EQ controls.
+The seven official DDJ-FLX4 MIDI gaps are also closed from the official Pioneer
+message list: Censor (approximated as a sync-correct forward seek-back rather
+than a true reverse), Sync-as-set-master, Quantize, Loop Adjust In/Out,
+Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls. The
+S3 maps the new physical MIDI notes to semantic control-link events and the P4
+owns the resulting state, audio, and LED behavior.
 The P4 firmware default is now a
 performance-optimized build so dual-deck audio/UI work runs with adequate
 headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
