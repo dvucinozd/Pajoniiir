@@ -877,3 +877,36 @@ Exit criteria:
 - LEDs recover to P4-confirmed state after S3 or FLX4 reconnect;
 - documentation distinguishes implemented, deferred, and unsupported Mixxx
   mappings.
+
+## Phase 8: Proposed Design Plans (not yet implemented)
+
+Two design plans are staged under `docs/superpowers/plans/`. Both were reviewed
+against the current `master` codebase (2026-07-03) and corrected so their API
+names, integration points, and assumptions match the real firmware. They are
+proposals, not merged work — no code exists for them yet.
+
+- **S3 GPIO48 status RGB LED** —
+  [`2026-07-03-s3-gpio48-wled-status.md`](superpowers/plans/2026-07-03-s3-gpio48-wled-status.md).
+  A service/diagnostic RGB indicator on the S3 (boot, FLX4 USB link, P4 UART
+  link, control/MIDI/UART activity, calibration, warning/error/fatal), with no
+  playback state. Key constraints baked into the plan: FLX4 connection is taken
+  from `flx4_midi_host` `publish_connection_state()` (USB host stack), **not**
+  TinyUSB device callbacks; GPIO48 as an addressable RGB is gated behind a
+  mandatory hardware-verification Step 0 because this is a custom panel board
+  with discrete LEDs already on GPIO 33/34/38; the P4-link watchdog hooks the
+  existing `handle_p4_frame()` RX path and `heartbeat_task`.
+- **WAV + FLAC playback** —
+  [`2026-07-03-wav-flac-decoder-support.md`](superpowers/plans/2026-07-03-wav-flac-decoder-support.md).
+  A decoder-abstraction layer (format detection → `audio_decoder_t` ops → WAV
+  parser / `dr_flac`) feeding the existing `audio_pcm_ring` → resampler → mixer
+  path. Key constraints: uses the real per-frame `audio_pcm_ring_push()` (SPSC,
+  boolean, with backpressure) rather than a bulk/blocking write; targets the
+  real `audio_engine_deck_load(deck, path, pvbr_400, duration_ms)` signature;
+  routes all file IO through `media_io_gate`; and explicitly resolves the
+  Rekordbox/ANLZ coupling (PVBR seek table is MP3-only, `NULL` for WAV/FLAC;
+  beatgrid/BPM/waveform come from ANLZ, and tracks without ANLZ degrade
+  gracefully with sync/quantize/beat-jump disabled and a `NO BEATGRID` UI hint).
+  Output remains PCM5102A RCA MAIN + FLX4 USB-headphones cue (ES8311 is gone).
+
+Both plans carry a "Sažetak ispravaka vs original" table documenting every
+correction made during the code review.

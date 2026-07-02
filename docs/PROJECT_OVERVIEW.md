@@ -143,3 +143,16 @@ The fork is no longer only the imported single-deck baseline:
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.
 - Treating FLX4 MIDI XML as executable logic.
+
+## Proposed Next Work
+
+Two code-reviewed design plans are staged under `docs/superpowers/plans/`
+(details in Phase 8 of [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)). Neither is
+implemented yet:
+
+- **S3 GPIO48 status RGB LED** — a service/diagnostic indicator (link/activity/
+  error states, no playback), gated behind a hardware check that GPIO48 is a
+  real addressable RGB on this custom panel board.
+- **WAV + FLAC playback** — a decoder-abstraction layer feeding the existing PCM
+  ring/resampler/mixer path, with the Rekordbox/ANLZ beatgrid coupling and
+  `media_io_gate` file access resolved.
