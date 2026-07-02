@@ -1255,6 +1255,43 @@ static void test_smart_buttons_toggle_audio_state_and_leds(void)
     assert(control_link_stub_last_led_state(LED_SMART_FADER, CTRL_DECK_1) == 1);
 }
 
+static void test_shifted_smart_buttons_are_noop_placeholders(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    audio_engine_stub_smart_cfx_enabled = true;
+    audio_engine_stub_smart_fader_enabled = true;
+
+    ctrl_event_t smart_cfx_shift_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_CFX_SHIFT,
+        .value = 1,
+    };
+    ctrl_event_t smart_cfx_shift_release = smart_cfx_shift_press;
+    smart_cfx_shift_release.value = 0;
+    ctrl_event_t smart_fader_shift_press = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_SMART_FADER_SHIFT,
+        .value = 1,
+    };
+    ctrl_event_t smart_fader_shift_release = smart_fader_shift_press;
+    smart_fader_shift_release.value = 0;
+
+    deck_core_test_apply_event(&smart_cfx_shift_press);
+    deck_core_test_apply_event(&smart_cfx_shift_release);
+    deck_core_test_apply_event(&smart_fader_shift_press);
+    deck_core_test_apply_event(&smart_fader_shift_release);
+
+    assert(audio_engine_stub_smart_cfx_enabled);
+    assert(audio_engine_stub_smart_fader_enabled);
+    assert(control_link_stub_led_count == 0);
+    assert(s_load_calls[CTRL_DECK_1] == 0);
+    assert(s_load_calls[CTRL_DECK_2] == 0);
+    assert(s_toggle_library_view_calls == 0);
+}
+
 static void test_beat_fx_defaults_and_state_controls(void)
 {
     deck_core_test_reset();
@@ -2024,6 +2061,7 @@ int main(void)
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();
     test_smart_buttons_toggle_audio_state_and_leds();
+    test_shifted_smart_buttons_are_noop_placeholders();
     test_beat_fx_defaults_and_state_controls();
     test_beat_fx_public_snapshot_matches_state_controls();
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();

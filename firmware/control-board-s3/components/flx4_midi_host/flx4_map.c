@@ -54,6 +54,8 @@
 #define FLX4_BTN_BROWSE_SHIFT_PRESS 0x42
 #define FLX4_BTN_SMART_CFX     0x00
 #define FLX4_BTN_SMART_FADER   0x01
+#define FLX4_BTN_SMART_CFX_SHIFT 0x08
+#define FLX4_BTN_SMART_FADER_SHIFT 0x09
 #define FLX4_BTN_BEAT_FX_TARGET_CH1 0x10
 #define FLX4_BTN_BEAT_FX_TARGET_CH2 0x11
 #define FLX4_BTN_BEAT_FX_CLEAR 0x43
@@ -494,6 +496,12 @@ bool flx4_map_message(flx4_map_state_t *state,
         }
         if (msg->data1 == FLX4_BTN_SMART_FADER) {
             return emit_button(out, CTRL_ID_SMART_FADER, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_SMART_CFX_SHIFT) {
+            return emit_button(out, CTRL_ID_SMART_CFX_SHIFT, msg->data2 > 0 ? 1 : 0);
+        }
+        if (msg->data1 == FLX4_BTN_SMART_FADER_SHIFT) {
+            return emit_button(out, CTRL_ID_SMART_FADER_SHIFT, msg->data2 > 0 ? 1 : 0);
         }
         if (msg->data1 == FLX4_BTN_BROWSE_PRESS) {
             return emit_button(out, CTRL_ID_BROWSE_PRESS, msg->data2 > 0 ? 1 : 0);

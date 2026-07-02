@@ -1067,6 +1067,9 @@ static bool on_system_button(const ctrl_event_t *ev)
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
+    case CTRL_ID_SMART_CFX_SHIFT:
+    case CTRL_ID_SMART_FADER_SHIFT:
+        return true;
     case CTRL_ID_MASTER_CUE:
         if (ev->value == 0) {
             return true;

@@ -17,6 +17,8 @@ int p4_ctrl_type_state(void) { return CTRL_TYPE_STATE; }
 int p4_ctrl_id_flx4_connection(void) { return CTRL_ID_FLX4_CONNECTION; }
 int p4_ctrl_id_smart_cfx(void) { return CTRL_ID_SMART_CFX; }
 int p4_ctrl_id_smart_fader(void) { return CTRL_ID_SMART_FADER; }
+int p4_ctrl_id_smart_cfx_shift(void) { return CTRL_ID_SMART_CFX_SHIFT; }
+int p4_ctrl_id_smart_fader_shift(void) { return CTRL_ID_SMART_FADER_SHIFT; }
 int p4_ctrl_id_beat_fx_select_next(void) { return CTRL_ID_BEAT_FX_SELECT_NEXT; }
 int p4_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
 int p4_ctrl_id_deck1_shift(void) { return CTRL_ID_DECK1_SHIFT; }

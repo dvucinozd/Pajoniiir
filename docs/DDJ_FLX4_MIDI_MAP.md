@@ -51,6 +51,8 @@ P4 DSP/settings behavior is deferred.
 | Browse press | Library | `0x96` | `0x41` | toggles the P4 UI between Library and Overview; does not load a deck |
 | Smart CFX | Global | `0x96` | `0x00` | press `0x7F`, release `0x00`; toggles P4 Smart CFX state |
 | Smart Fader | Global | `0x96` | `0x01` | press `0x7F`, release `0x00`; toggles P4 Smart Fader state |
+| Shift + Smart CFX | Global | `0x96` | `0x08` | press `0x7F`, release `0x00`; mapped as P4 no-op placeholder |
+| Shift + Smart Fader | Global | `0x96` | `0x09` | press `0x7F`, release `0x00`; mapped as P4 no-op placeholder |
 
 ## Jogs
 
@@ -105,6 +107,8 @@ hardcoded ad hoc in parser logic.
 #define FLX4_BTN_PFL             0x54
 #define FLX4_BTN_SMART_CFX       0x00
 #define FLX4_BTN_SMART_FADER     0x01
+#define FLX4_BTN_SMART_CFX_SHIFT 0x08
+#define FLX4_BTN_SMART_FADER_SHIFT 0x09
 
 #define FLX4_CC_JOG_SIDE_BEND    0x21
 #define FLX4_CC_JOG_SCRATCH      0x22
@@ -203,6 +207,8 @@ Status legend:
 | Filter CH1 / CH2 | CH1 `0xB6/0x17+0x37`, CH2 `0xB6/0x18+0x38` | 14-bit MSB+LSB | channel-specific global CC | `CTRL_ID_CH1_FILTER`, `CTRL_ID_CH2_FILTER` | filter/DSP | Implemented behind Smart CFX | Verified 2026-06-21; DSP behavior enabled when Smart CFX is on |
 | Smart CFX | `0x96/0x00` | press/release | global | `CTRL_ID_SMART_CFX` | P4 Smart CFX filter DSP + LED | Implemented with softened macro curve and balanced HI side | Verified 2026-06-20 input/LED address; curve host-tested 2026-07-01; HI/LOW hardware DSP smoke passed 2026-07-01 |
 | Smart Fader | `0x96/0x01` | press/release | global | `CTRL_ID_SMART_FADER` | P4 Smart Fader transition assist + LED | Implemented | Verified 2026-06-20 input/LED address; hardware behavior smoke passed 2026-07-01 |
+| Shift + Smart CFX | official MIDI list/PDF: `0x96/0x08` | press/release | shifted global | `CTRL_ID_SMART_CFX_SHIFT` | future Smart CFX alternate behavior | Mapped only; P4 consumes press/release as no-op placeholder | Host-tested from official PDF; hardware smoke pending |
+| Shift + Smart Fader | official MIDI list/PDF: `0x96/0x09` | press/release | shifted global | `CTRL_ID_SMART_FADER_SHIFT` | future Smart Fader alternate behavior | Mapped only; P4 consumes press/release as no-op placeholder | Host-tested from official PDF; hardware smoke pending |
 | Beat FX select next / previous | `0x94/0x63`, `0x94/0x64` | press/release | FX section | `CTRL_ID_BEAT_FX_SELECT_NEXT`, `CTRL_ID_BEAT_FX_SELECT_PREV` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke passed 2026-07-01 |
 | Beat FX beat left / right | `0x94/0x4A`, `0x94/0x4B` | press/release | FX section | `CTRL_ID_BEAT_FX_BEAT_DEC`, `CTRL_ID_BEAT_FX_BEAT_INC` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke passed 2026-07-01 |
 | Beat FX channel select | CH1 `0x94/0x10`, CH2 `0x95/0x11` | stateful semantic target select; both active maps to `1&2` | FX channel selector | `CTRL_ID_BEAT_FX_TARGET` | P4 Beat FX state model | Implemented state/mapping | Host-tested from XML; hardware smoke passed 2026-07-01 for CH1/CH2/1&2 |
