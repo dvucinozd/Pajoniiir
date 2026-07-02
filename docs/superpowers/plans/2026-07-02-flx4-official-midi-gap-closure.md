@@ -109,11 +109,11 @@ Use these IDs unless a conflict is discovered during implementation:
 #define CTRL_ID_SHIFT_LOAD_DECK1       (CTRL_NS_BROWSER | 0x06)
 #define CTRL_ID_SHIFT_LOAD_DECK2       (CTRL_NS_BROWSER | 0x07)
 
-#define CTRL_ID_SMART_CFX_SHIFT        (CTRL_NS_SYSTEM | 0x0D)
-#define CTRL_ID_SMART_FADER_SHIFT      (CTRL_NS_SYSTEM | 0x0E)
-#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT (CTRL_NS_SYSTEM | 0x0F)
-#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT (CTRL_NS_SYSTEM | 0x10)
 #define CTRL_ID_HEADPHONE_LEVEL        0x7D
+#define CTRL_ID_SMART_CFX_SHIFT        0x7E
+#define CTRL_ID_SMART_FADER_SHIFT      0x7F
+#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
+#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 
 #define LED_CENSOR                     53
 #define LED_CUE_SHIFT                  54
@@ -140,7 +140,7 @@ Use these IDs unless a conflict is discovered during implementation:
 #define LED_REMOTE_COUNT               75
 ```
 
-`CTRL_ID_HEADPHONE_LEVEL` is allocated as a literal system/global semantic ID because the mixer namespace `0x50..0x5F` is already full and `CTRL_ID_HEADPHONE_MIX` uses the last mixer slot. It still travels as `CTRL_TYPE_PITCH`; P4 routes the ID to monitor/headphone gain instead of system-button behavior. Do not express it as `CTRL_NS_SYSTEM | offset` above `0x0F`; those values alias existing system IDs.
+The new global IDs after `CTRL_ID_MASTER_CUE` are allocated as literal byte IDs because `CTRL_NS_SYSTEM | offset` aliases existing IDs when `offset` is above `0x0F` (`0x70 | 0x10 == 0x70`). `CTRL_ID_HEADPHONE_LEVEL` still travels as `CTRL_TYPE_PITCH`; P4 routes the ID to monitor/headphone gain instead of system-button behavior.
 
 ---
 
@@ -674,8 +674,8 @@ git commit -m "feat: add flx4 headphone level control"
 Add to both `control_link.h` files:
 
 ```c
-#define CTRL_ID_SMART_CFX_SHIFT        (CTRL_NS_SYSTEM | 0x0D)
-#define CTRL_ID_SMART_FADER_SHIFT      (CTRL_NS_SYSTEM | 0x0E)
+#define CTRL_ID_SMART_CFX_SHIFT        0x7E
+#define CTRL_ID_SMART_FADER_SHIFT      0x7F
 ```
 
 Expose constants in `s3_constants.c` and `p4_constants.c`:
@@ -823,8 +823,8 @@ git commit -m "feat: map flx4 shifted smart controls"
 Add to both `control_link.h` files:
 
 ```c
-#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT (CTRL_NS_SYSTEM | 0x0F)
-#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT (CTRL_NS_SYSTEM | 0x10)
+#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
+#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 ```
 
 Expose and assert parity in the same style as Task 4.
