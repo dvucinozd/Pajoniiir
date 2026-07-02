@@ -27,6 +27,7 @@ typedef struct {
     flx4_14bit_state_t eq_low[2];
     flx4_14bit_state_t filter[2];
     flx4_14bit_state_t headphone_mix;
+    flx4_14bit_state_t headphone_level;
     flx4_14bit_state_t master_volume;
     flx4_14bit_state_t crossfader;
     uint8_t beat_fx_depth;

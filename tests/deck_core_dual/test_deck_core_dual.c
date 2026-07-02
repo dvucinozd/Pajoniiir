@@ -20,6 +20,7 @@ int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_master_volume;
 int audio_engine_stub_headphone_mix;
+int audio_engine_stub_headphone_level;
 int audio_engine_stub_master_cue_toggle_count;
 bool audio_engine_stub_master_cue_enabled;
 int audio_engine_stub_crossfader;
@@ -252,6 +253,7 @@ static void reset_audio_engine_stub(void)
     }
     audio_engine_stub_master_volume = -1;
     audio_engine_stub_headphone_mix = -1;
+    audio_engine_stub_headphone_level = -1;
     audio_engine_stub_master_cue_toggle_count = 0;
     audio_engine_stub_master_cue_enabled = true;
     audio_engine_stub_beat_fx_filter_target = -1;
@@ -681,6 +683,23 @@ static void test_mixer_namespace_routes_headphone_mix(void)
 
     assert(audio_engine_stub_headphone_mix == 4096);
     assert(!deck_core_test_should_log_deferred_mixer_value(CTRL_ID_HEADPHONE_MIX, 4096));
+}
+
+static void test_system_namespace_routes_headphone_level(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t headphone_level = {
+        .type = CTRL_EV_PITCH,
+        .id = CTRL_ID_HEADPHONE_LEVEL,
+        .value = 6144,
+    };
+    deck_core_test_apply_event(&headphone_level);
+
+    assert(audio_engine_stub_headphone_level == 6144);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_pitch_percent_set_count[CTRL_DECK_2] == 0);
 }
 
 static void test_system_namespace_routes_master_cue_toggle_on_press(void)
@@ -1997,6 +2016,7 @@ int main(void)
     test_mixer_namespace_routes_trim_to_pregain();
     test_mixer_namespace_routes_master_volume();
     test_mixer_namespace_routes_headphone_mix();
+    test_system_namespace_routes_headphone_level();
     test_system_namespace_routes_master_cue_toggle_on_press();
     test_jog_search_encoder_seeks_relative_to_deck_position();
     test_jog_search_encoder_clamps_at_track_start();

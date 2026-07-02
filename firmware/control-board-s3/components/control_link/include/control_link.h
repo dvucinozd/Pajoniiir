@@ -171,6 +171,8 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_CLEAR       (CTRL_NS_SYSTEM | 0x0A)
 #define CTRL_ID_MASTER_VOLUME       (CTRL_NS_SYSTEM | 0x0B)
 #define CTRL_ID_MASTER_CUE          (CTRL_NS_SYSTEM | 0x0C)
+/* Next free system/global semantic ID; avoid CTRL_NS_SYSTEM | offsets above 0x0F aliasing. */
+#define CTRL_ID_HEADPHONE_LEVEL     0x7D
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,

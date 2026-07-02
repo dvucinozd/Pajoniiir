@@ -26,6 +26,7 @@ int p4_ctrl_id_deck2_tempo_range(void) { return CTRL_ID_DECK2_TEMPO_RANGE; }
 int p4_ctrl_id_deck2_pad_action(void) { return CTRL_ID_DECK2_PAD_ACTION; }
 int p4_ctrl_id_ch1_trim(void) { return CTRL_ID_CH1_TRIM; }
 int p4_ctrl_id_headphone_mix(void) { return CTRL_ID_HEADPHONE_MIX; }
+int p4_ctrl_id_headphone_level(void) { return CTRL_ID_HEADPHONE_LEVEL; }
 int p4_ctrl_id_master_volume(void) { return CTRL_ID_MASTER_VOLUME; }
 int p4_ctrl_id_master_cue(void) { return CTRL_ID_MASTER_CUE; }
 int p4_ctrl_id_deck1_jog_search(void) { return CTRL_ID_DECK1_JOG_SEARCH; }

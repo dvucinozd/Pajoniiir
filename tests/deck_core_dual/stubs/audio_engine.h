@@ -127,6 +127,7 @@ extern int audio_engine_stub_channel_volume[2];
 extern int audio_engine_stub_pregain[2];
 extern int audio_engine_stub_master_volume;
 extern int audio_engine_stub_headphone_mix;
+extern int audio_engine_stub_headphone_level;
 extern int audio_engine_stub_master_cue_toggle_count;
 extern bool audio_engine_stub_master_cue_enabled;
 extern int audio_engine_stub_crossfader;
@@ -181,6 +182,12 @@ static inline esp_err_t audio_engine_set_master_volume(uint16_t raw_volume)
 static inline esp_err_t audio_engine_set_headphone_mix(uint16_t raw_mix)
 {
     audio_engine_stub_headphone_mix = raw_mix;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_headphone_level(uint16_t raw_level)
+{
+    audio_engine_stub_headphone_level = raw_level;
     return ESP_OK;
 }
 

@@ -113,7 +113,7 @@ Use these IDs unless a conflict is discovered during implementation:
 #define CTRL_ID_SMART_FADER_SHIFT      (CTRL_NS_SYSTEM | 0x0E)
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT (CTRL_NS_SYSTEM | 0x0F)
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT (CTRL_NS_SYSTEM | 0x10)
-#define CTRL_ID_HEADPHONE_LEVEL        (CTRL_NS_SYSTEM | 0x11)
+#define CTRL_ID_HEADPHONE_LEVEL        0x7D
 
 #define LED_CENSOR                     53
 #define LED_CUE_SHIFT                  54
@@ -140,7 +140,7 @@ Use these IDs unless a conflict is discovered during implementation:
 #define LED_REMOTE_COUNT               75
 ```
 
-`CTRL_ID_HEADPHONE_LEVEL` is allocated in the system namespace because the mixer namespace `0x50..0x5F` is already full and `CTRL_ID_HEADPHONE_MIX` uses the last mixer slot. It still travels as `CTRL_TYPE_PITCH`; P4 routes the ID to monitor/headphone gain instead of system-button behavior.
+`CTRL_ID_HEADPHONE_LEVEL` is allocated as a literal system/global semantic ID because the mixer namespace `0x50..0x5F` is already full and `CTRL_ID_HEADPHONE_MIX` uses the last mixer slot. It still travels as `CTRL_TYPE_PITCH`; P4 routes the ID to monitor/headphone gain instead of system-button behavior. Do not express it as `CTRL_NS_SYSTEM | offset` above `0x0F`; those values alias existing system IDs.
 
 ---
 
@@ -442,14 +442,17 @@ int p4_ctrl_id_headphone_level(void);
 
 assert(s3_ctrl_id_headphone_level() == p4_ctrl_id_headphone_level());
 assert(s3_ctrl_id_headphone_level() == CTRL_ID_HEADPHONE_LEVEL);
+assert(s3_ctrl_id_headphone_level() != s3_ctrl_id_smart_cfx());
+assert(s3_ctrl_id_headphone_level() == 0x7D);
 ```
 
 - [ ] **Step 2: Add shared ID**
 
-In both `control_link.h` files, after `CTRL_ID_HEADPHONE_MIX`:
+In both `control_link.h` files, in the system/global semantic ID block:
 
 ```c
-#define CTRL_ID_HEADPHONE_LEVEL   (CTRL_NS_SYSTEM | 0x11)
+/* Next free system/global semantic ID; avoid CTRL_NS_SYSTEM | offsets above 0x0F aliasing. */
+#define CTRL_ID_HEADPHONE_LEVEL   0x7D
 ```
 
 - [ ] **Step 3: Extend S3 map state**

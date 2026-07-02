@@ -84,6 +84,8 @@
 #define FLX4_CC_EQ_LOW_LSB     0x2F
 #define FLX4_CC_HEADPHONE_MIX_MSB 0x0C
 #define FLX4_CC_HEADPHONE_MIX_LSB 0x2C
+#define FLX4_CC_HEADPHONE_LEVEL_MSB 0x0D
+#define FLX4_CC_HEADPHONE_LEVEL_LSB 0x2D
 #define FLX4_CC_MASTER_LEVEL_MSB  0x08
 #define FLX4_CC_MASTER_LEVEL_LSB  0x28
 #define FLX4_CC_FILTER_CH1_MSB 0x17
@@ -410,6 +412,10 @@ static bool map_master_cc(flx4_map_state_t *state,
         return update_14bit(&state->headphone_mix, true, data2, out, CTRL_ID_HEADPHONE_MIX);
     case FLX4_CC_HEADPHONE_MIX_LSB:
         return update_14bit(&state->headphone_mix, false, data2, out, CTRL_ID_HEADPHONE_MIX);
+    case FLX4_CC_HEADPHONE_LEVEL_MSB:
+        return update_14bit(&state->headphone_level, true, data2, out, CTRL_ID_HEADPHONE_LEVEL);
+    case FLX4_CC_HEADPHONE_LEVEL_LSB:
+        return update_14bit(&state->headphone_level, false, data2, out, CTRL_ID_HEADPHONE_LEVEL);
     case FLX4_CC_MASTER_LEVEL_MSB:
         return update_14bit(&state->master_volume, true, data2, out, CTRL_ID_MASTER_VOLUME);
     case FLX4_CC_MASTER_LEVEL_LSB:
@@ -585,7 +591,9 @@ size_t flx4_map_emit_snapshot(const flx4_map_state_t *state,
         !emit_snapshot_14bit(&state->master_volume,
                              CTRL_ID_MASTER_VOLUME, cb, ctx, &count) ||
         !emit_snapshot_14bit(&state->headphone_mix,
-                             CTRL_ID_HEADPHONE_MIX, cb, ctx, &count)) {
+                             CTRL_ID_HEADPHONE_MIX, cb, ctx, &count) ||
+        !emit_snapshot_14bit(&state->headphone_level,
+                             CTRL_ID_HEADPHONE_LEVEL, cb, ctx, &count)) {
         return count;
     }
 

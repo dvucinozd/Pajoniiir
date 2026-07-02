@@ -199,6 +199,7 @@ static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
 static float            s_master_trim = 1.0f;
 static uint16_t         s_master_volume = AUDIO_MIXER_CONTROL_MAX;
 static uint16_t         s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
+static uint16_t         s_headphone_level = AUDIO_MIXER_CONTROL_MAX;
 static bool             s_master_cue_enabled = true;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
@@ -1305,13 +1306,14 @@ static void ae_output_task(void *arg)
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
 
-            audio_output_mix_result_t mix = audio_output_mixer_next_full(
+            audio_output_mix_result_t mix = audio_output_mixer_next_full_with_headphone_level(
                 &deck0,
                 &deck1,
                 s_pfl_enabled[deck0_index],
                 s_pfl_enabled[deck1_index],
                 output_headphone_mode(),
                 s_headphone_mix,
+                s_headphone_level,
                 s_master_cue_enabled,
                 &frame_consumed0,
                 &frame_consumed1,
@@ -1465,6 +1467,7 @@ esp_err_t audio_engine_init(void)
     s_master_trim = 1.0f;
     s_master_volume = AUDIO_MIXER_CONTROL_MAX;
     s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
+    s_headphone_level = AUDIO_MIXER_CONTROL_MAX;
     s_master_cue_enabled = true;
     s_cue_mode = 0;
     s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
@@ -2295,6 +2298,20 @@ uint16_t audio_engine_get_headphone_mix(void)
     return s_headphone_mix;
 }
 
+esp_err_t audio_engine_set_headphone_level(uint16_t raw_level)
+{
+    if (raw_level > AUDIO_MIXER_CONTROL_MAX) {
+        raw_level = AUDIO_MIXER_CONTROL_MAX;
+    }
+    s_headphone_level = raw_level;
+    return ESP_OK;
+}
+
+uint16_t audio_engine_get_headphone_level(void)
+{
+    return s_headphone_level;
+}
+
 esp_err_t audio_engine_set_eq(uint8_t deck, audio_eq_band_t band, uint16_t raw)
 {
     if (!deck_is_valid(deck) || band >= AUDIO_EQ_BAND_COUNT) {
@@ -2576,6 +2593,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->master_volume = s_master_volume;
     out_snapshot->headphone_mix = s_headphone_mix;
+    out_snapshot->headphone_level = s_headphone_level;
     out_snapshot->master_cue_enabled = s_master_cue_enabled;
     out_snapshot->output_gain[0] = gain0;
     out_snapshot->output_gain[1] = gain1;

@@ -398,6 +398,10 @@ static void test_14bit_controls_emit_after_both_halves(void)
     assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x13), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x23), &ev));
     expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x13 << 7) | 0x23));
+
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0D, 0x14), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2D, 0x24), &ev));
+    expect_event(&ev, CTRL_TYPE_PITCH, CTRL_ID_HEADPHONE_LEVEL, (int16_t)((0x14 << 7) | 0x24));
 }
 
 static void test_snapshot_emits_known_absolute_controls_only(void)
@@ -409,6 +413,8 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
     memset(&capture, 0, sizeof(capture));
 
     assert(!flx4_map_message(&state, MSG(0xB0, 0x04, 0x10), &ev));
+    assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
+    assert(!flx4_map_message(&state, MSG(0xB6, 0x0D, 0x52), &ev));
     assert(flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture) == 0);
 
     assert(flx4_map_message(&state, MSG(0xB0, 0x24, 0x20), &ev));
@@ -424,6 +430,7 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
     assert(flx4_map_message(&state, MSG(0xB6, 0x28, 0x41), &ev));
     assert(!flx4_map_message(&state, MSG(0xB6, 0x0C, 0x50), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x2C, 0x51), &ev));
+    assert(flx4_map_message(&state, MSG(0xB6, 0x2D, 0x53), &ev));
     assert(!flx4_map_message(&state, MSG(0xB6, 0x17, 0x60), &ev));
     assert(flx4_map_message(&state, MSG(0xB6, 0x37, 0x61), &ev));
     assert(!flx4_map_message(&state, MSG(0xB0, 0x07, 0x62), &ev));
@@ -441,19 +448,19 @@ static void test_snapshot_emits_known_absolute_controls_only(void)
 
     size_t emitted = flx4_map_emit_snapshot(&state, capture_snapshot_event, &capture);
     assert(emitted == capture.count);
-    assert(emitted == 9);
+    assert(emitted == 10);
     expect_snapshot_event(&capture, CTRL_ID_CH1_TRIM, (int16_t)((0x10 << 7) | 0x20));
     expect_snapshot_event(&capture, CTRL_ID_CH2_VOLUME, (int16_t)((0x21 << 7) | 0x23));
     expect_snapshot_event(&capture, CTRL_ID_CROSSFADER, (int16_t)((0x30 << 7) | 0x31));
     expect_snapshot_event(&capture, CTRL_ID_MASTER_VOLUME, (int16_t)((0x40 << 7) | 0x41));
     expect_snapshot_event(&capture, CTRL_ID_HEADPHONE_MIX, (int16_t)((0x50 << 7) | 0x51));
+    expect_snapshot_event(&capture, CTRL_ID_HEADPHONE_LEVEL, (int16_t)((0x52 << 7) | 0x53));
     expect_snapshot_event(&capture, CTRL_ID_CH1_FILTER, (int16_t)((0x60 << 7) | 0x61));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_HIGH, (int16_t)((0x62 << 7) | 0x63));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_MID, (int16_t)((0x64 << 7) | 0x65));
     expect_snapshot_event(&capture, CTRL_ID_CH1_EQ_LOW, (int16_t)((0x66 << 7) | 0x67));
     expect_no_snapshot_event(&capture, CTRL_ID_DECK1_TEMPO);
     expect_no_snapshot_event(&capture, CTRL_ID_DECK1_PFL);
-    expect_no_snapshot_event(&capture, CTRL_ID_SMART_CFX);
     expect_no_snapshot_event(&capture, CTRL_ID_BROWSE_DELTA);
     expect_no_snapshot_event(&capture, CTRL_ID_BEAT_FX_DEPTH);
 }

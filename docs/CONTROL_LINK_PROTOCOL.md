@@ -50,7 +50,7 @@ Suggested namespaces:
 | Deck 2 | `0x30`-`0x4F` | transport, jog, tempo, loop, pad mode/action |
 | Mixer | `0x50`-`0x5F` | channel faders, crossfader, PFL, trim/EQ/filter monitor controls |
 | Browser | `0x60`-`0x6F` | browse/load/navigation |
-| System | `0x70`-`0x7F` | heartbeat, diagnostics |
+| System | `0x70`-`0x7F` | heartbeat, diagnostics, global system/audio controls |
 
 The S3 and P4 headers carry matching constants for this layout. Host tests
 verify that the shared MVP IDs, Smart control IDs, and FLX4 connection state
@@ -113,11 +113,16 @@ test.
 | `0x79` | Beat FX on/off | `0` release, `1` press; press toggles P4 Beat FX enabled state |
 | `0x7A` | Beat FX clear | `0` release, `1` press; press resets P4 Beat FX state to defaults |
 | `0x7B` | Master volume | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 Master Level `0xB6/0x08+0x28`; P4 applies it as runtime non-boosting master output volume |
+| `0x7D` | Headphone Level | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB6/0x0D+0x2D`; P4 scales only headphone/monitor output |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
 channel fader, and crossfader events are locally coalesced before UART send;
 button edges and load/PFL events remain FIFO.
+
+`CTRL_ID_HEADPHONE_LEVEL` is a literal `0x7D` in both firmware targets because
+the current namespace encoding aliases `CTRL_NS_SYSTEM | offset` values above
+`0x0F`.
 
 Pad action values are packed into the signed 16-bit `value` field:
 
@@ -197,11 +202,12 @@ After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
 the last known FLX4 absolute input snapshot to P4. The replay covers only
 controls whose current value S3 has actually observed as a complete value:
 channel faders, crossfader, trim/pregain, EQ high/mid/low, channel filter,
-Master Level, Headphones Mix, and Beat FX Level/Depth. S3 does not fabricate
-defaults for unknown physical positions, and the USB MIDI class does not expose
-a generic "read all knobs now" request. Tempo faders, buttons, pad actions,
-PFL, browse, and jog inputs are deliberately excluded from this snapshot phase
-because replaying them could create false user actions or disable Beat Sync.
+Master Level, Headphones Mix, Headphone Level, and Beat FX Level/Depth. S3 does
+not fabricate defaults for unknown physical positions, and the USB MIDI class
+does not expose a generic "read all knobs now" request. Tempo faders, buttons,
+pad actions, PFL, browse, and jog inputs are deliberately excluded from this
+snapshot phase because replaying them could create false user actions or disable
+Beat Sync.
 
 The current P4 Beat FX snapshot is exposed through `/api/status` under
 `beat_fx` for low-rate hardware smoke verification without raw MIDI logging.

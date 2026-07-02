@@ -1137,9 +1137,19 @@ static bool on_system_button(const ctrl_event_t *ev)
 
 static bool on_system_value(const ctrl_event_t *ev)
 {
-    if (!ev || ev->type != CTRL_EV_PITCH || ev->id != CTRL_ID_BEAT_FX_DEPTH) {
+    if (!ev || ev->type != CTRL_EV_PITCH) {
         return false;
     }
+
+    if (ev->id == CTRL_ID_HEADPHONE_LEVEL) {
+        audio_engine_set_headphone_level(ev->value < 0 ? 0u : (uint16_t)ev->value);
+        return true;
+    }
+
+    if (ev->id != CTRL_ID_BEAT_FX_DEPTH) {
+        return false;
+    }
+
     int16_t depth = ev->value;
     if (depth < 0) {
         depth = 0;
