@@ -635,6 +635,9 @@ static esp_err_t start_midi_in_transfer(flx4_host_state_t *host)
 static void close_device(flx4_host_state_t *host)
 {
     host->closing = true;
+#if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
+    flx4_usb_audio_stop();
+#endif
     if (host->in_xfer && !host->transfer_active) {
         esp_err_t rc = usb_host_transfer_free(host->in_xfer);
         if (rc != ESP_OK) {
@@ -713,6 +716,15 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
                                                   cfg->wTotalLength);
     if (audio_rc == ESP_OK) {
         ESP_LOGI(TAG, "FLX4 USB Audio playback interface configured");
+#if CONFIG_DDJ_FLX4_USB_AUDIO_TONE_SMOKE_AUTOSTART
+        esp_err_t tone_rc = flx4_usb_audio_start_tone(1000u);
+        if (tone_rc == ESP_OK) {
+            ESP_LOGI(TAG, "FLX4 USB Audio tone smoke started");
+        } else {
+            ESP_LOGW(TAG, "FLX4 USB Audio tone smoke start failed: %s",
+                     esp_err_to_name(tone_rc));
+        }
+#endif
     } else {
         ESP_LOGW(TAG, "FLX4 USB Audio configure failed, MIDI will continue: %s",
                  esp_err_to_name(audio_rc));

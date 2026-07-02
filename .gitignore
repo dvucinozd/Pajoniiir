@@ -6,6 +6,7 @@ vendor/
 
 # ESP-IDF / embedded build outputs
 build/
+build_*/
 managed_components/
 dependencies.lock
 sdkconfig

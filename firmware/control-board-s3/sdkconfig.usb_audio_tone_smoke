@@ -1,0 +1,15 @@
+# DDJ-FLX4 USB Audio tone smoke profile.
+# Use together with sdkconfig.defaults:
+# idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.usb_audio_tone_smoke" build
+
+CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES=y
+CONFIG_DDJ_FLX4_USB_AUDIO_TONE_SMOKE_AUTOSTART=y
+# CONFIG_DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2 is not set
+
+# FLX4 playback is an isochronous OUT endpoint with MPS 384 on the
+# selected 4ch/16-bit alt-setting. ESP-IDF's default/Bias-IN FIFO layouts
+# cannot claim that endpoint, so the USB host must reserve FIFO for
+# periodic OUT traffic during this smoke profile.
+# CONFIG_USB_HOST_HW_BUFFER_BIAS_BALANCED is not set
+# CONFIG_USB_HOST_HW_BUFFER_BIAS_IN is not set
+CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
