@@ -121,7 +121,13 @@ typedef enum {
 #define LED_HOT_CUE_PAD_7 50
 #define LED_HOT_CUE_PAD_8 51
 #define LED_MASTER_CUE 52
+/* LED_CENSOR is state-driven: the P4 publishes it through the periodic FLX4 LED
+ * snapshot (flx4_led_snapshot.c) from deck_state_t.censor_active. */
 #define LED_CENSOR 53
+/* The LEDs below are output-only capability: their MIDI note mapping exists in
+ * flx4_led_midi.c and is packet-tested, but no P4 deck handler drives them yet.
+ * They are reserved for the momentary press/release feedback described in the
+ * gap-closure plan and are intentionally NOT part of the state snapshot. */
 #define LED_CUE_SHIFT 54
 #define LED_LOOP_ADJUST_IN 55
 #define LED_LOOP_ADJUST_OUT 56
@@ -177,10 +183,19 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_CLEAR       (CTRL_NS_SYSTEM | 0x0A)
 #define CTRL_ID_MASTER_VOLUME       (CTRL_NS_SYSTEM | 0x0B)
 #define CTRL_ID_MASTER_CUE          (CTRL_NS_SYSTEM | 0x0C)
-/* Next free system/global semantic ID; avoid CTRL_NS_SYSTEM | offsets above 0x0F aliasing. */
-#define CTRL_ID_HEADPHONE_LEVEL     0x7D
-#define CTRL_ID_SMART_CFX_SHIFT     0x7E
-#define CTRL_ID_SMART_FADER_SHIFT   0x7F
+/*
+ * Global (deck-less) semantic IDs. The system namespace CTRL_NS_SYSTEM = 0x70
+ * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
+ * Once 0x7F is used the namespace is full; any further global IDs live as flat
+ * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
+ * reserved as headroom, so 0x83/0x84 are the current overflow allocations.
+ * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
+ * control_link_protocol host test asserts the two sides agree.
+ */
+#define CTRL_ID_HEADPHONE_LEVEL     0x7D  /* CTRL_NS_SYSTEM | 0x0D */
+#define CTRL_ID_SMART_CFX_SHIFT     0x7E  /* CTRL_NS_SYSTEM | 0x0E */
+#define CTRL_ID_SMART_FADER_SHIFT   0x7F  /* CTRL_NS_SYSTEM | 0x0F -- namespace full */
+/* Flat global overflow region (no namespace); 0x80..0x82 reserved for future use. */
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 

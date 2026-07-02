@@ -722,6 +722,17 @@ static void adjust_loop_boundary(uint8_t deck, bool adjust_in, deck_state_t *sta
     }
 }
 
+/*
+ * Censor approximation. Real Pioneer censor plays the track in reverse while
+ * held and, on release, resumes exactly where the untouched timeline would be
+ * (so beat alignment is preserved). We approximate that without a reverse
+ * decoder: on press we seek back CENSOR_REPEAT_BACK_MS and keep playing
+ * FORWARD, and on release we snap to the "real" position (origin + time held)
+ * so sync is not lost. Consequences of the approximation: playback is forward,
+ * not reversed; the CENSOR_REPEAT_BACK_MS window plays once and does not loop;
+ * and if held longer than that window the audible content diverges from a true
+ * censor even though the release position stays correct.
+ */
 static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
