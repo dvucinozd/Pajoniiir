@@ -416,6 +416,8 @@ static bool should_log_deferred_button(uint8_t id, int16_t value)
         id == CTRL_ID_BEAT_FX_SELECT_PREV ||
         id == CTRL_ID_BEAT_FX_BEAT_DEC ||
         id == CTRL_ID_BEAT_FX_BEAT_INC ||
+        id == CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT ||
+        id == CTRL_ID_BEAT_FX_BEAT_INC_SHIFT ||
         id == CTRL_ID_BEAT_FX_TARGET ||
         id == CTRL_ID_BEAT_FX_ON ||
         id == CTRL_ID_BEAT_FX_CLEAR) {
@@ -1106,6 +1108,36 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0 && s_beat_fx.beat < DECK_CORE_BEAT_FX_BEAT_4) {
             s_beat_fx.beat = (deck_core_beat_fx_beat_t)(s_beat_fx.beat + 1);
             ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT:
+        if (ev->value != 0) {
+            deck_core_beat_fx_beat_t next = s_beat_fx.beat;
+            if (next > DECK_CORE_BEAT_FX_BEAT_1_2) {
+                next = (deck_core_beat_fx_beat_t)(next - 2);
+            } else {
+                next = DECK_CORE_BEAT_FX_BEAT_1_4;
+            }
+            if (next != s_beat_fx.beat) {
+                s_beat_fx.beat = next;
+                sync_beat_fx_audio_state();
+                ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+            }
+        }
+        return true;
+    case CTRL_ID_BEAT_FX_BEAT_INC_SHIFT:
+        if (ev->value != 0) {
+            deck_core_beat_fx_beat_t next = s_beat_fx.beat;
+            if (next < DECK_CORE_BEAT_FX_BEAT_2) {
+                next = (deck_core_beat_fx_beat_t)(next + 2);
+            } else {
+                next = DECK_CORE_BEAT_FX_BEAT_4;
+            }
+            if (next != s_beat_fx.beat) {
+                s_beat_fx.beat = next;
+                sync_beat_fx_audio_state();
+                ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
+            }
         }
         return true;
     case CTRL_ID_BEAT_FX_TARGET:

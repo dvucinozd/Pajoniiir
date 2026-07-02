@@ -21,6 +21,8 @@ int p4_ctrl_id_smart_cfx_shift(void) { return CTRL_ID_SMART_CFX_SHIFT; }
 int p4_ctrl_id_smart_fader_shift(void) { return CTRL_ID_SMART_FADER_SHIFT; }
 int p4_ctrl_id_beat_fx_select_next(void) { return CTRL_ID_BEAT_FX_SELECT_NEXT; }
 int p4_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
+int p4_ctrl_id_beat_fx_beat_dec_shift(void) { return CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT; }
+int p4_ctrl_id_beat_fx_beat_inc_shift(void) { return CTRL_ID_BEAT_FX_BEAT_INC_SHIFT; }
 int p4_ctrl_id_deck1_shift(void) { return CTRL_ID_DECK1_SHIFT; }
 int p4_ctrl_id_deck2_to_start(void) { return CTRL_ID_DECK2_TO_START; }
 int p4_ctrl_id_deck1_sync(void) { return CTRL_ID_DECK1_SYNC; }

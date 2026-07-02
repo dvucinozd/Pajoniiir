@@ -175,6 +175,8 @@ typedef enum {
 #define CTRL_ID_HEADPHONE_LEVEL     0x7D
 #define CTRL_ID_SMART_CFX_SHIFT     0x7E
 #define CTRL_ID_SMART_FADER_SHIFT   0x7F
+#define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
+#define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,

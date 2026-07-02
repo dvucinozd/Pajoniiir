@@ -62,6 +62,8 @@
 #define FLX4_BTN_BEAT_FX_ON    0x47
 #define FLX4_BTN_BEAT_FX_BEAT_DEC 0x4A
 #define FLX4_BTN_BEAT_FX_BEAT_INC 0x4B
+#define FLX4_BTN_BEAT_FX_BEAT_DEC_SHIFT 0x66
+#define FLX4_BTN_BEAT_FX_BEAT_INC_SHIFT 0x6B
 #define FLX4_BTN_BEAT_FX_SELECT_NEXT 0x63
 #define FLX4_BTN_BEAT_FX_SELECT_PREV 0x64
 #define FLX4_BTN_MASTER_CUE     0x63
@@ -359,6 +361,10 @@ static bool map_beat_fx_button(flx4_map_state_t *state,
         return emit_button(out, CTRL_ID_BEAT_FX_BEAT_DEC, pressed);
     case FLX4_BTN_BEAT_FX_BEAT_INC:
         return emit_button(out, CTRL_ID_BEAT_FX_BEAT_INC, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_DEC_SHIFT:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, pressed);
+    case FLX4_BTN_BEAT_FX_BEAT_INC_SHIFT:
+        return emit_button(out, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, pressed);
     case FLX4_BTN_BEAT_FX_ON:
         return emit_button(out, CTRL_ID_BEAT_FX_ON, pressed);
     case FLX4_BTN_BEAT_FX_CLEAR:

@@ -1354,6 +1354,40 @@ static void test_beat_fx_public_snapshot_matches_state_controls(void)
     assert(state.enabled);
 }
 
+static void test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t inc_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    deck_core_test_apply_event(&inc_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
+    deck_core_test_apply_event(&inc_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
+
+    ctrl_event_t dec_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 1);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1_4);
+    deck_core_test_apply_event(&dec_shift);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1_4);
+}
+
+static void test_shifted_beat_fx_beat_button_release_does_not_change_state(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t release_inc = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 0);
+    deck_core_test_apply_event(&release_inc);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_1);
+
+    ctrl_event_t inc_shift = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    ctrl_event_t release_dec = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 0);
+    deck_core_test_apply_event(&inc_shift);
+    deck_core_test_apply_event(&release_dec);
+    assert(deck_core_test_get_beat_fx_state().beat == DECK_CORE_BEAT_FX_BEAT_4);
+}
+
 static void test_beat_fx_on_toggles_on_press_only_and_clear_resets(void)
 {
     deck_core_test_reset();
@@ -2064,6 +2098,8 @@ int main(void)
     test_shifted_smart_buttons_are_noop_placeholders();
     test_beat_fx_defaults_and_state_controls();
     test_beat_fx_public_snapshot_matches_state_controls();
+    test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate();
+    test_shifted_beat_fx_beat_button_release_does_not_change_state();
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();
     test_beat_fx_filter_state_updates_audio_engine();
     test_beat_fx_echo_state_updates_audio_engine();

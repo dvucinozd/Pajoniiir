@@ -153,6 +153,15 @@ static void test_beat_fx_controls(void)
     assert(flx4_map_message(&state, MSG(0x94, 0x4B, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC, 1);
 
+    assert(flx4_map_message(&state, MSG(0x94, 0x66, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x66, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT, 0);
+    assert(flx4_map_message(&state, MSG(0x94, 0x6B, 0x7F), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 1);
+    assert(flx4_map_message(&state, MSG(0x94, 0x6B, 0x00), &ev));
+    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_BEAT_INC_SHIFT, 0);
+
     assert(flx4_map_message(&state, MSG(0x94, 0x10, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
     assert(!flx4_map_message(&state, MSG(0x94, 0x10, 0x00), &ev));

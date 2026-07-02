@@ -116,16 +116,19 @@ test.
 | `0x7D` | Headphone Level | `0..16383`; sent with `CTRL_TYPE_PITCH` from FLX4 `0xB6/0x0D+0x2D`; P4 scales only headphone/monitor output |
 | `0x7E` | Shift+Smart CFX | `0` release, `1` press; P4 consumes as no-op placeholder until standalone behavior is defined |
 | `0x7F` | Shift+Smart Fader | `0` release, `1` press; P4 consumes as no-op placeholder until standalone behavior is defined |
+| `0x83` | Shift+Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down by two enum positions with min saturation |
+| `0x84` | Shift+Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up by two enum positions with max saturation |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
 channel fader, and crossfader events are locally coalesced before UART send;
 button edges and load/PFL events remain FIFO.
 
-`CTRL_ID_HEADPHONE_LEVEL`, `CTRL_ID_SMART_CFX_SHIFT`, and
-`CTRL_ID_SMART_FADER_SHIFT` are literal `0x7D`, `0x7E`, and `0x7F` values in
-both firmware targets because the current namespace encoding aliases
-`CTRL_NS_SYSTEM | offset` values above `0x0F`.
+`CTRL_ID_HEADPHONE_LEVEL`, `CTRL_ID_SMART_CFX_SHIFT`,
+`CTRL_ID_SMART_FADER_SHIFT`, `CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT`, and
+`CTRL_ID_BEAT_FX_BEAT_INC_SHIFT` are literal `0x7D`, `0x7E`, `0x7F`, `0x83`,
+and `0x84` values in both firmware targets because the current namespace
+encoding aliases `CTRL_NS_SYSTEM | offset` values above `0x0F`.
 
 Pad action values are packed into the signed 16-bit `value` field:
 
