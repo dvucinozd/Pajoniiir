@@ -162,6 +162,18 @@ $tests = @(
             "test_flx4_uac_descriptors.c",
             "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c"
         )
+    },
+    @{
+        Name = "flx4_uac_packetizer"
+        Dir = "tests/flx4_usb_audio"
+        Target = "test_flx4_uac_packetizer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
+            "-o", "test_flx4_uac_packetizer.exe",
+            "test_flx4_uac_packetizer.c",
+            "../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_packetizer.c"
+        )
     }
 )
 

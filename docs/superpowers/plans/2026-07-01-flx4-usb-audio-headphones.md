@@ -727,7 +727,7 @@ git commit -m "test: add flx4 usb audio descriptor parser"
 - Create: `tests/flx4_usb_audio/test_flx4_uac_packetizer.c`
 - Modify: `tests/flx4_usb_audio/Makefile`
 
-- [ ] **Step 1: Add packetizer API**
+- [x] **Step 1: Add packetizer API**
 
 Create `flx4_uac_packetizer.h`:
 
@@ -753,7 +753,7 @@ uint16_t flx4_uac_packetizer_next_frames(flx4_uac_packetizer_t *p);
 size_t flx4_uac_packetizer_next_bytes(flx4_uac_packetizer_t *p);
 ```
 
-- [ ] **Step 2: Add failing tests for 48 kHz and 44.1 kHz**
+- [x] **Step 2: Add failing tests for 48 kHz and 44.1 kHz**
 
 Create `test_flx4_uac_packetizer.c`:
 
@@ -810,7 +810,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 3: Implement packetizer**
+- [x] **Step 3: Implement packetizer**
 
 Create `flx4_uac_packetizer.c`:
 
@@ -846,7 +846,7 @@ size_t flx4_uac_packetizer_next_bytes(flx4_uac_packetizer_t *p)
 }
 ```
 
-- [ ] **Step 4: Run packetizer tests**
+- [x] **Step 4: Run packetizer tests**
 
 Run:
 
