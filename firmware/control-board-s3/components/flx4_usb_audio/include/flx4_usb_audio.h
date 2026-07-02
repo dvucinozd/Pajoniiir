@@ -28,6 +28,16 @@ esp_err_t flx4_usb_audio_configure(usb_host_client_handle_t client,
                                    size_t config_len);
 esp_err_t flx4_usb_audio_start_tone(uint16_t hz);
 esp_err_t flx4_usb_audio_start_ring(void);
+
+/*
+ * Poll-driven ring autostart. Call periodically from the FLX4 USB client task
+ * (the context that pumps usb_host_client_handle_events). Once the interface
+ * is configured and the P4 audio link has buffered at least ~20 ms of frames,
+ * it matches the FLX4 endpoint sample rate to the P4 output rate (if the FLX4
+ * format supports it) and starts ring streaming exactly once. No-op otherwise.
+ */
+esp_err_t flx4_usb_audio_poll_ring_autostart(void);
+
 void flx4_usb_audio_stop(void);
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out);
 

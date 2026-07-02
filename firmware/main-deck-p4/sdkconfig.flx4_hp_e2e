@@ -1,0 +1,17 @@
+# FLX4 USB headphones end-to-end profile (Task 8 Step 1).
+# Publishes real hp_out over the monitor PCM I2S link (unit 1). ES8311 stays on
+# unit 0 and paces the output loop; PCM5102A MAIN OUT is off so unit 1 is free
+# for the link. Step 2 does the unit swap (link->unit0, PCM5102A pacing) so RCA
+# MAIN and FLX4 phones run simultaneously.
+# Build: idf.py -B build_flx4_hp_e2e -D SDKCONFIG="build_flx4_hp_e2e/sdkconfig" \
+#   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.flx4_hp_e2e" build
+CONFIG_MONITOR_PCM_LINK_ENABLED=y
+# No bench tone: the audio engine publishes real hp_out instead.
+# CONFIG_BSP_PCM5102A_MAIN_OUT is not set
+
+# Local working-sdkconfig UI settings kept for parity.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+
+# Surface the monitor link INFO diagnostics (P4 default log level is WARN).
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y

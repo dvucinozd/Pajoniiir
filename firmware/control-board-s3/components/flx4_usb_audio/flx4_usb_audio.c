@@ -6,8 +6,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "p4_audio_link.h"
 #endif
 #include "flx4_uac_packetizer.h"
+
+/* Largest per-USB-frame stereo frame count we buffer on the stack while
+   building a packet (48 frames at 48 kHz, 45 at 44.1 kHz). */
+#define FLX4_USB_AUDIO_MAX_PACKET_FRAMES 64u
 
 #ifndef CONFIG_DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2
 #define CONFIG_DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2 0
@@ -90,8 +95,10 @@ static int16_t next_tone_sample(void)
     return s_sine_48_minus18dbfs[index];
 }
 
+static size_t fill_next_stream_packet(uint8_t *dst, size_t dst_capacity);
+
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
-static void submit_tone_transfer(usb_transfer_t *transfer);
+static void submit_stream_transfer(usb_transfer_t *transfer);
 
 static void ctrl_transfer_cb(usb_transfer_t *transfer)
 {
@@ -250,7 +257,7 @@ static void audio_transfer_cb(usb_transfer_t *transfer)
     }
 
     log_stream_stats_if_due();
-    submit_tone_transfer(transfer);
+    submit_stream_transfer(transfer);
 }
 
 static void free_transfers(void)
@@ -297,16 +304,17 @@ static esp_err_t allocate_transfers(const flx4_uac_playback_format_t *fmt)
     return ESP_OK;
 }
 
-static void submit_tone_transfer(usb_transfer_t *transfer)
+static void submit_stream_transfer(usb_transfer_t *transfer)
 {
-    if (!transfer || s_mode != FLX4_USB_AUDIO_MODE_TONE) {
+    if (!transfer ||
+        (s_mode != FLX4_USB_AUDIO_MODE_TONE && s_mode != FLX4_USB_AUDIO_MODE_RING)) {
         return;
     }
 
     size_t offset = 0u;
     for (int i = 0; i < transfer->num_isoc_packets; ++i) {
-        size_t bytes = flx4_usb_audio_fill_next_tone_packet(&transfer->data_buffer[offset],
-                                                            transfer->data_buffer_size - offset);
+        size_t bytes = fill_next_stream_packet(&transfer->data_buffer[offset],
+                                               transfer->data_buffer_size - offset);
         transfer->isoc_packet_desc[i].num_bytes = (int)bytes;
         transfer->isoc_packet_desc[i].actual_num_bytes = 0;
         offset += bytes;
@@ -321,11 +329,11 @@ static void submit_tone_transfer(usb_transfer_t *transfer)
     esp_err_t rc = usb_host_transfer_submit(transfer);
     if (rc != ESP_OK) {
         s_stats.skipped_packets++;
-        ESP_LOGW(TAG, "submit tone transfer failed: %s", esp_err_to_name(rc));
+        ESP_LOGW(TAG, "submit stream transfer failed: %s", esp_err_to_name(rc));
     }
 }
 
-static esp_err_t start_tone_transfers(void)
+static esp_err_t start_stream_transfers(void)
 {
     s_streaming = true;
     s_consecutive_errors = 0u;
@@ -335,7 +343,7 @@ static esp_err_t start_tone_transfers(void)
             s_streaming = false;
             return ESP_ERR_INVALID_STATE;
         }
-        submit_tone_transfer(s_transfers[i]);
+        submit_stream_transfer(s_transfers[i]);
     }
     return ESP_OK;
 }
@@ -437,7 +445,7 @@ esp_err_t flx4_usb_audio_start_tone(uint16_t hz)
     s_tone_step_q16 = ((uint32_t)hz * 48u * 65536u) / s_stream_sample_rate;
     s_mode = FLX4_USB_AUDIO_MODE_TONE;
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
-    return start_tone_transfers();
+    return start_stream_transfers();
 #else
     return ESP_OK;
 #endif
@@ -445,12 +453,65 @@ esp_err_t flx4_usb_audio_start_tone(uint16_t hz)
 
 esp_err_t flx4_usb_audio_start_ring(void)
 {
-    if (!s_stats.configured) {
+    if (!s_stats.configured || s_stream_sample_rate == 0u) {
         return ESP_ERR_INVALID_STATE;
     }
+    /* Reset packet pacing so ring streaming starts on a clean 1 ms cadence. */
+    flx4_uac_packetizer_init(&s_packetizer,
+                             s_stream_sample_rate,
+                             s_stats.format.channels,
+                             s_stats.format.bytes_per_sample);
     s_mode = FLX4_USB_AUDIO_MODE_RING;
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+    return start_stream_transfers();
+#else
     return ESP_OK;
+#endif
 }
+
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+esp_err_t flx4_usb_audio_poll_ring_autostart(void)
+{
+    if (s_mode != FLX4_USB_AUDIO_MODE_STOPPED || !s_stats.configured ||
+        s_stream_sample_rate == 0u) {
+        return ESP_OK;
+    }
+
+    p4_audio_link_stats_t link = { 0 };
+    p4_audio_link_get_stats(&link);
+    if (link.sample_rate == 0u) {
+        return ESP_OK; /* P4 audio engine not producing monitor PCM yet */
+    }
+    const uint32_t prime_frames = link.sample_rate / 50u; /* ~20 ms cushion */
+    if (link.ring_frames < prime_frames) {
+        return ESP_OK;
+    }
+
+    /* Match the FLX4 endpoint rate to the P4 output rate so producer and
+       consumer share a frame rate. If the FLX4 format cannot expose the P4
+       rate, stream at the configured rate anyway (Step 3 adds sample-rate
+       conversion for that case). */
+    if (link.sample_rate != s_stream_sample_rate) {
+        if (format_has_rate(&s_stats.format, link.sample_rate)) {
+            esp_err_t rc = set_endpoint_sample_rate(s_stats.format.endpoint_addr, link.sample_rate);
+            if (rc == ESP_OK) {
+                s_stream_sample_rate = link.sample_rate;
+                ESP_LOGI(TAG, "ring rate matched to P4 link: %u Hz", (unsigned)link.sample_rate);
+            } else {
+                ESP_LOGW(TAG, "ring rate match to %u Hz failed: %s",
+                         (unsigned)link.sample_rate, esp_err_to_name(rc));
+            }
+        } else {
+            ESP_LOGW(TAG, "P4 link rate %u Hz unsupported by FLX4; streaming at %u Hz",
+                     (unsigned)link.sample_rate, (unsigned)s_stream_sample_rate);
+        }
+    }
+
+    ESP_LOGI(TAG, "starting FLX4 USB ring stream (link ring=%u frames @ %u Hz)",
+             (unsigned)link.ring_frames, (unsigned)s_stream_sample_rate);
+    return flx4_usb_audio_start_ring();
+}
+#endif
 
 void flx4_usb_audio_stop(void)
 {
@@ -489,33 +550,55 @@ void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out)
     }
 }
 
-size_t flx4_usb_audio_fill_next_tone_packet(uint8_t *dst, size_t dst_capacity)
+/* Fills one USB Audio OUT packet for the active streaming mode. Tone mode
+   generates a mono 1 kHz sine; ring mode pulls stereo monitor frames from the
+   P4 audio link. Both map the stereo pair onto the headphone channel pair
+   (channels 3/4 by default for the 4-channel FLX4 format, or 1/2 when the
+   diagnostic inversion is set). */
+static size_t fill_next_stream_packet(uint8_t *dst, size_t dst_capacity)
 {
-    if (!dst || s_mode != FLX4_USB_AUDIO_MODE_TONE ||
-        s_stats.format.channels == 0u || s_stats.format.bytes_per_sample != 2u) {
+    if (!dst || s_stats.format.channels == 0u || s_stats.format.bytes_per_sample != 2u) {
+        return 0u;
+    }
+    if (s_mode != FLX4_USB_AUDIO_MODE_TONE && s_mode != FLX4_USB_AUDIO_MODE_RING) {
         return 0u;
     }
 
     const uint16_t frames = flx4_uac_packetizer_next_frames(&s_packetizer);
-    const size_t packet_bytes = (size_t)frames *
-                                (size_t)s_stats.format.channels *
-                                (size_t)s_stats.format.bytes_per_sample;
-    if (frames == 0u || dst_capacity < packet_bytes) {
+    const uint8_t channels = s_stats.format.channels;
+    const size_t packet_bytes = (size_t)frames * (size_t)channels * sizeof(int16_t);
+    if (frames == 0u || frames > FLX4_USB_AUDIO_MAX_PACKET_FRAMES || dst_capacity < packet_bytes) {
         s_stats.skipped_packets++;
         return 0u;
     }
 
-    memset(dst, 0, packet_bytes);
-    for (uint16_t frame = 0; frame < frames; ++frame) {
-        const int16_t sample = next_tone_sample();
-        uint8_t first_tone_channel = 0u;
-        if (s_stats.format.channels >= 4u && !CONFIG_DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2) {
-            first_tone_channel = 2u;
+    int16_t stereo[FLX4_USB_AUDIO_MAX_PACKET_FRAMES * 2u];
+    if (s_mode == FLX4_USB_AUDIO_MODE_TONE) {
+        for (uint16_t frame = 0; frame < frames; ++frame) {
+            const int16_t sample = next_tone_sample();
+            stereo[frame * 2u] = sample;
+            stereo[frame * 2u + 1u] = sample;
         }
+    } else {
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+        /* Fills silence and counts an underrun internally when the ring is
+           short, so a starved link degrades to quiet rather than clicks. */
+        (void)p4_audio_link_read_frames(stereo, frames);
+#else
+        memset(stereo, 0, (size_t)frames * 2u * sizeof(int16_t));
+#endif
+    }
 
-        for (uint8_t channel = 0u; channel < 2u && first_tone_channel + channel < s_stats.format.channels; ++channel) {
-            const size_t offset = (((size_t)frame * s_stats.format.channels) +
-                                   (size_t)first_tone_channel + channel) * sizeof(int16_t);
+    memset(dst, 0, packet_bytes);
+    uint8_t first_channel = 0u;
+    if (channels >= 4u && !CONFIG_DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2) {
+        first_channel = 2u;
+    }
+    for (uint16_t frame = 0; frame < frames; ++frame) {
+        for (uint8_t channel = 0u; channel < 2u && first_channel + channel < channels; ++channel) {
+            const int16_t sample = stereo[frame * 2u + channel];
+            const size_t offset = (((size_t)frame * channels) +
+                                   (size_t)first_channel + channel) * sizeof(int16_t);
             memcpy(&dst[offset], &sample, sizeof(sample));
         }
     }
@@ -523,4 +606,12 @@ size_t flx4_usb_audio_fill_next_tone_packet(uint8_t *dst, size_t dst_capacity)
     s_stats.submitted_packets++;
     s_stats.actual_bytes += (uint32_t)packet_bytes;
     return packet_bytes;
+}
+
+size_t flx4_usb_audio_fill_next_tone_packet(uint8_t *dst, size_t dst_capacity)
+{
+    if (s_mode != FLX4_USB_AUDIO_MODE_TONE) {
+        return 0u;
+    }
+    return fill_next_stream_packet(dst, dst_capacity);
 }

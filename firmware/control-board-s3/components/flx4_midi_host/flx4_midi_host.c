@@ -849,6 +849,11 @@ static void midi_client_task(void *arg)
                 close_device(&s_host);
             }
         }
+#if CONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART
+        if (s_host.opened && !s_host.closing) {
+            (void)flx4_usb_audio_poll_ring_autostart();
+        }
+#endif
     }
 }
 

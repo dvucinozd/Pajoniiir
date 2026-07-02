@@ -27,4 +27,14 @@ config DDJ_FLX4_USB_AUDIO_TONE_SMOKE_AUTOSTART
         playback interface is configured. Use only for the hardware tone smoke
         pass because it continuously submits isochronous OUT transfers.
 
+config DDJ_FLX4_USB_AUDIO_RING_AUTOSTART
+    bool "Auto-start FLX4 USB Audio ring streaming when the P4 link is primed"
+    default n
+    depends on DDJ_FLX4_USB_AUDIO_HEADPHONES && P4_AUDIO_LINK_ENABLED
+    help
+        The FLX4 client task polls the P4 audio link and starts ring streaming
+        (real P4 hp_out monitor mix) once the link ring has buffered ~20 ms of
+        frames. This is the product end-to-end path; mutually exclusive with the
+        tone smoke autostart.
+
 endmenu

@@ -1205,6 +1205,12 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     s_output_codec_open = true;
     s_output_sample_rate = sample_rate;
     (void)monitor_pcm_link_set_format(sample_rate, 2u, 16u);
+#if CONFIG_MONITOR_PCM_LINK_ENABLED && !CONFIG_MONITOR_PCM_LINK_BENCH_TONE
+    /* Product path: start publishing real hp_out to the S3 monitor link now
+       that the output rate is known. The bench-tone build enables the link
+       from its own generator task instead. */
+    monitor_pcm_link_set_enabled(true);
+#endif
     ESP_LOGI(TAG, "shared codec open @ %u Hz", (unsigned)sample_rate);
     AE_UNLOCK();
     return ESP_OK;
