@@ -97,10 +97,11 @@ S3 host regression tests on Windows:
 
 Current `master` carries the Phase 7 extended-control work plus the 2026-07-02
 FLX4 USB headphones and official-MIDI-gap-closure features; those feature
-branches were merged, verified, pushed, and deleted. One old experimental
-branch, `codex/flx4-extended-controls`, is intentionally still preserved outside
-`master` because it contains dirty Smart/DSP work that needs a separate review
-before any merge/delete decision.
+branches were merged, verified, pushed, and deleted. On 2026-07-03 the remaining
+stale Codex branches were reviewed and removed (local + remote); the old
+experimental `codex/flx4-extended-controls` was deleted after confirming its
+verified slices had already been salvaged into `master`. No non-master feature
+branches remain.
 
 Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
 substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck

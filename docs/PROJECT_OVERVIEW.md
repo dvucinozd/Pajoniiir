@@ -125,10 +125,11 @@ The fork is no longer only the imported single-deck baseline:
   (forward seek-back, sync-correct on release) rather than a true reverse.
   Merged to `master` on 2026-07-02; host suites pass, hardware smoke pending.
 - The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
-  merged to `master` and deleted after the 2026-07-02 work. Some older
-  experimental Codex branches (for example `codex/flx4-extended-controls`)
-  remain outside `master` and still need separate review before reuse or
-  deletion.
+  merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
+  remaining stale Codex branches were reviewed and removed (local + remote),
+  including the old experimental `codex/flx4-extended-controls`, whose verified
+  slices had already been salvaged into `master`. No non-master feature branches
+  remain.
 
 ## Non-Goals For The First Milestone
 

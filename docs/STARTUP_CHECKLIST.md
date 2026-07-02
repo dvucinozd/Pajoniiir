@@ -44,9 +44,9 @@
   extended-control surface.
 - Phase 7 was merged into `master` and pushed on 2026-06-26. Completed stale
   Codex branches were removed locally and remotely after the merge.
-- Remaining non-master branch: `codex/flx4-extended-controls`. It is an older
-  dirty experimental Smart/DSP worktree and should be reviewed separately
-  before any merge/delete decision.
+- No non-master branches remain: the old experimental `codex/flx4-extended-controls`
+  was reviewed and removed (local + remote) on 2026-07-03 after confirming its
+  verified slices were already salvaged into `master`.
 - The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host

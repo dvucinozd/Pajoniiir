@@ -637,10 +637,10 @@ standalone P4 feature definitions exist.
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
 targets passed before the merge, and the merged `master` was pushed. Stale
-completed Codex branches were removed locally and remotely. The only preserved
-non-master branch is the old `codex/flx4-extended-controls` worktree, which is
-dirty and contains experimental Smart/DSP changes that require a separate
-review before reuse or deletion.
+completed Codex branches were removed locally and remotely. As of 2026-07-03 the
+last preserved branch, the old `codex/flx4-extended-controls` worktree, was also
+reviewed and removed after confirming its verified slices were already salvaged
+into `master`; no non-master branches remain.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
