@@ -30,10 +30,13 @@ Do not use `firmware/control-board-s3/PINOUT.md` for P4 peripherals.
 
 | JP1 pin | GPIO | Candidate use | Status |
 | --- | --- | --- | --- |
+| bench-confirmed header pin required | GPIO32 | P4 -> S3 monitor PCM link I2S BCLK | Candidate for FLX4 USB headphones transport |
+| bench-confirmed header pin required | GPIO34 | P4 -> S3 monitor PCM link I2S WS/LRCK | Candidate for FLX4 USB headphones transport |
+| bench-confirmed header pin required | GPIO35 | P4 -> S3 monitor PCM link I2S DOUT | Candidate for FLX4 USB headphones transport |
+| 11 | GPIO49 | P4 -> S3 monitor PCM link READY/FLOW or debug | Candidate; not used by PCM5102A bring-up |
 | 5 | GPIO52 | PCM5102A WS/LRCK | Candidate, requires bench verification |
 | 7 | GPIO51 | PCM5102A DIN from P4 DOUT | Candidate, requires bench verification |
 | 9 | GPIO50 | PCM5102A BCLK | Candidate, requires bench verification |
-| 11 | GPIO49 | Optional PCM5102A SCK/MCLK | Not used in first bring-up |
 
 ## Rejected DAC pin proposals
 

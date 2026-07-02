@@ -140,6 +140,32 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 
 ---
 
+## Candidate P4 Monitor PCM Link — DDJ-FLX4 USB Audio Headphones
+
+This candidate mapping is only for the future DDJ-FLX4 USB Audio headphones
+phase. It is valid only when the S3 runs `CONFIG_DDJ_FLX4_HOST_MODE` and the
+legacy CDJ `panel_io` LED path is not active.
+
+| Signal | ESP32-S3 candidate | ESP32-P4 candidate | Direction |
+|--------|--------------------|--------------------|-----------|
+| I2S BCLK | GPIO15 | GPIO32 | P4 -> S3 |
+| I2S WS/LRCK | GPIO16 | GPIO34 | P4 -> S3 |
+| I2S DIN | GPIO17 | GPIO35 | P4 -> S3 |
+| READY/FLOW/debug | GPIO18 | GPIO49 | optional, direction selected by role |
+| GND | GND | GND | shared |
+
+Notes:
+
+- GPIO15 and GPIO16 are legacy `JOG_A` / `JOG_B` pins in panel mode.
+- GPIO17 and GPIO18 are legacy `BROWSE_A` / `BROWSE_B` pins in panel mode.
+- This mapping intentionally avoids GPIO36/GPIO37 because repo source comments
+  still flag GPIO35-GPIO37 as octal-PSRAM-sensitive on N16R8 variants.
+- GPIO48 is intentionally left unused for this PCM link because it is reserved
+  for future LED work.
+- Do not use this mapping for the inherited CDJ panel compatibility mode.
+
+---
+
 ## USB — MIDI Device (TinyUSB)
 
 | Parameter | Value |

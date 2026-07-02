@@ -59,6 +59,26 @@ Inherited confirmed UART:
 - P4 GPIO28: UART RX from S3 TX.
 - P4 GPIO29: UART TX to S3 RX.
 
+P4-to-S3 monitor PCM link candidate for the future FLX4 USB Audio headphones
+phase:
+
+| Signal | ESP32-P4 candidate | ESP32-S3 side | Direction | Notes |
+| --- | --- | --- | --- | --- |
+| I2S BCLK | GPIO32 | GPIO15 | P4 -> S3 | clock for monitor PCM stream |
+| I2S WS/LRCK | GPIO34 | GPIO16 | P4 -> S3 | stereo frame sync |
+| I2S DOUT | GPIO35 | GPIO17 | P4 -> S3 | P4 `hp_out` monitor PCM data |
+| READY/FLOW/debug | GPIO49 | GPIO18 | S3 -> P4 or P4 -> S3 | optional; reserve for flow-control, IRQ, or diagnostics |
+| GND | GND | GND | shared | required |
+
+Initial recommendation: use GPIO32/GPIO34/GPIO35 as P4 I2S TX into S3 I2S RX.
+Reserve GPIO49 and do not use it unless the bench run shows a real need for
+flow control or a debug/ready signal. The S3 candidate set GPIO15/GPIO16/GPIO17
+with optional GPIO18 avoids S3 USB GPIO19/GPIO20, existing control UART
+GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, GPIO48 reserved
+for future LED work, and the PSRAM-sensitive GPIO35-GPIO37 range. GPIO15-GPIO18
+are legacy CDJ jog/browse encoder pins and are acceptable only in the current
+`CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is not active.
+
 PCM5102A MAIN OUT candidate pins for the photographed PCM5102MK/PCM5102A
 breakout board. The board header silkscreen is:
 
