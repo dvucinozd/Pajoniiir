@@ -4,8 +4,31 @@ config MONITOR_PCM_LINK_ENABLED
     bool "Enable monitor PCM link transport"
     default n
     help
-        Enables the future P4-to-S3 monitor PCM transport. The first
-        implementation slice is disabled-safe and only exposes a non-blocking
-        facade plus counters.
+        Enables the dedicated P4-to-S3 monitor PCM transport: an I2S TX master
+        that streams framed P4HP blocks to the S3 p4_audio_link receiver.
+
+config MONITOR_PCM_LINK_BCLK_GPIO
+    int "Monitor PCM link I2S BCLK GPIO"
+    default 32
+    depends on MONITOR_PCM_LINK_ENABLED
+
+config MONITOR_PCM_LINK_WS_GPIO
+    int "Monitor PCM link I2S WS/LRCK GPIO"
+    default 34
+    depends on MONITOR_PCM_LINK_ENABLED
+
+config MONITOR_PCM_LINK_DOUT_GPIO
+    int "Monitor PCM link I2S DOUT GPIO"
+    default 35
+    depends on MONITOR_PCM_LINK_ENABLED
+
+config MONITOR_PCM_LINK_BENCH_TONE
+    bool "Generate deterministic 1 kHz bench tone through the monitor PCM link"
+    default n
+    depends on MONITOR_PCM_LINK_ENABLED
+    help
+        Starts a bench task that enables the link and feeds a deterministic
+        1 kHz -18 dBFS stereo sine at 48 kHz. Use only for the P4-to-S3 link
+        bench pass; the product path publishes real hp_out blocks instead.
 
 endmenu

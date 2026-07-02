@@ -8,6 +8,9 @@
 #else
 #include "midi_compat.h"
 #endif
+#if CONFIG_P4_AUDIO_LINK_ENABLED
+#include "p4_audio_link.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -234,6 +237,11 @@ void app_main(void)
                     ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
+#endif
+
+#if CONFIG_P4_AUDIO_LINK_ENABLED
+    ESP_ERROR_CHECK(p4_audio_link_init());
+    ESP_ERROR_CHECK(p4_audio_link_start());
 #endif
 
     ESP_LOGI(TAG, "all subsystems ready");

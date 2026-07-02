@@ -10,9 +10,11 @@ typedef struct {
 static monitor_pcm_link_stats_t s_stats;
 static bool s_enabled;
 static monitor_pcm_link_queued_block_t s_queue[MONITOR_PCM_LINK_QUEUE_DEPTH];
-static uint32_t s_read_index;
-static uint32_t s_write_index;
-static uint32_t s_queued_blocks;
+/* SPSC queue: the audio task is the only writer (bumps s_write_count), the
+   transport task is the only reader (bumps s_read_count). Cross-task
+   visibility uses acquire/release atomics; used depth = write - read. */
+static uint32_t s_write_count;
+static uint32_t s_read_count;
 static uint32_t s_next_sequence;
 
 static uint32_t monitor_pcm_link_crc32(const uint8_t *data, size_t len)
@@ -33,9 +35,8 @@ esp_err_t monitor_pcm_link_init(void)
     memset(&s_stats, 0, sizeof(s_stats));
     memset(s_queue, 0, sizeof(s_queue));
     s_enabled = false;
-    s_read_index = 0u;
-    s_write_index = 0u;
-    s_queued_blocks = 0u;
+    __atomic_store_n(&s_write_count, 0u, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_read_count, 0u, __ATOMIC_RELEASE);
     s_next_sequence = 1u;
     return ESP_OK;
 }
@@ -69,12 +70,14 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
         s_stats.dropped_blocks++;
         return false;
     }
-    if (s_queued_blocks >= MONITOR_PCM_LINK_QUEUE_DEPTH) {
+    const uint32_t write_count = s_write_count;
+    const uint32_t read_count = __atomic_load_n(&s_read_count, __ATOMIC_ACQUIRE);
+    if (write_count - read_count >= MONITOR_PCM_LINK_QUEUE_DEPTH) {
         s_stats.dropped_blocks++;
         return false;
     }
 
-    monitor_pcm_link_queued_block_t *slot = &s_queue[s_write_index];
+    monitor_pcm_link_queued_block_t *slot = &s_queue[write_count % MONITOR_PCM_LINK_QUEUE_DEPTH];
     size_t payload_bytes = frames * 2u * sizeof(int16_t);
     memcpy(slot->pcm, interleaved_stereo, payload_bytes);
     slot->header.magic = MONITOR_PCM_LINK_BLOCK_MAGIC;
@@ -84,8 +87,7 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
     slot->header.sequence = s_next_sequence++;
     slot->header.payload_crc32 = monitor_pcm_link_crc32((const uint8_t *)slot->pcm, payload_bytes);
 
-    s_write_index = (s_write_index + 1u) % MONITOR_PCM_LINK_QUEUE_DEPTH;
-    s_queued_blocks++;
+    __atomic_store_n(&s_write_count, write_count + 1u, __ATOMIC_RELEASE);
     s_stats.submitted_blocks++;
     s_stats.submitted_frames += (uint32_t)frames;
     return true;
@@ -93,11 +95,17 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
 
 size_t monitor_pcm_link_read_block_for_transport(uint8_t *dst, size_t dst_capacity)
 {
-    if (!dst || s_queued_blocks == 0u) {
+    if (!dst) {
         return 0u;
     }
 
-    const monitor_pcm_link_queued_block_t *slot = &s_queue[s_read_index];
+    const uint32_t read_count = s_read_count;
+    const uint32_t write_count = __atomic_load_n(&s_write_count, __ATOMIC_ACQUIRE);
+    if (write_count == read_count) {
+        return 0u;
+    }
+
+    const monitor_pcm_link_queued_block_t *slot = &s_queue[read_count % MONITOR_PCM_LINK_QUEUE_DEPTH];
     size_t payload_bytes = (size_t)slot->header.frames * 2u * sizeof(int16_t);
     size_t total_bytes = sizeof(slot->header) + payload_bytes;
     if (dst_capacity < total_bytes) {
@@ -106,8 +114,7 @@ size_t monitor_pcm_link_read_block_for_transport(uint8_t *dst, size_t dst_capaci
 
     memcpy(dst, &slot->header, sizeof(slot->header));
     memcpy(dst + sizeof(slot->header), slot->pcm, payload_bytes);
-    s_read_index = (s_read_index + 1u) % MONITOR_PCM_LINK_QUEUE_DEPTH;
-    s_queued_blocks--;
+    __atomic_store_n(&s_read_count, read_count + 1u, __ATOMIC_RELEASE);
     return total_bytes;
 }
 

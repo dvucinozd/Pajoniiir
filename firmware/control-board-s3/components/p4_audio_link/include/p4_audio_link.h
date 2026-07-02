@@ -35,8 +35,14 @@ typedef struct {
 
 esp_err_t p4_audio_link_init(void);
 bool p4_audio_link_receive_block(const uint8_t *block, size_t block_len);
+/* Streaming deframer entry: feed raw link bytes in arbitrary chunks; complete
+   CRC-valid P4HP blocks land in the frame ring. */
+void p4_audio_link_feed_bytes(const uint8_t *data, size_t len);
 size_t p4_audio_link_read_frames(int16_t *dst_interleaved_stereo, size_t frames);
 void p4_audio_link_get_stats(p4_audio_link_stats_t *out);
+/* ESP-only, available when CONFIG_P4_AUDIO_LINK_ENABLED=y: starts the I2S
+   slave RX task that feeds the deframer and logs 1 Hz aggregate stats. */
+esp_err_t p4_audio_link_start(void);
 
 #ifdef __cplusplus
 }

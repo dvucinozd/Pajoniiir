@@ -1,0 +1,21 @@
+# P4-to-S3 monitor PCM link bench profile.
+# Build: idf.py -B build_monitor_link_bench -D SDKCONFIG="build_monitor_link_bench/sdkconfig" \
+#   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.monitor_link_bench" build
+CONFIG_MONITOR_PCM_LINK_ENABLED=y
+CONFIG_MONITOR_PCM_LINK_BENCH_TONE=y
+
+# PCM5102A MAIN OUT is deliberately OFF in this bench profile: with ES8311 on
+# I2S0 and PCM5102A on I2S1, the monitor link lands on I2S2, and I2S2 register
+# access hard-freezes this rev v1.3 (eco2) P4 during i2s_new_channel. The
+# bench runs the link on I2S1 instead. Product integration must budget two
+# usable I2S units (ES8311 monitor OR FLX4 USB monitor link swap on one unit).
+# CONFIG_BSP_PCM5102A_MAIN_OUT is not set
+
+# Local working-sdkconfig UI settings kept for parity.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+
+# P4 firmware runs at WARN log level (logging previously caused audio
+# stutter), which silently compiles out the bench INFO stats. Allow INFO to
+# be compiled in; the transport enables it at runtime only for its own tag.
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y

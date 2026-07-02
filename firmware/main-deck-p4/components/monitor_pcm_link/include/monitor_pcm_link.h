@@ -33,6 +33,9 @@ typedef struct {
 } monitor_pcm_link_block_header_t;
 
 esp_err_t monitor_pcm_link_init(void);
+/* ESP-only, available when CONFIG_MONITOR_PCM_LINK_ENABLED=y: starts the I2S
+   TX transport task (and the bench tone task when the bench option is set). */
+esp_err_t monitor_pcm_link_start_transport(void);
 esp_err_t monitor_pcm_link_set_format(uint32_t sample_rate,
                                       uint8_t channels,
                                       uint8_t bits_per_sample);

@@ -167,12 +167,78 @@ static int test_overrun_drops_oldest_frames(void)
     return 0;
 }
 
+static int test_deframer_reassembles_chunked_stream_with_filler(void)
+{
+    uint8_t stream[1024] = { 0 };
+    size_t pos = 0u;
+    const int16_t pcm_a[] = { 100, -100, 200, -200, 300, -300, 400, -400 };
+    const int16_t pcm_b[] = { 500, -500, 600, -600 };
+
+    EXPECT_TRUE(p4_audio_link_init() == 0, "init ok");
+
+    pos += 37u; /* leading zero filler, deliberately not 4-byte aligned */
+    size_t len = build_block(&stream[pos], sizeof(stream) - pos, 1u, 48000u, pcm_a, 4u, UINT32_MAX);
+    EXPECT_TRUE(len > 0u, "block A built");
+    pos += len;
+    pos += 21u; /* inter-block zero filler */
+    len = build_block(&stream[pos], sizeof(stream) - pos, 2u, 48000u, pcm_b, 2u, UINT32_MAX);
+    EXPECT_TRUE(len > 0u, "block B built");
+    pos += len;
+    pos += 16u; /* trailing filler */
+
+    for (size_t off = 0u; off < pos; off += 7u) {
+        size_t chunk = pos - off < 7u ? pos - off : 7u;
+        p4_audio_link_feed_bytes(&stream[off], chunk);
+    }
+
+    p4_audio_link_stats_t stats = { 0 };
+    p4_audio_link_get_stats(&stats);
+    EXPECT_EQ_U32(stats.received_blocks, 2u, "both chunked blocks received");
+    EXPECT_EQ_U32(stats.sequence_gaps, 0u, "no gaps across filler");
+    EXPECT_EQ_U32(stats.crc_errors, 0u, "no crc errors");
+    EXPECT_EQ_U32(stats.ring_frames, 6u, "all frames in ring");
+
+    int16_t out[6 * 2] = { 0 };
+    EXPECT_EQ_U32(p4_audio_link_read_frames(out, 6u), 6u, "frames readable");
+    EXPECT_TRUE(memcmp(out, pcm_a, sizeof(pcm_a)) == 0, "block A PCM preserved");
+    EXPECT_TRUE(memcmp(&out[8], pcm_b, sizeof(pcm_b)) == 0, "block B PCM preserved");
+    return 0;
+}
+
+static int test_deframer_resyncs_after_corrupted_payload(void)
+{
+    uint8_t stream[512] = { 0 };
+    size_t pos = 0u;
+    const int16_t pcm[] = { 10, -10, 20, -20 };
+
+    EXPECT_TRUE(p4_audio_link_init() == 0, "init ok");
+
+    size_t len = build_block(&stream[pos], sizeof(stream) - pos, 1u, 48000u, pcm, 2u, UINT32_MAX);
+    EXPECT_TRUE(len > 0u, "block built");
+    stream[pos + sizeof(p4_audio_link_block_header_t) + 1u] ^= 0xFFu; /* corrupt payload */
+    pos += len;
+    len = build_block(&stream[pos], sizeof(stream) - pos, 2u, 48000u, pcm, 2u, UINT32_MAX);
+    EXPECT_TRUE(len > 0u, "second block built");
+    pos += len;
+
+    p4_audio_link_feed_bytes(stream, pos);
+
+    p4_audio_link_stats_t stats = { 0 };
+    p4_audio_link_get_stats(&stats);
+    EXPECT_EQ_U32(stats.received_blocks, 1u, "only intact block received");
+    EXPECT_EQ_U32(stats.crc_errors, 1u, "corrupted payload counted as crc error");
+    EXPECT_EQ_U32(stats.ring_frames, 2u, "intact block frames in ring");
+    return 0;
+}
+
 int main(void)
 {
     if (test_receives_valid_blocks_and_reads_fifo_frames() != 0) return 1;
     if (test_sequence_gap_and_crc_error_are_counted() != 0) return 1;
     if (test_underrun_returns_silence() != 0) return 1;
     if (test_overrun_drops_oldest_frames() != 0) return 1;
+    if (test_deframer_reassembles_chunked_stream_with_filler() != 0) return 1;
+    if (test_deframer_resyncs_after_corrupted_payload() != 0) return 1;
 
     puts("p4_audio_link: PASS");
     return 0;
