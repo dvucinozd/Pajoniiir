@@ -426,8 +426,11 @@ static uint32_t s_midi_out_full_drop_count;
 static TickType_t s_last_midi_out_full_warn;
 
 /* Caller holds s_midi_out_mutex. Starts the next queued OUT transfer when the
- * endpoint is idle. A packet popped for a failed submit is dropped — a later
- * LED refresh supersedes it. */
+ * endpoint is idle. Batches as many queued 4-byte USB-MIDI event packets as
+ * fit in one bulk transfer (16 at mps 64) — draining one packet per transfer
+ * round-trip loses most of the forced LED snapshot the P4 bursts on connect
+ * (observed "MIDI OUT queue full, drops=32"). Packets popped for a failed
+ * submit are dropped — a later LED refresh supersedes them. */
 static esp_err_t midi_out_submit_next_locked(flx4_host_state_t *host)
 {
     if (host->out_transfer_active || !host->out_xfer || !s_midi_out_queue ||
@@ -435,13 +438,19 @@ static esp_err_t midi_out_submit_next_locked(flx4_host_state_t *host)
         return ESP_OK;
     }
 
+    const size_t max_packets = (size_t)host->out_xfer->data_buffer_size / 4u;
+    size_t packets = 0;
     uint8_t packet[4];
-    if (xQueueReceive(s_midi_out_queue, packet, 0) != pdTRUE) {
+    while (packets < max_packets &&
+           xQueueReceive(s_midi_out_queue, packet, 0) == pdTRUE) {
+        memcpy(&host->out_xfer->data_buffer[packets * 4u], packet, 4);
+        packets++;
+    }
+    if (packets == 0) {
         return ESP_OK;
     }
 
-    memcpy(host->out_xfer->data_buffer, packet, 4);
-    host->out_xfer->num_bytes = 4;
+    host->out_xfer->num_bytes = (int)(packets * 4u);
     host->out_xfer->device_handle = host->dev_hdl;
     host->out_xfer->bEndpointAddress = host->out_ep_addr;
     esp_err_t rc = usb_host_transfer_submit(host->out_xfer);

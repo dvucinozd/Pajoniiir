@@ -58,8 +58,10 @@ $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
 
 # Flash and monitor logs
+# NOTE: the CH343 COM number can move between replugs (seen as COM4, now COM3);
+# if the port is missing, list ports and pick the "USB-Enhanced-SERIAL CH343" entry.
 cd firmware/control-board-s3
-idf.py -p COM4 flash monitor
+idf.py -p COM3 flash monitor
 
 # Build only (no flash)
 idf.py build
@@ -79,7 +81,7 @@ Must be in `sdkconfig.defaults`. Check if CMake regenerates `sdkconfig`.
 | `CONFIG_DDJ_FLX4_HOST_MODE` | `y` | Default DDJ-FLX4 raw USB MIDI capture mode |
 | `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` | unset by default | Enable only after hardware capture validates the map |
 | `CONFIG_TINYUSB_MIDI_COUNT` | `1` | Enables MIDI driver (default is 0 → linker error) |
-| `CONFIG_ESP_CONSOLE_UART_DEFAULT` | `y` | Console on UART0/COM4 |
+| `CONFIG_ESP_CONSOLE_UART_DEFAULT` | `y` | Console on UART0 (CH343 COM port) |
 | `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | **CRITICAL**: USB-JTAG secondary conflicts with TinyUSB |
 | `CONFIG_TINYUSB_MODE_SLAVE` | `y` | DMA mode causes enumeration failure |
 | `CONFIG_FREERTOS_HZ` | `1000` | 1ms tick for debounce timers |
