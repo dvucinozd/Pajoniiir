@@ -107,6 +107,17 @@ static void test_fat32_mbr_candidate(void)
     assert(layout.candidates[0].kind == USB_MEDIA_VOLUME_FAT);
 }
 
+static void test_reject_mbr_candidate_past_uint32_lba(void)
+{
+    uint8_t sector[512];
+    make_mbr(sector, 0x0cu, UINT32_MAX - 8u, 16u);
+
+    usb_media_layout_t layout;
+    assert(usb_media_partition_scan_mbr_or_sfd(sector, 512u, &layout) ==
+           USB_MEDIA_PARTITION_NO_CANDIDATE);
+    assert(layout.count == 0u);
+}
+
 static void test_exfat_mbr_candidate_type_07(void)
 {
     uint8_t sector[512];
@@ -163,6 +174,7 @@ int main(void)
 {
     test_exfat_superfloppy();
     test_fat32_mbr_candidate();
+    test_reject_mbr_candidate_past_uint32_lba();
     test_exfat_mbr_candidate_type_07();
     test_gpt_basic_data_candidate();
     test_reject_malformed_gpt();
