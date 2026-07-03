@@ -202,14 +202,11 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 ---
 
 ## Open Items
-- ⚠️ **USB filesystem/layout support:** AlphaTheta/rekordbox OneLibrary-style
-  exports can be exFAT, and Windows FAT32 formatting can leave the disk as GPT.
-  On 2026-06-29 PC validation showed the stick carried a readable legacy
-  `export.pdb` and valid `USBANLZ` analysis files, but P4 failed before
-  `library_init()` at mount time. Diagnostic build showed FatFs
-  `FR_NO_FILESYSTEM` for FAT32-on-GPT. Converting the same stick to MBR + FAT32
-  made P4 read the USB. Current supported path is FAT32 with an MBR partition
-  table; exFAT and GPT support remain firmware backlog items.
+- ⚙️ **USB filesystem/layout support:** P4 firmware now has a planned closure for
+  FAT32/exFAT across superfloppy, MBR, and GPT layouts in
+  `docs/superpowers/specs/2026-07-03-p4-usb-exfat-gpt-design.md` and
+  `docs/superpowers/plans/2026-07-03-p4-usb-exfat-gpt.md`. Hardware acceptance
+  is tracked in `docs/validation/P4_USB_EXFAT_GPT_SMOKE.md`.
 - ✅ **Control path verified on hardware (touch):** PLAY/PAUSE, CUE, hot cues, beat jump, loop, and
   live header/waveform tracking all work via `deck_core` → `audio_engine`. CUE is now an on-screen
   button (OVERVIEW, right of the upper waveform); the physical S3 CUE will reuse the same path.

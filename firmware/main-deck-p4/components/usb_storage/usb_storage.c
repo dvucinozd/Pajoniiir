@@ -6,7 +6,7 @@
 #include "esp_log.h"
 #include "usb/usb_host.h"
 #include "usb/msc_host.h"
-#include "usb/msc_host_vfs.h"
+#include "usb_media_mount.h"
 #include <dirent.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -34,7 +34,7 @@ static TaskHandle_t           s_usb_lib_task = NULL;
 static usb_storage_event_cb_t s_cb          = NULL;
 static volatile bool          s_mounted     = false;
 static msc_host_device_handle_t s_msc_dev   = NULL;
-static msc_host_vfs_handle_t    s_vfs        = NULL;
+static usb_media_mount_t       *s_mount      = NULL;
 static uint32_t              s_event_drop_count;
 static TickType_t            s_last_drop_warn;
 
@@ -122,7 +122,7 @@ static void storage_task(void *arg)
             msc_host_device_info_t info;
             if (msc_host_get_device_info(s_msc_dev, &info) == ESP_OK) {
                 uint64_t mb = ((uint64_t)info.sector_size * info.sector_count) / (1024 * 1024);
-                ESP_LOGI(TAG, "USB MSC device: %llu MB, sector=%u bytes (VID:0x%04X PID:0x%04X)",
+                ESP_LOGW(TAG, "USB MSC device: %llu MB, sector=%u bytes (VID:0x%04X PID:0x%04X)",
                          mb,
                          (unsigned)info.sector_size,
                          info.idVendor,
@@ -133,14 +133,22 @@ static void storage_task(void *arg)
                 .max_files              = 5,
                 .allocation_unit_size   = 8192,
             };
-            rc = msc_host_vfs_register(s_msc_dev, USB_STORAGE_MOUNT_POINT, &mount_cfg, &s_vfs);
+            rc = usb_media_mount(s_msc_dev, USB_STORAGE_MOUNT_POINT, &mount_cfg, &s_mount);
             if (rc != ESP_OK) {
-                ESP_LOGE(TAG, "msc_host_vfs_register: %s", esp_err_to_name(rc));
-                ESP_LOGE(TAG, "USB mount failed; supported media is FAT32 with an MBR partition table. "
-                              "exFAT and FAT32-on-GPT are not supported by the current firmware.");
+                ESP_LOGE(TAG, "usb_media_mount: %s", esp_err_to_name(rc));
+                ESP_LOGE(TAG, "USB mount failed; supported media is FAT32/exFAT on superfloppy, MBR, or GPT layout.");
                 msc_host_uninstall_device(s_msc_dev);
                 s_msc_dev = NULL;
                 continue;
+            }
+            usb_media_mount_info_t mount_info;
+            if (usb_media_mount_get_info(s_mount, &mount_info)) {
+                ESP_LOGW(TAG, "USB media mounted: base_lba=%u sectors=%u sector_size=%u exfat=%u gpt=%u",
+                         (unsigned)mount_info.base_lba,
+                         (unsigned)mount_info.sector_count,
+                         (unsigned)mount_info.sector_size,
+                         mount_info.exfat ? 1u : 0u,
+                         mount_info.gpt ? 1u : 0u);
             }
             if (msc_host_get_device_info(s_msc_dev, &info) == ESP_OK) {
                 uint64_t mb = ((uint64_t)info.sector_size * info.sector_count) / (1024 * 1024);
@@ -173,9 +181,9 @@ static void storage_task(void *arg)
                 s_cb(false);
             }
             media_io_gate_begin();
-            if (s_vfs) {
-                msc_host_vfs_unregister(s_vfs);
-                s_vfs = NULL;
+            if (s_mount) {
+                usb_media_unmount(s_mount);
+                s_mount = NULL;
             }
             if (s_msc_dev) {
                 msc_host_uninstall_device(s_msc_dev);

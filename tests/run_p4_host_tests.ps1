@@ -308,6 +308,18 @@ $tests = @(
         )
     },
     @{
+        Name = "usb_media_partition"
+        Dir = "tests/usb_media_partition"
+        Target = "test_usb_media_partition.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-o", "test_usb_media_partition.exe",
+            "test_usb_media_partition.c",
+            "../../firmware/main-deck-p4/components/usb_storage/usb_media_partition.c"
+        )
+    },
+    @{
         Name = "audio_fw_preload"
         Dir = "tests/audio_fw_preload"
         Target = "test_audio_fw_preload.exe"
