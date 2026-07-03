@@ -425,6 +425,49 @@ static SemaphoreHandle_t s_midi_out_mutex = NULL;
 static uint32_t s_midi_out_full_drop_count;
 static TickType_t s_last_midi_out_full_warn;
 
+/* Caller holds s_midi_out_mutex. Starts the next queued OUT transfer when the
+ * endpoint is idle. A packet popped for a failed submit is dropped — a later
+ * LED refresh supersedes it. */
+static esp_err_t midi_out_submit_next_locked(flx4_host_state_t *host)
+{
+    if (host->out_transfer_active || !host->out_xfer || !s_midi_out_queue ||
+        !host->opened || !host->claimed || host->closing) {
+        return ESP_OK;
+    }
+
+    uint8_t packet[4];
+    if (xQueueReceive(s_midi_out_queue, packet, 0) != pdTRUE) {
+        return ESP_OK;
+    }
+
+    memcpy(host->out_xfer->data_buffer, packet, 4);
+    host->out_xfer->num_bytes = 4;
+    host->out_xfer->device_handle = host->dev_hdl;
+    host->out_xfer->bEndpointAddress = host->out_ep_addr;
+    esp_err_t rc = usb_host_transfer_submit(host->out_xfer);
+    if (rc == ESP_OK) {
+        host->out_transfer_active = true;
+    } else {
+        ESP_LOGE(TAG, "submit MIDI OUT transfer failed: %s", esp_err_to_name(rc));
+    }
+    return rc;
+}
+
+/* Watchdog pump, run from the client task loop: restarts a stalled OUT queue
+ * (e.g. after the completion callback missed the mutex) within one loop
+ * iteration instead of waiting for the next send_packet call. */
+static void midi_out_pump(void)
+{
+    if (!s_midi_out_mutex) {
+        return;
+    }
+    if (xSemaphoreTake(s_midi_out_mutex, 0) != pdTRUE) {
+        return;
+    }
+    (void)midi_out_submit_next_locked(&s_host);
+    xSemaphoreGive(s_midi_out_mutex);
+}
+
 static void log_config_descriptor_hex(const uint8_t *data, size_t len)
 {
 #if CONFIG_DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
@@ -518,20 +561,11 @@ static void midi_out_transfer_cb(usb_transfer_t *transfer)
 
     if (s_midi_out_mutex && xSemaphoreTake(s_midi_out_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         host->out_transfer_active = false;
-
-        uint8_t next_packet[4];
-        if (s_midi_out_queue && xQueueReceive(s_midi_out_queue, next_packet, 0) == pdTRUE) {
-            memcpy(transfer->data_buffer, next_packet, 4);
-            transfer->num_bytes = 4;
-            esp_err_t rc = usb_host_transfer_submit(transfer);
-            if (rc == ESP_OK) {
-                host->out_transfer_active = true;
-            } else {
-                ESP_LOGE(TAG, "resubmit MIDI OUT transfer failed: %s", esp_err_to_name(rc));
-            }
-        }
+        (void)midi_out_submit_next_locked(host);
         xSemaphoreGive(s_midi_out_mutex);
     } else {
+        /* Missed the lock: mark the endpoint idle and let the client-task
+           pump restart the queue on its next loop iteration. */
         host->out_transfer_active = false;
     }
 }
@@ -849,6 +883,7 @@ static void midi_client_task(void *arg)
                 close_device(&s_host);
             }
         }
+        midi_out_pump();
 #if CONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART
         if (s_host.opened && !s_host.closing) {
             (void)flx4_usb_audio_poll_ring_autostart();
@@ -932,20 +967,10 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
         goto exit;
     }
 
-    if (!s_host.out_transfer_active && s_host.out_xfer) {
-        uint8_t next_packet[4];
-        if (xQueueReceive(s_midi_out_queue, next_packet, 0) == pdTRUE) {
-            memcpy(s_host.out_xfer->data_buffer, next_packet, 4);
-            s_host.out_xfer->num_bytes = 4;
-            s_host.out_xfer->device_handle = s_host.dev_hdl;
-            s_host.out_xfer->bEndpointAddress = s_host.out_ep_addr;
-            esp_err_t rc = usb_host_transfer_submit(s_host.out_xfer);
-            if (rc == ESP_OK) {
-                s_host.out_transfer_active = true;
-            } else {
-                ESP_LOGE(TAG, "submit MIDI OUT transfer failed: %s", esp_err_to_name(rc));
-                ret = rc;
-            }
+    {
+        esp_err_t pump_rc = midi_out_submit_next_locked(&s_host);
+        if (pump_rc != ESP_OK) {
+            ret = pump_rc;
         }
     }
 
