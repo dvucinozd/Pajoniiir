@@ -48,6 +48,7 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 #define TABLE_TYPE_TRACKS   0x00u
 #define TABLE_TYPE_ARTISTS  0x02u
 #define TABLE_TYPE_ALBUMS   0x03u
+#define TABLE_TYPE_KEYS     0x0Du
 
 /* Page layout */
 #define PAGE_HEAP_OFFSET    0x28u   /* heap start relative to page base       */
@@ -55,6 +56,7 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 #define PAGE_NEXT_OFF       0x0Cu   /* uint32: next page number               */
 
 /* Track row field offsets (relative to row start) */
+#define TRACK_OFF_KEY_ID    0x20u   /* uint32: id in the Keys table           */
 #define TRACK_OFF_TEMPO     0x38u   /* uint32: BPM × 100                      */
 #define TRACK_OFF_ALBUM_ID  0x40u   /* uint32                                 */
 #define TRACK_OFF_ARTIST_ID 0x44u   /* uint32                                 */
@@ -78,6 +80,11 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 #define NAME_ROW_ID_OFF     4u      /* uint32 row ID (skip 4B link field)     */
 #define NAME_ROW_STR_OFF    10u     /* DeviceSQL string (skip id+empty+pad)   */
 #define NAME_ROW_MIN_SIZE   14u
+
+/* Key-table row layout: uint32 id, uint32 id copy, DeviceSQL name */
+#define KEY_ROW_ID_OFF      0u
+#define KEY_ROW_STR_OFF     8u
+#define KEY_ROW_MIN_SIZE    9u
 
 /* Limits — embedded memory budget */
 #define PDB_MAX_TRACKS      1024u
@@ -263,6 +270,8 @@ struct pdb_s {
     int           artist_count;
     name_entry_t *albums;
     int           album_count;
+    name_entry_t *keys;
+    int           key_count;
 };
 
 /* ── Page helpers ────────────────────────────────────────────────────────── */
@@ -360,6 +369,10 @@ typedef struct {
     name_entry_t *arr;
     int          *count;
     int           max;
+    /* Row layout — Artists/Albums and Keys place id/name differently */
+    size_t        id_off;
+    size_t        str_off;
+    size_t        min_size;
 } name_ctx_t;
 
 static bool name_cb(const struct pdb_s *p, uint32_t page_num,
@@ -369,15 +382,15 @@ static bool name_cb(const struct pdb_s *p, uint32_t page_num,
     if (*ctx->count >= ctx->max) return false;
 
     size_t row = page_base_off(p, page_num) + PAGE_HEAP_OFFSET + (size_t)heap_off;
-    if (row + NAME_ROW_MIN_SIZE > p->data_len) return true;
+    if (row + ctx->min_size > p->data_len) return true;
 
-    uint32_t row_id = rd_le32(p->data + row + NAME_ROW_ID_OFF);
+    uint32_t row_id = rd_le32(p->data + row + ctx->id_off);
     if (row_id == 0u) return true;
 
     name_entry_t *e = &ctx->arr[*ctx->count];
     e->id = row_id;
     decode_devicesql(p->data, p->data_len,
-                     row + NAME_ROW_STR_OFF,
+                     row + ctx->str_off,
                      e->name, PDB_STR_NAME_MAX);
 
     if (e->name[0] != '\0') (*ctx->count)++;
@@ -385,7 +398,8 @@ static bool name_cb(const struct pdb_s *p, uint32_t page_num,
 }
 
 static void parse_name_table(struct pdb_s *p, uint32_t table_type,
-                               name_entry_t **out, int *out_count, int max)
+                               name_entry_t **out, int *out_count, int max,
+                               size_t id_off, size_t str_off, size_t min_size)
 {
     *out       = NULL;
     *out_count = 0;
@@ -394,7 +408,7 @@ static void parse_name_table(struct pdb_s *p, uint32_t table_type,
     if (!*out) return;
     memset(*out, 0, (size_t)max * sizeof(name_entry_t));
 
-    name_ctx_t ctx = { *out, out_count, max };
+    name_ctx_t ctx = { *out, out_count, max, id_off, str_off, min_size };
     walk_table(p, table_type, name_cb, &ctx);
 
     PDB_LOGI(TAG, "Name table 0x%02X: %d entries", table_type, *out_count);
@@ -444,6 +458,7 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
 
     uint32_t artist_id = rd_le32(p->data + row + TRACK_OFF_ARTIST_ID);
     uint32_t album_id  = rd_le32(p->data + row + TRACK_OFF_ALBUM_ID);
+    uint32_t key_id    = rd_le32(p->data + row + TRACK_OFF_KEY_ID);
 
     /* Read string fields from offset table.
      * Each entry is a uint16 at (row + TRACK_OFF_STR_OFFS + idx*2).
@@ -479,6 +494,9 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
 
     const char *al = lookup_name(p->albums, p->album_count, album_id);
     if (al) pdb_copy_str(t->album, sizeof(t->album), al);
+
+    const char *k = lookup_name(p->keys, p->key_count, key_id);
+    if (k) pdb_copy_str(t->key, sizeof(t->key), k);
 
     ctx->count++;
     return true;
@@ -555,14 +573,19 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
 
     /* Build name lookup tables BEFORE parsing tracks */
     parse_name_table(p, TABLE_TYPE_ARTISTS,
-                     &p->artists, &p->artist_count, (int)PDB_MAX_NAMES);
+                     &p->artists, &p->artist_count, (int)PDB_MAX_NAMES,
+                     NAME_ROW_ID_OFF, NAME_ROW_STR_OFF, NAME_ROW_MIN_SIZE);
     parse_name_table(p, TABLE_TYPE_ALBUMS,
-                     &p->albums,  &p->album_count,  (int)PDB_MAX_NAMES);
+                     &p->albums,  &p->album_count,  (int)PDB_MAX_NAMES,
+                     NAME_ROW_ID_OFF, NAME_ROW_STR_OFF, NAME_ROW_MIN_SIZE);
+    parse_name_table(p, TABLE_TYPE_KEYS,
+                     &p->keys,    &p->key_count,    (int)PDB_MAX_NAMES,
+                     KEY_ROW_ID_OFF, KEY_ROW_STR_OFF, KEY_ROW_MIN_SIZE);
 
     /* Allocate track array */
     p->tracks = (pdb_track_t *)calloc(PDB_MAX_TRACKS, sizeof(pdb_track_t));
     if (!p->tracks) {
-        free(p->artists); free(p->albums);
+        free(p->artists); free(p->albums); free(p->keys);
         free(p->data); free(p);
         return ESP_ERR_NO_MEM;
     }
@@ -575,13 +598,14 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
         PDB_LOGW(TAG, "Track index truncated at %u entries", PDB_MAX_TRACKS);
     }
 
-    PDB_LOGI(TAG, "Loaded: %d tracks, %d artists, %d albums",
-             p->track_count, p->artist_count, p->album_count);
+    PDB_LOGI(TAG, "Loaded: %d tracks, %d artists, %d albums, %d keys",
+             p->track_count, p->artist_count, p->album_count, p->key_count);
 
     /* Free intermediary data — no longer needed after index is built */
     free(p->data);     p->data          = NULL; p->data_len    = 0;
     free(p->artists);  p->artists       = NULL; p->artist_count = 0;
     free(p->albums);   p->albums        = NULL; p->album_count  = 0;
+    free(p->keys);     p->keys          = NULL; p->key_count    = 0;
 
     *out = p;
     return ESP_OK;
@@ -594,6 +618,7 @@ void pdb_close(pdb_t *pdb)
     free(pdb->tracks);
     free(pdb->artists);
     free(pdb->albums);
+    free(pdb->keys);
     free(pdb);
 }
 

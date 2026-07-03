@@ -194,12 +194,7 @@ esp_err_t library_init(void)
         lt->track_id = pt.track_id;
         lt->bpm      = pt.bpm;
         lt->duration_ms = (uint32_t)pt.duration_s * 1000u;
-
-        const char *camelot_keys[] = {
-            "8A", "9A", "10A", "11A", "12A", "1A", "2A", "3A", "4A", "5A", "6A", "7A",
-            "8B", "9B", "10B", "11B", "12B", "1B", "2B", "3B", "4B", "5B", "6B", "7B"
-        };
-        library_copy_str(lt->key, sizeof(lt->key), camelot_keys[lt->track_id % 24]);
+        library_copy_str(lt->key, sizeof(lt->key), pt.key);
 
         build_count++;
     }
@@ -496,11 +491,52 @@ static int compare_bpm_desc(const void *a, const void *b)
     return compare_bpm_asc(b, a);
 }
 
+/* Camelot keys ("8A", "12B") need numeric-aware ordering: plain strcasecmp
+ * puts "10A" before "2A". Classical names ("Am", "F#m") fall back to a
+ * string compare, and tracks without a key sort after keyed ones. */
+static bool parse_camelot_key(const char *key, int *out_number, char *out_letter)
+{
+    int number = 0;
+    int i = 0;
+    while (key[i] >= '0' && key[i] <= '9' && i < 2) {
+        number = number * 10 + (key[i] - '0');
+        i++;
+    }
+    if (i == 0 || number < 1 || number > 12) {
+        return false;
+    }
+    char letter = key[i];
+    if (letter >= 'a' && letter <= 'z') {
+        letter = (char)(letter - 'a' + 'A');
+    }
+    if ((letter != 'A' && letter != 'B') || key[i + 1] != '\0') {
+        return false;
+    }
+    *out_number = number;
+    *out_letter = letter;
+    return true;
+}
+
 static int compare_key_asc(const void *a, const void *b)
 {
     const library_track_t *ta = (const library_track_t *)a;
     const library_track_t *tb = (const library_track_t *)b;
-    int cmp = strcasecmp(ta->key, tb->key);
+
+    bool a_empty = ta->key[0] == '\0';
+    bool b_empty = tb->key[0] == '\0';
+    if (a_empty != b_empty) {
+        return a_empty ? 1 : -1;
+    }
+
+    int cmp = 0;
+    int num_a = 0, num_b = 0;
+    char let_a = 0, let_b = 0;
+    if (parse_camelot_key(ta->key, &num_a, &let_a) &&
+        parse_camelot_key(tb->key, &num_b, &let_b)) {
+        cmp = (num_a != num_b) ? (num_a - num_b) : (let_a - let_b);
+    } else {
+        cmp = strcasecmp(ta->key, tb->key);
+    }
     if (cmp == 0) {
         return strcasecmp(ta->title, tb->title);
     }

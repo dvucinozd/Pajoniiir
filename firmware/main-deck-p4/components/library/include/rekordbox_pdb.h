@@ -66,6 +66,8 @@ typedef struct {
     uint32_t track_id;                  /* Rekordbox internal track ID            */
     uint16_t bpm;                       /* BPM, rounded (bpm_x100 / 100)         */
     uint16_t duration_s;                /* Duration in seconds                    */
+    char     key[8];                    /* Musical key name from the Keys table   */
+                                        /* (e.g. "Am", "8A"); empty if unknown    */
     char     title[PDB_STR_MAX];        /* Title (or filename when title absent)  */
     char     artist[PDB_STR_MAX];       /* Artist name (empty string if unknown)  */
     char     album[PDB_STR_MAX];        /* Album name  (empty string if unknown)  */
