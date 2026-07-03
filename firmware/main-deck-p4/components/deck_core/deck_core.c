@@ -107,6 +107,36 @@ typedef struct {
 
 static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
 
+/* Hot-cue exists-mask cache: publish_flx4_led_snapshot() needs the mask on
+ * every publish, and reading it from NVS each time puts flash reads on the
+ * input-handling path. All cue writes go through this file, so the cache is
+ * refreshed on save and only misses once per loaded track. */
+static uint32_t s_hot_cue_mask_cache_key[DECK_CORE_DECK_COUNT];
+static uint8_t  s_hot_cue_mask_cache_value[DECK_CORE_DECK_COUNT];
+
+static void hot_cue_mask_cache_invalidate(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) {
+        return;
+    }
+    s_hot_cue_mask_cache_key[deck] = 0;
+    s_hot_cue_mask_cache_value[deck] = 0;
+}
+
+static void hot_cue_mask_cache_store(uint8_t deck, uint32_t track_key, uint8_t mask)
+{
+    if (deck < DECK_CORE_DECK_COUNT) {
+        s_hot_cue_mask_cache_key[deck] = track_key;
+        s_hot_cue_mask_cache_value[deck] = mask;
+    }
+    /* Keep the other deck coherent when both decks hold the same track. */
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+        if (d != deck && s_hot_cue_mask_cache_key[d] == track_key) {
+            s_hot_cue_mask_cache_value[d] = mask;
+        }
+    }
+}
+
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
@@ -451,12 +481,17 @@ static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
     if (track_key == 0) {
         return 0;
     }
+    if (deck < DECK_CORE_DECK_COUNT && s_hot_cue_mask_cache_key[deck] == track_key) {
+        return s_hot_cue_mask_cache_value[deck];
+    }
 
     hot_cue_store_blob_t blob = {0};
-    if (hot_cue_store_load(track_key, &blob) != ESP_OK) {
-        return 0;
+    uint8_t mask = 0;
+    if (hot_cue_store_load(track_key, &blob) == ESP_OK) {
+        mask = (uint8_t)(blob.valid_mask & 0xFFu);
     }
-    return (uint8_t)(blob.valid_mask & 0xFFu);
+    hot_cue_mask_cache_store(deck, track_key, mask);
+    return mask;
 }
 
 static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, deck_state_t *state)
@@ -496,6 +531,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         memset(&blob.slots[pad], 0, sizeof(blob.slots[pad]));
         rc = hot_cue_store_save(track_key, &blob);
         if (rc == ESP_OK) {
+            hot_cue_mask_cache_store(deck, track_key, (uint8_t)(blob.valid_mask & 0xFFu));
             ESP_LOGI(TAG, "deck %u hot cue %u cleared",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
@@ -536,6 +572,7 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
     };
     rc = hot_cue_store_save(track_key, &blob);
     if (rc == ESP_OK) {
+        hot_cue_mask_cache_store(deck, track_key, (uint8_t)(blob.valid_mask & 0xFFu));
         ESP_LOGI(TAG, "deck %u hot cue %u set -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned)pad + 1,
@@ -1027,7 +1064,7 @@ static void publish_flx4_led_snapshot(bool force)
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "FLX4 LED snapshot publish failed: %s", esp_err_to_name(rc));
     } else {
-        ESP_LOGI(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
+        ESP_LOGD(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
     }
 }
 
@@ -2101,6 +2138,7 @@ void deck_core_reset_deck(uint8_t deck)
     memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
     memset(&s_beat_loop_led[idx], 0, sizeof(s_beat_loop_led[idx]));
     memset(&s_censor_shadow[idx], 0, sizeof(s_censor_shadow[idx]));
+    hot_cue_mask_cache_invalidate(idx);
     xSemaphoreGive(s_mutex);
     ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
 }
@@ -2118,6 +2156,8 @@ void deck_core_test_reset(void)
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_beat_loop_led, 0, sizeof(s_beat_loop_led));
     memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
+    memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
+    memset(s_hot_cue_mask_cache_value, 0, sizeof(s_hot_cue_mask_cache_value));
 #if defined(DECK_CORE_PC_TEST)
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));

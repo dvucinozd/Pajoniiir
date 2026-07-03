@@ -1,18 +1,28 @@
 #include "web_api_helpers.h"
 
 #include <stdio.h>
+#include <string.h>
 
-static void append_json_char(char c, char *dst, size_t dst_size, size_t *written)
+/* Appends a full escape sequence or nothing: a truncated two-byte escape
+ * would leave a lone '\' that escapes the closing quote of the JSON string.
+ * `written` counts the untruncated logical length (like snprintf's return),
+ * `stored` counts bytes actually placed in dst; once they diverge the output
+ * is truncated and no further bytes are stored. */
+static void append_json_seq(const char *seq, size_t len,
+                            char *dst, size_t dst_size,
+                            size_t *written, size_t *stored)
 {
-    if (dst && *written + 1u < dst_size) {
-        dst[*written] = c;
+    if (dst && *stored == *written && *stored + len < dst_size) {
+        memcpy(&dst[*stored], seq, len);
+        *stored += len;
     }
-    (*written)++;
+    *written += len;
 }
 
 size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
 {
     size_t written = 0;
+    size_t stored = 0;
 
     if (!src) {
         src = "";
@@ -21,34 +31,28 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
     for (size_t i = 0; src[i] != '\0'; i++) {
         switch (src[i]) {
         case '"':
-            append_json_char('\\', dst, dst_size, &written);
-            append_json_char('"', dst, dst_size, &written);
+            append_json_seq("\\\"", 2u, dst, dst_size, &written, &stored);
             break;
         case '\\':
-            append_json_char('\\', dst, dst_size, &written);
-            append_json_char('\\', dst, dst_size, &written);
+            append_json_seq("\\\\", 2u, dst, dst_size, &written, &stored);
             break;
         case '\n':
-            append_json_char('\\', dst, dst_size, &written);
-            append_json_char('n', dst, dst_size, &written);
+            append_json_seq("\\n", 2u, dst, dst_size, &written, &stored);
             break;
         case '\r':
-            append_json_char('\\', dst, dst_size, &written);
-            append_json_char('r', dst, dst_size, &written);
+            append_json_seq("\\r", 2u, dst, dst_size, &written, &stored);
             break;
         case '\t':
-            append_json_char('\\', dst, dst_size, &written);
-            append_json_char('t', dst, dst_size, &written);
+            append_json_seq("\\t", 2u, dst, dst_size, &written, &stored);
             break;
         default:
-            append_json_char(src[i], dst, dst_size, &written);
+            append_json_seq(&src[i], 1u, dst, dst_size, &written, &stored);
             break;
         }
     }
 
     if (dst_size > 0 && dst) {
-        size_t terminator = written < dst_size ? written : dst_size - 1u;
-        dst[terminator] = '\0';
+        dst[stored < dst_size ? stored : dst_size - 1u] = '\0';
     }
 
     return written;

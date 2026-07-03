@@ -338,7 +338,15 @@ static void walk_table(const struct pdb_s *p, uint32_t table_type,
     for (uint32_t i = 0u; i < p->num_tables; i++) {
         if (p->tables[i].type != table_type) continue;
         uint32_t page_num = p->tables[i].first_page;
+        uint32_t visited = 0u;
         while (page_num != 0xFFFFFFFFu && page_num < p->total_pages) {
+            /* A corrupted next-page chain can form a cycle; without this
+               guard the walk spins forever and trips the task watchdog. */
+            if (visited++ >= p->total_pages) {
+                PDB_LOGW(TAG, "Page chain loop in table 0x%02X; truncating walk",
+                         table_type);
+                break;
+            }
             iter_page_rows(p, page_num, cb, user);
             page_num = page_next(p, page_num);
         }

@@ -120,6 +120,16 @@ static void parse_rx_byte(rx_state_t *st, uint8_t b)
     uint8_t chk = st->buf[1] ^ st->buf[2] ^ st->buf[3] ^ st->buf[4] ^ st->buf[5];
     if (chk != st->buf[6]) {
         ESP_LOGW(TAG, "bad checksum");
+        /* A dropped byte shifts framing: the real frame start is likely inside
+           the bytes just rejected. Resync on it instead of discarding all 7,
+           otherwise one lost byte can corrupt a long run of frames. */
+        for (int i = 1; i < CTRL_FRAME_LEN; i++) {
+            if (st->buf[i] == CTRL_FRAME_START) {
+                memmove(st->buf, &st->buf[i], (size_t)(CTRL_FRAME_LEN - i));
+                st->pos = CTRL_FRAME_LEN - i;
+                break;
+            }
+        }
         return;
     }
 
