@@ -12,6 +12,16 @@
 #include "minimp3.h"
 
 #include "audio_engine.h"
+#if defined(AUDIO_ENGINE_PC_TEST)
+#ifndef AUDIO_DECODER_PC_TEST
+#define AUDIO_DECODER_PC_TEST
+#endif
+#ifndef MEDIA_IO_GATE_STANDALONE_TEST
+#define MEDIA_IO_GATE_STANDALONE_TEST
+#endif
+#endif
+#include "audio_decoder.h"
+#include "audio_format.h"
 #include "audio_diag.h"
 #include "audio_delay_fx.h"
 #include "audio_filter.h"
@@ -124,6 +134,9 @@ static float pregain_gain_from_raw(uint16_t raw)
 typedef struct {
     FILE    *fp;
     mp3dec_t dec;
+    audio_format_t format;
+    audio_decoder_t decoder;
+    bool decoder_open;
 
     /* Direct memory-mapped buffer for firmware (bypasses fmemopen bugs) */
     const uint8_t *file_buf;
@@ -1577,6 +1590,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     audio_fw_preload_set_path(fw, mp3_path);
     eng->fp = NULL;
 #else
+    audio_format_t detected_format = audio_format_detect_path(mp3_path);
     FILE *fp = fopen(mp3_path, "rb");
     if (!fp) {
         ESP_LOGE(TAG, "Cannot open: %s", mp3_path);
@@ -1591,11 +1605,42 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     long pc_file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     eng->file_size = pc_file_size > 0 ? (size_t)pc_file_size : 0u;
+    eng->format = detected_format;
+    if (detected_format == AUDIO_FORMAT_WAV) {
+        fclose(fp);
+        eng->fp = NULL;
+        esp_err_t dec_rc = audio_decoder_open(&eng->decoder, mp3_path);
+        if (dec_rc != ESP_OK) {
+            eng->last_error = dec_rc;
+            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "DECODER ERR");
+            eng->loading = false;
+            eng->load_progress = 100;
+            return dec_rc;
+        }
+        eng->decoder_open = true;
+        eng->sample_rate = eng->decoder.info.sample_rate;
+        eng->channels = eng->decoder.info.channels;
+        if (duration_ms == 0u && eng->sample_rate > 0u) {
+            duration_ms = (uint32_t)((eng->decoder.info.total_frames * 1000ull) /
+                                     (uint64_t)eng->sample_rate);
+        }
+    } else if (detected_format == AUDIO_FORMAT_FLAC) {
+        fclose(fp);
+        eng->last_error = ESP_ERR_NOT_SUPPORTED;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "UNSUPPORTED FORMAT");
+        eng->loading = false;
+        eng->load_progress = 100;
+        return ESP_ERR_NOT_SUPPORTED;
+    } else {
+        eng->fp = fp;
+    }
 #endif
 
     eng->duration_ms = duration_ms;
-    eng->sample_rate = 0u;   /* latched on first decoded frame */
-    eng->channels    = 2;
+    if (eng->format != AUDIO_FORMAT_WAV) {
+        eng->sample_rate = 0u;   /* latched on first decoded frame */
+        eng->channels    = 2;
+    }
 
     if (pvbr_400) {
         bool any_nonzero = false;
@@ -1817,6 +1862,10 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 
     AE_LOCK();
     if (eng->fp) { fclose(eng->fp); eng->fp = NULL; }
+    if (eng->decoder_open) {
+        audio_decoder_close(&eng->decoder);
+        eng->decoder_open = false;
+    }
     eng->file_buf  = NULL;
     eng->file_size = 0;
     eng->file_pos  = 0;
@@ -1861,7 +1910,7 @@ esp_err_t audio_engine_stop(void)
 static esp_err_t audio_engine_seek_for_deck(uint8_t deck, uint32_t position_ms)
 {
     audio_engine_state_t *eng = &s_engines[deck];
-    if (!eng->loaded || (!eng->fp && !eng->file_buf)) return ESP_ERR_INVALID_STATE;
+    if (!eng->loaded || (!eng->fp && !eng->file_buf && !eng->decoder_open)) return ESP_ERR_INVALID_STATE;
 
     AE_LOCK();
     /* The decode task writes the same seek fields under the lock (loop-wrap
@@ -1877,6 +1926,11 @@ static esp_err_t audio_engine_seek_for_deck(uint8_t deck, uint32_t position_ms)
     eng->seek_base_ms = position_ms;
     eng->frames_since_seek = 0u;
     audio_pcm_ring_reset(&s_pcm_rings[deck]);
+
+    if (eng->decoder_open && eng->sample_rate > 0u) {
+        uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
+        (void)audio_decoder_seek_frame(&eng->decoder, frame);
+    }
 
 #if AE_FW
     audio_resampler_reset(&s_resamplers[deck]);

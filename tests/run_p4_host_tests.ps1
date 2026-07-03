@@ -213,20 +213,54 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_format"
+        Dir = "tests/audio_format"
+        Target = "test_audio_format.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_format.exe",
+            "test_audio_format.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c"
+        )
+    },
+    @{
+        Name = "audio_wav_decoder"
+        Dir = "tests/audio_wav_decoder"
+        Target = "test_audio_wav_decoder.exe"
+        Cleanup = @("test_stereo.wav", "test_mono.wav", "test_24bit.wav")
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-o", "test_audio_wav_decoder.exe",
+            "test_audio_wav_decoder.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+        )
+    },
+    @{
         Name = "audio_engine"
         Dir = "tests/audio_engine"
         Target = "test_audio_engine.exe"
         Args = @(
             "-Wall", "-Wextra", "-std=c99",
-            "-DAUDIO_ENGINE_PC_TEST", "-DANLZ_STANDALONE_TEST",
+            "-DAUDIO_ENGINE_PC_TEST", "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST", "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-I../control_link_protocol/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
@@ -241,6 +275,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c",
             "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c",
             "-lm"
         )
