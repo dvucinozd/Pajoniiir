@@ -11,7 +11,7 @@ ESP-IDF version: v5.5
 |---|---|---|---|---|---|
 | 1 | MBR | FAT32 | `/usb` mounts, `export.pdb` loads, one track opens | PASS | Baseline regression: mounted as `gpt=0`, `exfat=0`; operator-verified 2026-07-03, log evidence archived below |
 | 2 | GPT | FAT32 | `/usb` mounts, `export.pdb` loads, one track opens | PASS | Inserted media mounted as `gpt=1`, `exfat=0`; UI showed tracks |
-| 3 | MBR | exFAT | `/usb` mounts, `export.pdb` loads, one track opens |  | exFAT MBR |
+| 3 | MBR | exFAT | `/usb` mounts, `export.pdb` loads, one track opens | PASS | exFAT MBR: media mounted, library loaded, track played (operator-verified 2026-07-03; log capture not archived) |
 | 4 | GPT | exFAT | `/usb` mounts, `export.pdb` loads, one track opens | PASS | Inserted media mounted as `gpt=1`, `exfat=1`; UI showed tracks |
 
 ## Required Log Evidence
