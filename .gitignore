@@ -31,6 +31,11 @@ tests/**/*.so
 tests/**/real_out.txt
 tests/**/real_err.txt
 tests/**/real_result.txt
+# Fixtures the host tests generate at runtime
+tests/anlz/test_unicode_ppth.dat
+tests/audio_engine/dummy_diag_audio.mp3
+tests/audio_engine/out.wav
+tests/audio_engine/out_from5s.wav
 
 # OS files
 Thumbs.db
