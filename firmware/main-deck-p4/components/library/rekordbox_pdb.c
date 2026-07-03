@@ -44,11 +44,13 @@ static void pdb_copy_str(char *dst, size_t dst_len, const char *src)
 
 /* ── PDB format constants ─────────────────────────────────────────────────── */
 
-/* Table type IDs */
+/* Table type IDs (crate-digger page_type: 5=keys, 13=artwork — do not mix
+ * them up: artwork rows also start with a uint32 id, so reading artwork as
+ * keys yields path fragments as "key names") */
 #define TABLE_TYPE_TRACKS   0x00u
 #define TABLE_TYPE_ARTISTS  0x02u
 #define TABLE_TYPE_ALBUMS   0x03u
-#define TABLE_TYPE_KEYS     0x0Du
+#define TABLE_TYPE_KEYS     0x05u
 
 /* Page layout */
 #define PAGE_HEAP_OFFSET    0x28u   /* heap start relative to page base       */
