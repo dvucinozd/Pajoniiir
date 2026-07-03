@@ -143,6 +143,15 @@ typedef struct {
     size_t         file_size;
     size_t         file_pos;
 
+    /* Firmware WAV decode state for the PSRAM preloaded buffer. */
+    bool           wav_ready;
+    size_t         wav_data_offset;
+    size_t         wav_data_size;
+    size_t         wav_data_pos;
+    uint16_t       wav_block_align;
+    uint64_t       wav_total_frames;
+    uint64_t       wav_current_frame;
+
     /* PVBR seek table — 400 file-byte offsets (from ANLZ0000.DAT) */
     uint32_t pvbr[AUDIO_PVBR_LEN];
     bool     has_pvbr;
@@ -406,6 +415,171 @@ static bool any_deck_loaded(void)
 
 #endif
 
+static uint16_t ae_wav_rd_u16le(const uint8_t *p)
+{
+    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+}
+
+#if AE_FW
+static uint32_t ae_wav_rd_u32le(const uint8_t *p)
+{
+    return (uint32_t)p[0] |
+           ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
+static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
+{
+    if (!eng || !eng->file_buf || eng->file_size < 12u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (audio_format_detect_header(eng->file_buf, eng->file_size) != AUDIO_FORMAT_WAV) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    bool have_fmt = false;
+    bool have_data = false;
+    uint16_t audio_format = 0;
+    uint16_t channels = 0;
+    uint16_t bits_per_sample = 0;
+    uint16_t block_align = 0;
+    uint32_t sample_rate = 0;
+    size_t data_offset = 0;
+    size_t data_size = 0;
+    size_t pos = 12u;
+
+    while (pos + 8u <= eng->file_size && !have_data) {
+        const uint8_t *chunk = eng->file_buf + pos;
+        uint32_t chunk_size = ae_wav_rd_u32le(chunk + 4);
+        size_t payload = pos + 8u;
+        size_t padded_size = (size_t)chunk_size + (size_t)(chunk_size & 1u);
+        if (payload > eng->file_size || padded_size > eng->file_size - payload) {
+            return ESP_FAIL;
+        }
+
+        if (memcmp(chunk, "fmt ", 4) == 0) {
+            if (chunk_size < 16u) {
+                return ESP_FAIL;
+            }
+            const uint8_t *fmt = eng->file_buf + payload;
+            audio_format = ae_wav_rd_u16le(fmt + 0);
+            channels = ae_wav_rd_u16le(fmt + 2);
+            sample_rate = ae_wav_rd_u32le(fmt + 4);
+            block_align = ae_wav_rd_u16le(fmt + 12);
+            bits_per_sample = ae_wav_rd_u16le(fmt + 14);
+            have_fmt = true;
+        } else if (memcmp(chunk, "data", 4) == 0) {
+            data_offset = payload;
+            data_size = chunk_size;
+            have_data = true;
+        }
+
+        pos = payload + padded_size;
+    }
+
+    if (!have_fmt || !have_data || audio_format != 1u) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if ((channels != 1u && channels != 2u) || bits_per_sample != 16u) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (sample_rate == 0u ||
+        block_align == 0u ||
+        block_align != (uint16_t)(channels * sizeof(int16_t))) {
+        return ESP_FAIL;
+    }
+
+    eng->format = AUDIO_FORMAT_WAV;
+    eng->sample_rate = sample_rate;
+    eng->channels = (int)channels;
+    eng->wav_ready = true;
+    eng->wav_data_offset = data_offset;
+    eng->wav_data_size = data_size;
+    eng->wav_data_pos = data_offset;
+    eng->wav_block_align = block_align;
+    eng->wav_total_frames = data_size / block_align;
+    eng->wav_current_frame = 0u;
+    eng->file_pos = data_offset;
+    eng->eof = (eng->wav_total_frames == 0u);
+    if (eng->duration_ms == 0u) {
+        eng->duration_ms = (uint32_t)((eng->wav_total_frames * 1000ull) /
+                                      (uint64_t)sample_rate);
+    }
+    ESP_LOGI(TAG, "WAV: %u Hz, %u ch, %u frames",
+             (unsigned)sample_rate,
+             (unsigned)channels,
+             (unsigned)eng->wav_total_frames);
+    return ESP_OK;
+}
+#endif
+
+static void ae_wav_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
+{
+    if (!eng || !eng->wav_ready || eng->sample_rate == 0u || eng->wav_block_align == 0u) {
+        return;
+    }
+    uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
+    if (frame > eng->wav_total_frames) {
+        frame = eng->wav_total_frames;
+    }
+    eng->wav_current_frame = frame;
+    eng->wav_data_pos = eng->wav_data_offset + (size_t)(frame * eng->wav_block_align);
+    eng->file_pos = eng->wav_data_pos;
+    eng->eof = (frame >= eng->wav_total_frames);
+}
+
+static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
+                                   int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
+{
+    if (!eng || !eng->wav_ready || eng->eof || eng->wav_block_align == 0u) {
+        return 0;
+    }
+    if (eng->wav_current_frame >= eng->wav_total_frames) {
+        eng->eof = true;
+        return 0;
+    }
+
+    uint64_t frames_left64 = eng->wav_total_frames - eng->wav_current_frame;
+    size_t frames = frames_left64 > (uint64_t)MINIMP3_MAX_SAMPLES_PER_FRAME
+                        ? (size_t)MINIMP3_MAX_SAMPLES_PER_FRAME
+                        : (size_t)frames_left64;
+    size_t data_end = eng->wav_data_offset + eng->wav_data_size;
+    if (eng->wav_data_pos >= data_end) {
+        eng->eof = true;
+        return 0;
+    }
+    size_t bytes_left = data_end - eng->wav_data_pos;
+    size_t frames_available = bytes_left / eng->wav_block_align;
+    if (frames > frames_available) {
+        frames = frames_available;
+    }
+    if (frames == 0u) {
+        eng->eof = true;
+        return 0;
+    }
+
+    for (size_t i = 0; i < frames; i++) {
+        const uint8_t *p = eng->file_buf + eng->wav_data_pos + i * eng->wav_block_align;
+        if (eng->channels == 1) {
+            int16_t s = (int16_t)ae_wav_rd_u16le(p);
+            out_pcm[i * 2u + 0u] = s;
+            out_pcm[i * 2u + 1u] = s;
+        } else {
+            out_pcm[i * 2u + 0u] = (int16_t)ae_wav_rd_u16le(p + 0);
+            out_pcm[i * 2u + 1u] = (int16_t)ae_wav_rd_u16le(p + 2);
+        }
+    }
+
+    eng->wav_current_frame += frames;
+    eng->wav_data_pos += frames * eng->wav_block_align;
+    eng->file_pos = eng->wav_data_pos;
+    if (eng->wav_current_frame >= eng->wav_total_frames) {
+        eng->eof = true;
+    }
+    return (int)frames;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Internal helpers
  * ═════════════════════════════════════════════════════════════════════════ */
@@ -427,6 +601,28 @@ static int decode_one_frame(
 #endif
     int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
+    if (eng->decoder_open) {
+        if (eng->eof) return 0;
+        size_t frames_read = 0;
+        esp_err_t rc = audio_decoder_read_pcm_s16(&eng->decoder,
+                                                  out_pcm,
+                                                  MINIMP3_MAX_SAMPLES_PER_FRAME,
+                                                  &frames_read);
+        if (rc != ESP_OK || frames_read == 0u) {
+            eng->eof = true;
+            return 0;
+        }
+        if (eng->sample_rate == 0u && eng->decoder.info.sample_rate > 0u) {
+            eng->sample_rate = eng->decoder.info.sample_rate;
+            eng->channels = eng->decoder.info.channels;
+        }
+        return (int)frames_read;
+    }
+
+    if (eng->format == AUDIO_FORMAT_WAV) {
+        return ae_wav_decode_one_frame(eng, out_pcm);
+    }
+
     if (eng->file_buf) {
         size_t available = eng->file_size;
 #if AE_FW
@@ -1001,7 +1197,9 @@ static void ae_loader_task(void *arg)
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
         ae_diag_log_memory("preload-done", ctx->deck);
-        build_seek_table(eng);        /* full file in PSRAM → frame-accurate IFI seeks */
+        if (eng->format != AUDIO_FORMAT_WAV) {
+            build_seek_table(eng);    /* full file in PSRAM -> frame-accurate IFI seeks */
+        }
         fw->load_done = true;
         eng->load_progress = 100;
     }
@@ -1040,33 +1238,49 @@ static void ae_decode_task(void *arg)
     }
     if (!runtime->run) goto cleanup;
 
-    /* Latch the sample rate from the first decodable frame, then open the codec.
-     * Gated: a large ID3 tag may push frame 1 past the first chunk — wait for it. */
-    int attempts = 0;
-    while (runtime->run && eng->sample_rate == 0 && attempts < 256 && !eng->eof) {
-        if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
+    if (eng->format == AUDIO_FORMAT_WAV) {
+        while (runtime->run && !fw->load_done) {
             vTaskDelay(pdMS_TO_TICKS(2));
-            continue;
         }
+        if (!runtime->run) goto cleanup;
         AE_LOCK();
-        int64_t decode_start_us = esp_timer_get_time();
-        int n = decode_one_frame(eng, fw, decode_pcm);
-        uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
-        if (n > 0) {
-            eng->frames_since_seek += (uint64_t)n;
-            for (int i = 0; i < n; i++) {
-                audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
-            }
-            ae_diag_record_decode(ctx->deck,
-                                  decode_us,
-                                  n,
-                                  audio_pcm_ring_used(pcm_ring),
-                                  eng->file_pos,
-                                  fw->loaded_bytes,
-                                  fw->load_done);
-        }
+        esp_err_t wav_rc = ae_wav_init_from_memory(eng);
         AE_UNLOCK();
-        attempts++;
+        if (wav_rc != ESP_OK) {
+            ESP_LOGE(TAG, "WAV parse failed: %d", (int)wav_rc);
+            eng->last_error = wav_rc;
+            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "WAV ERR");
+            goto cleanup;
+        }
+    } else {
+        /* Latch the sample rate from the first decodable frame, then open the codec.
+         * Gated: a large ID3 tag may push frame 1 past the first chunk - wait for it. */
+        int attempts = 0;
+        while (runtime->run && eng->sample_rate == 0 && attempts < 256 && !eng->eof) {
+            if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
+                vTaskDelay(pdMS_TO_TICKS(2));
+                continue;
+            }
+            AE_LOCK();
+            int64_t decode_start_us = esp_timer_get_time();
+            int n = decode_one_frame(eng, fw, decode_pcm);
+            uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+            if (n > 0) {
+                eng->frames_since_seek += (uint64_t)n;
+                for (int i = 0; i < n; i++) {
+                    audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
+                }
+                ae_diag_record_decode(ctx->deck,
+                                      decode_us,
+                                      n,
+                                      audio_pcm_ring_used(pcm_ring),
+                                      eng->file_pos,
+                                      fw->loaded_bytes,
+                                      fw->load_done);
+            }
+            AE_UNLOCK();
+            attempts++;
+        }
     }
     if (!runtime->run || eng->sample_rate == 0) {
         ESP_LOGE(TAG, "no audio frame found");
@@ -1099,7 +1313,9 @@ static void ae_decode_task(void *arg)
             AE_LOCK();
             if (eng->seek_requested) {
                 uint32_t target_ms = eng->seek_target_ms;
-                if (eng->seek_table) {
+                if (eng->format == AUDIO_FORMAT_WAV) {
+                    ae_wav_seek_to_ms(eng, target_ms);
+                } else if (eng->seek_table) {
                     seek_index(eng, target_ms);
                 } else if (eng->has_pvbr) {
                     seek_pvbr(eng, target_ms);
@@ -1113,7 +1329,9 @@ static void ae_decode_task(void *arg)
                     eng->output_frames_since_seek = 0u;
                 }
                 eng->eof               = false;
-                mp3dec_init(&eng->dec);
+                if (eng->format != AUDIO_FORMAT_WAV) {
+                    mp3dec_init(&eng->dec);
+                }
 
                 /* Loop wrap keeps the ring (gapless); user seeks flush it. */
                 if (!eng->seek_is_loop) {
@@ -1127,7 +1345,9 @@ static void ae_decode_task(void *arg)
         }
 
         /* Gate: never decode past what the loader has fetched into PSRAM. */
-        if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
+        if (eng->format != AUDIO_FORMAT_WAV &&
+            !fw->load_done &&
+            eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -1586,6 +1806,15 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     eng->load_progress = 0;
 
 #if AE_FW
+    audio_format_t detected_format = audio_format_detect_path(mp3_path);
+    if (detected_format == AUDIO_FORMAT_FLAC) {
+        eng->last_error = ESP_ERR_NOT_SUPPORTED;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "UNSUPPORTED FORMAT");
+        eng->loading = false;
+        eng->load_progress = 100;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    eng->format = (detected_format == AUDIO_FORMAT_UNKNOWN) ? AUDIO_FORMAT_MP3 : detected_format;
     audio_fw_preload_t *fw = &s_fw_preloads[deck];
     audio_fw_preload_set_path(fw, mp3_path);
     eng->fp = NULL;
@@ -1626,6 +1855,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         }
     } else if (detected_format == AUDIO_FORMAT_FLAC) {
         fclose(fp);
+        eng->fp = NULL;
         eng->last_error = ESP_ERR_NOT_SUPPORTED;
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "UNSUPPORTED FORMAT");
         eng->loading = false;
@@ -2823,7 +3053,9 @@ static void wav_write_header(FILE      *wav,
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms)
 {
     audio_engine_state_t *eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
-    if (!eng->loaded || !eng->fp) return ESP_ERR_INVALID_STATE;
+    if (!eng->loaded || (!eng->fp && !eng->decoder_open && !eng->file_buf)) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!wav_path)                 return ESP_ERR_INVALID_ARG;
 
     FILE *wav = fopen(wav_path, "wb");
@@ -2836,8 +3068,14 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
     wav_write_header(wav, 44100u, 2u, 0u);
 
     /* Rewind input, reset decoder */
-    rewind(eng->fp);
-    mp3dec_init(&eng->dec);
+    if (eng->decoder_open) {
+        (void)audio_decoder_seek_frame(&eng->decoder, 0u);
+    } else if (eng->format == AUDIO_FORMAT_WAV && eng->wav_ready) {
+        ae_wav_seek_to_ms(eng, 0u);
+    } else if (eng->fp) {
+        rewind(eng->fp);
+        mp3dec_init(&eng->dec);
+    }
     eng->frames_since_seek = 0u;
     eng->eof               = false;
 
