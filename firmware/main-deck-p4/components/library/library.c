@@ -268,8 +268,14 @@ esp_err_t library_get(int index, library_track_t *out)
     return ESP_OK;
 }
 
-/* ── library_get_ptr ──────────────────────────────────────────────────────── */
-
+/* ── library_get_ptr (simulator only) ─────────────────────────────────────── *
+ *
+ * Returns a pointer into the live index, which library_init()/library_sort()
+ * republish under the caller's feet. The single-threaded PC simulator can
+ * live with that; firmware code must use library_get()/library_get_summary()
+ * (or media_catalog) instead, so the symbol does not exist there.
+ */
+#ifdef WIN32
 library_track_t *library_get_ptr(int index)
 {
     if (ensure_library_mutex() != ESP_OK) return NULL;
@@ -278,6 +284,24 @@ library_track_t *library_get_ptr(int index)
     library_track_t *track = (!idx || index < 0 || index >= s_track_count) ? NULL : &idx[index];
     xSemaphoreGiveRecursive(s_library_mutex);
     return track;
+}
+#endif
+
+/* ── library_get_summary ──────────────────────────────────────────────────── */
+
+esp_err_t library_get_summary(int index, uint16_t *out_bpm, uint32_t *out_duration_ms)
+{
+    if (ensure_library_mutex() != ESP_OK) return ESP_ERR_NOT_FOUND;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    library_track_t *idx = active_index();
+    if (!idx || index < 0 || index >= s_track_count) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (out_bpm) *out_bpm = idx[index].bpm;
+    if (out_duration_ms) *out_duration_ms = idx[index].duration_ms;
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return ESP_OK;
 }
 
 /* ── library_load_anlz ────────────────────────────────────────────────────── *
@@ -492,11 +516,22 @@ void library_sort(int field_type, bool descending)
 {
     if (ensure_library_mutex() != ESP_OK) return;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    library_track_t *idx = active_index();
-    if (!idx || s_track_count <= 1) {
+    library_track_t *src = active_index();
+    if (!src || s_track_count <= 1) {
         xSemaphoreGiveRecursive(s_library_mutex);
         return;
     }
+
+    /* Publish-on-write: sort a copy in the inactive buffer and flip, so any
+     * reader of the previous buffer sees a stable snapshot instead of rows
+     * being reshuffled mid-read by an in-place qsort. */
+    int build_buf = s_active_buf ^ 1;
+    library_track_t *idx = s_index_buf[build_buf];
+    if (!idx) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return;
+    }
+    memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t));
 
     if (field_type == 0) { // Artist
         qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_artist_desc : compare_artist_asc);
@@ -507,6 +542,7 @@ void library_sort(int field_type, bool descending)
     } else if (field_type == 3) { // Key
         qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_key_desc : compare_key_asc);
     }
+    s_active_buf = build_buf;
     s_generation++;
     xSemaphoreGiveRecursive(s_library_mutex);
     ESP_LOGI(TAG, "Library sorted: field=%d, descending=%d", field_type, descending);
