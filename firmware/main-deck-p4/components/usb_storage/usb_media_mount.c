@@ -306,6 +306,37 @@ static bool candidate_effective_sector_count(const usb_media_candidate_t *candid
     return true;
 }
 
+static void refine_candidate_kind_from_boot_sector(msc_host_device_handle_t device,
+                                                   uint32_t sector_size,
+                                                   uint32_t device_sector_count,
+                                                   usb_media_candidate_t *candidate)
+{
+    if (device == NULL || candidate == NULL || sector_size < USB_MEDIA_SECTOR_SIZE_MIN) {
+        return;
+    }
+
+    uint32_t ignored_sector_count;
+    if (!candidate_effective_sector_count(candidate, device_sector_count, &ignored_sector_count)) {
+        return;
+    }
+
+    uint8_t *boot = calloc(1, sector_size);
+    if (boot == NULL) {
+        return;
+    }
+
+    const esp_err_t rc = read_sectors(device, candidate->first_lba, 1u, sector_size, boot);
+    if (rc == ESP_OK) {
+        const usb_media_volume_kind_t kind =
+            usb_media_partition_classify_boot_sector(boot, sector_size);
+        if (kind == USB_MEDIA_VOLUME_FAT || kind == USB_MEDIA_VOLUME_EXFAT) {
+            candidate->kind = kind;
+        }
+    }
+
+    free(boot);
+}
+
 static void free_mount_object(usb_media_mount_t *mount)
 {
     if (mount == NULL) {
@@ -427,6 +458,14 @@ esp_err_t usb_media_mount(msc_host_device_handle_t device,
 
     for (size_t i = 0; i < layout.count; ++i) {
         usb_media_mount_t *candidate_mount = NULL;
+        refine_candidate_kind_from_boot_sector(device,
+                                               info.sector_size,
+                                               info.sector_count,
+                                               &layout.candidates[i]);
+        if (layout.candidates[i].kind == USB_MEDIA_VOLUME_EXFAT) {
+            ESP_LOGI(TAG, "exFAT candidate detected at LBA %u",
+                     (unsigned)layout.candidates[i].first_lba);
+        }
         rc = mount_candidate(device,
                              base_path,
                              mount_config,

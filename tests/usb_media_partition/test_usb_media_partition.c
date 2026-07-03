@@ -170,6 +170,30 @@ static void test_boot_sector_classification(void)
     assert(usb_media_partition_classify_boot_sector(blank, 512u) == USB_MEDIA_VOLUME_UNKNOWN);
 }
 
+static void test_mbr_type_07_becomes_exfat_after_boot_sector_classification(void)
+{
+    uint8_t mbr[512];
+    uint8_t boot[512];
+    uint8_t blank[512] = {0};
+    make_mbr(mbr, 0x07u, 8192u, 262144u);
+    make_exfat_boot(boot);
+
+    usb_media_layout_t layout;
+    assert(usb_media_partition_scan_mbr_or_sfd(mbr, 512u, &layout) == USB_MEDIA_PARTITION_OK);
+    assert(layout.count == 1u);
+    assert(layout.candidates[0].first_lba == 8192u);
+    assert(layout.candidates[0].sector_count == 262144u);
+    assert(layout.candidates[0].kind == USB_MEDIA_VOLUME_UNKNOWN);
+
+    layout.candidates[0].kind = usb_media_partition_classify_boot_sector(boot, 512u);
+    assert(layout.candidates[0].kind == USB_MEDIA_VOLUME_EXFAT);
+
+    assert(usb_media_partition_scan_mbr_or_sfd(mbr, 512u, &layout) == USB_MEDIA_PARTITION_OK);
+    assert(layout.candidates[0].kind == USB_MEDIA_VOLUME_UNKNOWN);
+    layout.candidates[0].kind = usb_media_partition_classify_boot_sector(blank, 512u);
+    assert(layout.candidates[0].kind == USB_MEDIA_VOLUME_UNKNOWN);
+}
+
 int main(void)
 {
     test_exfat_superfloppy();
@@ -179,6 +203,7 @@ int main(void)
     test_gpt_basic_data_candidate();
     test_reject_malformed_gpt();
     test_boot_sector_classification();
+    test_mbr_type_07_becomes_exfat_after_boot_sector_classification();
     puts("usb_media_partition tests passed");
     return 0;
 }
