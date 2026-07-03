@@ -122,7 +122,7 @@ static void storage_task(void *arg)
             msc_host_device_info_t info;
             if (msc_host_get_device_info(s_msc_dev, &info) == ESP_OK) {
                 uint64_t mb = ((uint64_t)info.sector_size * info.sector_count) / (1024 * 1024);
-                ESP_LOGI(TAG, "USB MSC device: %llu MB, sector=%u bytes (VID:0x%04X PID:0x%04X)",
+                ESP_LOGW(TAG, "USB MSC device: %llu MB, sector=%u bytes (VID:0x%04X PID:0x%04X)",
                          mb,
                          (unsigned)info.sector_size,
                          info.idVendor,
@@ -143,7 +143,7 @@ static void storage_task(void *arg)
             }
             usb_media_mount_info_t mount_info;
             if (usb_media_mount_get_info(s_mount, &mount_info)) {
-                ESP_LOGI(TAG, "USB media mounted: base_lba=%u sectors=%u sector_size=%u exfat=%u gpt=%u",
+                ESP_LOGW(TAG, "USB media mounted: base_lba=%u sectors=%u sector_size=%u exfat=%u gpt=%u",
                          (unsigned)mount_info.base_lba,
                          (unsigned)mount_info.sector_count,
                          (unsigned)mount_info.sector_size,

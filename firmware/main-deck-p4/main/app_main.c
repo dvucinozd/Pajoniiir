@@ -26,7 +26,7 @@ static void on_usb_storage_event(bool mounted)
     if (mounted) {
         esp_err_t rc = library_init();   // open export.pdb, build the track index
         if (rc == ESP_OK) {
-            ESP_LOGI(TAG, "USB media library loaded: %d tracks", library_count());
+            ESP_LOGW(TAG, "USB media library loaded: %d tracks", library_count());
         } else {
             ESP_LOGW(TAG, "library_init after USB mount: %s", esp_err_to_name(rc));
         }

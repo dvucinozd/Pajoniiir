@@ -463,7 +463,7 @@ esp_err_t usb_media_mount(msc_host_device_handle_t device,
                                                info.sector_count,
                                                &layout.candidates[i]);
         if (layout.candidates[i].kind == USB_MEDIA_VOLUME_EXFAT) {
-            ESP_LOGI(TAG, "exFAT candidate detected at LBA %u",
+            ESP_LOGW(TAG, "exFAT candidate detected at LBA %u",
                      (unsigned)layout.candidates[i].first_lba);
         }
         rc = mount_candidate(device,
