@@ -1,31 +1,44 @@
 # DDJ-FFL4
 
-Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 controller, an
-ESP32-S3 control board, and a JC4880P443C_I_W ESP32-P4 multimedia board.
+Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 controller, an ESP32-S3 control board, and a JC4880P443C_I_W ESP32-P4 multimedia board.
 
-This repository is a fork-style port of
-[`dvucinozd/CDJ100S-XXX`](https://github.com/dvucinozd/CDJ100S-XXX). The
-upstream project already proves the hard platform pieces: ESP32-P4 display and
-touch, Rekordbox USB library parsing, MP3 preload/decode, ES8311 I2S output,
-ESP32-S3 support firmware, and the internal `0xA5` UART control link.
+This repository is a fork-style port of [`dvucinozd/CDJ100S-XXX`](https://github.com/dvucinozd/CDJ100S-XXX). The upstream project already proves the hard platform pieces: ESP32-P4 display and touch, Rekordbox USB library parsing, MP3 preload/decode, ES8311 I2S output, ESP32-S3 support firmware, and the internal `0xA5` UART control link.
 
 DDJ-FFL4 changes the product target:
+- The CDJ-100S front panel is replaced by a Pioneer DDJ-FLX4.
+- The ESP32-S3 becomes a USB MIDI host and FLX4 protocol translator.
+- The ESP32-P4 becomes a two-deck playback, UI, and mixer engine.
+- The existing UART `control_link` remains the semantic event bus between the S3 and P4.
 
-- the CDJ-100S front panel is replaced by a Pioneer DDJ-FLX4;
-- the ESP32-S3 becomes a USB MIDI host and FLX4 protocol translator;
-- the ESP32-P4 becomes a two-deck playback, UI, and mixer engine;
-- the existing UART `control_link` remains the semantic event bus between the
-  S3 and P4.
+---
 
-## Hardware Roles
+## 📸 Screenshots & Hardware
+
+### ESP32-P4 Development Board & Display
+![ESP32-P4 Development Board](docs/images/p4.jpg)
+
+### Dual-Deck LVGL UI
+Below are the screens designed for the two-deck playback interface:
+
+| Overview Screen | Library Navigation |
+| --- | --- |
+| ![Overview Screen](docs/images/overview.jpg) | ![Library Screen](docs/images/library.jpg) |
+| **Loop Controls** | **Settings & Diagnostics** |
+| ![Loop Screen](docs/images/loop.jpg) | ![Settings Screen](docs/images/settings.jpg) |
+
+---
+
+## 🛠️ Hardware Roles
 
 | Device | Role |
 | --- | --- |
-| Pioneer DDJ-FLX4 | Operator surface: transport, jogs, tempo, mixer, cue, pads, LEDs |
-| ESP32-S3-DevKitC-1 N16R8 | USB MIDI host for FLX4, MIDI-to-control-link translator, LED feedback bridge |
-| JC4880P443C_I_W ESP32-P4 | LVGL UI, Rekordbox media library, two deck states, audio decode, mixer, master/cue output |
+| **Pioneer DDJ-FLX4** | Operator surface: transport, jogs, tempo, mixer, cue, pads, LEDs |
+| **ESP32-S3-DevKitC-1 N16R8** | USB MIDI host for FLX4, MIDI-to-control-link translator, LED feedback bridge |
+| **JC4880P443C_I_W ESP32-P4** | LVGL UI, Rekordbox media library, two deck states, audio decode, mixer, master/cue output |
 
-## Repository Layout
+---
+
+## 📁 Repository Layout
 
 ```text
 firmware/
@@ -33,11 +46,11 @@ firmware/
   main-deck-p4/       ESP32-P4 firmware inherited from CDJ100S-XXX
 docs/
   reference/          vendored upstream and FLX4 mapping inputs
+  images/             Screenshots and hardware photos used in documentation
 tests/                PC-side test harnesses inherited from CDJ100S-XXX
 ```
 
-Key project documents:
-
+### Key Project Documents
 - [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [DDJ-FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
@@ -47,202 +60,108 @@ Key project documents:
 - [Startup checklist](docs/STARTUP_CHECKLIST.md)
 - [Risk register](docs/RISK_REGISTER.md)
 
-## Reference Inputs
+---
+
+## 📚 Reference Inputs
 
 - Original upstream README: [docs/reference/CDJ100S-XXX-README.md](docs/reference/CDJ100S-XXX-README.md)
-- Mixxx DDJ-FLX4 MIDI mapping XML:
-  [docs/reference/Pioneer-DDJ-FLX4.midi.xml](docs/reference/Pioneer-DDJ-FLX4.midi.xml)
-- Official Pioneer DDJ-FLX4 MIDI message list:
-  [docs/reference/DDJ-FLX4_MIDI_message_List.md](docs/reference/DDJ-FLX4_MIDI_message_List.md)
-- Existing upstream technical docs remain under [docs/](docs/) and should be
-  treated as the baseline implementation reference unless superseded by the
-  DDJ-FFL4 documents.
+- Mixxx DDJ-FLX4 MIDI mapping XML: [docs/reference/Pioneer-DDJ-FLX4.midi.xml](docs/reference/Pioneer-DDJ-FLX4.midi.xml)
+- Official Pioneer DDJ-FLX4 MIDI message list: [docs/reference/DDJ-FLX4_MIDI_message_List.md](docs/reference/DDJ-FLX4_MIDI_message_List.md)
+- Existing upstream technical docs remain under [docs/](docs/) and should be treated as the baseline implementation reference unless superseded by the DDJ-FFL4 documents.
 
-## Build Environment
+---
+
+## 💻 Build Environment
 
 The inherited firmware expects the same baseline environment as CDJ100S-XXX:
+- **ESP-IDF** v5.5
+- **Python** environment installed by Espressif tooling
+- **Native MinGW/GCC** for PC unit tests on Windows
 
-- ESP-IDF v5.5
-- Python environment installed by Espressif tooling
-- Native MinGW/GCC for PC unit tests on Windows
-
-Typical shell bootstrap:
-
+### Typical shell bootstrap:
 ```powershell
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
 ```
 
-Inherited build entry points:
-
+### Build Entry Points:
 ```powershell
+# Build S3 firmware
 cd firmware/control-board-s3
 idf.py build
 
+# Build P4 firmware
 cd ..\main-deck-p4
 idf.py build
 ```
 
-P4 host regression tests on Windows:
-
+### Running Host Regression Tests:
 ```powershell
+# P4 tests on Windows
 .\tests\run_p4_host_tests.ps1
-```
 
-S3 host regression tests on Windows:
-
-```powershell
+# S3 tests on Windows
 .\tests\run_s3_host_tests.ps1
 ```
 
-Current `master` carries the Phase 7 extended-control work plus the 2026-07-02
-FLX4 USB headphones and official-MIDI-gap-closure features; those feature
-branches were merged, verified, pushed, and deleted. On 2026-07-03 the remaining
-stale Codex branches were reviewed and removed (local + remote); the old
-experimental `codex/flx4-extended-controls` was deleted after confirming its
-verified slices had already been salvaged into `master`. No non-master feature
-branches remain.
+---
 
-Do not treat the whole system as DDJ-FLX4-ready yet. The P4 target now has
-substantial DDJ-FFL4 work in place: deck-aware state, source-safe dual-deck
-library load paths, shared output/mixer audio plumbing, hardware-verified
-dual-deck audio scheduling/waveform stability, and a refactored two-deck LVGL
-UI with Pioneered-style Overview chrome, centered beat/phase indicators,
-fixed-segment timers, bounded title/timer invalidation, and calibrated audio
-output diagnostics that no longer report normal codec-write pacing as late
-blocks. PCM5102A MAIN OUT bring-up is implemented behind the local
-`CONFIG_BSP_PCM5102A_MAIN_OUT` build option and hardware-smoked on the
-photographed PCM5102MK/PCM5102A board; both RCA line out and the board's 3.5 mm
-output were confirmed on 2026-06-30. The external DAC I2S clock is reconfigured
-to the loaded track sample rate, ES8311 remains the monitor/speaker path, audio
-tasks are pinned away from the LVGL core, mixed 44.1/48 kHz dual-deck playback
-is handled by per-deck source/output sample-rate compensation in the output
-mixer, and a non-boosting master trim control is available in Settings for
-clipping/limiter tuning and is persisted in NVS.
-Limiter telemetry is also exposed through the mixer snapshot and central
-diagnostics snapshot; `/api/status` mirrors diagnostics for smoke captures, and
-the P4 status indicator shows `CLIP n` only when new limiting occurs. P4 boot now shows a short LVGL splash screen (`PajoNiiiR` in the
-Musieer font) before loading the main dual-deck UI.
-The S3 target has a raw FLX4 USB MIDI logger, a deck-aware software
-translator behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`, and host tests for the
-mapper/protocol path. Physical FLX4 USB enumeration, raw MIDI capture,
-Browse/Load routing, dual-deck headphone cue/PFL routing, active physical FLX4
-LED feedback (Play, Cue, PFL), FLX4 reconnect LED resynchronization, and raw
-Smart CFX/Smart Fader input mapping and P4-owned state/LED behavior are
-implemented. Smart CFX enables the deck-local filter DSP from the FLX4 filter
-knobs with a softened raw-to-effective macro curve and a hardware-smoked
-musical HI side that preserves perceived level; Smart Fader applies a
-conservative crossfader transition-assist curve with hardware smoke passed.
-Trim/pregain now routes the FLX4 deck-local Trim knobs into P4 audio output
-gain as a bounded pregain scalar: center is unity, left attenuates, and right
-boosts up to +6 dB before the existing post-sum limiter.
-The physical FLX4 Master Level knob is mapped from the official MIDI PDF
-(`0xB6/0x08+0x28`) to a P4-owned runtime master volume. It is non-boosting and
-multiplies the persistent Settings master trim, so the controller knob provides
-day-to-day level control while the UI trim remains a saved limiter/headroom
-setting.
-Headphones Mix routes the FLX4 14-bit Headphones Mix control into the P4 monitor
-DSP: raw minimum is cue/PFL, raw maximum is stereo master, and the middle blends
-cue with master on the monitor/headphone buffer. As of 2026-07-02 that monitor
-mix is also streamed back out through the DDJ-FLX4's own headphone jack over USB
-Audio Class: the P4 ships the `hp_out` bus to the S3 over an inter-board I2S
-link and the S3 (still the FLX4 USB host) plays it to the controller headphones,
-while PCM5102A stays the RCA MAIN OUT so CUE/MONITOR and MASTER run at once.
-ES8311 was dropped to free a P4 I2S unit for that link. The FLX4 Headphones
-Level knob (official `0xB6/0x0D+0x2D`) is mapped to a P4-owned headphone output
-gain.
-Beat FX section mapping and a P4-owned Beat FX state model are implemented
-from the official FLX4 XML reference: effect select, beat size, target, depth,
-on/off, and clear/reset are stateful. Beat FX audio DSP is intentionally still
-incremental: FILTER now drives a conservative target-aware low-pass DSP from
-the Beat FX depth control, and Echo/delay now has a BPM-synced DSP slice with
-target-aware routing and diagnostics. Echo beat sizes derive delay time from
-the target deck effective BPM, with a 120 BPM fallback and 1000 ms safety cap.
-The P4 Overview screen shows the current Beat FX effect, beat size, target,
-depth, and on/off state from the same authoritative state snapshot; the
-right-side Beat FX panel uses larger value text and active-state highlighting
-for better hardware readability. Hardware smoke on 2026-07-01 confirmed Beat
-FX FILTER and Echo behavior, gradual depth response, CH1/CH2/1&2 target
-routing, BPM-synced Echo beat-size changes, and the physical ON/OFF LED follows
-the P4-owned enabled state.
-Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
-PAD_FX1/PAD_FX2 `CTRL_PAD_ACTION` events, using the existing filter and delay
-primitives. Physical FLX4 Pad FX pad input mapping is implemented from the
-official Pioneer/AlphaTheta MIDI message PDF: Pad FX1 uses `0x10..0x17` and Pad
-FX2 uses `0x50..0x57` on the existing deck pad statuses. Hardware smoke
-confirmed Pad FX filter pads and Echo routing; short Echo presses keep a
-host-tested release tail so the delay is audible after pad release. Pad FX1 and
-Pad FX2 normal pad LEDs now follow P4-owned momentary pad press state; shifted
-mirror pad LEDs remain deferred.
-Hot Cue normal pad LEDs now follow P4-owned hot cue slot state while Hot Cue
-mode is selected; shifted mirror pad LEDs remain deferred.
-The S3 USB MIDI host now
-treats FLX4 VU output as low-priority feedback and suppresses raw MIDI INFO log
-floods during normal translator operation, preserving controller responsiveness
-under dual-deck playback. Extended deck, loop, mixer, monitoring, pad-mode,
-pad-action, and VU-meter input/output mapping is implemented and smoke-verified
-where documented in `docs/DDJ_FLX4_MIDI_MAP.md`. Loop In/Out, Reloop/Exit, loop
-halve/double, Beat Jump, normal/shifted Beat Loop pads, Tempo Range, Beat Sync
-BPM-match-on-press with one-shot phase align while playing, and Hot Cue pad
-store/recall/clear now have P4 behavior. Beat Sync phase-align now preserves
-the reference deck's signed intra-beat offset, so the Overview beat-match guide
-lines align after the one-shot seek instead of landing merely near the same
-beat phase. Overview waveform zoom is controlled by Browse rotate on the
-Overview tab in shared coarse steps of 4, 8, 12, 16, and 24 beats, with
-16 beats as the default. Main waveform loading is deferred to the Overview
-scheduler, and both deck overlays are briefly reblitted after any track load so
-Deck 1 and Deck 2 waveforms remain visible without requiring a touch redraw.
-Three-band channel EQ is implemented in the P4 audio path for both decks using
-the verified FLX4 14-bit EQ controls.
-The seven official DDJ-FLX4 MIDI gaps are also closed from the official Pioneer
-message list: Censor (approximated as a sync-correct forward seek-back rather
-than a true reverse), Sync-as-set-master, Quantize, Loop Adjust In/Out,
-Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls. The
-S3 maps the new physical MIDI notes to semantic control-link events and the P4
-owns the resulting state, audio, and LED behavior.
-The P4 firmware default is now a
-performance-optimized build so dual-deck audio/UI work runs with adequate
-headroom; LVGL examples/demos are disabled in `sdkconfig.defaults`. Sampler,
-Key Shift, and remaining Beat FX DSP polish remain
-P4/controller feature work, not S3 MVP mapping work.
-The porting
-steps are tracked in
-[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+## 📢 Current Status & Features
 
-## MVP Target
+The `master` branch is currently up to date and contains the Phase 7 extended-control work, including USB headphone support for the DDJ-FLX4 and official MIDI gap closures. All stale experimental branches have been reviewed, merged where appropriate, and deleted.
 
-The first DDJ-FFL4 milestone is not a full controller clone. It is a stable
-two-deck standalone path:
+> [!WARNING]
+> Do not treat the entire system as fully plug-and-play ready for the DDJ-FLX4 yet. Significant progress has been made, but active testing is ongoing.
 
-1. S3 enumerates the DDJ-FLX4 as a class-compliant USB MIDI device.
-2. S3 translates Play, Cue, Load, Jog, Tempo, channel faders, crossfader, and
-   headphone cue into deck-aware `control_link` frames.
-3. P4 maintains two independent deck states. Current P4 firmware already does
-   this for the local UI/control path.
-4. P4 decodes two tracks and outputs a simple master mix with Split Mono and Stereo Master headphone cue/PFL audio routing (implemented and hardware-verified for dual-deck playback).
-5. P4 sends transport, mixer, pad-mode, Hot Cue pad, Pad FX pad, Beat Sync,
-   Loop In/Out, and Beat FX ON/OFF LED feedback
-   (Play, Cue, PFL, selected pad mode, sync-enabled state, pending Loop In
-   marker, active loop indicators, Hot Cue slot state, Pad FX momentary pad
-   state, and Beat FX enabled state) back to the S3, and S3 sends the matching
-   MIDI LED messages to the FLX4 (implemented; pad-mode, Hot Cue pad, Pad FX
-   pad, Beat Sync, Loop In/Out, and Beat FX ON/OFF LED smoke has passed where
-   recorded in the validation notes; extended reconnect smoke is still pending).
-6. S3 publishes FLX4 USB connection state and P4 forces a P4-owned MVP LED
-   snapshot after reconnect so Play/Cue/PFL LEDs recover without changing
-   playback state. S3 also refreshes the already-connected FLX4 state after
-   heartbeat so a P4-only reboot can recover without physically replugging the
-   controller (implemented; hardware smoke passed 2026-06-26).
+### Implemented P4 Features (Audio & UI)
+- **Audio Engine & Mixer**:
+  - Two independent deck states with mixed 44.1/48 kHz playback.
+  - Per-deck source/output sample-rate compensation in the output mixer.
+  - PCM5102A MAIN OUT support (verified via both RCA and 3.5 mm jack).
+  - Limiter telemetry, clipping diagnostics, and persistent non-boosting Master Trim in Settings (NVS).
+- **LVGL User Interface**:
+  - Interactive dual-deck layout with Pioneer-style Overview chrome.
+  - Centered beat/phase match guide lines, fixed-segment timers, and bounded title/timer invalidations.
+  - Waveform loading deferred to Overview scheduler with automatic overlays redraw on track load.
+  - Waveform zoom controls via Browse knob (4, 8, 12, 16, 24 beats).
+  - Custom boot splash screen (`PajoNiiiR` in Musieer font).
+- **Audio DSP & Mapping**:
+  - Three-band channel EQ using FLX4 14-bit EQ knobs.
+  - Trim/pregain scaling from FLX4 Trim knobs (center is unity, up to +6 dB boost before limiter).
+  - Headphones Mix (14-bit) routed to monitor DSP (blends Cue/PFL with Master).
+  - Headphones Level mapped to headphone output gain.
+  - Beat FX: Sync-delay Echo (tempo-derived, 1000 ms safety cap) and low-pass Filter.
+  - Pad FX: Filter and delay pads with a release tail.
+  - Hot Cue: Store, recall, and clear.
+  - Loop controls: In/Out, Reloop/Exit, halve/double, Beat Jump, and Beat Loop pads.
+  - Beat Sync: BPM-matching and one-shot phase alignment preserving intra-beat offset.
 
-## Extended Controller Plan
+### Implemented S3 Features (USB Host & MIDI Translator)
+- **Host Middleware**:
+  - Class-compliant USB MIDI host configuration for the Pioneer DDJ-FLX4.
+  - Low-priority feedback treatment for VU output to eliminate MIDI INFO logging flood.
+- **Physical LED Feedback**:
+  - LED status updates for Play, Cue, PFL, active loops, Beat Sync, selected pad mode, Hot Cue slot status, and Beat FX ON/OFF.
+- **Reconnection/Boot Recovery**:
+  - Physical reconnection LED resynchronization.
+  - S3 refreshes FLX4 LEDs periodically so that a P4-only reboot recovers state without replugging.
 
-The remaining useful FLX4 controls use the vendored Mixxx XML for MIDI status,
-midino, message encoding, deck/shift channels, and 14-bit pairing, with the
-official Pioneer MIDI message list used as an additional reference for output
-LEDs and XML/official-list conflicts. The XML mapping is accepted as the
-authoritative source for remaining input controls due to its 100% accuracy in
-our hardware tests. Pre-implementation physical capture is bypassed to speed up
-development; S3 emits semantic events and P4 owns all deck, mixer, pad-mode,
-effect, playback, and LED state directly from the XML seed. Implementation
-order and acceptance criteria are defined in Phase 7 of
-[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+---
+
+## 🎯 MVP Target & Milestones
+
+The primary milestone for DDJ-FFL4 is a stable, stand-alone two-deck playback system:
+1. **USB Host Setup**: S3 successfully enumerates the DDJ-FLX4.
+2. **Translation**: S3 translates Play, Cue, Load, Jog, Tempo, channel faders, crossfader, and headphone cue into `control_link` frames.
+3. **Deck States**: P4 manages two independent deck states.
+4. **Playback/Mixing**: P4 decodes two tracks and outputs a master mix with Split Mono and Stereo Master headphone cue/PFL routing.
+5. **LED Feedback**: P4 reports status back to S3, which synchronizes FLX4 LEDs.
+6. **Recovery**: Heartbeat resync allows connection recovery and hot reboot of boards.
+
+---
+
+## 🚀 Extended Controller Plan
+
+Additional controls are implemented based on the vendored Mixxx XML configuration mapping (for MIDI status, message encoding, and 14-bit pairings) and the official Pioneer MIDI message list.
+For full details on the development timeline, see Phase 7 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+
