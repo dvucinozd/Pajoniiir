@@ -13,6 +13,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if !FF_FS_EXFAT
+#error "DDJ-FFL4 P4 USB media mount requires FatFs FF_FS_EXFAT=1"
+#endif
+
 #define USB_MEDIA_MAX_MOUNTS 4u
 #define USB_MEDIA_DRIVE_STR_LEN 3u
 #define USB_MEDIA_GPT_ENTRY_READ_BYTES 4096u
