@@ -10,7 +10,8 @@
  *   PIONEER/USBANLZ/<P-hash>/<ID-hash>/ANLZ0000.2EX  — color waveform (newer Rekordbox)
  *
  * All multi-byte values in ANLZ files are big-endian.
- * Tags are laid out sequentially; parser uses forward-only fgetc() scan (no fseek).
+ * Tags are located by walking the section headers (tag/header_size/segment_size);
+ * a byte-scan fallback handles structurally broken files.
  *
  * Usage:
  *   anlz_metadata_t meta;

@@ -82,18 +82,62 @@ static bool utf8_append_codepoint(char *dst, size_t dst_sz, size_t *out_i, uint3
     return true;
 }
 
-/* ── Token search ────────────────────────────────────────────────────────── */
+/* ── Tag search ──────────────────────────────────────────────────────────── */
 
-/* Scan forward from the current position looking for a matching 4-byte tag.
- * Uses a single-byte sliding window — reads strictly forward, never seeks back.
- * This is safe on slow/remote storage (USB drives, network) where backwards
- * fseek() would defeat FILE buffering and cause a seek per step.
+/* ANLZ files are a sequence of sections, each with a
+ * (tag, header_size, segment_size) header, optionally preceded by a PMAI
+ * file header whose segment_size spans the whole file. Walking the section
+ * headers finds a tag without ever reading payload bytes, so tag-like byte
+ * patterns inside another section's payload can never produce a false hit
+ * (and the walk is a handful of seeks instead of an fgetc() pass per tag). */
+typedef enum {
+    TAG_WALK_FOUND = 0,     /* fp positioned right after the 4-byte tag  */
+    TAG_WALK_ABSENT,        /* clean walk to EOF, tag not in the file    */
+    TAG_WALK_MALFORMED,     /* section chain broken — structure unusable */
+} tag_walk_result_t;
+
+static tag_walk_result_t walk_sections_for_tag(FILE *fp, uint32_t target)
+{
+    if (fseek(fp, 0, SEEK_END) != 0) return TAG_WALK_MALFORMED;
+    long fsz = ftell(fp);
+    if (fsz < 12) return TAG_WALK_MALFORMED;
+
+    uint32_t file_len = (uint32_t)fsz;
+    uint32_t pos = 0;
+
+    while (pos + 12u <= file_len) {
+        if (fseek(fp, (long)pos, SEEK_SET) != 0) return TAG_WALK_MALFORMED;
+        uint32_t tag          = read_be32(fp);
+        uint32_t header_size  = read_be32(fp);
+        uint32_t segment_size = read_be32(fp);
+
+        if (tag == target) {
+            if (fseek(fp, (long)(pos + 4u), SEEK_SET) != 0) return TAG_WALK_MALFORMED;
+            return TAG_WALK_FOUND;
+        }
+
+        /* PMAI's segment_size covers the entire file; its sections start
+         * right after the PMAI header. Every other section advances by its
+         * own total segment size. */
+        uint32_t advance = (tag == ANLZ_TAG_PMAI) ? header_size : segment_size;
+        if (advance < 12u || advance > file_len - pos) {
+            return TAG_WALK_MALFORMED;
+        }
+        pos += advance;
+    }
+
+    return TAG_WALK_ABSENT;
+}
+
+/* Legacy fallback for structurally broken files: scan forward with a
+ * single-byte sliding window. Can false-match a tag inside payload data,
+ * which is why it only runs when the section walk cannot parse the file.
  *
  * On success the file pointer is positioned immediately after the tag ID
- * (i.e. at the header_size field).
- * Returns true if found, false on EOF/error. */
-static bool find_tag(FILE *fp, uint32_t target)
+ * (i.e. at the header_size field). */
+static bool scan_bytes_for_tag(FILE *fp, uint32_t target)
 {
+    rewind(fp);
     uint32_t window = 0;
     int c;
     while ((c = fgetc(fp)) != EOF) {
@@ -101,6 +145,14 @@ static bool find_tag(FILE *fp, uint32_t target)
         if (window == target) return true;
     }
     return false;
+}
+
+static bool find_tag(FILE *fp, uint32_t target)
+{
+    tag_walk_result_t rc = walk_sections_for_tag(fp, target);
+    if (rc == TAG_WALK_FOUND) return true;
+    if (rc == TAG_WALK_ABSENT) return false;   /* well-formed file, tag not present */
+    return scan_bytes_for_tag(fp, target);
 }
 
 /* ── PPTH parser ─────────────────────────────────────────────────────────── *
