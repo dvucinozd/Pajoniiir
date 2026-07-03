@@ -140,8 +140,10 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
 - **Host Middleware**:
   - Class-compliant USB MIDI host configuration for the Pioneer DDJ-FLX4.
   - Low-priority feedback treatment for VU output to eliminate MIDI INFO logging flood.
+  - Batched MIDI OUT (up to 16 USB-MIDI packets per bulk transfer) so full LED snapshots survive the connect-time burst without queue drops.
 - **Physical LED Feedback**:
   - LED status updates for Play, Cue, PFL, active loops, Beat Sync, selected pad mode, Hot Cue slot status, and Beat FX ON/OFF.
+  - Onboard DevKitC-1 RGB status LED (WS2812 on GPIO48): red = FLX4 disconnected, green = connected, brighter flash on MIDI input traffic.
 - **Reconnection/Boot Recovery**:
   - Physical reconnection LED resynchronization.
   - S3 refreshes FLX4 LEDs periodically so that a P4-only reboot recovers state without replugging.

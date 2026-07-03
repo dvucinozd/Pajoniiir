@@ -73,7 +73,8 @@ and `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 The S3 set GPIO15/GPIO16/GPIO17 avoids S3 USB GPIO19/GPIO20, control UART
 GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, and GPIO48
-(reserved for future LED work). GPIO15-GPIO18 are legacy CDJ jog/browse encoder
+(drives the onboard DevKitC-1 WS2812 RGB status LED via the `status_led`
+component — red = FLX4 disconnected, green = connected, flash on MIDI input). GPIO15-GPIO18 are legacy CDJ jog/browse encoder
 pins, acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io`
 is inactive.
 

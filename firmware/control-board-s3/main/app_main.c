@@ -5,6 +5,7 @@
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
+#include "status_led.h"
 #else
 #include "midi_compat.h"
 #endif
@@ -212,6 +213,9 @@ void app_main(void)
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
     ESP_LOGI(TAG, "mode: DDJ-FLX4 USB MIDI translator");
+    if (status_led_init() != ESP_OK) {
+        ESP_LOGW(TAG, "status LED unavailable; continuing without it");
+    }
     flx4_map_init(&s_flx4_map);
     s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
     ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
@@ -224,6 +228,9 @@ void app_main(void)
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #else
     ESP_LOGI(TAG, "mode: DDJ-FLX4 USB MIDI host raw logger");
+    if (status_led_init() != ESP_OK) {
+        ESP_LOGW(TAG, "status LED unavailable; continuing without it");
+    }
     ESP_ERROR_CHECK(flx4_midi_host_init());
 #endif
 #else

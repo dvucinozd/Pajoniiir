@@ -350,6 +350,7 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 #include "esp_log.h"
 #include "control_link.h"
 #include "flx4_usb_audio.h"
+#include "status_led.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -373,6 +374,7 @@ static void publish_connection_state(bool connected)
         return;
     }
 
+    status_led_set_connected(connected);
     const int16_t value = connected ? CTRL_FLX4_CONNECTED : CTRL_FLX4_DISCONNECTED;
     esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE, CTRL_ID_FLX4_CONNECTION, value);
     if (rc != ESP_OK) {
@@ -498,6 +500,8 @@ static void log_config_descriptor_hex(const uint8_t *data, size_t len)
 
 static void log_midi_packet(const uint8_t packet[4])
 {
+    status_led_notify_activity();
+
     flx4_midi_message_t msg;
     if (!flx4_midi_parse_usb_packet(packet, &msg)) {
         ESP_LOGW(TAG, "USB-MIDI raw %02X %02X %02X %02X (unsupported CIN)",
