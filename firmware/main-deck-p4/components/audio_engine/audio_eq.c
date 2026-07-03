@@ -53,10 +53,18 @@ void audio_eq_reset_filters(audio_eq_state_t *eq)
 void audio_eq_init(audio_eq_state_t *eq, uint32_t sample_rate_hz)
 {
     if (!eq) return;
-    eq->low_alpha = one_pole_alpha(AUDIO_EQ_LOW_CUTOFF_HZ, sample_rate_hz);
-    eq->high_alpha = one_pole_alpha(AUDIO_EQ_HIGH_CUTOFF_HZ, sample_rate_hz);
+    audio_eq_set_sample_rate(eq, sample_rate_hz);
     audio_eq_set_raw(eq, AUDIO_EQ_RAW_CENTER, AUDIO_EQ_RAW_CENTER, AUDIO_EQ_RAW_CENTER);
     audio_eq_reset_filters(eq);
+}
+
+/* Retunes the band-split alphas without touching gains or filter state, so it
+ * is safe once the real output rate is known mid-stream. */
+void audio_eq_set_sample_rate(audio_eq_state_t *eq, uint32_t sample_rate_hz)
+{
+    if (!eq) return;
+    eq->low_alpha = one_pole_alpha(AUDIO_EQ_LOW_CUTOFF_HZ, sample_rate_hz);
+    eq->high_alpha = one_pole_alpha(AUDIO_EQ_HIGH_CUTOFF_HZ, sample_rate_hz);
 }
 
 void audio_eq_set_raw(audio_eq_state_t *eq,

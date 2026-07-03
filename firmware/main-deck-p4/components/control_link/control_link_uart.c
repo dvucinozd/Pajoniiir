@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include <inttypes.h>
 #include <stdatomic.h>
+#include <string.h>
 
 static const char *TAG = "ctrl_link";
 
@@ -101,7 +102,11 @@ static bool try_coalesce_latest_event(const ctrl_event_t *ev)
     }
 
     for (int i = 0; i < stash_len; i++) {
-        (void)xQueueSend(s_event_queue, &stash[i], 0);
+        if (xQueueSend(s_event_queue, &stash[i], 0) != pdTRUE) {
+            /* UI/web producers can refill the queue while it is drained here;
+               a failed re-push is a real event loss and must be counted. */
+            s_event_drop_count++;
+        }
     }
 
     if (!replaced) {
@@ -181,6 +186,16 @@ static void parse_byte(rx_state_t *st, uint8_t b)
     uint8_t chk = st->buf[1] ^ st->buf[2] ^ st->buf[3] ^ st->buf[4] ^ st->buf[5];
     if (chk != st->buf[6]) {
         ESP_LOGW(TAG, "bad checksum (got 0x%02x expected 0x%02x)", st->buf[6], chk);
+        /* A dropped byte shifts framing: the real frame start is likely inside
+           the bytes just rejected. Resync on it instead of discarding all 7,
+           otherwise one lost byte can corrupt a long run of frames. */
+        for (int i = 1; i < CTRL_FRAME_LEN; i++) {
+            if (st->buf[i] == CTRL_FRAME_START) {
+                memmove(st->buf, &st->buf[i], (size_t)(CTRL_FRAME_LEN - i));
+                st->pos = CTRL_FRAME_LEN - i;
+                break;
+            }
+        }
         return;
     }
 

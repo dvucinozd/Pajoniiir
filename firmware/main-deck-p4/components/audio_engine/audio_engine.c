@@ -928,6 +928,8 @@ static void ae_loader_task(void *arg)
         ESP_LOGE(TAG, "Cannot open %s", fw->path);
         eng->last_error = ESP_ERR_NOT_FOUND;
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NOT FOUND");
+        eng->loading = false;
+        eng->load_progress = 100;
         goto park;
     }
     fseek(src, 0, SEEK_END);
@@ -939,6 +941,8 @@ static void ae_loader_task(void *arg)
         media_io_gate_end();
         eng->last_error = ESP_ERR_INVALID_SIZE;
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "BAD SIZE");
+        eng->loading = false;
+        eng->load_progress = 100;
         goto park;
     }
 
@@ -949,6 +953,8 @@ static void ae_loader_task(void *arg)
         media_io_gate_end();
         eng->last_error = ESP_ERR_NO_MEM;
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "NO MEM");
+        eng->loading = false;
+        eng->load_progress = 100;
         goto park;
     }
     ae_diag_log_memory("preload-alloc", ctx->deck);
@@ -1170,6 +1176,24 @@ cleanup:
 #define AE_OUTPUT_TASK_STACK 8192
 /* Keep real-time audio producer/output work off the LVGL core. */
 #define AE_AUDIO_TASK_CORE 0
+/* The per-deck effects run post-resampler on the shared output stream, but
+ * they are initialised before the codec rate is known (EQ/filter at 44.1 kHz,
+ * echo at the 48 kHz fallback). Retune them to the real output rate so
+ * beat-synced echo delays and filter cutoffs land where they should. */
+static void audio_output_apply_fx_sample_rate(uint32_t sample_rate)
+{
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        audio_eq_set_sample_rate(&s_deck_eq[deck], sample_rate);
+        s_deck_filter[deck].sample_rate_hz = sample_rate;
+        s_beat_fx_filter[deck].sample_rate_hz = sample_rate;
+        s_pad_fx[deck].filter.sample_rate_hz = sample_rate;
+        s_beat_fx_echo[deck].sample_rate = sample_rate;
+        audio_delay_fx_configure(&s_beat_fx_echo[deck], &s_beat_fx_echo[deck].config);
+        s_pad_fx[deck].echo.sample_rate = sample_rate;
+        audio_delay_fx_configure(&s_pad_fx[deck].echo, &s_pad_fx[deck].echo.config);
+    }
+}
+
 static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 {
     if (sample_rate == 0) return ESP_ERR_INVALID_ARG;
@@ -1207,6 +1231,7 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     }
     s_output_codec_open = true;
     s_output_sample_rate = sample_rate;
+    audio_output_apply_fx_sample_rate(sample_rate);
     (void)monitor_pcm_link_set_format(sample_rate, 2u, 16u);
 #if CONFIG_MONITOR_PCM_LINK_ENABLED && !CONFIG_MONITOR_PCM_LINK_BENCH_TONE
     /* Product path: start publishing real hp_out to the S3 monitor link now
@@ -1838,12 +1863,15 @@ static esp_err_t audio_engine_seek_for_deck(uint8_t deck, uint32_t position_ms)
     audio_engine_state_t *eng = &s_engines[deck];
     if (!eng->loaded || (!eng->fp && !eng->file_buf)) return ESP_ERR_INVALID_STATE;
 
+    AE_LOCK();
+    /* The decode task writes the same seek fields under the lock (loop-wrap
+     * seek and end-of-handling clear), so a user seek must publish them under
+     * the lock too — otherwise it can be lost or downgraded to a no-flush
+     * loop seek when the writes interleave. */
     eng->seek_target_ms = position_ms;
     eng->seek_is_loop   = false;  /* user seek -> flush ring (set before requested) */
     eng->seek_requested = true;
     eng->eof            = false;  /* also wakes decode thread if at EOF */
-
-    AE_LOCK();
     eng->output_base_ms = position_ms;
     eng->output_frames_since_seek = 0u;
     eng->seek_base_ms = position_ms;

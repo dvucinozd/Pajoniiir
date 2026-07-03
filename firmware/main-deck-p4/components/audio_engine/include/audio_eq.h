@@ -26,6 +26,7 @@ typedef struct {
 } audio_eq_state_t;
 
 void audio_eq_init(audio_eq_state_t *eq, uint32_t sample_rate_hz);
+void audio_eq_set_sample_rate(audio_eq_state_t *eq, uint32_t sample_rate_hz);
 void audio_eq_reset_filters(audio_eq_state_t *eq);
 void audio_eq_set_raw(audio_eq_state_t *eq,
                       uint16_t low,
