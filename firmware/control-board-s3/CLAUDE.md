@@ -43,6 +43,12 @@ Status:
 | Pitch slider | GPIO1 (ADC1 CH0) | Ch1 CC0+CC32 (14-bit) |
 
 LEDs: CUE=GPIO33, PLAY=GPIO34, BEAT=GPIO38, END=GPIO39 (active-high, 220Ω)
+— legacy CDJ panel path only; in FLX4 host mode `panel_io` is not initialised
+and LED frames from the P4 go to the FLX4 over USB MIDI instead.
+
+Onboard RGB status LED (WS2812 on GPIO48, `status_led` component, FLX4 host
+modes): red = FLX4 disconnected, green = connected, brighter flash on MIDI
+input traffic. Needs the `led_strip` driver — a plain GPIO write cannot drive it.
 
 ---
 
@@ -115,6 +121,7 @@ Inherited CDJ panel compatibility:
 | `midi_compat` | Legacy TinyUSB MIDI device compatibility path |
 | `control_link` | UART1 binary protocol to ESP32-P4 |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
+| `status_led` | Onboard WS2812 RGB LED (GPIO48): FLX4 connection state + MIDI activity |
 
 ---
 
