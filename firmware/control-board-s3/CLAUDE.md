@@ -13,8 +13,13 @@ Status:
 
 - default build: DDJ-FLX4 USB MIDI raw logger;
 - optional build: DDJ-FLX4 MIDI-to-P4 translator via
-  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
-- pending hardware task: physical DDJ-FLX4 enumeration and raw MIDI capture.
+  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` (enabled in `sdkconfig.defaults`);
+- FLX4 enumerates and translates to control-link frames on hardware
+  (VID 0x2B73 / PID 0x0045); onboard RGB status LED reflects the link state.
+
+Boot note: the FLX4 briefly disconnects/re-enumerates ~0.9 s into boot on
+every cold start (USB host settling). It self-recovers within ~0.6 s — the
+connection state is republished and no packets are lost. Benign; not a fault.
 
 ---
 
