@@ -15,6 +15,7 @@ typedef struct {
     uint8_t time_remain;    // 0 = elapsed time, 1 = remaining time
     uint8_t cue_mode;       // 0 = stereo master, 1 = split mono (L=master, R=cue)
     uint8_t master_trim_preset; // 0 = 0 dB, 1 = -3 dB, 2 = -6 dB
+    uint8_t wifi_remote;    // 0 = Wi-Fi remote off (default), 1 = on (SoftAP + web UI)
 } app_settings_t;
 
 // Initialise NVS and load saved settings (or sensible defaults if none stored).
@@ -29,3 +30,4 @@ void app_settings_set_backlight(uint8_t pct);
 void app_settings_set_time_remain(uint8_t remain);
 void app_settings_set_cue_mode(uint8_t mode);
 void app_settings_set_master_trim_preset(uint8_t preset);
+void app_settings_set_wifi_remote(uint8_t on);

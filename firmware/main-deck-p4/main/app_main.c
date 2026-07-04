@@ -78,13 +78,21 @@ void app_main(void)
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
     // ── Web UI / status API transport ───────────────────────────────────────
+    // Wi-Fi remote (ESP-Hosted SoftAP + web UI) is user-controlled from the
+    // Settings tab and defaults to OFF. wifi_link_init() only prepares state;
+    // the AP + web server come up asynchronously when the saved setting is on
+    // (or when the user flips the Settings switch), so boot is never blocked on
+    // the SDIO/C6 bring-up.
     esp_err_t wifi_rc = wifi_link_init();
     if (wifi_rc != ESP_OK) {
-        ESP_LOGW(TAG, "wifi_link_init(host): %s", esp_err_to_name(wifi_rc));
+        ESP_LOGW(TAG, "wifi_link_init: %s", esp_err_to_name(wifi_rc));
     }
-    if (wifi_rc == ESP_OK) {
-        ESP_ERROR_CHECK(web_server_start());
-        ESP_ERROR_CHECK(dns_server_start());
+    // Let the Settings tab toggle the Wi-Fi remote without the UI depending on
+    // the wifi_link/web_server components directly.
+    ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
+    if (app_settings_get().wifi_remote) {
+        ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
+        wifi_link_request_enable(true);
     }
 
     // ── Media and audio ──────────────────────────────────────────────────────
