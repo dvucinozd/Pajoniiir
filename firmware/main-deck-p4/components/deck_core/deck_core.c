@@ -28,6 +28,9 @@ static const char *TAG = "deck";
 #define BROWSE_SHIFT_OVERVIEW_MULTIPLIER 4
 #define CENSOR_REPEAT_BACK_MS 1000u
 #define DECK_TASK_STACK_BYTES 8192u
+#define DECK_UI_COMMAND_QUEUE_LEN 16
+#define DECK_UI_TASK_STACK_BYTES 4096u
+#define DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN 32u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
 #define BEAT_FX_ECHO_MAX_BPM 300.0f
@@ -46,6 +49,7 @@ extern const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck) __attribut
 extern uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm) __attribute__((weak));
 
 static QueueHandle_t    s_queue;
+static QueueHandle_t    s_ui_command_queue;
 static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
 static flx4_led_publisher_t s_flx4_led_publisher;
@@ -56,6 +60,26 @@ static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
+
+typedef enum {
+    DECK_UI_CMD_LOAD_SELECTED,
+    DECK_UI_CMD_LIBRARY_SELECT_DELTA_IF_ACTIVE,
+    DECK_UI_CMD_BROWSE_DELTA,
+    DECK_UI_CMD_TOGGLE_LIBRARY_VIEW,
+    DECK_UI_CMD_SHOW_LIBRARY,
+} deck_ui_command_kind_t;
+
+typedef struct {
+    deck_ui_command_kind_t kind;
+    uint8_t deck;
+    uint8_t id;
+    int16_t value;
+} deck_ui_command_t;
+
+#if defined(DECK_CORE_PC_TEST)
+static deck_ui_command_t s_test_ui_commands[DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN];
+static size_t s_test_ui_command_count;
+#endif
 #if !defined(DECK_CORE_PC_TEST)
 static esp_timer_handle_t s_vu_timer;
 #endif
@@ -1007,7 +1031,7 @@ static button_id_t button_for_event(const ctrl_event_t *ev)
 
 // ─── LED sync ─────────────────────────────────────────────────────────────────
 
-static void sync_leds(uint8_t deck)
+static void sync_legacy_compat_leds(uint8_t deck)
 {
     if (deck != DECK_CORE_COMPAT_DECK) return;
     deck_state_t *state = &s_decks[deck];
@@ -1066,6 +1090,99 @@ static void publish_flx4_led_snapshot(bool force)
     } else {
         ESP_LOGD(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
     }
+}
+
+static void execute_ui_command(const deck_ui_command_t *cmd)
+{
+    if (!cmd) return;
+    switch (cmd->kind) {
+    case DECK_UI_CMD_LOAD_SELECTED:
+        if (ui_library_load_selected_for_deck) {
+            esp_err_t rc = ui_library_load_selected_for_deck(cmd->deck);
+            ESP_LOGI(TAG, "deck %u load selected -> %s", (unsigned)cmd->deck + 1,
+                     esp_err_to_name(rc));
+        } else if (cmd->deck == DECK_CORE_COMPAT_DECK && ui_library_load_selected) {
+            esp_err_t rc = ui_library_load_selected();
+            ESP_LOGI(TAG, "load selected -> %s", esp_err_to_name(rc));
+        } else {
+            ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
+        }
+        break;
+
+    case DECK_UI_CMD_LIBRARY_SELECT_DELTA_IF_ACTIVE:
+        if (ui_is_library_active && ui_library_select_delta && ui_is_library_active()) {
+            esp_err_t rc = ui_library_select_delta(cmd->value);
+            ESP_LOGD(TAG, "track select %+d -> %s", (int)cmd->value, esp_err_to_name(rc));
+        } else {
+            ESP_LOGD(TAG, "track select %+d pressed outside library tab", (int)cmd->value);
+        }
+        break;
+
+    case DECK_UI_CMD_BROWSE_DELTA: {
+        bool shifted = cmd->id == CTRL_ID_BROWSE_SHIFT_DELTA;
+        bool library_active = !ui_is_library_active || ui_is_library_active();
+        bool overview_active = ui_is_overview_active && ui_is_overview_active();
+        if (library_active && ui_library_select_delta) {
+            int scaled = shifted ? cmd->value * BROWSE_SHIFT_LIBRARY_MULTIPLIER : cmd->value;
+            esp_err_t rc = ui_library_select_delta(scaled);
+            ESP_LOGD(TAG, "browse %+d -> %s", scaled, esp_err_to_name(rc));
+        } else if (!library_active && overview_active && ui_overview_zoom_delta) {
+            int scaled = shifted ? cmd->value * BROWSE_SHIFT_OVERVIEW_MULTIPLIER : cmd->value;
+            esp_err_t rc = ui_overview_zoom_delta(scaled);
+            ESP_LOGD(TAG, "overview zoom %+d -> %s", scaled, esp_err_to_name(rc));
+        } else {
+            ESP_LOGW(TAG, "browse unsupported: UI API unavailable");
+        }
+        break;
+    }
+
+    case DECK_UI_CMD_TOGGLE_LIBRARY_VIEW:
+        if (ui_toggle_library_view) {
+            esp_err_t rc = ui_toggle_library_view();
+            ESP_LOGD(TAG, "browse press -> library/overview toggle: %s", esp_err_to_name(rc));
+        } else if (ui_show_library) {
+            esp_err_t rc = ui_show_library();
+            ESP_LOGD(TAG, "browse press -> library fallback: %s", esp_err_to_name(rc));
+        } else {
+            ESP_LOGW(TAG, "browse press unsupported: UI API unavailable");
+        }
+        break;
+
+    case DECK_UI_CMD_SHOW_LIBRARY:
+        if (ui_show_library) {
+            esp_err_t rc = ui_show_library();
+            ESP_LOGD(TAG, "browse shift press -> library: %s", esp_err_to_name(rc));
+        } else if (ui_toggle_library_view) {
+            esp_err_t rc = ui_toggle_library_view();
+            ESP_LOGD(TAG, "browse shift press fallback -> toggle: %s", esp_err_to_name(rc));
+        } else {
+            ESP_LOGW(TAG, "browse shift press unsupported: UI API unavailable");
+        }
+        break;
+    }
+}
+
+static bool enqueue_ui_command(const deck_ui_command_t *cmd)
+{
+    if (!cmd) return false;
+#if defined(DECK_CORE_PC_TEST)
+    if (s_test_ui_command_count >= DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN) {
+        ESP_LOGW(TAG, "test UI command queue full");
+        return false;
+    }
+    s_test_ui_commands[s_test_ui_command_count++] = *cmd;
+    return true;
+#else
+    if (!s_ui_command_queue) {
+        ESP_LOGW(TAG, "UI command queue unavailable");
+        return false;
+    }
+    if (xQueueSend(s_ui_command_queue, cmd, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "UI command queue full");
+        return false;
+    }
+    return true;
+#endif
 }
 
 static void on_state_event(const ctrl_event_t *ev)
@@ -1152,12 +1269,14 @@ static bool on_system_button(const ctrl_event_t *ev)
     case CTRL_ID_BEAT_FX_BEAT_DEC:
         if (ev->value != 0 && s_beat_fx.beat > DECK_CORE_BEAT_FX_BEAT_1_4) {
             s_beat_fx.beat = (deck_core_beat_fx_beat_t)(s_beat_fx.beat - 1);
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
         }
         return true;
     case CTRL_ID_BEAT_FX_BEAT_INC:
         if (ev->value != 0 && s_beat_fx.beat < DECK_CORE_BEAT_FX_BEAT_4) {
             s_beat_fx.beat = (deck_core_beat_fx_beat_t)(s_beat_fx.beat + 1);
+            sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx beat -> %d", (int)s_beat_fx.beat);
         }
         return true;
@@ -1281,7 +1400,7 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         }
         ESP_LOGI(TAG, "deck %u play -> %s", (unsigned)deck + 1,
                  state->playing ? "PLAYING" : "PAUSED");
-        sync_leds(deck);
+        sync_legacy_compat_leds(deck);
         break;
 
     case BTN_CUE:
@@ -1296,7 +1415,7 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         state->position_ms = state->cue_point_ms;
         ESP_LOGI(TAG, "deck %u cue -> %lu ms (paused)", (unsigned)deck + 1,
                  (unsigned long)state->cue_point_ms);
-        sync_leds(deck);
+        sync_legacy_compat_leds(deck);
         break;
 
     case BTN_MODE:
@@ -1318,32 +1437,22 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
         state->position_ms  = 0;
         state->cue_point_ms = 0;
         ESP_LOGI(TAG, "deck %u eject", (unsigned)deck + 1);
-        sync_leds(deck);
+        sync_legacy_compat_leds(deck);
         break;
 
     case BTN_LOAD:
-        if (ui_library_load_selected_for_deck) {
-            esp_err_t rc = ui_library_load_selected_for_deck(deck);
-            ESP_LOGI(TAG, "deck %u load selected -> %s", (unsigned)deck + 1,
-                     esp_err_to_name(rc));
-        } else if (deck == DECK_CORE_COMPAT_DECK && ui_library_load_selected) {
-            esp_err_t rc = ui_library_load_selected();
-            ESP_LOGI(TAG, "load selected -> %s", esp_err_to_name(rc));
-        } else {
-            ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
-        }
+        (void)enqueue_ui_command(&(deck_ui_command_t) {
+            .kind = DECK_UI_CMD_LOAD_SELECTED,
+            .deck = deck,
+        });
         break;
 
     case BTN_TRACK_PREV:
     case BTN_TRACK_NEXT:
-        if (ui_is_library_active && ui_library_select_delta && ui_is_library_active()) {
-            int delta = (btn == BTN_TRACK_NEXT) ? 1 : -1;
-            esp_err_t rc = ui_library_select_delta(delta);
-            ESP_LOGD(TAG, "track select %+d → %s", delta, esp_err_to_name(rc));
-        } else {
-            ESP_LOGD(TAG, "track %s pressed outside library tab",
-                     btn == BTN_TRACK_NEXT ? "next" : "prev");
-        }
+        (void)enqueue_ui_command(&(deck_ui_command_t) {
+            .kind = DECK_UI_CMD_LIBRARY_SELECT_DELTA_IF_ACTIVE,
+            .value = (btn == BTN_TRACK_NEXT) ? 1 : -1,
+        });
         break;
 
     case BTN_SEARCH_BACK:
@@ -1425,7 +1534,7 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         state->position_ms = 0;
         state->cue_point_ms = 0;
         ESP_LOGI(TAG, "deck %u cue+shift -> track start", (unsigned)deck + 1);
-        sync_leds(deck);
+        sync_legacy_compat_leds(deck);
         return true;
 
     case CTRL_DECK_CTL_SYNC:
@@ -1701,46 +1810,25 @@ static void on_jog_search(uint8_t deck, int16_t delta)
 static void on_browse_event(uint8_t id, int16_t delta)
 {
     if (delta == 0) return;
-    bool shifted = id == CTRL_ID_BROWSE_SHIFT_DELTA;
-    bool library_active = !ui_is_library_active || ui_is_library_active();
-    bool overview_active = ui_is_overview_active && ui_is_overview_active();
-    if (library_active && ui_library_select_delta) {
-        int scaled = shifted ? delta * BROWSE_SHIFT_LIBRARY_MULTIPLIER : delta;
-        esp_err_t rc = ui_library_select_delta(scaled);
-        ESP_LOGD(TAG, "browse %+d -> %s", scaled, esp_err_to_name(rc));
-    } else if (!library_active && overview_active && ui_overview_zoom_delta) {
-        int scaled = shifted ? delta * BROWSE_SHIFT_OVERVIEW_MULTIPLIER : delta;
-        esp_err_t rc = ui_overview_zoom_delta(scaled);
-        ESP_LOGD(TAG, "overview zoom %+d -> %s", scaled, esp_err_to_name(rc));
-    } else {
-        ESP_LOGW(TAG, "browse unsupported: UI API unavailable");
-    }
+    (void)enqueue_ui_command(&(deck_ui_command_t) {
+        .kind = DECK_UI_CMD_BROWSE_DELTA,
+        .id = id,
+        .value = delta,
+    });
 }
 
 static void on_browse_press(void)
 {
-    if (ui_toggle_library_view) {
-        esp_err_t rc = ui_toggle_library_view();
-        ESP_LOGD(TAG, "browse press -> library/overview toggle: %s", esp_err_to_name(rc));
-    } else if (ui_show_library) {
-        esp_err_t rc = ui_show_library();
-        ESP_LOGD(TAG, "browse press -> library fallback: %s", esp_err_to_name(rc));
-    } else {
-        ESP_LOGW(TAG, "browse press unsupported: UI API unavailable");
-    }
+    (void)enqueue_ui_command(&(deck_ui_command_t) {
+        .kind = DECK_UI_CMD_TOGGLE_LIBRARY_VIEW,
+    });
 }
 
 static void on_browse_shift_press(void)
 {
-    if (ui_show_library) {
-        esp_err_t rc = ui_show_library();
-        ESP_LOGD(TAG, "browse shift press -> library: %s", esp_err_to_name(rc));
-    } else if (ui_toggle_library_view) {
-        esp_err_t rc = ui_toggle_library_view();
-        ESP_LOGD(TAG, "browse shift press fallback -> toggle: %s", esp_err_to_name(rc));
-    } else {
-        ESP_LOGW(TAG, "browse shift press unsupported: UI API unavailable");
-    }
+    (void)enqueue_ui_command(&(deck_ui_command_t) {
+        .kind = DECK_UI_CMD_SHOW_LIBRARY,
+    });
 }
 
 static void on_pitch(uint8_t deck, int16_t raw)
@@ -2015,6 +2103,17 @@ static void deck_task(void *arg)
     }
 }
 
+static void deck_ui_command_task(void *arg)
+{
+    (void)arg;
+    deck_ui_command_t cmd;
+    while (1) {
+        if (xQueueReceive(s_ui_command_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+            execute_ui_command(&cmd);
+        }
+    }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
@@ -2029,9 +2128,34 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     if (!s_mutex) return ESP_ERR_NO_MEM;
 
     s_queue = xQueueCreate(CTRL_QUEUE_LEN, sizeof(ctrl_event_t));
-    if (!s_queue) return ESP_ERR_NO_MEM;
+    if (!s_queue) {
+        vSemaphoreDelete(s_mutex);
+        s_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_ui_command_queue = xQueueCreate(DECK_UI_COMMAND_QUEUE_LEN, sizeof(deck_ui_command_t));
+    if (!s_ui_command_queue) {
+        vQueueDelete(s_queue);
+        s_queue = NULL;
+        vSemaphoreDelete(s_mutex);
+        s_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
 
     if (xTaskCreate(deck_task, "deck", DECK_TASK_STACK_BYTES, NULL, 5, NULL) != pdPASS) {
+        vQueueDelete(s_ui_command_queue);
+        s_ui_command_queue = NULL;
+        vQueueDelete(s_queue);
+        s_queue = NULL;
+        vSemaphoreDelete(s_mutex);
+        s_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (xTaskCreate(deck_ui_command_task, "deck_ui", DECK_UI_TASK_STACK_BYTES, NULL, 4, NULL) != pdPASS) {
+        vQueueDelete(s_ui_command_queue);
+        s_ui_command_queue = NULL;
         vQueueDelete(s_queue);
         s_queue = NULL;
         vSemaphoreDelete(s_mutex);
@@ -2047,6 +2171,8 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
         };
         esp_err_t timer_rc = esp_timer_create(&vu_timer_args, &s_vu_timer);
         if (timer_rc != ESP_OK) {
+            vQueueDelete(s_ui_command_queue);
+            s_ui_command_queue = NULL;
             vQueueDelete(s_queue);
             s_queue = NULL;
             vSemaphoreDelete(s_mutex);
@@ -2117,7 +2243,14 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
 
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 {
-    return s_beat_fx;
+    if (s_mutex) {
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+    }
+    deck_core_beat_fx_state_t snap = s_beat_fx;
+    if (s_mutex) {
+        xSemaphoreGive(s_mutex);
+    }
+    return snap;
 }
 
 void deck_core_reset(void)
@@ -2166,6 +2299,21 @@ void deck_core_test_reset(void)
     s_last_heartbeat_tick = 0;
     s_flx4_connection_state_valid = false;
     s_flx4_connected = false;
+    s_test_ui_command_count = 0;
+}
+
+void deck_core_test_flush_ui_commands(void)
+{
+    while (s_test_ui_command_count > 0) {
+        deck_ui_command_t cmd = s_test_ui_commands[0];
+        if (s_test_ui_command_count > 1) {
+            memmove(&s_test_ui_commands[0],
+                    &s_test_ui_commands[1],
+                    (s_test_ui_command_count - 1) * sizeof(s_test_ui_commands[0]));
+        }
+        s_test_ui_command_count--;
+        execute_ui_command(&cmd);
+    }
 }
 
 void deck_core_test_apply_event(const ctrl_event_t *ev)

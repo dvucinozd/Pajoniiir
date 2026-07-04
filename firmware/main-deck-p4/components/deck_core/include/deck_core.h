@@ -101,6 +101,7 @@ void deck_core_reset_deck(uint8_t deck);
 #if defined(DECK_CORE_PC_TEST)
 void deck_core_test_reset(void);
 void deck_core_test_apply_event(const ctrl_event_t *ev);
+void deck_core_test_flush_ui_commands(void);
 deck_state_t deck_core_test_get_deck_state(uint8_t deck);
 deck_core_beat_fx_state_t deck_core_test_get_beat_fx_state(void);
 bool deck_core_test_should_log_deferred_mixer_value(uint8_t id, uint16_t value);

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "audio_fw_runtime.h"
+
 #define AUDIO_FW_PRELOAD_PATH_LEN 384u
 
 typedef struct {
@@ -16,4 +18,5 @@ typedef struct {
 void audio_fw_preload_reset(audio_fw_preload_t *slot);
 void audio_fw_preload_begin_load(audio_fw_preload_t *slot);
 void audio_fw_preload_set_path(audio_fw_preload_t *slot, const char *path);
+void audio_fw_preload_abort_load(audio_fw_preload_t *slot, audio_fw_runtime_t *runtime);
 size_t audio_fw_preload_chunk_bytes(size_t remaining_bytes, bool output_active);

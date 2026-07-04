@@ -456,9 +456,24 @@ static void test_browser_namespace_routes_load_to_requested_deck(void)
     deck_core_test_apply_event(&load_deck1);
     deck_core_test_apply_event(&load_deck2);
     deck_core_test_apply_event(&load_deck2);
+    deck_core_test_flush_ui_commands();
 
     assert(s_load_calls[CTRL_DECK_1] == 1);
     assert(s_load_calls[CTRL_DECK_2] == 2);
+}
+
+static void test_browser_load_is_deferred_to_ui_command_sink(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    s_load_calls[CTRL_DECK_1] = 0;
+
+    ctrl_event_t load_deck1 = browser_button(CTRL_ID_LOAD_DECK1);
+    deck_core_test_apply_event(&load_deck1);
+
+    assert(s_load_calls[CTRL_DECK_1] == 0);
+    deck_core_test_flush_ui_commands();
+    assert(s_load_calls[CTRL_DECK_1] == 1);
 }
 
 static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only(void)
@@ -479,6 +494,7 @@ static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_
     deck_core_test_apply_event(&release_deck1);
     deck_core_test_apply_event(&load_deck2);
     deck_core_test_apply_event(&release_deck2);
+    deck_core_test_flush_ui_commands();
 
     assert(s_load_calls[CTRL_DECK_1] == 1);
     assert(s_load_calls[CTRL_DECK_2] == 1);
@@ -494,6 +510,7 @@ static void test_browser_namespace_routes_browse_delta(void)
 
     ctrl_event_t browse = browse_delta(3);
     deck_core_test_apply_event(&browse);
+    deck_core_test_flush_ui_commands();
 
     assert(s_browse_delta == 3);
     assert(s_overview_zoom_delta == 0);
@@ -510,6 +527,7 @@ static void test_browse_delta_zooms_overview_when_library_is_not_active(void)
 
     ctrl_event_t browse = browse_delta(-2);
     deck_core_test_apply_event(&browse);
+    deck_core_test_flush_ui_commands();
 
     assert(s_browse_delta == 0);
     assert(s_overview_zoom_delta == -2);
@@ -526,6 +544,7 @@ static void test_browse_delta_ignores_non_library_non_overview_tabs(void)
 
     ctrl_event_t browse = browse_delta(1);
     deck_core_test_apply_event(&browse);
+    deck_core_test_flush_ui_commands();
 
     assert(s_browse_delta == 0);
     assert(s_overview_zoom_delta == 0);
@@ -541,6 +560,7 @@ static void test_shift_browse_delta_accelerates_library_navigation(void)
 
     ctrl_event_t browse = browse_shift_delta(2);
     deck_core_test_apply_event(&browse);
+    deck_core_test_flush_ui_commands();
 
     assert(s_browse_delta == 20);
     assert(s_overview_zoom_delta == 0);
@@ -557,6 +577,7 @@ static void test_shift_browse_delta_accelerates_overview_zoom(void)
 
     ctrl_event_t browse = browse_shift_delta(-2);
     deck_core_test_apply_event(&browse);
+    deck_core_test_flush_ui_commands();
 
     assert(s_browse_delta == 0);
     assert(s_overview_zoom_delta == -8);
@@ -599,6 +620,7 @@ static void test_browser_press_toggles_library_view_without_loading_deck(void)
 
     deck_core_test_apply_event(&browse_press);
     deck_core_test_apply_event(&browse_release);
+    deck_core_test_flush_ui_commands();
 
     assert(s_toggle_library_view_calls == 1);
     assert(s_load_calls[CTRL_DECK_1] == 0);
@@ -618,6 +640,7 @@ static void test_shift_browse_press_forces_library_view(void)
     release.value = 0;
     deck_core_test_apply_event(&press);
     deck_core_test_apply_event(&release);
+    deck_core_test_flush_ui_commands();
 
     assert(s_show_library_calls == 1);
     assert(s_toggle_library_view_calls == 0);
@@ -1503,6 +1526,35 @@ static void test_beat_fx_echo_delay_uses_target_deck_bpm(void)
     assert(audio_engine_stub_beat_fx_echo_enabled);
 }
 
+static void test_active_beat_fx_echo_resyncs_on_normal_beat_buttons(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    ctrl_event_t target = beat_fx_button(CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
+    ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+    ctrl_event_t beat_inc = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC, 1);
+    ctrl_event_t beat_dec = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_DEC, 1);
+
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&target);
+    deck_core_test_apply_event(&on);
+
+    assert(audio_engine_stub_beat_fx_echo_enabled);
+    assert(audio_engine_stub_beat_fx_echo_delay_ms == 500);
+    int set_count_after_on = audio_engine_stub_beat_fx_echo_set_count;
+
+    deck_core_test_apply_event(&beat_inc);
+    assert(audio_engine_stub_beat_fx_echo_set_count > set_count_after_on);
+    assert(audio_engine_stub_beat_fx_echo_delay_ms == 1000);
+    int set_count_after_inc = audio_engine_stub_beat_fx_echo_set_count;
+
+    deck_core_test_apply_event(&beat_dec);
+    assert(audio_engine_stub_beat_fx_echo_set_count > set_count_after_inc);
+    assert(audio_engine_stub_beat_fx_echo_delay_ms == 500);
+}
+
 static void test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot(void)
 {
     deck_core_test_reset();
@@ -2079,6 +2131,7 @@ int main(void)
     test_tempo_range_change_reapplies_current_pitch();
     test_cue_shift_jumps_requested_deck_to_track_start();
     test_browser_namespace_routes_load_to_requested_deck();
+    test_browser_load_is_deferred_to_ui_command_sink();
     test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only();
     test_browser_namespace_routes_browse_delta();
     test_browse_delta_zooms_overview_when_library_is_not_active();
@@ -2108,6 +2161,7 @@ int main(void)
     test_beat_fx_filter_state_updates_audio_engine();
     test_beat_fx_echo_state_updates_audio_engine();
     test_beat_fx_echo_delay_uses_target_deck_bpm();
+    test_active_beat_fx_echo_resyncs_on_normal_beat_buttons();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_master_marks_requested_deck_as_reference();

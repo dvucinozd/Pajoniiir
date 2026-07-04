@@ -146,13 +146,13 @@ The fork is no longer only the imported single-deck baseline:
 
 ## Proposed Next Work
 
-Two code-reviewed design plans are staged under `docs/superpowers/plans/`
-(details in Phase 8 of [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)). Neither is
-implemented yet:
+Two design plans staged under `docs/superpowers/plans/` have since been
+implemented in firmware (details in Phase 8 of
+[DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)):
 
-- **S3 GPIO48 status RGB LED** — a service/diagnostic indicator (link/activity/
-  error states, no playback), gated behind a hardware check that GPIO48 is a
-  real addressable RGB on this custom panel board.
-- **WAV + FLAC playback** — a decoder-abstraction layer feeding the existing PCM
-  ring/resampler/mixer path, with the Rekordbox/ANLZ beatgrid coupling and
-  `media_io_gate` file access resolved.
+- **S3 GPIO48 status RGB LED** — implemented as the S3 `status_led` component
+  for FLX4 host modes. It reports USB link state and MIDI activity; it does not
+  encode playback state.
+- **WAV + FLAC playback** — implemented through the decoder-abstraction layer
+  and firmware preload path. MP3 keeps PVBR seek support; WAV/FLAC use decoder
+  metadata while Rekordbox/ANLZ still supplies beatgrid/BPM/waveform context.

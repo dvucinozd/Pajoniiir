@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "web_api_helpers.h"
@@ -60,6 +61,30 @@ static void test_beat_fx_echo_diag_json_formats_status_block(void)
     assert(strcmp(out, "\"beat_fx_echo\":{\"allocated1\":true,\"allocated2\":false,\"enabled1\":true,\"enabled2\":false,\"delay_ms1\":250,\"delay_ms2\":500}") == 0);
 }
 
+static void test_alloc_printf_handles_payload_larger_than_legacy_status_buffer(void)
+{
+    char large[2300];
+    memset(large, 'x', sizeof(large) - 1u);
+    large[sizeof(large) - 1u] = '\0';
+
+    char *out = NULL;
+    int n = web_api_alloc_printf(&out, "{\"status\":\"%s\"}", large);
+
+    assert(out != NULL);
+    assert(n == (int)strlen(out));
+    assert((size_t)n > 2048u);
+    assert(strncmp(out, "{\"status\":\"", 11u) == 0);
+    free(out);
+}
+
+static void test_clamp_seek_ms_bounds_to_loaded_track_duration(void)
+{
+    assert(web_api_clamp_seek_ms(-10, 30000u, true) == 0u);
+    assert(web_api_clamp_seek_ms(12000, 30000u, true) == 12000u);
+    assert(web_api_clamp_seek_ms(40000, 30000u, true) == 30000u);
+    assert(web_api_clamp_seek_ms(40000, 0u, false) == 40000u);
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
@@ -67,6 +92,8 @@ int main(void)
     test_json_escape_accepts_null_and_zero_buffer();
     test_beat_fx_json_formats_status_block();
     test_beat_fx_echo_diag_json_formats_status_block();
+    test_alloc_printf_handles_payload_larger_than_legacy_status_buffer();
+    test_clamp_seek_ms_bounds_to_loaded_track_duration();
 
     puts("web_api_helpers tests passed");
     return 0;

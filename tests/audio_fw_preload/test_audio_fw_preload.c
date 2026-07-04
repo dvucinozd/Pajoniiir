@@ -1,4 +1,5 @@
 #include "audio_fw_preload.h"
+#include "audio_fw_runtime.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,12 +58,31 @@ static void test_chunk_size_is_smaller_when_output_is_active(void)
     assert(audio_fw_preload_chunk_bytes(0u, true) == 0u);
 }
 
+static void test_abort_load_wakes_waiters_and_stops_runtime(void)
+{
+    audio_fw_preload_t slot;
+    audio_fw_runtime_t runtime;
+    audio_fw_preload_reset(&slot);
+    audio_fw_runtime_begin_load(&runtime);
+
+    slot.buf = (uint8_t *)0x1234;
+    slot.loaded_bytes = 128u;
+
+    audio_fw_preload_abort_load(&slot, &runtime);
+
+    assert(slot.buf == (uint8_t *)0x1234);
+    assert(slot.loaded_bytes == 128u);
+    assert(slot.load_done);
+    assert(!runtime.run);
+}
+
 int main(void)
 {
     test_reset_clears_transient_state();
     test_set_path_copies_and_terminates();
     test_begin_load_keeps_path_but_clears_progress();
     test_chunk_size_is_smaller_when_output_is_active();
+    test_abort_load_wakes_waiters_and_stops_runtime();
     puts("audio_fw_preload tests passed");
     return 0;
 }

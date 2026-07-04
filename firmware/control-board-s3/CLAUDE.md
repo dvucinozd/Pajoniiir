@@ -90,7 +90,7 @@ Must be in `sdkconfig.defaults`. Check if CMake regenerates `sdkconfig`.
 | Key | Value | Why |
 |-----|-------|-------|
 | `CONFIG_DDJ_FLX4_HOST_MODE` | `y` | Default DDJ-FLX4 raw USB MIDI capture mode |
-| `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` | unset by default | Enable only after hardware capture validates the map |
+| `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` | `y` in `sdkconfig.defaults` | Default DDJ-FLX4 MIDI-to-P4 translator path after MVP capture validated the XML-derived map |
 | `CONFIG_TINYUSB_MIDI_COUNT` | `1` | Enables MIDI driver (default is 0 → linker error) |
 | `CONFIG_ESP_CONSOLE_UART_DEFAULT` | `y` | Console on UART0 (CH343 COM port) |
 | `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | **CRITICAL**: USB-JTAG secondary conflicts with TinyUSB |
@@ -178,11 +178,11 @@ Deck-aware semantic IDs are documented in
 
 - Validate DDJ-FLX4 physical USB host wiring: correct OTG port, powered hub or
   valid VBUS source, and shared ground.
-- Capture raw FLX4 MIDI packets for all MVP controls and compare them with
-  `docs/DDJ_FLX4_MIDI_MAP.md`.
-- Enable `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` only after capture confirms or
-  corrects the current XML-derived map.
-- Implement native FLX4 LED MIDI feedback after output messages are verified.
+- Use `docs/reference/Pioneer-DDJ-FLX4.midi.xml` and
+  `docs/DDJ_FLX4_MIDI_MAP.md` as the authoritative source for remaining
+  controls; physical capture is now acceptance smoke, not a coding prerequisite.
+- Keep `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y` for the normal translator build.
+- Extend native FLX4 LED MIDI feedback only from P4-owned state.
 - Legacy hardware acceptance: confirm LOAD/BROWSE, pitch direction, LED
   feedback, and offline heartbeat timeout on a physical S3/P4 pair if the
   inherited CDJ panel path is still used.

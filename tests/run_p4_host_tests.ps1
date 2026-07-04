@@ -365,7 +365,8 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_fw_preload.exe",
             "test_audio_fw_preload.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c"
+            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
         )
     },
     @{

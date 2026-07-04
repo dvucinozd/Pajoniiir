@@ -51,11 +51,11 @@ static void build_frame(uint8_t frame[CTRL_FRAME_LEN],
     frame[6] = frame[1] ^ frame[2] ^ frame[3] ^ frame[4] ^ frame[5];
 }
 
-static void send_frame_checked(const uint8_t frame[CTRL_FRAME_LEN], const char *what)
+static esp_err_t send_frame_checked(const uint8_t frame[CTRL_FRAME_LEN], const char *what)
 {
     int written = uart_write_bytes(UART_PORT, frame, CTRL_FRAME_LEN);
     if (written == CTRL_FRAME_LEN) {
-        return;
+        return ESP_OK;
     }
 
     s_uart_write_fail_count++;
@@ -65,6 +65,7 @@ static void send_frame_checked(const uint8_t frame[CTRL_FRAME_LEN], const char *
         ESP_LOGW(TAG, "%s UART short write (%d/%d), failures=%" PRIu32,
                  what, written, CTRL_FRAME_LEN, s_uart_write_fail_count);
     }
+    return ESP_FAIL;
 }
 
 // ─── RX parser ───────────────────────────────────────────────────────────────
@@ -189,15 +190,14 @@ void control_link_send_heartbeat(void)
     uint8_t frame[CTRL_FRAME_LEN];
     uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
     build_frame(frame, CTRL_TYPE_HEARTBEAT, 0, (int16_t)(uptime_s & 0xFFFF));
-    send_frame_checked(frame, "heartbeat");
+    (void)send_frame_checked(frame, "heartbeat");
 }
 
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
 {
     uint8_t frame[CTRL_FRAME_LEN];
     build_frame(frame, type, id, value);
-    send_frame_checked(frame, "semantic event");
-    return ESP_OK;
+    return send_frame_checked(frame, "semantic event");
 }
 
 void control_link_send_event(const panel_event_t *ev)
@@ -221,5 +221,5 @@ void control_link_send_event(const panel_event_t *ev)
         return;
     }
 
-    send_frame_checked(frame, "panel event");
+    (void)send_frame_checked(frame, "panel event");
 }
