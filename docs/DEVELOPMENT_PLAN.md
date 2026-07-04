@@ -897,3 +897,37 @@ the codebase on 2026-07-03 and have since been implemented in firmware.
 
 Both plans carry a "Sažetak ispravaka vs original" table documenting every
 correction made during the code review.
+
+## Phase 9: Wi-Fi Web UI, Waveform Visualisations, And Audit Hardening (2026-07-04)
+
+Implemented and hardware-verified on COM15/COM3; all P4 and S3 host tests pass.
+
+- **ESP-Hosted Wi-Fi + web UI re-enabled behind a Settings switch.** The onboard
+  ESP32-C6 (SDIO ESP-Hosted) SoftAP `PAJONIIR` and the httpd mobile controller
+  (`http://192.168.4.1`) were un-parked. A new `wifi_remote` NVS setting (default
+  **off**) gates it; the Settings tab switch calls `wifi_link_request_enable()`
+  (async worker task, so the ~1-2 s SDIO/C6 bring-up never blocks the LVGL task),
+  and `wifi_link_start/stop` bring the whole stack (hosted + Wi-Fi + web + captive
+  DNS) up/down. UI stays decoupled via `ui_settings_set_wifi_toggle_cb()`.
+- **Web UI batch 1.** Live connection dot, per-deck `duration_ms` + progress bar
+  with tap-to-seek, throttled sliders, an honest master VU from the limiter peak,
+  and stacked LOAD D1/D2 buttons so both are visible on a phone. The web UI is
+  deliberately kept a simple remote, not a full control surface.
+- **USB-disconnect crash fix.** `track_meta_cache_load/save` did an ungated
+  `stat()` on the USB ANLZ paths; a drive glitch during it tore down the MSC
+  device under an in-flight transfer and panicked the vendored driver, wedging
+  USB until a power cycle. The stats are now wrapped in `media_io_gate`. A
+  Settings "Last reset" readout (`esp_reset_reason()`) was added for on-screen
+  crash diagnosis without serial.
+- **Audit pass** (thread-safety + robustness). RELAXED atomics for all shared
+  mixer/pfl/beat-fx/gain state in `audio_engine` and stats in `p4_audio_link`;
+  `deck_core` moves heavy UI commands (LOAD/BROWSE) onto a dedicated lower-priority
+  task so the real-time control loop stays responsive; `ae_fail_load()` aborts a
+  stalled load; beat-FX beat inc/dec now resyncs the echo delay; `control_link`
+  semantic send propagates UART errors; web status JSON is dynamically sized.
+- **Overview waveform visualisations.** "Punchy" colour scheme with white
+  transient tips; active + armed loop-region amber highlight with edge markers
+  (`deck_core_get_loop_display()`); hot-cue markers baked into the large strip and
+  as LVGL lines on the mini; translucent warm-amber played-progress overlay on the
+  mini. All large-waveform overlays are baked into the scrolling RGB565 strip so
+  they PPA-blit atomically (no LVGL-over-PPA flicker).

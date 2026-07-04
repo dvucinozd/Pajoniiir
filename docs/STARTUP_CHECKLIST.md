@@ -128,12 +128,12 @@
 - P4 dual-deck audio scheduling is hardware-verified after the 2026-06-20
   preload/output pacing pass: both decks can play with normal audio and normal
   waveform motion.
-- USB library import currently requires FAT32 on an MBR-partitioned USB stick.
-  AlphaTheta/rekordbox OneLibrary-style exports still provide readable legacy
-  `export.pdb` and `USBANLZ` data, but P4 failed before parsing on exFAT and on
-  FAT32-on-GPT (`FR_NO_FILESYSTEM`/`msc_host_vfs_register: ERROR`). Converting
-  the same stick to MBR + FAT32 made P4 read the USB. Firmware exFAT/GPT support
-  is a pending implementation item.
+- USB library import handles FAT32 and exFAT on superfloppy, MBR, and GPT
+  layouts via `usb_media_mount` (base-LBA translation + vendored FatFs with
+  `FF_FS_EXFAT=1`). exFAT large sequential reads are chunked into ≤64-sector SCSI
+  commands (exFAT's large clusters otherwise exceed the MSC bulk transfer limit
+  and silently abort the audio preload). Hardware-verified: MP3/WAV/hi-res FLAC
+  all play from an exFAT drive.
 - P4 master output now uses a transparent soft-knee post-sum limiter with
   lightweight limiter telemetry in both the output diagnostic log and the audio
   mixer snapshot. Material below roughly ±30000 PCM units remains unchanged;
@@ -202,13 +202,16 @@
   `codex/splash-screen` branch. Boot shows `PajoNiiiR` in `Musieer_80` for
   roughly three seconds, then returns to the already-built main dual-deck UI.
   The `ctrl_rx` UART task stack is 4096 bytes in the same stabilization slice.
-- ESP-Hosted Wi-Fi is disabled in active P4 firmware as of 2026-06-29. The
-  local `wifi_link` component remains as a no-op status shim, but P4 no longer
-  links `esp_hosted`/`esp_wifi_remote` or starts the hosted AP during boot.
-  HTTP status and captive DNS startup are gated behind successful Wi-Fi/AP init
-  because `esp_http_server` asserts in lwIP if started before the TCP/IP stack.
-  Browser access still requires a real network interface. The old Settings
-  `link_mode` selector remains removed from active firmware.
+- ESP-Hosted Wi-Fi was re-enabled on 2026-07-04 behind a Settings switch
+  (`app_settings.wifi_remote`, default **off**). The onboard ESP32-C6 provides a
+  SoftAP `PAJONIIR` over SDIO; turning the switch on runs `wifi_link_start()`
+  (hosted + Wi-Fi + `web_server` + captive DNS) and off runs `wifi_link_stop()`
+  (full teardown, incl. `esp_hosted_deinit`). HTTP status and captive DNS startup
+  are still gated behind successful Wi-Fi/AP init because `esp_http_server`
+  asserts in lwIP if started before the TCP/IP stack. The mobile web controller
+  is at `http://192.168.4.1`. The old Settings `link_mode`/`JOINED` selectors
+  remain removed. (Historical: it was parked 2026-06-29 as a no-op shim for
+  RF-quiet development.)
 
 ## First Firmware Task
 

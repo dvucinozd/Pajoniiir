@@ -6,14 +6,19 @@ ESP32-P4 firmware for the CDJ100S-XXX main deck board (JC4880P443C_I_W).
 Responsible for: UI (LVGL), deck state machine, audio decode/output, USB media library.  
 Communicates with the ESP32-S3 control board via UART1 (7-byte frame protocol).
 
-**Status:** Display, touch, USB media library, audio (ES8311 + I2S), SDMMC mount,
-display triple buffering, and the dual-deck P4 touchscreen path are operational
-on hardware. `deck_core` drives `audio_engine` through deck-aware APIs for local
-touchscreen control; the S3 will populate the same event queue after FLX4 raw
-MIDI capture is proven. The P4 UI has been refactored into focused modules, and
-the 2026-06-13 Deck 2 lower Overview waveform jitter fix is in `master`.
-Line-out validation, native FLX4 input, native FLX4 LED feedback, and the cue/PFL
-audio output path remain pending.
+**Status:** Display, touch, USB media library (FAT32/exFAT on MBR/GPT), audio
+(PCM5102A I2S MAIN, MP3/WAV/FLAC), SDMMC mount, display triple buffering, and the
+dual-deck P4 touchscreen path are operational on hardware. `deck_core` drives
+`audio_engine` through deck-aware APIs; the S3 control board populates the same
+event queue over the UART control link (FLX4 controls verified). The Overview
+waveform is feature-complete: both decks use the direct PPA overlay path with
+"Punchy" colour-waveform rendering, white transient tips, an active/armed loop
+region highlight, hot-cue markers on the large + mini waveforms, and a
+translucent played-progress highlight on the mini. The **ESP-Hosted Wi-Fi + web
+UI mobile controller** is re-enabled behind a Settings switch (default off). A
+2026-07-04 audit hardened thread-safety (atomics), load-failure abort, and the
+web status JSON. Line-out validation and native FLX4 LED feedback remain the main
+pending items.
 
 ---
 
@@ -27,10 +32,12 @@ audio output path remain pending.
 | `library/rekordbox_anlz` | ✅ **RUNNING ON HW** | ANLZ parser — BPM/beatgrid/waveform/cues; section-header tag walk; 34 unit tests |
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
-| `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; `ui_trigger_library_refresh()` |
+| `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
+| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress; Settings Wi-Fi remote switch + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload (direct buffer, no fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; RELAXED-atomic shared state; `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
+| `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 
 ---
 
@@ -265,11 +272,26 @@ once at load into an I8 canvas, then progress-tinted as it plays.
 
 Waveform colours (2026-07-04, "Punchy" scheme): brighter cyan transients
 (`#26E0FF`), true-white 2 px tips on loud transients (peak amp ≥ 26), punchier
-blue/pink. The 10-colour palette lives in three synced places — the RGB565
-firmware palette (`s_overview_wave_rgb565_palette`) and the two LVGL I8 canvas
-palettes (main WIN32 + mini) in `ui_create_overview_deck_panel`. The
-sample→colour mapping is `ui_waveform_palette_for_sample()`; the white tips are
-`WAVE_TIP_*` in `ui_overview_renderer.c`.
+blue/pink. The RGB565 firmware palette (`s_overview_wave_rgb565_palette`) has
+indices 0–9 waveform colours, 10 = dim-amber loop background, and 11–18 = hot-cue
+slot colours 0–7; the two LVGL I8 canvas palettes (main WIN32 + mini) mirror
+0–9. The sample→colour mapping is `ui_waveform_palette_for_sample()`; the white
+tips are `WAVE_TIP_*` in `ui_overview_renderer.c`.
+
+Overview waveform overlays (all baked into the scrolling RGB565 strip so they
+PPA-blit atomically with the waveform — no LVGL-over-PPA flicker):
+- **Loop region highlight** — amber background over `[loop_start, loop_end)` with
+  white edge markers. Active loop is `[in, out]`; an *armed* loop-in (before the
+  out is pressed) grows from the marker to the live playhead.
+  `deck_core_get_loop_display()` exposes `{active, armed, start, end}`; the region
+  is fed to the cache via `ui_overview_wave_cache_set_loop()` (a change forces a
+  full strip redraw).
+- **Hot-cue markers** — coloured vertical lines + flag heads drawn from
+  `meta->cues` (`WAVE_CUE_*`), scrolling with the waveform. The old LVGL cue
+  objects are hidden.
+- **Mini (full-track) overview** — thin LVGL hot-cue lines across the whole
+  track, and a translucent warm-amber "played" overlay (`panel->mini_played`)
+  covering `[0, playhead]`. Both sit under the mini playhead.
 
 **Header Time Counters:**
 - Left (larger, blue) = elapsed time (current position).
@@ -390,3 +412,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
 - ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
 - ✅ ~~Deck 2 lower Overview waveform jitter~~ — resolved 2026-06-13; both decks now use the direct PPA overlay path
+- ✅ ~~ESP-Hosted Wi-Fi + web UI mobile controller~~ — re-enabled 2026-07-04 behind a Settings switch (default off); SoftAP `PAJONIIR` + `http://192.168.4.1`
+- ✅ ~~USB-disconnect crash~~ — fixed 2026-07-04 by gating the track-meta-cache USB `stat()` (a disconnect during it panicked the MSC driver + wedged USB)
+- ✅ ~~Overview waveform visualisations~~ — "Punchy" colours, loop-region highlight (active + armed), hot-cue markers (large + mini), mini played-progress overlay
+- **Line-out (RCA) validation** — hardware measurement of the RCA/monitor output path pending
