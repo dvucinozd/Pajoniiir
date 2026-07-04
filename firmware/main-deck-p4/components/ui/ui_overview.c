@@ -219,17 +219,21 @@ static ui_overview_scheduler_t s_overview_scheduler;
 #ifndef WIN32
 #define UI_RGB565(r, g, b) \
     (uint16_t)((((uint16_t)(r) & 0xF8u) << 8) | (((uint16_t)(g) & 0xFCu) << 3) | ((uint16_t)(b) >> 3))
+/* "Punchy" waveform palette (2026-07-04): brighter cyan transients, true
+ * white for transient tips, punchier blue/pink, stronger contrast. Index
+ * meanings match ui_waveform_palette_for_sample(); kept in sync with the two
+ * LVGL I8 canvas palettes (main WIN32 + mini) in ui_create_overview_deck_panel. */
 static const uint16_t s_overview_wave_rgb565_palette[] = {
-    UI_RGB565(0x00, 0x00, 0x00),
-    UI_RGB565(0xF0, 0x2B, 0x72),
-    UI_RGB565(0x26, 0x65, 0xFF),
-    UI_RGB565(0x1D, 0x5F, 0x5E),
-    UI_RGB565(0xE5, 0xE6, 0xEA),
-    UI_RGB565(0x1D, 0xF5, 0x94),
-    UI_RGB565(0xFF, 0xB3, 0x38),
-    UI_RGB565(0x9B, 0x5C, 0xFF),
-    UI_RGB565(0x5A, 0x5D, 0x64),
-    UI_RGB565(0xFF, 0x17, 0x44),
+    UI_RGB565(0x00, 0x00, 0x00),  /* 0 background */
+    UI_RGB565(0xFF, 0x2E, 0x6E),  /* 1 hot pink/red body */
+    UI_RGB565(0x3A, 0x7B, 0xFF),  /* 2 blue mid energy */
+    UI_RGB565(0x26, 0xE0, 0xFF),  /* 3 bright cyan transient */
+    UI_RGB565(0xFF, 0xFF, 0xFF),  /* 4 white (tips / center) */
+    UI_RGB565(0x38, 0xF5, 0x8C),  /* 5 green */
+    UI_RGB565(0xFF, 0xB7, 0x33),  /* 6 amber */
+    UI_RGB565(0xB5, 0x7C, 0xFF),  /* 7 purple quiet detail */
+    UI_RGB565(0x5A, 0x5D, 0x64),  /* 8 grey */
+    UI_RGB565(0xFF, 0x17, 0x44),  /* 9 red */
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
@@ -587,13 +591,13 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_remove_flag(panel->wave_canvas, LV_OBJ_FLAG_CLICKABLE);
 
         lv_canvas_set_palette(panel->wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0xF0, 0x2B, 0x72, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x1D, 0x5F, 0x5E, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
-        lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 1, lv_color32_make(0xFF, 0x2E, 0x6E, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 2, lv_color32_make(0x3A, 0x7B, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 3, lv_color32_make(0x26, 0xE0, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 4, lv_color32_make(0xFF, 0xFF, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 5, lv_color32_make(0x38, 0xF5, 0x8C, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 6, lv_color32_make(0xFF, 0xB7, 0x33, 0xFF));
+        lv_canvas_set_palette(panel->wave_canvas, 7, lv_color32_make(0xB5, 0x7C, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
         lv_canvas_set_palette(panel->wave_canvas, 9, lv_color32_make(0xFF, 0x17, 0x44, 0xFF));
 
@@ -645,13 +649,13 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_align(panel->mini_wave_canvas, LV_ALIGN_TOP_LEFT, 0, 0);
         lv_obj_remove_flag(panel->mini_wave_canvas, LV_OBJ_FLAG_CLICKABLE);
         lv_canvas_set_palette(panel->mini_wave_canvas, 0, lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 1, lv_color32_make(0xE8, 0x2B, 0x78, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0x26, 0x65, 0xFF, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x1D, 0x5F, 0x5E, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 4, lv_color32_make(0xE5, 0xE6, 0xEA, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 5, lv_color32_make(0x1D, 0xF5, 0x94, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 6, lv_color32_make(0xFF, 0xB3, 0x38, 0xFF));
-        lv_canvas_set_palette(panel->mini_wave_canvas, 7, lv_color32_make(0x9B, 0x5C, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 1, lv_color32_make(0xFF, 0x2E, 0x6E, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 2, lv_color32_make(0x3A, 0x7B, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 3, lv_color32_make(0x26, 0xE0, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 4, lv_color32_make(0xFF, 0xFF, 0xFF, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 5, lv_color32_make(0x38, 0xF5, 0x8C, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 6, lv_color32_make(0xFF, 0xB7, 0x33, 0xFF));
+        lv_canvas_set_palette(panel->mini_wave_canvas, 7, lv_color32_make(0xB5, 0x7C, 0xFF, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 8, lv_color32_make(0x5A, 0x5D, 0x64, 0xFF));
         lv_canvas_set_palette(panel->mini_wave_canvas, 9, lv_color32_make(0xFF, 0x17, 0x44, 0xFF));
         lv_image_dsc_t *mini_dsc = lv_canvas_get_image(panel->mini_wave_canvas);

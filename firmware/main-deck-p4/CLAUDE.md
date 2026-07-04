@@ -254,10 +254,22 @@ and backend ownership has moved into focused modules:
 - `ui_overview_renderer`, `ui_overview_scheduler`, `ui_waveform_model`, and
   `ui_position_interpolator`: testable waveform helpers.
 
-Overview waveform note: Deck 1 may use the direct PPA overlay path. Deck 2 uses
-the normal LVGL invalidation/flush path because the direct overlay path caused
-visible lower waveform jitter on hardware; this was fixed and visually verified
-on 2026-06-13.
+Overview waveform note: **both decks now use the direct PPA overlay path** for
+the large (zoom) waveform on firmware (`ui_overview_scheduler_direct_overlay_allowed`
+returns true for deck 0 and 1); the Deck 2 lower-waveform jitter that once forced
+an LVGL path was resolved on 2026-06-13. The LVGL I8 `wave_canvas` now exists only
+in the PC/simulator build. The scrolling strip cache (`ui_overview_wave_cache`)
+renders new columns, burns the fixed centre playhead into the strip, and PPA-blits
+segments straight to the framebuffer. The small (mini) full-track waveform is drawn
+once at load into an I8 canvas, then progress-tinted as it plays.
+
+Waveform colours (2026-07-04, "Punchy" scheme): brighter cyan transients
+(`#26E0FF`), true-white 2 px tips on loud transients (peak amp ≥ 26), punchier
+blue/pink. The 10-colour palette lives in three synced places — the RGB565
+firmware palette (`s_overview_wave_rgb565_palette`) and the two LVGL I8 canvas
+palettes (main WIN32 + mini) in `ui_create_overview_deck_panel`. The
+sample→colour mapping is `ui_waveform_palette_for_sample()`; the white tips are
+`WAVE_TIP_*` in `ui_overview_renderer.c`.
 
 **Header Time Counters:**
 - Left (larger, blue) = elapsed time (current position).
@@ -377,4 +389,4 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
 - ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
-- ✅ ~~Deck 2 lower Overview waveform jitter~~ — fixed by disabling direct overlay for Deck 2
+- ✅ ~~Deck 2 lower Overview waveform jitter~~ — resolved 2026-06-13; both decks now use the direct PPA overlay path
