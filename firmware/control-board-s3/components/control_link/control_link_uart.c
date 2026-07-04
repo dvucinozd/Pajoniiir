@@ -2,6 +2,7 @@
 #include "panel_io.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
+#include "status_led.h"
 #include "esp_check.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
@@ -133,6 +134,9 @@ static void parse_rx_byte(rx_state_t *st, uint8_t b)
         return;
     }
 
+    /* A valid frame proves the P4 UART link is alive; the status LED uses this
+       to distinguish "link down" (amber) from FLX4 connection state. */
+    status_led_notify_p4_frame();
     handle_p4_frame(st->buf);
 }
 

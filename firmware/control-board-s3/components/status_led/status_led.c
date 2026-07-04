@@ -14,12 +14,27 @@
 #define STATUS_LED_LEVEL_BASE  16u
 #define STATUS_LED_LEVEL_FLASH 48u
 
+// P4 sends the VU-meter LED stream continuously (~66 frames/s), so a few
+// seconds of silence reliably means the UART link is down.
+#define STATUS_LED_P4_TIMEOUT_MS 3000u
+
 static const char *TAG = "status_led";
 
 static led_strip_handle_t s_strip;
 static esp_timer_handle_t s_timer;
 static atomic_bool s_connected;
 static atomic_uint s_activity;
+static atomic_uint s_p4_last_frame_ms;   /* 0 = no frame seen yet (boot) */
+
+static bool p4_link_up(void)
+{
+    const uint32_t last_ms = atomic_load(&s_p4_last_frame_ms);
+    if (last_ms == 0u) {
+        return false;
+    }
+    const uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    return (now_ms - last_ms) < STATUS_LED_P4_TIMEOUT_MS;
+}
 
 static void status_led_render_cb(void *arg)
 {
@@ -33,7 +48,10 @@ static void status_led_render_cb(void *arg)
 
     uint8_t red = 0;
     uint8_t green = 0;
-    if (connected) {
+    if (!p4_link_up()) {
+        red = STATUS_LED_LEVEL_BASE;                 /* amber */
+        green = STATUS_LED_LEVEL_BASE / 3u;
+    } else if (connected) {
         green = flash ? STATUS_LED_LEVEL_FLASH : STATUS_LED_LEVEL_BASE;
     } else {
         red = STATUS_LED_LEVEL_BASE;
@@ -95,4 +113,13 @@ void status_led_set_connected(bool connected)
 void status_led_notify_activity(void)
 {
     atomic_fetch_add(&s_activity, 1u);
+}
+
+void status_led_notify_p4_frame(void)
+{
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now_ms == 0u) {
+        now_ms = 1u;   /* keep 0 reserved for "never seen a frame" */
+    }
+    atomic_store(&s_p4_last_frame_ms, now_ms);
 }

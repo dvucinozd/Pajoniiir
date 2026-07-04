@@ -23,14 +23,14 @@ audio output path remain pending.
 |-----------|--------|-------------|
 | `control_link` | ✅ **IMPLEMENTED** | UART RX/TX, frame parser, LED send |
 | `deck_core` | ✅ **RUNNING ON HW** | state machine + drives `audio_engine` (play/pause/cue→seek/jog/pitch); `deck_core_queue_event()` for UI/S3 sources |
-| `library/rekordbox_pdb` | ✅ **IMPLEMENTED** | PDB parser — title/artist/anlz_path from export.pdb |
-| `library/rekordbox_anlz` | ✅ **IMPLEMENTED** | ANLZ parser — BPM/beatgrid/waveform/cues; 32 unit tests |
-| `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads 308 tracks from `/usb`; `library_get_ptr()` (no stack copy) |
-| `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → FATFS mount `/usb`; callback reload library + UI refresh |
+| `library/rekordbox_pdb` | ✅ **RUNNING ON HW** | PDB parser — title/artist/album/anlz_path + musical key (Keys table 0x05) from export.pdb |
+| `library/rekordbox_anlz` | ✅ **RUNNING ON HW** | ANLZ parser — BPM/beatgrid/waveform/cues; section-header tag walk; 34 unit tests |
+| `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
+| `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; `ui_trigger_library_refresh()` |
-| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + ES8311 audio; SDMMC `/sd` mount hardware-verified |
-| `audio_engine` | ✅ **RUNNING ON HW** | minimp3 → ES8311/I2S; PSRAM preload (fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); SDL2 on PC |
+| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
+| `audio_engine` | ✅ **RUNNING ON HW** | minimp3 → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload (direct buffer, no fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; SDL2/WAV on PC |
 
 ---
 
@@ -74,9 +74,15 @@ control_link  →  ctrl_event_queue  →  deck_core
 2. `control_link_init(queue)` — UART RX task, pushes events onto queue
 3. `bsp_display_init()` ✅ + `bsp_touch_init()` ✅ + `bsp_audio_init()` ✅ + `bsp_sd_init()` (`/sd`, non-fatal without card)
 4. `library_init()` — returns NOT_FOUND until USB is mounted (OK at boot)
-5. `audio_engine_init()` — retrieves ES8311 codec handle, creates mutex/tasks
+5. `audio_engine_init()` — grabs the PCM5102A/monitor output handles, creates mutex/tasks
 6. `ui_init()` — LVGL 800×480, 7 screens, PPA rotation, touch indev
 7. `usb_storage_init(cb)` — USB host; on mount loads library + refreshes UI
+
+> **Boot log note — `wifi_link_init(host): ESP_ERR_NOT_SUPPORTED` is expected.**
+> The P4 has no native Wi-Fi; the web AP path needs an ESP-Hosted co-processor,
+> which is disabled. `wifi_link_init()` returns `ESP_ERR_NOT_SUPPORTED` by
+> design and `app_main` skips `web_server_start()`/`dns_server_start()`. This
+> is not a fault — the touchscreen UI is the primary surface.
 
 ---
 
@@ -346,12 +352,13 @@ Format details: `docs/rekordbox-format-analysis.md`
 
 - ✅ ~~BSP display (ST7701)~~ — WORKS (verified, COM15)
 - ✅ ~~BSP touch (GT911)~~ — WORKS (taps accurate)
-- ✅ ~~BSP audio (ES8311 + I2S)~~ — WORKS (MP3 playback, 44.1/48k)
-- ✅ ~~USB host + VFS mount `/usb`~~ — WORKS (308 tracks, library auto-load)
+- ✅ ~~BSP audio~~ — WORKS (PCM5102A MAIN out; MP3 playback 44.1/48k; ES8311 dropped)
+- ✅ ~~USB host + VFS mount `/usb`~~ — WORKS (FAT32/exFAT on MBR/GPT via `usb_media_mount`, library auto-load)
 - ✅ ~~GPIO28/29 UART link~~ — verified end-to-end with S3
-- **S3 DDJ-FLX4 raw MIDI capture** — next hardware blocker before real FLX4 controls
-- **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — after raw capture
+- ✅ ~~S3 DDJ-FLX4 raw MIDI capture~~ — FLX4 enumerates on hardware; translator maps the MVP + extended controls to control-link frames
+- **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — mapped; full hardware pass pending
 - **Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)
+- **WAV/FLAC decode** — planned via a decoder-abstraction layer (see `docs/superpowers/plans/2026-07-03-wav-flac-decoder-support.md`)
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
 - ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
