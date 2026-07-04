@@ -17,6 +17,12 @@
 #define WAVE_LOOP_BG_PALETTE_INDEX 10
 #define WAVE_LOOP_MARK_PALETTE_INDEX WAVE_TIP_PALETTE_INDEX
 
+/* Hot-cue vertical markers: palette indices 11..18 hold cue-slot colours 0..7.
+ * Drawn from meta->cues, baked into the strip like the beat grid so they scroll
+ * with the waveform without LVGL-over-PPA flicker. */
+#define WAVE_CUE_BASE_PALETTE_INDEX 11
+#define WAVE_CUE_MAX 8
+
 typedef struct {
     uint8_t avg;
     uint8_t peak;
@@ -608,6 +614,39 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
             int dest_x = dest_x_px + (edge_x - logical_x_px);
             for (int y = 0; y < height_px; y++) {
                 pixels[y * stride_px + dest_x] = mark;
+            }
+        }
+    }
+
+    /* Hot-cue markers: a full-height line in the cue-slot colour plus a short
+     * solid head at the top so the cue reads even over a busy waveform. */
+    if (meta && meta->cue_count > 0 && window_ms > 0) {
+        int head_h = height_px / 6;
+        if (head_h < 3) head_h = 3;
+        for (uint8_t c = 0; c < meta->cue_count && c < WAVE_CUE_MAX; c++) {
+            uint8_t slot = meta->cues[c].index;
+            if (slot >= WAVE_CUE_MAX) {
+                continue;
+            }
+            int cue_x = (int)(((int64_t)meta->cues[c].start_ms - window_start_ms) *
+                              (int64_t)logical_width_px / (int64_t)window_ms);
+            if (cue_x < logical_x_px || cue_x >= logical_x_px + column_count) {
+                continue;
+            }
+            int dest_x = dest_x_px + (cue_x - logical_x_px);
+            uint16_t cue_color = rgb565_palette_color(palette, palette_count,
+                                                      WAVE_CUE_BASE_PALETTE_INDEX + slot);
+            for (int y = 0; y < height_px; y++) {
+                pixels[y * stride_px + dest_x] = cue_color;
+            }
+            for (int hx = 0; hx < 3; hx++) {
+                int head_dx = dest_x + hx;
+                if (head_dx >= dest_x_px + column_count || head_dx >= stride_px) {
+                    break;
+                }
+                for (int y = 0; y < head_h; y++) {
+                    pixels[y * stride_px + head_dx] = cue_color;
+                }
             }
         }
     }

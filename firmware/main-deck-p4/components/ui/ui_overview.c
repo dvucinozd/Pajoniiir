@@ -188,9 +188,11 @@ typedef struct {
     lv_obj_t *mini_wave_canvas;
     uint8_t  *mini_wave_buf;
     int       mini_wave_stride_px;
+    lv_obj_t *mini_played;
     lv_obj_t *mini_playhead;
     lv_obj_t *playhead;
     int       last_mini_fill_x;
+    int       last_mini_played_w;
     int       last_playhead_x;
     uint32_t  last_wave_center_ms;
     uint32_t  last_wave_window_ms;
@@ -235,6 +237,16 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
     UI_RGB565(0x5A, 0x5D, 0x64),  /* 8 grey */
     UI_RGB565(0xFF, 0x17, 0x44),  /* 9 red */
     UI_RGB565(0x6B, 0x3F, 0x00),  /* 10 active-loop background (dim amber) */
+    /* 11..18 hot-cue colours (slot 0..7); kept in sync with the mini cue-line
+     * colours in ui_overview_update_cue_markers. */
+    UI_RGB565(0x00, 0xE6, 0x76),  /* 11 cue 0 green */
+    UI_RGB565(0x00, 0xE5, 0xFF),  /* 12 cue 1 cyan */
+    UI_RGB565(0xFF, 0xAB, 0x00),  /* 13 cue 2 amber */
+    UI_RGB565(0xE0, 0x40, 0xFB),  /* 14 cue 3 magenta */
+    UI_RGB565(0xFF, 0xD6, 0x00),  /* 15 cue 4 yellow */
+    UI_RGB565(0xFF, 0x17, 0x44),  /* 16 cue 5 red */
+    UI_RGB565(0x7C, 0x4D, 0xFF),  /* 17 cue 6 purple */
+    UI_RGB565(0x29, 0x79, 0xFF),  /* 18 cue 7 blue */
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
@@ -252,6 +264,7 @@ static lv_obj_t *s_phase_meter_knob = NULL;
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
 
 static lv_obj_t *s_overview_cue_markers[DECK_CORE_DECK_COUNT][8];
+static lv_obj_t *s_overview_mini_cue_markers[DECK_CORE_DECK_COUNT][8];
 static uint32_t s_overview_deck_duration_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
@@ -472,6 +485,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->wave_stride_px = OVERVIEW_CV_W;
     panel->mini_wave_stride_px = OVERVIEW_MINI_CV_W;
     panel->last_mini_fill_x = -1;
+    panel->last_mini_played_w = -1;
     panel->last_playhead_x = -1;
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
@@ -666,6 +680,32 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     } else {
         ESP_LOGE(TAG, "D%u mini overview canvas alloc failed (%u bytes)",
                  (unsigned)deck + 1u, (unsigned)mini_sz);
+    }
+
+    /* Mini "played" highlight: a translucent overlay covering the portion of the
+     * full-track overview the playhead has passed. Created before the cue lines
+     * and playhead so both stay on top. Width is driven each frame in the
+     * progress update. */
+    panel->mini_played = lv_obj_create(panel->mini_wave_border);
+    lv_obj_remove_style_all(panel->mini_played);
+    lv_obj_set_style_bg_color(panel->mini_played, lv_color_hex(0xFFB05A), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->mini_played, 80, LV_PART_MAIN);
+    lv_obj_set_size(panel->mini_played, 0, OVERVIEW_MINI_CV_H);
+    lv_obj_set_pos(panel->mini_played, 0, 0);
+    lv_obj_add_flag(panel->mini_played, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(panel->mini_played, LV_OBJ_FLAG_CLICKABLE);
+    panel->last_mini_played_w = -1;
+
+    /* Mini hot-cue lines: created before the playhead so the playhead stays on
+     * top; positioned/coloured (and shown) in ui_overview_update_cue_markers. */
+    for (int i = 0; i < 8; i++) {
+        lv_obj_t *mc = lv_obj_create(panel->mini_wave_border);
+        lv_obj_set_style_border_width(mc, 0, LV_PART_MAIN);
+        lv_obj_set_size(mc, 1, OVERVIEW_MINI_CV_H);
+        lv_obj_set_pos(mc, 0, 0);
+        lv_obj_add_flag(mc, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(mc, LV_OBJ_FLAG_CLICKABLE);
+        s_overview_mini_cue_markers[ui_overview_deck_index(deck)][i] = mc;
     }
 
     panel->mini_playhead = lv_obj_create(panel->mini_wave_border);
@@ -1286,6 +1326,11 @@ void ui_overview_load_waveform_data(uint8_t deck,
     };
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
     panel->last_mini_fill_x = -1;
+    panel->last_mini_played_w = -1;
+    if (panel->mini_played) {
+        lv_obj_add_flag(panel->mini_played, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(panel->mini_played, 0, OVERVIEW_MINI_CV_H);
+    }
     panel->last_playhead_x = -1;
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
@@ -1327,84 +1372,58 @@ void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, u
         0x2979FF
     };
 
-    if (!meta || duration_ms == 0) {
-        for (int i = 0; i < 8; i++) {
-            if (s_overview_cue_markers[deck_idx][i]) {
-                lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
-            }
-            if (s_overview_cue_heads[deck_idx][i]) {
-                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
-            }
+    /* The main (zoom) waveform cue markers are now baked into the scrolling
+     * strip (drawn from meta->cues by the renderer), so hide the legacy LVGL
+     * marker/head objects that used to flicker over the PPA overlay. */
+    for (int i = 0; i < 8; i++) {
+        if (s_overview_cue_markers[deck_idx][i]) {
+            lv_obj_add_flag(s_overview_cue_markers[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
         }
-        return;
+        if (s_overview_cue_heads[deck_idx][i]) {
+            lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
-    uint32_t window_ms = panel->last_wave_window_ms > 0
-                       ? panel->last_wave_window_ms
-                       : ui_overview_main_window_ms(deck, meta);
-    uint32_t center_ms = panel->last_wave_center_ms != UINT32_MAX
-                       ? panel->last_wave_center_ms
-                       : 0;
-    int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
-    int64_t window_end_ms = window_start_ms + (int64_t)window_ms;
-
+    /* Mini (full-track overview) cue lines: fixed x across the whole track. */
     for (int i = 0; i < 8; i++) {
-        lv_obj_t *marker = s_overview_cue_markers[deck_idx][i];
-        if (!marker) {
+        lv_obj_t *mc = s_overview_mini_cue_markers[deck_idx][i];
+        if (!mc) {
             continue;
         }
-
         bool found = false;
         uint32_t pos = 0;
-        for (int j = 0; j < meta->cue_count; j++) {
-            if (meta->cues[j].index == i) {
-                pos = meta->cues[j].start_ms;
-                found = true;
-                break;
+        if (meta && duration_ms > 0) {
+            for (int j = 0; j < meta->cue_count; j++) {
+                if (meta->cues[j].index == i) {
+                    pos = meta->cues[j].start_ms;
+                    found = true;
+                    break;
+                }
             }
         }
-
-        if (!found) {
-            lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
-            if (s_overview_cue_heads[deck_idx][i]) {
-                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
-            }
+        if (!found || pos > duration_ms) {
+            lv_obj_add_flag(mc, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
-
-        if ((int64_t)pos < window_start_ms || (int64_t)pos > window_end_ms) {
-            lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
-            if (s_overview_cue_heads[deck_idx][i]) {
-                lv_obj_add_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
-            }
-            continue;
-        }
-
-        int marker_x = OVERVIEW_WAVE_INSET_X +
-            (int)((((int64_t)pos - window_start_ms) * OVERVIEW_CV_W) /
-                  (int64_t)window_ms) - 1;
-        if (marker_x < OVERVIEW_WAVE_INSET_X - 1) marker_x = OVERVIEW_WAVE_INSET_X - 1;
-        if (marker_x > OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2) {
-            marker_x = OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 2;
-        }
-        lv_obj_set_pos(marker, marker_x, OVERVIEW_WAVE_INSET_Y + 4);
-        lv_obj_set_style_bg_color(marker, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
-        lv_obj_remove_flag(marker, LV_OBJ_FLAG_HIDDEN);
-        if (s_overview_cue_heads[deck_idx][i]) {
-            int head_x = marker_x - 2;
-            int head_min = OVERVIEW_WAVE_INSET_X;
-            int head_max = OVERVIEW_WAVE_INSET_X + OVERVIEW_CV_W - 7;
-            if (head_x < head_min) {
-                head_x = head_min;
-            } else if (head_x > head_max) {
-                head_x = head_max;
-            }
-            lv_obj_set_pos(s_overview_cue_heads[deck_idx][i], head_x, OVERVIEW_WAVE_INSET_Y);
-            lv_obj_set_style_bg_color(s_overview_cue_heads[deck_idx][i],
-                                      lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
-            lv_obj_remove_flag(s_overview_cue_heads[deck_idx][i], LV_OBJ_FLAG_HIDDEN);
-        }
+        int mini_x = (int)(((int64_t)pos * OVERVIEW_MINI_CV_W) / (int64_t)duration_ms);
+        if (mini_x < 0) mini_x = 0;
+        if (mini_x > OVERVIEW_MINI_CV_W - 1) mini_x = OVERVIEW_MINI_CV_W - 1;
+        lv_obj_set_pos(mc, mini_x, 0);
+        lv_obj_set_style_bg_color(mc, lv_color_hex(cue_hex_colors[i]), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(mc, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_remove_flag(mc, LV_OBJ_FLAG_HIDDEN);
     }
+
+    /* Force the main strip to re-render so newly-loaded cues appear immediately
+     * (the source/window/meta key may be unchanged when cues arrive). */
+#ifndef WIN32
+    ui_overview_wave_cache_reset(&s_overview_wave_cache[deck_idx]);
+    ui_overview_arm_all_wave_reblits();
+    panel->last_wave_center_ms = UINT32_MAX;
+    panel->last_wave_window_ms = 0;
+#else
+    (void)panel;
+#endif
 }
 
 
@@ -1646,40 +1665,19 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     if (panel->mini_playhead) {
         ui_obj_set_x_if_changed(panel->mini_playhead, mini_x);
     }
-    if (mini_x == panel->last_mini_fill_x) {
-        return;
-    }
 
-    uint8_t *mini_buf = panel->mini_wave_buf + 256 * sizeof(lv_color32_t);
-    const int MW = OVERVIEW_MINI_CV_W;
-    const int MH = OVERVIEW_MINI_CV_H;
-    const int MS = panel->mini_wave_stride_px;
-    int mx0 = 0;
-    int mx1 = MW;
-    uint8_t mini_color = 1;
-    if (panel->last_mini_fill_x >= 0 && panel->last_mini_fill_x <= MW) {
-        if (mini_x > panel->last_mini_fill_x) {
-            mx0 = panel->last_mini_fill_x;
-            mx1 = mini_x;
-            mini_color = 2;
+    /* Translucent "played" highlight over [0, playhead] on the full-track mini
+     * overview. Uniform over the multi-colour waveform (unlike the old per-pixel
+     * recolour) and drawn under the cue lines + playhead. */
+    if (panel->mini_played && mini_x != panel->last_mini_played_w) {
+        if (mini_x > 0) {
+            lv_obj_set_size(panel->mini_played, mini_x, OVERVIEW_MINI_CV_H);
+            lv_obj_remove_flag(panel->mini_played, LV_OBJ_FLAG_HIDDEN);
         } else {
-            mx0 = mini_x;
-            mx1 = panel->last_mini_fill_x;
-            mini_color = 1;
+            lv_obj_add_flag(panel->mini_played, LV_OBJ_FLAG_HIDDEN);
         }
+        panel->last_mini_played_w = mini_x;
     }
-
-    for (int x = mx0; x < mx1; x++) {
-        uint8_t col = (panel->last_mini_fill_x < 0) ? ((x < mini_x) ? 2 : 1) : mini_color;
-        for (int y = 0; y < MH; y++) {
-            uint8_t val = mini_buf[y * MS + x];
-            if ((val == 1 || val == 2) && val != col) {
-                mini_buf[y * MS + x] = col;
-            }
-        }
-    }
-    panel->last_mini_fill_x = mini_x;
-    ui_overview_invalidate_mini_wave_range(panel, mx0, mx1);
 }
 
 #ifndef WIN32
