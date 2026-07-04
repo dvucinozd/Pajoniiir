@@ -239,6 +239,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
             "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
         )
     },
@@ -261,6 +262,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",

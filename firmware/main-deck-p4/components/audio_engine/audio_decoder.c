@@ -13,8 +13,9 @@ esp_err_t audio_decoder_open(audio_decoder_t *dec, const char *path)
     switch (format) {
     case AUDIO_FORMAT_WAV:
         return audio_wav_decoder_open(dec, path);
-    case AUDIO_FORMAT_MP3:
     case AUDIO_FORMAT_FLAC:
+        return audio_flac_decoder_open(dec, path);
+    case AUDIO_FORMAT_MP3:
         return ESP_ERR_NOT_SUPPORTED;
     case AUDIO_FORMAT_UNKNOWN:
     default:

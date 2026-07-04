@@ -71,7 +71,7 @@ static const char *TAG = "audio";
 
 #define AE_SDL 0
 
-/* Firmware (ESP32-P4): real-time I2S output through the ES8311 codec */
+/* Firmware (ESP32-P4): real-time I2S output through the PCM5102A MAIN out */
 #if !AE_PC
 #   define AE_FW 1
 #   include "freertos/FreeRTOS.h"
@@ -84,6 +84,8 @@ static const char *TAG = "audio";
 #   include "bsp_jc4880.h"
 #   include "esp_codec_dev.h"
 #   include "driver/i2s_common.h"
+/* Declarations only — DR_FLAC_IMPLEMENTATION lives in audio_flac_decoder.c. */
+#   include "dr_flac.h"
 #else
 #   define AE_FW 0
 #endif
@@ -151,6 +153,11 @@ typedef struct {
     uint16_t       wav_block_align;
     uint64_t       wav_total_frames;
     uint64_t       wav_current_frame;
+
+    /* Firmware FLAC decode over the PSRAM preloaded buffer (dr_flac).
+     * void* to keep dr_flac.h out of the struct definition; cast in ae_flac_*. */
+    void          *flac;
+    bool           flac_ready;
 
     /* PVBR seek table — 400 file-byte offsets (from ANLZ0000.DAT) */
     uint32_t pvbr[AUDIO_PVBR_LEN];
@@ -580,6 +587,118 @@ static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
     return (int)frames;
 }
 
+#if AE_FW
+/* ── Firmware FLAC decode over the PSRAM preload buffer (dr_flac) ──────────── *
+ *
+ * Unlike MP3/WAV the FLAC decoder needs the whole file resident (dr_flac reads
+ * STREAMINFO and seeks within the stream), so ae_flac_init_from_memory is
+ * called only after the loader signals load_done; it decodes directly from the
+ * in-PSRAM buffer with drflac_open_memory (never touches USB during playback).
+ */
+static void *ae_flac_psram_malloc(size_t sz, void *ud)
+{
+    (void)ud;
+    return heap_caps_malloc(sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+static void *ae_flac_psram_realloc(void *p, size_t sz, void *ud)
+{
+    (void)ud;
+    return heap_caps_realloc(p, sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+
+static void ae_flac_psram_free(void *p, void *ud)
+{
+    (void)ud;
+    heap_caps_free(p);
+}
+
+static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
+{
+    if (!eng || !eng->file_buf || eng->file_size == 0u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    drflac_allocation_callbacks cb = {
+        .pUserData = NULL,
+        .onMalloc = ae_flac_psram_malloc,
+        .onRealloc = ae_flac_psram_realloc,
+        .onFree = ae_flac_psram_free,
+    };
+    drflac *flac = drflac_open_memory(eng->file_buf, eng->file_size, &cb);
+    if (!flac) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (flac->channels != 1u && flac->channels != 2u) {
+        drflac_close(flac);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    eng->flac = flac;
+    eng->flac_ready = true;
+    eng->format = AUDIO_FORMAT_FLAC;
+    eng->sample_rate = flac->sampleRate;
+    eng->channels = (int)flac->channels;
+    if (eng->duration_ms == 0u && flac->sampleRate > 0u) {
+        eng->duration_ms = (uint32_t)((flac->totalPCMFrameCount * 1000ull) /
+                                      (uint64_t)flac->sampleRate);
+    }
+    eng->eof = (flac->totalPCMFrameCount == 0u);
+    ESP_LOGI(TAG, "FLAC: %u Hz, %u ch, %llu frames",
+             (unsigned)flac->sampleRate,
+             (unsigned)flac->channels,
+             (unsigned long long)flac->totalPCMFrameCount);
+    return ESP_OK;
+}
+
+static void ae_flac_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
+{
+    if (!eng || !eng->flac_ready || !eng->flac || eng->sample_rate == 0u) {
+        return;
+    }
+    drflac *flac = (drflac *)eng->flac;
+    uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
+    if (frame > flac->totalPCMFrameCount) {
+        frame = flac->totalPCMFrameCount;
+    }
+    (void)drflac_seek_to_pcm_frame(flac, (drflac_uint64)frame);
+    eng->eof = (frame >= flac->totalPCMFrameCount);
+}
+
+static int ae_flac_decode_one_frame(audio_engine_state_t *eng,
+                                    int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
+{
+    if (!eng || !eng->flac_ready || !eng->flac || eng->eof) {
+        return 0;
+    }
+    drflac *flac = (drflac *)eng->flac;
+    const uint8_t channels = (uint8_t)eng->channels;
+
+    /* dr_flac interleaves native channels; decode into a scratch and pack to
+     * stereo. MINIMP3_MAX_SAMPLES_PER_FRAME frames per call keeps the ring fed
+     * at the same cadence as the MP3/WAV paths. */
+    int16_t scratch[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+    drflac_uint64 got = drflac_read_pcm_frames_s16(flac,
+                                                   MINIMP3_MAX_SAMPLES_PER_FRAME,
+                                                   scratch);
+    if (got == 0u) {
+        eng->eof = true;
+        return 0;
+    }
+    for (size_t i = 0; i < (size_t)got; ++i) {
+        if (channels == 1u) {
+            int16_t s = scratch[i];
+            out_pcm[i * 2u + 0u] = s;
+            out_pcm[i * 2u + 1u] = s;
+        } else {
+            out_pcm[i * 2u + 0u] = scratch[i * channels + 0u];
+            out_pcm[i * 2u + 1u] = scratch[i * channels + 1u];
+        }
+    }
+    return (int)got;
+}
+#endif /* AE_FW */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Internal helpers
  * ═════════════════════════════════════════════════════════════════════════ */
@@ -622,6 +741,11 @@ static int decode_one_frame(
     if (eng->format == AUDIO_FORMAT_WAV) {
         return ae_wav_decode_one_frame(eng, out_pcm);
     }
+#if AE_FW
+    if (eng->format == AUDIO_FORMAT_FLAC) {
+        return ae_flac_decode_one_frame(eng, out_pcm);
+    }
+#endif
 
     if (eng->file_buf) {
         size_t available = eng->file_size;
@@ -1197,8 +1321,8 @@ static void ae_loader_task(void *arg)
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
         ae_diag_log_memory("preload-done", ctx->deck);
-        if (eng->format != AUDIO_FORMAT_WAV) {
-            build_seek_table(eng);    /* full file in PSRAM -> frame-accurate IFI seeks */
+        if (eng->format != AUDIO_FORMAT_WAV && eng->format != AUDIO_FORMAT_FLAC) {
+            build_seek_table(eng);    /* MP3 only: WAV/FLAC seek by frame index */
         }
         fw->load_done = true;
         eng->load_progress = 100;
@@ -1238,18 +1362,22 @@ static void ae_decode_task(void *arg)
     }
     if (!runtime->run) goto cleanup;
 
-    if (eng->format == AUDIO_FORMAT_WAV) {
+    if (eng->format == AUDIO_FORMAT_WAV || eng->format == AUDIO_FORMAT_FLAC) {
+        /* WAV and FLAC both decode from the fully-loaded PSRAM buffer. */
+        const bool is_wav = (eng->format == AUDIO_FORMAT_WAV);
         while (runtime->run && !fw->load_done) {
             vTaskDelay(pdMS_TO_TICKS(2));
         }
         if (!runtime->run) goto cleanup;
         AE_LOCK();
-        esp_err_t wav_rc = ae_wav_init_from_memory(eng);
+        esp_err_t init_rc = is_wav ? ae_wav_init_from_memory(eng)
+                                   : ae_flac_init_from_memory(eng);
         AE_UNLOCK();
-        if (wav_rc != ESP_OK) {
-            ESP_LOGE(TAG, "WAV parse failed: %d", (int)wav_rc);
-            eng->last_error = wav_rc;
-            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "WAV ERR");
+        if (init_rc != ESP_OK) {
+            ESP_LOGE(TAG, "%s parse failed: %d", is_wav ? "WAV" : "FLAC", (int)init_rc);
+            eng->last_error = init_rc;
+            snprintf(eng->last_error_text, sizeof(eng->last_error_text),
+                     "%s", is_wav ? "WAV ERR" : "FLAC ERR");
             goto cleanup;
         }
     } else {
@@ -1315,6 +1443,8 @@ static void ae_decode_task(void *arg)
                 uint32_t target_ms = eng->seek_target_ms;
                 if (eng->format == AUDIO_FORMAT_WAV) {
                     ae_wav_seek_to_ms(eng, target_ms);
+                } else if (eng->format == AUDIO_FORMAT_FLAC) {
+                    ae_flac_seek_to_ms(eng, target_ms);
                 } else if (eng->seek_table) {
                     seek_index(eng, target_ms);
                 } else if (eng->has_pvbr) {
@@ -1329,7 +1459,7 @@ static void ae_decode_task(void *arg)
                     eng->output_frames_since_seek = 0u;
                 }
                 eng->eof               = false;
-                if (eng->format != AUDIO_FORMAT_WAV) {
+                if (eng->format != AUDIO_FORMAT_WAV && eng->format != AUDIO_FORMAT_FLAC) {
                     mp3dec_init(&eng->dec);
                 }
 
@@ -1344,8 +1474,10 @@ static void ae_decode_task(void *arg)
             AE_UNLOCK();
         }
 
-        /* Gate: never decode past what the loader has fetched into PSRAM. */
+        /* Gate: never decode past what the loader has fetched into PSRAM.
+         * WAV and FLAC only start after load_done, so the gate is MP3-only. */
         if (eng->format != AUDIO_FORMAT_WAV &&
+            eng->format != AUDIO_FORMAT_FLAC &&
             !fw->load_done &&
             eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -1807,13 +1939,8 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
 #if AE_FW
     audio_format_t detected_format = audio_format_detect_path(mp3_path);
-    if (detected_format == AUDIO_FORMAT_FLAC) {
-        eng->last_error = ESP_ERR_NOT_SUPPORTED;
-        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "UNSUPPORTED FORMAT");
-        eng->loading = false;
-        eng->load_progress = 100;
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    /* MP3, WAV and FLAC all preload into PSRAM and decode from the buffer;
+     * unknown extensions fall back to MP3 (minimp3 resyncs on the first frame). */
     eng->format = (detected_format == AUDIO_FORMAT_UNKNOWN) ? AUDIO_FORMAT_MP3 : detected_format;
     audio_fw_preload_t *fw = &s_fw_preloads[deck];
     audio_fw_preload_set_path(fw, mp3_path);
@@ -1835,7 +1962,9 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     fseek(fp, 0, SEEK_SET);
     eng->file_size = pc_file_size > 0 ? (size_t)pc_file_size : 0u;
     eng->format = detected_format;
-    if (detected_format == AUDIO_FORMAT_WAV) {
+    if (detected_format == AUDIO_FORMAT_WAV || detected_format == AUDIO_FORMAT_FLAC) {
+        /* WAV and FLAC both decode through the audio_decoder abstraction on the
+         * PC/simulator build (MP3 stays on minimp3). */
         fclose(fp);
         eng->fp = NULL;
         esp_err_t dec_rc = audio_decoder_open(&eng->decoder, mp3_path);
@@ -1853,21 +1982,13 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
             duration_ms = (uint32_t)((eng->decoder.info.total_frames * 1000ull) /
                                      (uint64_t)eng->sample_rate);
         }
-    } else if (detected_format == AUDIO_FORMAT_FLAC) {
-        fclose(fp);
-        eng->fp = NULL;
-        eng->last_error = ESP_ERR_NOT_SUPPORTED;
-        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "UNSUPPORTED FORMAT");
-        eng->loading = false;
-        eng->load_progress = 100;
-        return ESP_ERR_NOT_SUPPORTED;
     } else {
         eng->fp = fp;
     }
 #endif
 
     eng->duration_ms = duration_ms;
-    if (eng->format != AUDIO_FORMAT_WAV) {
+    if (eng->format == AUDIO_FORMAT_MP3 || eng->format == AUDIO_FORMAT_UNKNOWN) {
         eng->sample_rate = 0u;   /* latched on first decoded frame */
         eng->channels    = 2;
     }
@@ -2096,6 +2217,13 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
         audio_decoder_close(&eng->decoder);
         eng->decoder_open = false;
     }
+#if AE_FW
+    if (eng->flac) {
+        drflac_close((drflac *)eng->flac);
+        eng->flac = NULL;
+    }
+    eng->flac_ready = false;
+#endif
     eng->file_buf  = NULL;
     eng->file_size = 0;
     eng->file_pos  = 0;

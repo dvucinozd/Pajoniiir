@@ -30,7 +30,7 @@ audio output path remain pending.
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; `ui_trigger_library_refresh()` |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
-| `audio_engine` | ✅ **RUNNING ON HW** | minimp3 → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload (direct buffer, no fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload (direct buffer, no fmemopen); pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; SDL2/WAV on PC |
 
 ---
 
@@ -358,7 +358,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~S3 DDJ-FLX4 raw MIDI capture~~ — FLX4 enumerates on hardware; translator maps the MVP + extended controls to control-link frames
 - **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — mapped; full hardware pass pending
 - **Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)
-- **WAV/FLAC decode** — planned via a decoder-abstraction layer (see `docs/superpowers/plans/2026-07-03-wav-flac-decoder-support.md`)
+- ✅ ~~WAV/FLAC decode~~ — decoder-abstraction layer (`audio_decoder`/`audio_format`); WAV inline + FLAC via dr_flac over the PSRAM preload; MP3 stays on minimp3
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
 - ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified

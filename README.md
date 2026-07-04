@@ -115,6 +115,7 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
 
 ### Implemented P4 Features (Audio & UI)
 - **Audio Engine & Mixer**:
+  - MP3 (minimp3), WAV, and FLAC (dr_flac) playback through a decoder-abstraction layer; all decode from the PSRAM preload buffer.
   - Two independent deck states with mixed 44.1/48 kHz playback.
   - Per-deck source/output sample-rate compensation in the output mixer.
   - PCM5102A MAIN OUT support (verified via both RCA and 3.5 mm jack).

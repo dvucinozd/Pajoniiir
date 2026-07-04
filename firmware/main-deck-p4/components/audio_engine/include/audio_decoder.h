@@ -55,3 +55,4 @@ esp_err_t audio_decoder_seek_frame(audio_decoder_t *dec, uint64_t frame_index);
 void audio_decoder_close(audio_decoder_t *dec);
 
 esp_err_t audio_wav_decoder_open(audio_decoder_t *dec, const char *path);
+esp_err_t audio_flac_decoder_open(audio_decoder_t *dec, const char *path);
