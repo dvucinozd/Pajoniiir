@@ -4,7 +4,10 @@
 #include <stdint.h>
 
 #if defined(MEDIA_IO_GATE_STANDALONE_TEST)
+#ifndef ESP_ERR_T_DEFINED
 typedef int esp_err_t;
+#define ESP_ERR_T_DEFINED
+#endif
 #define ESP_OK 0
 #define ESP_FAIL -1
 #else

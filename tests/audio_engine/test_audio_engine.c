@@ -72,6 +72,71 @@ static int wav_is_valid(const char *path, uint32_t *out_sample_rate,
     return 1;
 }
 
+static int wav_header_fields(const uint8_t hdr[44], uint16_t *out_channels,
+                             uint32_t *out_sample_rate, uint32_t *out_pcm_bytes)
+{
+    if (memcmp(hdr,      "RIFF", 4) != 0) return 0;
+    if (memcmp(hdr + 8,  "WAVE", 4) != 0) return 0;
+    if (memcmp(hdr + 12, "fmt ", 4) != 0) return 0;
+    if (memcmp(hdr + 36, "data", 4) != 0) return 0;
+
+    uint16_t audio_fmt;
+    memcpy(&audio_fmt, hdr + 20, 2);
+    if (audio_fmt != 1) return 0;
+
+    if (out_channels)    memcpy(out_channels,    hdr + 22, 2);
+    if (out_sample_rate) memcpy(out_sample_rate, hdr + 24, 4);
+    if (out_pcm_bytes)   memcpy(out_pcm_bytes,   hdr + 40, 4);
+    return 1;
+}
+
+static void wr_u16(FILE *fp, uint16_t v)
+{
+    fputc((int)(v & 0xffu), fp);
+    fputc((int)((v >> 8) & 0xffu), fp);
+}
+
+static void wr_u32(FILE *fp, uint32_t v)
+{
+    wr_u16(fp, (uint16_t)(v & 0xffffu));
+    wr_u16(fp, (uint16_t)((v >> 16) & 0xffffu));
+}
+
+static int write_test_wav(const char *path)
+{
+    static const int16_t samples[] = {
+        1000, -1000,
+        2000, -2000,
+        3000, -3000,
+        4000, -4000,
+    };
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return 0;
+    const uint16_t channels = 2;
+    const uint16_t bits_per_sample = 16;
+    const uint16_t block_align = channels * (bits_per_sample / 8u);
+    const uint32_t sample_rate = 44100;
+    const uint32_t frame_count = 4;
+    const uint32_t data_bytes = frame_count * block_align;
+
+    fwrite("RIFF", 1, 4, fp);
+    wr_u32(fp, 36u + data_bytes);
+    fwrite("WAVE", 1, 4, fp);
+    fwrite("fmt ", 1, 4, fp);
+    wr_u32(fp, 16);
+    wr_u16(fp, 1);
+    wr_u16(fp, channels);
+    wr_u32(fp, sample_rate);
+    wr_u32(fp, sample_rate * block_align);
+    wr_u16(fp, block_align);
+    wr_u16(fp, bits_per_sample);
+    fwrite("data", 1, 4, fp);
+    wr_u32(fp, data_bytes);
+    fwrite(samples, sizeof(samples), 1, fp);
+    fclose(fp);
+    return 1;
+}
+
 /* ── Test 1: init / uninitialised-state guards ───────────────────────────── */
 static void test_init(void)
 {
@@ -451,6 +516,81 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     remove(path);
 }
 
+static void test_wav_load_populates_deck_metadata(void)
+{
+    puts("\n[Test 4d] WAV load metadata");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets WAV load state");
+
+    const char *path = "dummy_engine_audio.wav";
+    EXPECT(write_test_wav(path), "dummy WAV file created");
+    EXPECT(audio_engine_deck_load(0, path, NULL, 0) == ESP_OK,
+           "deck 0 WAV load returns ESP_OK");
+
+    audio_engine_diagnostics_snapshot_t diag;
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.deck_sample_rate[0] == 44100, "WAV load captures sample rate");
+    EXPECT(diag.deck_channels[0] == 2, "WAV load captures channel count");
+    EXPECT(diag.deck_file_bytes[0] > 44, "WAV load captures file size");
+    EXPECT(diag.deck_load_progress[0] == 100, "WAV load completes synchronously in PC test");
+
+    audio_engine_deck_status_t status;
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK, "WAV deck status is readable");
+    EXPECT(status.loaded, "WAV deck status reports loaded");
+    EXPECT(status.state == AE_READY, "WAV deck status is ready after load");
+
+    audio_engine_deck_stop(0);
+    remove(path);
+}
+
+static void test_wav_decode_to_wav_preserves_pcm(void)
+{
+    puts("\n[Test 4e] WAV decode path");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets WAV decode state");
+
+    const char *path = "dummy_engine_audio.wav";
+    const char *out_path = "decoded_engine_audio.wav";
+    static const int16_t expected_samples[] = {
+        1000, -1000,
+        2000, -2000,
+        3000, -3000,
+        4000, -4000,
+    };
+
+    EXPECT(write_test_wav(path), "dummy WAV file created for decode");
+    EXPECT(audio_engine_deck_load(0, path, NULL, 0) == ESP_OK,
+           "deck 0 WAV load returns ESP_OK for decode");
+    EXPECT(audio_engine_decode_to_wav(out_path, 0) == ESP_OK,
+           "WAV deck decodes to WAV output");
+
+    FILE *fp = fopen(out_path, "rb");
+    EXPECT(fp != NULL, "decoded WAV output exists");
+    if (fp) {
+        uint8_t hdr[44];
+        EXPECT(fread(hdr, 1, sizeof(hdr), fp) == sizeof(hdr),
+               "decoded WAV header is readable");
+        uint16_t channels = 0;
+        uint32_t sample_rate = 0;
+        uint32_t pcm_bytes = 0;
+        EXPECT(wav_header_fields(hdr, &channels, &sample_rate, &pcm_bytes),
+               "decoded WAV header is valid PCM");
+        EXPECT(channels == 2, "decoded WAV output is stereo");
+        EXPECT(sample_rate == 44100, "decoded WAV output keeps sample rate");
+        EXPECT(pcm_bytes == sizeof(expected_samples),
+               "decoded WAV output has expected PCM length");
+
+        int16_t samples[sizeof(expected_samples) / sizeof(expected_samples[0])] = { 0 };
+        EXPECT(fread(samples, sizeof(samples), 1, fp) == 1,
+               "decoded WAV PCM payload is readable");
+        EXPECT(memcmp(samples, expected_samples, sizeof(expected_samples)) == 0,
+               "decoded WAV PCM payload matches input");
+        fclose(fp);
+    }
+
+    audio_engine_deck_stop(0);
+    remove(path);
+    remove(out_path);
+}
+
 /* ── Test 5: per-deck transition API guards ─────────────────────────────── */
 static void test_pfl_state_api(void)
 {
@@ -808,6 +948,8 @@ int main(int argc, char *argv[])
     test_mixer_state_api();
     test_deck_peak_meter_api_returns_and_resets_peak();
     test_diagnostics_snapshot_reports_audio_health_state();
+    test_wav_load_populates_deck_metadata();
+    test_wav_decode_to_wav_preserves_pcm();
     test_pfl_state_api();
     test_cue_mode_api();
     test_headphone_mix_api();
