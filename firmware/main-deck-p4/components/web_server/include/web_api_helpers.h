@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 size_t web_api_json_escape(const char *src, char *dst, size_t dst_size);
 int web_api_format_beat_fx_json(char *dst,
@@ -19,3 +20,5 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                                           bool enabled2,
                                           unsigned delay_ms1,
                                           unsigned delay_ms2);
+int web_api_alloc_printf(char **out, const char *fmt, ...);
+uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known);

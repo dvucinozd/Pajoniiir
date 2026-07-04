@@ -30,6 +30,21 @@ static p4_audio_link_stats_t s_stats;
 static uint8_t s_deframe_buf[P4_AUDIO_LINK_DEFRAME_BUF_BYTES];
 static size_t s_deframe_len;
 
+static void stats_add(uint32_t *counter, uint32_t delta)
+{
+    (void)__atomic_fetch_add(counter, delta, __ATOMIC_RELAXED);
+}
+
+static void stats_store(uint32_t *counter, uint32_t value)
+{
+    __atomic_store_n(counter, value, __ATOMIC_RELAXED);
+}
+
+static uint32_t stats_load(const uint32_t *counter)
+{
+    return __atomic_load_n(counter, __ATOMIC_RELAXED);
+}
+
 static uint32_t p4_audio_link_crc32(const uint8_t *data, size_t len)
 {
     uint32_t crc = 0xFFFFFFFFu;
@@ -50,7 +65,7 @@ static void p4_audio_link_push_frame(int16_t left, int16_t right)
     if (w - r >= P4_AUDIO_LINK_RING_CAPACITY_FRAMES) {
         /* Full: overwrite the oldest slot and let the reader fast-forward its
            own counter past the lapped frames. Never move s_read_count here. */
-        s_stats.overruns++;
+        stats_add(&s_stats.overruns, 1u);
     }
 
     s_ring[w % P4_AUDIO_LINK_RING_CAPACITY_FRAMES].left = left;
@@ -62,7 +77,7 @@ esp_err_t p4_audio_link_init(void)
 {
     memset(s_ring, 0, sizeof(s_ring));
     memset(&s_stats, 0, sizeof(s_stats));
-    s_stats.ring_capacity_frames = P4_AUDIO_LINK_RING_CAPACITY_FRAMES;
+    stats_store(&s_stats.ring_capacity_frames, P4_AUDIO_LINK_RING_CAPACITY_FRAMES);
     __atomic_store_n(&s_write_count, 0u, __ATOMIC_RELEASE);
     __atomic_store_n(&s_read_count, 0u, __ATOMIC_RELEASE);
     s_last_sequence = 0u;
@@ -94,12 +109,12 @@ bool p4_audio_link_receive_block(const uint8_t *block, size_t block_len)
     const uint8_t *payload = block + hdr.header_bytes;
     uint32_t crc = p4_audio_link_crc32(payload, payload_bytes);
     if (crc != hdr.payload_crc32) {
-        s_stats.crc_errors++;
+        stats_add(&s_stats.crc_errors, 1u);
         return false;
     }
 
     if (s_have_sequence && hdr.sequence != s_last_sequence + 1u) {
-        s_stats.sequence_gaps++;
+        stats_add(&s_stats.sequence_gaps, 1u);
     }
     s_have_sequence = true;
     s_last_sequence = hdr.sequence;
@@ -112,8 +127,8 @@ bool p4_audio_link_receive_block(const uint8_t *block, size_t block_len)
         p4_audio_link_push_frame(left, right);
     }
 
-    s_stats.received_blocks++;
-    s_stats.sample_rate = hdr.sample_rate;
+    stats_add(&s_stats.received_blocks, 1u);
+    stats_store(&s_stats.sample_rate, hdr.sample_rate);
     return true;
 }
 
@@ -157,7 +172,7 @@ size_t p4_audio_link_read_frames(int16_t *dst_interleaved_stereo, size_t frames)
         memset(&dst_interleaved_stereo[read_frames * 2u],
                0,
                (frames - read_frames) * 2u * sizeof(int16_t));
-        s_stats.underruns++;
+        stats_add(&s_stats.underruns, 1u);
     }
 
     return read_frames;
@@ -168,9 +183,17 @@ void p4_audio_link_get_stats(p4_audio_link_stats_t *out)
     if (!out) {
         return;
     }
-    s_stats.ring_frames = ring_used_frames();
-    s_stats.ring_capacity_frames = P4_AUDIO_LINK_RING_CAPACITY_FRAMES;
-    *out = s_stats;
+    p4_audio_link_stats_t snapshot = {
+        .received_blocks = stats_load(&s_stats.received_blocks),
+        .sequence_gaps = stats_load(&s_stats.sequence_gaps),
+        .crc_errors = stats_load(&s_stats.crc_errors),
+        .ring_frames = ring_used_frames(),
+        .ring_capacity_frames = P4_AUDIO_LINK_RING_CAPACITY_FRAMES,
+        .underruns = stats_load(&s_stats.underruns),
+        .overruns = stats_load(&s_stats.overruns),
+        .sample_rate = stats_load(&s_stats.sample_rate),
+    };
+    *out = snapshot;
 }
 
 static void deframe_consume(size_t bytes)

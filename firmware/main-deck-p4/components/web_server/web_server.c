@@ -8,10 +8,24 @@
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
+#include <stdlib.h>
 #include <string.h>
 
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
+
+static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *uri)
+{
+    esp_err_t rc = httpd_register_uri_handler(server, uri);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "URI handler registration failed for %s: %s",
+                 uri && uri->uri ? uri->uri : "(null)",
+                 esp_err_to_name(rc));
+        httpd_stop(server);
+        s_web_server = NULL;
+    }
+    return rc;
+}
 
 // Simboli za ugrađene datoteke
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
@@ -148,137 +162,137 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
 
-    char *json = malloc(2048);
-    if (!json) {
+    char *json = NULL;
+    int json_len = web_api_alloc_printf(
+        &json,
+        "{"
+        "\"deck1\":{"
+        "\"title\":\"%s\","
+        "\"artist\":\"%s\","
+        "\"bpm\":%u,"
+        "\"pitch_percent\":%.2f,"
+        "\"raw_pitch\":%d,"
+        "\"position_ms\":%u,"
+        "\"duration_ms\":%u,"
+        "\"playing\":%s,"
+        "\"state_text\":\"%s\""
+        "},"
+        "\"deck2\":{"
+        "\"title\":\"%s\","
+        "\"artist\":\"%s\","
+        "\"bpm\":%u,"
+        "\"pitch_percent\":%.2f,"
+        "\"raw_pitch\":%d,"
+        "\"position_ms\":%u,"
+        "\"duration_ms\":%u,"
+        "\"playing\":%s,"
+        "\"state_text\":\"%s\""
+        "},"
+        "\"mixer\":{"
+        "\"volume1\":%u,"
+        "\"volume2\":%u,"
+        "\"crossfader\":%u,"
+        "\"master_volume\":%u,"
+        "\"headphone_mix\":%u,"
+        "\"pregain1\":%u,"
+        "\"pregain2\":%u,"
+        "\"pregain_gain1\":%.3f,"
+        "\"pregain_gain2\":%.3f,"
+        "\"eq1_low\":%u,"
+        "\"eq1_mid\":%u,"
+        "\"eq1_high\":%u,"
+        "\"eq2_low\":%u,"
+        "\"eq2_mid\":%u,"
+        "\"eq2_high\":%u,"
+        "\"filter1\":%u,"
+        "\"filter2\":%u,"
+        "\"smart_cfx\":%s,"
+        "\"smart_fader\":%s,"
+        "\"pfl1\":%s,"
+        "\"pfl2\":%s"
+        "},"
+        "%s,"
+        "\"diagnostics\":{"
+        "\"output_codec_open\":%s,"
+        "\"output_sample_rate\":%u,"
+        "\"output_late_count\":%u,"
+        "\"output_late_max_us\":%u,"
+        "\"output_late_threshold_us\":%u,"
+        "\"ring_capacity\":%u,"
+        "\"ring_used1\":%u,"
+        "\"ring_used2\":%u,"
+        "\"deck_sample_rate1\":%u,"
+        "\"deck_sample_rate2\":%u,"
+        "\"deck_channels1\":%u,"
+        "\"deck_channels2\":%u,"
+        "\"deck_file_bytes1\":%u,"
+        "\"deck_file_bytes2\":%u,"
+        "\"deck_load_progress1\":%u,"
+        "\"deck_load_progress2\":%u,"
+        "\"deck_active1\":%s,"
+        "\"deck_active2\":%s,"
+        "\"limiter_samples\":%u,"
+        "\"limiter_positive\":%u,"
+        "\"limiter_negative\":%u,"
+        "\"limiter_peak\":%d,"
+        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u},"
+        "%s,"
+        "\"heap_free\":%u,"
+        "\"internal_free\":%u,"
+        "\"psram_free\":%u"
+        "}"
+        "}",
+        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state_text1,
+        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state_text2,
+        mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
+        mixer.master_volume,
+        mixer.headphone_mix,
+        mixer.pregain[0], mixer.pregain[1],
+        (double)mixer.pregain_gain[0], (double)mixer.pregain_gain[1],
+        mixer.eq[0][AUDIO_EQ_BAND_LOW], mixer.eq[0][AUDIO_EQ_BAND_MID], mixer.eq[0][AUDIO_EQ_BAND_HIGH],
+        mixer.eq[1][AUDIO_EQ_BAND_LOW], mixer.eq[1][AUDIO_EQ_BAND_MID], mixer.eq[1][AUDIO_EQ_BAND_HIGH],
+        mixer.filter[0], mixer.filter[1],
+        mixer.smart_cfx_enabled ? "true" : "false",
+        mixer.smart_fader_enabled ? "true" : "false",
+        mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
+        beat_fx_json,
+        diagnostics.output_codec_open ? "true" : "false",
+        (unsigned)diagnostics.output_sample_rate,
+        (unsigned)diagnostics.output_late_count,
+        (unsigned)diagnostics.output_late_max_us,
+        (unsigned)diagnostics.output_late_threshold_us,
+        (unsigned)diagnostics.ring_capacity,
+        (unsigned)diagnostics.ring_used[0],
+        (unsigned)diagnostics.ring_used[1],
+        (unsigned)diagnostics.deck_sample_rate[0],
+        (unsigned)diagnostics.deck_sample_rate[1],
+        (unsigned)diagnostics.deck_channels[0],
+        (unsigned)diagnostics.deck_channels[1],
+        (unsigned)diagnostics.deck_file_bytes[0],
+        (unsigned)diagnostics.deck_file_bytes[1],
+        (unsigned)diagnostics.deck_load_progress[0],
+        (unsigned)diagnostics.deck_load_progress[1],
+        diagnostics.deck_active[0] ? "true" : "false",
+        diagnostics.deck_active[1] ? "true" : "false",
+        (unsigned)diagnostics.limiter.limited_samples,
+        (unsigned)diagnostics.limiter.positive_overloads,
+        (unsigned)diagnostics.limiter.negative_overloads,
+        (int)diagnostics.limiter.peak_input_abs,
+        (unsigned)diagnostics.usb_headphone_submitted_blocks,
+        (unsigned)diagnostics.usb_headphone_dropped_blocks,
+        (unsigned)diagnostics.usb_headphone_submitted_frames,
+        beat_fx_echo_diag_json,
+        (unsigned)diagnostics.heap_free,
+        (unsigned)diagnostics.internal_free,
+        (unsigned)diagnostics.psram_free);
+    if (!json || json_len < 0) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;
     }
 
-    snprintf(json, 2048,
-             "{"
-             "\"deck1\":{"
-             "\"title\":\"%s\","
-             "\"artist\":\"%s\","
-             "\"bpm\":%u,"
-             "\"pitch_percent\":%.2f,"
-             "\"raw_pitch\":%d,"
-             "\"position_ms\":%u,"
-             "\"duration_ms\":%u,"
-             "\"playing\":%s,"
-             "\"state_text\":\"%s\""
-             "},"
-             "\"deck2\":{"
-             "\"title\":\"%s\","
-             "\"artist\":\"%s\","
-             "\"bpm\":%u,"
-             "\"pitch_percent\":%.2f,"
-             "\"raw_pitch\":%d,"
-             "\"position_ms\":%u,"
-             "\"duration_ms\":%u,"
-             "\"playing\":%s,"
-             "\"state_text\":\"%s\""
-             "},"
-             "\"mixer\":{"
-             "\"volume1\":%u,"
-             "\"volume2\":%u,"
-             "\"crossfader\":%u,"
-             "\"master_volume\":%u,"
-             "\"headphone_mix\":%u,"
-             "\"pregain1\":%u,"
-             "\"pregain2\":%u,"
-             "\"pregain_gain1\":%.3f,"
-             "\"pregain_gain2\":%.3f,"
-             "\"eq1_low\":%u,"
-             "\"eq1_mid\":%u,"
-             "\"eq1_high\":%u,"
-             "\"eq2_low\":%u,"
-             "\"eq2_mid\":%u,"
-             "\"eq2_high\":%u,"
-             "\"filter1\":%u,"
-             "\"filter2\":%u,"
-             "\"smart_cfx\":%s,"
-             "\"smart_fader\":%s,"
-             "\"pfl1\":%s,"
-             "\"pfl2\":%s"
-             "},"
-             "%s,"
-             "\"diagnostics\":{"
-             "\"output_codec_open\":%s,"
-             "\"output_sample_rate\":%u,"
-             "\"output_late_count\":%u,"
-             "\"output_late_max_us\":%u,"
-             "\"output_late_threshold_us\":%u,"
-             "\"ring_capacity\":%u,"
-             "\"ring_used1\":%u,"
-             "\"ring_used2\":%u,"
-             "\"deck_sample_rate1\":%u,"
-             "\"deck_sample_rate2\":%u,"
-             "\"deck_channels1\":%u,"
-             "\"deck_channels2\":%u,"
-             "\"deck_file_bytes1\":%u,"
-             "\"deck_file_bytes2\":%u,"
-             "\"deck_load_progress1\":%u,"
-             "\"deck_load_progress2\":%u,"
-             "\"deck_active1\":%s,"
-             "\"deck_active2\":%s,"
-             "\"limiter_samples\":%u,"
-             "\"limiter_positive\":%u,"
-             "\"limiter_negative\":%u,"
-             "\"limiter_peak\":%d,"
-             "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u},"
-             "%s,"
-             "\"heap_free\":%u,"
-             "\"internal_free\":%u,"
-             "\"psram_free\":%u"
-             "}"
-             "}",
-             title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state_text1,
-             title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state_text2,
-             mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
-             mixer.master_volume,
-             mixer.headphone_mix,
-             mixer.pregain[0], mixer.pregain[1],
-             (double)mixer.pregain_gain[0], (double)mixer.pregain_gain[1],
-             mixer.eq[0][AUDIO_EQ_BAND_LOW], mixer.eq[0][AUDIO_EQ_BAND_MID], mixer.eq[0][AUDIO_EQ_BAND_HIGH],
-             mixer.eq[1][AUDIO_EQ_BAND_LOW], mixer.eq[1][AUDIO_EQ_BAND_MID], mixer.eq[1][AUDIO_EQ_BAND_HIGH],
-             mixer.filter[0], mixer.filter[1],
-             mixer.smart_cfx_enabled ? "true" : "false",
-             mixer.smart_fader_enabled ? "true" : "false",
-             mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
-             beat_fx_json,
-             diagnostics.output_codec_open ? "true" : "false",
-             (unsigned)diagnostics.output_sample_rate,
-             (unsigned)diagnostics.output_late_count,
-             (unsigned)diagnostics.output_late_max_us,
-             (unsigned)diagnostics.output_late_threshold_us,
-             (unsigned)diagnostics.ring_capacity,
-             (unsigned)diagnostics.ring_used[0],
-             (unsigned)diagnostics.ring_used[1],
-             (unsigned)diagnostics.deck_sample_rate[0],
-             (unsigned)diagnostics.deck_sample_rate[1],
-             (unsigned)diagnostics.deck_channels[0],
-             (unsigned)diagnostics.deck_channels[1],
-             (unsigned)diagnostics.deck_file_bytes[0],
-             (unsigned)diagnostics.deck_file_bytes[1],
-             (unsigned)diagnostics.deck_load_progress[0],
-             (unsigned)diagnostics.deck_load_progress[1],
-             diagnostics.deck_active[0] ? "true" : "false",
-             diagnostics.deck_active[1] ? "true" : "false",
-             (unsigned)diagnostics.limiter.limited_samples,
-             (unsigned)diagnostics.limiter.positive_overloads,
-             (unsigned)diagnostics.limiter.negative_overloads,
-             (int)diagnostics.limiter.peak_input_abs,
-             (unsigned)diagnostics.usb_headphone_submitted_blocks,
-             (unsigned)diagnostics.usb_headphone_dropped_blocks,
-             (unsigned)diagnostics.usb_headphone_submitted_frames,
-             beat_fx_echo_diag_json,
-             (unsigned)diagnostics.heap_free,
-             (unsigned)diagnostics.internal_free,
-             (unsigned)diagnostics.psram_free);
-
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_send(req, json, strlen(json));
+    httpd_resp_send(req, json, (size_t)json_len);
     free(json);
     return ESP_OK;
 }
@@ -452,8 +466,16 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
     } else if (strcmp(action, "seek") == 0) {
-        /* value = absolute position in milliseconds (from the web progress bar). */
-        uint32_t pos_ms = value < 0 ? 0u : (uint32_t)value;
+        audio_engine_deck_status_t status = {0};
+        if (audio_engine_deck_get_status(deck, &status) != ESP_OK ||
+            !status.loaded ||
+            status.state == AE_ERROR) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Deck not seekable");
+            return ESP_FAIL;
+        }
+        uint32_t duration_ms = 0;
+        ui_get_deck_track_info(deck, NULL, 0, NULL, 0, NULL, &duration_ms);
+        uint32_t pos_ms = web_api_clamp_seek_ms(value, duration_ms, duration_ms > 0u);
         esp_err_t rc = audio_engine_deck_seek(deck, pos_ms);
         if (rc != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Seek failed");
@@ -545,7 +567,8 @@ esp_err_t web_server_start(void)
         .handler = index_html_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &index_uri);
+    rc = register_uri_or_stop(s_web_server, &index_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t index_html_uri = {
         .uri = "/index.html*",
@@ -553,7 +576,8 @@ esp_err_t web_server_start(void)
         .handler = index_html_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &index_html_uri);
+    rc = register_uri_or_stop(s_web_server, &index_html_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t style_uri = {
         .uri = "/style.css*",
@@ -561,7 +585,8 @@ esp_err_t web_server_start(void)
         .handler = style_css_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &style_uri);
+    rc = register_uri_or_stop(s_web_server, &style_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t js_uri = {
         .uri = "/app.js*",
@@ -569,7 +594,8 @@ esp_err_t web_server_start(void)
         .handler = app_js_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &js_uri);
+    rc = register_uri_or_stop(s_web_server, &js_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t status_uri = {
         .uri = "/api/status*",
@@ -577,7 +603,8 @@ esp_err_t web_server_start(void)
         .handler = api_status_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &status_uri);
+    rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t library_uri = {
         .uri = "/api/library*",
@@ -585,7 +612,8 @@ esp_err_t web_server_start(void)
         .handler = api_library_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &library_uri);
+    rc = register_uri_or_stop(s_web_server, &library_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t control_uri = {
         .uri = "/api/control*",
@@ -593,7 +621,8 @@ esp_err_t web_server_start(void)
         .handler = api_control_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &control_uri);
+    rc = register_uri_or_stop(s_web_server, &control_uri);
+    if (rc != ESP_OK) return rc;
 
     httpd_uri_t load_uri = {
         .uri = "/api/load*",
@@ -601,7 +630,8 @@ esp_err_t web_server_start(void)
         .handler = api_load_handler,
         .user_ctx = NULL
     };
-    httpd_register_uri_handler(s_web_server, &load_uri);
+    rc = register_uri_or_stop(s_web_server, &load_uri);
+    if (rc != ESP_OK) return rc;
 
     // Registracija catch-all za preusmjeravanje Captive Portala
     httpd_uri_t catch_all_uri = {
@@ -611,7 +641,8 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     // Zbog poretka pretraživanja registrirat ćemo ga na kraju
-    httpd_register_uri_handler(s_web_server, &catch_all_uri);
+    rc = register_uri_or_stop(s_web_server, &catch_all_uri);
+    if (rc != ESP_OK) return rc;
 
     return ESP_OK;
 }

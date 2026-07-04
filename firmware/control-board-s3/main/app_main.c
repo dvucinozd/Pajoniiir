@@ -116,11 +116,30 @@ static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
         return true;
     }
     if (ev->type == CTRL_TYPE_PITCH) {
-        return ev->id == CTRL_ID_DECK1_TEMPO ||
-               ev->id == CTRL_ID_DECK2_TEMPO ||
-               ev->id == CTRL_ID_CH1_VOLUME ||
-               ev->id == CTRL_ID_CH2_VOLUME ||
-               ev->id == CTRL_ID_CROSSFADER;
+        switch (ev->id) {
+        case CTRL_ID_DECK1_TEMPO:
+        case CTRL_ID_DECK2_TEMPO:
+        case CTRL_ID_CH1_VOLUME:
+        case CTRL_ID_CH2_VOLUME:
+        case CTRL_ID_CROSSFADER:
+        case CTRL_ID_CH1_TRIM:
+        case CTRL_ID_CH2_TRIM:
+        case CTRL_ID_CH1_EQ_HIGH:
+        case CTRL_ID_CH2_EQ_HIGH:
+        case CTRL_ID_CH1_EQ_MID:
+        case CTRL_ID_CH2_EQ_MID:
+        case CTRL_ID_CH1_EQ_LOW:
+        case CTRL_ID_CH2_EQ_LOW:
+        case CTRL_ID_CH1_FILTER:
+        case CTRL_ID_CH2_FILTER:
+        case CTRL_ID_MASTER_VOLUME:
+        case CTRL_ID_HEADPHONE_MIX:
+        case CTRL_ID_HEADPHONE_LEVEL:
+        case CTRL_ID_BEAT_FX_DEPTH:
+            return true;
+        default:
+            return false;
+        }
     }
     return false;
 }

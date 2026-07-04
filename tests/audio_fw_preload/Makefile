@@ -3,7 +3,8 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -I../../firmware/main-deck-p4/components/audio_engine/include
 
 SRCS    = test_audio_fw_preload.c \
-          ../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c
+          ../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c \
+          ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c
 
 TARGET  = test_audio_fw_preload
 

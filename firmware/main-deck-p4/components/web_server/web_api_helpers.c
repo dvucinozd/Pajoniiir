@@ -1,6 +1,8 @@
 #include "web_api_helpers.h"
 
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Appends a full escape sequence or nothing: a truncated two-byte escape
@@ -100,4 +102,52 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                     enabled2 ? "true" : "false",
                     delay_ms1,
                     delay_ms2);
+}
+
+int web_api_alloc_printf(char **out, const char *fmt, ...)
+{
+    if (!out || !fmt) {
+        return -1;
+    }
+    *out = NULL;
+
+    va_list args;
+    va_start(args, fmt);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, fmt, args);
+    va_end(args);
+    if (needed < 0) {
+        va_end(args_copy);
+        return -1;
+    }
+
+    char *buf = malloc((size_t)needed + 1u);
+    if (!buf) {
+        va_end(args_copy);
+        return -1;
+    }
+
+    int written = vsnprintf(buf, (size_t)needed + 1u, fmt, args_copy);
+    va_end(args_copy);
+    if (written < 0 || written > needed) {
+        free(buf);
+        return -1;
+    }
+
+    *out = buf;
+    return written;
+}
+
+uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known)
+{
+    if (value <= 0) {
+        return 0u;
+    }
+
+    uint32_t pos_ms = (uint32_t)value;
+    if (duration_known && duration_ms > 0u && pos_ms > duration_ms) {
+        return duration_ms;
+    }
+    return pos_ms;
 }

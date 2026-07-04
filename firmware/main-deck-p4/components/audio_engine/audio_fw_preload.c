@@ -25,6 +25,16 @@ void audio_fw_preload_set_path(audio_fw_preload_t *slot, const char *path)
     snprintf(slot->path, sizeof(slot->path), "%s", path ? path : "");
 }
 
+void audio_fw_preload_abort_load(audio_fw_preload_t *slot, audio_fw_runtime_t *runtime)
+{
+    if (slot) {
+        slot->load_done = true;
+    }
+    if (runtime) {
+        runtime->run = false;
+    }
+}
+
 size_t audio_fw_preload_chunk_bytes(size_t remaining_bytes, bool output_active)
 {
     size_t cap = output_active
