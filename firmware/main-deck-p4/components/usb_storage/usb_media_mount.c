@@ -82,6 +82,13 @@ static bool logical_range_is_valid(const usb_media_mount_t *mount,
     return true;
 }
 
+/* Split multi-sector transfers into bounded SCSI READ10/WRITE10 commands.
+ * exFAT volumes use large clusters (e.g. 128 KB = 256 sectors), so FatFs
+ * issues bigger disk_read()s than FAT32 (32 KB clusters); a single large
+ * scsi_cmd_read10 can exceed the MSC bulk transfer limit and fail, which
+ * stalled large-file playback on exFAT while FAT32 (smaller runs) worked. */
+#define USB_MEDIA_MAX_XFER_SECTORS 64u
+
 static DRESULT translated_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
 {
     if (pdrv >= USB_MEDIA_MAX_MOUNTS || s_mounts[pdrv] == NULL || buff == NULL) {
@@ -91,15 +98,31 @@ static DRESULT translated_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
     uint32_t physical_lba;
     usb_media_mount_t *mount = s_mounts[pdrv];
     if (!logical_range_is_valid(mount, sector, count, &physical_lba)) {
+        ESP_LOGE(TAG, "read range reject: sector=%u count=%u part_sectors=%u",
+                 (unsigned)sector, (unsigned)count, (unsigned)mount->sector_count);
         return RES_PARERR;
     }
 
-    esp_err_t rc = scsi_cmd_read10(mount->device,
-                                   buff,
-                                   physical_lba,
-                                   count,
-                                   mount->sector_size);
-    return rc == ESP_OK ? RES_OK : RES_ERROR;
+    UINT done = 0;
+    while (done < count) {
+        UINT batch = count - done;
+        if (batch > USB_MEDIA_MAX_XFER_SECTORS) {
+            batch = USB_MEDIA_MAX_XFER_SECTORS;
+        }
+        esp_err_t rc = scsi_cmd_read10(mount->device,
+                                       buff + (size_t)done * mount->sector_size,
+                                       physical_lba + done,
+                                       batch,
+                                       mount->sector_size);
+        if (rc != ESP_OK) {
+            ESP_LOGE(TAG, "scsi read10 failed: lba=%u count=%u ss=%u rc=%s",
+                     (unsigned)(physical_lba + done), (unsigned)batch,
+                     (unsigned)mount->sector_size, esp_err_to_name(rc));
+            return RES_ERROR;
+        }
+        done += batch;
+    }
+    return RES_OK;
 }
 
 static DRESULT translated_write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count)
@@ -114,12 +137,23 @@ static DRESULT translated_write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT 
         return RES_PARERR;
     }
 
-    esp_err_t rc = scsi_cmd_write10(mount->device,
-                                    buff,
-                                    physical_lba,
-                                    count,
-                                    mount->sector_size);
-    return rc == ESP_OK ? RES_OK : RES_ERROR;
+    UINT done = 0;
+    while (done < count) {
+        UINT batch = count - done;
+        if (batch > USB_MEDIA_MAX_XFER_SECTORS) {
+            batch = USB_MEDIA_MAX_XFER_SECTORS;
+        }
+        esp_err_t rc = scsi_cmd_write10(mount->device,
+                                        buff + (size_t)done * mount->sector_size,
+                                        physical_lba + done,
+                                        batch,
+                                        mount->sector_size);
+        if (rc != ESP_OK) {
+            return RES_ERROR;
+        }
+        done += batch;
+    }
+    return RES_OK;
 }
 
 static DRESULT translated_ioctl(BYTE pdrv, BYTE cmd, void *buff)
