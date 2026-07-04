@@ -54,6 +54,9 @@ typedef struct {
     const uint16_t *palette;
     size_t palette_count;
     bool regular_beat_cap_bottom;
+    bool loop_active;
+    uint32_t loop_start_ms;
+    uint32_t loop_end_ms;
     struct {
         uint32_t update_count[UI_OVERVIEW_WAVE_CACHE_KIND_COUNT];
         uint32_t total_columns_rendered;
@@ -102,6 +105,13 @@ bool ui_overview_wave_cache_bind_strip(ui_overview_wave_cache_t *cache,
 
 void ui_overview_wave_cache_set_regular_beat_cap_bottom(ui_overview_wave_cache_t *cache,
                                                         bool enabled);
+
+/* Set the active-loop region drawn as an amber highlight on the main waveform.
+ * A change to the loop invalidates the cache so the strip is fully re-rendered. */
+void ui_overview_wave_cache_set_loop(ui_overview_wave_cache_t *cache,
+                                     bool active,
+                                     uint32_t start_ms,
+                                     uint32_t end_ms);
 
 bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
                                    const ui_waveform_source_t *source,

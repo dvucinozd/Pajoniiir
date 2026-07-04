@@ -234,6 +234,7 @@ static const uint16_t s_overview_wave_rgb565_palette[] = {
     UI_RGB565(0xB5, 0x7C, 0xFF),  /* 7 purple quiet detail */
     UI_RGB565(0x5A, 0x5D, 0x64),  /* 8 grey */
     UI_RGB565(0xFF, 0x17, 0x44),  /* 9 red */
+    UI_RGB565(0x6B, 0x3F, 0x00),  /* 10 active-loop background (dim amber) */
 };
 static uint16_t *s_overview_wave_overlay_rgb565[DECK_CORE_DECK_COUNT] = { NULL };
 static size_t    s_overview_wave_overlay_bytes = 0;
@@ -1160,7 +1161,10 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
                                              uint32_t duration_ms,
                                              const anlz_metadata_t *meta,
                                              uint32_t center_ms,
-                                             uint32_t window_ms)
+                                             uint32_t window_ms,
+                                             bool loop_active,
+                                             uint32_t loop_start_ms,
+                                             uint32_t loop_end_ms)
 {
     if (!panel) {
         return;
@@ -1177,6 +1181,10 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
         ui_overview_wave_overlay_ensure_buffer(idx)) {
         uint16_t *overlay = s_overview_wave_overlay_rgb565[idx];
         ui_overview_wave_cache_report_t cache_report = {0};
+        /* Feed the resolved loop region (active loop, or an armed loop-in growing
+         * to the playhead) so the cache tints it; a change flips it invalid. */
+        ui_overview_wave_cache_set_loop(&s_overview_wave_cache[idx], loop_active,
+                                        loop_start_ms, loop_end_ms);
         int64_t render_start_us = ui_diagnostics_enabled() ? esp_timer_get_time() : 0;
         bool cache_updated = ui_overview_wave_cache_update(&s_overview_wave_cache[idx],
                                                            source,
@@ -1236,6 +1244,9 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
         return;
     }
 #else
+    (void)loop_active;
+    (void)loop_start_ms;
+    (void)loop_end_ms;
     if (!panel->wave_buf) {
         return;
     }
@@ -1580,6 +1591,35 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     }
 #endif
 
+    /* Resolve the loop region to highlight: a full active loop [start,end], or an
+     * armed loop-in growing from its marker to the live playhead. Firmware only;
+     * the WIN32/PC main-waveform path does not draw the highlight. A change forces
+     * a redraw even when the playhead is parked (compared against the cache's
+     * applied loop so a scheduler veto just retries next frame). */
+    bool loop_active = false;
+    uint32_t loop_start_ms = 0;
+    uint32_t loop_end_ms = 0;
+#ifndef WIN32
+    {
+        deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+        if (loop.active) {
+            loop_active = true;
+            loop_start_ms = loop.start_ms;
+            loop_end_ms = loop.end_ms;
+        } else if (loop.armed && position_ms > loop.start_ms) {
+            loop_active = true;
+            loop_start_ms = loop.start_ms;
+            loop_end_ms = position_ms;
+        }
+        if (idx < DECK_CORE_DECK_COUNT &&
+            (s_overview_wave_cache[idx].loop_active != loop_active ||
+             s_overview_wave_cache[idx].loop_start_ms != loop_start_ms ||
+             s_overview_wave_cache[idx].loop_end_ms != loop_end_ms)) {
+            redraw_main = true;
+        }
+    }
+#endif
+
     if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
 #ifndef WIN32
@@ -1592,7 +1632,8 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     if (redraw_main && ui_overview_main_wave_ready(panel) &&
         source.kind != UI_WAVEFORM_SOURCE_NONE) {
         ui_render_overview_main_waveform(panel, deck, &source, duration_ms, meta,
-                                         center_ms, window_ms);
+                                         center_ms, window_ms,
+                                         loop_active, loop_start_ms, loop_end_ms);
     }
 
     if (!panel->mini_wave_canvas || !panel->mini_wave_buf) {

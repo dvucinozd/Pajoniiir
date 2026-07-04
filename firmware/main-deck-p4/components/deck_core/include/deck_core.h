@@ -88,6 +88,18 @@ deck_state_t deck_core_get_deck_state(uint8_t deck);
 // exposed for low-rate diagnostics and controller smoke verification.
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void);
 
+// Loop region for waveform display. `active` = a full loop (in+out) is set;
+// `armed` = loop-in pressed and waiting for loop-out (highlight from start_ms to
+// the live playhead). `end_ms` is only meaningful when `active`.
+typedef struct {
+    bool active;
+    bool armed;
+    uint32_t start_ms;
+    uint32_t end_ms;
+} deck_core_loop_display_t;
+
+deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck);
+
 // Queue a control event (from touch screen or other source).
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
 
