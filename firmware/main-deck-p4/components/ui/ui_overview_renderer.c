@@ -4,6 +4,13 @@
 
 #include "ui_overview_grid.h"
 
+/* "Punchy" transient tips: columns with peak amplitude at/above this get a
+ * 2 px white cap at the top and bottom of the mirrored bar so loud transients
+ * pop. Palette index 4 is white in every waveform palette. */
+#define WAVE_TIP_AMP_MIN 26
+#define WAVE_TIP_PALETTE_INDEX 4
+#define WAVE_TIP_MIN_BAR_PX 6
+
 typedef struct {
     uint8_t avg;
     uint8_t peak;
@@ -438,6 +445,12 @@ void ui_overview_renderer_draw_main_with_options(uint8_t *pixels,
             for (int y = y0; y <= y1; y++) {
                 pixels[y * stride_px + x] = color;
             }
+            if (amp >= WAVE_TIP_AMP_MIN && (y1 - y0) >= WAVE_TIP_MIN_BAR_PX) {
+                pixels[y0 * stride_px + x] = WAVE_TIP_PALETTE_INDEX;
+                pixels[(y0 + 1) * stride_px + x] = WAVE_TIP_PALETTE_INDEX;
+                pixels[y1 * stride_px + x] = WAVE_TIP_PALETTE_INDEX;
+                pixels[(y1 - 1) * stride_px + x] = WAVE_TIP_PALETTE_INDEX;
+            }
         }
     }
 
@@ -528,6 +541,14 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                                                    palette_index);
             for (int y = y0; y <= y1; y++) {
                 pixels[y * stride_px + dest_x] = color;
+            }
+            if (amp >= WAVE_TIP_AMP_MIN && (y1 - y0) >= WAVE_TIP_MIN_BAR_PX) {
+                uint16_t tip = rgb565_palette_color(palette, palette_count,
+                                                    WAVE_TIP_PALETTE_INDEX);
+                pixels[y0 * stride_px + dest_x] = tip;
+                pixels[(y0 + 1) * stride_px + dest_x] = tip;
+                pixels[y1 * stride_px + dest_x] = tip;
+                pixels[(y1 - 1) * stride_px + dest_x] = tip;
             }
         }
     }
