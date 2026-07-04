@@ -1,6 +1,7 @@
 #include "track_meta_cache.h"
 
 #include "esp_log.h"
+#include "media_io_gate.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -134,14 +135,25 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
     }
     memset(out_meta, 0, sizeof(*out_meta));
 
+    /* dat_path/ext_path live on the USB drive. Serialise these stats against
+       USB unmount/uninstall through the media I/O gate: without it, a drive
+       disconnect during the stat tears down the MSC device under an in-flight
+       transfer and the vendored driver panics on a NULL transfer semaphore
+       (assert xQueueSemaphoreTake pxQueue). The SD-side cache reads below use
+       a different medium and do not need the gate. */
     uint64_t dat_size = 0;
     int64_t dat_mtime = 0;
-    if (file_signature(dat_path, &dat_size, &dat_mtime) != ESP_OK) {
-        return ESP_ERR_NOT_FOUND;
-    }
     uint64_t ext_size = 0;
     int64_t ext_mtime = 0;
-    file_signature(ext_path, &ext_size, &ext_mtime);
+    media_io_gate_begin();
+    esp_err_t dat_rc = file_signature(dat_path, &dat_size, &dat_mtime);
+    if (dat_rc == ESP_OK) {
+        file_signature(ext_path, &ext_size, &ext_mtime);
+    }
+    media_io_gate_end();
+    if (dat_rc != ESP_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
 
     char dir[64];
     char path[96];
@@ -219,14 +231,20 @@ esp_err_t track_meta_cache_save(uint32_t track_key,
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* USB-side stats — gated for the same reason as in track_meta_cache_load(). */
     uint64_t dat_size = 0;
     int64_t dat_mtime = 0;
-    if (file_signature(dat_path, &dat_size, &dat_mtime) != ESP_OK) {
-        return ESP_ERR_NOT_FOUND;
-    }
     uint64_t ext_size = 0;
     int64_t ext_mtime = 0;
-    file_signature(ext_path, &ext_size, &ext_mtime);
+    media_io_gate_begin();
+    esp_err_t dat_rc = file_signature(dat_path, &dat_size, &dat_mtime);
+    if (dat_rc == ESP_OK) {
+        file_signature(ext_path, &ext_size, &ext_mtime);
+    }
+    media_io_gate_end();
+    if (dat_rc != ESP_OK) {
+        return ESP_ERR_NOT_FOUND;
+    }
 
     char dir[64];
     char path[96];
