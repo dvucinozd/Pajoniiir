@@ -66,9 +66,19 @@ The fork is no longer only the imported single-deck baseline:
 - P4 LVGL UI is dual-deck: Overview, Library load paths, performance target
   selection, Settings, status/header, and waveform rendering are split into
   smaller UI modules.
-- Deck 2 lower Overview waveform jitter was fixed on 2026-06-13 by keeping
-  Deck 2 on the normal LVGL invalidation/flush path while Deck 1 may use the
-  direct overlay path.
+- Both deck Overview waveforms use the direct PPA overlay path (the 2026-06-13
+  Deck 2 jitter that once forced an LVGL path is resolved). The waveform renders
+  with the "Punchy" colour scheme (bright cyan transients, white transient tips),
+  an active/armed loop-region amber highlight with edge markers, hot-cue markers
+  on the large + mini waveforms, and a translucent played-progress overlay on the
+  mini — all baked into the scrolling RGB565 strip so they PPA-blit without
+  LVGL-over-PPA flicker.
+- ESP-Hosted Wi-Fi is re-enabled behind a Settings switch (default off): the
+  onboard ESP32-C6 provides a SoftAP (`PAJONIIR`) and P4 serves a mobile web
+  controller at `http://192.168.4.1` (deck status, library load, transport,
+  mixer, seek). A 2026-07-04 audit added RELAXED atomics for shared audio/mixer
+  state, clean load-failure abort, and dynamically-sized web status JSON, and a
+  USB-disconnect crash (ungated track-meta-cache `stat()`) was fixed.
 - The current Overview UI uses Pioneered-style deck strips, centered beat/phase
   indicators, fixed-segment blue-strip timers, and bounded title/timer
   invalidation so status chrome does not create continuous redraw pressure.
@@ -156,3 +166,13 @@ implemented in firmware (details in Phase 8 of
 - **WAV + FLAC playback** — implemented through the decoder-abstraction layer
   and firmware preload path. MP3 keeps PVBR seek support; WAV/FLAC use decoder
   metadata while Rekordbox/ANLZ still supplies beatgrid/BPM/waveform context.
+- **Wi-Fi web UI mobile controller** — implemented (ESP-Hosted SoftAP, Settings
+  toggle, captive portal). Remaining web-UI scope (EQ/filter/hot-cue/beat-jump
+  controls, waveform) is intentionally deferred — the web UI stays a simple
+  remote, not a full control surface.
+- **Overview waveform visualisations** — implemented ("Punchy" colours, loop
+  highlight, hot-cue markers, mini played-progress).
+
+Remaining hardware-facing items: line-out (RCA) validation, native FLX4 beat
+LED feedback from the PQTZ beatgrid, and the full S3-driven control hardware
+pass.
