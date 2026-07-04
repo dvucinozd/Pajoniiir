@@ -106,7 +106,6 @@ Python/toolchain paths until the local Espressif export environment is repaired.
 | Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PARKED** | Web server code remains, but no hosted AP is active |
 | Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PARKED** | DNS code remains for future re-enable |
 | Concurrent web load | Browser double-click/load spam | Second `/api/load` is rejected while load worker is busy | **PENDING** | Prevents concurrent P4 track load workers |
-| Remote cache re-enable | Future CDJ Link build | STA/join, UDP discovery, remote library fetch and SD cache are revalidated | **PARKED** | The old Settings link mode and Library JOINED selector are removed from the current MVP |
 
 ### Key P4 PSRAM & Performance Optimizations
 
@@ -179,25 +178,18 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 
 ---
 
-## CDJ Link / ESP-Hosted Bring-Up
+## ESP-Hosted / Wi-Fi Bring-Up
 
 | Check | Result | Notes |
 | --- | --- | --- |
 | P4 flash target | **PASS** | `COM15`, ESP32-P4 rev v1.3, MAC `80:f1:b2:d0:b4:9b` |
 | ESP-Hosted SDIO pins | **PASS** | Log confirms slot 1, 4-bit, CLK 18, CMD 19, D0-D3 14-17, C6 reset 54 |
 | Host transport init | **PASS** | C6 identified as `esp32c6`; SDIO card init successful; transport active |
-| SoftAP host mode | **PASS / HISTORICAL** | Previous builds started SoftAP on `192.168.4.1`; active DDJ-FFL4 firmware disables ESP-Hosted and does not start the AP |
-| Remote library snapshot | **PASS** | USB mounted and `cdj_link_server` built snapshot: 308 tracks, 73320 bytes |
-| Windows Wi-Fi scan | **PASS** | PC sees the `CDJ100S-<id>` SoftAP at strong signal; WPA2 profile connects with `cdj100slink` |
-| HTTP hello/library | **PASS** | `GET /v1/hello.txt` returns `CDJLINK1`; `GET /v1/library.bin` returns 73320 bytes with 308 records in ~0.13 s from a Windows Wi-Fi client |
-| HTTP manifest/DAT | **PASS** | First track `track_key=5` returns manifest: audio 9047128 bytes, DAT 9836 bytes, EXT 212819 bytes; `ANLZ0000.DAT` download matches 9836 bytes |
-| HTTP MP3 transfer | **WARN** | Full `audio.mp3` for `track_key=5` downloads successfully after replacing chunked sequential file send with fixed-length pipelined read/send. Best `curl.exe` run measured 9047128 bytes in 9.40-9.42 s (~0.96 MB/s), but subsequent Windows-client runs varied around ~0.75 MB/s and one transfer reset; continue validation on the real joined P4 client. |
-| Host busy handling | **PASS** | Host returns `503 BUSY` while USB gate is occupied; client cache now retries `HOST BUSY` with backoff instead of failing immediately. |
+| SoftAP + web UI | **PASS** | Re-enabled 2026-07-04 behind the Settings switch; SoftAP `PAJONIIR` on `192.168.4.1`, mobile web controller reachable |
 | ESP-Hosted mempool | **FIXED** | Initial HOST boot asserted in `sdio_mempool_create` because SDIO mempool allocated ~48 KB internal DMA RAM. Enabling `CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y` fixes boot on this P4 workload. |
 | C6 firmware version | **FIXED** | Upgraded onboard C6 over `COM12` to ESP-Hosted slave `2.12.8` using USB-TTL on `PROG_C6`. Boot log now identifies `esp32c6`, reports `Transport active`, and no longer prints the Host/Co-proc version mismatch warning. |
 | C6 slave firmware build | **PASS** | Built and flashed `firmware/main-deck-p4/managed_components/espressif__esp_hosted/slave/build/network_adapter.bin`; stable flashing required P4 held in bootloader and C6 flashing at 115200 baud because 460800 stopped responding through the jumper wiring. |
 | SD cache mount | **FIXED** | `/sd` now mounts on boot with the inserted `SA32G` 29.5 GB card: 4-bit SDMMC, 20 MHz. Root cause was missing vendor SD power control: on-chip LDO channel 4 must be attached to `host.pwr_ctrl_handle` before `esp_vfs_fat_sdmmc_mount()`. |
-| Active ESP-Hosted runtime | **DISABLED** | 2026-06-29 boot loop root cause was ESP-Hosted static task creation before `app_main()`. Active firmware now builds without `esp_hosted`/`esp_wifi_remote`; boot capture reached `all subsystems ready`, and repeated FLX4 connection heartbeats no longer resend forced LED snapshots. |
 
 ---
 

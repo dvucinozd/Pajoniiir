@@ -36,7 +36,6 @@ CDJ100S/P4 standalone context from the imported project.
 
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active DDJ-FLX4 staged implementation plan
 - [`development-plan.md`](development-plan.md) - legacy CDJ100S/P4 standalone plan retained for reference
-- [`cdj-link-cache-preload.md`](cdj-link-cache-preload.md) — remote USB library, binary protocol and SD cache/preload design
 
 ## Hardware Bringup
 
