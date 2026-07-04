@@ -270,10 +270,50 @@ static void test_main_rgb565_renderer_can_draw_logical_columns_to_destination_sp
                                                       &source, 8000, NULL,
                                                       4000, 8000, palette,
                                                       sizeof(palette) / sizeof(palette[0]),
-                                                      false);
+                                                      false,
+                                                      false, 0, 0);
 
     assert(pixels[(10 / 2) * 64 + 4] == 0xAAAA);
     assert(pixels[(10 / 2) * 64 + 40] != 0xAAAA);
+}
+
+static void test_main_rgb565_renderer_highlights_active_loop_region(void)
+{
+    uint8_t samples[16];
+    memset(samples, 0x1Fu, sizeof(samples));
+    ui_waveform_source_t source = {
+        .kind = UI_WAVEFORM_SOURCE_LOW,
+        .samples = samples,
+        .sample_count = sizeof(samples),
+    };
+    /* Index 4 = white marker, index 10 = amber loop background. */
+    const uint16_t palette[] = {
+        0x0000, 0xF16E, 0x235F, 0x475C, 0xE71D,
+        0x1F32, 0xFD66, 0x9ADF, 0x3989, 0xF8A8, 0x1234,
+    };
+    uint16_t pixels[64 * 10];
+    for (size_t i = 0; i < sizeof(pixels) / sizeof(pixels[0]); i++) {
+        pixels[i] = 0xAAAA;
+    }
+
+    /* window [0,8000] over 64 px => 125 ms/px. Loop [2000,2500) => cols 16..19,
+       start marker at col 16, end marker at col 20. Render logical 16..23. */
+    ui_overview_renderer_draw_main_rgb565_column_span(pixels, 64, 10,
+                                                      0, 16, 8, 64,
+                                                      &source, 8000, NULL,
+                                                      4000, 8000, palette,
+                                                      sizeof(palette) / sizeof(palette[0]),
+                                                      false,
+                                                      true, 2000, 2500);
+
+    /* Row 0 is above the bar (h=4, rows 3..7). Interior loop col 17 (dest 1) is
+       amber; non-loop col 21 (dest 5) is background black. */
+    assert(pixels[0 * 64 + 1] == 0x1234);
+    assert(pixels[0 * 64 + 5] == 0x0000);
+    /* Start/end edge markers are white across the full height. */
+    assert(pixels[0 * 64 + 0] == 0xE71D);
+    assert(pixels[9 * 64 + 0] == 0xE71D);
+    assert(pixels[0 * 64 + 4] == 0xE71D);
 }
 
 static void test_mini_renderer_clears_and_draws_full_track_waveform(void)
@@ -426,6 +466,7 @@ int main(void)
     test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom();
     test_main_rgb565_renderer_can_draw_column_range_without_clearing_all();
     test_main_rgb565_renderer_can_draw_logical_columns_to_destination_span();
+    test_main_rgb565_renderer_highlights_active_loop_region();
     test_mini_renderer_clears_and_draws_full_track_waveform();
     test_mini_renderer_preserves_spikes_on_tall_canvas();
     test_mini_renderer_does_not_clip_hot_spikes();

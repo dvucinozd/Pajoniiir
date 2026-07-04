@@ -2253,6 +2253,32 @@ deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
     return snap;
 }
 
+deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
+{
+    deck_core_loop_display_t out = {0};
+    if (deck >= DECK_CORE_DECK_COUNT) {
+        return out;
+    }
+    if (s_mutex) {
+        xSemaphoreTake(s_mutex, portMAX_DELAY);
+    }
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (read_active_loop(deck, &active, &start_ms, &end_ms) && active && end_ms > start_ms) {
+        out.active = true;
+        out.start_ms = start_ms;
+        out.end_ms = end_ms;
+    } else if (s_loop_shadow[deck].pending_in) {
+        out.armed = true;
+        out.start_ms = s_loop_shadow[deck].pending_start_ms;
+    }
+    if (s_mutex) {
+        xSemaphoreGive(s_mutex);
+    }
+    return out;
+}
+
 void deck_core_reset(void)
 {
     deck_core_reset_deck(DECK_CORE_COMPAT_DECK);

@@ -85,7 +85,10 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                                                        uint32_t window_ms,
                                                        const uint16_t *palette,
                                                        size_t palette_count,
-                                                       bool regular_beat_cap_bottom);
+                                                       bool regular_beat_cap_bottom,
+                                                       bool loop_active,
+                                                       uint32_t loop_start_ms,
+                                                       uint32_t loop_end_ms);
 
 bool ui_overview_renderer_draw_mini(uint8_t *pixels,
                                     int stride_px,

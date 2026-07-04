@@ -203,6 +203,25 @@ void ui_overview_wave_cache_set_regular_beat_cap_bottom(ui_overview_wave_cache_t
     cache->valid = false;
 }
 
+void ui_overview_wave_cache_set_loop(ui_overview_wave_cache_t *cache,
+                                     bool active,
+                                     uint32_t start_ms,
+                                     uint32_t end_ms)
+{
+    if (!cache) {
+        return;
+    }
+    if (cache->loop_active == active &&
+        cache->loop_start_ms == start_ms &&
+        cache->loop_end_ms == end_ms) {
+        return;
+    }
+    cache->loop_active = active;
+    cache->loop_start_ms = start_ms;
+    cache->loop_end_ms = end_ms;
+    cache->valid = false;
+}
+
 static bool source_matches(const ui_overview_wave_cache_t *cache,
                            const ui_waveform_source_t *source,
                            uint32_t duration_ms,
@@ -299,7 +318,10 @@ static void render_physical_span(ui_overview_wave_cache_t *cache,
                                                           strip_window_ms(cache),
                                                           cache->palette,
                                                           cache->palette_count,
-                                                          cache->regular_beat_cap_bottom);
+                                                          cache->regular_beat_cap_bottom,
+                                                          cache->loop_active,
+                                                          cache->loop_start_ms,
+                                                          cache->loop_end_ms);
         physical_x += chunk;
         logical_x += chunk;
         column_count -= chunk;

@@ -11,6 +11,12 @@
 #define WAVE_TIP_PALETTE_INDEX 4
 #define WAVE_TIP_MIN_BAR_PX 6
 
+/* Active-loop region highlight on the main (zoom) waveform: columns inside the
+ * loop get an amber background (palette index 10) and the loop in/out edges get
+ * a bright white marker line (reuses the white tip index). */
+#define WAVE_LOOP_BG_PALETTE_INDEX 10
+#define WAVE_LOOP_MARK_PALETTE_INDEX WAVE_TIP_PALETTE_INDEX
+
 typedef struct {
     uint8_t avg;
     uint8_t peak;
@@ -477,7 +483,10 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                                                        uint32_t window_ms,
                                                        const uint16_t *palette,
                                                        size_t palette_count,
-                                                       bool regular_beat_cap_bottom)
+                                                       bool regular_beat_cap_bottom,
+                                                       bool loop_active,
+                                                       uint32_t loop_start_ms,
+                                                       uint32_t loop_end_ms)
 {
     if (!pixels || stride_px <= 0 || height_px <= 0 ||
         logical_width_px <= 0 || column_count <= 0 ||
@@ -515,6 +524,27 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                          background);
 
     int64_t window_start_ms = (int64_t)center_ms - ((int64_t)window_ms / 2);
+
+    /* Active-loop background: tint the columns whose time falls inside the loop
+     * amber, before the grid/waveform draw over it. Baked into the strip so it
+     * scrolls and PPA-blits atomically with the waveform. */
+    bool loop_valid = loop_active && loop_end_ms > loop_start_ms;
+    if (loop_valid) {
+        uint16_t loop_bg = rgb565_palette_color(palette, palette_count,
+                                                WAVE_LOOP_BG_PALETTE_INDEX);
+        for (int i = 0; i < column_count; i++) {
+            int logical_x = logical_x_px + i;
+            int64_t col_ms = window_start_ms +
+                ((int64_t)logical_x * (int64_t)window_ms) / logical_width_px;
+            if (col_ms >= (int64_t)loop_start_ms && col_ms < (int64_t)loop_end_ms) {
+                int dest_x = dest_x_px + i;
+                for (int y = 0; y < height_px; y++) {
+                    pixels[y * stride_px + dest_x] = loop_bg;
+                }
+            }
+        }
+    }
+
     draw_zoom_grid_rgb565_column_span(pixels, stride_px, height_px,
                                       dest_x_px, logical_x_px, column_count,
                                       logical_width_px, window_start_ms,
@@ -563,6 +593,24 @@ void ui_overview_renderer_draw_main_rgb565_column_span(uint16_t *pixels,
                                       logical_width_px, window_start_ms,
                                       window_ms, meta, palette, palette_count,
                                       true, regular_beat_cap_bottom, false);
+
+    /* Loop in/out edge markers: bright vertical lines over everything. */
+    if (loop_valid) {
+        uint16_t mark = rgb565_palette_color(palette, palette_count,
+                                             WAVE_LOOP_MARK_PALETTE_INDEX);
+        const uint32_t edges[2] = { loop_start_ms, loop_end_ms };
+        for (int e = 0; e < 2; e++) {
+            int edge_x = (int)(((int64_t)edges[e] - window_start_ms) *
+                               (int64_t)logical_width_px / (int64_t)window_ms);
+            if (edge_x < logical_x_px || edge_x >= logical_x_px + column_count) {
+                continue;
+            }
+            int dest_x = dest_x_px + (edge_x - logical_x_px);
+            for (int y = 0; y < height_px; y++) {
+                pixels[y * stride_px + dest_x] = mark;
+            }
+        }
+    }
 }
 
 void ui_overview_renderer_draw_main_rgb565_columns(uint16_t *pixels,
@@ -586,7 +634,8 @@ void ui_overview_renderer_draw_main_rgb565_columns(uint16_t *pixels,
                                                       duration_ms, meta,
                                                       center_ms, window_ms,
                                                       palette, palette_count,
-                                                      false);
+                                                      false,
+                                                      false, 0, 0);
 }
 
 void ui_overview_renderer_draw_main_rgb565(uint16_t *pixels,
@@ -651,7 +700,8 @@ void ui_overview_renderer_draw_main_rgb565_with_options(uint16_t *pixels,
                                                           meta, center_ms,
                                                           window_ms, palette,
                                                           palette_count,
-                                                          true);
+                                                          true,
+                                                          false, 0, 0);
     }
     draw_center_playhead_rgb565(pixels, stride_px, width_px, height_px,
                                 palette, palette_count);
