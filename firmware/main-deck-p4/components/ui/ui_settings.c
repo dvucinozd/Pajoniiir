@@ -74,6 +74,7 @@ const char *ui_settings_master_trim_label(uint8_t preset)
 #include "audio_engine.h"
 #include "bsp_jc4880.h"
 #include "esp_timer.h"
+#include "esp_system.h"
 #endif
 
 static const char *TAG = "ui_settings";
@@ -263,6 +264,27 @@ static void audio_out_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Monitor speaker: %s", speaker_enabled ? "on" : "off");
 }
 
+#ifndef WIN32
+static const char *ui_settings_reset_reason_str(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "Power-on";
+    case ESP_RST_EXT:       return "External pin";
+    case ESP_RST_SW:        return "Software";
+    case ESP_RST_PANIC:     return "PANIC / exception";
+    case ESP_RST_INT_WDT:   return "Interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "Task watchdog";
+    case ESP_RST_WDT:       return "Other watchdog";
+    case ESP_RST_DEEPSLEEP: return "Deep sleep wake";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT (power dip)";
+    case ESP_RST_SDIO:      return "SDIO";
+    case ESP_RST_USB:       return "USB peripheral";
+    case ESP_RST_JTAG:      return "JTAG";
+    default:                return "Unknown";
+    }
+}
+#endif
+
 static void wifi_remote_event_cb(lv_event_t *event)
 {
     lv_obj_t *sw = lv_event_get_target(event);
@@ -430,6 +452,20 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             COL_TEXT_DIM, &lv_font_montserrat_12, 16, 146);
     ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
                             COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
+
+#ifndef WIN32
+    {
+        esp_reset_reason_t rr = esp_reset_reason();
+        bool rr_bad = (rr == ESP_RST_PANIC || rr == ESP_RST_BROWNOUT ||
+                       rr == ESP_RST_INT_WDT || rr == ESP_RST_TASK_WDT ||
+                       rr == ESP_RST_WDT);
+        char rr_buf[64];
+        snprintf(rr_buf, sizeof(rr_buf), "Last reset: %s", ui_settings_reset_reason_str());
+        ui_settings_value_label(status_section, rr_buf,
+                                rr_bad ? COL_RED : COL_TEXT_DIM,
+                                &lv_font_montserrat_12, 16, 190);
+    }
+#endif
 
     lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 96, "WI-FI REMOTE");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);

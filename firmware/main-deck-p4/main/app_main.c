@@ -17,6 +17,7 @@
 #endif
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_system.h"
 
 static const char *TAG = "main";
 
@@ -47,6 +48,10 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
+    // Log the reason for the most recent reset. A spontaneous reboot during use
+    // that reports BROWNOUT points at power (bus-powered USB drive current
+    // spike); PANIC/WDT points at firmware. Visible at the default WARN level.
+    ESP_LOGW(TAG, "reset reason: %d", (int)esp_reset_reason());
 
 #if CONFIG_MONITOR_PCM_LINK_ENABLED
     // Acquire the monitor link I2S unit before the heavy subsystems come up:
