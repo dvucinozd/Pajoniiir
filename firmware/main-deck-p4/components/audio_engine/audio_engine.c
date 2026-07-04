@@ -627,9 +627,11 @@ static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
     };
     drflac *flac = drflac_open_memory(eng->file_buf, eng->file_size, &cb);
     if (!flac) {
+        ESP_LOGE(TAG, "drflac_open_memory failed (size=%u)", (unsigned)eng->file_size);
         return ESP_ERR_NOT_SUPPORTED;
     }
     if (flac->channels != 1u && flac->channels != 2u) {
+        ESP_LOGE(TAG, "FLAC unsupported channel count: %u", (unsigned)flac->channels);
         drflac_close(flac);
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -644,9 +646,10 @@ static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
                                       (uint64_t)flac->sampleRate);
     }
     eng->eof = (flac->totalPCMFrameCount == 0u);
-    ESP_LOGI(TAG, "FLAC: %u Hz, %u ch, %llu frames",
+    ESP_LOGI(TAG, "FLAC: %u Hz, %u ch, %u bps, %llu frames",
              (unsigned)flac->sampleRate,
              (unsigned)flac->channels,
+             (unsigned)flac->bitsPerSample,
              (unsigned long long)flac->totalPCMFrameCount);
     return ESP_OK;
 }
@@ -1316,6 +1319,12 @@ static void ae_loader_task(void *arg)
     fclose(src);
     media_io_gate_end();
 
+    if (runtime->run && off != (size_t)fsz) {
+        /* A truncated preload leaves load_done unset and the decoder waiting;
+           surface it at ERROR level so it is visible at the default log level. */
+        ESP_LOGE(TAG, "preload INCOMPLETE D%u: %u/%u bytes — decoder will stall",
+                 (unsigned)ctx->deck, (unsigned)off, (unsigned)fsz);
+    }
     if (runtime->run && off == (size_t)fsz) {
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
@@ -1417,11 +1426,19 @@ static void ae_decode_task(void *arg)
         goto cleanup;
     }
 
-    if (audio_output_service_open_codec(eng->sample_rate) != ESP_OK) {
-        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)eng->sample_rate);
+    /* The I2S/codec output path targets 44.1/48 kHz; hi-res sources (96/192 kHz
+     * FLAC) are downsampled by the per-deck output resampler, so the codec opens
+     * at a supported rate while the deck keeps its native source rate. */
+    uint32_t codec_rate = eng->sample_rate > 48000u ? 48000u : eng->sample_rate;
+    if (audio_output_service_open_codec(codec_rate) != ESP_OK) {
+        ESP_LOGE(TAG, "esp_codec_dev_open(%u Hz) failed", (unsigned)codec_rate);
         eng->last_error = ESP_FAIL;
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "CODEC OPEN ERR");
         goto cleanup;
+    }
+    if (codec_rate != eng->sample_rate) {
+        ESP_LOGI(TAG, "hi-res source %u Hz D%u -> output %u Hz (resampled)",
+                 (unsigned)eng->sample_rate, (unsigned)ctx->deck, (unsigned)codec_rate);
     }
     ESP_LOGI(TAG,
              "track format D%u: %u Hz %d ch file=%u bytes loaded=%u done=%u",
