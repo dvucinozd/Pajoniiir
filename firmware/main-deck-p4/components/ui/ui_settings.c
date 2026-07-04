@@ -429,8 +429,6 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             198,
                             48);
 
-    // CDJ Link UI elements have been removed as per user request
-
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
     lv_obj_t *label_uart_status =
