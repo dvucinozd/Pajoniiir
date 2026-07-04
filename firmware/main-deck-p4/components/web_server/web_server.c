@@ -163,6 +163,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"pitch_percent\":%.2f,"
              "\"raw_pitch\":%d,"
              "\"position_ms\":%u,"
+             "\"duration_ms\":%u,"
              "\"playing\":%s,"
              "\"state_text\":\"%s\""
              "},"
@@ -173,6 +174,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"pitch_percent\":%.2f,"
              "\"raw_pitch\":%d,"
              "\"position_ms\":%u,"
+             "\"duration_ms\":%u,"
              "\"playing\":%s,"
              "\"state_text\":\"%s\""
              "},"
@@ -230,8 +232,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
              "\"psram_free\":%u"
              "}"
              "}",
-             title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, state1.playing ? "true" : "false", state_text1,
-             title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, state2.playing ? "true" : "false", state_text2,
+             title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state_text1,
+             title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state_text2,
              mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
              mixer.master_volume,
              mixer.headphone_mix,
@@ -447,6 +449,14 @@ static esp_err_t api_control_handler(httpd_req_t *req)
         esp_err_t rc = audio_engine_deck_clear_loop(deck);
         if (rc != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop clear failed");
+            return ESP_FAIL;
+        }
+    } else if (strcmp(action, "seek") == 0) {
+        /* value = absolute position in milliseconds (from the web progress bar). */
+        uint32_t pos_ms = value < 0 ? 0u : (uint32_t)value;
+        esp_err_t rc = audio_engine_deck_seek(deck, pos_ms);
+        if (rc != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Seek failed");
             return ESP_FAIL;
         }
     } else {

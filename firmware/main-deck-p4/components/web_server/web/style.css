@@ -117,6 +117,48 @@ body {
     box-shadow: 0 0 6px var(--green);
 }
 
+.status-dot.offline {
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+}
+
+/* ── Progress / seek bar ───────────────────────────────────────────────────── */
+.progress-wrap {
+    position: relative;
+    height: 22px;
+    margin: 6px 12px 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.progress-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: var(--blue);
+    opacity: 0.5;
+    pointer-events: none;
+    transition: width 0.2s linear;
+}
+
+.time-remain {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
 /* ── Performance Zone: flex row ────────────────────────────────────────────── */
 .perf-zone {
     display: flex;
@@ -748,11 +790,32 @@ input[type="range"]:not(.vertical-slider)::-moz-range-thumb {
     table-layout: fixed;
 }
 
-.library-table col:nth-child(1) { width: 35%; }
-.library-table col:nth-child(2) { width: 25%; }
+.library-table col:nth-child(1) { width: 34%; }
+.library-table col:nth-child(2) { width: 23%; }
 .library-table col:nth-child(3) { width: 9%;  }
-.library-table col:nth-child(4) { width: 11%; }
-.library-table col:nth-child(5) { width: 20%; }
+.library-table col:nth-child(4) { width: 12%; }
+.library-table col:nth-child(5) { width: 22%; }
+
+/* ACTION cell: stack the two LOAD buttons so both stay visible on a narrow
+   phone (the row grows to fit; the fixed td height acts as a minimum). */
+.library-table td:last-child {
+    overflow: visible;
+    white-space: normal;
+    padding: 4px 8px;
+}
+
+.library-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: stretch;
+}
+
+.library-actions .btn-load {
+    width: 100%;
+    margin: 0;
+    text-align: center;
+}
 
 .library-table th {
     padding: 0 var(--sp-3);
@@ -933,6 +996,11 @@ body.browser-expanded .deck-card .time-display {
     font-weight: 900;
     padding-top: 0;
     color: var(--blue);
+}
+
+/* Hide the progress/seek bar in the browse-focused expanded layout. */
+body.browser-expanded .deck-card .progress-wrap {
+    display: none;
 }
 
 /* Pitch/Tempo horizontal slider row u horizontalnom modu */

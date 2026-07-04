@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 
@@ -43,6 +43,12 @@
                     </div>
                 </div>
                 <div class="time-display" id="deck-1-time">00:00:00</div>
+            </div>
+
+            <!-- Progress / seek -->
+            <div class="progress-wrap" id="deck-1-progress" onclick="onSeek(1, event)" title="Tap to seek">
+                <div class="progress-fill" id="deck-1-fill"></div>
+                <span class="time-remain" id="deck-1-remain">-00:00:00</span>
             </div>
 
             <!-- Pitch / Tempo control -->
@@ -81,17 +87,17 @@
 
                 <!-- Decorative VU meter -->
                 <div class="vu-column">
-                    <div class="vu-bar-container">
+                    <div class="vu-bar-container" id="vu-master" title="Master output level">
                         <div class="vu-seg vu-red"></div>
                         <div class="vu-seg vu-red"></div>
                         <div class="vu-seg vu-amber"></div>
                         <div class="vu-seg vu-amber"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
-                        <div class="vu-seg vu-green vu-active"></div>
+                        <div class="vu-seg vu-green"></div>
+                        <div class="vu-seg vu-green"></div>
+                        <div class="vu-seg vu-green"></div>
+                        <div class="vu-seg vu-green"></div>
+                        <div class="vu-seg vu-green"></div>
+                        <div class="vu-seg vu-green"></div>
                     </div>
                 </div>
 
@@ -142,6 +148,12 @@
                 <div class="time-display" id="deck-2-time">00:00:00</div>
             </div>
 
+            <!-- Progress / seek -->
+            <div class="progress-wrap" id="deck-2-progress" onclick="onSeek(2, event)" title="Tap to seek">
+                <div class="progress-fill" id="deck-2-fill"></div>
+                <span class="time-remain" id="deck-2-remain">-00:00:00</span>
+            </div>
+
             <!-- Pitch / Tempo control -->
             <div class="pitch-control">
                 <span class="pitch-control-label">TEMPO</span>
@@ -181,6 +193,9 @@
         </div>
         <div class="library-container">
             <table class="library-table">
+                <colgroup>
+                    <col><col><col><col><col>
+                </colgroup>
                 <thead>
                     <tr>
                         <th>TITLE</th>
@@ -199,6 +214,6 @@
         </div>
     </section>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>
