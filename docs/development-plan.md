@@ -83,7 +83,7 @@ event source feeding the same `deck_core` → `audio_engine`.
     - [x] Empty/loading/error states: normalized Library and load/cache status
       vocabulary with consistent action, success, warning and error colors.
 
-- **P7 — Hosted Wi-Fi + remote USB library: 🟡 parked.**
+- **P7 — Hosted Wi-Fi + remote USB library: 🟢 web UI AP re-enabled, remote library parked.**
   - [ ] **exFAT/GPT USB support for newer AlphaTheta/rekordbox exports.** A
     2026-06-29 OneLibrary-style USB exported by current AlphaTheta/rekordbox
     tooling still contained a valid legacy `PIONEER/rekordbox/export.pdb` plus
@@ -95,10 +95,13 @@ event source feeding the same `deck_core` → `audio_engine`.
     FAT32 with an MBR partition table is the current supported workaround and was
     hardware-confirmed by the user after converting the same stick from GPT to
     MBR.
-  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP support was brought up and
-    bench-validated historically, then disabled in active DDJ-FFL4 firmware on
-    2026-06-29 because the controller/audio MVP does not need ESP-Hosted and it
-    can consume scarce internal RAM before `app_main()`.
+  - [x] `wifi_link`: ESP32-P4 hosted Wi-Fi SoftAP re-enabled 2026-07-04. Parked
+    2026-06-29 for RF-interference-free development, then un-parked for the web
+    UI mobile controller. The onboard ESP32-C6 provides Wi-Fi over ESP-Hosted
+    SDIO; `wifi_link_init()` starts SoftAP `PAJONIIR` on 192.168.4.1 and
+    `app_main` brings up `web_server`/`dns_server`. Hardware-verified: AP
+    appears, web UI loads and controls work. C6 mempool prefers SPIRAM to keep
+    hosted buffers out of scarce internal RAM (static DIRAM ~44% used).
   - [ ] STA scan/join path for `CDJ100S-*` is retained as component code but not exposed
     through Settings or Library UI in the current DDJ-FFL4 MVP.
   - [x] `cdj_link_protocol`: packed binary library records, manifests and UDP discovery packet,

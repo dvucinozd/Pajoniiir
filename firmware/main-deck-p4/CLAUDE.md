@@ -78,11 +78,18 @@ control_link  →  ctrl_event_queue  →  deck_core
 6. `ui_init()` — LVGL 800×480, 7 screens, PPA rotation, touch indev
 7. `usb_storage_init(cb)` — USB host; on mount loads library + refreshes UI
 
-> **Boot log note — `wifi_link_init(host): ESP_ERR_NOT_SUPPORTED` is expected.**
-> The P4 has no native Wi-Fi; the web AP path needs an ESP-Hosted co-processor,
-> which is disabled. `wifi_link_init()` returns `ESP_ERR_NOT_SUPPORTED` by
-> design and `app_main` skips `web_server_start()`/`dns_server_start()`. This
-> is not a fault — the touchscreen UI is the primary surface.
+> **Boot log note — ESP-Hosted Wi-Fi + web UI SoftAP is enabled (2026-07-04).**
+> The P4 has no native radio; the onboard **ESP32-C6** provides Wi-Fi over the
+> **ESP-Hosted SDIO** transport (slot 1, 4-bit; CLK18/CMD19/D0-D3 14-17; C6
+> reset GPIO54). `wifi_link_init()` runs `esp_hosted_init()` → `esp_wifi_init()`
+> → starts SoftAP **`PAJONIIR`** (WPA2, pw `12345678`) on **192.168.4.1**, and
+> `app_main` then starts `web_server_start()`/`dns_server_start()`. Connect a
+> phone/PC to the AP and open `http://192.168.4.1` for the mobile controller
+> (captive portal redirects there). Hardware-verified 2026-07-04: AP appears,
+> web UI loads and controls work. If `wifi_link_init` returns non-OK the web
+> server is skipped and the touchscreen UI stays the primary surface.
+> (Historically parked 2026-06-29 for RF-interference-free development; the C6
+> mempool prefers SPIRAM so hosted buffers stay out of scarce internal RAM.)
 
 ---
 

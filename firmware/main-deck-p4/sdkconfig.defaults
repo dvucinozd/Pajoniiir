@@ -87,7 +87,28 @@ CONFIG_LV_FONT_MONTSERRAT_28=y
 # CONFIG_LV_USE_BUILTIN_MALLOC is not set
 CONFIG_LV_USE_CLIB_MALLOC=y
 
-# ── Wi-Fi / ESP-Hosted ───────────────────────────────────────────────────────
-# Disabled for DDJ-FFL4. The P4 does not need the ESP32-C6 ESP-Hosted Wi-Fi
-# slave for the current standalone controller/audio path, and keeping it enabled
-# costs internal RAM and can fail before app_main() during hosted task startup.
+# ── ESP32-P4 Wi-Fi expansion via onboard ESP32-C6 (ESP-Hosted over SDIO) ─────
+# Re-enabled 2026-07-04 for the web UI mobile controller. The P4 has no native
+# radio; the onboard ESP32-C6 provides Wi-Fi over the ESP-Hosted SDIO transport
+# (slot 1, 4-bit; CLK18/CMD19/D0-D3 14-17; C6 reset GPIO54). wifi_link starts a
+# SoftAP (SSID PAJONIIR) and app_main brings up web_server + dns_server.
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD=y
+CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM=16
+CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_WIFI_RMT_AMPDU_TX_ENABLED=y
+CONFIG_WIFI_RMT_TX_BA_WIN=32
+CONFIG_WIFI_RMT_AMPDU_RX_ENABLED=y
+CONFIG_WIFI_RMT_RX_BA_WIN=32
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=65534
+CONFIG_LWIP_TCP_WND_DEFAULT=65534
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_LWIP_TCP_SACK_OUT=y
