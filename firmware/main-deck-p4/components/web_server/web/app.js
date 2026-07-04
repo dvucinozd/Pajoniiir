@@ -7,6 +7,40 @@ let isInteracting = {
     'crossfader': false
 };
 
+// Track duration per deck (ms), used to map the progress bar to a seek target.
+let deckDuration = { 1: 0, 2: 0 };
+
+// Rate-limit continuous slider requests so dragging a fader does not flood the
+// ESP httpd (5 sockets). Sends the latest value at most every minInterval ms,
+// always including a trailing send so the final position is not dropped.
+const _throttle = {};
+function throttledSend(key, urlFor, value, minInterval = 90) {
+    const st = _throttle[key] || (_throttle[key] = { last: 0, timer: null, pending: null });
+    const send = (v) => {
+        st.last = Date.now();
+        fetch(urlFor(v), { method: 'GET' }).catch(err => console.error(err));
+    };
+    const elapsed = Date.now() - st.last;
+    if (elapsed >= minInterval) {
+        send(value);
+    } else {
+        st.pending = value;
+        if (!st.timer) {
+            st.timer = setTimeout(() => {
+                st.timer = null;
+                if (st.pending !== null) { send(st.pending); st.pending = null; }
+            }, minInterval - elapsed);
+        }
+    }
+}
+
+function setConnected(ok) {
+    const dot = document.getElementById('conn-dot');
+    if (!dot) return;
+    dot.classList.toggle('online', ok);
+    dot.classList.toggle('offline', !ok);
+}
+
 function init() {
     // Pokreni status loop odmah da sučelje odmah oživi
     pollStatus();
@@ -63,8 +97,10 @@ function renderLibrary(tracks) {
                 <td>${track.bpm / 100}</td>
                 <td>${formatMs(track.duration_ms)}</td>
                 <td>
-                    <button class="btn btn-load" onclick="loadTrack(${track.index}, 1)">LOAD D1</button>
-                    <button class="btn btn-load" onclick="loadTrack(${track.index}, 2)">LOAD D2</button>
+                    <div class="library-actions">
+                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 1)">LOAD D1</button>
+                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 2)">LOAD D2</button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -87,13 +123,38 @@ function filterLibrary() {
 
 function pollStatus() {
     fetch('/api/status')
-        .then(res => res.json())
+        .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
         .then(status => {
+            setConnected(true);
             updateDeckUI(1, status.deck1);
             updateDeckUI(2, status.deck2);
             updateMixerUI(status.mixer);
+            updateVu(status.diagnostics);
         })
-        .catch(err => console.error('Status poll error:', err));
+        .catch(err => {
+            setConnected(false);
+            console.error('Status poll error:', err);
+        });
+}
+
+// Drive the centre meter from the real master limiter peak (0..32767) instead
+// of the old hardcoded segments. Honest level indication, not a per-channel VU.
+function updateVu(diag) {
+    const container = document.getElementById('vu-master');
+    if (!container) return;
+    const peak = (diag && typeof diag.limiter_peak === 'number') ? diag.limiter_peak : 0;
+    const level = Math.max(0, Math.min(1, peak / 32767));
+    const lit = Math.round(level * 10);
+    const segs = container.querySelectorAll('.vu-seg');
+    const total = segs.length;
+    segs.forEach((seg, i) => {
+        // DOM order is top->bottom; light from the bottom up.
+        const rankFromBottom = total - 1 - i;
+        seg.classList.toggle('vu-active', rankFromBottom < lit);
+    });
 }
 
 function updateDeckUI(deckNum, data) {
@@ -107,8 +168,22 @@ function updateDeckUI(deckNum, data) {
         ? `+${data.pitch_percent.toFixed(2)}%` 
         : `${data.pitch_percent.toFixed(2)}%`;
     
-    // Vrijeme
-    document.getElementById(`deck-${deckNum}-time`).innerText = formatMs(data.position_ms);
+    // Vrijeme + progress / preostalo
+    const pos = data.position_ms || 0;
+    const dur = data.duration_ms || 0;
+    deckDuration[deckNum] = dur;
+    document.getElementById(`deck-${deckNum}-time`).innerText = formatMs(pos);
+
+    const fill = document.getElementById(`deck-${deckNum}-fill`);
+    const remain = document.getElementById(`deck-${deckNum}-remain`);
+    if (dur > 0) {
+        const pct = Math.max(0, Math.min(100, (pos / dur) * 100));
+        if (fill) fill.style.width = pct + '%';
+        if (remain) remain.innerText = '-' + formatMs(dur > pos ? dur - pos : 0);
+    } else {
+        if (fill) fill.style.width = '0%';
+        if (remain) remain.innerText = '';
+    }
 
     // Status badge
     const badge = document.getElementById(`deck-${deckNum}-status`);
@@ -179,17 +254,27 @@ function sendControl(deck, action) {
 }
 
 function onVolumeChange(deck, value) {
-    fetch(`/api/control?deck=${deck}&action=volume&value=${value}`, { method: 'GET' })
-        .catch(err => console.error(err));
+    throttledSend('vol' + deck, v => `/api/control?deck=${deck}&action=volume&value=${v}`, value);
 }
 
 function onCrossfaderChange(value) {
-    fetch(`/api/control?action=crossfader&value=${value}`, { method: 'GET' })
-        .catch(err => console.error(err));
+    throttledSend('cf', v => `/api/control?action=crossfader&value=${v}`, value);
 }
 
 function onPitchChange(deck, value) {
-    fetch(`/api/control?deck=${deck}&action=pitch&value=${value}`, { method: 'GET' })
+    throttledSend('pitch' + deck, v => `/api/control?deck=${deck}&action=pitch&value=${v}`, value);
+}
+
+// Tap/click the progress bar to seek to that position.
+function onSeek(deck, event) {
+    const dur = deckDuration[deck] || 0;
+    if (dur <= 0) return;
+    const wrap = document.getElementById(`deck-${deck}-progress`);
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const ms = Math.floor(frac * dur);
+    fetch(`/api/control?deck=${deck}&action=seek&value=${ms}`, { method: 'GET' })
         .catch(err => console.error(err));
 }
 
