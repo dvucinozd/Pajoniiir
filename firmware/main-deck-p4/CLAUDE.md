@@ -78,18 +78,26 @@ control_link  →  ctrl_event_queue  →  deck_core
 6. `ui_init()` — LVGL 800×480, 7 screens, PPA rotation, touch indev
 7. `usb_storage_init(cb)` — USB host; on mount loads library + refreshes UI
 
-> **Boot log note — ESP-Hosted Wi-Fi + web UI SoftAP is enabled (2026-07-04).**
+> **Wi-Fi remote — user-toggled from Settings, default OFF (2026-07-04).**
 > The P4 has no native radio; the onboard **ESP32-C6** provides Wi-Fi over the
 > **ESP-Hosted SDIO** transport (slot 1, 4-bit; CLK18/CMD19/D0-D3 14-17; C6
-> reset GPIO54). `wifi_link_init()` runs `esp_hosted_init()` → `esp_wifi_init()`
-> → starts SoftAP **`PAJONIIR`** (WPA2, pw `12345678`) on **192.168.4.1**, and
-> `app_main` then starts `web_server_start()`/`dns_server_start()`. Connect a
-> phone/PC to the AP and open `http://192.168.4.1` for the mobile controller
-> (captive portal redirects there). Hardware-verified 2026-07-04: AP appears,
-> web UI loads and controls work. If `wifi_link_init` returns non-OK the web
-> server is skipped and the touchscreen UI stays the primary surface.
-> (Historically parked 2026-06-29 for RF-interference-free development; the C6
-> mempool prefers SPIRAM so hosted buffers stay out of scarce internal RAM.)
+> reset GPIO54). The **Settings tab has a WI-FI REMOTE switch** (default **off**,
+> persisted in NVS `app_settings.wifi_remote`). Turning it on runs
+> `wifi_link_start()` → `esp_hosted_init()` → `esp_wifi_init()` → SoftAP
+> **`PAJONIIR`** (WPA2, pw `12345678`) on **192.168.4.1** + `web_server` +
+> captive `dns_server`; turning it off runs `wifi_link_stop()` which tears the
+> whole stack back down (`esp_wifi_deinit` + `esp_hosted_deinit`) so the C6/RF
+> stops drawing RAM and power. Toggling is **asynchronous** — the UI event only
+> calls `wifi_link_request_enable()`, which spawns a worker task so the ~1-2 s
+> SDIO/C6 bring-up never blocks the LVGL task. At boot `app_main` re-starts the
+> AP only when the saved setting is on. Connect a phone/PC to `PAJONIIR` and
+> open `http://192.168.4.1` for the mobile controller (captive portal redirects
+> there). Hardware-verified 2026-07-04: default-off, toggle on/off, and reboot
+> persistence all work. UI stays decoupled from the transport via
+> `ui_settings_set_wifi_toggle_cb()` (registered in `app_main`) to avoid a
+> `ui → wifi_link → web_server → ui` component cycle. (Historically parked
+> 2026-06-29 for RF-interference-free development; the C6 mempool prefers
+> SPIRAM so hosted buffers stay out of scarce internal RAM.)
 
 ---
 

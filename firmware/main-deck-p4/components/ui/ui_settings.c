@@ -94,7 +94,9 @@ static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_audio_out = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
+static lv_obj_t *s_label_wifi_remote = NULL;
 static uint8_t s_master_trim_preset = 0;
+static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -261,6 +263,24 @@ static void audio_out_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Monitor speaker: %s", speaker_enabled ? "on" : "off");
 }
 
+static void wifi_remote_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+#ifndef WIN32
+    app_settings_set_wifi_remote(on ? 1 : 0);
+#endif
+    if (s_wifi_toggle_cb) {
+        s_wifi_toggle_cb(on);
+    }
+    if (s_label_wifi_remote) {
+        lv_label_set_text(s_label_wifi_remote, on ? "ON" : "OFF");
+        lv_obj_set_style_text_color(s_label_wifi_remote,
+                                    on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
+    }
+    ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
+}
+
 #ifndef WIN32
 static void master_trim_event_cb(lv_event_t *event)
 {
@@ -292,6 +312,11 @@ static void cue_mode_event_cb(lv_event_t *event)
 
 #endif
 
+void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb)
+{
+    s_wifi_toggle_cb = cb;
+}
+
 void ui_settings_configure(const ui_settings_config_t *config)
 {
     s_config = (ui_settings_config_t){0};
@@ -316,10 +341,12 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     bool monitor_speaker_init = (cfg.audio_out == 0);
     s_master_trim_preset = ui_settings_master_trim_sanitize_preset(cfg.master_trim_preset);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(s_master_trim_preset));
+    bool wifi_remote_init = (cfg.wifi_remote != 0);
 #else
     int bl_init = 80;
     bool monitor_speaker_init = true;
     s_master_trim_preset = 0;
+    bool wifi_remote_init = false;
 #endif
 
     const int left_x = 30;
@@ -403,6 +430,24 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             COL_TEXT_DIM, &lv_font_montserrat_12, 16, 146);
     ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
                             COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
+
+    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 96, "WI-FI REMOTE");
+    lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
+    lv_obj_set_pos(sw_wifi, 16, 40);
+    lv_obj_add_event_cb(sw_wifi, wifi_remote_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    if (wifi_remote_init) {
+        lv_obj_add_state(sw_wifi, LV_STATE_CHECKED);
+    }
+
+    s_label_wifi_remote = ui_settings_value_label(wifi_section,
+                                                  wifi_remote_init ? "ON" : "OFF",
+                                                  wifi_remote_init ? COL_GREEN : COL_TEXT_DIM,
+                                                  &lv_font_montserrat_16,
+                                                  104, 40);
+
+    ui_settings_value_label(wifi_section,
+                            "SSID PAJONIIR / pass 12345678 / http://192.168.4.1",
+                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 70);
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 346, 740, 70, "MIXER / PFL ROUTING");
     ui_settings_static_tile(mixer_section, 18, 30, 108, 28,

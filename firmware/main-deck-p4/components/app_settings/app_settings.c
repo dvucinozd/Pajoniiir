@@ -13,6 +13,7 @@ static app_settings_t s_cfg = {
     .time_remain   = 0,
     .cue_mode      = 0,   /* stereo master */
     .master_trim_preset = 0, /* 0 dB */
+    .wifi_remote   = 0,   /* Wi-Fi remote off by default */
 };
 
 
@@ -49,12 +50,14 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(h, "time_rem",  &v) == ESP_OK) s_cfg.time_remain   = v;
         if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
         if (nvs_get_u8(h, "master_trim", &v) == ESP_OK && v <= 2) s_cfg.master_trim_preset = v;
+        if (nvs_get_u8(h, "wifi_rem",   &v) == ESP_OK && v <= 1) s_cfg.wifi_remote = v;
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u",
+    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u wifi_remote=%s",
              s_cfg.audio_out ? "off" : "on",
              s_cfg.backlight_pct, s_cfg.time_remain, s_cfg.cue_mode,
-             s_cfg.master_trim_preset);
+             s_cfg.master_trim_preset,
+             s_cfg.wifi_remote ? "on" : "off");
     return ESP_OK;
 }
 
@@ -98,4 +101,12 @@ void app_settings_set_master_trim_preset(uint8_t preset)
     if (s_cfg.master_trim_preset == preset) return;
     s_cfg.master_trim_preset = preset;
     save_u8("master_trim", preset);
+}
+
+void app_settings_set_wifi_remote(uint8_t on)
+{
+    on = on ? 1 : 0;
+    if (s_cfg.wifi_remote == on) return;
+    s_cfg.wifi_remote = on;
+    save_u8("wifi_rem", on);
 }

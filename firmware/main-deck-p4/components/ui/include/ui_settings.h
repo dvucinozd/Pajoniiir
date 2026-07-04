@@ -33,6 +33,12 @@ typedef struct {
     lv_obj_t *sd_status;
 } ui_settings_widgets_t;
 
+// Action invoked when the user flips the Wi-Fi remote switch. Registered by
+// app_main so the UI stays decoupled from the wifi_link/web_server transport
+// (avoids a ui -> wifi_link -> web_server -> ui component dependency cycle).
+typedef void (*ui_settings_wifi_toggle_cb_t)(bool enable);
+void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb);
+
 void ui_settings_configure(const ui_settings_config_t *config);
 lv_obj_t *ui_settings_create(lv_obj_t *parent);
 void ui_settings_init(const ui_settings_widgets_t *widgets);
