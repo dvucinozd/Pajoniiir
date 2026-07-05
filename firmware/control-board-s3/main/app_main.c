@@ -2,6 +2,7 @@
 #include "control_link.h"
 #include "calibration.h"
 #include "sdkconfig.h"
+#include "wifi_debug_log.h"
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
@@ -228,6 +229,7 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
+    (void)wifi_debug_log_init();
 
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4

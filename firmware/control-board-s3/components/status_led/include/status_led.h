@@ -1,13 +1,11 @@
 #pragma once
 
-// Onboard DevKitC-1 RGB status LED (WS2812 on GPIO48).
+// Onboard Seeed Studio XIAO ESP32S3 user status LED (GPIO21, active-low).
 //
-// Shows the link states at a glance, highest priority first:
-//   amber  — P4 UART link down (no valid frame for 3 s; boot default until
-//            the first frame — the P4 VU stream provides continuous traffic)
-//   red    — P4 link up, FLX4 disconnected
-//   green  — P4 link up, FLX4 connected
-//   bright green flash — USB-MIDI input traffic while connected
+// Shows reduced one-LED link state:
+//   on  — P4 UART link down, or FLX4 connected
+//   off — P4 link up, FLX4 disconnected
+//   tick — USB-MIDI input traffic
 
 #include <stdbool.h>
 #include "esp_err.h"

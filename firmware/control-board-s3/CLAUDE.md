@@ -15,7 +15,8 @@ Status:
 - optional build: DDJ-FLX4 MIDI-to-P4 translator via
   `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` (enabled in `sdkconfig.defaults`);
 - FLX4 enumerates and translates to control-link frames on hardware
-  (VID 0x2B73 / PID 0x0045); onboard RGB status LED reflects the link state.
+  (VID 0x2B73 / PID 0x0045); the XIAO GPIO21 user LED reflects reduced link
+  state.
 
 Boot note: the FLX4 briefly disconnects/re-enumerates ~0.9 s into boot on
 every cold start (USB host settling). It self-recovers within ~0.6 s — the
@@ -51,9 +52,10 @@ LEDs: CUE=GPIO33, PLAY=GPIO34, BEAT=GPIO38, END=GPIO39 (active-high, 220Ω)
 — legacy CDJ panel path only; in FLX4 host mode `panel_io` is not initialised
 and LED frames from the P4 go to the FLX4 over USB MIDI instead.
 
-Onboard RGB status LED (WS2812 on GPIO48, `status_led` component, FLX4 host
-modes): red = FLX4 disconnected, green = connected, brighter flash on MIDI
-input traffic. Needs the `led_strip` driver — a plain GPIO write cannot drive it.
+Onboard XIAO user status LED (`status_led` component, FLX4 host modes):
+GPIO21 active-low. It provides reduced one-LED feedback: on while the P4 link is
+down or FLX4 is connected, off when P4 is up and FLX4 is disconnected, with a
+short activity tick on MIDI input.
 
 ---
 
@@ -126,7 +128,7 @@ Inherited CDJ panel compatibility:
 | `midi_compat` | Legacy TinyUSB MIDI device compatibility path |
 | `control_link` | UART1 binary protocol to ESP32-P4 |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
-| `status_led` | Onboard WS2812 RGB LED (GPIO48): FLX4 connection state + MIDI activity |
+| `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
 
 ---
 

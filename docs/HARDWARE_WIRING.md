@@ -8,8 +8,8 @@ Keep the inherited CDJ100S-XXX UART wiring.
 | --- | --- | --- | --- |
 | GND | GND | JP1 pin 3 or 4 | shared |
 | 3.3 V | 3V3 | JP1 pin 1 or 16 | power, only if current budget is verified |
-| UART TX | GPIO40 | GPIO28 / JP1 pin 19 | S3 -> P4 |
-| UART RX | GPIO41 | GPIO29 / JP1 pin 12 | P4 -> S3 |
+| UART TX | GPIO5 | GPIO28 / JP1 pin 19 | S3 -> P4 |
+| UART RX | GPIO6 | GPIO29 / JP1 pin 12 | P4 -> S3 |
 
 Leave the JC4880 UART0 connector free for flashing and diagnostics.
 
@@ -17,6 +17,12 @@ Leave the JC4880 UART0 connector free for flashing and diagnostics.
 
 The DDJ-FLX4 connects to the S3 through USB. The S3 must run USB host mode and
 enumerate the FLX4 as a USB MIDI device.
+
+For the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense replacement board, use
+the dedicated wiring note in `firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`.
+This migration branch maps the S3-P4 UART to XIAO header pins GPIO5/GPIO6
+instead of the previous DevKitC GPIO40/GPIO41 pair or the abandoned SuperMini
+GPIO12/GPIO13 candidate.
 
 Open wiring questions:
 
@@ -65,18 +71,16 @@ and `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 | Signal | ESP32-P4 (JP1 pin) | ESP32-S3 side | Direction | Notes |
 | --- | --- | --- | --- | --- |
-| I2S BCLK | GPIO32 (JP1 pin 17) | GPIO15 | P4 -> S3 | clock for monitor PCM stream |
-| I2S WS/LRCK | GPIO34 (JP1 pin 15) | GPIO16 | P4 -> S3 | stereo frame sync |
-| I2S DOUT | GPIO35 (JP1 pin 13) | GPIO17 | P4 -> S3 | P4 `hp_out` monitor PCM data |
+| I2S BCLK | GPIO32 (JP1 pin 17) | GPIO7 | P4 -> S3 | clock for monitor PCM stream |
+| I2S WS/LRCK | GPIO34 (JP1 pin 15) | GPIO8 | P4 -> S3 | stereo frame sync |
+| I2S DOUT | GPIO35 (JP1 pin 13) | GPIO9 | P4 -> S3 | P4 `hp_out` monitor PCM data |
 | GND | GND (JP1 pin 14) | GND | shared | required; use JP1 pin 14 next to the signal pins |
-| READY/FLOW/debug | GPIO49 (JP1 pin 11) | GPIO18 | optional | not needed; leave disconnected |
+| READY/FLOW/debug | GPIO49 (JP1 pin 11) | not assigned | optional | not needed; leave disconnected |
 
-The S3 set GPIO15/GPIO16/GPIO17 avoids S3 USB GPIO19/GPIO20, control UART
-GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, and GPIO48
-(drives the onboard DevKitC-1 WS2812 RGB status LED via the `status_led`
-component — red = FLX4 disconnected, green = connected, flash on MIDI input). GPIO15-GPIO18 are legacy CDJ jog/browse encoder
-pins, acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io`
-is inactive.
+The XIAO ESP32S3 migration set GPIO7/GPIO8/GPIO9 avoids the control UART
+GPIO5/GPIO6 and UART0 GPIO43/GPIO44. These pins are legacy CDJ panel pins,
+acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is
+inactive.
 
 **Transport details (validated):** P4 `monitor_pcm_link` is an I2S TX master
 that streams `P4HP` framed blocks (stereo 16-bit monitor PCM, sequence numbers,

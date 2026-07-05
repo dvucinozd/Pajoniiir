@@ -883,11 +883,12 @@ Exit criteria:
 Two design plans staged under `docs/superpowers/plans/` were reviewed against
 the codebase on 2026-07-03 and have since been implemented in firmware.
 
-- **S3 GPIO48 status RGB LED** —
+- **S3 XIAO GPIO21 user status LED** —
   [`2026-07-03-s3-gpio48-wled-status.md`](superpowers/plans/2026-07-03-s3-gpio48-wled-status.md).
-  Implemented as the S3 `status_led` component for FLX4 host modes. It reports
-  FLX4 USB link state and MIDI input activity and intentionally carries no
-  playback state.
+  The original GPIO48 WS2812 assumption was replaced during the XIAO ESP32S3
+  migration. The implemented S3 `status_led` component now drives the XIAO
+  active-low GPIO21 user LED for reduced FLX4 USB link and MIDI input activity
+  feedback and intentionally carries no playback state.
 - **WAV + FLAC playback** —
   [`2026-07-03-wav-flac-decoder-support.md`](superpowers/plans/2026-07-03-wav-flac-decoder-support.md).
   Implemented through format detection, `audio_decoder_t`, WAV parsing, and

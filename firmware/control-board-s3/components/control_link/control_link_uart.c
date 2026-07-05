@@ -18,8 +18,8 @@
 static const char *TAG = "ctrl_link";
 
 // ─── Pin assignment ───────────────────────────────────────────────────────────
-#define PIN_UART_TX  GPIO_NUM_40   // S3 → P4
-#define PIN_UART_RX  GPIO_NUM_41   // P4 → S3
+#define PIN_UART_TX  ((gpio_num_t)CONTROL_LINK_UART_TX_GPIO)   // S3 -> P4
+#define PIN_UART_RX  ((gpio_num_t)CONTROL_LINK_UART_RX_GPIO)   // P4 -> S3
 
 #define UART_PORT    UART_NUM_1
 #define UART_BAUD    115200

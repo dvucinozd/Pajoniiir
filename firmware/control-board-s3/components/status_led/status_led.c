@@ -2,17 +2,13 @@
 
 #include <stdatomic.h>
 
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "led_strip.h"
 
-// Onboard addressable RGB LED on the ESP32-S3-DevKitC-1 (N16R8).
-#define STATUS_LED_GPIO        48
+// Onboard user LED on the Seeed Studio XIAO ESP32S3 / Sense. It is active-low.
+#define STATUS_LED_GPIO        21
 #define STATUS_LED_TICK_US     (60 * 1000)
-
-// The onboard WS2812 is bright; keep the base level dim.
-#define STATUS_LED_LEVEL_BASE  16u
-#define STATUS_LED_LEVEL_FLASH 48u
 
 // P4 sends the VU-meter LED stream continuously (~66 frames/s), so a few
 // seconds of silence reliably means the UART link is down.
@@ -20,8 +16,8 @@
 
 static const char *TAG = "status_led";
 
-static led_strip_handle_t s_strip;
 static esp_timer_handle_t s_timer;
+static atomic_bool s_initialized;
 static atomic_bool s_connected;
 static atomic_uint s_activity;
 static atomic_uint s_p4_last_frame_ms;   /* 0 = no frame seen yet (boot) */
@@ -39,47 +35,35 @@ static bool p4_link_up(void)
 static void status_led_render_cb(void *arg)
 {
     (void)arg;
-    if (!s_strip) {
+    if (!atomic_load(&s_initialized)) {
         return;
     }
 
     const bool connected = atomic_load(&s_connected);
     const bool flash = atomic_exchange(&s_activity, 0u) != 0u;
-
-    uint8_t red = 0;
-    uint8_t green = 0;
-    if (!p4_link_up()) {
-        red = STATUS_LED_LEVEL_BASE;                 /* amber */
-        green = STATUS_LED_LEVEL_BASE / 3u;
-    } else if (connected) {
-        green = flash ? STATUS_LED_LEVEL_FLASH : STATUS_LED_LEVEL_BASE;
-    } else {
-        red = STATUS_LED_LEVEL_BASE;
-    }
-    (void)led_strip_set_pixel(s_strip, 0, red, green, 0);
-    (void)led_strip_refresh(s_strip);
+    const bool active = !p4_link_up() || connected || flash;
+    (void)gpio_set_level(STATUS_LED_GPIO, active ? 0 : 1);
 }
 
 esp_err_t status_led_init(void)
 {
-    if (s_strip) {
+    if (atomic_load(&s_initialized)) {
         return ESP_OK;
     }
 
-    led_strip_config_t strip_cfg = {
-        .strip_gpio_num = STATUS_LED_GPIO,
-        .max_leds = 1,
-        .led_model = LED_MODEL_WS2812,
-        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << STATUS_LED_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
-    led_strip_rmt_config_t rmt_cfg = {
-        .resolution_hz = 10 * 1000 * 1000,
-    };
-    esp_err_t rc = led_strip_new_rmt_device(&strip_cfg, &rmt_cfg, &s_strip);
+    esp_err_t rc = gpio_config(&cfg);
     if (rc != ESP_OK) {
-        ESP_LOGW(TAG, "led_strip init failed: %s", esp_err_to_name(rc));
+        ESP_LOGW(TAG, "GPIO init failed: %s", esp_err_to_name(rc));
         return rc;
     }
+    (void)gpio_set_level(STATUS_LED_GPIO, 1);
 
     const esp_timer_create_args_t timer_args = {
         .callback = status_led_render_cb,
@@ -94,14 +78,14 @@ esp_err_t status_led_init(void)
             (void)esp_timer_delete(s_timer);
             s_timer = NULL;
         }
-        (void)led_strip_del(s_strip);
-        s_strip = NULL;
+        (void)gpio_set_level(STATUS_LED_GPIO, 1);
         return rc;
     }
 
     atomic_store(&s_connected, false);
-    status_led_render_cb(NULL);   /* show red immediately, not after one tick */
-    ESP_LOGI(TAG, "onboard RGB status LED on GPIO%d", STATUS_LED_GPIO);
+    atomic_store(&s_initialized, true);
+    status_led_render_cb(NULL);   /* show boot/P4-link status immediately */
+    ESP_LOGI(TAG, "XIAO ESP32S3 user LED on GPIO%d (active-low)", STATUS_LED_GPIO);
     return ESP_OK;
 }
 

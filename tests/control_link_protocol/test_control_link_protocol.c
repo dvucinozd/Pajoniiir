@@ -73,6 +73,8 @@ int s3_btn_load(void);
 int s3_btn_count(void);
 int s3_panel_ev_jog(void);
 int s3_panel_ev_browse(void);
+int s3_control_link_uart_tx_gpio(void);
+int s3_control_link_uart_rx_gpio(void);
 int s3_ctrl_id_deck1_play(void);
 int s3_ctrl_id_deck2_cue(void);
 int s3_ctrl_id_deck1_tempo(void);
@@ -198,6 +200,12 @@ static void test_button_ids_match_and_existing_ids_stay_stable(void)
     assert(p4_btn_load() == 13);
     assert(s3_btn_count() == p4_btn_count());
     assert(p4_btn_count() == 14);
+}
+
+static void test_s3_xiao_control_link_uart_pin_defaults(void)
+{
+    assert(s3_control_link_uart_tx_gpio() == 5);
+    assert(s3_control_link_uart_rx_gpio() == 6);
 }
 
 static void test_button_load_decodes(void)
@@ -466,6 +474,7 @@ static void test_led_command_values_and_bad_checksum(void)
 int main(void)
 {
     test_button_ids_match_and_existing_ids_stay_stable();
+    test_s3_xiao_control_link_uart_pin_defaults();
     test_button_load_decodes();
     test_encoder_ids_route_to_jog_and_browse();
     test_firmware_decodes_deck_aware_flx4_ids();
