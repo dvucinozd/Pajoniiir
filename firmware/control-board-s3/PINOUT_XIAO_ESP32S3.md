@@ -103,11 +103,12 @@ Bench status on 2026-07-06:
 
 - S3 raw I2S RX confirmed on GPIO7/GPIO8/GPIO9.
 - `P4HP` deframing confirmed.
-- CRC, I2S read timeout/error, underrun, and overrun counters stayed at zero in
-  the captured stable windows.
-- A 5-minute soak showed rare sequence-gap increments, so this wiring is
-  physically confirmed but the product acceptance gate remains a zero-gap soak
-  after the P4 bench TX drop path is tightened.
+- `P4HP` blocks now use CRC32 over the protected header plus PCM payload, so
+  header corruption is rejected before sequence tracking.
+- Stable S3-only 5-minute soak, with P4 left running, had zero deltas for
+  sequence gaps, CRC errors, I2S read timeouts/errors, underruns, and overruns.
+- Repeat the soak after I2S, task-priority, or FLX4 USB Audio scheduling
+  changes.
 
 ## Pins Reserved Or Avoided
 

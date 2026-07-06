@@ -85,15 +85,16 @@ inactive.
 
 **Transport details (validated):** P4 `monitor_pcm_link` is an I2S TX master
 that streams `P4HP` framed blocks (stereo 16-bit monitor PCM, sequence numbers,
-CRC32). S3 `p4_audio_link` is an I2S slave RX that deframes into a 4096-frame
-ring. The pipe runs at **64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
+CRC32 over protected header plus payload). S3 `p4_audio_link` is an I2S slave
+RX that deframes into a 4096-frame ring. The pipe runs at
+**64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
 slots corrupted over the jumper harness. The TX task writes at line rate (real
 blocks or explicit zero filler) so the continuously-transmitting DMA never laps
 the writer mid-block. 2026-07-06 XIAO bench confirmed raw I2S reception and
-deframing on GPIO7/GPIO8/GPIO9 with `crc=0`, `timeouts=0`, `errors=0`,
-`underruns=0`, and `overruns=0`. A 5-minute soak observed rare sequence-gap
-increments, so product acceptance still needs a zero-gap soak after the P4 TX
-drop path is tightened.
+deframing on GPIO7/GPIO8/GPIO9 with zero steady-state deltas for `gaps`, `crc`,
+I2S `timeouts`, I2S `errors`, `underruns`, and `overruns` during a five-minute
+S3-only soak. Repeat this soak after I2S, task-priority, or FLX4 USB Audio
+scheduling changes.
 
 **Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
 `i2s_new_channel`, leaving units 0 and 1. Product config: **monitor link on

@@ -29,7 +29,7 @@ typedef struct {
     uint16_t frames;
     uint32_t sample_rate;
     uint32_t sequence;
-    uint32_t payload_crc32;
+    uint32_t block_crc32;
 } monitor_pcm_link_block_header_t;
 
 esp_err_t monitor_pcm_link_init(void);

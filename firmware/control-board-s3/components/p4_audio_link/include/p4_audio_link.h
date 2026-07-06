@@ -19,7 +19,7 @@ typedef struct {
     uint16_t frames;
     uint32_t sample_rate;
     uint32_t sequence;
-    uint32_t payload_crc32;
+    uint32_t block_crc32;
 } p4_audio_link_block_header_t;
 
 typedef struct {

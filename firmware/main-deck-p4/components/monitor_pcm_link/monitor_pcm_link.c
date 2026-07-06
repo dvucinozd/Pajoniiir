@@ -17,9 +17,8 @@ static uint32_t s_write_count;
 static uint32_t s_read_count;
 static uint32_t s_next_sequence;
 
-static uint32_t monitor_pcm_link_crc32(const uint8_t *data, size_t len)
+static uint32_t monitor_pcm_link_crc32_update(uint32_t crc, const uint8_t *data, size_t len)
 {
-    uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; ++i) {
         crc ^= (uint32_t)data[i];
         for (unsigned bit = 0; bit < 8u; ++bit) {
@@ -27,6 +26,20 @@ static uint32_t monitor_pcm_link_crc32(const uint8_t *data, size_t len)
             crc = (crc >> 1) ^ (0xEDB88320u & mask);
         }
     }
+    return crc;
+}
+
+static uint32_t monitor_pcm_link_block_crc32(const monitor_pcm_link_block_header_t *header,
+                                             const int16_t *pcm,
+                                             size_t payload_bytes)
+{
+    monitor_pcm_link_block_header_t protected_header = *header;
+    protected_header.block_crc32 = 0u;
+    uint32_t crc = 0xFFFFFFFFu;
+    crc = monitor_pcm_link_crc32_update(crc,
+                                        (const uint8_t *)&protected_header,
+                                        sizeof(protected_header));
+    crc = monitor_pcm_link_crc32_update(crc, (const uint8_t *)pcm, payload_bytes);
     return ~crc;
 }
 
@@ -85,7 +98,9 @@ bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_
     slot->header.frames = (uint16_t)frames;
     slot->header.sample_rate = s_stats.sample_rate;
     slot->header.sequence = s_next_sequence++;
-    slot->header.payload_crc32 = monitor_pcm_link_crc32((const uint8_t *)slot->pcm, payload_bytes);
+    slot->header.block_crc32 = monitor_pcm_link_block_crc32(&slot->header,
+                                                            slot->pcm,
+                                                            payload_bytes);
 
     __atomic_store_n(&s_write_count, write_count + 1u, __ATOMIC_RELEASE);
     s_stats.submitted_blocks++;

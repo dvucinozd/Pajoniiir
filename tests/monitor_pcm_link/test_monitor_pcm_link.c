@@ -50,9 +50,8 @@ static int test_invalid_format_is_rejected(void)
     return 0;
 }
 
-static uint32_t test_crc32(const uint8_t *data, size_t len)
+static uint32_t test_crc32_update(uint32_t crc, const uint8_t *data, size_t len)
 {
-    uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; ++i) {
         crc ^= (uint32_t)data[i];
         for (unsigned bit = 0; bit < 8u; ++bit) {
@@ -60,6 +59,18 @@ static uint32_t test_crc32(const uint8_t *data, size_t len)
             crc = (crc >> 1) ^ (0xEDB88320u & mask);
         }
     }
+    return crc;
+}
+
+static uint32_t test_block_crc32(const monitor_pcm_link_block_header_t *header,
+                                 const int16_t *pcm,
+                                 size_t payload_bytes)
+{
+    monitor_pcm_link_block_header_t protected_header = *header;
+    protected_header.block_crc32 = 0u;
+    uint32_t crc = 0xFFFFFFFFu;
+    crc = test_crc32_update(crc, (const uint8_t *)&protected_header, sizeof(protected_header));
+    crc = test_crc32_update(crc, (const uint8_t *)pcm, payload_bytes);
     return ~crc;
 }
 
@@ -93,7 +104,7 @@ static int test_enabled_link_serializes_pcm_blocks(void)
     EXPECT_EQ(hdr.frames, 3u, "serialized frame count");
     EXPECT_EQ(hdr.sample_rate, 48000u, "serialized sample rate");
     EXPECT_EQ(hdr.sequence, 1u, "first sequence number");
-    EXPECT_EQ(hdr.payload_crc32, test_crc32((const uint8_t *)pcm, sizeof(pcm)), "serialized payload crc");
+    EXPECT_EQ(hdr.block_crc32, test_block_crc32(&hdr, pcm, sizeof(pcm)), "serialized block crc");
     EXPECT_TRUE(memcmp(block + sizeof(hdr), pcm, sizeof(pcm)) == 0, "serialized PCM payload");
     return 0;
 }

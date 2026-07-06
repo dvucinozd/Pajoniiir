@@ -45,9 +45,8 @@ static uint32_t stats_load(const uint32_t *counter)
     return __atomic_load_n(counter, __ATOMIC_RELAXED);
 }
 
-static uint32_t p4_audio_link_crc32(const uint8_t *data, size_t len)
+static uint32_t p4_audio_link_crc32_update(uint32_t crc, const uint8_t *data, size_t len)
 {
-    uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; ++i) {
         crc ^= (uint32_t)data[i];
         for (unsigned bit = 0; bit < 8u; ++bit) {
@@ -55,6 +54,20 @@ static uint32_t p4_audio_link_crc32(const uint8_t *data, size_t len)
             crc = (crc >> 1) ^ (0xEDB88320u & mask);
         }
     }
+    return crc;
+}
+
+static uint32_t p4_audio_link_block_crc32(const p4_audio_link_block_header_t *header,
+                                          const uint8_t *payload,
+                                          size_t payload_bytes)
+{
+    p4_audio_link_block_header_t protected_header = *header;
+    protected_header.block_crc32 = 0u;
+    uint32_t crc = 0xFFFFFFFFu;
+    crc = p4_audio_link_crc32_update(crc,
+                                     (const uint8_t *)&protected_header,
+                                     sizeof(protected_header));
+    crc = p4_audio_link_crc32_update(crc, payload, payload_bytes);
     return ~crc;
 }
 
@@ -107,8 +120,8 @@ bool p4_audio_link_receive_block(const uint8_t *block, size_t block_len)
     }
 
     const uint8_t *payload = block + hdr.header_bytes;
-    uint32_t crc = p4_audio_link_crc32(payload, payload_bytes);
-    if (crc != hdr.payload_crc32) {
+    uint32_t crc = p4_audio_link_block_crc32(&hdr, payload, payload_bytes);
+    if (crc != hdr.block_crc32) {
         stats_add(&s_stats.crc_errors, 1u);
         return false;
     }
