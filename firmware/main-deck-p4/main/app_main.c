@@ -21,6 +21,8 @@
 
 static const char *TAG = "main";
 
+void p4_tcm_heap_guard_keep(void);
+
 // Called from the USB storage task when the Rekordbox drive mounts/unmounts.
 static void on_usb_storage_event(bool mounted)
 {
@@ -46,6 +48,8 @@ static void on_usb_storage_event(bool mounted)
 
 void app_main(void)
 {
+    p4_tcm_heap_guard_keep();
+
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
     // Log the reason for the most recent reset. A spontaneous reboot during use
