@@ -36,17 +36,48 @@ static void rx_task(void *arg)
     (void)arg;
     static uint8_t chunk[P4_AUDIO_LINK_RX_CHUNK_BYTES];
     TickType_t last_log = xTaskGetTickCount();
+#if CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER
+    uint32_t raw_reads = 0u;
+    uint32_t raw_timeouts = 0u;
+    uint32_t raw_errors = 0u;
+    uint32_t raw_nonzero_reads = 0u;
+    uint32_t raw_magic_reads = 0u;
+    uint32_t raw_bytes = 0u;
+#endif
 
     while (1) {
         size_t got = 0u;
         esp_err_t rc = i2s_channel_read(s_rx_chan, chunk, sizeof(chunk), &got,
                                         pdMS_TO_TICKS(100));
         if (rc == ESP_OK && got > 0u) {
+#if CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER
+            raw_reads++;
+            raw_bytes += (uint32_t)got;
+            bool has_nonzero = false;
+            bool has_magic = false;
+            for (size_t i = 0; i < got; ++i) {
+                has_nonzero |= chunk[i] != 0u;
+                has_magic |= i + 4u <= got &&
+                             chunk[i] == 0x50u &&
+                             chunk[i + 1u] == 0x34u &&
+                             chunk[i + 2u] == 0x48u &&
+                             chunk[i + 3u] == 0x50u;
+            }
+            raw_nonzero_reads += has_nonzero ? 1u : 0u;
+            raw_magic_reads += has_magic ? 1u : 0u;
+#endif
             /* The ring is fed and drained from this task only, so the pure
                p4_audio_link state needs no locking in the bench slice. The
                Task 8 USB consumer must add cross-task protection first. */
             p4_audio_link_feed_bytes(chunk, got);
         }
+#if CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER
+        else if (rc == ESP_ERR_TIMEOUT) {
+            raw_timeouts++;
+        } else if (rc != ESP_OK) {
+            raw_errors++;
+        }
+#endif
 
 #if CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER
         static int16_t scratch[P4_AUDIO_LINK_BENCH_DRAIN_CHUNK_FRAMES * 2u];
@@ -74,6 +105,15 @@ static void rx_task(void *arg)
                      (unsigned)stats.ring_frames,
                      (unsigned)stats.underruns,
                      (unsigned)stats.overruns);
+#if CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER
+            ESP_LOGI(TAG, "P4_AUDIO_LINK raw reads=%u bytes=%u nonzero=%u magic=%u timeouts=%u errors=%u",
+                     (unsigned)raw_reads,
+                     (unsigned)raw_bytes,
+                     (unsigned)raw_nonzero_reads,
+                     (unsigned)raw_magic_reads,
+                     (unsigned)raw_timeouts,
+                     (unsigned)raw_errors);
+#endif
         }
     }
 }

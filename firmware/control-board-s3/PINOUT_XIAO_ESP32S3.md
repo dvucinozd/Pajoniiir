@@ -99,9 +99,15 @@ CONFIG_P4_AUDIO_LINK_WS_GPIO=8
 CONFIG_P4_AUDIO_LINK_DIN_GPIO=9
 ```
 
-Repeat the P4-to-S3 audio-link bench before using this path as product wiring.
-Passing criteria remain zero sequence gaps, zero CRC errors, and no steady-state
-underruns/overruns.
+Bench status on 2026-07-06:
+
+- S3 raw I2S RX confirmed on GPIO7/GPIO8/GPIO9.
+- `P4HP` deframing confirmed.
+- CRC, I2S read timeout/error, underrun, and overrun counters stayed at zero in
+  the captured stable windows.
+- A 5-minute soak showed rare sequence-gap increments, so this wiring is
+  physically confirmed but the product acceptance gate remains a zero-gap soak
+  after the P4 bench TX drop path is tightened.
 
 ## Pins Reserved Or Avoided
 

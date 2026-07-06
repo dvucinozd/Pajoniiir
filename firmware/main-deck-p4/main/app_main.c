@@ -58,6 +58,12 @@ void app_main(void)
     // on rev v1.3 (eco2) silicon, claiming a fresh I2S unit late in boot with
     // DSI/PSRAM/USB traffic active has hard-frozen the HP bus.
     ESP_ERROR_CHECK(monitor_pcm_link_start_transport());
+#if CONFIG_MONITOR_PCM_LINK_BENCH_TONE
+    ESP_LOGW(TAG, "monitor PCM bench profile active; skipping full P4 app startup");
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#endif
 #endif
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────

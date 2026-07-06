@@ -66,8 +66,9 @@ Inherited confirmed UART:
 - P4 GPIO29: UART TX to S3 RX.
 
 P4-to-S3 monitor PCM link for the FLX4 USB Audio headphones path
-(**hardware-validated 2026-07-02**, `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`
-and `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
+(DevKitC candidate hardware-validated 2026-07-02; XIAO ESP32S3/Sense wiring
+validated 2026-07-06; see `docs/validation/P4_S3_AUDIO_LINK_BENCH.md` and
+`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 | Signal | ESP32-P4 (JP1 pin) | ESP32-S3 side | Direction | Notes |
 | --- | --- | --- | --- | --- |
@@ -88,7 +89,11 @@ CRC32). S3 `p4_audio_link` is an I2S slave RX that deframes into a 4096-frame
 ring. The pipe runs at **64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
 slots corrupted over the jumper harness. The TX task writes at line rate (real
 blocks or explicit zero filler) so the continuously-transmitting DMA never laps
-the writer mid-block. 80 s bench: 0 gaps / 0 CRC / 0 under/overruns.
+the writer mid-block. 2026-07-06 XIAO bench confirmed raw I2S reception and
+deframing on GPIO7/GPIO8/GPIO9 with `crc=0`, `timeouts=0`, `errors=0`,
+`underruns=0`, and `overruns=0`. A 5-minute soak observed rare sequence-gap
+increments, so product acceptance still needs a zero-gap soak after the P4 TX
+drop path is tightened.
 
 **Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
 `i2s_new_channel`, leaving units 0 and 1. Product config: **monitor link on
