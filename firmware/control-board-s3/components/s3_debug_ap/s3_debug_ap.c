@@ -144,37 +144,57 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t events_send_sse(httpd_req_t *req, char *text)
+{
+    // Emit one SSE event whose payload is `text`, mapping each embedded
+    // newline to a fresh "data:" line so multi-line log blocks render intact.
+    if (httpd_resp_sendstr_chunk(req, "data: ") != ESP_OK) {
+        return ESP_FAIL;
+    }
+    char *start = text;
+    for (char *p = text;; p++) {
+        if (*p == '\n' || *p == '\0') {
+            char saved = *p;
+            *p = '\0';
+            if (httpd_resp_sendstr_chunk(req, start) != ESP_OK) {
+                return ESP_FAIL;
+            }
+            *p = saved;
+            if (saved == '\0') {
+                break;
+            }
+            if (httpd_resp_sendstr_chunk(req, "\ndata: ") != ESP_OK) {
+                return ESP_FAIL;
+            }
+            start = p + 1;
+        }
+    }
+    return httpd_resp_sendstr_chunk(req, "\n\n");
+}
+
 static esp_err_t events_get_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/event-stream");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
 
-    char snapshot[2048];
-    for (int i = 0; i < 120; i++) {
-        snapshot[0] = '\0';
-        if (s_lock && xSemaphoreTake(s_lock, pdMS_TO_TICKS(20)) == pdTRUE) {
-            (void)s3_debug_log_ring_snapshot(&s_log_ring, snapshot, sizeof(snapshot), 0);
+    // Stream only lines newer than what this client has already received.
+    uint32_t last_seq = 0;
+    char chunk[512];
+    for (int i = 0; i < 600; i++) {
+        chunk[0] = '\0';
+        uint32_t seen_seq = last_seq;
+        if (s_lock && xSemaphoreTake(s_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+            (void)s3_debug_log_ring_snapshot(&s_log_ring, chunk, sizeof(chunk), last_seq);
+            seen_seq = s_log_ring.next_seq;
             xSemaphoreGive(s_lock);
         }
-        if (snapshot[0] != '\0') {
-            if (httpd_resp_sendstr_chunk(req, "data: ") != ESP_OK) {
+        if (chunk[0] != '\0') {
+            last_seq = seen_seq;
+            if (events_send_sse(req, chunk) != ESP_OK) {
                 break;
             }
-            for (char *p = snapshot; *p; p++) {
-                if (*p == '\n') {
-                    if (httpd_resp_sendstr_chunk(req, "\ndata: ") != ESP_OK) {
-                        return ESP_FAIL;
-                    }
-                } else {
-                    char c[2] = { *p, '\0' };
-                    if (httpd_resp_sendstr_chunk(req, c) != ESP_OK) {
-                        return ESP_FAIL;
-                    }
-                }
-            }
-            if (httpd_resp_sendstr_chunk(req, "\n\n") != ESP_OK) {
-                break;
-            }
+        } else if (httpd_resp_sendstr_chunk(req, ": keepalive\n\n") != ESP_OK) {
+            break;
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -189,6 +209,10 @@ static esp_err_t start_httpd(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
+    // The SSE handler runs a long-lived loop with local buffers on top of the
+    // httpd internals; the 4 KB default task stack overflows, so give it room.
+    config.stack_size = 8192;
+    config.lru_purge_enable = true;
     ESP_RETURN_ON_ERROR(httpd_start(&s_httpd, &config), TAG, "httpd_start");
 
     httpd_uri_t root = {
