@@ -110,6 +110,16 @@ Bench status on 2026-07-06:
 - Repeat the soak after I2S, task-priority, or FLX4 USB Audio scheduling
   changes.
 
+Product e2e status on 2026-07-07:
+
+- `build_flx4_hp_e2e_xiao` on S3 and `build_flx4_hp_e2e_tcmguard` on P4 were
+  flashed and booted.
+- P4 playback generated monitor PCM blocks with `MONITOR_PCM_LINK dropped=0`.
+- S3 received P4 audio-link blocks on GPIO7/GPIO8/GPIO9 with `gaps=0` and
+  `crc=0`.
+- The FLX4 headphone jack produced audible audio after the FLX4 USB Audio
+  consumer was connected.
+
 ## Pins Reserved Or Avoided
 
 | Pin | Use / reason |

@@ -43,3 +43,35 @@ time from the two usable P4 I2S units. The eco2 I2S-unit-2 freeze is avoided;
 ES8311 onboard monitor is dropped in the product build (not needed as a
 simultaneous fallback per the 2026-07-02 decision). The end-to-end acceptance
 criteria in the plan are met.
+
+## XIAO ESP32S3/Sense migration re-smoke -- PASS (2026-07-07)
+
+Branch: `codex/s3-supermini-migration`
+
+After replacing the S3 control board with the Seeed Studio XIAO ESP32S3 /
+XIAO ESP32S3 Sense, the full product headphone path was re-smoked with the
+XIAO GPIO7/GPIO8/GPIO9 monitor PCM link wiring.
+
+Builds flashed:
+
+- S3: `build_flx4_hp_e2e_xiao`, using `sdkconfig.flx4_hp_e2e` with
+  `CONFIG_P4_AUDIO_LINK_BCLK_GPIO=7`,
+  `CONFIG_P4_AUDIO_LINK_WS_GPIO=8`, and
+  `CONFIG_P4_AUDIO_LINK_DIN_GPIO=9`.
+- P4: `build_flx4_hp_e2e_tcmguard`, using the product `flx4_hp_e2e` topology
+  plus the P4 TCM heap guard needed for stable ESP-IDF 5.5 boot on ESP32-P4.
+
+Observed result:
+
+| Check | Result |
+| --- | --- |
+| P4 boot stability after flash | PASS; no FreeRTOS TCM stack/TCB bootloop |
+| USB media library load | PASS; P4 reported 18 tracks |
+| P4 monitor PCM TX | PASS; `submitted` and `sent` rose together, `dropped=0` |
+| S3 P4-audio-link RX while P4 playback was active | PASS; `rx blocks` rose, `gaps=0`, `crc=0` |
+| FLX4 headphones audible | PASS; confirmed by operator |
+
+The first S3 RX check with FLX4 not yet consuming audio showed the expected
+full ring and increasing overruns: the P4-to-S3 link was already carrying PCM,
+but no USB Audio consumer was draining it. After the FLX4 headphones path was
+connected, the operator confirmed audible audio in the FLX4 headphones.

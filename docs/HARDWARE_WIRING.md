@@ -26,8 +26,10 @@ GPIO12/GPIO13 candidate.
 
 Open wiring questions:
 
-- confirm whether the selected S3 dev board can power the FLX4 through USB;
-- if not, use a powered USB hub or externally powered USB host wiring;
+- the FLX4 is externally powered for the current XIAO bench setup; do not use
+  the XIAO as the FLX4 operating-current supply;
+- keep a valid host/OTG VBUS arrangement for enumeration without tying
+  independent 5 V sources together;
 - ensure common ground between S3, P4, audio boards, and any external supply;
 - document actual VBUS/current behavior during bench testing.
 
@@ -95,6 +97,14 @@ deframing on GPIO7/GPIO8/GPIO9 with zero steady-state deltas for `gaps`, `crc`,
 I2S `timeouts`, I2S `errors`, `underruns`, and `overruns` during a five-minute
 S3-only soak. Repeat this soak after I2S, task-priority, or FLX4 USB Audio
 scheduling changes.
+
+**Product e2e result (validated 2026-07-07):** with the XIAO GPIO7/GPIO8/GPIO9
+link wiring, P4 `build_flx4_hp_e2e_tcmguard`, and S3
+`build_flx4_hp_e2e_xiao`, the full path from P4 playback to the FLX4 headphone
+jack was confirmed audible by the operator. P4 `MONITOR_PCM_LINK` counters rose
+with `dropped=0`; S3 `P4_AUDIO_LINK` counters rose with `gaps=0` and `crc=0`
+before the FLX4 USB Audio consumer was attached. See
+`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`.
 
 **Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
 `i2s_new_channel`, leaving units 0 and 1. Product config: **monitor link on
