@@ -133,7 +133,10 @@ The fork is no longer only the imported single-deck baseline:
   The S3 maps the new physical MIDI notes to semantic control-link events and the
   P4 owns the resulting state/audio/LED behavior. Censor is an approximation
   (forward seek-back, sync-correct on release) rather than a true reverse.
-  Merged to `master` on 2026-07-02; host suites pass, hardware smoke pending.
+  Merged to `master` on 2026-07-02; host suites pass. The XIAO RC2 smoke on
+  2026-07-07 confirmed the connected FLX4 headphone/mixer control path with
+  audible USB headphone output; remaining per-control exceptions stay tracked in
+  `docs/DDJ_FLX4_MIDI_MAP.md`.
 - The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
   merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
   remaining stale Codex branches were reviewed and removed (local + remote),

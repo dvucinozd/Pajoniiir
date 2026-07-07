@@ -773,10 +773,13 @@ Implementation order:
      path. Hardware smoke passed on 2026-07-01.
    - headphones mix is implemented for the P4 monitor path: S3 forwards the
      14-bit FLX4 Headphones Mix control (`B6 0C/2C`), P4 stores the raw value
-     in the mixer snapshot and `/api/status`, and the ES8311 monitor/headphone
-     buffer blends cue/PFL with stereo master (`0` = cue/PFL, `16383` =
-     master). This intentionally does not drive the original FLX4 headphone
-     jack; that remains a separate USB Audio Class or analog bridge phase.
+     in the mixer snapshot and `/api/status`, and the P4 `hp_out` monitor bus
+     blends cue/PFL with stereo master (`0` = cue/PFL, `16383` = master). In
+     the product topology this bus is streamed over the P4-to-S3 I2S monitor
+     link and then to the original FLX4 headphone jack via USB Audio Class.
+     XIAO ESP32S3/Sense hardware smoke with audible FLX4 headphones passed on
+     2026-07-07, including Headphones Mix and Headphones Level operator
+     acceptance.
    - physical MASTER CUE is implemented from the official MIDI list
      (`96 63`, shifted `96 78`) as a P4-owned monitor master-cue gate.
      The official `96 68` message is Shift+Load Deck 1, not Master Cue.
