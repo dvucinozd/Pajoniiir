@@ -58,6 +58,8 @@ int p4_led_sync(void);
 int p4_led_loop_in(void);
 int p4_led_loop_out(void);
 int p4_led_master_cue(void);
+int p4_led_beat_jump_pad_1(void);
+int p4_led_beat_jump_pad_8(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
@@ -124,6 +126,8 @@ int s3_led_sync(void);
 int s3_led_loop_in(void);
 int s3_led_loop_out(void);
 int s3_led_master_cue(void);
+int s3_led_beat_jump_pad_1(void);
+int s3_led_beat_jump_pad_8(void);
 int s3_ctrl_flx4_disconnected(void);
 int s3_ctrl_flx4_connected(void);
 
@@ -406,6 +410,11 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
     assert(p4_led_loop_out() == LED_LOOP_OUT);
     assert(s3_led_master_cue() == p4_led_master_cue());
     assert(p4_led_master_cue() == LED_MASTER_CUE);
+    assert(s3_led_beat_jump_pad_1() == p4_led_beat_jump_pad_1());
+    assert(s3_led_beat_jump_pad_8() == p4_led_beat_jump_pad_8());
+    assert(p4_led_beat_jump_pad_1() == LED_BEAT_JUMP_PAD_1);
+    assert(p4_led_beat_jump_pad_8() == LED_BEAT_JUMP_PAD_8);
+    assert(p4_led_beat_jump_pad_8() == p4_led_beat_jump_pad_1() + 7);
 }
 
 static void test_s3_and_p4_flx4_connection_state_ids_match(void)

@@ -119,6 +119,16 @@ typedef enum {
     LED_LOOP_ADJUST_OUT,
     LED_TRACK_LOAD_DECK1,
     LED_TRACK_LOAD_DECK2,
+    /* Beat Jump pad LEDs are state-driven FLX4 pad feedback published by
+     * deck_core outside the fixed FLX4 LED snapshot table. */
+    LED_BEAT_JUMP_PAD_1,
+    LED_BEAT_JUMP_PAD_2,
+    LED_BEAT_JUMP_PAD_3,
+    LED_BEAT_JUMP_PAD_4,
+    LED_BEAT_JUMP_PAD_5,
+    LED_BEAT_JUMP_PAD_6,
+    LED_BEAT_JUMP_PAD_7,
+    LED_BEAT_JUMP_PAD_8,
     LED_REMOTE_COUNT,
 } led_id_t;
 

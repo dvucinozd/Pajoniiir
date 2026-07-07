@@ -64,5 +64,7 @@ int s3_led_sync(void) { return LED_SYNC; }
 int s3_led_loop_in(void) { return LED_LOOP_IN; }
 int s3_led_loop_out(void) { return LED_LOOP_OUT; }
 int s3_led_master_cue(void) { return LED_MASTER_CUE; }
+int s3_led_beat_jump_pad_1(void) { return LED_BEAT_JUMP_PAD_1; }
+int s3_led_beat_jump_pad_8(void) { return LED_BEAT_JUMP_PAD_8; }
 int s3_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int s3_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

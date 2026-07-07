@@ -87,6 +87,12 @@ static void assert_last_led_flash(led_id_t led, uint8_t deck)
     assert(last == 0);
 }
 
+static led_id_t test_beat_jump_pad_led(uint8_t pad)
+{
+    assert(pad < 8);
+    return (led_id_t)(LED_BEAT_JUMP_PAD_1 + pad);
+}
+
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
@@ -2132,6 +2138,32 @@ static void test_beat_jump_pad_maps_pad_index_to_jump_size(void)
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 20000);
 }
 
+static void test_beat_jump_mode_lights_pad_leds_when_track_loaded(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    audio_engine_stub_deck_loaded[CTRL_DECK_2] = true;
+
+    ctrl_event_t mode = deck_button(CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP);
+    deck_core_test_apply_event(&mode);
+
+    for (uint8_t pad = 0; pad < 8; pad++) {
+        assert(control_link_stub_last_led_state(test_beat_jump_pad_led(pad),
+                                                CTRL_DECK_2) == 1);
+    }
+
+    control_link_stub_reset_leds();
+    audio_engine_stub_deck_loaded[CTRL_DECK_2] = false;
+    deck_core_test_apply_event(&mode);
+
+    for (uint8_t pad = 0; pad < 8; pad++) {
+        assert(control_link_stub_last_led_state(test_beat_jump_pad_led(pad),
+                                                CTRL_DECK_2) == 0);
+    }
+}
+
 static void test_beat_jump_release_event_does_not_seek(void)
 {
     deck_core_test_reset();
@@ -2279,6 +2311,7 @@ int main(void)
     test_shift_hot_cue_pad_clears_requested_slot();
     test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
     test_beat_jump_pad_maps_pad_index_to_jump_size();
+    test_beat_jump_mode_lights_pad_leds_when_track_loaded();
     test_beat_jump_release_event_does_not_seek();
     test_beat_jump_clamps_to_beatgrid_edges();
     test_smoke_log_policy_rates_limits_deferred_analog_controls();

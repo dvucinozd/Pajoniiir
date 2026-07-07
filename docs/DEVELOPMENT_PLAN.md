@@ -837,6 +837,11 @@ Implementation order:
      pad mode; shifted mirror LED notes remain deferred. A 2026-07-01 fix
      removed the previous 120-BPM duration-inference dependency, and hardware
      LED smoke passed on both decks;
+   - Beat Jump normal pad LED output is implemented for the normal pad LED
+     notes and derived from P4-owned loaded-track state while Beat Jump mode is
+     selected; shifted helper/mirror LED notes remain deferred. Post-flash
+     FLX4 smoke passed on 2026-07-07: all 8 normal Beat Jump pads lit in Beat
+     Jump mode with a loaded track;
    - Beat Sync LED feedback is implemented as a P4-owned per-deck sync-enabled
      state (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - Loop In/Out LED feedback is implemented from P4-owned loop marker/loop

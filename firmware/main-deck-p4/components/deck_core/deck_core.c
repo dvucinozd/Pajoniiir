@@ -56,6 +56,8 @@ static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
+static bool              s_beat_jump_pad_led_valid[DECK_CORE_DECK_COUNT][8];
+static uint8_t           s_beat_jump_pad_led_state[DECK_CORE_DECK_COUNT][8];
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
@@ -1059,14 +1061,21 @@ static led_id_t track_load_led_for_deck(uint8_t deck)
     return deck == CTRL_DECK_2 ? LED_TRACK_LOAD_DECK2 : LED_TRACK_LOAD_DECK1;
 }
 
+static led_id_t beat_jump_pad_led_for_pad(uint8_t pad)
+{
+    return (led_id_t)(LED_BEAT_JUMP_PAD_1 + pad);
+}
+
+static bool deck_has_loaded_track(uint8_t deck)
+{
+    audio_engine_deck_status_t status = { 0 };
+    return audio_engine_deck_get_status(deck, &status) == ESP_OK && status.loaded;
+}
+
 static void publish_track_load_leds(bool force)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        audio_engine_deck_status_t status = { 0 };
-        uint8_t value = 0u;
-        if (audio_engine_deck_get_status(deck, &status) == ESP_OK && status.loaded) {
-            value = 1u;
-        }
+        uint8_t value = deck_has_loaded_track(deck) ? 1u : 0u;
 
         if (force ||
             !s_track_load_led_valid[deck] ||
@@ -1074,6 +1083,24 @@ static void publish_track_load_leds(bool force)
             control_link_send_led_deck(track_load_led_for_deck(deck), value, deck);
             s_track_load_led_state[deck] = value;
             s_track_load_led_valid[deck] = true;
+        }
+    }
+}
+
+static void publish_beat_jump_pad_leds(bool force)
+{
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        deck_state_t state = deck_core_get_deck_state(deck);
+        uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
+                         deck_has_loaded_track(deck)) ? 1u : 0u;
+        for (uint8_t pad = 0; pad < 8; pad++) {
+            if (force ||
+                !s_beat_jump_pad_led_valid[deck][pad] ||
+                s_beat_jump_pad_led_state[deck][pad] != value) {
+                control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
+                s_beat_jump_pad_led_state[deck][pad] = value;
+                s_beat_jump_pad_led_valid[deck][pad] = true;
+            }
         }
     }
 }
@@ -1123,6 +1150,7 @@ static void publish_flx4_led_snapshot(bool force)
         ESP_LOGD(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
     }
     publish_track_load_leds(force);
+    publish_beat_jump_pad_leds(force);
 }
 
 static void execute_ui_command(const deck_ui_command_t *cmd)
@@ -1146,6 +1174,7 @@ static void execute_ui_command(const deck_ui_command_t *cmd)
         }
         if (loaded) {
             publish_track_load_leds(false);
+            publish_beat_jump_pad_leds(false);
         }
         break;
     }
@@ -2355,6 +2384,8 @@ void deck_core_test_reset(void)
     memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
     memset(s_track_load_led_valid, 0, sizeof(s_track_load_led_valid));
     memset(s_track_load_led_state, 0, sizeof(s_track_load_led_state));
+    memset(s_beat_jump_pad_led_valid, 0, sizeof(s_beat_jump_pad_led_valid));
+    memset(s_beat_jump_pad_led_state, 0, sizeof(s_beat_jump_pad_led_state));
     memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
     memset(s_hot_cue_mask_cache_value, 0, sizeof(s_hot_cue_mask_cache_value));
 #if defined(DECK_CORE_PC_TEST)

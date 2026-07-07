@@ -144,7 +144,17 @@ typedef enum {
 #define LED_LOOP_ADJUST_OUT 56
 #define LED_TRACK_LOAD_DECK1 57
 #define LED_TRACK_LOAD_DECK2 58
-#define LED_REMOTE_COUNT 59
+/* Beat Jump pad LEDs are P4-owned FLX4 pad feedback. They intentionally live
+ * outside the legacy FLX4 snapshot table and are published by P4 deck_core. */
+#define LED_BEAT_JUMP_PAD_1 59
+#define LED_BEAT_JUMP_PAD_2 60
+#define LED_BEAT_JUMP_PAD_3 61
+#define LED_BEAT_JUMP_PAD_4 62
+#define LED_BEAT_JUMP_PAD_5 63
+#define LED_BEAT_JUMP_PAD_6 64
+#define LED_BEAT_JUMP_PAD_7 65
+#define LED_BEAT_JUMP_PAD_8 66
+#define LED_REMOTE_COUNT 67
 
 typedef enum {
     CTRL_PAD_MODE_HOT_CUE = 0,
