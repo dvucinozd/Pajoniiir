@@ -56,5 +56,7 @@ int p4_led_loop_out(void) { return LED_LOOP_OUT; }
 int p4_led_master_cue(void) { return LED_MASTER_CUE; }
 int p4_led_beat_jump_pad_1(void) { return LED_BEAT_JUMP_PAD_1; }
 int p4_led_beat_jump_pad_8(void) { return LED_BEAT_JUMP_PAD_8; }
+int p4_led_beat_jump_shift_helper_7(void) { return LED_BEAT_JUMP_SHIFT_HELPER_7; }
+int p4_led_beat_jump_shift_helper_8(void) { return LED_BEAT_JUMP_SHIFT_HELPER_8; }
 int p4_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int p4_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }

@@ -839,9 +839,11 @@ Implementation order:
      LED smoke passed on both decks;
    - Beat Jump normal pad LED output is implemented for the normal pad LED
      notes and derived from P4-owned loaded-track state while Beat Jump mode is
-     selected; shifted helper/mirror LED notes remain deferred. Post-flash
-     FLX4 smoke passed on 2026-07-07: all 8 normal Beat Jump pads lit in Beat
-     Jump mode with a loaded track;
+     selected. Shifted helper LED 7/8 output is implemented from the same
+     loaded-track/mode state gated by held deck Shift; broader shifted mirror
+     LED notes remain deferred. Post-flash FLX4 smoke passed on 2026-07-07:
+     all 8 normal Beat Jump pads lit in Beat Jump mode with a loaded track,
+     and shifted helper LED 7/8 lit while deck Shift was held;
    - Beat Sync LED feedback is implemented as a P4-owned per-deck sync-enabled
      state (`deck_core.sync_enabled`) and XML-derived S3 MIDI OUT note `0x58`;
    - Loop In/Out LED feedback is implemented from P4-owned loop marker/loop

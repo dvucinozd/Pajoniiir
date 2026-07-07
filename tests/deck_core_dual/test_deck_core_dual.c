@@ -93,6 +93,12 @@ static led_id_t test_beat_jump_pad_led(uint8_t pad)
     return (led_id_t)(LED_BEAT_JUMP_PAD_1 + pad);
 }
 
+static led_id_t test_beat_jump_shift_helper_led(uint8_t pad)
+{
+    assert(pad == 6 || pad == 7);
+    return pad == 6 ? LED_BEAT_JUMP_SHIFT_HELPER_7 : LED_BEAT_JUMP_SHIFT_HELPER_8;
+}
+
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
     assert(deck < DECK_CORE_DECK_COUNT);
@@ -2164,6 +2170,35 @@ static void test_beat_jump_mode_lights_pad_leds_when_track_loaded(void)
     }
 }
 
+static void test_beat_jump_shift_lights_helper_leds_when_track_loaded(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    audio_engine_stub_deck_loaded[CTRL_DECK_1] = true;
+    ctrl_event_t mode = deck_button(CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP);
+    deck_core_test_apply_event(&mode);
+    control_link_stub_reset_leds();
+
+    ctrl_event_t shift = deck_button(CTRL_ID_DECK1_SHIFT);
+    deck_core_test_apply_event(&shift);
+
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(6),
+                                            CTRL_DECK_1) == 1);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(7),
+                                            CTRL_DECK_1) == 1);
+
+    control_link_stub_reset_leds();
+    shift.value = 0;
+    deck_core_test_apply_event(&shift);
+
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(6),
+                                            CTRL_DECK_1) == 0);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(7),
+                                            CTRL_DECK_1) == 0);
+}
+
 static void test_beat_jump_release_event_does_not_seek(void)
 {
     deck_core_test_reset();
@@ -2312,6 +2347,7 @@ int main(void)
     test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
     test_beat_jump_pad_maps_pad_index_to_jump_size();
     test_beat_jump_mode_lights_pad_leds_when_track_loaded();
+    test_beat_jump_shift_lights_helper_leds_when_track_loaded();
     test_beat_jump_release_event_does_not_seek();
     test_beat_jump_clamps_to_beatgrid_edges();
     test_smoke_log_policy_rates_limits_deferred_analog_controls();

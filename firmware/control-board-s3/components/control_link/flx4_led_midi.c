@@ -16,6 +16,10 @@ static bool note_for_led(uint8_t led, uint8_t *note)
         *note = (uint8_t)(0x20u + (led - LED_BEAT_JUMP_PAD_1));
         return true;
     }
+    if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 && led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+        *note = (uint8_t)(0x26u + (led - LED_BEAT_JUMP_SHIFT_HELPER_7));
+        return true;
+    }
     if (led >= LED_HOT_CUE_PAD_1 && led <= LED_HOT_CUE_PAD_8) {
         *note = (uint8_t)(0x00u + (led - LED_HOT_CUE_PAD_1));
         return true;
@@ -136,6 +140,8 @@ bool flx4_led_midi_build_packet(uint8_t led,
         (led >= LED_PAD_FX1_PAD_1 && led <= LED_PAD_FX1_PAD_8) ||
         (led >= LED_PAD_FX2_PAD_1 && led <= LED_PAD_FX2_PAD_8)) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x97 : 0x99;
+    } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 && led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+        packet[1] = (deck == CTRL_DECK_1) ? 0x98 : 0x9A;
     } else if (led == LED_BEAT_FX_ON) {
         packet[1] = (deck == CTRL_DECK_1) ? 0x94 : 0x95;
     } else if (led == LED_TRACK_LOAD_DECK1 || led == LED_TRACK_LOAD_DECK2) {

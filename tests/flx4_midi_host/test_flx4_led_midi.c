@@ -32,7 +32,9 @@ static void test_transport_and_mode_led_packets(void)
     assert(LED_TRACK_LOAD_DECK2 == LED_TRACK_LOAD_DECK1 + 1);
     assert(LED_BEAT_JUMP_PAD_1 == LED_TRACK_LOAD_DECK2 + 1);
     assert(LED_BEAT_JUMP_PAD_8 == LED_BEAT_JUMP_PAD_1 + 7);
-    assert(LED_REMOTE_COUNT == LED_BEAT_JUMP_PAD_8 + 1);
+    assert(LED_BEAT_JUMP_SHIFT_HELPER_7 == LED_BEAT_JUMP_PAD_8 + 1);
+    assert(LED_BEAT_JUMP_SHIFT_HELPER_8 == LED_BEAT_JUMP_SHIFT_HELPER_7 + 1);
+    assert(LED_REMOTE_COUNT == LED_BEAT_JUMP_SHIFT_HELPER_8 + 1);
 
     expect_packet(LED_PLAY, 1, CTRL_DECK_1, 0x09, 0x90, 0x0B, 0x7F);
     expect_packet(LED_CUE, 0, CTRL_DECK_2, 0x09, 0x91, 0x0C, 0x00);
@@ -106,6 +108,14 @@ static void test_beat_jump_pad_led_packets(void)
     expect_packet(LED_BEAT_JUMP_PAD_8, 0, CTRL_DECK_2, 0x09, 0x99, 0x27, 0x00);
 }
 
+static void test_beat_jump_shift_helper_led_packets(void)
+{
+    expect_packet(LED_BEAT_JUMP_SHIFT_HELPER_7, 1, CTRL_DECK_1, 0x09, 0x98, 0x26, 0x7F);
+    expect_packet(LED_BEAT_JUMP_SHIFT_HELPER_8, 0, CTRL_DECK_1, 0x09, 0x98, 0x27, 0x00);
+    expect_packet(LED_BEAT_JUMP_SHIFT_HELPER_7, 1, CTRL_DECK_2, 0x09, 0x9A, 0x26, 0x7F);
+    expect_packet(LED_BEAT_JUMP_SHIFT_HELPER_8, 0, CTRL_DECK_2, 0x09, 0x9A, 0x27, 0x00);
+}
+
 static void test_hot_cue_pad_led_packets(void)
 {
     expect_packet(LED_HOT_CUE_PAD_1, 1, CTRL_DECK_1, 0x09, 0x97, 0x00, 0x7F);
@@ -144,6 +154,7 @@ int main(void)
     test_transport_and_mode_led_packets();
     test_beat_loop_pad_led_packets();
     test_beat_jump_pad_led_packets();
+    test_beat_jump_shift_helper_led_packets();
     test_hot_cue_pad_led_packets();
     test_pad_fx_pad_led_packets();
     test_vu_and_rejects();

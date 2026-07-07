@@ -340,9 +340,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   remains deferred. A 2026-07-01 regression fix removed the previous 120-BPM
   duration-inference dependency, and hardware LED smoke passed on both decks.
   Beat Jump normal pad LED output is implemented from P4-owned loaded-track
-  state while Beat Jump mode is selected; shifted helper/mirror LEDs remain
-  deferred. Post-flash FLX4 smoke passed on 2026-07-07: all 8 normal Beat
-  Jump pads lit in Beat Jump mode with a loaded track.
+  state while Beat Jump mode is selected. Shifted helper LED 7/8 output is
+  implemented from the same loaded-track/mode state gated by held deck Shift;
+  broader shifted mirror LEDs remain deferred. Post-flash FLX4 smoke passed on
+  2026-07-07: all 8 normal Beat Jump pads lit in Beat Jump mode with a loaded
+  track, and shifted helper LED 7/8 lit while deck Shift was held.
   The 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
   Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
   mode LED behavior.

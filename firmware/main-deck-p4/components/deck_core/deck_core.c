@@ -58,6 +58,9 @@ static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static bool              s_beat_jump_pad_led_valid[DECK_CORE_DECK_COUNT][8];
 static uint8_t           s_beat_jump_pad_led_state[DECK_CORE_DECK_COUNT][8];
+static bool              s_deck_shift_held[DECK_CORE_DECK_COUNT];
+static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT][2];
+static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
@@ -1066,6 +1069,11 @@ static led_id_t beat_jump_pad_led_for_pad(uint8_t pad)
     return (led_id_t)(LED_BEAT_JUMP_PAD_1 + pad);
 }
 
+static led_id_t beat_jump_shift_helper_led_for_pad(uint8_t pad)
+{
+    return (led_id_t)(LED_BEAT_JUMP_SHIFT_HELPER_7 + pad);
+}
+
 static bool deck_has_loaded_track(uint8_t deck)
 {
     audio_engine_deck_status_t status = { 0 };
@@ -1100,6 +1108,25 @@ static void publish_beat_jump_pad_leds(bool force)
                 control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
                 s_beat_jump_pad_led_state[deck][pad] = value;
                 s_beat_jump_pad_led_valid[deck][pad] = true;
+            }
+        }
+    }
+}
+
+static void publish_beat_jump_shift_helper_leds(bool force)
+{
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        deck_state_t state = deck_core_get_deck_state(deck);
+        uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
+                         s_deck_shift_held[deck] &&
+                         deck_has_loaded_track(deck)) ? 1u : 0u;
+        for (uint8_t pad = 0; pad < 2; pad++) {
+            if (force ||
+                !s_beat_jump_shift_helper_led_valid[deck][pad] ||
+                s_beat_jump_shift_helper_led_state[deck][pad] != value) {
+                control_link_send_led_deck(beat_jump_shift_helper_led_for_pad(pad), value, deck);
+                s_beat_jump_shift_helper_led_state[deck][pad] = value;
+                s_beat_jump_shift_helper_led_valid[deck][pad] = true;
             }
         }
     }
@@ -1151,6 +1178,7 @@ static void publish_flx4_led_snapshot(bool force)
     }
     publish_track_load_leds(force);
     publish_beat_jump_pad_leds(force);
+    publish_beat_jump_shift_helper_leds(force);
 }
 
 static void execute_ui_command(const deck_ui_command_t *cmd)
@@ -1175,6 +1203,7 @@ static void execute_ui_command(const deck_ui_command_t *cmd)
         if (loaded) {
             publish_track_load_leds(false);
             publish_beat_jump_pad_leds(false);
+            publish_beat_jump_shift_helper_leds(false);
         }
         break;
     }
@@ -1588,8 +1617,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 
     switch (control_link_id_control(ev->id)) {
     case CTRL_DECK_CTL_SHIFT:
+        s_deck_shift_held[deck] = pressed;
         ESP_LOGD(TAG, "deck %u shift -> %s", (unsigned)deck + 1,
                  pressed ? "pressed" : "released");
+        publish_beat_jump_shift_helper_leds(false);
         return true;
 
     case CTRL_DECK_CTL_TO_START:
@@ -2386,6 +2417,9 @@ void deck_core_test_reset(void)
     memset(s_track_load_led_state, 0, sizeof(s_track_load_led_state));
     memset(s_beat_jump_pad_led_valid, 0, sizeof(s_beat_jump_pad_led_valid));
     memset(s_beat_jump_pad_led_state, 0, sizeof(s_beat_jump_pad_led_state));
+    memset(s_deck_shift_held, 0, sizeof(s_deck_shift_held));
+    memset(s_beat_jump_shift_helper_led_valid, 0, sizeof(s_beat_jump_shift_helper_led_valid));
+    memset(s_beat_jump_shift_helper_led_state, 0, sizeof(s_beat_jump_shift_helper_led_state));
     memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
     memset(s_hot_cue_mask_cache_value, 0, sizeof(s_hot_cue_mask_cache_value));
 #if defined(DECK_CORE_PC_TEST)
