@@ -67,6 +67,7 @@ static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
+static deck_core_s3_debug_ap_status_cb_t s_s3_debug_ap_status_cb;
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -1289,6 +1290,13 @@ static void on_state_event(const ctrl_event_t *ev)
     if (!ev) {
         return;
     }
+    if (ev->id == CTRL_ID_S3_DEBUG_AP) {
+        if (s_s3_debug_ap_status_cb) {
+            s_s3_debug_ap_status_cb((uint8_t)ev->value);
+        }
+        ESP_LOGI(TAG, "S3 Debug AP status=%d", ev->value);
+        return;
+    }
     if (ev->id != CTRL_ID_FLX4_CONNECTION) {
         ESP_LOGW(TAG, "unknown state id %u", (unsigned)ev->id);
         return;
@@ -2349,6 +2357,11 @@ deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
         xSemaphoreGive(s_mutex);
     }
     return snap;
+}
+
+void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
+{
+    s_s3_debug_ap_status_cb = cb;
 }
 
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
