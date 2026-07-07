@@ -342,6 +342,20 @@ $tests = @(
         )
     },
     @{
+        Name = "s3_debug_log_ring"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_log_ring.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DS3_DEBUG_AP_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_log_ring.exe",
+            "test_s3_debug_log_ring.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_log_ring.c"
+        )
+    },
+    @{
         Name = "flx4_usb_audio"
         Dir = "tests/flx4_usb_audio"
         Target = "test_flx4_uac_descriptors.exe"
