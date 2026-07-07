@@ -631,8 +631,10 @@ does not expose a complete Pad FX pad range. Hardware smoke on 2026-07-01
 confirmed Pad FX filter pads and Echo pad routing; short Echo presses now keep
 a host-tested release tail instead of clearing the delay buffer immediately.
 Normal Pad FX pad LED hardware smoke also passed on 2026-07-01.
-Sampler, stem, and key-shift behavior remains deferred until
-standalone P4 feature definitions exist.
+Sampler, stem/Keyboard, and Key Shift behavior is out of product scope as of
+2026-07-07. S3 ignores those FLX4 input ranges, P4 ignores stale/manual
+control-link events for those modes, and unsupported mode LEDs remain OFF while
+their numeric IDs stay reserved for compatibility.
 
 Integration status as of 2026-06-26: the Phase 7 implementation branch and the
 P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
@@ -773,10 +775,13 @@ Implementation order:
      path. Hardware smoke passed on 2026-07-01.
    - headphones mix is implemented for the P4 monitor path: S3 forwards the
      14-bit FLX4 Headphones Mix control (`B6 0C/2C`), P4 stores the raw value
-     in the mixer snapshot and `/api/status`, and the ES8311 monitor/headphone
-     buffer blends cue/PFL with stereo master (`0` = cue/PFL, `16383` =
-     master). This intentionally does not drive the original FLX4 headphone
-     jack; that remains a separate USB Audio Class or analog bridge phase.
+     in the mixer snapshot and `/api/status`, and the P4 `hp_out` monitor bus
+     blends cue/PFL with stereo master (`0` = cue/PFL, `16383` = master). In
+     the product topology this bus is streamed over the P4-to-S3 I2S monitor
+     link and then to the original FLX4 headphone jack via USB Audio Class.
+     XIAO ESP32S3/Sense hardware smoke with audible FLX4 headphones passed on
+     2026-07-07, including Headphones Mix and Headphones Level operator
+     acceptance.
    - physical MASTER CUE is implemented from the official MIDI list
      (`96 63`, shifted `96 78`) as a P4-owned monitor master-cue gate.
      The official `96 68` message is Shift+Load Deck 1, not Master Cue.
@@ -794,7 +799,8 @@ Implementation order:
      `BEAT JUMP`, `SAMPLER`) plus shifted secondary modes (`Keyboard/Stems`,
      `Pad FX2`, `Beat Loop`, `Key Shift`) and their MIDI ranges from the XML;
    - connect P4-owned semantic pad-mode inputs for Hot Cue, Beat Loop,
-     Beat Jump, Key Shift, Keyboard/Stems, Pad FX1, Pad FX2, and Sampler;
+     Beat Jump, Pad FX1, and Pad FX2; Keyboard/Stems, Sampler, and Key Shift
+     are documented XML addresses only and are ignored by the product firmware;
    - represent pad mode and pad action as separate P4-owned semantic state;
    - Hot Cue pad behavior is implemented in P4: pad 1-8 stores the current
      deck position into an empty per-track slot or recalls an existing slot via
@@ -802,16 +808,15 @@ Implementation order:
      slot. Deck 1 set/recall/shift-clear hardware smoke passed on
      2026-06-21; Deck 2 behavior uses the same deck-local implementation and
      remains pending for hardware smoke;
-   - hardware smoke verified sampler pads 1-8 on both decks, key-shift pads
-     1-8 on both decks, beat-loop pads 1-8 on both decks, and most beat-jump
-     pads. Normal and shifted Beat Loop pad behavior plus Beat Jump pad
+   - previous hardware smoke identified sampler pad and key-shift pad MIDI
+     ranges, but those controls are now out of product scope. Normal and
+     shifted Beat Loop pad behavior plus Beat Jump pad
      behavior is implemented in P4 using beatgrid/BPM calculation and remains
      pending for hardware behavior smoke. Pad FX has a first host-tested P4 DSP
      slice and physical input mapping from the official MIDI message PDF for
      PAD_FX1/PAD_FX2 pad actions; hardware smoke passed on 2026-07-01 for pad
-     behavior, Echo tail, and normal Pad FX pad LEDs. Sampler, stem, and
-     key-shift behavior remains deferred until standalone P4 feature
-     definitions exist.
+     behavior, Echo tail, and normal Pad FX pad LEDs. Sampler, stem/Keyboard,
+     and Key Shift behavior was removed from the product scope on 2026-07-07.
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
@@ -822,8 +827,11 @@ Implementation order:
    - drive LEDs only from P4-confirmed state through the existing S3 MIDI Out
      queue;
    - first slice implemented in firmware: P4-owned per-deck pad mode LED
-     snapshot and S3 XML-derived MIDI OUT translation for Hot Cue, Keyboard,
-     Pad FX1, Pad FX2, Beat Jump, Beat Loop, Sampler, and Key Shift;
+     snapshot and S3 XML-derived MIDI OUT translation for supported Hot Cue,
+     Pad FX1, Pad FX2, Beat Jump, and Beat Loop mode LEDs. Keyboard/Stems,
+     Sampler, and Key Shift LED IDs are retained only so reconnect/force paths
+     can keep them OFF. Post-flash hardware smoke on 2026-07-07 confirmed
+     supported modes still work and unsupported modes stay inert;
    - Beat Loop pad LED output is implemented for the normal pad LED notes and
      derived from P4-owned active Beat Loop pad state plus selected Beat Loop
      pad mode; shifted mirror LED notes remain deferred. A 2026-07-01 fix
@@ -838,6 +846,9 @@ Implementation order:
      state and clear/reset forces it off;
    - Master Cue LED feedback is implemented from P4-owned monitor state and is
      included in reconnect snapshots; hardware smoke passed on 2026-07-02;
+   - the 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
+     Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
+     mode LED behavior;
    - pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LEDs have hardware
      smoke coverage as recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`;
      extended reconnect resynchronization is implemented for FLX4 USB replug,

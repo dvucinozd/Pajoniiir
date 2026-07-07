@@ -452,7 +452,33 @@ static void test_pad_fx2_mode_lights_active_pad_led(void)
     assert(!saw_other_pad_on);
 }
 
-static void test_changed_pad_mode_sends_old_off_and_new_on_for_deck(void)
+static void test_changed_pad_mode_sends_old_off_and_new_on_for_supported_deck_mode(void)
+{
+    flx4_led_publisher_t publisher;
+    flx4_led_snapshot_input_t input = { 0 };
+    send_log_t log = { 0 };
+
+    input.pad_mode[0] = CTRL_PAD_MODE_HOT_CUE;
+    input.pad_mode[1] = CTRL_PAD_MODE_HOT_CUE;
+
+    flx4_led_publisher_init(&publisher);
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 98);
+
+    input.pad_mode[1] = CTRL_PAD_MODE_BEAT_JUMP;
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 100);
+    assert(log.led[98] == LED_PAD_MODE_HOT_CUE);
+    assert(log.deck[98] == 1);
+    assert(log.state[98] == 0);
+    assert(log.led[99] == LED_PAD_MODE_BEAT_JUMP);
+    assert(log.deck[99] == 1);
+    assert(log.state[99] == 1);
+}
+
+static void test_out_of_scope_pad_modes_do_not_turn_on_mode_leds(void)
 {
     flx4_led_publisher_t publisher;
     flx4_led_snapshot_input_t input = { 0 };
@@ -469,13 +495,24 @@ static void test_changed_pad_mode_sends_old_off_and_new_on_for_deck(void)
     input.pad_mode[1] = CTRL_PAD_MODE_SAMPLER;
     assert(flx4_led_publisher_publish(&publisher, &input, false,
                                       capture_send, &log) == ESP_OK);
-    assert(log.count == 100);
+    assert(log.count == 99);
     assert(log.led[98] == LED_PAD_MODE_HOT_CUE);
     assert(log.deck[98] == 1);
     assert(log.state[98] == 0);
-    assert(log.led[99] == LED_PAD_MODE_SAMPLER);
-    assert(log.deck[99] == 1);
-    assert(log.state[99] == 1);
+
+    memset(&log, 0, sizeof(log));
+    input.pad_mode[1] = CTRL_PAD_MODE_KEY_SHIFT;
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 0);
+
+    input.pad_mode[0] = CTRL_PAD_MODE_KEYBOARD;
+    assert(flx4_led_publisher_publish(&publisher, &input, false,
+                                      capture_send, &log) == ESP_OK);
+    assert(log.count == 1);
+    assert(log.led[0] == LED_PAD_MODE_HOT_CUE);
+    assert(log.deck[0] == 0);
+    assert(log.state[0] == 0);
 }
 
 static void test_failed_send_retries_on_next_normal_publish(void)
@@ -509,7 +546,7 @@ static void test_forced_reconnect_snapshot_sends_all_values_including_off(void)
     send_log_t log = { 0 };
 
     input.pad_mode[0] = CTRL_PAD_MODE_BEAT_JUMP;
-    input.pad_mode[1] = CTRL_PAD_MODE_KEY_SHIFT;
+    input.pad_mode[1] = CTRL_PAD_MODE_BEAT_LOOP;
     input.cue[0] = 1;
     input.play[1] = 1;
     input.pfl[1] = 1;
@@ -557,7 +594,8 @@ int main(void)
     test_hot_cue_mode_lights_existing_hot_cue_slots();
     test_pad_fx1_mode_lights_active_pad_led_only_while_pressed();
     test_pad_fx2_mode_lights_active_pad_led();
-    test_changed_pad_mode_sends_old_off_and_new_on_for_deck();
+    test_changed_pad_mode_sends_old_off_and_new_on_for_supported_deck_mode();
+    test_out_of_scope_pad_modes_do_not_turn_on_mode_leds();
     test_failed_send_retries_on_next_normal_publish();
     test_forced_reconnect_snapshot_sends_all_values_including_off();
     puts("flx4_led_snapshot tests passed");
