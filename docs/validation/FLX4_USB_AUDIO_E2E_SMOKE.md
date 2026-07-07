@@ -75,3 +75,28 @@ The first S3 RX check with FLX4 not yet consuming audio showed the expected
 full ring and increasing overruns: the P4-to-S3 link was already carrying PCM,
 but no USB Audio consumer was draining it. After the FLX4 headphones path was
 connected, the operator confirmed audible audio in the FLX4 headphones.
+
+## XIAO Wi-Fi UDP telemetry soak -- PASS (2026-07-07)
+
+After adding the S3 Wi-Fi UDP debug-log profile, the XIAO product build was
+flashed with local Wi-Fi credentials and the PC UDP listener at
+`192.168.0.239:3333`. The S3 joined Wi-Fi as `192.168.0.235`, mirrored normal
+ESP logs over UDP, and captured a 300-second soak while FLX4 headphones were
+audibly playing.
+
+Capture file: `logs/s3_wifi_udp_soak_20260707.log`.
+
+| Metric | Start | End | Delta |
+| --- | --- | --- | --- |
+| S3 `P4_AUDIO_LINK rx blocks` | `36297` | `87786` | `+51489` |
+| S3 sequence gaps | `0` | `0` | `+0` |
+| S3 CRC errors | `0` | `0` | `+0` |
+| S3 ring frames | `2103` | `2679` | `+576` |
+| S3 underruns / overruns | `0 / 0` | `0 / 0` | `+0 / +0` |
+| FLX4 USB submitted packets | `210032` | `510032` | `+300000` |
+| FLX4 USB completed packets | `210008` | `510008` | `+300000` |
+| FLX4 USB skipped / underrun packets | `0 / 0` | `0 / 0` | `+0 / +0` |
+| FLX4 USB payload bytes | `74099288` | `179939288` | `+105840000` |
+
+Result: no link corruption, no ring underrun/overrun, and no USB Audio skipped
+or underrun packets during the 5-minute product-path soak.
