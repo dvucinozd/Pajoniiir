@@ -1633,10 +1633,8 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 
     case CTRL_DECK_CTL_PAD_MODE_KEYBOARD:
         if (pressed) {
-            state->pad_mode = CTRL_PAD_MODE_KEYBOARD;
-            ESP_LOGI(TAG, "deck %u pad mode -> KEYBOARD (behavior deferred)",
+            ESP_LOGI(TAG, "deck %u KEYBOARD/STEMS pad mode ignored (out of scope)",
                      (unsigned)deck + 1);
-            publish_flx4_led_snapshot(false);
         }
         return true;
 
@@ -1678,19 +1676,15 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 
     case CTRL_DECK_CTL_PAD_MODE_KEY_SHIFT:
         if (pressed) {
-            state->perf_mode = PERF_MODE_KEY_SHIFT;
-            state->pad_mode = CTRL_PAD_MODE_KEY_SHIFT;
-            ESP_LOGI(TAG, "deck %u pad mode -> KEY_SHIFT", (unsigned)deck + 1);
-            publish_flx4_led_snapshot(false);
+            ESP_LOGI(TAG, "deck %u KEY_SHIFT pad mode ignored (out of scope)",
+                     (unsigned)deck + 1);
         }
         return true;
 
     case CTRL_DECK_CTL_PAD_MODE_SAMPLER:
         if (pressed) {
-            state->pad_mode = CTRL_PAD_MODE_SAMPLER;
-            ESP_LOGI(TAG, "deck %u pad mode -> SAMPLER (behavior deferred)",
+            ESP_LOGI(TAG, "deck %u SAMPLER pad mode ignored (out of scope)",
                      (unsigned)deck + 1);
-            publish_flx4_led_snapshot(false);
         }
         return true;
 

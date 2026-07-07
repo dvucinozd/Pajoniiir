@@ -1769,31 +1769,35 @@ static void test_pad_mode_buttons_update_requested_deck_mode(void)
     reset_audio_engine_stub();
 
     ctrl_event_t deck1_mode = deck_button(CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP);
-    ctrl_event_t deck2_mode = deck_button(CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT);
+    ctrl_event_t deck2_mode = deck_button(CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP);
     deck_core_test_apply_event(&deck1_mode);
     deck_core_test_apply_event(&deck2_mode);
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_BEAT_LOOP);
-    assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_KEY_SHIFT);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_BEAT_JUMP);
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).pad_mode == CTRL_PAD_MODE_BEAT_LOOP);
-    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_KEY_SHIFT);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_BEAT_JUMP);
 }
 
-static void test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects(void)
+static void test_out_of_scope_pad_mode_buttons_are_ignored(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
 
     ctrl_event_t deck1_pad_fx = deck_button(CTRL_ID_DECK1_PAD_MODE_PAD_FX1);
     ctrl_event_t deck2_sampler = deck_button(CTRL_ID_DECK2_PAD_MODE_SAMPLER);
+    ctrl_event_t deck1_keyboard = deck_button(CTRL_ID_DECK1_PAD_MODE_KEYBOARD);
+    ctrl_event_t deck2_key_shift = deck_button(CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT);
 
     deck_core_test_apply_event(&deck1_pad_fx);
     deck_core_test_apply_event(&deck2_sampler);
+    deck_core_test_apply_event(&deck1_keyboard);
+    deck_core_test_apply_event(&deck2_key_shift);
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).perf_mode == PERF_MODE_HOT_CUE);
     assert(deck_core_test_get_deck_state(CTRL_DECK_2).perf_mode == PERF_MODE_HOT_CUE);
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).pad_mode == CTRL_PAD_MODE_PAD_FX1);
-    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_SAMPLER);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).pad_mode == CTRL_PAD_MODE_HOT_CUE);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_1).playing);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
     assert(!audio_engine_stub_deck_playing[CTRL_DECK_1]);
@@ -2192,7 +2196,7 @@ int main(void)
     test_shifted_beat_loop_release_restores_previous_loop();
     test_shifted_beat_loop_release_clears_when_no_previous_loop();
     test_pad_mode_buttons_update_requested_deck_mode();
-    test_deferred_pad_mode_buttons_are_consumed_without_transport_side_effects();
+    test_out_of_scope_pad_mode_buttons_are_ignored();
     test_pad_action_is_consumed_without_transport_side_effects();
     test_pad_fx1_pad_action_routes_to_audio_engine();
     test_pad_fx2_pad_action_routes_to_audio_engine();

@@ -60,13 +60,13 @@ static const led_id_t s_led_ids[FLX4_LED_SNAPSHOT_COUNT] = {
 
 static const uint8_t s_pad_modes[8] = {
     CTRL_PAD_MODE_HOT_CUE,
-    CTRL_PAD_MODE_KEYBOARD,
+    0xFFu,
     CTRL_PAD_MODE_PAD_FX1,
     CTRL_PAD_MODE_PAD_FX2,
     CTRL_PAD_MODE_BEAT_JUMP,
     CTRL_PAD_MODE_BEAT_LOOP,
-    CTRL_PAD_MODE_SAMPLER,
-    CTRL_PAD_MODE_KEY_SHIFT,
+    0xFFu,
+    0xFFu,
 };
 
 static uint8_t beat_loop_pad_value(const flx4_led_snapshot_input_t *input,

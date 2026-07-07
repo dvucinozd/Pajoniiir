@@ -240,7 +240,7 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     case FLX4_BTN_PAD_HOT_CUE:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_HOT_CUE : CTRL_ID_DECK2_PAD_MODE_HOT_CUE, pressed);
     case FLX4_BTN_PAD_KEYBOARD:
-        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_KEYBOARD : CTRL_ID_DECK2_PAD_MODE_KEYBOARD, pressed);
+        return false;
     case FLX4_BTN_PAD_FX1:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_PAD_FX1 : CTRL_ID_DECK2_PAD_MODE_PAD_FX1, pressed);
     case FLX4_BTN_PAD_FX2:
@@ -250,9 +250,9 @@ static bool map_deck_button(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     case FLX4_BTN_PAD_BEAT_JUMP:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP : CTRL_ID_DECK2_PAD_MODE_BEAT_JUMP, pressed);
     case FLX4_BTN_PAD_SAMPLER:
-        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_SAMPLER : CTRL_ID_DECK2_PAD_MODE_SAMPLER, pressed);
+        return false;
     case FLX4_BTN_PAD_KEY_SHIFT:
-        return emit_button(out, deck1 ? CTRL_ID_DECK1_PAD_MODE_KEY_SHIFT : CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT, pressed);
+        return false;
     case FLX4_BTN_JOG_TOUCH:
         return emit_button(out, deck1 ? CTRL_ID_DECK1_JOG_TOUCH : CTRL_ID_DECK2_JOG_TOUCH, pressed);
     case FLX4_BTN_JOG_SEARCH_TOUCH:
@@ -457,12 +457,8 @@ static bool map_pad_message(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
     } else if (data1 >= 0x20 && data1 <= 0x27) {
         mode = CTRL_PAD_MODE_BEAT_JUMP;
         pad = data1 - 0x20;
-    } else if (data1 >= 0x30 && data1 <= 0x37) {
-        mode = CTRL_PAD_MODE_SAMPLER;
-        pad = data1 - 0x30;
-    } else if (data1 >= 0x40 && data1 <= 0x47) {
-        mode = CTRL_PAD_MODE_KEYBOARD;
-        pad = data1 - 0x40;
+    } else if (data1 >= 0x30 && data1 <= 0x47) {
+        return false;
     } else if (data1 >= 0x50 && data1 <= 0x57) {
         mode = CTRL_PAD_MODE_PAD_FX2;
         pad = data1 - 0x50;
@@ -470,8 +466,7 @@ static bool map_pad_message(uint8_t status, uint8_t data1, uint8_t data2, flx4_c
         mode = CTRL_PAD_MODE_BEAT_LOOP;
         pad = data1 - 0x60;
     } else if (data1 >= 0x70 && data1 <= 0x77) {
-        mode = CTRL_PAD_MODE_KEY_SHIFT;
-        pad = data1 - 0x70;
+        return false;
     } else {
         return false;
     }

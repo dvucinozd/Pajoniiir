@@ -301,33 +301,26 @@ static void test_pad_modes_and_pad_actions(void)
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_MODE_HOT_CUE, 1);
     assert(flx4_map_message(&state, MSG(0x91, 0x1E, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_MODE_PAD_FX1, 1);
-    assert(flx4_map_message(&state, MSG(0x90, 0x22, 0x7F), &ev));
-    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_MODE_SAMPLER, 1);
+    assert(!flx4_map_message(&state, MSG(0x90, 0x22, 0x7F), &ev));
     assert(flx4_map_message(&state, MSG(0x91, 0x6D, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_MODE_BEAT_LOOP, 1);
     assert(flx4_map_message(&state, MSG(0x90, 0x20, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_MODE_BEAT_JUMP, 1);
-    assert(flx4_map_message(&state, MSG(0x91, 0x6F, 0x7F), &ev));
-    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_MODE_KEY_SHIFT, 1);
+    assert(!flx4_map_message(&state, MSG(0x91, 0x6F, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x90, 0x69, 0x7F), &ev));
 
     assert(flx4_map_message(&state, MSG(0x97, 0x03, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
                  CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 3, false, true));
-    assert(flx4_map_message(&state, MSG(0x9A, 0x75, 0x00), &ev));
-    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
-                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_KEY_SHIFT, 5, true, false));
+    assert(!flx4_map_message(&state, MSG(0x9A, 0x75, 0x00), &ev));
     assert(flx4_map_message(&state, MSG(0x99, 0x62, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
                  CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 2, false, true));
     assert(flx4_map_message(&state, MSG(0x98, 0x27, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
                  CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 7, true, true));
-    assert(flx4_map_message(&state, MSG(0x99, 0x34, 0x7F), &ev));
-    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION,
-                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_SAMPLER, 4, false, true));
-    assert(flx4_map_message(&state, MSG(0x98, 0x45, 0x7F), &ev));
-    expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,
-                 CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_KEYBOARD, 5, true, true));
+    assert(!flx4_map_message(&state, MSG(0x99, 0x34, 0x7F), &ev));
+    assert(!flx4_map_message(&state, MSG(0x98, 0x45, 0x7F), &ev));
 
     assert(flx4_map_message(&state, MSG(0x97, 0x10, 0x7F), &ev));
     expect_event(&ev, CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION,

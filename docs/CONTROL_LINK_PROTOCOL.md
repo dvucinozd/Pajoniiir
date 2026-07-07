@@ -77,7 +77,7 @@ test.
 | `0x1F`-`0x20` | Deck 1 beat-jump buttons | `0` release, `1` press; beat-jump back/forward behavior is implemented |
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
-| `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; behavior deferred where no P4 owner exists |
+| `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; unsupported Keyboard/Stems and Key Shift values are reserved/ignored |
 | `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
@@ -134,7 +134,9 @@ Pad action values are packed into the signed 16-bit `value` field:
 
 - bits `0..2`: pad index `0..7`;
 - bits `3..5`: pad mode `0..7` (`HOT_CUE`, `BEAT_LOOP`, `BEAT_JUMP`,
-  `KEY_SHIFT`, `KEYBOARD`, `PAD_FX1`, `PAD_FX2`, `SAMPLER`);
+  retained compatibility values for out-of-scope `KEY_SHIFT` and `KEYBOARD`,
+  `PAD_FX1`, `PAD_FX2`, and retained compatibility value for out-of-scope
+  `SAMPLER`);
 - bit `6`: shifted pad action;
 - bit `7`: pressed state.
 
@@ -158,13 +160,13 @@ packed into the high byte of the 16-bit value by `control_link_send_led_deck()`:
 | `0x04` | PFL |
 | `0x05` | VU meter level |
 | `0x06` | Pad mode: Hot Cue |
-| `0x07` | Pad mode: Keyboard/Stems |
+| `0x07` | Pad mode: Keyboard/Stems compatibility ID; kept OFF/ignored |
 | `0x08` | Pad mode: Pad FX1 |
 | `0x09` | Pad mode: Pad FX2 |
 | `0x0A` | Pad mode: Beat Jump |
 | `0x0B` | Pad mode: Beat Loop |
-| `0x0C` | Pad mode: Sampler |
-| `0x0D` | Pad mode: Key Shift |
+| `0x0C` | Pad mode: Sampler compatibility ID; kept OFF/ignored |
+| `0x0D` | Pad mode: Key Shift compatibility ID; kept OFF/ignored |
 | `0x0E` | Beat Sync enabled |
 | `0x0F` | Loop In indicator |
 | `0x10` | Loop Out indicator |
@@ -199,10 +201,10 @@ period. S3 forwards this as USB MIDI CC `0x02` on `0xB0` for Deck/Channel 1 and
 
 P4 also owns reconnect recovery. When S3 reports
 `CTRL_TYPE_STATE / CTRL_ID_FLX4_CONNECTION / CTRL_FLX4_CONNECTED`, P4 forces a
-P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected pad mode, Beat Sync
-enabled state, active Loop In/Out state, Beat Loop pad state, momentary Pad FX
-pad state, Censor active state, Smart CFX/Fader state, the global Beat FX
-ON/OFF enabled state, and the global Master Cue monitor state.
+P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected supported pad mode,
+Beat Sync enabled state, active Loop In/Out state, Beat Loop pad state,
+momentary Pad FX pad state, Censor active state, Smart CFX/Fader state, the
+global Beat FX ON/OFF enabled state, and the global Master Cue monitor state.
 Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
 reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
@@ -212,9 +214,10 @@ The new Censor LED is snapshot-driven from P4 `deck_state_t.censor_active`.
 The Cue+Shift / track-start, Loop Adjust In, Loop Adjust Out, and Track Load
 illumination IDs are mapped by S3 to the official FLX4 output packets for
 future P4 use, but they are not part of the reconnect-safe snapshot until P4
-owns a real persistent or momentary state for those indicators. Beat Jump and
-Sampler pad LED output candidates remain deferred-state candidates; no sampler
-model or beat-jump LED selection state is currently published.
+owns a real persistent or momentary state for those indicators. Beat Jump pad
+LED output remains a deferred-state candidate. Sampler, Keyboard/Stems, and Key
+Shift mode/pad behavior is out of product scope as of 2026-07-07; their numeric
+IDs remain reserved for compatibility and reconnect OFF output only.
 
 In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
 after each heartbeat while the USB MIDI device remains open. This is

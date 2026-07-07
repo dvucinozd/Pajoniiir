@@ -311,9 +311,12 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   or analog bridge phase is added. MASTER CUE is implemented from the official
   MIDI list as a P4-owned monitor master-cue gate with LED feedback; hardware
   smoke passed on 2026-07-02.
-- [x] Connect FLX4 pad mode inputs to P4-owned semantic pad mode state.
-  The four physical mode buttons and shifted secondary modes are mapped and
-  smoke-verified where noted in the MIDI map. Hot Cue pad behavior is
+- [x] Connect supported FLX4 pad mode inputs to P4-owned semantic pad mode
+  state.
+  Hot Cue, Pad FX1/2, Beat Jump, and Beat Loop are mapped where noted in the
+  MIDI map. Keyboard/Stems, Sampler, and Key Shift were removed from product
+  scope on 2026-07-07; S3 ignores those input ranges and P4 ignores stale/manual
+  control-link events for those modes. Hot Cue pad behavior is
   implemented in P4 for per-track store/recall and shifted clear; Deck 1
   hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
   passed on 2026-06-26.
@@ -323,8 +326,7 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Pad FX has a
   host-tested P4 DSP slice and official-PDF-backed FLX4 Pad FX pad input
   mapping; hardware smoke passed on 2026-07-01 for pad behavior, Echo tail, and
-  normal Pad FX pad LEDs. Actual Sampler and Key Shift behavior remains a
-  separate P4 feature task.
+  normal Pad FX pad LEDs.
 - [ ] Expand LED feedback only from P4-confirmed state.
   First firmware slice is implemented for P4-owned selected pad mode LEDs
   across direct and shifted modes, Beat Sync enabled state, and
