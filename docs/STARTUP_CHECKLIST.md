@@ -212,6 +212,14 @@
   is at `http://192.168.4.1`. The old Settings `link_mode`/`JOINED` selectors
   remain removed. (Historical: it was parked 2026-06-29 as a no-op shim for
   RF-quiet development.)
+- A separate runtime **S3 Debug AP** was added on the `codex/s3-ap-wifi-debug`
+  branch (`CONFIG_S3_DEBUG_AP_ENABLED=y`, default). It is independent of the P4
+  Wi-Fi remote: the S3 hosts its own open SoftAP `PajoNiiiR-S3-DEBUG` +
+  read-only live log viewer at `http://192.168.4.1`, toggled from a
+  non-persisted P4 Settings switch over `CTRL_ID_S3_DEBUG_AP` (`0x82`/`0x85`).
+  OFF at every boot; P4 also sends OFF at boot as a safe reset. Host tests and
+  both firmware builds pass; hardware smoke (below) is still pending. See
+  `docs/S3_WIFI_DEBUG_LOG.md` and `docs/CONTROL_LINK_PROTOCOL.md`.
 
 ## First Firmware Task
 
@@ -367,3 +375,34 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 See Phase 7 in `docs/DEVELOPMENT_PLAN.md`. XML status/midino values are now the
 implementation seed because the physical MVP capture matched them exactly;
 Mixxx JavaScript behavior is not imported.
+
+## S3 Debug AP Smoke Test
+
+Runtime S3 Wi-Fi debug AP on the `codex/s3-ap-wifi-debug` branch. Hardware smoke
+passed on 2026-07-08 (S3 on COM6, P4 on COM15) after two fixes below:
+
+- [x] Flash current S3 (COM6) and P4 (COM15) firmware.
+- [x] Boot with the P4 Settings `S3 DEBUG AP` switch OFF; no `PajoNiiiR-S3-DEBUG`
+  AP visible.
+- [x] Enable the switch; S3 brings up SoftAP + DHCP on `192.168.4.1`
+  (`s3_debug_ap: S3 debug AP active` on the S3 console).
+- [x] Connect a phone to `PajoNiiiR-S3-DEBUG`, open `http://192.168.4.1`; page
+  loads and **live logs stream** over SSE without disconnecting.
+- [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while ON — not retested
+  this session (FLX4 was unplugged; re-verify when the controller is attached).
+- [ ] Reboot P4 with the AP left ON; confirm P4 sends OFF at boot (boot-time OFF
+  frame is wired but not separately observed this session).
+
+Two issues were found and fixed during the smoke:
+
+1. **Wi-Fi owner conflict.** `wifi_debug_log` (build-time UDP log, STA mode) and
+   `s3_debug_ap` (runtime AP mode) both drive the S3 radio and are mutually
+   exclusive. A stale local `sdkconfig` had `CONFIG_WIFI_DEBUG_LOG_ENABLED=y`
+   with real credentials, so the S3 came up in STA and `start_ap()` never
+   produced the AP. Kconfig default is `n`; keep `wifi_debug_log` disabled when
+   using the runtime debug AP (the AP replaces it).
+2. **httpd `/events` crash.** The SSE handler overflowed the 4 KB default httpd
+   task stack (2 KB local buffer) and reset the S3 as soon as a browser opened
+   the stream. Fixed by raising `config.stack_size` to 8 KB, shrinking the
+   per-tick buffer, and streaming only new lines (`last_seq`) instead of the
+   whole ring each second.

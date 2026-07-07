@@ -33,7 +33,7 @@ pending items.
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress; Settings Wi-Fi remote switch + "Last reset" diagnostic |
+| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress; Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
 | `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; RELAXED-atomic shared state; `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
@@ -123,6 +123,7 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 | 0x03 PITCH | S3→P4 | id=0, val=0–16383 (14-bit) |
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime s |
 | 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
+| 0x82 STATE | both | S3→P4 FLX4 connection + S3 Debug AP status; P4→S3 S3 Debug AP enable request (`CTRL_ID_S3_DEBUG_AP` 0x85) |
 
 ---
 
@@ -172,7 +173,7 @@ if (rc == ESP_OK) {
 }
 ```
 
-PC unit tests (`tests/anlz/`): `mingw32-make test` → 32/32 PASS
+PC unit tests (`tests/anlz/`): via `.\tests\run_p4_host_tests.ps1` → 34/34 PASS
 
 Format details: `docs/rekordbox-format-analysis.md`
 
@@ -180,7 +181,9 @@ Format details: `docs/rekordbox-format-analysis.md`
 
 ## Audio Engine (`audio_engine`) ✅ RUNNING ON HARDWARE
 
-minimp3 single-header decode + ES8311/I2S output (firmware) / WAV (PC test).
+minimp3/dr_flac/WAV decode + PCM5102A I2S MAIN output (firmware) / WAV (PC test).
+(ES8311 codec was dropped; MAIN out is PCM5102A on I2S_NUM_1, headphone cue is
+the FLX4 USB audio path.)
 
 ```c
 // Typical usage:
@@ -199,16 +202,18 @@ audio_engine_stop();
 | Define | Platform | Audio output |
 |--------|-----------|-------------|
 | `AUDIO_ENGINE_PC_TEST` | PC offline test | `audio_engine_decode_to_wav()` → WAV file |
-| (neither) | ESP32-P4 firmware | ES8311/I2S via `esp_codec_dev` |
+| (neither) | ESP32-P4 firmware | PCM5102A MAIN via `i2s_channel_write` (`CONFIG_BSP_PCM5102A_MAIN_OUT`) |
 
 **Firmware Path (running on HW):**
-- `bsp_audio_init()` creates the ES8311 codec dev; `audio_engine_init()` retrieves it.
+- `bsp_audio_init()` sets up the PCM5102A I2S MAIN channel (I2S_NUM_1);
+  `audio_engine_init()` retrieves it via `bsp_audio_get_main_i2s_tx()` and writes
+  with `i2s_channel_write` (blocks on I2S DMA → real-time tempo).
 - `audio_engine_load()` does not read USB on the caller stack — the **decode task preloads the entire MP3
   into PSRAM**, opens it, and decodes from memory. (Streaming from /usb during
   playback crashes the USB-DWC driver: `usb_dwc_hal.c:502`.)
 - minimp3 needs **~26 KB stack** → decode task is 32 KB (NOT on the LVGL/caller stack).
-- The output task pitch-resamples the ring buffer and writes via `esp_codec_dev_write()` (blocks on I2S DMA → real-time tempo).
-- Codec opens at the sample rate of the first frame (44.1/48k both observed).
+- The output task pitch-resamples/mixes the ring buffer and writes MAIN via `i2s_channel_write()` (blocks on I2S DMA → real-time tempo); headphone cue goes out over the FLX4 USB audio path.
+- The PCM5102A I2S clock opens at the sample rate of the first frame (44.1/48k both observed).
 - **Control flows through `deck_core`**: UI "LOAD TRACK" → `audio_engine_load`; touch PLAY/CUE/loop/
   hot-cue/beat-jump → `deck_core`/`audio_engine`. `audio_engine_seek()` only sets
   `seek_target_ms` — the actual seek (PVBR O(1) or linear) is handled by the **decode task** (32 KB stack).
@@ -222,12 +227,9 @@ Seek O(1) when PVBR present; linear scan from start when absent.
 **Pitch Resampling:** linear interpolation (SDL callback on PC / output task on HW).  
 `factor = 1.0 + (8192 − raw_pitch) / 8192.0 × 0.10`
 
-PC test harness: `tests/audio_engine/`  
-```
-cd tests/audio_engine
-mingw32-make test                         # synthetic tests (11/11 PASS)
-mingw32-make test MP3=F:/Contents/...mp3  # real MP3 decode to out.wav
-```
+PC test harness: `tests/audio_engine/` (run all P4 host tests via
+`.\tests\run_p4_host_tests.ps1`; `make`/`mingw32-make` is not installed — the
+runner compiles each suite with `gcc` from `C:\msys64\ucrt64\bin`).
 
 ---
 

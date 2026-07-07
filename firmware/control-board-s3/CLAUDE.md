@@ -129,6 +129,7 @@ Inherited CDJ panel compatibility:
 | `control_link` | UART1 binary protocol to ESP32-P4 |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
+| `s3_debug_ap` | Runtime bench-only SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
 
 ---
 
@@ -157,6 +158,7 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 | 0x03 PITCH | S3→P4 | legacy pitch id or deck-aware analog semantic id |
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime seconds |
 | 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
+| 0x82 STATE | both | id=CTRL_ID_S3_DEBUG_AP (0x85): P4→S3 request 0/1, S3→P4 status 0-3; also FLX4 connection state S3→P4 |
 
 UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 115200 baud.
 

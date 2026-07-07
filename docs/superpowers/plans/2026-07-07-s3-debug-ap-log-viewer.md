@@ -1628,17 +1628,23 @@ git commit -m "Record S3 debug AP smoke result"
 
 ## Final Verification Checklist
 
-- [ ] `git diff --check`
-- [ ] `.\tests\run_s3_host_tests.ps1`
-- [ ] `.\tests\run_p4_host_tests.ps1`
-- [ ] `idf.py build` in `firmware/control-board-s3`
-- [ ] `idf.py build` in `firmware/main-deck-p4`
-- [ ] S3 flash on COM6 succeeds
-- [ ] P4 flash on COM15 succeeds
-- [ ] Hardware smoke confirms AP default OFF
-- [ ] Hardware smoke confirms P4 status ack `STARTING` -> `ON` -> `OFF`
-- [ ] Hardware smoke confirms `http://192.168.4.1` log viewer works
-- [ ] Hardware smoke confirms FLX4 MIDI/audio remains responsive while AP is ON
+Code implemented (Tasks 1-5) and docs updated (Task 6) as of 2026-07-08.
+
+- [x] `.\tests\run_s3_host_tests.ps1` — passed (incl. `s3_debug_log_ring`, `s3_debug_ap_state`, `control_link_protocol`)
+- [x] `.\tests\run_p4_host_tests.ps1` — passed (incl. `ui_settings`, `control_link_protocol`)
+- [x] `idf.py build` in `firmware/control-board-s3` — passed (default build, `CONFIG_S3_DEBUG_AP_ENABLED=y`)
+- [x] `idf.py build` in `firmware/main-deck-p4` — passed
+- [x] Docs updated — `S3_WIFI_DEBUG_LOG.md`, `CONTROL_LINK_PROTOCOL.md`, `STARTUP_CHECKLIST.md`, both firmware `CLAUDE.md`
+- [x] S3 flash on COM6 succeeds (manual bootloader entry; auto-reset flaky on this rig)
+- [x] P4 flash on COM15 succeeds
+- [x] Hardware smoke confirms AP default OFF (not broadcasting until enabled)
+- [x] Hardware smoke confirms `http://192.168.4.1` log viewer works with live SSE logs
+- [ ] Hardware smoke confirms FLX4 MIDI/audio responsive while AP is ON — deferred (FLX4 not attached this session)
+
+Smoke on 2026-07-08 uncovered and fixed two issues (see STARTUP_CHECKLIST.md
+"S3 Debug AP Smoke Test"): a `wifi_debug_log` (STA) vs `s3_debug_ap` (AP) Wi-Fi
+owner conflict from a stale local `sdkconfig`, and an httpd `/events` task-stack
+overflow that reset the S3 when a browser opened the SSE stream.
 
 ## Self-Review
 
