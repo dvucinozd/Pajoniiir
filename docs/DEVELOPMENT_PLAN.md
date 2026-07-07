@@ -830,7 +830,8 @@ Implementation order:
      snapshot and S3 XML-derived MIDI OUT translation for supported Hot Cue,
      Pad FX1, Pad FX2, Beat Jump, and Beat Loop mode LEDs. Keyboard/Stems,
      Sampler, and Key Shift LED IDs are retained only so reconnect/force paths
-     can keep them OFF;
+     can keep them OFF. Post-flash hardware smoke on 2026-07-07 confirmed
+     supported modes still work and unsupported modes stay inert;
    - Beat Loop pad LED output is implemented for the normal pad LED notes and
      derived from P4-owned active Beat Loop pad state plus selected Beat Loop
      pad mode; shifted mirror LED notes remain deferred. A 2026-07-01 fix
@@ -845,6 +846,9 @@ Implementation order:
      state and clear/reset forces it off;
    - Master Cue LED feedback is implemented from P4-owned monitor state and is
      included in reconnect snapshots; hardware smoke passed on 2026-07-02;
+   - the 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
+     Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
+     mode LED behavior;
    - pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LEDs have hardware
      smoke coverage as recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`;
      extended reconnect resynchronization is implemented for FLX4 USB replug,

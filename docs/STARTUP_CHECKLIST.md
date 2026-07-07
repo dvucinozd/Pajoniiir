@@ -316,7 +316,8 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   Hot Cue, Pad FX1/2, Beat Jump, and Beat Loop are mapped where noted in the
   MIDI map. Keyboard/Stems, Sampler, and Key Shift were removed from product
   scope on 2026-07-07; S3 ignores those input ranges and P4 ignores stale/manual
-  control-link events for those modes. Hot Cue pad behavior is
+  control-link events for those modes. Post-flash hardware smoke on 2026-07-07
+  confirmed supported modes still work and unsupported modes stay inert. Hot Cue pad behavior is
   implemented in P4 for per-track store/recall and shifted clear; Deck 1
   hardware behavior smoke passed on 2026-06-21, and Deck 2 shifted clear smoke
   passed on 2026-06-26.
@@ -338,6 +339,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   pad state plus selected Beat Loop pad mode; shifted mirror pad LED output
   remains deferred. A 2026-07-01 regression fix removed the previous 120-BPM
   duration-inference dependency, and hardware LED smoke passed on both decks.
+  The 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
+  Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
+  mode LED behavior.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
   hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke
   passed on 2026-07-01. Master Cue LED output is implemented from P4 monitor
