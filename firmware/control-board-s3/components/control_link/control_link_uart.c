@@ -2,6 +2,7 @@
 #include "panel_io.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
+#include "s3_debug_ap.h"
 #include "status_led.h"
 #include "esp_check.h"
 #include "esp_timer.h"
@@ -104,8 +105,11 @@ static void handle_p4_frame(const uint8_t *f)
                 panel_led_set((led_id_t)id, state != 0);
             }
         }
+    } else if (type == CTRL_TYPE_STATE) {
+        if (id == CTRL_ID_S3_DEBUG_AP) {
+            (void)s3_debug_ap_request(state != 0);
+        }
     }
-    // CTRL_TYPE_STATE reserved for future use
 }
 
 static void parse_rx_byte(rx_state_t *st, uint8_t b)
