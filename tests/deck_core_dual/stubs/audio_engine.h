@@ -28,6 +28,7 @@ static inline uint32_t audio_engine_position_ms(void) { return 0; }
 
 extern esp_err_t audio_engine_stub_deck_play_result[2];
 extern bool audio_engine_stub_deck_playing[2];
+extern bool audio_engine_stub_deck_loaded[2];
 extern uint32_t audio_engine_stub_deck_position_ms[2];
 extern int audio_engine_stub_deck_seek_count[2];
 extern bool audio_engine_stub_loop_active[2];
@@ -89,6 +90,28 @@ static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)
 static inline bool audio_engine_deck_is_playing(uint8_t deck)
 {
     return deck < 2 ? audio_engine_stub_deck_playing[deck] : false;
+}
+
+typedef struct {
+    bool loaded;
+    bool loading;
+    uint8_t load_progress;
+    char title[64];
+    char artist[64];
+    char last_error[64];
+} audio_engine_deck_status_t;
+
+static inline esp_err_t audio_engine_deck_get_status(uint8_t deck,
+                                                     audio_engine_deck_status_t *out)
+{
+    if (deck >= 2 || !out) return ESP_ERR_INVALID_ARG;
+    out->loaded = audio_engine_stub_deck_loaded[deck];
+    out->loading = false;
+    out->load_progress = audio_engine_stub_deck_loaded[deck] ? 100 : 0;
+    out->title[0] = '\0';
+    out->artist[0] = '\0';
+    out->last_error[0] = '\0';
+    return ESP_OK;
 }
 
 static inline esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,

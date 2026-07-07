@@ -54,6 +54,8 @@ static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
 static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
+static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
+static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
 static TickType_t        s_last_heartbeat_tick;
@@ -1046,6 +1048,36 @@ static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, vo
     return ESP_OK;
 }
 
+static void send_momentary_led(led_id_t led, uint8_t deck)
+{
+    control_link_send_led_deck(led, 1u, deck);
+    control_link_send_led_deck(led, 0u, deck);
+}
+
+static led_id_t track_load_led_for_deck(uint8_t deck)
+{
+    return deck == CTRL_DECK_2 ? LED_TRACK_LOAD_DECK2 : LED_TRACK_LOAD_DECK1;
+}
+
+static void publish_track_load_leds(bool force)
+{
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        audio_engine_deck_status_t status = { 0 };
+        uint8_t value = 0u;
+        if (audio_engine_deck_get_status(deck, &status) == ESP_OK && status.loaded) {
+            value = 1u;
+        }
+
+        if (force ||
+            !s_track_load_led_valid[deck] ||
+            s_track_load_led_state[deck] != value) {
+            control_link_send_led_deck(track_load_led_for_deck(deck), value, deck);
+            s_track_load_led_state[deck] = value;
+            s_track_load_led_valid[deck] = true;
+        }
+    }
+}
+
 static void publish_flx4_led_snapshot(bool force)
 {
     flx4_led_snapshot_input_t input = { 0 };
@@ -1090,6 +1122,7 @@ static void publish_flx4_led_snapshot(bool force)
     } else {
         ESP_LOGD(TAG, "%s FLX4 LED snapshot published", force ? "forced" : "diff");
     }
+    publish_track_load_leds(force);
 }
 
 static void execute_ui_command(const deck_ui_command_t *cmd)
@@ -1097,17 +1130,25 @@ static void execute_ui_command(const deck_ui_command_t *cmd)
     if (!cmd) return;
     switch (cmd->kind) {
     case DECK_UI_CMD_LOAD_SELECTED:
+    {
+        bool loaded = false;
         if (ui_library_load_selected_for_deck) {
             esp_err_t rc = ui_library_load_selected_for_deck(cmd->deck);
             ESP_LOGI(TAG, "deck %u load selected -> %s", (unsigned)cmd->deck + 1,
                      esp_err_to_name(rc));
+            loaded = rc == ESP_OK;
         } else if (cmd->deck == DECK_CORE_COMPAT_DECK && ui_library_load_selected) {
             esp_err_t rc = ui_library_load_selected();
             ESP_LOGI(TAG, "load selected -> %s", esp_err_to_name(rc));
+            loaded = rc == ESP_OK;
         } else {
             ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
         }
+        if (loaded) {
+            publish_track_load_leds(false);
+        }
         break;
+    }
 
     case DECK_UI_CMD_LIBRARY_SELECT_DELTA_IF_ACTIVE:
         if (ui_is_library_active && ui_library_select_delta && ui_is_library_active()) {
@@ -1535,6 +1576,7 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         state->cue_point_ms = 0;
         ESP_LOGI(TAG, "deck %u cue+shift -> track start", (unsigned)deck + 1);
         sync_legacy_compat_leds(deck);
+        send_momentary_led(LED_CUE_SHIFT, deck);
         return true;
 
     case CTRL_DECK_CTL_SYNC:
@@ -1598,9 +1640,11 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             return true;
         case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN:
             adjust_loop_boundary(deck, true, state);
+            send_momentary_led(LED_LOOP_ADJUST_IN, deck);
             return true;
         case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT:
             adjust_loop_boundary(deck, false, state);
+            send_momentary_led(LED_LOOP_ADJUST_OUT, deck);
             return true;
         case CTRL_DECK_EXT_ACTION_QUANTIZE:
             state->quantize_enabled = !state->quantize_enabled;
@@ -2309,6 +2353,8 @@ void deck_core_test_reset(void)
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
     memset(s_beat_loop_led, 0, sizeof(s_beat_loop_led));
     memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
+    memset(s_track_load_led_valid, 0, sizeof(s_track_load_led_valid));
+    memset(s_track_load_led_state, 0, sizeof(s_track_load_led_state));
     memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
     memset(s_hot_cue_mask_cache_value, 0, sizeof(s_hot_cue_mask_cache_value));
 #if defined(DECK_CORE_PC_TEST)

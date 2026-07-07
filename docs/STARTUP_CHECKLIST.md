@@ -342,6 +342,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   The 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
   Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
   mode LED behavior.
+  Cue+Shift / track-start and Loop Adjust In/Out now emit P4-owned momentary
+  LED flashes, and Track Load Deck 1/2 follows the P4 audio-engine loaded
+  state with reconnect refresh. Post-flash FLX4 behavior smoke for these
+  outputs passed on 2026-07-07.
   Beat FX ON/OFF LED output is implemented from P4 Beat FX enabled state and
   hardware smoke passed on 2026-07-01. Pad FX normal pad LED hardware smoke
   passed on 2026-07-01. Master Cue LED output is implemented from P4 monitor

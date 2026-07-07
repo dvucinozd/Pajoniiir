@@ -47,6 +47,7 @@ bool audio_engine_stub_smart_cfx_enabled;
 bool audio_engine_stub_smart_fader_enabled;
 esp_err_t audio_engine_stub_deck_play_result[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_deck_playing[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_deck_loaded[DECK_CORE_DECK_COUNT];
 uint32_t audio_engine_stub_deck_position_ms[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_deck_seek_count[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_loop_active[DECK_CORE_DECK_COUNT];
@@ -57,10 +58,34 @@ int audio_engine_stub_loop_clear_count[DECK_CORE_DECK_COUNT];
 float audio_engine_stub_pitch_percent[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pitch_percent_set_count[DECK_CORE_DECK_COUNT];
 extern int control_link_stub_led_count;
+extern led_id_t control_link_stub_led[128];
+extern uint8_t control_link_stub_state[128];
+extern uint8_t control_link_stub_deck[128];
 void control_link_stub_reset_leds(void);
 int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
 static anlz_metadata_t beat_jump_meta(void);
+
+static void assert_last_led_flash(led_id_t led, uint8_t deck)
+{
+    int match_count = 0;
+    uint8_t prev = 0;
+    uint8_t last = 0;
+    for (int i = 0; i < control_link_stub_led_count; i++) {
+        if (control_link_stub_led[i] == led && control_link_stub_deck[i] == deck) {
+            prev = last;
+            last = control_link_stub_state[i];
+            match_count++;
+        }
+    }
+    if (match_count < 2) {
+        fprintf(stderr, "missing LED flash led=%d deck=%u matches=%d total=%d\n",
+                (int)led, (unsigned)deck, match_count, control_link_stub_led_count);
+    }
+    assert(match_count >= 2);
+    assert(prev == 1);
+    assert(last == 0);
+}
 
 esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
 {
@@ -238,6 +263,7 @@ static void reset_audio_engine_stub(void)
         s_loaded_bpm[deck] = 0;
         audio_engine_stub_deck_play_result[deck] = ESP_OK;
         audio_engine_stub_deck_playing[deck] = false;
+        audio_engine_stub_deck_loaded[deck] = false;
         audio_engine_stub_deck_position_ms[deck] = 0;
         audio_engine_stub_deck_seek_count[deck] = 0;
         audio_engine_stub_loop_active[deck] = false;
@@ -476,6 +502,34 @@ static void test_browser_load_is_deferred_to_ui_command_sink(void)
     assert(s_load_calls[CTRL_DECK_1] == 1);
 }
 
+static void test_track_load_led_follows_audio_loaded_state_after_load_command(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    audio_engine_stub_deck_loaded[CTRL_DECK_1] = true;
+    audio_engine_stub_deck_loaded[CTRL_DECK_2] = false;
+
+    ctrl_event_t load_deck1 = browser_button(CTRL_ID_LOAD_DECK1);
+    deck_core_test_apply_event(&load_deck1);
+    deck_core_test_flush_ui_commands();
+
+    assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK1, CTRL_DECK_1) == 1);
+    assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK2, CTRL_DECK_2) == 0);
+
+    audio_engine_stub_deck_loaded[CTRL_DECK_1] = false;
+    audio_engine_stub_deck_loaded[CTRL_DECK_2] = true;
+    control_link_stub_reset_leds();
+
+    ctrl_event_t load_deck2 = browser_button(CTRL_ID_LOAD_DECK2);
+    deck_core_test_apply_event(&load_deck2);
+    deck_core_test_flush_ui_commands();
+
+    assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK1, CTRL_DECK_1) == 0);
+    assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK2, CTRL_DECK_2) == 1);
+}
+
 static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only(void)
 {
     deck_core_test_reset();
@@ -604,6 +658,18 @@ static void test_cue_shift_jumps_requested_deck_to_track_start(void)
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 0);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_1).playing);
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).playing);
+}
+
+static void test_cue_shift_track_start_flashes_led(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    ctrl_event_t deck1_to_start = deck_button(CTRL_ID_DECK1_TO_START);
+    deck_core_test_apply_event(&deck1_to_start);
+
+    assert_last_led_flash(LED_CUE_SHIFT, CTRL_DECK_1);
 }
 
 static void test_browser_press_toggles_library_view_without_loading_deck(void)
@@ -1171,6 +1237,7 @@ static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
+    control_link_stub_reset_leds();
     audio_engine_stub_loop_active[CTRL_DECK_2] = true;
     audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 1000;
     audio_engine_stub_loop_end_ms[CTRL_DECK_2] = 5000;
@@ -1180,12 +1247,15 @@ static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
     deck_core_test_apply_event(&adjust_in);
     assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
+    assert_last_led_flash(LED_LOOP_ADJUST_IN, CTRL_DECK_2);
 
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 7000;
+    control_link_stub_reset_leds();
     ctrl_event_t adjust_out = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true);
     deck_core_test_apply_event(&adjust_out);
     assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 7000);
+    assert_last_led_flash(LED_LOOP_ADJUST_OUT, CTRL_DECK_2);
 }
 
 static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
@@ -2134,8 +2204,10 @@ int main(void)
     test_pitch_mapping_uses_selected_tempo_range();
     test_tempo_range_change_reapplies_current_pitch();
     test_cue_shift_jumps_requested_deck_to_track_start();
+    test_cue_shift_track_start_flashes_led();
     test_browser_namespace_routes_load_to_requested_deck();
     test_browser_load_is_deferred_to_ui_command_sink();
+    test_track_load_led_follows_audio_loaded_state_after_load_command();
     test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only();
     test_browser_namespace_routes_browse_delta();
     test_browse_delta_zooms_overview_when_library_is_not_active();

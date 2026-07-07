@@ -849,6 +849,10 @@ Implementation order:
    - the 2026-07-07 LED batch smoke passed for Censor, Cue+Shift / track-start,
      Loop Adjust In, Loop Adjust Out, Track Load Deck 1/2, and post-removal pad
      mode LED behavior;
+   - Cue+Shift / track-start and Loop Adjust In/Out now emit P4-owned momentary
+     LED flashes, and Track Load Deck 1/2 follows the P4 audio-engine loaded
+     state with reconnect refresh; post-flash FLX4 behavior smoke for these
+     outputs passed on 2026-07-07;
    - pad-mode, Beat Sync, Loop In/Out, and Beat FX ON/OFF LEDs have hardware
      smoke coverage as recorded in `docs/validation/FLX4_LED_MIDI_OUT_CAPTURE.md`;
      extended reconnect resynchronization is implemented for FLX4 USB replug,
