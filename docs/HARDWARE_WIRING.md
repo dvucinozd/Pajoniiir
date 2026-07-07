@@ -8,8 +8,8 @@ Keep the inherited CDJ100S-XXX UART wiring.
 | --- | --- | --- | --- |
 | GND | GND | JP1 pin 3 or 4 | shared |
 | 3.3 V | 3V3 | JP1 pin 1 or 16 | power, only if current budget is verified |
-| UART TX | GPIO40 | GPIO28 / JP1 pin 19 | S3 -> P4 |
-| UART RX | GPIO41 | GPIO29 / JP1 pin 12 | P4 -> S3 |
+| UART TX | GPIO5 | GPIO28 / JP1 pin 19 | S3 -> P4 |
+| UART RX | GPIO6 | GPIO29 / JP1 pin 12 | P4 -> S3 |
 
 Leave the JC4880 UART0 connector free for flashing and diagnostics.
 
@@ -18,10 +18,18 @@ Leave the JC4880 UART0 connector free for flashing and diagnostics.
 The DDJ-FLX4 connects to the S3 through USB. The S3 must run USB host mode and
 enumerate the FLX4 as a USB MIDI device.
 
+For the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense replacement board, use
+the dedicated wiring note in `firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`.
+This migration branch maps the S3-P4 UART to XIAO header pins GPIO5/GPIO6
+instead of the previous DevKitC GPIO40/GPIO41 pair or the abandoned SuperMini
+GPIO12/GPIO13 candidate.
+
 Open wiring questions:
 
-- confirm whether the selected S3 dev board can power the FLX4 through USB;
-- if not, use a powered USB hub or externally powered USB host wiring;
+- the FLX4 is externally powered for the current XIAO bench setup; do not use
+  the XIAO as the FLX4 operating-current supply;
+- keep a valid host/OTG VBUS arrangement for enumeration without tying
+  independent 5 V sources together;
 - ensure common ground between S3, P4, audio boards, and any external supply;
 - document actual VBUS/current behavior during bench testing.
 
@@ -60,31 +68,43 @@ Inherited confirmed UART:
 - P4 GPIO29: UART TX to S3 RX.
 
 P4-to-S3 monitor PCM link for the FLX4 USB Audio headphones path
-(**hardware-validated 2026-07-02**, `docs/validation/P4_S3_AUDIO_LINK_BENCH.md`
-and `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
+(DevKitC candidate hardware-validated 2026-07-02; XIAO ESP32S3/Sense wiring
+validated 2026-07-06; see `docs/validation/P4_S3_AUDIO_LINK_BENCH.md` and
+`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 | Signal | ESP32-P4 (JP1 pin) | ESP32-S3 side | Direction | Notes |
 | --- | --- | --- | --- | --- |
-| I2S BCLK | GPIO32 (JP1 pin 17) | GPIO15 | P4 -> S3 | clock for monitor PCM stream |
-| I2S WS/LRCK | GPIO34 (JP1 pin 15) | GPIO16 | P4 -> S3 | stereo frame sync |
-| I2S DOUT | GPIO35 (JP1 pin 13) | GPIO17 | P4 -> S3 | P4 `hp_out` monitor PCM data |
+| I2S BCLK | GPIO32 (JP1 pin 17) | GPIO7 | P4 -> S3 | clock for monitor PCM stream |
+| I2S WS/LRCK | GPIO34 (JP1 pin 15) | GPIO8 | P4 -> S3 | stereo frame sync |
+| I2S DOUT | GPIO35 (JP1 pin 13) | GPIO9 | P4 -> S3 | P4 `hp_out` monitor PCM data |
 | GND | GND (JP1 pin 14) | GND | shared | required; use JP1 pin 14 next to the signal pins |
-| READY/FLOW/debug | GPIO49 (JP1 pin 11) | GPIO18 | optional | not needed; leave disconnected |
+| READY/FLOW/debug | GPIO49 (JP1 pin 11) | not assigned | optional | not needed; leave disconnected |
 
-The S3 set GPIO15/GPIO16/GPIO17 avoids S3 USB GPIO19/GPIO20, control UART
-GPIO40/GPIO41, UART0 GPIO43/GPIO44, strapping GPIO45/GPIO46, and GPIO48
-(drives the onboard DevKitC-1 WS2812 RGB status LED via the `status_led`
-component — red = FLX4 disconnected, green = connected, flash on MIDI input). GPIO15-GPIO18 are legacy CDJ jog/browse encoder
-pins, acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io`
-is inactive.
+The XIAO ESP32S3 migration set GPIO7/GPIO8/GPIO9 avoids the control UART
+GPIO5/GPIO6 and UART0 GPIO43/GPIO44. These pins are legacy CDJ panel pins,
+acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is
+inactive.
 
 **Transport details (validated):** P4 `monitor_pcm_link` is an I2S TX master
 that streams `P4HP` framed blocks (stereo 16-bit monitor PCM, sequence numbers,
-CRC32). S3 `p4_audio_link` is an I2S slave RX that deframes into a 4096-frame
-ring. The pipe runs at **64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
+CRC32 over protected header plus payload). S3 `p4_audio_link` is an I2S slave
+RX that deframes into a 4096-frame ring. The pipe runs at
+**64 kHz 16-bit stereo slots (2.048 MHz BCLK)** -- 96 kHz
 slots corrupted over the jumper harness. The TX task writes at line rate (real
 blocks or explicit zero filler) so the continuously-transmitting DMA never laps
-the writer mid-block. 80 s bench: 0 gaps / 0 CRC / 0 under/overruns.
+the writer mid-block. 2026-07-06 XIAO bench confirmed raw I2S reception and
+deframing on GPIO7/GPIO8/GPIO9 with zero steady-state deltas for `gaps`, `crc`,
+I2S `timeouts`, I2S `errors`, `underruns`, and `overruns` during a five-minute
+S3-only soak. Repeat this soak after I2S, task-priority, or FLX4 USB Audio
+scheduling changes.
+
+**Product e2e result (validated 2026-07-07):** with the XIAO GPIO7/GPIO8/GPIO9
+link wiring, P4 `build_flx4_hp_e2e_tcmguard`, and S3
+`build_flx4_hp_e2e_xiao`, the full path from P4 playback to the FLX4 headphone
+jack was confirmed audible by the operator. P4 `MONITOR_PCM_LINK` counters rose
+with `dropped=0`; S3 `P4_AUDIO_LINK` counters rose with `gaps=0` and `crc=0`
+before the FLX4 USB Audio consumer was attached. See
+`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`.
 
 **Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
 `i2s_new_channel`, leaving units 0 and 1. Product config: **monitor link on

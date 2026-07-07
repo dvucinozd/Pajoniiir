@@ -1,0 +1,21 @@
+menu "S3 control link"
+
+config CONTROL_LINK_UART_TX_GPIO
+    int "S3 control-link UART TX GPIO"
+    default 5
+    range 0 48
+    help
+        ESP32-S3 GPIO used for the UART signal from S3 to P4. The Seeed Studio
+        XIAO ESP32S3 migration default is GPIO5 / D4 / SDA because GPIO12 is
+        not exposed on this board.
+
+config CONTROL_LINK_UART_RX_GPIO
+    int "S3 control-link UART RX GPIO"
+    default 6
+    range 0 48
+    help
+        ESP32-S3 GPIO used for the UART signal from P4 to S3. The Seeed Studio
+        XIAO ESP32S3 migration default is GPIO6 / D5 / SCL because GPIO13 is
+        not exposed on this board.
+
+endmenu

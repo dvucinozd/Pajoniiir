@@ -2,4 +2,7 @@
 # Build: idf.py -B build_p4_link_bench -D SDKCONFIG="build_p4_link_bench/sdkconfig" \
 #   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.p4_link_bench" build
 CONFIG_P4_AUDIO_LINK_ENABLED=y
+CONFIG_P4_AUDIO_LINK_BCLK_GPIO=7
+CONFIG_P4_AUDIO_LINK_WS_GPIO=8
+CONFIG_P4_AUDIO_LINK_DIN_GPIO=9
 CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER=y

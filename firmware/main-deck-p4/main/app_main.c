@@ -21,6 +21,8 @@
 
 static const char *TAG = "main";
 
+void p4_tcm_heap_guard_keep(void);
+
 // Called from the USB storage task when the Rekordbox drive mounts/unmounts.
 static void on_usb_storage_event(bool mounted)
 {
@@ -46,6 +48,8 @@ static void on_usb_storage_event(bool mounted)
 
 void app_main(void)
 {
+    p4_tcm_heap_guard_keep();
+
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
     // Log the reason for the most recent reset. A spontaneous reboot during use
@@ -58,6 +62,12 @@ void app_main(void)
     // on rev v1.3 (eco2) silicon, claiming a fresh I2S unit late in boot with
     // DSI/PSRAM/USB traffic active has hard-frozen the HP bus.
     ESP_ERROR_CHECK(monitor_pcm_link_start_transport());
+#if CONFIG_MONITOR_PCM_LINK_BENCH_TONE
+    ESP_LOGW(TAG, "monitor PCM bench profile active; skipping full P4 app startup");
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#endif
 #endif
 
     // ── Persistent settings (NVS) ────────────────────────────────────────────

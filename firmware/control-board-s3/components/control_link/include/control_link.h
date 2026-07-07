@@ -3,6 +3,17 @@
 #include "esp_err.h"
 #include "panel_io.h"
 
+#ifndef CONFIG_CONTROL_LINK_UART_TX_GPIO
+#define CONFIG_CONTROL_LINK_UART_TX_GPIO 5
+#endif
+
+#ifndef CONFIG_CONTROL_LINK_UART_RX_GPIO
+#define CONFIG_CONTROL_LINK_UART_RX_GPIO 6
+#endif
+
+#define CONTROL_LINK_UART_TX_GPIO CONFIG_CONTROL_LINK_UART_TX_GPIO
+#define CONTROL_LINK_UART_RX_GPIO CONFIG_CONTROL_LINK_UART_RX_GPIO
+
 // Inter-board UART protocol constants.
 //
 // Frame layout (7 bytes):

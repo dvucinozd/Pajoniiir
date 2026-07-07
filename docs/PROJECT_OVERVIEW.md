@@ -160,9 +160,9 @@ Two design plans staged under `docs/superpowers/plans/` have since been
 implemented in firmware (details in Phase 8 of
 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)):
 
-- **S3 GPIO48 status RGB LED** — implemented as the S3 `status_led` component
-  for FLX4 host modes. It reports USB link state and MIDI activity; it does not
-  encode playback state.
+- **S3 XIAO GPIO21 user status LED** — implemented as the S3 `status_led`
+  component for FLX4 host modes. It uses the active-low XIAO onboard user LED
+  for reduced USB/link/activity feedback; it does not encode playback state.
 - **WAV + FLAC playback** — implemented through the decoder-abstraction layer
   and firmware preload path. MP3 keeps PVBR seek support; WAV/FLAC use decoder
   metadata while Rekordbox/ANLZ still supplies beatgrid/BPM/waveform context.

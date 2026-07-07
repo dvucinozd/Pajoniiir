@@ -42,6 +42,137 @@ function Assert-FileContains {
     }
 }
 
+function Assert-FileNotContains {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$Patterns
+    )
+
+    Write-Host "==> static $Name"
+    foreach ($pattern in $Patterns) {
+        if (Select-String -LiteralPath $Path -Pattern $pattern -SimpleMatch) {
+            throw "$Name found forbidden pattern '$pattern' in $Path"
+        }
+    }
+}
+
+function Assert-FilePatternOrder {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$First,
+        [Parameter(Mandatory = $true)][string]$Second
+    )
+
+    Write-Host "==> static $Name"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $firstIndex = $text.IndexOf($First, [StringComparison]::Ordinal)
+    $secondIndex = $text.IndexOf($Second, [StringComparison]::Ordinal)
+    if ($firstIndex -lt 0) {
+        throw "$Name missing first pattern '$First' in $Path"
+    }
+    if ($secondIndex -lt 0) {
+        throw "$Name missing second pattern '$Second' in $Path"
+    }
+    if ($firstIndex -ge $secondIndex) {
+        throw "$Name expected '$First' before '$Second' in $Path"
+    }
+}
+
+function Assert-CFunctionDoesNotContain {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$FunctionSignature,
+        [Parameter(Mandatory = $true)][string]$ForbiddenPattern
+    )
+
+    Write-Host "==> static $Name"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $start = $text.IndexOf($FunctionSignature, [StringComparison]::Ordinal)
+    if ($start -lt 0) {
+        throw "$Name missing function signature '$FunctionSignature' in $Path"
+    }
+    $brace = $text.IndexOf("{", $start, [StringComparison]::Ordinal)
+    if ($brace -lt 0) {
+        throw "$Name missing function body for '$FunctionSignature' in $Path"
+    }
+
+    $depth = 0
+    $end = -1
+    for ($i = $brace; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq "{") {
+            $depth++
+        } elseif ($text[$i] -eq "}") {
+            $depth--
+            if ($depth -eq 0) {
+                $end = $i
+                break
+            }
+        }
+    }
+    if ($end -lt 0) {
+        throw "$Name found unterminated function body for '$FunctionSignature' in $Path"
+    }
+
+    $body = $text.Substring($brace, $end - $brace + 1)
+    if ($body.IndexOf($ForbiddenPattern, [StringComparison]::Ordinal) -ge 0) {
+        throw "$Name found forbidden pattern '$ForbiddenPattern' in '$FunctionSignature'"
+    }
+}
+
+function Assert-CFunctionPatternOrder {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$FunctionSignature,
+        [Parameter(Mandatory = $true)][string]$First,
+        [Parameter(Mandatory = $true)][string]$Second
+    )
+
+    Write-Host "==> static $Name"
+    $text = Get-Content -LiteralPath $Path -Raw
+    $start = $text.LastIndexOf($FunctionSignature, [StringComparison]::Ordinal)
+    if ($start -lt 0) {
+        throw "$Name missing function signature '$FunctionSignature' in $Path"
+    }
+    $brace = $text.IndexOf("{", $start, [StringComparison]::Ordinal)
+    if ($brace -lt 0) {
+        throw "$Name missing function body for '$FunctionSignature' in $Path"
+    }
+
+    $depth = 0
+    $end = -1
+    for ($i = $brace; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq "{") {
+            $depth++
+        } elseif ($text[$i] -eq "}") {
+            $depth--
+            if ($depth -eq 0) {
+                $end = $i
+                break
+            }
+        }
+    }
+    if ($end -lt 0) {
+        throw "$Name found unterminated function body for '$FunctionSignature' in $Path"
+    }
+
+    $body = $text.Substring($brace, $end - $brace + 1)
+    $firstIndex = $body.IndexOf($First, [StringComparison]::Ordinal)
+    $secondIndex = $body.IndexOf($Second, [StringComparison]::Ordinal)
+    if ($firstIndex -lt 0) {
+        throw "$Name missing first pattern '$First' in '$FunctionSignature'"
+    }
+    if ($secondIndex -lt 0) {
+        throw "$Name missing second pattern '$Second' in '$FunctionSignature'"
+    }
+    if ($firstIndex -ge $secondIndex) {
+        throw "$Name expected '$First' before '$Second' in '$FunctionSignature'"
+    }
+}
+
 Assert-FileContains `
     -Name "flx4 mode split" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/Kconfig") `
@@ -101,6 +232,50 @@ Assert-FileContains `
     -Name "p4 audio link stats use atomic counters" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c") `
     -Patterns @("__atomic_fetch_add", "stats_load(&s_stats")
+
+Assert-FileContains `
+    -Name "xiao user status led uses gpio21 active low" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/status_led/status_led.c") `
+    -Patterns @("#define STATUS_LED_GPIO        21", "gpio_set_level(STATUS_LED_GPIO, active ? 0 : 1)", "XIAO ESP32S3 user LED on GPIO%d")
+
+Assert-FileNotContains `
+    -Name "xiao user status led avoids ws2812 strip driver" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/status_led/status_led.c") `
+    -Patterns @("led_strip", "LED_MODEL_WS2812", "GPIO48")
+
+Assert-FileContains `
+    -Name "wifi debug log component is optional and async" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/wifi_debug_log/wifi_debug_log.c") `
+    -Patterns @("CONFIG_WIFI_DEBUG_LOG_ENABLED", "esp_log_set_vprintf", "xQueueSend", "sendto", "wifi_debug_log_task", "wifi_debug_log_connect_task", "xTaskCreate(wifi_debug_log_connect_task")
+
+Assert-CFunctionPatternOrder `
+    -Name "wifi debug log opens UDP socket after netif init" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/wifi_debug_log/wifi_debug_log.c") `
+    -FunctionSignature "static esp_err_t wifi_debug_log_start_wifi(void)" `
+    -First "esp_netif_init()" `
+    -Second "wifi_debug_log_open_udp_socket()"
+
+Assert-CFunctionDoesNotContain `
+    -Name "wifi debug log init does not open UDP socket before netif" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/wifi_debug_log/wifi_debug_log.c") `
+    -FunctionSignature "esp_err_t wifi_debug_log_init(void)" `
+    -ForbiddenPattern "socket(AF_INET, SOCK_DGRAM, IPPROTO_IP)"
+
+Assert-FileContains `
+    -Name "wifi debug log keeps credentials in local config" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/wifi_debug_log/Kconfig") `
+    -Patterns @("WIFI_DEBUG_LOG_SSID", "WIFI_DEBUG_LOG_PASSWORD", "WIFI_DEBUG_LOG_HOST", "WIFI_DEBUG_LOG_PORT")
+
+Assert-FileContains `
+    -Name "app starts wifi debug log before subsystems" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @('#include "wifi_debug_log.h"', "wifi_debug_log_init();")
+
+Assert-FilePatternOrder `
+    -Name "app logs boot before starting wifi debug log" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -First 'ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");' `
+    -Second "wifi_debug_log_init();"
 
 $tests = @(
     @{

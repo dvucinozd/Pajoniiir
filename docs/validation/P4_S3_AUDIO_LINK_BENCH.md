@@ -27,9 +27,11 @@ Rationale:
 ## Implemented software slice
 
 - P4 `monitor_pcm_link` now serializes enabled monitor PCM writes into
-  non-blocking `P4HP` blocks with sequence numbers and payload CRC32.
-- S3 `p4_audio_link` now accepts `P4HP` blocks, verifies CRC32, detects sequence
-  gaps, and stores stereo frames in a 4096-frame ring.
+  non-blocking `P4HP` blocks with sequence numbers and CRC32 over the protected
+  header plus PCM payload.
+- S3 `p4_audio_link` now accepts `P4HP` blocks, verifies the protected block
+  CRC32 before sequence tracking, detects sequence gaps, and stores stereo
+  frames in a 4096-frame ring.
 - Ring overrun drops the oldest monitor frames.
 - Ring underrun returns silence and increments diagnostics.
 
@@ -89,3 +91,91 @@ frames/block = 48000 frames/s.
 - **S3 RX robustness:** 8 x 500-frame RX DMA descriptors (~64 ms cushion) plus
   a streaming deframer that CRC-checks each `P4HP` block and resyncs on the
   magic keep USB-host bursts from corrupting the ring.
+
+## XIAO ESP32S3/Sense migration bench -- PASS WITH STABLE DELTA (2026-07-06)
+
+Branch: `codex/s3-supermini-migration`
+
+The control board was migrated from the earlier ESP32-S3 DevKitC candidate to
+the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense. The XIAO does not expose
+GPIO15/GPIO16/GPIO17 as the preferred audio-link group in this harness, so the
+P4-to-S3 monitor PCM link moved to XIAO GPIO7/GPIO8/GPIO9.
+
+Bench build profiles:
+
+- P4: `sdkconfig.monitor_link_bench` built into `build_monitor_link_bench_fixed`.
+  The bench profile starts only the monitor PCM transport/tone generator and
+  skips full P4 app startup.
+- S3: `sdkconfig.p4_link_bench` built into `build_p4_link_bench_diag`.
+  The bench consumer includes raw I2S RX counters while
+  `CONFIG_P4_AUDIO_LINK_BENCH_CONSUMER=y`.
+
+Wiring validated on hardware:
+
+| Signal | P4 GPIO | P4 JP1 pin | XIAO ESP32S3/Sense pin |
+| --- | --- | --- | --- |
+| I2S BCLK | GPIO32 | JP1 pin 17 | D8 / GPIO7 |
+| I2S WS/LRCK | GPIO34 | JP1 pin 15 | D9 / GPIO8 |
+| I2S DOUT | GPIO35 | JP1 pin 13 | D10 / GPIO9 |
+| GND | GND | JP1 pin 14 | GND |
+
+60-second confirmation capture after flashing the diagnostic S3 bench:
+
+| Metric | Measured |
+| --- | --- |
+| S3 received blocks | `10272` by the captured endpoint |
+| S3 sequence gaps | `0` |
+| S3 CRC errors | `0` |
+| S3 underruns / overruns | `0 / 0` |
+| Raw I2S reads | `5136` |
+| Raw I2S bytes | `10518528` |
+| Raw reads with non-zero data | `5136` |
+| Raw reads containing `P4HP` magic | `5066` |
+| Raw I2S timeouts / errors | `0 / 0` |
+
+Initial 5-minute soak follow-up before the block-CRC hardening:
+
+| Metric | Measured |
+| --- | --- |
+| P4 TX last counter | `tx submitted=198241 dropped=12 sent=198240` |
+| S3 last RX counter | `rx blocks=113174 gaps=1 crc=0 ring=2048 underruns=0 overruns=0` |
+| S3 last raw counter | `raw reads=56591 bytes=115898368 nonzero=56587 magic=55821 timeouts=0 errors=0` |
+
+The initial 5-minute soak confirmed that the physical XIAO wiring and I2S RX
+path were healthy: raw data arrived continuously, `P4HP` magic was found, CRC
+stayed zero, and there were no I2S read timeouts/errors or ring
+underruns/overruns. It also showed that payload-only CRC left one ambiguity:
+an altered header could reach sequence tracking and appear as a sequence gap
+without a CRC error.
+
+A subsequent 120-second S3-only delta check, still before block-CRC hardening,
+did not add further link-quality errors:
+
+| Metric | Start | End |
+| --- | --- | --- |
+| S3 RX | `rx blocks=120930 gaps=2 crc=0 ring=2048 underruns=0 overruns=0` | `rx blocks=150726 gaps=2 crc=0 ring=2048 underruns=0 overruns=0` |
+| S3 raw | `raw reads=60473 bytes=123848704 nonzero=60466 magic=59647 timeouts=0 errors=0` | `raw reads=75371 bytes=154359808 nonzero=75364 magic=74343 timeouts=0 errors=0` |
+
+Block-CRC follow-up:
+
+- `monitor_pcm_link` / `p4_audio_link` now protect the whole `P4HP` block:
+  header with the CRC field cleared, plus PCM payload.
+- Host regression coverage rejects a header-corrupted block before sequence
+  tracking, so header corruption cannot be misreported as a clean sequence gap.
+- A combined P4+S3 serial capture showed `gaps=1 crc=1` only while opening
+  COM15 reset the P4 during S3 reception; this is a startup/reset disturbance,
+  not a steady-state link delta.
+- Stable S3-only 180-second delta, with P4 left running and COM15 untouched:
+  `rx blocks +44836`, `gaps +0`, `crc +0`, `timeouts +0`, `errors +0`.
+- Stable S3-only 300-second delta, with P4 left running and COM15 untouched:
+  `rx blocks +74864`, `gaps +0`, `crc +0`, `ring +0`,
+  `underruns +0`, `overruns +0`; raw I2S `reads +37432`,
+  `bytes +76660736`, `nonzero +37432`, `magic +37432`,
+  `timeouts +0`, `errors +0`.
+
+Follow-up before product integration changes:
+
+- repeat this zero-delta soak after any I2S, task-priority, or FLX4 USB Audio
+  scheduling change;
+- keep the XIAO GPIO7/GPIO8/GPIO9 wiring as the confirmed physical pinout for
+  further FLX4 USB headphones integration work.

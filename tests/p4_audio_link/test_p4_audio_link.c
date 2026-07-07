@@ -22,9 +22,8 @@
         } \
     } while (0)
 
-static uint32_t test_crc32(const uint8_t *data, size_t len)
+static uint32_t test_crc32_update(uint32_t crc, const uint8_t *data, size_t len)
 {
-    uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; ++i) {
         crc ^= (uint32_t)data[i];
         for (unsigned bit = 0; bit < 8u; ++bit) {
@@ -32,6 +31,18 @@ static uint32_t test_crc32(const uint8_t *data, size_t len)
             crc = (crc >> 1) ^ (0xEDB88320u & mask);
         }
     }
+    return crc;
+}
+
+static uint32_t test_block_crc32(const p4_audio_link_block_header_t *header,
+                                 const int16_t *frames,
+                                 size_t payload_bytes)
+{
+    p4_audio_link_block_header_t protected_header = *header;
+    protected_header.block_crc32 = 0u;
+    uint32_t crc = 0xFFFFFFFFu;
+    crc = test_crc32_update(crc, (const uint8_t *)&protected_header, sizeof(protected_header));
+    crc = test_crc32_update(crc, (const uint8_t *)frames, payload_bytes);
     return ~crc;
 }
 
@@ -55,10 +66,10 @@ static size_t build_block(uint8_t *dst,
         .frames = frame_count,
         .sample_rate = sample_rate,
         .sequence = sequence,
-        .payload_crc32 = test_crc32((const uint8_t *)frames, payload_bytes),
     };
+    hdr.block_crc32 = test_block_crc32(&hdr, frames, payload_bytes);
     if (crc_override != UINT32_MAX) {
-        hdr.payload_crc32 = crc_override;
+        hdr.block_crc32 = crc_override;
     }
 
     memcpy(dst, &hdr, sizeof(hdr));
@@ -123,6 +134,34 @@ static int test_sequence_gap_and_crc_error_are_counted(void)
     EXPECT_EQ_U32(stats.received_blocks, 2u, "only valid blocks counted");
     EXPECT_EQ_U32(stats.sequence_gaps, 1u, "one sequence gap counted");
     EXPECT_EQ_U32(stats.crc_errors, 1u, "crc error counted");
+    return 0;
+}
+
+static int test_corrupted_header_is_rejected_before_sequence_tracking(void)
+{
+    uint8_t block[128] = { 0 };
+    const int16_t pcm[] = {
+        10, -10,
+        20, -20,
+    };
+
+    EXPECT_TRUE(p4_audio_link_init() == 0, "init ok");
+    size_t block_len = build_block(block, sizeof(block), 1u, 48000u, pcm, 2u, UINT32_MAX);
+    EXPECT_TRUE(p4_audio_link_receive_block(block, block_len), "first block accepted");
+
+    block_len = build_block(block, sizeof(block), 2u, 48000u, pcm, 2u, UINT32_MAX);
+    p4_audio_link_block_header_t hdr = { 0 };
+    memcpy(&hdr, block, sizeof(hdr));
+    hdr.sequence = 130u;
+    memcpy(block, &hdr, sizeof(hdr));
+    EXPECT_TRUE(!p4_audio_link_receive_block(block, block_len), "header-corrupted block rejected");
+
+    p4_audio_link_stats_t stats = { 0 };
+    p4_audio_link_get_stats(&stats);
+    EXPECT_EQ_U32(stats.received_blocks, 1u, "corrupted header not counted as received");
+    EXPECT_EQ_U32(stats.sequence_gaps, 0u, "corrupted header does not create a sequence gap");
+    EXPECT_EQ_U32(stats.crc_errors, 1u, "corrupted header counted as crc error");
+    EXPECT_EQ_U32(stats.ring_frames, 2u, "only first block frames in ring");
     return 0;
 }
 
@@ -235,6 +274,7 @@ int main(void)
 {
     if (test_receives_valid_blocks_and_reads_fifo_frames() != 0) return 1;
     if (test_sequence_gap_and_crc_error_are_counted() != 0) return 1;
+    if (test_corrupted_header_is_rejected_before_sequence_tracking() != 0) return 1;
     if (test_underrun_returns_silence() != 0) return 1;
     if (test_overrun_drops_oldest_frames() != 0) return 1;
     if (test_deframer_reassembles_chunked_stream_with_filler() != 0) return 1;

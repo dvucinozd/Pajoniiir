@@ -4,6 +4,12 @@
 CONFIG_MONITOR_PCM_LINK_ENABLED=y
 CONFIG_MONITOR_PCM_LINK_BENCH_TONE=y
 
+# Keep the bench transport in internal task memory. ESP-IDF defaults this to
+# enabled on ESP32-P4, but the monitor-link bench image has hit a FreeRTOS
+# startup assert while creating the IDLE task when external task stacks are
+# allowed.
+# CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM is not set
+
 # PCM5102A MAIN OUT is deliberately OFF in this bench profile: with ES8311 on
 # I2S0 and PCM5102A on I2S1, the monitor link lands on I2S2, and I2S2 register
 # access hard-freezes this rev v1.3 (eco2) P4 during i2s_new_channel. The

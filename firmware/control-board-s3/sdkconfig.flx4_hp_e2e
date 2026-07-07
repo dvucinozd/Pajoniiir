@@ -5,6 +5,9 @@
 CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES=y
 CONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART=y
 CONFIG_P4_AUDIO_LINK_ENABLED=y
+CONFIG_P4_AUDIO_LINK_BCLK_GPIO=7
+CONFIG_P4_AUDIO_LINK_WS_GPIO=8
+CONFIG_P4_AUDIO_LINK_DIN_GPIO=9
 # No bench consumer: the FLX4 USB callback drains the ring instead.
 # No tone autostart: ring streaming replaces the synthetic tone.
 

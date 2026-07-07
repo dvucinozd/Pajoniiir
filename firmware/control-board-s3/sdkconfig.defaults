@@ -37,3 +37,9 @@ CONFIG_TINYUSB_MODE_SLAVE=y
 # Increase control transfer size to support large configuration descriptors of DDJ-FLX4
 CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
 
+# Seeed Studio XIAO ESP32S3 migration wiring. The previous DevKitC wiring used
+# GPIO40/GPIO41 and the abandoned SuperMini candidate used GPIO12/GPIO13; the
+# XIAO exposes neither pair on its header.
+CONFIG_CONTROL_LINK_UART_TX_GPIO=5
+CONFIG_CONTROL_LINK_UART_RX_GPIO=6
+

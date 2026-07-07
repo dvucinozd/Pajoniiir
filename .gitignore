@@ -11,6 +11,7 @@ managed_components/
 dependencies.lock
 sdkconfig
 sdkconfig.old
+firmware/control-board-s3/sdkconfig.wifi_debug.local
 
 # Tool/editor files
 .vscode/

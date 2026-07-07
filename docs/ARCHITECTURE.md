@@ -159,15 +159,16 @@ Current S3 firmware modes:
 - inherited CDJ panel compatibility mode: direct GPIO panel input plus TinyUSB
   MIDI device compatibility when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
 
-FLX4 USB headphones path (**hardware-validated 2026-07-02**,
+FLX4 USB headphones path (**hardware-validated 2026-07-02; XIAO wiring
+validated 2026-07-06**,
 `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 - P4 owns the monitor/cue mix and publishes stereo 16-bit `hp_out` blocks
   through `monitor_pcm_link` (I2S TX master, unit 0).
 - The dedicated P4-to-S3 monitor PCM payload uses `P4HP` blocks (sequence
-  numbers + CRC32) over I2S, intentionally separate from the `0xA5` UART control
-  protocol. Pins: P4 GPIO32/GPIO34/GPIO35 -> S3 GPIO15/GPIO16/GPIO17, 64 kHz
-  stereo slots.
+  numbers + CRC32 over protected header plus payload) over I2S, intentionally
+  separate from the `0xA5` UART control protocol. Current XIAO wiring pins:
+  P4 GPIO32/GPIO34/GPIO35 -> S3 GPIO7/GPIO8/GPIO9, 64 kHz stereo slots.
 - S3 `p4_audio_link` (I2S slave RX) deframes into a 4096-frame ring; the
   `flx4_usb_audio` UAC streamer drains the ring into isochronous OUT transfers,
   mapping P4 `hp_out` onto the FLX4 4-channel format's headphone pair

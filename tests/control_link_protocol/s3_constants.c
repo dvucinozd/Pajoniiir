@@ -13,6 +13,8 @@ int s3_btn_load(void) { return BTN_LOAD; }
 int s3_btn_count(void) { return BTN_COUNT; }
 int s3_panel_ev_jog(void) { return PANEL_EV_JOG; }
 int s3_panel_ev_browse(void) { return PANEL_EV_BROWSE; }
+int s3_control_link_uart_tx_gpio(void) { return CONTROL_LINK_UART_TX_GPIO; }
+int s3_control_link_uart_rx_gpio(void) { return CONTROL_LINK_UART_RX_GPIO; }
 int s3_ctrl_id_deck1_play(void) { return CTRL_ID_DECK1_PLAY; }
 int s3_ctrl_id_deck2_cue(void) { return CTRL_ID_DECK2_CUE; }
 int s3_ctrl_id_deck1_tempo(void) { return CTRL_ID_DECK1_TEMPO; }

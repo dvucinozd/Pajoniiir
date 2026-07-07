@@ -1,6 +1,3 @@
 ## IDF Component Manager Manifest
 dependencies:
   idf: "^5.4"
-  # Onboard DevKitC-1 RGB LED (WS2812 on GPIO48) needs the addressable-LED
-  # driver; a plain GPIO level cannot drive it.
-  espressif/led_strip: "^3.0.0"
