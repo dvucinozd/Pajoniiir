@@ -12,6 +12,7 @@ uint8_t ui_settings_master_trim_sanitize_preset(uint8_t preset);
 uint8_t ui_settings_master_trim_next_preset(uint8_t current);
 float ui_settings_master_trim_gain(uint8_t preset);
 const char *ui_settings_master_trim_label(uint8_t preset);
+const char *ui_settings_s3_debug_ap_status_label(uint8_t status);
 
 #ifndef UI_SETTINGS_HOST_TEST
 
@@ -38,6 +39,10 @@ typedef struct {
 // (avoids a ui -> wifi_link -> web_server -> ui component dependency cycle).
 typedef void (*ui_settings_wifi_toggle_cb_t)(bool enable);
 void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb);
+
+typedef void (*ui_settings_s3_debug_ap_toggle_cb_t)(bool enable);
+void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t cb);
+void ui_settings_set_s3_debug_ap_status(uint8_t status);
 
 void ui_settings_configure(const ui_settings_config_t *config);
 lv_obj_t *ui_settings_create(lv_obj_t *parent);

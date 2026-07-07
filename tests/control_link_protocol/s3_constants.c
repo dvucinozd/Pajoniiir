@@ -35,6 +35,11 @@ int s3_ctrl_id_beat_fx_select_next(void) { return CTRL_ID_BEAT_FX_SELECT_NEXT; }
 int s3_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
 int s3_ctrl_id_beat_fx_beat_dec_shift(void) { return CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT; }
 int s3_ctrl_id_beat_fx_beat_inc_shift(void) { return CTRL_ID_BEAT_FX_BEAT_INC_SHIFT; }
+int s3_ctrl_id_s3_debug_ap(void) { return CTRL_ID_S3_DEBUG_AP; }
+int s3_ctrl_s3_debug_ap_off(void) { return CTRL_S3_DEBUG_AP_OFF; }
+int s3_ctrl_s3_debug_ap_starting(void) { return CTRL_S3_DEBUG_AP_STARTING; }
+int s3_ctrl_s3_debug_ap_on(void) { return CTRL_S3_DEBUG_AP_ON; }
+int s3_ctrl_s3_debug_ap_error(void) { return CTRL_S3_DEBUG_AP_ERROR; }
 int s3_ctrl_id_deck1_shift(void) { return CTRL_ID_DECK1_SHIFT; }
 int s3_ctrl_id_deck2_to_start(void) { return CTRL_ID_DECK2_TO_START; }
 int s3_ctrl_id_deck1_sync(void) { return CTRL_ID_DECK1_SYNC; }

@@ -1,4 +1,5 @@
 #include "ui_settings.h"
+#include "control_link.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -64,6 +65,22 @@ const char *ui_settings_master_trim_label(uint8_t preset)
     return s_master_trim_presets[preset].label;
 }
 
+const char *ui_settings_s3_debug_ap_status_label(uint8_t status)
+{
+    switch (status) {
+    case CTRL_S3_DEBUG_AP_OFF:
+        return "OFF";
+    case CTRL_S3_DEBUG_AP_STARTING:
+        return "STARTING";
+    case CTRL_S3_DEBUG_AP_ON:
+        return "ON";
+    case CTRL_S3_DEBUG_AP_ERROR:
+        return "ERROR";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 #ifndef UI_SETTINGS_HOST_TEST
 
 #include "esp_log.h"
@@ -96,8 +113,13 @@ static lv_obj_t *s_label_audio_out = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
+static lv_obj_t *s_label_s3_debug_ap = NULL;
+static lv_obj_t *s_switch_s3_debug_ap = NULL;
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
+static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
+static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
+static uint8_t s_s3_debug_ap_displayed_status = UINT8_MAX;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -296,11 +318,62 @@ static void wifi_remote_event_cb(lv_event_t *event)
         s_wifi_toggle_cb(on);
     }
     if (s_label_wifi_remote) {
-        lv_label_set_text(s_label_wifi_remote, on ? "ON" : "OFF");
+        lv_label_set_text(s_label_wifi_remote, on ? "P4 REMOTE ON" : "P4 REMOTE OFF");
         lv_obj_set_style_text_color(s_label_wifi_remote,
                                     on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
     }
     ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
+}
+
+static lv_color_t s3_debug_ap_status_color(uint8_t status)
+{
+    switch (status) {
+    case CTRL_S3_DEBUG_AP_ON:
+        return COL_GREEN;
+    case CTRL_S3_DEBUG_AP_STARTING:
+        return COL_AMBER;
+    case CTRL_S3_DEBUG_AP_ERROR:
+        return COL_RED;
+    default:
+        return COL_TEXT_DIM;
+    }
+}
+
+static void ui_settings_apply_s3_debug_ap_status(void)
+{
+    uint8_t status = s_s3_debug_ap_status;
+    if (!s_label_s3_debug_ap || s_s3_debug_ap_displayed_status == status) {
+        return;
+    }
+
+    lv_label_set_text_fmt(s_label_s3_debug_ap, "S3 DEBUG AP %s",
+                          ui_settings_s3_debug_ap_status_label(status));
+    lv_obj_set_style_text_color(s_label_s3_debug_ap,
+                                s3_debug_ap_status_color(status),
+                                LV_PART_MAIN);
+    if (s_switch_s3_debug_ap) {
+        if (status == CTRL_S3_DEBUG_AP_ON || status == CTRL_S3_DEBUG_AP_STARTING) {
+            lv_obj_add_state(s_switch_s3_debug_ap, LV_STATE_CHECKED);
+        } else {
+            lv_obj_clear_state(s_switch_s3_debug_ap, LV_STATE_CHECKED);
+        }
+    }
+    s_s3_debug_ap_displayed_status = status;
+}
+
+static void s3_debug_ap_event_cb(lv_event_t *event)
+{
+    lv_obj_t *sw = lv_event_get_target(event);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    s_s3_debug_ap_status = on ? CTRL_S3_DEBUG_AP_STARTING : CTRL_S3_DEBUG_AP_OFF;
+    s_s3_debug_ap_displayed_status = UINT8_MAX;
+    ui_settings_apply_s3_debug_ap_status();
+
+    if (s_s3_debug_ap_toggle_cb) {
+        s_s3_debug_ap_toggle_cb(on);
+    }
+    ESP_LOGI(TAG, "S3 Debug AP requested: %s", on ? "on" : "off");
 }
 
 #ifndef WIN32
@@ -337,6 +410,17 @@ static void cue_mode_event_cb(lv_event_t *event)
 void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb)
 {
     s_wifi_toggle_cb = cb;
+}
+
+void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t cb)
+{
+    s_s3_debug_ap_toggle_cb = cb;
+}
+
+void ui_settings_set_s3_debug_ap_status(uint8_t status)
+{
+    s_s3_debug_ap_status = status;
+    s_s3_debug_ap_displayed_status = UINT8_MAX;
 }
 
 void ui_settings_configure(const ui_settings_config_t *config)
@@ -465,23 +549,31 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     }
 #endif
 
-    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 96, "WI-FI REMOTE");
+    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 96, "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
-    lv_obj_set_pos(sw_wifi, 16, 40);
+    lv_obj_set_pos(sw_wifi, 16, 34);
     lv_obj_add_event_cb(sw_wifi, wifi_remote_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     if (wifi_remote_init) {
         lv_obj_add_state(sw_wifi, LV_STATE_CHECKED);
     }
 
     s_label_wifi_remote = ui_settings_value_label(wifi_section,
-                                                  wifi_remote_init ? "ON" : "OFF",
+                                                  wifi_remote_init ? "P4 REMOTE ON" : "P4 REMOTE OFF",
                                                   wifi_remote_init ? COL_GREEN : COL_TEXT_DIM,
-                                                  &lv_font_montserrat_16,
-                                                  104, 40);
+                                                  &lv_font_montserrat_14,
+                                                  104, 36);
 
-    ui_settings_value_label(wifi_section,
-                            "SSID PAJONIIR / pass 12345678 / http://192.168.4.1",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 70);
+    s_switch_s3_debug_ap = lv_switch_create(wifi_section);
+    lv_obj_set_pos(s_switch_s3_debug_ap, 16, 64);
+    lv_obj_add_event_cb(s_switch_s3_debug_ap, s3_debug_ap_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    s_label_s3_debug_ap = ui_settings_value_label(wifi_section,
+                                                  "S3 DEBUG AP OFF",
+                                                  COL_TEXT_DIM,
+                                                  &lv_font_montserrat_14,
+                                                  104, 66);
+    s_s3_debug_ap_displayed_status = UINT8_MAX;
+    ui_settings_apply_s3_debug_ap_status();
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 346, 740, 70, "MIXER / PFL ROUTING");
     ui_settings_static_tile(mixer_section, 18, 30, 108, 28,
@@ -682,6 +774,7 @@ void ui_settings_update(const ui_frame_context_t *ctx)
 #ifndef WIN32
     ui_settings_update_uart_status_label(&ctx->deck_state[CTRL_DECK_1]);
     ui_settings_update_sd_status_label(false);
+    ui_settings_apply_s3_debug_ap_status();
 #endif
 }
 

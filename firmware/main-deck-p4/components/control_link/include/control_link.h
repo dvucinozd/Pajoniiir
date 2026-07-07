@@ -233,7 +233,7 @@ typedef enum {
  * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
  * Once 0x7F is used the namespace is full; any further global IDs live as flat
  * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
- * reserved as headroom, so 0x83/0x84 are the current overflow allocations.
+ * reserved as headroom, so 0x83..0x85 are the current overflow allocations.
  * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
  * control_link_protocol host test asserts the two sides agree.
  */
@@ -243,6 +243,14 @@ typedef enum {
 /* Flat global overflow region (no namespace); 0x80..0x82 reserved for future use. */
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
+#define CTRL_ID_S3_DEBUG_AP            0x85
+
+typedef enum {
+    CTRL_S3_DEBUG_AP_OFF = 0,
+    CTRL_S3_DEBUG_AP_STARTING = 1,
+    CTRL_S3_DEBUG_AP_ON = 2,
+    CTRL_S3_DEBUG_AP_ERROR = 3,
+} ctrl_s3_debug_ap_status_t;
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
@@ -399,3 +407,6 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue);
 // Send LED command to S3. Thread-safe.
 void control_link_send_led(led_id_t led, uint8_t state);  // state: 0 off / 1 on / 2 blink
 void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
+
+// Send a deck-less state/control command to S3. Thread-safe.
+void control_link_send_state(uint8_t id, int16_t value);

@@ -25,9 +25,9 @@ Baud rate: `115200`.
 | S3 -> P4 | `0x02` | encoder |
 | S3 -> P4 | `0x03` | pitch |
 | S3 -> P4 | `0x04` | heartbeat |
-| S3 -> P4 | `0x82` | semantic state, currently FLX4 USB connection state |
+| S3 -> P4 | `0x82` | semantic state: FLX4 USB connection state, S3 Debug AP status |
 | P4 -> S3 | `0x81` | LED |
-| P4 -> S3 | `0x82` | state feedback/reserved |
+| P4 -> S3 | `0x82` | semantic command: S3 Debug AP enable request |
 
 ## DDJ-FFL4 Semantic Namespace
 
@@ -118,6 +118,7 @@ test.
 | `0x7F` | Shift+Smart Fader | `0` release, `1` press; P4 consumes as no-op placeholder until standalone behavior is defined |
 | `0x83` | Shift+Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down by two enum positions with min saturation |
 | `0x84` | Shift+Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up by two enum positions with max saturation |
+| `0x85` | S3 Debug AP | bidirectional on `CTRL_TYPE_STATE`; P4->S3 request `0` OFF / `1` ON; S3->P4 status `0` OFF / `1` STARTING / `2` ON / `3` ERROR (see below) |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
@@ -274,6 +275,46 @@ pending loop-in marker with the authoritative per-deck audio loop state from
 sets a pending marker and remains on while an active loop exists. `LED_LOOP_OUT`
 turns on only after Loop Out closes an active loop. S3 maps those LED IDs to USB
 MIDI notes `0x10` and `0x11` on `0x90`/`0x91`.
+
+## S3 Debug AP Control
+
+`CTRL_ID_S3_DEBUG_AP` (`0x85`) drives the runtime, bench-only S3 Wi-Fi debug
+access point and live log viewer (see `docs/S3_WIFI_DEBUG_LOG.md`). It is a
+diagnostic control, not an audio/deck control, and rides on the existing 7-byte
+frame with `CTRL_TYPE_STATE` (`0x82`) in both directions.
+
+Request (P4 -> S3):
+
+| Field | Value |
+| --- | --- |
+| type | `CTRL_TYPE_STATE` (`0x82`) |
+| id | `CTRL_ID_S3_DEBUG_AP` (`0x85`) |
+| value | `0` request OFF, `1` request ON |
+
+Status feedback (S3 -> P4), `ctrl_s3_debug_ap_status_t`:
+
+| Value | Status | Meaning |
+| ---: | --- | --- |
+| `0` | `OFF` | AP and HTTP server stopped |
+| `1` | `STARTING` | S3 is bringing up SoftAP/HTTP |
+| `2` | `ON` | AP live at `PajoNiiiR-S3-DEBUG` / `http://192.168.4.1` |
+| `3` | `ERROR` | start failed; S3 tore down partial state and stays OFF |
+
+Handshake and ownership:
+
+- The switch lives only in the **P4 Settings UI**. It is **not** persisted in P4
+  NVS and always initializes OFF after a P4 boot.
+- On P4 boot (and after S3 reconnect recovery) P4 sends `0x85 = 0` as a safe
+  reset so the debug AP never lingers active across a reboot.
+- The P4 UI toggle calls `control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0/1)`.
+- S3 dispatches the request to `s3_debug_ap_request()` and reports every state
+  transition back through its status callback, which P4 `deck_core` forwards to
+  the Settings label (`OFF` / `STARTING` / `ON` / `ERROR`).
+- FLX4 MIDI, control-link UART, and P4-to-S3 headphone audio must keep running
+  regardless of debug AP state; a start failure only yields `ERROR`.
+
+The `control_link_protocol` host test asserts `CTRL_ID_S3_DEBUG_AP` and the
+`CTRL_S3_DEBUG_AP_*` status enum stay byte-for-byte aligned across both targets.
 
 ## Future Protocol Versioning
 

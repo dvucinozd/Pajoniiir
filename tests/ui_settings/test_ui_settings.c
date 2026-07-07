@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
+#include "control_link.h"
 #include "ui_settings.h"
 
 static void test_force_poll_always_allows_refresh(void)
@@ -41,11 +43,21 @@ static void test_master_trim_presets_are_non_boosting_and_cycle(void)
     assert(ui_settings_master_trim_label(99) == ui_settings_master_trim_label(0));
 }
 
+static void test_s3_debug_ap_status_labels_are_stable(void)
+{
+    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_OFF), "OFF") == 0);
+    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_STARTING), "STARTING") == 0);
+    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ON), "ON") == 0);
+    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ERROR), "ERROR") == 0);
+    assert(strcmp(ui_settings_s3_debug_ap_status_label(99), "UNKNOWN") == 0);
+}
+
 int main(void)
 {
     test_force_poll_always_allows_refresh();
     test_first_poll_and_interval_gate();
     test_master_trim_presets_are_non_boosting_and_cycle();
+    test_s3_debug_ap_status_labels_are_stable();
 
     puts("ui_settings tests passed");
     return 0;

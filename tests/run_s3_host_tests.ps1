@@ -277,6 +277,31 @@ Assert-FilePatternOrder `
     -First 'ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");' `
     -Second "wifi_debug_log_init();"
 
+Assert-FileContains `
+    -Name "s3 debug ap control link dispatch" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("CTRL_ID_S3_DEBUG_AP", "s3_debug_ap_request")
+
+Assert-FileContains `
+    -Name "s3 debug ap status callback registered after control link" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("s3_debug_ap_init", "s3_debug_ap_set_status_callback", "CTRL_ID_S3_DEBUG_AP")
+
+Assert-FileContains `
+    -Name "s3 debug ap runtime hosts open softap" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("WIFI_MODE_AP", "PajoNiiiR-S3-DEBUG", "192.168.4.1", "esp_wifi_start")
+
+Assert-FileContains `
+    -Name "s3 debug ap exposes read only http log page" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("httpd_start", "S3 Debug Log", "/events", "text/event-stream")
+
+Assert-FileContains `
+    -Name "s3 debug ap log hook remains non blocking" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("esp_log_set_vprintf", "s_prev_vprintf", "s3_debug_log_ring_append")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"
@@ -339,6 +364,35 @@ $tests = @(
             "test_control_link_protocol.c",
             "s3_constants.c",
             "p4_constants.c"
+        )
+    },
+    @{
+        Name = "s3_debug_log_ring"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_log_ring.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DS3_DEBUG_AP_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_log_ring.exe",
+            "test_s3_debug_log_ring.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_log_ring.c"
+        )
+    },
+    @{
+        Name = "s3_debug_ap_state"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_ap_state.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DS3_DEBUG_AP_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_ap_state.exe",
+            "test_s3_debug_ap_state.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_log_ring.c"
         )
     },
     @{

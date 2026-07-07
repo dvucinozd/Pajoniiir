@@ -2,6 +2,7 @@
 #include "control_link.h"
 #include "calibration.h"
 #include "sdkconfig.h"
+#include "s3_debug_ap.h"
 #include "wifi_debug_log.h"
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
@@ -35,6 +36,13 @@ static QueueHandle_t s_panel_queue;
 #if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 static void flx4_replay_known_input_snapshot(void);
 #endif
+
+static void s3_debug_ap_status_cb(s3_debug_ap_status_t status)
+{
+    (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                     CTRL_ID_S3_DEBUG_AP,
+                                     (int16_t)status);
+}
 
 #if !CONFIG_DDJ_FLX4_HOST_MODE
 static void router_task(void *arg)
@@ -241,6 +249,8 @@ void app_main(void)
     s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
     ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(control_link_init(NULL));
+    ESP_ERROR_CHECK(s3_debug_ap_init());
+    ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
     flx4_midi_host_set_message_callback(flx4_midi_message_cb, NULL);
     ESP_ERROR_CHECK(flx4_midi_host_init());
     ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6, NULL) == pdPASS
@@ -260,6 +270,8 @@ void app_main(void)
     ESP_ERROR_CHECK(panel_io_init(&s_panel_queue));
     ESP_ERROR_CHECK(midi_compat_init(s_panel_queue));
     ESP_ERROR_CHECK(control_link_init(s_panel_queue));
+    ESP_ERROR_CHECK(s3_debug_ap_init());
+    ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
 
     ESP_ERROR_CHECK(xTaskCreate(router_task, "router", 3072, NULL, 6, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);

@@ -23,6 +23,11 @@ static const char *TAG = "main";
 
 void p4_tcm_heap_guard_keep(void);
 
+static void on_s3_debug_ap_toggle(bool enable)
+{
+    control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
+}
+
 // Called from the USB storage task when the Rekordbox drive mounts/unmounts.
 static void on_usb_storage_event(bool mounted)
 {
@@ -78,7 +83,9 @@ void app_main(void)
     // deck_core creates the event queue; control_link pushes frames onto it.
     QueueHandle_t ctrl_queue;
     ESP_ERROR_CHECK(deck_core_init(&ctrl_queue));
+    deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
     ESP_ERROR_CHECK(control_link_init(ctrl_queue));
+    control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);
 
     // ── Board support (stubs until hardware arrives) ─────────────────────────
     ESP_ERROR_CHECK(bsp_display_init());
@@ -105,6 +112,7 @@ void app_main(void)
     // Let the Settings tab toggle the Wi-Fi remote without the UI depending on
     // the wifi_link/web_server components directly.
     ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
+    ui_settings_set_s3_debug_ap_toggle_cb(on_s3_debug_ap_toggle);
     if (app_settings_get().wifi_remote) {
         ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
         wifi_link_request_enable(true);

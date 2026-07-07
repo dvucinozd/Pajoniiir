@@ -46,6 +46,26 @@ function Assert-FileDoesNotContain {
     }
 }
 
+function Assert-FileContains {
+    param(
+        [string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$LiteralPatterns
+    )
+
+    if (-not $Name) {
+        $Name = "file guard"
+    }
+
+    Write-Host "==> static $Name"
+    foreach ($pattern in $LiteralPatterns) {
+        $matches = Select-String -LiteralPath $Path -Pattern $pattern -SimpleMatch
+        if (-not $matches) {
+            throw "$Name missing required pattern '$pattern' in $Path"
+        }
+    }
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -137,6 +157,21 @@ Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
+
+Assert-FileContains `
+    -Name "s3 debug ap p4 sends state frames" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
+
+Assert-FileContains `
+    -Name "s3 debug ap status reaches settings ui" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP")
+
+Assert-FileContains `
+    -Name "s3 debug ap settings ui toggle wiring" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("ui_settings_set_s3_debug_ap_toggle_cb", "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)")
 
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `
@@ -523,6 +558,8 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DUI_SETTINGS_HOST_TEST",
             "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../control_link_protocol/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
             "../../firmware/main-deck-p4/components/ui/ui_settings.c"

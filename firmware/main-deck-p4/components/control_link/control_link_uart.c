@@ -69,6 +69,11 @@ void control_link_send_led(led_id_t led, uint8_t state)
     control_link_send_led_deck(led, state, 0);
 }
 
+void control_link_send_state(uint8_t id, int16_t value)
+{
+    send_frame(CTRL_TYPE_STATE, id, value);
+}
+
 // ─── RX parser ────────────────────────────────────────────────────────────────
 
 typedef struct {
