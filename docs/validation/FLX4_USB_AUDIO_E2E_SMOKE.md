@@ -100,3 +100,11 @@ Capture file: `logs/s3_wifi_udp_soak_20260707.log`.
 
 Result: no link corruption, no ring underrun/overrun, and no USB Audio skipped
 or underrun packets during the 5-minute product-path soak.
+
+## Operator acceptance -- PASS (2026-07-07)
+
+After the UDP soak, the operator manually checked the live setup and confirmed
+that the current XIAO ESP32S3/Sense product path works in practice: FLX4
+headphones are audible and the connected controls behaved correctly during the
+smoke check. This acceptance was performed with the Wi-Fi debug build still
+running, so UART0 was not required for runtime monitoring.
