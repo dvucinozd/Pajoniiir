@@ -287,6 +287,21 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("s3_debug_ap_init", "s3_debug_ap_set_status_callback", "CTRL_ID_S3_DEBUG_AP")
 
+Assert-FileContains `
+    -Name "s3 debug ap runtime hosts open softap" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("WIFI_MODE_AP", "PajoNiiiR-S3-DEBUG", "192.168.4.1", "esp_wifi_start")
+
+Assert-FileContains `
+    -Name "s3 debug ap exposes read only http log page" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("httpd_start", "S3 Debug Log", "/events", "text/event-stream")
+
+Assert-FileContains `
+    -Name "s3 debug ap log hook remains non blocking" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("esp_log_set_vprintf", "s_prev_vprintf", "s3_debug_log_ring_append")
+
 $tests = @(
     @{
         Name = "flx4_midi_host"
