@@ -314,6 +314,24 @@ Assert-FileDoesNotContain `
     )
 
 Assert-FileContains `
+    -Name "P4 Overview deck badges stay clear of VU meters" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_DECK_BADGE_W",
+        "_Static_assert(OVERVIEW_DECK_BADGE_X + OVERVIEW_DECK_BADGE_W + 4 <= OVERVIEW_VU_X",
+        'deck == CTRL_DECK_1 ? "D1" : "D2"'
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview deck badges avoid legacy wide labels" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        '"DECK 1"',
+        '"DECK 2"',
+        "lv_obj_set_size(panel->label_deck, 76, 38)"
+    )
+
+Assert-FileContains `
     -Name "P4 Overview Beat FX uses compact right rail" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(

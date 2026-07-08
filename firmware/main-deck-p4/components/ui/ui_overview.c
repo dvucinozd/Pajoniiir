@@ -144,6 +144,10 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_BEAT_STRIP_CENTER_GAP_PX 18
 #define OVERVIEW_BEAT_STRIP_TOP_Y (OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H + 5)
 #define OVERVIEW_BEAT_STRIP_ROW_GAP_PX 12
+#define OVERVIEW_DECK_BADGE_X 4
+#define OVERVIEW_DECK_BADGE_W 50
+#define OVERVIEW_DECK_BADGE_H 38
+#define OVERVIEW_DECK_BADGE_Y_OFFSET 12
 #define OVERVIEW_TRANSPORT_X 4
 #define OVERVIEW_TRANSPORT_W 58
 #define OVERVIEW_TRANSPORT_PLAY_Y_OFFSET 60
@@ -156,6 +160,8 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_VU_SEGMENT_COUNT 8
 #define OVERVIEW_VU_H ((OVERVIEW_VU_SEGMENT_COUNT * OVERVIEW_VU_SEGMENT_H) + \
                        ((OVERVIEW_VU_SEGMENT_COUNT - 1) * OVERVIEW_VU_SEGMENT_GAP))
+_Static_assert(OVERVIEW_DECK_BADGE_X + OVERVIEW_DECK_BADGE_W + 4 <= OVERVIEW_VU_X,
+               "Deck badge must not overlap VU meter");
 _Static_assert(OVERVIEW_VU_X >= (OVERVIEW_TRANSPORT_X + OVERVIEW_TRANSPORT_W + 4),
                "VU meter must not overlap transport buttons");
 _Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
@@ -573,9 +579,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_remove_flag(panel->panel, LV_OBJ_FLAG_CLICKABLE);
 
     panel->label_deck = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                COL_TEXT, 4, top_y + 12, 76,
-                                                deck == CTRL_DECK_1 ? "DECK 1" : "DECK 2");
-    lv_obj_set_size(panel->label_deck, 76, 38);
+                                                COL_TEXT,
+                                                OVERVIEW_DECK_BADGE_X,
+                                                top_y + OVERVIEW_DECK_BADGE_Y_OFFSET,
+                                                OVERVIEW_DECK_BADGE_W,
+                                                deck == CTRL_DECK_1 ? "D1" : "D2");
+    lv_obj_set_size(panel->label_deck, OVERVIEW_DECK_BADGE_W, OVERVIEW_DECK_BADGE_H);
     lv_obj_set_style_bg_color(panel->label_deck, COL_PANEL, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_text_align(panel->label_deck, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
