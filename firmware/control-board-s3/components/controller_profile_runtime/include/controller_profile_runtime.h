@@ -39,6 +39,14 @@ bool controller_profile_runtime_active(void);
 bool controller_profile_runtime_map(uint8_t status, uint8_t data1, uint8_t data2,
                                      uint8_t *type, uint8_t *id, int16_t *value);
 
+/* Map a P4 LED frame (led id + deck + state) to a 4-byte USB-MIDI packet for
+ * the connected controller, using the active profile's output table. Fills
+ * packet[0]=CIN (MIDI status nibble), packet[1..3]=status/data1/data2.
+ * Returns false when no profile is active or the profile has no mapping for
+ * (led, deck) -- the caller then falls back to the built-in FLX4 LED map. */
+bool controller_profile_runtime_map_led(uint8_t led, uint8_t deck, uint8_t state,
+                                        uint8_t packet[4]);
+
 /* Re-emit the replay-flagged absolute controls of the active profile (input
  * snapshot replay after reconnect). Returns the number emitted; 0 when no
  * profile is active. */

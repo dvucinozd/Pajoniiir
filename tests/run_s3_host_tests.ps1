@@ -345,6 +345,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("controller_profile_runtime_active", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
 
+Assert-FileContains `
+    -Name "s3 LED output prefers the dynamic profile with FLX4 fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("controller_profile_runtime_map_led", "flx4_led_midi_build_packet")
+
 # The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
 # identical on the S3 and P4 sides so the link cannot disagree on the wire.
 function Assert-FilesIdentical {

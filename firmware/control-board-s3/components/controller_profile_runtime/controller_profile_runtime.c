@@ -94,6 +94,27 @@ bool controller_profile_runtime_map(uint8_t status, uint8_t data1, uint8_t data2
     return matched;
 }
 
+bool controller_profile_runtime_map_led(uint8_t led, uint8_t deck, uint8_t state,
+                                        uint8_t packet[4])
+{
+    bool ok = false;
+    RT_LOCK();
+    if (s_active) {
+        uint8_t midi[3];
+        if (cp_profile_map_led(&s_profile, led, deck, state, midi)) {
+            /* USB-MIDI event packet: CIN = the MIDI status nibble (0x9 Note On,
+             * 0xB Control Change), matching the built-in FLX4 LED packets. */
+            packet[0] = (uint8_t)(midi[0] >> 4);
+            packet[1] = midi[0];
+            packet[2] = midi[1];
+            packet[3] = midi[2];
+            ok = true;
+        }
+    }
+    RT_UNLOCK();
+    return ok;
+}
+
 size_t controller_profile_runtime_emit_snapshot(controller_profile_runtime_emit_cb_t cb,
                                                 void *ctx)
 {

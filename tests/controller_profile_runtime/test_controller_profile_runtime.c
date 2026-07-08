@@ -93,6 +93,20 @@ int main(void)
     assert(n >= 1 && cap.count == (int)n);
     printf("  activate + map + snapshot (FLX4 fixture)          PASS\n");
 
+    /* LED mapping: Deck 1 Play LED -> USB-MIDI Note On 0x90 note 0x0B.
+     * CIN nibble 0x9, on-value 0x7F; off-value 0x00. */
+    uint8_t packet[4];
+    assert(controller_profile_runtime_map_led(1 /*play*/, 0 /*deck1*/, 1, packet));
+    assert(packet[0] == 0x09 && packet[1] == 0x90 && packet[2] == 0x0B && packet[3] == 0x7F);
+    assert(controller_profile_runtime_map_led(1, 0, 0, packet));
+    assert(packet[3] == 0x00);
+    /* VU meter -> CC 0x02, value passthrough, CIN nibble 0xB. */
+    assert(controller_profile_runtime_map_led(5 /*vu*/, 1 /*deck2*/, 0x42, packet));
+    assert(packet[0] == 0x0B && packet[1] == 0xB1 && packet[2] == 0x02 && packet[3] == 0x42);
+    /* Unknown led id -> no mapping. */
+    assert(!controller_profile_runtime_map_led(200, 0, 1, packet));
+    printf("  LED map (Note + VU CC passthrough)                PASS\n");
+
     /* A failed parse must NOT disturb the active profile. */
     static uint8_t garbage[64];
     memset(garbage, 0xAB, sizeof(garbage));

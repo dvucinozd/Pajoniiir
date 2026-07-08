@@ -2,6 +2,7 @@
 #include "panel_io.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
+#include "controller_profile_runtime.h"
 #include "s3_debug_ap.h"
 #include "status_led.h"
 #include "esp_check.h"
@@ -97,10 +98,19 @@ static void handle_p4_frame(const uint8_t *f)
     uint8_t deck  = f[4];
 
     if (type == CTRL_TYPE_LED) {
-        // 1. Forward to DDJ-FLX4 via USB MIDI
+        // 1. Forward to the connected controller via USB MIDI. Prefer the
+        //    active dynamic profile's LED table; fall back to the built-in
+        //    FLX4 LED map when no profile is active (or it has no mapping).
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
             uint8_t packet[4];
-            if (flx4_led_midi_build_packet(id, state, deck, packet)) {
+            bool built = false;
+            if (controller_profile_runtime_active()) {
+                built = controller_profile_runtime_map_led(id, deck, state, packet);
+            }
+            if (!built) {
+                built = flx4_led_midi_build_packet(id, state, deck, packet);
+            }
+            if (built) {
                 #if !defined(FLX4_MIDI_HOST_PC_TEST)
                 flx4_midi_host_send_packet(packet);
                 #endif
