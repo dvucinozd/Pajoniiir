@@ -12,6 +12,9 @@
 #include "web_server.h"
 #include "sd_diag_log.h"
 #include "sdkconfig.h"
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+#include "controller_profile_manager.h"
+#endif
 #if CONFIG_MONITOR_PCM_LINK_ENABLED
 #include "monitor_pcm_link.h"
 #endif
@@ -27,6 +30,16 @@ static void on_s3_debug_ap_toggle(bool enable)
 {
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
 }
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+// S3 reports the connected controller over the 0xA6 bulk layer; the profile
+// manager matches it against the SD/TF registry.
+static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
+{
+    (void)controller_profile_manager_on_descriptor_report(rep->vid, rep->pid,
+                                                          rep->caps, rep->product);
+}
+#endif
 
 // Called from the USB storage task when the Rekordbox drive mounts/unmounts.
 static void on_usb_storage_event(bool mounted)
@@ -86,6 +99,9 @@ void app_main(void)
     deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
     ESP_ERROR_CHECK(control_link_init(ctrl_queue));
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    control_link_set_descriptor_report_cb(on_controller_descriptor);
+#endif
 
     // ── Board support (stubs until hardware arrives) ─────────────────────────
     ESP_ERROR_CHECK(bsp_display_init());
@@ -93,6 +109,16 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_audio_init());
     ESP_ERROR_CHECK(bsp_sd_init());
     sd_diag_log_init();
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    // Controller profiles live on the SD/TF card; a missing directory is
+    // normal (no profiles yet) and must not block boot.
+    ESP_ERROR_CHECK(controller_profile_manager_init());
+    esp_err_t profile_rc = controller_profile_manager_scan_storage();
+    if (profile_rc != ESP_OK && profile_rc != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "controller profile scan: %s", esp_err_to_name(profile_rc));
+    }
+#endif
 
     // Apply the saved monitor speaker route + backlight brightness.
     bsp_audio_set_output(app_settings_get().audio_out ? BSP_AUDIO_OUT_RCA

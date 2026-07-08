@@ -399,6 +399,26 @@ Assert-FileContains `
         "lv_obj_set_pos(btn_cue, 570, 34);"
     )
 
+Assert-FileContains `
+    -Name "p4 bulk descriptor frames dispatch to a callback" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("ctrl_bulk_parser_feed", "CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR", "control_link_set_descriptor_report_cb")
+
+Assert-FileContains `
+    -Name "p4 app wires descriptor reports to the profile manager" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("control_link_set_descriptor_report_cb", "controller_profile_manager_on_descriptor_report")
+
+Assert-FileContains `
+    -Name "p4 manager streams the matched profile to the S3 off the RX task" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
+    -LiteralPatterns @("cpm_sender_task", "control_link_send_profile_begin", "control_link_send_profile_chunk", "cp_xfer_crc32", "CTRL_BULK_TYPE_PROFILE_ACTIVATE")
+
+Assert-FileContains `
+    -Name "p4 dispatches profile ACK/NACK replies to a callback" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("ctrl_bulk_decode_profile_ack", "ctrl_bulk_decode_profile_nack", "s_profile_reply_cb")
+
 $tests = @(
     @{
         Name = "audio_diag"
@@ -924,6 +944,20 @@ $tests = @(
             "test_control_link_protocol.c",
             "s3_constants.c",
             "p4_constants.c"
+        )
+    },
+    @{
+        Name = "controller_profile_manager"
+        Dir = "tests/controller_profile_manager"
+        Target = "test_controller_profile_manager.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
+            "-o", "test_controller_profile_manager.exe",
+            "test_controller_profile_manager.c",
+            "../../firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c"
         )
     }
 )

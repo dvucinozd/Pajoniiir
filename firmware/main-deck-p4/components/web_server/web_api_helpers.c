@@ -104,6 +104,38 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                     delay_ms2);
 }
 
+int web_api_format_controller_json(char *dst,
+                                   size_t dst_size,
+                                   bool present,
+                                   unsigned vid,
+                                   unsigned pid,
+                                   const char *product_escaped,
+                                   bool midi_in,
+                                   bool midi_out,
+                                   bool usb_audio,
+                                   const char *active_profile_escaped,
+                                   unsigned profile_count)
+{
+    if (!dst || dst_size == 0) {
+        return 0;
+    }
+    return snprintf(dst,
+                    dst_size,
+                    "\"controller\":{\"present\":%s,\"vid\":\"0x%04X\","
+                    "\"pid\":\"0x%04X\",\"product\":\"%s\",\"midi_in\":%s,"
+                    "\"midi_out\":%s,\"usb_audio\":%s,\"active_profile\":\"%s\","
+                    "\"profiles\":%u}",
+                    present ? "true" : "false",
+                    vid & 0xFFFFu,
+                    pid & 0xFFFFu,
+                    product_escaped ? product_escaped : "",
+                    midi_in ? "true" : "false",
+                    midi_out ? "true" : "false",
+                    usb_audio ? "true" : "false",
+                    active_profile_escaped ? active_profile_escaped : "",
+                    profile_count);
+}
+
 int web_api_alloc_printf(char **out, const char *fmt, ...)
 {
     if (!out || !fmt) {

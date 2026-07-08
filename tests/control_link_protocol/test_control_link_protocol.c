@@ -500,6 +500,92 @@ static void test_s3_and_p4_flx4_connection_state_ids_match(void)
     assert(ev.value == CTRL_FLX4_CONNECTED);
 }
 
+int s3_ctrl_bulk_frame_start(void);
+int s3_ctrl_bulk_max_payload(void);
+int s3_ctrl_bulk_header_len(void);
+int s3_ctrl_bulk_crc_len(void);
+int s3_ctrl_bulk_type_controller_descriptor(void);
+int s3_ctrl_desc_payload_len(void);
+int s3_ctrl_desc_product_max(void);
+int s3_ctrl_desc_cap_midi_in(void);
+int s3_ctrl_desc_cap_midi_out(void);
+int s3_ctrl_desc_cap_usb_audio(void);
+int p4_ctrl_bulk_frame_start(void);
+int p4_ctrl_bulk_max_payload(void);
+int p4_ctrl_bulk_header_len(void);
+int p4_ctrl_bulk_crc_len(void);
+int p4_ctrl_bulk_type_controller_descriptor(void);
+int p4_ctrl_desc_payload_len(void);
+int p4_ctrl_desc_product_max(void);
+int p4_ctrl_desc_cap_midi_in(void);
+int p4_ctrl_desc_cap_midi_out(void);
+int p4_ctrl_desc_cap_usb_audio(void);
+
+int s3_ctrl_bulk_type_profile_begin(void);
+int s3_ctrl_bulk_type_profile_chunk(void);
+int s3_ctrl_bulk_type_profile_end(void);
+int s3_ctrl_bulk_type_profile_ack(void);
+int s3_ctrl_bulk_type_profile_nack(void);
+int s3_ctrl_bulk_type_profile_activate(void);
+int s3_ctrl_bulk_type_profile_status(void);
+int s3_ctrl_bulk_type_profile_clear(void);
+int s3_ctrl_profile_begin_len(void);
+int s3_ctrl_profile_chunk_max(void);
+int s3_ctrl_profile_nack_crc(void);
+int s3_ctrl_profile_state_active(void);
+int p4_ctrl_bulk_type_profile_begin(void);
+int p4_ctrl_bulk_type_profile_chunk(void);
+int p4_ctrl_bulk_type_profile_end(void);
+int p4_ctrl_bulk_type_profile_ack(void);
+int p4_ctrl_bulk_type_profile_nack(void);
+int p4_ctrl_bulk_type_profile_activate(void);
+int p4_ctrl_bulk_type_profile_status(void);
+int p4_ctrl_bulk_type_profile_clear(void);
+int p4_ctrl_profile_begin_len(void);
+int p4_ctrl_profile_chunk_max(void);
+int p4_ctrl_profile_nack_crc(void);
+int p4_ctrl_profile_state_active(void);
+
+static void test_s3_and_p4_bulk_frame_constants_match(void)
+{
+    assert(s3_ctrl_bulk_frame_start() == p4_ctrl_bulk_frame_start());
+    assert(s3_ctrl_bulk_frame_start() == 0xA6);
+    assert(s3_ctrl_bulk_frame_start() != CTRL_FRAME_START);
+    assert(s3_ctrl_bulk_max_payload() == p4_ctrl_bulk_max_payload());
+    assert(s3_ctrl_bulk_max_payload() == 128);
+    assert(s3_ctrl_bulk_header_len() == p4_ctrl_bulk_header_len());
+    assert(s3_ctrl_bulk_crc_len() == p4_ctrl_bulk_crc_len());
+    assert(s3_ctrl_bulk_type_controller_descriptor() ==
+           p4_ctrl_bulk_type_controller_descriptor());
+    assert(s3_ctrl_bulk_type_controller_descriptor() == 0x01);
+    assert(s3_ctrl_desc_payload_len() == p4_ctrl_desc_payload_len());
+    assert(s3_ctrl_desc_payload_len() ==
+           6 + s3_ctrl_desc_product_max());
+    assert(s3_ctrl_desc_product_max() == p4_ctrl_desc_product_max());
+    assert(s3_ctrl_desc_cap_midi_in() == p4_ctrl_desc_cap_midi_in());
+    assert(s3_ctrl_desc_cap_midi_out() == p4_ctrl_desc_cap_midi_out());
+    assert(s3_ctrl_desc_cap_usb_audio() == p4_ctrl_desc_cap_usb_audio());
+    assert(s3_ctrl_desc_payload_len() <= s3_ctrl_bulk_max_payload());
+
+    /* Profile transfer frame types + payload sizing must agree byte-for-byte. */
+    assert(s3_ctrl_bulk_type_profile_begin() == p4_ctrl_bulk_type_profile_begin());
+    assert(s3_ctrl_bulk_type_profile_begin() == 0x02);
+    assert(s3_ctrl_bulk_type_profile_chunk() == p4_ctrl_bulk_type_profile_chunk());
+    assert(s3_ctrl_bulk_type_profile_end() == p4_ctrl_bulk_type_profile_end());
+    assert(s3_ctrl_bulk_type_profile_ack() == p4_ctrl_bulk_type_profile_ack());
+    assert(s3_ctrl_bulk_type_profile_nack() == p4_ctrl_bulk_type_profile_nack());
+    assert(s3_ctrl_bulk_type_profile_activate() == p4_ctrl_bulk_type_profile_activate());
+    assert(s3_ctrl_bulk_type_profile_status() == p4_ctrl_bulk_type_profile_status());
+    assert(s3_ctrl_bulk_type_profile_clear() == p4_ctrl_bulk_type_profile_clear());
+    assert(s3_ctrl_bulk_type_profile_clear() == 0x09);
+    assert(s3_ctrl_profile_begin_len() == p4_ctrl_profile_begin_len());
+    assert(s3_ctrl_profile_begin_len() == 12);
+    assert(s3_ctrl_profile_chunk_max() == p4_ctrl_profile_chunk_max());
+    assert(s3_ctrl_profile_chunk_max() == s3_ctrl_bulk_max_payload() - 4);
+    assert(s3_ctrl_profile_nack_crc() == p4_ctrl_profile_nack_crc());
+    assert(s3_ctrl_profile_state_active() == p4_ctrl_profile_state_active());
+}
+
 static void test_led_command_values_and_bad_checksum(void)
 {
     uint8_t frame[CTRL_FRAME_LEN];
@@ -524,6 +610,7 @@ int main(void)
     test_firmware_decodes_deck_aware_flx4_ids();
     test_s3_and_p4_deck_aware_ids_match();
     test_s3_and_p4_flx4_connection_state_ids_match();
+    test_s3_and_p4_bulk_frame_constants_match();
     test_led_command_values_and_bad_checksum();
     puts("control_link_protocol tests passed");
     return 0;

@@ -302,6 +302,100 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -Patterns @("esp_log_set_vprintf", "s_prev_vprintf", "s3_debug_log_ring_append")
 
+# The FLX4 controller-profile fixture must stay in sync with profile.json.
+# Regenerate through the compiler and byte-compare against the committed
+# .s3bin (skipped with a warning when python is unavailable).
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    Write-Host "==> controller profile fixture is up to date"
+    $fixtureJson = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.json"
+    $fixtureBin = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.s3bin"
+    $fixtureTmp = Join-Path $RepoRoot "tests/controller_profile/profile_regen.s3bin"
+    & $python.Source (Join-Path $RepoRoot "tools/controller_profile/compile_profile.py") `
+        $fixtureJson -o $fixtureTmp | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "controller profile fixture regeneration failed"
+    }
+    try {
+        $expected = [System.IO.File]::ReadAllBytes($fixtureBin)
+        $actual = [System.IO.File]::ReadAllBytes($fixtureTmp)
+        if ($expected.Length -ne $actual.Length -or
+            -not [System.Linq.Enumerable]::SequenceEqual($expected, $actual)) {
+            throw "controllers/pioneer_ddj_flx4/profile.s3bin is stale; rerun tools/controller_profile/compile_profile.py"
+        }
+    } finally {
+        Remove-Item -LiteralPath $fixtureTmp -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Warning "python not found; skipping controller profile fixture freshness check"
+}
+
+Assert-FileContains `
+    -Name "s3 descriptor report accompanies connection state" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("desc_report_send_if_valid", "CTRL_DESC_CAP_MIDI_IN", "control_link_send_descriptor_report")
+
+Assert-FileContains `
+    -Name "s3 receives profile transfer frames and stores the blob" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("handle_profile_frame", "cp_xfer_rx_begin", "cp_xfer_rx_chunk", "cp_xfer_rx_end", "send_profile_reply_ack", "control_link_get_stored_profile")
+
+Assert-FileContains `
+    -Name "s3 routes MIDI through the dynamic profile with FLX4 fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("controller_profile_runtime_active", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
+
+Assert-FileContains `
+    -Name "s3 LED output prefers the dynamic profile with FLX4 fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("controller_profile_runtime_map_led", "flx4_led_midi_build_packet")
+
+# The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
+# identical on the S3 and P4 sides so the link cannot disagree on the wire.
+function Assert-FilesIdentical {
+    param([string]$Name, [string]$A, [string]$B)
+    Write-Host "==> static $Name"
+    $a = [System.IO.File]::ReadAllBytes((Join-Path $RepoRoot $A))
+    $b = [System.IO.File]::ReadAllBytes((Join-Path $RepoRoot $B))
+    if ($a.Length -ne $b.Length -or -not [System.Linq.Enumerable]::SequenceEqual($a, $b)) {
+        throw ("{0}: {1} and {2} differ (must be byte-identical)" -f $Name, $A, $B)
+    }
+}
+Assert-FilesIdentical -Name "ctrl_bulk.c canonical on both sides" `
+    -A "firmware/control-board-s3/components/control_link/ctrl_bulk.c" `
+    -B "firmware/main-deck-p4/components/control_link/ctrl_bulk.c"
+Assert-FilesIdentical -Name "cp_xfer.c canonical on both sides" `
+    -A "firmware/control-board-s3/components/control_link/cp_xfer.c" `
+    -B "firmware/main-deck-p4/components/control_link/cp_xfer.c"
+
+# ctrl_bulk: exercise the canonical codec + transfer receiver, driving the real
+# FLX4 fixture through build -> parse -> reassemble -> cp_profile_parse.
+Write-Host "==> build ctrl_bulk"
+$bulkDir = Join-Path $RepoRoot "tests/ctrl_bulk"
+Push-Location $bulkDir
+try {
+    $inc = @(
+        "-I../control_link_protocol/stubs",
+        "-I../../firmware/main-deck-p4/components/control_link/include",
+        "-I../../firmware/control-board-s3/components/controller_profile/include"
+    )
+    $gccArgs = @("-Wall", "-Wextra", "-Wpedantic", "-std=c99") + $inc + @(
+        "-o", "test_ctrl_bulk.exe",
+        "test_ctrl_bulk.c",
+        "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
+        "../../firmware/main-deck-p4/components/control_link/cp_xfer.c",
+        "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
+    )
+    & $Gcc.Source @gccArgs
+    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk compile failed" }
+    Write-Host "==> run ctrl_bulk"
+    & ".\test_ctrl_bulk.exe"
+    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk tests failed" }
+} finally {
+    Remove-Item "test_ctrl_bulk.exe" -ErrorAction SilentlyContinue
+    Pop-Location
+}
+
 $tests = @(
     @{
         Name = "flx4_midi_host"
@@ -364,6 +458,52 @@ $tests = @(
             "test_control_link_protocol.c",
             "s3_constants.c",
             "p4_constants.c"
+        )
+    },
+    @{
+        Name = "controller_profile"
+        Dir = "tests/controller_profile"
+        Target = "test_controller_profile.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-o", "test_controller_profile.exe",
+            "test_controller_profile.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
+        )
+    },
+    @{
+        Name = "controller_profile_parity"
+        Dir = "tests/controller_profile"
+        Target = "test_controller_profile_parity.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            "-DFLX4_MIDI_HOST_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/control-board-s3/components/panel_io/include",
+            "-o", "test_controller_profile_parity.exe",
+            "test_controller_profile_parity.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_map.c",
+            "../../firmware/control-board-s3/components/control_link/flx4_led_midi.c"
+        )
+    },
+    @{
+        Name = "controller_profile_runtime"
+        Dir = "tests/controller_profile_runtime"
+        Target = "test_controller_profile_runtime.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DCONTROLLER_PROFILE_RUNTIME_PC_TEST",
+            "-I../../firmware/control-board-s3/components/controller_profile_runtime/include",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-o", "test_controller_profile_runtime.exe",
+            "test_controller_profile_runtime.c",
+            "../../firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
         )
     },
     @{

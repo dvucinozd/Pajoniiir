@@ -8,6 +8,10 @@
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
+#include "sdkconfig.h"
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+#include "controller_profile_manager.h"
+#endif
 #include <stdlib.h>
 #include <string.h>
 
@@ -162,6 +166,32 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
 
+    char controller_json[256] = {0};
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    {
+        const controller_profile_registry_t *reg =
+            controller_profile_manager_get_registry();
+        char product_esc[2 * CPM_PRODUCT_MAX + 8] = {0};
+        web_api_json_escape(reg->connected_product, product_esc, sizeof(product_esc));
+        const char *active = (reg->active_index >= 0 &&
+                              reg->active_index < (int)reg->count)
+            ? reg->profiles[reg->active_index].id : "";
+        char active_esc[2 * CPM_ID_MAX + 8] = {0};
+        web_api_json_escape(active, active_esc, sizeof(active_esc));
+        web_api_format_controller_json(controller_json, sizeof(controller_json),
+                                       reg->controller_present,
+                                       reg->connected_vid, reg->connected_pid,
+                                       product_esc,
+                                       (reg->connected_caps & CTRL_DESC_CAP_MIDI_IN) != 0,
+                                       (reg->connected_caps & CTRL_DESC_CAP_MIDI_OUT) != 0,
+                                       (reg->connected_caps & CTRL_DESC_CAP_USB_AUDIO) != 0,
+                                       active_esc, reg->count);
+    }
+#else
+    web_api_format_controller_json(controller_json, sizeof(controller_json),
+                                   false, 0, 0, "", false, false, false, "", 0);
+#endif
+
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
@@ -212,6 +242,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"pfl2\":%s"
         "},"
         "%s,"
+        "%s,"
         "\"diagnostics\":{"
         "\"output_codec_open\":%s,"
         "\"output_sample_rate\":%u,"
@@ -256,6 +287,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         mixer.smart_fader_enabled ? "true" : "false",
         mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
         beat_fx_json,
+        controller_json,
         diagnostics.output_codec_open ? "true" : "false",
         (unsigned)diagnostics.output_sample_rate,
         (unsigned)diagnostics.output_late_count,

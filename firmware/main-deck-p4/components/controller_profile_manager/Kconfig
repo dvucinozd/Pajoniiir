@@ -1,0 +1,17 @@
+menu "Controller Profile Manager"
+
+config CONTROLLER_PROFILE_MANAGER
+    bool "Scan SD/TF for controller profiles at boot"
+    default y
+    help
+        Scans CONTROLLER_PROFILE_SD_PATH for compiled S3CP controller
+        profiles (see docs/CONTROLLER_PROFILE_SCHEMA.md) and keeps a registry
+        used to match a connected controller by VID/PID. Later phases send the
+        active profile to the S3 over the control link.
+
+config CONTROLLER_PROFILE_SD_PATH
+    string "Profile directory on the SD/TF card"
+    default "/sd/controllers"
+    depends on CONTROLLER_PROFILE_MANAGER
+
+endmenu
