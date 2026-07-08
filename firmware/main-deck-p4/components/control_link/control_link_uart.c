@@ -31,8 +31,32 @@ static uint32_t s_event_coalesce_count;
 static TickType_t s_last_warn;
 static ctrl_bulk_parser_t s_bulk_parser;
 static control_link_descriptor_cb_t s_descriptor_cb;
+static control_link_profile_reply_cb_t s_profile_reply_cb;
 
 // ─── TX helpers ───────────────────────────────────────────────────────────────
+
+static esp_err_t send_bulk_frame(const uint8_t *frame, size_t len, const char *what)
+{
+    if (len == 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    int written = uart_write_bytes(UART_PORT, frame, len);
+    if (written == (int)len) {
+        return ESP_OK;
+    }
+    s_uart_write_fail_count++;
+    TickType_t now = xTaskGetTickCount();
+    if (now - s_last_warn >= pdMS_TO_TICKS(1000)) {
+        s_last_warn = now;
+        ESP_LOGW(TAG, "%s UART short write (%d/%u)", what, written, (unsigned)len);
+    }
+    return ESP_FAIL;
+}
+
+static uint8_t next_seq(void)
+{
+    return atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
+}
 
 static void send_frame(uint8_t type, uint8_t id, int16_t value)
 {
@@ -79,6 +103,37 @@ void control_link_send_state(uint8_t id, int16_t value)
 void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb)
 {
     s_descriptor_cb = cb;
+}
+
+void control_link_set_profile_reply_cb(control_link_profile_reply_cb_t cb)
+{
+    s_profile_reply_cb = cb;
+}
+
+esp_err_t control_link_send_profile_begin(uint32_t total_size, uint32_t crc32,
+                                          uint16_t vid, uint16_t pid)
+{
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    size_t len = ctrl_bulk_build_profile_begin(frame, sizeof(frame), next_seq(),
+                                               total_size, crc32, vid, pid);
+    return send_bulk_frame(frame, len, "profile begin");
+}
+
+esp_err_t control_link_send_profile_chunk(uint32_t offset, const uint8_t *data,
+                                          size_t len)
+{
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    size_t n = ctrl_bulk_build_profile_chunk(frame, sizeof(frame), next_seq(),
+                                             offset, data, len);
+    return send_bulk_frame(frame, n, "profile chunk");
+}
+
+esp_err_t control_link_send_profile_simple(uint8_t type)
+{
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    size_t len = ctrl_bulk_build_profile_simple(frame, sizeof(frame), next_seq(),
+                                                type);
+    return send_bulk_frame(frame, len, "profile ctrl");
 }
 
 // ─── RX parser ────────────────────────────────────────────────────────────────
@@ -200,6 +255,32 @@ static void handle_bulk_frame(const uint8_t *frame, size_t frame_len)
                  rep.vid, rep.pid, rep.caps, rep.product);
         if (s_descriptor_cb) {
             s_descriptor_cb(&rep);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_ACK: {
+        uint8_t acked;
+        if (ctrl_bulk_decode_profile_ack(frame, frame_len, &acked) &&
+            s_profile_reply_cb) {
+            s_profile_reply_cb(true, acked, CTRL_PROFILE_NACK_NONE);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_NACK: {
+        uint8_t nacked, reason;
+        if (ctrl_bulk_decode_profile_nack(frame, frame_len, &nacked, &reason)) {
+            ESP_LOGW(TAG, "profile NACK type=0x%02X reason=%u", nacked, reason);
+            if (s_profile_reply_cb) {
+                s_profile_reply_cb(false, nacked, reason);
+            }
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_STATUS: {
+        uint8_t state;
+        uint16_t vid, pid;
+        if (ctrl_bulk_decode_profile_status(frame, frame_len, &state, &vid, &pid)) {
+            ESP_LOGI(TAG, "profile status=%u VID=0x%04X PID=0x%04X", state, vid, pid);
         }
         break;
     }

@@ -75,3 +75,15 @@ int p4_ctrl_desc_product_max(void) { return CTRL_DESC_PRODUCT_MAX; }
 int p4_ctrl_desc_cap_midi_in(void) { return CTRL_DESC_CAP_MIDI_IN; }
 int p4_ctrl_desc_cap_midi_out(void) { return CTRL_DESC_CAP_MIDI_OUT; }
 int p4_ctrl_desc_cap_usb_audio(void) { return CTRL_DESC_CAP_USB_AUDIO; }
+int p4_ctrl_bulk_type_profile_begin(void) { return CTRL_BULK_TYPE_PROFILE_BEGIN; }
+int p4_ctrl_bulk_type_profile_chunk(void) { return CTRL_BULK_TYPE_PROFILE_CHUNK; }
+int p4_ctrl_bulk_type_profile_end(void) { return CTRL_BULK_TYPE_PROFILE_END; }
+int p4_ctrl_bulk_type_profile_ack(void) { return CTRL_BULK_TYPE_PROFILE_ACK; }
+int p4_ctrl_bulk_type_profile_nack(void) { return CTRL_BULK_TYPE_PROFILE_NACK; }
+int p4_ctrl_bulk_type_profile_activate(void) { return CTRL_BULK_TYPE_PROFILE_ACTIVATE; }
+int p4_ctrl_bulk_type_profile_status(void) { return CTRL_BULK_TYPE_PROFILE_STATUS; }
+int p4_ctrl_bulk_type_profile_clear(void) { return CTRL_BULK_TYPE_PROFILE_CLEAR; }
+int p4_ctrl_profile_begin_len(void) { return CTRL_PROFILE_BEGIN_LEN; }
+int p4_ctrl_profile_chunk_max(void) { return CTRL_PROFILE_CHUNK_MAX; }
+int p4_ctrl_profile_nack_crc(void) { return CTRL_PROFILE_NACK_CRC; }
+int p4_ctrl_profile_state_active(void) { return CTRL_PROFILE_STATE_ACTIVE; }

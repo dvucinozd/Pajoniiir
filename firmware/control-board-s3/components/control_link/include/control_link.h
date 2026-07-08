@@ -254,7 +254,14 @@ typedef enum {
 #define CTRL_BULK_MAX_FRAME   (CTRL_BULK_HEADER_LEN + CTRL_BULK_MAX_PAYLOAD + CTRL_BULK_CRC_LEN)
 
 #define CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR 0x01
-/* 0x02..0x09 reserved: PROFILE_BEGIN/CHUNK/END/ACK/NACK/ACTIVATE/STATUS/CLEAR. */
+#define CTRL_BULK_TYPE_PROFILE_BEGIN         0x02  /* P4->S3 */
+#define CTRL_BULK_TYPE_PROFILE_CHUNK         0x03  /* P4->S3 */
+#define CTRL_BULK_TYPE_PROFILE_END           0x04  /* P4->S3 */
+#define CTRL_BULK_TYPE_PROFILE_ACK           0x05  /* S3->P4 */
+#define CTRL_BULK_TYPE_PROFILE_NACK          0x06  /* S3->P4 */
+#define CTRL_BULK_TYPE_PROFILE_ACTIVATE      0x07  /* P4->S3 */
+#define CTRL_BULK_TYPE_PROFILE_STATUS        0x08  /* S3->P4 */
+#define CTRL_BULK_TYPE_PROFILE_CLEAR         0x09  /* P4->S3 */
 
 /* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
  * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
@@ -270,6 +277,110 @@ typedef struct {
     uint16_t caps;
     char product[CTRL_DESC_PRODUCT_MAX + 1];
 } ctrl_descriptor_report_t;
+
+/* Profile transfer payloads (P4 sends a compiled S3CP profile to the S3):
+ *   BEGIN    total_size u32, transfer crc32 u32, vid u16, pid u16   (12 B)
+ *   CHUNK    offset u32, data[1..CTRL_PROFILE_CHUNK_MAX]
+ *   END      (empty)
+ *   ACTIVATE (empty)      CLEAR (empty)
+ *   ACK      acked_type u8
+ *   NACK     nacked_type u8, reason u8 (ctrl_profile_nack_t)
+ *   STATUS   state u8 (ctrl_profile_state_t), vid u16, pid u16      (5 B)
+ * The transfer crc32 is IEEE 802.3 over the whole blob; the S3CP file also
+ * carries its own internal crc32, so a transfer is double-checked. */
+#define CTRL_PROFILE_BEGIN_LEN  12
+#define CTRL_PROFILE_CHUNK_HDR  4
+#define CTRL_PROFILE_CHUNK_MAX  (CTRL_BULK_MAX_PAYLOAD - CTRL_PROFILE_CHUNK_HDR)
+#define CTRL_PROFILE_STATUS_LEN 5
+
+typedef enum {
+    CTRL_PROFILE_NACK_NONE = 0,
+    CTRL_PROFILE_NACK_SIZE,    /* total_size zero or beyond receiver capacity */
+    CTRL_PROFILE_NACK_STATE,   /* frame arrived in the wrong transfer state */
+    CTRL_PROFILE_NACK_OFFSET,  /* chunk offset/len out of range */
+    CTRL_PROFILE_NACK_CRC,     /* END transfer crc32 mismatch */
+    CTRL_PROFILE_NACK_PARSE,   /* ACTIVATE: reassembled bytes are not a profile */
+} ctrl_profile_nack_t;
+
+typedef enum {
+    CTRL_PROFILE_STATE_IDLE = 0,
+    CTRL_PROFILE_STATE_RECEIVING,
+    CTRL_PROFILE_STATE_STORED,
+    CTRL_PROFILE_STATE_ACTIVE,
+    CTRL_PROFILE_STATE_ERROR,
+} ctrl_profile_state_t;
+
+/* Incremental 0xA6 frame parser (pure; host-tested). Feed RX bytes one at a
+ * time: returns the full frame length when a valid frame completed (frame
+ * bytes in .buf), 0 while in progress or idle, -1 on CRC/format error (the
+ * parser resets itself). Bytes that are not part of a bulk frame are only
+ * consumed when the parser is mid-frame. */
+typedef struct {
+    uint8_t buf[CTRL_BULK_MAX_FRAME];
+    int pos;
+    int total_len;
+} ctrl_bulk_parser_t;
+
+void ctrl_bulk_parser_reset(ctrl_bulk_parser_t *p);
+int ctrl_bulk_parser_feed(ctrl_bulk_parser_t *p, uint8_t b);
+
+/* Frame builders: serialise into `out` (cap bytes), return frame length or 0. */
+size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
+                                        const ctrl_descriptor_report_t *rep);
+size_t ctrl_bulk_build_profile_begin(uint8_t *out, size_t cap, uint8_t seq,
+                                     uint32_t total_size, uint32_t crc32,
+                                     uint16_t vid, uint16_t pid);
+size_t ctrl_bulk_build_profile_chunk(uint8_t *out, size_t cap, uint8_t seq,
+                                     uint32_t offset, const uint8_t *data,
+                                     size_t len);
+size_t ctrl_bulk_build_profile_simple(uint8_t *out, size_t cap, uint8_t seq,
+                                      uint8_t type);
+size_t ctrl_bulk_build_profile_ack(uint8_t *out, size_t cap, uint8_t seq,
+                                   uint8_t acked_type);
+size_t ctrl_bulk_build_profile_nack(uint8_t *out, size_t cap, uint8_t seq,
+                                    uint8_t nacked_type, uint8_t reason);
+size_t ctrl_bulk_build_profile_status(uint8_t *out, size_t cap, uint8_t seq,
+                                      uint8_t state, uint16_t vid, uint16_t pid);
+
+/* Frame decoders operate on a parser-validated frame (type + length checked). */
+bool ctrl_bulk_decode_descriptor(const uint8_t *frame, size_t frame_len,
+                                 ctrl_descriptor_report_t *rep);
+bool ctrl_bulk_decode_profile_begin(const uint8_t *frame, size_t frame_len,
+                                    uint32_t *total_size, uint32_t *crc32,
+                                    uint16_t *vid, uint16_t *pid);
+bool ctrl_bulk_decode_profile_chunk(const uint8_t *frame, size_t frame_len,
+                                    uint32_t *offset, const uint8_t **data,
+                                    size_t *len);
+bool ctrl_bulk_decode_profile_ack(const uint8_t *frame, size_t frame_len,
+                                  uint8_t *acked_type);
+bool ctrl_bulk_decode_profile_nack(const uint8_t *frame, size_t frame_len,
+                                   uint8_t *nacked_type, uint8_t *reason);
+bool ctrl_bulk_decode_profile_status(const uint8_t *frame, size_t frame_len,
+                                     uint8_t *state, uint16_t *vid, uint16_t *pid);
+
+/* Profile transfer receiver (S3 role): reassembles PROFILE_BEGIN/CHUNK/END
+ * into a caller-provided buffer and verifies the transfer crc32. Chunks must
+ * arrive in order and contiguous. Pure; host-tested. Each step returns a
+ * ctrl_profile_nack_t (0 == CTRL_PROFILE_NACK_NONE == ok); on any non-zero the
+ * receiver moves to CTRL_PROFILE_STATE_ERROR and a fresh BEGIN restarts it. */
+typedef struct {
+    uint8_t *buf;
+    size_t cap;
+    uint8_t state;      /* ctrl_profile_state_t */
+    uint16_t vid;
+    uint16_t pid;
+    uint32_t total;
+    uint32_t crc;
+    uint32_t received;
+} cp_xfer_rx_t;
+
+uint32_t cp_xfer_crc32(const uint8_t *data, size_t len);
+void cp_xfer_rx_init(cp_xfer_rx_t *rx, uint8_t *buf, size_t cap);
+uint8_t cp_xfer_rx_begin(cp_xfer_rx_t *rx, uint32_t total_size, uint32_t crc32,
+                         uint16_t vid, uint16_t pid);
+uint8_t cp_xfer_rx_chunk(cp_xfer_rx_t *rx, uint32_t offset,
+                         const uint8_t *data, size_t len);
+uint8_t cp_xfer_rx_end(cp_xfer_rx_t *rx);
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
@@ -394,3 +505,18 @@ size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
 
 // Send a controller descriptor report to the P4. Safe to call from any task.
 esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep);
+
+// Called (from the RX task) when the P4 requests activation of a fully
+// received profile. `blob`/`len` are the validated S3CP bytes; return true to
+// accept (ACK) or false to reject (NACK PARSE). A CLEAR request calls this with
+// blob == NULL / len == 0. When no callback is registered, ACTIVATE is ACKed
+// and the stored blob is left available via control_link_get_stored_profile().
+typedef bool (*control_link_profile_activate_cb_t)(const uint8_t *blob,
+                                                   size_t len,
+                                                   uint16_t vid, uint16_t pid);
+void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb);
+
+// Access the last fully received + CRC-validated profile blob (valid after an
+// END ACK). Returns NULL when none is stored. `len`/`vid`/`pid` may be NULL.
+const uint8_t *control_link_get_stored_profile(size_t *len, uint16_t *vid,
+                                               uint16_t *pid);

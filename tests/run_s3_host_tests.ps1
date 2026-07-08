@@ -335,40 +335,54 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
     -Patterns @("desc_report_send_if_valid", "CTRL_DESC_CAP_MIDI_IN", "control_link_send_descriptor_report")
 
-# ctrl_bulk: the S3 builder and P4 parser must round-trip 0xA6 frames. The two
-# sides' control_link.h headers define the same types, so each side compiles
-# in its own translation units with its own include paths, then links once.
+Assert-FileContains `
+    -Name "s3 receives profile transfer frames and stores the blob" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("handle_profile_frame", "cp_xfer_rx_begin", "cp_xfer_rx_chunk", "cp_xfer_rx_end", "send_profile_reply_ack", "control_link_get_stored_profile")
+
+# The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
+# identical on the S3 and P4 sides so the link cannot disagree on the wire.
+function Assert-FilesIdentical {
+    param([string]$Name, [string]$A, [string]$B)
+    Write-Host "==> static $Name"
+    $a = [System.IO.File]::ReadAllBytes((Join-Path $RepoRoot $A))
+    $b = [System.IO.File]::ReadAllBytes((Join-Path $RepoRoot $B))
+    if ($a.Length -ne $b.Length -or -not [System.Linq.Enumerable]::SequenceEqual($a, $b)) {
+        throw ("{0}: {1} and {2} differ (must be byte-identical)" -f $Name, $A, $B)
+    }
+}
+Assert-FilesIdentical -Name "ctrl_bulk.c canonical on both sides" `
+    -A "firmware/control-board-s3/components/control_link/ctrl_bulk.c" `
+    -B "firmware/main-deck-p4/components/control_link/ctrl_bulk.c"
+Assert-FilesIdentical -Name "cp_xfer.c canonical on both sides" `
+    -A "firmware/control-board-s3/components/control_link/cp_xfer.c" `
+    -B "firmware/main-deck-p4/components/control_link/cp_xfer.c"
+
+# ctrl_bulk: exercise the canonical codec + transfer receiver, driving the real
+# FLX4 fixture through build -> parse -> reassemble -> cp_profile_parse.
 Write-Host "==> build ctrl_bulk"
 $bulkDir = Join-Path $RepoRoot "tests/ctrl_bulk"
 Push-Location $bulkDir
 try {
-    $s3Inc = @(
+    $inc = @(
         "-I../control_link_protocol/stubs",
-        "-I../../firmware/control-board-s3/components/control_link/include",
-        "-I../../firmware/control-board-s3/components/panel_io/include"
+        "-I../../firmware/main-deck-p4/components/control_link/include",
+        "-I../../firmware/control-board-s3/components/controller_profile/include"
     )
-    $p4Inc = @(
-        "-I../control_link_protocol/stubs",
-        "-I../../firmware/main-deck-p4/components/control_link/include"
+    $gccArgs = @("-Wall", "-Wextra", "-Wpedantic", "-std=c99") + $inc + @(
+        "-o", "test_ctrl_bulk.exe",
+        "test_ctrl_bulk.c",
+        "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
+        "../../firmware/main-deck-p4/components/control_link/cp_xfer.c",
+        "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
     )
-    $common = @("-Wall", "-Wextra", "-Wpedantic", "-std=c99")
-
-    & $Gcc.Source @common @s3Inc -c "../../firmware/control-board-s3/components/control_link/ctrl_bulk.c" -o s3_ctrl_bulk.o
-    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk S3 builder compile failed" }
-    & $Gcc.Source @common @s3Inc -c s3_bulk_shim.c -o s3_bulk_shim.o
-    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk S3 shim compile failed" }
-    & $Gcc.Source @common @p4Inc -c "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c" -o p4_ctrl_bulk.o
-    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk P4 parser compile failed" }
-    & $Gcc.Source @common @p4Inc -c test_ctrl_bulk.c -o test_ctrl_bulk.o
-    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk test compile failed" }
-    & $Gcc.Source s3_ctrl_bulk.o s3_bulk_shim.o p4_ctrl_bulk.o test_ctrl_bulk.o -o test_ctrl_bulk.exe
-    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk link failed" }
-
+    & $Gcc.Source @gccArgs
+    if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk compile failed" }
     Write-Host "==> run ctrl_bulk"
     & ".\test_ctrl_bulk.exe"
     if ($LASTEXITCODE -ne 0) { throw "ctrl_bulk tests failed" }
 } finally {
-    Remove-Item "s3_ctrl_bulk.o", "s3_bulk_shim.o", "p4_ctrl_bulk.o", "test_ctrl_bulk.o", "test_ctrl_bulk.exe" -ErrorAction SilentlyContinue
+    Remove-Item "test_ctrl_bulk.exe" -ErrorAction SilentlyContinue
     Pop-Location
 }
 

@@ -13,6 +13,7 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 #include <inttypes.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdatomic.h>
 
@@ -34,6 +35,18 @@ static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
 static bool s_panel_led_fallback_enabled;
+
+// ─── Profile transfer receiver (0xA6 bulk layer) ──────────────────────────────
+#define S3_PROFILE_BUF_CAP 16384
+
+static ctrl_bulk_parser_t s_bulk_parser;
+static cp_xfer_rx_t s_xfer;
+static uint8_t *s_profile_buf;
+static bool s_profile_stored;
+static size_t s_profile_len;
+static uint16_t s_profile_vid;
+static uint16_t s_profile_pid;
+static control_link_profile_activate_cb_t s_profile_activate_cb;
 
 // ─── Frame helpers ────────────────────────────────────────────────────────────
 
@@ -112,9 +125,154 @@ static void handle_p4_frame(const uint8_t *f)
     }
 }
 
+static void s3_send_bulk(const uint8_t *frame, size_t len)
+{
+    if (len == 0) {
+        return;
+    }
+    int written = uart_write_bytes(UART_PORT, frame, len);
+    if (written != (int)len) {
+        s_uart_write_fail_count++;
+        TickType_t now = xTaskGetTickCount();
+        if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
+            s_last_uart_write_warn = now;
+            ESP_LOGW(TAG, "bulk reply UART short write (%d/%u)", written,
+                     (unsigned)len);
+        }
+    }
+}
+
+static void send_profile_reply_ack(uint8_t acked_type)
+{
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
+    s3_send_bulk(frame, ctrl_bulk_build_profile_ack(frame, sizeof(frame), seq,
+                                                    acked_type));
+}
+
+static void send_profile_reply_nack(uint8_t nacked_type, uint8_t reason)
+{
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
+    s3_send_bulk(frame, ctrl_bulk_build_profile_nack(frame, sizeof(frame), seq,
+                                                     nacked_type, reason));
+    ESP_LOGW(TAG, "profile NACK type=0x%02X reason=%u", nacked_type, reason);
+}
+
+static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
+{
+    switch (frame[1]) {
+    case CTRL_BULK_TYPE_PROFILE_BEGIN: {
+        uint32_t total, crc;
+        uint16_t vid, pid;
+        if (!ctrl_bulk_decode_profile_begin(frame, frame_len, &total, &crc,
+                                            &vid, &pid)) {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_BEGIN,
+                                    CTRL_PROFILE_NACK_STATE);
+            return;
+        }
+        if (!s_profile_buf) {
+            s_profile_buf = malloc(S3_PROFILE_BUF_CAP);
+            if (!s_profile_buf) {
+                send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_BEGIN,
+                                        CTRL_PROFILE_NACK_SIZE);
+                return;
+            }
+        }
+        s_profile_stored = false;
+        cp_xfer_rx_init(&s_xfer, s_profile_buf, S3_PROFILE_BUF_CAP);
+        uint8_t reason = cp_xfer_rx_begin(&s_xfer, total, crc, vid, pid);
+        if (reason == CTRL_PROFILE_NACK_NONE) {
+            send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_BEGIN);
+        } else {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_BEGIN, reason);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_CHUNK: {
+        uint32_t offset;
+        const uint8_t *data;
+        size_t len;
+        if (!ctrl_bulk_decode_profile_chunk(frame, frame_len, &offset, &data,
+                                            &len)) {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_CHUNK,
+                                    CTRL_PROFILE_NACK_OFFSET);
+            return;
+        }
+        uint8_t reason = cp_xfer_rx_chunk(&s_xfer, offset, data, len);
+        /* Silent on success (ACK only after END); NACK aborts the P4 sender. */
+        if (reason != CTRL_PROFILE_NACK_NONE) {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_CHUNK, reason);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_END: {
+        uint8_t reason = cp_xfer_rx_end(&s_xfer);
+        if (reason == CTRL_PROFILE_NACK_NONE) {
+            s_profile_stored = true;
+            s_profile_len = s_xfer.total;
+            s_profile_vid = s_xfer.vid;
+            s_profile_pid = s_xfer.pid;
+            send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_END);
+            ESP_LOGI(TAG, "profile received: %u B VID=0x%04X PID=0x%04X",
+                     (unsigned)s_profile_len, s_profile_vid, s_profile_pid);
+        } else {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_END, reason);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_ACTIVATE: {
+        if (!s_profile_stored) {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_ACTIVATE,
+                                    CTRL_PROFILE_NACK_STATE);
+            return;
+        }
+        bool ok = true;
+        if (s_profile_activate_cb) {
+            ok = s_profile_activate_cb(s_profile_buf, s_profile_len,
+                                       s_profile_vid, s_profile_pid);
+        }
+        if (ok) {
+            send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_ACTIVATE);
+            ESP_LOGI(TAG, "profile activated VID=0x%04X PID=0x%04X",
+                     s_profile_vid, s_profile_pid);
+        } else {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_ACTIVATE,
+                                    CTRL_PROFILE_NACK_PARSE);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_PROFILE_CLEAR:
+        s_profile_stored = false;
+        s_profile_len = 0;
+        cp_xfer_rx_init(&s_xfer, s_profile_buf, S3_PROFILE_BUF_CAP);
+        if (s_profile_activate_cb) {
+            (void)s_profile_activate_cb(NULL, 0, 0, 0);
+        }
+        send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_CLEAR);
+        break;
+    default:
+        ESP_LOGW(TAG, "unexpected bulk frame type 0x%02X", frame[1]);
+        break;
+    }
+}
+
 static void parse_rx_byte(rx_state_t *st, uint8_t b)
 {
+    /* 0xA6 bulk frames (profile transfer) run through the bulk parser, which
+       owns the stream while a bulk frame is in progress. 0xA5 event frames use
+       the fixed 7-byte path below. */
     if (st->pos == 0) {
+        if (s_bulk_parser.pos > 0 || b == CTRL_BULK_FRAME_START) {
+            int r = ctrl_bulk_parser_feed(&s_bulk_parser, b);
+            if (r > 0) {
+                status_led_notify_p4_frame();
+                handle_profile_frame(s_bulk_parser.buf, (size_t)r);
+            } else if (r < 0) {
+                ESP_LOGW(TAG, "bulk frame CRC/format error");
+            }
+            return;
+        }
         if (b != CTRL_FRAME_START) return;
     }
     st->buf[st->pos++] = b;
@@ -202,6 +360,23 @@ esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
     uint8_t frame[CTRL_FRAME_LEN];
     build_frame(frame, type, id, value);
     return send_frame_checked(frame, "semantic event");
+}
+
+void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb)
+{
+    s_profile_activate_cb = cb;
+}
+
+const uint8_t *control_link_get_stored_profile(size_t *len, uint16_t *vid,
+                                               uint16_t *pid)
+{
+    if (!s_profile_stored) {
+        return NULL;
+    }
+    if (len) *len = s_profile_len;
+    if (vid) *vid = s_profile_vid;
+    if (pid) *pid = s_profile_pid;
+    return s_profile_buf;
 }
 
 esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep)

@@ -167,21 +167,153 @@ int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg
 
 #ifndef CONTROLLER_PROFILE_MANAGER_PC_TEST
 
+#include "control_link.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #ifndef CONFIG_CONTROLLER_PROFILE_SD_PATH
 #define CONFIG_CONTROLLER_PROFILE_SD_PATH "/sd/controllers"
 #endif
 
+#define CPM_SENDER_STACK      4096
+#define CPM_SEND_ATTEMPTS     3
+#define CPM_REPLY_TIMEOUT_MS  2000
+#define CPM_CHUNK_PACE_MS     2
+
 static const char *TAG = "ctrl_profile";
 
 static controller_profile_registry_t s_registry;
+
+/* Profile-transfer sender: runs off the control-link RX task so the multi-KB
+ * stream to the S3 never blocks event/descriptor handling. */
+static QueueHandle_t s_send_q;
+static SemaphoreHandle_t s_reply_sem;
+static volatile bool s_reply_ack;
+static volatile uint8_t s_reply_ref;
+static volatile uint8_t s_reply_reason;
+
+static void cpm_on_reply(bool ack, uint8_t ref_type, uint8_t reason)
+{
+    s_reply_ack = ack;
+    s_reply_ref = ref_type;
+    s_reply_reason = reason;
+    if (s_reply_sem) {
+        xSemaphoreGive(s_reply_sem);
+    }
+}
+
+static bool cpm_wait_reply(uint8_t expect_ref)
+{
+    if (xSemaphoreTake(s_reply_sem, pdMS_TO_TICKS(CPM_REPLY_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGW(TAG, "profile reply timeout (expected 0x%02X)", expect_ref);
+        return false;
+    }
+    return s_reply_ack && s_reply_ref == expect_ref;
+}
+
+static bool cpm_stream_profile(const controller_profile_meta_t *m)
+{
+    FILE *f = fopen(m->path, "rb");
+    if (!f) {
+        ESP_LOGW(TAG, "cannot open %s", m->path);
+        return false;
+    }
+    uint8_t *buf = malloc(m->size);
+    if (!buf) {
+        fclose(f);
+        return false;
+    }
+    size_t got = fread(buf, 1, m->size, f);
+    fclose(f);
+    if (got != m->size) {
+        free(buf);
+        return false;
+    }
+
+    uint32_t crc = cp_xfer_crc32(buf, m->size);
+    bool ok = false;
+
+    for (int attempt = 1; attempt <= CPM_SEND_ATTEMPTS && !ok; attempt++) {
+        while (xSemaphoreTake(s_reply_sem, 0) == pdTRUE) {
+            /* drain stale replies before starting a fresh transfer */
+        }
+        if (control_link_send_profile_begin((uint32_t)m->size, crc,
+                                            m->vid, m->pid) != ESP_OK ||
+            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_BEGIN)) {
+            continue;
+        }
+        bool chunks_ok = true;
+        for (uint32_t off = 0; off < m->size; off += CTRL_PROFILE_CHUNK_MAX) {
+            size_t n = m->size - off;
+            if (n > CTRL_PROFILE_CHUNK_MAX) {
+                n = CTRL_PROFILE_CHUNK_MAX;
+            }
+            if (control_link_send_profile_chunk(off, buf + off, n) != ESP_OK) {
+                chunks_ok = false;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(CPM_CHUNK_PACE_MS));
+        }
+        if (!chunks_ok) {
+            continue;
+        }
+        if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_END) != ESP_OK ||
+            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_END)) {
+            continue;
+        }
+        if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_ACTIVATE) != ESP_OK ||
+            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_ACTIVATE)) {
+            continue;
+        }
+        ok = true;
+    }
+
+    free(buf);
+    return ok;
+}
+
+static void cpm_sender_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        int idx;
+        if (xQueueReceive(s_send_q, &idx, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (idx < 0 || idx >= (int)s_registry.count) {
+            continue;
+        }
+        controller_profile_meta_t m = s_registry.profiles[idx];
+        if (!m.valid) {
+            continue;
+        }
+        bool ok = cpm_stream_profile(&m);
+        ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
+                 ok ? "OK" : "FAILED");
+    }
+}
 
 esp_err_t controller_profile_manager_init(void)
 {
     memset(&s_registry, 0, sizeof(s_registry));
     s_registry.active_index = -1;
+
+    if (!s_reply_sem) {
+        s_reply_sem = xSemaphoreCreateBinary();
+        s_send_q = xQueueCreate(2, sizeof(int));
+        if (!s_reply_sem || !s_send_q) {
+            return ESP_ERR_NO_MEM;
+        }
+        if (xTaskCreate(cpm_sender_task, "cpm_send", CPM_SENDER_STACK, NULL, 4,
+                        NULL) != pdPASS) {
+            return ESP_ERR_NO_MEM;
+        }
+        control_link_set_profile_reply_cb(cpm_on_reply);
+    }
     return ESP_OK;
 }
 
@@ -227,6 +359,11 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
     if (idx >= 0) {
         ESP_LOGI(TAG, "controller VID=0x%04X PID=0x%04X -> profile '%s'",
                  vid, pid, s_registry.profiles[idx].id);
+        /* Hand the transfer to the sender task; drop silently if it is busy
+         * (the next connect/heartbeat descriptor re-triggers a match). */
+        if (s_send_q) {
+            (void)xQueueSend(s_send_q, &idx, 0);
+        }
     } else {
         ESP_LOGW(TAG, "controller VID=0x%04X PID=0x%04X has no profile", vid, pid);
     }
