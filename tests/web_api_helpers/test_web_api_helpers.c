@@ -85,6 +85,28 @@ static void test_clamp_seek_ms_bounds_to_loaded_track_duration(void)
     assert(web_api_clamp_seek_ms(40000, 0u, false) == 40000u);
 }
 
+static void test_controller_json_formats_connected_and_absent(void)
+{
+    char out[256];
+
+    web_api_format_controller_json(out, sizeof(out), true, 0x2B73, 0x0045,
+                                   "Pioneer DDJ-FLX4", true, true, true,
+                                   "pioneer_ddj_flx4", 2);
+    assert(strcmp(out,
+        "\"controller\":{\"present\":true,\"vid\":\"0x2B73\",\"pid\":\"0x0045\","
+        "\"product\":\"Pioneer DDJ-FLX4\",\"midi_in\":true,\"midi_out\":true,"
+        "\"usb_audio\":true,\"active_profile\":\"pioneer_ddj_flx4\","
+        "\"profiles\":2}") == 0);
+
+    /* No controller / unsupported (no active profile). */
+    web_api_format_controller_json(out, sizeof(out), false, 0, 0, "",
+                                   false, false, false, "", 0);
+    assert(strcmp(out,
+        "\"controller\":{\"present\":false,\"vid\":\"0x0000\",\"pid\":\"0x0000\","
+        "\"product\":\"\",\"midi_in\":false,\"midi_out\":false,"
+        "\"usb_audio\":false,\"active_profile\":\"\",\"profiles\":0}") == 0);
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
@@ -94,6 +116,7 @@ int main(void)
     test_beat_fx_echo_diag_json_formats_status_block();
     test_alloc_printf_handles_payload_larger_than_legacy_status_buffer();
     test_clamp_seek_ms_bounds_to_loaded_track_duration();
+    test_controller_json_formats_connected_and_absent();
 
     puts("web_api_helpers tests passed");
     return 0;
