@@ -212,6 +212,44 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("remain_ms / 10u")
 
+Assert-FileContains `
+    -Name "P4 Overview beat strip geometry derives from waveform center" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_BEAT_STRIP_CENTER_GAP_PX",
+        "OVERVIEW_BEAT_STRIP_STEP_PX",
+        "OVERVIEW_WAVE_CENTER_X + ui_overview_beat_strip_offset_x(i)",
+        "OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview beat strip avoids legacy hardcoded dot positions" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "pulse_x = 358",
+        "pulse_x = 382",
+        "pulse_x = 418",
+        "pulse_x = 442",
+        "pulse_y = (deck_idx == CTRL_DECK_1) ? 288 : 300"
+    )
+
+Assert-FileContains `
+    -Name "P4 Overview beat strip uses interpolated deck position" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("ui_update_overview_beat_strip(deck, elapsed_ms)")
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview removes disabled legacy phase meter" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "ui_create_overview_phase_meter",
+        "ui_update_phase_meter",
+        "s_phase_meter_label",
+        "OVERVIEW_PHASE_W",
+        "OVERVIEW_PHASE_X",
+        "OVERVIEW_PHASE_Y"
+    )
+
 Assert-FileDoesNotContain `
     -Name "deck_core UI-only buttons use semantic button mapping" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `

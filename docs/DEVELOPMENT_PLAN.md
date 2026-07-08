@@ -433,9 +433,10 @@ Validation note, 2026-06-10:
   blank. Hardware smoke on 2026-07-01 confirmed that loading Deck 1 shows its
   main waveform without touching the screen, loading Deck 2 keeps both main
   waveforms visible, and later playback/zoom redraws continue normally.
-- Overview now includes a compact D2-vs-D1 phase meter between the main
-  waveforms. It uses the shared beat-grid/BPM helper, shows signed beat offset,
-  and turns green when the two decks are within the current lock tolerance.
+- Overview now uses a compact two-row beat phase strip below the lower waveform.
+  The strip is centered from the overview playhead/waveform geometry and uses
+  the same interpolated deck position as the waveform, while the old signed
+  D2-vs-D1 phase meter code is no longer part of the runtime UI.
 - Deck 2 transport follow-up: firmware task planning now lets whichever deck is
   loaded first own the shared output task/codec path. This fixes the D2-first
   play path where Deck 2 could decode as a producer but had no active output
@@ -514,10 +515,9 @@ Validation note, 2026-06-10:
 - Overview chrome polish on 2026-06-16 removes continuous LVGL title marquee
   invalidation, updates the remaining-time display in 50 ms buckets, and splits
   the blue-strip timer into fixed `-MM:SS` and `.CC` labels so the centiseconds
-  no longer shift the seconds field. The same pass removes weak active-deck
-  accent/border indicators, centers the beat-match dots and D2-vs-D1 phase
-  meter around the main playhead, and slightly enlarges the Play/Cue touch
-  buttons.
+  no longer shift the seconds field. Later overview polish restores a restrained
+  active-deck badge, centers the beat-match dots around the main playhead from
+  waveform geometry, and keeps Play/Cue touch controls compact.
 - P4 UI architecture refactor closed on 2026-06-13. Extracted modules include
   `ui_lvgl_backend`, `ui_overview`, `ui_library`, `ui_controls`,
   `ui_performance_tabs`, `ui_settings`, `ui_status`,
@@ -537,7 +537,9 @@ Validation note, 2026-06-10:
     waveform to avoid shimmer on wider zoom levels; playhead/downbeat reference
     markers remain high contrast in the foreground.
   - Moved the lower deck waveform vertical position (`OVERVIEW_DECK2_WAVE_Y`) to **142**, resulting in a tight **1px** vertical gap between both decks' waveforms to create a "touching" alignment effect.
-  - Relocated beat pulse indicators (flashing boxes) below the lower waveform (Y=288 for Deck 1 and Y=300 for Deck 2) to prevent overlapping with the shifted waveform.
+  - Relocated beat pulse indicators (flashing boxes) below the lower waveform.
+    Later polish derives both rows from the lower waveform bottom and the
+    overview playhead center instead of fixed pixel positions.
   - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the DECK 1 and DECK 2 labels.
   - Resized the `panel->label_deck` ("DECK 1" / "DECK 2") to **76x38px** to match the dimensions of the Play/Cue buttons, reduced the font size to **16** (`lv_font_montserrat_16`), centered the text (with a top padding of **10px**), and replaced the white play-state outline with a neon green (`COL_GREEN`) PFL outline on a neutral background.
 - **Time formatting and Web Control performance optimization (2026-06-17)**:

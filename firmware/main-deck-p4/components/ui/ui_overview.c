@@ -132,12 +132,11 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_DECK1_WAVE_Y 0
 #define OVERVIEW_DECK2_WAVE_Y 142
 #define OVERVIEW_WAVE_CENTER_X (OVERVIEW_WAVE_X + OVERVIEW_WAVE_INSET_X + (OVERVIEW_CV_W / 2))
-#define OVERVIEW_BEAT_PULSES_Y 144
-#define OVERVIEW_BEAT_PULSES_X (OVERVIEW_WAVE_CENTER_X - 33)
-#define OVERVIEW_PHASE_W 240
-#define OVERVIEW_PHASE_X (OVERVIEW_WAVE_CENTER_X - (OVERVIEW_PHASE_W / 2))
-#define OVERVIEW_PHASE_Y 150
-#define OVERVIEW_PHASE_KNOB_W 8
+#define OVERVIEW_BEAT_STRIP_DOT_SIZE_PX 12
+#define OVERVIEW_BEAT_STRIP_STEP_PX 24
+#define OVERVIEW_BEAT_STRIP_CENTER_GAP_PX 18
+#define OVERVIEW_BEAT_STRIP_TOP_Y (OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H + 5)
+#define OVERVIEW_BEAT_STRIP_ROW_GAP_PX 12
 #define OVERVIEW_PLAYHEAD_W 3
 #define OVERVIEW_OUTLINE_W 1
 #define OVERVIEW_DECK_INFO_W 400
@@ -164,6 +163,19 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_TIME_UPDATE_MS 50u
 #define OVERVIEW_SIDE_BTN_H 38
 
+static int ui_overview_beat_strip_offset_x(int phase)
+{
+    int center_delta = OVERVIEW_BEAT_STRIP_CENTER_GAP_PX;
+    if (phase < 2) {
+        center_delta = -OVERVIEW_BEAT_STRIP_CENTER_GAP_PX;
+    }
+    if (phase == 0 || phase == 3) {
+        center_delta += (phase < 2) ? -OVERVIEW_BEAT_STRIP_STEP_PX
+                                    : OVERVIEW_BEAT_STRIP_STEP_PX;
+    }
+    return center_delta - (OVERVIEW_BEAT_STRIP_DOT_SIZE_PX / 2);
+}
+
 typedef struct {
     lv_obj_t *panel;
     lv_obj_t *label_deck;
@@ -178,6 +190,8 @@ typedef struct {
     lv_obj_t *label_pitch;
     lv_obj_t *label_ch;
     lv_obj_t *label_out;
+    lv_obj_t *play_button;
+    lv_obj_t *play_label;
     lv_obj_t *out_bar_bg;
     lv_obj_t *out_bar_fill;
     lv_obj_t *wave_border;
@@ -203,6 +217,7 @@ typedef struct {
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
 static bool s_overview_deck_pfl[DECK_CORE_DECK_COUNT];
 static bool s_overview_deck_playing[DECK_CORE_DECK_COUNT];
+static uint8_t s_overview_performance_target = CTRL_DECK_1;
 static lv_obj_t *s_beat_pulses[DECK_CORE_DECK_COUNT][4];
 static lv_obj_t *s_overview_cue_heads[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_overview_fx_panel = NULL;
@@ -255,12 +270,6 @@ static ui_overview_perf_counter_t s_overview_overlay_total_perf[DECK_CORE_DECK_C
 static ui_overview_perf_counter_t s_overview_overlay_msync_perf[DECK_CORE_DECK_COUNT];
 static ui_overview_perf_counter_t s_overview_overlay_ppa_perf[DECK_CORE_DECK_COUNT];
 #endif
-static lv_obj_t *s_phase_meter_label = NULL;
-#if 0
-static lv_obj_t *s_phase_meter_track = NULL;
-static lv_obj_t *s_phase_meter_center = NULL;
-#endif
-static lv_obj_t *s_phase_meter_knob = NULL;
 static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *meta);
 
 static lv_obj_t *s_overview_cue_markers[DECK_CORE_DECK_COUNT][8];
@@ -386,10 +395,31 @@ static void ui_overview_apply_deck_badge(uint8_t deck)
     if (pfl_on) {
         lv_obj_set_style_border_color(panel->label_deck, COL_GREEN, LV_PART_MAIN);
         lv_obj_set_style_border_width(panel->label_deck, 3, LV_PART_MAIN);
+    } else if (idx == ui_overview_deck_index(s_overview_performance_target)) {
+        lv_obj_set_style_border_color(panel->label_deck,
+                                      idx == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
+                                      LV_PART_MAIN);
+        lv_obj_set_style_border_width(panel->label_deck, 2, LV_PART_MAIN);
     } else {
         lv_obj_set_style_border_color(panel->label_deck, bg, LV_PART_MAIN);
         lv_obj_set_style_border_width(panel->label_deck, 1, LV_PART_MAIN);
     }
+}
+
+static void ui_overview_apply_play_button(ui_overview_deck_panel_t *panel, bool playing)
+{
+    if (!panel || !panel->play_button) {
+        return;
+    }
+
+    if (panel->play_label) {
+        ui_label_set_text_if_changed(panel->play_label, playing ? "PAUSE" : "PLAY");
+    }
+    lv_obj_set_style_bg_color(panel->play_button,
+                              playing ? COL_GREEN : COL_PANEL_DK,
+                              LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->play_button, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->play_button, 1, LV_PART_MAIN);
 }
 
 static lv_obj_t *ui_overview_compact_button(lv_obj_t *parent, uint8_t deck,
@@ -734,13 +764,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
 
     for (int i = 0; i < 4; i++) {
         s_beat_pulses[deck_idx][i] = lv_obj_create(panel->panel);
-        lv_obj_set_size(s_beat_pulses[deck_idx][i], 12, 12);
-        int pulse_y = (deck_idx == CTRL_DECK_1) ? 288 : 300;
-        int pulse_x = 0;
-        if (i == 0) pulse_x = 358;
-        else if (i == 1) pulse_x = 382;
-        else if (i == 2) pulse_x = 418;
-        else if (i == 3) pulse_x = 442;
+        lv_obj_set_size(s_beat_pulses[deck_idx][i],
+                        OVERVIEW_BEAT_STRIP_DOT_SIZE_PX,
+                        OVERVIEW_BEAT_STRIP_DOT_SIZE_PX);
+        int pulse_y = OVERVIEW_BEAT_STRIP_TOP_Y +
+            ((deck_idx == CTRL_DECK_1) ? 0 : OVERVIEW_BEAT_STRIP_ROW_GAP_PX);
+        int pulse_x = OVERVIEW_WAVE_CENTER_X + ui_overview_beat_strip_offset_x(i);
         lv_obj_set_pos(s_beat_pulses[deck_idx][i], pulse_x, pulse_y);
         lv_obj_set_style_radius(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(s_beat_pulses[deck_idx][i], 0, LV_PART_MAIN);
@@ -750,7 +779,10 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_set_style_border_width(s_beat_pulses[deck_idx][i], 1, LV_PART_MAIN);
     }
 
-    ui_overview_compact_button(panel->panel, deck, 4, top_y + 60, 76, "PLAY", &s_style_btn_primary, play_pause_event_cb);
+    panel->play_button = ui_overview_compact_button(panel->panel, deck, 4, top_y + 60, 76,
+                                                    "PLAY", &s_style_btn_primary,
+                                                    play_pause_event_cb);
+    panel->play_label = lv_obj_get_child(panel->play_button, 0);
     ui_overview_compact_button(panel->panel, deck, 4, top_y + 102, 76, "CUE", &s_style_btn_amber, cue_event_cb);
 }
 
@@ -858,44 +890,6 @@ static void ui_create_overview_center_marker(lv_obj_t *parent)
 
 }
 
-#if 0
-static void ui_create_overview_phase_meter(lv_obj_t *parent)
-{
-    s_phase_meter_label = ui_overview_value_label(parent, &lv_font_montserrat_12,
-                                                  COL_TEXT_MUTED,
-                                                  OVERVIEW_PHASE_X,
-                                                  OVERVIEW_PHASE_Y - 18,
-                                                  OVERVIEW_PHASE_W,
-                                                  "PHASE --");
-    lv_obj_set_style_text_align(s_phase_meter_label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_add_flag(s_phase_meter_label, LV_OBJ_FLAG_HIDDEN);
-
-    s_phase_meter_track = ui_overview_bar(parent,
-                                          OVERVIEW_PHASE_X,
-                                          OVERVIEW_PHASE_Y,
-                                          OVERVIEW_PHASE_W,
-                                          4,
-                                          COL_PANEL_DK);
-    lv_obj_set_style_bg_opa(s_phase_meter_track, LV_OPA_COVER, LV_PART_MAIN);
-
-    s_phase_meter_center = ui_overview_bar(parent,
-                                           OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2),
-                                           OVERVIEW_PHASE_Y - 5,
-                                           1,
-                                           14,
-                                           COL_TEXT);
-    lv_obj_set_style_bg_opa(s_phase_meter_center, LV_OPA_80, LV_PART_MAIN);
-
-    s_phase_meter_knob = ui_overview_bar(parent,
-                                         OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
-                                             (OVERVIEW_PHASE_KNOB_W / 2),
-                                         OVERVIEW_PHASE_Y - 6,
-                                         OVERVIEW_PHASE_KNOB_W,
-                                         16,
-                                         COL_TEXT_DIM);
-}
-#endif
-
 lv_obj_t *ui_overview_create(lv_obj_t *parent) {
     lv_obj_t *screen = NULL;
     screen = lv_obj_create(parent);
@@ -907,7 +901,6 @@ lv_obj_t *ui_overview_create(lv_obj_t *parent) {
     ui_create_overview_deck_panel(screen, CTRL_DECK_1, 4);
     ui_create_overview_deck_panel(screen, CTRL_DECK_2, 222);
     ui_create_overview_center_marker(screen);
-    // ui_create_overview_phase_meter(screen);
     ui_create_overview_fx_panel(screen);
     return screen;
 }
@@ -1470,87 +1463,28 @@ static void ui_update_beat_indicator(uint8_t deck_idx, const ui_beat_indicator_s
         }
 
         // Beat-indicator colours stay inline (paired with the downbeat red, not chrome).
-        lv_color_t color = downbeat ? lv_color_hex(0xFF1744) : lv_color_hex(0xFFFFFF);
+        lv_color_t color = downbeat ? lv_color_hex(0xFF1744)
+                                    : (deck_idx == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN);
         lv_obj_set_style_bg_color(s_beat_pulses[deck_idx][i], color, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(s_beat_pulses[deck_idx][i], opa, LV_PART_MAIN);
         lv_obj_set_style_border_color(s_beat_pulses[deck_idx][i], color, LV_PART_MAIN);
     }
 }
 
-static void ui_update_phase_meter(const deck_state_t *deck1_state,
-                                  const deck_state_t *deck2_state)
+static void ui_update_overview_beat_strip(uint8_t deck, uint32_t position_ms)
 {
-    if (!s_phase_meter_label || !s_phase_meter_knob) {
-        return;
+    uint8_t idx = ui_overview_deck_index(deck);
+    ui_beat_indicator_state_t beat_state = {0};
+    bool beat_valid = false;
+    if (s_overview_deck_duration_ms[idx] > 0) {
+        const anlz_metadata_t *meta = s_overview_deck_meta[idx];
+        beat_state = ui_beat_indicator_calculate(position_ms,
+                                                 meta ? meta->beats : NULL,
+                                                 meta ? meta->beat_count : 0,
+                                                 s_overview_deck_bpm[idx]);
+        beat_valid = beat_state.valid;
     }
-
-    const ui_deck_track_info_t *info1 = s_overview_deck_info[ui_overview_deck_index(CTRL_DECK_1)];
-    const ui_deck_track_info_t *info2 = s_overview_deck_info[ui_overview_deck_index(CTRL_DECK_2)];
-    bool tracks_ready = info1 && info1->valid && info2 && info2->valid;
-    if (!deck1_state || !deck2_state || !tracks_ready) {
-        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE --");
-        ui_obj_set_text_color_if_changed(s_phase_meter_label, COL_TEXT_MUTED);
-        ui_obj_set_x_if_changed(s_phase_meter_knob,
-                                OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
-                                    (OVERVIEW_PHASE_KNOB_W / 2));
-        ui_obj_set_bg_color_if_changed(s_phase_meter_knob, COL_TEXT_DIM);
-        ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_60);
-        return;
-    }
-
-    const anlz_metadata_t *meta1 = s_overview_deck_meta[ui_overview_deck_index(CTRL_DECK_1)];
-    const anlz_metadata_t *meta2 = s_overview_deck_meta[ui_overview_deck_index(CTRL_DECK_2)];
-    ui_beat_indicator_state_t beat1 =
-        ui_beat_indicator_calculate(deck1_state->position_ms,
-                                    meta1 ? meta1->beats : NULL,
-                                    meta1 ? meta1->beat_count : 0,
-                                    s_overview_deck_bpm[ui_overview_deck_index(CTRL_DECK_1)]);
-    ui_beat_indicator_state_t beat2 =
-        ui_beat_indicator_calculate(deck2_state->position_ms,
-                                    meta2 ? meta2->beats : NULL,
-                                    meta2 ? meta2->beat_count : 0,
-                                    s_overview_deck_bpm[ui_overview_deck_index(CTRL_DECK_2)]);
-    ui_beat_phase_delta_t delta = ui_beat_phase_delta_calculate(beat1, beat2);
-    if (!delta.valid) {
-        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE --");
-        ui_obj_set_text_color_if_changed(s_phase_meter_label, COL_TEXT_MUTED);
-        ui_obj_set_x_if_changed(s_phase_meter_knob,
-                                OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) -
-                                    (OVERVIEW_PHASE_KNOB_W / 2));
-        ui_obj_set_bg_color_if_changed(s_phase_meter_knob, COL_TEXT_DIM);
-        ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_60);
-        return;
-    }
-
-    int knob_center = OVERVIEW_PHASE_X + (OVERVIEW_PHASE_W / 2) +
-        ((int)delta.deck2_delta_permille * (OVERVIEW_PHASE_W / 2)) / 2000;
-    int min_center = OVERVIEW_PHASE_X;
-    int max_center = OVERVIEW_PHASE_X + OVERVIEW_PHASE_W;
-    if (knob_center < min_center) knob_center = min_center;
-    if (knob_center > max_center) knob_center = max_center;
-    ui_obj_set_x_if_changed(s_phase_meter_knob, knob_center - (OVERVIEW_PHASE_KNOB_W / 2));
-
-    lv_color_t color = COL_GREEN;
-    if (!delta.locked) {
-        color = delta.deck2_delta_permille < 0 ? COL_AMBER : COL_ACCENT;
-    }
-    ui_obj_set_bg_color_if_changed(s_phase_meter_knob, color);
-    ui_obj_set_bg_opa_if_changed(s_phase_meter_knob, LV_OPA_COVER);
-    ui_obj_set_text_color_if_changed(s_phase_meter_label, color);
-
-    if (delta.locked) {
-        ui_label_set_text_if_changed(s_phase_meter_label, "PHASE LOCK");
-    } else {
-        int abs_delta = delta.deck2_delta_permille < 0 ?
-            -delta.deck2_delta_permille : delta.deck2_delta_permille;
-        char text[16];
-        snprintf(text, sizeof(text),
-                 "D2 %c%d.%02dB",
-                 delta.deck2_delta_permille < 0 ? '-' : '+',
-                 abs_delta / 1000,
-                 (abs_delta % 1000) / 10);
-        ui_label_set_text_if_changed(s_phase_meter_label, text);
-    }
+    ui_update_beat_indicator(idx, beat_valid ? &beat_state : NULL);
 }
 
 static ui_waveform_source_t ui_overview_redraw_source(uint8_t deck,
@@ -1772,6 +1706,7 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
         s_overview_deck_playing[idx] = state->playing;
         ui_overview_apply_deck_badge(deck);
     }
+    ui_overview_apply_play_button(panel, state->playing);
     ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "No Track");
 
     uint32_t time_bucket = remain_ms / OVERVIEW_TIME_UPDATE_MS;
@@ -1831,18 +1766,18 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 
     ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
                                          state->playing);
+    ui_update_overview_beat_strip(deck, elapsed_ms);
 }
 
 
 void ui_overview_set_performance_target(uint8_t active_deck)
 {
-    (void)active_deck;
+    s_overview_performance_target = ui_overview_deck_index(active_deck);
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ui_overview_deck_panel_t *panel = &s_overview_decks[deck];
-        if (!panel->panel || !panel->wave_border) {
-            continue;
+        if (panel->panel) {
+            ui_overview_apply_deck_badge(deck);
         }
-        lv_obj_set_style_border_width(panel->wave_border, 0, LV_PART_MAIN);
     }
 }
 
@@ -1893,29 +1828,10 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
     ui_update_overview_fx_panel(&ctx->beat_fx_state);
 
-    static uint32_t last_beat_update_ms = 0;
-    if (ctx->now_ms - last_beat_update_ms >= 30u || last_beat_update_ms == 0) {
-        last_beat_update_ms = ctx->now_ms;
-        for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
-            ui_beat_indicator_state_t beat_state = {0};
-            bool beat_valid = false;
-            if (ctx->deck_duration_ms[d] > 0) {
-                beat_state = ui_beat_indicator_calculate(
-                    ctx->deck_state[d].position_ms,
-                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beats : NULL,
-                    ctx->deck_meta[d] ? ctx->deck_meta[d]->beat_count : 0,
-                    ctx->deck_bpm[d]);
-                beat_valid = beat_state.valid;
-            }
-            ui_update_beat_indicator(d, beat_valid ? &beat_state : NULL);
-        }
-    }
-
     if (ctx->overview_slow_update) {
 #ifndef WIN32
         ui_update_mixer_overview(&ctx->mixer_snapshot);
 #endif
-        ui_update_phase_meter(&ctx->deck_state[CTRL_DECK_1], &ctx->deck_state[CTRL_DECK_2]);
         ui_overview_update_cue_markers(CTRL_DECK_1,
                                        ctx->deck_meta[CTRL_DECK_1],
                                        ctx->deck_duration_ms[CTRL_DECK_1]);
