@@ -58,12 +58,22 @@
 
 static const char *TAG = "ui";
 
+typedef enum {
+    UI_TAB_OVERVIEW = 0,
+    UI_TAB_LIBRARY,
+    UI_TAB_HOT_CUES,
+    UI_TAB_LOOP,
+    UI_TAB_BEAT_JUMP,
+    UI_TAB_SETTINGS,
+    UI_TAB_COUNT,
+} ui_tab_t;
+
 // ─── UI State and Variables ──────────────────────────────────────────────────
 static lv_obj_t *s_main_screen = NULL;
 static lv_obj_t *s_root_container = NULL;
 static lv_obj_t *s_header_container = NULL;
 static lv_obj_t *s_footer_container = NULL;
-static lv_obj_t *s_screens[7];
+static lv_obj_t *s_screens[UI_TAB_COUNT];
 static int       s_active_tab = 0;
 
 // Header elements
@@ -88,10 +98,10 @@ static ui_overview_perf_counter_t s_ui_update_interval_perf;
 static ui_overview_perf_counter_t s_ui_update_duration_perf;
 
 // Footer navigation buttons
-static lv_obj_t *s_footer_buttons[7];
-static lv_obj_t *s_footer_active_strips[7];
-static const char *s_tab_names[7] = {
-    "OVERVIEW", "LIBRARY", "HOT CUES", "LOOP", "BEAT JUMP", "KEY SHIFT", "SETTINGS"
+static lv_obj_t *s_footer_buttons[UI_TAB_COUNT];
+static lv_obj_t *s_footer_active_strips[UI_TAB_COUNT];
+static const char *s_tab_names[UI_TAB_COUNT] = {
+    "OVERVIEW", "LIBRARY", "HOT CUES", "LOOP", "BEAT JUMP", "SETTINGS"
 };
 
 // ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
@@ -279,15 +289,6 @@ static void ui_performance_clear_loop(uint8_t deck)
 #endif
 }
 
-static void ui_performance_toggle_master_tempo(void)
-{
-#ifdef WIN32
-    mock_deck_toggle_master_tempo();
-    deck_state_t state = deck_core_get_state();
-    ESP_LOGI(TAG, "Master Tempo toggled: %s", state.master_tempo ? "ON" : "OFF");
-#endif
-}
-
 static void ui_set_loop_shadow(uint8_t deck,
                                bool active,
                                uint32_t start_ms,
@@ -330,11 +331,11 @@ static void ui_deck_anlz_set_from_current(uint8_t deck, const anlz_metadata_t *m
 
 static void ui_switch_tab(int target_idx)
 {
-    if (target_idx < 0 || target_idx >= 7) {
+    if (target_idx < 0 || target_idx >= UI_TAB_COUNT) {
         return;
     }
     // Update visibility of screens
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < UI_TAB_COUNT; i++) {
         if (i == target_idx) {
             lv_obj_remove_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_active, LV_PART_MAIN);
@@ -628,13 +629,14 @@ static void create_footer(lv_obj_t *parent) {
     lv_obj_set_size(s_footer_container, UI_HOR_RES, UI_TOPBAR_H);
     lv_obj_set_pos(s_footer_container, 0, 0);
 
-    const int btn_width = 106;
     const int btn_height = 28;
     const int spacing = 6;
     const int offset_left = 6;
     const int offset_top = 9;
+    const int btn_width =
+        (UI_HOR_RES - (offset_left * 2) - ((UI_TAB_COUNT - 1) * spacing)) / UI_TAB_COUNT;
 
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < UI_TAB_COUNT; i++) {
         s_footer_buttons[i] = lv_button_create(s_footer_container);
         lv_obj_remove_style_all(s_footer_buttons[i]);
         lv_obj_add_style(s_footer_buttons[i], &s_style_tab_btn_normal, LV_PART_MAIN);
@@ -779,7 +781,6 @@ esp_err_t ui_init(void) {
             .play = ui_performance_play,
             .set_loop = ui_performance_set_loop,
             .clear_loop = ui_performance_clear_loop,
-            .toggle_master_tempo = ui_performance_toggle_master_tempo,
             .update_overview_cue_markers = ui_update_overview_cue_markers,
         },
         .hor_res = UI_HOR_RES,
@@ -796,6 +797,7 @@ esp_err_t ui_init(void) {
         .hor_res = UI_HOR_RES,
         .content_y = UI_CONTENT_Y,
         .content_h = UI_CONTENT_H,
+        .settings_tab_index = UI_TAB_SETTINGS,
     };
     ui_settings_configure(&settings_config);
 
@@ -850,18 +852,17 @@ esp_err_t ui_init(void) {
     create_header(s_root_container);
     create_footer(s_root_container);
 
-    // Build the 7 screen layers
-    s_screens[0] = ui_overview_create(s_root_container);
+    // Build the screen layers
+    s_screens[UI_TAB_OVERVIEW] = ui_overview_create(s_root_container);
     ui_controls_update_performance_target_visuals(&s_controls);
-    s_screens[1] = ui_library_create(s_root_container);
-    s_screens[2] = ui_performance_tabs_create_hot_cues(s_root_container);
-    s_screens[3] = ui_performance_tabs_create_beat_loop(s_root_container);
-    s_screens[4] = ui_performance_tabs_create_beat_jump(s_root_container);
-    s_screens[5] = ui_performance_tabs_create_key_shift(s_root_container);
-    s_screens[6] = ui_settings_create(s_root_container);
+    s_screens[UI_TAB_LIBRARY] = ui_library_create(s_root_container);
+    s_screens[UI_TAB_HOT_CUES] = ui_performance_tabs_create_hot_cues(s_root_container);
+    s_screens[UI_TAB_LOOP] = ui_performance_tabs_create_beat_loop(s_root_container);
+    s_screens[UI_TAB_BEAT_JUMP] = ui_performance_tabs_create_beat_jump(s_root_container);
+    s_screens[UI_TAB_SETTINGS] = ui_settings_create(s_root_container);
 
     // Switch initially to overview (index 0) and hide others
-    for (int i = 1; i < 7; i++) {
+    for (int i = 1; i < UI_TAB_COUNT; i++) {
         lv_obj_add_flag(s_screens[i], LV_OBJ_FLAG_HIDDEN);
     }
     s_active_tab = 0;
@@ -1040,29 +1041,29 @@ void ui_update(void) {
 
 bool ui_is_overview_active(void)
 {
-    return s_active_tab == 0;
+    return s_active_tab == UI_TAB_OVERVIEW;
 }
 
 esp_err_t ui_show_library(void)
 {
-    if (!s_root_container || !s_screens[1]) {
+    if (!s_root_container || !s_screens[UI_TAB_LIBRARY]) {
         return ESP_ERR_INVALID_STATE;
     }
 
     ui_lvgl_lock();
-    ui_switch_tab(1);
+    ui_switch_tab(UI_TAB_LIBRARY);
     ui_lvgl_unlock();
     return ESP_OK;
 }
 
 esp_err_t ui_toggle_library_view(void)
 {
-    if (!s_root_container || !s_screens[0] || !s_screens[1]) {
+    if (!s_root_container || !s_screens[UI_TAB_OVERVIEW] || !s_screens[UI_TAB_LIBRARY]) {
         return ESP_ERR_INVALID_STATE;
     }
 
     ui_lvgl_lock();
-    ui_switch_tab(s_active_tab == 1 ? 0 : 1);
+    ui_switch_tab(s_active_tab == UI_TAB_LIBRARY ? UI_TAB_OVERVIEW : UI_TAB_LIBRARY);
     ui_lvgl_unlock();
     return ESP_OK;
 }

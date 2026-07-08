@@ -383,14 +383,6 @@ static void jump_btn_event_cb(lv_event_t *event)
              val);
 }
 
-static void keylock_toggle_event_cb(lv_event_t *event)
-{
-    (void)event;
-    if (s_config.actions.toggle_master_tempo) {
-        s_config.actions.toggle_master_tempo();
-    }
-}
-
 static lv_obj_t *ui_performance_tabs_create_screen(lv_obj_t *parent)
 {
     lv_obj_t *screen = lv_obj_create(parent);
@@ -670,110 +662,6 @@ lv_obj_t *ui_performance_tabs_create_beat_jump(lv_obj_t *parent)
                                     COL_GREEN, COL_PANEL_DK, COL_GREEN);
     ui_performance_tabs_static_tile(jump_strip, 552, 12, 112, 36, "D1/D2",
                                     COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    return screen;
-}
-
-lv_obj_t *ui_performance_tabs_create_key_shift(lv_obj_t *parent)
-{
-    lv_obj_t *screen = ui_performance_tabs_create_screen(parent);
-    ui_controls_create_performance_target_selector(screen, 298, 4);
-
-    const int panel_y = 54;
-    const int panel_h = 282;
-
-    lv_obj_t *tempo_panel = lv_obj_create(screen);
-    lv_obj_remove_style_all(tempo_panel);
-    if (s_config.styles.panel_frame) {
-        lv_obj_add_style(tempo_panel, s_config.styles.panel_frame, LV_PART_MAIN);
-    }
-    lv_obj_set_size(tempo_panel, 320, panel_h);
-    lv_obj_set_pos(tempo_panel, 50, panel_y);
-    lv_obj_clear_flag(tempo_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_tempo = lv_label_create(tempo_panel);
-    ui_performance_tabs_label_small_caps(lbl_tempo, "MASTER TEMPO", COL_TEXT_MUTED);
-    lv_obj_set_pos(lbl_tempo, 18, 16);
-
-    lv_obj_t *lbl_keylock = lv_label_create(tempo_panel);
-    lv_label_set_text(lbl_keylock, "KEY LOCK");
-    lv_obj_set_style_text_font(lbl_keylock, &lv_font_montserrat_24, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_keylock, COL_GREEN, LV_PART_MAIN);
-    lv_obj_align(lbl_keylock, LV_ALIGN_TOP_LEFT, 18, 64);
-
-    lv_obj_t *sw_keylock = lv_switch_create(tempo_panel);
-    lv_obj_set_pos(sw_keylock, 18, 130);
-    lv_obj_add_event_cb(sw_keylock, keylock_toggle_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    lv_obj_t *lbl_preserves = lv_label_create(tempo_panel);
-    lv_label_set_text(lbl_preserves, "PRESERVES KEY");
-    lv_obj_set_style_text_font(lbl_preserves, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_preserves, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_preserves, 18, 174);
-
-    ui_performance_tabs_value_label(tempo_panel, "TEMPO RANGE", COL_TEXT_MUTED,
-                                    &lv_font_montserrat_12, 18, 208);
-    ui_performance_tabs_static_tile(tempo_panel, 18, 234, 58, 30, "6%",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_performance_tabs_static_tile(tempo_panel, 84, 234, 58, 30, "10%",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_performance_tabs_static_tile(tempo_panel, 150, 234, 58, 30, "16%",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER);
-    ui_performance_tabs_static_tile(tempo_panel, 216, 234, 76, 30, "WIDE",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER);
-
-    lv_obj_t *transpose_panel = lv_obj_create(screen);
-    lv_obj_remove_style_all(transpose_panel);
-    if (s_config.styles.panel_frame) {
-        lv_obj_add_style(transpose_panel, s_config.styles.panel_frame, LV_PART_MAIN);
-    }
-    lv_obj_set_size(transpose_panel, 360, panel_h);
-    lv_obj_set_pos(transpose_panel, 410, panel_y);
-    lv_obj_clear_flag(transpose_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *lbl_transpose = lv_label_create(transpose_panel);
-    ui_performance_tabs_label_small_caps(lbl_transpose, "KEY TRANSPOSE", COL_TEXT_MUTED);
-    lv_obj_set_pos(lbl_transpose, 18, 16);
-
-    lv_obj_t *lbl_key_value = lv_label_create(transpose_panel);
-    lv_label_set_text(lbl_key_value, "ORIGINAL KEY");
-    lv_obj_set_style_text_font(lbl_key_value, &lv_font_montserrat_24, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_key_value, COL_TEXT, LV_PART_MAIN);
-    lv_obj_align(lbl_key_value, LV_ALIGN_TOP_LEFT, 18, 84);
-
-    lv_obj_t *lbl_no_transpose = lv_label_create(transpose_panel);
-    lv_label_set_text(lbl_no_transpose, "NO TRANSPOSITION");
-    lv_obj_set_style_text_font(lbl_no_transpose, &lv_font_montserrat_12, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_no_transpose, COL_TEXT_DIM, LV_PART_MAIN);
-    lv_obj_set_pos(lbl_no_transpose, 18, 150);
-
-    ui_performance_tabs_value_label(transpose_panel, "KEY CONTROL", COL_TEXT_MUTED,
-                                    &lv_font_montserrat_12, 18, 190);
-    ui_performance_tabs_static_tile(transpose_panel, 18, 218, 88, 42, "- KEY",
-                                    COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_performance_tabs_static_tile(transpose_panel, 118, 218, 104, 42, "RESET",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_performance_tabs_static_tile(transpose_panel, 234, 218, 88, 42, "+ KEY",
-                                    COL_GREEN, COL_PANEL_DK, COL_GREEN);
-
-    lv_obj_t *pitch_strip = lv_obj_create(screen);
-    lv_obj_remove_style_all(pitch_strip);
-    if (s_config.styles.panel_frame) {
-        lv_obj_add_style(pitch_strip, s_config.styles.panel_frame, LV_PART_MAIN);
-    }
-    lv_obj_set_size(pitch_strip, 720, 66);
-    lv_obj_set_pos(pitch_strip, 50, 352);
-    lv_obj_clear_flag(pitch_strip, LV_OBJ_FLAG_SCROLLABLE);
-
-    ui_performance_tabs_value_label(pitch_strip, "PITCH / SYNC PLACEHOLDERS", COL_TEXT_MUTED,
-                                    &lv_font_montserrat_12, 18, 14);
-    ui_performance_tabs_static_tile(pitch_strip, 250, 14, 88, 38, "- PITCH",
-                                    COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_performance_tabs_static_tile(pitch_strip, 350, 14, 88, 38, "RESET",
-                                    COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_performance_tabs_static_tile(pitch_strip, 450, 14, 88, 38, "+ PITCH",
-                                    COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_performance_tabs_static_tile(pitch_strip, 560, 14, 92, 38, "SYNC",
-                                    COL_DISABLED, COL_PANEL_DK, COL_BORDER);
     return screen;
 }
 

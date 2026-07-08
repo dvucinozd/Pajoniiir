@@ -32,7 +32,6 @@ typedef struct {
     void (*play)(uint8_t deck);
     void (*set_loop)(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
     void (*clear_loop)(uint8_t deck);
-    void (*toggle_master_tempo)(void);
     void (*update_overview_cue_markers)(uint8_t deck);
 } ui_performance_tabs_actions_t;
 
@@ -49,7 +48,6 @@ void ui_performance_tabs_init(const ui_performance_tabs_config_t *config);
 lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent);
 lv_obj_t *ui_performance_tabs_create_beat_loop(lv_obj_t *parent);
 lv_obj_t *ui_performance_tabs_create_beat_jump(lv_obj_t *parent);
-lv_obj_t *ui_performance_tabs_create_key_shift(lv_obj_t *parent);
 void ui_performance_tabs_update_hot_cues(void);
 void ui_performance_tabs_update_loop_screen_state(void);
 void ui_performance_tabs_set_loop_shadow(uint8_t deck,

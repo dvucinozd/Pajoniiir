@@ -13,6 +13,7 @@ uint8_t ui_settings_master_trim_next_preset(uint8_t current);
 float ui_settings_master_trim_gain(uint8_t preset);
 const char *ui_settings_master_trim_label(uint8_t preset);
 const char *ui_settings_s3_debug_ap_status_label(uint8_t status);
+bool ui_settings_is_active_tab(int active_tab, int settings_tab_index);
 
 #ifndef UI_SETTINGS_HOST_TEST
 
@@ -27,6 +28,7 @@ typedef struct {
     int hor_res;
     int content_y;
     int content_h;
+    int settings_tab_index;
 } ui_settings_config_t;
 
 typedef struct {

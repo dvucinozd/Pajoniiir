@@ -52,12 +52,20 @@ static void test_s3_debug_ap_status_labels_are_stable(void)
     assert(strcmp(ui_settings_s3_debug_ap_status_label(99), "UNKNOWN") == 0);
 }
 
+static void test_settings_active_tab_uses_configured_index(void)
+{
+    assert(ui_settings_is_active_tab(5, 5));
+    assert(!ui_settings_is_active_tab(6, 5));
+    assert(!ui_settings_is_active_tab(5, -1));
+}
+
 int main(void)
 {
     test_force_poll_always_allows_refresh();
     test_first_poll_and_interval_gate();
     test_master_trim_presets_are_non_boosting_and_cycle();
     test_s3_debug_ap_status_labels_are_stable();
+    test_settings_active_tab_uses_configured_index();
 
     puts("ui_settings tests passed");
     return 0;

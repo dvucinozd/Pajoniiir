@@ -222,6 +222,46 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("write_elapsed_us")
 
+Assert-FileDoesNotContain `
+    -Name "P4 local UI excludes removed Key Shift screen" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @('"KEY SHIFT"', "ui_performance_tabs_create_key_shift")
+
+Assert-FileDoesNotContain `
+    -Name "P4 performance tabs exclude removed Key Shift controls" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
+    -LiteralPatterns @("KEY TRANSPOSE", "NO TRANSPOSITION", "ui_performance_tabs_create_key_shift")
+
+Assert-FileDoesNotContain `
+    -Name "P4 performance tabs API excludes removed Key Shift screen" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
+    -LiteralPatterns @("ui_performance_tabs_create_key_shift", "toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "P4 Settings excludes retired monitor speaker switch" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -LiteralPatterns @("MONITOR SPEAKER", "audio_out_event_cb", "monitor_route_label")
+
+Assert-FileDoesNotContain `
+    -Name "P4 Settings update avoids removed tab index" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -LiteralPatterns @("active_tab != 6")
+
+Assert-FileContains `
+    -Name "P4 Settings wireless switches use dark off-state styling" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ", "S3 DEBUG AP: ")
+
+Assert-FileContains `
+    -Name "P4 Settings mixer status strip keeps title clear of controls" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
+    -LiteralPatterns @(
+        'ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS")',
+        "mixer_section, 18, 34, 110, 22",
+        "lv_obj_set_size(btn_cue, 142, 22);",
+        "lv_obj_set_pos(btn_cue, 570, 34);"
+    )
+
 $tests = @(
     @{
         Name = "audio_diag"

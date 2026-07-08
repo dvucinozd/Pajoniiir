@@ -54,7 +54,7 @@ event source feeding the same `deck_core` → `audio_engine`.
     at the next frame boundary. Verified on hardware (no tearing on the scrolling waveform/tabs).
   - [ ] Verify the actual RCA wiring + line level (DAC_OUT_P/N → RCA jacks) — needs the chassis.
   - [x] On-screen beat indicator: 4-beat pulse row in OVERVIEW, driven by PQTZ beatgrid with BPM fallback.
-  - [ ] **UI polish** — visual + interaction refinement across the 7 screens: consistent
+  - [ ] **UI polish** — visual + interaction refinement across the six active screens: consistent
     spacing/typography/colour, tab-switch and button feedback, touch target sizing, waveform
     rendering quality, empty/loading states, and overall layout cleanup. (Scope TBD per screen.)
     - [x] A-1: English labels everywhere + universal press feedback (dim-on-press style).
@@ -73,10 +73,9 @@ event source feeding the same `deck_core` → `audio_engine`.
     - [x] Beat Jump: retained the dedicated screen and existing jump values while
       replacing the explanatory header with clear backward/forward lanes and
       restrained red/green performance buttons.
-    - [x] Key Shift: retained the dedicated screen and existing keylock switch
-      behavior while restyling Master Tempo and Key Transpose as clear
-      two-panel control/readout surfaces.
-    - [x] Footer tabs: retained the seven-tab navigation model while refining
+    - [x] Removed the retired Key Shift screen from the local P4 UI after
+      product scope moved Key Shift out of standalone behavior.
+    - [x] Footer tabs: retained the active navigation model while refining
       active, normal, pressed and future disabled states into a clearer
       performance-bar footer.
     - [x] Empty/loading/error states: normalized Library and load/cache status
@@ -300,8 +299,7 @@ Files: `firmware/main-deck-p4/components/ui/`
 - [x] Tab 2 — HOT CUES: 8 cue buttons with time positions and authentic Rekordbox green/orange coloring.
 - [x] Tab 3 — LOOP: loop in/out controls with 1/2, 1, 2, 4, 8, 16 beat loops.
 - [x] Tab 4 — BEAT JUMP: ±1/4/8/16 beat jump buttons.
-- [x] Tab 5 — KEY SHIFT: transposition.
-- [x] Tab 6 — SETTINGS: configuration, backlight PWM slider (GPIO23), RCA speaker switch, and system/memory diagnostics.
+- [x] Tab 5 — SETTINGS: configuration, backlight PWM slider (GPIO23), RCA speaker switch, and system/memory diagnostics.
 
 
 ### Hardware Integration — DONE ✅
@@ -331,7 +329,7 @@ Files: `firmware/main-deck-p4/components/ui/`
 - Full audio playback engine integration (Phase 7)
 - Hot cue persistence (flash/NVS)
 - Loop roll + beat jump from PQTZ beatgrid
-- Key shift / keylock
+- Key shift / keylock: removed from standalone product scope; compatibility IDs remain documented and inert.
 - FLAC/WAV audio formats
 - V2 controls: BTN_LOAD (GPIO21), BROWSE encoder (GPIO17/18)
 - MIDI controller mode (use with desktop Mixxx)

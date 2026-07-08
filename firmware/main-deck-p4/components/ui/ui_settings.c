@@ -81,6 +81,11 @@ const char *ui_settings_s3_debug_ap_status_label(uint8_t status)
     }
 }
 
+bool ui_settings_is_active_tab(int active_tab, int settings_tab_index)
+{
+    return settings_tab_index >= 0 && active_tab == settings_tab_index;
+}
+
 #ifndef UI_SETTINGS_HOST_TEST
 
 #include "esp_log.h"
@@ -109,7 +114,6 @@ typedef struct {
 static ui_settings_config_t s_config;
 static ui_settings_widgets_t s_widgets;
 static lv_obj_t *s_label_brightness_val = NULL;
-static lv_obj_t *s_label_audio_out = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
@@ -255,6 +259,30 @@ static lv_obj_t *ui_settings_static_tile(lv_obj_t *parent,
     return tile;
 }
 
+static void ui_settings_style_wireless_switch(lv_obj_t *sw, lv_color_t active_color)
+{
+    if (!sw) {
+        return;
+    }
+
+    lv_obj_set_size(sw, 54, 24);
+    lv_obj_set_style_bg_color(sw, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(sw, COL_BORDER_LT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(sw, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(sw, 12, LV_PART_MAIN);
+
+    lv_obj_set_style_bg_color(sw, COL_PANEL_DK, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(sw, active_color, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_CHECKED);
+
+    lv_obj_set_style_bg_color(sw, COL_DISABLED, LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_bg_color(sw, COL_BG, LV_PART_KNOB | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_KNOB | LV_STATE_CHECKED);
+}
+
 static void slider_brightness_event_cb(lv_event_t *event)
 {
     lv_obj_t *slider = lv_event_get_target(event);
@@ -265,25 +293,6 @@ static void slider_brightness_event_cb(lv_event_t *event)
     app_settings_set_backlight((uint8_t)val);
 #endif
     ESP_LOGI(TAG, "Backlight brightness set to %d%%", val);
-}
-
-static const char *monitor_route_label(bool speaker_enabled)
-{
-    return speaker_enabled ? "BUILT-IN SPEAKER" : "HEADPHONES";
-}
-
-static void audio_out_event_cb(lv_event_t *event)
-{
-    lv_obj_t *sw = lv_event_get_target(event);
-    bool speaker_enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
-#ifndef WIN32
-    bsp_audio_set_output(speaker_enabled ? BSP_AUDIO_OUT_SPEAKER : BSP_AUDIO_OUT_RCA);
-    app_settings_set_audio_out(speaker_enabled ? 0 : 1);
-#endif
-    if (s_label_audio_out) {
-        lv_label_set_text(s_label_audio_out, monitor_route_label(speaker_enabled));
-    }
-    ESP_LOGI(TAG, "Monitor speaker: %s", speaker_enabled ? "on" : "off");
 }
 
 #ifndef WIN32
@@ -318,7 +327,7 @@ static void wifi_remote_event_cb(lv_event_t *event)
         s_wifi_toggle_cb(on);
     }
     if (s_label_wifi_remote) {
-        lv_label_set_text(s_label_wifi_remote, on ? "P4 REMOTE ON" : "P4 REMOTE OFF");
+        lv_label_set_text(s_label_wifi_remote, on ? "P4 REMOTE: ON" : "P4 REMOTE: OFF");
         lv_obj_set_style_text_color(s_label_wifi_remote,
                                     on ? COL_GREEN : COL_TEXT_DIM, LV_PART_MAIN);
     }
@@ -346,7 +355,7 @@ static void ui_settings_apply_s3_debug_ap_status(void)
         return;
     }
 
-    lv_label_set_text_fmt(s_label_s3_debug_ap, "S3 DEBUG AP %s",
+    lv_label_set_text_fmt(s_label_s3_debug_ap, "S3 DEBUG AP: %s",
                           ui_settings_s3_debug_ap_status_label(status));
     lv_obj_set_style_text_color(s_label_s3_debug_ap,
                                 s3_debug_ap_status_color(status),
@@ -444,13 +453,11 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 #ifndef WIN32
     app_settings_t cfg = app_settings_get();
     int bl_init = cfg.backlight_pct;
-    bool monitor_speaker_init = (cfg.audio_out == 0);
     s_master_trim_preset = ui_settings_master_trim_sanitize_preset(cfg.master_trim_preset);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(s_master_trim_preset));
     bool wifi_remote_init = (cfg.wifi_remote != 0);
 #else
     int bl_init = 80;
-    bool monitor_speaker_init = true;
     s_master_trim_preset = 0;
     bool wifi_remote_init = false;
 #endif
@@ -470,22 +477,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                      &lv_font_montserrat_14, 270, 44);
     lv_label_set_text_fmt(s_label_brightness_val, "%d%%", bl_init);
 
-    lv_obj_t *audio_section = ui_settings_section(screen, left_x, 118, left_w, 86, "MONITOR SPEAKER");
-    lv_obj_t *sw_audio = lv_switch_create(audio_section);
-    lv_obj_set_pos(sw_audio, 16, 42);
-    lv_obj_add_event_cb(sw_audio, audio_out_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    s_label_audio_out = ui_settings_value_label(audio_section,
-                                                monitor_route_label(monitor_speaker_init),
-                                                COL_GREEN,
-                                                &lv_font_montserrat_16,
-                                                104,
-                                                44);
-    if (monitor_speaker_init) {
-        lv_obj_add_state(sw_audio, LV_STATE_CHECKED);
-    }
-
-    lv_obj_t *master_section = ui_settings_section(screen, left_x, 216, left_w, 86, "MASTER OUTPUT");
+    lv_obj_t *master_section = ui_settings_section(screen, left_x, 118, left_w, 86, "MASTER OUTPUT");
     lv_obj_t *btn_master_trim = lv_button_create(master_section);
     lv_obj_remove_style_all(btn_master_trim);
     if (s_config.btn_secondary) {
@@ -507,11 +499,36 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_align(s_label_master_trim, LV_ALIGN_CENTER, 0, 0);
 
     ui_settings_value_label(master_section,
-                            "Use if limiter/clipping is constant",
+                            "Lower if limiter stays active",
                             COL_TEXT_DIM,
                             &lv_font_montserrat_12,
                             198,
                             48);
+
+    lv_obj_t *output_section = ui_settings_section(screen, left_x, 216, left_w, 86, "OUTPUT");
+    ui_settings_value_label(output_section,
+                            "MAIN: PCM5102A RCA",
+                            COL_GREEN,
+                            &lv_font_montserrat_12,
+                            16,
+                            36);
+    ui_settings_value_label(output_section,
+                            "CUE: FLX4 USB",
+                            COL_ACCENT,
+                            &lv_font_montserrat_12,
+                            16,
+                            56);
+    ui_settings_value_label(output_section,
+#if defined(CONFIG_BSP_ES8311_MONITOR) && CONFIG_BSP_ES8311_MONITOR
+                            "LOCAL: ES8311 monitor",
+                            COL_TEXT_DIM,
+#else
+                            "LOCAL: disabled",
+                            COL_TEXT_DIM,
+#endif
+                            &lv_font_montserrat_12,
+                            176,
+                            56);
 
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
@@ -549,43 +566,43 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     }
 #endif
 
-    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 96, "WIRELESS");
+    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 108, "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
-    lv_obj_set_pos(sw_wifi, 16, 34);
+    ui_settings_style_wireless_switch(sw_wifi, COL_GREEN);
+    lv_obj_set_pos(sw_wifi, 16, 38);
     lv_obj_add_event_cb(sw_wifi, wifi_remote_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     if (wifi_remote_init) {
         lv_obj_add_state(sw_wifi, LV_STATE_CHECKED);
     }
 
     s_label_wifi_remote = ui_settings_value_label(wifi_section,
-                                                  wifi_remote_init ? "P4 REMOTE ON" : "P4 REMOTE OFF",
+                                                  wifi_remote_init ? "P4 REMOTE: ON" : "P4 REMOTE: OFF",
                                                   wifi_remote_init ? COL_GREEN : COL_TEXT_DIM,
                                                   &lv_font_montserrat_14,
-                                                  104, 36);
+                                                  96, 41);
 
     s_switch_s3_debug_ap = lv_switch_create(wifi_section);
-    lv_obj_set_pos(s_switch_s3_debug_ap, 16, 64);
+    ui_settings_style_wireless_switch(s_switch_s3_debug_ap, COL_ACCENT);
+    lv_obj_set_pos(s_switch_s3_debug_ap, 16, 74);
     lv_obj_add_event_cb(s_switch_s3_debug_ap, s3_debug_ap_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     s_label_s3_debug_ap = ui_settings_value_label(wifi_section,
-                                                  "S3 DEBUG AP OFF",
+                                                  "S3 DEBUG AP: OFF",
                                                   COL_TEXT_DIM,
                                                   &lv_font_montserrat_14,
-                                                  104, 66);
+                                                  96, 77);
     s_s3_debug_ap_displayed_status = UINT8_MAX;
     ui_settings_apply_s3_debug_ap_status();
 
-    lv_obj_t *mixer_section = ui_settings_section(screen, 30, 346, 740, 70, "MIXER / PFL ROUTING");
-    ui_settings_static_tile(mixer_section, 18, 30, 108, 28,
-                            "CH1 FADER", COL_ACCENT, COL_PANEL_DK, COL_ACCENT);
-    ui_settings_static_tile(mixer_section, 138, 30, 108, 28,
-                            "CH2 FADER", COL_GREEN, COL_PANEL_DK, COL_GREEN);
-    ui_settings_static_tile(mixer_section, 258, 30, 118, 28,
-                            "CROSSFADER", COL_TEXT, COL_PANEL_DK, COL_BORDER_LT);
-    ui_settings_static_tile(mixer_section, 388, 30, 88, 28,
-                            "PFL D1", COL_AMBER, COL_PANEL_DK, COL_AMBER);
-    ui_settings_static_tile(mixer_section, 488, 30, 88, 28,
-                            "PFL D2", COL_AMBER, COL_PANEL_DK, COL_AMBER);
+    lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS");
+    ui_settings_static_tile(mixer_section, 18, 34, 110, 22,
+                            "MIXER: FLX4", COL_TEXT_MUTED, COL_PANEL_DK, COL_BORDER);
+    ui_settings_static_tile(mixer_section, 140, 34, 104, 22,
+                            "CH FADERS", COL_ACCENT, COL_PANEL_DK, COL_BORDER);
+    ui_settings_static_tile(mixer_section, 256, 34, 112, 22,
+                            "CROSSFADER", COL_TEXT_MUTED, COL_PANEL_DK, COL_BORDER);
+    ui_settings_static_tile(mixer_section, 380, 34, 104, 22,
+                            "PFL D1/D2", COL_AMBER, COL_PANEL_DK, COL_BORDER);
 
     lv_obj_t *btn_cue = lv_button_create(mixer_section);
     lv_obj_remove_style_all(btn_cue);
@@ -595,8 +612,8 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     if (s_config.pressed) {
         lv_obj_add_style(btn_cue, s_config.pressed, LV_STATE_PRESSED);
     }
-    lv_obj_set_size(btn_cue, 124, 28);
-    lv_obj_set_pos(btn_cue, 588, 30);
+    lv_obj_set_size(btn_cue, 142, 22);
+    lv_obj_set_pos(btn_cue, 570, 34);
 #ifndef WIN32
     lv_obj_add_event_cb(btn_cue, cue_mode_event_cb, LV_EVENT_CLICKED, NULL);
 #endif
@@ -768,7 +785,7 @@ static void ui_settings_update_sd_status_label(bool force)
 
 void ui_settings_update(const ui_frame_context_t *ctx)
 {
-    if (!ctx || ctx->active_tab != 6) {
+    if (!ctx || !ui_settings_is_active_tab(ctx->active_tab, s_config.settings_tab_index)) {
         return;
     }
 #ifndef WIN32

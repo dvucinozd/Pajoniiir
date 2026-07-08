@@ -2,8 +2,8 @@
 
 // LVGL DJ UI — landscape 800x480 after 90° rotation.
 //
-// Tabs (matching upstream XDJ100SX skin):
-//   overview | library | hotcues | beatloop | beatjump | keyshift | settings
+// Tabs:
+//   overview | library | hotcues | beatloop | beatjump | settings
 
 #include "esp_err.h"
 #include "rekordbox_anlz.h"
