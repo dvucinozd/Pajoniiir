@@ -150,12 +150,11 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_DECK_INFO_W 400
 #define OVERVIEW_TITLE_Y 312
 #define OVERVIEW_TITLE_H 30
-#define OVERVIEW_TITLE_TEXT_W 224
-#define OVERVIEW_TITLE_TIMER_X 248
-#define OVERVIEW_TITLE_TIMER_Y 314
-#define OVERVIEW_TITLE_TIMER_MAIN_W 90
-#define OVERVIEW_TITLE_TIMER_FRACTION_X (OVERVIEW_TITLE_TIMER_X + OVERVIEW_TITLE_TIMER_MAIN_W + 2)
-#define OVERVIEW_TITLE_TIMER_FRACTION_W 46
+#define OVERVIEW_TITLE_TEXT_W 286
+#define OVERVIEW_TITLE_TIME_X 292
+#define OVERVIEW_TITLE_TIME_Y 315
+#define OVERVIEW_TITLE_TIME_W 100
+#define OVERVIEW_TITLE_TIME_H 24
 #define OVERVIEW_INFO_DIVIDER_Y 344
 #define OVERVIEW_INFO_ROW_Y 346
 #define OVERVIEW_TIME_Y 354
@@ -170,7 +169,6 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_PITCH_CHIP_H 28
 #define OVERVIEW_PITCH_W OVERVIEW_PITCH_CHIP_W
 #define OVERVIEW_MINI_WAVE_Y 386
-#define OVERVIEW_TIME_UPDATE_MS 50u
 #define OVERVIEW_SIDE_BTN_H 38
 
 static int ui_overview_beat_strip_offset_x(int phase)
@@ -192,10 +190,8 @@ typedef struct {
     lv_obj_t *label_status;
     lv_obj_t *label_title;
     lv_obj_t *label_artist;
+    lv_obj_t *title_time_bg;
     lv_obj_t *label_time;
-    lv_obj_t *label_time_secs;
-    lv_obj_t *label_time_fraction;
-    lv_obj_t *label_remain;
     lv_obj_t *label_bpm;
     lv_obj_t *label_pitch;
     lv_obj_t *label_ch;
@@ -223,7 +219,6 @@ typedef struct {
     uint32_t  last_wave_center_ms;
     uint32_t  last_wave_window_ms;
     uint32_t  last_time_bucket;
-    uint32_t  last_remain_bucket;
 } ui_overview_deck_panel_t;
 
 static ui_overview_deck_panel_t s_overview_decks[DECK_CORE_DECK_COUNT];
@@ -533,7 +528,6 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
     panel->last_time_bucket = UINT32_MAX;
-    panel->last_remain_bucket = UINT32_MAX;
     int top_y = (deck == CTRL_DECK_1) ? 0 : 158;
     int wave_y = (deck == CTRL_DECK_1) ? OVERVIEW_DECK1_WAVE_Y : OVERVIEW_DECK2_WAVE_Y;
     int info_x = (deck == CTRL_DECK_1) ? 0 : 400;
@@ -568,7 +562,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                     OVERVIEW_DECK_INFO_W, OVERVIEW_TITLE_H, COL_TITLE_BLUE);
     panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                  COL_TEXT, info_x, OVERVIEW_TITLE_Y,
-                                                 OVERVIEW_TITLE_TEXT_W, "No Track");
+                                                 OVERVIEW_TITLE_TEXT_W, "NO TRACK");
     lv_label_set_long_mode(panel->label_title, LV_LABEL_LONG_CLIP);
     lv_obj_set_height(panel->label_title, OVERVIEW_TITLE_H);
     lv_obj_set_style_bg_color(panel->label_title, COL_TITLE_BLUE, LV_PART_MAIN);
@@ -578,37 +572,22 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
     lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
-    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X,
-                                                OVERVIEW_TITLE_TIMER_Y,
-                                                48, "-00");
+    panel->title_time_bg = ui_overview_bar(panel->panel,
+                                           info_x + OVERVIEW_TITLE_TIME_X,
+                                           OVERVIEW_TITLE_TIME_Y,
+                                           OVERVIEW_TITLE_TIME_W,
+                                           OVERVIEW_TITLE_TIME_H,
+                                           COL_PANEL_DK);
+    lv_obj_set_style_bg_opa(panel->title_time_bg, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->title_time_bg, COL_ACCENT, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->title_time_bg, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(panel->title_time_bg, 0, LV_PART_MAIN);
+    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
+                                                COL_TEXT, info_x + OVERVIEW_TITLE_TIME_X,
+                                                OVERVIEW_TITLE_TIME_Y + 2,
+                                                OVERVIEW_TITLE_TIME_W, "--:--");
     lv_obj_set_height(panel->label_time, OVERVIEW_TITLE_H);
-    lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-
-    lv_obj_t *label_colon = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                    COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X + 48,
-                                                    OVERVIEW_TITLE_TIMER_Y,
-                                                    8, ":");
-    lv_obj_set_height(label_colon, OVERVIEW_TITLE_H);
-    lv_obj_set_style_text_align(label_colon, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-
-    panel->label_time_secs = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                     COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_X + 56,
-                                                     OVERVIEW_TITLE_TIMER_Y,
-                                                     34, "00");
-    lv_obj_set_height(panel->label_time_secs, OVERVIEW_TITLE_H);
-    lv_obj_set_style_text_align(panel->label_time_secs, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-
-    panel->label_time_fraction =
-        ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                COL_TEXT, info_x + OVERVIEW_TITLE_TIMER_FRACTION_X,
-                                OVERVIEW_TITLE_TIMER_Y,
-                                OVERVIEW_TITLE_TIMER_FRACTION_W, ".00");
-    lv_obj_set_height(panel->label_time_fraction, OVERVIEW_TITLE_H);
-    lv_obj_set_style_text_align(panel->label_time_fraction, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-    panel->label_remain = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                  COL_TEXT_MUTED, info_x + 254, OVERVIEW_TIME_Y + 8, 68, "-00:00");
-    lv_obj_add_flag(panel->label_remain, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                COL_TEXT, info_x + OVERVIEW_BPM_X,
                                                OVERVIEW_BPM_Y, OVERVIEW_BPM_W, "120.00");
@@ -1365,7 +1344,6 @@ void ui_overview_load_waveform_data(uint8_t deck,
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
     panel->last_time_bucket = UINT32_MAX;
-    panel->last_remain_bucket = UINT32_MAX;
 #ifndef WIN32
     ui_overview_wave_cache_reset(&s_overview_wave_cache[idx]);
     ui_overview_arm_all_wave_reblits();
@@ -1795,6 +1773,36 @@ static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
     return (uint32_t)speed;
 }
 
+static void ui_overview_format_remaining_time(char *out,
+                                              size_t out_size,
+                                              uint32_t duration_ms,
+                                              uint32_t remain_ms)
+{
+    if (!out || out_size == 0) {
+        return;
+    }
+    if (duration_ms == 0) {
+        snprintf(out, out_size, "--:--");
+        return;
+    }
+
+    uint32_t total_secs = remain_ms / 1000u;
+    uint32_t hrs = total_secs / 3600u;
+    uint32_t mins = (total_secs % 3600u) / 60u;
+    uint32_t secs = total_secs % 60u;
+
+    if (hrs > 0) {
+        snprintf(out, out_size, "-%u:%02u:%02u",
+                 (unsigned)hrs,
+                 (unsigned)mins,
+                 (unsigned)secs);
+    } else {
+        snprintf(out, out_size, "-%02u:%02u",
+                 (unsigned)mins,
+                 (unsigned)secs);
+    }
+}
+
 static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
 {
     uint8_t idx = ui_overview_deck_index(deck);
@@ -1822,42 +1830,14 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
         ui_overview_apply_deck_badge(deck);
     }
     ui_overview_apply_play_button(panel, state->playing);
-    ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "No Track");
+    ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "NO TRACK");
 
-    uint32_t time_bucket = remain_ms / OVERVIEW_TIME_UPDATE_MS;
+    uint32_t time_bucket = duration_ms > 0 ? (remain_ms / 1000u) : UINT32_MAX - 1u;
     if (time_bucket != panel->last_time_bucket) {
-        char mins_text[12];
-        char secs_text[4];
-        char fraction_text[8];
+        char time_text[16];
         panel->last_time_bucket = time_bucket;
-        uint32_t display_remain_ms = time_bucket * OVERVIEW_TIME_UPDATE_MS;
-        uint32_t total_secs = display_remain_ms / 1000u;
-        uint32_t hrs = total_secs / 3600u;
-        uint32_t mins = (total_secs % 3600u) / 60u;
-        uint32_t secs = total_secs % 60u;
-
-        snprintf(mins_text, sizeof(mins_text), "-%02u", (unsigned)hrs);
-        snprintf(secs_text, sizeof(secs_text), "%02u", (unsigned)mins);
-        snprintf(fraction_text, sizeof(fraction_text), ":%02u", (unsigned)secs);
-
-        ui_label_set_text_if_changed(panel->label_time, mins_text);
-        ui_label_set_text_if_changed(panel->label_time_secs, secs_text);
-        ui_label_set_text_if_changed(panel->label_time_fraction, fraction_text);
-    }
-
-    uint32_t remain_bucket = remain_ms / 1000u;
-    if (remain_bucket != panel->last_remain_bucket) {
-        char text[16];
-        panel->last_remain_bucket = remain_bucket;
-        uint32_t total_secs = remain_ms / 1000u;
-        uint32_t hrs = total_secs / 3600u;
-        uint32_t mins = (total_secs % 3600u) / 60u;
-        uint32_t secs = total_secs % 60u;
-        snprintf(text, sizeof(text), "-%02u:%02u:%02u",
-                 (unsigned)hrs,
-                 (unsigned)mins,
-                 (unsigned)secs);
-        ui_label_set_text_if_changed(panel->label_remain, text);
+        ui_overview_format_remaining_time(time_text, sizeof(time_text), duration_ms, remain_ms);
+        ui_label_set_text_if_changed(panel->label_time, time_text);
     }
 
     int32_t pitch_centipct = ui_overview_pitch_centipercent(state);

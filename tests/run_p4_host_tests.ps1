@@ -213,6 +213,27 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("remain_ms / 10u")
 
 Assert-FileContains `
+    -Name "P4 Overview title strip uses compact time pill" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "title_time_bg",
+        "OVERVIEW_TITLE_TIME_X",
+        "OVERVIEW_TITLE_TIME_W",
+        "ui_overview_format_remaining_time"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview title strip avoids split timer labels" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "label_time_secs",
+        "label_time_fraction",
+        "OVERVIEW_TITLE_TIMER_MAIN_W",
+        "OVERVIEW_TITLE_TIMER_FRACTION_X",
+        "OVERVIEW_TITLE_TIMER_FRACTION_W"
+    )
+
+Assert-FileContains `
     -Name "P4 Overview beat strip geometry derives from waveform center" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
