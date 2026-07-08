@@ -75,3 +75,13 @@ int s3_led_beat_jump_shift_helper_7(void) { return LED_BEAT_JUMP_SHIFT_HELPER_7;
 int s3_led_beat_jump_shift_helper_8(void) { return LED_BEAT_JUMP_SHIFT_HELPER_8; }
 int s3_ctrl_flx4_disconnected(void) { return CTRL_FLX4_DISCONNECTED; }
 int s3_ctrl_flx4_connected(void) { return CTRL_FLX4_CONNECTED; }
+int s3_ctrl_bulk_frame_start(void) { return CTRL_BULK_FRAME_START; }
+int s3_ctrl_bulk_max_payload(void) { return CTRL_BULK_MAX_PAYLOAD; }
+int s3_ctrl_bulk_header_len(void) { return CTRL_BULK_HEADER_LEN; }
+int s3_ctrl_bulk_crc_len(void) { return CTRL_BULK_CRC_LEN; }
+int s3_ctrl_bulk_type_controller_descriptor(void) { return CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR; }
+int s3_ctrl_desc_payload_len(void) { return CTRL_DESC_PAYLOAD_LEN; }
+int s3_ctrl_desc_product_max(void) { return CTRL_DESC_PRODUCT_MAX; }
+int s3_ctrl_desc_cap_midi_in(void) { return CTRL_DESC_CAP_MIDI_IN; }
+int s3_ctrl_desc_cap_midi_out(void) { return CTRL_DESC_CAP_MIDI_OUT; }
+int s3_ctrl_desc_cap_usb_audio(void) { return CTRL_DESC_CAP_USB_AUDIO; }

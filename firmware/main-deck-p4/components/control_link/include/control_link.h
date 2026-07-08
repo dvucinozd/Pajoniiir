@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
@@ -252,6 +253,63 @@ typedef enum {
     CTRL_S3_DEBUG_AP_ERROR = 3,
 } ctrl_s3_debug_ap_status_t;
 
+/*
+ * ── 0xA6 bulk frame layer ────────────────────────────────────────────────────
+ * Variable-length frames on the same UART for payloads that do not fit the
+ * 7-byte 0xA5 event frame (controller descriptor reports now; the profile
+ * transfer protocol later). Layout:
+ *
+ *   [0] 0xA6 start   [1] type   [2] seq   [3] len (0..128)
+ *   [4..4+len)  payload
+ *   [4+len]     crc_lo   [5+len] crc_hi
+ *
+ * CRC16-CCITT (poly 0x1021, init 0xFFFF, no reflection) over bytes [1..4+len).
+ * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
+ * control_link_protocol host test asserts the two sides agree.
+ */
+#define CTRL_BULK_FRAME_START 0xA6
+#define CTRL_BULK_MAX_PAYLOAD 128
+#define CTRL_BULK_HEADER_LEN  4
+#define CTRL_BULK_CRC_LEN     2
+#define CTRL_BULK_MAX_FRAME   (CTRL_BULK_HEADER_LEN + CTRL_BULK_MAX_PAYLOAD + CTRL_BULK_CRC_LEN)
+
+#define CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR 0x01
+/* 0x02..0x09 reserved: PROFILE_BEGIN/CHUNK/END/ACK/NACK/ACTIVATE/STATUS/CLEAR. */
+
+/* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
+ * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
+#define CTRL_DESC_PRODUCT_MAX 32
+#define CTRL_DESC_PAYLOAD_LEN (6 + CTRL_DESC_PRODUCT_MAX)
+#define CTRL_DESC_CAP_MIDI_IN   0x0001
+#define CTRL_DESC_CAP_MIDI_OUT  0x0002
+#define CTRL_DESC_CAP_USB_AUDIO 0x0004
+
+typedef struct {
+    uint16_t vid;
+    uint16_t pid;
+    uint16_t caps;
+    char product[CTRL_DESC_PRODUCT_MAX + 1];
+} ctrl_descriptor_report_t;
+
+/* Incremental 0xA6 frame parser (pure; host-tested). Feed RX bytes one at a
+ * time: returns the full frame length when a valid frame completed (frame
+ * bytes in .buf), 0 while in progress or idle, -1 on CRC/format error (the
+ * parser resets itself). Bytes that are not part of a bulk frame are only
+ * consumed when the parser is mid-frame. */
+typedef struct {
+    uint8_t buf[CTRL_BULK_MAX_FRAME];
+    int pos;
+    int total_len;
+} ctrl_bulk_parser_t;
+
+void ctrl_bulk_parser_reset(ctrl_bulk_parser_t *p);
+int ctrl_bulk_parser_feed(ctrl_bulk_parser_t *p, uint8_t b);
+
+/* Decode a validated CONTROLLER_DESCRIPTOR frame. Returns false when the
+ * frame type/payload length do not match. */
+bool ctrl_bulk_decode_descriptor(const uint8_t *frame, size_t frame_len,
+                                 ctrl_descriptor_report_t *rep);
+
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
     CTRL_BEAT_FX_TARGET_CH2 = 1,
@@ -410,3 +468,8 @@ void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
 
 // Send a deck-less state/control command to S3. Thread-safe.
 void control_link_send_state(uint8_t id, int16_t value);
+
+// Register a callback invoked (from the RX task) whenever the S3 reports a
+// connected controller descriptor over the 0xA6 bulk layer.
+typedef void (*control_link_descriptor_cb_t)(const ctrl_descriptor_report_t *rep);
+void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb);

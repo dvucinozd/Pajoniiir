@@ -31,6 +31,16 @@ static void on_s3_debug_ap_toggle(bool enable)
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
 }
 
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+// S3 reports the connected controller over the 0xA6 bulk layer; the profile
+// manager matches it against the SD/TF registry.
+static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
+{
+    (void)controller_profile_manager_on_descriptor_report(rep->vid, rep->pid,
+                                                          rep->caps, rep->product);
+}
+#endif
+
 // Called from the USB storage task when the Rekordbox drive mounts/unmounts.
 static void on_usb_storage_event(bool mounted)
 {
@@ -89,6 +99,9 @@ void app_main(void)
     deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
     ESP_ERROR_CHECK(control_link_init(ctrl_queue));
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    control_link_set_descriptor_report_cb(on_controller_descriptor);
+#endif
 
     // ── Board support (stubs until hardware arrives) ─────────────────────────
     ESP_ERROR_CHECK(bsp_display_init());

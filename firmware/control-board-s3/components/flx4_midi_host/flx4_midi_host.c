@@ -368,6 +368,41 @@ static const char *TAG = "flx4_host";
 #define MIDI_TRANSFER_BYTES     64
 #define MIDI_OUT_QUEUE_DEPTH    ((uint32_t)FLX4_MIDI_OUT_QUEUE_DEPTH)
 
+/* Descriptor summary of the currently open controller, reported to the P4
+ * over the 0xA6 bulk layer alongside the connection state so the P4 profile
+ * manager can match a profile by VID/PID (and survive a P4-only reboot via
+ * the heartbeat refresh path). */
+static ctrl_descriptor_report_t s_desc_report;
+static bool s_desc_report_valid;
+
+static void desc_report_send_if_valid(void)
+{
+    if (!s_desc_report_valid) {
+        return;
+    }
+    esp_err_t rc = control_link_send_descriptor_report(&s_desc_report);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "descriptor report send failed: %s", esp_err_to_name(rc));
+    }
+}
+
+static void desc_report_set_product(const usb_str_desc_t *str_desc)
+{
+    memset(s_desc_report.product, 0, sizeof(s_desc_report.product));
+    if (!str_desc || str_desc->bLength < 2) {
+        return;
+    }
+    /* UTF-16LE to ASCII squash; non-ASCII code units become '?'. */
+    size_t chars = (size_t)(str_desc->bLength - 2) / 2;
+    if (chars > CTRL_DESC_PRODUCT_MAX) {
+        chars = CTRL_DESC_PRODUCT_MAX;
+    }
+    for (size_t i = 0; i < chars; i++) {
+        uint16_t cu = str_desc->wData[i];
+        s_desc_report.product[i] = (cu >= 0x20 && cu <= 0x7E) ? (char)cu : '?';
+    }
+}
+
 static void publish_connection_state(bool connected)
 {
     if (!should_publish_connection_state(connected)) {
@@ -382,6 +417,9 @@ static void publish_connection_state(bool connected)
     } else {
         ESP_LOGI(TAG, "published FLX4 connection state: %s",
                  connected ? "connected" : "disconnected");
+    }
+    if (connected) {
+        desc_report_send_if_valid();
     }
 }
 
@@ -398,6 +436,7 @@ bool flx4_midi_host_refresh_connection_state(void)
         ESP_LOGW(TAG, "refresh FLX4 connection state failed: %s", esp_err_to_name(rc));
         return false;
     }
+    desc_report_send_if_valid();
     return true;
 }
 
@@ -682,6 +721,7 @@ static esp_err_t start_midi_in_transfer(flx4_host_state_t *host)
 static void close_device(flx4_host_state_t *host)
 {
     host->closing = true;
+    s_desc_report_valid = false;
 #if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
     flx4_usb_audio_stop();
 #endif
@@ -732,10 +772,14 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
                         TAG, "open device");
     host->opened = true;
 
+    s_desc_report_valid = false;
+    memset(&s_desc_report, 0, sizeof(s_desc_report));
+
     usb_device_info_t info;
     if (usb_host_device_info(host->dev_hdl, &info) == ESP_OK) {
         ESP_LOGI(TAG, "device speed=%d config=%u address=%u",
                  info.speed, info.bConfigurationValue, info.dev_addr);
+        desc_report_set_product(info.str_desc_product);
     }
 
     const usb_device_desc_t *dev_desc = NULL;
@@ -748,6 +792,8 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
              dev_desc->bDeviceClass,
              dev_desc->bDeviceSubClass,
              dev_desc->bNumConfigurations);
+    s_desc_report.vid = dev_desc->idVendor;
+    s_desc_report.pid = dev_desc->idProduct;
 
     const usb_config_desc_t *cfg = NULL;
     ESP_RETURN_ON_ERROR(usb_host_get_active_config_descriptor(host->dev_hdl, &cfg),
@@ -762,6 +808,7 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
                                                   (const uint8_t *)cfg,
                                                   cfg->wTotalLength);
     if (audio_rc == ESP_OK) {
+        s_desc_report.caps |= CTRL_DESC_CAP_USB_AUDIO;
         ESP_LOGI(TAG, "FLX4 USB Audio playback interface configured");
 #if CONFIG_DDJ_FLX4_USB_AUDIO_TONE_SMOKE_AUTOSTART
         esp_err_t tone_rc = flx4_usb_audio_start_tone(1000u);
@@ -788,6 +835,8 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
         ESP_LOGE(TAG, "no MIDIStreaming IN/OUT endpoints found");
         return ESP_ERR_NOT_FOUND;
     }
+    s_desc_report.caps |= CTRL_DESC_CAP_MIDI_IN | CTRL_DESC_CAP_MIDI_OUT;
+    s_desc_report_valid = true;
 
     ESP_RETURN_ON_ERROR(usb_host_interface_claim(host->client_hdl,
                                                 host->dev_hdl,

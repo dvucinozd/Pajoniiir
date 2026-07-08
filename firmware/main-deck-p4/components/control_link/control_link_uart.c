@@ -29,6 +29,8 @@ static uint32_t s_uart_write_fail_count;
 static uint32_t s_event_drop_count;
 static uint32_t s_event_coalesce_count;
 static TickType_t s_last_warn;
+static ctrl_bulk_parser_t s_bulk_parser;
+static control_link_descriptor_cb_t s_descriptor_cb;
 
 // ─── TX helpers ───────────────────────────────────────────────────────────────
 
@@ -72,6 +74,11 @@ void control_link_send_led(led_id_t led, uint8_t state)
 void control_link_send_state(uint8_t id, int16_t value)
 {
     send_frame(CTRL_TYPE_STATE, id, value);
+}
+
+void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb)
+{
+    s_descriptor_cb = cb;
 }
 
 // ─── RX parser ────────────────────────────────────────────────────────────────
@@ -179,9 +186,45 @@ static void dispatch_frame(const uint8_t *f)
     }
 }
 
+static void handle_bulk_frame(const uint8_t *frame, size_t frame_len)
+{
+    switch (frame[1]) {
+    case CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR: {
+        ctrl_descriptor_report_t rep;
+        if (!ctrl_bulk_decode_descriptor(frame, frame_len, &rep)) {
+            ESP_LOGW(TAG, "bad controller descriptor frame (len=%u)",
+                     (unsigned)frame_len);
+            return;
+        }
+        ESP_LOGI(TAG, "controller descriptor: VID=0x%04X PID=0x%04X caps=0x%04X '%s'",
+                 rep.vid, rep.pid, rep.caps, rep.product);
+        if (s_descriptor_cb) {
+            s_descriptor_cb(&rep);
+        }
+        break;
+    }
+    default:
+        ESP_LOGW(TAG, "unknown bulk frame type 0x%02X", frame[1]);
+        break;
+    }
+}
+
 static void parse_byte(rx_state_t *st, uint8_t b)
 {
-    if (st->pos == 0 && b != CTRL_FRAME_START) return;
+    /* Route 0xA6 bulk frames to the bulk parser; it owns the stream while a
+     * bulk frame is in progress. 0xA5 event frames keep the existing path. */
+    if (st->pos == 0) {
+        if (s_bulk_parser.pos > 0 || b == CTRL_BULK_FRAME_START) {
+            int r = ctrl_bulk_parser_feed(&s_bulk_parser, b);
+            if (r > 0) {
+                handle_bulk_frame(s_bulk_parser.buf, (size_t)r);
+            } else if (r < 0) {
+                ESP_LOGW(TAG, "bulk frame CRC/format error");
+            }
+            return;
+        }
+        if (b != CTRL_FRAME_START) return;
+    }
 
     st->buf[st->pos++] = b;
     if (st->pos < CTRL_FRAME_LEN) return;

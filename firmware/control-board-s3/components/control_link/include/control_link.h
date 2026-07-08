@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "esp_err.h"
 #include "panel_io.h"
 
@@ -230,6 +233,44 @@ typedef enum {
     CTRL_S3_DEBUG_AP_ERROR = 3,
 } ctrl_s3_debug_ap_status_t;
 
+/*
+ * ── 0xA6 bulk frame layer ────────────────────────────────────────────────────
+ * Variable-length frames on the same UART for payloads that do not fit the
+ * 7-byte 0xA5 event frame (controller descriptor reports now; the profile
+ * transfer protocol later). Layout:
+ *
+ *   [0] 0xA6 start   [1] type   [2] seq   [3] len (0..128)
+ *   [4..4+len)  payload
+ *   [4+len]     crc_lo   [5+len] crc_hi
+ *
+ * CRC16-CCITT (poly 0x1021, init 0xFFFF, no reflection) over bytes [1..4+len).
+ * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
+ * control_link_protocol host test asserts the two sides agree.
+ */
+#define CTRL_BULK_FRAME_START 0xA6
+#define CTRL_BULK_MAX_PAYLOAD 128
+#define CTRL_BULK_HEADER_LEN  4
+#define CTRL_BULK_CRC_LEN     2
+#define CTRL_BULK_MAX_FRAME   (CTRL_BULK_HEADER_LEN + CTRL_BULK_MAX_PAYLOAD + CTRL_BULK_CRC_LEN)
+
+#define CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR 0x01
+/* 0x02..0x09 reserved: PROFILE_BEGIN/CHUNK/END/ACK/NACK/ACTIVATE/STATUS/CLEAR. */
+
+/* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
+ * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
+#define CTRL_DESC_PRODUCT_MAX 32
+#define CTRL_DESC_PAYLOAD_LEN (6 + CTRL_DESC_PRODUCT_MAX)
+#define CTRL_DESC_CAP_MIDI_IN   0x0001
+#define CTRL_DESC_CAP_MIDI_OUT  0x0002
+#define CTRL_DESC_CAP_USB_AUDIO 0x0004
+
+typedef struct {
+    uint16_t vid;
+    uint16_t pid;
+    uint16_t caps;
+    char product[CTRL_DESC_PRODUCT_MAX + 1];
+} ctrl_descriptor_report_t;
+
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
     CTRL_BEAT_FX_TARGET_CH2 = 1,
@@ -344,3 +385,12 @@ void control_link_send_event(const panel_event_t *ev);
 // Call periodically (e.g. every 5 s) so the P4 can detect S3 disconnects.
 // Safe to call from any task.
 void control_link_send_heartbeat(void);
+
+// Serialise a controller descriptor report into a 0xA6 bulk frame.
+// Returns the frame length written, or 0 when `out` is too small.
+// Pure helper (no UART); host tests exercise it directly.
+size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
+                                        const ctrl_descriptor_report_t *rep);
+
+// Send a controller descriptor report to the P4. Safe to call from any task.
+esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep);

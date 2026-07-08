@@ -233,4 +233,19 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
     return idx;
 }
 
+int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
+                                                    uint16_t caps,
+                                                    const char *product)
+{
+    s_registry.connected_caps = caps;
+    memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
+    if (product) {
+        snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
+                 "%.*s", CPM_PRODUCT_MAX, product);
+    }
+    ESP_LOGI(TAG, "connected controller '%s' caps=0x%04X",
+             s_registry.connected_product, caps);
+    return controller_profile_manager_on_descriptor(vid, pid);
+}
+
 #endif /* CONTROLLER_PROFILE_MANAGER_PC_TEST */

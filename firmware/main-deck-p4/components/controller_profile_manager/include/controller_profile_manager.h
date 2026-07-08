@@ -46,6 +46,8 @@ typedef struct {
     bool valid;               /* header + CRC validated */
 } controller_profile_meta_t;
 
+#define CPM_PRODUCT_MAX 32
+
 typedef struct {
     controller_profile_meta_t profiles[CPM_MAX_PROFILES];
     uint8_t count;
@@ -53,6 +55,8 @@ typedef struct {
     bool controller_present;   /* an S3 controller descriptor has been received */
     uint16_t connected_vid;
     uint16_t connected_pid;
+    uint16_t connected_caps;   /* CTRL_DESC_CAP_* bits from the S3 report */
+    char connected_product[CPM_PRODUCT_MAX + 1];
 } controller_profile_registry_t;
 
 /* ── Firmware entry points (glue; sdkconfig + logging) ──────────────────────── */
@@ -69,6 +73,13 @@ const controller_profile_registry_t *controller_profile_manager_get_registry(voi
 /* Record a connected controller (fed by the S3 descriptor report in a later
  * phase) and re-select the active profile. Returns the matched index or -1. */
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid);
+
+/* Full descriptor report from the S3 (0xA6 bulk frame): also stores the
+ * capability bits and product string for UI/web status. `product` may be
+ * NULL. Returns the matched index or -1. */
+int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
+                                                    uint16_t caps,
+                                                    const char *product);
 
 /* ── Pure helpers (host-testable, no ESP logging) ──────────────────────────── */
 

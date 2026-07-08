@@ -500,6 +500,49 @@ static void test_s3_and_p4_flx4_connection_state_ids_match(void)
     assert(ev.value == CTRL_FLX4_CONNECTED);
 }
 
+int s3_ctrl_bulk_frame_start(void);
+int s3_ctrl_bulk_max_payload(void);
+int s3_ctrl_bulk_header_len(void);
+int s3_ctrl_bulk_crc_len(void);
+int s3_ctrl_bulk_type_controller_descriptor(void);
+int s3_ctrl_desc_payload_len(void);
+int s3_ctrl_desc_product_max(void);
+int s3_ctrl_desc_cap_midi_in(void);
+int s3_ctrl_desc_cap_midi_out(void);
+int s3_ctrl_desc_cap_usb_audio(void);
+int p4_ctrl_bulk_frame_start(void);
+int p4_ctrl_bulk_max_payload(void);
+int p4_ctrl_bulk_header_len(void);
+int p4_ctrl_bulk_crc_len(void);
+int p4_ctrl_bulk_type_controller_descriptor(void);
+int p4_ctrl_desc_payload_len(void);
+int p4_ctrl_desc_product_max(void);
+int p4_ctrl_desc_cap_midi_in(void);
+int p4_ctrl_desc_cap_midi_out(void);
+int p4_ctrl_desc_cap_usb_audio(void);
+
+static void test_s3_and_p4_bulk_frame_constants_match(void)
+{
+    assert(s3_ctrl_bulk_frame_start() == p4_ctrl_bulk_frame_start());
+    assert(s3_ctrl_bulk_frame_start() == 0xA6);
+    assert(s3_ctrl_bulk_frame_start() != CTRL_FRAME_START);
+    assert(s3_ctrl_bulk_max_payload() == p4_ctrl_bulk_max_payload());
+    assert(s3_ctrl_bulk_max_payload() == 128);
+    assert(s3_ctrl_bulk_header_len() == p4_ctrl_bulk_header_len());
+    assert(s3_ctrl_bulk_crc_len() == p4_ctrl_bulk_crc_len());
+    assert(s3_ctrl_bulk_type_controller_descriptor() ==
+           p4_ctrl_bulk_type_controller_descriptor());
+    assert(s3_ctrl_bulk_type_controller_descriptor() == 0x01);
+    assert(s3_ctrl_desc_payload_len() == p4_ctrl_desc_payload_len());
+    assert(s3_ctrl_desc_payload_len() ==
+           6 + s3_ctrl_desc_product_max());
+    assert(s3_ctrl_desc_product_max() == p4_ctrl_desc_product_max());
+    assert(s3_ctrl_desc_cap_midi_in() == p4_ctrl_desc_cap_midi_in());
+    assert(s3_ctrl_desc_cap_midi_out() == p4_ctrl_desc_cap_midi_out());
+    assert(s3_ctrl_desc_cap_usb_audio() == p4_ctrl_desc_cap_usb_audio());
+    assert(s3_ctrl_desc_payload_len() <= s3_ctrl_bulk_max_payload());
+}
+
 static void test_led_command_values_and_bad_checksum(void)
 {
     uint8_t frame[CTRL_FRAME_LEN];
@@ -524,6 +567,7 @@ int main(void)
     test_firmware_decodes_deck_aware_flx4_ids();
     test_s3_and_p4_deck_aware_ids_match();
     test_s3_and_p4_flx4_connection_state_ids_match();
+    test_s3_and_p4_bulk_frame_constants_match();
     test_led_command_values_and_bad_checksum();
     puts("control_link_protocol tests passed");
     return 0;

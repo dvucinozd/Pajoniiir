@@ -204,6 +204,34 @@ esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
     return send_frame_checked(frame, "semantic event");
 }
 
+esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep)
+{
+    if (!rep) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
+    size_t len = ctrl_bulk_build_descriptor_frame(frame, sizeof(frame), seq, rep);
+    if (len == 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    int written = uart_write_bytes(UART_PORT, frame, len);
+    if (written == (int)len) {
+        return ESP_OK;
+    }
+
+    s_uart_write_fail_count++;
+    TickType_t now = xTaskGetTickCount();
+    if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
+        s_last_uart_write_warn = now;
+        ESP_LOGW(TAG, "descriptor report UART short write (%d/%u), failures=%" PRIu32,
+                 written, (unsigned)len, s_uart_write_fail_count);
+    }
+    return ESP_FAIL;
+}
+
 void control_link_send_event(const panel_event_t *ev)
 {
     uint8_t frame[CTRL_FRAME_LEN];
