@@ -301,6 +301,24 @@ Assert-FileContains `
         "ctx->mixer_snapshot.deck_peak[deck]"
     )
 
+Assert-FileContains `
+    -Name "P4 Overview Beat FX uses compact right rail" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_FX_PANEL_H",
+        "OVERVIEW_FX_DEPTH_BAR_W",
+        "depth_fill",
+        "status_bar"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview Beat FX avoids deck2 title overlap" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "lv_obj_set_size(s_overview_fx_panel, fx_w, 316)",
+        "s_overview_fx.enabled_bar = ui_overview_bar(s_overview_fx_panel, row_x, 258, row_w, 40"
+    )
+
 Assert-FileDoesNotContain `
     -Name "deck_core UI-only buttons use semantic button mapping" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
