@@ -455,9 +455,26 @@ static void test_deck_peak_meter_api_returns_and_resets_peak(void)
     EXPECT(audio_engine_get_deck_peak(1) == 9000, "deck 1 peak is independent");
 }
 
+static void test_mixer_snapshot_reports_deck_peak_without_reset(void)
+{
+    puts("\n[Test 4c] Mixer snapshot deck peak API");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets peak meter state");
+
+    audio_engine_test_record_deck_peak(0, -12000, 6000);
+    audio_engine_test_record_deck_peak(1, 3000, -16000);
+
+    audio_engine_mixer_snapshot_t snapshot;
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.deck_peak[0] == 12000, "snapshot captures deck 0 peak");
+    EXPECT(snapshot.deck_peak[1] == 16000, "snapshot captures deck 1 peak");
+
+    EXPECT(audio_engine_get_deck_peak(0) == 12000, "snapshot does not reset deck 0 peak");
+    EXPECT(audio_engine_get_deck_peak(1) == 16000, "snapshot does not reset deck 1 peak");
+}
+
 static void test_diagnostics_snapshot_reports_audio_health_state(void)
 {
-    puts("\n[Test 4c] Diagnostics snapshot API");
+    puts("\n[Test 4d] Diagnostics snapshot API");
     EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init resets diagnostics snapshot");
 
     audio_engine_diagnostics_snapshot_t diag;
@@ -947,6 +964,7 @@ int main(int argc, char *argv[])
     test_pitch();
     test_mixer_state_api();
     test_deck_peak_meter_api_returns_and_resets_peak();
+    test_mixer_snapshot_reports_deck_peak_without_reset();
     test_diagnostics_snapshot_reports_audio_health_state();
     test_wav_load_populates_deck_metadata();
     test_wav_decode_to_wav_preserves_pcm();

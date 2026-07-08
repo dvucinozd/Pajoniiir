@@ -3120,6 +3120,11 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->pad_fx_active[deck] = audio_pad_fx_is_active(&s_pad_fx[deck]);
         out_snapshot->pad_fx_kind[deck] = audio_pad_fx_kind(&s_pad_fx[deck]);
     }
+    AE_LOCK();
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        out_snapshot->deck_peak[deck] = s_deck_peak[deck];
+    }
+    AE_UNLOCK();
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->master_volume = atomic_load_u16(&s_master_volume);
     out_snapshot->headphone_mix = atomic_load_u16(&s_headphone_mix);

@@ -137,6 +137,14 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_BEAT_STRIP_CENTER_GAP_PX 18
 #define OVERVIEW_BEAT_STRIP_TOP_Y (OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H + 5)
 #define OVERVIEW_BEAT_STRIP_ROW_GAP_PX 12
+#define OVERVIEW_VU_X 67
+#define OVERVIEW_VU_Y_OFFSET 17
+#define OVERVIEW_VU_SEGMENT_W 10
+#define OVERVIEW_VU_SEGMENT_H 11
+#define OVERVIEW_VU_SEGMENT_GAP 3
+#define OVERVIEW_VU_SEGMENT_COUNT 8
+#define OVERVIEW_VU_H ((OVERVIEW_VU_SEGMENT_COUNT * OVERVIEW_VU_SEGMENT_H) + \
+                       ((OVERVIEW_VU_SEGMENT_COUNT - 1) * OVERVIEW_VU_SEGMENT_GAP))
 #define OVERVIEW_PLAYHEAD_W 3
 #define OVERVIEW_OUTLINE_W 1
 #define OVERVIEW_DECK_INFO_W 400
@@ -207,9 +215,11 @@ typedef struct {
     lv_obj_t *mini_played;
     lv_obj_t *mini_playhead;
     lv_obj_t *playhead;
+    lv_obj_t *vu_segment[OVERVIEW_VU_SEGMENT_COUNT];
     int       last_mini_fill_x;
     int       last_mini_played_w;
     int       last_playhead_x;
+    int       last_vu_level;
     uint32_t  last_wave_center_ms;
     uint32_t  last_wave_window_ms;
     uint32_t  last_time_bucket;
@@ -519,6 +529,7 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->last_mini_fill_x = -1;
     panel->last_mini_played_w = -1;
     panel->last_playhead_x = -1;
+    panel->last_vu_level = -1;
     panel->last_wave_center_ms = UINT32_MAX;
     panel->last_wave_window_ms = 0;
     panel->last_time_bucket = UINT32_MAX;
@@ -793,6 +804,23 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                                                     play_pause_event_cb);
     panel->play_label = lv_obj_get_child(panel->play_button, 0);
     ui_overview_compact_button(panel->panel, deck, 4, top_y + 102, 76, "CUE", &s_style_btn_amber, cue_event_cb);
+
+    for (int i = 0; i < OVERVIEW_VU_SEGMENT_COUNT; i++) {
+        int seg_index_from_top = OVERVIEW_VU_SEGMENT_COUNT - 1 - i;
+        lv_obj_t *vu_segment = lv_obj_create(panel->panel);
+        lv_obj_remove_style_all(vu_segment);
+        lv_obj_set_size(vu_segment, OVERVIEW_VU_SEGMENT_W, OVERVIEW_VU_SEGMENT_H);
+        lv_obj_set_pos(vu_segment,
+                       OVERVIEW_VU_X,
+                       top_y + OVERVIEW_VU_Y_OFFSET +
+                           (seg_index_from_top * (OVERVIEW_VU_SEGMENT_H + OVERVIEW_VU_SEGMENT_GAP)));
+        lv_obj_set_style_bg_color(vu_segment, COL_PANEL_DK, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(vu_segment, LV_OPA_80, LV_PART_MAIN);
+        lv_obj_set_style_border_color(vu_segment, COL_BORDER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(vu_segment, 1, LV_PART_MAIN);
+        lv_obj_remove_flag(vu_segment, LV_OBJ_FLAG_CLICKABLE);
+        panel->vu_segment[i] = vu_segment;
+    }
 }
 
 static lv_obj_t *ui_fx_panel_label(lv_obj_t *parent, const char *text,
@@ -1623,6 +1651,53 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     }
 }
 
+static void ui_overview_update_vu_meter(uint8_t deck, uint16_t peak)
+{
+    uint8_t idx = ui_overview_deck_index(deck);
+    ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    if (!panel->panel) {
+        return;
+    }
+
+    int level = (int)(((uint32_t)peak * OVERVIEW_VU_SEGMENT_COUNT) / 32768u);
+    if (peak > 0 && level < 1) {
+        level = 1;
+    }
+    if (level > OVERVIEW_VU_SEGMENT_COUNT) {
+        level = OVERVIEW_VU_SEGMENT_COUNT;
+    }
+    if (panel->last_vu_level >= 0 && level < panel->last_vu_level) {
+        level = panel->last_vu_level - 1;
+    }
+    if (level == panel->last_vu_level) {
+        return;
+    }
+    panel->last_vu_level = level;
+
+    for (int i = 0; i < OVERVIEW_VU_SEGMENT_COUNT; i++) {
+        lv_obj_t *vu_segment = panel->vu_segment[i];
+        if (!vu_segment) {
+            continue;
+        }
+        bool active = i < level;
+        lv_color_t color = COL_PANEL_DK;
+        lv_opa_t opa = LV_OPA_50;
+        if (active) {
+            if (i >= OVERVIEW_VU_SEGMENT_COUNT - 1) {
+                color = lv_color_hex(0xFF1744);
+            } else if (i >= OVERVIEW_VU_SEGMENT_COUNT - 3) {
+                color = COL_AMBER;
+            } else {
+                color = COL_GREEN;
+            }
+            opa = LV_OPA_COVER;
+        }
+        lv_obj_set_style_bg_color(vu_segment, color, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(vu_segment, opa, LV_PART_MAIN);
+        lv_obj_set_style_border_color(vu_segment, active ? color : COL_BORDER, LV_PART_MAIN);
+    }
+}
+
 #ifndef WIN32
 static void ui_update_mixer_overview(const audio_engine_mixer_snapshot_t *snapshot)
 {
@@ -1869,6 +1944,9 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck]);
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
     ui_update_overview_fx_panel(&ctx->beat_fx_state);
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+        ui_overview_update_vu_meter(deck, ctx->mixer_snapshot.deck_peak[deck]);
+    }
 
     if (ctx->overview_slow_update) {
 #ifndef WIN32

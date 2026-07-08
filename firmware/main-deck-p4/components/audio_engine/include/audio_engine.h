@@ -153,6 +153,7 @@ typedef struct {
     bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_pad_fx_kind_t pad_fx_kind[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
+    uint16_t deck_peak[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;

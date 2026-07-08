@@ -269,6 +269,17 @@ Assert-FileContains `
         "%u.%02u"
     )
 
+Assert-FileContains `
+    -Name "P4 Overview shows deck-local VU meters beside transport controls" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_VU_X",
+        "OVERVIEW_VU_H",
+        "vu_segment",
+        "ui_overview_update_vu_meter",
+        "ctx->mixer_snapshot.deck_peak[deck]"
+    )
+
 Assert-FileDoesNotContain `
     -Name "deck_core UI-only buttons use semantic button mapping" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
