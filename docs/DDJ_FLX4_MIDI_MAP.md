@@ -22,8 +22,9 @@ and P4-owned state transition. Hardware capture remains the acceptance test for
 each newly delivered control group, and any difference must be recorded here.
 
 Additional physical capture on 2026-06-20 verified SMART CFX and SMART FADER
-button inputs. They are implemented as input-only semantic press/release events;
-P4 DSP/settings behavior is deferred.
+button inputs. They are implemented as semantic press/release events that toggle
+P4-owned Smart CFX and Smart Fader state; Smart CFX drives the P4 filter DSP and
+Smart Fader drives the conservative transition-assist curve.
 
 ## Deck Channels
 
@@ -81,8 +82,8 @@ halves are available.
 | Channel fader | Deck 2 | `0xB1` | `0x13` | `0x33` | mixer channel 2 volume |
 | Crossfader | Master | `0xB6` | `0x1F` | `0x3F` | mixer crossfader |
 | Master Level | Master | `0xB6` | `0x08` | `0x28` | master output volume |
-| Trim | Deck 1 | `0xB0` | `0x04` | `0x24` | later pregain |
-| Trim | Deck 2 | `0xB1` | `0x04` | `0x24` | later pregain |
+| Trim | Deck 1 | `0xB0` | `0x04` | `0x24` | trim/pregain |
+| Trim | Deck 2 | `0xB1` | `0x04` | `0x24` | trim/pregain |
 | Headphone cue | Deck 1 | `0x90` | `0x54` | n/a | cue/PFL toggle |
 | Headphone cue | Deck 2 | `0x91` | `0x54` | n/a | cue/PFL toggle |
 

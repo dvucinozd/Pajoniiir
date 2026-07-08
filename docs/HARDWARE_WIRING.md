@@ -35,30 +35,28 @@ Open wiring questions:
 
 ## P4 Audio Outputs
 
-The inherited P4 firmware currently uses ES8311/I2S for audio output.
-
-DDJ-FFL4 needs two output paths:
+The current DDJ-FFL4 product topology uses two output paths:
 
 - master output for speakers/PA/recording;
 - cue/PFL output for headphones.
 
-Recommended MVP hardware plan:
+Implemented hardware plan:
 
 | Output | Hardware | Notes |
 | --- | --- | --- |
-| Master | external PCM5102A or similar I2S DAC | use the JP1 candidate set GPIO50/GPIO52/GPIO51 only after bench verification |
-| Cue/PFL | onboard ES8311 path | ES8311 remains the monitor/headphones/onboard-speaker path |
+| Master | external PCM5102A I2S DAC | verified on GPIO50/GPIO52/GPIO51 through RCA and onboard 3.5 mm output |
+| Cue/PFL | FLX4 USB headphones | P4 sends monitor PCM to S3 over the inter-board I2S link; S3 streams it to the FLX4 USB Audio endpoint |
 
 Headphones Mix DSP is implemented in the P4 monitor path: FLX4 Headphones Mix
 raw `0` is cue/PFL, raw `16383` is master, and intermediate values blend cue
-with stereo master. This drives the ES8311 monitor/headphone buffer. It does
-not drive the physical DDJ-FLX4 headphone jack, because the current S3 USB host
-path enumerates the controller for MIDI only. Using the original FLX4 headphone
-jack would require a separate USB Audio Class host/streaming phase or a hardware
-analog monitor-output bridge to a headphone jack.
+with stereo master. The monitor buffer is sent over the P4-to-S3 I2S link and
+plays from the physical DDJ-FLX4 headphone jack through USB Audio Class. The
+old onboard ES8311/speaker path is disabled in the product profile to free the
+needed P4 I2S unit.
 
-Important: do not short a BTL speaker amplifier output to ground. The ES8311
-and amplifier path must be inspected before wiring headphones or line outputs.
+Important: do not short a BTL speaker amplifier output to ground. If the old
+ES8311/speaker path is ever revived, inspect the schematic and bench-measure it
+again before wiring headphones or line outputs.
 
 ## P4 Pins Mentioned In Current Plan
 
@@ -144,8 +142,8 @@ Runtime notes after hardware bring-up:
 
 - PCM5102A uses the P4 I2S1 channel as MAIN OUT when
   `CONFIG_BSP_PCM5102A_MAIN_OUT=y` is enabled in the local P4 build config.
-- ES8311 remains the monitor/onboard-speaker path and continues to receive the
-  monitor/headphone buffer.
+- ES8311/onboard monitor output is disabled in the current FLX4 USB headphones
+  product profile; the P4-to-S3 monitor PCM link owns the CUE/MONITOR path.
 - The audio engine must reconfigure the PCM5102A I2S clock to the current track
   sample rate when opening the shared output service. Leaving PCM5102A at its
   44.1 kHz BSP default while playing a 48 kHz track causes slow/popping audio

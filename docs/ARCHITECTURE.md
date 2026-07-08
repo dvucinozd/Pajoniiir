@@ -106,9 +106,9 @@ Current P4 audio ownership rule:
   `diagnostics` so hardware smoke tests can read one structured report instead
   of scraping log lines;
 - Beat FX state is P4-owned and read by both the physical Overview UI and
-  `/api/status`. Active firmware keeps ESP-Hosted Wi-Fi disabled, so the HTTP
-  server and captive DNS are not started until a real Wi-Fi/AP transport
-  initializes the TCP/IP stack;
+  `/api/status`. ESP-Hosted Wi-Fi is enabled only when the Settings
+  `wifi_remote` switch requests it; the HTTP server and captive DNS start after
+  hosted Wi-Fi/AP init succeeds and are fully torn down when the switch is off;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
 - MP3 preload uses smaller read chunks while audio output is active, and MP3
@@ -123,6 +123,10 @@ Current P4 Overview waveform ownership rule:
 
 - the Library/load path publishes deck-local waveform and beat-grid metadata,
   but it does not directly render the large main waveform;
+- Overview owns the visual chrome around that state: compact D1/D2 badges, the
+  title strip, BPM/pitch readouts, transport controls, deck VU meters, beat/phase
+  strip, and compact Beat FX rail. Those widgets render P4-owned deck, mixer,
+  and Beat FX state; they do not become new state owners;
 - the Overview scheduler owns main-waveform render/blit timing, including the
   shared Browse-rotate zoom window used by both deck panels;
 - the large main waveforms use direct RGB565/PPA overlays for performance, so a

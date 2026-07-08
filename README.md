@@ -108,7 +108,7 @@ idf.py build
 
 ## 📢 Current Status & Features
 
-The `master` branch is currently up to date and contains the Phase 7 extended-control work, including USB headphone support for the DDJ-FLX4 and official MIDI gap closures. All stale experimental branches have been reviewed, merged where appropriate, and deleted.
+The `master` branch is currently up to date and contains the Phase 7 extended-control work, Phase 9 Wi-Fi/web UI work, USB headphone support for the DDJ-FLX4, official MIDI gap closures, and the July 2026 P4 Settings/Overview UI polish. All stale experimental branches have been reviewed, merged where appropriate, and deleted.
 
 > [!WARNING]
 > Do not treat the entire system as fully plug-and-play ready for the DDJ-FLX4 yet. Significant progress has been made, but active testing is ongoing.
@@ -122,9 +122,10 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Limiter telemetry, clipping diagnostics, and persistent non-boosting Master Trim in Settings (NVS).
 - **LVGL User Interface**:
   - Interactive dual-deck layout with Pioneer-style Overview chrome.
-  - Centered beat/phase match guide lines, fixed-segment timers, and bounded title/timer invalidations.
+  - Compact Overview title strip with remaining-time pill, readable BPM/pitch indicators, centered beat/phase match guide lines, compact Beat FX rail, non-overlapping deck VU meters, and bounded title/timer invalidations.
   - Waveform loading deferred to Overview scheduler with automatic overlays redraw on track load.
   - Waveform zoom controls via Browse knob (4, 8, 12, 16, 24 beats).
+  - Settings polish with removed out-of-scope Key Shift UI, retired monitor-speaker switch removed, darker wireless switch states, and compact mixer/PFL status strip.
   - Custom boot splash screen (`PajoNiiiR` in Musieer font).
 - **Audio DSP & Mapping**:
   - Three-band channel EQ using FLX4 14-bit EQ knobs.
@@ -144,7 +145,7 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Batched MIDI OUT (up to 16 USB-MIDI packets per bulk transfer) so full LED snapshots survive the connect-time burst without queue drops.
 - **Physical LED Feedback**:
   - LED status updates for Play, Cue, PFL, active loops, Beat Sync, selected pad mode, Hot Cue slot status, and Beat FX ON/OFF.
-  - Onboard DevKitC-1 RGB status LED (WS2812 on GPIO48): red = FLX4 disconnected, green = connected, brighter flash on MIDI input traffic.
+  - Board-local S3 status LED feedback for FLX4 host modes: disconnected, connected, and MIDI activity states are shown without encoding playback state.
 - **Reconnection/Boot Recovery**:
   - Physical reconnection LED resynchronization.
   - S3 refreshes FLX4 LEDs periodically so that a P4-only reboot recovers state without replugging.
@@ -166,5 +167,5 @@ The primary milestone for DDJ-FFL4 is a stable, stand-alone two-deck playback sy
 ## 🚀 Extended Controller Plan
 
 Additional controls are implemented based on the vendored Mixxx XML configuration mapping (for MIDI status, message encoding, and 14-bit pairings) and the official Pioneer MIDI message list.
-For full details on the development timeline, see Phase 7 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+For full details on the development timeline, see Phases 7-10 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 

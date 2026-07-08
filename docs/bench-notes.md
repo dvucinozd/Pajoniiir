@@ -101,10 +101,10 @@ Python/toolchain paths until the local Espressif export environment is repaired.
 
 | Test | Firmware/example | Expected | Result | Notes |
 | --- | --- | --- | --- | --- |
-| ESP32-C6 hosted Wi-Fi firmware | Historical P4 build | P4 initializes hosted Wi-Fi without error | **PARKED** | Active DDJ-FFL4 firmware disabled ESP-Hosted on 2026-06-29; re-enable only if a Wi-Fi product path returns |
-| Web UI SoftAP | Historical P4 startup | SoftAP starts without a user-selectable link mode | **PARKED** | Hosted AP is no longer started by active firmware |
-| Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PARKED** | Web server code remains, but no hosted AP is active |
-| Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PARKED** | DNS code remains for future re-enable |
+| ESP32-C6 hosted Wi-Fi firmware | Current P4 build | P4 initializes hosted Wi-Fi only when Settings Wi-Fi Remote is ON | **PASS** | Re-enabled 2026-07-04 behind `app_settings.wifi_remote`; default off keeps RF quiet |
+| Web UI SoftAP | Current P4 startup | SoftAP starts after user enables Wi-Fi Remote | **PASS** | SoftAP `PAJONIIR` starts on `192.168.4.1` after hosted/AP init succeeds |
+| Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PASS** | Mobile controller reachable at `http://192.168.4.1` when Wi-Fi Remote is enabled |
+| Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PASS** | Captive DNS starts only after the Wi-Fi/AP stack is initialized |
 | Concurrent web load | Browser double-click/load spam | Second `/api/load` is rejected while load worker is busy | **PENDING** | Prevents concurrent P4 track load workers |
 
 ### Key P4 PSRAM & Performance Optimizations
@@ -171,10 +171,10 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | Audio output diagnostics | **PASS** | 2026-06-21 P4 run: `diag output late` warning spam removed by using a precise µs block period and a 2x-period outlier threshold. Dual-deck smoke reported `DIAG_OUTPUT_LATE_COUNT=0`, healthy rings, and stable decode timing. |
 | Stability under load | **PASS** | MUST preload MP3 to PSRAM + decode via `fmemopen`; streaming from USB during playback trips a USB-DWC channel assert (`usb_dwc_hal.c:502`) → reboot |
 | Decode task stack | Note | minimp3 needs ~26 KB → dedicated 32 KB decode task |
-| Output routing switch | **PASS** | SETTINGS speaker⟷RCA toggle drives PA (GPIO11); RCA mode mutes speaker (PA off), clean line-level on DAC_OUT_P/N |
-| Settings persistence (NVS) | **PASS** | `app_settings` stores audio out / backlight / time mode; power-cycle restored audio_out=1 (RCA) + backlight=46 and applied at boot |
+| Output routing topology | **PASS** | Current product path is PCM5102A RCA MAIN OUT plus FLX4 USB headphones. The retired Settings speaker/monitor switch was removed from active UI during the 2026-07-08 polish pass. |
+| Settings persistence (NVS) | **PASS** | `app_settings` stores master trim, backlight, time mode, and Wi-Fi Remote state; power-cycle persistence verified across Settings work |
 | PWM backlight | **PASS** | LEDC 10-bit @ 5 kHz on GPIO23; SETTINGS slider smoothly dims/brightens the panel |
-| Line-level output viable | Pending | verify ES8311 DAC_OUT_P/N → RCA jack wiring + line level in the chassis (board has speaker amp, RCA tap to be wired) |
+| Line-level output viable | **PASS** | PCM5102A MAIN OUT acceptance passed 2026-06-30 through RCA and onboard 3.5 mm output; ES8311 RCA tap is no longer the product path |
 
 ---
 
@@ -248,10 +248,12 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
   zero late warnings while aggregate output telemetry remained available.
 - ✅ `bsp_sd_init()` SDMMC (config/cache): `/sd` mounts on the JC4880 TF slot. Root cause of the
   earlier timeout was `SDMMC_HOST_DEFAULT()` selecting slot 1 while this board is wired to slot 0.
-- Line-level output: verify ES8311 DAC → RCA line level.
+- ✅ Line-level output: PCM5102A MAIN OUT RCA and onboard 3.5 mm output verified
+  on 2026-06-30; ES8311 DAC-to-RCA is no longer the product path.
 - ✅ Display tearing fix — DPI triple buffering wired into the flush (PPA → non-displayed fb,
   then draw_bitmap flips at frame boundary). Verified on hardware: no tearing.
-- UI polish — visual/interaction refinement across the 7 screens (open, scope TBD).
+- ✅ UI polish — visual/interaction refinement across Settings and Overview is
+  tracked in Phase 10 of `docs/DEVELOPMENT_PLAN.md`.
   - ✅ English labels + universal dim-on-press feedback; chrome palette centralised in `ui_theme.h`.
   - ✅ Header BPM/pitch were blank — **LVGL builtin `vsnprintf` has no `%f`** unless `LV_USE_FLOAT`
     is on (which also flips `lv_value_precise_t` to float — unwanted). Fix: format decimals via

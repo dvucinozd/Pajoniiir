@@ -68,9 +68,10 @@
   waveforms remain visible, and Browse-rotate zoom uses the shared
   4/8/12/16/24-beat steps.
 - Current P4 Overview polish keeps title/timer LVGL invalidation bounded,
-  stabilizes the blue-strip remaining-time display with fixed timer segments,
-  centers beat-match/phase indicators around the main playhead, removes weak
-  active-deck accent bars/borders, and uses taller Play/Cue touch targets.
+  uses a compact blue-strip remaining-time pill, keeps BPM and pitch readable,
+  centers beat-match/phase indicators around the main playhead, uses compact
+  D1/D2 deck badges, separates deck VU meters from Play/Cue touch targets, and
+  renders Beat FX as a compact right rail.
 - P4 UI Phase 6 is closed for the local touchscreen path: `ui.c` is now an
   887-line orchestrator, with Overview, Library, Controls, Performance tabs,
   Settings, Status, LVGL backend, renderer, scheduler, and frame-context logic
@@ -105,8 +106,8 @@
   BPM-synced DSP slice with P4-owned delay buffers, target-aware routing, and
   `/api/status.diagnostics.beat_fx_echo` telemetry; delay time is derived from
   target deck effective BPM with a 120 BPM fallback and 1000 ms cap. The
-  Overview Beat FX panel renders the same P4-owned
-  state with larger value text and active-state highlighting, and
+  Overview Beat FX rail renders the same P4-owned state with compact active
+  status, target/effect/depth readouts, and reduced overlap risk, and
   `/api/status.beat_fx` remains available for hardware smoke verification
   instead of raw serial logging when a network transport is present. Hardware
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
@@ -212,14 +213,19 @@
   is at `http://192.168.4.1`. The old Settings `link_mode`/`JOINED` selectors
   remain removed. (Historical: it was parked 2026-06-29 as a no-op shim for
   RF-quiet development.)
-- A separate runtime **S3 Debug AP** was added on the `codex/s3-ap-wifi-debug`
-  branch (`CONFIG_S3_DEBUG_AP_ENABLED=y`, default). It is independent of the P4
+- A separate runtime **S3 Debug AP** was added and merged to `master`
+  (`CONFIG_S3_DEBUG_AP_ENABLED=y`, default). It is independent of the P4
   Wi-Fi remote: the S3 hosts its own open SoftAP `PajoNiiiR-S3-DEBUG` +
   read-only live log viewer at `http://192.168.4.1`, toggled from a
   non-persisted P4 Settings switch over `CTRL_ID_S3_DEBUG_AP` (`0x82`/`0x85`).
   OFF at every boot; P4 also sends OFF at boot as a safe reset. Host tests and
-  both firmware builds pass; hardware smoke (below) is still pending. See
+  both firmware builds pass; AP/live-log hardware smoke passed on 2026-07-08.
+  See
   `docs/S3_WIFI_DEBUG_LOG.md` and `docs/CONTROL_LINK_PROTOCOL.md`.
+- Settings UI polish on 2026-07-08 removed Key Shift presentation from active
+  UI, removed the retired monitor-speaker switch, changed wireless switch off
+  states to stay dark/non-white, and replaced the lower mixer/PFL routing block
+  with a compact status strip.
 
 ## First Firmware Task
 
@@ -314,11 +320,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   `docs/DDJ_FLX4_MIDI_MAP.md`.
   Trim/pregain, three-band EQ, and Headphones Mix now have P4 DSP behavior.
   Filter is used by Smart CFX while enabled, with HI/LOW hardware smoke passed
-  on 2026-07-01. Headphones Mix is host-tested for the P4 ES8311 monitor path;
-  the original FLX4 headphone jack remains out of scope until a USB Audio Class
-  or analog bridge phase is added. MASTER CUE is implemented from the official
-  MIDI list as a P4-owned monitor master-cue gate with LED feedback; hardware
-  smoke passed on 2026-07-02.
+  on 2026-07-01. Headphones Mix and Headphones Level now feed the FLX4 USB
+  headphone path, with audible hardware smoke passed on 2026-07-07. MASTER CUE
+  is implemented from the official MIDI list as a P4-owned monitor master-cue
+  gate with LED feedback; hardware smoke passed on 2026-07-02.
 - [x] Connect supported FLX4 pad mode inputs to P4-owned semantic pad mode
   state.
   Hot Cue, Pad FX1/2, Beat Jump, and Beat Loop are mapped where noted in the
@@ -378,8 +383,8 @@ Mixxx JavaScript behavior is not imported.
 
 ## S3 Debug AP Smoke Test
 
-Runtime S3 Wi-Fi debug AP on the `codex/s3-ap-wifi-debug` branch. Hardware smoke
-passed on 2026-07-08 (S3 on COM6, P4 on COM15) after two fixes below:
+Runtime S3 Wi-Fi debug AP on `master`. Hardware smoke passed on 2026-07-08
+(S3 on COM6, P4 on COM15) after two fixes below:
 
 - [x] Flash current S3 (COM6) and P4 (COM15) firmware.
 - [x] Boot with the P4 Settings `S3 DEBUG AP` switch OFF; no `PajoNiiiR-S3-DEBUG`

@@ -384,8 +384,8 @@ Validation note, 2026-06-10:
   lighter played overlay color.
 - Functional GUI element pass is complete for the current scope: performance
   tabs expose utility/status strips, the retired Key Shift screen has been
-  removed from the local P4 UI, Settings has a mixer/PFL routing block, and
-  Overview owns per-deck cue marker objects for D1 and D2.
+  removed from the local P4 UI, Settings uses compact audio/wireless/status
+  sections, and Overview owns per-deck cue marker objects for D1 and D2.
 - First Overview polish pass now follows the Pioneered reference more closely:
   the two deck waveforms live in the upper overview area, Beat FX is a compact
   right-side stack, and the deck metadata is split into two lower deck strips.
@@ -540,8 +540,8 @@ Validation note, 2026-06-10:
   - Relocated beat pulse indicators (flashing boxes) below the lower waveform.
     Later polish derives both rows from the lower waveform bottom and the
     overview playhead center instead of fixed pixel positions.
-  - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the DECK 1 and DECK 2 labels.
-  - Resized the `panel->label_deck` ("DECK 1" / "DECK 2") to **76x38px** to match the dimensions of the Play/Cue buttons, reduced the font size to **16** (`lv_font_montserrat_16`), centered the text (with a top padding of **10px**), and replaced the white play-state outline with a neon green (`COL_GREEN`) PFL outline on a neutral background.
+  - Removed the redundant status indicator labels (`panel->label_status` showing "LOADED", "PLAY" etc.) below the deck labels.
+  - Later UI polish replaced the larger `DECK 1` / `DECK 2` labels with compact `D1` / `D2` badges, separated the VU meters from the Play/Cue touch targets, and added static layout guards so the VU channel cannot overlap the transport buttons or deck badges.
 - **Time formatting and Web Control performance optimization (2026-06-17)**:
   - Removed centiseconds from time representation and applied `hh:mm:ss` format across the physical screen (Overview status, deck panels, and Performance tabs) and the mobile web controller interface.
   - Suppressed synchronous and blocking UART logging (`ESP_LOGI` to `ESP_LOGD`) for the status API (`/api/status`) and DNS/Captive Portal redirects, resolving main waveform micro-stuttering.
@@ -608,12 +608,12 @@ conservative crossfader transition-assist curve with hardware smoke passed on
 2026-07-01.
 Beat FX section mapping and the first P4-owned state
 model are implemented for effect select, beat size, target, depth, on/off, and
-clear/reset. The Overview right-side Beat FX panel renders that P4-owned
-snapshot directly, and `/api/status` exposes the same Beat FX snapshot for smoke
-testing without serial log spam when a network transport is present. The HTTP
-server and captive DNS remain disabled while the `wifi_link` shim returns
-`ESP_ERR_NOT_SUPPORTED`; starting `esp_http_server` without an initialized
-TCP/IP stack causes a boot-time lwIP assertion on P4. Beat FX FILTER now applies
+clear/reset. The Overview Beat FX rail renders that P4-owned snapshot directly,
+and `/api/status` exposes the same Beat FX snapshot for smoke testing without
+serial log spam when Wi-Fi Remote is enabled. HTTP server and captive DNS
+startup remain gated behind successful ESP-Hosted Wi-Fi/AP init because starting
+`esp_http_server` without an initialized TCP/IP stack causes a boot-time lwIP
+assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
 Beat FX Echo/delay has a BPM-synced DSP slice: P4 owns the delay lines,
@@ -956,3 +956,27 @@ Implemented and hardware-verified on COM15/COM3; all P4 and S3 host tests pass.
   as LVGL lines on the mini; translucent warm-amber played-progress overlay on the
   mini. All large-waveform overlays are baked into the scrolling RGB565 strip so
   they PPA-blit atomically (no LVGL-over-PPA flicker).
+
+## Phase 10: P4 Settings And Overview UI Polish (2026-07-08)
+
+Status: implemented, committed to `master`, pushed, and flashed through
+`RC1-51-g6fb0bc4f` on P4 `COM15`.
+
+- **Settings cleanup.** Out-of-scope Key Shift UI was removed from the active
+  product surface, the retired monitor-speaker switch was removed, wireless
+  switches keep dark off states instead of white inactive blocks, and the lower
+  mixer/PFL routing block was collapsed into a compact status strip.
+- **Overview title and deck data polish.** The blue top strip now uses compact
+  bounded content with a remaining-time pill and clearer BPM/pitch readouts.
+  Pitch percent was enlarged so it remains readable on the P4 screen.
+- **Overview VU placement.** Deck VU meters were moved into a narrow left-side
+  channel separate from Play/Cue, then the deck labels were shortened from
+  `DECK 1`/`DECK 2` to compact `D1`/`D2` badges to remove the final overlap.
+  Static layout guards cover the VU channel, transport targets, and badge
+  positions.
+- **Overview Beat FX rail.** The former larger right-side Beat FX block was
+  replaced by a compact rail that shows the P4-owned effect, target, beat/depth,
+  and enabled state without colliding with waveform or transport content.
+- **Build/flash acceptance.** Each UI slice passed the P4 ESP-IDF build before
+  commit. The latest flashed UI polish is `RC1-51-g6fb0bc4f`, following the Beat
+  FX rail (`RC1-49-g72c7985c`) and VU placement (`RC1-50-g1e4cd72b`) flashes.

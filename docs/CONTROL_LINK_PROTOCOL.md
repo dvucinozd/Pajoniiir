@@ -92,7 +92,7 @@ test.
 | `0x52` | Crossfader | `0..16383` |
 | `0x53` | Deck 1 PFL | `0` release, `1` press/toggle |
 | `0x54` | Deck 2 PFL | `0` release, `1` press/toggle |
-| `0x55`-`0x5F` | Trim, EQ, Filter, Headphone Mix | `0..16383`; P4 DSP behavior deferred |
+| `0x55`-`0x5F` | Trim, EQ, Filter, Headphone Mix | `0..16383`; P4 applies trim/pregain, three-band EQ, Smart CFX filter use, and headphone mix DSP |
 | `0x60` | Browse delta | signed delta |
 | `0x61` | Load Deck 1 | `0` release, `1` press |
 | `0x62` | Load Deck 2 | `0` release, `1` press |
@@ -205,20 +205,22 @@ P4 also owns reconnect recovery. When S3 reports
 P4-owned LED snapshot for Deck 1/2 Cue, Play, PFL, selected supported pad mode,
 Beat Sync enabled state, active Loop In/Out state, Beat Loop pad state,
 momentary Pad FX pad state, Censor active state, Smart CFX/Fader state, the
-global Beat FX ON/OFF enabled state, and the global Master Cue monitor state.
+global Beat FX ON/OFF enabled state, Track Load Deck 1/2 illumination, and the
+global Master Cue monitor state.
 Host tests verify normal diff
 suppression, failed-send retry, and forced reconnect publication. Transport
-reconnect smoke has passed for Play/Cue/PFL; extended pad-mode/sync/loop
-reconnect smoke remains an acceptance item.
+reconnect smoke has passed for Play/Cue/PFL, extended pad-mode/sync/loop
+reconnect, USB replug, S3 reset, and P4 heartbeat connected-state refresh where
+recorded in the startup checklist.
 
 The new Censor LED is snapshot-driven from P4 `deck_state_t.censor_active`.
-The Cue+Shift / track-start, Loop Adjust In, Loop Adjust Out, and Track Load
-illumination IDs are mapped by S3 to the official FLX4 output packets for
-future P4 use, but they are not part of the reconnect-safe snapshot until P4
-owns a real persistent or momentary state for those indicators. Beat Jump pad
-LED output remains a deferred-state candidate. Sampler, Keyboard/Stems, and Key
-Shift mode/pad behavior is out of product scope as of 2026-07-07; their numeric
-IDs remain reserved for compatibility and reconnect OFF output only.
+Cue+Shift / track-start, Loop Adjust In, and Loop Adjust Out are P4-owned
+momentary LED flashes. Track Load Deck 1/2 illumination follows P4 audio-engine
+loaded state and is included in reconnect refresh. Beat Jump normal pad LEDs and
+shifted helper LEDs 7/8 are implemented from P4 loaded-track/mode/shift state.
+Sampler, Keyboard/Stems, and Key Shift mode/pad behavior is out of product scope
+as of 2026-07-07; their numeric IDs remain reserved for compatibility and
+reconnect OFF output only.
 
 In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
 after each heartbeat while the USB MIDI device remains open. This is

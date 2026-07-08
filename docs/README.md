@@ -16,6 +16,7 @@ CDJ100S/P4 standalone context from the imported project.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active staged DDJ-FLX4 plan
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) - current bootstrap/hardware checklist
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) - remaining technical risks
+- [`bench-notes.md`](bench-notes.md) - current hardware smoke notes and bench results
 
 ## Validation Records
 
@@ -36,10 +37,11 @@ CDJ100S/P4 standalone context from the imported project.
 
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active DDJ-FLX4 staged implementation plan
 - [`development-plan.md`](development-plan.md) - legacy CDJ100S/P4 standalone plan retained for reference
+- [`task.md`](task.md) - historical local checklist from earlier visual beatgrid/UI work
 
 ## Hardware Bringup
 
-- [`bench-notes.md`](bench-notes.md) — hardware smoke test results (ESP32-S3 + P4 display/touch/USB/audio confirmed)
+- [`bench-notes.md`](bench-notes.md) — hardware smoke test results (ESP32-S3 + P4 display/touch/USB/audio/Wi-Fi confirmed)
 - [`wiring-map.md`](wiring-map.md) — CDJ front panel → ESP32-S3 GPIO assignments (confirmed)
 
 ## Local Inputs (not in git)

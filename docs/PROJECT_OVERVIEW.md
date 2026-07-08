@@ -79,9 +79,11 @@ The fork is no longer only the imported single-deck baseline:
   mixer, seek). A 2026-07-04 audit added RELAXED atomics for shared audio/mixer
   state, clean load-failure abort, and dynamically-sized web status JSON, and a
   USB-disconnect crash (ungated track-meta-cache `stat()`) was fixed.
-- The current Overview UI uses Pioneered-style deck strips, centered beat/phase
-  indicators, fixed-segment blue-strip timers, and bounded title/timer
-  invalidation so status chrome does not create continuous redraw pressure.
+- The current Overview UI uses Pioneered-style deck strips, compact D1/D2 deck
+  badges, a separated transport/VU lane, centered beat/phase indicators, a
+  compact blue title strip with remaining-time pill, readable BPM/pitch
+  indicators, a compact Beat FX rail, and bounded title/timer invalidation so
+  status chrome does not create continuous redraw pressure.
 - Overview waveform loading and zoom are stabilized for the current dual-deck
   path: Browse rotate controls a shared 4/8/12/16/24-beat main-waveform zoom
   while Overview is active, track load defers main waveform rendering to the
@@ -103,6 +105,10 @@ The fork is no longer only the imported single-deck baseline:
   semantic button events. P4 now owns their state, LED feedback, status
   exposure, Smart CFX filter DSP with softened raw/effective control travel,
   and Smart Fader transition-assist behavior.
+- Settings UI polish removed out-of-scope Key Shift presentation, removed the
+  retired monitor-speaker switch from the active UI, darkened wireless switch
+  off states, and collapsed the lower mixer/PFL routing block into a compact
+  status strip.
 - Hot Cue pad behavior is implemented on P4: an empty pad stores the current
   per-track deck position, an occupied pad recalls it with audio seek, and
   Shift + pad clears the slot. Deck 1 hardware behavior smoke passed on
@@ -151,7 +157,7 @@ The fork is no longer only the imported single-deck baseline:
   sync state.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
   filter curve, Smart Fader transition-assist V1 behavior, Beat FX FILTER,
-  first fixed-delay Echo slice, and host-tested Pad FX DSP/input/LED slice.
+  BPM-synced Echo slice, and host-tested Pad FX DSP/input/LED slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.
@@ -176,6 +182,7 @@ implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-Remaining hardware-facing items: line-out (RCA) validation, native FLX4 beat
-LED feedback from the PQTZ beatgrid, and the full S3-driven control hardware
-pass.
+Remaining hardware-facing items: native FLX4 beat LED feedback from the PQTZ
+beatgrid, selected shifted-control hardware acceptance where still marked in
+the MIDI map, and a full end-to-end S3/P4/FLX4 regression pass after the next
+major control or UI batch.
