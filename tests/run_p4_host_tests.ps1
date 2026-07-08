@@ -748,6 +748,20 @@ $tests = @(
             "s3_constants.c",
             "p4_constants.c"
         )
+    },
+    @{
+        Name = "controller_profile_manager"
+        Dir = "tests/controller_profile_manager"
+        Target = "test_controller_profile_manager.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
+            "-o", "test_controller_profile_manager.exe",
+            "test_controller_profile_manager.c",
+            "../../firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c"
+        )
     }
 )
 

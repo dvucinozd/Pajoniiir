@@ -12,6 +12,9 @@
 #include "web_server.h"
 #include "sd_diag_log.h"
 #include "sdkconfig.h"
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+#include "controller_profile_manager.h"
+#endif
 #if CONFIG_MONITOR_PCM_LINK_ENABLED
 #include "monitor_pcm_link.h"
 #endif
@@ -93,6 +96,16 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_audio_init());
     ESP_ERROR_CHECK(bsp_sd_init());
     sd_diag_log_init();
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    // Controller profiles live on the SD/TF card; a missing directory is
+    // normal (no profiles yet) and must not block boot.
+    ESP_ERROR_CHECK(controller_profile_manager_init());
+    esp_err_t profile_rc = controller_profile_manager_scan_storage();
+    if (profile_rc != ESP_OK && profile_rc != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "controller profile scan: %s", esp_err_to_name(profile_rc));
+    }
+#endif
 
     // Apply the saved monitor speaker route + backlight brightness.
     bsp_audio_set_output(app_settings_get().audio_out ? BSP_AUDIO_OUT_RCA
