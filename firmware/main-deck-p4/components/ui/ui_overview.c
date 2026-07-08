@@ -152,13 +152,15 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_INFO_ROW_Y 346
 #define OVERVIEW_TIME_Y 354
 #define OVERVIEW_MIX_ROW_Y 370
-#define OVERVIEW_BPM_X 184
+#define OVERVIEW_BPM_X 170
 #define OVERVIEW_BPM_Y 348
-#define OVERVIEW_BPM_W 58
-#define OVERVIEW_BPM_TAG_X 246
-#define OVERVIEW_PITCH_X 282
-#define OVERVIEW_PITCH_Y 350
-#define OVERVIEW_PITCH_W 108
+#define OVERVIEW_BPM_W 92
+#define OVERVIEW_BPM_TAG_X 264
+#define OVERVIEW_PITCH_X 302
+#define OVERVIEW_PITCH_Y 346
+#define OVERVIEW_PITCH_CHIP_W 94
+#define OVERVIEW_PITCH_CHIP_H 28
+#define OVERVIEW_PITCH_W OVERVIEW_PITCH_CHIP_W
 #define OVERVIEW_MINI_WAVE_Y 386
 #define OVERVIEW_TIME_UPDATE_MS 50u
 #define OVERVIEW_SIDE_BTN_H 38
@@ -598,11 +600,18 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_add_flag(panel->label_remain, LV_OBJ_FLAG_HIDDEN);
     panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                COL_TEXT, info_x + OVERVIEW_BPM_X,
-                                               OVERVIEW_BPM_Y, OVERVIEW_BPM_W, "120");
+                                               OVERVIEW_BPM_Y, OVERVIEW_BPM_W, "120.00");
     lv_obj_set_style_text_align(panel->label_bpm, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-    panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_16,
-                                                 COL_TEXT_MUTED, info_x + OVERVIEW_PITCH_X,
+    panel->label_pitch = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
+                                                 COL_GREEN, info_x + OVERVIEW_PITCH_X,
                                                  OVERVIEW_PITCH_Y, OVERVIEW_PITCH_W, "+0.00%");
+    lv_obj_set_size(panel->label_pitch, OVERVIEW_PITCH_CHIP_W, OVERVIEW_PITCH_CHIP_H);
+    lv_obj_set_style_text_align(panel->label_pitch, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(panel->label_pitch, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->label_pitch, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->label_pitch, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->label_pitch, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(panel->label_pitch, 2, LV_PART_MAIN);
 
     ui_overview_bar(panel->panel, info_x, OVERVIEW_INFO_DIVIDER_Y, OVERVIEW_DECK_INFO_W, 1, COL_BORDER);
     ui_overview_value_label(panel->panel, &lv_font_montserrat_12, COL_TEXT_MUTED,
@@ -1661,6 +1670,37 @@ static uint64_t ui_monotonic_time_us(void)
 #endif
 }
 
+static int32_t ui_overview_pitch_centipercent(const deck_state_t *state)
+{
+    if (!state) {
+        return 0;
+    }
+#ifndef WIN32
+    return state->pitch_centipercent;
+#else
+    if (state->pitch_centipercent != 0) {
+        return state->pitch_centipercent;
+    }
+    int32_t raw = state->pitch;
+    if (raw < 0) raw = 0;
+    if (raw > 16383) raw = 16383;
+    return ((8192 - raw) * 1000) / 8192;
+#endif
+}
+
+static uint32_t ui_overview_base_bpm_x100(uint8_t idx)
+{
+    idx = ui_overview_deck_index(idx);
+    const anlz_metadata_t *meta = s_overview_deck_meta[idx];
+    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
+        return meta->beats[0].bpm_x100;
+    }
+    if (s_overview_deck_bpm[idx] > 0) {
+        return (uint32_t)s_overview_deck_bpm[idx] * 100u;
+    }
+    return 12000u;
+}
+
 static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
 {
     if (!state) {
@@ -1745,23 +1785,25 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
         ui_label_set_text_if_changed(panel->label_remain, text);
     }
 
-    float pitch_pct;
-#ifndef WIN32
-    pitch_pct = deck_core_pitch_percent(state);
-#else
-    pitch_pct = ((8192.0f - (float)state->pitch) / 8192.0f) * 10.0f;
-#endif
-    uint16_t base_bpm = s_overview_deck_bpm[idx];
-    float current_bpm = (float)(base_bpm ? base_bpm : 120) * (1.0f + (pitch_pct / 100.0f));
-    char bpm_text[8];
-    snprintf(bpm_text, sizeof(bpm_text), "%u", (unsigned)(current_bpm + 0.5f));
+    int32_t pitch_centipct = ui_overview_pitch_centipercent(state);
+    uint32_t base_bpm_x100 = ui_overview_base_bpm_x100(idx);
+    int32_t speed_centipct = 10000 + pitch_centipct;
+    if (speed_centipct < 1) {
+        speed_centipct = 1;
+    }
+    uint32_t bpm_centi = (uint32_t)(((uint64_t)base_bpm_x100 *
+                                     (uint64_t)speed_centipct + 5000u) / 10000u);
+    char bpm_text[12];
+    snprintf(bpm_text, sizeof(bpm_text), "%u.%02u",
+             (unsigned)(bpm_centi / 100u),
+             (unsigned)(bpm_centi % 100u));
     ui_label_set_text_if_changed(panel->label_bpm, bpm_text);
-    int pc = (int)(pitch_pct * 100.0f + (pitch_pct >= 0.0f ? 0.5f : -0.5f));
     char pitch_text[16];
+    int pitch_abs = (int)(pitch_centipct < 0 ? -pitch_centipct : pitch_centipct);
     snprintf(pitch_text, sizeof(pitch_text), "%c%d.%02d%%",
-             (pc < 0) ? '-' : '+',
-             (pc < 0 ? -pc : pc) / 100,
-             (pc < 0 ? -pc : pc) % 100);
+             (pitch_centipct < 0) ? '-' : '+',
+             pitch_abs / 100,
+             pitch_abs % 100);
     ui_label_set_text_if_changed(panel->label_pitch, pitch_text);
 
     ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,

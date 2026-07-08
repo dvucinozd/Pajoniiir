@@ -250,6 +250,25 @@ Assert-FileDoesNotContain `
         "OVERVIEW_PHASE_Y"
     )
 
+Assert-FileContains `
+    -Name "P4 Overview tempo cluster keeps pitch readable" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_PITCH_CHIP_W",
+        "lv_font_montserrat_18",
+        "lv_obj_set_style_bg_color(panel->label_pitch, COL_PANEL_DK",
+        "lv_obj_set_style_border_color(panel->label_pitch, COL_GREEN"
+    )
+
+Assert-FileContains `
+    -Name "P4 Overview tempo cluster displays decimal effective BPM" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "ui_overview_base_bpm_x100",
+        "bpm_centi",
+        "%u.%02u"
+    )
+
 Assert-FileDoesNotContain `
     -Name "deck_core UI-only buttons use semantic button mapping" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
