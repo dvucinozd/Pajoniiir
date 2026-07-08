@@ -7,6 +7,7 @@
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
+#include "controller_profile_runtime.h"
 #include "status_led.h"
 #else
 #include "midi_compat.h"
@@ -106,9 +107,11 @@ static bool flx4_send_snapshot_event(uint8_t type, uint8_t id, int16_t value, vo
 static void flx4_replay_known_input_snapshot(void)
 {
     flx4_snapshot_replay_ctx_t replay = { 0 };
-    size_t known = flx4_map_emit_snapshot(&s_flx4_map,
-                                          flx4_send_snapshot_event,
-                                          &replay);
+    /* A dynamic profile, once activated, owns the input map (and its own
+     * replay set); otherwise fall back to the built-in FLX4 map. */
+    size_t known = controller_profile_runtime_active()
+        ? controller_profile_runtime_emit_snapshot(flx4_send_snapshot_event, &replay)
+        : flx4_map_emit_snapshot(&s_flx4_map, flx4_send_snapshot_event, &replay);
     if (known > 0 || replay.failed > 0) {
         ESP_LOGD(TAG, "FLX4 input snapshot replay known=%u sent=%u failed=%u",
                  (unsigned)known, (unsigned)replay.sent, (unsigned)replay.failed);
@@ -210,11 +213,29 @@ static void flx4_enqueue_event(const flx4_control_event_t *ev)
     flx4_translator_warn_rate_limited();
 }
 
+static bool flx4_profile_activate_cb(const uint8_t *blob, size_t len,
+                                     uint16_t vid, uint16_t pid)
+{
+    return controller_profile_runtime_activate(blob, len, vid, pid);
+}
+
 static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
 {
     (void)user_ctx;
+    if (!msg || msg->len < 3) {
+        return;
+    }
     flx4_control_event_t ev;
-    if (flx4_map_message(&s_flx4_map, msg, &ev)) {
+    bool mapped;
+    /* Prefer the active dynamic profile; fall back to the built-in FLX4 map
+     * when none has been transferred/activated. */
+    if (controller_profile_runtime_active()) {
+        mapped = controller_profile_runtime_map(msg->status, msg->data1, msg->data2,
+                                                &ev.type, &ev.id, &ev.value);
+    } else {
+        mapped = flx4_map_message(&s_flx4_map, msg, &ev);
+    }
+    if (mapped) {
         flx4_enqueue_event(&ev);
     } else {
         s_flx4_unsupported_count++;
@@ -246,9 +267,11 @@ void app_main(void)
         ESP_LOGW(TAG, "status LED unavailable; continuing without it");
     }
     flx4_map_init(&s_flx4_map);
+    controller_profile_runtime_init();
     s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
     ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(control_link_init(NULL));
+    control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
     ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
     flx4_midi_host_set_message_callback(flx4_midi_message_cb, NULL);

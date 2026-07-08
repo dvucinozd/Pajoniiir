@@ -340,6 +340,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
     -Patterns @("handle_profile_frame", "cp_xfer_rx_begin", "cp_xfer_rx_chunk", "cp_xfer_rx_end", "send_profile_reply_ack", "control_link_get_stored_profile")
 
+Assert-FileContains `
+    -Name "s3 routes MIDI through the dynamic profile with FLX4 fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("controller_profile_runtime_active", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
+
 # The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
 # identical on the S3 and P4 sides so the link cannot disagree on the wire.
 function Assert-FilesIdentical {
@@ -479,6 +484,21 @@ $tests = @(
             "../../firmware/control-board-s3/components/controller_profile/controller_profile.c",
             "../../firmware/control-board-s3/components/flx4_midi_host/flx4_map.c",
             "../../firmware/control-board-s3/components/control_link/flx4_led_midi.c"
+        )
+    },
+    @{
+        Name = "controller_profile_runtime"
+        Dir = "tests/controller_profile_runtime"
+        Target = "test_controller_profile_runtime.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DCONTROLLER_PROFILE_RUNTIME_PC_TEST",
+            "-I../../firmware/control-board-s3/components/controller_profile_runtime/include",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-o", "test_controller_profile_runtime.exe",
+            "test_controller_profile_runtime.c",
+            "../../firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
         )
     },
     @{
