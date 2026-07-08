@@ -980,3 +980,48 @@ Status: implemented, committed to `master`, pushed, and flashed through
 - **Build/flash acceptance.** Each UI slice passed the P4 ESP-IDF build before
   commit. The latest flashed UI polish is `RC1-51-g6fb0bc4f`, following the Beat
   FX rail (`RC1-49-g72c7985c`) and VU placement (`RC1-50-g1e4cd72b`) flashes.
+
+## Phase 11: Data-Driven Multi-Controller Platform (2026-07-09)
+
+Status: firmware side implemented, host-tested, committed to `master`, pushed,
+and flashed; profile-loading path hardware-verified (P4 `/api/status` reports
+`profiles:1`). Windows Profile Builder and a first non-FLX4 controller remain
+out of firmware scope. Design source: `Plan 2` (multi-controller with S3 kept as
+generic controller host). Format spec: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
+
+Goal: support DJ controllers beyond the DDJ-FLX4 without a firmware rebuild, by
+moving the controller-specific MIDI/LED mapping into data profiles the S3
+executes. The FLX4 becomes the first profile; its built-in C map stays as a
+fallback. The P4 remains the sole authority for deck/audio/UI/mixer state.
+
+- **Profile format + compiler.** `docs/CONTROLLER_PROFILE_SCHEMA.md` defines the
+  editable `profile.json` and the compact binary `profile.s3bin` (S3CP: 32-byte
+  header + 16-byte input entries + 12-byte output entries + CRC32).
+  `tools/controller_profile/compile_profile.py` compiles JSON → S3BIN (+`--dump`).
+  A hand-written FLX4 `profile.json` transcribes `flx4_map.c` +
+  `flx4_led_midi.c`.
+- **Parser + matcher (S3).** `controller_profile` is a pure-C S3CP parser and
+  table-driven MIDI-in matcher + LED-out mapper. A golden-parity host test
+  proves the compiled FLX4 profile is byte-equivalent to the built-in map
+  (12288-message input sweep, snapshot parity, 690-combo LED parity).
+- **Profile manager (P4).** `controller_profile_manager` scans
+  `/sd/controllers/<name>/profile.s3bin` at boot, validates headers, keeps a
+  registry, and matches the connected controller by VID/PID.
+- **0xA6 bulk transport.** A variable-length frame layer on the same UART
+  (`ctrl_bulk.c`, byte-identical both sides) carries the S3→P4 controller
+  descriptor report and the P4→S3 profile transfer
+  (BEGIN/CHUNK/END/ACK/NACK/ACTIVATE/STATUS/CLEAR) with CRC16 frames and a
+  CRC32-verified reassembly (`cp_xfer.c`). See `docs/CONTROL_LINK_PROTOCOL.md`.
+- **Dynamic mapping (S3).** `controller_profile_runtime` holds the active
+  profile; `app_main` routes MIDI-in, LED-out, and reconnect input-snapshot
+  replay through it when active, falling back to the built-in FLX4 map
+  otherwise.
+- **Status reporting (P4).** `/api/status` gains a `controller` object
+  (present, VID/PID, product, MIDI/audio capability, active profile, profile
+  count) so the operator can see why a controller works without a serial log.
+
+Acceptance met: S3 + P4 host tests pass; both `idf.py` builds pass; on hardware
+the SD profile loads into the P4 registry and `/api/status` reports `profiles:1`.
+End-to-end with a physical FLX4 connected (descriptor → match → transfer →
+activate → dynamic mapping) is wired and builds; final controller-attached smoke
+is pending controller availability.

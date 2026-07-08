@@ -28,6 +28,10 @@ Baud rate: `115200`.
 | S3 -> P4 | `0x82` | semantic state: FLX4 USB connection state, S3 Debug AP status |
 | P4 -> S3 | `0x81` | LED |
 | P4 -> S3 | `0x82` | semantic command: S3 Debug AP enable request |
+| both | `0xA6` | variable-length bulk frame: controller descriptor + profile transfer (see [0xA6 Bulk Frame Layer](#0xa6-bulk-frame-layer-controller-profiles)) |
+
+The `0xA6` byte starts a separate variable-length frame that never collides
+with the fixed 7-byte `0xA5` frame; a receiver routes on the start byte.
 
 ## DDJ-FFL4 Semantic Namespace
 
@@ -317,6 +321,75 @@ Handshake and ownership:
 
 The `control_link_protocol` host test asserts `CTRL_ID_S3_DEBUG_AP` and the
 `CTRL_S3_DEBUG_AP_*` status enum stay byte-for-byte aligned across both targets.
+
+## 0xA6 Bulk Frame Layer (controller profiles)
+
+The 7-byte `0xA5` frame carries small semantic events. Payloads that do not fit
+it — the connected-controller descriptor and compiled controller profiles — use
+a second, variable-length frame type on the **same UART**, distinguished by a
+different start byte (`0xA6`). This is the transport for the data-driven
+multi-controller platform (see `docs/CONTROLLER_PROFILE_SCHEMA.md`).
+
+Frame layout:
+
+```text
+[0] 0xA6        start byte
+[1] type        CTRL_BULK_TYPE_* below
+[2] seq         rolling sequence counter
+[3] len         payload length, 0..128
+[4..4+len)      payload
+[4+len]         crc16_lo
+[5+len]         crc16_hi
+```
+
+`crc16` is CRC16-CCITT (poly `0x1021`, init `0xFFFF`, no reflection) over bytes
+`[1 .. 4+len)`. The frame codec (`ctrl_bulk.c`) and the profile-transfer
+receiver (`cp_xfer.c`) are kept **byte-for-byte identical** on the S3 and P4
+sides; the S3 host runner asserts the two file copies match, and
+`control_link_protocol` asserts the shared constants agree.
+
+| Type | Dir | Meaning |
+| ---: | --- | --- |
+| `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + product string |
+| `0x02` PROFILE_BEGIN | P4 -> S3 | total_size + transfer crc32 + vid/pid |
+| `0x03` PROFILE_CHUNK | P4 -> S3 | offset + profile bytes |
+| `0x04` PROFILE_END | P4 -> S3 | end of stream (triggers crc32 verify) |
+| `0x05` PROFILE_ACK | S3 -> P4 | acked frame type |
+| `0x06` PROFILE_NACK | S3 -> P4 | nacked frame type + reason |
+| `0x07` PROFILE_ACTIVATE | P4 -> S3 | activate the received profile |
+| `0x08` PROFILE_STATUS | S3 -> P4 | transfer state + vid/pid |
+| `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile (fall back to built-in) |
+
+### Controller descriptor report (S3 -> P4)
+
+When the S3 opens a controller it sends `CONTROLLER_DESCRIPTOR` with VID, PID,
+capability bits (`CTRL_DESC_CAP_MIDI_IN/MIDI_OUT/USB_AUDIO`), and a 32-byte
+product string. It is re-sent with every connection-state publish and heartbeat
+refresh, so a P4-only reboot re-learns the controller. The P4
+`controller_profile_manager` matches the VID/PID against profiles on the SD/TF
+card and selects the active profile.
+
+### Profile transfer (P4 -> S3)
+
+On a VID/PID match the P4 streams the compiled `.s3bin` to the S3 off the RX
+task: `BEGIN`, sequential in-order `CHUNK`s (each with a byte offset so a drop
+is caught immediately), then `END`. The S3 reassembles into a buffer, verifies
+the transfer `crc32`, and `ACK`s (or `NACK`s with `ctrl_profile_nack_t`:
+`SIZE`/`STATE`/`OFFSET`/`CRC`/`PARSE`). The P4 then sends `ACTIVATE`; the S3
+parses the stored blob and installs it as the active profile. The P4 sender
+waits for each stage's ACK with retry + timeout; a `NACK` restarts the transfer.
+Because the S3CP file carries its own internal crc32 in addition to the
+transfer crc32, a profile is double-checked before use.
+
+### Dynamic mapping and fallback
+
+Once a profile is active, the S3 maps controller MIDI IN through the profile's
+input table (`controller_profile_runtime`) instead of the built-in `flx4_map`,
+and maps P4 LED frames through the profile's output table instead of
+`flx4_led_midi`. When no profile is active it falls back to the built-in FLX4
+map on both paths. The FLX4 `profile.s3bin` is proven byte-equivalent to the
+built-in map by a golden-parity host test, so the dynamic path reproduces the
+built-in behaviour exactly.
 
 ## Future Protocol Versioning
 

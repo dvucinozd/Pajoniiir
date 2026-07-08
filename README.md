@@ -55,10 +55,22 @@ tests/                PC-side test harnesses inherited from CDJ100S-XXX
 - [Architecture](docs/ARCHITECTURE.md)
 - [DDJ-FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
 - [Control link protocol](docs/CONTROL_LINK_PROTOCOL.md)
+- [Controller profile schema](docs/CONTROLLER_PROFILE_SCHEMA.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Startup checklist](docs/STARTUP_CHECKLIST.md)
 - [Risk register](docs/RISK_REGISTER.md)
+
+### Multi-Controller Platform
+The system supports controllers beyond the DDJ-FLX4 through **data-driven
+controller profiles** — no firmware rebuild per controller. A profile
+(`controllers/<name>/profile.s3bin`, compiled from `profile.json` by
+[`tools/controller_profile/compile_profile.py`](tools/controller_profile/compile_profile.py))
+goes on the SD/TF card; on boot the P4 scans `/sd/controllers`, and when the
+S3 reports a connected controller the matching profile is transferred to the S3
+over the UART `0xA6` bulk layer and used to map MIDI in/out. The DDJ-FLX4 is the
+first supported profile and its built-in map remains the fallback. See
+[Architecture](docs/ARCHITECTURE.md) and [Controller profile schema](docs/CONTROLLER_PROFILE_SCHEMA.md).
 
 ---
 

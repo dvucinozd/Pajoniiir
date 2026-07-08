@@ -130,6 +130,15 @@ Inherited CDJ panel compatibility:
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
 | `s3_debug_ap` | Runtime bench-only SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
+| `controller_profile` | Pure-C S3CP profile parser + table-driven MIDI-in matcher and LED-out mapper (`cp_profile_parse`, `cp_runtime_process`, `cp_profile_map_led`). No ESP deps; host-tested |
+| `controller_profile_runtime` | Holds the active dynamic profile (mutex-guarded); `control_link` ACTIVATE/CLEAR installs it. `app_main` prefers it for MIDI-in map + LED-out + reconnect snapshot, falling back to `flx4_map`/`flx4_led_midi` when none is active |
+
+Multi-controller platform: when the P4 transfers + activates a profile, the S3
+maps controller MIDI through it instead of the hard-coded FLX4 path (built-in
+FLX4 map is the fallback). See `docs/CONTROLLER_PROFILE_SCHEMA.md` and the 0xA6
+bulk layer in `docs/CONTROL_LINK_PROTOCOL.md`. `control_link` also carries the
+`ctrl_bulk.c` frame codec + `cp_xfer.c` transfer receiver, both kept
+byte-for-byte identical with the P4 copies (runner asserts).
 
 ---
 
@@ -159,6 +168,7 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime seconds |
 | 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
 | 0x82 STATE | both | id=CTRL_ID_S3_DEBUG_AP (0x85): P4→S3 request 0/1, S3→P4 status 0-3; also FLX4 connection state S3→P4 |
+| 0xA6 BULK | both | variable-length frame `[A6][type][seq][len][payload][crc16]`: controller descriptor (S3→P4) + profile transfer (P4→S3). See `docs/CONTROL_LINK_PROTOCOL.md` |
 
 UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 115200 baud.
 

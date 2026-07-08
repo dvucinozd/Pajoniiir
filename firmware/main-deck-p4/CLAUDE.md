@@ -37,7 +37,8 @@ pending items.
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
 | `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; RELAXED-atomic shared state; `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
-| `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
+| `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
+| `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
 
 ---
 
@@ -124,6 +125,7 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime s |
 | 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
 | 0x82 STATE | both | S3→P4 FLX4 connection + S3 Debug AP status; P4→S3 S3 Debug AP enable request (`CTRL_ID_S3_DEBUG_AP` 0x85) |
+| 0xA6 BULK | both | variable-length `[A6][type][seq][len][payload][crc16]`: S3→P4 controller descriptor; P4→S3 profile transfer (BEGIN/CHUNK/END/ACTIVATE) + S3→P4 ACK/NACK/STATUS. See `docs/CONTROL_LINK_PROTOCOL.md` |
 
 ---
 

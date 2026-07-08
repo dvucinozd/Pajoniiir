@@ -411,3 +411,40 @@ Two issues were found and fixed during the smoke:
    the stream. Fixed by raising `config.stack_size` to 8 KB, shrinking the
    per-tick buffer, and streaming only new lines (`last_seq`) instead of the
    whole ring each second.
+
+## Controller Profile Setup And Verification
+
+Data-driven multi-controller platform (Phase 11). To run the DDJ-FLX4 (or any
+supported controller) through a profile instead of the built-in map:
+
+1. Compile the profile if needed:
+   `python tools/controller_profile/compile_profile.py controllers/pioneer_ddj_flx4/profile.json -o controllers/pioneer_ddj_flx4/profile.s3bin`
+   (the committed `.s3bin` is already up to date; the S3 host runner fails if it
+   drifts from `profile.json`).
+2. Copy to the SD/TF card so the layout is `SD:/controllers/<name>/profile.s3bin`
+   (directory per controller; `profile.json` may sit alongside and is ignored by
+   the firmware). Rekordbox media stays on the USB drive.
+3. Insert the SD into the P4 and boot.
+
+Verification (hardware, 2026-07-09 — profile-loading path confirmed):
+
+- [x] SD card populated: `controllers/pioneer_ddj_flx4/profile.s3bin`
+  byte-identical to the repo, S3CP header + CRC valid.
+- [x] P4 boots with the card and mounts `/sd`.
+- [x] P4 scans `/sd/controllers` at boot and loads the profile into the
+  registry — confirmed via `http://192.168.4.1/api/status` reporting
+  `"controller":{...,"profiles":1}` over the `PAJONIIR` Wi-Fi remote AP.
+- [ ] Connect the DDJ-FLX4 to the S3: S3 sends the descriptor, P4 matches and
+  streams the profile (`profile 'pioneer_ddj_flx4' transfer to S3 OK`),
+  `/api/status` shows `"present":true,"active_profile":"pioneer_ddj_flx4"`, and
+  FLX4 controls/LEDs work through the dynamic profile — pending controller being
+  attached to the S3.
+
+Notes:
+
+- P4 serial is native USB-Serial-JTAG (COM15); early-boot app logs (including the
+  `ctrl_profile:` scan line) are lost to non-interactive pyserial capture before
+  the host CDC connection stabilises. Use `idf.py -p COM15 monitor` in a real
+  terminal for a lossless boot log, or `/api/status` for the profile state.
+- A stale `/sd/controllers` (SD missing or no profiles) is a boot warning, never
+  a boot blocker.

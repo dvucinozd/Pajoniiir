@@ -217,3 +217,69 @@ state. The FLX4 mapping file tells us what the controller sends and accepts; it
 does not define the playback model.
 
 `deck_core` and the audio engine on P4 own the actual state.
+
+## Data-Driven Multi-Controller Platform
+
+The S3↔P4 split also enables supporting controllers other than the DDJ-FLX4
+**without a firmware rebuild**, using data-driven controller profiles. The
+FLX4 remains the first supported controller and its built-in C map stays as a
+fallback; the platform makes it one profile among many rather than the only
+model. Format details: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
+
+Roles:
+
+- **Windows Profile Builder** (planned, out of firmware scope): scans a
+  controller, runs MIDI/LED learn wizards, and exports `profile.json` +
+  compiled `profile.s3bin`.
+- **SD/TF card**: holds `/controllers/<name>/profile.s3bin` (one directory per
+  controller). Rekordbox media stays on the USB drive; profiles live on the SD.
+- **P4 `controller_profile_manager`**: scans `/sd/controllers` at boot, validates
+  each S3CP header (magic/version/CRC), keeps a registry, and matches the
+  connected controller by VID/PID. On a match it streams the `.s3bin` to the S3
+  and reports connection/profile state through `/api/status`.
+- **S3 `controller_profile` + `controller_profile_runtime`**: parse the received
+  profile and run a table-driven MIDI-in mapper and LED-out mapper that emit the
+  same `control_link` semantic vocabulary the built-in map uses.
+
+Flow (adds to the base data flow above):
+
+```text
+controller connect
+  -> S3 sends CONTROLLER_DESCRIPTOR (VID/PID/caps/product) over 0xA6 bulk frame
+  -> P4 matches a profile in /sd/controllers and streams it back (0xA6 transfer)
+  -> S3 verifies crc32, ACKs, activates
+  -> S3 maps MIDI IN and LED OUT through the active profile (FLX4 map fallback)
+  -> P4 deck_core / audio_engine / UI are unchanged: they still receive the
+     same semantic events and send the same semantic LED frames
+```
+
+Design guarantees:
+
+- P4 stays the sole authority for deck/audio/UI/mixer state; the profile only
+  changes how raw controller MIDI is translated to and from the semantic bus.
+- The 0xA6 frame codec and the transfer receiver are byte-identical on both
+  sides (asserted by host tests) so the link cannot disagree on the wire.
+- The compiled FLX4 profile is proven byte-equivalent to the built-in
+  `flx4_map`/`flx4_led_midi` by a golden-parity host test (12k-message input
+  sweep + snapshot + 690-combo LED parity), so routing FLX4 through the dynamic
+  profile reproduces the built-in behaviour exactly.
+
+Protocol details: `docs/CONTROL_LINK_PROTOCOL.md` (0xA6 Bulk Frame Layer).
+Verified on hardware 2026-07-09: the SD profile loads into the P4 registry and
+`/api/status` reports `profiles:1`.
+
+New components:
+
+```text
+firmware/control-board-s3/components/
+  controller_profile/          S3CP parser + table-driven MIDI/LED matcher (pure C)
+  controller_profile_runtime/  active-profile holder + dynamic mapper (S3)
+firmware/main-deck-p4/components/
+  controller_profile_manager/  SD scan, registry, VID/PID match, profile sender
+firmware/*/components/control_link/
+  ctrl_bulk.c                  0xA6 frame codec (byte-identical both sides)
+  cp_xfer.c                    profile-transfer receiver + crc32 (byte-identical)
+tools/controller_profile/
+  compile_profile.py           profile.json -> profile.s3bin compiler
+controllers/pioneer_ddj_flx4/  hand-written FLX4 profile.json + compiled .s3bin
+```
