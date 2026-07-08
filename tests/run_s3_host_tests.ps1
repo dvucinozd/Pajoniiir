@@ -302,6 +302,34 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -Patterns @("esp_log_set_vprintf", "s_prev_vprintf", "s3_debug_log_ring_append")
 
+# The FLX4 controller-profile fixture must stay in sync with profile.json.
+# Regenerate through the compiler and byte-compare against the committed
+# .s3bin (skipped with a warning when python is unavailable).
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    Write-Host "==> controller profile fixture is up to date"
+    $fixtureJson = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.json"
+    $fixtureBin = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.s3bin"
+    $fixtureTmp = Join-Path $RepoRoot "tests/controller_profile/profile_regen.s3bin"
+    & $python.Source (Join-Path $RepoRoot "tools/controller_profile/compile_profile.py") `
+        $fixtureJson -o $fixtureTmp | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "controller profile fixture regeneration failed"
+    }
+    try {
+        $expected = [System.IO.File]::ReadAllBytes($fixtureBin)
+        $actual = [System.IO.File]::ReadAllBytes($fixtureTmp)
+        if ($expected.Length -ne $actual.Length -or
+            -not [System.Linq.Enumerable]::SequenceEqual($expected, $actual)) {
+            throw "controllers/pioneer_ddj_flx4/profile.s3bin is stale; rerun tools/controller_profile/compile_profile.py"
+        }
+    } finally {
+        Remove-Item -LiteralPath $fixtureTmp -Force -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Warning "python not found; skipping controller profile fixture freshness check"
+}
+
 $tests = @(
     @{
         Name = "flx4_midi_host"
@@ -364,6 +392,37 @@ $tests = @(
             "test_control_link_protocol.c",
             "s3_constants.c",
             "p4_constants.c"
+        )
+    },
+    @{
+        Name = "controller_profile"
+        Dir = "tests/controller_profile"
+        Target = "test_controller_profile.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-o", "test_controller_profile.exe",
+            "test_controller_profile.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
+        )
+    },
+    @{
+        Name = "controller_profile_parity"
+        Dir = "tests/controller_profile"
+        Target = "test_controller_profile_parity.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            "-DFLX4_MIDI_HOST_PC_TEST",
+            "-I../control_link_protocol/stubs",
+            "-I../../firmware/control-board-s3/components/controller_profile/include",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/control-board-s3/components/panel_io/include",
+            "-o", "test_controller_profile_parity.exe",
+            "test_controller_profile_parity.c",
+            "../../firmware/control-board-s3/components/controller_profile/controller_profile.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_map.c",
+            "../../firmware/control-board-s3/components/control_link/flx4_led_midi.c"
         )
     },
     @{
