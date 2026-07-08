@@ -144,7 +144,11 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_BEAT_STRIP_CENTER_GAP_PX 18
 #define OVERVIEW_BEAT_STRIP_TOP_Y (OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H + 5)
 #define OVERVIEW_BEAT_STRIP_ROW_GAP_PX 12
-#define OVERVIEW_VU_X 67
+#define OVERVIEW_TRANSPORT_X 4
+#define OVERVIEW_TRANSPORT_W 58
+#define OVERVIEW_TRANSPORT_PLAY_Y_OFFSET 60
+#define OVERVIEW_TRANSPORT_CUE_Y_OFFSET 102
+#define OVERVIEW_VU_X 68
 #define OVERVIEW_VU_Y_OFFSET 17
 #define OVERVIEW_VU_SEGMENT_W 10
 #define OVERVIEW_VU_SEGMENT_H 11
@@ -152,6 +156,10 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_VU_SEGMENT_COUNT 8
 #define OVERVIEW_VU_H ((OVERVIEW_VU_SEGMENT_COUNT * OVERVIEW_VU_SEGMENT_H) + \
                        ((OVERVIEW_VU_SEGMENT_COUNT - 1) * OVERVIEW_VU_SEGMENT_GAP))
+_Static_assert(OVERVIEW_VU_X >= (OVERVIEW_TRANSPORT_X + OVERVIEW_TRANSPORT_W + 4),
+               "VU meter must not overlap transport buttons");
+_Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
+               "VU meter must stay clear of waveform");
 #define OVERVIEW_PLAYHEAD_W 3
 #define OVERVIEW_OUTLINE_W 1
 #define OVERVIEW_DECK_INFO_W 400
@@ -797,11 +805,22 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
         lv_obj_set_style_border_width(s_beat_pulses[deck_idx][i], 1, LV_PART_MAIN);
     }
 
-    panel->play_button = ui_overview_compact_button(panel->panel, deck, 4, top_y + 60, 76,
+    panel->play_button = ui_overview_compact_button(panel->panel,
+                                                    deck,
+                                                    OVERVIEW_TRANSPORT_X,
+                                                    top_y + OVERVIEW_TRANSPORT_PLAY_Y_OFFSET,
+                                                    OVERVIEW_TRANSPORT_W,
                                                     "PLAY", &s_style_btn_primary,
                                                     play_pause_event_cb);
     panel->play_label = lv_obj_get_child(panel->play_button, 0);
-    ui_overview_compact_button(panel->panel, deck, 4, top_y + 102, 76, "CUE", &s_style_btn_amber, cue_event_cb);
+    ui_overview_compact_button(panel->panel,
+                               deck,
+                               OVERVIEW_TRANSPORT_X,
+                               top_y + OVERVIEW_TRANSPORT_CUE_Y_OFFSET,
+                               OVERVIEW_TRANSPORT_W,
+                               "CUE",
+                               &s_style_btn_amber,
+                               cue_event_cb);
 
     for (int i = 0; i < OVERVIEW_VU_SEGMENT_COUNT; i++) {
         int seg_index_from_top = OVERVIEW_VU_SEGMENT_COUNT - 1 - i;

@@ -294,11 +294,23 @@ Assert-FileContains `
     -Name "P4 Overview shows deck-local VU meters beside transport controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
+        "OVERVIEW_TRANSPORT_X",
+        "OVERVIEW_TRANSPORT_W",
         "OVERVIEW_VU_X",
+        "_Static_assert(OVERVIEW_VU_X >= (OVERVIEW_TRANSPORT_X + OVERVIEW_TRANSPORT_W + 4)",
         "OVERVIEW_VU_H",
         "vu_segment",
         "ui_overview_update_vu_meter",
         "ctx->mixer_snapshot.deck_peak[deck]"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview VU meters avoid transport button overlap" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "#define OVERVIEW_VU_X 67",
+        "panel->play_button = ui_overview_compact_button(panel->panel, deck, 4, top_y + 60, 76",
+        "ui_overview_compact_button(panel->panel, deck, 4, top_y + 102, 76, `"CUE`""
     )
 
 Assert-FileContains `
