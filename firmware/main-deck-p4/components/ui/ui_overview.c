@@ -145,7 +145,7 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_BEAT_STRIP_TOP_Y (OVERVIEW_DECK2_WAVE_Y + OVERVIEW_CV_H + 5)
 #define OVERVIEW_BEAT_STRIP_ROW_GAP_PX 12
 #define OVERVIEW_DECK_BADGE_X 4
-#define OVERVIEW_DECK_BADGE_W 50
+#define OVERVIEW_DECK_BADGE_W 58
 #define OVERVIEW_DECK_BADGE_H 38
 #define OVERVIEW_DECK_BADGE_Y_OFFSET 12
 #define OVERVIEW_TRANSPORT_X 4
@@ -198,6 +198,9 @@ _Static_assert(OVERVIEW_TIME_X + OVERVIEW_ELAPSED_W <= OVERVIEW_REMAIN_X, "elaps
 #define OVERVIEW_PITCH_W OVERVIEW_PITCH_CHIP_W
 #define OVERVIEW_MINI_WAVE_Y 386
 #define OVERVIEW_SIDE_BTN_H 38
+/* The D1/D2 deck badges are sized to match the play/cue transport buttons. */
+_Static_assert(OVERVIEW_DECK_BADGE_W == OVERVIEW_TRANSPORT_W, "deck badge width must match the play/cue buttons");
+_Static_assert(OVERVIEW_DECK_BADGE_H == OVERVIEW_SIDE_BTN_H, "deck badge height must match the play/cue buttons");
 #define OVERVIEW_FX_PANEL_X 736
 #define OVERVIEW_FX_PANEL_Y 0
 #define OVERVIEW_FX_PANEL_W 64
@@ -436,20 +439,21 @@ static void ui_overview_apply_deck_badge(uint8_t deck)
     }
 
     bool pfl_on = s_overview_deck_pfl[idx];
-    lv_color_t bg = COL_PANEL;
-    lv_color_t text = COL_TEXT;
+    /* Fill matches the Library LOAD DECK 1/2 buttons: accent for D1, green for D2,
+     * with dark on-accent text. */
+    lv_color_t bg = (idx == CTRL_DECK_1) ? COL_ACCENT : COL_GREEN;
 
     lv_obj_set_style_bg_color(panel->label_deck, bg, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(panel->label_deck, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(panel->label_deck, text, LV_PART_MAIN);
+    lv_obj_set_style_text_color(panel->label_deck, COL_ON_ACCENT, LV_PART_MAIN);
 
+    /* The fill already carries the deck colour, so PFL / performance-target use a
+     * contrasting white outline that reads on both the accent and green fills. */
     if (pfl_on) {
-        lv_obj_set_style_border_color(panel->label_deck, COL_GREEN, LV_PART_MAIN);
+        lv_obj_set_style_border_color(panel->label_deck, COL_TEXT, LV_PART_MAIN);
         lv_obj_set_style_border_width(panel->label_deck, 3, LV_PART_MAIN);
     } else if (idx == ui_overview_deck_index(s_overview_performance_target)) {
-        lv_obj_set_style_border_color(panel->label_deck,
-                                      idx == CTRL_DECK_1 ? COL_ACCENT : COL_GREEN,
-                                      LV_PART_MAIN);
+        lv_obj_set_style_border_color(panel->label_deck, COL_TEXT, LV_PART_MAIN);
         lv_obj_set_style_border_width(panel->label_deck, 2, LV_PART_MAIN);
     } else {
         lv_obj_set_style_border_color(panel->label_deck, bg, LV_PART_MAIN);

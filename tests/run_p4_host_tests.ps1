@@ -344,6 +344,16 @@ Assert-FileDoesNotContain `
     )
 
 Assert-FileContains `
+    -Name "P4 Overview deck badges match play/cue size and Library LOAD fill colours" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "_Static_assert(OVERVIEW_DECK_BADGE_W == OVERVIEW_TRANSPORT_W",
+        "_Static_assert(OVERVIEW_DECK_BADGE_H == OVERVIEW_SIDE_BTN_H",
+        "lv_color_t bg = (idx == CTRL_DECK_1) ? COL_ACCENT : COL_GREEN;",
+        "lv_obj_set_style_text_color(panel->label_deck, COL_ON_ACCENT, LV_PART_MAIN);"
+    )
+
+Assert-FileContains `
     -Name "P4 Overview Beat FX uses compact right rail" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
