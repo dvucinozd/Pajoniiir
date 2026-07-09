@@ -179,3 +179,25 @@ Follow-up before product integration changes:
   scheduling change;
 - keep the XIAO GPIO7/GPIO8/GPIO9 wiring as the confirmed physical pinout for
   further FLX4 USB headphones integration work.
+
+## Product USB Audio scheduling follow-up -- PASS (2026-07-09)
+
+The 2026-07-09 S3 product fix changed FLX4 USB Audio scheduling logic, not the
+I2S wire format or `P4HP` block format. The required follow-up was therefore a
+product-path counter check with P4 playback active and the FLX4 USB headphone
+consumer draining the S3 ring.
+
+Observed on S3 `COM6` after flashing `build_audio_20260709_s3`:
+
+| Metric | Observed |
+| --- | --- |
+| S3 received blocks | increased steadily (`47` -> `21949` in the captured window) |
+| P4 sequence gaps | `0` |
+| S3 CRC errors | `0` |
+| S3 overruns | `0` |
+| FLX4 USB skipped / underrun packets | `0 / 0` |
+| Ring fill | stable below the 4096-frame ceiling instead of pinned full |
+
+Result: the FLX4 USB Audio scheduling change did not introduce link corruption,
+and it removed the product-path ring overrun symptom caused by the previous
+post-start sample-rate mismatch.

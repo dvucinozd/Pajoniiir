@@ -226,6 +226,13 @@
   UI, removed the retired monitor-speaker switch, changed wireless switch off
   states to stay dark/non-white, and replaced the lower mixer/PFL routing block
   with a compact status strip.
+- FLX4 USB headphone product streaming was stabilized on 2026-07-09 after
+  intermittent S3 `p4_audio_link` overruns were traced to a post-start
+  sample-rate mismatch between the P4 monitor PCM producer and the FLX4 USB
+  Audio consumer. S3 now tracks the active P4 link rate while already in ring
+  mode, reapplies the FLX4 endpoint rate when supported, and reinitializes the
+  USB packetizer. COM6 smoke after flashing showed `overruns=0`, `gaps=0`,
+  `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two minutes.
 
 ## First Firmware Task
 
@@ -411,6 +418,23 @@ Two issues were found and fixed during the smoke:
    the stream. Fixed by raising `config.stack_size` to 8 KB, shrinking the
    per-tick buffer, and streaming only new lines (`last_seq`) instead of the
    whole ring each second.
+
+## FLX4 USB Audio Product Smoke
+
+Current product topology: PCM5102A RCA MAIN from the P4, FLX4 USB headphones as
+CUE/MONITOR through the P4-to-S3 I2S monitor link and S3 USB Audio streamer.
+
+- [x] Build S3 with `sdkconfig.defaults;sdkconfig.flx4_hp_e2e`.
+- [x] Flash S3 product build to `COM6` after the 2026-07-09 rate-match fix.
+- [x] Confirm ring stream starts with the P4 link rate and that
+  `P4_AUDIO_LINK rx blocks` rises steadily.
+- [x] Confirm `gaps=0` and `crc=0` during steady playback.
+- [x] Confirm `overruns=0` during steady playback; ring fill should oscillate
+  below the 4096-frame ceiling instead of staying pinned at full.
+- [x] Confirm `FLX4_USB_AUDIO submitted` and `completed` rise together with
+  `skipped=0` and `underrun=0`.
+- [x] Confirm audio remains audible in FLX4 headphones and PCM5102A MAIN output
+  remains active.
 
 ## Controller Profile Setup And Verification
 

@@ -108,3 +108,50 @@ that the current XIAO ESP32S3/Sense product path works in practice: FLX4
 headphones are audible and the connected controls behaved correctly during the
 smoke check. This acceptance was performed with the Wi-Fi debug build still
 running, so UART0 was not required for runtime monitoring.
+
+## Product overrun regression fix -- PASS (2026-07-09)
+
+Branch/worktree state: S3 product build from the main worktree, S3 on `COM6`,
+P4 product audio build already running on `COM15`, DDJ-FLX4 connected and
+audible.
+
+Symptom before the fix:
+
+- `P4_AUDIO_LINK rx blocks` kept increasing and `FLX4_USB_AUDIO submitted` /
+  `completed` also kept increasing, proving both the P4 producer and FLX4 USB
+  transfer path were alive.
+- The S3 `p4_audio_link` ring stayed near full (`ring` close to 4096 frames) and
+  `overruns` climbed quickly.
+- Packet deltas showed the P4 monitor link producing 48 kHz audio while the
+  already-started FLX4 USB Audio packetizer could continue draining at the
+  earlier selected rate.
+
+Fix:
+
+- `flx4_usb_audio_poll_ring_autostart()` now also runs the rate-match path while
+  already in `FLX4_USB_AUDIO_MODE_RING`.
+- When the active `p4_audio_link.sample_rate` differs and the FLX4 format
+  supports it, S3 applies the endpoint rate, updates `s_stream_sample_rate`, and
+  reinitializes the UAC packetizer so packet sizing matches the P4 monitor
+  stream.
+- A host regression test covers an already-started ring stream following a
+  supported P4 link rate and ignoring an unsupported rate.
+
+Verification:
+
+| Check | Result |
+| --- | --- |
+| S3 host tests | PASS (`tests/run_s3_host_tests.ps1`) |
+| S3 product build | PASS (`build_audio_20260709_s3`, `sdkconfig.defaults;sdkconfig.flx4_hp_e2e`) |
+| S3 flash | PASS on `COM6` |
+| `P4_AUDIO_LINK rx blocks` | rose from `47` to `21949` during the captured window |
+| `P4_AUDIO_LINK gaps / crc` | `0 / 0` throughout the captured window |
+| `P4_AUDIO_LINK overruns` | `0` throughout the captured window |
+| Ring fill | oscillated below full, roughly `1024` to `2048` frames in steady playback |
+| `FLX4_USB_AUDIO submitted / completed` | rose from `5024 / 5000` to `115024 / 115000` |
+| `FLX4_USB_AUDIO skipped / underrun` | `0 / 0` throughout the captured window |
+
+Result: the product-path S3 ring no longer overruns during steady FLX4 headphone
+playback. The startup `underruns` counter may move while the stream primes, but
+the steady-state acceptance condition is zero growth in `overruns`, `gaps`,
+`crc`, FLX4 USB `skipped`, and FLX4 USB `underrun`.

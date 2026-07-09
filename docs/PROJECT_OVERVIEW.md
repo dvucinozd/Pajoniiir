@@ -133,6 +133,11 @@ The fork is no longer only the imported single-deck baseline:
   P4 ships the monitor PCM to the S3 over an inter-board I2S link, and ES8311 was
   dropped to free an I2S unit (the P4 usable I2S budget is two units on eco2
   silicon). Merged to `master` and hardware-verified end-to-end on 2026-07-02.
+  A 2026-07-09 S3 regression fix keeps the FLX4 USB Audio stream's endpoint
+  rate and packetizer aligned with the active P4 link rate after ring streaming
+  has already started; the follow-up COM6 smoke held `P4_AUDIO_LINK overruns=0`,
+  `gaps=0`, `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two
+  minutes of product playback.
 - The seven official DDJ-FLX4 MIDI gaps were closed against the official Pioneer
   MIDI message list: Censor, Sync (set-master), Quantize, Loop Adjust In/Out,
   Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls.

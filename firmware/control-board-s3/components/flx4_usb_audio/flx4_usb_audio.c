@@ -39,6 +39,8 @@ static flx4_usb_audio_mode_t s_mode;
 static uint32_t s_stream_sample_rate;
 static uint32_t s_tone_phase_q16;
 static uint32_t s_tone_step_q16;
+static uint32_t s_reported_unsupported_link_rate;
+static uint32_t s_reported_failed_link_rate;
 
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
 static const char *TAG = "flx4_usb_audio";
@@ -99,6 +101,7 @@ static int16_t next_tone_sample(void)
 }
 
 static size_t fill_next_stream_packet(uint8_t *dst, size_t dst_capacity);
+static esp_err_t match_stream_rate_to_link(uint32_t link_sample_rate);
 
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
 static void submit_stream_transfer(usb_transfer_t *transfer);
@@ -456,6 +459,8 @@ esp_err_t flx4_usb_audio_configure(usb_host_client_handle_t client,
     s_mode = FLX4_USB_AUDIO_MODE_STOPPED;
     s_tone_phase_q16 = 0u;
     s_tone_step_q16 = 0u;
+    s_reported_unsupported_link_rate = 0u;
+    s_reported_failed_link_rate = 0u;
     return ESP_OK;
 }
 
@@ -496,8 +501,7 @@ esp_err_t flx4_usb_audio_start_ring(void)
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
 esp_err_t flx4_usb_audio_poll_ring_autostart(void)
 {
-    if (s_mode != FLX4_USB_AUDIO_MODE_STOPPED || !s_stats.configured ||
-        s_stream_sample_rate == 0u) {
+    if (!s_stats.configured || s_stream_sample_rate == 0u) {
         return ESP_OK;
     }
 
@@ -506,6 +510,15 @@ esp_err_t flx4_usb_audio_poll_ring_autostart(void)
     if (link.sample_rate == 0u) {
         return ESP_OK; /* P4 audio engine not producing monitor PCM yet */
     }
+
+    if (s_mode == FLX4_USB_AUDIO_MODE_RING) {
+        (void)match_stream_rate_to_link(link.sample_rate);
+        return ESP_OK;
+    }
+    if (s_mode != FLX4_USB_AUDIO_MODE_STOPPED) {
+        return ESP_OK;
+    }
+
     const uint32_t prime_frames = link.sample_rate / 50u; /* ~20 ms cushion */
     if (link.ring_frames < prime_frames) {
         return ESP_OK;
@@ -515,27 +528,56 @@ esp_err_t flx4_usb_audio_poll_ring_autostart(void)
        consumer share a frame rate. If the FLX4 format cannot expose the P4
        rate, stream at the configured rate anyway (Step 3 adds sample-rate
        conversion for that case). */
-    if (link.sample_rate != s_stream_sample_rate) {
-        if (format_has_rate(&s_stats.format, link.sample_rate)) {
-            esp_err_t rc = set_endpoint_sample_rate(s_stats.format.endpoint_addr, link.sample_rate);
-            if (rc == ESP_OK) {
-                s_stream_sample_rate = link.sample_rate;
-                ESP_LOGI(TAG, "ring rate matched to P4 link: %u Hz", (unsigned)link.sample_rate);
-            } else {
-                ESP_LOGW(TAG, "ring rate match to %u Hz failed: %s",
-                         (unsigned)link.sample_rate, esp_err_to_name(rc));
-            }
-        } else {
-            ESP_LOGW(TAG, "P4 link rate %u Hz unsupported by FLX4; streaming at %u Hz",
-                     (unsigned)link.sample_rate, (unsigned)s_stream_sample_rate);
-        }
-    }
+    (void)match_stream_rate_to_link(link.sample_rate);
 
     ESP_LOGI(TAG, "starting FLX4 USB ring stream (link ring=%u frames @ %u Hz)",
              (unsigned)link.ring_frames, (unsigned)s_stream_sample_rate);
     return flx4_usb_audio_start_ring();
 }
 #endif
+
+static esp_err_t match_stream_rate_to_link(uint32_t link_sample_rate)
+{
+    if (!s_stats.configured || s_stream_sample_rate == 0u || link_sample_rate == 0u ||
+        link_sample_rate == s_stream_sample_rate) {
+        return ESP_OK;
+    }
+
+    if (!format_has_rate(&s_stats.format, link_sample_rate)) {
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+        if (s_reported_unsupported_link_rate != link_sample_rate) {
+            ESP_LOGW(TAG, "P4 link rate %u Hz unsupported by FLX4; streaming at %u Hz",
+                     (unsigned)link_sample_rate, (unsigned)s_stream_sample_rate);
+            s_reported_unsupported_link_rate = link_sample_rate;
+        }
+#endif
+        return ESP_OK;
+    }
+
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+    esp_err_t rc = set_endpoint_sample_rate(s_stats.format.endpoint_addr, link_sample_rate);
+    if (rc != ESP_OK) {
+        if (s_reported_failed_link_rate != link_sample_rate) {
+            ESP_LOGW(TAG, "ring rate match to %u Hz failed: %s",
+                     (unsigned)link_sample_rate, esp_err_to_name(rc));
+            s_reported_failed_link_rate = link_sample_rate;
+        }
+        return rc;
+    }
+#endif
+
+    s_stream_sample_rate = link_sample_rate;
+    s_reported_unsupported_link_rate = 0u;
+    s_reported_failed_link_rate = 0u;
+    flx4_uac_packetizer_init(&s_packetizer,
+                             s_stream_sample_rate,
+                             s_stats.format.channels,
+                             s_stats.format.bytes_per_sample);
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+    ESP_LOGI(TAG, "ring rate matched to P4 link: %u Hz", (unsigned)link_sample_rate);
+#endif
+    return ESP_OK;
+}
 
 void flx4_usb_audio_stop(void)
 {
@@ -565,6 +607,8 @@ void flx4_usb_audio_stop(void)
     s_stream_sample_rate = 0u;
     s_tone_phase_q16 = 0u;
     s_tone_step_q16 = 0u;
+    s_reported_unsupported_link_rate = 0u;
+    s_reported_failed_link_rate = 0u;
 }
 
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out)
@@ -658,3 +702,15 @@ size_t flx4_usb_audio_fill_next_tone_packet(uint8_t *dst, size_t dst_capacity)
     }
     return fill_next_stream_packet(dst, dst_capacity);
 }
+
+#if defined(FLX4_USB_AUDIO_PC_TEST)
+uint32_t flx4_usb_audio_pc_stream_sample_rate(void)
+{
+    return s_stream_sample_rate;
+}
+
+int flx4_usb_audio_pc_apply_link_rate(uint32_t link_sample_rate)
+{
+    return match_stream_rate_to_link(link_sample_rate);
+}
+#endif

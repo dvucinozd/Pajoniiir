@@ -155,6 +155,7 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Class-compliant USB MIDI host configuration for the Pioneer DDJ-FLX4.
   - Low-priority feedback treatment for VU output to eliminate MIDI INFO logging flood.
   - Batched MIDI OUT (up to 16 USB-MIDI packets per bulk transfer) so full LED snapshots survive the connect-time burst without queue drops.
+  - USB Audio Class output streaming for the FLX4 headphone endpoint. The S3 drains the P4 `hp_out` monitor PCM ring into isochronous OUT transfers, tracks the active P4 link sample rate after stream start, and keeps the packetizer aligned with 44.1/48 kHz monitor output.
 - **Physical LED Feedback**:
   - LED status updates for Play, Cue, PFL, active loops, Beat Sync, selected pad mode, Hot Cue slot status, and Beat FX ON/OFF.
   - Board-local S3 status LED feedback for FLX4 host modes: disconnected, connected, and MIDI activity states are shown without encoding playback state.

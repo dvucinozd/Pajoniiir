@@ -134,11 +134,34 @@ static int test_start_tone_requires_configuration(void)
     return 0;
 }
 
+extern uint32_t flx4_usb_audio_pc_stream_sample_rate(void);
+extern int flx4_usb_audio_pc_apply_link_rate(uint32_t link_sample_rate);
+
+static int test_ring_stream_tracks_p4_link_rate_after_start(void)
+{
+    size_t len = 0;
+    uint8_t *descriptor = read_fixture(&len);
+
+    EXPECT_TRUE(flx4_usb_audio_configure(NULL, NULL, descriptor, len) == 0, "configure succeeds");
+    EXPECT_TRUE(flx4_usb_audio_start_ring() == 0, "ring start succeeds");
+    EXPECT_EQ_U32(flx4_usb_audio_pc_stream_sample_rate(), 48000u, "ring starts at preferred rate");
+
+    EXPECT_TRUE(flx4_usb_audio_pc_apply_link_rate(44100u) == 0, "supported link rate accepted");
+    EXPECT_EQ_U32(flx4_usb_audio_pc_stream_sample_rate(), 44100u, "ring stream follows P4 link rate");
+
+    EXPECT_TRUE(flx4_usb_audio_pc_apply_link_rate(32000u) == 0, "unsupported link rate is a no-op");
+    EXPECT_EQ_U32(flx4_usb_audio_pc_stream_sample_rate(), 44100u, "unsupported link rate keeps current rate");
+
+    free(descriptor);
+    return 0;
+}
+
 int main(void)
 {
     if (test_configure_selects_flx4_playback_format_without_streaming() != 0) return 1;
     if (test_tone_packet_uses_headphone_candidate_channels_by_default() != 0) return 1;
     if (test_start_tone_requires_configuration() != 0) return 1;
+    if (test_ring_stream_tracks_p4_link_rate_after_start() != 0) return 1;
 
     puts("flx4_usb_audio_runtime: PASS");
     return 0;

@@ -121,6 +121,9 @@ FLX4_USB_AUDIO tx submitted=... completed=... skipped=... underrun=... bytes=...
 ```
 
 During normal FLX4 headphone playback, `rx blocks`, `submitted`, and
-`completed` should keep increasing. `gaps` and `crc` should stay at zero.
-Short startup underruns are acceptable; sustained growth during audible
-dropouts is a failure to investigate.
+`completed` should keep increasing. `gaps`, `crc`, `skipped`, and FLX4 USB
+`underrun` should stay at zero. `overruns` should stay flat during steady
+playback and the ring should not stay pinned at its 4096-frame ceiling. Short
+startup underruns are acceptable; sustained growth during audible dropouts, or
+a steadily rising `overruns` counter while USB packets still complete, is a
+failure to investigate as a producer/consumer rate or drain mismatch.

@@ -1025,3 +1025,43 @@ the SD profile loads into the P4 registry and `/api/status` reports `profiles:1`
 End-to-end with a physical FLX4 connected (descriptor → match → transfer →
 activate → dynamic mapping) is wired and builds; final controller-attached smoke
 is pending controller availability.
+
+## Phase 12: FLX4 USB Audio Product Stabilization (2026-07-09)
+
+Status: implemented on S3, host-tested, product-built, flashed to S3 `COM6`,
+and hardware-smoked with the existing P4 product audio build on `COM15`.
+
+Goal: remove intermittent S3 `p4_audio_link` ring overruns observed after the
+FLX4 USB headphone path became audible in the full PCM5102A MAIN + FLX4 cue
+topology.
+
+Root cause:
+
+- P4 monitor PCM was producing 48 kHz blocks over the P4-to-S3 link.
+- The FLX4 USB Audio packet stream could keep draining at its previously
+  selected rate after ring streaming had already started because
+  `flx4_usb_audio_poll_ring_autostart()` returned early in `RING` mode.
+- That left the S3 ring with a producer/consumer rate mismatch; `ring` pinned
+  near 4096 frames and `overruns` climbed even while USB transfers completed.
+
+Fix:
+
+- `flx4_usb_audio` now checks the active `p4_audio_link.sample_rate` while in
+  `FLX4_USB_AUDIO_MODE_RING`.
+- If the FLX4 playback format supports the P4 link rate, S3 applies the endpoint
+  sample rate, updates `s_stream_sample_rate`, and reinitializes the UAC
+  packetizer so isochronous packet sizing matches the P4 monitor stream.
+- Unsupported or failed rate changes are logged once per rate instead of
+  flooding the console; the current stream rate is kept as a fallback.
+- Host regression coverage asserts that an already-started ring stream follows
+  a supported P4 link rate and ignores an unsupported one.
+
+Acceptance met:
+
+- `tests/run_s3_host_tests.ps1` passes, including `flx4_usb_audio_runtime`.
+- S3 product build with `sdkconfig.defaults;sdkconfig.flx4_hp_e2e` passes.
+- S3 was flashed on `COM6`.
+- Product smoke: over roughly two minutes of playback, S3 logs showed
+  `P4_AUDIO_LINK overruns=0`, `gaps=0`, `crc=0`, ring fill oscillating around
+  1024-2048 frames instead of pinning at 4096, and `FLX4_USB_AUDIO skipped=0`
+  / `underrun=0` while submitted/completed USB packet counts rose together.

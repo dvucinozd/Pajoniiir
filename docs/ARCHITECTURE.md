@@ -164,7 +164,7 @@ Current S3 firmware modes:
   MIDI device compatibility when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
 
 FLX4 USB headphones path (**hardware-validated 2026-07-02; XIAO wiring
-validated 2026-07-06**,
+validated 2026-07-06; S3 overrun regression fixed and re-smoked 2026-07-09**,
 `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 - P4 owns the monitor/cue mix and publishes stereo 16-bit `hp_out` blocks
@@ -177,7 +177,10 @@ validated 2026-07-06**,
   `flx4_usb_audio` UAC streamer drains the ring into isochronous OUT transfers,
   mapping P4 `hp_out` onto the FLX4 4-channel format's headphone pair
   (channels 3/4). Ring streaming autostarts once ~20 ms is buffered and matches
-  the FLX4 endpoint rate to the P4 output rate (44.1 / 48 kHz).
+  the FLX4 endpoint rate to the P4 output rate (44.1 / 48 kHz). While already in
+  ring-streaming mode, S3 continues to track `p4_audio_link.sample_rate` and
+  reinitializes the USB packetizer if the P4 link rate changes; otherwise the
+  producer and USB consumer drift apart and the 4096-frame ring can overrun.
 - Output topology (P4 has 2 usable I2S units; unit 2 freezes on eco2):
   **PCM5102A RCA = MAIN OUT (unit 1, paces the loop)**, **FLX4 USB = CUE/MONITOR
   (link on unit 0)**, **ES8311 onboard monitor disabled** to free unit 0. Both

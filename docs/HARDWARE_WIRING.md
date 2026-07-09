@@ -96,12 +96,16 @@ I2S `timeouts`, I2S `errors`, `underruns`, and `overruns` during a five-minute
 S3-only soak. Repeat this soak after I2S, task-priority, or FLX4 USB Audio
 scheduling changes.
 
-**Product e2e result (validated 2026-07-07):** with the XIAO GPIO7/GPIO8/GPIO9
+**Product e2e result (validated 2026-07-07; rate-match re-smoke 2026-07-09):** with the XIAO GPIO7/GPIO8/GPIO9
 link wiring, P4 `build_flx4_hp_e2e_tcmguard`, and S3
 `build_flx4_hp_e2e_xiao`, the full path from P4 playback to the FLX4 headphone
 jack was confirmed audible by the operator. P4 `MONITOR_PCM_LINK` counters rose
 with `dropped=0`; S3 `P4_AUDIO_LINK` counters rose with `gaps=0` and `crc=0`
-before the FLX4 USB Audio consumer was attached. See
+before the FLX4 USB Audio consumer was attached. A 2026-07-09 S3 product flash
+fixed the remaining intermittent product-path overruns by keeping the FLX4 USB
+Audio endpoint rate and packetizer synchronized to the active P4 link rate while
+the ring stream is already running; the follow-up COM6 log held `overruns=0`
+with `FLX4_USB_AUDIO skipped=0 underrun=0`. See
 `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`.
 
 **Product I2S unit budget (P4 rev v1.3 / eco2):** I2S unit 2 freezes on
