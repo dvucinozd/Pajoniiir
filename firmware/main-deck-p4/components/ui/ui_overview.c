@@ -180,12 +180,17 @@ _Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
 #define OVERVIEW_BPM_Y 348
 #define OVERVIEW_BPM_W 92
 #define OVERVIEW_BPM_TAG_X 264
-/* Per-deck time counter: moved out of the blue title strip onto the BPM row,
- * left of the BPM value, aligned with the title text start, at the BPM font
- * size. The blue strip above is now title-only. */
+/* Per-deck time counters on the BPM row (out of the blue title strip, which is
+ * now title-only), at the BPM font size: elapsed at the title-aligned start, then
+ * a gap, then remaining. Widths hold a full "MM:SS" / "-MM:SS" at montserrat_24
+ * (worst-case ~69 / ~79 px) so neither clips into the other; both stay left of
+ * the BPM value. */
 #define OVERVIEW_TIME_X 8
-#define OVERVIEW_TIME_W 150
-_Static_assert(OVERVIEW_TIME_X + OVERVIEW_TIME_W <= OVERVIEW_BPM_X, "overview time counter must stay left of the BPM value");
+#define OVERVIEW_ELAPSED_W 72
+#define OVERVIEW_REMAIN_X 90
+#define OVERVIEW_REMAIN_W 80
+_Static_assert(OVERVIEW_REMAIN_X + OVERVIEW_REMAIN_W <= OVERVIEW_BPM_X, "overview time counters must stay left of the BPM value");
+_Static_assert(OVERVIEW_TIME_X + OVERVIEW_ELAPSED_W <= OVERVIEW_REMAIN_X, "elapsed time must not overlap the remaining time");
 #define OVERVIEW_PITCH_X 302
 #define OVERVIEW_PITCH_Y 346
 #define OVERVIEW_PITCH_CHIP_W 94
@@ -224,6 +229,7 @@ typedef struct {
     lv_obj_t *label_title;
     lv_obj_t *label_artist;
     lv_obj_t *title_time_bg;
+    lv_obj_t *label_time_elapsed;
     lv_obj_t *label_time;
     lv_obj_t *label_bpm;
     lv_obj_t *label_pitch;
@@ -613,13 +619,19 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
     lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
-    /* Time counter now lives on the BPM row (left of the BPM value, aligned with
-     * the title text start, at the BPM font size); the blue strip is title-only. */
+    /* Time counters live on the BPM row (blue strip is title-only): elapsed at the
+     * title-aligned start, remaining just to its right with a small gap, both at
+     * the BPM font size. */
     panel->title_time_bg = NULL;
-    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                COL_TEXT, info_x + OVERVIEW_TIME_X,
+    panel->label_time_elapsed = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                COL_TEXT_MUTED, info_x + OVERVIEW_TIME_X,
                                                 OVERVIEW_BPM_Y,
-                                                OVERVIEW_TIME_W, "--:--");
+                                                OVERVIEW_ELAPSED_W, "--:--");
+    lv_obj_set_style_text_align(panel->label_time_elapsed, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                COL_TEXT, info_x + OVERVIEW_REMAIN_X,
+                                                OVERVIEW_BPM_Y,
+                                                OVERVIEW_REMAIN_W, "--:--");
     lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                COL_TEXT, info_x + OVERVIEW_BPM_X,
@@ -1894,6 +1906,36 @@ static uint32_t ui_pitch_speed_permille(const deck_state_t *state)
     return (uint32_t)speed;
 }
 
+static void ui_overview_format_elapsed_time(char *out,
+                                            size_t out_size,
+                                            uint32_t duration_ms,
+                                            uint32_t elapsed_ms)
+{
+    if (!out || out_size == 0) {
+        return;
+    }
+    if (duration_ms == 0) {
+        snprintf(out, out_size, "--:--");
+        return;
+    }
+
+    uint32_t total_secs = elapsed_ms / 1000u;
+    uint32_t hrs = total_secs / 3600u;
+    uint32_t mins = (total_secs % 3600u) / 60u;
+    uint32_t secs = total_secs % 60u;
+
+    if (hrs > 0) {
+        snprintf(out, out_size, "%u:%02u:%02u",
+                 (unsigned)hrs,
+                 (unsigned)mins,
+                 (unsigned)secs);
+    } else {
+        snprintf(out, out_size, "%02u:%02u",
+                 (unsigned)mins,
+                 (unsigned)secs);
+    }
+}
+
 static void ui_overview_format_remaining_time(char *out,
                                               size_t out_size,
                                               uint32_t duration_ms,
@@ -1955,10 +1997,12 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     }
     ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "NO TRACK");
 
-    uint32_t time_bucket = duration_ms > 0 ? (remain_ms / 1000u) : UINT32_MAX - 1u;
+    uint32_t time_bucket = duration_ms > 0 ? (elapsed_ms / 1000u) : UINT32_MAX - 1u;
     if (time_bucket != panel->last_time_bucket) {
         char time_text[16];
         panel->last_time_bucket = time_bucket;
+        ui_overview_format_elapsed_time(time_text, sizeof(time_text), duration_ms, elapsed_ms);
+        ui_label_set_text_if_changed(panel->label_time_elapsed, time_text);
         ui_overview_format_remaining_time(time_text, sizeof(time_text), duration_ms, remain_ms);
         ui_label_set_text_if_changed(panel->label_time, time_text);
     }

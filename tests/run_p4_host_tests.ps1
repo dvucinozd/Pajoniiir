@@ -213,14 +213,16 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("remain_ms / 10u")
 
 Assert-FileContains `
-    -Name "P4 Overview time counter sits beside BPM at BPM font size" `
+    -Name "P4 Overview shows elapsed + remaining time on the BPM row at BPM font size" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_TIME_X",
-        "OVERVIEW_TIME_W",
-        "_Static_assert(OVERVIEW_TIME_X + OVERVIEW_TIME_W <= OVERVIEW_BPM_X",
-        "panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,",
-        "info_x + OVERVIEW_TIME_X,",
+        "OVERVIEW_ELAPSED_W",
+        "OVERVIEW_REMAIN_X",
+        "OVERVIEW_REMAIN_W",
+        "_Static_assert(OVERVIEW_REMAIN_X + OVERVIEW_REMAIN_W <= OVERVIEW_BPM_X",
+        "panel->label_time_elapsed = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,",
+        "ui_overview_format_elapsed_time",
         "ui_overview_format_remaining_time"
     )
 
