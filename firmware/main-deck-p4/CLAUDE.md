@@ -33,9 +33,9 @@ pending items.
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress; Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
-| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; RELAXED-atomic shared state; `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
+| `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/filter/beat-FX; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
@@ -274,6 +274,31 @@ renders new columns, burns the fixed centre playhead into the strip, and PPA-bli
 segments straight to the framebuffer. The small (mini) full-track waveform is drawn
 once at load into an I8 canvas, then progress-tinted as it plays.
 
+**Overview stability pass (2026-07-09)** — removed the periodic waveform hitch and
+the VU-driven flash:
+- The 1 Hz slow-update no longer resets the wave-cache on every tick. `ui_overview_update_cue_markers`
+  keeps an FNV-1a fingerprint of the cue layout + duration and only rebuilds the
+  strip when the cues actually change (`s_overview_cue_fingerprint`). This was the
+  main source of the ~1 s jitter on both decks.
+- The cue-reset used to *also* mask an erase: when LVGL repaints the wave rectangle
+  (returning to Overview while paused, or a full-screen redraw) it overwrites the
+  direct-PPA waveform. Returning to the Overview tab now re-arms the strip reblit
+  (`s_overview_prev_tab`) so the waveform is restored even while paused.
+- `ui_overview_update_vu_meter` restyles only the VU segments whose active state
+  flips, and the transport play button is restyled only on an actual play/pause
+  transition. `LV_INV_BUF_SIZE=64` (global compile def in `CMakeLists.txt`) widens
+  LVGL's invalidate buffer so bursts of small invalidations no longer overflow into
+  a full-screen redraw (which would erase the PPA waveforms).
+
+**Deck VU meters** — `audio_engine` records a per-deck **pre-fader** peak
+(`deck_frame` scaled by pregain × master trim, so it tracks the FLX4 TRIM knob →
+`CTRL_ID_CH_TRIM` → pregain; `AE_VU_SENSITIVITY` tunes the reference level) into two
+lock-free atomics: `s_deck_peak` (raw, read-and-reset, drained by the FLX4 LED
+path) and `s_deck_ui_peak` → snapshot `deck_peak_display` (instant-attack/decaying,
+read non-destructively so the on-screen VU never sticks). The Overview VU segments
+read `deck_peak_display`; the controller LED VU (`deck_core` `vu_task`, 30 ms) adds
+attack/slow-decay ballistics (`vu_ballistic_level`) so the pads don't flicker.
+
 Waveform colours (2026-07-04, "Punchy" scheme): brighter cyan transients
 (`#26E0FF`), true-white 2 px tips on loud transients (peak amp ≥ 26), punchier
 blue/pink. The RGB565 firmware palette (`s_overview_wave_rgb565_palette`) has
@@ -419,4 +444,8 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~ESP-Hosted Wi-Fi + web UI mobile controller~~ — re-enabled 2026-07-04 behind a Settings switch (default off); SoftAP `PAJONIIR` + `http://192.168.4.1`
 - ✅ ~~USB-disconnect crash~~ — fixed 2026-07-04 by gating the track-meta-cache USB `stat()` (a disconnect during it panicked the MSC driver + wedged USB)
 - ✅ ~~Overview waveform visualisations~~ — "Punchy" colours, loop-region highlight (active + armed), hot-cue markers (large + mini), mini played-progress overlay
+- ✅ ~~Overview waveform jitter after VU meters~~ — fixed 2026-07-09: cue-fingerprint guard (no 1 Hz strip reset), tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`
+- ✅ ~~Controller VU meters flicker / ignore TRIM~~ — fixed 2026-07-09: pre-fader peak (pregain × trim) + `AE_VU_SENSITIVITY` + attack/decay ballistics (`vu_ballistic_level`)
+- ✅ ~~Hot-cue pad LEDs stale on FLX4 track load~~ — fixed 2026-07-09: load path now republishes the full FLX4 LED snapshot so the loaded deck's hot-cue pads light immediately
+- ✅ ~~`/sd` not mounting on cold boot~~ — fixed 2026-07-09: `bsp_sd_init` retries the mount 3× (150 ms) to ride out the transient power-up `send_op_cond` timeout
 - **Line-out (RCA) validation** — hardware measurement of the RCA/monitor output path pending

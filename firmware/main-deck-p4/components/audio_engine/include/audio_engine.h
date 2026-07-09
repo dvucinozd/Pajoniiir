@@ -154,6 +154,11 @@ typedef struct {
     audio_pad_fx_kind_t pad_fx_kind[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
     uint16_t deck_peak[AUDIO_ENGINE_DECK_COUNT];
+    /* Display VU peak: instant attack, gentle decay, maintained by the output
+     * task and read non-destructively. Unlike deck_peak (a raw running max the
+     * FLX4 LED path drains via audio_engine_get_deck_peak), this never sticks
+     * and is independent of that consumer, so the on-screen VU stays live. */
+    uint16_t deck_peak_display[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;

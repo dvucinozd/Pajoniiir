@@ -1205,6 +1205,11 @@ static void execute_ui_command(const deck_ui_command_t *cmd)
             ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
         }
         if (loaded) {
+            /* Refresh the full LED snapshot so the newly-loaded track's hot-cue
+             * pads light on the correct deck immediately. Previously only the
+             * track-load + beat-jump LEDs were republished on load, so the
+             * hot-cue pads showed stale state until the next unrelated event. */
+            publish_flx4_led_snapshot(false);
             publish_track_load_leds(false);
             publish_beat_jump_pad_leds(false);
             publish_beat_jump_shift_helper_leds(false);
@@ -1605,6 +1610,32 @@ static uint8_t peak_to_midi_level(uint16_t peak)
     return (uint8_t)(level > 127u ? 127u : level);
 }
 
+/* VU meter ballistics: the raw per-30 ms-window peak jumps around wildly on
+ * music, so the LED VU flickered. Rise instantly to a new peak, then fall back
+ * by a fixed step each tick (~330 ms full release) for a natural meter. */
+#define VU_DECAY_STEP_PER_TICK 12u
+static uint8_t s_vu_display_level[DECK_CORE_DECK_COUNT];
+
+static uint8_t vu_ballistic_level(uint8_t deck, uint8_t raw)
+{
+    uint8_t prev = (deck < DECK_CORE_DECK_COUNT) ? s_vu_display_level[deck] : 0u;
+    uint8_t disp;
+    if (raw >= prev) {
+        disp = raw;                          /* instant attack */
+    } else if (prev > VU_DECAY_STEP_PER_TICK) {
+        disp = (uint8_t)(prev - VU_DECAY_STEP_PER_TICK);
+        if (disp < raw) {
+            disp = raw;
+        }
+    } else {
+        disp = raw;
+    }
+    if (deck < DECK_CORE_DECK_COUNT) {
+        s_vu_display_level[deck] = disp;
+    }
+    return disp;
+}
+
 /* VU meters run in their own task, not an esp_timer callback: the send blocks
  * on uart_write_bytes when the TX ring is full (e.g. during a bulk profile
  * transfer), and blocking inside an esp_timer callback stalls every other
@@ -1639,9 +1670,14 @@ static void vu_task(void *arg)
         }
 
         for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-            uint8_t level = any_playing
-                ? peak_to_midi_level(audio_engine_get_deck_peak(deck))
-                : 0u;
+            uint8_t level;
+            if (any_playing) {
+                uint8_t raw = peak_to_midi_level(audio_engine_get_deck_peak(deck));
+                level = vu_ballistic_level(deck, raw);
+            } else {
+                level = 0u;                       /* snap to 0 when stopped */
+                s_vu_display_level[deck] = 0u;
+            }
             control_link_send_led_deck(LED_VU_METER, level, deck);
         }
     }

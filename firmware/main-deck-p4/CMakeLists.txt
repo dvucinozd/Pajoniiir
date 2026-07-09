@@ -11,3 +11,11 @@ project(main-deck-p4)
 if("$ENV{ESP_IDF_VERSION}" VERSION_LESS "5.5")
     idf_build_set_property(COMPILE_OPTIONS "-Wno-error=format" APPEND)
 endif()
+
+# Enlarge LVGL's per-display invalidate-area buffer (default 32). When many
+# small widgets invalidate in one refresh (e.g. the deck VU meters plus
+# transport/beat widgets) the 32-slot buffer overflows and LVGL falls back to a
+# full-screen redraw, which repaints over the direct-PPA waveforms and causes a
+# visible flash. Must be global so every LVGL translation unit sees the same
+# lv_display_t layout (the buffer is an inline array in that struct).
+idf_build_set_property(COMPILE_DEFINITIONS "LV_INV_BUF_SIZE=64" APPEND)

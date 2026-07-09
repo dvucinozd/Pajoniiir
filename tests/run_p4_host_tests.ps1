@@ -301,7 +301,7 @@ Assert-FileContains `
         "OVERVIEW_VU_H",
         "vu_segment",
         "ui_overview_update_vu_meter",
-        "ctx->mixer_snapshot.deck_peak[deck]"
+        "ctx->mixer_snapshot.deck_peak_display[deck]"
     )
 
 Assert-FileDoesNotContain `

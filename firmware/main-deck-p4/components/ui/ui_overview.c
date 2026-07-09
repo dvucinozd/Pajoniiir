@@ -314,12 +314,15 @@ static uint32_t ui_overview_main_window_ms(uint8_t deck, const anlz_metadata_t *
 
 static lv_obj_t *s_overview_cue_markers[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_overview_mini_cue_markers[DECK_CORE_DECK_COUNT][8];
+static uint32_t s_overview_cue_fingerprint[DECK_CORE_DECK_COUNT];
+static bool s_overview_cue_fingerprint_valid[DECK_CORE_DECK_COUNT];
 static uint32_t s_overview_deck_duration_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
 static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
+static uint8_t s_overview_prev_tab = 0xFFu;
 static uint8_t s_overview_zoom_step = 2u;
 #ifndef WIN32
 static uint8_t s_overview_wave_load_reblit_remaining[DECK_CORE_DECK_COUNT];
@@ -822,6 +825,9 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                                                     "PLAY", &s_style_btn_primary,
                                                     play_pause_event_cb);
     panel->play_label = lv_obj_get_child(panel->play_button, 0);
+    /* Seed the paused-state styling once; per-frame updates now only run on an
+     * actual play/pause transition (see ui_update_overview_deck). */
+    ui_overview_apply_play_button(panel, false);
     ui_overview_compact_button(panel->panel,
                                deck,
                                OVERVIEW_TRANSPORT_X,
@@ -1414,6 +1420,7 @@ void ui_overview_load_waveform_data(uint8_t deck,
         .has_waveform = has_waveform,
     };
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
+    s_overview_cue_fingerprint_valid[idx] = false;
     panel->last_mini_fill_x = -1;
     panel->last_mini_played_w = -1;
     if (panel->mini_played) {
@@ -1445,10 +1452,39 @@ void ui_overview_load_waveform_data(uint8_t deck,
     }
 }
 
+/* FNV-1a over the cue layout + track duration. Lets the 1 Hz slow-update skip
+ * the expensive strip re-render + reblit unless the cues actually changed. */
+static uint32_t ui_overview_cue_fingerprint(const anlz_metadata_t *meta, uint32_t duration_ms)
+{
+    uint32_t fp = 2166136261u;
+    fp = (fp ^ duration_ms) * 16777619u;
+    if (meta) {
+        fp = (fp ^ (uint32_t)meta->cue_count) * 16777619u;
+        for (uint8_t j = 0; j < meta->cue_count && j < ANLZ_MAX_CUES; j++) {
+            fp = (fp ^ (uint32_t)meta->cues[j].index) * 16777619u;
+            fp = (fp ^ meta->cues[j].start_ms) * 16777619u;
+        }
+    }
+    return fp;
+}
+
 void ui_overview_update_cue_markers(uint8_t deck, const anlz_metadata_t *meta, uint32_t duration_ms)
 {
     uint8_t deck_idx = ui_overview_deck_index(deck);
     ui_overview_deck_panel_t *panel = &s_overview_decks[deck_idx];
+
+    /* Skip when nothing about the cues changed. Previously this ran every second
+     * and unconditionally reset the wave cache (forcing a full strip rebuild on
+     * both decks ~once per second), which is the main source of the periodic
+     * waveform hitch. */
+    uint32_t fingerprint = ui_overview_cue_fingerprint(meta, duration_ms);
+    if (s_overview_cue_fingerprint_valid[deck_idx] &&
+        s_overview_cue_fingerprint[deck_idx] == fingerprint) {
+        return;
+    }
+    s_overview_cue_fingerprint[deck_idx] = fingerprint;
+    s_overview_cue_fingerprint_valid[deck_idx] = true;
+
     static const uint32_t cue_hex_colors[8] = {
         0x00E676,
         0x00E5FF,
@@ -1724,15 +1760,26 @@ static void ui_overview_update_vu_meter(uint8_t deck, uint16_t peak)
     if (level > OVERVIEW_VU_SEGMENT_COUNT) {
         level = OVERVIEW_VU_SEGMENT_COUNT;
     }
-    if (panel->last_vu_level >= 0 && level < panel->last_vu_level) {
-        level = panel->last_vu_level - 1;
+    int old_level = panel->last_vu_level;
+    if (old_level >= 0 && level < old_level) {
+        level = old_level - 1;
     }
-    if (level == panel->last_vu_level) {
+    if (level == old_level) {
         return;
     }
     panel->last_vu_level = level;
 
-    for (int i = 0; i < OVERVIEW_VU_SEGMENT_COUNT; i++) {
+    /* Only restyle the segments whose active state actually flips this update.
+     * A typical ±1 level change touches a single segment instead of all 8, which
+     * keeps the LVGL invalidate buffer from filling up (and spilling to a
+     * full-screen redraw that would erase the PPA-blitted waveforms). */
+    int from = 0;
+    int to = OVERVIEW_VU_SEGMENT_COUNT;
+    if (old_level >= 0) {
+        from = level < old_level ? level : old_level;
+        to = level > old_level ? level : old_level;
+    }
+    for (int i = from; i < to; i++) {
         lv_obj_t *vu_segment = panel->vu_segment[i];
         if (!vu_segment) {
             continue;
@@ -1908,8 +1955,10 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
     if (s_overview_deck_playing[idx] != state->playing) {
         s_overview_deck_playing[idx] = state->playing;
         ui_overview_apply_deck_badge(deck);
+        /* Only restyle the transport button on an actual play/pause transition;
+         * doing it every frame re-invalidated both buttons on every refresh. */
+        ui_overview_apply_play_button(panel, state->playing);
     }
-    ui_overview_apply_play_button(panel, state->playing);
     ui_label_set_text_if_changed(panel->label_title, info->valid ? info->title : "NO TRACK");
 
     uint32_t time_bucket = duration_ms > 0 ? (remain_ms / 1000u) : UINT32_MAX - 1u;
@@ -1982,6 +2031,22 @@ void ui_overview_update(const ui_frame_context_t *ctx)
         s_overview_wave_source[deck] = ctx->overview_wave_source[deck];
     }
 
+#ifndef WIN32
+    /* Returning to Overview from another tab: LVGL repainted the previously
+     * hidden screen and erased the direct-PPA waveforms. Re-arm the strip reblit
+     * so both decks are restored even while paused (center unchanged would
+     * otherwise skip the redraw). The old unconditional 1 Hz cue-marker reset
+     * used to mask this by rebuilding the strip every second. */
+    if (ctx->active_tab == 0 && s_overview_prev_tab != 0) {
+        ui_overview_arm_all_wave_reblits();
+        for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
+            s_overview_decks[i].last_wave_center_ms = UINT32_MAX;
+            s_overview_decks[i].last_wave_window_ms = 0;
+        }
+    }
+#endif
+    s_overview_prev_tab = (uint8_t)ctx->active_tab;
+
     if (ctx->active_tab != 0) {
         return;
     }
@@ -2005,7 +2070,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
     ui_update_overview_fx_panel(&ctx->beat_fx_state);
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        ui_overview_update_vu_meter(deck, ctx->mixer_snapshot.deck_peak[deck]);
+        ui_overview_update_vu_meter(deck, ctx->mixer_snapshot.deck_peak_display[deck]);
     }
 
     if (ctx->overview_slow_update) {

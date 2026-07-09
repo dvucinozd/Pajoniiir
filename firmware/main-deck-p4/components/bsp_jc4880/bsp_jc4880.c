@@ -1,6 +1,8 @@
 #include "bsp_jc4880.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "driver/i2c_master.h"
@@ -58,6 +60,11 @@ static const char *TAG = "bsp";
 
 // Vendor P4 function board BSP powers the uSD slot through on-chip LDO channel 4.
 #define BSP_SD_LDO_CHAN         4
+// On a cold reset the card's power/state may not have settled before the first
+// ACMD41, which surfaces as a send_op_cond timeout. Retry the mount a few times
+// with a short settle delay so /sd comes up reliably at boot.
+#define BSP_SD_MOUNT_ATTEMPTS       3
+#define BSP_SD_MOUNT_RETRY_DELAY_MS 150
 
 // ── MIPI DSI PHY power (ESP32-P4 internal LDO VO3 → VDD_MIPI_DPHY 2.5 V) ──────
 #define BSP_MIPI_LDO_CHAN       3
@@ -583,7 +590,22 @@ esp_err_t bsp_sd_init(void)
              host.slot, slot_config.width, slot_config.clk, slot_config.cmd,
              slot_config.d0, slot_config.d1, slot_config.d2, slot_config.d3);
 
-    esp_err_t rc = esp_vfs_fat_sdmmc_mount("/sd", &host, &slot_config, &mount_config, &s_sd_card);
+    esp_err_t rc = ESP_FAIL;
+    for (int attempt = 1; attempt <= BSP_SD_MOUNT_ATTEMPTS; attempt++) {
+        rc = esp_vfs_fat_sdmmc_mount("/sd", &host, &slot_config, &mount_config, &s_sd_card);
+        if (rc == ESP_OK) {
+            break;
+        }
+        // esp_vfs_fat_sdmmc_mount tears down the slot on failure, so a fresh
+        // call re-runs the full SD init sequence on the next attempt.
+        s_sd_card = NULL;
+        ESP_LOGW(TAG, "SD mount attempt %d/%d failed (%s)%s",
+                 attempt, BSP_SD_MOUNT_ATTEMPTS, esp_err_to_name(rc),
+                 attempt < BSP_SD_MOUNT_ATTEMPTS ? " — retrying" : "");
+        if (attempt < BSP_SD_MOUNT_ATTEMPTS) {
+            vTaskDelay(pdMS_TO_TICKS(BSP_SD_MOUNT_RETRY_DELAY_MS));
+        }
+    }
     if (rc != ESP_OK) {
         s_sd_card = NULL;
         ESP_LOGW(TAG, "SD mount skipped (%s) — /sd unavailable; USB media path continues",

@@ -235,6 +235,7 @@ static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
 static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
+static uint16_t         s_deck_ui_peak[AUDIO_ENGINE_DECK_COUNT];
 static audio_mixer_limiter_stats_t s_limiter_stats;
 static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
@@ -334,12 +335,58 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
     return left > right ? left : right;
 }
 
+/* VU meter reference sensitivity: a peak this far below digital full scale reads
+ * as a full meter, so normal (non-brickwalled) material lights more than a
+ * sliver. ~-6 dBFS. Tune here if the controller/on-screen VU reads hot or cold. */
+#define AE_VU_SENSITIVITY 2.0f
+
+/* Pre-fader channel-meter peak: the deck frame is measured BEFORE the channel
+ * gain (pregain/trim/volume/crossfader) is mixed into the master, so scale it by
+ * the pre-fader gain (pregain x master trim) here. This makes the VU track the
+ * TRIM knob (which sets pregain) like a real DJ channel meter, independent of
+ * the fader/crossfader. */
+static uint16_t frame_peak_prefader(audio_mixer_frame_t frame, float prefader_gain)
+{
+    float peak = (float)frame_peak(frame) * prefader_gain * AE_VU_SENSITIVITY;
+    if (peak < 0.0f) {
+        peak = 0.0f;
+    }
+    if (peak > 32768.0f) {
+        peak = 32768.0f;
+    }
+    return (uint16_t)(peak + 0.5f);
+}
+
 static void record_deck_peak_value(uint8_t deck, uint16_t peak)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
-    if (peak > s_deck_peak[deck]) {
-        s_deck_peak[deck] = peak;
+    /* Raw running max, drained (read-and-reset) by the FLX4 LED path. Atomic so
+     * the snapshot + LED reader never need the audio mutex. */
+    if (peak > atomic_load_u16(&s_deck_peak[deck])) {
+        atomic_store_u16(&s_deck_peak[deck], peak);
     }
+}
+
+/* Display VU peak: instant attack, gentle per-block decay (~1/16 per 256-frame
+ * block). Maintained only by the output task and read non-destructively by the
+ * UI + web snapshot, so it never sticks like the raw read-and-reset peak and is
+ * independent of the FLX4 LED consumer. */
+static uint16_t vu_decay_peak(uint16_t current, uint16_t block_peak)
+{
+    uint16_t step = current >> 4;
+    if (step == 0) {
+        step = 1;   /* guarantee decay reaches 0, not a floor of ~15 that would
+                     * keep the bottom VU segment lit after playback stops */
+    }
+    uint16_t decayed = current > step ? (uint16_t)(current - step) : 0u;
+    return block_peak > decayed ? block_peak : decayed;
+}
+
+static void record_deck_ui_peak(uint8_t deck, uint16_t block_peak)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
+    atomic_store_u16(&s_deck_ui_peak[deck],
+                     vu_decay_peak(atomic_load_u16(&s_deck_ui_peak[deck]), block_peak));
 }
 
 #if defined(AUDIO_ENGINE_PC_TEST)
@@ -1732,6 +1779,12 @@ static void ae_output_task(void *arg)
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
+        /* Pre-fader gain (pregain x master trim) for the VU meters, so they track
+         * the TRIM knob independent of the channel fader/crossfader. */
+        float deck0_prefader_gain =
+            pregain_gain_from_raw(atomic_load_u16(&s_pregain[0])) * s_master_trim;
+        float deck1_prefader_gain =
+            pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * s_master_trim;
         bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
         bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AUDIO_ENGINE_COMPAT_DECK]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
@@ -1804,8 +1857,8 @@ static void ae_output_task(void *arg)
                 &frame_consumed1,
                 &block_limiter_stats);
 
-            uint16_t peak0 = frame_peak(mix.deck_frame[0]);
-            uint16_t peak1 = frame_peak(mix.deck_frame[1]);
+            uint16_t peak0 = frame_peak_prefader(mix.deck_frame[0], deck0_prefader_gain);
+            uint16_t peak1 = frame_peak_prefader(mix.deck_frame[1], deck1_prefader_gain);
             if (peak0 > block_peak[deck0_index]) block_peak[deck0_index] = peak0;
             if (peak1 > block_peak[deck1_index]) block_peak[deck1_index] = peak1;
 
@@ -1832,6 +1885,8 @@ static void ae_output_task(void *arg)
             update_deck_output_position(deck1_index, consumed[deck1_index]);
             record_deck_peak_value(deck0_index, block_peak[deck0_index]);
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
+            record_deck_ui_peak(deck0_index, block_peak[deck0_index]);
+            record_deck_ui_peak(deck1_index, block_peak[deck1_index]);
             s_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
             s_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
             s_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
@@ -1944,6 +1999,7 @@ esp_err_t audio_engine_init(void)
         atomic_store_u16(&s_pregain[i], AUDIO_MIXER_CONTROL_CENTER);
         atomic_store_bool(&s_pfl_enabled[i], false);
         s_deck_peak[i] = 0;
+        s_deck_ui_peak[i] = 0;
         audio_eq_init(&s_deck_eq[i], 44100u);
         audio_filter_init(&s_deck_filter[i], 44100u);
         atomic_store_u16(&s_deck_filter_raw[i], AUDIO_FILTER_RAW_CENTER);
@@ -2718,11 +2774,9 @@ bool audio_engine_deck_is_playing(uint8_t deck)
 uint16_t audio_engine_get_deck_peak(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return 0;
-    AE_LOCK();
-    uint16_t peak = s_deck_peak[deck];
-    s_deck_peak[deck] = 0;
-    AE_UNLOCK();
-    return peak;
+    /* Lock-free read-and-reset (atomic exchange); no audio mutex so this never
+     * contends with the LVGL/decode/output tasks. */
+    return __atomic_exchange_n(&s_deck_peak[deck], 0u, __ATOMIC_RELAXED);
 }
 
 static uint32_t beat_fx_echo_capacity_frames(void)
@@ -3167,11 +3221,10 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->pad_fx_active[deck] = audio_pad_fx_is_active(&s_pad_fx[deck]);
         out_snapshot->pad_fx_kind[deck] = audio_pad_fx_kind(&s_pad_fx[deck]);
     }
-    AE_LOCK();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
-        out_snapshot->deck_peak[deck] = s_deck_peak[deck];
+        out_snapshot->deck_peak[deck] = atomic_load_u16(&s_deck_peak[deck]);
+        out_snapshot->deck_peak_display[deck] = atomic_load_u16(&s_deck_ui_peak[deck]);
     }
-    AE_UNLOCK();
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->master_volume = atomic_load_u16(&s_master_volume);
     out_snapshot->headphone_mix = atomic_load_u16(&s_headphone_mix);
