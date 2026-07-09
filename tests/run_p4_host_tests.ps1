@@ -213,13 +213,23 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("remain_ms / 10u")
 
 Assert-FileContains `
-    -Name "P4 Overview title strip uses compact time pill" `
+    -Name "P4 Overview time counter sits beside BPM at BPM font size" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
-        "title_time_bg",
-        "OVERVIEW_TITLE_TIME_X",
-        "OVERVIEW_TITLE_TIME_W",
+        "OVERVIEW_TIME_X",
+        "OVERVIEW_TIME_W",
+        "_Static_assert(OVERVIEW_TIME_X + OVERVIEW_TIME_W <= OVERVIEW_BPM_X",
+        "panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,",
+        "info_x + OVERVIEW_TIME_X,",
         "ui_overview_format_remaining_time"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "P4 Overview blue title strip is title-only (no time pill)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @(
+        "OVERVIEW_TITLE_TIME_X",
+        "OVERVIEW_TITLE_TIME_W"
     )
 
 Assert-FileDoesNotContain `

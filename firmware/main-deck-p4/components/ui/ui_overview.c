@@ -171,11 +171,7 @@ _Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
 #define OVERVIEW_DECK_INFO_W 400
 #define OVERVIEW_TITLE_Y 312
 #define OVERVIEW_TITLE_H 30
-#define OVERVIEW_TITLE_TEXT_W 286
-#define OVERVIEW_TITLE_TIME_X 292
-#define OVERVIEW_TITLE_TIME_Y 315
-#define OVERVIEW_TITLE_TIME_W 100
-#define OVERVIEW_TITLE_TIME_H 24
+#define OVERVIEW_TITLE_TEXT_W 392
 #define OVERVIEW_INFO_DIVIDER_Y 344
 #define OVERVIEW_INFO_ROW_Y 346
 #define OVERVIEW_TIME_Y 354
@@ -184,6 +180,12 @@ _Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
 #define OVERVIEW_BPM_Y 348
 #define OVERVIEW_BPM_W 92
 #define OVERVIEW_BPM_TAG_X 264
+/* Per-deck time counter: moved out of the blue title strip onto the BPM row,
+ * left of the BPM value, aligned with the title text start, at the BPM font
+ * size. The blue strip above is now title-only. */
+#define OVERVIEW_TIME_X 8
+#define OVERVIEW_TIME_W 150
+_Static_assert(OVERVIEW_TIME_X + OVERVIEW_TIME_W <= OVERVIEW_BPM_X, "overview time counter must stay left of the BPM value");
 #define OVERVIEW_PITCH_X 302
 #define OVERVIEW_PITCH_Y 346
 #define OVERVIEW_PITCH_CHIP_W 94
@@ -611,22 +613,14 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
     lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
-    panel->title_time_bg = ui_overview_bar(panel->panel,
-                                           info_x + OVERVIEW_TITLE_TIME_X,
-                                           OVERVIEW_TITLE_TIME_Y,
-                                           OVERVIEW_TITLE_TIME_W,
-                                           OVERVIEW_TITLE_TIME_H,
-                                           COL_PANEL_DK);
-    lv_obj_set_style_bg_opa(panel->title_time_bg, LV_OPA_90, LV_PART_MAIN);
-    lv_obj_set_style_border_color(panel->title_time_bg, COL_ACCENT, LV_PART_MAIN);
-    lv_obj_set_style_border_width(panel->title_time_bg, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(panel->title_time_bg, 0, LV_PART_MAIN);
-    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_18,
-                                                COL_TEXT, info_x + OVERVIEW_TITLE_TIME_X,
-                                                OVERVIEW_TITLE_TIME_Y + 2,
-                                                OVERVIEW_TITLE_TIME_W, "--:--");
-    lv_obj_set_height(panel->label_time, OVERVIEW_TITLE_H);
-    lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    /* Time counter now lives on the BPM row (left of the BPM value, aligned with
+     * the title text start, at the BPM font size); the blue strip is title-only. */
+    panel->title_time_bg = NULL;
+    panel->label_time = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
+                                                COL_TEXT, info_x + OVERVIEW_TIME_X,
+                                                OVERVIEW_BPM_Y,
+                                                OVERVIEW_TIME_W, "--:--");
+    lv_obj_set_style_text_align(panel->label_time, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     panel->label_bpm = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
                                                COL_TEXT, info_x + OVERVIEW_BPM_X,
                                                OVERVIEW_BPM_Y, OVERVIEW_BPM_W, "120.00");
