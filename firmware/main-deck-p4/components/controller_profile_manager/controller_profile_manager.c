@@ -113,7 +113,9 @@ esp_err_t controller_profile_scan_dir(const char *root,
     }
 
     memset(reg, 0, sizeof(*reg));
+    reg->matched_index = -1;
     reg->active_index = -1;
+    reg->transfer_state = CPM_TRANSFER_IDLE;
 
     DIR *dir = opendir(root);
     if (!dir) {
@@ -159,8 +161,52 @@ int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg
     reg->connected_vid = vid;
     reg->connected_pid = pid;
     int idx = controller_profile_registry_match(reg, vid, pid);
-    reg->active_index = (int8_t)idx;
+    reg->matched_index = (int8_t)idx;
+    if (idx >= 0) {
+        if (reg->active_index == idx &&
+            reg->transfer_state == CPM_TRANSFER_ACTIVE) {
+            return idx;
+        }
+        reg->active_index = -1;
+        reg->transfer_state = CPM_TRANSFER_MATCHED;
+    } else {
+        reg->active_index = -1;
+        reg->transfer_state = CPM_TRANSFER_UNSUPPORTED;
+    }
     return idx;
+}
+
+void controller_profile_registry_mark_transfer_started(controller_profile_registry_t *reg,
+                                                       int index)
+{
+    if (!reg || index < 0 || index >= (int)reg->count) {
+        return;
+    }
+    reg->matched_index = (int8_t)index;
+    reg->active_index = -1;
+    reg->transfer_state = CPM_TRANSFER_TRANSFERRING;
+}
+
+void controller_profile_registry_mark_transfer_active(controller_profile_registry_t *reg,
+                                                     int index)
+{
+    if (!reg || index < 0 || index >= (int)reg->count) {
+        return;
+    }
+    reg->matched_index = (int8_t)index;
+    reg->active_index = (int8_t)index;
+    reg->transfer_state = CPM_TRANSFER_ACTIVE;
+}
+
+void controller_profile_registry_mark_transfer_failed(controller_profile_registry_t *reg,
+                                                     int index)
+{
+    if (!reg || index < 0 || index >= (int)reg->count) {
+        return;
+    }
+    reg->matched_index = (int8_t)index;
+    reg->active_index = -1;
+    reg->transfer_state = CPM_TRANSFER_FAILED;
 }
 
 /* ── Firmware glue (ESP-IDF only) ──────────────────────────────────────────── */
@@ -308,8 +354,10 @@ static void cpm_sender_task(void *arg)
             s_transferred_vid = m.vid;
             s_transferred_pid = m.pid;
             s_transferred_valid = true;
+            controller_profile_registry_mark_transfer_active(&s_registry, idx);
         } else {
             s_transferred_valid = false;   /* retry on the next announcement */
+            controller_profile_registry_mark_transfer_failed(&s_registry, idx);
         }
         ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
                  ok ? "OK" : "FAILED");
@@ -319,7 +367,9 @@ static void cpm_sender_task(void *arg)
 esp_err_t controller_profile_manager_init(void)
 {
     memset(&s_registry, 0, sizeof(s_registry));
+    s_registry.matched_index = -1;
     s_registry.active_index = -1;
+    s_registry.transfer_state = CPM_TRANSFER_IDLE;
 
     if (!s_reply_sem) {
         s_reply_sem = xSemaphoreCreateBinary();
@@ -379,6 +429,7 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
         if (s_transferred_valid && s_transferred_vid == vid && s_transferred_pid == pid) {
             /* Already streamed + activated for this controller; the S3 still
              * holds it. Skip the redundant re-transfer (see dedup note above). */
+            controller_profile_registry_mark_transfer_active(&s_registry, idx);
             ESP_LOGD(TAG, "controller VID=0x%04X PID=0x%04X profile '%s' already active",
                      vid, pid, s_registry.profiles[idx].id);
             return idx;
@@ -388,7 +439,9 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
         /* Hand the transfer to the sender task; drop silently if it is busy
          * (the next connect/heartbeat descriptor re-triggers a match). */
         if (s_send_q) {
-            (void)xQueueSend(s_send_q, &idx, 0);
+            if (xQueueSend(s_send_q, &idx, 0) == pdTRUE) {
+                controller_profile_registry_mark_transfer_started(&s_registry, idx);
+            }
         }
     } else {
         /* No profile for this controller — forget any previous mark so a later

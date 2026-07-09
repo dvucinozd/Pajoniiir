@@ -18,6 +18,28 @@
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
 
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+static const char *controller_profile_state_name(controller_profile_transfer_state_t state)
+{
+    switch (state) {
+    case CPM_TRANSFER_IDLE:
+        return "idle";
+    case CPM_TRANSFER_MATCHED:
+        return "matched";
+    case CPM_TRANSFER_TRANSFERRING:
+        return "transferring";
+    case CPM_TRANSFER_ACTIVE:
+        return "active";
+    case CPM_TRANSFER_FAILED:
+        return "failed";
+    case CPM_TRANSFER_UNSUPPORTED:
+        return "unsupported";
+    default:
+        return "unknown";
+    }
+}
+#endif
+
 static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *uri)
 {
     esp_err_t rc = httpd_register_uri_handler(server, uri);
@@ -178,6 +200,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             ? reg->profiles[reg->active_index].id : "";
         char active_esc[2 * CPM_ID_MAX + 8] = {0};
         web_api_json_escape(active, active_esc, sizeof(active_esc));
+        char state_esc[24] = {0};
+        web_api_json_escape(controller_profile_state_name(reg->transfer_state),
+                            state_esc, sizeof(state_esc));
         web_api_format_controller_json(controller_json, sizeof(controller_json),
                                        reg->controller_present,
                                        reg->connected_vid, reg->connected_pid,
@@ -185,11 +210,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                        (reg->connected_caps & CTRL_DESC_CAP_MIDI_IN) != 0,
                                        (reg->connected_caps & CTRL_DESC_CAP_MIDI_OUT) != 0,
                                        (reg->connected_caps & CTRL_DESC_CAP_USB_AUDIO) != 0,
-                                       active_esc, reg->count);
+                                       active_esc, state_esc, reg->count);
     }
 #else
     web_api_format_controller_json(controller_json, sizeof(controller_json),
-                                   false, 0, 0, "", false, false, false, "", 0);
+                                   false, 0, 0, "", false, false, false, "", "idle", 0);
 #endif
 
     char *json = NULL;

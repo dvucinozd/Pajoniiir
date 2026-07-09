@@ -460,9 +460,11 @@ Verification (hardware, 2026-07-09 — profile-loading path confirmed):
   `"controller":{...,"profiles":1}` over the `PAJONIIR` Wi-Fi remote AP.
 - [ ] Connect the DDJ-FLX4 to the S3: S3 sends the descriptor, P4 matches and
   streams the profile (`profile 'pioneer_ddj_flx4' transfer to S3 OK`),
-  `/api/status` shows `"present":true,"active_profile":"pioneer_ddj_flx4"`, and
-  FLX4 controls/LEDs work through the dynamic profile — pending controller being
-  attached to the S3.
+  `/api/status` shows `"present":true`,
+  `"profile_state":"active"`, and
+  `"active_profile":"pioneer_ddj_flx4"` only after the S3 ACKs
+  `PROFILE_ACTIVATE`; then confirm FLX4 controls/LEDs work through the dynamic
+  profile — pending controller being attached to the S3.
 
 Notes:
 

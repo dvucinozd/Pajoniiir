@@ -256,6 +256,11 @@ controller connect
      same semantic events and send the same semantic LED frames
 ```
 
+`/api/status.controller.active_profile` is deliberately stricter than a VID/PID
+match: it is empty until the P4 sender receives the S3 ACK for
+`PROFILE_ACTIVATE`. During bring-up, `profile_state` reports `matched`,
+`transferring`, `active`, `failed`, or `unsupported`.
+
 Design guarantees:
 
 - P4 stays the sole authority for deck/audio/UI/mixer state; the profile only

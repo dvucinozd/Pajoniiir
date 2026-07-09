@@ -30,6 +30,7 @@ int web_api_format_controller_json(char *dst,
                                    bool midi_out,
                                    bool usb_audio,
                                    const char *active_profile_escaped,
+                                   const char *profile_state_escaped,
                                    unsigned profile_count);
 int web_api_alloc_printf(char **out, const char *fmt, ...);
 uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known);

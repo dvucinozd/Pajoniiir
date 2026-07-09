@@ -1018,13 +1018,18 @@ fallback. The P4 remains the sole authority for deck/audio/UI/mixer state.
   otherwise.
 - **Status reporting (P4).** `/api/status` gains a `controller` object
   (present, VID/PID, product, MIDI/audio capability, active profile, profile
-  count) so the operator can see why a controller works without a serial log.
+  state, and profile count) so the operator can see why a controller works
+  without a serial log. `active_profile` is populated only after the S3 ACKs
+  `PROFILE_ACTIVATE`; before that, `profile_state` distinguishes `matched`,
+  `transferring`, `failed`, and `unsupported`.
 
 Acceptance met: S3 + P4 host tests pass; both `idf.py` builds pass; on hardware
 the SD profile loads into the P4 registry and `/api/status` reports `profiles:1`.
 End-to-end with a physical FLX4 connected (descriptor → match → transfer →
-activate → dynamic mapping) is wired and builds; final controller-attached smoke
-is pending controller availability.
+activate → dynamic mapping) is wired and builds; P4 now reports an active
+profile only after the S3 has ACKed activation, so final controller-attached
+smoke must confirm `/api/status.controller.profile_state:"active"` and
+`active_profile:"pioneer_ddj_flx4"`.
 
 ## Phase 12: FLX4 USB Audio Product Stabilization (2026-07-09)
 

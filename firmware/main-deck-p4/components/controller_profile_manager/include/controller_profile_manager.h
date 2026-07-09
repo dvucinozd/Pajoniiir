@@ -4,8 +4,8 @@
  *
  * Scans the SD/TF card for compiled controller profiles (S3CP `.s3bin`,
  * see docs/CONTROLLER_PROFILE_SCHEMA.md), validates their headers, and keeps a
- * registry the P4 uses to pick a profile for a connected controller and (later
- * phases) transfer it to the S3.
+ * registry the P4 uses to pick a profile for a connected controller, transfer
+ * it to the S3, and expose whether the S3 has actually ACKed activation.
  *
  * The pure functions (header parse, directory scan, registry match) carry no
  * ESP-IDF logging or sdkconfig dependency so the host test harness compiles
@@ -48,10 +48,21 @@ typedef struct {
 
 #define CPM_PRODUCT_MAX 32
 
+typedef enum {
+    CPM_TRANSFER_IDLE = 0,
+    CPM_TRANSFER_MATCHED,
+    CPM_TRANSFER_TRANSFERRING,
+    CPM_TRANSFER_ACTIVE,
+    CPM_TRANSFER_FAILED,
+    CPM_TRANSFER_UNSUPPORTED,
+} controller_profile_transfer_state_t;
+
 typedef struct {
     controller_profile_meta_t profiles[CPM_MAX_PROFILES];
     uint8_t count;
-    int8_t active_index;       /* index into profiles[], -1 = none/unsupported */
+    int8_t matched_index;      /* profile matching the connected VID/PID, -1 = none */
+    int8_t active_index;       /* S3-ACKed active profile, -1 = not active yet */
+    controller_profile_transfer_state_t transfer_state;
     bool controller_present;   /* an S3 controller descriptor has been received */
     uint16_t connected_vid;
     uint16_t connected_pid;
@@ -107,6 +118,15 @@ int controller_profile_registry_match(const controller_profile_registry_t *reg,
  * profile. Returns the matched index or -1. */
 int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg,
                                               uint16_t vid, uint16_t pid);
+
+void controller_profile_registry_mark_transfer_started(controller_profile_registry_t *reg,
+                                                       int index);
+
+void controller_profile_registry_mark_transfer_active(controller_profile_registry_t *reg,
+                                                     int index);
+
+void controller_profile_registry_mark_transfer_failed(controller_profile_registry_t *reg,
+                                                     int index);
 
 #ifdef __cplusplus
 }

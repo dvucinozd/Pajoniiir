@@ -152,12 +152,16 @@ static void test_scan_and_match(void)
     assert(controller_profile_registry_on_descriptor(&reg, 0x2B73, 0x0045) == flx4);
     assert(reg.controller_present);
     assert(reg.connected_vid == 0x2B73 && reg.connected_pid == 0x0045);
-    assert(reg.active_index == flx4);
+    assert(reg.matched_index == flx4);
+    assert(reg.active_index == -1);
+    assert(reg.transfer_state == CPM_TRANSFER_MATCHED);
 
     /* ...and an unknown controller clears it while staying "present". */
     assert(controller_profile_registry_on_descriptor(&reg, 0x1234, 0x5678) == -1);
     assert(reg.controller_present);
+    assert(reg.matched_index == -1);
     assert(reg.active_index == -1);
+    assert(reg.transfer_state == CPM_TRANSFER_UNSUPPORTED);
 
     /* Missing root reports NOT_FOUND. */
     assert(controller_profile_scan_dir("no_such_dir_xyz", &reg) ==
@@ -165,6 +169,38 @@ static void test_scan_and_match(void)
     assert(controller_profile_scan_dir(NULL, &reg) == ESP_ERR_INVALID_ARG);
 
     printf("  scan + registry match/descriptor                 PASS\n");
+}
+
+static void test_descriptor_match_waits_for_activate_ack(void)
+{
+    controller_profile_registry_t reg;
+
+    build_tree();
+    assert(controller_profile_scan_dir(ROOT, &reg) == ESP_OK);
+    int flx4 = controller_profile_registry_match(&reg, 0x2B73, 0x0045);
+    assert(flx4 >= 0);
+
+    assert(controller_profile_registry_on_descriptor(&reg, 0x2B73, 0x0045) == flx4);
+    assert(reg.controller_present);
+    assert(reg.matched_index == flx4);
+    assert(reg.active_index == -1);
+    assert(reg.transfer_state == CPM_TRANSFER_MATCHED);
+
+    controller_profile_registry_mark_transfer_started(&reg, flx4);
+    assert(reg.transfer_state == CPM_TRANSFER_TRANSFERRING);
+    assert(reg.active_index == -1);
+
+    controller_profile_registry_mark_transfer_active(&reg, flx4);
+    assert(reg.transfer_state == CPM_TRANSFER_ACTIVE);
+    assert(reg.active_index == flx4);
+
+    assert(controller_profile_registry_on_descriptor(&reg, 0x1234, 0x5678) == -1);
+    assert(reg.controller_present);
+    assert(reg.matched_index == -1);
+    assert(reg.active_index == -1);
+    assert(reg.transfer_state == CPM_TRANSFER_UNSUPPORTED);
+
+    printf("  descriptor match waits for activate ACK           PASS\n");
 }
 
 static void cleanup_tree(void)
@@ -190,6 +226,7 @@ int main(void)
     load_fixture();
     test_meta_parse();
     test_scan_and_match();
+    test_descriptor_match_waits_for_activate_ack();
     cleanup_tree();
     printf("controller_profile_manager tests passed\n");
     return 0;

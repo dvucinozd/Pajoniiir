@@ -114,6 +114,7 @@ int web_api_format_controller_json(char *dst,
                                    bool midi_out,
                                    bool usb_audio,
                                    const char *active_profile_escaped,
+                                   const char *profile_state_escaped,
                                    unsigned profile_count)
 {
     if (!dst || dst_size == 0) {
@@ -124,7 +125,7 @@ int web_api_format_controller_json(char *dst,
                     "\"controller\":{\"present\":%s,\"vid\":\"0x%04X\","
                     "\"pid\":\"0x%04X\",\"product\":\"%s\",\"midi_in\":%s,"
                     "\"midi_out\":%s,\"usb_audio\":%s,\"active_profile\":\"%s\","
-                    "\"profiles\":%u}",
+                    "\"profile_state\":\"%s\",\"profiles\":%u}",
                     present ? "true" : "false",
                     vid & 0xFFFFu,
                     pid & 0xFFFFu,
@@ -133,6 +134,7 @@ int web_api_format_controller_json(char *dst,
                     midi_out ? "true" : "false",
                     usb_audio ? "true" : "false",
                     active_profile_escaped ? active_profile_escaped : "",
+                    profile_state_escaped ? profile_state_escaped : "",
                     profile_count);
 }
 
