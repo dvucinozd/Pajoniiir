@@ -22,6 +22,14 @@ HEADER_SIZE = 32
 INPUT_ENTRY_SIZE = 16
 OUTPUT_ENTRY_SIZE = 12
 
+# Firmware bounds — keep in sync with controller_profile.h (S3 parser) and
+# controller_profile_manager.h (P4 transfer). A profile exceeding any of these
+# is rejected on-device (CP_ERR_BOUNDS / NACK_SIZE); catch it here instead.
+MAX_INPUTS = 320        # CP_MAX_INPUTS
+MAX_OUTPUTS = 160       # CP_MAX_OUTPUTS
+MAX_PAIR_SLOTS = 40     # CP_MAX_PAIR_SLOTS
+MAX_PROFILE_SIZE = 16384  # CPM_MAX_PROFILE_SIZE
+
 # control_link.h CTRL_TYPE_*
 TYPE_BUTTON = 0x01
 TYPE_ENCODER = 0x02
@@ -232,8 +240,9 @@ def compile_inputs(inputs):
         nonlocal pair_slots
         slot = pair_slots
         pair_slots += 1
-        if pair_slots > 255:
-            raise ValueError("too many pairing slots")
+        if pair_slots > MAX_PAIR_SLOTS:
+            raise ValueError("too many pairing slots (%d > %d)" %
+                             (pair_slots, MAX_PAIR_SLOTS))
         return slot
 
     for item in inputs:
@@ -344,6 +353,13 @@ def compile_profile(profile):
     entries, pair_slots = compile_inputs(profile.get("inputs", []))
     outputs = compile_outputs(profile.get("outputs", []))
 
+    if len(entries) > MAX_INPUTS:
+        raise ValueError("too many input entries (%d > %d)" %
+                         (len(entries), MAX_INPUTS))
+    if len(outputs) > MAX_OUTPUTS:
+        raise ValueError("too many output entries (%d > %d)" %
+                         (len(outputs), MAX_OUTPUTS))
+
     caps = profile.get("capabilities", {})
     flags = 0
     if caps.get("led_feedback"):
@@ -362,6 +378,9 @@ def compile_profile(profile):
     tail = struct.pack("<HHIHHBBH", num(profile["vid"]), num(profile["pid"]),
                        flags, len(entries), len(outputs), pair_slots,
                        int(profile.get("decks", 2)), 0)
+    if profile_size > MAX_PROFILE_SIZE:
+        raise ValueError("profile too large (%d > %d bytes)" %
+                         (profile_size, MAX_PROFILE_SIZE))
     crc = zlib.crc32(tail + body) & 0xFFFFFFFF
     header = S3CP_MAGIC + struct.pack("<HHII", S3CP_VERSION, HEADER_SIZE,
                                       profile_size, crc) + tail

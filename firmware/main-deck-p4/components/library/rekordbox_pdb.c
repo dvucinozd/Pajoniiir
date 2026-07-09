@@ -455,7 +455,9 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
 
     t->track_id  = rd_le32(p->data + row + TRACK_OFF_TRACK_ID);
     uint32_t bpm100 = rd_le32(p->data + row + TRACK_OFF_TEMPO);
-    t->bpm       = (uint16_t)(bpm100 / 100u);
+    /* Round to nearest, matching the ANLZ beat-grid path (rekordbox_anlz.c),
+     * so a track's coarse (PDB) and precise (ANLZ) BPM agree on the integer. */
+    t->bpm       = (uint16_t)((bpm100 + 50u) / 100u);
     t->duration_s = rd_le16(p->data + row + TRACK_OFF_DURATION);
 
     uint32_t artist_id = rd_le32(p->data + row + TRACK_OFF_ARTIST_ID);

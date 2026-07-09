@@ -26,12 +26,12 @@ static const char *TAG = "ctrl_link";
 
 #define UART_PORT    UART_NUM_1
 #define UART_BAUD    115200
-#define RX_BUF_SIZE  256
-#define TX_BUF_SIZE  256
-#define RX_QUEUE_LEN 10
+/* 1 KB rings (was 256 B ≈ 22 ms at 115200): gives headroom for the 0xA6 bulk
+ * profile stream and brief RX-task stalls so event/LED frames are not dropped. */
+#define RX_BUF_SIZE  1024
+#define TX_BUF_SIZE  1024
 #define CTRL_RX_TASK_STACK 4096
 
-static QueueHandle_t   s_uart_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
@@ -340,8 +340,10 @@ esp_err_t control_link_init(QueueHandle_t panel_event_queue)
         .flow_ctrl           = UART_HW_FLOWCTRL_DISABLE,
         .source_clk          = UART_SCLK_DEFAULT,
     };
+    /* No UART event queue: the RX task polls with uart_read_bytes and the event
+     * queue was never consumed (matches the P4 side). */
     ESP_RETURN_ON_ERROR(uart_driver_install(UART_PORT, RX_BUF_SIZE, TX_BUF_SIZE,
-                                            RX_QUEUE_LEN, &s_uart_event_queue, 0),
+                                            0, NULL, 0),
                         TAG, "driver install");
     ESP_RETURN_ON_ERROR(uart_param_config(UART_PORT, &ucfg), TAG, "param config");
     ESP_RETURN_ON_ERROR(uart_set_pin(UART_PORT, PIN_UART_TX, PIN_UART_RX,

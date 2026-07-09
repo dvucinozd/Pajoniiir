@@ -75,7 +75,11 @@ void monitor_pcm_link_set_enabled(bool enabled)
 
 bool monitor_pcm_link_write_nonblocking(const int16_t *interleaved_stereo, size_t frames)
 {
-    if (!interleaved_stereo || frames == 0u || frames > MONITOR_PCM_LINK_MAX_FRAMES_PER_BLOCK || !s_enabled) {
+    if (!s_enabled) {
+        /* Feature off — not a drop; don't inflate the diagnostics counter. */
+        return false;
+    }
+    if (!interleaved_stereo || frames == 0u || frames > MONITOR_PCM_LINK_MAX_FRAMES_PER_BLOCK) {
         s_stats.dropped_blocks++;
         return false;
     }

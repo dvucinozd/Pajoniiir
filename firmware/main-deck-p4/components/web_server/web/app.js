@@ -42,9 +42,10 @@ function setConnected(ok) {
 }
 
 function init() {
-    // Pokreni status loop odmah da sučelje odmah oživi
-    pollStatus();
-    setInterval(pollStatus, 250);
+    // Pokreni status loop odmah da sučelje odmah oživi. Ulančani setTimeout
+    // (umjesto setInterval) šalje sljedeći zahtjev tek nakon što prethodni
+    // završi, pa se zahtjevi ne gomilaju na sporom linku (httpd ima 5 socketa).
+    scheduleNextPoll();
 
     // Dohvati podatke o knjižnici u pozadini s kratkom odgodom
     setTimeout(fetchLibrary, 500);
@@ -94,7 +95,7 @@ function renderLibrary(tracks) {
             <tr>
                 <td>${escapeHtml(track.title)}</td>
                 <td style="color: var(--text-muted)">${escapeHtml(track.artist)}</td>
-                <td>${track.bpm / 100}</td>
+                <td>${track.bpm}</td>
                 <td>${formatMs(track.duration_ms)}</td>
                 <td>
                     <div class="library-actions">
@@ -121,8 +122,22 @@ function filterLibrary() {
     renderLibrary(filtered);
 }
 
+const POLL_INTERVAL_MS = 250;
+let pollTimer = null;
+
+function scheduleNextPoll() {
+    if (pollTimer !== null) return;
+    pollTimer = setTimeout(() => {
+        pollTimer = null;
+        pollStatus();
+    }, POLL_INTERVAL_MS);
+}
+
 function pollStatus() {
-    fetch('/api/status')
+    // Abort a stalled request so a slow/dead link can't leave the poll wedged.
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 2000);
+    fetch('/api/status', { signal: controller.signal })
         .then(res => {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
@@ -137,6 +152,10 @@ function pollStatus() {
         .catch(err => {
             setConnected(false);
             console.error('Status poll error:', err);
+        })
+        .finally(() => {
+            clearTimeout(abortTimer);
+            scheduleNextPoll();   // chain the next poll only after this one settles
         });
 }
 
@@ -163,7 +182,8 @@ function updateDeckUI(deckNum, data) {
     // Tekstovi i statusi
     document.getElementById(`deck-${deckNum}-title`).innerText = data.title || "No Track";
     document.getElementById(`deck-${deckNum}-artist`).innerText = data.artist || "Unknown Artist";
-    document.getElementById(`deck-${deckNum}-bpm`).innerText = (data.bpm / 100).toFixed(2);
+    // API sends whole BPM (already pitch-adjusted), matching the on-device UI.
+    document.getElementById(`deck-${deckNum}-bpm`).innerText = Number(data.bpm).toFixed(2);
     document.getElementById(`deck-${deckNum}-pitch`).innerText = data.pitch_percent >= 0 
         ? `+${data.pitch_percent.toFixed(2)}%` 
         : `${data.pitch_percent.toFixed(2)}%`;

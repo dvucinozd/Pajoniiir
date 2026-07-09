@@ -41,6 +41,14 @@ esp_err_t flx4_usb_audio_poll_ring_autostart(void);
 void flx4_usb_audio_stop(void);
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out);
 
+/*
+ * Watchdog pump. Call periodically from the FLX4 USB client task. Re-arms any
+ * isochronous OUT transfer that dropped out of the self-resubmit rotation after
+ * a failed submit, so a transient submit error does not permanently silence the
+ * headphone-cue stream. No-op when not streaming.
+ */
+void flx4_usb_audio_pump(void);
+
 size_t flx4_usb_audio_fill_next_tone_packet(uint8_t *dst, size_t dst_capacity);
 
 #ifdef __cplusplus

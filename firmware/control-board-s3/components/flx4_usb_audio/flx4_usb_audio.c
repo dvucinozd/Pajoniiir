@@ -53,6 +53,9 @@ static const char *TAG = "flx4_usb_audio";
 #define UAC_SAMPLING_FREQ_CONTROL 0x01u
 
 static usb_transfer_t *s_transfers[FLX4_USB_AUDIO_TRANSFER_COUNT];
+/* Set when a transfer's submit failed so it dropped out of the self-resubmit
+ * rotation; flx4_usb_audio_pump() re-arms these from the client task. */
+static bool s_transfer_idle[FLX4_USB_AUDIO_TRANSFER_COUNT];
 static bool s_streaming;
 static usb_host_client_handle_t s_client;
 static usb_device_handle_t s_device;
@@ -264,6 +267,7 @@ static void free_transfers(void)
 {
     s_streaming = false;
     for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
+        s_transfer_idle[i] = false;
         if (s_transfers[i]) {
             esp_err_t rc = usb_host_transfer_free(s_transfers[i]);
             if (rc == ESP_OK) {
@@ -304,12 +308,24 @@ static esp_err_t allocate_transfers(const flx4_uac_playback_format_t *fmt)
     return ESP_OK;
 }
 
+static int transfer_index(const usb_transfer_t *transfer)
+{
+    for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
+        if (s_transfers[i] == transfer) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
 static void submit_stream_transfer(usb_transfer_t *transfer)
 {
     if (!transfer ||
         (s_mode != FLX4_USB_AUDIO_MODE_TONE && s_mode != FLX4_USB_AUDIO_MODE_RING)) {
         return;
     }
+
+    const int idx = transfer_index(transfer);
 
     size_t offset = 0u;
     for (int i = 0; i < transfer->num_isoc_packets; ++i) {
@@ -322,6 +338,9 @@ static void submit_stream_transfer(usb_transfer_t *transfer)
 
     if (offset == 0u) {
         s_stats.skipped_packets++;
+        if (idx >= 0) {
+            s_transfer_idle[idx] = true;   /* nothing to send yet; pump retries */
+        }
         return;
     }
 
@@ -329,7 +348,12 @@ static void submit_stream_transfer(usb_transfer_t *transfer)
     esp_err_t rc = usb_host_transfer_submit(transfer);
     if (rc != ESP_OK) {
         s_stats.skipped_packets++;
+        if (idx >= 0) {
+            s_transfer_idle[idx] = true;
+        }
         ESP_LOGW(TAG, "submit stream transfer failed: %s", esp_err_to_name(rc));
+    } else if (idx >= 0) {
+        s_transfer_idle[idx] = false;
     }
 }
 
@@ -548,6 +572,25 @@ void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out)
     if (out) {
         *out = s_stats;
     }
+}
+
+void flx4_usb_audio_pump(void)
+{
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+    if (!s_streaming ||
+        (s_mode != FLX4_USB_AUDIO_MODE_TONE && s_mode != FLX4_USB_AUDIO_MODE_RING)) {
+        return;
+    }
+    /* Re-arm any transfer that fell out of the self-resubmit rotation after a
+     * failed submit. Runs on the client task (the same context that dispatches
+     * audio_transfer_cb), so re-submitting here can never collide with a
+     * callback resubmit of the same transfer. */
+    for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
+        if (s_transfers[i] && s_transfer_idle[i]) {
+            submit_stream_transfer(s_transfers[i]);
+        }
+    }
+#endif
 }
 
 /* Fills one USB Audio OUT packet for the active streaming mode. Tone mode

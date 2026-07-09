@@ -353,10 +353,18 @@ static void record_deck_peak(uint8_t deck, audio_mixer_frame_t frame)
 #if AE_FW
 static esp_codec_dev_handle_t s_codec       = NULL;  /* owned by bsp_jc4880 */
 static i2s_chan_handle_t      s_main_i2s_tx = NULL;  /* optional PCM5102A MAIN OUT */
-static SemaphoreHandle_t      s_tasks_done  = NULL;  /* counting sem: each task gives on exit */
+/* Per-deck counting semaphore: each of a deck's tasks gives on exit. Per-deck
+ * (not shared) so tearing down deck A never consumes the exit signals a
+ * concurrent load of deck B is waiting on. */
+static SemaphoreHandle_t      s_tasks_done[AUDIO_ENGINE_DECK_COUNT] = { NULL };
 static SemaphoreHandle_t      s_output_done = NULL;
 static TaskHandle_t           s_output_task = NULL;
 static volatile bool          s_output_run = false;
+/* Guards the decode-task ring/resampler flush against the output-task consumer:
+ * both are pinned to AE_AUDIO_TASK_CORE, so a brief critical section makes the
+ * two-index ring reset atomic w.r.t. a concurrent pop (which runs outside
+ * AE_LOCK during mixing). */
+static portMUX_TYPE           s_ring_flush_mux = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool          s_output_codec_open = false;
 static uint32_t               s_output_sample_rate = 0;
 /* The MP3 is preloaded into PSRAM once and decoded directly from the
@@ -1292,6 +1300,14 @@ static void ae_fail_load(audio_engine_state_t *eng,
     audio_fw_preload_abort_load(fw, runtime);
 }
 
+/* The per-deck exit semaphore for a task's context. ctx->deck is bound before
+ * the task is created, so it is always valid here; clamp defensively. */
+static SemaphoreHandle_t ctx_tasks_done(const audio_fw_task_context_t *ctx)
+{
+    uint8_t d = (ctx && ctx->deck < AUDIO_ENGINE_DECK_COUNT) ? ctx->deck : 0u;
+    return s_tasks_done[d];
+}
+
 /* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark;
  * build the frame seek table once the whole file is in. Parks
  * until stop() so the teardown counting semaphore stays balanced. */
@@ -1299,7 +1315,7 @@ static void ae_loader_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
     if (!audio_fw_task_context_is_bound(ctx)) {
-        xSemaphoreGive(s_tasks_done);
+        xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDelete(NULL);
         return;
     }
@@ -1381,7 +1397,7 @@ static void ae_loader_task(void *arg)
 park:
     while (runtime->run) vTaskDelay(pdMS_TO_TICKS(20));   /* stay alive until stop() */
     runtime->loader_task = NULL;
-    xSemaphoreGive(s_tasks_done);
+    xSemaphoreGive(ctx_tasks_done(ctx));
     vTaskDelete(NULL);
 }
 
@@ -1390,7 +1406,7 @@ static void ae_decode_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
     if (!audio_fw_task_context_is_bound(ctx)) {
-        xSemaphoreGive(s_tasks_done);
+        xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDeleteWithCaps(NULL);
         return;
     }
@@ -1400,7 +1416,7 @@ static void ae_decode_task(void *arg)
     audio_pcm_ring_t *pcm_ring = (audio_pcm_ring_t *)ctx->pcm_ring;
     audio_resampler_state_t *resampler = (audio_resampler_state_t *)ctx->resampler;
     if (ctx->deck >= AUDIO_ENGINE_DECK_COUNT) {
-        xSemaphoreGive(s_tasks_done);
+        xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDeleteWithCaps(NULL);
         return;
     }
@@ -1520,10 +1536,16 @@ static void ae_decode_task(void *arg)
                     mp3dec_init(&eng->dec);
                 }
 
-                /* Loop wrap keeps the ring (gapless); user seeks flush it. */
+                /* Loop wrap keeps the ring (gapless); user seeks flush it.
+                 * The output task pops the ring / reads the resampler without
+                 * AE_LOCK, so shut out preemption on this core while both are
+                 * reset — otherwise a pop interleaved with the two-index reset
+                 * sees a bogus (underflowed) used count and streams garbage. */
                 if (!eng->seek_is_loop) {
+                    taskENTER_CRITICAL(&s_ring_flush_mux);
                     audio_pcm_ring_reset(pcm_ring);
                     audio_resampler_reset(resampler);
+                    taskEXIT_CRITICAL(&s_ring_flush_mux);
                 }
                 eng->seek_is_loop   = false;
                 eng->seek_requested = false;
@@ -1588,7 +1610,7 @@ static void ae_decode_task(void *arg)
 cleanup:
     /* The preload buffer / file are owned by the loader + audio_engine_stop(). */
     runtime->decode_task = NULL;
-    xSemaphoreGive(s_tasks_done);
+    xSemaphoreGive(ctx_tasks_done(ctx));
     vTaskDeleteWithCaps(NULL);
 }
 
@@ -1958,13 +1980,18 @@ esp_err_t audio_engine_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
-    if (!s_tasks_done) {
-        s_tasks_done = xSemaphoreCreateCounting(AUDIO_ENGINE_DECK_COUNT * 3, 0);
+    bool tasks_done_ok = true;
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (!s_tasks_done[i]) {
+            /* Each deck runs at most a loader + decoder + output task. */
+            s_tasks_done[i] = xSemaphoreCreateCounting(3, 0);
+        }
+        if (!s_tasks_done[i]) tasks_done_ok = false;
     }
     if (!s_output_done) {
         s_output_done = xSemaphoreCreateCounting(1, 0);
     }
-    if (!s_file_mutex || !s_tasks_done || !s_output_done) return ESP_ERR_NO_MEM;
+    if (!s_file_mutex || !tasks_done_ok || !s_output_done) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "audio_engine_init: output ready (ES8311=%s, PCM5102A=%s)",
              s_codec ? "on" : "off", s_main_i2s_tx ? "on" : "off");
 #endif
@@ -2111,9 +2138,9 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
                                ring,
                                &s_resamplers[deck],
                                task_plan);
-    if (s_tasks_done) {
-        while (xSemaphoreTake(s_tasks_done, 0) == pdTRUE) {
-            /* drain stale task-exit signals from a previous load */
+    if (s_tasks_done[deck]) {
+        while (xSemaphoreTake(s_tasks_done[deck], 0) == pdTRUE) {
+            /* drain stale task-exit signals from a previous load of this deck */
         }
     }
     if (task_plan.start_loader) {
@@ -2152,12 +2179,21 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         eng->loading = false;
         eng->load_progress = 100;
         runtime->run = false;
+        int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
-            xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
+            if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
+                exited++;
+            }
         }
-        if (fw->buf) {
+        /* Only reclaim the PSRAM buffer once every task that could still be
+         * reading it (the loader's fread target) has actually exited; freeing
+         * it under a stuck loader would be a use-after-free. */
+        if (exited == runtime->tasks_started && fw->buf) {
             heap_caps_free(fw->buf);
             fw->buf = NULL;
+        } else if (exited != runtime->tasks_started) {
+            ESP_LOGE(TAG, "load abort: %d/%d tasks exited; leaking preload buffer",
+                     exited, runtime->tasks_started);
         }
         audio_engine_reset_state(eng, output_rc, "OUTPUT TASK ERR");
         audio_fw_runtime_mark_stopped(runtime);
@@ -2170,16 +2206,24 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         eng->loading = false;
         eng->load_progress = 100;
         runtime->run = false;
+        int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
-            xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500));
+            if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
+                exited++;
+            }
         }
         if (runtime->codec_open) {
             if (s_codec) esp_codec_dev_close(s_codec);
             runtime->codec_open = false;
         }
-        if (fw->buf) {
+        /* Same rule as the OUTPUT TASK ERR path: never free the buffer while a
+         * task that reads it might still be alive. */
+        if (exited == runtime->tasks_started && fw->buf) {
             heap_caps_free(fw->buf);
             fw->buf = NULL;
+        } else if (exited != runtime->tasks_started) {
+            ESP_LOGE(TAG, "load abort: %d/%d tasks exited; leaking preload buffer",
+                     exited, runtime->tasks_started);
         }
         audio_engine_reset_state(eng, ESP_ERR_NO_MEM, "TASK CREATE ERR");
         audio_fw_runtime_mark_stopped(runtime);
@@ -2253,10 +2297,10 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
     if (runtime->run || runtime->tasks_started > 0) {
         runtime->run = false;
         eng->eof = false;   /* wake decode task if parked at EOF */
-        if (s_tasks_done) {
+        if (s_tasks_done[deck]) {
             int exited = 0;
             for (int i = 0; i < runtime->tasks_started; i++) {
-                if (xSemaphoreTake(s_tasks_done, pdMS_TO_TICKS(1500)) == pdTRUE) {
+                if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
                     exited++;
                 }
             }
@@ -2346,16 +2390,19 @@ static esp_err_t audio_engine_seek_for_deck(uint8_t deck, uint32_t position_ms)
     eng->output_frames_since_seek = 0u;
     eng->seek_base_ms = position_ms;
     eng->frames_since_seek = 0u;
+#if !AE_FW
+    /* PC/simulator has no decode task to service seek_requested, so flush the
+     * ring here. On firmware the decode task owns the ring/resampler flush (it
+     * runs on the same core as the output-task consumer, so the reset never
+     * races a concurrent pop from another core). */
     audio_pcm_ring_reset(&s_pcm_rings[deck]);
+#endif
 
     if (eng->decoder_open && eng->sample_rate > 0u) {
         uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
         (void)audio_decoder_seek_frame(&eng->decoder, frame);
     }
 
-#if AE_FW
-    audio_resampler_reset(&s_resamplers[deck]);
-#endif
     AE_UNLOCK();
 
     return ESP_OK;

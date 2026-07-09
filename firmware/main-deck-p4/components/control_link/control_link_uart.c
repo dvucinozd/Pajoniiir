@@ -20,8 +20,10 @@ static const char *TAG = "ctrl_link";
 
 #define UART_PORT    UART_NUM_1
 #define UART_BAUD    115200
-#define RX_BUF_SIZE  256
-#define TX_BUF_SIZE  256
+/* 1 KB rings (was 256 B ≈ 22 ms at 115200): headroom for the 0xA6 bulk profile
+ * stream and brief RX-task stalls so event/LED frames are not dropped. */
+#define RX_BUF_SIZE  1024
+#define TX_BUF_SIZE  1024
 
 static QueueHandle_t    s_event_queue;
 static atomic_uint_fast8_t s_seq = 0;

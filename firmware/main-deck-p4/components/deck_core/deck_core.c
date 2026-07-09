@@ -89,7 +89,10 @@ static deck_ui_command_t s_test_ui_commands[DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN]
 static size_t s_test_ui_command_count;
 #endif
 #if !defined(DECK_CORE_PC_TEST)
-static esp_timer_handle_t s_vu_timer;
+static TaskHandle_t s_vu_task;
+/* Tracks whether the VU meters were last driven non-idle, so a single "all
+ * zero" frame is emitted on the play->idle transition and then sending stops. */
+static bool s_vu_meters_active;
 #endif
 #if defined(DECK_CORE_PC_TEST)
 static uint16_t          s_deferred_mixer_last[256];
@@ -1602,12 +1605,45 @@ static uint8_t peak_to_midi_level(uint16_t peak)
     return (uint8_t)(level > 127u ? 127u : level);
 }
 
-static void vu_timer_cb(void *arg)
+/* VU meters run in their own task, not an esp_timer callback: the send blocks
+ * on uart_write_bytes when the TX ring is full (e.g. during a bulk profile
+ * transfer), and blocking inside an esp_timer callback stalls every other
+ * timer in the system. The task also gates on FLX4-connected + at-least-one-
+ * deck-playing so it never floods the link while idle. */
+static void vu_task(void *arg)
 {
     (void)arg;
-    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        uint8_t level = peak_to_midi_level(audio_engine_get_deck_peak(deck));
-        control_link_send_led_deck(LED_VU_METER, level, deck);
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(30));
+
+        if (!s_flx4_connected) {
+            s_vu_meters_active = false;
+            continue;
+        }
+
+        bool any_playing = false;
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+            if (audio_engine_deck_is_playing(deck)) {
+                any_playing = true;
+                break;
+            }
+        }
+
+        if (!any_playing) {
+            if (!s_vu_meters_active) {
+                continue;   /* already idle; nothing to send */
+            }
+            s_vu_meters_active = false;   /* emit one final zeroed frame set */
+        } else {
+            s_vu_meters_active = true;
+        }
+
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+            uint8_t level = any_playing
+                ? peak_to_midi_level(audio_engine_get_deck_peak(deck))
+                : 0u;
+            control_link_send_led_deck(LED_VU_METER, level, deck);
+        }
     }
 }
 #endif
@@ -1871,8 +1907,10 @@ static void on_jog(uint8_t deck, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     if (state->playing) {
-        // Nudge: shift position slightly (placeholder — audio_engine handles real nudge)
-        ESP_LOGD(TAG, "deck %u jog nudge %+d", (unsigned)deck + 1, delta);
+        // TODO: pitch-bend nudge while playing is not implemented — a real nudge
+        // needs a transient pitch-factor bump on the output resampler. For now
+        // jogging during playback intentionally does nothing but log.
+        ESP_LOGD(TAG, "deck %u jog nudge %+d (no-op while playing)", (unsigned)deck + 1, delta);
     } else {
         // Scratch: advance/rewind position while paused
         int32_t pos = (int32_t)state->position_ms + delta * 3;
@@ -2270,23 +2308,18 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     }
 
 #if !defined(DECK_CORE_PC_TEST)
-    if (!s_vu_timer) {
-        const esp_timer_create_args_t vu_timer_args = {
-            .callback = vu_timer_cb,
-            .name = "flx4_vu",
-        };
-        esp_err_t timer_rc = esp_timer_create(&vu_timer_args, &s_vu_timer);
-        if (timer_rc != ESP_OK) {
+    s_vu_meters_active = false;
+    if (!s_vu_task) {
+        if (xTaskCreate(vu_task, "flx4_vu", 3072, NULL, 3, &s_vu_task) != pdPASS) {
             vQueueDelete(s_ui_command_queue);
             s_ui_command_queue = NULL;
             vQueueDelete(s_queue);
             s_queue = NULL;
             vSemaphoreDelete(s_mutex);
             s_mutex = NULL;
-            return timer_rc;
+            return ESP_ERR_NO_MEM;
         }
     }
-    ESP_ERROR_CHECK(esp_timer_start_periodic(s_vu_timer, 30000));
 #endif
 
     *ctrl_event_queue_out = s_queue;

@@ -96,6 +96,15 @@ static atomic_bool s_log_hook_active;
 static bool s_wifi_initialized;
 static bool s_wifi_started;
 
+/* AP bring-up/teardown runs in a dedicated worker task, not on the caller
+ * (control-link RX task): the WiFi/httpd start takes hundreds of ms, long
+ * enough to overflow the 256-byte UART RX ring and drop inbound P4 frames.
+ * s_ap_desired/s_ap_active are guarded by s_lock; the worker collapses rapid
+ * toggles by looping until active == desired. */
+static volatile bool s_ap_desired;
+static volatile bool s_ap_active;
+static bool s_ap_worker_running;
+
 static void set_status(s3_debug_ap_status_t status)
 {
     s_status = status;
@@ -321,7 +330,9 @@ esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
     return ESP_OK;
 }
 
-esp_err_t s3_debug_ap_request(bool enable)
+/* Does the actual (blocking) WiFi/httpd bring-up or teardown. Only ever runs on
+ * the worker task (or directly if init has not run yet). */
+static esp_err_t s3_debug_ap_apply(bool enable)
 {
     if (!enable) {
         stop_ap();
@@ -345,6 +356,58 @@ esp_err_t s3_debug_ap_request(bool enable)
 
     ESP_LOGI(TAG, "S3 debug AP active: SSID=%s URL=http://%s", S3_DEBUG_AP_SSID, S3_DEBUG_AP_IP);
     set_status(S3_DEBUG_AP_STATUS_ON);
+    return ESP_OK;
+}
+
+static void s3_debug_ap_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        bool desired = s_ap_desired;
+        bool active = s_ap_active;
+        if (desired == active) {
+            s_ap_worker_running = false;
+            xSemaphoreGive(s_lock);
+            break;
+        }
+        xSemaphoreGive(s_lock);
+
+        esp_err_t rc = s3_debug_ap_apply(desired);
+
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_ap_active = desired ? (rc == ESP_OK) : false;
+        xSemaphoreGive(s_lock);
+    }
+    vTaskDelete(NULL);
+}
+
+esp_err_t s3_debug_ap_request(bool enable)
+{
+    if (!s_lock) {
+        /* init not run — fall back to a direct (blocking) apply. */
+        esp_err_t rc = s3_debug_ap_apply(enable);
+        s_ap_active = enable ? (rc == ESP_OK) : false;
+        return rc;
+    }
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_ap_desired = enable;
+    bool spawn = !s_ap_worker_running;
+    if (spawn) {
+        s_ap_worker_running = true;
+    }
+    xSemaphoreGive(s_lock);
+
+    if (spawn) {
+        if (xTaskCreate(s3_debug_ap_worker, "s3dbgap", 4096, NULL, 3, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "failed to spawn s3 debug AP worker");
+            xSemaphoreTake(s_lock, portMAX_DELAY);
+            s_ap_worker_running = false;
+            xSemaphoreGive(s_lock);
+            return ESP_ERR_NO_MEM;
+        }
+    }
     return ESP_OK;
 }
 

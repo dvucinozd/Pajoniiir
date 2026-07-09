@@ -196,6 +196,18 @@ static volatile bool s_reply_ack;
 static volatile uint8_t s_reply_ref;
 static volatile uint8_t s_reply_reason;
 
+/* Dedup: the S3 re-announces the connected controller every heartbeat (~5 s) so
+ * a freshly-booted P4 can (re)learn it. Without this guard the P4 would re-stream
+ * and re-ACTIVATE the whole (up to 16 KB) profile on every announcement — that
+ * floods the 115200-baud link and resets the S3's live runtime state mid-set.
+ * Remember which VID/PID is already transferred+active and skip repeats; a
+ * failed transfer clears the mark so the next announcement retries. The S3
+ * keeps its runtime profile across a controller unplug/replug, so re-sending on
+ * reconnect is unnecessary. */
+static volatile bool s_transferred_valid;
+static volatile uint16_t s_transferred_vid;
+static volatile uint16_t s_transferred_pid;
+
 static void cpm_on_reply(bool ack, uint8_t ref_type, uint8_t reason)
 {
     s_reply_ack = ack;
@@ -292,6 +304,13 @@ static void cpm_sender_task(void *arg)
             continue;
         }
         bool ok = cpm_stream_profile(&m);
+        if (ok) {
+            s_transferred_vid = m.vid;
+            s_transferred_pid = m.pid;
+            s_transferred_valid = true;
+        } else {
+            s_transferred_valid = false;   /* retry on the next announcement */
+        }
         ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
                  ok ? "OK" : "FAILED");
     }
@@ -357,6 +376,13 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
 {
     int idx = controller_profile_registry_on_descriptor(&s_registry, vid, pid);
     if (idx >= 0) {
+        if (s_transferred_valid && s_transferred_vid == vid && s_transferred_pid == pid) {
+            /* Already streamed + activated for this controller; the S3 still
+             * holds it. Skip the redundant re-transfer (see dedup note above). */
+            ESP_LOGD(TAG, "controller VID=0x%04X PID=0x%04X profile '%s' already active",
+                     vid, pid, s_registry.profiles[idx].id);
+            return idx;
+        }
         ESP_LOGI(TAG, "controller VID=0x%04X PID=0x%04X -> profile '%s'",
                  vid, pid, s_registry.profiles[idx].id);
         /* Hand the transfer to the sender task; drop silently if it is busy
@@ -365,6 +391,9 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
             (void)xQueueSend(s_send_q, &idx, 0);
         }
     } else {
+        /* No profile for this controller — forget any previous mark so a later
+         * re-match streams fresh. */
+        s_transferred_valid = false;
         ESP_LOGW(TAG, "controller VID=0x%04X PID=0x%04X has no profile", vid, pid);
     }
     return idx;

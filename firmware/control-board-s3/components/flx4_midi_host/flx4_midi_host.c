@@ -518,6 +518,29 @@ static void midi_out_pump(void)
     xSemaphoreGive(s_midi_out_mutex);
 }
 
+/* Watchdog pump for the IN endpoint: re-arms the MIDI IN transfer if the
+ * completion callback failed to resubmit it (a single submit failure would
+ * otherwise silently kill all controller input until a physical replug). Runs
+ * on the client task, the same context that dispatches the transfer callback,
+ * so there is no window for a double-submit. */
+static void midi_in_pump(flx4_host_state_t *host)
+{
+    if (!host->opened || !host->claimed || host->closing) {
+        return;
+    }
+    if (!host->in_xfer || host->transfer_active) {
+        return;
+    }
+    host->in_xfer->num_bytes = usb_round_up_to_mps(MIDI_TRANSFER_BYTES, host->in_ep_mps);
+    host->in_xfer->device_handle = host->dev_hdl;
+    host->in_xfer->bEndpointAddress = host->in_ep_addr;
+    esp_err_t rc = usb_host_transfer_submit(host->in_xfer);
+    if (rc == ESP_OK) {
+        host->transfer_active = true;
+        ESP_LOGW(TAG, "re-armed stalled MIDI IN transfer");
+    }
+}
+
 static void log_config_descriptor_hex(const uint8_t *data, size_t len)
 {
 #if CONFIG_DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
@@ -945,7 +968,13 @@ static void midi_client_task(void *arg)
                 close_device(&s_host);
             }
         }
+        midi_in_pump(&s_host);
         midi_out_pump();
+#if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
+        if (s_host.opened && !s_host.closing) {
+            flx4_usb_audio_pump();
+        }
+#endif
 #if CONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART
         if (s_host.opened && !s_host.closing) {
             (void)flx4_usb_audio_poll_ring_autostart();

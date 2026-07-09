@@ -46,7 +46,7 @@ esp_err_t app_settings_init(void)
     if (nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
         uint8_t v;
         if (nvs_get_u8(h, "audio_out", &v) == ESP_OK) s_cfg.audio_out     = v;
-        if (nvs_get_u8(h, "backlight", &v) == ESP_OK) s_cfg.backlight_pct = v;
+        if (nvs_get_u8(h, "backlight", &v) == ESP_OK) s_cfg.backlight_pct = v > 100 ? 100 : v;
         if (nvs_get_u8(h, "time_rem",  &v) == ESP_OK) s_cfg.time_remain   = v;
         if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
         if (nvs_get_u8(h, "master_trim", &v) == ESP_OK && v <= 2) s_cfg.master_trim_preset = v;
@@ -75,6 +75,7 @@ void app_settings_set_audio_out(uint8_t out)
 
 void app_settings_set_backlight(uint8_t pct)
 {
+    if (pct > 100) pct = 100;
     if (s_cfg.backlight_pct == pct) return;
     s_cfg.backlight_pct = pct;
     save_u8("backlight", pct);

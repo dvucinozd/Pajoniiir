@@ -1369,7 +1369,13 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (!ui_library_try_begin_track_load()) {
         return ESP_ERR_INVALID_STATE;
     }
+    /* This entry point is called from the web/httpd task, off the LVGL thread.
+     * ui_submit_track_load()'s error paths touch LVGL objects (status label,
+     * load buttons), so hold the LVGL lock across it — the on-screen load path
+     * already runs it under the same lock. */
+    ui_lvgl_lock();
     esp_err_t rc = ui_submit_track_load(index, deck);
+    ui_lvgl_unlock();
     if (rc != ESP_OK) {
         return rc;
     }

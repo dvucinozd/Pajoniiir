@@ -35,7 +35,11 @@ static int test_disabled_link_drops_without_failure(void)
     EXPECT_EQ(stats.sample_rate, 48000u, "sample rate kept");
     EXPECT_EQ(stats.channels, 2u, "channel count kept");
     EXPECT_EQ(stats.bits_per_sample, 16u, "bit depth kept");
-    EXPECT_EQ(stats.dropped_blocks, 1u, "drop counted");
+    /* A write while the link is disabled is a no-op, not a drop: the output task
+     * calls this every block regardless of the enable state, so counting drops
+     * here would inflate the diagnostics into the millions when the feature is
+     * off. */
+    EXPECT_EQ(stats.dropped_blocks, 0u, "disabled write not counted as a drop");
     EXPECT_EQ(stats.submitted_blocks, 0u, "no submitted blocks");
     EXPECT_EQ(stats.submitted_frames, 0u, "no submitted frames");
     return 0;
