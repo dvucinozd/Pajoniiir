@@ -2031,6 +2031,10 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
              pitch_abs / 100,
              pitch_abs % 100);
     ui_label_set_text_if_changed(panel->label_pitch, pitch_text);
+    /* Negative pitch (slowed down) reads red; positive/zero stays green. The green
+     * chip border is left unchanged. */
+    ui_obj_set_text_color_if_changed(panel->label_pitch,
+                                     pitch_centipct < 0 ? COL_RED : COL_GREEN);
 
     ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
                                          state->playing);

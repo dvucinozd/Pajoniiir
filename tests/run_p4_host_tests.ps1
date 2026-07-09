@@ -290,7 +290,8 @@ Assert-FileContains `
         "OVERVIEW_PITCH_CHIP_W",
         "lv_font_montserrat_18",
         "lv_obj_set_style_bg_color(panel->label_pitch, COL_PANEL_DK",
-        "lv_obj_set_style_border_color(panel->label_pitch, COL_GREEN"
+        "lv_obj_set_style_border_color(panel->label_pitch, COL_GREEN",
+        "pitch_centipct < 0 ? COL_RED : COL_GREEN"
     )
 
 Assert-FileContains `
