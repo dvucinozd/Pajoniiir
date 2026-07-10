@@ -274,6 +274,14 @@ static bool             s_smart_fader_enabled;
 #define AE_JOG_BEND_DECAY    0.88f
 static float            s_jog_bend[AUDIO_ENGINE_DECK_COUNT];
 
+/* Platter-hold (vinyl mode Phase 1): while the jog platter top is touched during
+ * playback, deck_core sets this so the deck output is silenced and its position
+ * frozen (an output-level mute, the logical play state stays "playing" for LEDs).
+ * Releasing clears it and forward playback resumes instantly from wherever the
+ * position was scrubbed to. Plain atomic bool: written by the control task, read
+ * by the output task; no lock (matches the s_jog_bend / pitch_factor pattern). */
+static bool             s_deck_hold[AUDIO_ENGINE_DECK_COUNT];
+
 static inline uint16_t atomic_load_u16(const uint16_t *value)
 {
     return __atomic_load_n(value, __ATOMIC_RELAXED);
@@ -490,6 +498,9 @@ static bool deck_output_active(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return false;
     audio_engine_state_t *eng = &s_engines[deck];
+    /* Platter-hold silences the deck and freezes its position (the mixer skips an
+     * inactive deck, so it neither outputs nor pops/advances the ring). */
+    if (atomic_load_bool(&s_deck_hold[deck])) return false;
     return eng->playing && !eng->paused;
 }
 
@@ -2004,6 +2015,11 @@ static esp_err_t audio_output_service_stop(void)
 
 static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, const char *err_text)
 {
+    /* Clear any lingering platter-hold so a freshly (re)loaded deck is never
+     * stuck silenced. eng-indexed via pointer arithmetic against the array. */
+    if (eng >= s_engines && eng < s_engines + AUDIO_ENGINE_DECK_COUNT) {
+        atomic_store_bool(&s_deck_hold[eng - s_engines], false);
+    }
     memset(eng, 0, sizeof(*eng));
     eng->pitch_factor = 1.0f;
     eng->load_progress = 100;
@@ -2795,6 +2811,17 @@ void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)
     if (bend > AE_JOG_BEND_MAX) bend = AE_JOG_BEND_MAX;
     if (bend < -AE_JOG_BEND_MAX) bend = -AE_JOG_BEND_MAX;
     s_jog_bend[deck] = bend;
+}
+
+void audio_engine_deck_set_hold(uint8_t deck, bool held)
+{
+    if (!deck_is_valid(deck)) return;
+    /* Leaving hold cancels any leftover jog nudge so the deck resumes at exactly
+     * the fader tempo, not with a stray bend from before the platter was grabbed. */
+    if (!held) {
+        s_jog_bend[deck] = 0.0f;
+    }
+    atomic_store_bool(&s_deck_hold[deck], held);
 }
 
 uint32_t audio_engine_deck_position_ms(uint8_t deck)

@@ -61,6 +61,12 @@ static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static bool              s_beat_jump_pad_led_valid[DECK_CORE_DECK_COUNT][8];
 static uint8_t           s_beat_jump_pad_led_state[DECK_CORE_DECK_COUNT][8];
 static bool              s_deck_shift_held[DECK_CORE_DECK_COUNT];
+/* Jog platter touch (vinyl mode Phase 1): true while the platter top is held.
+ * Touching during playback enters platter-hold (audio silenced + position frozen)
+ * and jogs then scrub the position; s_jog_hold_active[] remembers a hold was
+ * entered so release resumes forward playback. */
+static bool              s_jog_touched[DECK_CORE_DECK_COUNT];
+static bool              s_jog_hold_active[DECK_CORE_DECK_COUNT];
 static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT][2];
 static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
@@ -1716,6 +1722,45 @@ static void vu_task(void *arg)
 }
 #endif
 
+/*
+ * Jog platter touch (vinyl mode Phase 1). Touching the platter top while the
+ * deck plays enters "platter-hold": the audio is silenced and the position
+ * frozen (audio_engine hold), so jogs scrub the position like a held record
+ * (see on_jog). Releasing resumes forward playback from wherever it was
+ * scrubbed to. Touching while paused just records the touch state (paused jog
+ * already scrubs). No audible scratch yet — that is Phase 4.
+ */
+static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+
+    if (pressed) {
+        s_jog_touched[deck] = true;
+        if (state->playing) {
+            /* Seed the position from the live playhead so the first scrub delta
+             * is relative to where the audio actually is, then freeze it. */
+            state->position_ms = current_deck_position_ms(deck, state);
+            s_jog_hold_active[deck] = true;
+            audio_engine_deck_set_hold(deck, true);
+            ESP_LOGI(TAG, "deck %u platter hold -> %lu ms (audio muted)",
+                     (unsigned)deck + 1,
+                     (unsigned long)state->position_ms);
+        }
+        return;
+    }
+
+    s_jog_touched[deck] = false;
+    if (s_jog_hold_active[deck]) {
+        s_jog_hold_active[deck] = false;
+        audio_engine_deck_set_hold(deck, false);
+        ESP_LOGI(TAG, "deck %u platter release -> resume %lu ms",
+                 (unsigned)deck + 1,
+                 (unsigned long)state->position_ms);
+    }
+}
+
 static bool on_deck_extension_button(const ctrl_event_t *ev)
 {
     if (!ev || ev->type != CTRL_EV_BUTTON || !control_link_id_is_deck(ev->id)) {
@@ -1728,6 +1773,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     bool uses_audio = deck_uses_audio_engine(deck);
 
     switch (control_link_id_control(ev->id)) {
+    case CTRL_DECK_CTL_JOG_TOUCH:
+        handle_jog_touch(deck, pressed, state);
+        return true;
+
     case CTRL_DECK_CTL_SHIFT:
         s_deck_shift_held[deck] = pressed;
         ESP_LOGD(TAG, "deck %u shift -> %s", (unsigned)deck + 1,
@@ -1974,18 +2023,19 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
 static void on_jog(uint8_t deck, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
-    if (state->playing) {
-        // Any jog while playing (platter or bend ring) does a transient pitch-bend
-        // nudge for manual beat matching: bump the deck tempo in the jog direction;
+    bool touched = deck < DECK_CORE_DECK_COUNT && s_jog_touched[deck];
+    if (state->playing && !touched) {
+        // Playing + platter NOT touched (bend ring): transient pitch-bend nudge
+        // for manual beat matching — bump the deck tempo in the jog direction;
         // the audio engine springs it back to the fader tempo when the jog stops.
-        // (No true scratch DSP yet, so the jog nudges rather than scratches while
-        // playing.)
         if (deck_uses_audio_engine(deck)) {
             audio_engine_deck_jog_nudge(deck, delta);
         }
         ESP_LOGD(TAG, "deck %u jog nudge %+d (pitch bend)", (unsigned)deck + 1, delta);
     } else {
-        // Scrub: advance/rewind position while paused
+        // Scrub: advance/rewind the position. Used while paused, and while the
+        // platter is held during playback (vinyl mode Phase 1: audio is muted +
+        // frozen by the hold, so scrubbing drags the playhead; release resumes).
         int32_t pos = (int32_t)state->position_ms + delta * 3;
         state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
         if (deck_uses_audio_engine(deck)) {
