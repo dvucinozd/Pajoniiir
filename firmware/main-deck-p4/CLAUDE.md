@@ -59,6 +59,12 @@ idf.py build
 idf.py -p COM15 flash               # device is on COM15
 ```
 
+> **Sound is in the default build (2026-07-10).** The FLX4 USB-headphones audio
+> profile (PCM5102A RCA MAIN on I2S unit 1 + monitor PCM link on unit 0, ES8311
+> off) was folded into `sdkconfig.defaults`, so a plain `idf.py build` now
+> produces the audio firmware. The former `sdkconfig.flx4_hp_e2e` /
+> `sdkconfig.monitor_link_bench` overlays and all `build_*` dirs were removed.
+
 `idf.py monitor` requires a TTY; for boot logs use pyserial capture
 (`serial.Serial('COM15',115200)` + DTR/RTS reset toggle). Keep only one
 process active on COM15 (capture and flash are mutually exclusive — "Access is denied").

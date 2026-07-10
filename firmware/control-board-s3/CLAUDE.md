@@ -11,9 +11,13 @@ mode when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
 
 Status:
 
-- default build: DDJ-FLX4 USB MIDI raw logger;
-- optional build: DDJ-FLX4 MIDI-to-P4 translator via
-  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` (enabled in `sdkconfig.defaults`);
+- default build (`sdkconfig.defaults`): DDJ-FLX4 MIDI-to-P4 translator
+  (`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`) **plus the FLX4 USB-headphone audio
+  path** (`CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` + `CONFIG_P4_AUDIO_LINK_ENABLED`,
+  folded into defaults on 2026-07-10 — a plain `idf.py build` now has sound);
+- to fall back to the raw MIDI capture logger, disable
+  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` in menuconfig (or `CONFIG_DDJ_FLX4_HOST_MODE`
+  for the inherited CDJ panel USB-MIDI device mode);
 - FLX4 enumerates and translates to control-link frames on hardware
   (VID 0x2B73 / PID 0x0045); the XIAO GPIO21 user LED reflects reduced link
   state.
@@ -127,11 +131,14 @@ Inherited CDJ panel compatibility:
 | `panel_io` | Buttons (active-low, pull-up), PCNT encoders, ADC pitch, LED output |
 | `midi_compat` | Legacy TinyUSB MIDI device compatibility path |
 | `control_link` | UART1 binary protocol to ESP32-P4 |
+| `p4_audio_link` | S3-side I2S receiver for the P4 `hp_out` monitor PCM (BCLK7/WS8/DIN9); recovers the link sample rate and feeds `flx4_usb_audio`. `CONFIG_P4_AUDIO_LINK_ENABLED` (default-on) |
+| `flx4_usb_audio` | FLX4 USB Audio Class output: drains the `p4_audio_link` monitor ring into isochronous OUT transfers to the controller headphone endpoint, tracking the active P4 link rate. `CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` (default-on) |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
 | `s3_debug_ap` | Runtime bench-only SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
 | `controller_profile` | Pure-C S3CP profile parser + table-driven MIDI-in matcher and LED-out mapper (`cp_profile_parse`, `cp_runtime_process`, `cp_profile_map_led`). No ESP deps; host-tested |
 | `controller_profile_runtime` | Holds the active dynamic profile (mutex-guarded); `control_link` ACTIVATE/CLEAR installs it. `app_main` prefers it for MIDI-in map + LED-out + reconnect snapshot, falling back to `flx4_map`/`flx4_led_midi` when none is active |
+| `wifi_debug_log` | Optional Wi-Fi UDP debug-log sink (`CONFIG_WIFI_DEBUG_LOG_ENABLED`, off by default); joins a configured AP and streams logs to a PC listener. Configure via `sdkconfig.wifi_debug.local` — see `docs/S3_WIFI_DEBUG_LOG.md` |
 
 Multi-controller platform: when the P4 transfers + activates a profile, the S3
 maps controller MIDI through it instead of the hard-coded FLX4 path (built-in

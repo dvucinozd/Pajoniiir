@@ -82,7 +82,7 @@ The fork is no longer only the imported single-deck baseline:
 - The current Overview UI uses Pioneered-style deck strips, compact D1/D2 deck
   badges, a separated transport/VU lane, centered beat/phase indicators, a
   compact blue title strip with remaining-time pill, readable BPM/pitch
-  indicators, a compact Beat FX rail, and bounded title/timer invalidation so
+  indicators, an effect-colour-coded Beat FX rail with a vertical depth meter, and bounded title/timer invalidation so
   status chrome does not create continuous redraw pressure.
 - Overview waveform loading and zoom are stabilized for the current dual-deck
   path: Browse rotate controls a shared 4/8/12/16/24-beat main-waveform zoom
@@ -103,8 +103,8 @@ The fork is no longer only the imported single-deck baseline:
   refresh with hardware smoke passed on 2026-06-26.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
   semantic button events. P4 now owns their state, LED feedback, status
-  exposure, Smart CFX filter DSP with softened raw/effective control travel,
-  and Smart Fader transition-assist behavior.
+  exposure, Smart CFX filter DSP with a smoothstep response curve (fine near
+  the detent, ~1:1 at half turn), and Smart Fader transition-assist behavior.
 - Settings UI polish removed out-of-scope Key Shift presentation, removed the
   retired monitor-speaker switch from the active UI, darkened wireless switch
   off states, and collapsed the lower mixer/PFL routing block into a compact
@@ -138,6 +138,18 @@ The fork is no longer only the imported single-deck baseline:
   has already started; the follow-up COM6 smoke held `P4_AUDIO_LINK overruns=0`,
   `gaps=0`, `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two
   minutes of product playback.
+- The Beat FX audio DSP was overhauled on 2026-07-10 for better sound and less
+  touchy knob response: the one-knob channel Filter became a resonant ZDF
+  state-variable filter with an exponential low-pass/high-pass sweep to full
+  kill, the Echo gained per-generation feedback damping and a ring-out tail,
+  Smart CFX moved to a smoothstep response curve, and a beat-synced **Flanger**
+  was added as a third Beat FX effect (cycle FILTER → ECHO → FLANGER). The
+  Overview Beat FX rail was redesigned to be effect-colour-coded
+  (Filter blue / Echo amber / Flanger magenta) with a vertical depth meter.
+- The FLX4 USB-headphone audio profile was made the default build on both boards
+  (folded into each `sdkconfig.defaults` on 2026-07-10), so a plain `idf.py
+  build` now produces the sound firmware; the per-profile overlays and stale
+  `build_*` dirs were removed.
 - The seven official DDJ-FLX4 MIDI gaps were closed against the official Pioneer
   MIDI message list: Censor, Sync (set-master), Quantize, Loop Adjust In/Out,
   Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls.
@@ -161,8 +173,8 @@ The fork is no longer only the imported single-deck baseline:
 - Continuous beat following, master tempo/key lock, or full Rekordbox-style
   sync state.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
-  filter curve, Smart Fader transition-assist V1 behavior, Beat FX FILTER,
-  BPM-synced Echo slice, and host-tested Pad FX DSP/input/LED slice.
+  smoothstep curve, Smart Fader transition-assist V1 behavior, the Beat FX
+  Filter/Echo/Flanger DSP, and host-tested Pad FX DSP/input/LED slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.
@@ -187,10 +199,11 @@ implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-Remaining hardware-facing items: native FLX4 beat LED feedback from the PQTZ
-beatgrid, selected shifted-control hardware acceptance where still marked in
-the MIDI map, and a full end-to-end S3/P4/FLX4 regression pass after the next
-major control or UI batch.
+Remaining hardware-facing items: selected shifted-control hardware acceptance
+where still marked in the MIDI map, and a full end-to-end S3/P4/FLX4 regression
+pass after the next major control or UI batch. (Beat feedback from the PQTZ
+beatgrid is already shown on the Overview beat strip with a red downbeat marker;
+a dedicated controller beat LED was declined, so that item is closed.)
 
 ## Multi-Controller Platform
 

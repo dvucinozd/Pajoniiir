@@ -67,8 +67,7 @@ Inherited confirmed UART:
 
 P4-to-S3 monitor PCM link for the FLX4 USB Audio headphones path
 (DevKitC candidate hardware-validated 2026-07-02; XIAO ESP32S3/Sense wiring
-validated 2026-07-06; see `docs/validation/P4_S3_AUDIO_LINK_BENCH.md` and
-`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
+validated 2026-07-06; see `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 
 | Signal | ESP32-P4 (JP1 pin) | ESP32-S3 side | Direction | Notes |
 | --- | --- | --- | --- | --- |

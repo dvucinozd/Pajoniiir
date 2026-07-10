@@ -95,7 +95,9 @@ Current P4 audio ownership rule:
   mixer snapshot and exposed through `/api/status`; center is unity, minimum is
   band kill, and maximum is a conservative boost;
 - Smart CFX and Smart Fader are P4-owned global states. Smart CFX enables the
-  deck-local filter DSP driven by the verified FLX4 filter knobs. Smart Fader
+  deck-local channel-filter DSP (a resonant ZDF state-variable filter with an
+  exponential sweep, shaped by a smoothstep response curve) driven by the
+  verified FLX4 filter knobs. Smart Fader
   keeps the physical crossfader authoritative but squares the fade-out side of
   the crossfader curve for a conservative transition assist. Both states drive
   FLX4 LEDs and are included in the mixer snapshot/status API;
@@ -125,8 +127,9 @@ Current P4 Overview waveform ownership rule:
   but it does not directly render the large main waveform;
 - Overview owns the visual chrome around that state: compact D1/D2 badges, the
   title strip, BPM/pitch readouts, transport controls, deck VU meters, beat/phase
-  strip, and compact Beat FX rail. Those widgets render P4-owned deck, mixer,
-  and Beat FX state; they do not become new state owners;
+  strip, and effect-colour-coded Beat FX rail (Filter/Echo/Flanger, with a
+  vertical depth meter). Those widgets render P4-owned deck, mixer, and Beat FX
+  state; they do not become new state owners;
 - the Overview scheduler owns main-waveform render/blit timing, including the
   shared Browse-rotate zoom window used by both deck panels;
 - the large main waveforms use direct RGB565/PPA overlays for performance, so a

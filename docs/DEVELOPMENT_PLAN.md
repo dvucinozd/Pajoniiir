@@ -625,6 +625,19 @@ and caps delay at 1000 ms to match the current delay-line budget. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
 response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size changes, and
 the ON/OFF LED following P4 state.
+
+**2026-07-10 Beat FX DSP + rail update.** The one-knob channel filter (and the
+shared Beat FX filter, both in `audio_filter.c`) became a resonant ZDF
+state-variable filter with an exponential low-pass/high-pass sweep to full kill;
+the Echo (`audio_delay_fx.c`) gained per-generation feedback damping and a ~2 s
+ring-out tail on switch-off; Smart CFX moved from the softened macro to a
+smoothstep response curve; and a beat-synced **Flanger** (`audio_flanger_fx.c`)
+was added as a third Beat FX effect, so the deck_core cycle is now
+FILTER → ECHO → FLANGER. The Overview Beat FX rail was redesigned as an
+effect-colour-coded strip (Filter blue / Echo amber / Flanger magenta) with a
+vertical depth meter. Host suites pass, and the FLX4 USB-headphones audio
+profile was made the default build on both boards (folded into
+`sdkconfig.defaults`; a plain `idf.py build` now has sound).
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
 delay primitives. Full FLX4 Pad FX physical pad input mapping is implemented

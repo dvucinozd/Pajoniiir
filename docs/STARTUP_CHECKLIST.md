@@ -113,6 +113,14 @@
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
   depth response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size
   changes, and physical ON/OFF LED feedback.
+- **2026-07-10 update:** the Beat FX audio DSP was reworked for better sound and
+  less touchy knobs — resonant state-variable channel/Beat-FX filter with an
+  exponential kill sweep, tape-style Echo with feedback damping + ring-out tail,
+  and a smoothstep Smart CFX curve — and a beat-synced **Flanger** was added as a
+  third Beat FX effect (cycle FILTER → ECHO → FLANGER). The Overview Beat FX rail
+  is now an effect-colour-coded strip with a vertical depth meter. Sound is now
+  the default build on both boards (`idf.py build`); the per-profile sdkconfig
+  overlays were removed.
 - Pad FX DSP first slice is implemented in P4 and host-tested through
   `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical FLX4 Pad FX pad input
   mapping is implemented from the official MIDI message PDF (`0x10..0x17` for

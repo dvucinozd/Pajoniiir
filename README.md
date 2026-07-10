@@ -107,6 +107,11 @@ cd ..\main-deck-p4
 idf.py build
 ```
 
+> The default build of **both** boards now includes the FLX4 USB-headphone audio
+> path (PCM5102A RCA MAIN on the P4, USB Audio Class output on the S3) — a plain
+> `idf.py build` produces the sound firmware. The former `sdkconfig.flx4_hp_e2e`
+> overlay was folded into each board's `sdkconfig.defaults`.
+
 ### Running Host Regression Tests:
 ```powershell
 # P4 tests on Windows
@@ -134,7 +139,7 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Limiter telemetry, clipping diagnostics, and persistent non-boosting Master Trim in Settings (NVS).
 - **LVGL User Interface**:
   - Interactive dual-deck layout with Pioneer-style Overview chrome.
-  - Compact Overview title strip with remaining-time pill, readable BPM/pitch indicators, centered beat/phase match guide lines, compact Beat FX rail, non-overlapping deck VU meters, and bounded title/timer invalidations.
+  - Compact Overview title strip with remaining-time pill, readable BPM/pitch indicators, centered beat/phase match guide lines, an effect-colour-coded Beat FX rail with a vertical depth meter, non-overlapping deck VU meters, and bounded title/timer invalidations.
   - Waveform loading deferred to Overview scheduler with automatic overlays redraw on track load.
   - Waveform zoom controls via Browse knob (4, 8, 12, 16, 24 beats).
   - Settings polish with removed out-of-scope Key Shift UI, retired monitor-speaker switch removed, darker wireless switch states, and compact mixer/PFL status strip.
@@ -144,7 +149,8 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Trim/pregain scaling from FLX4 Trim knobs (center is unity, up to +6 dB boost before limiter).
   - Headphones Mix (14-bit) routed to monitor DSP (blends Cue/PFL with Master).
   - Headphones Level mapped to headphone output gain.
-  - Beat FX: Sync-delay Echo (tempo-derived, 1000 ms safety cap) and low-pass Filter.
+  - Beat FX (three effects, effect-colour-coded on the Overview rail): a resonant one-knob channel **Filter** (exponential low-pass/high-pass sweep to full kill), a tape-style tempo-synced **Echo** (per-generation feedback damping + ring-out tail, 1000 ms safety cap), and a beat-synced **Flanger** (triangle-LFO fractional delay with feedback).
+  - Smart CFX applies a smoothstep response curve to the channel filter (fine near the detent, ~1:1 at half turn, precise near full kill).
   - Pad FX: Filter and delay pads with a release tail.
   - Hot Cue: Store, recall, and clear.
   - Loop controls: In/Out, Reloop/Exit, halve/double, Beat Jump, and Beat Loop pads.

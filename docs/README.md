@@ -22,7 +22,6 @@ CDJ100S/P4 standalone context from the imported project.
 
 - [`validation/FLX4_SMART_INPUT_CAPTURE.md`](validation/FLX4_SMART_INPUT_CAPTURE.md) - physical SMART CFX / SMART FADER MIDI input capture and integration notes
 - [`validation/FLX4_LED_MIDI_OUT_CAPTURE.md`](validation/FLX4_LED_MIDI_OUT_CAPTURE.md) - physical LED MIDI output capture and reconnect resynchronization notes
-- [`validation/P4_S3_AUDIO_LINK_BENCH.md`](validation/P4_S3_AUDIO_LINK_BENCH.md) - P4-to-S3 monitor PCM link bench, XIAO wiring, and link-integrity soak notes
 - [`validation/FLX4_USB_AUDIO_E2E_SMOKE.md`](validation/FLX4_USB_AUDIO_E2E_SMOKE.md) - full PCM5102A MAIN + FLX4 USB headphones product smoke and S3 overrun regression notes
 
 ## Analysis & Decisions
