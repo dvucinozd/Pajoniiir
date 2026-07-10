@@ -4,9 +4,9 @@
 #   firmware/control-board-s3/sdkconfig.wifi_debug.local
 # then fill SSID, password, and the PC IPv4 address that runs the UDP listener.
 #
-# Build example:
-#   idf.py -B build_flx4_hp_e2e_xiao_wifi -D SDKCONFIG="build_flx4_hp_e2e_xiao_wifi/sdkconfig" \
-#     -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.flx4_hp_e2e;sdkconfig.wifi_debug.local" build
+# Build example (the FLX4 USB-audio config is already in sdkconfig.defaults):
+#   idf.py -B build_wifi_debug -D SDKCONFIG="build_wifi_debug/sdkconfig" \
+#     -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.wifi_debug.local" build
 
 CONFIG_WIFI_DEBUG_LOG_ENABLED=y
 CONFIG_WIFI_DEBUG_LOG_SSID=""

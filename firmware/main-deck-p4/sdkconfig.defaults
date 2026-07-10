@@ -112,3 +112,17 @@ CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
 CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCP_SACK_OUT=y
+
+# ── FLX4 USB headphones audio — product default (merged 2026-07-10) ───────────
+# Was the separate sdkconfig.flx4_hp_e2e overlay; folded in so a plain
+# `idf.py build` produces the sound firmware. Simultaneous outputs: PCM5102A RCA
+# MAIN (I2S unit 1, paces the output loop) + FLX4 USB headphones CUE fed by the
+# monitor link (I2S unit 0). ES8311 is disabled to free unit 0.
+CONFIG_MONITOR_PCM_LINK_ENABLED=y
+CONFIG_MONITOR_PCM_LINK_I2S_UNIT=0
+CONFIG_BSP_PCM5102A_MAIN_OUT=y
+# CONFIG_BSP_ES8311_MONITOR is not set
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+# Surface the monitor-link INFO diagnostics (default runtime log level is WARN).
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y

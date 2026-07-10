@@ -113,7 +113,8 @@ with `FLX4_USB_AUDIO skipped=0 underrun=0`. See
 unit 0** (`CONFIG_MONITOR_PCM_LINK_I2S_UNIT=0`), **PCM5102A RCA MAIN on unit 1**,
 and **ES8311 onboard monitor disabled** (`CONFIG_BSP_ES8311_MONITOR=n`) to free
 unit 0. The FLX4 USB headphones are the CUE/MONITOR output; the local ES8311
-monitor is dropped. Build both boards with the `sdkconfig.flx4_hp_e2e` profiles.
+monitor is dropped. This audio config is now the default (folded into each
+board's `sdkconfig.defaults` on 2026-07-10), so a plain `idf.py build` has sound.
 
 PCM5102A MAIN OUT candidate pins for the photographed PCM5102MK/PCM5102A
 breakout board. The board header silkscreen is:

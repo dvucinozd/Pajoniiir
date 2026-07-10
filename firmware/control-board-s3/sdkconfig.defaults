@@ -43,3 +43,19 @@ CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
 CONFIG_CONTROL_LINK_UART_TX_GPIO=5
 CONFIG_CONTROL_LINK_UART_RX_GPIO=6
 
+# ── FLX4 USB headphones audio — product default (merged 2026-07-10) ───────────
+# Was the separate sdkconfig.flx4_hp_e2e overlay; folded in so a plain
+# `idf.py build` produces the sound firmware. Real P4 hp_out monitor mix ->
+# I2S link (BCLK7/WS8/DIN9) -> ring -> FLX4 USB Audio phones.
+CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES=y
+CONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART=y
+CONFIG_P4_AUDIO_LINK_ENABLED=y
+CONFIG_P4_AUDIO_LINK_BCLK_GPIO=7
+CONFIG_P4_AUDIO_LINK_WS_GPIO=8
+CONFIG_P4_AUDIO_LINK_DIN_GPIO=9
+# FLX4 playback is an isochronous OUT endpoint; bias the USB host FIFO to
+# periodic OUT so the host can claim it.
+# CONFIG_USB_HOST_HW_BUFFER_BIAS_BALANCED is not set
+# CONFIG_USB_HOST_HW_BUFFER_BIAS_IN is not set
+CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
+

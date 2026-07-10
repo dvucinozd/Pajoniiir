@@ -97,11 +97,11 @@ If Windows Firewall prompts for Python, allow private-network UDP traffic.
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
 cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
-idf.py -B build_flx4_hp_e2e_xiao_wifi `
-  -D SDKCONFIG="build_flx4_hp_e2e_xiao_wifi/sdkconfig" `
-  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.flx4_hp_e2e;sdkconfig.wifi_debug.local" `
+idf.py -B build_wifi_debug `
+  -D SDKCONFIG="build_wifi_debug/sdkconfig" `
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.wifi_debug.local" `
   build
-idf.py -B build_flx4_hp_e2e_xiao_wifi -p COM6 flash
+idf.py -B build_wifi_debug -p COM6 flash
 ```
 
 Use the actual S3 flash port if it is no longer `COM6`.
