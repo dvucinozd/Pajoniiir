@@ -1074,6 +1074,9 @@ static bool ui_overview_wave_overlay_ensure_buffer(uint8_t idx)
                                                     sizeof(s_overview_wave_rgb565_palette) /
                                                         sizeof(s_overview_wave_rgb565_palette[0]));
         }
+        /* Downbeat triangle on each deck's INNER edge (deck 1 top wave -> bottom,
+         * deck 2 bottom wave -> top) so the two decks' markers meet base-to-base
+         * at the shared boundary between the waveforms. */
         ui_overview_wave_cache_set_regular_beat_cap_bottom(&s_overview_wave_cache[idx],
                                                            idx == 0);
         return true;

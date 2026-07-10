@@ -45,8 +45,12 @@ static void test_main_renderer_keeps_downbeat_grid_on_top(void)
 
     ui_overview_renderer_draw_main(pixels, 8, 8, 10, &source, 8000, &meta, 4000, 8000);
 
-    assert(pixels[0 * 8 + 4] == 4);
-    assert(pixels[9 * 8 + 4] == 4);
+    /* Beat sits at the centre, under the white centre playhead (cols 3-5), so
+     * check the red triangle on its exposed sides and the white grid at the
+     * bottom. */
+    assert(pixels[0 * 8 + 1] == 9);   /* red downbeat triangle base (left side) */
+    assert(pixels[0 * 8 + 7] == 9);   /* red downbeat triangle base (right side) */
+    assert(pixels[9 * 8 + 4] == 4);   /* white downbeat grid stays on top at the bottom */
 }
 
 static void test_main_renderer_keeps_regular_beat_grid_behind_waveform(void)
@@ -69,13 +73,12 @@ static void test_main_renderer_keeps_regular_beat_grid_behind_waveform(void)
 
     ui_overview_renderer_draw_main(pixels, 8, 8, 12, &source, 8000, &meta, 4000, 8000);
 
-    assert(pixels[0 * 8 + 2] == 9);
-    assert(pixels[1 * 8 + 2] == 9);
-    assert(pixels[11 * 8 + 2] == 8);
-    assert(pixels[6 * 8 + 2] != 8);
+    assert(pixels[0 * 8 + 2] == 8);   /* dim guide above the wave (regular beats have no cap) */
+    assert(pixels[11 * 8 + 2] == 8);  /* dim guide below the wave */
+    assert(pixels[6 * 8 + 2] != 8);   /* wave hides the guide in the middle */
 }
 
-static void test_main_renderer_can_draw_regular_beat_cap_at_bottom(void)
+static void test_main_renderer_draws_downbeat_triangle_at_bottom(void)
 {
     uint8_t samples[16];
     memset(samples, 0x1Fu, sizeof(samples));
@@ -85,7 +88,7 @@ static void test_main_renderer_can_draw_regular_beat_cap_at_bottom(void)
         .sample_count = sizeof(samples),
     };
     anlz_beat_t beats[] = {
-        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 2000},
     };
     anlz_metadata_t meta = {
         .beats = beats,
@@ -96,11 +99,11 @@ static void test_main_renderer_can_draw_regular_beat_cap_at_bottom(void)
     ui_overview_renderer_draw_main_with_options(pixels, 8, 8, 12, &source, 8000,
                                                 &meta, 4000, 8000, true);
 
-    assert(pixels[0 * 8 + 2] == 8);
-    assert(pixels[8 * 8 + 2] == 9);
-    assert(pixels[11 * 8 + 2] == 9);
-    assert(pixels[7 * 8 + 2] != 8);
-    assert(pixels[6 * 8 + 2] != 8);
+    assert(pixels[0 * 8 + 2] == 4);    /* white downbeat line at the top */
+    assert(pixels[8 * 8 + 2] == 9);    /* red triangle apex points up into the wave */
+    assert(pixels[11 * 8 + 2] == 9);   /* red triangle base at the bottom edge */
+    assert(pixels[11 * 8 + 0] == 9);   /* base is wider than the 2px line */
+    assert(pixels[8 * 8 + 0] != 9);    /* apex is 1px wide */
 }
 
 static void test_main_renderer_draws_center_playhead(void)
@@ -177,13 +180,12 @@ static void test_main_rgb565_renderer_keeps_regular_beat_grid_behind_waveform(vo
                                           &meta, 4000, 8000, palette,
                                           sizeof(palette) / sizeof(palette[0]));
 
-    assert(pixels[0 * 8 + 2] == palette[9]);
-    assert(pixels[1 * 8 + 2] == palette[9]);
-    assert(pixels[11 * 8 + 2] == palette[8]);
-    assert(pixels[6 * 8 + 2] != palette[8]);
+    assert(pixels[0 * 8 + 2] == palette[8]);   /* dim guide above the wave (no cap now) */
+    assert(pixels[11 * 8 + 2] == palette[8]);  /* dim guide below the wave */
+    assert(pixels[6 * 8 + 2] != palette[8]);   /* wave hides the guide in the middle */
 }
 
-static void test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom(void)
+static void test_main_rgb565_renderer_draws_downbeat_triangle_at_bottom(void)
 {
     uint8_t samples[16];
     memset(samples, 0x1Fu, sizeof(samples));
@@ -193,7 +195,7 @@ static void test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom(void)
         .sample_count = sizeof(samples),
     };
     anlz_beat_t beats[] = {
-        {.beat_phase = 2, .bpm_x100 = 12000, .time_ms = 2000},
+        {.beat_phase = 0, .bpm_x100 = 12000, .time_ms = 2000},
     };
     anlz_metadata_t meta = {
         .beats = beats,
@@ -211,11 +213,11 @@ static void test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom(void)
                                                        sizeof(palette) / sizeof(palette[0]),
                                                        true);
 
-    assert(pixels[0 * 8 + 2] == palette[8]);
-    assert(pixels[8 * 8 + 2] == palette[9]);
-    assert(pixels[11 * 8 + 2] == palette[9]);
-    assert(pixels[7 * 8 + 2] != palette[8]);
-    assert(pixels[6 * 8 + 2] != palette[8]);
+    assert(pixels[0 * 8 + 2] == palette[4]);   /* white downbeat line at the top */
+    assert(pixels[8 * 8 + 2] == palette[9]);   /* red triangle apex points up */
+    assert(pixels[11 * 8 + 2] == palette[9]);  /* red triangle base at the bottom edge */
+    assert(pixels[11 * 8 + 0] == palette[9]);  /* base is wider than the line */
+    assert(pixels[8 * 8 + 0] != palette[9]);   /* apex is 1px wide */
 }
 
 static void test_main_rgb565_renderer_can_draw_column_range_without_clearing_all(void)
@@ -458,12 +460,12 @@ int main(void)
     test_main_renderer_clears_and_draws_waveform_columns();
     test_main_renderer_keeps_downbeat_grid_on_top();
     test_main_renderer_keeps_regular_beat_grid_behind_waveform();
-    test_main_renderer_can_draw_regular_beat_cap_at_bottom();
+    test_main_renderer_draws_downbeat_triangle_at_bottom();
     test_main_renderer_draws_center_playhead();
     test_main_renderer_spreads_isolated_transient_to_neighbor_columns();
     test_main_rgb565_renderer_maps_palette_directly();
     test_main_rgb565_renderer_keeps_regular_beat_grid_behind_waveform();
-    test_main_rgb565_renderer_can_draw_regular_beat_cap_at_bottom();
+    test_main_rgb565_renderer_draws_downbeat_triangle_at_bottom();
     test_main_rgb565_renderer_can_draw_column_range_without_clearing_all();
     test_main_rgb565_renderer_can_draw_logical_columns_to_destination_span();
     test_main_rgb565_renderer_highlights_active_loop_region();

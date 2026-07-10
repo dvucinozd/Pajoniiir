@@ -69,8 +69,10 @@ static void test_zoom_grid_styles_regular_beats_as_dim_background_guides(void)
     assert(style.line_width_px == 1);
     assert(style.y0_permille == 0);
     assert(style.y1_permille == 1000);
-    assert(style.cap_palette_index == 9u);
-    assert(style.cap_height_px == 4);
+    /* Regular beats have no cap now — the red marker lives on the downbeat. */
+    assert(style.cap_palette_index == 0u);
+    assert(style.cap_height_px == 0);
+    assert(style.cap_base_px == 0);
 }
 
 static void test_zoom_grid_styles_downbeats_as_full_height_markers(void)
@@ -81,6 +83,10 @@ static void test_zoom_grid_styles_downbeats_as_full_height_markers(void)
     assert(style.line_width_px == 2);
     assert(style.y0_permille == 0);
     assert(style.y1_permille == 1000);
+    /* Downbeat carries the red triangle marker (base 7, height 4). */
+    assert(style.cap_palette_index == 9u);
+    assert(style.cap_height_px == 4);
+    assert(style.cap_base_px == 7);
 }
 
 int main(void)

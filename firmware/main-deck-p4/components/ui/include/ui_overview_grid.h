@@ -16,6 +16,7 @@ typedef struct {
     uint8_t cap_palette_index;
     int line_width_px;
     int cap_height_px;
+    int cap_base_px;   /* triangle cap base width in px (0 = no triangle cap) */
     int y0_permille;
     int y1_permille;
 } ui_overview_grid_style_t;

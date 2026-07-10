@@ -77,6 +77,77 @@ static bool mini_waveform_column_for_column(const ui_waveform_source_t *source,
     return true;
 }
 
+/* Downbeat marker: a small filled triangle centred on center_x, pointing into
+ * the waveform — widest at the cap edge, narrowing to a 1px point (v for a top
+ * cap, ^ for a bottom cap). Clips horizontally to [0, width_px). */
+static void draw_grid_cap_triangle_u8(uint8_t *pixels, int stride_px,
+                                      int width_px, int height_px,
+                                      int center_x, int base_px, int cap_h,
+                                      uint8_t palette_index, bool cap_bottom)
+{
+    if (cap_h <= 0 || base_px <= 0) {
+        return;
+    }
+    if (cap_h > height_px) {
+        cap_h = height_px;
+    }
+    int half = base_px / 2;
+    for (int row = 0; row < cap_h; row++) {
+        int y = cap_bottom ? (height_px - cap_h + row) : row;
+        int hw = (cap_h > 1)
+                     ? (cap_bottom ? (half * row) / (cap_h - 1)
+                                   : (half * (cap_h - 1 - row)) / (cap_h - 1))
+                     : half;
+        for (int dx = -hw; dx <= hw; dx++) {
+            int px = center_x + dx;
+            if (px < 0 || px >= width_px) {
+                continue;
+            }
+            pixels[y * stride_px + px] = palette_index;
+        }
+    }
+}
+
+/* RGB565 column-span variant: center_logical_x is in logical (view) coordinates;
+ * columns are clipped to the current span [logical_x_px, logical_end_x) and
+ * mapped into the destination strip at dest_x_px. */
+static void draw_grid_cap_triangle_rgb565(uint16_t *pixels, int stride_px,
+                                          int height_px, int center_logical_x,
+                                          int base_px, int cap_h, uint16_t cap_color,
+                                          bool cap_bottom, int dest_x_px,
+                                          int logical_x_px, int logical_end_x,
+                                          int logical_width_px)
+{
+    if (cap_h <= 0 || base_px <= 0) {
+        return;
+    }
+    if (cap_h > height_px) {
+        cap_h = height_px;
+    }
+    int half = base_px / 2;
+    for (int row = 0; row < cap_h; row++) {
+        int y = cap_bottom ? (height_px - cap_h + row) : row;
+        int hw = (cap_h > 1)
+                     ? (cap_bottom ? (half * row) / (cap_h - 1)
+                                   : (half * (cap_h - 1 - row)) / (cap_h - 1))
+                     : half;
+        for (int dx = -hw; dx <= hw; dx++) {
+            int gx = center_logical_x + dx;
+            if (gx < logical_x_px || gx >= logical_end_x) {
+                continue;
+            }
+            if (gx < 0 || gx >= logical_width_px) {
+                continue;
+            }
+            int dest_x = dest_x_px + (gx - logical_x_px);
+            if (dest_x < 0 || dest_x >= stride_px) {
+                continue;
+            }
+            pixels[y * stride_px + dest_x] = cap_color;
+        }
+    }
+}
+
 static void draw_zoom_grid(uint8_t *pixels,
                            int stride_px,
                            int width_px,
@@ -121,20 +192,17 @@ static void draw_zoom_grid(uint8_t *pixels,
             int y1 = (height_px * style.y1_permille) / 1000;
             if (y1 <= y0) y1 = y0 + 1;
             if (y1 > height_px) y1 = height_px;
-            for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
-                if (!caps_only) {
+            if (!caps_only) {
+                for (int lx = 0; lx < style.line_width_px && x + lx < width_px; lx++) {
                     for (int y = y0; y < y1; y++) {
                         pixels[y * stride_px + x + lx] = style.palette_index;
                     }
                 }
-                if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
-                    int cap_h = style.cap_height_px;
-                    if (cap_h > height_px) cap_h = height_px;
-                    int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
-                    for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
-                        pixels[y * stride_px + x + lx] = style.cap_palette_index;
-                    }
-                }
+            }
+            if (style.cap_palette_index != 0 && style.cap_base_px > 0) {
+                draw_grid_cap_triangle_u8(pixels, stride_px, width_px, height_px,
+                                          x, style.cap_base_px, style.cap_height_px,
+                                          style.cap_palette_index, regular_beat_cap_bottom);
             }
         }
         return;
@@ -158,13 +226,10 @@ static void draw_zoom_grid(uint8_t *pixels,
                 pixels[y * stride_px + x] = style.palette_index;
             }
         }
-        if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
-            int cap_h = style.cap_height_px;
-            if (cap_h > height_px) cap_h = height_px;
-            int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
-            for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
-                pixels[y * stride_px + x] = style.cap_palette_index;
-            }
+        if (style.cap_palette_index != 0 && style.cap_base_px > 0) {
+            draw_grid_cap_triangle_u8(pixels, stride_px, width_px, height_px,
+                                      x, style.cap_base_px, style.cap_height_px,
+                                      style.cap_palette_index, regular_beat_cap_bottom);
         }
     }
 }
@@ -293,28 +358,27 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
                                                    style.palette_index);
             uint16_t cap_color = rgb565_palette_color(palette, palette_count,
                                                        style.cap_palette_index);
-            for (int lx = 0; lx < style.line_width_px && x + lx < logical_width_px; lx++) {
-                int gx = x + lx;
-                if (gx < logical_x_px || gx >= logical_end_x) {
-                    continue;
-                }
-                int dest_x = dest_x_px + (gx - logical_x_px);
-                if (dest_x < 0 || dest_x >= stride_px) {
-                    continue;
-                }
-                if (!caps_only) {
+            if (!caps_only) {
+                for (int lx = 0; lx < style.line_width_px && x + lx < logical_width_px; lx++) {
+                    int gx = x + lx;
+                    if (gx < logical_x_px || gx >= logical_end_x) {
+                        continue;
+                    }
+                    int dest_x = dest_x_px + (gx - logical_x_px);
+                    if (dest_x < 0 || dest_x >= stride_px) {
+                        continue;
+                    }
                     for (int y = y0; y < y1; y++) {
                         pixels[y * stride_px + dest_x] = color;
                     }
                 }
-                if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
-                    int cap_h = style.cap_height_px;
-                    if (cap_h > height_px) cap_h = height_px;
-                    int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
-                    for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
-                        pixels[y * stride_px + dest_x] = cap_color;
-                    }
-                }
+            }
+            if (style.cap_palette_index != 0 && style.cap_base_px > 0) {
+                draw_grid_cap_triangle_rgb565(pixels, stride_px, height_px, x,
+                                              style.cap_base_px, style.cap_height_px,
+                                              cap_color, regular_beat_cap_bottom,
+                                              dest_x_px, logical_x_px, logical_end_x,
+                                              logical_width_px);
             }
         }
         return;
@@ -353,13 +417,12 @@ static void draw_zoom_grid_rgb565_column_span(uint16_t *pixels,
                 pixels[y * stride_px + dest_x] = color;
             }
         }
-        if (style.cap_palette_index != 0 && style.cap_height_px > 0) {
-            int cap_h = style.cap_height_px;
-            if (cap_h > height_px) cap_h = height_px;
-            int cap_y0 = regular_beat_cap_bottom ? height_px - cap_h : 0;
-            for (int y = cap_y0; y < cap_y0 + cap_h; y++) {
-                pixels[y * stride_px + dest_x] = cap_color;
-            }
+        if (style.cap_palette_index != 0 && style.cap_base_px > 0) {
+            draw_grid_cap_triangle_rgb565(pixels, stride_px, height_px, x,
+                                          style.cap_base_px, style.cap_height_px,
+                                          cap_color, regular_beat_cap_bottom,
+                                          dest_x_px, logical_x_px, logical_end_x,
+                                          logical_width_px);
         }
     }
 }
