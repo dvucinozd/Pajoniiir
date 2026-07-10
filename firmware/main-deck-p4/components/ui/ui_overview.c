@@ -506,13 +506,16 @@ static void ui_overview_apply_play_button(ui_overview_deck_panel_t *panel, bool 
         return;
     }
 
+    /* Media-player convention: the button shows the action it performs. While
+     * playing it is red with the pause glyph (two bars); while paused/stopped it
+     * is light green with the play glyph (triangle). */
     if (panel->play_label) {
-        ui_label_set_text_if_changed(panel->play_label, playing ? "PAUSE" : "PLAY");
+        ui_label_set_text_if_changed(panel->play_label, playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
     }
     lv_obj_set_style_bg_color(panel->play_button,
-                              playing ? COL_GREEN : COL_PANEL_DK,
+                              playing ? COL_RED : COL_GREEN,
                               LV_PART_MAIN);
-    lv_obj_set_style_border_color(panel->play_button, COL_GREEN, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->play_button, playing ? COL_RED : COL_GREEN, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->play_button, 1, LV_PART_MAIN);
 }
 
@@ -877,6 +880,11 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
                                                     "PLAY", &s_style_btn_primary,
                                                     play_pause_event_cb);
     panel->play_label = lv_obj_get_child(panel->play_button, 0);
+    /* The play/pause label is a media glyph (play triangle / pause bars), sized
+     * up from the default button font so it reads as an icon rather than text. */
+    if (panel->play_label) {
+        lv_obj_set_style_text_font(panel->play_label, &lv_font_montserrat_20, LV_PART_MAIN);
+    }
     /* Seed the paused-state styling once; per-frame updates now only run on an
      * actual play/pause transition (see ui_update_overview_deck). */
     ui_overview_apply_play_button(panel, false);
