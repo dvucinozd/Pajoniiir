@@ -20,11 +20,17 @@ DDJ-FFL4 changes the product target:
 ### Dual-Deck LVGL UI
 Below are the screens designed for the two-deck playback interface:
 
+<!-- TODO(docs): docs/images/hotcues.jpg is MISSING and must be added — a
+     screenshot of the Hot Cues tab. The Loop touch screen was removed
+     2026-07-10 and its screenshot (loop.jpg) was deleted; the Hot Cues cell
+     below references hotcues.jpg, which renders as a broken image until the
+     file is committed to docs/images/. -->
+
 | Overview Screen | Library Navigation |
 | --- | --- |
 | ![Overview Screen](docs/images/overview.jpg) | ![Library Screen](docs/images/library.jpg) |
-| **Loop Controls** | **Settings & Diagnostics** |
-| ![Loop Screen](docs/images/loop.jpg) | ![Settings Screen](docs/images/settings.jpg) |
+| **Hot Cues** | **Settings & Diagnostics** |
+| ![Hot Cues Screen](docs/images/hotcues.jpg) | ![Settings Screen](docs/images/settings.jpg) |
 
 ---
 
