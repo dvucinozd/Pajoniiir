@@ -5,6 +5,7 @@
 #include "audio_delay_fx.h"
 #include "audio_eq.h"
 #include "audio_filter.h"
+#include "audio_flanger_fx.h"
 #include "audio_mixer.h"
 #include "audio_pad_fx.h"
 #include "audio_resampler.h"
@@ -20,6 +21,8 @@ typedef struct {
     bool filter_enabled;
     audio_filter_state_t *beat_fx_filter;
     bool beat_fx_filter_enabled;
+    audio_flanger_fx_t *beat_fx_flanger;
+    bool beat_fx_flanger_enabled;
     audio_delay_fx_t *beat_fx_echo;
     bool beat_fx_echo_enabled;
     audio_pad_fx_state_t *pad_fx;

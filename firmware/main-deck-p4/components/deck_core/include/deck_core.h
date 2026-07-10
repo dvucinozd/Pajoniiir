@@ -46,6 +46,7 @@ typedef enum {
     DECK_CORE_BEAT_FX_NONE = 0,
     DECK_CORE_BEAT_FX_FILTER,
     DECK_CORE_BEAT_FX_ECHO,
+    DECK_CORE_BEAT_FX_FLANGER,
     DECK_CORE_BEAT_FX_COUNT,
 } deck_core_beat_fx_effect_t;
 

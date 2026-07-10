@@ -214,6 +214,10 @@ typedef enum {
 esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
                                           uint8_t depth,
                                           bool enabled);
+esp_err_t audio_engine_set_beat_fx_flanger(audio_engine_beat_fx_target_t target,
+                                           uint8_t depth,
+                                           uint32_t period_ms,
+                                           bool enabled);
 esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
                                         uint8_t depth,
                                         uint32_t delay_ms,

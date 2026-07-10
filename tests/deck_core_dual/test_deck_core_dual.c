@@ -38,6 +38,11 @@ int audio_engine_stub_beat_fx_echo_depth;
 uint32_t audio_engine_stub_beat_fx_echo_delay_ms;
 bool audio_engine_stub_beat_fx_echo_enabled;
 int audio_engine_stub_beat_fx_echo_set_count;
+int audio_engine_stub_beat_fx_flanger_target;
+int audio_engine_stub_beat_fx_flanger_depth;
+uint32_t audio_engine_stub_beat_fx_flanger_period_ms;
+bool audio_engine_stub_beat_fx_flanger_enabled;
+int audio_engine_stub_beat_fx_flanger_set_count;
 int audio_engine_stub_pad_fx_deck;
 int audio_engine_stub_pad_fx_mode;
 int audio_engine_stub_pad_fx_pad;
@@ -303,6 +308,11 @@ static void reset_audio_engine_stub(void)
     audio_engine_stub_beat_fx_echo_delay_ms = 0;
     audio_engine_stub_beat_fx_echo_enabled = false;
     audio_engine_stub_beat_fx_echo_set_count = 0;
+    audio_engine_stub_beat_fx_flanger_target = -1;
+    audio_engine_stub_beat_fx_flanger_depth = -1;
+    audio_engine_stub_beat_fx_flanger_period_ms = 0;
+    audio_engine_stub_beat_fx_flanger_enabled = false;
+    audio_engine_stub_beat_fx_flanger_set_count = 0;
     audio_engine_stub_pad_fx_deck = -1;
     audio_engine_stub_pad_fx_mode = -1;
     audio_engine_stub_pad_fx_pad = -1;
@@ -1444,6 +1454,34 @@ static void test_beat_fx_defaults_and_state_controls(void)
     assert(state.depth == 127);
 }
 
+static void test_beat_fx_flanger_cycles_and_syncs_to_audio_engine(void)
+{
+    deck_core_test_reset();
+
+    /* FILTER -> ECHO -> FLANGER on the select-next cycle. */
+    ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&next);
+    deck_core_beat_fx_state_t state = deck_core_test_get_beat_fx_state();
+    assert(state.effect == DECK_CORE_BEAT_FX_FLANGER);
+
+    ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+    deck_core_test_apply_event(&on);
+
+    assert(audio_engine_stub_beat_fx_flanger_enabled);
+    assert(audio_engine_stub_beat_fx_flanger_target == (int)CTRL_BEAT_FX_TARGET_BOTH);
+    assert(audio_engine_stub_beat_fx_flanger_depth == 64);
+    /* 1 beat at the 120 BPM fallback = 500 ms LFO period. */
+    assert(audio_engine_stub_beat_fx_flanger_period_ms == 500u);
+    /* The other effects stay off while the flanger is selected. */
+    assert(!audio_engine_stub_beat_fx_filter_enabled);
+    assert(!audio_engine_stub_beat_fx_echo_enabled);
+
+    ctrl_event_t off = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+    deck_core_test_apply_event(&off);
+    assert(!audio_engine_stub_beat_fx_flanger_enabled);
+}
+
 static void test_beat_fx_public_snapshot_matches_state_controls(void)
 {
     deck_core_test_reset();
@@ -2297,6 +2335,7 @@ int main(void)
     test_smart_buttons_toggle_audio_state_and_leds();
     test_shifted_smart_buttons_are_noop_placeholders();
     test_beat_fx_defaults_and_state_controls();
+    test_beat_fx_flanger_cycles_and_syncs_to_audio_engine();
     test_beat_fx_public_snapshot_matches_state_controls();
     test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate();
     test_shifted_beat_fx_beat_button_release_does_not_change_state();

@@ -2,6 +2,11 @@
 
 #include "audio_filter.h"
 
+/* Smart CFX response curve: smoothstep (3x^2 - 2x^3) on the knob's distance
+ * from the detent. Compared to the raw knob it stays gentle right around the
+ * detent (fine control before the effect bites), passes through 1:1 at half
+ * turn, and flattens again near the ends for precise full-kill riding —
+ * instead of the old x^2 curve that deadened the whole first half. */
 uint16_t audio_smart_cfx_curve_raw(uint16_t raw)
 {
     if (raw > AUDIO_FILTER_RAW_MAX) {
@@ -21,7 +26,11 @@ uint16_t audio_smart_cfx_curve_raw(uint16_t raw)
         mag = max;
     }
 
-    uint32_t curved = (mag * mag + (max / 2u)) / max;
+    /* smoothstep: y = mag^2 * (3*max - 2*mag) / max^2, rounded. */
+    uint64_t num = (uint64_t)mag * (uint64_t)mag *
+                   (uint64_t)(3u * max - 2u * mag);
+    uint64_t den = (uint64_t)max * (uint64_t)max;
+    uint32_t curved = (uint32_t)((num + den / 2u) / den);
     uint32_t min_audible = max / 24u;
     if (mag > min_audible && curved < min_audible) {
         curved = min_audible;

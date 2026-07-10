@@ -11,8 +11,19 @@
 typedef struct {
     uint16_t raw;
     uint32_t sample_rate_hz;
-    float lp1[2];
-    float lp2[2];
+    /* Knob smoothing + cached ZDF SVF coefficients, refreshed once per
+     * coefficient block (not per sample) to keep tanf/expf off the hot path. */
+    float smoothed_raw;
+    uint32_t block_frames_left;
+    bool bypassed;
+    bool hp_mode;
+    float k;
+    float a1;
+    float a2;
+    float a3;
+    /* Integrator state, one pair per channel. */
+    float ic1eq[2];
+    float ic2eq[2];
 } audio_filter_state_t;
 
 void audio_filter_init(audio_filter_state_t *filter, uint32_t sample_rate_hz);

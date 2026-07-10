@@ -91,6 +91,79 @@ static void test_feedback_decays_and_reset_clears_tail(void)
     }
 }
 
+static void test_switch_off_rings_tail_then_goes_silent(void)
+{
+    int16_t left[32] = { 0 };
+    int16_t right[32] = { 0 };
+    audio_delay_fx_t fx;
+    audio_delay_fx_init(&fx, left, right, 32u, 1000u);
+
+    audio_delay_fx_config_t cfg = {
+        .enabled = true,
+        .delay_ms = 4,
+        .wet_q15 = 16384,
+        .feedback_q15 = 8192,
+    };
+    audio_delay_fx_configure(&fx, &cfg);
+
+    (void)audio_delay_fx_process_frame(
+        &fx,
+        (audio_mixer_frame_t) { .left = 10000, .right = 10000 });
+    for (int i = 0; i < 3; i++) {
+        (void)audio_delay_fx_process_frame(&fx, (audio_mixer_frame_t) { 0 });
+    }
+
+    cfg.enabled = false;
+    audio_delay_fx_configure(&fx, &cfg);
+    assert(audio_delay_fx_is_ringing(&fx));
+
+    audio_mixer_frame_t tail = audio_delay_fx_process_frame(&fx, (audio_mixer_frame_t) { 0 });
+    assert(tail.left > 4000);
+    assert(tail.right > 4000);
+
+    for (int i = 0; i < 2100; i++) {
+        (void)audio_delay_fx_process_frame(&fx, (audio_mixer_frame_t) { 0 });
+    }
+    assert(!audio_delay_fx_is_ringing(&fx));
+
+    audio_mixer_frame_t in = { .left = 777, .right = -777 };
+    audio_mixer_frame_t out = audio_delay_fx_process_frame(&fx, in);
+    assert(out.left == in.left);
+    assert(out.right == in.right);
+}
+
+static void test_reenable_clears_stale_tail(void)
+{
+    int16_t left[32] = { 0 };
+    int16_t right[32] = { 0 };
+    audio_delay_fx_t fx;
+    audio_delay_fx_init(&fx, left, right, 32u, 1000u);
+
+    audio_delay_fx_config_t cfg = {
+        .enabled = true,
+        .delay_ms = 4,
+        .wet_q15 = 16384,
+        .feedback_q15 = 8192,
+    };
+    audio_delay_fx_configure(&fx, &cfg);
+    (void)audio_delay_fx_process_frame(
+        &fx,
+        (audio_mixer_frame_t) { .left = 10000, .right = 10000 });
+
+    cfg.enabled = false;
+    audio_delay_fx_configure(&fx, &cfg);
+    assert(audio_delay_fx_is_ringing(&fx));
+
+    cfg.enabled = true;
+    audio_delay_fx_configure(&fx, &cfg);
+    assert(!audio_delay_fx_is_ringing(&fx));
+    for (int i = 0; i < 8; i++) {
+        audio_mixer_frame_t out = audio_delay_fx_process_frame(&fx, (audio_mixer_frame_t) { 0 });
+        assert(out.left == 0);
+        assert(out.right == 0);
+    }
+}
+
 static void test_null_or_zero_buffer_bypasses(void)
 {
     audio_delay_fx_t fx;
@@ -115,6 +188,8 @@ int main(void)
     test_disabled_bypasses_input();
     test_impulse_reappears_after_delay();
     test_feedback_decays_and_reset_clears_tail();
+    test_switch_off_rings_tail_then_goes_silent();
+    test_reenable_clears_stale_tail();
     test_null_or_zero_buffer_bypasses();
     puts("audio_delay_fx tests passed");
     return 0;

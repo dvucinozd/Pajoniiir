@@ -168,6 +168,11 @@ extern int audio_engine_stub_beat_fx_echo_depth;
 extern uint32_t audio_engine_stub_beat_fx_echo_delay_ms;
 extern bool audio_engine_stub_beat_fx_echo_enabled;
 extern int audio_engine_stub_beat_fx_echo_set_count;
+extern int audio_engine_stub_beat_fx_flanger_target;
+extern int audio_engine_stub_beat_fx_flanger_depth;
+extern uint32_t audio_engine_stub_beat_fx_flanger_period_ms;
+extern bool audio_engine_stub_beat_fx_flanger_enabled;
+extern int audio_engine_stub_beat_fx_flanger_set_count;
 extern int audio_engine_stub_pad_fx_deck;
 extern int audio_engine_stub_pad_fx_mode;
 extern int audio_engine_stub_pad_fx_pad;
@@ -269,6 +274,19 @@ static inline esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_targe
     audio_engine_stub_beat_fx_echo_delay_ms = delay_ms;
     audio_engine_stub_beat_fx_echo_enabled = enabled;
     audio_engine_stub_beat_fx_echo_set_count++;
+    return ESP_OK;
+}
+
+static inline esp_err_t audio_engine_set_beat_fx_flanger(audio_engine_beat_fx_target_t target,
+                                                         uint8_t depth,
+                                                         uint32_t period_ms,
+                                                         bool enabled)
+{
+    audio_engine_stub_beat_fx_flanger_target = (int)target;
+    audio_engine_stub_beat_fx_flanger_depth = (int)depth;
+    audio_engine_stub_beat_fx_flanger_period_ms = period_ms;
+    audio_engine_stub_beat_fx_flanger_enabled = enabled;
+    audio_engine_stub_beat_fx_flanger_set_count++;
     return ESP_OK;
 }
 

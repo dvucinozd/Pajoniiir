@@ -35,6 +35,8 @@ static const char *TAG = "deck";
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
 #define BEAT_FX_ECHO_MAX_BPM 300.0f
 #define BEAT_FX_ECHO_MAX_DELAY_MS 1000u
+#define BEAT_FX_FLANGER_MIN_PERIOD_MS 100u
+#define BEAT_FX_FLANGER_MAX_PERIOD_MS 8000u
 
 extern bool ui_is_library_active(void) __attribute__((weak));
 extern bool ui_is_overview_active(void) __attribute__((weak));
@@ -278,6 +280,30 @@ static uint32_t beat_fx_delay_ms(deck_core_beat_fx_beat_t beat,
     return delay_ms;
 }
 
+/* Flanger LFO period follows the beat selector directly (1/4 beat = fast
+ * jet, 4 beats = slow sweep); unlike the echo it is not bound by the 1 s
+ * delay-buffer cap. */
+static uint32_t beat_fx_flanger_period_ms(deck_core_beat_fx_beat_t beat,
+                                          ctrl_beat_fx_target_t target)
+{
+    uint16_t numerator = 1u;
+    uint16_t denominator = 1u;
+    if (!beat_fx_beat_ratio(beat, &numerator, &denominator) || denominator == 0u) {
+        return 500u;
+    }
+
+    float bpm = beat_fx_target_bpm(target);
+    float period = (60000.0f * (float)numerator) / (bpm * (float)denominator);
+    uint32_t period_ms = (uint32_t)(period + 0.5f);
+    if (period_ms < BEAT_FX_FLANGER_MIN_PERIOD_MS) {
+        period_ms = BEAT_FX_FLANGER_MIN_PERIOD_MS;
+    }
+    if (period_ms > BEAT_FX_FLANGER_MAX_PERIOD_MS) {
+        period_ms = BEAT_FX_FLANGER_MAX_PERIOD_MS;
+    }
+    return period_ms;
+}
+
 static void sync_beat_fx_audio_state(void)
 {
     audio_engine_beat_fx_target_t target = beat_fx_audio_target(s_beat_fx.target);
@@ -285,6 +311,8 @@ static void sync_beat_fx_audio_state(void)
                           s_beat_fx.effect == DECK_CORE_BEAT_FX_FILTER;
     bool echo_enabled = s_beat_fx.enabled &&
                         s_beat_fx.effect == DECK_CORE_BEAT_FX_ECHO;
+    bool flanger_enabled = s_beat_fx.enabled &&
+                           s_beat_fx.effect == DECK_CORE_BEAT_FX_FLANGER;
 
     audio_engine_set_beat_fx_filter(target,
                                     s_beat_fx.depth,
@@ -293,6 +321,10 @@ static void sync_beat_fx_audio_state(void)
                                   s_beat_fx.depth,
                                   beat_fx_delay_ms(s_beat_fx.beat, s_beat_fx.target),
                                   echo_enabled);
+    audio_engine_set_beat_fx_flanger(target,
+                                     s_beat_fx.depth,
+                                     beat_fx_flanger_period_ms(s_beat_fx.beat, s_beat_fx.target),
+                                     flanger_enabled);
 }
 
 static uint8_t normalize_deck(uint8_t deck)

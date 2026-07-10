@@ -526,6 +526,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
@@ -650,6 +651,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_flanger_fx"
+        Dir = "tests/audio_flanger_fx"
+        Target = "test_audio_flanger_fx.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_flanger_fx.exe",
+            "test_audio_flanger_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_pad_fx"
         Dir = "tests/audio_pad_fx"
         Target = "test_audio_pad_fx.exe"
@@ -677,9 +691,11 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
-            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c"
+            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "-lm"
         )
     },
     @{

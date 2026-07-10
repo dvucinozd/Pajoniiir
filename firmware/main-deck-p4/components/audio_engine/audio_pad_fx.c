@@ -137,7 +137,8 @@ void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config)
                 fx->active = false;
                 fx->config.active = false;
                 fx->echo_tail_active = true;
-                fx->echo_tail_frames_remaining = fx->echo.sample_rate ? fx->echo.sample_rate : 44100u;
+                /* 2 s of tail so even the 1-beat/1 s echo pads ring out. */
+                fx->echo_tail_frames_remaining = 2u * (fx->echo.sample_rate ? fx->echo.sample_rate : 44100u);
                 return;
             }
             audio_pad_fx_reset(fx);
