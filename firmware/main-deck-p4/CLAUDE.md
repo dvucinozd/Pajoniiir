@@ -33,7 +33,7 @@ pending items.
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 7-screen 800×480 dual-deck UI; PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
+| `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
 | `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger) + Smart CFX; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
@@ -89,7 +89,7 @@ control_link  →  ctrl_event_queue  →  deck_core
 3. `bsp_display_init()` ✅ + `bsp_touch_init()` ✅ + `bsp_audio_init()` ✅ + `bsp_sd_init()` (`/sd`, non-fatal without card)
 4. `library_init()` — returns NOT_FOUND until USB is mounted (OK at boot)
 5. `audio_engine_init()` — grabs the PCM5102A/monitor output handles, creates mutex/tasks
-6. `ui_init()` — LVGL 800×480, 7 screens, PPA rotation, touch indev
+6. `ui_init()` — LVGL 800×480, 4 screens, PPA rotation, touch indev
 7. `usb_storage_init(cb)` — USB host; on mount loads library + refreshes UI
 
 > **Wi-Fi remote — user-toggled from Settings, default OFF (2026-07-04).**
@@ -269,17 +269,21 @@ runner compiles each suite with `gcc` from `C:\msys64\ucrt64\bin`).
 
 ## LVGL UI ✅ RUNNING ON HW
 
-800×480 landscape layout with 7 screens (PPA hw rotation, GT911 touch indev):
+800×480 landscape layout with 4 screens (PPA hw rotation, GT911 touch indev):
 
 | Tab | Screen | Content |
 |-----|-------|---------|
 | 0 | OVERVIEW | Waveform overview + zoom, playhead, status |
 | 1 | LIBRARY | List of tracks from `library_get()` |
 | 2 | HOT CUES | 8 cue buttons with time positions |
-| 3 | LOOP | Loop in/out controls |
-| 4 | BEAT JUMP | Beat jump buttons (±1, ±2, ±4, ±8 beats) |
-| 5 | KEY SHIFT | Transposition by semitones |
-| 6 | SETTINGS | Configuration |
+| 3 | SETTINGS | Configuration |
+
+The dedicated touch **LOOP** and **BEAT JUMP** screens were removed 2026-07-10
+(Key Shift went earlier): they duplicated the FLX4 beat-loop / beat-jump pads
+(driven through `deck_core`) and the Overview's loop-region + beat markers, so
+the touch screens were redundant. The loop/beat-jump **logic** (`deck_core`,
+`beat_jump.c`) is unchanged. Removing the screens dropped the tab bar from 6 to
+4 (the footer lays tabs out dynamically from `UI_TAB_COUNT`).
 
 Header (always visible): title, artist (left), status indicator, two time counters
 in the middle, BPM + pitch% (aligned to the right edge).
@@ -422,7 +426,7 @@ on default 20 MHz PSRAM, the DSI cannot fetch the frame buffer in time → "unde
 Also required because the PDB track index (~281 KB) and ANLZ waveforms do not fit in DRAM.  
 `library.c` uses `heap_caps_malloc(MALLOC_CAP_SPIRAM)` — falls back to internal heap if SPIRAM is unavailable.
 
-`CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384` — `ui_init()` builds all 7 screens on the main task stack;
+`CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384` — `ui_init()` builds all 4 screens on the main task stack;
 default 3.5 KB overflows (stack-protection panic).
 
 ---

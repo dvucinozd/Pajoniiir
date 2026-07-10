@@ -489,9 +489,6 @@ static void ui_apply_usb_removed(void)
     if (removed_loaded) {
         ui_library_cache_invalidate();
         ui_library_set_header_track("No Track", "", 0);
-        if (s_library_config.actions.update_loop_screen_state) {
-            s_library_config.actions.update_loop_screen_state();
-        }
         if (s_library_config.actions.update_hot_cues) {
             s_library_config.actions.update_hot_cues();
         }

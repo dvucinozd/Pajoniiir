@@ -79,7 +79,6 @@ typedef struct {
                             int beats);
     bool (*is_performance_target_active)(uint8_t deck);
     void (*update_hot_cues)(void);
-    void (*update_loop_screen_state)(void);
 } ui_library_actions_t;
 
 typedef struct {

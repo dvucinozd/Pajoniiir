@@ -62,8 +62,6 @@ typedef enum {
     UI_TAB_OVERVIEW = 0,
     UI_TAB_LIBRARY,
     UI_TAB_HOT_CUES,
-    UI_TAB_LOOP,
-    UI_TAB_BEAT_JUMP,
     UI_TAB_SETTINGS,
     UI_TAB_COUNT,
 } ui_tab_t;
@@ -101,7 +99,7 @@ static ui_overview_perf_counter_t s_ui_update_duration_perf;
 static lv_obj_t *s_footer_buttons[UI_TAB_COUNT];
 static lv_obj_t *s_footer_active_strips[UI_TAB_COUNT];
 static const char *s_tab_names[UI_TAB_COUNT] = {
-    "OVERVIEW", "LIBRARY", "HOT CUES", "LOOP", "BEAT JUMP", "SETTINGS"
+    "OVERVIEW", "LIBRARY", "HOT CUES", "SETTINGS"
 };
 
 // ─── Style Definitions (Harmonious Dark Theme) ───────────────────────────────
@@ -308,7 +306,6 @@ static void ui_set_performance_deck(uint8_t deck)
     }
 
     ui_controls_update_performance_target_visuals(&s_controls);
-    ui_performance_tabs_update_loop_screen_state();
     ui_performance_tabs_update_hot_cues();
 
     if (before != after) {
@@ -822,7 +819,6 @@ esp_err_t ui_init(void) {
             .set_loop_shadow = ui_set_loop_shadow,
             .is_performance_target_active = ui_library_is_performance_target_active,
             .update_hot_cues = ui_performance_tabs_update_hot_cues,
-            .update_loop_screen_state = ui_performance_tabs_update_loop_screen_state,
         },
         .hor_res = UI_HOR_RES,
         .content_y = UI_CONTENT_Y,
@@ -857,8 +853,6 @@ esp_err_t ui_init(void) {
     ui_controls_update_performance_target_visuals(&s_controls);
     s_screens[UI_TAB_LIBRARY] = ui_library_create(s_root_container);
     s_screens[UI_TAB_HOT_CUES] = ui_performance_tabs_create_hot_cues(s_root_container);
-    s_screens[UI_TAB_LOOP] = ui_performance_tabs_create_beat_loop(s_root_container);
-    s_screens[UI_TAB_BEAT_JUMP] = ui_performance_tabs_create_beat_jump(s_root_container);
     s_screens[UI_TAB_SETTINGS] = ui_settings_create(s_root_container);
 
     // Switch initially to overview (index 0) and hide others

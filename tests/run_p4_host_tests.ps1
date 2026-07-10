@@ -400,6 +400,21 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("ui_performance_tabs_create_key_shift", "toggle_master_tempo")
 
 Assert-FileDoesNotContain `
+    -Name "P4 local UI excludes removed Loop and Beat Jump screens" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @('"BEAT JUMP"', "UI_TAB_LOOP", "UI_TAB_BEAT_JUMP", "ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump")
+
+Assert-FileDoesNotContain `
+    -Name "P4 performance tabs exclude removed Loop and Beat Jump controls" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
+    -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "loop_btn_event_cb", "jump_btn_event_cb", "EXIT LOOP")
+
+Assert-FileDoesNotContain `
+    -Name "P4 performance tabs API excludes removed Loop and Beat Jump screens" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
+    -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "ui_performance_tabs_update_loop_screen_state")
+
+Assert-FileDoesNotContain `
     -Name "P4 Settings excludes retired monitor speaker switch" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
     -LiteralPatterns @("MONITOR SPEAKER", "audio_out_event_cb", "monitor_route_label")
