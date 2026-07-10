@@ -643,17 +643,20 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_add_event_cb(panel->label_deck, overview_deck_select_event_cb, LV_EVENT_CLICKED, NULL);
     ui_overview_apply_deck_badge(deck);
     panel->label_status = NULL;
-    ui_overview_bar(panel->panel, info_x, OVERVIEW_TITLE_Y,
-                    OVERVIEW_DECK_INFO_W, OVERVIEW_TITLE_H, COL_TITLE_BLUE);
-    panel->label_title = ui_overview_value_label(panel->panel, &lv_font_montserrat_24,
-                                                 COL_TEXT, info_x, OVERVIEW_TITLE_Y,
-                                                 OVERVIEW_TITLE_TEXT_W, "NO TRACK");
+    /* The blue title strip is the container; the title text is its child,
+     * vertically centred with LV_ALIGN_LEFT_MID so it no longer top-aligns and
+     * "touches" the strip top (font-metric-robust, matches the transport
+     * button pattern). The strip's own blue bg shows through the label. */
+    lv_obj_t *title_strip = ui_overview_bar(panel->panel, info_x, OVERVIEW_TITLE_Y,
+                                            OVERVIEW_DECK_INFO_W, OVERVIEW_TITLE_H, COL_TITLE_BLUE);
+    lv_obj_clear_flag(title_strip, LV_OBJ_FLAG_SCROLLABLE);
+    panel->label_title = lv_label_create(title_strip);
+    lv_label_set_text(panel->label_title, "NO TRACK");
+    lv_obj_set_style_text_font(panel->label_title, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(panel->label_title, COL_TEXT, LV_PART_MAIN);
     lv_label_set_long_mode(panel->label_title, LV_LABEL_LONG_CLIP);
-    lv_obj_set_height(panel->label_title, OVERVIEW_TITLE_H);
-    lv_obj_set_style_bg_color(panel->label_title, COL_TITLE_BLUE, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(panel->label_title, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(panel->label_title, 8, LV_PART_MAIN);
-    lv_obj_set_style_pad_top(panel->label_title, 0, LV_PART_MAIN);
+    lv_obj_set_width(panel->label_title, OVERVIEW_TITLE_TEXT_W);
+    lv_obj_align(panel->label_title, LV_ALIGN_LEFT_MID, 8, 0);
     panel->label_artist = ui_overview_value_label(panel->panel, &lv_font_montserrat_12,
                                                   COL_TEXT_MUTED, info_x + 8, OVERVIEW_INFO_ROW_Y, 118, "TRACK");
     lv_obj_add_flag(panel->label_artist, LV_OBJ_FLAG_HIDDEN);
