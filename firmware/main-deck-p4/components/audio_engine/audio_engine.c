@@ -35,6 +35,7 @@
 #include "audio_output_timing.h"
 #include "audio_pad_fx.h"
 #include "audio_pcm_ring.h"
+#include "audio_scratch_buffer.h"
 #include "audio_resampler.h"
 #include "audio_smart_cfx.h"
 #include "monitor_pcm_link.h"
@@ -107,6 +108,19 @@ static int64_t ae_now_us(void)
  */
 static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 
+/* Per-deck scratch capture buffer (vinyl mode Phase 2). The decode task appends
+ * every decoded source frame here in addition to the PCM ring, giving a rolling
+ * random-access window of recent audio for the (future) scratch read head. The
+ * PSRAM backing store is allocated once at init; capacity is fixed for
+ * AE_SCRATCH_SECONDS at AE_SCRATCH_MAX_RATE (hi-res sources get a shorter window
+ * since the store holds source frames). Capture is passive — playback unchanged.
+ * See docs/VINYL_SCRATCH_PLAN.md. */
+#define AE_SCRATCH_SECONDS   4u
+#define AE_SCRATCH_MAX_RATE  48000u
+#define AE_SCRATCH_CAPACITY_FRAMES (AE_SCRATCH_SECONDS * AE_SCRATCH_MAX_RATE)
+static audio_scratch_buffer_t s_scratch_buf[AUDIO_ENGINE_DECK_COUNT];
+static int16_t               *s_scratch_storage[AUDIO_ENGINE_DECK_COUNT];
+
 /* Shared scratchpad buffer for decoding to avoid stack allocation */
 static int16_t            s_scratch_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2u];
 
@@ -121,6 +135,7 @@ static bool deck_is_valid(uint8_t deck);
 static void init_beat_fx_echo_buffers(void);
 static void init_beat_fx_flanger_buffers(void);
 static void init_pad_fx_buffers(void);
+static void init_scratch_buffers(void);
 
 static float pregain_gain_from_raw(uint16_t raw)
 {
@@ -219,6 +234,14 @@ static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
         return &s_pcm_rings[deck];
     }
     return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static inline audio_scratch_buffer_t *scratch_buffer_for_deck(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) {
+        return &s_scratch_buf[deck];
+    }
+    return &s_scratch_buf[AUDIO_ENGINE_COMPAT_DECK];
 }
 
 static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
@@ -1492,6 +1515,7 @@ static void ae_decode_task(void *arg)
     audio_fw_runtime_t *runtime = ctx->runtime;
     audio_engine_state_t *eng = (audio_engine_state_t *)ctx->engine;
     audio_pcm_ring_t *pcm_ring = (audio_pcm_ring_t *)ctx->pcm_ring;
+    audio_scratch_buffer_t *scratch = scratch_buffer_for_deck(ctx->deck);
     audio_resampler_state_t *resampler = (audio_resampler_state_t *)ctx->resampler;
     if (ctx->deck >= AUDIO_ENGINE_DECK_COUNT) {
         xSemaphoreGive(ctx_tasks_done(ctx));
@@ -1499,6 +1523,7 @@ static void ae_decode_task(void *arg)
         return;
     }
     int16_t *decode_pcm = s_decode_pcm[ctx->deck];
+    bool scratch_full_logged = false;  /* one-shot fill diagnostic (Phase 2) */
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
     while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
@@ -1586,6 +1611,11 @@ static void ae_decode_task(void *arg)
     eng->load_progress = 100;
     eng->loading       = false;   /* P5a: track is now playable */
 
+    /* Scratch capture (vinyl Phase 2): the source rate is now known, so bind it
+     * for ms<->frame mapping and start the window fresh. */
+    audio_scratch_buffer_set_sample_rate(scratch, eng->sample_rate);
+    audio_scratch_buffer_reset(scratch);
+
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
         if (eng->seek_requested) {
@@ -1624,6 +1654,9 @@ static void ae_decode_task(void *arg)
                     audio_pcm_ring_reset(pcm_ring);
                     audio_resampler_reset(resampler);
                     taskEXIT_CRITICAL(&s_ring_flush_mux);
+                    /* A user seek is a position discontinuity: drop the captured
+                     * window so the contiguous-frames assumption stays valid. */
+                    audio_scratch_buffer_reset(scratch);
                 }
                 eng->seek_is_loop   = false;
                 eng->seek_requested = false;
@@ -1645,12 +1678,21 @@ static void ae_decode_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
+        uint32_t scratch_newest_ms = 0u;
+        bool scratch_newest_valid = false;
         AE_LOCK();
         int64_t decode_start_us = esp_timer_get_time();
         int  samples = decode_one_frame(eng, fw, decode_pcm);
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
+            /* Source position of this batch's last frame, for scratch capture
+             * tagging (Phase 2). Same timeline as the playhead (output_base_ms). */
+            if (eng->sample_rate > 0u) {
+                scratch_newest_ms = eng->seek_base_ms +
+                    (uint32_t)(((eng->frames_since_seek - 1u) * 1000ull) / eng->sample_rate);
+                scratch_newest_valid = true;
+            }
             if (eng->loop_active && eng->sample_rate > 0) {
                 uint32_t current_ms = eng->seek_base_ms + (uint32_t)(eng->frames_since_seek * 1000u / eng->sample_rate);
                 if (current_ms >= eng->loop_end_ms) {
@@ -1682,6 +1724,20 @@ static void ae_decode_task(void *arg)
         for (int i = 0; i < samples && runtime->run; i++) {
             while (audio_pcm_ring_free(pcm_ring) == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
             audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
+            /* Capture the same source frame into the scratch window (passive). */
+            audio_scratch_buffer_push(scratch, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
+        }
+        if (scratch_newest_valid) {
+            audio_scratch_buffer_mark_newest_ms(scratch, scratch_newest_ms);
+        }
+        if (!scratch_full_logged &&
+            audio_scratch_buffer_used(scratch) >= AE_SCRATCH_CAPACITY_FRAMES) {
+            scratch_full_logged = true;
+            ESP_LOGI(TAG, "scratch buffer D%u filled: %u frames @ %u Hz (newest %u ms)",
+                     (unsigned)ctx->deck,
+                     (unsigned)audio_scratch_buffer_used(scratch),
+                     (unsigned)eng->sample_rate,
+                     (unsigned)scratch_newest_ms);
         }
     }
 
@@ -2060,6 +2116,7 @@ esp_err_t audio_engine_init(void)
     init_beat_fx_echo_buffers();
     init_beat_fx_flanger_buffers();
     init_pad_fx_buffers();
+    init_scratch_buffers();
     atomic_store_u16(&s_crossfader, AUDIO_MIXER_CONTROL_CENTER);
     s_master_trim = 1.0f;
     atomic_store_u16(&s_master_volume, AUDIO_MIXER_CONTROL_MAX);
@@ -2460,6 +2517,7 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 
     audio_engine_reset_state(eng, ESP_OK, "OK");
     audio_pcm_ring_reset(&s_pcm_rings[deck]);
+    audio_scratch_buffer_reset(&s_scratch_buf[deck]);
 
 #if AE_FW
     if (!any_deck_loaded()) {
@@ -2926,6 +2984,23 @@ static void init_pad_fx_buffers(void)
                                            s_pad_fx_echo_left[deck],
                                            s_pad_fx_echo_right[deck],
                                            frames);
+    }
+}
+
+/* Allocate the per-deck scratch capture stores (once) and bind each buffer.
+ * Stereo, so capacity*2 int16. On PSRAM (~768 KB/deck at the default 4 s @
+ * 48 kHz); if an allocation fails the buffer stays unbound and capture is a
+ * no-op for that deck — playback is unaffected. */
+static void init_scratch_buffers(void)
+{
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        if (!s_scratch_storage[deck]) {
+            s_scratch_storage[deck] =
+                beat_fx_echo_alloc_buffer(AE_SCRATCH_CAPACITY_FRAMES * 2u);
+        }
+        audio_scratch_buffer_init(&s_scratch_buf[deck],
+                                  s_scratch_storage[deck],
+                                  s_scratch_storage[deck] ? AE_SCRATCH_CAPACITY_FRAMES : 0u);
     }
 }
 

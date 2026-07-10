@@ -469,6 +469,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("case CTRL_DECK_CTL_JOG_TOUCH:", "handle_jog_touch", "audio_engine_deck_set_hold(deck, true)", "s_jog_touched[deck]")
 
+Assert-FileContains `
+    -Name "p4 audio_engine captures decoded frames into the scratch buffer (vinyl phase 2)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "audio_scratch_buffer_reset(scratch)")
+
 $tests = @(
     @{
         Name = "audio_diag"
@@ -551,6 +556,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
@@ -687,6 +693,19 @@ $tests = @(
             "-o", "test_audio_flanger_fx.exe",
             "test_audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_scratch_buffer"
+        Dir = "tests/audio_scratch_buffer"
+        Target = "test_audio_scratch_buffer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_scratch_buffer.exe",
+            "test_audio_scratch_buffer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
         )
     },
