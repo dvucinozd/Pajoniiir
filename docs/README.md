@@ -12,6 +12,7 @@ The active DDJ-FLX4 port roadmap is [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)
 - [`CONTROL_LINK_PROTOCOL.md`](CONTROL_LINK_PROTOCOL.md) - internal UART frame and DDJ control IDs
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) - current two-board wiring notes
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active staged DDJ-FLX4 plan
+- [`VINYL_SCRATCH_PLAN.md`](VINYL_SCRATCH_PLAN.md) - phased plan for real turntable scratch / vinyl mode (planned)
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) - current bootstrap/hardware checklist
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) - remaining technical risks
 - [`bench-notes.md`](bench-notes.md) - current hardware smoke notes and bench results
