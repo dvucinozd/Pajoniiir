@@ -153,11 +153,14 @@ _Static_assert(OVERVIEW_WAVE_STRIP_W > OVERVIEW_CV_W, "wave strip must be wider 
 #define OVERVIEW_TRANSPORT_PLAY_Y_OFFSET 60
 #define OVERVIEW_TRANSPORT_CUE_Y_OFFSET 102
 #define OVERVIEW_VU_X 68
-#define OVERVIEW_VU_Y_OFFSET 17
+/* 10 segments: the middle 8 keep their old positions; one segment is added at
+ * the top and one at the bottom (Y_OFFSET moved up by one segment pitch, 17→3,
+ * so the meter stays centred in the deck lane). */
+#define OVERVIEW_VU_Y_OFFSET 3
 #define OVERVIEW_VU_SEGMENT_W 10
 #define OVERVIEW_VU_SEGMENT_H 11
 #define OVERVIEW_VU_SEGMENT_GAP 3
-#define OVERVIEW_VU_SEGMENT_COUNT 8
+#define OVERVIEW_VU_SEGMENT_COUNT 10
 #define OVERVIEW_VU_H ((OVERVIEW_VU_SEGMENT_COUNT * OVERVIEW_VU_SEGMENT_H) + \
                        ((OVERVIEW_VU_SEGMENT_COUNT - 1) * OVERVIEW_VU_SEGMENT_GAP))
 _Static_assert(OVERVIEW_DECK_BADGE_X + OVERVIEW_DECK_BADGE_W + 4 <= OVERVIEW_VU_X,
@@ -166,6 +169,8 @@ _Static_assert(OVERVIEW_VU_X >= (OVERVIEW_TRANSPORT_X + OVERVIEW_TRANSPORT_W + 4
                "VU meter must not overlap transport buttons");
 _Static_assert((OVERVIEW_VU_X + OVERVIEW_VU_SEGMENT_W + 4) <= OVERVIEW_WAVE_X,
                "VU meter must stay clear of waveform");
+_Static_assert(OVERVIEW_VU_Y_OFFSET + OVERVIEW_VU_H <= OVERVIEW_CV_H,
+               "VU meter must fit within the deck waveform lane height");
 #define OVERVIEW_PLAYHEAD_W 3
 #define OVERVIEW_OUTLINE_W 1
 #define OVERVIEW_DECK_INFO_W 400
@@ -1888,7 +1893,7 @@ static void ui_overview_update_vu_meter(uint8_t deck, uint16_t peak)
     panel->last_vu_level = level;
 
     /* Only restyle the segments whose active state actually flips this update.
-     * A typical ±1 level change touches a single segment instead of all 8, which
+     * A typical ±1 level change touches a single segment instead of all of them, which
      * keeps the LVGL invalidate buffer from filling up (and spilling to a
      * full-screen redraw that would erase the PPA-blitted waveforms). */
     int from = 0;
