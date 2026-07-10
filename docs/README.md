@@ -3,8 +3,6 @@
 Architecture decisions, board analysis, hardware bring-up notes, and development plans.
 
 The active DDJ-FLX4 port roadmap is [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md).
-The older [`development-plan.md`](development-plan.md) remains as historical
-CDJ100S/P4 standalone context from the imported project.
 
 ## Active DDJ-FFL4 Docs
 
@@ -33,17 +31,6 @@ CDJ100S/P4 standalone context from the imported project.
 - [`control-board-decision.md`](control-board-decision.md) — why CDJ controls moved to dedicated ESP32-S3
 - [`porting-architecture.md`](porting-architecture.md) — two-board architecture, component map, design decisions
 - [`rekordbox-format-analysis.md`](rekordbox-format-analysis.md) — ANLZ file format (waveform, BPM, cues, VBR seek); USB drive folder structure
-
-## Implementation
-
-- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active DDJ-FLX4 staged implementation plan
-- [`development-plan.md`](development-plan.md) - legacy CDJ100S/P4 standalone plan retained for reference
-- [`task.md`](task.md) - historical local checklist from earlier visual beatgrid/UI work
-
-## Hardware Bringup
-
-- [`bench-notes.md`](bench-notes.md) — hardware smoke test results (ESP32-S3 + P4 display/touch/USB/audio/Wi-Fi confirmed)
-- [`wiring-map.md`](wiring-map.md) — CDJ front panel → ESP32-S3 GPIO assignments (confirmed)
 
 ## Local Inputs (not in git)
 

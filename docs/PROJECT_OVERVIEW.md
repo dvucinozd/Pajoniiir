@@ -182,8 +182,7 @@ The fork is no longer only the imported single-deck baseline:
 
 ## Proposed Next Work
 
-Two design plans staged under `docs/superpowers/plans/` have since been
-implemented in firmware (details in Phase 8 of
+Two design plans have since been implemented in firmware (details in Phase 8 of
 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)):
 
 - **S3 XIAO GPIO21 user status LED** — implemented as the S3 `status_led`

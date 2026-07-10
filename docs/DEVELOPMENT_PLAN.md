@@ -185,13 +185,11 @@ TODO:
   output consumes 160 source frames per 147 output frames. Hardware smoke after
   the fix confirmed audio OK, fluid waveform, normal Caribbean Blue playback,
   and no reboot.
-- Before adding PCM5102A hardware support, follow
-  `docs/superpowers/plans/2026-06-26-pcm5102a-migration-readiness.md`: create
+- Before adding PCM5102A hardware support, the readiness steps were to create
   a P4 pinout inventory, fix the output sample-rate strategy, split logical
   `master_out[]`/`hp_out[]` buffers, harden BSP audio init, and only then select
   approved P4 GPIOs for the PCM5102A.
-- For the concrete DAC bring-up sequence, follow
-  `docs/superpowers/plans/2026-06-26-pcm5102a-main-out-es8311-monitor.md`:
+- The concrete DAC bring-up sequence was to
   use GPIO50/GPIO52/GPIO51 as the bench-verification candidate set, reject the
   GPIO22/GPIO23/GPIO24/GPIO25 proposal because GPIO23 is LCD backlight PWM, and
   route PCM5102A as MAIN OUT while keeping ES8311 as monitor/headphones/speaker.
@@ -199,7 +197,6 @@ TODO:
   are the CUE/MONITOR output, so ES8311 is dropped there. Final topology:
   PCM5102A RCA = MAIN OUT (I2S unit 1), FLX4 USB = cue (monitor link on unit 0),
   ES8311 disabled to free unit 0 (only 2 usable I2S units on eco2 P4). See
-  `docs/superpowers/plans/2026-07-01-flx4-usb-audio-headphones.md` and
   `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md` (hardware-validated).
 
 Exit criteria:
@@ -917,18 +914,16 @@ Exit criteria:
 
 ## Phase 8: Proposed Design Plans (not yet implemented)
 
-Two design plans staged under `docs/superpowers/plans/` were reviewed against
-the codebase on 2026-07-03 and have since been implemented in firmware.
+Two design plans were reviewed against the codebase on 2026-07-03 and have since
+been implemented in firmware.
 
-- **S3 XIAO GPIO21 user status LED** —
-  [`2026-07-03-s3-gpio48-wled-status.md`](superpowers/plans/2026-07-03-s3-gpio48-wled-status.md).
-  The original GPIO48 WS2812 assumption was replaced during the XIAO ESP32S3
-  migration. The implemented S3 `status_led` component now drives the XIAO
-  active-low GPIO21 user LED for reduced FLX4 USB link and MIDI input activity
-  feedback and intentionally carries no playback state.
-- **WAV + FLAC playback** —
-  [`2026-07-03-wav-flac-decoder-support.md`](superpowers/plans/2026-07-03-wav-flac-decoder-support.md).
-  Implemented through format detection, `audio_decoder_t`, WAV parsing, and
+- **S3 XIAO GPIO21 user status LED** — the original GPIO48 WS2812 assumption was
+  replaced during the XIAO ESP32S3 migration. The implemented S3 `status_led`
+  component now drives the XIAO active-low GPIO21 user LED for reduced FLX4 USB
+  link and MIDI input activity feedback and intentionally carries no playback
+  state.
+- **WAV + FLAC playback** — implemented through format detection,
+  `audio_decoder_t`, WAV parsing, and
   `dr_flac` on top of the existing preload/ring/resampler/mixer path. MP3 keeps
   PVBR seek support; WAV/FLAC use decoder metadata while Rekordbox/ANLZ remains
   the source for beatgrid/BPM/waveform data.
