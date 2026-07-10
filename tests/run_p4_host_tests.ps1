@@ -474,6 +474,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "audio_scratch_buffer_reset(scratch)")
 
+Assert-FileContains `
+    -Name "p4 audio_scratch DSP engine renders bidirectional interpolated scratch (vinyl phase 3)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_scratch.c") `
+    -LiteralPatterns @("audio_scratch_render", "audio_scratch_buffer_read_frame_back", "head_back -= s->velocity", "past_new_edge", "past_old_edge")
+
 $tests = @(
     @{
         Name = "audio_diag"
@@ -705,6 +710,20 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_scratch_buffer.exe",
             "test_audio_scratch_buffer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_scratch"
+        Dir = "tests/audio_scratch"
+        Target = "test_audio_scratch.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_scratch.exe",
+            "test_audio_scratch.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
         )

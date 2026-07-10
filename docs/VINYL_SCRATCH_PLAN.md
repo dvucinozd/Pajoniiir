@@ -1,6 +1,6 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **in progress** — Phases 1–2 done (2026-07-11), Phases 3–5 planned.
+Status: **in progress** — Phases 1–3 done (2026-07-11), Phases 4–5 planned.
 Phased roadmap for real turntable scratch on the P4. Written 2026-07-10 so work
 can resume cleanly.
 
@@ -118,17 +118,30 @@ Build the random-access PCM history without changing playback.
   so `index_for_ms` near a loop boundary can be off — fine for capture-only.
 - Risk: low–medium (memory + one cheap write in the hot path).
 
-### Phase 3 — Scratch DSP (bidirectional interpolated read)
-The pure scratch read, host-tested in isolation.
-- `audio_scratch` engine: given a fractional read head + per-output-sample
-  velocity, produce output frames by linear interpolation of the buffer,
-  advancing the head by velocity (negative → reverse). Clamp to the buffered
-  window; silence (or hold) outside it.
-- Velocity model: jog delta (ticks) → target platter velocity in
-  frames/output-sample, with smoothing/decay so it feels analog (a still-but-
-  touched platter → velocity 0 → sound stops; released → handoff).
-- Files: `audio_scratch.c/.h` (pure DSP, no ESP deps), tests (forward, reverse,
-  interpolation, out-of-range). Risk: medium but isolated + host-tested.
+### Phase 3 — Scratch DSP (bidirectional interpolated read) ✅ DONE (2026-07-11)
+The pure scratch read, host-tested in isolation (not wired into the output yet —
+that is Phase 4).
+- `audio_scratch.c/.h` engine (pure DSP, no ESP deps): a fractional read head
+  measured in `frames back from the newest captured frame` (0 = newest) plus a
+  `velocity` = forward source-frames advanced per output sample. `render()`
+  linear-interpolates the two frames bracketing the head, then does
+  `head_back -= velocity` (positive = forward/newer, negative = reverse/older).
+  Running off a window edge (`past_new_edge`/`past_old_edge`) → silence, and the
+  head keeps integrating so a reversal walks it back in.
+- New buffer primitive `audio_scratch_buffer_read_frame_back(buf, frames_back)`
+  reads frame N slots before the newest — the frame-accurate step the head walks.
+- Velocity model: `audio_scratch_jog(ticks)` adds an impulse
+  (`velocity_per_tick`, clamped to ±`velocity_max`); velocity decays toward 0
+  each rendered sample (`velocity_decay`) so a platter held still coasts to a
+  stop — and a stopped platter (|velocity| < ε) is silent, like a still record.
+  Parameters are placeholders to tune on hardware in Phase 5.
+- Files: `audio_scratch.c/.h`, `audio_scratch_buffer.{c,h}` (primitive),
+  `CMakeLists.txt`. Tests: `tests/audio_scratch` (inactive/stopped silence,
+  forward ascends toward newest, reverse descends toward oldest, linear
+  interpolation, past-newest + past-oldest silence, reversal re-enters the
+  window, jog accumulate/clamp, velocity decay) + a static guard. Full host
+  suite + firmware build pass.
+- Risk: medium but isolated + host-tested.
 
 ### Phase 4 — Integrate scratch into the real-time output (behind the CONFIG flag)
 Wire it so touching the platter actually scratches the audio.
