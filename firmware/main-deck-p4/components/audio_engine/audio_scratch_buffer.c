@@ -96,3 +96,18 @@ bool audio_scratch_buffer_read(const audio_scratch_buffer_t *b, uint32_t index,
     *out_right = b->frames[index * 2u + 1u];
     return true;
 }
+
+bool audio_scratch_buffer_read_frame_back(const audio_scratch_buffer_t *b,
+                                          uint32_t frames_back,
+                                          int16_t *out_left, int16_t *out_right)
+{
+    if (!b || !b->frames || !out_left || !out_right || b->capacity == 0u ||
+        frames_back >= b->filled) {
+        return false;
+    }
+    uint32_t newest_idx = (b->write_index + b->capacity - 1u) % b->capacity;
+    uint32_t idx = (newest_idx + b->capacity - frames_back) % b->capacity;
+    *out_left = b->frames[idx * 2u];
+    *out_right = b->frames[idx * 2u + 1u];
+    return true;
+}

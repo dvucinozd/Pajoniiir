@@ -68,3 +68,11 @@ bool audio_scratch_buffer_index_for_ms(const audio_scratch_buffer_t *b,
  * index still holds live window data is the caller's concern (index_for_ms). */
 bool audio_scratch_buffer_read(const audio_scratch_buffer_t *b, uint32_t index,
                                int16_t *out_left, int16_t *out_right);
+
+/* Read the stereo frame `frames_back` slots before the newest (0 = newest,
+ * 1 = one frame older, ...). Returns false if frames_back is outside the
+ * currently buffered window (>= used). This is the frame-accurate primitive the
+ * scratch read head walks over; it needs no sample rate. */
+bool audio_scratch_buffer_read_frame_back(const audio_scratch_buffer_t *b,
+                                          uint32_t frames_back,
+                                          int16_t *out_left, int16_t *out_right);
