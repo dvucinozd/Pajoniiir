@@ -1,8 +1,8 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **in progress** — Phase 1 done (2026-07-11), Phases 2–5 planned. Phased
-roadmap for real turntable scratch on the P4. Written 2026-07-10 so work can
-resume cleanly.
+Status: **in progress** — Phases 1–2 done (2026-07-11), Phases 3–5 planned.
+Phased roadmap for real turntable scratch on the P4. Written 2026-07-10 so work
+can resume cleanly.
 
 ## Goal
 
@@ -92,16 +92,30 @@ is the foundation for the scratch handoff. Implemented on branch
   on HW (COM15) — platter stops audio, jog scrubs, release resumes, bend ring
   still nudges.
 
-### Phase 2 — Scratch buffer (capture only, passive)
+### Phase 2 — Scratch buffer (capture only, passive) ✅ DONE (2026-07-11)
 Build the random-access PCM history without changing playback.
-- New `audio_scratch_buffer` component: PSRAM circular stereo-int16 buffer,
-  ~`SCRATCH_SECONDS` (start 4 s ≈ 176 400 frames ≈ 700 KB). Stores frames plus
-  the track position of the newest frame so a target `ms` → buffer index.
-- The decode/consume path writes each produced frame into the buffer (in
-  addition to the ring), keeping a rolling window ending near the playhead.
-- Passive: playback unchanged; verify the buffer fills correctly via diagnostics.
-- Files: new `audio_scratch_buffer.c/.h`, `audio_engine` write wiring,
-  `CMakeLists.txt`. Tests: host (push, wrap, position→index mapping, bounds).
+- `audio_scratch_buffer.c/.h` (in the `audio_engine` component): a circular
+  stereo-int16 store bound to a caller-owned PSRAM buffer (pure C, host-tested).
+  Capacity is fixed for `AE_SCRATCH_SECONDS` (4) at `AE_SCRATCH_MAX_RATE`
+  (48 kHz) → 192 000 frames ≈ 768 KB/deck; hi-res sources get a shorter window
+  (fewer seconds, since the store holds source frames). Tracks `write_index`,
+  `filled`, `sample_rate` and the `newest_pos_ms` of the last frame; frames are
+  assumed contiguous at `sample_rate`, so `index_for_ms()` maps a track position
+  to a stored frame (rejecting future or evicted-past positions).
+- `audio_engine` decode task pushes every decoded source frame into the buffer
+  alongside the ring and marks the batch's newest source position; binds the
+  rate + resets on track load; resets on a user seek (position discontinuity);
+  resets on stop. One-shot INFO log when the window first fills (diagnostic).
+- Passive: playback path is byte-for-byte unchanged (the mixer/output never
+  reads the scratch buffer yet — that is Phase 4). Verified: HW audio streams
+  clean (no ring under-runs) with the added per-frame capture write.
+- Files: `audio_scratch_buffer.c/.h`, `audio_engine.c` wiring, `CMakeLists.txt`.
+  Tests: `tests/audio_scratch_buffer` (push, used-cap, wrap-window mapping,
+  ms→index in-window + future/evicted bounds, reset, null/unset guards) + a
+  static guard in `run_p4_host_tests.ps1`. Full host suite + build pass.
+- Known edge (deferred to Phase 5): a gapless loop wrap keeps the ring but
+  introduces a position discontinuity in the capture window (no reset on loop),
+  so `index_for_ms` near a loop boundary can be off — fine for capture-only.
 - Risk: low–medium (memory + one cheap write in the hot path).
 
 ### Phase 3 — Scratch DSP (bidirectional interpolated read)
