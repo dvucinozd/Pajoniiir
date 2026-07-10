@@ -137,6 +137,11 @@ void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
  * speeds the deck up, negative slows it, and the tempo springs back to the
  * fader setting when the jog stops. Used for manual beat matching. */
 void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta);
+/* Platter-hold (vinyl mode Phase 1): while held the deck output is silenced and
+ * its playback position frozen, without changing the logical play state (LEDs
+ * stay lit). Clearing it resumes forward playback instantly from the current
+ * position. Set on jog-platter touch-down, cleared on release. */
+void audio_engine_deck_set_hold(uint8_t deck, bool held);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 uint16_t audio_engine_get_deck_peak(uint8_t deck);

@@ -40,6 +40,8 @@ extern float audio_engine_stub_pitch_percent[2];
 extern int audio_engine_stub_pitch_percent_set_count[2];
 extern int audio_engine_stub_jog_nudge_count[2];
 extern int audio_engine_stub_jog_nudge_last_delta[2];
+extern int audio_engine_stub_hold_set_count[2];
+extern bool audio_engine_stub_hold[2];
 
 static inline esp_err_t audio_engine_deck_play(uint8_t deck)
 {
@@ -89,6 +91,13 @@ static inline void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)
     if (deck >= 2) return;
     audio_engine_stub_jog_nudge_count[deck]++;
     audio_engine_stub_jog_nudge_last_delta[deck] = delta;
+}
+
+static inline void audio_engine_deck_set_hold(uint8_t deck, bool held)
+{
+    if (deck >= 2) return;
+    audio_engine_stub_hold_set_count[deck]++;
+    audio_engine_stub_hold[deck] = held;
 }
 
 static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)
