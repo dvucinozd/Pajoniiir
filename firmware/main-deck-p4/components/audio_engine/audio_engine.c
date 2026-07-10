@@ -261,6 +261,18 @@ static int16_t         *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
 static bool             s_smart_fader_enabled;
+/* Transient jog pitch-bend (nudge) per deck: a jog while playing bumps this, the
+ * output task adds it on top of pitch_factor and decays it back to 0, so tempo
+ * returns to the fader setting when the jog stops. Plain float — written by the
+ * control task, read+decayed by the output task; a 32-bit aligned store is not
+ * torn and the effect is transient, so no lock (matches pitch_factor access).
+ * Feel constants — tune on hardware: each jog tick adds *_PER_TICK (clamped to
+ * ±*_MAX = a momentary tempo change); the output task multiplies toward 0 by
+ * *_DECAY each ~5.8 ms block so tempo springs back to the fader on release. */
+#define AE_JOG_BEND_PER_TICK 0.02f
+#define AE_JOG_BEND_MAX      0.30f
+#define AE_JOG_BEND_DECAY    0.88f
+static float            s_jog_bend[AUDIO_ENGINE_DECK_COUNT];
 
 static inline uint16_t atomic_load_u16(const uint16_t *value)
 {
@@ -1806,7 +1818,7 @@ static void ae_output_task(void *arg)
         const uint8_t deck1_index = 1u;
         audio_output_mixer_deck_t deck0 = {
             .active = deck_output_active(deck0_index),
-            .pitch_factor = s_engines[deck0_index].pitch_factor,
+            .pitch_factor = s_engines[deck0_index].pitch_factor * (1.0f + s_jog_bend[deck0_index]),
             .source_sample_rate = s_engines[deck0_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
             .gain = deck0_gain,
@@ -1826,7 +1838,7 @@ static void ae_output_task(void *arg)
         };
         audio_output_mixer_deck_t deck1 = {
             .active = deck_output_active(deck1_index),
-            .pitch_factor = s_engines[deck1_index].pitch_factor,
+            .pitch_factor = s_engines[deck1_index].pitch_factor * (1.0f + s_jog_bend[deck1_index]),
             .source_sample_rate = s_engines[deck1_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
             .gain = deck1_gain,
@@ -1844,6 +1856,14 @@ static void ae_output_task(void *arg)
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
         };
+
+        /* Decay the jog nudge once per output block; snap tiny residuals to 0. */
+        for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
+            s_jog_bend[d] *= AE_JOG_BEND_DECAY;
+            if (s_jog_bend[d] < 0.0005f && s_jog_bend[d] > -0.0005f) {
+                s_jog_bend[d] = 0.0f;
+            }
+        }
 
         if (!deck0.active && !deck1.active) {
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -2768,6 +2788,15 @@ void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent)
     audio_engine_set_pitch_percent_for_deck(deck, percent);
 }
 
+void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)
+{
+    if (!deck_is_valid(deck) || delta == 0) return;
+    float bend = s_jog_bend[deck] + (float)delta * AE_JOG_BEND_PER_TICK;
+    if (bend > AE_JOG_BEND_MAX) bend = AE_JOG_BEND_MAX;
+    if (bend < -AE_JOG_BEND_MAX) bend = -AE_JOG_BEND_MAX;
+    s_jog_bend[deck] = bend;
+}
+
 uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return 0;
@@ -3301,6 +3330,10 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         out_snapshot->deck_peak[deck] = atomic_load_u16(&s_deck_peak[deck]);
         out_snapshot->deck_peak_display[deck] = atomic_load_u16(&s_deck_ui_peak[deck]);
+        float speed = s_engines[deck].pitch_factor * (1.0f + s_jog_bend[deck]) * 1000.0f;
+        if (speed < 0.0f) speed = 0.0f;
+        if (speed > 65535.0f) speed = 65535.0f;
+        out_snapshot->effective_speed_permille[deck] = (uint16_t)(speed + 0.5f);
     }
     out_snapshot->master_trim = s_master_trim;
     out_snapshot->master_volume = atomic_load_u16(&s_master_volume);

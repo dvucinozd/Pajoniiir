@@ -62,6 +62,8 @@ int audio_engine_stub_loop_set_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_loop_clear_count[DECK_CORE_DECK_COUNT];
 float audio_engine_stub_pitch_percent[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pitch_percent_set_count[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_jog_nudge_count[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_jog_nudge_last_delta[DECK_CORE_DECK_COUNT];
 extern int control_link_stub_led_count;
 extern led_id_t control_link_stub_led[128];
 extern uint8_t control_link_stub_state[128];
@@ -290,6 +292,8 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_loop_clear_count[deck] = 0;
         audio_engine_stub_pitch_percent[deck] = 0.0f;
         audio_engine_stub_pitch_percent_set_count[deck] = 0;
+        audio_engine_stub_jog_nudge_count[deck] = 0;
+        audio_engine_stub_jog_nudge_last_delta[deck] = 0;
         audio_engine_stub_pregain[deck] = -1;
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
@@ -859,6 +863,35 @@ static void test_jog_search_encoder_clamps_at_track_start(void)
 
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 0);
+}
+
+static void test_jog_nudges_while_playing_scrubs_while_paused(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    // Paused (default): a jog scrubs the position and does not pitch-nudge.
+    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK1_JOG_SCRATCH, 4);
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+
+    // Start playing; a jog now pitch-nudges with the delta and does not seek.
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    deck_core_test_apply_event(&play);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).playing);
+    int seeks_after_play = audio_engine_stub_deck_seek_count[CTRL_DECK_1];
+
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_jog_nudge_last_delta[CTRL_DECK_1] == 4);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == seeks_after_play);
+
+    // The bend ring behaves the same as the platter while playing.
+    ctrl_event_t bend = deck_encoder(CTRL_ID_DECK1_JOG_BEND, -2);
+    deck_core_test_apply_event(&bend);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == 2);
+    assert(audio_engine_stub_jog_nudge_last_delta[CTRL_DECK_1] == -2);
 }
 
 static void test_mixer_namespace_routes_eq_controls(void)
@@ -2329,6 +2362,7 @@ int main(void)
     test_system_namespace_routes_master_cue_toggle_on_press();
     test_jog_search_encoder_seeks_relative_to_deck_position();
     test_jog_search_encoder_clamps_at_track_start();
+    test_jog_nudges_while_playing_scrubs_while_paused();
     test_mixer_namespace_routes_eq_controls();
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();

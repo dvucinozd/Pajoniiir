@@ -133,6 +133,10 @@ esp_err_t audio_engine_deck_stop(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
+/* Transient jog pitch-bend (nudge) while playing: a positive delta briefly
+ * speeds the deck up, negative slows it, and the tempo springs back to the
+ * fader setting when the jog stops. Used for manual beat matching. */
+void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 uint16_t audio_engine_get_deck_peak(uint8_t deck);
@@ -159,6 +163,10 @@ typedef struct {
      * FLX4 LED path drains via audio_engine_get_deck_peak), this never sticks
      * and is independent of that consumer, so the on-screen VU stays live. */
     uint16_t deck_peak_display[AUDIO_ENGINE_DECK_COUNT];
+    /* Current playback speed per deck in per-mille (1000 = 1x), including the
+     * pitch fader and the transient jog bend — lets the on-screen waveform track
+     * the audio during a jog nudge instead of lagging at the fader speed. */
+    uint16_t effective_speed_permille[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;

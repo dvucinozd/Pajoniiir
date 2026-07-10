@@ -1975,18 +1975,23 @@ static void on_jog(uint8_t deck, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     if (state->playing) {
-        // TODO: pitch-bend nudge while playing is not implemented — a real nudge
-        // needs a transient pitch-factor bump on the output resampler. For now
-        // jogging during playback intentionally does nothing but log.
-        ESP_LOGD(TAG, "deck %u jog nudge %+d (no-op while playing)", (unsigned)deck + 1, delta);
+        // Any jog while playing (platter or bend ring) does a transient pitch-bend
+        // nudge for manual beat matching: bump the deck tempo in the jog direction;
+        // the audio engine springs it back to the fader tempo when the jog stops.
+        // (No true scratch DSP yet, so the jog nudges rather than scratches while
+        // playing.)
+        if (deck_uses_audio_engine(deck)) {
+            audio_engine_deck_jog_nudge(deck, delta);
+        }
+        ESP_LOGD(TAG, "deck %u jog nudge %+d (pitch bend)", (unsigned)deck + 1, delta);
     } else {
-        // Scratch: advance/rewind position while paused
+        // Scrub: advance/rewind position while paused
         int32_t pos = (int32_t)state->position_ms + delta * 3;
         state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
         if (deck_uses_audio_engine(deck)) {
             audio_engine_deck_seek(deck, state->position_ms);
         }
-        ESP_LOGD(TAG, "deck %u jog scratch -> %lu ms", (unsigned)deck + 1,
+        ESP_LOGD(TAG, "deck %u jog scrub -> %lu ms", (unsigned)deck + 1,
                  (unsigned long)state->position_ms);
     }
 }

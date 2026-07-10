@@ -2129,19 +2129,26 @@ static void ui_overview_format_remaining_time(char *out,
     }
 }
 
-static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state)
+static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
+                                    uint16_t effective_speed_permille)
 {
     uint8_t idx = ui_overview_deck_index(deck);
     ui_overview_deck_panel_t *panel = &s_overview_decks[idx];
     if (!panel->panel || !state) return;
 
     uint32_t duration_ms = s_overview_deck_duration_ms[idx];
+    /* Prefer the audio engine's effective speed (pitch fader × jog bend) so the
+     * waveform tracks a jog nudge instead of lagging at the fader speed; fall
+     * back to the fader-only estimate if the snapshot did not provide it. */
+    uint32_t speed_permille = effective_speed_permille != 0
+                            ? effective_speed_permille
+                            : ui_pitch_speed_permille(state);
     uint32_t elapsed_ms = ui_position_interpolator_update(
         &s_overview_position_interp[idx],
         state->position_ms,
         duration_ms,
         state->playing,
-        ui_pitch_speed_permille(state),
+        speed_permille,
         ui_monotonic_time_us());
     uint32_t remain_ms = (duration_ms > elapsed_ms) ? (duration_ms - elapsed_ms) : 0;
     const ui_deck_track_info_t *info = s_overview_deck_info[idx];
@@ -2271,8 +2278,10 @@ void ui_overview_update(const ui_frame_context_t *ctx)
                                           &first_deck,
                                           &second_deck);
 
-    ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck]);
-    ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck]);
+    ui_update_overview_deck(first_deck, &ctx->deck_state[first_deck],
+                            ctx->mixer_snapshot.effective_speed_permille[first_deck]);
+    ui_update_overview_deck(second_deck, &ctx->deck_state[second_deck],
+                            ctx->mixer_snapshot.effective_speed_permille[second_deck]);
     ui_update_overview_fx_panel(&ctx->beat_fx_state);
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ui_overview_update_vu_meter(deck, ctx->mixer_snapshot.deck_peak_display[deck]);
