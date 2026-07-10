@@ -455,6 +455,40 @@ static void waveform_seek_event_cb(lv_event_t *e) {
              (int)((rel_x * 100) / OVERVIEW_CV_W));
 }
 
+// Tap-to-seek on the mini (full-track) waveform: jump playback to the tapped
+// position mapped across the whole track (not the zoom window). Active whenever
+// a track is loaded (duration > 0), so a tap while playing continues from the
+// new point.
+static void mini_waveform_seek_event_cb(lv_event_t *e) {
+    lv_obj_t *border = lv_event_get_target(e);
+    uint8_t deck = ui_event_deck(e);
+    uint8_t idx = ui_overview_deck_index(deck);
+    uint32_t duration_ms = s_overview_deck_duration_ms[idx];
+    if (duration_ms == 0) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+
+    lv_area_t content;
+    lv_obj_get_content_coords(border, &content);
+    int rel_x = (int)p.x - content.x1;
+    if (rel_x < 0) rel_x = 0;
+    if (rel_x > OVERVIEW_MINI_CV_W) rel_x = OVERVIEW_MINI_CV_W;
+
+    int64_t target = ((int64_t)rel_x * (int64_t)duration_ms) / OVERVIEW_MINI_CV_W;
+    if (target < 0) target = 0;
+    if (target > (int64_t)duration_ms) target = duration_ms;
+    uint32_t target_ms = (uint32_t)target;
+
+    if (s_overview_config.actions.seek) {
+        s_overview_config.actions.seek(deck, target_ms);
+    }
+    ESP_LOGI(TAG, "D%u mini waveform seek -> %lu ms", (unsigned)deck + 1u,
+             (unsigned long)target_ms);
+}
+
 static lv_obj_t *ui_overview_value_label(lv_obj_t *parent, const lv_font_t *font,
                                          lv_color_t color, int x, int y,
                                          int w, const char *text)
@@ -770,8 +804,12 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_border_width(panel->mini_wave_border, 0, LV_PART_MAIN);
     lv_obj_set_size(panel->mini_wave_border, OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H);
     lv_obj_set_pos(panel->mini_wave_border, info_x + 4, OVERVIEW_MINI_WAVE_Y);
-    lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_CLICKABLE);
+    /* Tap-to-seek across the full track: keep the border clickable (its canvas,
+     * played overlay, cue markers and playhead are all non-clickable, so taps
+     * land here) and tag it with the deck so the handler seeks the right one. */
+    lv_obj_set_user_data(panel->mini_wave_border, (void *)(uintptr_t)deck);
     lv_obj_remove_flag(panel->mini_wave_border, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(panel->mini_wave_border, mini_waveform_seek_event_cb, LV_EVENT_CLICKED, NULL);
 
     size_t mini_sz = LV_DRAW_BUF_SIZE(OVERVIEW_MINI_CV_W, OVERVIEW_MINI_CV_H, LV_COLOR_FORMAT_I8);
 #ifndef WIN32

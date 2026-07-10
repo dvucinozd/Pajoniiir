@@ -148,6 +148,7 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Compact Overview title strip with remaining-time pill, readable BPM/pitch indicators, centered beat/phase match guide lines, an effect-colour-coded Beat FX rail with a vertical depth meter, non-overlapping deck VU meters, and bounded title/timer invalidations.
   - Waveform loading deferred to Overview scheduler with automatic overlays redraw on track load.
   - Waveform zoom controls via Browse knob (4, 8, 12, 16, 24 beats).
+  - Tap-to-seek on both waveforms per deck: the large (zoom) waveform seeks within the visible window, and the mini full-track waveform seeks across the whole track.
   - Settings polish with removed out-of-scope Key Shift UI, retired monitor-speaker switch removed, darker wireless switch states, and compact mixer/PFL status strip.
   - Custom boot splash screen (`PajoNiiiR` in Musieer font).
 - **Audio DSP & Mapping**:

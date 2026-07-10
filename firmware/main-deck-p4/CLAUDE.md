@@ -356,7 +356,20 @@ PPA-blit atomically with the waveform — no LVGL-over-PPA flicker):
   objects are hidden.
 - **Mini (full-track) overview** — thin LVGL hot-cue lines across the whole
   track, and a translucent warm-amber "played" overlay (`panel->mini_played`)
-  covering `[0, playhead]`. Both sit under the mini playhead.
+  covering `[0, playhead]`. Both sit under the mini playhead. The two decks'
+  minis sit side-by-side at the bottom (deck 1 left `info_x=0`, deck 2 right
+  `info_x=400`).
+
+**Tap-to-seek.** Both waveforms are tappable per deck (each `*_border` carries
+its deck in `user_data`; the canvas/overlays/cue markers/playhead are
+non-clickable so taps fall through to the border):
+- the **large** waveform (`wave_border` → `waveform_seek_event_cb`) seeks within
+  the visible zoom window;
+- the **mini** waveform (`mini_wave_border` → `mini_waveform_seek_event_cb`,
+  2026-07-10) maps the tap across the **whole track** (`rel_x / OVERVIEW_MINI_CV_W
+  × duration`). Active whenever a track is loaded (`duration_ms > 0`), so a tap
+  while playing continues from the new point. Both route through
+  `ui_overview_config.actions.seek`.
 
 **Header Time Counters:**
 - Left (larger, blue) = elapsed time (current position).
