@@ -13,6 +13,7 @@ The active DDJ-FLX4 port roadmap is [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md)
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) - current two-board wiring notes
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) - active staged DDJ-FLX4 plan
 - [`VINYL_SCRATCH_PLAN.md`](VINYL_SCRATCH_PLAN.md) - phased plan for real turntable scratch / vinyl mode (planned)
+- [`BLE_MIDI_FLX4_FEASIBILITY.md`](BLE_MIDI_FLX4_FEASIBILITY.md) - wireless FLX4 over BLE-MIDI (hard / low-priority option, not planned)
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) - current bootstrap/hardware checklist
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) - remaining technical risks
 - [`bench-notes.md`](bench-notes.md) - current hardware smoke notes and bench results
