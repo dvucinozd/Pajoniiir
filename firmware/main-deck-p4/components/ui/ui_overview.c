@@ -204,13 +204,44 @@ _Static_assert(OVERVIEW_DECK_BADGE_H == OVERVIEW_SIDE_BTN_H, "deck badge height 
 #define OVERVIEW_FX_PANEL_X 736
 #define OVERVIEW_FX_PANEL_Y 0
 #define OVERVIEW_FX_PANEL_W 64
-#define OVERVIEW_FX_PANEL_H 284
+/* Panel runs from the top down to just above the blue title strip so the depth
+ * meter fills the whole right rail with no dead space at the bottom. */
+#define OVERVIEW_FX_PANEL_H 308
 #define OVERVIEW_FX_ROW_X 4
 #define OVERVIEW_FX_ROW_W 56
-#define OVERVIEW_FX_DEPTH_BAR_X 9
-#define OVERVIEW_FX_DEPTH_BAR_Y 211
-#define OVERVIEW_FX_DEPTH_BAR_W 46
-#define OVERVIEW_FX_DEPTH_BAR_H 5
+/* Effect identity chip (big, filled in the effect colour when FX is on). */
+#define OVERVIEW_FX_CHIP_X 4
+#define OVERVIEW_FX_CHIP_Y 28
+#define OVERVIEW_FX_CHIP_W 56
+#define OVERVIEW_FX_CHIP_H 36
+/* Target channel pills (CH1 / CH2), lit in the effect colour when routed. */
+#define OVERVIEW_FX_TARGET_CAPTION_Y 68
+#define OVERVIEW_FX_PILL_Y 82
+#define OVERVIEW_FX_PILL_W 25
+#define OVERVIEW_FX_PILL_H 22
+#define OVERVIEW_FX_PILL1_X 5
+#define OVERVIEW_FX_PILL2_X 34
+/* Beat-division chip. */
+#define OVERVIEW_FX_BEAT_CAPTION_Y 110
+#define OVERVIEW_FX_BEAT_CHIP_X 12
+#define OVERVIEW_FX_BEAT_CHIP_Y 122
+#define OVERVIEW_FX_BEAT_CHIP_W 40
+#define OVERVIEW_FX_BEAT_CHIP_H 22
+/* Depth is a vertical fill meter (fills bottom-up) — the live-ride element. */
+#define OVERVIEW_FX_DEPTH_CAPTION_Y 150
+#define OVERVIEW_FX_DEPTH_BAR_X 20
+#define OVERVIEW_FX_DEPTH_BAR_Y 164
+#define OVERVIEW_FX_DEPTH_BAR_W 24
+#define OVERVIEW_FX_DEPTH_BAR_H 112
+#define OVERVIEW_FX_DEPTH_VALUE_Y 282
+_Static_assert(OVERVIEW_FX_DEPTH_VALUE_Y + 22 <= OVERVIEW_FX_PANEL_H,
+               "FX depth value must stay inside the FX panel");
+_Static_assert(OVERVIEW_FX_DEPTH_BAR_Y + OVERVIEW_FX_DEPTH_BAR_H <= OVERVIEW_FX_DEPTH_VALUE_Y,
+               "FX depth meter must not overlap the depth value");
+_Static_assert(OVERVIEW_FX_PILL2_X + OVERVIEW_FX_PILL_W <= OVERVIEW_FX_PANEL_W,
+               "FX target pills must stay inside the FX panel");
+_Static_assert(OVERVIEW_FX_PANEL_Y + OVERVIEW_FX_PANEL_H <= OVERVIEW_TITLE_Y,
+               "FX panel must stay above the blue title strip");
 
 static int ui_overview_beat_strip_offset_x(int phase)
 {
@@ -271,14 +302,17 @@ static lv_obj_t *s_beat_pulses[DECK_CORE_DECK_COUNT][4];
 static lv_obj_t *s_overview_cue_heads[DECK_CORE_DECK_COUNT][8];
 static lv_obj_t *s_overview_fx_panel = NULL;
 typedef struct {
-    lv_obj_t *effect;
-    lv_obj_t *beat;
-    lv_obj_t *target;
-    lv_obj_t *depth;
-    lv_obj_t *enabled;
-    lv_obj_t *depth_bg;
-    lv_obj_t *depth_fill;
-    lv_obj_t *status_bar;
+    lv_obj_t *header;         /* header bar — effect-colour fill when FX is on   */
+    lv_obj_t *header_label;   /* "FX"                                            */
+    lv_obj_t *effect_chip;    /* filled identity chip behind the effect name     */
+    lv_obj_t *effect;         /* effect name (FILTER / ECHO / FLANGER)           */
+    lv_obj_t *pill_bg[2];     /* CH1 / CH2 target pills                          */
+    lv_obj_t *pill_label[2];
+    lv_obj_t *beat_chip;      /* beat-division chip outline                      */
+    lv_obj_t *beat;           /* beat value (1/4 .. 4)                           */
+    lv_obj_t *depth_bg;       /* vertical depth track                            */
+    lv_obj_t *depth_fill;     /* vertical depth fill (bottom-up)                 */
+    lv_obj_t *depth;          /* depth percentage                                */
 } ui_overview_fx_widgets_t;
 static ui_overview_fx_widgets_t s_overview_fx;
 static ui_overview_perf_counter_t s_overview_wave_perf[DECK_CORE_DECK_COUNT];
@@ -881,6 +915,37 @@ static lv_obj_t *ui_fx_panel_label(lv_obj_t *parent, const char *text,
     return label;
 }
 
+/* Per-effect accent colour so a glance tells you which FX is armed. FILTER and
+ * ECHO reuse existing theme tokens; FLANGER gets one inline magenta (feature
+ * colours stay inline, like the beat-jump reds). */
+static lv_color_t ui_overview_fx_effect_color(deck_core_beat_fx_effect_t effect)
+{
+    switch (effect) {
+    case DECK_CORE_BEAT_FX_ECHO:    return COL_AMBER;
+    case DECK_CORE_BEAT_FX_FLANGER: return lv_color_hex(0xB44AE0);
+    case DECK_CORE_BEAT_FX_FILTER:
+    default:                        return COL_ACCENT;
+    }
+}
+
+static lv_obj_t *ui_fx_target_pill(lv_obj_t *parent, int x, const char *text,
+                                   lv_obj_t **out_label)
+{
+    lv_obj_t *pill = ui_overview_bar(parent, x, OVERVIEW_FX_PILL_Y,
+                                     OVERVIEW_FX_PILL_W, OVERVIEW_FX_PILL_H, COL_ACCENT);
+    lv_obj_set_style_radius(pill, OVERVIEW_FX_PILL_H / 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(pill, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(pill, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(pill, COL_BORDER_LT, LV_PART_MAIN);
+    lv_obj_remove_flag(pill, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_t *label = ui_fx_panel_label(parent, text, x, OVERVIEW_FX_PILL_Y + 3,
+                                        OVERVIEW_FX_PILL_W, &lv_font_montserrat_14, COL_TEXT_DIM);
+    if (out_label) {
+        *out_label = label;
+    }
+    return pill;
+}
+
 static void ui_create_overview_fx_panel(lv_obj_t *parent)
 {
     const int fx_x = OVERVIEW_FX_PANEL_X;
@@ -898,55 +963,67 @@ static void ui_create_overview_fx_panel(lv_obj_t *parent)
     lv_obj_set_pos(s_overview_fx_panel, fx_x, OVERVIEW_FX_PANEL_Y);
     lv_obj_clear_flag(s_overview_fx_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *header = ui_overview_bar(s_overview_fx_panel, 0, 0, fx_w, 24, COL_PANEL);
-    lv_obj_remove_flag(header, LV_OBJ_FLAG_CLICKABLE);
-    ui_fx_panel_label(s_overview_fx_panel, "FX", 0, 5, fx_w,
-                      &lv_font_montserrat_12, COL_TEXT);
+    s_overview_fx.header = ui_overview_bar(s_overview_fx_panel, 0, 0, fx_w, 24, COL_PANEL);
+    lv_obj_remove_flag(s_overview_fx.header, LV_OBJ_FLAG_CLICKABLE);
+    s_overview_fx.header_label = ui_fx_panel_label(s_overview_fx_panel, "FX", 0, 5, fx_w,
+                                                   &lv_font_montserrat_12, COL_TEXT);
 
-    ui_fx_panel_label(s_overview_fx_panel, "EFFECT", row_x, 34, row_w,
-                      &lv_font_montserrat_12, COL_TEXT_DIM);
-    s_overview_fx.effect = ui_fx_panel_label(s_overview_fx_panel, "FILTER", row_x, 50, row_w,
+    /* Effect identity chip — filled in the effect colour when the FX is live. */
+    s_overview_fx.effect_chip = ui_overview_bar(s_overview_fx_panel,
+                                                OVERVIEW_FX_CHIP_X, OVERVIEW_FX_CHIP_Y,
+                                                OVERVIEW_FX_CHIP_W, OVERVIEW_FX_CHIP_H, COL_ACCENT);
+    lv_obj_set_style_radius(s_overview_fx.effect_chip, 6, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_overview_fx.effect_chip, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_overview_fx.effect_chip, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_overview_fx.effect_chip, COL_BORDER_LT, LV_PART_MAIN);
+    lv_obj_remove_flag(s_overview_fx.effect_chip, LV_OBJ_FLAG_CLICKABLE);
+    s_overview_fx.effect = ui_fx_panel_label(s_overview_fx_panel, "FILTER",
+                                             row_x, OVERVIEW_FX_CHIP_Y + 8, row_w,
                                              &lv_font_montserrat_14, COL_ACCENT);
 
-    ui_fx_panel_label(s_overview_fx_panel, "BEAT", row_x, 80, row_w,
+    /* Target channel pills. */
+    ui_fx_panel_label(s_overview_fx_panel, "TARGET", row_x, OVERVIEW_FX_TARGET_CAPTION_Y, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
-    s_overview_fx.beat = ui_fx_panel_label(s_overview_fx_panel, "1", row_x, 96, row_w,
-                                           &lv_font_montserrat_16, COL_TEXT);
+    s_overview_fx.pill_bg[0] = ui_fx_target_pill(s_overview_fx_panel, OVERVIEW_FX_PILL1_X, "1",
+                                                 &s_overview_fx.pill_label[0]);
+    s_overview_fx.pill_bg[1] = ui_fx_target_pill(s_overview_fx_panel, OVERVIEW_FX_PILL2_X, "2",
+                                                 &s_overview_fx.pill_label[1]);
 
-    ui_fx_panel_label(s_overview_fx_panel, "TARGET", row_x, 123, row_w,
+    /* Beat-division chip. */
+    ui_fx_panel_label(s_overview_fx_panel, "BEAT", row_x, OVERVIEW_FX_BEAT_CAPTION_Y, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
-    s_overview_fx.target = ui_fx_panel_label(s_overview_fx_panel, "BOTH", row_x, 139, row_w,
-                                             &lv_font_montserrat_16, COL_TEXT);
+    s_overview_fx.beat_chip = ui_overview_bar(s_overview_fx_panel,
+                                              OVERVIEW_FX_BEAT_CHIP_X, OVERVIEW_FX_BEAT_CHIP_Y,
+                                              OVERVIEW_FX_BEAT_CHIP_W, OVERVIEW_FX_BEAT_CHIP_H,
+                                              COL_PANEL_DK);
+    lv_obj_set_style_radius(s_overview_fx.beat_chip, 6, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_overview_fx.beat_chip, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_overview_fx.beat_chip, COL_BORDER_LT, LV_PART_MAIN);
+    lv_obj_remove_flag(s_overview_fx.beat_chip, LV_OBJ_FLAG_CLICKABLE);
+    s_overview_fx.beat = ui_fx_panel_label(s_overview_fx_panel, "1",
+                                           OVERVIEW_FX_BEAT_CHIP_X, OVERVIEW_FX_BEAT_CHIP_Y + 4,
+                                           OVERVIEW_FX_BEAT_CHIP_W, &lv_font_montserrat_14, COL_TEXT);
 
-    ui_fx_panel_label(s_overview_fx_panel, "DEPTH", row_x, 166, row_w,
+    /* Depth vertical fill meter — the live-ride element. */
+    ui_fx_panel_label(s_overview_fx_panel, "DEPTH", row_x, OVERVIEW_FX_DEPTH_CAPTION_Y, row_w,
                       &lv_font_montserrat_12, COL_TEXT_DIM);
-    s_overview_fx.depth = ui_fx_panel_label(s_overview_fx_panel, "50%", row_x, 182, row_w,
-                                            &lv_font_montserrat_16, COL_TEXT);
-
     s_overview_fx.depth_bg = ui_overview_bar(s_overview_fx_panel,
-                                             OVERVIEW_FX_DEPTH_BAR_X,
-                                             OVERVIEW_FX_DEPTH_BAR_Y,
-                                             OVERVIEW_FX_DEPTH_BAR_W,
-                                             OVERVIEW_FX_DEPTH_BAR_H,
-                                             COL_BG);
+                                             OVERVIEW_FX_DEPTH_BAR_X, OVERVIEW_FX_DEPTH_BAR_Y,
+                                             OVERVIEW_FX_DEPTH_BAR_W, OVERVIEW_FX_DEPTH_BAR_H, COL_BG);
+    lv_obj_set_style_radius(s_overview_fx.depth_bg, 4, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_overview_fx.depth_bg, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(s_overview_fx.depth_bg, COL_BORDER, LV_PART_MAIN);
     lv_obj_remove_flag(s_overview_fx.depth_bg, LV_OBJ_FLAG_CLICKABLE);
     s_overview_fx.depth_fill = ui_overview_bar(s_overview_fx_panel,
                                                OVERVIEW_FX_DEPTH_BAR_X,
-                                               OVERVIEW_FX_DEPTH_BAR_Y,
-                                               OVERVIEW_FX_DEPTH_BAR_W / 2,
-                                               OVERVIEW_FX_DEPTH_BAR_H,
-                                               COL_ACCENT);
+                                               OVERVIEW_FX_DEPTH_BAR_Y + OVERVIEW_FX_DEPTH_BAR_H / 2,
+                                               OVERVIEW_FX_DEPTH_BAR_W,
+                                               OVERVIEW_FX_DEPTH_BAR_H / 2, COL_ACCENT);
+    lv_obj_set_style_radius(s_overview_fx.depth_fill, 4, LV_PART_MAIN);
     lv_obj_remove_flag(s_overview_fx.depth_fill, LV_OBJ_FLAG_CLICKABLE);
-
-    s_overview_fx.status_bar = ui_overview_bar(s_overview_fx_panel, row_x, 244, row_w, 28,
-                                               COL_PANEL_DK);
-    lv_obj_set_style_border_width(s_overview_fx.status_bar, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_overview_fx.status_bar, COL_BORDER, LV_PART_MAIN);
-    lv_obj_remove_flag(s_overview_fx.status_bar, LV_OBJ_FLAG_CLICKABLE);
-    s_overview_fx.enabled = ui_fx_panel_label(s_overview_fx_panel, "FX OFF", row_x, 251, row_w,
-                                              &lv_font_montserrat_12, COL_TEXT_DIM);
+    s_overview_fx.depth = ui_fx_panel_label(s_overview_fx_panel, "50%",
+                                            row_x, OVERVIEW_FX_DEPTH_VALUE_Y, row_w,
+                                            &lv_font_montserrat_16, COL_TEXT);
 }
 
 static void ui_update_overview_fx_panel(const deck_core_beat_fx_state_t *state)
@@ -958,36 +1035,61 @@ static void ui_update_overview_fx_panel(const deck_core_beat_fx_state_t *state)
     ui_beat_fx_overview_text_t text = {0};
     ui_beat_fx_format_overview(state, &text);
 
+    const bool on = state && state->enabled;
+    const deck_core_beat_fx_effect_t effect = state ? state->effect : DECK_CORE_BEAT_FX_FILTER;
+    const lv_color_t ec = ui_overview_fx_effect_color(effect);
+
     ui_label_set_text_if_changed(s_overview_fx.effect, text.effect);
     ui_label_set_text_if_changed(s_overview_fx.beat, text.beat);
-    ui_label_set_text_if_changed(s_overview_fx.target, text.target);
     ui_label_set_text_if_changed(s_overview_fx.depth, text.depth);
-    ui_label_set_text_if_changed(s_overview_fx.enabled, text.enabled);
 
-    const bool on = state && state->enabled;
+    /* Panel border + header carry the on/off + effect-colour signal. */
+    ui_obj_set_border_color_if_changed(s_overview_fx_panel, on ? ec : COL_BORDER);
+    ui_obj_set_bg_color_if_changed(s_overview_fx.header, on ? ec : COL_PANEL);
+    ui_obj_set_text_color_if_changed(s_overview_fx.header_label, on ? COL_ON_ACCENT : COL_TEXT_MUTED);
+
+    /* Effect chip: filled + dark text when on, outlined + dim when off. */
+    ui_obj_set_bg_color_if_changed(s_overview_fx.effect_chip, ec);
+    ui_obj_set_bg_opa_if_changed(s_overview_fx.effect_chip, on ? LV_OPA_COVER : LV_OPA_TRANSP);
+    ui_obj_set_border_color_if_changed(s_overview_fx.effect_chip, on ? ec : COL_BORDER_LT);
+    ui_obj_set_text_color_if_changed(s_overview_fx.effect, on ? COL_ON_ACCENT : COL_TEXT_DIM);
+
+    /* Target pills: light the routed channel(s) in the effect colour. */
+    const bool ch_on[2] = {
+        on && (state->target == CTRL_BEAT_FX_TARGET_CH1 || state->target == CTRL_BEAT_FX_TARGET_BOTH),
+        on && (state->target == CTRL_BEAT_FX_TARGET_CH2 || state->target == CTRL_BEAT_FX_TARGET_BOTH),
+    };
+    for (int i = 0; i < 2; i++) {
+        ui_obj_set_bg_color_if_changed(s_overview_fx.pill_bg[i], ec);
+        ui_obj_set_bg_opa_if_changed(s_overview_fx.pill_bg[i], ch_on[i] ? LV_OPA_COVER : LV_OPA_TRANSP);
+        ui_obj_set_border_color_if_changed(s_overview_fx.pill_bg[i], ch_on[i] ? ec : COL_BORDER_LT);
+        ui_obj_set_text_color_if_changed(s_overview_fx.pill_label[i], ch_on[i] ? COL_ON_ACCENT : COL_TEXT_DIM);
+    }
+
+    /* Beat chip. */
+    ui_obj_set_border_color_if_changed(s_overview_fx.beat_chip, on ? ec : COL_BORDER_LT);
+    ui_obj_set_text_color_if_changed(s_overview_fx.beat, on ? COL_TEXT : COL_TEXT_DIM);
+
+    /* Depth vertical fill (grows bottom-up). */
     unsigned depth = state ? state->depth : 0u;
     if (depth > 127u) {
         depth = 127u;
     }
-    int depth_w = on ? (int)((OVERVIEW_FX_DEPTH_BAR_W * depth + 63u) / 127u) : 0;
-    if (depth_w < 0) {
-        depth_w = 0;
+    int fill_h = on ? (int)((OVERVIEW_FX_DEPTH_BAR_H * depth + 63u) / 127u) : 0;
+    if (fill_h < 0) {
+        fill_h = 0;
     }
-    if (lv_obj_get_width(s_overview_fx.depth_fill) != depth_w) {
-        lv_obj_set_width(s_overview_fx.depth_fill, depth_w);
+    int fill_y = OVERVIEW_FX_DEPTH_BAR_Y + (OVERVIEW_FX_DEPTH_BAR_H - fill_h);
+    if (lv_obj_get_height(s_overview_fx.depth_fill) != fill_h) {
+        lv_obj_set_height(s_overview_fx.depth_fill, fill_h);
     }
-
-    ui_obj_set_border_color_if_changed(s_overview_fx_panel, on ? COL_ACCENT : COL_BORDER);
-    ui_obj_set_text_color_if_changed(s_overview_fx.effect, on ? COL_ACCENT : COL_TEXT_MUTED);
-    ui_obj_set_text_color_if_changed(s_overview_fx.beat, on ? COL_TEXT : COL_TEXT_DIM);
-    ui_obj_set_text_color_if_changed(s_overview_fx.target, on ? COL_ACCENT : COL_TEXT_DIM);
+    if (lv_obj_get_y(s_overview_fx.depth_fill) != fill_y) {
+        lv_obj_set_y(s_overview_fx.depth_fill, fill_y);
+    }
+    ui_obj_set_bg_color_if_changed(s_overview_fx.depth_fill, ec);
+    ui_obj_set_bg_opa_if_changed(s_overview_fx.depth_fill,
+                                 (on && fill_h > 0) ? LV_OPA_COVER : LV_OPA_TRANSP);
     ui_obj_set_text_color_if_changed(s_overview_fx.depth, on ? COL_TEXT : COL_TEXT_DIM);
-    ui_obj_set_text_color_if_changed(s_overview_fx.enabled, on ? COL_BG : COL_TEXT_DIM);
-    ui_obj_set_bg_color_if_changed(s_overview_fx.depth_fill, on ? COL_ACCENT : COL_PANEL_DK);
-    ui_obj_set_bg_opa_if_changed(s_overview_fx.depth_fill, (on && depth_w > 0) ? LV_OPA_COVER : LV_OPA_TRANSP);
-    ui_obj_set_bg_color_if_changed(s_overview_fx.status_bar, on ? COL_ACCENT : COL_PANEL_DK);
-    ui_obj_set_bg_opa_if_changed(s_overview_fx.status_bar, LV_OPA_COVER);
-    ui_obj_set_border_color_if_changed(s_overview_fx.status_bar, on ? COL_ACCENT : COL_BORDER);
 }
 
 static void ui_create_overview_center_marker(lv_obj_t *parent)

@@ -461,7 +461,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~GPIO28/29 UART link~~ — verified end-to-end with S3
 - ✅ ~~S3 DDJ-FLX4 raw MIDI capture~~ — FLX4 enumerates on hardware; translator maps the MVP + extended controls to control-link frames
 - **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — mapped; full hardware pass pending
-- **Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)
+- ✅ ~~**Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)~~ — dropped 2026-07-10: the beatgrid beat feedback already lives on the Overview screen (`s_beat_pulses` phase strip + red downbeat marker, beatgrid-driven). A controller LED was declined (FLX4 has no dedicated beat LED and hijacking a state LED was not wanted); legacy CDJ-panel GPIO38 BEAT is unused hardware. No hardware LED path needed.
 - ✅ ~~WAV/FLAC decode~~ — decoder-abstraction layer (`audio_decoder`/`audio_format`); WAV inline + FLAC via dr_flac over the PSRAM preload; MP3 stays on minimp3
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload

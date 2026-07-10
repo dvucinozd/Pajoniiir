@@ -355,13 +355,15 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
-    -Name "P4 Overview Beat FX uses compact right rail" `
+    -Name "P4 Overview Beat FX uses compact right rail with effect-colour coding" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @(
         "OVERVIEW_FX_PANEL_H",
-        "OVERVIEW_FX_DEPTH_BAR_W",
-        "depth_fill",
-        "status_bar"
+        "OVERVIEW_FX_DEPTH_BAR_H",
+        "ui_overview_fx_effect_color",
+        "effect_chip",
+        "pill_bg",
+        "depth_fill"
     )
 
 Assert-FileDoesNotContain `

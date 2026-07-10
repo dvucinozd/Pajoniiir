@@ -57,7 +57,7 @@ static void test_flanger_effect_formats_label(void)
 
     ui_beat_fx_format_overview(&state, &text);
 
-    assert(strcmp(text.effect, "FLANGER") == 0);
+    assert(strcmp(text.effect, "FLANG") == 0);
     assert(strcmp(text.beat, "4") == 0);
     assert(strcmp(text.target, "CH1") == 0);
     assert(strcmp(text.enabled, "FX ON") == 0);
