@@ -1,7 +1,8 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **planned** (not started). Phased roadmap for real turntable scratch on
-the P4. Written 2026-07-10 so work can resume cleanly.
+Status: **in progress** — Phase 1 done (2026-07-11), Phases 2–5 planned. Phased
+roadmap for real turntable scratch on the P4. Written 2026-07-10 so work can
+resume cleanly.
 
 ## Goal
 
@@ -27,9 +28,16 @@ already implemented.
 - **Waveform tracking (done):** the mixer snapshot carries
   `effective_speed_permille` (fader × bend), fed to the Overview position
   interpolator.
-- **`JOG_TOUCH`:** the S3 emits `CTRL_ID_DECK{1,2}_JOG_TOUCH` (button
-  press/release, from `FLX4_BTN_JOG_TOUCH` 0x36). **`deck_core` does not consume
-  it yet** — this is the signal that will gate scratch (touched) vs bend (ring).
+- **`JOG_TOUCH` (Phase 1 done):** the S3 emits `CTRL_ID_DECK{1,2}_JOG_TOUCH`
+  (button press/release, from `FLX4_BTN_JOG_TOUCH` 0x36). `deck_core` now
+  consumes it (`handle_jog_touch` → per-deck `s_jog_touched[]`) and gates the
+  jog: touched → scrub, untouched + playing → bend.
+- **Platter-hold (Phase 1 done):** touching the platter while playing silences
+  the deck and freezes its position via `audio_engine_deck_set_hold()`
+  (per-deck `s_deck_hold[]`; `deck_output_active()` returns false so the mixer
+  skips it — no output, no ring advance). Release resumes forward playback. This
+  is an output-level mute; the logical play state stays on (LEDs stay lit).
+  **No audible scratch yet — that is Phase 4.**
 - **Audio pipeline (forward-only):** decode task → `audio_pcm_ring`
   (`AUDIO_PCM_RING_FRAMES` = 8192 ≈ **186 ms** FIFO) → `audio_resampler_next`
   (forward-only: `fraction += pitch`, pops while `>= 1.0`; **no reverse**) →
@@ -61,20 +69,28 @@ change the normal playback output at all.
 
 ## Phases
 
-### Phase 1 — Touch state + platter brake/scrub (tactile, no audible scratch)
+### Phase 1 — Touch state + platter brake/scrub (tactile, no audible scratch) ✅ DONE (2026-07-11)
 Low risk; gets the touch signal + "grab the platter" feel working end-to-end and
-is the foundation for the scratch handoff.
-- `deck_core`: consume `CTRL_ID_DECK*_JOG_TOUCH` → per-deck `s_jog_touched[]`.
-- Touch-down while playing → enter a **platter-hold** state: mute the deck output
-  (keep the decoder/position live for instant resume) and remember it was
-  playing. Jog while touched → **scrub** the position (seek), like the paused
-  scrub. Touch-up → unmute and resume from the new position.
-- `audio_engine`: a per-deck hold/mute flag that silences the deck frame while
-  held (preferred over full pause so resume is instant).
+is the foundation for the scratch handoff. Implemented on branch
+`feature/vinyl-phase1-touch-scrub` (commit `7edb21f5`).
+- `deck_core`: consumes `CTRL_ID_DECK*_JOG_TOUCH` (`handle_jog_touch`) → per-deck
+  `s_jog_touched[]` / `s_jog_hold_active[]`.
+- Touch-down while playing → enters a **platter-hold** state: seeds the position
+  from the live playhead, mutes the deck output and freezes the position (the
+  decoder/ring stay live for instant resume) and remembers a hold was entered.
+  Jog while touched → **scrub** the position (seek), like the paused scrub.
+  Touch-up → releases the hold and resumes forward from the new position.
+- `audio_engine`: per-deck `s_deck_hold[]` + `audio_engine_deck_set_hold()`;
+  `deck_output_active()` returns false while held so the mixer skips the deck
+  (silence + no ring advance — preferred over full pause so resume is instant).
+  Release clears any residual jog nudge; hold is cleared on deck reset/load.
 - Gate: touched → scrub+hold; not touched + playing → pitch bend (existing).
-- Files: `deck_core.c`, `audio_engine.c/.h`. Tests: `deck_core_dual` (touch mutes
-  + holds, jog scrubs, release resumes; bend still works untouched). HW: platter
-  stops audio, jog moves position, release resumes. No flag needed (safe).
+- Files: `deck_core.c`, `audio_engine.c/.h`. Tests: `deck_core_dual`
+  (`test_platter_touch_holds_and_scrubs_while_playing`,
+  `test_platter_touch_while_paused_does_not_hold`) + hold stub + two static
+  guards in `run_p4_host_tests.ps1`. Build OK; full host suite passes; verified
+  on HW (COM15) — platter stops audio, jog scrubs, release resumes, bend ring
+  still nudges.
 
 ### Phase 2 — Scratch buffer (capture only, passive)
 Build the random-access PCM history without changing playback.
