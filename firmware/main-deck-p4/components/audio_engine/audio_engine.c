@@ -133,6 +133,24 @@ static audio_scratch_t   s_scratch_engine[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_playing[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t           s_scratch_ctx_deck[AUDIO_ENGINE_DECK_COUNT];
 
+/* Click-free handoff (vinyl mode Phase 4b). On release the output does not snap
+ * from the scratch source to forward playback; it cross-fades per sample:
+ * FADE_OUT ramps the scratch tail to silence, FADE_IN ramps the resumed forward
+ * audio (popped from the just-seeked ring) up from silence — waiting at silence
+ * if the ring has not refilled yet — then RING hands back to the resampler at the
+ * next block. All owned by the output task except the FADE_OUT arm set by the
+ * control task in scratch_end. */
+typedef enum {
+    AE_SCRATCH_HANDOFF_NONE = 0,
+    AE_SCRATCH_HANDOFF_FADE_OUT,
+    AE_SCRATCH_HANDOFF_FADE_IN,
+    AE_SCRATCH_HANDOFF_RING,
+} ae_scratch_handoff_t;
+static ae_scratch_handoff_t s_scratch_handoff[AUDIO_ENGINE_DECK_COUNT];
+static float                s_scratch_handoff_gain[AUDIO_ENGINE_DECK_COUNT];
+#define AE_SCRATCH_XFADE_FRAMES 480u   /* ~10 ms per side @ 48 kHz */
+#define AE_SCRATCH_XFADE_STEP   (1.0f / (float)AE_SCRATCH_XFADE_FRAMES)
+
 /* Shared scratchpad buffer for decoding to avoid stack allocation */
 static int16_t            s_scratch_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2u];
 
@@ -1667,8 +1685,13 @@ static void ae_decode_task(void *arg)
                     audio_resampler_reset(resampler);
                     taskEXIT_CRITICAL(&s_ring_flush_mux);
                     /* A user seek is a position discontinuity: drop the captured
-                     * window so the contiguous-frames assumption stays valid. */
-                    audio_scratch_buffer_reset(scratch);
+                     * window so the contiguous-frames assumption stays valid.
+                     * Exception: the release-handoff seek keeps s_scratch_playing
+                     * set — leave the window intact so the fade-out (4b) can keep
+                     * reading it; capture resumes (and refills) once handoff ends. */
+                    if (!atomic_load_bool(&s_scratch_playing[ctx->deck])) {
+                        audio_scratch_buffer_reset(scratch);
+                    }
                 }
                 eng->seek_is_loop   = false;
                 eng->seek_requested = false;
@@ -1775,23 +1798,65 @@ cleanup:
 #define AE_AUDIO_TASK_CORE 0
 
 /* Mixer scratch source callback (vinyl mode Phase 4): renders one output-rate
- * frame for the deck named by `ctx` from its scratch engine + capture buffer.
- * Returns true if audio was produced (false -> silence). Runs on the output
- * task; the engine/buffer are single-reader here. */
+ * frame for the deck named by `ctx`. Steady state reads the scratch engine; the
+ * release handoff (4b) cross-fades scratch -> forward per sample. Returns true if
+ * audio was produced (false -> silence). Runs on the output task; the
+ * engine/buffer/ring are single-reader here. */
 static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : 0u;
+    if (out) { out->left = 0; out->right = 0; }
     if (deck >= AUDIO_ENGINE_DECK_COUNT || !out) {
-        if (out) { out->left = 0; out->right = 0; }
         return false;
     }
-    int16_t left = 0;
-    int16_t right = 0;
-    bool produced = audio_scratch_render(&s_scratch_engine[deck],
-                                         &s_scratch_buf[deck], &left, &right);
-    out->left = left;
-    out->right = right;
-    return produced;
+
+    switch (s_scratch_handoff[deck]) {
+    case AE_SCRATCH_HANDOFF_FADE_OUT: {
+        int16_t l = 0, r = 0;
+        (void)audio_scratch_render(&s_scratch_engine[deck], &s_scratch_buf[deck], &l, &r);
+        float g = s_scratch_handoff_gain[deck];
+        out->left = (int16_t)((float)l * g);
+        out->right = (int16_t)((float)r * g);
+        g -= AE_SCRATCH_XFADE_STEP;
+        if (g <= 0.0f) {
+            g = 0.0f;
+            s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_FADE_IN;
+        }
+        s_scratch_handoff_gain[deck] = g;
+        return true;
+    }
+    case AE_SCRATCH_HANDOFF_FADE_IN:
+    case AE_SCRATCH_HANDOFF_RING: {
+        /* Resume source: the just-seeked ring. Wait at silence (hold the gain)
+         * until it has refilled, so there is no gap-click. */
+        audio_mixer_frame_t f = { 0 };
+        if (!pop_ring_source(pcm_ring_for_deck(deck), &f)) {
+            return false;
+        }
+        float g = s_scratch_handoff_gain[deck];
+        out->left = (int16_t)((float)f.left * g);
+        out->right = (int16_t)((float)f.right * g);
+        if (s_scratch_handoff[deck] == AE_SCRATCH_HANDOFF_FADE_IN) {
+            g += AE_SCRATCH_XFADE_STEP;
+            if (g >= 1.0f) {
+                g = 1.0f;
+                /* Full gain reached; keep popping the ring until the output task
+                 * hands back to the resampler at the next block boundary. */
+                s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_RING;
+            }
+            s_scratch_handoff_gain[deck] = g;
+        }
+        return true;
+    }
+    default: {
+        int16_t l = 0, r = 0;
+        bool produced = audio_scratch_render(&s_scratch_engine[deck],
+                                             &s_scratch_buf[deck], &l, &r);
+        out->left = l;
+        out->right = r;
+        return produced;
+    }
+    }
 }
 /* The per-deck effects run post-resampler on the shared output stream, but
  * they are initialised before the codec rate is known (EQ/filter at 44.1 kHz,
@@ -1904,6 +1969,19 @@ static void ae_output_task(void *arg)
             continue;
         }
         int64_t block_start_us = esp_timer_get_time();
+
+        /* Scratch handoff (4b): once the resumed forward audio has faded up to
+         * full gain, hand the deck back to the resampler + ring. Done here, before
+         * the deck structs capture s_scratch_playing, so this block already routes
+         * through the resampler. */
+        for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
+            if (s_scratch_handoff[d] == AE_SCRATCH_HANDOFF_RING) {
+                s_scratch_handoff[d] = AE_SCRATCH_HANDOFF_NONE;
+                s_scratch_handoff_gain[d] = 1.0f;
+                atomic_store_bool(&s_scratch_playing[d], false);
+            }
+        }
+
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
@@ -2950,6 +3028,9 @@ void audio_engine_deck_scratch_begin(uint8_t deck)
         head_back = (float)back;
     }
     audio_scratch_seed(&s_scratch_engine[deck], head_back);
+    /* Cancel any in-flight release handoff and enter steady scratch at full gain. */
+    s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_NONE;
+    s_scratch_handoff_gain[deck] = 1.0f;
     atomic_store_bool(&s_scratch_playing[deck], true);
 }
 
@@ -2964,19 +3045,24 @@ void audio_engine_deck_scratch_end(uint8_t deck)
     if (!deck_is_valid(deck)) return;
 
     /* Convert the read-head position back to a track position and seek normal
-     * playback there, then hand control back to the ring. The seek flushes the
-     * ring + scratch buffer and resumes forward from the head. (4a hands off
-     * with a plain seek; 4b adds a short cross-fade to kill the click.) */
+     * playback there. The seek flushes + refills the ring (but not the scratch
+     * buffer while the deck is still scratch_playing, so the fade-out can keep
+     * reading it). Then arm the cross-fade handoff (4b): the output task fades
+     * the scratch tail out and the resumed forward audio in, and only then hands
+     * the deck back to the resampler + clears s_scratch_playing. */
     audio_scratch_buffer_t *b = &s_scratch_buf[deck];
     float head_back = audio_scratch_head_back(&s_scratch_engine[deck]);
-    audio_scratch_end(&s_scratch_engine[deck]);
 
     if (b->newest_valid && b->sample_rate > 0u) {
         uint32_t back_ms = (uint32_t)((head_back * 1000.0f) / (float)b->sample_rate);
         uint32_t target = b->newest_pos_ms > back_ms ? b->newest_pos_ms - back_ms : 0u;
         (void)audio_engine_deck_seek(deck, target);
     }
-    atomic_store_bool(&s_scratch_playing[deck], false);
+
+    s_scratch_handoff_gain[deck] = 1.0f;
+    s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_FADE_OUT;
+    /* s_scratch_playing stays true through the handoff; the output task clears it
+     * once the fade-in reaches full gain (AE_SCRATCH_HANDOFF_RING). */
 }
 
 uint32_t audio_engine_deck_position_ms(uint8_t deck)
@@ -3100,6 +3186,8 @@ static void init_scratch_buffers(void)
                                   s_scratch_storage[deck] ? AE_SCRATCH_CAPACITY_FRAMES : 0u);
         audio_scratch_init(&s_scratch_engine[deck]);
         atomic_store_bool(&s_scratch_playing[deck], false);
+        s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_NONE;
+        s_scratch_handoff_gain[deck] = 1.0f;
         s_scratch_ctx_deck[deck] = deck;
     }
 }

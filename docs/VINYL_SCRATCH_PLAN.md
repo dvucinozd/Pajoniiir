@@ -1,8 +1,8 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **in progress** — Phases 1–3 + 4a done (2026-07-11); 4b (handoff
-cross-fade) + Phase 5 (feel tuning) pending. Phased roadmap for real turntable
-scratch on the P4. Written 2026-07-10 so work can resume cleanly.
+Status: **in progress** — Phases 1–4 done (2026-07-11; 4b HW feel test pending);
+Phase 5 (feel tuning) remains. Phased roadmap for real turntable scratch on the
+P4. Written 2026-07-10 so work can resume cleanly.
 
 ## Goal
 
@@ -168,12 +168,27 @@ Wire it so touching the platter actually scratches the audio. Split into 4a
   guards. HW: forward + reverse scratch confirmed audible; feel OK (params to
   tune later).
 
-**Phase 4b — click-free handoff (pending).**
-- Replace the plain seek on release with a short (~5–10 ms) cross-fade between
-  the last scratch output and the resumed forward playback; refine the touch-down
-  seed so entry is click-free too.
-- Risk: **HIGH** (real-time). Mitigate: flag + additive + one deck first + short
+**Phase 4b ✅ DONE (2026-07-11; HW feel test pending) — click-free handoff.**
+- The release no longer snaps from the scratch source to forward playback. The
+  scratch render callback (`ae_scratch_render_cb`) runs a per-sample cross-fade
+  state machine: `FADE_OUT` ramps the scratch tail to silence (~10 ms), then
+  `FADE_IN` ramps the resumed forward audio — popped straight from the just-seeked
+  ring — up from silence, **waiting at silence if the ring has not refilled yet**
+  (no gap-click), then `RING` hands the deck back to the resampler at the next
+  block. `AE_SCRATCH_XFADE_FRAMES` = 480 (~10 ms/side).
+- `scratch_end` issues the seek then arms `FADE_OUT` (keeping `s_scratch_playing`
+  set through the handoff); the decode task **skips the scratch-buffer reset while
+  `s_scratch_playing`** so the fade-out keeps reading the intact window (the ring
+  is still flushed + refilled). The output task clears `s_scratch_playing` only
+  once `FADE_IN` reaches full gain.
+- Verified: full host suite + firmware build pass; static guard. **HW feel test
+  (click-free release) still pending.**
+- Risk: **HIGH** (real-time). Mitigated: flag + additive + one deck first + short
   cross-fades + underrun → silence.
+
+Small residual (Phase 5): the fade-in reads the ring without counting it toward
+the deck position, so the playhead trails the audio by ~the handoff length
+(~10–20 ms) until the next seek — cosmetic, self-corrects.
 
 ### Phase 5 — Feel, edge cases, HW validation
 - Tune velocity/sensitivity/decay; click-free reverse + handoff; underrun

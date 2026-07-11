@@ -485,6 +485,11 @@ Assert-FileContains `
     -LiteralPatterns @("ae_scratch_render_cb", "audio_engine_deck_scratch_begin", "audio_engine_deck_scratch_move", "audio_engine_deck_scratch_end", ".scratch_active = atomic_load_bool(&s_scratch_playing")
 
 Assert-FileContains `
+    -Name "p4 audio_engine cross-fades the scratch->forward release handoff (vinyl phase 4b)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("AE_SCRATCH_HANDOFF_FADE_OUT", "AE_SCRATCH_HANDOFF_FADE_IN", "AE_SCRATCH_HANDOFF_RING", "AE_SCRATCH_XFADE_STEP")
+
+Assert-FileContains `
     -Name "p4 deck_core gates jog touch to scratch behind CONFIG_AUDIO_SCRATCH_ENABLED (vinyl phase 4)" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_SCRATCH_ENABLED", "audio_engine_deck_scratch_begin(deck)", "audio_engine_deck_scratch_move(deck, delta)", "audio_engine_deck_scratch_end(deck)")
