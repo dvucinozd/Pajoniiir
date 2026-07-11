@@ -1607,20 +1607,25 @@ static void ae_decode_task(void *arg)
             int64_t decode_start_us = esp_timer_get_time();
             int n = decode_one_frame(eng, fw, decode_pcm);
             uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+            size_t file_pos = eng->file_pos;
             if (n > 0) {
                 eng->frames_since_seek += (uint64_t)n;
                 for (int i = 0; i < n; i++) {
                     audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
                 }
+            }
+            AE_UNLOCK();
+            /* Diagnostics (its periodic ESP_LOGI does blocking UART I/O) run
+             * outside the lock; the ring used-count is an atomic SPSC read. */
+            if (n > 0) {
                 ae_diag_record_decode(ctx->deck,
                                       decode_us,
                                       n,
                                       audio_pcm_ring_used(pcm_ring),
-                                      eng->file_pos,
+                                      file_pos,
                                       fw->loaded_bytes,
                                       fw->load_done);
             }
-            AE_UNLOCK();
             attempts++;
         }
     }

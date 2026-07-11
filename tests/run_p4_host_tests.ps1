@@ -519,6 +519,21 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("scratch_handoff_store", "scratch_handoff_load", "__ATOMIC_ACQUIRE", "__ATOMIC_RELEASE")
 
+Assert-FileContains `
+    -Name "p4 deck_core quantize binary-searches the beatgrid" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
+
+Assert-FileContains `
+    -Name "p4 pdb row-slot iterator guards both ends of the slot cursor" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
+    -LiteralPatterns @("if (slot < pb || slot + 2u > p->data_len) continue;")
+
+Assert-FileContains `
+    -Name "p4 web library stream aborts when the client disconnects" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
+
 $tests = @(
     @{
         Name = "audio_diag"

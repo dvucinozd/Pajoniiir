@@ -779,17 +779,32 @@ static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
         return position_ms;
     }
 
-    uint32_t best_ms = meta->beats[0].time_ms;
-    uint32_t best_delta = best_ms > position_ms ? best_ms - position_ms : position_ms - best_ms;
-    for (uint16_t i = 1; i < meta->beat_count; i++) {
-        uint32_t beat_ms = meta->beats[i].time_ms;
-        uint32_t delta = beat_ms > position_ms ? beat_ms - position_ms : position_ms - beat_ms;
-        if (delta < best_delta) {
-            best_delta = delta;
-            best_ms = beat_ms;
+    /* Beatgrid times are monotonically increasing, so binary-search the first
+     * beat at/after position_ms and compare it with its predecessor — O(log n)
+     * instead of scanning the whole grid on every quantized action. */
+    uint16_t lo = 0;
+    uint16_t hi = meta->beat_count;   /* [lo, hi): candidates >= position_ms */
+    while (lo < hi) {
+        uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);
+        if (meta->beats[mid].time_ms < position_ms) {
+            lo = (uint16_t)(mid + 1u);
+        } else {
+            hi = mid;
         }
     }
-    return best_ms;
+
+    if (lo == 0u) {
+        return meta->beats[0].time_ms;               /* before the first beat */
+    }
+    if (lo >= meta->beat_count) {
+        return meta->beats[meta->beat_count - 1u].time_ms;  /* past the last beat */
+    }
+
+    uint32_t after_ms = meta->beats[lo].time_ms;
+    uint32_t before_ms = meta->beats[lo - 1u].time_ms;
+    uint32_t after_delta = after_ms - position_ms;
+    uint32_t before_delta = position_ms - before_ms;
+    return before_delta <= after_delta ? before_ms : after_ms;
 }
 
 static uint32_t quantized_deck_position_ms(uint8_t deck, const deck_state_t *state)

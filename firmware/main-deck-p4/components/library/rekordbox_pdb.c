@@ -328,7 +328,10 @@ static void iter_page_rows(const struct pdb_s *p, uint32_t page_num,
 
         for (uint32_t i = 0u; i < m; i++) {
             size_t slot = ptr - 4u - 2u * (i + 1u);
-            if (slot + 2u > p->data_len) continue;
+            /* Guard both ends: a malformed nrows/page can drive the slot cursor
+             * below the page base (reading a neighbouring page's bytes as a row
+             * offset) or, on size_t underflow, past the buffer end. */
+            if (slot < pb || slot + 2u > p->data_len) continue;
             uint32_t ho      = (uint32_t)rd_le16(p->data + slot);
             bool     present = (rowpf & (1u << i)) != 0u;
             if (present) {

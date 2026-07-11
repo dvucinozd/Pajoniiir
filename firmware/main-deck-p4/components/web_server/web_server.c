@@ -377,6 +377,7 @@ static esp_err_t api_library_handler(httpd_req_t *req)
 
     int chunk_len = 0;
     bool first = true;
+    esp_err_t send_rc = ESP_OK;
 
     for (int i = 0; i < count; i++) {
         media_catalog_row_t row;
@@ -394,13 +395,17 @@ static esp_err_t api_library_handler(httpd_req_t *req)
                 ESP_LOGW(TAG, "Skipping oversized library JSON row index=%d", i);
                 continue;
             }
-            
+
             // Ako bi dodavanje ovog stavka premašilo sigurnosnu granicu chunka, pošalji trenutni chunk
             if (chunk_len + item_len >= chunk_sz - 10) {
-                httpd_resp_send_chunk(req, chunk, chunk_len);
+                send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);
                 chunk_len = 0;
+                // Klijent je prekinuo vezu: prestani slati ostatak liste.
+                if (send_rc != ESP_OK) {
+                    break;
+                }
             }
-            
+
             memcpy(chunk + chunk_len, item, item_len);
             chunk_len += item_len;
             first = false;
@@ -408,11 +413,17 @@ static esp_err_t api_library_handler(httpd_req_t *req)
     }
 
     // Pošalji preostali dio chunka
-    if (chunk_len > 0) {
-        httpd_resp_send_chunk(req, chunk, chunk_len);
+    if (send_rc == ESP_OK && chunk_len > 0) {
+        send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);
     }
 
     free(chunk);
+
+    if (send_rc != ESP_OK) {
+        // Veza je pukla; abortaj prijenos (ne šalji footer ni terminating chunk).
+        ESP_LOGW(TAG, "library JSON send aborted: %s", esp_err_to_name(send_rc));
+        return send_rc;
+    }
 
     // Pošalji kraj JSON-a
     const char *footer = "]}";
