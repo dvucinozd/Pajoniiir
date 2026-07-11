@@ -29,7 +29,7 @@ XIAO D5 / GPIO6  <- P4 GPIO29 / JP1 pin 12
 XIAO GND         -> P4 GND
 ```
 
-Baud rate: `115200`, 8N1.
+Baud rate: `460800`, 8N1.
 
 Firmware defaults on this migration branch:
 

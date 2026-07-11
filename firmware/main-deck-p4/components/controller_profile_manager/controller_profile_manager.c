@@ -245,7 +245,7 @@ static volatile uint8_t s_reply_reason;
 /* Dedup: the S3 re-announces the connected controller every heartbeat (~5 s) so
  * a freshly-booted P4 can (re)learn it. Without this guard the P4 would re-stream
  * and re-ACTIVATE the whole (up to 16 KB) profile on every announcement — that
- * floods the 115200-baud link and resets the S3's live runtime state mid-set.
+ * floods the control link and resets the S3's live runtime state mid-set.
  * Remember which VID/PID is already transferred+active and skip repeats; a
  * failed transfer clears the mark so the next announcement retries. The S3
  * keeps its runtime profile across a controller unplug/replug, so re-sending on

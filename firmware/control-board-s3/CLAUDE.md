@@ -177,7 +177,7 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 | 0x82 STATE | both | id=CTRL_ID_S3_DEBUG_AP (0x85): P4→S3 request 0/1, S3→P4 status 0-3; also FLX4 connection state S3→P4 |
 | 0xA6 BULK | both | variable-length frame `[A6][type][seq][len][payload][crc16]`: controller descriptor (S3→P4) + profile transfer (P4→S3). See `docs/CONTROL_LINK_PROTOCOL.md` |
 
-UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 115200 baud.
+UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 460800 baud.
 
 Deck-aware semantic IDs are documented in
 `docs/CONTROL_LINK_PROTOCOL.md`. S3 and P4 headers are kept aligned by the

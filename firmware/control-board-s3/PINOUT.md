@@ -122,8 +122,8 @@ For connecting to the main board (ESP32-P4). Keep disconnected until the P4 boar
 
 | Signal | GPIO | Direction | Baud |
 |--------|------|-------|------|
-| UART1_TX | **GPIO40** | S3 → P4 | 115200 |
-| UART1_RX | **GPIO41** | P4 → S3 | 115200 |
+| UART1_TX | **GPIO40** | S3 → P4 | 460800 |
+| UART1_RX | **GPIO41** | P4 → S3 | 460800 |
 
 ```
 ESP32-S3              ESP32-P4

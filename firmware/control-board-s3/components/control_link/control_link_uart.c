@@ -25,7 +25,12 @@ static const char *TAG = "ctrl_link";
 #define PIN_UART_RX  ((gpio_num_t)CONTROL_LINK_UART_RX_GPIO)   // P4 -> S3
 
 #define UART_PORT    UART_NUM_1
-#define UART_BAUD    115200
+/* 460800 (4x the original 115200) over the short JP1 board-to-board link: cuts a
+ * full 16 KB 0xA6 profile transfer from ~1.5 s to ~0.4 s so it stops starving
+ * LED/event frames for that window. MUST match the P4 side. A framing error from
+ * marginal signal integrity is self-healing (the RX parser resyncs on the next
+ * 0xA5/0xA6 start byte), so a bad wire degrades rather than wedges the link. */
+#define UART_BAUD    460800
 /* 1 KB rings (was 256 B ≈ 22 ms at 115200): gives headroom for the 0xA6 bulk
  * profile stream and brief RX-task stalls so event/LED frames are not dropped. */
 #define RX_BUF_SIZE  1024

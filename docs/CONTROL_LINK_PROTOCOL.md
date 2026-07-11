@@ -15,7 +15,7 @@ between the ESP32-S3 and ESP32-P4.
 [6] checksum    XOR of bytes [1]..[5]
 ```
 
-Baud rate: `115200`.
+Baud rate: `460800` (8N1). Both boards must match; see `UART_BAUD` in each side's `control_link_uart.c`.
 
 ## Existing Types
 

@@ -238,6 +238,17 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
     -Patterns @("s_consecutive_errors >= FLX4_USB_AUDIO_MAX_CONSECUTIVE_ERRORS", "s_mode = FLX4_USB_AUDIO_MODE_STOPPED;")
 
+# Control-link baud must be identical on both boards or framing never syncs.
+Assert-FileContains `
+    -Name "control link baud is 460800 on the S3 side" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("#define UART_BAUD    460800")
+
+Assert-FileContains `
+    -Name "control link baud is 460800 on the P4 side (matches S3)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -Patterns @("#define UART_BAUD    460800")
+
 Assert-FileContains `
     -Name "p4 audio link stats use atomic counters" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c") `

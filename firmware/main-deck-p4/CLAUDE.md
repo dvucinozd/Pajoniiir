@@ -75,7 +75,7 @@ process active on COM15 (capture and flash are mutually exclusive — "Access is
 
 ```
 S3 (panel events)
-    ↓ UART 115200
+    ↓ UART 460800
 control_link  →  ctrl_event_queue  →  deck_core
                                            ↓
                                audio_engine  |  ui (LVGL)
