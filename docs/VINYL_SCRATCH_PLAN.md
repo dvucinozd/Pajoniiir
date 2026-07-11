@@ -1,8 +1,8 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **in progress** — Phases 1–3 done (2026-07-11), Phases 4–5 planned.
-Phased roadmap for real turntable scratch on the P4. Written 2026-07-10 so work
-can resume cleanly.
+Status: **in progress** — Phases 1–3 + 4a done (2026-07-11); 4b (handoff
+cross-fade) + Phase 5 (feel tuning) pending. Phased roadmap for real turntable
+scratch on the P4. Written 2026-07-10 so work can resume cleanly.
 
 ## Goal
 
@@ -144,18 +144,34 @@ that is Phase 4).
 - Risk: medium but isolated + host-tested.
 
 ### Phase 4 — Integrate scratch into the real-time output (behind the CONFIG flag)
-Wire it so touching the platter actually scratches the audio.
-- `CONFIG_AUDIO_SCRATCH_ENABLED` (Kconfig); additive so scratch-inactive == today.
-- Output task: a deck in scratch (touched) produces its frames from the scratch
-  engine (buffer at the jog-driven head) instead of resampler-from-ring; else the
-  normal path.
-- `deck_core`: while touched, feed jog deltas to the scratch velocity
-  (`audio_engine_deck_scratch_move(deck, delta)`) instead of scrub/bend.
-- Handoff: touch-down → seed the head from the current play position (ensure the
-  buffer covers it); touch-up → seek normal playback to the head position, resume
-  forward, cross-fade a few ms.
-- Files: `audio_engine` output task + scratch state, `deck_core`, Kconfig. Tests:
-  host (scratch state machine + handoff position math); HW for feel.
+Wire it so touching the platter actually scratches the audio. Split into 4a
+(routing + handoff via a plain seek) and 4b (click-free cross-fade handoff).
+
+**Phase 4a ✅ DONE (2026-07-11) — audible scratch, plain-seek handoff.**
+- `CONFIG_AUDIO_SCRATCH_ENABLED` (Kconfig, default n; enabled in the P4
+  `sdkconfig.defaults` so the product build scratches — flip to roll back to the
+  Phase 1 hold). Additive: with it off the output path is byte-for-byte today's.
+- Mixer: `audio_output_mixer_deck_t` gained an optional scratch source
+  (`scratch_active` + `scratch_render` + `scratch_ctx`); `next_deck_frame` draws
+  the deck frame from it (consuming nothing from the ring) when active, and the
+  normal EQ/FX chain still applies.
+- `audio_engine`: per-deck `audio_scratch_t` + `s_scratch_playing[]`;
+  `audio_engine_deck_scratch_begin` (seed the head at the current playhead within
+  the window), `_move` (jog → head velocity), `_end` (head position → track ms →
+  seek forward). The output task routes a scratching deck to `ae_scratch_render_cb`;
+  the decode task **freezes scratch capture** while scratching so the window's
+  newest frame stays fixed under the head.
+- `deck_core`: `#if CONFIG_AUDIO_SCRATCH_ENABLED`, touch-down → `scratch_begin`,
+  jog-while-touched → `scratch_move`, release → `scratch_end` (else the Phase 1
+  hold/scrub path).
+- Tests: mixer scratch source (replaces ring, consumes 0; silence path) + static
+  guards. HW: forward + reverse scratch confirmed audible; feel OK (params to
+  tune later).
+
+**Phase 4b — click-free handoff (pending).**
+- Replace the plain seek on release with a short (~5–10 ms) cross-fade between
+  the last scratch output and the resumed forward playback; refine the touch-down
+  seed so entry is click-free too.
 - Risk: **HIGH** (real-time). Mitigate: flag + additive + one deck first + short
   cross-fades + underrun → silence.
 

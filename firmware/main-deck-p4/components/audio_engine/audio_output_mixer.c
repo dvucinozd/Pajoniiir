@@ -16,7 +16,20 @@ static audio_mixer_frame_t next_deck_frame(const audio_output_mixer_deck_t *deck
                                            uint32_t *out_consumed)
 {
     if (out_consumed) *out_consumed = 0u;
-    if (!deck || !deck->active || !deck->resampler) {
+    if (!deck || !deck->active) {
+        return (audio_mixer_frame_t){ 0 };
+    }
+
+    /* Scratch source (vinyl mode): jog-driven read over the capture buffer,
+     * already at output rate, so it bypasses the resampler and consumes nothing
+     * from the ring. The EQ/FX chain below still applies to the returned frame. */
+    if (deck->scratch_active && deck->scratch_render) {
+        audio_mixer_frame_t frame = { 0 };
+        deck->scratch_render(deck->scratch_ctx, &frame);
+        return frame;
+    }
+
+    if (!deck->resampler) {
         return (audio_mixer_frame_t){ 0 };
     }
 

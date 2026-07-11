@@ -495,9 +495,87 @@ static void test_pad_fx_applies_before_beat_fx_layer(void)
     assert(audio_pad_fx_is_active(&pad_fx));
 }
 
+static bool scratch_yields_fixed(void *ctx, audio_mixer_frame_t *out)
+{
+    const int16_t *v = (const int16_t *)ctx;
+    out->left = v[0];
+    out->right = v[1];
+    return true;
+}
+
+static bool scratch_yields_silence(void *ctx, audio_mixer_frame_t *out)
+{
+    (void)ctx;
+    out->left = 0;
+    out->right = 0;
+    return false;
+}
+
+/* Vinyl mode Phase 4: an active scratch source replaces the resampler+ring for
+ * that deck and consumes nothing from the ring. */
+static void test_scratch_source_replaces_ring_without_consuming(void)
+{
+    audio_mixer_frame_t deck0_frames[] = {
+        { .left = 100, .right = 100 },
+        { .left = 100, .right = 100 },
+    };
+    source_t deck0_source = { .frames = deck0_frames, .count = 2, .index = 0 };
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_reset(&deck0_resampler);
+    int16_t scratch_val[2] = { 7000, -7000 };
+
+    audio_output_mixer_deck_t deck0 = {
+        .active = true,
+        .pitch_factor = 1.0f,
+        .gain = 1.0f,
+        .resampler = &deck0_resampler,
+        .pop_source = pop_source,
+        .source_ctx = &deck0_source,
+        .scratch_active = true,
+        .scratch_render = scratch_yields_fixed,
+        .scratch_ctx = scratch_val,
+    };
+    audio_output_mixer_deck_t deck1 = { .active = false };
+    uint32_t consumed0 = 99;
+    uint32_t consumed1 = 99;
+
+    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1,
+                                                      &consumed0, &consumed1, NULL);
+    assert(out.left == 7000);
+    assert(out.right == -7000);
+    assert(consumed0 == 0);            /* scratch consumes no ring frames */
+    assert(deck0_source.index == 0);   /* the ring source was never popped */
+}
+
+/* A scratch source that returns silence yields a silent deck frame. */
+static void test_scratch_source_silence(void)
+{
+    audio_resampler_state_t deck0_resampler;
+    audio_resampler_reset(&deck0_resampler);
+    audio_output_mixer_deck_t deck0 = {
+        .active = true,
+        .pitch_factor = 1.0f,
+        .gain = 1.0f,
+        .resampler = &deck0_resampler,
+        .scratch_active = true,
+        .scratch_render = scratch_yields_silence,
+        .scratch_ctx = NULL,
+    };
+    audio_output_mixer_deck_t deck1 = { .active = false };
+    uint32_t consumed0 = 0;
+    uint32_t consumed1 = 0;
+
+    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1,
+                                                      &consumed0, &consumed1, NULL);
+    assert(out.left == 0);
+    assert(out.right == 0);
+}
+
 int main(void)
 {
     test_mixes_two_active_decks_with_output_gains();
+    test_scratch_source_replaces_ring_without_consuming();
+    test_scratch_source_silence();
     test_inactive_deck_does_not_consume_source();
     test_deck_sample_rate_ratio_affects_source_consumption();
     test_master_limiter_leaves_single_deck_unchanged();

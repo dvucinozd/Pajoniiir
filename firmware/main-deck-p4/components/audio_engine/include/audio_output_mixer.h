@@ -10,6 +10,13 @@
 #include "audio_pad_fx.h"
 #include "audio_resampler.h"
 
+/* Optional scratch source (vinyl mode Phase 4): when `scratch_active`, the deck
+ * frame comes from `scratch_render` (a jog-driven read over the scratch buffer,
+ * already at output rate) instead of the resampler+ring, and the normal EQ/FX
+ * chain still applies. Fills *out and returns true if audio was produced (false
+ * -> silence). Consumes nothing from the ring. */
+typedef bool (*audio_output_scratch_fn)(void *ctx, audio_mixer_frame_t *out);
+
 typedef struct {
     bool active;
     float pitch_factor;
@@ -29,6 +36,9 @@ typedef struct {
     audio_resampler_state_t *resampler;
     audio_resampler_pop_fn pop_source;
     void *source_ctx;
+    bool scratch_active;
+    audio_output_scratch_fn scratch_render;
+    void *scratch_ctx;
 } audio_output_mixer_deck_t;
 
 typedef enum {
