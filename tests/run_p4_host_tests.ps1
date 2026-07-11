@@ -479,6 +479,26 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_scratch.c") `
     -LiteralPatterns @("audio_scratch_render", "audio_scratch_buffer_read_frame_back", "head_back -= s->velocity", "past_new_edge", "past_old_edge")
 
+Assert-FileContains `
+    -Name "p4 audio_engine routes a scratching deck to the scratch engine (vinyl phase 4)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("ae_scratch_render_cb", "audio_engine_deck_scratch_begin", "audio_engine_deck_scratch_move", "audio_engine_deck_scratch_end", ".scratch_active = atomic_load_bool(&s_scratch_playing")
+
+Assert-FileContains `
+    -Name "p4 deck_core gates jog touch to scratch behind CONFIG_AUDIO_SCRATCH_ENABLED (vinyl phase 4)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("#if CONFIG_AUDIO_SCRATCH_ENABLED", "audio_engine_deck_scratch_begin(deck)", "audio_engine_deck_scratch_move(deck, delta)", "audio_engine_deck_scratch_end(deck)")
+
+Assert-FileContains `
+    -Name "p4 mixer supports an optional scratch frame source (vinyl phase 4)" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c") `
+    -LiteralPatterns @("deck->scratch_active && deck->scratch_render", "deck->scratch_render(deck->scratch_ctx")
+
+Assert-FileContains `
+    -Name "p4 ships with vinyl scratch enabled" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("CONFIG_AUDIO_SCRATCH_ENABLED=y")
+
 $tests = @(
     @{
         Name = "audio_diag"
@@ -562,6 +582,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",

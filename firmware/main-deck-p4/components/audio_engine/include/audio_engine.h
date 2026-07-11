@@ -142,6 +142,15 @@ void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta);
  * stay lit). Clearing it resumes forward playback instantly from the current
  * position. Set on jog-platter touch-down, cleared on release. */
 void audio_engine_deck_set_hold(uint8_t deck, bool held);
+/* Scratch playback (vinyl mode Phase 4). begin() enters scratch: the deck's
+ * audio is produced by a jog-driven read head over the capture buffer (seeded at
+ * the current playhead) instead of forward playback; move() feeds jog ticks to
+ * the head velocity; end() converts the head position back to a track position,
+ * seeks normal playback there and resumes forward. Gated behind
+ * CONFIG_AUDIO_SCRATCH_ENABLED at the call site (deck_core). */
+void audio_engine_deck_scratch_begin(uint8_t deck);
+void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta);
+void audio_engine_deck_scratch_end(uint8_t deck);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 uint16_t audio_engine_get_deck_peak(uint8_t deck);

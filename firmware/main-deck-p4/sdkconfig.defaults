@@ -126,3 +126,10 @@ CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_22=y
 # Surface the monitor-link INFO diagnostics (default runtime log level is WARN).
 CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+
+# ── Vinyl / scratch mode (Phase 4) ───────────────────────────────────────────
+# Touching the jog platter top while playing scratches the audio (forward +
+# reverse) via the per-deck scratch capture buffer, instead of the Phase 1
+# hold/scrub. Additive + behind the flag; flip to `is not set` to roll back to
+# the Phase 1 platter hold. See docs/VINYL_SCRATCH_PLAN.md.
+CONFIG_AUDIO_SCRATCH_ENABLED=y

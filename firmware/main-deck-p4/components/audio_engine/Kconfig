@@ -1,0 +1,14 @@
+menu "Audio engine"
+
+config AUDIO_SCRATCH_ENABLED
+    bool "Enable vinyl/scratch mode (jog platter scratches the audio)"
+    default n
+    help
+        When enabled, touching the FLX4 jog platter top while a deck plays
+        scratches the audio (forward + reverse) by driving a read head over the
+        per-deck PSRAM scratch capture buffer, instead of the Phase 1 platter
+        hold+scrub. Releasing seeks normal forward playback to the head position.
+        Additive: with this off the output path is unchanged and touching the
+        platter does the Phase 1 hold/scrub. See docs/VINYL_SCRATCH_PLAN.md.
+
+endmenu

@@ -36,6 +36,7 @@
 #include "audio_pad_fx.h"
 #include "audio_pcm_ring.h"
 #include "audio_scratch_buffer.h"
+#include "audio_scratch.h"
 #include "audio_resampler.h"
 #include "audio_smart_cfx.h"
 #include "monitor_pcm_link.h"
@@ -120,6 +121,17 @@ static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 #define AE_SCRATCH_CAPACITY_FRAMES (AE_SCRATCH_SECONDS * AE_SCRATCH_MAX_RATE)
 static audio_scratch_buffer_t s_scratch_buf[AUDIO_ENGINE_DECK_COUNT];
 static int16_t               *s_scratch_storage[AUDIO_ENGINE_DECK_COUNT];
+
+/* Scratch playback (vinyl mode Phase 4): while s_scratch_playing[deck] is set,
+ * the output task draws that deck's frames from s_scratch_engine[deck] (a
+ * jog-driven read over s_scratch_buf[deck]) instead of the resampler+ring, and
+ * the decode task freezes capture so the window's newest frame stays put under
+ * the read head. Plain atomic bool: set/cleared by the control task, read by the
+ * output + decode tasks. s_scratch_ctx_deck feeds the deck index to the mixer's
+ * scratch render callback. */
+static audio_scratch_t   s_scratch_engine[AUDIO_ENGINE_DECK_COUNT];
+static bool              s_scratch_playing[AUDIO_ENGINE_DECK_COUNT];
+static uint8_t           s_scratch_ctx_deck[AUDIO_ENGINE_DECK_COUNT];
 
 /* Shared scratchpad buffer for decoding to avoid stack allocation */
 static int16_t            s_scratch_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2u];
@@ -1721,13 +1733,20 @@ static void ae_decode_task(void *arg)
                               fw->loaded_bytes,
                               fw->load_done);
 
+        /* Freeze scratch capture while this deck is scratching so the window's
+         * newest frame stays put under the jog-driven read head (the head is
+         * measured as frames-back-from-newest). Ring capture continues so normal
+         * playback can resume on release (which seeks + flushes anyway). */
+        bool capture_scratch = !atomic_load_bool(&s_scratch_playing[ctx->deck]);
         for (int i = 0; i < samples && runtime->run; i++) {
             while (audio_pcm_ring_free(pcm_ring) == 0 && runtime->run) vTaskDelay(pdMS_TO_TICKS(1));
             audio_pcm_ring_push(pcm_ring, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
-            /* Capture the same source frame into the scratch window (passive). */
-            audio_scratch_buffer_push(scratch, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
+            if (capture_scratch) {
+                /* Capture the same source frame into the scratch window (passive). */
+                audio_scratch_buffer_push(scratch, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
+            }
         }
-        if (scratch_newest_valid) {
+        if (capture_scratch && scratch_newest_valid) {
             audio_scratch_buffer_mark_newest_ms(scratch, scratch_newest_ms);
         }
         if (!scratch_full_logged &&
@@ -1754,6 +1773,26 @@ cleanup:
 #define AE_OUTPUT_TASK_STACK 8192
 /* Keep real-time audio producer/output work off the LVGL core. */
 #define AE_AUDIO_TASK_CORE 0
+
+/* Mixer scratch source callback (vinyl mode Phase 4): renders one output-rate
+ * frame for the deck named by `ctx` from its scratch engine + capture buffer.
+ * Returns true if audio was produced (false -> silence). Runs on the output
+ * task; the engine/buffer are single-reader here. */
+static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
+{
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : 0u;
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || !out) {
+        if (out) { out->left = 0; out->right = 0; }
+        return false;
+    }
+    int16_t left = 0;
+    int16_t right = 0;
+    bool produced = audio_scratch_render(&s_scratch_engine[deck],
+                                         &s_scratch_buf[deck], &left, &right);
+    out->left = left;
+    out->right = right;
+    return produced;
+}
 /* The per-deck effects run post-resampler on the shared output stream, but
  * they are initialised before the codec rate is known (EQ/filter at 44.1 kHz,
  * echo at the 48 kHz fallback). Retune them to the real output rate so
@@ -1902,6 +1941,9 @@ static void ae_output_task(void *arg)
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck0_index),
+            .scratch_active = atomic_load_bool(&s_scratch_playing[deck0_index]),
+            .scratch_render = ae_scratch_render_cb,
+            .scratch_ctx = &s_scratch_ctx_deck[deck0_index],
         };
         audio_output_mixer_deck_t deck1 = {
             .active = deck_output_active(deck1_index),
@@ -1922,6 +1964,9 @@ static void ae_output_task(void *arg)
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_ring_source,
             .source_ctx = pcm_ring_for_deck(deck1_index),
+            .scratch_active = atomic_load_bool(&s_scratch_playing[deck1_index]),
+            .scratch_render = ae_scratch_render_cb,
+            .scratch_ctx = &s_scratch_ctx_deck[deck1_index],
         };
 
         /* Decay the jog nudge once per output block; snap tiny residuals to 0. */
@@ -2882,6 +2927,58 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held)
     atomic_store_bool(&s_deck_hold[deck], held);
 }
 
+void audio_engine_deck_scratch_begin(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return;
+
+    /* Seed the read head at the current playhead within the capture window:
+     * head_back = (newest_pos - playhead) in source frames, clamped to the
+     * window. The decode task freezes capture while scratching, so `newest`
+     * stays fixed under this head. */
+    audio_scratch_buffer_t *b = &s_scratch_buf[deck];
+    float head_back = 0.0f;
+    if (b->newest_valid && b->sample_rate > 0u) {
+        uint32_t pos = audio_engine_deck_position_ms(deck);
+        if (pos > b->newest_pos_ms) {
+            pos = b->newest_pos_ms;
+        }
+        uint64_t back = ((uint64_t)(b->newest_pos_ms - pos) * b->sample_rate) / 1000ull;
+        uint32_t used = audio_scratch_buffer_used(b);
+        if (used > 0u && back > (uint64_t)(used - 1u)) {
+            back = (uint64_t)(used - 1u);
+        }
+        head_back = (float)back;
+    }
+    audio_scratch_seed(&s_scratch_engine[deck], head_back);
+    atomic_store_bool(&s_scratch_playing[deck], true);
+}
+
+void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta)
+{
+    if (!deck_is_valid(deck)) return;
+    audio_scratch_jog(&s_scratch_engine[deck], delta);
+}
+
+void audio_engine_deck_scratch_end(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return;
+
+    /* Convert the read-head position back to a track position and seek normal
+     * playback there, then hand control back to the ring. The seek flushes the
+     * ring + scratch buffer and resumes forward from the head. (4a hands off
+     * with a plain seek; 4b adds a short cross-fade to kill the click.) */
+    audio_scratch_buffer_t *b = &s_scratch_buf[deck];
+    float head_back = audio_scratch_head_back(&s_scratch_engine[deck]);
+    audio_scratch_end(&s_scratch_engine[deck]);
+
+    if (b->newest_valid && b->sample_rate > 0u) {
+        uint32_t back_ms = (uint32_t)((head_back * 1000.0f) / (float)b->sample_rate);
+        uint32_t target = b->newest_pos_ms > back_ms ? b->newest_pos_ms - back_ms : 0u;
+        (void)audio_engine_deck_seek(deck, target);
+    }
+    atomic_store_bool(&s_scratch_playing[deck], false);
+}
+
 uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return 0;
@@ -3001,6 +3098,9 @@ static void init_scratch_buffers(void)
         audio_scratch_buffer_init(&s_scratch_buf[deck],
                                   s_scratch_storage[deck],
                                   s_scratch_storage[deck] ? AE_SCRATCH_CAPACITY_FRAMES : 0u);
+        audio_scratch_init(&s_scratch_engine[deck]);
+        atomic_store_bool(&s_scratch_playing[deck], false);
+        s_scratch_ctx_deck[deck] = deck;
     }
 }
 

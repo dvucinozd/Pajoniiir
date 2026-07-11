@@ -100,6 +100,33 @@ static inline void audio_engine_deck_set_hold(uint8_t deck, bool held)
     audio_engine_stub_hold[deck] = held;
 }
 
+/* Scratch API (vinyl mode Phase 4). Unused in the default host build
+ * (CONFIG_AUDIO_SCRATCH_ENABLED off -> deck_core takes the Phase 1 hold path);
+ * present so a scratch-enabled compile of deck_core still links. */
+extern int audio_engine_stub_scratch_begin_count[2];
+extern int audio_engine_stub_scratch_move_count[2];
+extern int audio_engine_stub_scratch_move_last_delta[2];
+extern int audio_engine_stub_scratch_end_count[2];
+
+static inline void audio_engine_deck_scratch_begin(uint8_t deck)
+{
+    if (deck >= 2) return;
+    audio_engine_stub_scratch_begin_count[deck]++;
+}
+
+static inline void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta)
+{
+    if (deck >= 2) return;
+    audio_engine_stub_scratch_move_count[deck]++;
+    audio_engine_stub_scratch_move_last_delta[deck] = delta;
+}
+
+static inline void audio_engine_deck_scratch_end(uint8_t deck)
+{
+    if (deck >= 2) return;
+    audio_engine_stub_scratch_end_count[deck]++;
+}
+
 static inline uint32_t audio_engine_deck_position_ms(uint8_t deck)
 {
     return deck < 2 ? audio_engine_stub_deck_position_ms[deck] : 0;

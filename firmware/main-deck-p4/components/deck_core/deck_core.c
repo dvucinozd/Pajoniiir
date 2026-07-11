@@ -11,6 +11,7 @@
 #include "rekordbox_anlz.h"
 #if !defined(DECK_CORE_PC_TEST)
 #include "esp_timer.h"
+#include "sdkconfig.h"   /* CONFIG_AUDIO_SCRATCH_ENABLED (undefined -> Phase 1) */
 #endif
 #include <inttypes.h>
 #include <stdlib.h>
@@ -1728,7 +1729,13 @@ static void vu_task(void *arg)
  * frozen (audio_engine hold), so jogs scrub the position like a held record
  * (see on_jog). Releasing resumes forward playback from wherever it was
  * scrubbed to. Touching while paused just records the touch state (paused jog
- * already scrubs). No audible scratch yet — that is Phase 4.
+ * already scrubs).
+ *
+ * With CONFIG_AUDIO_SCRATCH_ENABLED (Phase 4) touching during playback instead
+ * enters audible scratch: the deck's audio comes from the jog-driven read head
+ * over the capture buffer, and release seeks normal playback to the head. The
+ * s_jog_hold_active[] flag marks "engaged while playing" in both builds so the
+ * matching release action fires.
  */
 static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
 {
@@ -1739,6 +1746,11 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
     if (pressed) {
         s_jog_touched[deck] = true;
         if (state->playing) {
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+            s_jog_hold_active[deck] = true;
+            audio_engine_deck_scratch_begin(deck);
+            ESP_LOGI(TAG, "deck %u scratch begin", (unsigned)deck + 1);
+#else
             /* Seed the position from the live playhead so the first scrub delta
              * is relative to where the audio actually is, then freeze it. */
             state->position_ms = current_deck_position_ms(deck, state);
@@ -1747,6 +1759,7 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
             ESP_LOGI(TAG, "deck %u platter hold -> %lu ms (audio muted)",
                      (unsigned)deck + 1,
                      (unsigned long)state->position_ms);
+#endif
         }
         return;
     }
@@ -1754,10 +1767,15 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
     s_jog_touched[deck] = false;
     if (s_jog_hold_active[deck]) {
         s_jog_hold_active[deck] = false;
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+        audio_engine_deck_scratch_end(deck);
+        ESP_LOGI(TAG, "deck %u scratch end", (unsigned)deck + 1);
+#else
         audio_engine_deck_set_hold(deck, false);
         ESP_LOGI(TAG, "deck %u platter release -> resume %lu ms",
                  (unsigned)deck + 1,
                  (unsigned long)state->position_ms);
+#endif
     }
 }
 
@@ -2032,18 +2050,31 @@ static void on_jog(uint8_t deck, int16_t delta)
             audio_engine_deck_jog_nudge(deck, delta);
         }
         ESP_LOGD(TAG, "deck %u jog nudge %+d (pitch bend)", (unsigned)deck + 1, delta);
-    } else {
-        // Scrub: advance/rewind the position. Used while paused, and while the
-        // platter is held during playback (vinyl mode Phase 1: audio is muted +
-        // frozen by the hold, so scrubbing drags the playhead; release resumes).
-        int32_t pos = (int32_t)state->position_ms + delta * 3;
-        state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
-        if (deck_uses_audio_engine(deck)) {
-            audio_engine_deck_seek(deck, state->position_ms);
-        }
-        ESP_LOGD(TAG, "deck %u jog scrub -> %lu ms", (unsigned)deck + 1,
-                 (unsigned long)state->position_ms);
+        return;
     }
+
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    if (state->playing && touched) {
+        // Scratch (vinyl mode Phase 4): the jog drives the read-head velocity;
+        // the audio engine renders the deck from the capture buffer at the head.
+        if (deck_uses_audio_engine(deck)) {
+            audio_engine_deck_scratch_move(deck, delta);
+        }
+        ESP_LOGD(TAG, "deck %u scratch move %+d", (unsigned)deck + 1, delta);
+        return;
+    }
+#endif
+
+    // Scrub: advance/rewind the position. Used while paused, and (Phase 1 build)
+    // while the platter is held during playback — audio is muted + frozen by the
+    // hold, so scrubbing drags the playhead; release resumes.
+    int32_t pos = (int32_t)state->position_ms + delta * 3;
+    state->position_ms = (pos < 0) ? 0 : (uint32_t)pos;
+    if (deck_uses_audio_engine(deck)) {
+        audio_engine_deck_seek(deck, state->position_ms);
+    }
+    ESP_LOGD(TAG, "deck %u jog scrub -> %lu ms", (unsigned)deck + 1,
+             (unsigned long)state->position_ms);
 }
 
 static void on_jog_search(uint8_t deck, int16_t delta)
