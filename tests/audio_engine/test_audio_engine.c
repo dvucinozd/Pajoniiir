@@ -470,6 +470,18 @@ static void test_mixer_snapshot_reports_deck_peak_without_reset(void)
 
     EXPECT(audio_engine_get_deck_peak(0) == 12000, "snapshot does not reset deck 0 peak");
     EXPECT(audio_engine_get_deck_peak(1) == 16000, "snapshot does not reset deck 1 peak");
+
+    uint16_t previous = snapshot.deck_peak_display[1];
+    EXPECT(previous > 0, "display peak captures active audio");
+    bool monotonic = true;
+    for (int i = 0; i < 256; i++) {
+        audio_engine_test_decay_idle_deck_peaks();
+        audio_engine_get_mixer_snapshot(&snapshot);
+        if (snapshot.deck_peak_display[1] > previous) monotonic = false;
+        previous = snapshot.deck_peak_display[1];
+    }
+    EXPECT(monotonic, "idle display peak decays monotonically");
+    EXPECT(previous == 0, "idle display peak reaches the meter floor");
 }
 
 static void test_diagnostics_snapshot_reports_audio_health_state(void)

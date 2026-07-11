@@ -632,6 +632,13 @@ static void record_deck_ui_peak(uint8_t deck, uint16_t block_peak)
                      vu_decay_peak(atomic_load_u16(&s_deck_ui_peak[deck]), block_peak));
 }
 
+static void decay_idle_deck_ui_peaks(void)
+{
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        record_deck_ui_peak(deck, 0u);
+    }
+}
+
 #if defined(AUDIO_ENGINE_PC_TEST)
 static void record_deck_peak(uint8_t deck, audio_mixer_frame_t frame)
 {
@@ -2430,6 +2437,9 @@ static void ae_output_task(void *arg)
         }
 
         if (!deck0.active && !deck1.active) {
+            /* No audio block will reach the normal peak-recording path below,
+             * but the UI meter still needs zero-input release ticks. */
+            decay_idle_deck_ui_peaks();
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -3853,8 +3863,15 @@ static void init_scratch_buffers(void)
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right)
 {
     AE_LOCK();
-    record_deck_peak(deck, (audio_mixer_frame_t){ .left = left, .right = right });
+    audio_mixer_frame_t frame = { .left = left, .right = right };
+    record_deck_peak(deck, frame);
+    record_deck_ui_peak(deck, frame_peak(frame));
     AE_UNLOCK();
+}
+
+void audio_engine_test_decay_idle_deck_peaks(void)
+{
+    decay_idle_deck_ui_peaks();
 }
 
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats)
