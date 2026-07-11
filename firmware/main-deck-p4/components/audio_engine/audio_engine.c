@@ -1670,13 +1670,19 @@ static void ae_loader_task(void *arg)
 
     int64_t t0  = esp_timer_get_time();
     size_t  off = 0;
-    while (off < (size_t)fsz && runtime->run) {
+    while (off < (size_t)fsz && runtime->run && media_io_gate_is_available()) {
         size_t want = audio_fw_preload_chunk_bytes((size_t)fsz - off,
                                                    audio_fw_output_task_running());
         int64_t chunk_start_us = esp_timer_get_time();
         size_t got = fread(fw->buf + off, 1, want, src);
         uint32_t chunk_us = (uint32_t)(esp_timer_get_time() - chunk_start_us);
-        if (got == 0) break;
+        if (got == 0) {
+            /* READ10 may fail just before the MSC callback publishes media
+             * loss.  Allow one scheduler window before classifying the short
+             * read as a genuine preload error. */
+            vTaskDelay(pdMS_TO_TICKS(10));
+            break;
+        }
         off += got;
         fw->loaded_bytes = off;                               /* publish watermark */
         eng->load_progress = (uint8_t)(off * 100u / (size_t)fsz);
@@ -1685,12 +1691,12 @@ static void ae_loader_task(void *arg)
     fclose(src);
     media_io_gate_end();
 
-    if (runtime->run && off != (size_t)fsz) {
+    if (runtime->run && media_io_gate_is_available() && off != (size_t)fsz) {
         ESP_LOGE(TAG, "preload INCOMPLETE D%u: %u/%u bytes",
                  (unsigned)ctx->deck, (unsigned)off, (unsigned)fsz);
         ae_fail_load(eng, fw, runtime, ESP_ERR_INVALID_SIZE, "PRELOAD ERR");
     }
-    if (runtime->run && off == (size_t)fsz) {
+    if (runtime->run && media_io_gate_is_available() && off == (size_t)fsz) {
         int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
         ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
                  (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);

@@ -18,3 +18,5 @@ esp_err_t media_io_gate_init(void);
 void media_io_gate_begin(void);
 bool media_io_gate_try_begin(uint32_t timeout_ms);
 void media_io_gate_end(void);
+void media_io_gate_set_available(bool available);
+bool media_io_gate_is_available(void);

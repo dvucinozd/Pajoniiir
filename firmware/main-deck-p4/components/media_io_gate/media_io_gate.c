@@ -3,10 +3,12 @@
 #if defined(MEDIA_IO_GATE_STANDALONE_TEST)
 
 static bool s_locked;
+static bool s_available;
 
 esp_err_t media_io_gate_init(void)
 {
     s_locked = false;
+    s_available = false;
     return ESP_OK;
 }
 
@@ -32,14 +34,26 @@ void media_io_gate_end(void)
     s_locked = false;
 }
 
+void media_io_gate_set_available(bool available)
+{
+    s_available = available;
+}
+
+bool media_io_gate_is_available(void)
+{
+    return s_available;
+}
+
 #else
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "stdatomic.h"
 
 static const char *TAG = "media_io_gate";
 static SemaphoreHandle_t s_gate;
+static atomic_bool s_available;
 
 esp_err_t media_io_gate_init(void)
 {
@@ -79,6 +93,16 @@ void media_io_gate_end(void)
     if (s_gate) {
         xSemaphoreGive(s_gate);
     }
+}
+
+void media_io_gate_set_available(bool available)
+{
+    atomic_store_explicit(&s_available, available, memory_order_release);
+}
+
+bool media_io_gate_is_available(void)
+{
+    return atomic_load_explicit(&s_available, memory_order_acquire);
 }
 
 #endif

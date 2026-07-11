@@ -22,6 +22,7 @@ static const char *TAG = "usb_storage";
 // on this task.
 #define STORAGE_TASK_STACK   (16 * 1024)
 #define STORAGE_TASK_PRIO    3
+#define CONNECT_STABLE_MS    350
 
 typedef struct {
     enum { EVT_CONNECTED, EVT_DISCONNECTED } id;
@@ -37,6 +38,20 @@ static msc_host_device_handle_t s_msc_dev   = NULL;
 static usb_media_mount_t       *s_mount      = NULL;
 static uint32_t              s_event_drop_count;
 static TickType_t            s_last_drop_warn;
+
+static void release_device(void)
+{
+    media_io_gate_begin();
+    if (s_mount) {
+        usb_media_unmount(s_mount);
+        s_mount = NULL;
+    }
+    if (s_msc_dev) {
+        msc_host_uninstall_device(s_msc_dev);
+        s_msc_dev = NULL;
+    }
+    media_io_gate_end();
+}
 
 bool usb_storage_is_mounted(void)
 {
@@ -55,6 +70,9 @@ static void msc_event_cb(const msc_host_event_t *event, void *arg)
             s_event_drop_count++;
         }
     } else if (event->event == MSC_DEVICE_DISCONNECTED) {
+        /* Publish media loss immediately.  The storage task can still be
+         * blocked behind an in-flight FATFS read when this callback runs. */
+        media_io_gate_set_available(false);
         msg.id = EVT_DISCONNECTED;
         msg.dev_addr = 0;
         if (xQueueSend(s_queue, &msg, 0) != pdTRUE) {
@@ -111,6 +129,31 @@ static void storage_task(void *arg)
         if (msg.id == EVT_CONNECTED) {
             if (s_mounted) {
                 ESP_LOGW(TAG, "a drive is already mounted; ignoring second device");
+                continue;
+            }
+            /* A hub/root-port reset often reports CONNECT followed immediately
+             * by DISCONNECT.  Do not start SCSI probing until the address has
+             * survived a short stability window. */
+            storage_msg_t pending;
+            bool disconnected = false;
+            TickType_t stable_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(CONNECT_STABLE_MS);
+            while (true) {
+                TickType_t now = xTaskGetTickCount();
+                TickType_t remaining = (now < stable_deadline) ? stable_deadline - now : 0;
+                if (xQueueReceive(s_queue, &pending, remaining) != pdTRUE) {
+                    break;
+                }
+                if (pending.id == EVT_DISCONNECTED) {
+                    disconnected = true;
+                } else {
+                    msg = pending;
+                    disconnected = false;
+                    stable_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(CONNECT_STABLE_MS);
+                }
+            }
+            if (disconnected) {
+                ESP_LOGW(TAG, "drive disappeared during %d ms mount stability window",
+                         CONNECT_STABLE_MS);
                 continue;
             }
             ESP_LOGI(TAG, "drive connected (addr=%d), mounting at %s", msg.dev_addr, USB_STORAGE_MOUNT_POINT);
@@ -171,31 +214,28 @@ static void storage_task(void *arg)
             }
 
             s_mounted = true;
+            media_io_gate_set_available(true);
             if (s_cb) {
                 s_cb(true);
             }
         } else { // EVT_DISCONNECTED
-            ESP_LOGW(TAG, "drive disconnected");
+            bool had_device = s_mounted || s_mount || s_msc_dev;
+            if (had_device) {
+                ESP_LOGW(TAG, "drive disconnected");
+            }
             s_mounted = false;
-            if (s_cb) {
+            media_io_gate_set_available(false);
+            if (had_device && s_cb) {
                 s_cb(false);
             }
-            media_io_gate_begin();
-            if (s_mount) {
-                usb_media_unmount(s_mount);
-                s_mount = NULL;
-            }
-            if (s_msc_dev) {
-                msc_host_uninstall_device(s_msc_dev);
-                s_msc_dev = NULL;
-            }
-            media_io_gate_end();
+            release_device();
         }
     }
 }
 
 esp_err_t usb_storage_init(usb_storage_event_cb_t cb)
 {
+    media_io_gate_set_available(false);
     s_cb = cb;
     s_queue = xQueueCreate(4, sizeof(storage_msg_t));
     if (!s_queue) {
