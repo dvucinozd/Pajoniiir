@@ -571,6 +571,19 @@ Assert-FileContains `
 
 $tests = @(
     @{
+        Name = "audio_keylock"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock.exe",
+            "test_audio_keylock.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_diag"
         Dir = "tests/audio_diag"
         Target = "test_audio_diag.exe"
@@ -646,6 +659,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",

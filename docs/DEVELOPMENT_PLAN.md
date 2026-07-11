@@ -1078,3 +1078,26 @@ Acceptance met:
   `P4_AUDIO_LINK overruns=0`, `gaps=0`, `crc=0`, ring fill oscillating around
   1024-2048 frames instead of pinning at 4096, and `FLX4_USB_AUDIO skipped=0`
   / `underrun=0` while submitted/completed USB packet counts rose together.
+
+## Phase 13: P4 Master Tempo / Key Lock (2026-07-12)
+
+Status: implemented, host-tested, built, flashed to P4 COM15, and basic
+single-deck hardware listening smoke passed. A simultaneous dual-deck MT soak
+is intentionally deferred.
+
+- Each Overview deck has a compact `MT` toggle beside its pitch readout. The
+  callback enters the deck event queue, so UI and the inherited Master Tempo
+  button share one P4-owned state transition.
+- `audio_keylock` implements a deck-local WSOLA-style granular reader over the
+  canonical PCM timeline. A local correlation search aligns overlap regions,
+  avoiding the phase cancellation produced by blind overlap-add.
+- Tempo advancement remains driven by the selected fader factor while the
+  short grains retain the source pitch. Scratch is still the higher-priority
+  output source. Near EOF, where the look-ahead window cannot be filled, the
+  normal resampler drains the remaining PCM instead of parking in silence.
+- Host coverage checks +10% source-frame advancement, retained tone frequency,
+  and sample-identical unity-rate output. The full P4 host suite and firmware
+  build pass; the flashed image reports 52% app-partition headroom.
+- Hardware acceptance confirmed the Overview toggle and expected basic
+  key-lock behavior without an observed reboot or audio failure. Longer
+  dual-deck quality/CPU tuning remains a future smoke test.

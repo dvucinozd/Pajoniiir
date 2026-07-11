@@ -4,8 +4,8 @@
  *
  * Decodes MP3 from USB drive using minimp3 (single-header, public domain).
  * Supports VBR seeking via Rekordbox PVBR seek table (400 file-byte offsets
- * stored in ANLZ0000.DAT), and pitch/tempo control via linear-interpolation
- * resampling (±10% rate; no key preservation — key-lock is Phase 10).
+ * stored in ANLZ0000.DAT), pitch/tempo control, and optional deck-local
+ * Master Tempo key preservation through the canonical PCM timeline.
  *
  * Platform selection (compile-time defines):
  *   AUDIO_ENGINE_PC_TEST       — WAV file output (offline unit test)
@@ -101,7 +101,9 @@ esp_err_t audio_engine_seek(uint32_t position_ms);
  *
  * Percent = ((8192 - raw_pitch) / 8192.0) * 10.0
  * Factor = 1.0 + (Percent / 100.0)
- * NOTE: this changes tempo only — no key preservation (key-lock = Phase 10).
+ * With deck-local Master Tempo disabled this is ordinary rate resampling;
+ * when enabled, the WSOLA-style key-lock path changes tempo while preserving
+ * the perceived musical key.
  */
 void audio_engine_set_pitch(int16_t raw_pitch);
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch);
@@ -133,6 +135,8 @@ esp_err_t audio_engine_deck_stop(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
+void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled);
+bool audio_engine_deck_master_tempo_enabled(uint8_t deck);
 /* Transient jog pitch-bend (nudge) while playing: a positive delta briefly
  * speeds the deck up, negative slows it, and the tempo springs back to the
  * fader setting when the jog stops. Used for manual beat matching. */

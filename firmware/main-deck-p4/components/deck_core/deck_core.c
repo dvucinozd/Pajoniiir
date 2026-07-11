@@ -1603,6 +1603,9 @@ static void on_button(uint8_t deck, button_id_t btn, bool pressed)
 
     case BTN_MASTER_TEMPO:
         state->master_tempo = !state->master_tempo;
+        if (uses_audio) {
+            audio_engine_deck_set_master_tempo(deck, state->master_tempo);
+        }
         ESP_LOGI(TAG, "deck %u master tempo -> %s", (unsigned)deck + 1,
                  state->master_tempo ? "ON" : "OFF");
         break;
@@ -2555,6 +2558,20 @@ esp_err_t deck_core_queue_event(const ctrl_event_t *ev)
 deck_state_t deck_core_get_state(void)
 {
     return deck_core_get_deck_state(DECK_CORE_COMPAT_DECK);
+}
+
+void deck_core_toggle_master_tempo(uint8_t deck)
+{
+    if (!s_queue || deck >= DECK_CORE_DECK_COUNT) return;
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = BTN_MASTER_TEMPO,
+        .value = 1,
+        .deck = deck,
+    };
+    if (xQueueSend(s_queue, &ev, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "deck %u master tempo UI event dropped", (unsigned)deck + 1u);
+    }
 }
 
 deck_state_t deck_core_get_deck_state(uint8_t deck)

@@ -30,6 +30,7 @@
 #include "audio_fw_runtime.h"
 #include "audio_fw_task_context.h"
 #include "audio_fw_task_plan.h"
+#include "audio_keylock.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_output_timing.h"
@@ -668,6 +669,9 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 /* ── Pitch-resampling state (firmware I2S output) ─────────────────────────── */
 #if AE_FW
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
+static audio_keylock_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
+static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_keylock_generation[AUDIO_ENGINE_DECK_COUNT];
 
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 {
@@ -675,6 +679,36 @@ static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
         return &s_resamplers[deck];
     }
     return &s_resamplers[AUDIO_ENGINE_COMPAT_DECK];
+}
+
+static bool keylock_timeline_read(void *ctx, uint64_t seq, audio_mixer_frame_t *out)
+{
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : AUDIO_ENGINE_COMPAT_DECK;
+    return deck < AUDIO_ENGINE_DECK_COUNT &&
+           audio_pcm_timeline_read(&s_pcm_timelines[deck], seq, out);
+}
+
+static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
+                                 audio_mixer_frame_t *out,
+                                 uint32_t *out_consumed)
+{
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : AUDIO_ENGINE_COMPAT_DECK;
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || !timeline_active(deck) || !out) return false;
+    audio_pcm_timeline_t *timeline = &s_pcm_timelines[deck];
+    uint32_t generation = audio_pcm_timeline_generation(timeline);
+    if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation) {
+        audio_keylock_reset(&s_keylocks[deck], audio_pcm_timeline_play_seq(timeline));
+        s_keylock_generation[deck] = generation;
+    }
+    float rate_ratio = 1.0f;
+    if (s_engines[deck].sample_rate > 0u && s_output_sample_rate > 0u) {
+        rate_ratio = (float)s_engines[deck].sample_rate / (float)s_output_sample_rate;
+    }
+    audio_keylock_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
+    uint64_t play_seq = audio_pcm_timeline_play_seq(timeline);
+    if (!audio_keylock_next(&s_keylocks[deck], keylock_timeline_read, ctx,
+                            out, out_consumed, &play_seq)) return false;
+    return audio_pcm_timeline_set_playhead(timeline, play_seq);
 }
 
 static void apply_pending_pitch(uint8_t deck)
@@ -2351,6 +2385,10 @@ static void ae_output_task(void *arg)
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_deck_source,
             .source_ctx = &s_scratch_ctx_deck[deck0_index],
+            .keylock_active = atomic_load_bool(&s_master_tempo_enabled[deck0_index]) &&
+                              timeline_active(deck0_index),
+            .keylock_render = ae_keylock_render_cb,
+            .keylock_ctx = &s_scratch_ctx_deck[deck0_index],
             .scratch_active = atomic_load_bool(&s_scratch_playing[deck0_index]),
             .scratch_render = ae_scratch_render_cb,
             .scratch_ctx = &s_scratch_ctx_deck[deck0_index],
@@ -2374,6 +2412,10 @@ static void ae_output_task(void *arg)
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_deck_source,
             .source_ctx = &s_scratch_ctx_deck[deck1_index],
+            .keylock_active = atomic_load_bool(&s_master_tempo_enabled[deck1_index]) &&
+                              timeline_active(deck1_index),
+            .keylock_render = ae_keylock_render_cb,
+            .keylock_ctx = &s_scratch_ctx_deck[deck1_index],
             .scratch_active = atomic_load_bool(&s_scratch_playing[deck1_index]),
             .scratch_render = ae_scratch_render_cb,
             .scratch_ctx = &s_scratch_ctx_deck[deck1_index],
@@ -3390,6 +3432,28 @@ void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent)
     if (!deck_transport_supported(deck)) return;
 #endif
     audio_engine_set_pitch_percent_for_deck(deck, percent);
+}
+
+void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled)
+{
+    if (!deck_is_valid(deck)) return;
+#if AE_FW
+    atomic_store_bool(&s_master_tempo_enabled[deck], enabled);
+    s_keylocks[deck].initialized = false;
+    audio_resampler_reset(&s_resamplers[deck]);
+#else
+    (void)enabled;
+#endif
+}
+
+bool audio_engine_deck_master_tempo_enabled(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return false;
+#if AE_FW
+    return atomic_load_bool(&s_master_tempo_enabled[deck]);
+#else
+    return false;
+#endif
 }
 
 void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)

@@ -411,6 +411,11 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
 #endif
 }
 
+static void ui_overview_action_toggle_master_tempo(uint8_t deck)
+{
+    deck_core_toggle_master_tempo(deck);
+}
+
 // ─── Component Initialization Helpers ────────────────────────────────────────
 
 static void init_styles(void) {
@@ -756,6 +761,7 @@ esp_err_t ui_init(void) {
             .select_deck = ui_set_performance_deck,
             .play_pause = ui_overview_action_play_pause,
             .cue = ui_overview_action_cue,
+            .toggle_master_tempo = ui_overview_action_toggle_master_tempo,
             .seek = ui_overview_action_seek,
         },
     };

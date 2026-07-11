@@ -84,6 +84,7 @@ deck_state_t deck_core_get_state(void);
 
 // Thread-safe snapshot of one deck state.
 deck_state_t deck_core_get_deck_state(uint8_t deck);
+void deck_core_toggle_master_tempo(uint8_t deck);
 
 // Snapshot of the global Beat FX state. Beat FX DSP is not applied yet; this is
 // exposed for low-rate diagnostics and controller smoke verification.

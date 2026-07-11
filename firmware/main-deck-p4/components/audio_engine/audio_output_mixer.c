@@ -29,6 +29,16 @@ static audio_mixer_frame_t next_deck_frame(const audio_output_mixer_deck_t *deck
         return frame;
     }
 
+    if (deck->keylock_active && deck->keylock_render) {
+        audio_mixer_frame_t frame = {0};
+        if (deck->keylock_render(deck->keylock_ctx, deck->pitch_factor,
+                                 &frame, out_consumed)) {
+            return frame;
+        }
+        /* Near EOF there may be enough PCM for ordinary resampling but not for
+         * the key-lock look-ahead window. Fall through and drain it normally. */
+    }
+
     if (!deck->resampler) {
         return (audio_mixer_frame_t){ 0 };
     }

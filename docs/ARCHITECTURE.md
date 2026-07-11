@@ -116,6 +116,10 @@ Current P4 audio ownership rule:
 - MP3 preload uses smaller read chunks while audio output is active, and MP3
   seek table construction publishes the finished table with a short lock so
   loader/index work cannot hold the audio engine mutex for the full scan;
+- Master Tempo is deck-local and P4-owned. The Overview `MT` buttons toggle a
+  WSOLA-style overlap/correlation time-stretch reader over the canonical PCM
+  timeline; scratch remains the higher-priority source, and ordinary resampling
+  drains the final look-ahead tail near EOF;
 - stopping or reloading one deck must not close the codec while another deck is
   still loaded or playing;
 - USB removal uses `audio_engine_stop_all()` to tear down both decks and the

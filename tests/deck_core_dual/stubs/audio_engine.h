@@ -86,6 +86,12 @@ static inline void audio_engine_deck_set_pitch_percent(uint8_t deck, float perce
     audio_engine_stub_pitch_percent_set_count[deck]++;
 }
 
+static inline void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled)
+{
+    (void)deck;
+    (void)enabled;
+}
+
 static inline void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)
 {
     if (deck >= 2) return;

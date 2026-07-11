@@ -16,6 +16,9 @@
  * chain still applies. Fills *out and returns true if audio was produced (false
  * -> silence). Consumes nothing from the ring. */
 typedef bool (*audio_output_scratch_fn)(void *ctx, audio_mixer_frame_t *out);
+typedef bool (*audio_output_keylock_fn)(void *ctx, float tempo_factor,
+                                        audio_mixer_frame_t *out,
+                                        uint32_t *out_consumed);
 
 typedef struct {
     bool active;
@@ -36,6 +39,9 @@ typedef struct {
     audio_resampler_state_t *resampler;
     audio_resampler_pop_fn pop_source;
     void *source_ctx;
+    bool keylock_active;
+    audio_output_keylock_fn keylock_render;
+    void *keylock_ctx;
     bool scratch_active;
     audio_output_scratch_fn scratch_render;
     void *scratch_ctx;

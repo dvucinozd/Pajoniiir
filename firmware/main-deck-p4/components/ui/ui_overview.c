@@ -82,6 +82,14 @@ static void cue_event_cb(lv_event_t *e)
     }
 }
 
+static void master_tempo_event_cb(lv_event_t *e)
+{
+    uint8_t deck = ui_event_deck(e);
+    if (s_overview_config.actions.toggle_master_tempo) {
+        s_overview_config.actions.toggle_master_tempo(deck);
+    }
+}
+
 static bool ui_label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
     if (!label) return false;
@@ -183,8 +191,8 @@ _Static_assert(OVERVIEW_VU_Y_OFFSET + OVERVIEW_VU_H <= OVERVIEW_CV_H,
 #define OVERVIEW_MIX_ROW_Y 370
 #define OVERVIEW_BPM_X 170
 #define OVERVIEW_BPM_Y 348
-#define OVERVIEW_BPM_W 92
-#define OVERVIEW_BPM_TAG_X 264
+#define OVERVIEW_BPM_W 80
+#define OVERVIEW_BPM_TAG_X 252
 /* Per-deck time counters on the BPM row (out of the blue title strip, which is
  * now title-only), at the BPM font size: elapsed at the title-aligned start, then
  * a gap, then remaining. Widths hold a full "MM:SS" / "-MM:SS" at montserrat_24
@@ -196,11 +204,17 @@ _Static_assert(OVERVIEW_VU_Y_OFFSET + OVERVIEW_VU_H <= OVERVIEW_CV_H,
 #define OVERVIEW_REMAIN_W 80
 _Static_assert(OVERVIEW_REMAIN_X + OVERVIEW_REMAIN_W <= OVERVIEW_BPM_X, "overview time counters must stay left of the BPM value");
 _Static_assert(OVERVIEW_TIME_X + OVERVIEW_ELAPSED_W <= OVERVIEW_REMAIN_X, "elapsed time must not overlap the remaining time");
-#define OVERVIEW_PITCH_X 302
+#define OVERVIEW_PITCH_X 286
 #define OVERVIEW_PITCH_Y 346
-#define OVERVIEW_PITCH_CHIP_W 94
+#define OVERVIEW_PITCH_CHIP_W 70
 #define OVERVIEW_PITCH_CHIP_H 28
 #define OVERVIEW_PITCH_W OVERVIEW_PITCH_CHIP_W
+#define OVERVIEW_MT_X 360
+#define OVERVIEW_MT_W 36
+_Static_assert(OVERVIEW_PITCH_X + OVERVIEW_PITCH_CHIP_W <= OVERVIEW_MT_X,
+               "pitch chip must not overlap Master Tempo");
+_Static_assert(OVERVIEW_MT_X + OVERVIEW_MT_W <= OVERVIEW_DECK_INFO_W,
+               "Master Tempo must fit in its deck info column");
 #define OVERVIEW_MINI_WAVE_Y 386
 #define OVERVIEW_SIDE_BTN_H 38
 /* The D1/D2 deck badges are sized to match the play/cue transport buttons. */
@@ -272,6 +286,8 @@ typedef struct {
     lv_obj_t *label_time;
     lv_obj_t *label_bpm;
     lv_obj_t *label_pitch;
+    lv_obj_t *master_tempo_button;
+    lv_obj_t *master_tempo_label;
     lv_obj_t *label_ch;
     lv_obj_t *label_out;
     lv_obj_t *play_button;
@@ -730,6 +746,25 @@ static void ui_create_overview_deck_panel(lv_obj_t *parent, uint8_t deck, int y)
     lv_obj_set_style_border_color(panel->label_pitch, COL_GREEN, LV_PART_MAIN);
     lv_obj_set_style_border_width(panel->label_pitch, 1, LV_PART_MAIN);
     lv_obj_set_style_pad_top(panel->label_pitch, 2, LV_PART_MAIN);
+
+    panel->master_tempo_button = lv_button_create(panel->panel);
+    lv_obj_remove_style_all(panel->master_tempo_button);
+    lv_obj_set_pos(panel->master_tempo_button, info_x + OVERVIEW_MT_X, OVERVIEW_PITCH_Y);
+    lv_obj_set_size(panel->master_tempo_button, OVERVIEW_MT_W, OVERVIEW_PITCH_CHIP_H);
+    lv_obj_set_style_bg_color(panel->master_tempo_button, COL_PANEL_DK, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(panel->master_tempo_button, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel->master_tempo_button, COL_BORDER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel->master_tempo_button, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(panel->master_tempo_button, 4, LV_PART_MAIN);
+    lv_obj_add_style(panel->master_tempo_button, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_set_user_data(panel->master_tempo_button, (void *)(uintptr_t)deck);
+    lv_obj_add_event_cb(panel->master_tempo_button, master_tempo_event_cb,
+                        LV_EVENT_CLICKED, NULL);
+    panel->master_tempo_label = lv_label_create(panel->master_tempo_button);
+    lv_label_set_text(panel->master_tempo_label, "MT");
+    lv_obj_set_style_text_font(panel->master_tempo_label, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(panel->master_tempo_label, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_center(panel->master_tempo_label);
 
     ui_overview_bar(panel->panel, info_x, OVERVIEW_INFO_DIVIDER_Y, OVERVIEW_DECK_INFO_W, 1, COL_BORDER);
     ui_overview_value_label(panel->panel, &lv_font_montserrat_12, COL_TEXT_MUTED,
@@ -2204,6 +2239,12 @@ static void ui_update_overview_deck(uint8_t deck, const deck_state_t *state,
      * chip border is left unchanged. */
     ui_obj_set_text_color_if_changed(panel->label_pitch,
                                      pitch_centipct < 0 ? COL_RED : COL_GREEN);
+    ui_obj_set_bg_color_if_changed(panel->master_tempo_button,
+                                    state->master_tempo ? COL_ACCENT : COL_PANEL_DK);
+    ui_obj_set_border_color_if_changed(panel->master_tempo_button,
+                                        state->master_tempo ? COL_ACCENT : COL_BORDER);
+    ui_obj_set_text_color_if_changed(panel->master_tempo_label,
+                                      state->master_tempo ? COL_ON_ACCENT : COL_TEXT_MUTED);
 
     ui_update_overview_waveform_progress(deck, panel, elapsed_ms, duration_ms,
                                          state->playing);
