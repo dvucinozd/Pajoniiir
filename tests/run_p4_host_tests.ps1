@@ -510,14 +510,49 @@ Assert-FileContains `
     -LiteralPatterns @("clear_scratch_playback_state", "atomic_load_bool(&s_scratch_playing[d]) && !deck_output_active(d)")
 
 Assert-FileContains `
-    -Name "p4 audio_engine declines scratch on a non-playing deck and no-ops the release" `
+    -Name "p4 audio_engine permits loaded cue scratch and no-ops an unmatched release" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("if (!eng->playing || eng->paused) {", "if (!atomic_load_bool(&s_scratch_playing[deck])) {")
+    -LiteralPatterns @("if (!eng->loaded || eng->sample_rate == 0u || eng->loading)", "s_scratch_started_paused", "if (!atomic_load_bool(&s_scratch_playing[deck])) {")
 
 Assert-FileContains `
     -Name "p4 audio_engine publishes the scratch handoff phase with release/acquire" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("scratch_handoff_store", "scratch_handoff_load", "__ATOMIC_ACQUIRE", "__ATOMIC_RELEASE")
+
+Assert-FileContains `
+    -Name "p4 scratch begin supports a fast re-grab during release handoff" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("scratch re-grab", "s_scratch_capture_reset_ready[deck], false", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+
+Assert-FileContains `
+    -Name "p4 UI position follows the audible scratch head" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("scratch_head_snapshot(deck)", "audio_scratch_track_position_ms", "scratch_position_authoritative ? 0.0f")
+
+Assert-FileContains `
+    -Name "p4 waveform disables forward interpolation for scratch-authoritative position" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("scratch_position_authoritative", "? 0u", "mixer_snapshot.scratch_position_authoritative")
+
+Assert-FileContains `
+    -Name "p4 paused seek pre-roll centers cue scratch history and future" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("timeline_preroll_pending", "decode_target_ms = target_ms - pre_ms", "cue pre-roll D%u ready", "audio_pcm_timeline_set_playhead")
+
+Assert-FileContains `
+    -Name "p4 scratch position and release wrap inside active loops" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_scratch_track_position_ms", "eng->loop_active", "s_engines[deck].loop_start_ms", "s_engines[deck].loop_end_ms")
+
+Assert-FileContains `
+    -Name "p4 pitch changes are deferred until scratch fade-out reaches silence" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("s_pending_pitch_factor", "s_pending_pitch_valid", "apply_pending_pitch(deck)", "atomic_load_bool(&s_scratch_playing[deck])")
+
+Assert-FileContains `
+    -Name "p4 canonical PCM timeline drives decode, output and frame-accurate scratch release" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("AE_TIMELINE_FORWARD_MS", "deck_pcm_push", "pop_deck_source", "sync_scratch_view_from_timeline", "audio_pcm_timeline_set_playhead_frames_back")
 
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
@@ -616,6 +651,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_ring.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
@@ -873,6 +909,41 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_deck_core_dual.exe",
+            "test_deck_core_dual.c",
+            "control_link_stub.c",
+            "hot_cue_store_stub.c",
+            "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
+            "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+        )
+    },
+    @{
+        Name = "audio_pcm_timeline"
+        Dir = "tests/audio_pcm_timeline"
+        Target = "test_audio_pcm_timeline.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_pcm_timeline.exe",
+            "test_audio_pcm_timeline.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c"
+        )
+    },
+    @{
+        Name = "deck_core_dual_scratch"
+        Dir = "tests/deck_core_dual"
+        Target = "test_deck_core_dual_scratch.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-Wno-unused-variable", "-Wno-unused-parameter",
+            "-DDECK_CORE_PC_TEST", "-DCONFIG_AUDIO_SCRATCH_ENABLED=1",
+            "-Istubs",
+            "-I../../firmware/main-deck-p4/components/beat_jump/include",
+            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_deck_core_dual_scratch.exe",
             "test_deck_core_dual.c",
             "control_link_stub.c",
             "hot_cue_store_stub.c",

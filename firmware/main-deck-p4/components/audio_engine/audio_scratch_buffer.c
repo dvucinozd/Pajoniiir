@@ -7,6 +7,7 @@ void audio_scratch_buffer_init(audio_scratch_buffer_t *b, int16_t *storage,
     b->frames = storage;
     b->capacity = capacity_frames;
     b->sample_rate = 0u;
+    b->generation = 0u;
     audio_scratch_buffer_reset(b);
 }
 
@@ -17,6 +18,8 @@ void audio_scratch_buffer_reset(audio_scratch_buffer_t *b)
     b->filled = 0u;
     b->newest_pos_ms = 0u;
     b->newest_valid = false;
+    b->generation++;
+    if (b->generation == 0u) b->generation = 1u;
 }
 
 void audio_scratch_buffer_set_sample_rate(audio_scratch_buffer_t *b,
@@ -59,6 +62,11 @@ void audio_scratch_buffer_mark_newest_ms(audio_scratch_buffer_t *b,
 uint32_t audio_scratch_buffer_used(const audio_scratch_buffer_t *b)
 {
     return b ? b->filled : 0u;
+}
+
+uint32_t audio_scratch_buffer_generation(const audio_scratch_buffer_t *b)
+{
+    return b ? b->generation : 0u;
 }
 
 bool audio_scratch_buffer_index_for_ms(const audio_scratch_buffer_t *b,

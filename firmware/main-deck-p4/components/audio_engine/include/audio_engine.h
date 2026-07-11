@@ -148,7 +148,7 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held);
  * the head velocity; end() converts the head position back to a track position,
  * seeks normal playback there and resumes forward. Gated behind
  * CONFIG_AUDIO_SCRATCH_ENABLED at the call site (deck_core). */
-void audio_engine_deck_scratch_begin(uint8_t deck);
+bool audio_engine_deck_scratch_begin(uint8_t deck);
 void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta);
 void audio_engine_deck_scratch_end(uint8_t deck);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
@@ -181,6 +181,7 @@ typedef struct {
      * pitch fader and the transient jog bend — lets the on-screen waveform track
      * the audio during a jog nudge instead of lagging at the fader speed. */
     uint16_t effective_speed_permille[AUDIO_ENGINE_DECK_COUNT];
+    bool scratch_position_authoritative[AUDIO_ENGINE_DECK_COUNT];
     float master_trim;
     uint16_t master_volume;
     uint16_t headphone_mix;
@@ -201,6 +202,18 @@ typedef struct {
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;
+    bool pcm_timeline_active[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t pcm_timeline_history[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t pcm_timeline_future[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t pcm_timeline_generation[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t scratch_edge_hit_count[AUDIO_ENGINE_DECK_COUNT];
+    bool scratch_active[AUDIO_ENGINE_DECK_COUNT];
+    bool scratch_capture_frozen[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t scratch_buffer_used[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t scratch_buffer_capacity;
+    uint32_t scratch_generation[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t scratch_head_back_frames[AUDIO_ENGINE_DECK_COUNT];
     uint32_t deck_sample_rate[AUDIO_ENGINE_DECK_COUNT];
     uint8_t deck_channels[AUDIO_ENGINE_DECK_COUNT];
     uint32_t deck_file_bytes[AUDIO_ENGINE_DECK_COUNT];

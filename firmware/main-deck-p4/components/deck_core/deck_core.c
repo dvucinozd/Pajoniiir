@@ -68,6 +68,7 @@ static bool              s_deck_shift_held[DECK_CORE_DECK_COUNT];
  * entered so release resumes forward playback. */
 static bool              s_jog_touched[DECK_CORE_DECK_COUNT];
 static bool              s_jog_hold_active[DECK_CORE_DECK_COUNT];
+static bool              s_jog_scratch_active[DECK_CORE_DECK_COUNT];
 static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT][2];
 static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
@@ -1347,6 +1348,8 @@ static bool enqueue_ui_command(const deck_ui_command_t *cmd)
 #endif
 }
 
+static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state);
+
 static void on_state_event(const ctrl_event_t *ev)
 {
     if (!ev) {
@@ -1376,6 +1379,12 @@ static void on_state_event(const ctrl_event_t *ev)
         }
         s_flx4_connection_state_valid = true;
         s_flx4_connected = false;
+        /* A physical disconnect cannot deliver the final Note-On(value=0)
+         * touch edge. Force both platters released so scratch/capture never
+         * remain latched and silent until the next track load. */
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
+            handle_jog_touch(deck, false, &s_decks[deck]);
+        }
     } else {
         ESP_LOGW(TAG, "unknown FLX4 connection state %d", ev->value);
     }
@@ -1759,13 +1768,32 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
     }
 
     if (pressed) {
+        /* Touch is a level on the wire, but scratch begin/end are edge-driven.
+         * Ignore a repeated press while already held; otherwise the engine
+         * correctly reports "already active" and this layer used to mistake
+         * that for begin failure, muting a live scratch via platter-hold. */
+        if (s_jog_touched[deck]) {
+            return;
+        }
         s_jog_touched[deck] = true;
-        if (state->playing) {
 #if CONFIG_AUDIO_SCRATCH_ENABLED
+        if (deck_uses_audio_engine(deck)) {
             s_jog_hold_active[deck] = true;
-            audio_engine_deck_scratch_begin(deck);
-            ESP_LOGI(TAG, "deck %u scratch begin", (unsigned)deck + 1);
+            s_jog_scratch_active[deck] = audio_engine_deck_scratch_begin(deck);
+            if (s_jog_scratch_active[deck]) {
+                ESP_LOGI(TAG, "deck %u %s scratch begin", (unsigned)deck + 1,
+                         state->playing ? "play" : "cue");
+            } else if (state->playing) {
+                state->position_ms = current_deck_position_ms(deck, state);
+                audio_engine_deck_set_hold(deck, true);
+                ESP_LOGW(TAG, "deck %u scratch unavailable -> platter hold",
+                         (unsigned)deck + 1);
+            } else {
+                s_jog_hold_active[deck] = false;
+            }
+        }
 #else
+        if (state->playing) {
             /* Seed the position from the live playhead so the first scrub delta
              * is relative to where the audio actually is, then freeze it. */
             state->position_ms = current_deck_position_ms(deck, state);
@@ -1774,17 +1802,25 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
             ESP_LOGI(TAG, "deck %u platter hold -> %lu ms (audio muted)",
                      (unsigned)deck + 1,
                      (unsigned long)state->position_ms);
-#endif
         }
+#endif
         return;
     }
 
+    if (!s_jog_touched[deck]) {
+        return; /* duplicate release: no second handoff/hold transition */
+    }
     s_jog_touched[deck] = false;
     if (s_jog_hold_active[deck]) {
         s_jog_hold_active[deck] = false;
 #if CONFIG_AUDIO_SCRATCH_ENABLED
-        audio_engine_deck_scratch_end(deck);
-        ESP_LOGI(TAG, "deck %u scratch end", (unsigned)deck + 1);
+        if (s_jog_scratch_active[deck]) {
+            audio_engine_deck_scratch_end(deck);
+            ESP_LOGI(TAG, "deck %u scratch end", (unsigned)deck + 1);
+        } else {
+            audio_engine_deck_set_hold(deck, false);
+        }
+        s_jog_scratch_active[deck] = false;
 #else
         audio_engine_deck_set_hold(deck, false);
         ESP_LOGI(TAG, "deck %u platter release -> resume %lu ms",
@@ -2053,23 +2089,14 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
     }
 }
 
-static void on_jog(uint8_t deck, int16_t delta)
+static void on_jog(uint8_t deck, uint8_t control, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     bool touched = deck < DECK_CORE_DECK_COUNT && s_jog_touched[deck];
-    if (state->playing && !touched) {
-        // Playing + platter NOT touched (bend ring): transient pitch-bend nudge
-        // for manual beat matching — bump the deck tempo in the jog direction;
-        // the audio engine springs it back to the fader tempo when the jog stops.
-        if (deck_uses_audio_engine(deck)) {
-            audio_engine_deck_jog_nudge(deck, delta);
-        }
-        ESP_LOGD(TAG, "deck %u jog nudge %+d (pitch bend)", (unsigned)deck + 1, delta);
-        return;
-    }
 
 #if CONFIG_AUDIO_SCRATCH_ENABLED
-    if (state->playing && touched) {
+    if (touched && s_jog_scratch_active[deck] &&
+        control == CTRL_DECK_CTL_JOG_SCRATCH) {
         // Scratch (vinyl mode Phase 4): the jog drives the read-head velocity;
         // the audio engine renders the deck from the capture buffer at the head.
         if (deck_uses_audio_engine(deck)) {
@@ -2079,6 +2106,19 @@ static void on_jog(uint8_t deck, int16_t delta)
         return;
     }
 #endif
+
+    if (state->playing && (!touched || control == CTRL_DECK_CTL_JOG_BEND)) {
+        /* JOG_BEND is explicitly the platter side-ring / vinyl-off stream and
+         * must remain a tempo nudge even if the platter top is also touched.
+         * A scratch-stream event without a matching touch is safely treated as
+         * bend rather than entering scratch from stale/reordered touch state. */
+        if (deck_uses_audio_engine(deck)) {
+            audio_engine_deck_jog_nudge(deck, delta);
+        }
+        ESP_LOGD(TAG, "deck %u jog nudge %+d control=%u", (unsigned)deck + 1,
+                 delta, (unsigned)control);
+        return;
+    }
 
     // Scrub: advance/rewind the position. Used while paused, and (Phase 1 build)
     // while the platter is held during playback — audio is muted + frozen by the
@@ -2394,7 +2434,7 @@ static void deck_task(void *arg)
             if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
                 on_jog_search(deck, ev.value);
             } else {
-                on_jog(deck, ev.value);
+                on_jog(deck, control_link_id_control(ev.id), ev.value);
             }
             break;
         case CTRL_EV_BROWSE:
@@ -2602,6 +2642,9 @@ void deck_core_reset_deck(uint8_t deck)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
+    s_jog_touched[idx] = false;
+    s_jog_hold_active[idx] = false;
+    s_jog_scratch_active[idx] = false;
     if (s_sync_master_deck == idx) {
         s_sync_master_deck = CTRL_DECK_NONE;
     }
@@ -2633,6 +2676,9 @@ void deck_core_test_reset(void)
     memset(s_beat_jump_pad_led_valid, 0, sizeof(s_beat_jump_pad_led_valid));
     memset(s_beat_jump_pad_led_state, 0, sizeof(s_beat_jump_pad_led_state));
     memset(s_deck_shift_held, 0, sizeof(s_deck_shift_held));
+    memset(s_jog_touched, 0, sizeof(s_jog_touched));
+    memset(s_jog_hold_active, 0, sizeof(s_jog_hold_active));
+    memset(s_jog_scratch_active, 0, sizeof(s_jog_scratch_active));
     memset(s_beat_jump_shift_helper_led_valid, 0, sizeof(s_beat_jump_shift_helper_led_valid));
     memset(s_beat_jump_shift_helper_led_state, 0, sizeof(s_beat_jump_shift_helper_led_state));
     memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
@@ -2711,7 +2757,7 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
             on_jog_search(deck, ev->value);
         } else {
-            on_jog(deck, ev->value);
+            on_jog(deck, control_link_id_control(ev->id), ev->value);
         }
         break;
     case CTRL_EV_BROWSE:

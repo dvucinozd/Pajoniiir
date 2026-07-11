@@ -156,6 +156,39 @@ static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
     return false;
 }
 
+static bool flx4_event_is_relative_jog(const flx4_control_event_t *ev)
+{
+    if (!ev || ev->type != CTRL_TYPE_ENCODER) {
+        return false;
+    }
+    switch (ev->id) {
+    case CTRL_ID_DECK1_JOG_SCRATCH:
+    case CTRL_ID_DECK1_JOG_BEND:
+    case CTRL_ID_DECK1_JOG_SEARCH:
+    case CTRL_ID_DECK2_JOG_SCRATCH:
+    case CTRL_ID_DECK2_JOG_BEND:
+    case CTRL_ID_DECK2_JOG_SEARCH:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool flx4_event_is_jog_touch(const flx4_control_event_t *ev)
+{
+    return ev && ev->type == CTRL_TYPE_BUTTON &&
+           (ev->id == CTRL_ID_DECK1_JOG_TOUCH ||
+            ev->id == CTRL_ID_DECK2_JOG_TOUCH);
+}
+
+static int16_t flx4_accumulate_delta(int16_t a, int16_t b)
+{
+    int32_t sum = (int32_t)a + (int32_t)b;
+    if (sum > INT16_MAX) return INT16_MAX;
+    if (sum < INT16_MIN) return INT16_MIN;
+    return (int16_t)sum;
+}
+
 static void flx4_translator_warn_rate_limited(void)
 {
     TickType_t now = xTaskGetTickCount();
@@ -182,6 +215,12 @@ static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
     while (stash_len < FLX4_EVENT_QUEUE_LEN &&
            xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
         if (!replaced && cur.type == ev->type && cur.id == ev->id) {
+            if (flx4_event_is_relative_jog(ev)) {
+                cur.value = flx4_accumulate_delta(cur.value, ev->value);
+            } else {
+                cur = *ev;  /* absolute control: newest value wins */
+            }
+            stash[stash_len++] = cur;
             replaced = true;
             continue;
         }
@@ -200,11 +239,36 @@ static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
     if (!replaced) {
         return false;
     }
-    if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
-        s_flx4_coalesced_count++;
-        return true;
+    s_flx4_coalesced_count++;
+    return true;
+}
+
+/* Touch edges are state transitions, not lossy high-rate motion. If the queue is
+ * saturated by jog/fader traffic, evict one high-rate event and put the touch at
+ * the front so a release can never leave the P4 stuck in scratch mode. */
+static bool flx4_enqueue_priority_touch(const flx4_control_event_t *ev)
+{
+    if (!flx4_event_is_jog_touch(ev) || !s_flx4_event_queue) return false;
+
+    flx4_control_event_t stash[FLX4_EVENT_QUEUE_LEN];
+    int stash_len = 0;
+    bool evicted = false;
+    flx4_control_event_t cur;
+    while (stash_len < FLX4_EVENT_QUEUE_LEN &&
+           xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
+        if (!evicted && flx4_event_is_high_rate(&cur)) {
+            evicted = true;
+            s_flx4_dropped_count++;
+            continue;
+        }
+        stash[stash_len++] = cur;
     }
-    return false;
+    for (int i = 0; i < stash_len; i++) {
+        if (xQueueSend(s_flx4_event_queue, &stash[i], 0) != pdTRUE) {
+            s_flx4_dropped_count++;
+        }
+    }
+    return evicted && xQueueSendToFront(s_flx4_event_queue, ev, 0) == pdTRUE;
 }
 
 static void flx4_enqueue_event(const flx4_control_event_t *ev)
@@ -212,7 +276,7 @@ static void flx4_enqueue_event(const flx4_control_event_t *ev)
     if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
         return;
     }
-    if (!flx4_try_coalesce_latest(ev)) {
+    if (!flx4_enqueue_priority_touch(ev) && !flx4_try_coalesce_latest(ev)) {
         s_flx4_dropped_count++;
     }
     flx4_translator_warn_rate_limited();

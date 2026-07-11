@@ -108,10 +108,11 @@ extern int audio_engine_stub_scratch_move_count[2];
 extern int audio_engine_stub_scratch_move_last_delta[2];
 extern int audio_engine_stub_scratch_end_count[2];
 
-static inline void audio_engine_deck_scratch_begin(uint8_t deck)
+static inline bool audio_engine_deck_scratch_begin(uint8_t deck)
 {
-    if (deck >= 2) return;
+    if (deck >= 2) return false;
     audio_engine_stub_scratch_begin_count[deck]++;
+    return true;
 }
 
 static inline void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta)

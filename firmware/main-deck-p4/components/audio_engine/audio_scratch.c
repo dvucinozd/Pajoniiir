@@ -14,6 +14,8 @@ void audio_scratch_init(audio_scratch_t *s)
     s->slew_coef = AUDIO_SCRATCH_DEFAULT_SLEW_COEF;
     s->velocity_max = AUDIO_SCRATCH_DEFAULT_VELOCITY_MAX;
     s->hold_windows = AUDIO_SCRATCH_DEFAULT_HOLD_WINDOWS;
+    s->edge_latch = 0;
+    s->edge_hits = 0u;
     s->active = false;
 }
 
@@ -38,6 +40,7 @@ void audio_scratch_seed(audio_scratch_t *s, float head_back)
     __atomic_store_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
     s->window_pos = 0u;
     s->empty_windows = 0u;
+    s->edge_latch = 0;
     s->active = true;
 }
 
@@ -48,6 +51,7 @@ void audio_scratch_end(audio_scratch_t *s)
     s->velocity = 0.0f;
     s->velocity_target = 0.0f;
     __atomic_store_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
+    s->edge_latch = 0;
 }
 
 void audio_scratch_jog(audio_scratch_t *s, int16_t ticks)
@@ -104,6 +108,28 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
 
     update_velocity(s);
 
+    /* Once a fast throw reaches a retained-window edge, hold a clean silent
+     * stop instead of repeatedly accelerating into the clamp. Only an inward
+     * velocity estimate releases the latch, matching a record stopped by a
+     * physical end-stop and eliminating edge chatter from same-direction ticks. */
+    if (s->edge_latch > 0) {
+        if (s->velocity < -AUDIO_SCRATCH_SILENCE_VELOCITY ||
+            s->velocity_target < -AUDIO_SCRATCH_SILENCE_VELOCITY) {
+            s->edge_latch = 0;
+        } else {
+            s->velocity = 0.0f;
+            return false;
+        }
+    } else if (s->edge_latch < 0) {
+        if (s->velocity > AUDIO_SCRATCH_SILENCE_VELOCITY ||
+            s->velocity_target > AUDIO_SCRATCH_SILENCE_VELOCITY) {
+            s->edge_latch = 0;
+        } else {
+            s->velocity = 0.0f;
+            return false;
+        }
+    }
+
     uint32_t filled = audio_scratch_buffer_used(buf);
     if (filled < 2u) {
         return false;  /* nothing to read yet */
@@ -126,9 +152,9 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
     bool past_new_edge = (s->head_back <= 0.0f && s->velocity > 0.0f);
     bool past_old_edge = (s->head_back >= max_back && s->velocity < 0.0f);
     if (past_new_edge || past_old_edge) {
-        s->head_back -= s->velocity;
-        if (s->head_back < 0.0f) s->head_back = 0.0f;
-        if (s->head_back > max_back) s->head_back = max_back;
+        s->edge_latch = past_new_edge ? 1 : -1;
+        s->edge_hits++;
+        s->velocity = 0.0f;
         return false;
     }
 
@@ -153,4 +179,29 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
     if (s->head_back < 0.0f) s->head_back = 0.0f;
     if (s->head_back > max_back) s->head_back = max_back;
     return true;
+}
+
+uint32_t audio_scratch_track_position_ms(uint32_t newest_pos_ms,
+                                         float head_back_frames,
+                                         uint32_t sample_rate,
+                                         bool loop_active,
+                                         uint32_t loop_start_ms,
+                                         uint32_t loop_end_ms)
+{
+    if (sample_rate == 0u) return newest_pos_ms;
+    uint32_t back_ms = head_back_frames > 0.0f
+        ? (uint32_t)((head_back_frames * 1000.0f) / (float)sample_rate)
+        : 0u;
+
+    if (loop_active && loop_end_ms > loop_start_ms &&
+        newest_pos_ms >= loop_start_ms && newest_pos_ms <= loop_end_ms) {
+        uint32_t loop_ms = loop_end_ms - loop_start_ms;
+        uint32_t newest_offset = (newest_pos_ms - loop_start_ms) % loop_ms;
+        uint32_t back_offset = back_ms % loop_ms;
+        uint32_t target_offset =
+            (newest_offset + loop_ms - back_offset) % loop_ms;
+        return loop_start_ms + target_offset;
+    }
+
+    return newest_pos_ms > back_ms ? newest_pos_ms - back_ms : 0u;
 }

@@ -479,9 +479,26 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
 
     audio_engine_diagnostics_snapshot_t diag;
     audio_engine_get_diagnostics_snapshot(&diag);
-    EXPECT(diag.ring_capacity == AUDIO_PCM_RING_FRAMES, "diagnostics reports ring capacity");
+    EXPECT(diag.ring_capacity > AUDIO_PCM_RING_FRAMES,
+           "diagnostics reports canonical timeline capacity");
+    EXPECT(diag.pcm_timeline_active[0] && diag.pcm_timeline_active[1],
+           "diagnostics reports canonical timeline backend");
+    EXPECT(diag.pcm_timeline_history[0] == 0u &&
+           diag.pcm_timeline_future[0] == 0u,
+           "diagnostics timeline starts empty");
+    EXPECT(diag.pcm_timeline_generation[0] != 0u,
+           "diagnostics timeline generation starts valid");
+    EXPECT(diag.pcm_underrun_count[0] == 0u && diag.pcm_underrun_count[1] == 0u,
+           "diagnostics PCM underruns start clear");
+    EXPECT(diag.scratch_edge_hit_count[0] == 0u &&
+           diag.scratch_edge_hit_count[1] == 0u,
+           "diagnostics scratch edge counters start clear");
     EXPECT(diag.ring_used[0] == 0, "diagnostics ring 0 starts empty");
     EXPECT(diag.ring_used[1] == 0, "diagnostics ring 1 starts empty");
+    EXPECT(!diag.scratch_active[0] && !diag.scratch_active[1],
+           "diagnostics scratch starts inactive");
+    EXPECT(diag.scratch_buffer_capacity > 0u,
+           "diagnostics reports scratch buffer capacity");
     EXPECT(!diag.deck_active[0], "diagnostics deck 0 starts inactive");
     EXPECT(!diag.deck_active[1], "diagnostics deck 1 starts inactive");
     EXPECT(diag.deck_sample_rate[0] == 0, "diagnostics deck 0 sample rate starts unknown");

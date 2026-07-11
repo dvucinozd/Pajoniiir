@@ -165,6 +165,41 @@ static void test_reversal_walks_head_back_into_window(void)
     assert(feq(audio_scratch_head_back(&s), 2.0f));
 }
 
+static void test_window_edge_latches_silent_until_inward_reversal(void)
+{
+    audio_scratch_buffer_t b;
+    fill_window(&b);
+
+    audio_scratch_t s;
+    audio_scratch_init(&s);
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
+    audio_scratch_seed(&s, 0.0f);
+
+    int16_t l = 7, r = 7;
+    audio_scratch_jog(&s, 4);
+    assert(!audio_scratch_render(&s, &b, &l, &r));
+    assert(s.edge_latch == 1);
+    assert(s.edge_hits == 1u);
+    assert(feq(s.velocity, 0.0f));
+
+    /* Repeated outward motion remains a clean stop, never clamp chatter. */
+    for (int i = 0; i < 8; i++) {
+        audio_scratch_jog(&s, 1);
+        l = 7; r = 7;
+        assert(!audio_scratch_render(&s, &b, &l, &r));
+        assert(l == 0 && r == 0);
+        assert(feq(audio_scratch_head_back(&s), 0.0f));
+        assert(feq(s.velocity, 0.0f));
+        assert(s.edge_hits == 1u);
+    }
+
+    audio_scratch_jog(&s, -2);
+    assert(audio_scratch_render(&s, &b, &l, &r));
+    assert(s.edge_latch == 0);
+    assert(l == 900);
+    assert(feq(audio_scratch_head_back(&s), 2.0f));
+}
+
 /* The fixed-window rate: velocity = ticks banked in the window * frames_per_tick
  * / window_samples, clamped. With a 1-sample window + instant slew each render
  * reads exactly the ticks banked since the previous render. */
@@ -260,6 +295,26 @@ static void test_windowed_average_of_dense_ticks(void)
     assert(feq(s.velocity, 2.0f));
 }
 
+static void test_track_position_wraps_backward_inside_active_loop(void)
+{
+    /* Newest is 200 ms after loop start. Walking 500 ms backward must land
+     * 300 ms before loop end, not before loop_start or at track zero. */
+    uint32_t pos = audio_scratch_track_position_ms(
+        10200u, 500.0f, 1000u, true, 10000u, 20000u);
+    assert(pos == 19700u);
+
+    /* Multiple complete loop lengths preserve the same modular position. */
+    pos = audio_scratch_track_position_ms(
+        10200u, 20500.0f, 1000u, true, 10000u, 20000u);
+    assert(pos == 19700u);
+
+    /* No/invalid loop retains the normal saturating linear mapping. */
+    assert(audio_scratch_track_position_ms(
+        1200u, 500.0f, 1000u, false, 0u, 0u) == 700u);
+    assert(audio_scratch_track_position_ms(
+        200u, 500.0f, 1000u, false, 0u, 0u) == 0u);
+}
+
 int main(void)
 {
     test_inactive_and_stopped_are_silent();
@@ -269,9 +324,11 @@ int main(void)
     test_forward_past_newest_is_silent();
     test_reverse_past_oldest_is_silent();
     test_reversal_walks_head_back_into_window();
+    test_window_edge_latches_silent_until_inward_reversal();
     test_rate_estimate_and_clamp();
     test_velocity_holds_between_ticks_then_stops();
     test_windowed_average_of_dense_ticks();
+    test_track_position_wraps_backward_inside_active_loop();
     puts("audio_scratch tests passed");
     return 0;
 }

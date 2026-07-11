@@ -46,6 +46,8 @@ typedef struct {
     float    slew_coef;        /* per-sample fraction moved toward the target */
     float    velocity_max;     /* clamp on |velocity| */
     uint32_t hold_windows;     /* empty windows before the platter counts stopped */
+    int8_t   edge_latch;       /* +1 newest edge, -1 oldest edge, 0 inside */
+    uint32_t edge_hits;        /* transitions from inside to either edge */
     bool     active;           /* seeded and rendering */
 } audio_scratch_t;
 
@@ -101,3 +103,12 @@ bool audio_scratch_is_active(const audio_scratch_t *s);
  * the window is too small, or the head is clamped at a window edge. */
 bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
                           int16_t *out_left, int16_t *out_right);
+
+/* Map a scratch head to track time. With an active valid loop, walking backward
+ * through loop_start wraps to loop_end instead of saturating at zero. */
+uint32_t audio_scratch_track_position_ms(uint32_t newest_pos_ms,
+                                         float head_back_frames,
+                                         uint32_t sample_rate,
+                                         bool loop_active,
+                                         uint32_t loop_start_ms,
+                                         uint32_t loop_end_ms);

@@ -32,6 +32,7 @@ typedef struct {
     uint32_t filled;        /* valid frames currently stored [0,capacity] */
     uint32_t sample_rate;   /* source frames/sec, for ms<->frame mapping */
     uint32_t newest_pos_ms; /* track position of the most recent frame */
+    uint32_t generation;    /* increments whenever timeline continuity resets */
     bool     newest_valid;  /* newest_pos_ms set since the last reset */
 } audio_scratch_buffer_t;
 
@@ -56,6 +57,9 @@ void audio_scratch_buffer_mark_newest_ms(audio_scratch_buffer_t *b,
 
 /* Number of valid frames currently stored. */
 uint32_t audio_scratch_buffer_used(const audio_scratch_buffer_t *b);
+
+/* Non-zero timeline generation. Changes on every reset/seek discontinuity. */
+uint32_t audio_scratch_buffer_generation(const audio_scratch_buffer_t *b);
 
 /* Map a track position (ms) to a stored frame index.
  * Returns false if the buffer is empty/unset, the position is in the future

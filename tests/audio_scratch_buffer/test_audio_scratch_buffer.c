@@ -121,8 +121,10 @@ static void test_reset_after_seek_clears_window(void)
     }
     audio_scratch_buffer_mark_newest_ms(&b, 200u);
 
+    uint32_t generation_before = audio_scratch_buffer_generation(&b);
     audio_scratch_buffer_reset(&b);
     assert(audio_scratch_buffer_used(&b) == 0u);
+    assert(audio_scratch_buffer_generation(&b) != generation_before);
     uint32_t idx = 0;
     assert(!audio_scratch_buffer_index_for_ms(&b, 200u, &idx));
     /* Sample rate survives a reset (only the window is dropped). */
@@ -134,6 +136,7 @@ static void test_null_and_unset_guards(void)
     uint32_t idx = 0;
     int16_t l = 0, r = 0;
     assert(audio_scratch_buffer_used(NULL) == 0u);
+    assert(audio_scratch_buffer_generation(NULL) == 0u);
     assert(!audio_scratch_buffer_index_for_ms(NULL, 0u, &idx));
     assert(!audio_scratch_buffer_read(NULL, 0u, &l, &r));
 

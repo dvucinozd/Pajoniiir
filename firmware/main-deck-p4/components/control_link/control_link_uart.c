@@ -155,6 +155,21 @@ static bool event_is_high_rate(const ctrl_event_t *ev)
     return ev && (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_PITCH);
 }
 
+static bool event_is_jog_touch(const ctrl_event_t *ev)
+{
+    return ev && ev->type == CTRL_EV_BUTTON &&
+           (ev->id == CTRL_ID_DECK1_JOG_TOUCH ||
+            ev->id == CTRL_ID_DECK2_JOG_TOUCH);
+}
+
+static int16_t accumulate_jog_delta(int16_t a, int16_t b)
+{
+    int32_t sum = (int32_t)a + (int32_t)b;
+    if (sum > INT16_MAX) return INT16_MAX;
+    if (sum < INT16_MIN) return INT16_MIN;
+    return (int16_t)sum;
+}
+
 static bool try_coalesce_latest_event(const ctrl_event_t *ev)
 {
     if (!event_is_high_rate(ev) || !s_event_queue) {
@@ -169,6 +184,12 @@ static bool try_coalesce_latest_event(const ctrl_event_t *ev)
     while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
            xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
         if (!replaced && cur.type == ev->type && cur.id == ev->id) {
+            if (ev->type == CTRL_EV_JOG) {
+                cur.value = accumulate_jog_delta(cur.value, ev->value);
+            } else {
+                cur = *ev;  /* absolute pitch/fader control: newest wins */
+            }
+            stash[stash_len++] = cur;
             replaced = true;
             continue;
         }
@@ -187,12 +208,33 @@ static bool try_coalesce_latest_event(const ctrl_event_t *ev)
         return false;
     }
 
-    if (xQueueSend(s_event_queue, ev, 0) == pdTRUE) {
-        s_event_coalesce_count++;
-        return true;
-    }
+    s_event_coalesce_count++;
+    return true;
+}
 
-    return false;
+static bool enqueue_priority_touch(const ctrl_event_t *ev)
+{
+    if (!event_is_jog_touch(ev) || !s_event_queue) return false;
+
+    ctrl_event_t stash[32];
+    int stash_len = 0;
+    bool evicted = false;
+    ctrl_event_t cur;
+    while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
+           xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
+        if (!evicted && event_is_high_rate(&cur)) {
+            evicted = true;
+            s_event_drop_count++;
+            continue;
+        }
+        stash[stash_len++] = cur;
+    }
+    for (int i = 0; i < stash_len; i++) {
+        if (xQueueSend(s_event_queue, &stash[i], 0) != pdTRUE) {
+            s_event_drop_count++;
+        }
+    }
+    return evicted && xQueueSendToFront(s_event_queue, ev, 0) == pdTRUE;
 }
 
 static void dispatch_frame(const uint8_t *f)
@@ -236,6 +278,7 @@ static void dispatch_frame(const uint8_t *f)
     }
 
     if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE &&
+        !enqueue_priority_touch(&ev) &&
         !try_coalesce_latest_event(&ev)) {
         s_event_drop_count++;
         TickType_t now = xTaskGetTickCount();

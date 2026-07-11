@@ -302,6 +302,10 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_jog_nudge_last_delta[deck] = 0;
         audio_engine_stub_hold_set_count[deck] = 0;
         audio_engine_stub_hold[deck] = false;
+        audio_engine_stub_scratch_begin_count[deck] = 0;
+        audio_engine_stub_scratch_move_count[deck] = 0;
+        audio_engine_stub_scratch_move_last_delta[deck] = 0;
+        audio_engine_stub_scratch_end_count[deck] = 0;
         audio_engine_stub_pregain[deck] = -1;
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
@@ -922,10 +926,37 @@ static void test_platter_touch_holds_and_scrubs_while_playing(void)
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).playing);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 5000;
 
-    // Touch-down while playing enters platter-hold (audio muted).
+    // Touch-down enters audible scratch when enabled, otherwise Phase-1 hold.
     deck_core_test_apply_event(&touch_down);
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 0);
+    deck_core_test_apply_event(&touch_down); /* repeated MIDI level, not an edge */
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 0);
+
+    int nudges_before = audio_engine_stub_jog_nudge_count[CTRL_DECK_1];
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_scratch_move_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_scratch_move_last_delta[CTRL_DECK_1] == 10);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == nudges_before);
+
+    // The side ring remains bend even while the platter top is touched.
+    ctrl_event_t bend = deck_encoder(CTRL_ID_DECK1_JOG_BEND, -2);
+    deck_core_test_apply_event(&bend);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == nudges_before + 1);
+    assert(audio_engine_stub_jog_nudge_last_delta[CTRL_DECK_1] == -2);
+
+    deck_core_test_apply_event(&touch_up);
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 0);
+    deck_core_test_apply_event(&touch_up);
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_1] == 1);
+#else
     assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 1);
     assert(audio_engine_stub_hold[CTRL_DECK_1]);
+    deck_core_test_apply_event(&touch_down);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 1);
 
     // Jog while touched scrubs (seek), does NOT pitch-nudge, even though playing.
     int nudges_before = audio_engine_stub_jog_nudge_count[CTRL_DECK_1];
@@ -939,16 +970,20 @@ static void test_platter_touch_holds_and_scrubs_while_playing(void)
     deck_core_test_apply_event(&touch_up);
     assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 2);
     assert(!audio_engine_stub_hold[CTRL_DECK_1]);
+    deck_core_test_apply_event(&touch_up);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 2);
+#endif
 
     // With the platter released, a jog while playing nudges again (no scrub).
     int seeks_after_release = audio_engine_stub_deck_seek_count[CTRL_DECK_1];
+    int nudges_after_release = audio_engine_stub_jog_nudge_count[CTRL_DECK_1];
     deck_core_test_apply_event(&jog);
-    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == nudges_before + 1);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == nudges_after_release + 1);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == seeks_after_release);
 }
 
-/* Touching the platter while paused must not enter hold (paused jog already
- * scrubs); releasing must not toggle the audio hold. */
+/* Scratch builds render the frozen PCM window while paused and return to cue on
+ * release. Phase-1 builds retain the older silent seek-scrub behavior. */
 static void test_platter_touch_while_paused_does_not_hold(void)
 {
     deck_core_test_reset();
@@ -959,17 +994,25 @@ static void test_platter_touch_while_paused_does_not_hold(void)
     ctrl_event_t touch_up = {
         .type = CTRL_EV_BUTTON, .id = CTRL_ID_DECK2_JOG_TOUCH, .value = 0 };
 
-    // Paused deck: touch-down + release leave the hold untouched.
+    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK2_JOG_SCRATCH, 4);
     deck_core_test_apply_event(&touch_down);
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_2] == 1);
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_scratch_move_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+    deck_core_test_apply_event(&touch_up);
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_2] == 1);
+#else
     deck_core_test_apply_event(&touch_up);
     assert(audio_engine_stub_hold_set_count[CTRL_DECK_2] == 0);
     assert(!audio_engine_stub_hold[CTRL_DECK_2]);
 
     // A jog while (still) paused scrubs as before.
-    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK2_JOG_SCRATCH, 4);
     deck_core_test_apply_event(&jog);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
     assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_2] == 0);
+#endif
 }
 
 static void test_mixer_namespace_routes_eq_controls(void)
@@ -1802,6 +1845,28 @@ static void test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot(
     assert(control_link_stub_led_count == first_snapshot_led_count);
 }
 
+static void test_flx4_disconnect_forces_platter_release(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    ctrl_event_t touch_down = {
+        .type = CTRL_EV_BUTTON, .id = CTRL_ID_DECK1_JOG_TOUCH, .value = 1 };
+    ctrl_event_t disconnected = flx4_connection_state(CTRL_FLX4_DISCONNECTED);
+    deck_core_test_apply_event(&play);
+    deck_core_test_apply_event(&touch_down);
+    deck_core_test_apply_event(&disconnected);
+
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_1] == 1);
+#else
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 2);
+    assert(!audio_engine_stub_hold[CTRL_DECK_1]);
+#endif
+}
+
 static void test_loop_in_marker_publishes_loop_in_led_before_loop_out(void)
 {
     deck_core_test_reset();
@@ -2459,6 +2524,7 @@ int main(void)
     test_beat_fx_echo_delay_uses_target_deck_bpm();
     test_active_beat_fx_echo_resyncs_on_normal_beat_buttons();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();
+    test_flx4_disconnect_forces_platter_release();
     test_sync_button_toggles_requested_deck_sync_led_state();
     test_sync_master_marks_requested_deck_as_reference();
     test_sync_uses_selected_master_deck_as_reference();
