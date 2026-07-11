@@ -5,19 +5,28 @@ void audio_scratch_init(audio_scratch_t *s)
     if (!s) return;
     s->head_back = 0.0f;
     s->velocity = 0.0f;
-    s->velocity_per_tick = AUDIO_SCRATCH_DEFAULT_VELOCITY_PER_TICK;
-    s->velocity_decay = AUDIO_SCRATCH_DEFAULT_VELOCITY_DECAY;
+    s->velocity_target = 0.0f;
+    __atomic_store_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
+    s->window_pos = 0u;
+    s->empty_windows = 0u;
+    s->frames_per_tick = AUDIO_SCRATCH_DEFAULT_FRAMES_PER_TICK;
+    s->rate_window_samples = AUDIO_SCRATCH_DEFAULT_RATE_WINDOW;
+    s->slew_coef = AUDIO_SCRATCH_DEFAULT_SLEW_COEF;
     s->velocity_max = AUDIO_SCRATCH_DEFAULT_VELOCITY_MAX;
+    s->hold_windows = AUDIO_SCRATCH_DEFAULT_HOLD_WINDOWS;
     s->active = false;
 }
 
-void audio_scratch_config(audio_scratch_t *s, float velocity_per_tick,
-                          float velocity_decay, float velocity_max)
+void audio_scratch_config(audio_scratch_t *s, float frames_per_tick,
+                          uint32_t rate_window_samples, float slew_coef,
+                          float velocity_max, uint32_t hold_windows)
 {
     if (!s) return;
-    s->velocity_per_tick = velocity_per_tick;
-    s->velocity_decay = velocity_decay;
+    s->frames_per_tick = frames_per_tick;
+    s->rate_window_samples = rate_window_samples > 0u ? rate_window_samples : 1u;
+    s->slew_coef = slew_coef;
     s->velocity_max = velocity_max;
+    s->hold_windows = hold_windows;
 }
 
 void audio_scratch_seed(audio_scratch_t *s, float head_back)
@@ -25,6 +34,10 @@ void audio_scratch_seed(audio_scratch_t *s, float head_back)
     if (!s) return;
     s->head_back = head_back < 0.0f ? 0.0f : head_back;
     s->velocity = 0.0f;
+    s->velocity_target = 0.0f;
+    __atomic_store_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
+    s->window_pos = 0u;
+    s->empty_windows = 0u;
     s->active = true;
 }
 
@@ -33,15 +46,16 @@ void audio_scratch_end(audio_scratch_t *s)
     if (!s) return;
     s->active = false;
     s->velocity = 0.0f;
+    s->velocity_target = 0.0f;
+    __atomic_store_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
 }
 
 void audio_scratch_jog(audio_scratch_t *s, int16_t ticks)
 {
     if (!s || ticks == 0) return;
-    float v = s->velocity + (float)ticks * s->velocity_per_tick;
-    if (v > s->velocity_max) v = s->velocity_max;
-    if (v < -s->velocity_max) v = -s->velocity_max;
-    s->velocity = v;
+    /* Bank the motion; the render loop turns the banked ticks into a rate over a
+     * fixed window. Atomic: the control task adds while the output task snapshots. */
+    (void)__atomic_fetch_add(&s->pending_ticks, (int32_t)ticks, __ATOMIC_RELAXED);
 }
 
 float audio_scratch_head_back(const audio_scratch_t *s)
@@ -54,6 +68,31 @@ bool audio_scratch_is_active(const audio_scratch_t *s)
     return s && s->active;
 }
 
+/* Advance the fixed-window rate estimate by one rendered sample, then slew the
+ * playback velocity toward the current target. Every rate_window_samples the
+ * banked ticks become a fresh target = ticks x frames_per_tick / window; between
+ * windows the target holds, and a run of empty windows stops the platter. */
+static void update_velocity(audio_scratch_t *s)
+{
+    if (++s->window_pos >= s->rate_window_samples) {
+        s->window_pos = 0u;
+        int32_t ticks = __atomic_exchange_n(&s->pending_ticks, 0, __ATOMIC_RELAXED);
+        if (ticks != 0) {
+            s->empty_windows = 0u;
+            float v = ((float)ticks * s->frames_per_tick) /
+                      (float)s->rate_window_samples;
+            if (v > s->velocity_max) v = s->velocity_max;
+            if (v < -s->velocity_max) v = -s->velocity_max;
+            s->velocity_target = v;
+        } else if (++s->empty_windows >= s->hold_windows) {
+            s->velocity_target = 0.0f;   /* hand has stopped */
+        }
+        /* else: brief tickless gap -> HOLD the previous target (steady motion). */
+    }
+
+    s->velocity += (s->velocity_target - s->velocity) * s->slew_coef;
+}
+
 bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
                           int16_t *out_left, int16_t *out_right)
 {
@@ -63,17 +102,17 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
         return false;
     }
 
+    update_velocity(s);
+
     uint32_t filled = audio_scratch_buffer_used(buf);
     if (filled < 2u) {
-        s->velocity *= s->velocity_decay;  /* nothing to read yet */
-        return false;
+        return false;  /* nothing to read yet */
     }
     float max_back = (float)(filled - 1u);
 
     /* Stopped platter -> silence (a still record makes no sound), head held. */
     if (s->velocity > -AUDIO_SCRATCH_SILENCE_VELOCITY &&
         s->velocity < AUDIO_SCRATCH_SILENCE_VELOCITY) {
-        s->velocity = 0.0f;
         return false;
     }
 
@@ -90,7 +129,6 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
         s->head_back -= s->velocity;
         if (s->head_back < 0.0f) s->head_back = 0.0f;
         if (s->head_back > max_back) s->head_back = max_back;
-        s->velocity *= s->velocity_decay;
         return false;
     }
 
@@ -110,11 +148,9 @@ bool audio_scratch_render(audio_scratch_t *s, const audio_scratch_buffer_t *buf,
     *out_left = (int16_t)((1.0f - frac) * (float)l0 + frac * (float)l1);
     *out_right = (int16_t)((1.0f - frac) * (float)r0 + frac * (float)r1);
 
-    /* Advance (forward velocity moves toward newer -> smaller head_back), then
-     * decay the velocity toward a stop. */
+    /* Advance (forward velocity moves toward newer -> smaller head_back). */
     s->head_back -= s->velocity;
     if (s->head_back < 0.0f) s->head_back = 0.0f;
     if (s->head_back > max_back) s->head_back = max_back;
-    s->velocity *= s->velocity_decay;
     return true;
 }

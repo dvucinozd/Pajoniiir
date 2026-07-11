@@ -1,7 +1,9 @@
 # Vinyl / Scratch Mode — Implementation Plan
 
-Status: **in progress** — Phases 1–4 done (2026-07-11; 4b HW feel test pending);
-Phase 5 (feel tuning) remains. Phased roadmap for real turntable scratch on the
+Status: **Phases 1–5 done (HW-verified 2026-07-11)** — scratch works: backward /
+around a cued point sounds like a real scratch, a still-held platter is silent,
+click-free release. Two inherent limits are documented follow-ups (see Phase 5).
+Phased roadmap for real turntable scratch on the
 P4. Written 2026-07-10 so work can resume cleanly.
 
 ## Goal
@@ -190,18 +192,54 @@ Small residual (Phase 5): the fade-in reads the ring without counting it toward
 the deck position, so the playhead trails the audio by ~the handoff length
 (~10–20 ms) until the next seek — cosmetic, self-corrects.
 
-### Phase 5 — Feel, edge cases, HW validation
-- Tune velocity/sensitivity/decay; click-free reverse + handoff; underrun
-  (scratch past the buffered window) → clamp/silence; both-decks stress; CPU
-  headroom on the core-0 output task.
-- Update `firmware/main-deck-p4/CLAUDE.md`; mark the vinyl-mode pending item done.
+### Phase 5 — Feel, edge cases, HW validation ✅ DONE (2026-07-11)
 
-## Key parameters (initial — tune on hardware)
+The Phase 3/4 velocity model (each jog tick = a velocity impulse that decays per
+sample) did not survive HW: the FLX4 platter emits many small (±1) ticks at a
+high rate, so the impulse+decay model chopped between ticks and felt rubbery /
+"didn't follow". A serial capture of a real scratch (≈250 ±1 ticks/s) showed the
+first estimator (`ticks ÷ samples-since-last-tick`) divided by a bursty,
+noisy render-call count — a tick just after an output block gave an ~8× velocity
+spike, a tick after a gap gave ~0 — so the head alternately froze and shot to the
+window edge.
+
+**Rewritten to a FIXED-WINDOW rate estimate** (`audio_scratch.c`): jog ticks are
+banked (atomic); every `rate_window_samples` the banked ticks become
+`velocity = ticks × frames_per_tick / window` (rate over a CONSTANT time base),
+which the playback velocity slews toward. Between tickless windows the velocity
+HOLDS so steady motion stays continuous; after `hold_windows` empty windows the
+platter counts as stopped → silence. HW-calibrated defaults: `frames_per_tick`
+250, window 256 (~5 ms, longer than the ~4 ms tick interval so most windows carry
+a tick and a resting hand does not judder in place), slew 0.18, |v|≤6×, hold
+3 windows (~16 ms).
+
+Verified on HW: backward / around-a-cued-point scratch sounds like a scratch;
+still-held platter is silent; release is click-free; no regression to loops or
+normal playback.
+
+**Documented follow-ups (inherent limits, not yet addressed):**
+- *Forward-from-live scratch is short (~155 ms).* You cannot scratch forward past
+  "now" because the future is not decoded; the runway is the decode lead (the PCM
+  ring depth). Bumping the ring to 2× gave no perceptible gain (a blink at scratch
+  speed) and costs internal RAM + short-loop-set latency, so it was reverted. A
+  real fix needs a dedicated multi-second forward decode-ahead into the scratch
+  buffer, decoupled from the ring — a larger, riskier change.
+- *Waveform judders slightly while scratching.* The audible playhead is frozen
+  during scratch (the scratch source consumes nothing from the ring) but the UI
+  still reports ~1× speed, so the position interpolator extrapolates and snaps
+  back. A naïve "report 0 speed during scratch" made it worse and was reverted;
+  wants a considered fix (e.g. drive the waveform from the scratch head position).
+- Still open from before: both-decks stress + CPU headroom sweep on the core-0
+  output task; update `firmware/main-deck-p4/CLAUDE.md`.
+
+## Key parameters (HW-calibrated — `audio_scratch.h`)
 
 - `SCRATCH_SECONDS` = 4 (buffer length).
-- Jog tick → Δvelocity; velocity decay per output sample; max forward/reverse
-  speed.
-- Handoff cross-fade ≈ 5–10 ms.
+- `FRAMES_PER_TICK` = 250 (velocity = tick_rate × this ÷ sample_rate).
+- `RATE_WINDOW` = 256 samples (~5 ms rate-estimate window).
+- `SLEW_COEF` = 0.18 (per-sample approach to the target velocity).
+- `VELOCITY_MAX` = 6× ; `HOLD_WINDOWS` = 3 (~16 ms to declare the platter stopped).
+- Handoff cross-fade = 480 frames (~10 ms).
 - Interpolation: linear (matches `audio_resampler_next`).
 
 ## Thread model

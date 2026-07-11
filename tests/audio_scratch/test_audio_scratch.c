@@ -10,6 +10,16 @@
 #define N 10
 static int16_t g_store[N * 2];
 
+#define HOLD_FOREVER 1000000u
+
+/* Deterministic per-sample config: a 1-sample rate window + instant slew means
+ * one jog + one render sets the velocity to exactly ticks*frames_per_tick. */
+static void config_instant(audio_scratch_t *s, float frames_per_tick,
+                           float velocity_max, uint32_t hold_windows)
+{
+    audio_scratch_config(s, frames_per_tick, 1u, 1.0f, velocity_max, hold_windows);
+}
+
 static void fill_window(audio_scratch_buffer_t *b)
 {
     audio_scratch_buffer_init(b, g_store, N);
@@ -35,7 +45,7 @@ static void test_inactive_and_stopped_are_silent(void)
     assert(!audio_scratch_render(&s, &b, &l, &r));
     assert(l == 0 && r == 0);
 
-    /* Seeded but velocity 0 (platter held still) -> silence. */
+    /* Seeded but no jog motion (platter held still) -> silence. */
     audio_scratch_seed(&s, 4.0f);
     assert(audio_scratch_is_active(&s));
     l = 7; r = 7;
@@ -50,14 +60,14 @@ static void test_forward_playback_ascends_toward_newest(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 100.0f);  /* no decay for clean steps */
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, 5.0f);
     audio_scratch_jog(&s, 1);   /* velocity = +1 (forward, toward newer) */
 
     int16_t l = 0, r = 0;
     assert(audio_scratch_render(&s, &b, &l, &r));
     assert(l == 400 && r == -400);   /* back 5 -> (9-5)*100 */
-    assert(audio_scratch_render(&s, &b, &l, &r));
+    assert(audio_scratch_render(&s, &b, &l, &r));  /* held velocity */
     assert(l == 500);                /* back 4 */
     assert(audio_scratch_render(&s, &b, &l, &r));
     assert(l == 600);                /* back 3 */
@@ -70,7 +80,7 @@ static void test_reverse_playback_descends_toward_oldest(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 100.0f);
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, 4.0f);
     audio_scratch_jog(&s, -1);  /* velocity = -1 (reverse, toward older) */
 
@@ -90,7 +100,7 @@ static void test_linear_interpolation(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 0.5f, 1.0f, 100.0f);
+    config_instant(&s, 0.5f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, 3.5f);
     audio_scratch_jog(&s, 1);   /* velocity = +0.5 */
 
@@ -107,7 +117,7 @@ static void test_forward_past_newest_is_silent(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 100.0f);
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, 0.0f);   /* at the newest frame */
     audio_scratch_jog(&s, 1);       /* forward -> past the window */
 
@@ -123,7 +133,7 @@ static void test_reverse_past_oldest_is_silent(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 100.0f);
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, (float)(N - 1));  /* at the oldest frame */
     audio_scratch_jog(&s, -1);               /* reverse -> past the window */
 
@@ -139,7 +149,7 @@ static void test_reversal_walks_head_back_into_window(void)
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 100.0f);
+    config_instant(&s, 1.0f, 100.0f, HOLD_FOREVER);
     audio_scratch_seed(&s, 0.0f);
     audio_scratch_jog(&s, 1);   /* forward past newest -> silent, head pinned 0 */
 
@@ -147,48 +157,107 @@ static void test_reversal_walks_head_back_into_window(void)
     assert(!audio_scratch_render(&s, &b, &l, &r));
     assert(feq(audio_scratch_head_back(&s), 0.0f));
 
-    /* Reverse hard: two ticks back -> velocity -1, head walks into the window. */
+    /* Reverse: fresh ticks re-estimate the rate -> velocity -2, head walks
+     * back into the window and the newest frame is audible again. */
     audio_scratch_jog(&s, -2);
-    assert(audio_scratch_render(&s, &b, &l, &r));  /* now audible again */
+    assert(audio_scratch_render(&s, &b, &l, &r));
     assert(l == 900);                              /* back 0 = newest */
-    assert(feq(audio_scratch_head_back(&s), 1.0f));
+    assert(feq(audio_scratch_head_back(&s), 2.0f));
 }
 
-static void test_jog_accumulates_and_clamps_velocity(void)
-{
-    audio_scratch_t s;
-    audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 1.0f, 2.5f);
-
-    audio_scratch_jog(&s, 1);
-    assert(feq(s.velocity, 1.0f));
-    audio_scratch_jog(&s, 1);
-    assert(feq(s.velocity, 2.0f));
-    audio_scratch_jog(&s, 5);            /* would be 7.0, clamped to +2.5 */
-    assert(feq(s.velocity, 2.5f));
-    audio_scratch_jog(&s, -100);         /* clamped to -2.5 */
-    assert(feq(s.velocity, -2.5f));
-
-    audio_scratch_seed(&s, 3.0f);        /* seeding zeroes the velocity */
-    assert(feq(s.velocity, 0.0f));
-}
-
-static void test_velocity_decays_toward_stop(void)
+/* The fixed-window rate: velocity = ticks banked in the window * frames_per_tick
+ * / window_samples, clamped. With a 1-sample window + instant slew each render
+ * reads exactly the ticks banked since the previous render. */
+static void test_rate_estimate_and_clamp(void)
 {
     audio_scratch_buffer_t b;
     fill_window(&b);
 
     audio_scratch_t s;
     audio_scratch_init(&s);
-    audio_scratch_config(&s, 1.0f, 0.5f, 100.0f);  /* fast decay */
+    config_instant(&s, 1.0f, 2.5f, HOLD_FOREVER);
     audio_scratch_seed(&s, 5.0f);
-    audio_scratch_jog(&s, 2);   /* velocity = 2.0 */
 
     int16_t l = 0, r = 0;
-    (void)audio_scratch_render(&s, &b, &l, &r);   /* velocity 2.0 -> 1.0 */
-    assert(feq(s.velocity, 1.0f));
-    (void)audio_scratch_render(&s, &b, &l, &r);   /* 1.0 -> 0.5 */
-    assert(feq(s.velocity, 0.5f));
+    /* Two ticks banked before this render -> velocity 2.0 (within the clamp). */
+    audio_scratch_jog(&s, 1);
+    audio_scratch_jog(&s, 1);
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    assert(feq(s.velocity, 2.0f));
+
+    /* 5 ticks -> 5.0 clamped to +2.5. */
+    audio_scratch_jog(&s, 5);
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    assert(feq(s.velocity, 2.5f));
+
+    /* Hard reverse -> clamped to -2.5. */
+    audio_scratch_jog(&s, -100);
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    assert(feq(s.velocity, -2.5f));
+
+    audio_scratch_seed(&s, 3.0f);        /* seeding zeroes the velocity */
+    assert(feq(s.velocity, 0.0f));
+}
+
+/* Core Phase 5 property: between jog ticks the velocity HOLDS (steady platter
+ * motion sounds continuous), and only after `hold_windows` tickless windows does
+ * the platter stop (silence). The earlier estimator alternately froze the head
+ * and spiked it to the window edge because it divided by a noisy render count. */
+static void test_velocity_holds_between_ticks_then_stops(void)
+{
+    audio_scratch_buffer_t b;
+    fill_window(&b);
+
+    audio_scratch_t s;
+    audio_scratch_init(&s);
+    config_instant(&s, 1.0f, 100.0f, 3u);  /* stop after 3 empty windows */
+    audio_scratch_seed(&s, 5.0f);
+    audio_scratch_jog(&s, 1);
+
+    int16_t l = 0, r = 0;
+    /* Tick consumed; then tickless renders inside the hold window keep playing
+     * at the held velocity. */
+    assert(audio_scratch_render(&s, &b, &l, &r));   /* 400, head -> 4 */
+    assert(l == 400);
+    assert(audio_scratch_render(&s, &b, &l, &r));   /* empty win 1, hold -> 500 */
+    assert(l == 500);
+    assert(audio_scratch_render(&s, &b, &l, &r));   /* empty win 2, hold -> 600 */
+    assert(l == 600);
+
+    /* Third empty window: hand counted as stopped -> velocity slews to 0 -> silence. */
+    assert(!audio_scratch_render(&s, &b, &l, &r));
+    assert(l == 0 && r == 0);
+    assert(feq(s.velocity, 0.0f));
+}
+
+/* Realistic pattern: many small (+-1) ticks banked over a multi-sample window
+ * average to a smooth mid velocity instead of spiking. */
+static void test_windowed_average_of_dense_ticks(void)
+{
+    audio_scratch_buffer_t b;
+    fill_window(&b);
+
+    audio_scratch_t s;
+    audio_scratch_init(&s);
+    /* window = 4 samples, frames_per_tick = 2, instant slew, never stop. */
+    audio_scratch_config(&s, 2.0f, 4u, 1.0f, 100.0f, HOLD_FOREVER);
+    audio_scratch_seed(&s, 5.0f);
+
+    /* 4 forward ticks banked across the 4-sample window. */
+    for (int i = 0; i < 4; i++) {
+        audio_scratch_jog(&s, 1);
+    }
+
+    int16_t l = 0, r = 0;
+    /* First three renders are still inside the window (velocity_target unset =0)
+     * so the platter reads as not yet moving. */
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    assert(feq(s.velocity, 0.0f));
+    /* On the 4th (window close): velocity = 4 ticks * 2 / 4 = 2.0. */
+    (void)audio_scratch_render(&s, &b, &l, &r);
+    assert(feq(s.velocity, 2.0f));
 }
 
 int main(void)
@@ -200,8 +269,9 @@ int main(void)
     test_forward_past_newest_is_silent();
     test_reverse_past_oldest_is_silent();
     test_reversal_walks_head_back_into_window();
-    test_jog_accumulates_and_clamps_velocity();
-    test_velocity_decays_toward_stop();
+    test_rate_estimate_and_clamp();
+    test_velocity_holds_between_ticks_then_stops();
+    test_windowed_average_of_dense_ticks();
     puts("audio_scratch tests passed");
     return 0;
 }
