@@ -77,11 +77,42 @@ static void test_fractional_pitch_interpolates_between_source_frames(void)
     assert(consumed == 0);
 }
 
+/* Ring underrun (pop_source returns false after data has flowed) must hold the
+ * last sample, not snap to zero — a snap to zero clicks. */
+static void test_underrun_holds_last_frame(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 1000, .right = -1000 },
+    };
+    source_t source = { .frames = frames, .count = 1, .index = 0 };
+    audio_resampler_state_t state;
+    audio_resampler_reset(&state);
+
+    uint32_t consumed = 0;
+    /* Prime: pops the one frame into `current`; output is still the (zero)
+     * previous frame at unity's one-frame latency. */
+    audio_resampler_next(&state, 1.0f, pop_source, &source, &consumed);
+    assert(consumed == 1);
+
+    /* Underrun: source is exhausted, so the resampler holds the last frame. */
+    audio_mixer_frame_t out = audio_resampler_next(&state, 1.0f, pop_source, &source, &consumed);
+    assert(out.left == 1000);
+    assert(out.right == -1000);
+    assert(consumed == 0);
+
+    /* Sustained underrun keeps holding (flat), never decays to zero. */
+    out = audio_resampler_next(&state, 1.0f, pop_source, &source, &consumed);
+    assert(out.left == 1000);
+    assert(out.right == -1000);
+    assert(consumed == 0);
+}
+
 int main(void)
 {
     test_reset_outputs_silence_without_source();
     test_unity_pitch_preserves_existing_one_frame_latency();
     test_fractional_pitch_interpolates_between_source_frames();
+    test_underrun_holds_last_frame();
     puts("audio_resampler tests passed");
     return 0;
 }

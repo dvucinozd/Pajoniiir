@@ -189,7 +189,12 @@ static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
     }
 
     for (int i = 0; i < stash_len; i++) {
-        (void)xQueueSend(s_flx4_event_queue, &stash[i], 0);
+        if (xQueueSend(s_flx4_event_queue, &stash[i], 0) != pdTRUE) {
+            /* The FLX4 MIDI callback can refill the queue while it is drained
+             * here; a failed re-push is a real lost event and must be counted
+             * (matches the P4-side control_link coalescer). */
+            s_flx4_dropped_count++;
+        }
     }
 
     if (!replaced) {

@@ -146,7 +146,9 @@ typedef enum {
     AE_SCRATCH_HANDOFF_FADE_IN,
     AE_SCRATCH_HANDOFF_RING,
 } ae_scratch_handoff_t;
-static ae_scratch_handoff_t s_scratch_handoff[AUDIO_ENGINE_DECK_COUNT];
+/* uint8_t (not the enum type) so the phase can be accessed with the u8
+ * release/acquire helpers above; values are the ae_scratch_handoff_t constants. */
+static uint8_t              s_scratch_handoff[AUDIO_ENGINE_DECK_COUNT];
 static float                s_scratch_handoff_gain[AUDIO_ENGINE_DECK_COUNT];
 #define AE_SCRATCH_XFADE_FRAMES 480u   /* ~10 ms per side @ 48 kHz */
 #define AE_SCRATCH_XFADE_STEP   (1.0f / (float)AE_SCRATCH_XFADE_FRAMES)
@@ -363,6 +365,21 @@ static inline bool atomic_load_bool(const bool *value)
 static inline void atomic_store_bool(bool *value, bool new_value)
 {
     __atomic_store_n(value, new_value, __ATOMIC_RELAXED);
+}
+
+/* Scratch release-handoff state (4b) is written by the control task (arming the
+ * fade in scratch_end) and read+advanced by the output task per sample. Publish
+ * the handoff phase with release/acquire so a reader that observes a new phase
+ * also observes the matching s_scratch_handoff_gain seed written just before it
+ * (avoids a one-block wrong-source/wrong-gain glitch on the phase change). */
+static inline uint8_t scratch_handoff_load(const uint8_t *value)
+{
+    return __atomic_load_n(value, __ATOMIC_ACQUIRE);
+}
+
+static inline void scratch_handoff_store(uint8_t *value, uint8_t new_value)
+{
+    __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
 }
 
 #define AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS 1000u
@@ -1810,7 +1827,7 @@ static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
         return false;
     }
 
-    switch (s_scratch_handoff[deck]) {
+    switch (scratch_handoff_load(&s_scratch_handoff[deck])) {
     case AE_SCRATCH_HANDOFF_FADE_OUT: {
         int16_t l = 0, r = 0;
         (void)audio_scratch_render(&s_scratch_engine[deck], &s_scratch_buf[deck], &l, &r);
@@ -1820,7 +1837,9 @@ static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
         g -= AE_SCRATCH_XFADE_STEP;
         if (g <= 0.0f) {
             g = 0.0f;
-            s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_FADE_IN;
+            s_scratch_handoff_gain[deck] = g;
+            scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_FADE_IN);
+            return true;
         }
         s_scratch_handoff_gain[deck] = g;
         return true;
@@ -1836,13 +1855,15 @@ static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
         float g = s_scratch_handoff_gain[deck];
         out->left = (int16_t)((float)f.left * g);
         out->right = (int16_t)((float)f.right * g);
-        if (s_scratch_handoff[deck] == AE_SCRATCH_HANDOFF_FADE_IN) {
+        if (scratch_handoff_load(&s_scratch_handoff[deck]) == AE_SCRATCH_HANDOFF_FADE_IN) {
             g += AE_SCRATCH_XFADE_STEP;
             if (g >= 1.0f) {
                 g = 1.0f;
+                s_scratch_handoff_gain[deck] = g;
                 /* Full gain reached; keep popping the ring until the output task
                  * hands back to the resampler at the next block boundary. */
-                s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_RING;
+                scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_RING);
+                return true;
             }
             s_scratch_handoff_gain[deck] = g;
         }
@@ -1973,11 +1994,19 @@ static void ae_output_task(void *arg)
         /* Scratch handoff (4b): once the resumed forward audio has faded up to
          * full gain, hand the deck back to the resampler + ring. Done here, before
          * the deck structs capture s_scratch_playing, so this block already routes
-         * through the resampler. */
+         * through the resampler. A deck that stops (EOF/pause/stop) mid-scratch or
+         * mid-handoff would otherwise be skipped by the mixer, so its render
+         * callback never runs and s_scratch_playing sticks true (silent deck +
+         * frozen capture); tear the scratch state down here in that case. */
         for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
-            if (s_scratch_handoff[d] == AE_SCRATCH_HANDOFF_RING) {
-                s_scratch_handoff[d] = AE_SCRATCH_HANDOFF_NONE;
+            if (scratch_handoff_load(&s_scratch_handoff[d]) == AE_SCRATCH_HANDOFF_RING) {
                 s_scratch_handoff_gain[d] = 1.0f;
+                scratch_handoff_store(&s_scratch_handoff[d], AE_SCRATCH_HANDOFF_NONE);
+                atomic_store_bool(&s_scratch_playing[d], false);
+            } else if (atomic_load_bool(&s_scratch_playing[d]) && !deck_output_active(d)) {
+                audio_scratch_end(&s_scratch_engine[d]);
+                s_scratch_handoff_gain[d] = 1.0f;
+                scratch_handoff_store(&s_scratch_handoff[d], AE_SCRATCH_HANDOFF_NONE);
                 atomic_store_bool(&s_scratch_playing[d], false);
             }
         }
@@ -2192,12 +2221,28 @@ static esp_err_t audio_output_service_stop(void)
  * Public API
  * ═════════════════════════════════════════════════════════════════════════ */
 
+/* Tear down all vinyl-scratch playback state for a deck: cancel the read head,
+ * disarm any release-handoff, and route the deck back to the resampler. Called
+ * on (re)load/stop/error reset so a deck that was scratching (or mid-handoff)
+ * when the track changed can never be left routed to the scratch source with a
+ * frozen capture buffer — which would leave the freshly loaded deck silent. */
+static void clear_scratch_playback_state(uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
+    audio_scratch_end(&s_scratch_engine[deck]);
+    s_scratch_handoff_gain[deck] = 1.0f;
+    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
+    atomic_store_bool(&s_scratch_playing[deck], false);
+}
+
 static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, const char *err_text)
 {
-    /* Clear any lingering platter-hold so a freshly (re)loaded deck is never
-     * stuck silenced. eng-indexed via pointer arithmetic against the array. */
+    /* Clear any lingering platter-hold + scratch playback so a freshly (re)loaded
+     * deck is never stuck silenced. eng-indexed via pointer arithmetic. */
     if (eng >= s_engines && eng < s_engines + AUDIO_ENGINE_DECK_COUNT) {
-        atomic_store_bool(&s_deck_hold[eng - s_engines], false);
+        uint8_t deck = (uint8_t)(eng - s_engines);
+        atomic_store_bool(&s_deck_hold[deck], false);
+        clear_scratch_playback_state(deck);
     }
     memset(eng, 0, sizeof(*eng));
     eng->pitch_factor = 1.0f;
@@ -3009,6 +3054,15 @@ void audio_engine_deck_scratch_begin(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return;
 
+    /* Only engage scratch on a deck that is actually playing. The control task
+     * gates on its own shadow play flag, which can lag the engine (e.g. the track
+     * hit EOF); the engine state is authoritative, so a stale "playing" shadow
+     * never routes a stopped deck to the (empty) scratch source. */
+    audio_engine_state_t *eng = &s_engines[deck];
+    if (!eng->playing || eng->paused) {
+        return;
+    }
+
     /* Seed the read head at the current playhead within the capture window:
      * head_back = (newest_pos - playhead) in source frames, clamped to the
      * window. The decode task freezes capture while scratching, so `newest`
@@ -3028,9 +3082,11 @@ void audio_engine_deck_scratch_begin(uint8_t deck)
         head_back = (float)back;
     }
     audio_scratch_seed(&s_scratch_engine[deck], head_back);
-    /* Cancel any in-flight release handoff and enter steady scratch at full gain. */
-    s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_NONE;
+    /* Cancel any in-flight release handoff and enter steady scratch at full gain.
+     * Seed the gain before publishing the phase (release) so the output task never
+     * observes NONE with a stale mid-fade gain. */
     s_scratch_handoff_gain[deck] = 1.0f;
+    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
     atomic_store_bool(&s_scratch_playing[deck], true);
 }
 
@@ -3043,6 +3099,12 @@ void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta)
 void audio_engine_deck_scratch_end(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return;
+
+    /* No-op if scratch never engaged (begin was declined for a stopped deck):
+     * arming the handoff here would flip s_scratch_playing on with no capture. */
+    if (!atomic_load_bool(&s_scratch_playing[deck])) {
+        return;
+    }
 
     /* Convert the read-head position back to a track position and seek normal
      * playback there. The seek flushes + refills the ring (but not the scratch
@@ -3059,8 +3121,10 @@ void audio_engine_deck_scratch_end(uint8_t deck)
         (void)audio_engine_deck_seek(deck, target);
     }
 
+    /* Seed the fade gain before publishing the FADE_OUT phase (release) so the
+     * output task, on observing FADE_OUT, always sees gain == 1.0. */
     s_scratch_handoff_gain[deck] = 1.0f;
-    s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_FADE_OUT;
+    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_FADE_OUT);
     /* s_scratch_playing stays true through the handoff; the output task clears it
      * once the fade-in reaches full gain (AE_SCRATCH_HANDOFF_RING). */
 }
@@ -3186,8 +3250,8 @@ static void init_scratch_buffers(void)
                                   s_scratch_storage[deck] ? AE_SCRATCH_CAPACITY_FRAMES : 0u);
         audio_scratch_init(&s_scratch_engine[deck]);
         atomic_store_bool(&s_scratch_playing[deck], false);
-        s_scratch_handoff[deck] = AE_SCRATCH_HANDOFF_NONE;
         s_scratch_handoff_gain[deck] = 1.0f;
+        scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
         s_scratch_ctx_deck[deck] = deck;
     }
 }

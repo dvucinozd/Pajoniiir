@@ -258,6 +258,12 @@ static void audio_transfer_cb(usb_transfer_t *transfer)
             ESP_LOGE(TAG, "stopping FLX4 USB audio stream after %u consecutive transfer errors",
                      (unsigned)s_consecutive_errors);
             s_streaming = false;
+            /* Drop back to STOPPED (transfers stay allocated) so
+             * flx4_usb_audio_poll_ring_autostart() can re-prime and restart the
+             * stream once the P4 link recovers, instead of staying dead until a
+             * physical replug. */
+            s_mode = FLX4_USB_AUDIO_MODE_STOPPED;
+            s_consecutive_errors = 0u;
             return;
         }
     }

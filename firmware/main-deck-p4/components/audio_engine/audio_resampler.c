@@ -25,9 +25,11 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
         if (pop_source && pop_source(source_ctx, &next)) {
             state->current = next;
             if (out_consumed) (*out_consumed)++;
-        } else {
-            state->current = (audio_mixer_frame_t){ 0 };
         }
+        /* Ring underrun: leave `current` unchanged instead of snapping it to 0.
+         * `previous` was just set to `current` above, so both now hold the last
+         * delivered frame and the interpolation is a flat hold rather than a
+         * click to silence. Nothing is consumed, so pacing is unaffected. */
 
         state->fraction -= 1.0;
     }

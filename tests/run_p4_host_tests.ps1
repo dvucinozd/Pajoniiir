@@ -504,6 +504,21 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("CONFIG_AUDIO_SCRATCH_ENABLED=y")
 
+Assert-FileContains `
+    -Name "p4 audio_engine tears down scratch playback on reload/stop and when a deck stops mid-scratch" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("clear_scratch_playback_state", "atomic_load_bool(&s_scratch_playing[d]) && !deck_output_active(d)")
+
+Assert-FileContains `
+    -Name "p4 audio_engine declines scratch on a non-playing deck and no-ops the release" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("if (!eng->playing || eng->paused) {", "if (!atomic_load_bool(&s_scratch_playing[deck])) {")
+
+Assert-FileContains `
+    -Name "p4 audio_engine publishes the scratch handoff phase with release/acquire" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("scratch_handoff_store", "scratch_handoff_load", "__ATOMIC_ACQUIRE", "__ATOMIC_RELEASE")
+
 $tests = @(
     @{
         Name = "audio_diag"

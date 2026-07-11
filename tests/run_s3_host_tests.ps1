@@ -229,6 +229,16 @@ Assert-FileContains `
     -Patterns @("CTRL_ID_CH1_TRIM", "CTRL_ID_CH2_TRIM", "CTRL_ID_CH1_EQ_HIGH", "CTRL_ID_CH2_EQ_HIGH", "CTRL_ID_CH1_EQ_MID", "CTRL_ID_CH2_EQ_MID", "CTRL_ID_CH1_EQ_LOW", "CTRL_ID_CH2_EQ_LOW", "CTRL_ID_CH1_FILTER", "CTRL_ID_CH2_FILTER", "CTRL_ID_MASTER_VOLUME", "CTRL_ID_HEADPHONE_MIX", "CTRL_ID_HEADPHONE_LEVEL", "CTRL_ID_BEAT_FX_DEPTH")
 
 Assert-FileContains `
+    -Name "flx4 coalescer counts re-push drops" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("a failed re-push is a real lost event and must be counted", "s_flx4_dropped_count")
+
+Assert-FileContains `
+    -Name "flx4 usb audio drops to STOPPED so autostart can recover the stream" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
+    -Patterns @("s_consecutive_errors >= FLX4_USB_AUDIO_MAX_CONSECUTIVE_ERRORS", "s_mode = FLX4_USB_AUDIO_MODE_STOPPED;")
+
+Assert-FileContains `
     -Name "p4 audio link stats use atomic counters" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c") `
     -Patterns @("__atomic_fetch_add", "stats_load(&s_stats")
