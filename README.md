@@ -66,6 +66,7 @@ tests/                PC-side test harnesses inherited from CDJ100S-XXX
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Startup checklist](docs/STARTUP_CHECKLIST.md)
 - [Risk register](docs/RISK_REGISTER.md)
+- [OTA update plan](docs/OTA_UPDATE_PLAN.md)
 
 ### Multi-Controller Platform
 The system supports controllers beyond the DDJ-FLX4 through **data-driven

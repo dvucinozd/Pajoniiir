@@ -2,6 +2,13 @@
 
 #include "control_link.h"
 
+bool flx4_led_midi_builtin_authoritative(uint8_t led)
+{
+    /* Pre-v2 numeric profiles can alias the newer Track Load IDs to pad LEDs.
+     * Keep these official global 0x9F addresses authoritative in firmware. */
+    return led == LED_TRACK_LOAD_DECK1 || led == LED_TRACK_LOAD_DECK2;
+}
+
 static bool note_for_led(uint8_t led, uint8_t *note)
 {
     if (!note) {

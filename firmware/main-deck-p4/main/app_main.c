@@ -21,6 +21,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "firmware_health.h"
 
 static const char *TAG = "main";
 
@@ -67,6 +68,7 @@ static void on_usb_storage_event(bool mounted)
 void app_main(void)
 {
     p4_tcm_heap_guard_keep();
+    ESP_ERROR_CHECK(firmware_health_init());
 
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
@@ -166,4 +168,5 @@ void app_main(void)
     ESP_ERROR_CHECK(usb_storage_init(on_usb_storage_event));
 
     ESP_LOGI(TAG, "all subsystems ready — deck active, waiting for S3 events");
+    ESP_ERROR_CHECK(firmware_health_mark_ready());
 }

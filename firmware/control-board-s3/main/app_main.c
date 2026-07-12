@@ -4,6 +4,7 @@
 #include "sdkconfig.h"
 #include "s3_debug_ap.h"
 #include "wifi_debug_log.h"
+#include "firmware_health.h"
 #if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
@@ -325,6 +326,7 @@ static void flx4_translator_task(void *arg)
 
 void app_main(void)
 {
+    ESP_ERROR_CHECK(firmware_health_init());
     ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
     (void)wifi_debug_log_init();
@@ -377,4 +379,5 @@ void app_main(void)
 #endif
 
     ESP_LOGI(TAG, "all subsystems ready");
+    ESP_ERROR_CHECK(firmware_health_mark_ready());
 }

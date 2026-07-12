@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 #define CP_MAGIC            "S3CP"
-#define CP_VERSION          1
+#define CP_VERSION          2
 #define CP_HEADER_SIZE      32
 #define CP_INPUT_ENTRY_SIZE 16
 #define CP_OUTPUT_ENTRY_SIZE 12

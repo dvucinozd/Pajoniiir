@@ -482,3 +482,18 @@ Notes:
   terminal for a lossless boot log, or `/api/status` for the profile state.
 - A stale `/sd/controllers` (SD missing or no profiles) is a boot warning, never
   a boot blocker.
+
+## One-time OTA partition migration
+
+Before installing the boards in an enclosure, perform one full wired flash of
+both targets using the OTA-enabled build. The flash must include bootloader,
+partition table, initial OTA data, and application; flashing only the app binary
+does not migrate the legacy single-app layout.
+
+- P4 flash arguments must include `ota_data_initial.bin` at `0x10000` and the
+  factory application at `0x20000`.
+- S3 flash arguments must include `ota_data_initial.bin` at `0x10000` and the
+  initial `ota_0` application at `0x20000`.
+- Confirm each boot logs `fw_health` with the expected slot and image state.
+- Keep USB access available until a successful OTA and rollback cycle has been
+  completed on both targets.

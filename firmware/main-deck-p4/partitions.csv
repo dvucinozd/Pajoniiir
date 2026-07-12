@@ -1,7 +1,11 @@
 # Custom partition table for the JC4880P443C_I_W (16 MB flash).
-# The default 1 MB single-app partition is too small once LVGL + ST7701 + GT911 +
-# USB-MSC + esp_codec_dev + minimp3 are linked in. Give the app 4 MB of headroom.
-# Name,     Type, SubType,  Offset,   Size
-nvs,        data, nvs,      0x9000,   0x6000
-phy_init,   data, phy,      0xf000,   0x1000
-factory,    app,  factory,  0x10000,  0x400000
+# Factory recovery plus two 4 MB OTA slots. Install this table with a full
+# wired flash before enclosure; app-only OTA cannot migrate a partition table.
+# Name,     Type, SubType,  Offset,    Size
+nvs,        data, nvs,      0x9000,    0x6000
+phy_init,   data, phy,      0xf000,    0x1000
+otadata,    data, ota,      0x10000,   0x2000
+factory,    app,  factory,  0x20000,   0x400000
+ota_0,      app,  ota_0,    0x420000,  0x400000
+ota_1,      app,  ota_1,    0x820000,  0x400000
+coredump,   data, coredump, 0xc20000,  0x10000

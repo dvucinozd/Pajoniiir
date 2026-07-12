@@ -59,6 +59,9 @@ static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
+static bool              s_loaded_hot_cue_mask_valid[DECK_CORE_DECK_COUNT];
+static uint8_t           s_loaded_hot_cue_mask[DECK_CORE_DECK_COUNT];
+static bool              s_snapshot_suppress_inactive_pads;
 static bool              s_beat_jump_pad_led_valid[DECK_CORE_DECK_COUNT][8];
 static uint8_t           s_beat_jump_pad_led_state[DECK_CORE_DECK_COUNT][8];
 static bool              s_deck_shift_held[DECK_CORE_DECK_COUNT];
@@ -185,6 +188,7 @@ static void hot_cue_mask_cache_store(uint8_t deck, uint32_t track_key, uint8_t m
 #define DECK_CORE_DEFERRED_MIXER_LOG_STEP 2048u
 
 static void publish_flx4_led_snapshot(bool force);
+static void publish_loaded_track_hot_cue_leds(uint8_t deck);
 static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
 static uint8_t beat_sync_reference_deck(uint8_t deck);
@@ -1108,6 +1112,13 @@ static void sync_legacy_compat_leds(uint8_t deck)
 static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, void *ctx)
 {
     (void)ctx;
+    bool performance_pad =
+        (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) ||
+        (led >= LED_PAD_FX1_PAD_1 && led <= LED_PAD_FX2_PAD_8) ||
+        (led >= LED_HOT_CUE_PAD_1 && led <= LED_HOT_CUE_PAD_8);
+    if (s_snapshot_suppress_inactive_pads && performance_pad && state == 0u) {
+        return ESP_OK;
+    }
     control_link_send_led_deck(led, state, deck);
     return ESP_OK;
 }
@@ -1154,20 +1165,54 @@ static void publish_track_load_leds(bool force)
     }
 }
 
+static void publish_beat_jump_pad_leds_for_deck(uint8_t deck, bool force)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return;
+    deck_state_t state = deck_core_get_deck_state(deck);
+    uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
+                     deck_has_loaded_track(deck)) ? 1u : 0u;
+    for (uint8_t pad = 0; pad < 8; pad++) {
+        if (force ||
+            !s_beat_jump_pad_led_valid[deck][pad] ||
+            s_beat_jump_pad_led_state[deck][pad] != value) {
+            if (force && value == 0u) {
+                s_beat_jump_pad_led_state[deck][pad] = 0u;
+                s_beat_jump_pad_led_valid[deck][pad] = true;
+                continue;
+            }
+            control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
+            s_beat_jump_pad_led_state[deck][pad] = value;
+            s_beat_jump_pad_led_valid[deck][pad] = true;
+        }
+    }
+}
+
 static void publish_beat_jump_pad_leds(bool force)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        deck_state_t state = deck_core_get_deck_state(deck);
-        uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
-                         deck_has_loaded_track(deck)) ? 1u : 0u;
-        for (uint8_t pad = 0; pad < 8; pad++) {
-            if (force ||
-                !s_beat_jump_pad_led_valid[deck][pad] ||
-                s_beat_jump_pad_led_state[deck][pad] != value) {
-                control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
-                s_beat_jump_pad_led_state[deck][pad] = value;
-                s_beat_jump_pad_led_valid[deck][pad] = true;
+        publish_beat_jump_pad_leds_for_deck(deck, force);
+    }
+}
+
+static void publish_beat_jump_shift_helper_leds_for_deck(uint8_t deck, bool force)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return;
+    deck_state_t state = deck_core_get_deck_state(deck);
+    uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
+                     s_deck_shift_held[deck] &&
+                     deck_has_loaded_track(deck)) ? 1u : 0u;
+    for (uint8_t pad = 0; pad < 2; pad++) {
+        if (force ||
+            !s_beat_jump_shift_helper_led_valid[deck][pad] ||
+            s_beat_jump_shift_helper_led_state[deck][pad] != value) {
+            if (force && value == 0u) {
+                s_beat_jump_shift_helper_led_state[deck][pad] = 0u;
+                s_beat_jump_shift_helper_led_valid[deck][pad] = true;
+                continue;
             }
+            control_link_send_led_deck(beat_jump_shift_helper_led_for_pad(pad), value, deck);
+            s_beat_jump_shift_helper_led_state[deck][pad] = value;
+            s_beat_jump_shift_helper_led_valid[deck][pad] = true;
         }
     }
 }
@@ -1175,19 +1220,7 @@ static void publish_beat_jump_pad_leds(bool force)
 static void publish_beat_jump_shift_helper_leds(bool force)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        deck_state_t state = deck_core_get_deck_state(deck);
-        uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
-                         s_deck_shift_held[deck] &&
-                         deck_has_loaded_track(deck)) ? 1u : 0u;
-        for (uint8_t pad = 0; pad < 2; pad++) {
-            if (force ||
-                !s_beat_jump_shift_helper_led_valid[deck][pad] ||
-                s_beat_jump_shift_helper_led_state[deck][pad] != value) {
-                control_link_send_led_deck(beat_jump_shift_helper_led_for_pad(pad), value, deck);
-                s_beat_jump_shift_helper_led_state[deck][pad] = value;
-                s_beat_jump_shift_helper_led_valid[deck][pad] = true;
-            }
-        }
+        publish_beat_jump_shift_helper_leds_for_deck(deck, force);
     }
 }
 
@@ -1225,11 +1258,17 @@ static void publish_flx4_led_snapshot(bool force)
         }
     }
 
+    /* A reconnect snapshot used to send every inactive pad bank as eight
+     * sequential OFF notes, which the FLX4 renders as a visible sweep. The
+     * controller starts with inactive pads off; returning success here still
+     * primes the publisher's diff cache without putting those bursts on USB. */
+    s_snapshot_suppress_inactive_pads = force;
     esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,
                                               &input,
                                               force,
                                               send_snapshot_led,
                                               NULL);
+    s_snapshot_suppress_inactive_pads = false;
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "FLX4 LED snapshot publish failed: %s", esp_err_to_name(rc));
     } else {
@@ -1260,14 +1299,13 @@ static void execute_ui_command(const deck_ui_command_t *cmd)
             ESP_LOGW(TAG, "load selected unsupported: UI API unavailable");
         }
         if (loaded) {
-            /* Refresh the full LED snapshot so the newly-loaded track's hot-cue
-             * pads light on the correct deck immediately. Previously only the
-             * track-load + beat-jump LEDs were republished on load, so the
-             * hot-cue pads showed stale state until the next unrelated event. */
-            publish_flx4_led_snapshot(false);
+            /* Refresh only state owned by the newly loaded track. A full
+             * dual-deck snapshot here can emit unrelated D1 pad state during
+             * the first D2 load after boot. */
+            publish_loaded_track_hot_cue_leds(cmd->deck);
             publish_track_load_leds(false);
-            publish_beat_jump_pad_leds(false);
-            publish_beat_jump_shift_helper_leds(false);
+            publish_beat_jump_pad_leds_for_deck(cmd->deck, false);
+            publish_beat_jump_shift_helper_leds_for_deck(cmd->deck, false);
         }
         break;
     }
@@ -2574,6 +2612,29 @@ void deck_core_toggle_master_tempo(uint8_t deck)
     }
 }
 
+static void publish_loaded_track_hot_cue_leds(uint8_t deck)
+{
+    if (deck >= DECK_CORE_DECK_COUNT) return;
+    deck_state_t state = deck_core_get_deck_state(deck);
+    uint8_t mask = hot_cue_exists_mask_for_deck(deck);
+    for (uint8_t pad = 0; pad < HOT_CUE_STORE_SLOT_COUNT; pad++) {
+        uint8_t value = (state.pad_mode == CTRL_PAD_MODE_HOT_CUE &&
+                         (mask & (1u << pad)) != 0u) ? 1u : 0u;
+        uint8_t previous = (s_loaded_hot_cue_mask[deck] & (1u << pad)) != 0u ? 1u : 0u;
+        /* The FLX4 visibly sweeps a pad bank when it receives eight sequential
+         * OFF notes. On the first load there is no prior illuminated track to
+         * clear, so emit only existing cues. Later loads emit a true mask diff
+         * and still clear cues that belonged to the previous track. */
+        if ((!s_loaded_hot_cue_mask_valid[deck] && value != 0u) ||
+            (s_loaded_hot_cue_mask_valid[deck] && value != previous)) {
+            control_link_send_led_deck((led_id_t)(LED_HOT_CUE_PAD_1 + pad), value, deck);
+        }
+    }
+    s_loaded_hot_cue_mask[deck] =
+        state.pad_mode == CTRL_PAD_MODE_HOT_CUE ? mask : 0u;
+    s_loaded_hot_cue_mask_valid[deck] = true;
+}
+
 deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
     uint8_t idx = normalize_deck(deck);
@@ -2690,6 +2751,8 @@ void deck_core_test_reset(void)
     memset(s_censor_shadow, 0, sizeof(s_censor_shadow));
     memset(s_track_load_led_valid, 0, sizeof(s_track_load_led_valid));
     memset(s_track_load_led_state, 0, sizeof(s_track_load_led_state));
+    memset(s_loaded_hot_cue_mask_valid, 0, sizeof(s_loaded_hot_cue_mask_valid));
+    memset(s_loaded_hot_cue_mask, 0, sizeof(s_loaded_hot_cue_mask));
     memset(s_beat_jump_pad_led_valid, 0, sizeof(s_beat_jump_pad_led_valid));
     memset(s_beat_jump_pad_led_state, 0, sizeof(s_beat_jump_pad_led_state));
     memset(s_deck_shift_held, 0, sizeof(s_deck_shift_held));

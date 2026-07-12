@@ -84,6 +84,9 @@ static void test_transport_and_mode_led_packets(void)
     expect_packet(LED_LOOP_ADJUST_OUT, 1, CTRL_DECK_2, 0x09, 0x91, 0x4E, 0x7F);
     expect_packet(LED_LOOP_ADJUST_OUT, 0, CTRL_DECK_2, 0x09, 0x91, 0x4E, 0x00);
 
+    assert(flx4_led_midi_builtin_authoritative(LED_TRACK_LOAD_DECK1));
+    assert(flx4_led_midi_builtin_authoritative(LED_TRACK_LOAD_DECK2));
+    assert(!flx4_led_midi_builtin_authoritative(LED_PAD_FX1_PAD_1));
     expect_packet(LED_TRACK_LOAD_DECK1, 1, CTRL_DECK_1, 0x09, 0x9F, 0x00, 0x7F);
     expect_packet(LED_TRACK_LOAD_DECK1, 0, CTRL_DECK_1, 0x09, 0x9F, 0x00, 0x00);
     expect_packet(LED_TRACK_LOAD_DECK1, 1, CTRL_DECK_2, 0x09, 0x9F, 0x00, 0x7F);

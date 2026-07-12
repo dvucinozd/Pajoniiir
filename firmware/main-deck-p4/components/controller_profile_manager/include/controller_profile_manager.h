@@ -32,7 +32,7 @@ extern "C" {
 
 /* S3CP header layout (little-endian). Must match the schema/compiler. */
 #define CPM_MAGIC        "S3CP"
-#define CPM_VERSION      1
+#define CPM_VERSION      2
 #define CPM_HEADER_SIZE  32
 
 typedef struct {

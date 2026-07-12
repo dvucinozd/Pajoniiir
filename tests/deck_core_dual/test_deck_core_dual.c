@@ -566,6 +566,22 @@ static void test_track_load_led_follows_audio_loaded_state_after_load_command(vo
 
     assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK1, CTRL_DECK_1) == 0);
     assert(control_link_stub_last_led_state(LED_TRACK_LOAD_DECK2, CTRL_DECK_2) == 1);
+    for (int i = 0; i < control_link_stub_led_count; i++) {
+        assert(control_link_stub_led[i] < LED_PAD_FX1_PAD_1 ||
+               control_link_stub_led[i] > LED_PAD_FX2_PAD_8);
+        if (control_link_stub_deck[i] == CTRL_DECK_1) {
+            assert(control_link_stub_led[i] < LED_BEAT_LOOP_PAD_1 ||
+                   control_link_stub_led[i] > LED_BEAT_LOOP_PAD_8);
+            assert(control_link_stub_led[i] < LED_HOT_CUE_PAD_1 ||
+                   control_link_stub_led[i] > LED_HOT_CUE_PAD_8);
+            assert(control_link_stub_led[i] < LED_BEAT_JUMP_PAD_1 ||
+                   control_link_stub_led[i] > LED_BEAT_JUMP_SHIFT_HELPER_8);
+        }
+        if (control_link_stub_led[i] >= LED_HOT_CUE_PAD_1 &&
+            control_link_stub_led[i] <= LED_HOT_CUE_PAD_8) {
+            assert(0 && "first load with an empty hot-cue mask must not emit pad OFF sweep");
+        }
+    }
 }
 
 static void test_browser_namespace_routes_shift_load_to_requested_deck_on_press_only(void)

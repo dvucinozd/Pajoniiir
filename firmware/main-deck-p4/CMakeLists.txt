@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-set(EXTRA_COMPONENT_DIRS "components")
+set(EXTRA_COMPONENT_DIRS
+    "components"
+    "${CMAKE_CURRENT_LIST_DIR}/../common/firmware_health")
 if(NOT DEFINED ENV{ESP_IDF_VERSION})
     set(ENV{ESP_IDF_VERSION} "5.5")
 endif()

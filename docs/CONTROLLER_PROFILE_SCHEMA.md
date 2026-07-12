@@ -132,7 +132,12 @@ LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `hot_cue_pads`, `pad_fx1_pads`, `pad_fx2_pads`, `beat_jump_pads`,
 `beat_loop_pads`, `beat_jump_shift_helpers`.
 
-## profile.s3bin (S3CP v1)
+## profile.s3bin (S3CP v2)
+
+Version 2 invalidates older binaries whose numeric LED vocabulary can alias
+newer Track Load IDs to older pad-bank IDs. Recompile `profile.json` and replace
+the SD-card `.s3bin`; v1 is rejected instead of silently emitting an unrelated
+MIDI LED message.
 
 Little-endian, packed. CRC32 is IEEE 802.3 (zlib `crc32`) computed over all
 bytes from offset 16 to the end of the file.

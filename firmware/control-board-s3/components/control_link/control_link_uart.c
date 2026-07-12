@@ -109,7 +109,8 @@ static void handle_p4_frame(const uint8_t *f)
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
             uint8_t packet[4];
             bool built = false;
-            if (controller_profile_runtime_active()) {
+            if (controller_profile_runtime_active() &&
+                !flx4_led_midi_builtin_authoritative(id)) {
                 built = controller_profile_runtime_map_led(id, deck, state, packet);
             }
             if (!built) {
