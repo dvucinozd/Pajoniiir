@@ -41,6 +41,18 @@ static void refresh_running_locked(void)
     }
 }
 
+static void close_receive_resources_locked(void)
+{
+    if (s_handle_open) {
+        (void)esp_ota_abort(s_handle);
+        s_handle_open = false;
+    }
+    if (s_image_sha_active) {
+        mbedtls_sha256_free(&s_image_sha);
+        s_image_sha_active = false;
+    }
+}
+
 const char *s3_ota_state_name(s3_ota_state_t state)
 {
     switch (state) {
@@ -148,16 +160,18 @@ esp_err_t s3_ota_finish(void)
 {
     if (!s_lock) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    if (!s_handle_open || s_status.state != S3_OTA_RECEIVING ||
-        s_status.received_size != s_status.expected_size) {
-        if (s_handle_open) {
-            (void)esp_ota_abort(s_handle);
-            s_handle_open = false;
-        }
-        if (s_image_sha_active) {
-            mbedtls_sha256_free(&s_image_sha);
-            s_image_sha_active = false;
-        }
+    s3_ota_finish_policy_t finish_policy = s3_ota_policy_finish(
+        s_status.state == S3_OTA_RECEIVING, s_handle_open,
+        s_status.received_size, s_status.expected_size);
+    if (finish_policy == S3_OTA_FINISH_INVALID_STATE) {
+        /* A duplicate/idle finish must not replace the status of the operation
+         * that already ended. Clean any inconsistent leftovers only. */
+        close_receive_resources_locked();
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (finish_policy == S3_OTA_FINISH_INCOMPLETE) {
+        close_receive_resources_locked();
         copy_text(s_status.last_error, sizeof(s_status.last_error),
                   "incomplete OTA image");
         s_status.state = S3_OTA_FAILED;
@@ -212,14 +226,7 @@ void s3_ota_abort(const char *reason)
 {
     if (!s_lock) return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    if (s_handle_open) {
-        (void)esp_ota_abort(s_handle);
-        s_handle_open = false;
-    }
-    if (s_image_sha_active) {
-        mbedtls_sha256_free(&s_image_sha);
-        s_image_sha_active = false;
-    }
+    close_receive_resources_locked();
     copy_text(s_status.last_error, sizeof(s_status.last_error), reason ? reason : "aborted");
     s_status.state = S3_OTA_FAILED;
     xSemaphoreGive(s_lock);

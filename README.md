@@ -162,6 +162,9 @@ completed without writer timeout, DWC assert, reboot or PCM-link drop.
 R3 hardens both control queues so the newest platter touch/release level cannot
 be lost or reordered under saturation; both target builds pass and dual-target
 hardware smoke passed on 2026-07-13 after flashing both targets.
+R4 hardens OTA service access and status handling: both target APs use WPA2,
+invalid duplicate `finish()` calls preserve the authoritative result, and
+release packaging aligns signed versions with the ESP image descriptor limit.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure

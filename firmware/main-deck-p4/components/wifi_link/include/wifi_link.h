@@ -6,7 +6,7 @@
 #include "esp_err.h"
 
 #define WIFI_LINK_SOFTAP_SSID "PAJONIIR"
-#define WIFI_LINK_PASSWORD    "12345678"
+#define WIFI_LINK_PASSWORD    "PajoNiiiR"
 
 typedef struct {
     bool initialized;

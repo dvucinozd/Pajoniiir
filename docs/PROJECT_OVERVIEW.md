@@ -80,7 +80,7 @@ The fork is no longer only the imported single-deck baseline:
   mini — all baked into the scrolling RGB565 strip so they PPA-blit without
   LVGL-over-PPA flicker.
 - ESP-Hosted Wi-Fi is re-enabled behind a Settings switch (default off): the
-  onboard ESP32-C6 provides a SoftAP (`PAJONIIR`) and P4 serves a mobile web
+  onboard ESP32-C6 provides a WPA2 SoftAP (`PAJONIIR`) and P4 serves a mobile web
   controller at `http://192.168.4.1` (deck status, library load, transport,
   mixer, seek). A 2026-07-04 audit added RELAXED atomics for shared audio/mixer
   state, clean load-failure abort, and dynamically-sized web status JSON, and a

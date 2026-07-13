@@ -526,10 +526,13 @@ static esp_err_t start_ap(void)
 
     wifi_config_t ap_config = { 0 };
     snprintf((char *)ap_config.ap.ssid, sizeof(ap_config.ap.ssid), "%s", S3_DEBUG_AP_SSID);
+    snprintf((char *)ap_config.ap.password, sizeof(ap_config.ap.password), "%s",
+             S3_DEBUG_AP_PASSWORD);
     ap_config.ap.ssid_len = strlen(S3_DEBUG_AP_SSID);
     ap_config.ap.channel = 1;
     ap_config.ap.max_connection = CONFIG_S3_DEBUG_AP_MAX_CLIENTS;
-    ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    ap_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    ap_config.ap.pmf_cfg.required = false;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_AP), TAG, "esp_wifi_set_mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_AP, &ap_config), TAG, "esp_wifi_set_config");

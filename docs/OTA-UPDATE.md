@@ -106,7 +106,8 @@ python .\tools\ota_signing.py verify-file `
 ## Update P4
 
 1. Enable **Wi-Fi Remote** in P4 Settings.
-2. Connect to `PAJONIIR` and open `http://192.168.4.1`.
+2. Connect to `PAJONIIR` using the default WPA2 password `PajoNiiiR`, then
+   open `http://192.168.4.1`.
 3. Record the running P4 version, slot and state.
 4. Select **`main-deck-p4.ddjota`**, confirm and upload.
 5. Wait for success and restart; reconnect and refresh `/api/firmware`.
@@ -125,11 +126,12 @@ curl.exe -X POST `
 
 ## Update S3
 
-The S3 service AP is open and returns to OFF after reboot. Signature validation
-protects firmware authenticity, not AP confidentiality or availability.
+The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Signature
+validation remains the firmware-authenticity boundary.
 
 1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
-2. Connect to `PajoNiiiR-S3-DEBUG` and open
+2. Connect to `PajoNiiiR-S3-DEBUG` using the default WPA2 password
+   `PajoNiiiR`, then open
    `http://192.168.4.1/update`.
 3. Record the S3 running version, slot and state.
 4. Select **`control-board-s3.ddjota`**, confirm and upload.

@@ -20,7 +20,8 @@ only be enabled from the P4 Settings UI during the current runtime session.
 - The switch is always OFF after P4 boot and is not persisted in P4 NVS.
 - Enabling the switch sends a command to the S3 over the existing `0xA5`
   `control_link`.
-- S3 starts an open SoftAP:
+- Historical baseline: S3 originally started an open SoftAP. R4 replaced this
+  with WPA2-PSK using the default password `PajoNiiiR`:
   - SSID: `PajoNiiiR-S3-DEBUG`
   - IP: `192.168.4.1`
 - A browser connected to the AP can open `http://192.168.4.1` and see a live
@@ -170,7 +171,9 @@ Hardware smoke:
 
 - Wi-Fi/AP consumes RAM, CPU, and power when enabled.
 - Excessive logging can still introduce jitter if high-rate logs are reenabled.
-- Open AP has no authentication, so it must remain a bench/debug-only feature.
+- The R4 WPA2 baseline supersedes the original open-AP risk. The shared default
+  credential still makes this a bench/debug-only feature that remains OFF when
+  unused.
 - P4 and S3 status can briefly disagree during reset or UART interruption; the
   ack/status path is used to make this visible instead of hidden.
 

@@ -32,6 +32,17 @@ int main(void)
     assert(!p4_ota_policy_header_valid(header, sizeof(header)));
     assert(!p4_ota_policy_header_valid(NULL, 0));
 
+    assert(p4_ota_policy_finish(false, false, 0, 0) ==
+           P4_OTA_FINISH_INVALID_STATE);
+    assert(p4_ota_policy_finish(false, true, 1024, 1024) ==
+           P4_OTA_FINISH_INVALID_STATE);
+    assert(p4_ota_policy_finish(true, false, 1024, 1024) ==
+           P4_OTA_FINISH_INCOMPLETE);
+    assert(p4_ota_policy_finish(true, true, 1023, 1024) ==
+           P4_OTA_FINISH_INCOMPLETE);
+    assert(p4_ota_policy_finish(true, true, 1024, 1024) ==
+           P4_OTA_FINISH_VERIFY);
+
     puts("p4_ota_policy tests passed");
     return 0;
 }

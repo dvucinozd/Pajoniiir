@@ -30,6 +30,17 @@ int main(void)
     assert(!s3_ota_policy_header_valid(header, sizeof(header)));
     assert(!s3_ota_policy_header_valid(NULL, 0));
 
+    assert(s3_ota_policy_finish(false, false, 0, 0) ==
+           S3_OTA_FINISH_INVALID_STATE);
+    assert(s3_ota_policy_finish(false, true, 1024, 1024) ==
+           S3_OTA_FINISH_INVALID_STATE);
+    assert(s3_ota_policy_finish(true, false, 1024, 1024) ==
+           S3_OTA_FINISH_INCOMPLETE);
+    assert(s3_ota_policy_finish(true, true, 1023, 1024) ==
+           S3_OTA_FINISH_INCOMPLETE);
+    assert(s3_ota_policy_finish(true, true, 1024, 1024) ==
+           S3_OTA_FINISH_VERIFY);
+
     puts("s3_ota_policy tests passed");
     return 0;
 }

@@ -18,6 +18,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R2 scratch-freeze writer timeout fix passes P4 host tests and firmware build.
 - [x] R2 USB DWC BNA/CHHLTD compatibility wrapper passes link, host and P4 build checks.
 - [x] R3 lossless priority-touch policy passes both host suites and firmware builds.
+- [x] R4 WPA2 AP, OTA finish-state and signed-version packaging fixes pass both host suites and firmware builds.
 
 ## Repeat before enclosure close
 
@@ -29,6 +30,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
 - [x] R3 smoke after flashing both targets: dual-platter scratch/release operates correctly without a latched platter.
+- [ ] R4 smoke: both WPA2 APs accept `PajoNiiiR`, reject unauthenticated access, and still expose firmware status/update pages.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [ ] Perform one OTA update per target and record slot/version/state.
@@ -257,7 +259,7 @@ evidence, not instructions to repeat old commit-specific flashes.
   RF-quiet development.)
 - A separate runtime **S3 Debug AP** was added and merged to `master`
   (`CONFIG_S3_DEBUG_AP_ENABLED=y`, default). It is independent of the P4
-  Wi-Fi remote: the S3 hosts its own open SoftAP `PajoNiiiR-S3-DEBUG` +
+  Wi-Fi remote: the S3 hosts its own WPA2 SoftAP `PajoNiiiR-S3-DEBUG` +
   read-only live log viewer at `http://192.168.4.1`, toggled from a
   non-persisted P4 Settings switch over `CTRL_ID_S3_DEBUG_AP` (`0x82`/`0x85`).
   OFF at every boot; P4 also sends OFF at boot as a safe reset. Host tests and

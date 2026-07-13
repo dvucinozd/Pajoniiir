@@ -23,7 +23,8 @@ The debug AP is OFF after every boot and is controlled entirely from the P4:
 1. Flash the default S3 and P4 firmware (no special build flags needed).
 2. On the P4, open **Settings** and enable the **S3 DEBUG AP** switch. The label
    tracks the S3 handshake: `OFF` -> `STARTING` -> `ON` (or `ERROR`).
-3. Connect a phone/laptop to the open SoftAP **`PajoNiiiR-S3-DEBUG`**.
+3. Connect a phone/laptop to **`PajoNiiiR-S3-DEBUG`** using the default WPA2
+   password **`PajoNiiiR`**.
 4. Open **`http://192.168.4.1`** for a live log viewer (Server-Sent Events
    auto-reconnect). It shows the same aggregate `P4_AUDIO_LINK` and
    `FLX4_USB_AUDIO` counters described below. The log remains read-only.
@@ -49,12 +50,12 @@ long-lived SSE connection before the firmware upload starts.
   it again from P4 Settings when further diagnostics are needed.
 - An interrupted or rejected upload does not replace the running boot slot.
 
-The AP remains open. Signed bundles protect firmware authenticity but do not
-provide AP confidentiality or availability; keep it disabled except during a
-supervised bench update.
+The AP uses WPA2-PSK. Signed bundles remain the firmware-authenticity boundary;
+the shared default AP password is only an access-control baseline, so keep the
+service AP disabled except during a supervised update.
 
-> The open AP has no authentication and consumes RAM/CPU/power while ON, so keep
-> it a bench/debug-only tool. FLX4 MIDI, the control link, and P4-to-S3
+> The AP consumes RAM/CPU/power while ON, so keep it a bench/debug-only tool.
+> FLX4 MIDI, the control link, and P4-to-S3
 > headphone audio keep running while it is active.
 
 ## Build-time UDP Debug Log (Alternative)

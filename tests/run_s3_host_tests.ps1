@@ -314,9 +314,19 @@ Assert-FileContains `
     -Patterns @("s3_debug_ap_init", "s3_debug_ap_set_status_callback", "CTRL_ID_S3_DEBUG_AP")
 
 Assert-FileContains `
-    -Name "s3 debug ap runtime hosts open softap" `
+    -Name "s3 debug ap runtime hosts WPA2 softap" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -Patterns @("WIFI_MODE_AP", "PajoNiiiR-S3-DEBUG", "192.168.4.1", "esp_wifi_start")
+    -Patterns @("WIFI_MODE_AP", "S3_DEBUG_AP_PASSWORD", "WIFI_AUTH_WPA2_PSK", "esp_wifi_start")
+
+Assert-FileContains `
+    -Name "s3 debug ap uses the accepted default WPA2 credential" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/include/s3_debug_ap.h") `
+    -Patterns @('S3_DEBUG_AP_PASSWORD "PajoNiiiR"')
+
+Assert-FileNotContains `
+    -Name "s3 debug ap cannot regress to an open network" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("WIFI_AUTH_OPEN")
 
 Assert-FileContains `
     -Name "s3 debug ap exposes HTTP log page" `

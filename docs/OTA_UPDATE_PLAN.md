@@ -74,6 +74,10 @@ Batch 6 signed OTA is software-complete:
 - `tools/package_ota_release.ps1` checks project metadata, binary chip IDs,
   slot limits and matching P4/S3 versions, then emits target-specific signed
   `.ddjota` bundles, raw recovery images and a signed outer release manifest;
+- packaging truncates an overlong Git-derived version at a valid UTF-8 boundary
+  to the 31-byte payload capacity of `esp_app_desc.version` before signing both
+  target manifests, preventing a valid image from failing the exact version
+  cross-check after upload;
 - the fixed binary manifest signs target, chip, image size, project, version,
   image SHA-256 and key ID with ECDSA P-256;
 - P4 and S3 reject an invalid manifest before flash erase and compare the

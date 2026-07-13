@@ -112,7 +112,7 @@ control_link  →  ctrl_event_queue  →  deck_core
 > reset GPIO54). The **Settings tab has a WI-FI REMOTE switch** (default **off**,
 > persisted in NVS `app_settings.wifi_remote`). Turning it on runs
 > `wifi_link_start()` → `esp_hosted_init()` → `esp_wifi_init()` → SoftAP
-> **`PAJONIIR`** (WPA2, pw `12345678`) on **192.168.4.1** + `web_server` +
+> **`PAJONIIR`** (WPA2, pw `PajoNiiiR`) on **192.168.4.1** + `web_server` +
 > captive `dns_server`; turning it off runs `wifi_link_stop()` which tears the
 > whole stack back down (`esp_wifi_deinit` + `esp_hosted_deinit`) so the C6/RF
 > stops drawing RAM and power. Toggling is **asynchronous** — the UI event only

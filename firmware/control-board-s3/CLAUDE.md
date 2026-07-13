@@ -146,7 +146,7 @@ Inherited CDJ panel compatibility:
 | `flx4_usb_audio` | FLX4 USB Audio Class output: drains the `p4_audio_link` monitor ring into isochronous OUT transfers to the controller headphone endpoint, tracking the active P4 link rate. `CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` (default-on) |
 | `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
-| `s3_debug_ap` | Runtime bench-only SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
+| `s3_debug_ap` | Runtime bench-only WPA2 SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). Default password: `PajoNiiiR`. `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
 | `controller_profile` | Pure-C S3CP profile parser + table-driven MIDI-in matcher and LED-out mapper (`cp_profile_parse`, `cp_runtime_process`, `cp_profile_map_led`). No ESP deps; host-tested |
 | `controller_profile_runtime` | Holds the active dynamic profile (mutex-guarded); `control_link` ACTIVATE/CLEAR installs it. `app_main` prefers it for MIDI-in map + LED-out + reconnect snapshot, falling back to `flx4_map`/`flx4_led_midi` when none is active |
 | `wifi_debug_log` | Optional Wi-Fi UDP debug-log sink (`CONFIG_WIFI_DEBUG_LOG_ENABLED`, off by default); joins a configured AP and streams logs to a PC listener. Configure via `sdkconfig.wifi_debug.local` — see `docs/S3_WIFI_DEBUG_LOG.md` |

@@ -1312,3 +1312,39 @@ Initial hardware acceptance:
   every written image passed esptool hash verification;
 - user scratch smoke on both platters passed after the dual-target flash, with
   correct operation and no platter remaining latched after release.
+
+## Phase 18: OTA Remediation R4 — AP And Status Hardening (2026-07-13)
+
+Status: implemented; both host suites and signed-layout firmware builds pass.
+Dual-target WPA2 hardware smoke is pending.
+
+- P4 Wi-Fi Remote and the on-demand S3 Debug AP now both use WPA2-PSK with the
+  accepted default password `PajoNiiiR`; S3 no longer starts an open network.
+- P4 and S3 OTA `finish()` policy distinguishes an invalid duplicate/idle call
+  from an incomplete active transfer. Invalid calls preserve the authoritative
+  state and error from the operation that already ended, while incomplete
+  receiving sessions still abort resources and report `FAILED`.
+- Release packaging truncates overlong Git-derived versions at a valid UTF-8
+  boundary to the 31-byte `esp_app_desc.version` payload limit before signing.
+  P4 and S3 source versions must still match exactly.
+- Pure host policies cover idle, stale-resource, incomplete and complete finish
+  cases on both targets. Static guards require both accepted WPA2 credentials
+  and forbid `WIFI_AUTH_OPEN` in the S3 Debug AP.
+
+Software acceptance:
+
+- complete P4 host suite passes, including 318/318 `audio_engine` assertions;
+- complete S3 host suite passes;
+- OTA signing Python suite passes 6/6 and the packaging helper covers ASCII,
+  31/32-byte and multi-byte UTF-8 boundaries;
+- ESP-IDF P4 signed build passes; `main-deck-p4.bin` is `0x205B70` bytes with
+  49% free in the smallest app partition;
+- ESP-IDF S3 signed build passes; `control-board-s3.bin` is `0xE61E0` bytes with
+  52% free in the smallest app partition.
+
+Hardware acceptance still required:
+
+- flash both targets because each AP credential changed;
+- enable each AP in turn, confirm WPA2 authentication with `PajoNiiiR`, reject
+  a wrong/empty password, and open the firmware status/update page;
+- confirm normal playback/control traffic remains stable while each AP is on.

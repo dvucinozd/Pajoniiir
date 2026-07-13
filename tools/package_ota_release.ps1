@@ -16,6 +16,8 @@ if (-not $Python) {
     throw "python is required; initialize the ESP-IDF environment first"
 }
 $SigningTool = Join-Path $PSScriptRoot "ota_signing.py"
+$ReleaseHelpers = Join-Path $PSScriptRoot "OtaReleaseHelpers.psm1"
+Import-Module $ReleaseHelpers -Force
 $SigningKeyPath = Join-Path $RepoRoot $SigningKey
 $PublicKeyPath = Join-Path $RepoRoot $PublicKey
 if (-not (Test-Path -LiteralPath $SigningKeyPath)) {
@@ -69,9 +71,11 @@ function Read-TargetBuild {
                $ExpectedProject, $bytes.Length, $SlotSize)
     }
 
+    $sourceVersion = [string]$description.project_version
     [pscustomobject]@{
         Project = $ExpectedProject
-        Version = [string]$description.project_version
+        SourceVersion = $sourceVersion
+        Version = ConvertTo-EspAppVersion $sourceVersion
         Source = $binaryPath
         File = [string]$description.app_bin
         ChipId = $chipId
@@ -92,8 +96,11 @@ $s3 = Read-TargetBuild `
     -ExpectedChipId 0x0009 `
     -SlotSize 0x1e0000
 
-if ($p4.Version -ne $s3.Version) {
-    throw "P4/S3 versions differ: '$($p4.Version)' vs '$($s3.Version)'"
+if ($p4.SourceVersion -ne $s3.SourceVersion) {
+    throw "P4/S3 versions differ: '$($p4.SourceVersion)' vs '$($s3.SourceVersion)'"
+}
+if ($p4.SourceVersion -ne $p4.Version) {
+    Write-Warning "ESP application version truncated to 31 UTF-8 bytes: '$($p4.Version)'"
 }
 
 $safeVersion = $p4.Version -replace '[^A-Za-z0-9._-]', '_'

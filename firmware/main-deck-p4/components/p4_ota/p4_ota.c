@@ -41,6 +41,18 @@ static void refresh_running_locked(void)
     }
 }
 
+static void close_receive_resources_locked(void)
+{
+    if (s_handle_open) {
+        (void)esp_ota_abort(s_handle);
+        s_handle_open = false;
+    }
+    if (s_image_sha_active) {
+        mbedtls_sha256_free(&s_image_sha);
+        s_image_sha_active = false;
+    }
+}
+
 const char *p4_ota_state_name(p4_ota_state_t state)
 {
     switch (state) {
@@ -146,16 +158,19 @@ esp_err_t p4_ota_finish(void)
 {
     if (!s_lock) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    if (!s_handle_open || s_status.state != P4_OTA_RECEIVING ||
-        s_status.received_size != s_status.expected_size) {
-        if (s_handle_open) {
-            (void)esp_ota_abort(s_handle);
-            s_handle_open = false;
-        }
-        if (s_image_sha_active) {
-            mbedtls_sha256_free(&s_image_sha);
-            s_image_sha_active = false;
-        }
+    p4_ota_finish_policy_t finish_policy = p4_ota_policy_finish(
+        s_status.state == P4_OTA_RECEIVING, s_handle_open,
+        s_status.received_size, s_status.expected_size);
+    if (finish_policy == P4_OTA_FINISH_INVALID_STATE) {
+        /* A duplicate/idle finish is a caller error, not a failed transfer.
+         * Release any inconsistent leftover resources without overwriting the
+         * authoritative status/error from the operation that already ended. */
+        close_receive_resources_locked();
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (finish_policy == P4_OTA_FINISH_INCOMPLETE) {
+        close_receive_resources_locked();
         copy_text(s_status.last_error, sizeof(s_status.last_error),
                   "incomplete OTA image");
         s_status.state = P4_OTA_FAILED;
@@ -210,14 +225,7 @@ void p4_ota_abort(const char *reason)
 {
     if (!s_lock) return;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    if (s_handle_open) {
-        (void)esp_ota_abort(s_handle);
-        s_handle_open = false;
-    }
-    if (s_image_sha_active) {
-        mbedtls_sha256_free(&s_image_sha);
-        s_image_sha_active = false;
-    }
+    close_receive_resources_locked();
     copy_text(s_status.last_error, sizeof(s_status.last_error), reason ? reason : "aborted");
     s_status.state = P4_OTA_FAILED;
     xSemaphoreGive(s_lock);

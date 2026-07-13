@@ -193,6 +193,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web/index.html") `
     -LiteralPatterns @(".ddjota", "signed P4")
 
+Assert-FileContains `
+    -Name "P4 Wi-Fi Remote uses the accepted default WPA2 credential" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/include/wifi_link.h") `
+    -LiteralPatterns @('WIFI_LINK_PASSWORD    "PajoNiiiR"')
+
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -1343,6 +1348,12 @@ if ($python) {
 } else {
     Write-Warning "python not found; skipping OTA signing Python tests"
 }
+
+$pwsh = Get-Command pwsh -ErrorAction Stop
+Invoke-Step -Name "run OTA release helper tests" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $pwsh.Source `
+    -Arguments @("-NoProfile", "-File", "tests/ota_packaging/test_ota_release_helpers.ps1")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {

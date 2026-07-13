@@ -313,7 +313,7 @@ Status feedback (S3 -> P4), `ctrl_s3_debug_ap_status_t`:
 | ---: | --- | --- |
 | `0` | `OFF` | AP and HTTP server stopped |
 | `1` | `STARTING` | S3 is bringing up SoftAP/HTTP |
-| `2` | `ON` | AP live at `PajoNiiiR-S3-DEBUG` / `http://192.168.4.1` |
+| `2` | `ON` | WPA2 AP live at `PajoNiiiR-S3-DEBUG` / `http://192.168.4.1` |
 | `3` | `ERROR` | start failed; S3 tore down partial state and stays OFF |
 
 Handshake and ownership:
