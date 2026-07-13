@@ -1353,9 +1353,9 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A-R5E complete. R5F software audit, both host suites, both signed
-builds and the P4 flash/runtime check pass; S3 flash and final dual-target
-hardware soak remain.
+Status: R5A-R5F complete. Both host suites and signed builds pass; matching
+`RC1-121-gb7ac66a5` images were wired-flashed and the final dual-target scratch
+soak was accepted on 2026-07-14.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
@@ -1390,7 +1390,8 @@ hardware soak remain.
   and signed P4 remains `0x205AF0` with 49% slot free.
 - R5F removed the unused `anlz_walk_usbanlz()` API/walker after confirming that
   production uses the direct `export.pdb` ANLZ path. Final P4/S3 host suites and
-  signed builds pass at `RC1-120-gb898b26b`; P4 is `0x2056E0` and S3 remains
-  `0xE60E0`. P4 wired flash/hash verification and a 55-second reset/panic/
-  watchdog-free monitor pass are complete; S3 flash and final scratch soak are
-  the remaining closeout gates.
+  signed builds pass; matching `RC1-121-gb7ac66a5` images were wired-flashed
+  with hash verification. P4 is `0x2056E0` and S3 is `0xE60E0`. A final
+  45-second simultaneous capture while both platters were scratch-stressed had
+  no reset, panic, stack overflow, watchdog, underrun/overrun, link gap or CRC
+  error; the user confirmed correct operation on both decks.

@@ -1,9 +1,8 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A-R5E complete; R5F software audit, host regression, signed builds and
-P4 flash complete on 2026-07-13. S3 flash plus dual-target hardware soak remain
-before R5 can close. This document is the evidence and decision log for cleanup
-batches R5A-R5F.
+Status: R5A-R5F complete. Final host/build gates, matching-version wired flashes
+and the dual-target scratch soak were accepted on 2026-07-14. This document is
+the evidence and decision log for cleanup batches R5A-R5F.
 
 ## Confirmed Call Graph
 
@@ -98,13 +97,13 @@ the production library already reads each track's direct `anlz_path` from
 stub and `dirent` helpers were removed. The R5 audit now rejects that symbol in
 addition to every compatibility symbol and legacy S3 path retired in R5B-R5E.
 
-Final software acceptance on 2026-07-13:
+Final software acceptance on 2026-07-14:
 
 - complete P4 and S3 host suites pass;
 - P4 includes 330/330 `audio_engine` assertions and both canonical-allocation
   failure/platter-hold tests;
-- both clean signed-layout ESP-IDF builds pass with version
-  `RC1-120-gb898b26b`;
+- both clean signed-layout ESP-IDF builds pass; the hardware-accepted rebuild is
+  `RC1-121-gb7ac66a5` on both processors;
 - P4: application `0x2056E0`, total image 2,119,001 B, DIRAM 263,177 B
   (45.65%), 49% app-slot free;
 - S3: application `0xE60E0`, total image 942,185 B, DIRAM 155,651 B (45.54%),
@@ -114,7 +113,12 @@ Relative to the R5A signed baseline, the final P4 application is 1,168 B
 smaller and uses 12 B less DIRAM; the final S3 application is 256 B smaller and
 uses 488 B less DIRAM. The P4 clean image was wired-flashed on COM15 with hash
 verification and remained reset/panic/watchdog-free during 55 seconds of runtime
-monitoring. S3 wired flash and the final two-platter/dual-deck soak are pending.
+monitoring. Both clean images were then wired-flashed with hash verification.
+During the final 45-second simultaneous P4/S3 capture, the user loaded tracks
+and scratch-stressed both platters with fast forward/reverse and release/re-grab
+gestures. No reset, panic, stack overflow, watchdog, PCM underrun/overrun, link
+gap or CRC error occurred. The S3 PCM link reached 6,914 received blocks and the
+FLX4 USB audio path completed 35,000 transfers without an underrun.
 
 ## R5B Result
 

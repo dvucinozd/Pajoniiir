@@ -1,11 +1,11 @@
 # Documentation Status
 
-Last full audit: **2026-07-13** on `master` at `27150de0`.
+Last full audit: **2026-07-14** on `master` for the R5 closeout.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. The hardware-accepted release at the
-time of the audit is **`RC1-106-g717b6ab3`** on both processors, running from
-`ota_0` in `valid` state.
+time of the audit is **`RC1-121-gb7ac66a5`** on both processors, installed
+through their wired recovery ports and accepted under simultaneous monitoring.
 
 ## Source-of-truth order
 
@@ -29,7 +29,7 @@ in the active documents.
 | --- | --- |
 | Controller | Pioneer DDJ-FLX4 enumerates on the S3 USB host; input mapping and P4-owned LED feedback are operational |
 | Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls |
-| Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping, release/re-grab and dual-deck stress hardware-validated 2026-07-11 |
+| Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
 | Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12 |
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |

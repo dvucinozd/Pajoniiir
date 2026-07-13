@@ -2,8 +2,8 @@
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 controller, an ESP32-S3 control board, and a JC4880P443C_I_W ESP32-P4 multimedia board.
 
-Current hardware-accepted baseline (2026-07-13): **`RC1-106-g717b6ab3`** on
-both processors, `ota_0 / valid`. See the
+Current hardware-accepted baseline (2026-07-14): **`RC1-121-gb7ac66a5`** on
+both processors, installed through the wired recovery ports. See the
 [documentation status](docs/DOCUMENTATION_STATUS.md) for verified scope and
 remaining work.
 

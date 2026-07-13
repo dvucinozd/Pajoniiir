@@ -1,12 +1,12 @@
 # Startup Checklist
 
-Status: audited 2026-07-13. Checked items below are historical bring-up
+Status: audited 2026-07-14. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current accepted baseline
 
-- [x] P4: `RC1-106-g717b6ab3`, `ota_0`, `valid`.
-- [x] S3: `RC1-106-g717b6ab3`, `ota_0`, `valid`.
+- [x] P4: `RC1-121-gb7ac66a5`, wired `factory` recovery image, operational.
+- [x] S3: `RC1-121-gb7ac66a5`, wired `ota_0` image, operational.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
@@ -604,4 +604,4 @@ R5 cleanup status:
 - [x] R5F final call-graph audit, host suites, signed builds and size comparison
   recorded;
 - [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
-- [ ] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
+- [x] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
