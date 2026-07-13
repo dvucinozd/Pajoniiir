@@ -13,26 +13,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef ANLZ_STANDALONE_TEST
-#  include <dirent.h>
-#  include <sys/stat.h>
-#endif
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 
 static const char *TAG = "anlz";
 #define ANLZ_MAX_BEATS 0xFFFFu
-
-#ifdef ANLZ_STANDALONE_TEST
-static bool anlz_join_path(char *out, size_t out_size, const char *parent, const char *child)
-{
-    if (!out || out_size == 0 || !parent || !child) return false;
-
-    int written = snprintf(out, out_size, "%s/%s", parent, child);
-    return written >= 0 && (size_t)written < out_size;
-}
-#endif
 
 /* ── Big-endian read helpers ─────────────────────────────────────────────── */
 
@@ -42,7 +28,6 @@ static inline uint16_t read_be16(FILE *fp)
     if (fread(b, 1, 2, fp) != 2) return 0;
     return (uint16_t)((b[0] << 8) | b[1]);
 }
-
 static inline uint32_t read_be32(FILE *fp)
 {
     uint8_t b[4];
@@ -575,85 +560,3 @@ void anlz_free(anlz_metadata_t *meta)
     }
 }
 
-/* ── anlz_walk_usbanlz ──────────────────────────────────────────────────────
- *
- * Walk PIONEER/USBANLZ/ and call cb() for every folder containing ANLZ0000.DAT.
- *
- * IMPORTANT: Real Rekordbox USB drives use HASH-BASED folder names under USBANLZ
- * (e.g. PIONEER/USBANLZ/P000/00000832/ANLZ0000.DAT).  The hash values are
- * internal Rekordbox track IDs — they are NOT derived from the audio file path.
- * To map audio_path → ANLZ folder, you must walk all ANLZ files and read PPTH.
- *
- * Observed folder structure (tested with real Rekordbox USB, 308 tracks):
- *   PIONEER/USBANLZ/P000/00000832/ANLZ0000.DAT  (PPTH path = /Contents/artist/track.mp3)
- *   PIONEER/USBANLZ/P000/00000D18/ANLZ0000.DAT
- *   PIONEER/USBANLZ/P001/...
- *   ...
- *
- * NOTE: Requires ESP-IDF VFS + USB host to be mounted.  Phase 6 only.
- *       On bare-metal / pre-Phase-6: use anlz_parse_dat() directly with known path.
- */
-esp_err_t anlz_walk_usbanlz(const char      *usbanlz_root,
-                              anlz_folder_cb_t cb,
-                              void            *user_data)
-{
-#ifdef ANLZ_STANDALONE_TEST
-    /* PC / test implementation using POSIX dirent */
-    if (!usbanlz_root || !cb) return ESP_ERR_INVALID_ARG;
-
-    DIR *root_dir = opendir(usbanlz_root);
-    if (!root_dir) {
-        ANLZ_LOGE(TAG, "Cannot open USBANLZ root: %s", usbanlz_root);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    struct dirent *p_entry;
-    while ((p_entry = readdir(root_dir)) != NULL) {
-        if (p_entry->d_name[0] == '.') continue;
-
-        char l1[512];
-        if (!anlz_join_path(l1, sizeof(l1), usbanlz_root, p_entry->d_name)) continue;
-
-        DIR *l1_dir = opendir(l1);
-        if (!l1_dir) continue;
-
-        struct dirent *l2_entry;
-        while ((l2_entry = readdir(l1_dir)) != NULL) {
-            if (l2_entry->d_name[0] == '.') continue;
-
-            char l2[512];
-            if (!anlz_join_path(l2, sizeof(l2), l1, l2_entry->d_name)) continue;
-
-            char dat[520];
-            if (!anlz_join_path(dat, sizeof(dat), l2, "ANLZ0000.DAT")) continue;
-
-            FILE *fp = fopen(dat, "rb");
-            if (!fp) continue;
-            fclose(fp);
-
-            /* Read just PPTH from this DAT to get audio_path */
-            anlz_metadata_t tmp;
-            esp_err_t rc = anlz_parse_dat(dat, &tmp);
-            if (rc == ESP_OK) {
-                bool cont = cb(l2, tmp.audio_path, user_data);
-                anlz_free(&tmp);
-                if (!cont) {
-                    closedir(l1_dir);
-                    closedir(root_dir);
-                    return ESP_OK;
-                }
-            }
-        }
-        closedir(l1_dir);
-    }
-    closedir(root_dir);
-    return ESP_OK;
-
-#else
-    /* ESP-IDF implementation — Phase 6: use VFS readdir */
-    /* TODO Phase 6: implement using esp_vfs_fat / USB host directory traversal */
-    (void)usbanlz_root; (void)cb; (void)user_data;
-    ANLZ_LOGW(TAG, "anlz_walk_usbanlz: not implemented (Phase 6)");
-    return ESP_ERR_NOT_SUPPORTED;
-#endif
-}

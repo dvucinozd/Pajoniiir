@@ -160,35 +160,6 @@ esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta);
  */
 void anlz_free(anlz_metadata_t *meta);
 
-/**
- * Walk PIONEER/USBANLZ/ and call a callback for every ANLZ folder found.
- *
- * Real Rekordbox USB drives use HASH-BASED folder names under USBANLZ
- * (e.g. PIONEER/USBANLZ/P000/00000832/ANLZ0000.DAT), NOT a path-mirror of
- * the audio file location.  The only way to map audio_path → ANLZ folder is
- * to walk all ANLZ files and read their PPTH tags.
- *
- * This function is the entry point for Phase 6 library indexing.
- *
- * @param usbanlz_root   Path to PIONEER/USBANLZ/ on mounted USB (e.g. "/usb/PIONEER/USBANLZ").
- * @param cb             Called once per ANLZ folder.  Receives:
- *                         - anlz_folder: absolute path to the folder containing ANLZ0000.DAT
- *                         - audio_path:  value from PPTH (audio file path on USB)
- *                         - user_data:   opaque pointer passed through from caller
- *                       Return false to stop iteration.
- * @param user_data      Passed unchanged to every cb() call.
- * @return ESP_OK when all folders processed, or first error returned by cb.
- *
- * NOTE: Requires VFS + USB host to be mounted before calling.  Phase 6 only.
- */
-typedef bool (*anlz_folder_cb_t)(const char *anlz_folder,
-                                  const char *audio_path,
-                                  void       *user_data);
-
-esp_err_t anlz_walk_usbanlz(const char    *usbanlz_root,
-                              anlz_folder_cb_t cb,
-                              void           *user_data);
-
 #ifdef __cplusplus
 }
 #endif

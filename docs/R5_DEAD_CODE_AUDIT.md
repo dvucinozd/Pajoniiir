@@ -15,7 +15,7 @@ document is the evidence and decision log for cleanup batches R5A-R5F.
 | `audio_output_mixer_next_full()` | Wrapper used only by tests | Tests migrated to `_with_headphone_level()` and wrapper removed in R5C |
 | `s_scratch_storage` | Was a second PSRAM allocation and decode-copy path when canonical timeline allocation failed | Removed in R5E; normal ring playback remains and scratch declines into platter-hold |
 | S3 `router_task` / `panel_io` / `midi_compat` / `calibration` | Compiled legacy CDJ panel/TinyUSB device configuration still built at R5A | Explicitly retired and removed in R5D |
-| `TODO Phase 6` in `rekordbox_anlz.c` | Stale comment requires context audit | Resolve wording in R5F |
+| `anlz_walk_usbanlz()` / `TODO Phase 6` | No caller; obsolete because `export.pdb` supplies each track's direct `anlz_path` | API, PC walker and firmware stub removed in R5F |
 
 R5D proved that `control_link_init()` used its queue argument only as a legacy
 LED-fallback boolean and that `control_link_send_event()` merely translated four

@@ -74,7 +74,8 @@ foreach ($symbol in @(
     "audio_engine_clear_loop",
     "audio_engine_get_loop_state",
     "audio_output_mixer_next",
-    "audio_output_mixer_next_full"
+    "audio_output_mixer_next_full",
+    "anlz_walk_usbanlz"
 )) {
     Assert-SymbolAbsent $symbol
 }
