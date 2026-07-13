@@ -755,7 +755,10 @@ static void test_headphone_level_scales_headphone_not_master_output(void)
         .source_ctx = &deck0_source,
     };
 
-    (void)audio_output_mixer_next(&deck0, NULL, NULL, NULL, NULL);
+    (void)audio_output_mixer_next_full_with_headphone_level(&deck0, NULL,
+        false, false, AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+        AUDIO_MIXER_CONTROL_MAX, AUDIO_MIXER_CONTROL_MAX, true,
+        NULL, NULL, NULL);
 
     audio_output_mix_result_t out =
         audio_output_mixer_next_full_with_headphone_level(&deck0, NULL,

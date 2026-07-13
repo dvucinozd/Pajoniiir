@@ -17,6 +17,36 @@ static bool pop_source(void *ctx, audio_mixer_frame_t *out_frame)
     return true;
 }
 
+static audio_output_mix_result_t mix_full(const audio_output_mixer_deck_t *deck0,
+                                          const audio_output_mixer_deck_t *deck1,
+                                          bool deck0_pfl,
+                                          bool deck1_pfl,
+                                          audio_output_headphone_mode_t headphone_mode,
+                                          uint16_t headphone_mix,
+                                          bool master_cue_enabled,
+                                          uint32_t *out_deck0_consumed,
+                                          uint32_t *out_deck1_consumed,
+                                          audio_mixer_limiter_stats_t *limiter_stats)
+{
+    return audio_output_mixer_next_full_with_headphone_level(deck0, deck1,
+        deck0_pfl, deck1_pfl, headphone_mode, headphone_mix,
+        AUDIO_MIXER_CONTROL_MAX, master_cue_enabled,
+        out_deck0_consumed, out_deck1_consumed, limiter_stats);
+}
+
+static audio_mixer_frame_t mix_master(const audio_output_mixer_deck_t *deck0,
+                                      const audio_output_mixer_deck_t *deck1,
+                                      uint32_t *out_deck0_consumed,
+                                      uint32_t *out_deck1_consumed,
+                                      audio_mixer_limiter_stats_t *limiter_stats)
+{
+    return mix_full(deck0, deck1, false, false,
+                    AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+                    AUDIO_MIXER_CONTROL_MAX, true,
+                    out_deck0_consumed, out_deck1_consumed,
+                    limiter_stats).master;
+}
+
 static void test_mixes_two_active_decks_with_output_gains(void)
 {
     audio_mixer_frame_t deck0_frames[] = {
@@ -53,8 +83,8 @@ static void test_mixes_two_active_decks_with_output_gains(void)
     uint32_t consumed0 = 0;
     uint32_t consumed1 = 0;
 
-    audio_output_mixer_next(&deck0, &deck1, &consumed0, &consumed1, NULL);
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1, &consumed0, &consumed1, NULL);
+    mix_master(&deck0, &deck1, &consumed0, &consumed1, NULL);
+    audio_mixer_frame_t out = mix_master(&deck0, &deck1, &consumed0, &consumed1, NULL);
 
     assert(out.left == 15000);
     assert(out.right == 15000);
@@ -82,7 +112,7 @@ static void test_inactive_deck_does_not_consume_source(void)
     uint32_t consumed0 = 99;
     uint32_t consumed1 = 99;
 
-    audio_mixer_frame_t out = audio_output_mixer_next(NULL, &deck1, &consumed0, &consumed1, NULL);
+    audio_mixer_frame_t out = mix_master(NULL, &deck1, &consumed0, &consumed1, NULL);
 
     assert(out.left == 0);
     assert(out.right == 0);
@@ -114,7 +144,7 @@ static void test_deck_sample_rate_ratio_affects_source_consumption(void)
     uint32_t total_consumed = 0;
     for (int i = 0; i < 147; i++) {
         uint32_t consumed = 0;
-        audio_output_mixer_next(&deck, NULL, &consumed, NULL, NULL);
+        mix_master(&deck, NULL, &consumed, NULL, NULL);
         total_consumed += consumed;
     }
 
@@ -142,7 +172,7 @@ static void prime_output_mixer(audio_output_mixer_deck_t *deck0,
 {
     uint32_t consumed0 = 0;
     uint32_t consumed1 = 0;
-    audio_output_mixer_next(deck0, deck1, &consumed0, &consumed1, NULL);
+    mix_master(deck0, deck1, &consumed0, &consumed1, NULL);
 }
 
 static void test_master_limiter_leaves_single_deck_unchanged(void)
@@ -157,7 +187,7 @@ static void test_master_limiter_leaves_single_deck_unchanged(void)
     audio_mixer_limiter_stats_t stats = { 0 };
 
     prime_output_mixer(&deck0, NULL);
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, NULL, NULL, NULL, &stats);
+    audio_mixer_frame_t out = mix_master(&deck0, NULL, NULL, NULL, &stats);
 
     assert(out.left == 30000);
     assert(out.right == -30000);
@@ -185,7 +215,7 @@ static void test_master_limiter_leaves_normal_two_deck_sum_unchanged(void)
     audio_mixer_limiter_stats_t stats = { 0 };
 
     prime_output_mixer(&deck0, &deck1);
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1, NULL, NULL, &stats);
+    audio_mixer_frame_t out = mix_master(&deck0, &deck1, NULL, NULL, &stats);
 
     assert(out.left == 22000);
     assert(out.right == -22000);
@@ -204,7 +234,7 @@ static void test_deck_gain_allows_pregain_boost_before_limiter(void)
     audio_mixer_limiter_stats_t stats = { 0 };
 
     prime_output_mixer(&deck0, NULL);
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, NULL, NULL, NULL, &stats);
+    audio_mixer_frame_t out = mix_master(&deck0, NULL, NULL, NULL, &stats);
 
     assert(out.left == 18000);
     assert(out.right == -18000);
@@ -230,7 +260,7 @@ static void test_master_limiter_shapes_overloads_and_reports_telemetry(void)
     audio_mixer_limiter_stats_t stats = { 0 };
 
     prime_output_mixer(&deck0, &deck1);
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1, NULL, NULL, &stats);
+    audio_mixer_frame_t out = mix_master(&deck0, &deck1, NULL, NULL, &stats);
 
     assert(out.left <= 32767);
     assert(out.left > 30000);
@@ -260,7 +290,7 @@ static void test_full_mix_keeps_master_stereo_when_cue_is_enabled(void)
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
 
     prime_output_mixer(&deck0, &deck1);
-    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+    audio_output_mix_result_t out = mix_full(&deck0, &deck1,
                                                                  false, true,
                                                                  AUDIO_OUTPUT_HEADPHONE_CUE_MONO,
                                                                  AUDIO_MIXER_CONTROL_MAX,
@@ -291,7 +321,7 @@ static void test_full_mix_split_monitor_uses_master_left_and_pfl_right(void)
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
 
     prime_output_mixer(&deck0, &deck1);
-    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+    audio_output_mix_result_t out = mix_full(&deck0, &deck1,
                                                                  false, true,
                                                                  AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO,
                                                                  AUDIO_MIXER_CONTROL_MAX,
@@ -322,7 +352,7 @@ static void test_full_mix_headphone_mix_blends_cue_to_stereo_master(void)
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 0.0f);
 
     prime_output_mixer(&deck0, &deck1);
-    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+    audio_output_mix_result_t out = mix_full(&deck0, &deck1,
                                                                  false, true,
                                                                  AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                                                  AUDIO_MIXER_CONTROL_CENTER,
@@ -353,7 +383,7 @@ static void test_full_mix_master_cue_disabled_removes_master_from_headphone_mix_
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 0.0f);
 
     prime_output_mixer(&deck0, &deck1);
-    audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+    audio_output_mix_result_t out = mix_full(&deck0, &deck1,
                                                                  false, true,
                                                                  AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                                                  AUDIO_MIXER_CONTROL_MAX,
@@ -396,7 +426,7 @@ static void test_beat_fx_filter_applies_only_to_target_deck(void)
     int64_t target_abs = 0;
     int64_t bypass_abs = 0;
     for (int i = 0; i < 64; i++) {
-        audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, &deck1,
+        audio_output_mix_result_t out = mix_full(&deck0, &deck1,
                                                                      false, false,
                                                                      AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                                                      AUDIO_MIXER_CONTROL_MAX,
@@ -439,17 +469,17 @@ static void test_beat_fx_echo_applies_only_to_target_deck(void)
     deck0.beat_fx_echo_enabled = true;
 
     prime_output_mixer(&deck0, &deck1);
-    (void)audio_output_mixer_next_full(&deck0, &deck1, false, false,
+    (void)mix_full(&deck0, &deck1, false, false,
                                        AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                        AUDIO_MIXER_CONTROL_MAX,
                                        true,
                                        NULL, NULL, NULL);
-    (void)audio_output_mixer_next_full(&deck0, &deck1, false, false,
+    (void)mix_full(&deck0, &deck1, false, false,
                                        AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                        AUDIO_MIXER_CONTROL_MAX,
                                        true,
                                        NULL, NULL, NULL);
-    audio_output_mix_result_t delayed = audio_output_mixer_next_full(&deck0, &deck1,
+    audio_output_mix_result_t delayed = mix_full(&deck0, &deck1,
                                                                      false, false,
                                                                      AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                                                      AUDIO_MIXER_CONTROL_MAX,
@@ -482,7 +512,7 @@ static void test_pad_fx_applies_before_beat_fx_layer(void)
 
     int64_t processed_abs = 0;
     for (int i = 0; i < 64; i++) {
-        audio_output_mix_result_t out = audio_output_mixer_next_full(&deck0, NULL,
+        audio_output_mix_result_t out = mix_full(&deck0, NULL,
                                                                      false, false,
                                                                      AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
                                                                      AUDIO_MIXER_CONTROL_MAX,
@@ -539,8 +569,8 @@ static void test_scratch_source_replaces_ring_without_consuming(void)
     uint32_t consumed0 = 99;
     uint32_t consumed1 = 99;
 
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1,
-                                                      &consumed0, &consumed1, NULL);
+    audio_mixer_frame_t out = mix_master(&deck0, &deck1,
+                                         &consumed0, &consumed1, NULL);
     assert(out.left == 7000);
     assert(out.right == -7000);
     assert(consumed0 == 0);            /* scratch consumes no ring frames */
@@ -565,8 +595,8 @@ static void test_scratch_source_silence(void)
     uint32_t consumed0 = 0;
     uint32_t consumed1 = 0;
 
-    audio_mixer_frame_t out = audio_output_mixer_next(&deck0, &deck1,
-                                                      &consumed0, &consumed1, NULL);
+    audio_mixer_frame_t out = mix_master(&deck0, &deck1,
+                                         &consumed0, &consumed1, NULL);
     assert(out.left == 0);
     assert(out.right == 0);
 }

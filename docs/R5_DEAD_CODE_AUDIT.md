@@ -1,9 +1,9 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A baseline and R5B P4 facade removal completed 2026-07-13. This
-document is the evidence and decision log for cleanup batches R5A-R5F; it is
-not authorization to remove a working compatibility path without its batch
-acceptance gate.
+Status: R5A baseline, R5B P4 facade removal and R5C mixer consolidation
+completed 2026-07-13. This document is the evidence and decision log for
+cleanup batches R5A-R5F; it is not authorization to remove a working
+compatibility path without its batch acceptance gate.
 
 ## Confirmed Call Graph
 
@@ -12,8 +12,8 @@ acceptance gate.
 | `AE_SDL` | Defined once and never read | Removed in R5B |
 | single-deck play/pause/stop/seek/set-loop API | Definitions only; tests used part of the facade | Tests migrated and facade removed in R5B |
 | `audio_engine_clear_loop()` | Was called by `ui_library.c` for track load | Migrated to `audio_engine_deck_clear_loop(req.deck)` in R5B |
-| `audio_output_mixer_next()` | No firmware caller; tests exercise it | Move tests to the canonical full mixer in R5C |
-| `audio_output_mixer_next_full()` | Wrapper used only by tests | Move tests to `_with_headphone_level()` in R5C |
+| `audio_output_mixer_next()` | No firmware caller; tests exercised it | Removed in R5C |
+| `audio_output_mixer_next_full()` | Wrapper used only by tests | Tests migrated to `_with_headphone_level()` and wrapper removed in R5C |
 | `s_scratch_storage` | Real PSRAM allocation fallback when canonical timeline allocation fails | Replace with explicit safe degraded-mode in R5E; not dead today |
 | S3 `router_task` / `panel_io` / `midi_compat` / `calibration` | Compiled legacy CDJ panel/TinyUSB device configuration still builds | R5D requires an explicit product-support decision |
 | `TODO Phase 6` in `rekordbox_anlz.c` | Stale comment requires context audit | Resolve wording in R5F |
@@ -79,3 +79,19 @@ Acceptance on 2026-07-13:
   declarations, definitions or callers;
 - ESP-IDF P4 signed build passes; `main-deck-p4.bin` is `0x205AF0` bytes with
   49% free in the smallest app partition.
+
+## R5C Result
+
+`audio_output_mixer_next_full_with_headphone_level()` is now the only public
+mixer render entry point. The master-only and implicit-full-headphone-level
+wrappers were removed, while host tests preserve their previous expectations by
+calling the canonical path with an explicit maximum headphone level.
+
+Acceptance on 2026-07-13:
+
+- complete P4 host suite passes, including the master, PFL, headphone mode,
+  headphone level, FX, source-consumption and limiter assertions;
+- the static audit confirms that both removed mixer wrappers have zero firmware
+  declarations, definitions or callers;
+- ESP-IDF P4 signed build passes; `main-deck-p4.bin` remains `0x205AF0` bytes
+  with 49% free in the smallest app partition.

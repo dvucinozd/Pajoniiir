@@ -1353,8 +1353,8 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A audit/baseline and R5B P4 facade removal implemented; R5C-R5F
-pending.
+Status: R5A audit/baseline, R5B P4 facade removal and R5C mixer consolidation
+implemented; R5D-R5F pending.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
@@ -1369,3 +1369,9 @@ pending.
 - R5B software acceptance: complete P4 host suite passes with 319/319
   `audio_engine` assertions; signed P4 build is `0x205AF0` bytes with 49% app
   partition headroom.
+- R5C removed the master-only and implicit-headphone-level mixer wrappers. All
+  production and host paths now use
+  `audio_output_mixer_next_full_with_headphone_level()` with an explicit
+  headphone level.
+- R5C software acceptance: complete P4 host suite and signed P4 build pass; the
+  image remains `0x205AF0` bytes with 49% app partition headroom.

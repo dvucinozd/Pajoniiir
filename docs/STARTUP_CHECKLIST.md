@@ -597,7 +597,7 @@ R5 cleanup status:
 - [x] R5A call-graph, signed-size and legacy S3 build baseline recorded;
 - [x] R5B single-deck P4 audio facade removed and callers migrated to the
   authoritative deck API;
-- [ ] R5C mixer entry points consolidated;
+- [x] R5C mixer entry points consolidated;
 - [ ] R5D legacy S3 product-support decision confirmed before deletion;
 - [ ] R5E scratch allocation fallback converted to explicit safe degraded mode;
 - [ ] R5F final size, documentation and hardware soak acceptance recorded.

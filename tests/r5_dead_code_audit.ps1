@@ -57,9 +57,6 @@ function Assert-SymbolAbsent {
 }
 
 $AudioEngineImpl = "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
-$MixerImpl = "firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c"
-$LibraryImpl = "firmware/main-deck-p4/components/ui/ui_library.c"
-
 foreach ($symbol in @(
     "audio_engine_load",
     "audio_engine_play",
@@ -76,11 +73,12 @@ foreach ($symbol in @(
     "audio_engine_last_error_text",
     "audio_engine_set_loop",
     "audio_engine_clear_loop",
-    "audio_engine_get_loop_state"
+    "audio_engine_get_loop_state",
+    "audio_output_mixer_next",
+    "audio_output_mixer_next_full"
 )) {
     Assert-SymbolAbsent $symbol
 }
-Assert-NoUnexpectedCalls "audio_output_mixer_next" @($MixerImpl)
 
 $scratchStorageHits = Find-CSourceCalls "s_scratch_storage"
 $scratchUnexpected = @($scratchStorageHits | Where-Object { $_.RelativePath -ne $AudioEngineImpl })
