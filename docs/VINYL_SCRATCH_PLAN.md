@@ -102,18 +102,19 @@ is the foundation for the scratch handoff. Implemented on branch
 
 ### Phase 2 — Scratch buffer (capture only, passive) ✅ DONE (2026-07-11)
 Build the random-access PCM history without changing playback.
+- Historical note: this phase originally used an independent PCM copy. Canonical
+  timeline batch 3B superseded that storage, and R5E removed the old allocation
+  and decode-copy fallback entirely.
 - `audio_scratch_buffer.c/.h` (in the `audio_engine` component): a circular
-  stereo-int16 store bound to a caller-owned PSRAM buffer (pure C, host-tested).
-  Capacity is fixed for `AE_SCRATCH_SECONDS` (4) at `AE_SCRATCH_MAX_RATE`
-  (48 kHz) → 192 000 frames ≈ 768 KB/deck; hi-res sources get a shorter window
-  (fewer seconds, since the store holds source frames). Tracks `write_index`,
+  stereo-int16 metadata/read-head view bound to caller-owned PCM storage (pure
+  C, host-tested). The current backing store is the four-second canonical
+  timeline: 192 000 frames at 48 kHz, approximately 768 KB/deck. It tracks `write_index`,
   `filled`, `sample_rate` and the `newest_pos_ms` of the last frame; frames are
   assumed contiguous at `sample_rate`, so `index_for_ms()` maps a track position
   to a stored frame (rejecting future or evicted-past positions).
-- `audio_engine` decode task pushes every decoded source frame into the buffer
-  alongside the ring and marks the batch's newest source position; binds the
-  rate + resets on track load; resets on a user seek (position discontinuity);
-  resets on stop. One-shot INFO log when the window first fills (diagnostic).
+- The current `audio_engine` decode task publishes each decoded source frame once
+  into the canonical timeline and refreshes the scratch metadata view; it does
+  not copy PCM into a second scratch store.
 - Passive: playback path is byte-for-byte unchanged (the mixer/output never
   reads the scratch buffer yet — that is Phase 4). Verified: HW audio streams
   clean (no ring under-runs) with the added per-frame capture write.
@@ -326,8 +327,8 @@ Integration contract for batch 3B:
 
 - The four-second, stereo int16 canonical timeline is now allocated once per
   deck in PSRAM (192,000 source frames / 768 KiB at the configured 48 kHz
-  maximum). Allocation failure selects the legacy PCM ring plus independent
-  scratch buffer for that deck; track loading and normal playback remain usable.
+  maximum). If allocation fails, track loading and normal playback remain usable
+  through the bounded PCM ring, while audible scratch is unavailable.
 - In canonical mode the decoder is the sole writer and throttles at about two
   seconds of unplayed source PCM. Normal output/resampling consumes `play_seq`;
   consumed capacity automatically becomes retained scratch history instead of
@@ -338,8 +339,8 @@ Integration contract for batch 3B:
   retained history and the predecoded forward runway.
 - Canonical scratch release does not seek or decode the track again. It moves
   `play_seq` directly to the frame selected by the scratch head, resets the
-  resampler and uses the existing fade-out/fade-in handoff. The legacy fallback
-  retains its decoder-seek release behavior.
+  resampler and uses the existing fade-out/fade-in handoff. There is no second
+  scratch-storage or decoder-seek release path.
 - Timeline cursors use acquire/release publication for the SPSC decode/output
   boundary. Diagnostics expose whether each deck uses the timeline plus its
   history, future and generation counters.
@@ -516,5 +517,7 @@ pass; hardware confirmed the expected centered reverse/forward range.
 
 Vinyl routing remains behind `CONFIG_AUDIO_SCRATCH_ENABLED`. The canonical PCM
 timeline is now also the normal playback source when its PSRAM allocation
-succeeds; allocation failure falls back per deck to the legacy ring/scratch
-stores so track startup remains available.
+succeeds. Allocation failure keeps normal playback on the bounded PCM ring;
+`audio_engine_deck_scratch_begin()` returns false and `deck_core` enters the
+existing platter-hold mode until release. This preserves track startup without
+maintaining a second scratch PCM store.

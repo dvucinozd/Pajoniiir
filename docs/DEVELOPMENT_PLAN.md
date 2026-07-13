@@ -1353,8 +1353,9 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A audit/baseline, R5B P4 facade removal, R5C mixer consolidation and
-R5D S3 legacy retirement implemented; R5E-R5F pending.
+Status: R5A audit/baseline, R5B P4 facade removal, R5C mixer consolidation,
+R5D S3 legacy retirement and R5E scratch fallback cleanup implemented; R5F
+pending.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
@@ -1374,6 +1375,11 @@ R5D S3 legacy retirement implemented; R5E-R5F pending.
   production and host paths now use
   `audio_output_mixer_next_full_with_headphone_level()` with an explicit
   headphone level.
+- R5E removed the independent scratch PSRAM allocation, decode-copy and
+  decoder-seek release path. Canonical allocation failure now preserves bounded
+  PCM-ring playback while a jog touch safely degrades to platter-hold. The full
+  P4 host suite passes with 330/330 audio-engine assertions; signed P4 image is
+  `0x2056E0` bytes with 49% app-partition headroom.
 - R5C software acceptance: complete P4 host suite and signed P4 build pass; the
   image remains `0x205AF0` bytes with 49% app partition headroom.
 - R5D leaves USB OTG permanently in FLX4 host role and retains only the optional

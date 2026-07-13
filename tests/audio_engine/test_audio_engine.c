@@ -565,6 +565,41 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     remove(path);
 }
 
+static void test_missing_timeline_keeps_ring_playback_and_disables_scratch(void)
+{
+    puts("\n[Test 4e] Canonical timeline allocation failure fallback");
+    EXPECT(audio_engine_init() == ESP_OK, "audio_engine_init prepares fallback test");
+    audio_engine_test_disable_pcm_timeline(0);
+
+    audio_engine_diagnostics_snapshot_t diag;
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(!diag.pcm_timeline_active[0], "deck 0 canonical timeline can be unavailable");
+    EXPECT(diag.pcm_timeline_active[1], "deck 1 canonical timeline remains independent");
+    EXPECT(diag.ring_capacity == AUDIO_PCM_RING_FRAMES,
+           "diagnostics exposes deck 0 ring fallback capacity");
+    EXPECT(!audio_engine_deck_scratch_begin(0),
+           "scratch begin declines without the canonical timeline");
+
+    const char *path = "dummy_ring_fallback_audio.mp3";
+    FILE *fp = fopen(path, "wb");
+    EXPECT(fp != NULL, "ring fallback dummy track created");
+    if (fp) {
+        fputc(0, fp);
+        fclose(fp);
+    }
+    EXPECT(audio_engine_deck_load(0, path, NULL, 10000) == ESP_OK,
+           "ring fallback deck still loads");
+    EXPECT(audio_engine_deck_play(0) == ESP_OK,
+           "ring fallback deck still starts normal playback");
+    EXPECT(audio_engine_deck_is_playing(0),
+           "ring fallback deck reports active playback");
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK, "ring fallback deck stops cleanly");
+    remove(path);
+
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init restores canonical timeline after fallback test");
+}
+
 static void test_wav_load_populates_deck_metadata(void)
 {
     puts("\n[Test 4d] WAV load metadata");
@@ -1001,6 +1036,7 @@ int main(int argc, char *argv[])
     test_deck_peak_meter_api_returns_and_resets_peak();
     test_mixer_snapshot_reports_deck_peak_without_reset();
     test_diagnostics_snapshot_reports_audio_health_state();
+    test_missing_timeline_keeps_ring_playback_and_disables_scratch();
     test_wav_load_populates_deck_metadata();
     test_wav_decode_to_wav_preserves_pcm();
     test_pfl_state_api();

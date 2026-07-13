@@ -91,12 +91,11 @@ void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta);
  * stay lit). Clearing it resumes forward playback instantly from the current
  * position. Set on jog-platter touch-down, cleared on release. */
 void audio_engine_deck_set_hold(uint8_t deck, bool held);
-/* Scratch playback (vinyl mode Phase 4). begin() enters scratch: the deck's
- * audio is produced by a jog-driven read head over the capture buffer (seeded at
- * the current playhead) instead of forward playback; move() feeds jog ticks to
- * the head velocity; end() converts the head position back to a track position,
- * seeks normal playback there and resumes forward. Gated behind
- * CONFIG_AUDIO_SCRATCH_ENABLED at the call site (deck_core). */
+/* Scratch playback (vinyl mode Phase 4). begin() enters scratch only when the
+ * canonical PCM timeline is available; otherwise it returns false and deck_core
+ * selects platter-hold. move() feeds jog ticks to the timeline read head; end()
+ * commits that head as the normal playhead and resumes forward playback. Gated
+ * behind CONFIG_AUDIO_SCRATCH_ENABLED at the call site (deck_core). */
 bool audio_engine_deck_scratch_begin(uint8_t deck);
 void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta);
 void audio_engine_deck_scratch_end(uint8_t deck);
@@ -282,4 +281,5 @@ esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
+void audio_engine_test_disable_pcm_timeline(uint8_t deck);
 #endif

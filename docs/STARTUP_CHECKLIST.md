@@ -599,5 +599,6 @@ R5 cleanup status:
   authoritative deck API;
 - [x] R5C mixer entry points consolidated;
 - [x] R5D legacy S3 mode explicitly retired; components and build branch removed;
-- [ ] R5E scratch allocation fallback converted to explicit safe degraded mode;
+- [x] R5E independent scratch allocation/copy path removed; canonical timeline
+  failure keeps ring playback and selects platter-hold on touch;
 - [ ] R5F final size, documentation and hardware soak acceptance recorded.

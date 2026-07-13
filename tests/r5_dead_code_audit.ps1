@@ -56,7 +56,6 @@ function Assert-SymbolAbsent {
     Write-Host "R5 audit: $Symbol removed"
 }
 
-$AudioEngineImpl = "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
 foreach ($symbol in @(
     "audio_engine_load",
     "audio_engine_play",
@@ -104,11 +103,16 @@ if ($LASTEXITCODE -ne 1) {
 }
 Write-Host "R5 audit: CONFIG_DDJ_FLX4_HOST_MODE removed"
 
-$scratchStorageHits = Find-CSourceCalls "s_scratch_storage"
-$scratchUnexpected = @($scratchStorageHits | Where-Object { $_.RelativePath -ne $AudioEngineImpl })
-if ($scratchUnexpected.Count -gt 0) {
-    throw "s_scratch_storage escaped the audio_engine implementation"
+& $Rg --quiet --fixed-strings --glob "*.c" --glob "*.h" `
+    --glob "!**/build*/**" --glob "!**/managed_components/**" `
+    -- "s_scratch_storage" firmware
+if ($LASTEXITCODE -eq 0) {
+    throw "Retired independent scratch PCM store returned: s_scratch_storage"
 }
-Write-Host ("R5 audit: s_scratch_storage -> {0} audio_engine hit(s)" -f $scratchStorageHits.Count)
+if ($LASTEXITCODE -ne 1) {
+    throw "rg scratch-storage scan failed with exit code $LASTEXITCODE"
+}
+Write-Host "R5 audit: s_scratch_storage removed"
 
 Write-Host "R5 dead-code call-graph audit passed."
+$global:LASTEXITCODE = 0

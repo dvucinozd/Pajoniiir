@@ -1,8 +1,8 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A baseline, R5B P4 facade removal, R5C mixer consolidation and R5D
-S3 legacy retirement completed 2026-07-13. This document is the evidence and
-decision log for cleanup batches R5A-R5F.
+Status: R5A baseline, R5B P4 facade removal, R5C mixer consolidation, R5D S3
+legacy retirement and R5E scratch fallback cleanup completed 2026-07-13. This
+document is the evidence and decision log for cleanup batches R5A-R5F.
 
 ## Confirmed Call Graph
 
@@ -13,7 +13,7 @@ decision log for cleanup batches R5A-R5F.
 | `audio_engine_clear_loop()` | Was called by `ui_library.c` for track load | Migrated to `audio_engine_deck_clear_loop(req.deck)` in R5B |
 | `audio_output_mixer_next()` | No firmware caller; tests exercised it | Removed in R5C |
 | `audio_output_mixer_next_full()` | Wrapper used only by tests | Tests migrated to `_with_headphone_level()` and wrapper removed in R5C |
-| `s_scratch_storage` | Real PSRAM allocation fallback when canonical timeline allocation fails | Replace with explicit safe degraded-mode in R5E; not dead today |
+| `s_scratch_storage` | Was a second PSRAM allocation and decode-copy path when canonical timeline allocation failed | Removed in R5E; normal ring playback remains and scratch declines into platter-hold |
 | S3 `router_task` / `panel_io` / `midi_compat` / `calibration` | Compiled legacy CDJ panel/TinyUSB device configuration still built at R5A | Explicitly retired and removed in R5D |
 | `TODO Phase 6` in `rekordbox_anlz.c` | Stale comment requires context audit | Resolve wording in R5F |
 
@@ -62,6 +62,31 @@ The recorded result remains evidence for why explicit approval was required.
   scratch history is unavailable.
 - R5F compares final size output against this baseline and records hardware
   acceptance.
+
+## R5E Result
+
+The independent `s_scratch_storage` PSRAM allocation, per-frame decode copy,
+newest-position metadata update and decoder-seek scratch-release branches were
+removed. `audio_scratch_buffer_t` is now only a read-head/metadata view over the
+canonical timeline. If that timeline cannot be allocated, the deck continues
+to load and play through `s_pcm_rings[]`; scratch begin returns false and the
+existing deck-core policy freezes the live playhead in platter-hold until touch
+release.
+
+Acceptance coverage includes an audio-engine allocation-failure simulation that
+proves ring load/play remains available and scratch is rejected, plus a
+scratch-enabled deck-core test that proves begin failure holds, scrubs and
+releases without arming scratch handoff.
+
+Acceptance on 2026-07-13:
+
+- complete P4 host suite passes, including 330/330 `audio_engine` assertions,
+  the scratch-enabled deck-core suite and the zero-symbol R5 audit;
+- ESP-IDF P4 signed build passes; `main-deck-p4.bin` is `0x2056E0` bytes with
+  49% free in the smallest app partition;
+- relative to R5D, removal of the duplicate fallback path saves `0x410` (1,040)
+  application bytes; no extra PSRAM allocation is attempted after a canonical
+  timeline allocation failure.
 
 ## R5B Result
 

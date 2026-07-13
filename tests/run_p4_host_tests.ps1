@@ -505,9 +505,14 @@ Assert-FileContains `
     -LiteralPatterns @("case CTRL_DECK_CTL_JOG_TOUCH:", "handle_jog_touch", "audio_engine_deck_set_hold(deck, true)", "s_jog_touched[deck]")
 
 Assert-FileContains `
-    -Name "p4 audio_engine captures decoded frames into the scratch buffer (vinyl phase 2)" `
+    -Name "p4 audio_engine exposes canonical PCM timeline to scratch without a second PCM copy" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "audio_scratch_buffer_reset(scratch)")
+    -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "sync_scratch_view_from_timeline", "scratch begin D%u unavailable: canonical timeline not allocated -> platter hold")
+
+Assert-FileDoesNotContain `
+    -Name "p4 legacy independent scratch PCM store stays retired" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "legacy fallback")
 
 Assert-FileContains `
     -Name "p4 audio_scratch DSP engine renders bidirectional interpolated scratch (vinyl phase 3)" `
@@ -557,7 +562,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("scratch re-grab", "s_scratch_capture_reset_ready[deck], false", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+    -LiteralPatterns @("scratch re-grab", "s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `

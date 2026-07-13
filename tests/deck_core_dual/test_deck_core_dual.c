@@ -70,6 +70,7 @@ int audio_engine_stub_scratch_begin_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_scratch_move_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_scratch_move_last_delta[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_scratch_end_count[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_scratch_available[DECK_CORE_DECK_COUNT];
 extern int control_link_stub_led_count;
 extern led_id_t control_link_stub_led[128];
 extern uint8_t control_link_stub_state[128];
@@ -306,6 +307,7 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_scratch_move_count[deck] = 0;
         audio_engine_stub_scratch_move_last_delta[deck] = 0;
         audio_engine_stub_scratch_end_count[deck] = 0;
+        audio_engine_stub_scratch_available[deck] = true;
         audio_engine_stub_pregain[deck] = -1;
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
@@ -1030,6 +1032,40 @@ static void test_platter_touch_while_paused_does_not_hold(void)
     assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_2] == 0);
 #endif
 }
+
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+static void test_missing_scratch_backend_falls_back_to_platter_hold(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    ctrl_event_t touch_down = {
+        .type = CTRL_EV_BUTTON, .id = CTRL_ID_DECK1_JOG_TOUCH, .value = 1 };
+    ctrl_event_t touch_up = {
+        .type = CTRL_EV_BUTTON, .id = CTRL_ID_DECK1_JOG_TOUCH, .value = 0 };
+    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK1_JOG_SCRATCH, -10);
+
+    deck_core_test_apply_event(&play);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 5000;
+    audio_engine_stub_scratch_available[CTRL_DECK_1] = false;
+
+    deck_core_test_apply_event(&touch_down);
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_hold[CTRL_DECK_1]);
+
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_scratch_move_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 4970);
+
+    deck_core_test_apply_event(&touch_up);
+    assert(audio_engine_stub_scratch_end_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 2);
+    assert(!audio_engine_stub_hold[CTRL_DECK_1]);
+}
+#endif
 
 static void test_mixer_namespace_routes_eq_controls(void)
 {
@@ -2524,6 +2560,9 @@ int main(void)
     test_jog_nudges_while_playing_scrubs_while_paused();
     test_platter_touch_holds_and_scrubs_while_playing();
     test_platter_touch_while_paused_does_not_hold();
+#if CONFIG_AUDIO_SCRATCH_ENABLED
+    test_missing_scratch_backend_falls_back_to_platter_hold();
+#endif
     test_mixer_namespace_routes_eq_controls();
     test_mixer_namespace_routes_filter_controls();
     test_mixer_namespace_routes_pfl_toggle_on_press();

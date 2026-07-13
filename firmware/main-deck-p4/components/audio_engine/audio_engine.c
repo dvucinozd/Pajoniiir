@@ -116,7 +116,8 @@ static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 /* Canonical per-deck PCM store (batch 3B). At 48 kHz the four-second store is
  * 768 KiB/deck in PSRAM. Decode holds roughly two seconds ahead of play_seq;
  * the remaining capacity becomes bidirectional scratch history. If allocation
- * fails, that deck transparently keeps the legacy ring + scratch capture path. */
+ * fails, normal playback stays on the small PCM ring and scratch begin declines;
+ * deck_core then enters the existing platter-hold degraded mode. */
 #define AE_TIMELINE_SECONDS        4u
 #define AE_TIMELINE_FORWARD_MS     2000u
 #define AE_TIMELINE_MAX_RATE       48000u
@@ -126,18 +127,10 @@ static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
 static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
 
-/* Per-deck scratch capture buffer (vinyl mode Phase 2). The decode task appends
- * every decoded source frame here in addition to the PCM ring, giving a rolling
- * random-access window of recent audio for the (future) scratch read head. The
- * PSRAM backing store is allocated once at init; capacity is fixed for
- * AE_SCRATCH_SECONDS at AE_SCRATCH_MAX_RATE (hi-res sources get a shorter window
- * since the store holds source frames). Capture is passive — playback unchanged.
- * See docs/VINYL_SCRATCH_PLAN.md. */
-#define AE_SCRATCH_SECONDS   4u
-#define AE_SCRATCH_MAX_RATE  48000u
-#define AE_SCRATCH_CAPACITY_FRAMES (AE_SCRATCH_SECONDS * AE_SCRATCH_MAX_RATE)
+/* Scratch is a metadata/read-head view over the canonical timeline. It owns no
+ * second PCM allocation: normal playback can fall back to s_pcm_rings[], while
+ * audible scratch requires the canonical PSRAM store. */
 static audio_scratch_buffer_t s_scratch_buf[AUDIO_ENGINE_DECK_COUNT];
-static int16_t               *s_scratch_storage[AUDIO_ENGINE_DECK_COUNT];
 
 /* Scratch playback (vinyl mode Phase 4): while s_scratch_playing[deck] is set,
  * the output task draws that deck's frames from s_scratch_engine[deck] (a
@@ -149,10 +142,7 @@ static int16_t               *s_scratch_storage[AUDIO_ENGINE_DECK_COUNT];
 static audio_scratch_t   s_scratch_engine[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_playing[AUDIO_ENGINE_DECK_COUNT];
 static uint8_t           s_scratch_ctx_deck[AUDIO_ENGINE_DECK_COUNT];
-/* Output sets this after fade-out no longer needs the frozen history. Decode
- * consumes it before any post-seek capture, so two discontinuous timelines can
- * never be appended into the same scratch window. */
-static bool              s_scratch_capture_reset_ready[AUDIO_ENGINE_DECK_COUNT];
+/* Capture coordination is shared by the decoder, control and output tasks. */
 static bool              s_scratch_capture_freeze[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_capture_writing[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t          s_scratch_head_back_bits[AUDIO_ENGINE_DECK_COUNT];
@@ -1828,7 +1818,6 @@ static void ae_decode_task(void *arg)
         return;
     }
     int16_t *decode_pcm = s_decode_pcm[ctx->deck];
-    bool scratch_full_logged = false;  /* one-shot fill diagnostic (Phase 2) */
 
     /* Wait for the loader to allocate the buffer and fetch the first chunk. */
     while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
@@ -1988,20 +1977,6 @@ static void ae_decode_task(void *arg)
                     deck_pcm_reset(ctx->deck);
                     audio_resampler_reset(resampler);
                     taskEXIT_CRITICAL(&s_ring_flush_mux);
-                    /* A user seek is a position discontinuity: drop the captured
-                     * window so the contiguous-frames assumption stays valid.
-                     * Exception: the release-handoff seek keeps s_scratch_playing
-                     * set — leave the window intact so the fade-out (4b) can keep
-                     * reading it; capture resumes (and refills) once handoff ends. */
-                    if (!timeline_active(ctx->deck) &&
-                        seek_reason != AE_SEEK_REASON_SCRATCH_RELEASE) {
-                        audio_scratch_buffer_reset(scratch);
-                    }
-                } else if (!timeline_active(ctx->deck) &&
-                           !atomic_load_bool(&s_scratch_playing[ctx->deck])) {
-                    /* Gapless ring playback survives loop wrap, but capture does
-                     * not: loop-end -> loop-start is a new PCM generation. */
-                    audio_scratch_buffer_reset(scratch);
                 }
                 if (seek_reason == AE_SEEK_REASON_SCRATCH_ABORT) {
                     atomic_store_bool(&s_scratch_abort_seek_waiting[ctx->deck], false);
@@ -2082,18 +2057,11 @@ static void ae_decode_task(void *arg)
                               fw->loaded_bytes,
                               fw->load_done);
 
-        /* Once scratch fade-out has released the frozen history, drop it before
-         * capture can resume at the release-seek target. */
-        if (__atomic_exchange_n(&s_scratch_capture_reset_ready[ctx->deck], false,
-                                __ATOMIC_ACQ_REL)) {
-            if (!timeline_active(ctx->deck)) audio_scratch_buffer_reset(scratch);
-        }
-
         /* Freeze scratch capture while this deck is scratching so the window's
          * newest frame stays put under the jog-driven read head (the head is
          * measured as frames-back-from-newest). Ring capture continues so normal
          * playback can resume on release (which seeks + flushes anyway). */
-        bool capture_scratch =
+        bool capture_scratch = timeline_active(ctx->deck) &&
             !atomic_load_bool(&s_scratch_playing[ctx->deck]) &&
             !atomic_load_bool(&s_scratch_capture_freeze[ctx->deck]);
         if (capture_scratch) {
@@ -2131,10 +2099,6 @@ static void ae_decode_task(void *arg)
             }
             if (capture_interrupted) break;
             (void)deck_pcm_push(ctx->deck, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
-            if (capture_scratch && !timeline_active(ctx->deck)) {
-                /* Capture the same source frame into the scratch window (passive). */
-                audio_scratch_buffer_push(scratch, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
-            }
         }
         if (timeline_active(ctx->deck) && eng->timeline_preroll_pending &&
             audio_pcm_timeline_write_seq(&s_pcm_timelines[ctx->deck]) >=
@@ -2149,24 +2113,11 @@ static void ae_decode_task(void *arg)
                          (unsigned)eng->output_base_ms);
             }
         }
-        if (timeline_active(ctx->deck)) {
-            if (scratch_newest_valid && !capture_interrupted) {
-                sync_scratch_view_from_timeline(ctx->deck, scratch_newest_ms);
-            }
-        } else if (capture_scratch && scratch_newest_valid) {
-            audio_scratch_buffer_mark_newest_ms(scratch, scratch_newest_ms);
+        if (timeline_active(ctx->deck) && scratch_newest_valid && !capture_interrupted) {
+            sync_scratch_view_from_timeline(ctx->deck, scratch_newest_ms);
         }
         if (capture_scratch) {
             atomic_store_bool(&s_scratch_capture_writing[ctx->deck], false);
-        }
-        if (!timeline_active(ctx->deck) && !scratch_full_logged &&
-            audio_scratch_buffer_used(scratch) >= AE_SCRATCH_CAPACITY_FRAMES) {
-            scratch_full_logged = true;
-            ESP_LOGI(TAG, "scratch buffer D%u filled: %u frames @ %u Hz (newest %u ms)",
-                     (unsigned)ctx->deck,
-                     (unsigned)audio_scratch_buffer_used(scratch),
-                     (unsigned)eng->sample_rate,
-                     (unsigned)scratch_newest_ms);
         }
     }
 
@@ -2217,7 +2168,6 @@ static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
                                       AE_SCRATCH_HANDOFF_RING);
                 return true;
             }
-            atomic_store_bool(&s_scratch_capture_reset_ready[deck], true);
             scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_FADE_IN);
             return true;
         }
@@ -2408,7 +2358,6 @@ static void ae_output_task(void *arg)
                 scratch_handoff_store(&s_scratch_handoff[d], AE_SCRATCH_HANDOFF_NONE);
                 atomic_store_bool(&s_scratch_playing[d], false);
                 atomic_store_bool(&s_scratch_capture_freeze[d], false);
-                atomic_store_bool(&s_scratch_capture_reset_ready[d], false);
                 atomic_store_bool(&s_scratch_abort_seek_waiting[d], true);
                 apply_pending_pitch(d);
                 if (audio_engine_seek_for_deck_reason(d, target,
@@ -2693,7 +2642,6 @@ static void clear_scratch_playback_state(uint8_t deck)
     s_scratch_handoff_gain[deck] = 1.0f;
     scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
     atomic_store_bool(&s_scratch_playing[deck], false);
-    atomic_store_bool(&s_scratch_capture_reset_ready[deck], false);
     atomic_store_bool(&s_scratch_capture_freeze[deck], false);
     atomic_store_bool(&s_scratch_capture_writing[deck], false);
     atomic_store_bool(&s_scratch_abort_seek_requested[deck], false);
@@ -2808,7 +2756,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 {
     audio_engine_state_t *eng = &s_engines[deck];
 #if AE_FW
-    audio_pcm_ring_t *ring = &s_pcm_rings[deck]; /* legacy fallback in task context */
+    audio_pcm_ring_t *ring = &s_pcm_rings[deck]; /* bounded playback fallback */
 #endif
     eng->last_error = ESP_OK;
     snprintf(eng->last_error_text, sizeof(eng->last_error_text), "OK");
@@ -3517,6 +3465,12 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held)
 bool audio_engine_deck_scratch_begin(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return false;
+    if (!timeline_active(deck)) {
+        ESP_LOGW(TAG,
+                 "scratch begin D%u unavailable: canonical timeline not allocated -> platter hold",
+                 (unsigned)deck);
+        return false;
+    }
     if (atomic_load_bool(&s_scratch_playing[deck])) {
         /* Idempotent active touch, or a fast re-grab before the release fade has
          * completed. The frozen canonical window and scratch head are still
@@ -3524,7 +3478,6 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
         ae_scratch_handoff_t phase =
             (ae_scratch_handoff_t)scratch_handoff_load(&s_scratch_handoff[deck]);
         s_scratch_handoff_gain[deck] = 1.0f;
-        atomic_store_bool(&s_scratch_capture_reset_ready[deck], false);
         atomic_store_bool(&s_scratch_regrab_requested[deck], true);
         scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
         ESP_LOGI(TAG, "scratch re-grab D%u phase=%u", (unsigned)deck,
@@ -3583,9 +3536,7 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
     /* The canonical cursors are authoritative. Refresh the compatibility view
      * after the writer has stopped so a touch landing between PCM publication
      * and the batch-end metadata sync cannot observe stale `filled`/write_index. */
-    if (timeline_active(deck)) {
-        sync_scratch_view_from_timeline(deck, b->newest_pos_ms);
-    }
+    sync_scratch_view_from_timeline(deck, b->newest_pos_ms);
     uint32_t used = audio_scratch_buffer_used(b);
     if (!b->frames || !b->newest_valid || b->sample_rate == 0u || used < 2u) {
         atomic_store_bool(&s_scratch_capture_freeze[deck], false);
@@ -3595,29 +3546,17 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
                  (unsigned)b->sample_rate, (unsigned)used);
         return false;
     }
-    uint64_t back;
-    if (timeline_active(deck)) {
-        uint64_t write_seq = audio_pcm_timeline_write_seq(&s_pcm_timelines[deck]);
-        uint64_t play_seq = audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
-        if (write_seq == 0u || play_seq >= write_seq) {
-            atomic_store_bool(&s_scratch_capture_freeze[deck], false);
-            ESP_LOGW(TAG,
-                     "scratch begin D%u rejected: no future play=%llu write=%llu",
-                     (unsigned)deck, (unsigned long long)play_seq,
-                     (unsigned long long)write_seq);
-            return false;
-        }
-        back = (write_seq - 1u) - play_seq;
-    } else {
-        uint32_t pos = audio_engine_deck_position_ms(deck);
-        if (pos > b->newest_pos_ms) {
-            atomic_store_bool(&s_scratch_capture_freeze[deck], false);
-            ESP_LOGW(TAG, "scratch begin D%u rejected: playhead=%u newest=%u",
-                     (unsigned)deck, (unsigned)pos, (unsigned)b->newest_pos_ms);
-            return false;
-        }
-        back = ((uint64_t)(b->newest_pos_ms - pos) * b->sample_rate) / 1000ull;
+    uint64_t write_seq = audio_pcm_timeline_write_seq(&s_pcm_timelines[deck]);
+    uint64_t play_seq = audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
+    if (write_seq == 0u || play_seq >= write_seq) {
+        atomic_store_bool(&s_scratch_capture_freeze[deck], false);
+        ESP_LOGW(TAG,
+                 "scratch begin D%u rejected: no future play=%llu write=%llu",
+                 (unsigned)deck, (unsigned long long)play_seq,
+                 (unsigned long long)write_seq);
+        return false;
     }
+    uint64_t back = (write_seq - 1u) - play_seq;
     if (back >= used) {
         atomic_store_bool(&s_scratch_capture_freeze[deck], false);
         ESP_LOGW(TAG, "scratch begin D%u rejected: head back=%llu used=%u",
@@ -3629,11 +3568,11 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
     atomic_store_bool(&s_scratch_started_paused[deck], started_paused);
     atomic_store_bool(&s_scratch_return_paused[deck], false);
     s_scratch_origin_pos_ms[deck] = audio_engine_position_ms_for_deck(deck);
-    s_scratch_origin_play_seq[deck] = timeline_active(deck)
-        ? (uint32_t)audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]) : 0u;
+    s_scratch_origin_play_seq[deck] =
+        (uint32_t)audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
     float head_back = (float)back;
     float frames_per_tick = AUDIO_SCRATCH_DEFAULT_FRAMES_PER_TICK *
-        ((float)b->sample_rate / (float)AE_SCRATCH_MAX_RATE);
+        ((float)b->sample_rate / (float)AE_TIMELINE_MAX_RATE);
     audio_scratch_config(&s_scratch_engine[deck],
                          frames_per_tick,
                          AUDIO_SCRATCH_DEFAULT_RATE_WINDOW,
@@ -3678,13 +3617,8 @@ void audio_engine_deck_scratch_end(uint8_t deck)
     bool return_paused = atomic_load_bool(&s_scratch_started_paused[deck]);
 
     if (return_paused) {
-        if (timeline_active(deck)) {
-            (void)audio_pcm_timeline_set_playhead(
-                &s_pcm_timelines[deck], s_scratch_origin_play_seq[deck]);
-        } else {
-            (void)audio_engine_seek_for_deck_reason(
-                deck, s_scratch_origin_pos_ms[deck], AE_SEEK_REASON_SCRATCH_RELEASE);
-        }
+        (void)audio_pcm_timeline_set_playhead(
+            &s_pcm_timelines[deck], s_scratch_origin_play_seq[deck]);
         s_engines[deck].output_base_ms = s_scratch_origin_pos_ms[deck];
         s_engines[deck].output_frames_since_seek = 0u;
 #if AE_FW
@@ -3693,8 +3627,7 @@ void audio_engine_deck_scratch_end(uint8_t deck)
         atomic_store_bool(&s_scratch_return_paused[deck], true);
     }
 
-    if (!return_paused && timeline_active(deck) &&
-        b->newest_valid && b->sample_rate > 0u) {
+    if (!return_paused && b->newest_valid && b->sample_rate > 0u) {
         uint32_t frames_back = head_back > 0.0f ? (uint32_t)head_back : 0u;
         if (audio_pcm_timeline_set_playhead_frames_back(&s_pcm_timelines[deck],
                                                         frames_back)) {
@@ -3709,14 +3642,6 @@ void audio_engine_deck_scratch_end(uint8_t deck)
             audio_resampler_reset(&s_resamplers[deck]);
 #endif
         }
-    } else if (!return_paused && b->newest_valid && b->sample_rate > 0u) {
-        uint32_t target = audio_scratch_track_position_ms(
-            b->newest_pos_ms, head_back, b->sample_rate,
-            s_engines[deck].loop_active,
-            s_engines[deck].loop_start_ms,
-            s_engines[deck].loop_end_ms);
-        (void)audio_engine_seek_for_deck_reason(deck, target,
-                                                AE_SEEK_REASON_SCRATCH_RELEASE);
     }
 
     /* Seed the fade gain before publishing the FADE_OUT phase (release) so the
@@ -3833,10 +3758,10 @@ static void init_pad_fx_buffers(void)
     }
 }
 
-/* Allocate the per-deck scratch capture stores (once) and bind each buffer.
- * Stereo, so capacity*2 int16. On PSRAM (~768 KB/deck at the default 4 s @
- * 48 kHz); if an allocation fails the buffer stays unbound and capture is a
- * no-op for that deck — playback is unaffected. */
+/* Allocate the per-deck canonical PCM stores (once) and bind each scratch view.
+ * Stereo, so capacity*2 int16. On PSRAM (~768 KB/deck at 4 s @ 48 kHz). If an
+ * allocation fails, the deck keeps normal ring playback but audible scratch is
+ * unavailable and deck_core safely falls back to platter-hold. */
 static void init_scratch_buffers(void)
 {
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
@@ -3848,26 +3773,17 @@ static void init_scratch_buffers(void)
                                 s_pcm_timeline_storage[deck],
                                 s_pcm_timeline_storage[deck]
                                     ? AE_TIMELINE_CAPACITY_FRAMES : 0u);
-        if (!s_pcm_timeline_storage[deck] && !s_scratch_storage[deck]) {
-            s_scratch_storage[deck] =
-                beat_fx_echo_alloc_buffer(AE_SCRATCH_CAPACITY_FRAMES * 2u);
-        }
         audio_scratch_buffer_init(&s_scratch_buf[deck],
+                                  s_pcm_timeline_storage[deck],
                                   s_pcm_timeline_storage[deck]
-                                      ? s_pcm_timeline_storage[deck]
-                                      : s_scratch_storage[deck],
-                                  s_pcm_timeline_storage[deck]
-                                      ? AE_TIMELINE_CAPACITY_FRAMES
-                                      : (s_scratch_storage[deck]
-                                            ? AE_SCRATCH_CAPACITY_FRAMES : 0u));
+                                      ? AE_TIMELINE_CAPACITY_FRAMES : 0u);
         ESP_LOGI(TAG, "PCM timeline D%u: %s, capacity=%u frames",
                  (unsigned)deck,
-                 timeline_active(deck) ? "PSRAM canonical" : "legacy fallback",
+                 timeline_active(deck) ? "PSRAM canonical" : "ring playback; scratch unavailable",
                  (unsigned)(timeline_active(deck)
                      ? AE_TIMELINE_CAPACITY_FRAMES : AUDIO_PCM_RING_FRAMES));
         audio_scratch_init(&s_scratch_engine[deck]);
         atomic_store_bool(&s_scratch_playing[deck], false);
-        atomic_store_bool(&s_scratch_capture_reset_ready[deck], false);
         atomic_store_bool(&s_scratch_capture_freeze[deck], false);
         atomic_store_bool(&s_scratch_capture_writing[deck], false);
         atomic_store_bool(&s_scratch_abort_seek_requested[deck], false);
@@ -3915,6 +3831,16 @@ void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *s
         s_limiter_stats.peak_input_abs = stats->peak_input_abs;
     }
     AE_UNLOCK();
+}
+
+void audio_engine_test_disable_pcm_timeline(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return;
+    /* Retain the allocated pointer so a later audio_engine_init() can restore
+     * the normal test backend without leaking or reallocating host memory. */
+    audio_pcm_timeline_init(&s_pcm_timelines[deck], NULL, 0u);
+    audio_scratch_buffer_init(&s_scratch_buf[deck], NULL, 0u);
+    audio_pcm_ring_reset(&s_pcm_rings[deck]);
 }
 #endif
 
@@ -4360,7 +4286,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     AE_LOCK();
     out_snapshot->ring_capacity = timeline_active(0u)
         ? AE_TIMELINE_CAPACITY_FRAMES : AUDIO_PCM_RING_FRAMES;
-    out_snapshot->scratch_buffer_capacity = AE_SCRATCH_CAPACITY_FRAMES;
+    out_snapshot->scratch_buffer_capacity = AE_TIMELINE_CAPACITY_FRAMES;
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_engine_state_t *eng = &s_engines[deck];
         out_snapshot->deck_active[deck] = atomic_load_bool(&eng->playing) &&
