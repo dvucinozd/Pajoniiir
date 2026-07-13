@@ -1353,9 +1353,9 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A audit/baseline, R5B P4 facade removal, R5C mixer consolidation,
-R5D S3 legacy retirement and R5E scratch fallback cleanup implemented; R5F
-pending.
+Status: R5A-R5E complete. R5F software audit, both host suites, both signed
+builds and the P4 flash/runtime check pass; S3 flash and final dual-target
+hardware soak remain.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
@@ -1388,3 +1388,9 @@ pending.
 - R5D software acceptance: complete S3 and P4 host suites pass; clean signed S3
   build is `0xE60E0` (942,185 B total image, 155,651 B DIRAM, 52% slot free),
   and signed P4 remains `0x205AF0` with 49% slot free.
+- R5F removed the unused `anlz_walk_usbanlz()` API/walker after confirming that
+  production uses the direct `export.pdb` ANLZ path. Final P4/S3 host suites and
+  signed builds pass at `RC1-120-gb898b26b`; P4 is `0x2056E0` and S3 remains
+  `0xE60E0`. P4 wired flash/hash verification and a 55-second reset/panic/
+  watchdog-free monitor pass are complete; S3 flash and final scratch soak are
+  the remaining closeout gates.

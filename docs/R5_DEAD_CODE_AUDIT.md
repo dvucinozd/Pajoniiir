@@ -1,8 +1,9 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A baseline, R5B P4 facade removal, R5C mixer consolidation, R5D S3
-legacy retirement and R5E scratch fallback cleanup completed 2026-07-13. This
-document is the evidence and decision log for cleanup batches R5A-R5F.
+Status: R5A-R5E complete; R5F software audit, host regression, signed builds and
+P4 flash complete on 2026-07-13. S3 flash plus dual-target hardware soak remain
+before R5 can close. This document is the evidence and decision log for cleanup
+batches R5A-R5F.
 
 ## Confirmed Call Graph
 
@@ -87,6 +88,33 @@ Acceptance on 2026-07-13:
 - relative to R5D, removal of the duplicate fallback path saves `0x410` (1,040)
   application bytes; no extra PSRAM allocation is attempted after a canonical
   timeline allocation failure.
+
+## R5F Software Result
+
+The final call-graph audit resolved the stale `TODO Phase 6` in
+`rekordbox_anlz.c`. `anlz_walk_usbanlz()` had no caller and was obsolete because
+the production library already reads each track's direct `anlz_path` from
+`export.pdb`. Its public declaration, standalone PC directory walker, firmware
+stub and `dirent` helpers were removed. The R5 audit now rejects that symbol in
+addition to every compatibility symbol and legacy S3 path retired in R5B-R5E.
+
+Final software acceptance on 2026-07-13:
+
+- complete P4 and S3 host suites pass;
+- P4 includes 330/330 `audio_engine` assertions and both canonical-allocation
+  failure/platter-hold tests;
+- both clean signed-layout ESP-IDF builds pass with version
+  `RC1-120-gb898b26b`;
+- P4: application `0x2056E0`, total image 2,119,001 B, DIRAM 263,177 B
+  (45.65%), 49% app-slot free;
+- S3: application `0xE60E0`, total image 942,185 B, DIRAM 155,651 B (45.54%),
+  IRAM 16,384 B (100%), 52% app-slot free.
+
+Relative to the R5A signed baseline, the final P4 application is 1,168 B
+smaller and uses 12 B less DIRAM; the final S3 application is 256 B smaller and
+uses 488 B less DIRAM. The P4 clean image was wired-flashed on COM15 with hash
+verification and remained reset/panic/watchdog-free during 55 seconds of runtime
+monitoring. S3 wired flash and the final two-platter/dual-deck soak are pending.
 
 ## R5B Result
 

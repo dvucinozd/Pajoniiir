@@ -601,4 +601,7 @@ R5 cleanup status:
 - [x] R5D legacy S3 mode explicitly retired; components and build branch removed;
 - [x] R5E independent scratch allocation/copy path removed; canonical timeline
   failure keeps ring playback and selects platter-hold on touch;
-- [ ] R5F final size, documentation and hardware soak acceptance recorded.
+- [x] R5F final call-graph audit, host suites, signed builds and size comparison
+  recorded;
+- [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
+- [ ] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
