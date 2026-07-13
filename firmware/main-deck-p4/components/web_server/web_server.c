@@ -197,8 +197,9 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         strcmp(target, "p4") != 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: p4");
     }
-    if (req->content_len < P4_OTA_IMAGE_HEADER_SIZE) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware image is too small");
+    if (req->content_len < DDJ_OTA_HEADER_SIZE + P4_OTA_IMAGE_HEADER_SIZE) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Signed OTA bundle is too small");
     }
 
     uint8_t *buffer = malloc(4096);
@@ -206,7 +207,44 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
     }
 
-    size_t remaining = (size_t)req->content_len;
+    uint8_t manifest_header[DDJ_OTA_HEADER_SIZE];
+    size_t manifest_received = 0;
+    while (manifest_received < sizeof(manifest_header)) {
+        int received = ota_http_recv(req, manifest_header + manifest_received,
+                                     sizeof(manifest_header) - manifest_received);
+        if (received <= 0) {
+            free(buffer);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Manifest upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        manifest_received += (size_t)received;
+    }
+
+    ddj_ota_manifest_t manifest;
+    ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
+        manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_P4,
+        P4_OTA_ESP32P4_CHIP_ID, "main-deck-p4", P4_OTA_MAX_IMAGE_SIZE,
+        &manifest);
+    if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   ddj_ota_manifest_result_name(manifest_rc));
+    }
+    if (!ddj_ota_manifest_verify_signature(manifest_header, sizeof(manifest_header))) {
+        free(buffer);
+        httpd_resp_set_status(req, "403 Forbidden");
+        return httpd_resp_send(req, "Invalid OTA manifest signature", HTTPD_RESP_USE_STRLEN);
+    }
+    if ((size_t)req->content_len != DDJ_OTA_HEADER_SIZE + manifest.image_size) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Bundle length does not match signed manifest");
+    }
+
+    size_t remaining = manifest.image_size;
     size_t buffered = 0;
     while (buffered < P4_OTA_IMAGE_HEADER_SIZE) {
         size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
@@ -234,7 +272,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Cannot stop playback");
     }
-    rc = p4_ota_begin((size_t)req->content_len);
+    rc = p4_ota_begin(&manifest);
     if (rc != ESP_OK) {
         free(buffer);
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" : "400 Bad Request");

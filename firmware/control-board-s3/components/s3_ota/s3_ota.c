@@ -11,6 +11,7 @@
 #include "firmware_health.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "mbedtls/sha256.h"
 
 #define S3_OTA_PROJECT_NAME "control-board-s3"
 
@@ -20,6 +21,10 @@ static s3_ota_status_t s_status;
 static const esp_partition_t *s_target;
 static esp_ota_handle_t s_handle;
 static bool s_handle_open;
+static mbedtls_sha256_context s_image_sha;
+static bool s_image_sha_active;
+static uint8_t s_expected_sha256[DDJ_OTA_SHA256_SIZE];
+static char s_expected_version[DDJ_OTA_VERSION_SIZE];
 
 static void copy_text(char *dst, size_t dst_size, const char *src)
 {
@@ -61,9 +66,11 @@ esp_err_t s3_ota_init(void)
     return ESP_OK;
 }
 
-esp_err_t s3_ota_begin(size_t image_size)
+esp_err_t s3_ota_begin(const ddj_ota_manifest_t *manifest)
 {
     if (!s_lock) return ESP_ERR_INVALID_STATE;
+    if (!manifest || manifest->target != DDJ_OTA_TARGET_S3) return ESP_ERR_INVALID_ARG;
+    size_t image_size = manifest->image_size;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (s_status.state == S3_OTA_RECEIVING) {
         xSemaphoreGive(s_lock);
@@ -87,6 +94,18 @@ esp_err_t s3_ota_begin(size_t image_size)
         return rc;
     }
     s_handle_open = true;
+    mbedtls_sha256_init(&s_image_sha);
+    if (mbedtls_sha256_starts(&s_image_sha, 0) != 0) {
+        (void)esp_ota_abort(s_handle);
+        s_handle_open = false;
+        copy_text(s_status.last_error, sizeof(s_status.last_error), "SHA-256 init failed");
+        s_status.state = S3_OTA_FAILED;
+        xSemaphoreGive(s_lock);
+        return ESP_FAIL;
+    }
+    s_image_sha_active = true;
+    memcpy(s_expected_sha256, manifest->image_sha256, sizeof(s_expected_sha256));
+    copy_text(s_expected_version, sizeof(s_expected_version), manifest->version);
     s_status.state = S3_OTA_RECEIVING;
     s_status.expected_size = image_size;
     s_status.received_size = 0;
@@ -110,7 +129,13 @@ esp_err_t s3_ota_write(const void *data, size_t size)
     }
     esp_err_t rc = esp_ota_write(s_handle, data, size);
     if (rc == ESP_OK) {
-        s_status.received_size += size;
+        if (mbedtls_sha256_update(&s_image_sha, data, size) == 0) {
+            s_status.received_size += size;
+        } else {
+            rc = ESP_FAIL;
+            copy_text(s_status.last_error, sizeof(s_status.last_error), "SHA-256 update failed");
+            s_status.state = S3_OTA_FAILED;
+        }
     } else {
         copy_text(s_status.last_error, sizeof(s_status.last_error), esp_err_to_name(rc));
         s_status.state = S3_OTA_FAILED;
@@ -125,17 +150,47 @@ esp_err_t s3_ota_finish(void)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (!s_handle_open || s_status.state != S3_OTA_RECEIVING ||
         s_status.received_size != s_status.expected_size) {
+        if (s_handle_open) {
+            (void)esp_ota_abort(s_handle);
+            s_handle_open = false;
+        }
+        if (s_image_sha_active) {
+            mbedtls_sha256_free(&s_image_sha);
+            s_image_sha_active = false;
+        }
+        copy_text(s_status.last_error, sizeof(s_status.last_error),
+                  "incomplete OTA image");
+        s_status.state = S3_OTA_FAILED;
         xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_SIZE;
     }
 
-    esp_err_t rc = esp_ota_end(s_handle);
+    uint8_t actual_sha256[DDJ_OTA_SHA256_SIZE];
+    esp_err_t rc = mbedtls_sha256_finish(&s_image_sha, actual_sha256) == 0 ? ESP_OK : ESP_FAIL;
+    mbedtls_sha256_free(&s_image_sha);
+    s_image_sha_active = false;
+    if (rc == ESP_OK && memcmp(actual_sha256, s_expected_sha256,
+                               sizeof(actual_sha256)) != 0) {
+        rc = ESP_ERR_INVALID_CRC;
+        copy_text(s_status.last_error, sizeof(s_status.last_error),
+                  "firmware SHA-256 mismatch");
+    }
+    if (rc != ESP_OK) {
+        (void)esp_ota_abort(s_handle);
+    } else {
+        rc = esp_ota_end(s_handle);
+    }
     s_handle_open = false;
     esp_app_desc_t desc = {0};
     if (rc == ESP_OK) rc = esp_ota_get_partition_description(s_target, &desc);
     if (rc == ESP_OK && strcmp(desc.project_name, S3_OTA_PROJECT_NAME) != 0) {
         rc = ESP_ERR_INVALID_RESPONSE;
         copy_text(s_status.last_error, sizeof(s_status.last_error), "wrong firmware project");
+    }
+    if (rc == ESP_OK && strcmp(desc.version, s_expected_version) != 0) {
+        rc = ESP_ERR_INVALID_RESPONSE;
+        copy_text(s_status.last_error, sizeof(s_status.last_error),
+                  "signed version does not match image");
     }
     if (rc == ESP_OK) rc = esp_ota_set_boot_partition(s_target);
     if (rc == ESP_OK) {
@@ -160,6 +215,10 @@ void s3_ota_abort(const char *reason)
     if (s_handle_open) {
         (void)esp_ota_abort(s_handle);
         s_handle_open = false;
+    }
+    if (s_image_sha_active) {
+        mbedtls_sha256_free(&s_image_sha);
+        s_image_sha_active = false;
     }
     copy_text(s_status.last_error, sizeof(s_status.last_error), reason ? reason : "aborted");
     s_status.state = S3_OTA_FAILED;

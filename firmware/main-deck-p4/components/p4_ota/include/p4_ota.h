@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "ota_manifest.h"
 
 typedef enum {
     P4_OTA_IDLE = 0,
@@ -24,7 +25,7 @@ typedef struct {
 } p4_ota_status_t;
 
 esp_err_t p4_ota_init(void);
-esp_err_t p4_ota_begin(size_t image_size);
+esp_err_t p4_ota_begin(const ddj_ota_manifest_t *manifest);
 esp_err_t p4_ota_write(const void *data, size_t size);
 esp_err_t p4_ota_finish(void);
 void p4_ota_abort(const char *reason);

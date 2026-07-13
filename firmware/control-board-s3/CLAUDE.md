@@ -1,7 +1,9 @@
 # DDJ-FFL4 S3 Control Board Firmware - Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-13. The
-hardware-accepted OTA baseline is `RC1-106-g717b6ab3`, `ota_0 / valid`.
+hardware-accepted unsigned OTA baseline is `RC1-106-g717b6ab3`,
+`ota_0 / valid`. Signed `.ddjota` verification is implemented and awaits
+hardware acceptance.
 
 ## Project Overview
 
@@ -24,6 +26,12 @@ Status:
 - FLX4 enumerates and translates to control-link frames on hardware
   (VID 0x2B73 / PID 0x0045); the XIAO GPIO21 user LED reflects reduced link
   state.
+
+S3 web OTA accepts only signed `control-board-s3.ddjota` bundles. The shared
+`ota_manifest` component verifies the ECDSA P-256 manifest before flash erase
+and the streamed image SHA-256 before activation. Firmware embeds only the
+committed public DER key; the repository-root ignored private PEM is release
+infrastructure and must never be committed or copied onto the device.
 
 Boot note: the FLX4 briefly disconnects/re-enumerates ~0.9 s into boot on
 every cold start (USB host settling). It self-recovers within ~0.6 s — the

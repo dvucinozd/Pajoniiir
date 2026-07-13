@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "esp_err.h"
+#include "ota_manifest.h"
 
 typedef enum {
     S3_OTA_IDLE = 0,
@@ -23,7 +24,7 @@ typedef struct {
 } s3_ota_status_t;
 
 esp_err_t s3_ota_init(void);
-esp_err_t s3_ota_begin(size_t image_size);
+esp_err_t s3_ota_begin(const ddj_ota_manifest_t *manifest);
 esp_err_t s3_ota_write(const void *data, size_t size);
 esp_err_t s3_ota_finish(void);
 void s3_ota_abort(const char *reason);

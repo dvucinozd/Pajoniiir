@@ -173,6 +173,21 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
     -LiteralPatterns @("ui_settings_set_s3_debug_ap_toggle_cb", "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)")
 
+Assert-FileContains `
+    -Name "P4 OTA requires signed bundle before flash begin" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "ddj_ota_manifest_parse",
+        "ddj_ota_manifest_verify_signature",
+        "p4_ota_begin(&manifest)",
+        "Invalid OTA manifest signature"
+    )
+
+Assert-FileContains `
+    -Name "P4 OTA UI selects signed bundle" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web/index.html") `
+    -LiteralPatterns @(".ddjota", "signed P4")
+
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -1015,6 +1030,18 @@ $tests = @(
         )
     },
     @{
+        Name = "ota_manifest"
+        Dir = "tests/ota_manifest"
+        Target = "test_ota_manifest.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_ota_manifest.exe",
+            "test_ota_manifest.c",
+            "../../firmware/common/ota_manifest/ota_manifest.c"
+        )
+    },
+    @{
         Name = "ui_settings"
         Dir = "tests/ui_settings"
         Target = "test_ui_settings.exe"
@@ -1237,6 +1264,16 @@ foreach ($test in $tests) {
     Invoke-Step -Name "build $($test.Name)" -WorkingDirectory $dir -Executable $Gcc.Source -Arguments $test.Args
     $created.Add($target)
     Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments @()
+}
+
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    Invoke-Step -Name "run ota_signing" `
+        -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
+        -Executable $python.Source `
+        -Arguments @("test_ota_signing.py")
+} else {
+    Write-Warning "python not found; skipping OTA signing Python tests"
 }
 
 if (-not $KeepArtifacts) {

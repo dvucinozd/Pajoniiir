@@ -1,8 +1,10 @@
 # DDJ-FFL4 OTA Update Plan
 
-Status: design and acceptance record; all planned P4/S3 OTA hardware batches
-completed 2026-07-13. For the operator workflow use
-[`OTA-UPDATE.md`](OTA-UPDATE.md). Signed manifests remain future hardening.
+Status: design and acceptance record. The unsigned dual-slot/rollback path was
+hardware-accepted on 2026-07-13. Batch 6 signed OTA is implemented,
+host/build-verified and core hardware-smoked. Signed interrupted-upload and
+forced-rollback repetition remain. For the operator workflow use
+[`OTA-UPDATE.md`](OTA-UPDATE.md).
 
 ## Implementation status
 
@@ -20,7 +22,7 @@ Batch 2 implementation and hardware OTA smoke are complete:
 
 - `GET /api/firmware` reports the running/target slot, version, byte progress,
   state, and last error;
-- `POST /api/ota/p4` accepts a raw P4 application `.bin` with the mandatory
+- the legacy `POST /api/ota/p4` accepted a raw P4 application `.bin` with the mandatory
   `X-DDJ-OTA: p4` header;
 - the handler validates the 24-byte ESP header and ESP32-P4 chip ID before
   touching flash, stops playback, streams 4 KB chunks into the inactive slot,
@@ -34,7 +36,7 @@ Batch 4 implementation and hardware OTA smoke are complete:
 
 - `GET /api/firmware` on the S3 Debug AP reports the S3 running slot, version,
   upload progress, state, and last error;
-- `POST /api/ota/s3` accepts a raw S3 application `.bin` only with the
+- the legacy `POST /api/ota/s3` accepted a raw S3 application `.bin` only with the
   mandatory `X-DDJ-OTA: s3` header;
 - the first 24-byte ESP image header is buffered and checked for the ESP32-S3
   chip ID before flash erase begins;
@@ -67,11 +69,26 @@ S3 report at 3150 ms: `version=RC1-104-g2f710fb7-dirty slot=1 state=3`, meaning
 `ota_0 / VALID`. The later AP acceptance independently confirmed both OTA slots
 and the P4-visible S3 report after reboot.
 
-An unsigned combined release package tool is also available at
-`tools/package_ota_release.ps1`. It checks project metadata, binary chip IDs,
-slot limits, and matching P4/S3 versions, then emits both images plus a
-deterministic SHA-256 manifest under ignored `releases/`. Cryptographic manifest
-signing remains Batch 6 work.
+Batch 6 signed OTA is software-complete:
+
+- `tools/package_ota_release.ps1` checks project metadata, binary chip IDs,
+  slot limits and matching P4/S3 versions, then emits target-specific signed
+  `.ddjota` bundles, raw recovery images and a signed outer release manifest;
+- the fixed binary manifest signs target, chip, image size, project, version,
+  image SHA-256 and key ID with ECDSA P-256;
+- P4 and S3 reject an invalid manifest before flash erase and compare the
+  streamed image SHA-256 and signed version before activation;
+- the committed public DER key has key ID `rel-001`; the ignored private PEM is
+  release infrastructure and requires restricted offline backup;
+- host coverage passes valid P4/S3 bundles, tampered manifest/image, wrong key,
+  truncated/extended bundle and outer-manifest signature cases;
+- isolated `build_signed` release-layout builds pass for both targets.
+
+The design intentionally does not enforce version anti-rollback yet. Current
+Git-derived application versions are not monotonic security counters, and
+service rollback remains useful. The initial implementation trusts one key;
+production hardening must define secure custody and a multi-key or wired key
+rotation migration.
 
 Batch 3 and Batch 4 AP testing completed on 2026-07-13 while the development
 laptop retained Internet access over its wired `Ethernet 2` route and dedicated
@@ -122,8 +139,9 @@ the final recovery path.
    smoke complete.
 5. Report S3 version/update state to P4 and test S3 rollback. Reporting, wired
    smoke, and forced rollback complete.
-6. Add signed manifests after both independent update paths are stable. The
-   unsigned checked release package is complete.
+6. Add signed manifests after both independent update paths are stable.
+   Firmware, tooling, host tests and release builds are complete; hardware
+   transition and acceptance remain.
 
 P4-to-S3 firmware forwarding over the UART `0xA6` layer is deferred. Controller
 profile transfer has shown checksum/retry pressure, so independent Wi-Fi OTA is
@@ -147,6 +165,34 @@ the safer first implementation for firmware-sized payloads.
   processors;
 - [x] two successive A/B update cycles pass on each processor (`P4 factory ->
   ota_0 -> ota_1`; `S3 ota_0 -> ota_1 -> ota_0`).
+
+Batch 6 signed-path acceptance before enclosure:
+
+- [x] transition both boards to the signed-OTA-capable firmware through a full
+  wired flash (preferred) or one final legacy raw-image OTA;
+- [x] valid signed P4 and S3 bundles boot from the inactive slot and reach
+  `valid` after mandatory startup;
+- [x] a modified signed manifest is rejected before flash erase on both targets;
+- [ ] a bundle signed by the wrong key/key ID is rejected before flash erase;
+- [x] a modified image is rejected by streamed SHA-256 before activation on
+  both targets;
+- [x] the other target's signed bundle is rejected without selecting the
+  inactive slot on both targets;
+- [ ] wrong chip/project/version, truncated bundle and trailing bytes are
+  rejected without selecting the inactive slot;
+- [ ] interrupted signed upload leaves the current slot bootable;
+- [ ] a signed non-confirming image still rolls back to the prior valid slot;
+- [ ] final release version, key ID, slots, states and functional smoke are
+  recorded in the release log.
+
+The first signed hardware smoke on 2026-07-13 used the intentionally dirty test
+version `RC1-108-g1be328a9-dirty`. Both full wired migrations passed. Modified
+manifest fields returned HTTP 403 without starting an OTA; cross-target bundles
+returned HTTP 400; and modified image bytes returned HTTP 400 with
+`firmware SHA-256 mismatch` while the running slot remained unchanged. Original
+bundles then completed P4 `factory -> ota_0 -> ota_1` and S3
+`ota_0 -> ota_1 -> ota_0`. Final P4 status reported `ota_1`, no OTA error, and
+its authoritative S3 report showed `ota_0 / valid` with the same version.
 
 The 2026-07-13 AP acceptance used release `RC1-105-gf1c176e2`. Final status via
 the P4 endpoint was P4 `ota_1 / valid` and S3 `ota_0 / valid`, with the same

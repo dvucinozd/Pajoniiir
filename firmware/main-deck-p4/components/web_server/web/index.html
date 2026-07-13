@@ -218,14 +218,14 @@
         <div>
             <h2 class="browser-title">P4 FIRMWARE UPDATE</h2>
             <p id="ota-firmware-info">Reading firmware status...</p>
-            <p class="ota-warning">Playback stops during upload. Keep power connected until the controller restarts.</p>
+            <p class="ota-warning">Select only the signed P4 .ddjota bundle. Playback stops during upload. Keep power connected until the controller restarts.</p>
         </div>
-        <input id="ota-file" type="file" accept=".bin,application/octet-stream">
+        <input id="ota-file" type="file" accept=".ddjota,application/octet-stream">
         <button class="btn btn-ota" id="ota-upload-btn" onclick="uploadP4Firmware()">UPDATE P4</button>
         <progress id="ota-progress" max="100" value="0"></progress>
         <span id="ota-status"></span>
     </section>
 
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>

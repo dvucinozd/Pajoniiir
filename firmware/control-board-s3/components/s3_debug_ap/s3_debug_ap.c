@@ -229,9 +229,9 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "#msg{white-space:pre-wrap;margin-top:12px}.warn{color:#ffcb6b}</style></head>"
         "<body><section><a href=\"/\" style=\"color:#7fc7ff\">Back to log</a>"
         "<h1>S3 Firmware Update</h1><p id=\"status\">Loading status...</p>"
-        "<p class=\"warn\">Upload only a control-board-s3 application .bin. "
+        "<p class=\"warn\">Upload only the signed control-board-s3 .ddjota bundle. "
         "The controller reboots and the Debug AP turns off after success.</p>"
-        "<input id=\"file\" type=\"file\" accept=\".bin,application/octet-stream\"><br>"
+        "<input id=\"file\" type=\"file\" accept=\".ddjota,application/octet-stream\"><br>"
         "<button id=\"upload\">Upload and reboot</button>"
         "<progress id=\"progress\" value=\"0\" max=\"100\"></progress>"
         "<div id=\"msg\"></div></section><script>"
@@ -242,14 +242,16 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "s.running_version+' | State: '+s.state+(s.last_error?' | '+s.last_error:'');}"
         "catch(e){statusEl.textContent='Status unavailable: '+e.message;}}refresh();"
         "button.onclick=()=>{const file=document.getElementById('file').files[0];"
-        "if(!file){msg.textContent='Select a .bin file first.';return;}"
+        "if(!file){msg.textContent='Select a signed .ddjota bundle first.';return;}"
+        "if(!file.name.toLowerCase().endsWith('.ddjota')){msg.textContent="
+        "'Unsigned .bin images are rejected. Select the S3 .ddjota bundle.';return;}"
         "if(!confirm('Upload S3 firmware and reboot the controller?'))return;"
         "button.disabled=true;msg.textContent='Uploading...';const x=new XMLHttpRequest();"
         "x.open('POST','/api/ota/s3');x.setRequestHeader('Content-Type','application/octet-stream');"
         "x.setRequestHeader('X-DDJ-OTA','s3');x.upload.onprogress=e=>{if(e.lengthComputable)"
         "progress.value=Math.round(e.loaded*100/e.total);};"
         "x.onload=()=>{msg.textContent=x.status>=200&&x.status<300?"
-        "'Image accepted. S3 is rebooting; reconnect through P4 Settings.':"
+        "'Signature and image accepted. S3 is rebooting; reconnect through P4 Settings.':"
         "'Upload failed ('+x.status+'): '+x.responseText;if(x.status<200||x.status>=300)"
         "button.disabled=false;};x.onerror=()=>{msg.textContent='Connection failed during upload.';"
         "button.disabled=false;};x.send(file);};</script></body></html>";
@@ -318,8 +320,9 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         strcmp(target, "s3") != 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: s3");
     }
-    if (req->content_len < S3_OTA_IMAGE_HEADER_SIZE) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware image is too small");
+    if (req->content_len < DDJ_OTA_HEADER_SIZE + S3_OTA_IMAGE_HEADER_SIZE) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Signed OTA bundle is too small");
     }
 
     uint8_t *buffer = malloc(4096);
@@ -327,7 +330,40 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
     }
 
-    size_t remaining = (size_t)req->content_len;
+    uint8_t manifest_header[DDJ_OTA_HEADER_SIZE];
+    size_t manifest_received = 0;
+    while (manifest_received < sizeof(manifest_header)) {
+        int received = ota_http_recv(req, manifest_header + manifest_received,
+                                     sizeof(manifest_header) - manifest_received);
+        if (received <= 0) {
+            free(buffer);
+            return ota_receive_error(req, received, false);
+        }
+        manifest_received += (size_t)received;
+    }
+
+    ddj_ota_manifest_t manifest;
+    ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
+        manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_S3,
+        S3_OTA_ESP32S3_CHIP_ID, "control-board-s3", S3_OTA_MAX_IMAGE_SIZE,
+        &manifest);
+    if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   ddj_ota_manifest_result_name(manifest_rc));
+    }
+    if (!ddj_ota_manifest_verify_signature(manifest_header, sizeof(manifest_header))) {
+        free(buffer);
+        httpd_resp_set_status(req, "403 Forbidden");
+        return httpd_resp_send(req, "Invalid OTA manifest signature", HTTPD_RESP_USE_STRLEN);
+    }
+    if ((size_t)req->content_len != DDJ_OTA_HEADER_SIZE + manifest.image_size) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Bundle length does not match signed manifest");
+    }
+
+    size_t remaining = manifest.image_size;
     size_t buffered = 0;
     while (buffered < S3_OTA_IMAGE_HEADER_SIZE) {
         size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
@@ -345,7 +381,7 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
                                    "Not an ESP32-S3 firmware image");
     }
 
-    esp_err_t rc = s3_ota_begin((size_t)req->content_len);
+    esp_err_t rc = s3_ota_begin(&manifest);
     if (rc != ESP_OK) {
         free(buffer);
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" :

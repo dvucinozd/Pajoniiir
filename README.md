@@ -139,10 +139,13 @@ checked local release directory with:
 ```
 
 The tool validates target chip IDs, project metadata, slot limits, and matching
-versions before writing both application binaries and `manifest.json` under the
-ignored `releases/` directory. See the [OTA update procedure](docs/OTA-UPDATE.md)
-for operation and the [OTA design record](docs/OTA_UPDATE_PLAN.md) for acceptance
-history. Hardware acceptance is complete; signed manifests remain future work.
+versions, then signs and verifies target-specific `.ddjota` bundles plus the
+outer release manifest under the ignored `releases/` directory. Raw `.bin`
+files are retained for wired recovery only. See the
+[OTA update procedure](docs/OTA-UPDATE.md) for operation and the
+[OTA design record](docs/OTA_UPDATE_PLAN.md) for acceptance history. Unsigned
+OTA and rollback are hardware-accepted; signed-path hardware acceptance is the
+remaining Batch 6 step.
 
 ---
 
@@ -155,9 +158,9 @@ OTA with rollback.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure
-> power/thermal/RF soak, signed OTA manifests, longer dual-deck key-lock quality
-> testing and selected hardware acceptance rows remain before a production
-> release.
+> power/thermal/RF soak, signed-OTA hardware acceptance and production key
+> custody/rotation, longer dual-deck key-lock quality testing and selected
+> hardware acceptance rows remain before a production release.
 
 ### Implemented P4 Features (Audio & UI)
 - **Audio Engine & Mixer**:

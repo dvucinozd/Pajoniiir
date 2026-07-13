@@ -12,12 +12,13 @@ Status: current phase ledger, audited 2026-07-13.
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | Controller profiles | Firmware path implemented, host-tested and FLX4-profile hardware-verified |
-| P4/S3 OTA and rollback | Implemented and hardware-accepted 2026-07-13 |
+| P4/S3 OTA and rollback | Unsigned path hardware-accepted 2026-07-13; signed path implemented and host/build-verified |
 
-Next release hardening is signed OTA manifests, enclosure power/thermal/RF
-soak, longer dual-deck key-lock quality testing, selected pending MIDI hardware
-rows and a first non-FLX4 profile acceptance. Historical phase text below is
-retained as the implementation record.
+Next release hardening is signed-OTA hardware acceptance and production key
+custody/rotation, enclosure power/thermal/RF soak, longer dual-deck key-lock
+quality testing, selected pending MIDI hardware rows and a first non-FLX4
+profile acceptance. Historical phase text below is retained as the
+implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
@@ -1142,8 +1143,10 @@ rollback, and physical power-loss acceptance pass on P4 and S3.
   state, and version. P4 Settings and `GET /api/firmware` expose both targets.
 - Wired smoke confirmed P4 recovers `ota_0 / VALID` S3 metadata after a P4-only
   restart; the first decoded report arrived at 3150 ms.
-- The unsigned release packager validates chip IDs, project metadata, matching
-  versions, and slot limits before producing a deterministic SHA-256 manifest.
+- The release packager validates chip IDs, project metadata, matching versions
+  and slot limits, then emits ECDSA P-256 signed `.ddjota` bundles and a signed
+  outer release manifest. Both devices verify the embedded manifest before
+  flash erase and the streamed image SHA-256 before activation.
 - Newly booted OTA images are marked valid only after mandatory subsystem
   startup reaches the shared `firmware_health_mark_ready()` gate.
 - AP acceptance passed with release `RC1-105-gf1c176e2`: P4 cycled
@@ -1157,5 +1160,7 @@ rollback, and physical power-loss acceptance pass on P4 and S3.
   image bootable on both targets. The accepted S3 run used a 20 KiB/s throttled
   upload so power was demonstrably removed before transfer completion.
 
-See `docs/OTA_UPDATE_PLAN.md` for the remaining acceptance matrix and signed
-release-package work.
+Batch 6 signed OTA is software-complete: common manifest parsing/verification,
+both target integrations, packaging, tamper/wrong-key host tests and isolated
+release-layout builds pass. See `docs/OTA_UPDATE_PLAN.md` for the remaining
+hardware acceptance matrix and key-custody work.

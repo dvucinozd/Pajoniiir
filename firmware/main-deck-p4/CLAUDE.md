@@ -1,7 +1,9 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-13. The
-hardware-accepted OTA baseline is `RC1-106-g717b6ab3`, `ota_0 / valid`.
+hardware-accepted unsigned OTA baseline is `RC1-106-g717b6ab3`,
+`ota_0 / valid`. Signed `.ddjota` verification is implemented and awaits
+hardware acceptance.
 
 ## Project Overview
 
@@ -25,6 +27,12 @@ web status JSON. PCM5102A RCA MAIN, FLX4 USB headphone cue, FLX4 LED feedback,
 vinyl scratch, Master Tempo and P4/S3 OTA have since passed their recorded basic
 hardware acceptance. Remaining work is release/enclosure hardening and the
 explicitly pending rows in active validation documents.
+
+P4 web OTA accepts only signed `main-deck-p4.ddjota` bundles. The common
+`ota_manifest` component verifies the embedded ECDSA P-256 manifest before
+flash erase and the streamed image SHA-256 before activation. The trusted
+public DER key is committed in the common component; the ignored private key
+under repository-root `keys/` must never be copied into firmware or committed.
 
 ---
 

@@ -555,7 +555,24 @@ Batch 5 firmware-status verification:
 - P4 Settings must show both `P4: version [slot]` and
   `S3: version [slot/state]` rather than a hard-coded firmware label.
 - `tools/package_ota_release.ps1` creates an ignored dual-target package and
-  fails if versions, chip IDs, project metadata, or slot limits disagree.
+  fails if versions, chip IDs, project metadata, or slot limits disagree. It
+  now produces signed `.ddjota` bundles plus a signed outer manifest.
+
+Batch 6 signed-OTA transition and acceptance:
+
+- [ ] Back up `keys/ota_signing_private.pem` in restricted offline storage;
+- [x] install the signed-OTA-capable P4 and S3 firmware once by full wired flash
+  (preferred) or through each still-running legacy unsigned endpoint;
+- [x] upload valid signed P4 and S3 bundles and confirm version, opposite slot,
+  and successful mandatory startup/validation;
+- [ ] confirm audio, UI, controller and LED behavior after the signed updates;
+- [x] confirm modified manifest, modified image and wrong target are rejected on
+  both targets without activating the inactive slot;
+- [ ] confirm wrong key ID/key, chip/project mismatch and truncated/extended
+  bundles are rejected on hardware;
+- [ ] repeat interrupted-upload and forced-rollback checks with signed bundles;
+- [ ] record the accepted release version, key ID and final slots/states before
+  enclosing the boards.
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

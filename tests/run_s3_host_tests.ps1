@@ -321,7 +321,11 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "s3 debug ap exposes guarded OTA upload" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -Patterns @("/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA", "s3_ota_policy_header_valid")
+    -Patterns @(
+        "/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA",
+        "s3_ota_policy_header_valid", "ddj_ota_manifest_parse",
+        "ddj_ota_manifest_verify_signature", ".ddjota"
+    )
 
 Assert-FileContains `
     -Name "s3 OTA initializes before mandatory subsystem startup" `
@@ -581,6 +585,18 @@ $tests = @(
             "-o", "test_s3_ota_policy.exe",
             "test_s3_ota_policy.c",
             "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
+        )
+    },
+    @{
+        Name = "ota_manifest"
+        Dir = "tests/ota_manifest"
+        Target = "test_ota_manifest.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_ota_manifest.exe",
+            "test_ota_manifest.c",
+            "../../firmware/common/ota_manifest/ota_manifest.c"
         )
     },
     @{

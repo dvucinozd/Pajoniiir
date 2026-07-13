@@ -39,17 +39,19 @@ The Debug AP also hosts a dedicated OTA page at
 **`http://192.168.4.1/update`**. Navigating away from the log page closes its
 long-lived SSE connection before the firmware upload starts.
 
-- Select only `control-board-s3.bin` produced by the S3 build.
-- The browser sends the raw binary to `POST /api/ota/s3` with
+- Select only the signed `control-board-s3.ddjota` release bundle.
+- The browser sends the bundle to `POST /api/ota/s3` with
   `X-DDJ-OTA: s3`.
-- Firmware validates the ESP magic, ESP32-S3 chip ID, slot size, complete ESP
-  image, and project name before selecting the new boot slot.
+- Firmware verifies the ECDSA P-256 manifest before flash erase, then validates
+  the signed image SHA-256, ESP32-S3 chip ID, slot size, complete ESP image,
+  project name and version before selecting the new boot slot.
 - A successful upload restarts S3. The Debug AP is OFF after reboot, so enable
   it again from P4 Settings when further diagnostics are needed.
 - An interrupted or rejected upload does not replace the running boot slot.
 
-The AP is open and signed release manifests are scheduled for a later OTA
-batch. Keep it disabled except during a supervised bench update.
+The AP remains open. Signed bundles protect firmware authenticity but do not
+provide AP confidentiality or availability; keep it disabled except during a
+supervised bench update.
 
 > The open AP has no authentication and consumes RAM/CPU/power while ON, so keep
 > it a bench/debug-only tool. FLX4 MIDI, the control link, and P4-to-S3

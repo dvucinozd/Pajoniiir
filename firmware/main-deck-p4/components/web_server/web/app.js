@@ -365,7 +365,11 @@ function uploadP4Firmware() {
     const status = document.getElementById('ota-status');
     const file = fileInput && fileInput.files ? fileInput.files[0] : null;
     if (!file) {
-        status.innerText = 'Select a P4 .bin image first.';
+        status.innerText = 'Select a signed P4 .ddjota bundle first.';
+        return;
+    }
+    if (!file.name.toLowerCase().endsWith('.ddjota')) {
+        status.innerText = 'Unsigned .bin images are rejected. Select the P4 .ddjota bundle.';
         return;
     }
     if (!confirm(`Install ${file.name} (${file.size} bytes) and restart P4?`)) return;
@@ -383,7 +387,7 @@ function uploadP4Firmware() {
     xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
             progress.value = 100;
-            status.innerText = 'Image verified. P4 is restarting...';
+            status.innerText = 'Signature and image verified. P4 is restarting...';
             setTimeout(() => window.location.reload(), 8000);
         } else {
             button.disabled = false;

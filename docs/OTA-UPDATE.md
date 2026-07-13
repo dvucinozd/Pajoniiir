@@ -1,185 +1,177 @@
 # DDJ-FFL4 OTA Update Procedure
 
-Status: **operational and hardware-accepted on 2026-07-13** for both ESP32-P4
-and ESP32-S3. This is the operator procedure. See
-[`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for design decisions, partition
-layout, acceptance history and rollback fault injection.
+Status: dual-slot OTA and rollback are hardware-accepted on both targets. The
+signed `.ddjota` implementation, host tests, release builds, valid A/B updates
+and core signature/target/hash rejection tests are hardware-accepted on
+2026-07-13. Signed interrupted-upload and forced-rollback repetition remain.
+See
+[`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for the design and acceptance record.
 
 ## Safety rules
 
-- Update only one processor at a time and wait until it has rebooted cleanly.
-- Use only the application `.bin` for the correct target. Never upload a
-  bootloader, partition table, `ota_data_initial.bin` or merged flash image.
-- Keep stable power throughout upload and the following reboot.
-- Do not play audio during an update. P4 stops playback before writing flash.
-- Verify project, version, SHA-256 and image size against `manifest.json`.
-- Current manifests are **not cryptographically signed**. Distribute release
-  folders through a trusted channel until manifest signing is implemented.
-- Keep wired serial access available for the first installation of the OTA
-  partition layout and for disaster recovery.
+- Update one processor at a time and wait for a clean reboot.
+- Upload only the target's signed `.ddjota` bundle. Raw `.bin` files are for
+  wired recovery and the one-time transition described below.
+- Keep power stable and do not play audio during an update.
+- Keep wired access until both signed update paths have passed on hardware.
+- Do not distribute or commit `keys/ota_signing_private.pem`.
 
-## Prerequisites
+The device verifies the embedded ECDSA P-256 signature before flash erase. It
+then streams and verifies the signed image size and SHA-256, ESP chip, project
+name and signed version before activating the new slot. A package for the wrong
+target, a modified manifest, a modified image, an unknown key or trailing data
+is rejected.
 
-The boards must already contain the OTA-capable bootloader and partition table.
-A legacy single-slot installation cannot acquire a new partition table through
-an application-only OTA upload; install that layout once over USB/UART.
+## First signed-OTA installation
 
-Required PC setup:
+A legacy single-slot image cannot install a partition table through
+application OTA. Install the OTA-capable bootloader, partition table, initial
+OTA data and application once over USB/UART.
+
+Boards already running the accepted unsigned OTA firmware need one transition
+to the signed-OTA firmware. Use a full wired flash whenever possible. The old
+unsigned endpoint may alternatively install the new raw application `.bin`
+once; after the new firmware boots, every web update must be a `.ddjota` bundle.
+Never send a `.ddjota` bundle to the old raw-image endpoint or a raw `.bin` to
+the new signed endpoint.
+
+## Signing key custody
+
+- The ignored private key is `keys/ota_signing_private.pem`.
+- The trusted public key is committed at
+  `firmware/common/ota_manifest/keys/ddj_ota_release_public.der`.
+- Back up the private key offline and restrict access. Losing it prevents
+  future OTA releases unless a new trust key is installed over a wired path.
+- The current PEM is an unencrypted development/release key. Before production
+  distribution, move signing to encrypted offline storage, a secret store or
+  hardware-backed signer and define a key-rotation procedure.
+
+The current firmware trusts one key ID, `rel-001`. Adding or replacing trusted
+keys requires a firmware update signed by the existing key or a wired recovery
+flash. Signed older releases remain installable intentionally: the project does
+not yet enforce anti-rollback because Git-derived version strings are not a
+safe monotonic security counter and service rollback remains useful.
+
+## Build both targets
+
+Initialize ESP-IDF and use an isolated release build so stale ignored
+`sdkconfig` files cannot silently select an old partition layout:
 
 ```powershell
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
-cd D:\Documents\DDJ-FFL4
-idf.py --version
-```
 
-Before updating, copy any important SD-card configuration and use a release
-whose P4 and S3 versions match.
-
-## Build both application images
-
-Use the same build-directory name for both targets. `build_ota3` is the
-repository's established release-build name:
-
-```powershell
 cd D:\Documents\DDJ-FFL4\firmware\main-deck-p4
-idf.py -B build_ota3 build
+idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
 cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
-idf.py -B build_ota3 build
+idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 ```
 
-Do not package the release unless both builds exit with code 0.
+Do not package unless both commands exit with code 0. P4 must fit its 4 MiB
+slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
 
-## Create and verify the release package
+## Create and verify a signed release
 
 From the repository root:
 
 ```powershell
 cd D:\Documents\DDJ-FFL4
-.\tools\package_ota_release.ps1 -BuildName build_ota3
+.\tools\package_ota_release.ps1
 ```
 
-The script creates `releases\ddj-ffl4-<version>\` containing:
+The packager requires the initialized ESP-IDF Python environment and the local
+private key. It validates both builds, signs each bundle and the outer release
+manifest, and verifies its own output before succeeding. It creates the ignored
+directory `releases\ddj-ffl4-<version>\` with:
 
-- `main-deck-p4.bin` for the P4;
-- `control-board-s3.bin` for the S3;
-- `manifest.json` with version, target, project, ESP chip ID, size, slot size
-  and SHA-256.
+- `main-deck-p4.ddjota` and `control-board-s3.ddjota` for web OTA;
+- raw `main-deck-p4.bin` and `control-board-s3.bin` for wired recovery only;
+- `manifest.json` with target metadata, sizes, hashes and signing key ID;
+- `manifest.sig`, the ECDSA P-256 signature of `manifest.json`.
 
-The packager rejects a missing build, wrong project, wrong chip, mismatched
-P4/S3 version or image larger than its OTA slot. The limits are 4 MiB for P4
-and `0x1e0000` bytes (1.875 MiB) for S3.
-
-Optional independent checksum check:
+Independent verification is available with:
 
 ```powershell
-Get-FileHash .\releases\ddj-ffl4-<version>\main-deck-p4.bin -Algorithm SHA256
-Get-FileHash .\releases\ddj-ffl4-<version>\control-board-s3.bin -Algorithm SHA256
+python .\tools\ota_signing.py verify-bundle `
+  --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
+  .\releases\ddj-ffl4-<version>\main-deck-p4.ddjota
+
+python .\tools\ota_signing.py verify-file `
+  --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
+  --signature .\releases\ddj-ffl4-<version>\manifest.sig `
+  .\releases\ddj-ffl4-<version>\manifest.json
 ```
 
-The results must match `manifest.json`.
+## Update P4
 
-## Update the P4
+1. Enable **Wi-Fi Remote** in P4 Settings.
+2. Connect to `PAJONIIR` and open `http://192.168.4.1`.
+3. Record the running P4 version, slot and state.
+4. Select **`main-deck-p4.ddjota`**, confirm and upload.
+5. Wait for success and restart; reconnect and refresh `/api/firmware`.
+6. Confirm the expected version, opposite OTA slot and `valid` state, then
+   check display/touch, USB library, MAIN audio, UART and S3 status.
 
-1. On the P4 Settings screen enable **Wi-Fi Remote**.
-2. Connect the service laptop to SSID `PAJONIIR` using the configured WPA2
-   password. The current development default is `12345678`.
-3. Open `http://192.168.4.1`.
-4. Read the firmware status and note the running slot/version.
-5. In the firmware-update section select **`main-deck-p4.bin`**.
-6. Confirm the target and start upload. Do not close the page or remove power.
-7. Wait for the success response and automatic restart.
-8. Reconnect to `PAJONIIR` if Wi-Fi Remote starts after reboot, then refresh
-   `http://192.168.4.1/api/firmware`.
-9. Confirm that the version is expected, the running slot changed (`ota_0` to
-   `ota_1`, or vice versa), and state becomes `valid` after mandatory startup.
-10. Confirm display/touch, USB library, MAIN audio, UART heartbeat and S3
-    firmware report before updating the S3.
-
-The raw API equivalent is:
+Raw API equivalent:
 
 ```powershell
 curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
   -H "X-DDJ-OTA: p4" `
-  --data-binary "@releases\ddj-ffl4-<version>\main-deck-p4.bin" `
+  --data-binary "@releases\ddj-ffl4-<version>\main-deck-p4.ddjota" `
   http://192.168.4.1/api/ota/p4
 ```
 
-The endpoint checks the ESP image header/chip, exact content length, ESP-IDF
-image validity and `main-deck-p4` project name before selecting the new slot.
+## Update S3
 
-## Update the S3
+The S3 service AP is open and returns to OFF after reboot. Signature validation
+protects firmware authenticity, not AP confidentiality or availability.
 
-The S3 Debug AP is runtime-only and returns to OFF after reboot.
+1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
+2. Connect to `PajoNiiiR-S3-DEBUG` and open
+   `http://192.168.4.1/update`.
+3. Record the S3 running version, slot and state.
+4. Select **`control-board-s3.ddjota`**, confirm and upload.
+5. After restart, re-enable the AP, reconnect and inspect `/api/firmware`.
+6. Confirm expected version, opposite slot and `valid`, then turn the AP off
+   and verify FLX4 controls, LEDs, UART and USB headphone cue.
 
-1. On the P4 Settings screen enable **S3 DEBUG AP** and wait for status `ON`.
-2. Disconnect the laptop from `PAJONIIR` and connect to
-   `PajoNiiiR-S3-DEBUG`. The current service AP is intentionally open, so use it
-   only during a supervised update and disable it afterward.
-3. Open `http://192.168.4.1/update`.
-4. Verify the displayed S3 running slot/version.
-5. Select **`control-board-s3.bin`**, confirm and start upload.
-6. Keep power stable until success and automatic S3 restart.
-7. Because the Debug AP is off after reboot, re-enable **S3 DEBUG AP** from P4
-   Settings and reconnect the laptop.
-8. Open `http://192.168.4.1/api/firmware` and confirm the new version, opposite
-   OTA slot and `valid` state.
-9. Turn S3 DEBUG AP off and verify FLX4 reconnect, controls, LEDs, UART link and
-   USB headphone cue audio.
-
-The raw API equivalent, while connected to the S3 AP, is:
+Raw API equivalent:
 
 ```powershell
 curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
   -H "X-DDJ-OTA: s3" `
-  --data-binary "@releases\ddj-ffl4-<version>\control-board-s3.bin" `
+  --data-binary "@releases\ddj-ffl4-<version>\control-board-s3.ddjota" `
   http://192.168.4.1/api/ota/s3
 ```
 
-The S3 endpoint checks the image header/chip, image validity and
-`control-board-s3` project name before changing the boot slot.
+## Acceptance and failure behavior
 
-## Post-update acceptance
+For both targets record project, version, slot, state and last error. Confirm
+FLX4 reconnect/control/LED behavior, PCM5102A MAIN, FLX4 headphone cue and P4
+UI/media access.
 
-Record these values for both targets:
+- Invalid signature/key ID/target/chip/project/version/size or image SHA is
+  rejected without selecting the inactive slot.
+- A disconnected or interrupted transfer aborts the OTA handle; the current
+  slot remains bootable.
+- A new image stays `PENDING_VERIFY` until mandatory startup succeeds.
+- A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
-| Check | Expected result |
-| --- | --- |
-| Project | `main-deck-p4` or `control-board-s3` as appropriate |
-| Version | Same release version on P4 and S3 |
-| Running slot | The previously inactive `ota_0` or `ota_1` |
-| State | `valid` after required subsystem startup |
-| Last error | Empty/none |
-| Controller | FLX4 reconnects and sends both-deck controls |
-| Audio | PCM5102A MAIN and FLX4 headphone cue operate |
-| UI/media | Touch UI and USB library operate |
-
-The 2026-07-13 accepted baseline was `RC1-106-g717b6ab3`, with both targets on
-`ota_0 / valid` after the final clean release.
-
-## Failure and rollback behavior
-
-- A wrong target header, wrong chip, wrong project or oversized/invalid image
-  is rejected without making it the boot partition.
-- An interrupted upload aborts the OTA handle; the current slot remains
-  bootable and the partial inactive image is not selected.
-- A newly selected image boots as pending verification. Firmware marks it
-  valid only after mandatory startup succeeds.
-- If the new image resets or fails before confirmation, the ESP-IDF bootloader
-  rolls back to the previous valid slot.
-
-After an apparent failure, first read `/api/firmware` and serial logs. Do not
-immediately repeat uploads if the device is still confirming or rolling back.
+The unsigned rollback baseline accepted on 2026-07-13 was
+`RC1-106-g717b6ab3`, with both targets at `ota_0 / valid`. The first signed
+hardware smoke used `RC1-108-g1be328a9-dirty`: P4 completed
+`factory -> ota_0 -> ota_1`, S3 completed `ota_0 -> ota_1 -> ota_0`, both
+targets rejected modified signed fields, wrong targets and modified image data,
+and final status was P4 `ota_1` plus S3 `ota_0 / valid`.
 
 ## Wired recovery
 
-Use wired flashing when the board no longer exposes its AP, neither OTA slot
-boots, or the partition table/bootloader is missing or damaged. Flash the full
-set produced by ESP-IDF (bootloader, partition table, initial OTA data and
-application) using the offsets printed by `idf.py build`/`idf.py flash`.
+Use wired flashing if the AP is unavailable, neither slot boots, the trust key
+must be replaced, or bootloader/partition data is damaged. Flash the complete
+ESP-IDF set at the offsets reported by the build:
 
 ```powershell
 cd D:\Documents\DDJ-FFL4\firmware\main-deck-p4
@@ -189,23 +181,17 @@ cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
 idf.py -p <S3-COM-PORT> flash monitor
 ```
 
-Use the actually detected COM ports; historical port numbers in validation
-notes are not guaranteed. Exit the monitor before another process accesses the
-same port.
-
 ## Release record template
 
 ```text
-Date/time:
-Operator:
-Release version:
-Manifest SHA-256 checked: yes/no
+Date/time and operator:
+Release version and key ID:
+Bundle and manifest signatures verified: yes/no
 P4 before -> after slot/version/state:
 S3 before -> after slot/version/state:
-MAIN audio: pass/fail
-Headphone cue: pass/fail
-FLX4 controls/LEDs: pass/fail
-USB library/UI: pass/fail
+Wrong-key/tamper rejection tested: yes/no/details
+MAIN audio / headphone cue: pass/fail
+FLX4 controls/LEDs / USB library/UI: pass/fail
 Rollback observed: no/yes, details
 Notes:
 ```
