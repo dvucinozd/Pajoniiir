@@ -1221,3 +1221,58 @@ Hardware acceptance still required:
 - repeat with Master Tempo off/on and with a short track that can be completely
   predecoded before first PLAY;
 - confirm pause, platter hold and scratch near EOF do not falsely end the deck.
+
+## Phase 16: Audio Remediation R2 — PCM Timeline Concurrency (2026-07-13)
+
+Status: implemented, host-tested, P4 firmware-built and basic hardware-smoked.
+
+- Random Master Tempo reads no longer combine an atomic logical
+  `oldest_seq` snapshot with a separately changing producer-owned physical
+  `oldest_index`. The redundant physical eviction cursor has been removed.
+- The output task now derives the retained frame's physical slot from its own
+  stable `play_seq`/`play_index` anchor. This keeps the key-lock hot path free
+  of division while preventing mixed-generation cursor pairs.
+- After copying a stereo frame, the reader rechecks `oldest_seq`. If the
+  decoder evicted that exact frame during the copy, the read is rejected so a
+  potentially overwritten or torn frame cannot reach WSOLA.
+- Estimated seek now rejects a missing memory/file source instead of allowing
+  `fseek(NULL, ...)` on an invalid engine state.
+- Hardware serial diagnosis found a separate scratch-freeze priority inversion:
+  the priority-6 output task could starve the priority-5 decoder while the
+  decoder held `scratch_capture_writing`, causing scratch begin to time out
+  after 20 ms and fall back to platter hold. Output now gives the decoder an
+  immediate scheduler tick when freeze is waiting on a writer, and canonical
+  timeline publication stops at the next frame after observing freeze.
+- A later 30-second capture exposed an ESP-IDF v5.5 USB DWC HAL assert when a
+  documented `BNAINTR` channel error arrived without `CHHLTD`. P4 now links a
+  project-local wrapper for only the channel interrupt decoder: BNA follows the
+  HCD's existing recoverable pipe-error path, while every other missing-halt
+  invariant still aborts. Global HAL assertions remain enabled.
+- Host coverage exercises random reads after repeated physical wraps and
+  evictions. Static guards prevent reintroducing `oldest_index` and the unsafe
+  seek fallback, and require the prompt writer-release handshake.
+
+Software acceptance:
+
+- focused `audio_pcm_timeline` host test passes;
+- full P4 host suite passes, including 318/318 `audio_engine` assertions;
+- isolated ESP-IDF P4 build passes; `main-deck-p4.bin` is `0x205a70` bytes with
+  49% free in the smallest app partition.
+
+Hardware acceptance still required:
+
+- play both decks with Master Tempo enabled and exercise tempo changes,
+  scratch/release and seeks while the decoder timeline wraps;
+- listen for isolated clicks or short WSOLA dropouts during aggressive
+  dual-deck operation;
+- confirm serial output contains no watchdog, decoder or audio-output errors;
+- reproduce sustained USB playback/storage activity and confirm BNA recovery
+  does not reboot P4 or unmount the media.
+
+Initial hardware acceptance:
+
+- a post-flash 30-second dual-deck playback/scratch capture completed with no
+  scratch writer timeout, platter-hold fallback, USB DWC assert, reboot or
+  monitor PCM drop; link throughput remained approximately 172 blocks/s;
+- two isolated 11.92/12.13 ms output-late warnings did not cause a drop or
+  repeat into a sustained overload.

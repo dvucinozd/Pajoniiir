@@ -14,6 +14,9 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R1 EOF drain/replay implementation passes P4 host tests and firmware build.
 - [x] R1 basic hardware smoke: full track tail plays and PLAY restarts after natural EOF.
 - [x] Dual-deck MT watchdog fix host/build-verified and 45-second serial-smoked without WDT/drop.
+- [x] R2 PCM timeline race and missing-source seek guard pass P4 host tests and firmware build.
+- [x] R2 scratch-freeze writer timeout fix passes P4 host tests and firmware build.
+- [x] R2 USB DWC BNA/CHHLTD compatibility wrapper passes link, host and P4 build checks.
 
 ## Repeat before enclosure close
 
@@ -22,6 +25,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [ ] Run both host suites and both firmware builds from a clean checkout.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
+- [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
+- [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [ ] Perform one OTA update per target and record slot/version/state.

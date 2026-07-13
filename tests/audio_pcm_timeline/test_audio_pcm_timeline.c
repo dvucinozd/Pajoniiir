@@ -120,6 +120,24 @@ static void test_pop_cursor_crosses_physical_wrap(void)
     assert(!audio_pcm_timeline_pop(&t, &frame));
 }
 
+static void test_random_read_derives_slot_from_sequence_after_many_evictions(void)
+{
+    audio_pcm_timeline_t t;
+    audio_pcm_timeline_init(&t, s_storage, CAP);
+    for (int16_t i = 0; i < (int16_t)CAP; i++) push_value(&t, i);
+
+    audio_mixer_frame_t frame;
+    for (int16_t i = 0; i < 4; i++) {
+        assert(audio_pcm_timeline_pop(&t, &frame));
+        push_value(&t, (int16_t)(CAP + i));
+    }
+
+    assert(audio_pcm_timeline_oldest_seq(&t) == 4u);
+    for (uint64_t seq = 4u; seq < 10u; seq++) {
+        expect_seq(&t, seq, (int16_t)seq);
+    }
+}
+
 int main(void)
 {
     test_initial_future_and_normal_pop();
@@ -128,6 +146,7 @@ int main(void)
     test_reposition_playhead_inside_history_and_future();
     test_reset_changes_generation_and_drops_all_cursors();
     test_pop_cursor_crosses_physical_wrap();
+    test_random_read_derives_slot_from_sequence_after_many_evictions();
     puts("audio_pcm_timeline tests passed");
     return 0;
 }

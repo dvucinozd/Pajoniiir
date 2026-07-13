@@ -155,7 +155,10 @@ The `master` branch contains the complete dual-deck controller path, vinyl
 scratch, Master Tempo/key lock, simultaneous PCM5102A MAIN and FLX4 USB
 headphone cue, data-driven controller profiles, and hardware-accepted P4/S3
 OTA with rollback. The R1 end-of-track drain/replay correction is host-tested,
-P4-built and basic hardware-smoked.
+P4-built and basic hardware-smoked. R2 hardens concurrent PCM timeline reads
+used by Master Tempo and guards invalid source-less estimated seeks; its host
+tests and P4 build pass, and its initial dual-deck scratch/USB hardware smoke
+completed without writer timeout, DWC assert, reboot or PCM-link drop.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure

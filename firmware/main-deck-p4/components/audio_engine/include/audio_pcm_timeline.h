@@ -27,7 +27,6 @@ typedef struct {
     uint32_t oldest_seq;
     uint32_t play_seq;
     uint32_t write_seq;
-    uint32_t oldest_index;
     uint32_t play_index;
     uint32_t write_index;
     uint32_t generation;

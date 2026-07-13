@@ -605,6 +605,31 @@ Assert-FileContains `
     -LiteralPatterns @("audio_output_should_force_idle", "vTaskDelay(pdMS_TO_TICKS(1))", "IDLE0 one real tick")
 
 Assert-FileContains `
+    -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu", "scratch freeze is waiting for its writer flag")
+
+Assert-FileContains `
+    -Name "p4 USB DWC BNA without CHHLTD uses the recoverable HCD pipe-error path" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c") `
+    -LiteralPatterns @("USB_DWC_LL_INTR_CHAN_BNAINTR", "USB_DWC_HAL_CHAN_ERROR_BNA", "USB_DWC_HAL_CHAN_EVENT_ERROR", "if (!halted && !bna_without_halt)", "abort()")
+
+Assert-FileContains `
+    -Name "p4 links the narrow USB DWC interrupt decoder compatibility wrapper" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
+    -LiteralPatterns @("usb_dwc_hal_compat.c", "--wrap=usb_dwc_hal_chan_decode_intr")
+
+Assert-FileDoesNotContain `
+    -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_pcm_timeline.h") `
+    -LiteralPatterns @("oldest_index")
+
+Assert-FileContains `
+    -Name "p4 estimated seek rejects a missing file source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("else if (eng->fp)", "Estimate seek rejected: no file source")
+
+Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")

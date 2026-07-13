@@ -1499,8 +1499,11 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 
     if (eng->file_buf) {
         eng->file_pos = target_byte;
-    } else {
+    } else if (eng->fp) {
         fseek(eng->fp, (long)target_byte, SEEK_SET);
+    } else {
+        ESP_LOGE(TAG, "Estimate seek rejected: no file source");
+        return;
     }
     mp3dec_init(&eng->dec);
     atomic_store_bool(&eng->eof, false);
@@ -2103,10 +2106,29 @@ static void ae_decode_task(void *arg)
                 capture_scratch = false;
             }
         }
+        bool capture_interrupted = false;
         for (int i = 0; i < samples && runtime->run; i++) {
+            /* scratch_begin may freeze the canonical producer while this
+             * decoded batch is being published. Stop at the next frame so the
+             * writer flag can be released promptly; scratch release performs
+             * an authoritative seek, so discarding the unpublished tail cannot
+             * create a resumed-playback discontinuity. */
+            if (capture_scratch && timeline_active(ctx->deck) &&
+                (atomic_load_bool(&s_scratch_capture_freeze[ctx->deck]) ||
+                 atomic_load_bool(&s_scratch_playing[ctx->deck]))) {
+                capture_interrupted = true;
+                break;
+            }
             while (deck_pcm_free(ctx->deck, eng->sample_rate) == 0u && runtime->run) {
+                if (capture_scratch && timeline_active(ctx->deck) &&
+                    (atomic_load_bool(&s_scratch_capture_freeze[ctx->deck]) ||
+                     atomic_load_bool(&s_scratch_playing[ctx->deck]))) {
+                    capture_interrupted = true;
+                    break;
+                }
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
+            if (capture_interrupted) break;
             (void)deck_pcm_push(ctx->deck, decode_pcm[i * 2], decode_pcm[i * 2 + 1]);
             if (capture_scratch && !timeline_active(ctx->deck)) {
                 /* Capture the same source frame into the scratch window (passive). */
@@ -2126,8 +2148,10 @@ static void ae_decode_task(void *arg)
                          (unsigned)eng->output_base_ms);
             }
         }
-        if (timeline_active(ctx->deck) && scratch_newest_valid) {
-            sync_scratch_view_from_timeline(ctx->deck, scratch_newest_ms);
+        if (timeline_active(ctx->deck)) {
+            if (scratch_newest_valid && !capture_interrupted) {
+                sync_scratch_view_from_timeline(ctx->deck, scratch_newest_ms);
+            }
         } else if (capture_scratch && scratch_newest_valid) {
             audio_scratch_buffer_mark_newest_ms(scratch, scratch_newest_ms);
         }
@@ -2578,13 +2602,24 @@ static void ae_output_task(void *arg)
         uint32_t block_delay_ms = audio_output_remaining_delay_ms(
             s_output_sample_rate,
             block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
+        bool scratch_writer_needs_cpu = false;
+        for (uint8_t d = 0u; d < AUDIO_ENGINE_DECK_COUNT; d++) {
+            if (atomic_load_bool(&s_scratch_capture_freeze[d]) &&
+                atomic_load_bool(&s_scratch_capture_writing[d])) {
+                scratch_writer_needs_cpu = true;
+                break;
+            }
+        }
         if (block_delay_ms > 0u) {
             vTaskDelay(pdMS_TO_TICKS(block_delay_ms));
             consecutive_busy_blocks = 0u;
-        } else if (audio_output_should_force_idle(++consecutive_busy_blocks)) {
+        } else if (scratch_writer_needs_cpu ||
+                   audio_output_should_force_idle(++consecutive_busy_blocks)) {
             /* taskYIELD only offers CPU0 to equal/higher-priority tasks. Give
-             * IDLE0 one real tick periodically so its watchdog can run even
-             * during continuous dual-deck DSP. */
+             * the lower-priority decoder one real tick immediately when a
+             * scratch freeze is waiting for its writer flag. The same delay
+             * also gives IDLE0 one real tick periodically for its watchdog
+             * during continuous DSP. */
             vTaskDelay(pdMS_TO_TICKS(1));
             consecutive_busy_blocks = 0u;
         } else {

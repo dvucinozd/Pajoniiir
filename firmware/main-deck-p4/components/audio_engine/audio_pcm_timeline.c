@@ -16,7 +16,6 @@ void audio_pcm_timeline_reset(audio_pcm_timeline_t *t)
     t->oldest_seq = 0u;
     t->play_seq = 0u;
     t->write_seq = 0u;
-    t->oldest_index = 0u;
     t->play_index = 0u;
     t->write_index = 0u;
     t->generation++;
@@ -35,7 +34,6 @@ bool audio_pcm_timeline_push(audio_pcm_timeline_t *t, int16_t left, int16_t righ
         /* Never overwrite the next frame normal playback still needs. */
         if (oldest_seq >= play_seq) return false;
         oldest_seq++;
-        if (++t->oldest_index >= t->capacity) t->oldest_index = 0u;
         __atomic_store_n(&t->oldest_seq, oldest_seq, __ATOMIC_RELEASE);
     }
 
@@ -59,12 +57,22 @@ bool audio_pcm_timeline_read(const audio_pcm_timeline_t *t, uint64_t seq,
     if (seq > UINT32_MAX || seq < oldest_seq || seq >= write_seq) {
         return false;
     }
-    uint32_t offset = (uint32_t)seq - oldest_seq;
-    uint32_t index = t->oldest_index + offset;
-    if (index >= t->capacity) index -= t->capacity;
+    /* play_seq/play_index are owned by the same output task that performs
+     * random key-lock reads. Use that stable physical anchor rather than the
+     * producer-owned eviction cursor; the retained window is at most one
+     * capacity wide, so at most one wrap correction is required. */
+    uint32_t play_seq = __atomic_load_n(&t->play_seq, __ATOMIC_RELAXED);
+    int64_t index_from_play = (int64_t)t->play_index +
+                              ((int64_t)(uint32_t)seq - (int64_t)play_seq);
+    if (index_from_play < 0) index_from_play += t->capacity;
+    if (index_from_play >= t->capacity) index_from_play -= t->capacity;
+    uint32_t index = (uint32_t)index_from_play;
     out->left = t->frames[index * 2u];
     out->right = t->frames[index * 2u + 1u];
-    return true;
+    /* The producer may evict and overwrite this exact slot after our first
+     * range check. Discard a possibly torn frame if its sequence expired while
+     * it was being copied; callers already treat false as unavailable PCM. */
+    return seq >= __atomic_load_n(&t->oldest_seq, __ATOMIC_ACQUIRE);
 }
 
 bool audio_pcm_timeline_pop(audio_pcm_timeline_t *t, audio_mixer_frame_t *out)
@@ -91,9 +99,7 @@ bool audio_pcm_timeline_set_playhead(audio_pcm_timeline_t *t, uint64_t seq)
     if (!t || seq > UINT32_MAX || seq < audio_pcm_timeline_oldest_seq(t) ||
         seq > audio_pcm_timeline_write_seq(t)) return false;
     uint32_t seq32 = (uint32_t)seq;
-    uint32_t offset = seq32 - t->oldest_seq;
-    uint32_t index = t->oldest_index + offset;
-    if (index >= t->capacity) index -= t->capacity;
+    uint32_t index = seq32 % t->capacity;
     t->play_index = index;
     __atomic_store_n(&t->play_seq, seq32, __ATOMIC_RELEASE);
     return true;
