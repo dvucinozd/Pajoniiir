@@ -162,3 +162,7 @@ an upload to inactive `ota_0` and returned to valid `ota_1`. The first S3 attemp
 completed before power was removed and was not counted; the repeated upload was
 limited to 20 KiB/s, lost power while writing inactive `ota_0`, and returned to
 valid `ota_1` without activating the partial image.
+
+After acceptance, both targets were restored over OTA to the clean packaged
+release `RC1-106-g717b6ab3`. Final P4 status reported `ota_0 / valid`, and its
+embedded S3 report independently confirmed `ota_0 / valid` with the same version.

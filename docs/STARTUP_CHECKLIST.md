@@ -519,9 +519,10 @@ HTTP OTA implementation status:
   bootable on both targets. The accepted S3 run used a throttled 20 KiB/s upload
   to guarantee the power cut occurred before transfer completion.
 - AP testing passed on 2026-07-13 with Internet retained over `Ethernet 2` while
-  Wi-Fi was dedicated to `PAJONIIR` and `PajoNiiiR-S3-DEBUG` in turn. Final
-  status was P4 `ota_1 / valid`, S3 `ota_0 / valid`, both
-  `RC1-105-gf1c176e2`.
+  Wi-Fi was dedicated to `PAJONIIR` and `PajoNiiiR-S3-DEBUG` in turn. After the
+  destructive tests, both targets were OTA-restored to packaged release
+  `RC1-106-g717b6ab3`; final status was P4 `ota_0 / valid` and S3
+  `ota_0 / valid`.
 
 Batch 5 firmware-status verification:
 
