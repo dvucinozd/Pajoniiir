@@ -2,8 +2,9 @@
 
 Status: design and acceptance record. The unsigned dual-slot/rollback path was
 hardware-accepted on 2026-07-13. Batch 6 signed OTA is implemented,
-host/build-verified and core hardware-smoked. Signed interrupted-upload and
-forced-rollback repetition remain. For the operator workflow use
+host/build-verified and core hardware-smoked. R4 WPA2 access was accepted on
+both target APs on 2026-07-13. Signed interrupted-upload and forced-rollback
+repetition remain. For the operator workflow use
 [`OTA-UPDATE.md`](OTA-UPDATE.md).
 
 ## Implementation status

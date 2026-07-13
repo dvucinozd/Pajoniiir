@@ -1315,8 +1315,8 @@ Initial hardware acceptance:
 
 ## Phase 18: OTA Remediation R4 — AP And Status Hardening (2026-07-13)
 
-Status: implemented; both host suites and signed-layout firmware builds pass.
-Dual-target WPA2 hardware smoke is pending.
+Status: implemented; both host suites and signed-layout firmware builds pass,
+and dual-target WPA2 hardware smoke passed on 2026-07-13.
 
 - P4 Wi-Fi Remote and the on-demand S3 Debug AP now both use WPA2-PSK with the
   accepted default password `PajoNiiiR`; S3 no longer starts an open network.
@@ -1342,9 +1342,11 @@ Software acceptance:
 - ESP-IDF S3 signed build passes; `control-board-s3.bin` is `0xE61E0` bytes with
   52% free in the smallest app partition.
 
-Hardware acceptance still required:
+Initial hardware acceptance:
 
-- flash both targets because each AP credential changed;
-- enable each AP in turn, confirm WPA2 authentication with `PajoNiiiR`, reject
-  a wrong/empty password, and open the firmware status/update page;
-- confirm normal playback/control traffic remains stable while each AP is on.
+- both committed signed-layout images were wired-flashed and every bootloader,
+  partition, OTA-data and application write passed esptool hash verification;
+- a phone authenticated to the P4 `PAJONIIR` WPA2 AP with `PajoNiiiR` and loaded
+  the P4 web UI at `http://192.168.4.1`;
+- the same phone authenticated to `PajoNiiiR-S3-DEBUG` with `PajoNiiiR`, loaded
+  the live log, and opened the S3 `/update` OTA page successfully.

@@ -30,7 +30,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
 - [x] R3 smoke after flashing both targets: dual-platter scratch/release operates correctly without a latched platter.
-- [ ] R4 smoke: both WPA2 APs accept `PajoNiiiR`, reject unauthenticated access, and still expose firmware status/update pages.
+- [x] R4 smoke: both WPA2 APs accept `PajoNiiiR`; P4 web UI plus S3 log and OTA update pages load correctly.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [ ] Perform one OTA update per target and record slot/version/state.
