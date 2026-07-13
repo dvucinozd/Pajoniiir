@@ -1,7 +1,3 @@
 ## IDF Component Manager Manifest
 dependencies:
   idf: "^5.4"
-  # Retained for the inherited CDJ panel USB MIDI device compatibility mode.
-  # DDJ-FLX4 host mode uses the ESP-IDF USB host stack.
-  espressif/esp_tinyusb:
-    version: "^2.0.0"

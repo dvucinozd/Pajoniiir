@@ -1,10 +1,10 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
-#include "panel_io.h"
 
 #ifndef CONFIG_CONTROL_LINK_UART_TX_GPIO
 #define CONFIG_CONTROL_LINK_UART_TX_GPIO 5
@@ -87,7 +87,13 @@ typedef enum {
 #define CTRL_NS_BROWSER 0x60
 #define CTRL_NS_SYSTEM  0x70
 
+#define LED_CUE 0
+#define LED_PLAY 1
+#define LED_BEAT 2
+#define LED_END 3
+#define LED_PFL 4
 #define LED_VU_METER 5
+#define LED_COUNT 6
 #define LED_PAD_MODE_HOT_CUE 6
 #define LED_PAD_MODE_KEYBOARD 7
 #define LED_PAD_MODE_PAD_FX1 8
@@ -509,18 +515,12 @@ typedef enum {
 #define CTRL_ID_SHIFT_LOAD_DECK1  (CTRL_NS_BROWSER | 0x06)
 #define CTRL_ID_SHIFT_LOAD_DECK2  (CTRL_NS_BROWSER | 0x07)
 
-// Initialise UART1 and start RX task.
-// panel_event_queue: the queue returned by panel_io_init().
-// Received LED/state commands from the P4 are applied to panel LEDs directly.
-esp_err_t control_link_init(QueueHandle_t panel_event_queue);
+// Initialise UART1 and start the RX task.
+esp_err_t control_link_init(void);
 
 // Send a deck-aware DDJ-FLX4 semantic event to P4 over the existing frame.
 // Safe to call from any task.
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value);
-
-// Serialise one panel event and transmit to ESP32-P4 over UART.
-// Safe to call from any task.
-void control_link_send_event(const panel_event_t *ev);
 
 // Send a CTRL_TYPE_HEARTBEAT frame with the current uptime in seconds.
 // Call periodically (e.g. every 5 s) so the P4 can detect S3 disconnects.

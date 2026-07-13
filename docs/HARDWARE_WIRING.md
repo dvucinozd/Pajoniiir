@@ -81,9 +81,8 @@ validated 2026-07-06; see `docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
 | READY/FLOW/debug | GPIO49 (JP1 pin 11) | not assigned | optional | not needed; leave disconnected |
 
 The XIAO ESP32S3 migration set GPIO7/GPIO8/GPIO9 avoids the control UART
-GPIO5/GPIO6 and UART0 GPIO43/GPIO44. These pins are legacy CDJ panel pins,
-acceptable only in the `CONFIG_DDJ_FLX4_HOST_MODE` path where `panel_io` is
-inactive.
+GPIO5/GPIO6 and UART0 GPIO43/GPIO44. The retired CDJ panel firmware no longer
+claims these pins; the product S3 firmware always owns USB OTG as the FLX4 host.
 
 **Transport details (validated):** P4 `monitor_pcm_link` is an I2S TX master
 that streams `P4HP` framed blocks (stereo 16-bit monitor PCM, sequence numbers,

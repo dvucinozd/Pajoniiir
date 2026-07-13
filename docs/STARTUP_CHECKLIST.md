@@ -283,8 +283,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 
 `firmware/control-board-s3/components/flx4_midi_host/` contains the raw
 USB MIDI logger and the software translator path. Built with
-`CONFIG_DDJ_FLX4_HOST_MODE=y` and `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y`
-(enabled on 2026-06-14).
+`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y` (enabled on 2026-06-14). USB host role is
+unconditional since R5D; disabling the translator leaves the raw logger.
 
 ## P4 Overview Waveform Smoke Test
 
@@ -598,6 +598,6 @@ R5 cleanup status:
 - [x] R5B single-deck P4 audio facade removed and callers migrated to the
   authoritative deck API;
 - [x] R5C mixer entry points consolidated;
-- [ ] R5D legacy S3 product-support decision confirmed before deletion;
+- [x] R5D legacy S3 mode explicitly retired; components and build branch removed;
 - [ ] R5E scratch allocation fallback converted to explicit safe degraded mode;
 - [ ] R5F final size, documentation and hardware soak acceptance recorded.

@@ -80,6 +80,30 @@ foreach ($symbol in @(
     Assert-SymbolAbsent $symbol
 }
 
+foreach ($relativePath in @(
+    "firmware/control-board-s3/components/panel_io",
+    "firmware/control-board-s3/components/midi_compat",
+    "firmware/control-board-s3/components/calibration",
+    "firmware/control-board-s3/sdkconfig.legacy.defaults"
+)) {
+    if (Test-Path -LiteralPath (Join-Path $RepoRoot $relativePath)) {
+        throw "Retired S3 legacy path returned: $relativePath"
+    }
+    Write-Host "R5 audit: $relativePath removed"
+}
+
+& $Rg --quiet --fixed-strings --glob "*.c" --glob "*.h" --glob "Kconfig*" `
+    --glob "CMakeLists.txt" --glob "*.defaults" --glob "!**/build*/**" `
+    --glob "!**/managed_components/**" -- "DDJ_FLX4_HOST_MODE" `
+    firmware/control-board-s3
+if ($LASTEXITCODE -eq 0) {
+    throw "Retired CONFIG_DDJ_FLX4_HOST_MODE returned"
+}
+if ($LASTEXITCODE -ne 1) {
+    throw "rg S3 legacy-config scan failed with exit code $LASTEXITCODE"
+}
+Write-Host "R5 audit: CONFIG_DDJ_FLX4_HOST_MODE removed"
+
 $scratchStorageHits = Find-CSourceCalls "s_scratch_storage"
 $scratchUnexpected = @($scratchStorageHits | Where-Object { $_.RelativePath -ne $AudioEngineImpl })
 if ($scratchUnexpected.Count -gt 0) {

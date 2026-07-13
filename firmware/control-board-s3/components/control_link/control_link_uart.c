@@ -1,5 +1,4 @@
 #include "control_link.h"
-#include "panel_io.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
 #include "controller_profile_runtime.h"
@@ -40,7 +39,6 @@ static const char *TAG = "ctrl_link";
 static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
-static bool s_panel_led_fallback_enabled;
 
 // ─── Profile transfer receiver (0xA6 bulk layer) ──────────────────────────────
 #define S3_PROFILE_BUF_CAP 16384
@@ -126,14 +124,6 @@ static void handle_p4_frame(const uint8_t *f)
             }
         }
 
-        // 2. Fallback to local panel LEDs (compatibility / tests)
-        if (s_panel_led_fallback_enabled && id < LED_COUNT) {
-            if (state == 2) {
-                panel_led_blink((led_id_t)id, 500);
-            } else {
-                panel_led_set((led_id_t)id, state != 0);
-            }
-        }
     } else if (type == CTRL_TYPE_STATE) {
         if (id == CTRL_ID_S3_DEBUG_AP) {
             (void)s3_debug_ap_request(state != 0);
@@ -336,10 +326,8 @@ static void uart_rx_task(void *arg)
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-esp_err_t control_link_init(QueueHandle_t panel_event_queue)
+esp_err_t control_link_init(void)
 {
-    s_panel_led_fallback_enabled = panel_event_queue != NULL;
-
     uart_config_t ucfg = {
         .baud_rate           = UART_BAUD,
         .data_bits           = UART_DATA_8_BITS,
@@ -434,28 +422,4 @@ esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep)
     uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
     size_t len = ctrl_bulk_build_firmware_report(frame, sizeof(frame), seq, rep);
     return s3_send_bulk(frame, len);
-}
-
-void control_link_send_event(const panel_event_t *ev)
-{
-    uint8_t frame[CTRL_FRAME_LEN];
-
-    switch (ev->type) {
-    case PANEL_EV_BUTTON:
-        build_frame(frame, CTRL_TYPE_BUTTON, ev->id, ev->value);
-        break;
-    case PANEL_EV_JOG:
-        build_frame(frame, CTRL_TYPE_ENCODER, 0, ev->value);
-        break;
-    case PANEL_EV_BROWSE:
-        build_frame(frame, CTRL_TYPE_ENCODER, 1, ev->value);
-        break;
-    case PANEL_EV_PITCH:
-        build_frame(frame, CTRL_TYPE_PITCH, 0, ev->value);
-        break;
-    default:
-        return;
-    }
-
-    (void)send_frame_checked(frame, "panel event");
 }

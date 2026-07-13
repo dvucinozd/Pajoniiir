@@ -44,9 +44,9 @@ CONFIG_CONTROL_LINK_UART_RX_GPIO=6
 ### USB-UART Adapter For Runtime Monitor
 
 Native USB-C can be used for initial flashing while the XIAO is in ROM download
-mode. After the DDJ-FFL4 firmware boots in `CONFIG_DDJ_FLX4_HOST_MODE`, the
-native USB peripheral is used for the FLX4 host stack, so runtime logs should
-use an external USB-UART adapter.
+mode. After the DDJ-FFL4 firmware boots, the native USB peripheral is always
+used for the FLX4 host stack, so runtime logs should use an external USB-UART
+adapter.
 
 | USB-UART adapter | XIAO ESP32S3 | ESP32-S3 signal | Notes |
 | --- | --- | --- | --- |

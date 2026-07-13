@@ -1,19 +1,13 @@
-#include "panel_io.h"
 #include "control_link.h"
-#include "calibration.h"
 #include "sdkconfig.h"
 #include "s3_debug_ap.h"
 #include "s3_ota.h"
 #include "wifi_debug_log.h"
 #include "firmware_health.h"
-#if CONFIG_DDJ_FLX4_HOST_MODE
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
 #include "controller_profile_runtime.h"
 #include "status_led.h"
-#else
-#include "midi_compat.h"
-#endif
 #if CONFIG_P4_AUDIO_LINK_ENABLED
 #include "p4_audio_link.h"
 #endif
@@ -34,11 +28,7 @@ static const char *TAG = "main";
 // Reads panel events and fans them out to both the MIDI compat layer and the
 // UART control link to the ESP32-P4 main deck board.
 
-#if !CONFIG_DDJ_FLX4_HOST_MODE
-static QueueHandle_t s_panel_queue;
-#endif
-
-#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 static void flx4_replay_known_input_snapshot(void);
 #endif
 
@@ -49,24 +39,11 @@ static void s3_debug_ap_status_cb(s3_debug_ap_status_t status)
                                      (int16_t)status);
 }
 
-#if !CONFIG_DDJ_FLX4_HOST_MODE
-static void router_task(void *arg)
-{
-    panel_event_t ev;
-    while (1) {
-        if (xQueueReceive(s_panel_queue, &ev, portMAX_DELAY) == pdTRUE) {
-            midi_compat_process_event(&ev);
-            control_link_send_event(&ev);
-        }
-    }
-}
-#endif
-
 // ─── Heartbeat task ───────────────────────────────────────────────────────────
 // Sends CTRL_TYPE_HEARTBEAT to the P4 every 5 s.
 // The P4 can use this to detect S3 disconnects (e.g. timeout > 10 s → offline).
 
-#if !CONFIG_DDJ_FLX4_HOST_MODE || CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 static void send_firmware_report(void)
 {
     firmware_health_info_t info;
@@ -98,7 +75,7 @@ static void heartbeat_task(void *arg)
     while (1) {
         control_link_send_heartbeat();
         send_firmware_report();
-#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
         if (flx4_midi_host_refresh_connection_state()) {
             flx4_replay_known_input_snapshot();
         }
@@ -108,7 +85,7 @@ static void heartbeat_task(void *arg)
 }
 #endif
 
-#if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 #define FLX4_EVENT_QUEUE_LEN 32
 
 static QueueHandle_t s_flx4_event_queue;
@@ -386,7 +363,6 @@ void app_main(void)
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
     (void)wifi_debug_log_init();
 
-#if CONFIG_DDJ_FLX4_HOST_MODE
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
     ESP_LOGI(TAG, "mode: DDJ-FLX4 USB MIDI translator");
     if (status_led_init() != ESP_OK) {
@@ -396,7 +372,7 @@ void app_main(void)
     controller_profile_runtime_init();
     s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
     ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(control_link_init(NULL));
+    ESP_ERROR_CHECK(control_link_init());
     control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
     ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
@@ -412,20 +388,6 @@ void app_main(void)
         ESP_LOGW(TAG, "status LED unavailable; continuing without it");
     }
     ESP_ERROR_CHECK(flx4_midi_host_init());
-#endif
-#else
-    ESP_LOGI(TAG, "mode: legacy CDJ panel + USB MIDI device compatibility");
-    ESP_ERROR_CHECK(calibration_init());
-    ESP_ERROR_CHECK(panel_io_init(&s_panel_queue));
-    ESP_ERROR_CHECK(midi_compat_init(s_panel_queue));
-    ESP_ERROR_CHECK(control_link_init(s_panel_queue));
-    ESP_ERROR_CHECK(s3_debug_ap_init());
-    ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
-
-    ESP_ERROR_CHECK(xTaskCreate(router_task, "router", 3072, NULL, 6, NULL) == pdPASS
-                    ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
-                    ? ESP_OK : ESP_ERR_NO_MEM);
 #endif
 
 #if CONFIG_P4_AUDIO_LINK_ENABLED

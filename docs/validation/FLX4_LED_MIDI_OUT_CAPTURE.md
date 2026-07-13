@@ -87,10 +87,10 @@ firmware and P4 firmware `fe1792f-dirty`: P4 Settings reported
 `Control Link (S3): Connected`.
 
 The first end-to-end transport attempt exposed an S3 reset after the P4 sent
-an LED frame. The decoded backtrace ended in `panel_led_set()` calling
-`xQueueSemaphoreTake()` with the legacy panel mutex unset because FLX4
-translator mode does not initialize `panel_io`. The panel LED API now treats
-pre-initialization calls as no-ops and has a host regression test.
+an LED frame. The decoded backtrace ended in the then-present legacy panel LED
+fallback with an uninitialised mutex. That fallback was first guarded and was
+later removed completely with the legacy S3 mode in R5D; this paragraph is
+retained as historical validation context.
 
 After flashing the fix, S3 remained stable through boot, FLX4 enumeration,
 P4 LED traffic, and heartbeat operation. A physical Deck 1 transport smoke

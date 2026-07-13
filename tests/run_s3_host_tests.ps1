@@ -174,12 +174,12 @@ function Assert-CFunctionPatternOrder {
 }
 
 Assert-FileContains `
-    -Name "flx4 mode split" `
+    -Name "flx4 translator option" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/Kconfig") `
     -Patterns @("DDJ_FLX4_TRANSLATE_TO_P4")
 
 Assert-FileContains `
-    -Name "app mode split" `
+    -Name "app translator/raw logger split" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("CONFIG_DDJ_FLX4_TRANSLATE_TO_P4", "mode: DDJ-FLX4 USB MIDI host raw logger", "mode: DDJ-FLX4 USB MIDI translator")
 
@@ -193,25 +193,15 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @("s_flx4_event_queue", "flx4_translator_task", "s_flx4_coalesced_count")
 
-Assert-FileContains `
-    -Name "legacy panel coalescing" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/panel_io/panel_io.c") `
-    -Patterns @("s_pending_jog", "s_pending_browse", "panel_flush_pending_motion")
+Assert-FileNotContains `
+    -Name "S3 app excludes retired legacy mode" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("CONFIG_DDJ_FLX4_HOST_MODE", "panel_io", "midi_compat", "calibration", "router_task")
 
-Assert-FileContains `
-    -Name "legacy encoder pull config" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/panel_io/panel_encoder.c") `
-    -Patterns @("GPIO_PULLUP_ENABLE", "configure_encoder_gpio")
-
-Assert-FileContains `
-    -Name "legacy midi burst limit" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/midi_compat/midi_compat.c") `
-    -Patterns @("MIDI_COMPAT_MAX_ENCODER_BURST")
-
-Assert-FileContains `
-    -Name "flx4 led feedback skips uninitialised legacy panel fallback" `
+Assert-FileNotContains `
+    -Name "control link excludes retired panel coupling" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
-    -Patterns @("s_panel_led_fallback_enabled", "panel_event_queue != NULL", "if (s_panel_led_fallback_enabled && id < LED_COUNT)")
+    -Patterns @("panel_io", "panel_event_t", "panel_led_")
 
 Assert-FileContains `
     -Name "control link rx stack covers extended led bursts" `
@@ -476,7 +466,6 @@ $tests = @(
             "-I../control_link_protocol/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
-            "-I../../firmware/control-board-s3/components/panel_io/include",
             "-o", "test_flx4_map.exe",
             "test_flx4_map.c",
             "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c",
@@ -493,7 +482,6 @@ $tests = @(
             "-I../control_link_protocol/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
-            "-I../../firmware/control-board-s3/components/panel_io/include",
             "-o", "test_flx4_led_midi.exe",
             "test_flx4_led_midi.c",
             "../../firmware/control-board-s3/components/control_link/flx4_led_midi.c"
@@ -506,7 +494,6 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-Istubs",
-            "-I../../firmware/control-board-s3/components/panel_io/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_control_link_protocol.exe",
@@ -538,7 +525,6 @@ $tests = @(
             "-I../../firmware/control-board-s3/components/controller_profile/include",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
-            "-I../../firmware/control-board-s3/components/panel_io/include",
             "-o", "test_controller_profile_parity.exe",
             "test_controller_profile_parity.c",
             "../../firmware/control-board-s3/components/controller_profile/controller_profile.c",

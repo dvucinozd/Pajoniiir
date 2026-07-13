@@ -11,8 +11,8 @@ ESP32-S3-DevKitC-1 N16R8 firmware for the DDJ-FFL4 control board role.
 The active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
 deck-aware `0xA5` UART control-link frames to the ESP32-P4.
 
-The inherited CDJ-100S GPIO panel path remains available as a compatibility
-mode when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
+The inherited CDJ-100S GPIO panel/TinyUSB-device path was permanently retired
+in R5D. The S3 USB OTG peripheral is always the controller host.
 
 Status:
 
@@ -21,8 +21,7 @@ Status:
   path** (`CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` + `CONFIG_P4_AUDIO_LINK_ENABLED`,
   folded into defaults on 2026-07-10 — a plain `idf.py build` now has sound);
 - to fall back to the raw MIDI capture logger, disable
-  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` in menuconfig (or `CONFIG_DDJ_FLX4_HOST_MODE`
-  for the inherited CDJ panel USB-MIDI device mode);
+  `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` in menuconfig;
 - FLX4 enumerates and translates to control-link frames on hardware
   (VID 0x2B73 / PID 0x0045); the XIAO GPIO21 user LED reflects reduced link
   state.
@@ -41,33 +40,11 @@ connection state is republished and no packets are lost. Benign; not a fault.
 
 ## Control Surface
 
-### Implemented
+The Pioneer DDJ-FLX4 is the only supported operator surface. Input and LED
+addresses are documented in `docs/DDJ_FLX4_MIDI_MAP.md`; no direct CDJ GPIO
+button, encoder, pitch or panel LED driver remains in this target.
 
-| Control | GPIO | MIDI |
-|----------|------|------|
-| PLAY/PAUSE | GPIO8 | Ch1 Note 60 |
-| CUE | GPIO7 | Ch1 Note 61 |
-| EJECT | GPIO2 | Ch1 Note 63 |
-| TRACK SEARCH ◀ | GPIO3 | Ch1 Note 64 |
-| TRACK SEARCH ▶ | GPIO4 | Ch1 Note 65 |
-| SEARCH ◀◀ | GPIO5 | Ch1 Note 66 |
-| SEARCH ▶▶ | GPIO6 | Ch1 Note 67 |
-| JET (Perf1) | GPIO9 | Ch1 Note 68 |
-| ZIP (Perf2) | GPIO10 | Ch1 Note 69 |
-| WAH (Perf3) | GPIO11 | Ch1 Note 70 |
-| HOLD (Perf4) | GPIO12 | Ch1 Note 71 |
-| TIME MODE/AUTO CUE | GPIO13 | Ch1 Note 72 |
-| MASTER TEMPO | GPIO14 | Ch1 Note 62 |
-| LOAD | GPIO21 | Ch1 Note 73 |
-| Jog dial A/B | GPIO15/16 | Ch2 CC20 (CW=65, CCW=63) |
-| Browse A/B | GPIO17/18 | Ch3 Notes 70/71 |
-| Pitch slider | GPIO1 (ADC1 CH0) | Ch1 CC0+CC32 (14-bit) |
-
-LEDs: CUE=GPIO33, PLAY=GPIO34, BEAT=GPIO38, END=GPIO39 (active-high, 220Ω)
-— legacy CDJ panel path only; in FLX4 host mode `panel_io` is not initialised
-and LED frames from the P4 go to the FLX4 over USB MIDI instead.
-
-Onboard XIAO user status LED (`status_led` component, FLX4 host modes):
+Onboard XIAO user status LED (`status_led` component):
 GPIO21 active-low. It provides reduced one-LED feedback: on while the P4 link is
 down or FLX4 is connected, off when P4 is up and FLX4 is disconnected, with a
 short activity tick on MIDI input.
@@ -106,18 +83,13 @@ Must be in `sdkconfig.defaults`. Check if CMake regenerates `sdkconfig`.
 
 | Key | Value | Why |
 |-----|-------|-------|
-| `CONFIG_DDJ_FLX4_HOST_MODE` | `y` | Default DDJ-FLX4 raw USB MIDI capture mode |
 | `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` | `y` in `sdkconfig.defaults` | Default DDJ-FLX4 MIDI-to-P4 translator path after MVP capture validated the XML-derived map |
-| `CONFIG_TINYUSB_MIDI_COUNT` | `1` | Enables MIDI driver (default is 0 → linker error) |
 | `CONFIG_ESP_CONSOLE_UART_DEFAULT` | `y` | Console on UART0 (CH343 COM port) |
-| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | **CRITICAL**: USB-JTAG secondary conflicts with TinyUSB |
-| `CONFIG_TINYUSB_MODE_SLAVE` | `y` | DMA mode causes enumeration failure |
-| `CONFIG_FREERTOS_HZ` | `1000` | 1ms tick for debounce timers |
+| `CONFIG_ESP_CONSOLE_SECONDARY_NONE` | `y` | USB-JTAG secondary must not contend with USB host ownership |
+| `CONFIG_FREERTOS_HZ` | `1000` | 1 ms task/timer resolution |
 
-If inherited TinyUSB MIDI compatibility stops working: first check
-`CONFIG_TINYUSB_MIDI_COUNT`. If DDJ-FLX4 host capture stops working: first
-confirm that `CONFIG_DDJ_FLX4_HOST_MODE=y` and that the USB-OTG port has valid
-VBUS/ground wiring.
+If DDJ-FLX4 capture stops working, confirm USB-OTG VBUS/ground wiring and inspect
+the host enumeration log; there is no USB-device fallback.
 
 ---
 
@@ -130,8 +102,6 @@ DDJ-FLX4 host raw logger:
 DDJ-FLX4 translator:
   flx4_midi_host -> flx4_map -> coalescing queue -> control_link UART1 -> P4
 
-Inherited CDJ panel compatibility:
-  panel_io -> panel_event_t queue -> router_task -> midi_compat + control_link
 ```
 
 ### Components
@@ -139,12 +109,9 @@ Inherited CDJ panel compatibility:
 | Component | Description |
 |-----------|------|
 | `flx4_midi_host` | USB host raw logger, MIDI packet parser, FLX4 mapping helpers |
-| `panel_io` | Buttons (active-low, pull-up), PCNT encoders, ADC pitch, LED output |
-| `midi_compat` | Legacy TinyUSB MIDI device compatibility path |
 | `control_link` | UART1 binary protocol to ESP32-P4 |
 | `p4_audio_link` | S3-side I2S receiver for the P4 `hp_out` monitor PCM (BCLK7/WS8/DIN9); recovers the link sample rate and feeds `flx4_usb_audio`. `CONFIG_P4_AUDIO_LINK_ENABLED` (default-on) |
 | `flx4_usb_audio` | FLX4 USB Audio Class output: drains the `p4_audio_link` monitor ring into isochronous OUT transfers to the controller headphone endpoint, tracking the active P4 link rate. `CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` (default-on) |
-| `calibration` | Pitch fader center/deadzone/invert (GPIO1 ADC1 CH0) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
 | `s3_debug_ap` | Runtime bench-only WPA2 SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). Default password: `PajoNiiiR`. `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
 | `controller_profile` | Pure-C S3CP profile parser + table-driven MIDI-in matcher and LED-out mapper (`cp_profile_parse`, `cp_runtime_process`, `cp_profile_map_led`). No ESP deps; host-tested |
@@ -215,6 +182,5 @@ Deck-aware semantic IDs are documented in
   controls; physical capture is now acceptance smoke, not a coding prerequisite.
 - Keep `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y` for the normal translator build.
 - Extend native FLX4 LED MIDI feedback only from P4-owned state.
-- Legacy hardware acceptance: confirm LOAD/BROWSE, pitch direction, LED
-  feedback, and offline heartbeat timeout on a physical S3/P4 pair if the
-  inherited CDJ panel path is still used.
+- Watch for sample-rate mismatch between the P4 monitor PCM producer and the
+  FLX4 USB Audio consumer during hardware soak.

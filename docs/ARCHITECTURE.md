@@ -168,12 +168,14 @@ implemented explicitly in the owning P4 component.
 
 Current S3 firmware modes:
 
-- default DDJ-FLX4 host mode: USB MIDI host for raw logging, translator input,
+- DDJ-FLX4 product mode: USB MIDI host for translator input,
   connection-state publication, and MIDI LED output;
-- DDJ-FLX4 translator mode: raw MIDI input mapped to deck-aware `0xA5`
-  semantic frames, enabled by `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`;
-- inherited CDJ panel compatibility mode: direct GPIO panel input plus TinyUSB
-  MIDI device compatibility when `CONFIG_DDJ_FLX4_HOST_MODE` is disabled.
+- optional raw logger: disable `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` to retain
+  descriptor/MIDI capture without forwarding events to P4.
+
+R5D permanently retired the inherited CDJ GPIO panel/TinyUSB-device mode.
+The S3 USB OTG peripheral is now unconditionally a host; `panel_io`,
+`midi_compat`, `calibration` and `CONFIG_DDJ_FLX4_HOST_MODE` no longer exist.
 
 FLX4 USB headphones path (**hardware-validated 2026-07-02; XIAO wiring
 validated 2026-07-06; S3 overrun regression fixed and re-smoked 2026-07-09**,
@@ -205,7 +207,7 @@ Inherited files that will be touched early:
 
 - `firmware/control-board-s3/main/app_main.c`
 - `firmware/control-board-s3/components/control_link/`
-- `firmware/control-board-s3/components/midi_compat/`
+- `firmware/control-board-s3/components/flx4_midi_host/`
 - `firmware/main-deck-p4/components/control_link/`
 - `firmware/main-deck-p4/components/deck_core/`
 - `firmware/main-deck-p4/components/audio_engine/`

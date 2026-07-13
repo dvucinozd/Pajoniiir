@@ -1,9 +1,8 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A baseline, R5B P4 facade removal and R5C mixer consolidation
-completed 2026-07-13. This document is the evidence and decision log for
-cleanup batches R5A-R5F; it is not authorization to remove a working
-compatibility path without its batch acceptance gate.
+Status: R5A baseline, R5B P4 facade removal, R5C mixer consolidation and R5D
+S3 legacy retirement completed 2026-07-13. This document is the evidence and
+decision log for cleanup batches R5A-R5F.
 
 ## Confirmed Call Graph
 
@@ -15,13 +14,13 @@ compatibility path without its batch acceptance gate.
 | `audio_output_mixer_next()` | No firmware caller; tests exercised it | Removed in R5C |
 | `audio_output_mixer_next_full()` | Wrapper used only by tests | Tests migrated to `_with_headphone_level()` and wrapper removed in R5C |
 | `s_scratch_storage` | Real PSRAM allocation fallback when canonical timeline allocation fails | Replace with explicit safe degraded-mode in R5E; not dead today |
-| S3 `router_task` / `panel_io` / `midi_compat` / `calibration` | Compiled legacy CDJ panel/TinyUSB device configuration still builds | R5D requires an explicit product-support decision |
+| S3 `router_task` / `panel_io` / `midi_compat` / `calibration` | Compiled legacy CDJ panel/TinyUSB device configuration still built at R5A | Explicitly retired and removed in R5D |
 | `TODO Phase 6` in `rekordbox_anlz.c` | Stale comment requires context audit | Resolve wording in R5F |
 
-`control_link` on S3 still includes `panel_io.h`, exports
-`control_link_send_event(const panel_event_t *)`, and declares `panel_io` as a
-component dependency. The shipping FLX4 path therefore retains legacy coupling
-even though it passes `NULL` to `control_link_init()`.
+R5D proved that `control_link_init()` used its queue argument only as a legacy
+LED-fallback boolean and that `control_link_send_event()` merely translated four
+panel event variants into the existing semantic sender. Both couplings were
+removed before deleting the legacy components.
 
 ## R5A Size Baseline
 
@@ -34,15 +33,16 @@ the audit-only legacy defaults file.
 | S3 `build_signed` | `0xE61E0` | 942,437 B | DIRAM 156,139 B (45.69%), IRAM 16,384 B (100%) | 52% of 1.875 MiB app slot free |
 | S3 `build_legacy_audit` | `0xE6070` | 942,081 B | DIRAM 156,139 B (45.69%), IRAM 16,384 B (100%) | 10% of legacy 1 MiB app slot free |
 
-The legacy image being only 356 bytes smaller than the shipping image does not
-mean its panel path is free: shared component dependencies still pull much of
-the legacy surface into both configurations. R5D should measure the result only
-after decoupling `control_link` from `panel_io`.
+The legacy image being only 356 bytes smaller than the shipping image did not
+mean its panel path was free. R5D removed the entire alternative configuration
+and its direct TinyUSB dependency; the signed product image remains well inside
+its OTA slot.
 
-## Reproducible Legacy Build
+## Retired Legacy Build Baseline
 
-The shipping defaults remain FLX4 host + translator. The audit profile is
-loaded afterward and disables host-only audio/link features:
+R5A used the following audit-only profile to prove the mode was real before the
+product decision. R5D deleted both that profile and the components, so this
+command is intentionally no longer reproducible:
 
 ```powershell
 cd firmware\control-board-s3
@@ -50,8 +50,7 @@ idf.py -B build_legacy_audit `
   -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.legacy.defaults" build
 ```
 
-The profile is for compile-time retirement decisions only and must never be
-flashed onto the installed DDJ-FLX4 control board.
+The recorded result remains evidence for why explicit approval was required.
 
 ## Batch Gates
 
@@ -95,3 +94,29 @@ Acceptance on 2026-07-13:
   declarations, definitions or callers;
 - ESP-IDF P4 signed build passes; `main-deck-p4.bin` remains `0x205AF0` bytes
   with 49% free in the smallest app partition.
+
+## R5D Result
+
+The user explicitly approved permanent retirement of the S3 legacy mode on
+2026-07-13. `panel_io`, `midi_compat`, `calibration`, `router_task`, the
+`CONFIG_DDJ_FLX4_HOST_MODE` branch, its audit defaults and the direct
+`esp_tinyusb` manifest dependency were removed. The raw logger remains available
+by disabling only `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`; USB OTG always stays in
+host role.
+
+Active wire LED IDs 0-4 were moved from the deleted panel header into the S3
+`control_link` header and are parity-tested against P4. The S3 control-link API
+no longer exposes `panel_event_t` or depends on `panel_io`.
+
+Acceptance on 2026-07-13:
+
+- complete S3 host suite passes, including FLX4 input/LED/profile parity and
+  shared control-link protocol tests;
+- complete P4 host suite passes, including 319/319 `audio_engine` assertions;
+- clean ESP-IDF S3 signed build passes without `esp_tinyusb`; binary is
+  `0xE60E0`, total image is 942,185 B, DIRAM is 155,651 B (45.54%), and 52% of
+  the OTA app slot remains free;
+- ESP-IDF P4 signed build passes; binary remains `0x205AF0` with 49% free;
+- relative to R5A, S3 saves 256 binary bytes, 252 total-image bytes and 488
+  DIRAM bytes. The main value is removal of unsupported product surface rather
+  than size reduction.

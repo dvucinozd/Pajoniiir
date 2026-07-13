@@ -49,9 +49,10 @@ The imported upstream code already provides:
 
 The fork is no longer only the imported single-deck baseline:
 
-- S3 raw USB MIDI host logging exists, USB descriptor parsing is hardened, and
-  the software translator path can map MVP FLX4 MIDI messages into deck-aware
-  `control_link` frames behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`.
+- S3 USB MIDI host logging exists, USB descriptor parsing is hardened, and the
+  software translator maps FLX4 MIDI messages into deck-aware `control_link`
+  frames behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`. R5D retired the inherited
+  CDJ GPIO panel/TinyUSB-device path; USB host ownership is unconditional.
 - Physical DDJ-FLX4 enumeration and raw packet capture were completed on
   2026-06-14. All MVP controls matched the vendored Mixxx XML mapping, and the
   translator is enabled by default.

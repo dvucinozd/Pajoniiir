@@ -3,14 +3,12 @@ menu "P4 audio link"
 config P4_AUDIO_LINK_ENABLED
     bool "Enable P4-to-S3 monitor PCM link receiver"
     default n
-    depends on DDJ_FLX4_HOST_MODE
     help
         Enables the dedicated P4-to-S3 monitor PCM receiver used by the FLX4
         USB Audio headphones path: an I2S slave RX that deframes P4HP blocks
         into the frame ring. The Seeed Studio XIAO ESP32S3 migration defaults
         to GPIO7/GPIO8/GPIO9 because GPIO10 is not exposed on that board. These
-        pins are only safe while DDJ_FLX4_HOST_MODE keeps the legacy panel_io
-        button path inactive.
+        pins are dedicated to this link in the DDJ-FLX4 product firmware.
 
 config P4_AUDIO_LINK_BCLK_GPIO
     int "P4 audio link I2S BCLK input GPIO"

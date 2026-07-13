@@ -1,16 +1,7 @@
 menu "DDJ-FLX4 MIDI Host"
 
-config DDJ_FLX4_HOST_MODE
-    bool "Enable DDJ-FLX4 USB MIDI host raw logger"
-    default y
-    help
-        Enables the ESP32-S3 USB host spike for Pioneer DDJ-FLX4 raw MIDI
-        capture. When enabled, the legacy TinyUSB MIDI device compatibility
-        path is not started because the USB OTG peripheral is used as host.
-
 config DDJ_FLX4_TRANSLATE_TO_P4
     bool "Translate DDJ-FLX4 USB MIDI to P4 control-link frames"
-    depends on DDJ_FLX4_HOST_MODE
     default n
     help
         Enables the S3 USB host translator path. Keep this disabled until
@@ -18,7 +9,6 @@ config DDJ_FLX4_TRANSLATE_TO_P4
 
 config DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR
     bool "Dump DDJ-FLX4 active USB configuration descriptor"
-    depends on DDJ_FLX4_HOST_MODE
     default n
     help
         Logs the raw active USB configuration descriptor in deterministic

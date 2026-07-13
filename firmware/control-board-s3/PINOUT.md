@@ -1,10 +1,13 @@
 # ESP32-S3-DevKitC-1 N16R8 — Pinout Scheme
 
-Documentation status: legacy DevKitC/compatibility reference, reviewed
-2026-07-13. The active compact build uses `PINOUT_XIAO_ESP32S3.md`.
+Documentation status: retired hardware reference, reviewed 2026-07-13. R5D
+removed the corresponding `panel_io`, `calibration` and TinyUSB-device firmware;
+none of the GPIO panel wiring below is supported by the product build. The
+active compact build uses `PINOUT_XIAO_ESP32S3.md`.
 
 Complete wiring scheme for the CDJ100S-XXX control board firmware.  
-All constants are mapped directly from the source code (`components/panel_io/`, `components/control_link/`).
+Values below document the imported historical design and are no longer mapped
+by S3 source code.
 
 ---
 
@@ -145,9 +148,8 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 
 ## Candidate P4 Monitor PCM Link — DDJ-FLX4 USB Audio Headphones
 
-This candidate mapping is only for the future DDJ-FLX4 USB Audio headphones
-phase. It is valid only when the S3 runs `CONFIG_DDJ_FLX4_HOST_MODE` and the
-legacy CDJ `panel_io` LED path is not active.
+This candidate mapping is historical. The accepted XIAO wiring is documented
+in `PINOUT_XIAO_ESP32S3.md`; the retired CDJ panel path is no longer selectable.
 
 | Signal | ESP32-S3 candidate | ESP32-P4 candidate | Direction |
 |--------|--------------------|--------------------|-----------|

@@ -1,9 +1,6 @@
 CONFIG_IDF_TARGET="esp32s3"
 
-# DDJ-FFL4: use the S3 USB OTG peripheral as host for the Pioneer DDJ-FLX4.
-# Disable this in menuconfig only when returning to the inherited CDJ panel
-# USB MIDI device compatibility mode.
-CONFIG_DDJ_FLX4_HOST_MODE=y
+# DDJ-FFL4: the S3 USB OTG peripheral is permanently the Pioneer DDJ-FLX4 host.
 CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y
 
 # Default host mode is a raw MIDI capture logger. Enable
@@ -19,22 +16,12 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # RTOS – 1 kHz tick for 1 ms resolution in debounce timers
 CONFIG_FREERTOS_HZ=1000
 
-# TinyUSB MIDI device support is retained for inherited CDJ panel compatibility
-# mode. In DDJ-FLX4 host mode the S3 uses the ESP-IDF USB host stack instead.
-CONFIG_TINYUSB_MIDI_COUNT=1
-
-# ADC – keep calibration routines in IRAM for faster reads
-CONFIG_ADC_ONESHOT_CTRL_FUNC_IN_IRAM=y
-
 # Console on UART0 (GPIO43 TX, GPIO44 RX). USB-OTG (GPIO19/20) is fully owned
-# by TinyUSB; USB-Serial/JTAG (primary or secondary) conflicts with TinyUSB
+# by the USB host; USB-Serial/JTAG (primary or secondary) conflicts with it
 # and prevents USB enumeration.
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
-
-# TinyUSB DCD: use slave/IRQ mode (safer for bringup; DMA can be re-enabled later)
-CONFIG_TINYUSB_MODE_SLAVE=y
 
 # Increase control transfer size to support large configuration descriptors of DDJ-FLX4
 CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512

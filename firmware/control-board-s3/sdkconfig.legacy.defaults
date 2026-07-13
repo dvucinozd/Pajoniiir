@@ -1,6 +1,0 @@
-# R5 audit-only profile for the imported CDJ panel/TinyUSB device path.
-# Load after sdkconfig.defaults; this is not the shipping configuration.
-# CONFIG_DDJ_FLX4_HOST_MODE is not set
-# CONFIG_DDJ_FLX4_TRANSLATE_TO_P4 is not set
-# CONFIG_FLX4_USB_AUDIO_ENABLED is not set
-# CONFIG_P4_AUDIO_LINK_ENABLED is not set

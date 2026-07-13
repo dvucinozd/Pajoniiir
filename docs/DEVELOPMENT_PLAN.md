@@ -1353,14 +1353,15 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A audit/baseline, R5B P4 facade removal and R5C mixer consolidation
-implemented; R5D-R5F pending.
+Status: R5A audit/baseline, R5B P4 facade removal, R5C mixer consolidation and
+R5D S3 legacy retirement implemented; R5E-R5F pending.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
-- An audit-only S3 defaults profile proves the imported legacy CDJ panel/TinyUSB
-  device configuration still builds. R5D is therefore an intentional product
-  support retirement, not deletion of unreachable preprocessor text.
+- An audit-only S3 defaults profile proved the imported legacy CDJ
+  panel/TinyUSB-device configuration still built. After explicit user approval,
+  R5D intentionally retired it and deleted its components, config branch and
+  direct TinyUSB dependency.
 - The P4 host runner now rejects new production callers of the single-deck
   transport facade and simple mixer entry point before their removal batches.
 - R5B removed the public single-deck audio transport/state/error/loop facade,
@@ -1375,3 +1376,9 @@ implemented; R5D-R5F pending.
   headphone level.
 - R5C software acceptance: complete P4 host suite and signed P4 build pass; the
   image remains `0x205AF0` bytes with 49% app partition headroom.
+- R5D leaves USB OTG permanently in FLX4 host role and retains only the optional
+  raw-logger/translator split. Active LED IDs formerly hidden in the panel
+  header now belong to the shared control-link contract.
+- R5D software acceptance: complete S3 and P4 host suites pass; clean signed S3
+  build is `0xE60E0` (942,185 B total image, 155,651 B DIRAM, 52% slot free),
+  and signed P4 remains `0x205AF0` with 49% slot free.

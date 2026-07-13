@@ -52,6 +52,9 @@ int p4_ctrl_deck_ext_action_reloop_stop(void) { return CTRL_DECK_EXT_ACTION_RELO
 int p4_ctrl_deck_ext_action_loop_adjust_in(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN; }
 int p4_ctrl_deck_ext_action_loop_adjust_out(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT; }
 int p4_ctrl_deck_ext_action_quantize(void) { return CTRL_DECK_EXT_ACTION_QUANTIZE; }
+int p4_led_cue(void) { return LED_CUE; }
+int p4_led_play(void) { return LED_PLAY; }
+int p4_led_pfl(void) { return LED_PFL; }
 int p4_led_vu_meter(void) { return LED_VU_METER; }
 int p4_led_pad_mode_hot_cue(void) { return LED_PAD_MODE_HOT_CUE; }
 int p4_led_pad_mode_key_shift(void) { return LED_PAD_MODE_KEY_SHIFT; }

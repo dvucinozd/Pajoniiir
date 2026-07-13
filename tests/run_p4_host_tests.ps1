@@ -1304,7 +1304,6 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-Istubs",
-            "-I../../firmware/control-board-s3/components/panel_io/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_control_link_protocol.exe",

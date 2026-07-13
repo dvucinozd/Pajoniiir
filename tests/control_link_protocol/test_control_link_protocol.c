@@ -56,6 +56,9 @@ int p4_ctrl_deck_ext_action_reloop_stop(void);
 int p4_ctrl_deck_ext_action_loop_adjust_in(void);
 int p4_ctrl_deck_ext_action_loop_adjust_out(void);
 int p4_ctrl_deck_ext_action_quantize(void);
+int p4_led_cue(void);
+int p4_led_play(void);
+int p4_led_pfl(void);
 int p4_led_vu_meter(void);
 int p4_led_pad_mode_hot_cue(void);
 int p4_led_pad_mode_key_shift(void);
@@ -70,18 +73,6 @@ int p4_led_beat_jump_shift_helper_8(void);
 int p4_ctrl_flx4_disconnected(void);
 int p4_ctrl_flx4_connected(void);
 
-int s3_btn_eject(void);
-int s3_btn_track_prev(void);
-int s3_btn_track_next(void);
-int s3_btn_search_back(void);
-int s3_btn_search_fwd(void);
-int s3_btn_cue(void);
-int s3_btn_play(void);
-int s3_btn_master_tempo(void);
-int s3_btn_load(void);
-int s3_btn_count(void);
-int s3_panel_ev_jog(void);
-int s3_panel_ev_browse(void);
 int s3_control_link_uart_tx_gpio(void);
 int s3_control_link_uart_rx_gpio(void);
 int s3_ctrl_id_deck1_play(void);
@@ -131,6 +122,9 @@ int s3_ctrl_deck_ext_action_reloop_stop(void);
 int s3_ctrl_deck_ext_action_loop_adjust_in(void);
 int s3_ctrl_deck_ext_action_loop_adjust_out(void);
 int s3_ctrl_deck_ext_action_quantize(void);
+int s3_led_cue(void);
+int s3_led_play(void);
+int s3_led_pfl(void);
 int s3_led_vu_meter(void);
 int s3_led_pad_mode_hot_cue(void);
 int s3_led_pad_mode_key_shift(void);
@@ -201,22 +195,11 @@ static bool decode_p4_frame(const uint8_t frame[CTRL_FRAME_LEN], ctrl_event_t *e
     }
 }
 
-static void test_button_ids_match_and_existing_ids_stay_stable(void)
+static void test_existing_legacy_p4_button_ids_stay_stable(void)
 {
-    assert(s3_btn_eject() == p4_btn_eject());
-    assert(s3_btn_track_prev() == p4_btn_track_prev());
-    assert(s3_btn_track_next() == p4_btn_track_next());
-    assert(s3_btn_search_back() == p4_btn_search_back());
-    assert(s3_btn_search_fwd() == p4_btn_search_fwd());
-    assert(s3_btn_cue() == p4_btn_cue());
-    assert(s3_btn_play() == p4_btn_play());
-    assert(s3_btn_master_tempo() == p4_btn_master_tempo());
-
     assert(p4_btn_play() == 6);
     assert(p4_btn_master_tempo() == 12);
-    assert(s3_btn_load() == p4_btn_load());
     assert(p4_btn_load() == 13);
-    assert(s3_btn_count() == p4_btn_count());
     assert(p4_btn_count() == 14);
 }
 
@@ -244,7 +227,6 @@ static void test_encoder_ids_route_to_jog_and_browse(void)
     uint8_t frame[CTRL_FRAME_LEN];
     ctrl_event_t ev;
 
-    assert(s3_panel_ev_jog() != s3_panel_ev_browse());
     assert(p4_ctrl_ev_jog() != p4_ctrl_ev_browse());
 
     build_frame(frame, CTRL_TYPE_ENCODER, 0, -3, 8);
@@ -410,6 +392,9 @@ static void test_s3_and_p4_deck_aware_ids_match(void)
            CTRL_DECK_EXT_ACTION_QUANTIZE);
     assert(CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, true)));
     assert(!CTRL_DECK_EXT_PRESSED(CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_QUANTIZE, false)));
+    assert(s3_led_cue() == p4_led_cue());
+    assert(s3_led_play() == p4_led_play());
+    assert(s3_led_pfl() == p4_led_pfl());
     assert(s3_led_vu_meter() == p4_led_vu_meter());
     assert(p4_led_vu_meter() == LED_VU_METER);
     assert(s3_led_pad_mode_hot_cue() == p4_led_pad_mode_hot_cue());
@@ -617,7 +602,7 @@ static void test_led_command_values_and_bad_checksum(void)
 
 int main(void)
 {
-    test_button_ids_match_and_existing_ids_stay_stable();
+    test_existing_legacy_p4_button_ids_stay_stable();
     test_s3_xiao_control_link_uart_pin_defaults();
     test_button_load_decodes();
     test_encoder_ids_route_to_jog_and_browse();
