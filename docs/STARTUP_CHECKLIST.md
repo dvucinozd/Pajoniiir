@@ -19,6 +19,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R2 USB DWC BNA/CHHLTD compatibility wrapper passes link, host and P4 build checks.
 - [x] R3 lossless priority-touch policy passes both host suites and firmware builds.
 - [x] R4 WPA2 AP, OTA finish-state and signed-version packaging fixes pass both host suites and firmware builds.
+- [x] R5A call-graph, signed-build size and legacy S3 build baselines recorded.
 
 ## Repeat before enclosure close
 

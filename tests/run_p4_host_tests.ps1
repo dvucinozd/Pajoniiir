@@ -1350,6 +1350,10 @@ if ($python) {
 }
 
 $pwsh = Get-Command pwsh -ErrorAction Stop
+Invoke-Step -Name "run R5 dead-code call-graph audit" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $pwsh.Source `
+    -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
 Invoke-Step -Name "run OTA release helper tests" `
     -WorkingDirectory $RepoRoot `
     -Executable $pwsh.Source `

@@ -1350,3 +1350,15 @@ Initial hardware acceptance:
   the P4 web UI at `http://192.168.4.1`;
 - the same phone authenticated to `PajoNiiiR-S3-DEBUG` with `PajoNiiiR`, loaded
   the live log, and opened the S3 `/update` OTA page successfully.
+
+## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
+
+Status: R5A audit and baseline implemented; later cleanup batches pending.
+
+- The call graph, compatibility-path corrections and ESP-IDF size baseline are
+  recorded in `R5_DEAD_CODE_AUDIT.md`.
+- An audit-only S3 defaults profile proves the imported legacy CDJ panel/TinyUSB
+  device configuration still builds. R5D is therefore an intentional product
+  support retirement, not deletion of unreachable preprocessor text.
+- The P4 host runner now rejects new production callers of the single-deck
+  transport facade and simple mixer entry point before their removal batches.
