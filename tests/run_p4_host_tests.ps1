@@ -445,6 +445,16 @@ Assert-FileContains `
     -LiteralPatterns @("ctrl_bulk_parser_feed", "CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR", "control_link_set_descriptor_report_cb")
 
 Assert-FileContains `
+    -Name "p4 receives and displays S3 firmware reports" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("CTRL_BULK_TYPE_FIRMWARE_REPORT", "ctrl_bulk_decode_firmware_report", "control_link_get_s3_firmware_report")
+
+Assert-FileContains `
+    -Name "p4 OTA validates chip and project before activation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota/p4_ota.c") `
+    -LiteralPatterns @("P4_OTA_PROJECT_NAME", "wrong firmware project", "esp_ota_set_boot_partition")
+
+Assert-FileContains `
     -Name "p4 app wires descriptor reports to the profile manager" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
     -LiteralPatterns @("control_link_set_descriptor_report_cb", "controller_profile_manager_on_descriptor_report")
@@ -990,6 +1000,18 @@ $tests = @(
             "-o", "test_ui_library.exe",
             "test_ui_library.c",
             "../../firmware/main-deck-p4/components/ui/ui_library.c"
+        )
+    },
+    @{
+        Name = "p4_ota_policy"
+        Dir = "tests/p4_ota"
+        Target = "test_p4_ota_policy.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/p4_ota/include",
+            "-o", "test_p4_ota_policy.exe",
+            "test_p4_ota_policy.c",
+            "../../firmware/main-deck-p4/components/p4_ota/p4_ota_policy.c"
         )
     },
     @{

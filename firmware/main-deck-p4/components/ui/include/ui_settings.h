@@ -13,6 +13,8 @@ uint8_t ui_settings_master_trim_next_preset(uint8_t current);
 float ui_settings_master_trim_gain(uint8_t preset);
 const char *ui_settings_master_trim_label(uint8_t preset);
 const char *ui_settings_s3_debug_ap_status_label(uint8_t status);
+const char *ui_settings_firmware_slot_label(uint8_t slot);
+const char *ui_settings_firmware_state_label(uint8_t state);
 bool ui_settings_is_active_tab(int active_tab, int settings_tab_index);
 
 #ifndef UI_SETTINGS_HOST_TEST

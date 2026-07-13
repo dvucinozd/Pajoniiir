@@ -60,6 +60,35 @@ static void test_descriptor_roundtrip(void)
     printf("  descriptor roundtrip                              PASS\n");
 }
 
+static void test_firmware_report_roundtrip(void)
+{
+    ctrl_firmware_report_t in = {
+        .slot = CTRL_FW_SLOT_OTA_1,
+        .state = CTRL_FW_STATE_PENDING_VERIFY,
+    };
+    snprintf(in.version, sizeof(in.version), "RC1-105-g1234567-dirty");
+
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    size_t len = ctrl_bulk_build_firmware_report(frame, sizeof(frame), 7, &in);
+    assert(len == CTRL_BULK_HEADER_LEN + CTRL_FW_REPORT_LEN + CTRL_BULK_CRC_LEN);
+
+    ctrl_bulk_parser_t p;
+    ctrl_bulk_parser_reset(&p);
+    int r = 0;
+    for (size_t i = 0; i < len; i++) r = ctrl_bulk_parser_feed(&p, frame[i]);
+    assert(r == (int)len);
+
+    ctrl_firmware_report_t out = {0};
+    assert(ctrl_bulk_decode_firmware_report(p.buf, (size_t)r, &out));
+    assert(out.slot == in.slot);
+    assert(out.state == in.state);
+    assert(strcmp(out.version, in.version) == 0);
+    assert(!ctrl_bulk_decode_descriptor(p.buf, (size_t)r,
+                                        (ctrl_descriptor_report_t *)&out));
+    assert(ctrl_bulk_build_firmware_report(frame, 4, 0, &in) == 0);
+    printf("  firmware report roundtrip                         PASS\n");
+}
+
 /* ── ACK / NACK / STATUS / simple frame codecs ─────────────────────────────── */
 
 static void test_control_frames(void)
@@ -242,6 +271,7 @@ int main(void)
     printf("=== ctrl_bulk + profile transfer tests ===\n");
     load_fixture();
     test_descriptor_roundtrip();
+    test_firmware_report_roundtrip();
     test_control_frames();
     test_profile_transfer();
     test_transfer_nacks();

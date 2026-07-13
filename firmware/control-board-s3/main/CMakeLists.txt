@@ -1,4 +1,4 @@
-set(APP_REQUIRES panel_io control_link calibration log flx4_midi_host controller_profile_runtime p4_audio_link s3_debug_ap wifi_debug_log firmware_health)
+set(APP_REQUIRES panel_io control_link calibration log flx4_midi_host controller_profile_runtime p4_audio_link s3_debug_ap s3_ota wifi_debug_log firmware_health)
 
 if(NOT CONFIG_DDJ_FLX4_HOST_MODE)
     list(APPEND APP_REQUIRES midi_compat)

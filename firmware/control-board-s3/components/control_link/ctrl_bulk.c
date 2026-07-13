@@ -168,6 +168,25 @@ size_t ctrl_bulk_build_profile_status(uint8_t *out, size_t cap, uint8_t seq,
                          CTRL_PROFILE_STATUS_LEN);
 }
 
+size_t ctrl_bulk_build_firmware_report(uint8_t *out, size_t cap, uint8_t seq,
+                                       const ctrl_firmware_report_t *rep)
+{
+    const size_t frame_len =
+        CTRL_BULK_HEADER_LEN + CTRL_FW_REPORT_LEN + CTRL_BULK_CRC_LEN;
+    if (!out || !rep || cap < frame_len) {
+        return 0;
+    }
+    uint8_t *p = out + CTRL_BULK_HEADER_LEN;
+    p[0] = rep->slot;
+    p[1] = rep->state;
+    memset(p + 2, 0, CTRL_FW_VERSION_MAX);
+    for (size_t i = 0; i < CTRL_FW_VERSION_MAX && rep->version[i] != '\0'; i++) {
+        p[2 + i] = (uint8_t)rep->version[i];
+    }
+    return bulk_finalize(out, CTRL_BULK_TYPE_FIRMWARE_REPORT, seq,
+                         CTRL_FW_REPORT_LEN);
+}
+
 /* ── Streaming parser ──────────────────────────────────────────────────────── */
 
 void ctrl_bulk_parser_reset(ctrl_bulk_parser_t *p)
@@ -320,5 +339,21 @@ bool ctrl_bulk_decode_profile_status(const uint8_t *frame, size_t frame_len,
     *state = p[0];
     *vid = rd_u16(p + 1);
     *pid = rd_u16(p + 3);
+    return true;
+}
+
+bool ctrl_bulk_decode_firmware_report(const uint8_t *frame, size_t frame_len,
+                                      ctrl_firmware_report_t *rep)
+{
+    if (!rep ||
+        !frame_type_len(frame, frame_len, CTRL_BULK_TYPE_FIRMWARE_REPORT,
+                        CTRL_FW_REPORT_LEN)) {
+        return false;
+    }
+    const uint8_t *p = frame + CTRL_BULK_HEADER_LEN;
+    rep->slot = p[0];
+    rep->state = p[1];
+    memcpy(rep->version, p + 2, CTRL_FW_VERSION_MAX);
+    rep->version[CTRL_FW_VERSION_MAX] = '\0';
     return true;
 }

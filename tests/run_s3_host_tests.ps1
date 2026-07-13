@@ -314,9 +314,24 @@ Assert-FileContains `
     -Patterns @("WIFI_MODE_AP", "PajoNiiiR-S3-DEBUG", "192.168.4.1", "esp_wifi_start")
 
 Assert-FileContains `
-    -Name "s3 debug ap exposes read only http log page" `
+    -Name "s3 debug ap exposes HTTP log page" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -Patterns @("httpd_start", "S3 Debug Log", "/events", "text/event-stream")
+
+Assert-FileContains `
+    -Name "s3 debug ap exposes guarded OTA upload" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA", "s3_ota_policy_header_valid")
+
+Assert-FileContains `
+    -Name "s3 OTA initializes before mandatory subsystem startup" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @('#include "s3_ota.h"', "ESP_ERROR_CHECK(s3_ota_init());")
+
+Assert-FileContains `
+    -Name "s3 publishes firmware report with heartbeat" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("send_firmware_report", "control_link_send_firmware_report", "CTRL_FW_STATE_VALID")
 
 Assert-FileContains `
     -Name "s3 debug ap log hook remains non blocking" `
@@ -554,6 +569,18 @@ $tests = @(
             "test_s3_debug_ap_state.c",
             "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c",
             "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_log_ring.c"
+        )
+    },
+    @{
+        Name = "s3_ota_policy"
+        Dir = "tests/s3_ota"
+        Target = "test_s3_ota_policy.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/s3_ota/include",
+            "-o", "test_s3_ota_policy.exe",
+            "test_s3_ota_policy.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
         )
     },
     @{

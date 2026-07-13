@@ -341,3 +341,60 @@ function toggleBrowserExpand() {
         btn.innerText = 'HIDE';
     }
 }
+
+async function refreshFirmwareStatus() {
+    const info = document.getElementById('ota-firmware-info');
+    if (!info) return;
+    try {
+        const response = await fetch('/api/firmware', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text());
+        const fw = await response.json();
+        const s3 = fw.s3 && fw.s3.available
+            ? ` | S3 ${fw.s3.version || 'unknown'} from ${fw.s3.slot || 'unknown'} (${fw.s3.state || 'unknown'})`
+            : ' | S3 status unavailable';
+        info.innerText = `P4 ${fw.running_version || 'unknown'} from ${fw.running_slot || 'unknown'}${s3}`;
+    } catch (err) {
+        info.innerText = `Firmware status unavailable: ${err.message}`;
+    }
+}
+
+function uploadP4Firmware() {
+    const fileInput = document.getElementById('ota-file');
+    const button = document.getElementById('ota-upload-btn');
+    const progress = document.getElementById('ota-progress');
+    const status = document.getElementById('ota-status');
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!file) {
+        status.innerText = 'Select a P4 .bin image first.';
+        return;
+    }
+    if (!confirm(`Install ${file.name} (${file.size} bytes) and restart P4?`)) return;
+
+    button.disabled = true;
+    progress.value = 0;
+    status.innerText = 'Uploading...';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/ota/p4');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-DDJ-OTA', 'p4');
+    xhr.upload.onprogress = event => {
+        if (event.lengthComputable) progress.value = Math.round(event.loaded * 100 / event.total);
+    };
+    xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+            progress.value = 100;
+            status.innerText = 'Image verified. P4 is restarting...';
+            setTimeout(() => window.location.reload(), 8000);
+        } else {
+            button.disabled = false;
+            status.innerText = `Update rejected: ${xhr.responseText || xhr.status}`;
+        }
+    };
+    xhr.onerror = () => {
+        button.disabled = false;
+        status.innerText = 'Upload connection failed. The current firmware remains bootable.';
+    };
+    xhr.send(file);
+}
+
+refreshFirmwareStatus();

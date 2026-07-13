@@ -28,7 +28,7 @@ Baud rate: `460800` (8N1). Both boards must match; see `UART_BAUD` in each side'
 | S3 -> P4 | `0x82` | semantic state: FLX4 USB connection state, S3 Debug AP status |
 | P4 -> S3 | `0x81` | LED |
 | P4 -> S3 | `0x82` | semantic command: S3 Debug AP enable request |
-| both | `0xA6` | variable-length bulk frame: controller descriptor + profile transfer (see [0xA6 Bulk Frame Layer](#0xa6-bulk-frame-layer-controller-profiles)) |
+| both | `0xA6` | variable-length bulk frame: controller/profile data + firmware status (see [0xA6 Bulk Frame Layer](#0xa6-bulk-frame-layer-controller-profiles-and-firmware-status)) |
 
 The `0xA6` byte starts a separate variable-length frame that never collides
 with the fixed 7-byte `0xA5` frame; a receiver routes on the start byte.
@@ -322,13 +322,14 @@ Handshake and ownership:
 The `control_link_protocol` host test asserts `CTRL_ID_S3_DEBUG_AP` and the
 `CTRL_S3_DEBUG_AP_*` status enum stay byte-for-byte aligned across both targets.
 
-## 0xA6 Bulk Frame Layer (controller profiles)
+## 0xA6 Bulk Frame Layer (controller profiles and firmware status)
 
 The 7-byte `0xA5` frame carries small semantic events. Payloads that do not fit
-it — the connected-controller descriptor and compiled controller profiles — use
-a second, variable-length frame type on the **same UART**, distinguished by a
-different start byte (`0xA6`). This is the transport for the data-driven
-multi-controller platform (see `docs/CONTROLLER_PROFILE_SCHEMA.md`).
+it — the connected-controller descriptor, compiled controller profiles, and S3
+firmware report — use a second, variable-length frame type on the **same UART**,
+distinguished by a different start byte (`0xA6`). This is the transport for the
+data-driven multi-controller platform (see `docs/CONTROLLER_PROFILE_SCHEMA.md`)
+and low-rate system metadata.
 
 Frame layout:
 
@@ -359,6 +360,7 @@ sides; the S3 host runner asserts the two file copies match, and
 | `0x07` PROFILE_ACTIVATE | P4 -> S3 | activate the received profile |
 | `0x08` PROFILE_STATUS | S3 -> P4 | transfer state + vid/pid |
 | `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile (fall back to built-in) |
+| `0x0A` FIRMWARE_REPORT | S3 -> P4 | running slot + image state + 32-byte version |
 
 ### Controller descriptor report (S3 -> P4)
 
@@ -380,6 +382,26 @@ parses the stored blob and installs it as the active profile. The P4 sender
 waits for each stage's ACK with retry + timeout; a `NACK` restarts the transfer.
 Because the S3CP file carries its own internal crc32 in addition to the
 transfer crc32, a profile is double-checked before use.
+
+### S3 firmware report (S3 -> P4)
+
+S3 sends `FIRMWARE_REPORT` immediately with its first heartbeat and every five
+seconds afterward. Periodic publication lets a P4-only reboot recover the peer
+status without adding a request/response state machine.
+
+Payload (`34` bytes):
+
+```text
+[0]      slot     0 unknown, 1 ota_0, 2 ota_1, 3 factory
+[1]      state    0 unknown, 1 new, 2 pending_verify, 3 valid,
+                  4 invalid, 5 aborted
+[2..34)  version  32-byte NUL-padded ESP app version
+```
+
+P4 stores the latest report under a short critical section. Settings shows the
+real P4 and S3 version/slot/state, and P4 `GET /api/firmware` includes the same
+S3 data. The report carries metadata only; firmware binaries are never
+forwarded over UART.
 
 ### Dynamic mapping and fallback
 

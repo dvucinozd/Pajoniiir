@@ -81,6 +81,28 @@ const char *ui_settings_s3_debug_ap_status_label(uint8_t status)
     }
 }
 
+const char *ui_settings_firmware_slot_label(uint8_t slot)
+{
+    switch (slot) {
+    case CTRL_FW_SLOT_OTA_0: return "ota_0";
+    case CTRL_FW_SLOT_OTA_1: return "ota_1";
+    case CTRL_FW_SLOT_FACTORY: return "factory";
+    default: return "unknown";
+    }
+}
+
+const char *ui_settings_firmware_state_label(uint8_t state)
+{
+    switch (state) {
+    case CTRL_FW_STATE_NEW: return "NEW";
+    case CTRL_FW_STATE_PENDING_VERIFY: return "PENDING";
+    case CTRL_FW_STATE_VALID: return "VALID";
+    case CTRL_FW_STATE_INVALID: return "INVALID";
+    case CTRL_FW_STATE_ABORTED: return "ABORTED";
+    default: return "UNKNOWN";
+    }
+}
+
 bool ui_settings_is_active_tab(int active_tab, int settings_tab_index)
 {
     return settings_tab_index >= 0 && active_tab == settings_tab_index;
@@ -97,6 +119,7 @@ bool ui_settings_is_active_tab(int active_tab, int settings_tab_index)
 #include "bsp_jc4880.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "firmware_health.h"
 #endif
 
 static const char *TAG = "ui_settings";
@@ -119,6 +142,7 @@ static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
 static lv_obj_t *s_label_s3_debug_ap = NULL;
 static lv_obj_t *s_switch_s3_debug_ap = NULL;
+static lv_obj_t *s_label_s3_firmware = NULL;
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
 static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
@@ -133,6 +157,8 @@ static uint32_t s_cache_sd_free_mib = UINT32_MAX;
 static uint32_t s_cache_sd_total_mib = UINT32_MAX;
 static uint32_t s_cache_sd_last_poll_ms = 0;
 static ui_settings_text_cache_t s_cache_sd_text;
+static ui_settings_text_cache_t s_cache_s3_firmware_text;
+static ui_settings_color_cache_t s_cache_s3_firmware_color;
 
 static void ui_settings_copy_str(char *dst, size_t dst_len, const char *src)
 {
@@ -547,10 +573,23 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_set_width(label_sd_status, 320);
     lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
 
-    ui_settings_value_label(status_section, "Board: JC4880P443C_I_W (ESP32-P4 N16R8)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 146);
-    ui_settings_value_label(status_section, "Firmware: Main Deck Engine v1.0.0-Beta (IDF v5.5)",
-                            COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
+    {
+        firmware_health_info_t info;
+        char p4_text[80];
+        if (firmware_health_get_info(&info) == ESP_OK) {
+            snprintf(p4_text, sizeof(p4_text), "P4: %s [%s]",
+                     info.version, info.partition_label);
+        } else {
+            snprintf(p4_text, sizeof(p4_text), "P4: firmware status unavailable");
+        }
+        ui_settings_value_label(status_section, p4_text,
+                                COL_GREEN, &lv_font_montserrat_12, 16, 146);
+    }
+    s_label_s3_firmware =
+        ui_settings_value_label(status_section, "S3: waiting for firmware report",
+                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
+    lv_obj_set_width(s_label_s3_firmware, 320);
+    lv_label_set_long_mode(s_label_s3_firmware, LV_LABEL_LONG_CLIP);
 
 #ifndef WIN32
     {
@@ -658,6 +697,8 @@ void ui_settings_invalidate(void)
     s_cache_sd_total_mib = UINT32_MAX;
     s_cache_sd_last_poll_ms = 0;
     s_cache_sd_text.valid = false;
+    s_cache_s3_firmware_text.valid = false;
+    s_cache_s3_firmware_color.valid = false;
 }
 
 static void ui_settings_format_storage_size(uint64_t bytes, char *out, size_t out_size)
@@ -781,6 +822,36 @@ static void ui_settings_update_sd_status_label(bool force)
     ui_settings_obj_set_text_color_cached(s_widgets.sd_status, &s_cache_sd_color, COL_GREEN);
 }
 
+static void ui_settings_update_s3_firmware_label(void)
+{
+    if (!s_label_s3_firmware) return;
+
+    ctrl_firmware_report_t report;
+    if (!control_link_get_s3_firmware_report(&report)) {
+        ui_settings_label_set_text_cached(s_label_s3_firmware,
+                                          &s_cache_s3_firmware_text,
+                                          "S3: waiting for firmware report");
+        ui_settings_obj_set_text_color_cached(s_label_s3_firmware,
+                                               &s_cache_s3_firmware_color,
+                                               COL_TEXT_DIM);
+        return;
+    }
+
+    char text[80];
+    snprintf(text, sizeof(text), "S3: %s [%s/%s]",
+             report.version[0] ? report.version : "unknown",
+             ui_settings_firmware_slot_label(report.slot),
+             ui_settings_firmware_state_label(report.state));
+    ui_settings_label_set_text_cached(s_label_s3_firmware,
+                                      &s_cache_s3_firmware_text, text);
+    lv_color_t color = report.state == CTRL_FW_STATE_VALID ? COL_GREEN :
+                       report.state == CTRL_FW_STATE_PENDING_VERIFY ? COL_AMBER :
+                       (report.state == CTRL_FW_STATE_INVALID ||
+                        report.state == CTRL_FW_STATE_ABORTED) ? COL_RED : COL_TEXT_DIM;
+    ui_settings_obj_set_text_color_cached(s_label_s3_firmware,
+                                           &s_cache_s3_firmware_color, color);
+}
+
 #endif
 
 void ui_settings_update(const ui_frame_context_t *ctx)
@@ -791,6 +862,7 @@ void ui_settings_update(const ui_frame_context_t *ctx)
 #ifndef WIN32
     ui_settings_update_uart_status_label(&ctx->deck_state[CTRL_DECK_1]);
     ui_settings_update_sd_status_label(false);
+    ui_settings_update_s3_firmware_label();
     ui_settings_apply_s3_debug_ap_status();
 #endif
 }

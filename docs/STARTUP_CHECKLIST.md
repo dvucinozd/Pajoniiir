@@ -497,3 +497,28 @@ does not migrate the legacy single-app layout.
 - Confirm each boot logs `fw_health` with the expected slot and image state.
 - Keep USB access available until a successful OTA and rollback cycle has been
   completed on both targets.
+
+HTTP OTA implementation status:
+
+- P4 Wi-Fi Remote exposes `/api/firmware` and `/api/ota/p4` plus its firmware
+  upload panel. Code/build/bootstrap flash are complete; A/B and rollback
+  acceptance are pending.
+- S3 Debug AP exposes `/api/firmware`, `/api/ota/s3`, and `/update`. Code,
+  build, wired bootstrap flash, and stable `ota_0` boot verification are
+  complete; HTTP A/B and rollback acceptance are pending.
+- Perform the AP tests when the laptop has Ethernet for Internet access; do not
+  disconnect the active development Wi-Fi session merely to satisfy the smoke
+  test early.
+
+Batch 5 firmware-status verification:
+
+- S3 sends `0xA6 FIRMWARE_REPORT` with slot, image state, and version alongside
+  each five-second heartbeat.
+- P4 logs the first/changed report as `S3 firmware version=... slot=... state=...`.
+- P4 Settings must show both `P4: version [slot]` and
+  `S3: version [slot/state]` rather than a hard-coded firmware label.
+- `tools/package_ota_release.ps1` creates an ignored dual-target package and
+  fails if versions, chip IDs, project metadata, or slot limits disagree.
+
+Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
+`S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

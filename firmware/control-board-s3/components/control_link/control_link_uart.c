@@ -141,21 +141,23 @@ static void handle_p4_frame(const uint8_t *f)
     }
 }
 
-static void s3_send_bulk(const uint8_t *frame, size_t len)
+static esp_err_t s3_send_bulk(const uint8_t *frame, size_t len)
 {
     if (len == 0) {
-        return;
+        return ESP_ERR_INVALID_SIZE;
     }
     int written = uart_write_bytes(UART_PORT, frame, len);
-    if (written != (int)len) {
-        s_uart_write_fail_count++;
-        TickType_t now = xTaskGetTickCount();
-        if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
-            s_last_uart_write_warn = now;
-            ESP_LOGW(TAG, "bulk reply UART short write (%d/%u)", written,
-                     (unsigned)len);
-        }
+    if (written == (int)len) {
+        return ESP_OK;
     }
+    s_uart_write_fail_count++;
+    TickType_t now = xTaskGetTickCount();
+    if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
+        s_last_uart_write_warn = now;
+        ESP_LOGW(TAG, "bulk reply UART short write (%d/%u)", written,
+                 (unsigned)len);
+    }
+    return ESP_FAIL;
 }
 
 static void send_profile_reply_ack(uint8_t acked_type)
@@ -423,6 +425,15 @@ esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *re
                  written, (unsigned)len, s_uart_write_fail_count);
     }
     return ESP_FAIL;
+}
+
+esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep)
+{
+    if (!rep) return ESP_ERR_INVALID_ARG;
+    uint8_t frame[CTRL_BULK_MAX_FRAME];
+    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
+    size_t len = ctrl_bulk_build_firmware_report(frame, sizeof(frame), seq, rep);
+    return s3_send_bulk(frame, len);
 }
 
 void control_link_send_event(const panel_event_t *ev)

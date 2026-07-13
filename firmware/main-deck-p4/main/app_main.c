@@ -22,6 +22,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "firmware_health.h"
+#include "p4_ota.h"
 
 static const char *TAG = "main";
 
@@ -69,6 +70,7 @@ void app_main(void)
 {
     p4_tcm_heap_guard_keep();
     ESP_ERROR_CHECK(firmware_health_init());
+    ESP_ERROR_CHECK(p4_ota_init());
 
     ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");

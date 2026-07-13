@@ -12,6 +12,7 @@ dependencies.lock
 sdkconfig
 sdkconfig.old
 firmware/control-board-s3/sdkconfig.wifi_debug.local
+releases/
 
 # Tool/editor files
 .claude/

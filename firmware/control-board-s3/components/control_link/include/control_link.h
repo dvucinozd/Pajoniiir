@@ -262,6 +262,32 @@ typedef enum {
 #define CTRL_BULK_TYPE_PROFILE_ACTIVATE      0x07  /* P4->S3 */
 #define CTRL_BULK_TYPE_PROFILE_STATUS        0x08  /* S3->P4 */
 #define CTRL_BULK_TYPE_PROFILE_CLEAR         0x09  /* P4->S3 */
+#define CTRL_BULK_TYPE_FIRMWARE_REPORT       0x0A  /* S3->P4 */
+
+#define CTRL_FW_VERSION_MAX 32
+#define CTRL_FW_REPORT_LEN  (2 + CTRL_FW_VERSION_MAX)
+
+typedef enum {
+    CTRL_FW_SLOT_UNKNOWN = 0,
+    CTRL_FW_SLOT_OTA_0 = 1,
+    CTRL_FW_SLOT_OTA_1 = 2,
+    CTRL_FW_SLOT_FACTORY = 3,
+} ctrl_firmware_slot_t;
+
+typedef enum {
+    CTRL_FW_STATE_UNKNOWN = 0,
+    CTRL_FW_STATE_NEW = 1,
+    CTRL_FW_STATE_PENDING_VERIFY = 2,
+    CTRL_FW_STATE_VALID = 3,
+    CTRL_FW_STATE_INVALID = 4,
+    CTRL_FW_STATE_ABORTED = 5,
+} ctrl_firmware_state_t;
+
+typedef struct {
+    uint8_t slot;
+    uint8_t state;
+    char version[CTRL_FW_VERSION_MAX + 1];
+} ctrl_firmware_report_t;
 
 /* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
  * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
@@ -341,6 +367,8 @@ size_t ctrl_bulk_build_profile_nack(uint8_t *out, size_t cap, uint8_t seq,
                                     uint8_t nacked_type, uint8_t reason);
 size_t ctrl_bulk_build_profile_status(uint8_t *out, size_t cap, uint8_t seq,
                                       uint8_t state, uint16_t vid, uint16_t pid);
+size_t ctrl_bulk_build_firmware_report(uint8_t *out, size_t cap, uint8_t seq,
+                                       const ctrl_firmware_report_t *rep);
 
 /* Frame decoders operate on a parser-validated frame (type + length checked). */
 bool ctrl_bulk_decode_descriptor(const uint8_t *frame, size_t frame_len,
@@ -357,6 +385,8 @@ bool ctrl_bulk_decode_profile_nack(const uint8_t *frame, size_t frame_len,
                                    uint8_t *nacked_type, uint8_t *reason);
 bool ctrl_bulk_decode_profile_status(const uint8_t *frame, size_t frame_len,
                                      uint8_t *state, uint16_t *vid, uint16_t *pid);
+bool ctrl_bulk_decode_firmware_report(const uint8_t *frame, size_t frame_len,
+                                      ctrl_firmware_report_t *rep);
 
 /* Profile transfer receiver (S3 role): reassembles PROFILE_BEGIN/CHUNK/END
  * into a caller-provided buffer and verifies the transfer crc32. Chunks must
@@ -505,6 +535,9 @@ size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
 
 // Send a controller descriptor report to the P4. Safe to call from any task.
 esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep);
+
+// Send the running S3 firmware slot/state/version to P4 as a 0xA6 report.
+esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep);
 
 // Called (from the RX task) when the P4 requests activation of a fully
 // received profile. `blob`/`len` are the validated S3CP bytes; return true to

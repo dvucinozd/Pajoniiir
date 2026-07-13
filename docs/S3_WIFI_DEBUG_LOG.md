@@ -21,15 +21,32 @@ The debug AP is OFF after every boot and is controlled entirely from the P4:
 2. On the P4, open **Settings** and enable the **S3 DEBUG AP** switch. The label
    tracks the S3 handshake: `OFF` -> `STARTING` -> `ON` (or `ERROR`).
 3. Connect a phone/laptop to the open SoftAP **`PajoNiiiR-S3-DEBUG`**.
-4. Open **`http://192.168.4.1`** for a read-only live log viewer (Server-Sent
-   Events auto-reconnect). It shows the same aggregate `P4_AUDIO_LINK` and
-   `FLX4_USB_AUDIO` counters described below.
+4. Open **`http://192.168.4.1`** for a live log viewer (Server-Sent Events
+   auto-reconnect). It shows the same aggregate `P4_AUDIO_LINK` and
+   `FLX4_USB_AUDIO` counters described below. The log remains read-only.
 5. Disable the switch when done; the AP and HTTP server stop.
 
 The switch is not persisted in P4 NVS; P4 also sends OFF at boot so the AP never
-lingers after a reboot. The web page is read-only and exposes no firmware
-commands. See `docs/CONTROL_LINK_PROTOCOL.md` (`CTRL_ID_S3_DEBUG_AP`) for the
-control-link handshake and status enum.
+lingers after a reboot. See `docs/CONTROL_LINK_PROTOCOL.md`
+(`CTRL_ID_S3_DEBUG_AP`) for the control-link handshake and status enum.
+
+### S3 Firmware Update
+
+The Debug AP also hosts a dedicated OTA page at
+**`http://192.168.4.1/update`**. Navigating away from the log page closes its
+long-lived SSE connection before the firmware upload starts.
+
+- Select only `control-board-s3.bin` produced by the S3 build.
+- The browser sends the raw binary to `POST /api/ota/s3` with
+  `X-DDJ-OTA: s3`.
+- Firmware validates the ESP magic, ESP32-S3 chip ID, slot size, complete ESP
+  image, and project name before selecting the new boot slot.
+- A successful upload restarts S3. The Debug AP is OFF after reboot, so enable
+  it again from P4 Settings when further diagnostics are needed.
+- An interrupted or rejected upload does not replace the running boot slot.
+
+The AP is open and signed release manifests are scheduled for a later OTA
+batch. Keep it disabled except during a supervised bench update.
 
 > The open AP has no authentication and consumes RAM/CPU/power while ON, so keep
 > it a bench/debug-only tool. FLX4 MIDI, the control link, and P4-to-S3

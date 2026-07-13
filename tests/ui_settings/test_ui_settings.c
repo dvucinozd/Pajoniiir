@@ -59,6 +59,18 @@ static void test_settings_active_tab_uses_configured_index(void)
     assert(!ui_settings_is_active_tab(5, -1));
 }
 
+static void test_firmware_status_labels_are_stable(void)
+{
+    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_OTA_0), "ota_0") == 0);
+    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_OTA_1), "ota_1") == 0);
+    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_FACTORY), "factory") == 0);
+    assert(strcmp(ui_settings_firmware_slot_label(99), "unknown") == 0);
+    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_PENDING_VERIFY), "PENDING") == 0);
+    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_VALID), "VALID") == 0);
+    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_INVALID), "INVALID") == 0);
+    assert(strcmp(ui_settings_firmware_state_label(99), "UNKNOWN") == 0);
+}
+
 int main(void)
 {
     test_force_poll_always_allows_refresh();
@@ -66,6 +78,7 @@ int main(void)
     test_master_trim_presets_are_non_boosting_and_cycle();
     test_s3_debug_ap_status_labels_are_stable();
     test_settings_active_tab_uses_configured_index();
+    test_firmware_status_labels_are_stable();
 
     puts("ui_settings tests passed");
     return 0;

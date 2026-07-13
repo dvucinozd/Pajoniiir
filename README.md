@@ -128,6 +128,18 @@ idf.py build
 .\tests\run_s3_host_tests.ps1
 ```
 
+After both OTA-enabled targets have been built with the same version, create a
+checked local release directory with:
+
+```powershell
+.\tools\package_ota_release.ps1
+```
+
+The tool validates target chip IDs, project metadata, slot limits, and matching
+versions before writing both application binaries and `manifest.json` under the
+ignored `releases/` directory. See the [OTA update plan](docs/OTA_UPDATE_PLAN.md)
+for the remaining hardware acceptance and manifest-signing work.
+
 ---
 
 ## 📢 Current Status & Features

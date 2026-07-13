@@ -1107,3 +1107,26 @@ body.browser-expanded .browser-card .library-container {
     }
 
 }
+
+.ota-card {
+    margin: var(--sp-3);
+    padding: var(--sp-3);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: grid;
+    gap: var(--sp-2);
+}
+
+.ota-warning {
+    color: #ffbf69;
+    font-size: 12px;
+}
+
+.btn-ota {
+    width: max-content;
+    background: #8c2f39;
+}
+
+#ota-progress {
+    width: 100%;
+}

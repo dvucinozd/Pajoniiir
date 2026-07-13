@@ -1101,3 +1101,32 @@ is intentionally deferred.
 - Hardware acceptance confirmed the Overview toggle and expected basic
   key-lock behavior without an observed reboot or audio failure. Longer
   dual-deck quality/CPU tuning remains a future smoke test.
+
+## Phase 14: Dual-Target OTA Foundation (2026-07-13)
+
+Status: partition migration and rollback health-gates are hardware-smoked on
+both targets. P4 and S3 HTTP OTA implementations build successfully; their A/B,
+interruption, invalid-image, and rollback acceptance cycles remain pending.
+
+- P4 retains a wired recovery `factory` image and alternates normal updates
+  between two 4 MB OTA slots through the Wi-Fi Remote web application.
+- S3 alternates between two 1.875 MB OTA slots. Its temporary Debug AP exposes
+  a separate `/update` page so the live SSE log connection cannot monopolize
+  the firmware upload workflow.
+- Both upload paths use mandatory target headers, bounded streaming receives,
+  inactive-slot writes, ESP-IDF image verification, and delayed restart only
+  after selecting a validated boot partition.
+- S3 additionally rejects a non-ESP32-S3 header before erasing flash and checks
+  the `control-board-s3` project name before activation.
+- P4 now applies the matching ESP32-P4 header and `main-deck-p4` project checks.
+- S3 sends a periodic `0xA6 FIRMWARE_REPORT` carrying its real slot, image
+  state, and version. P4 Settings and `GET /api/firmware` expose both targets.
+- Wired smoke confirmed P4 recovers `ota_0 / VALID` S3 metadata after a P4-only
+  restart; the first decoded report arrived at 3150 ms.
+- The unsigned release packager validates chip IDs, project metadata, matching
+  versions, and slot limits before producing a deterministic SHA-256 manifest.
+- Newly booted OTA images are marked valid only after mandatory subsystem
+  startup reaches the shared `firmware_health_mark_ready()` gate.
+
+See `docs/OTA_UPDATE_PLAN.md` for the remaining acceptance matrix and signed
+release-package work.

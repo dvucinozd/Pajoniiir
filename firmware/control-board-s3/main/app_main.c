@@ -3,6 +3,7 @@
 #include "calibration.h"
 #include "sdkconfig.h"
 #include "s3_debug_ap.h"
+#include "s3_ota.h"
 #include "wifi_debug_log.h"
 #include "firmware_health.h"
 #if CONFIG_DDJ_FLX4_HOST_MODE
@@ -22,6 +23,8 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "main";
 
@@ -64,16 +67,43 @@ static void router_task(void *arg)
 // The P4 can use this to detect S3 disconnects (e.g. timeout > 10 s → offline).
 
 #if !CONFIG_DDJ_FLX4_HOST_MODE || CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+static void send_firmware_report(void)
+{
+    firmware_health_info_t info;
+    if (firmware_health_get_info(&info) != ESP_OK) return;
+
+    ctrl_firmware_report_t report = {0};
+    if (strcmp(info.partition_label, "ota_0") == 0) {
+        report.slot = CTRL_FW_SLOT_OTA_0;
+    } else if (strcmp(info.partition_label, "ota_1") == 0) {
+        report.slot = CTRL_FW_SLOT_OTA_1;
+    } else if (strcmp(info.partition_label, "factory") == 0) {
+        report.slot = CTRL_FW_SLOT_FACTORY;
+    }
+    switch (info.image_state) {
+    case ESP_OTA_IMG_NEW: report.state = CTRL_FW_STATE_NEW; break;
+    case ESP_OTA_IMG_PENDING_VERIFY: report.state = CTRL_FW_STATE_PENDING_VERIFY; break;
+    case ESP_OTA_IMG_VALID: report.state = CTRL_FW_STATE_VALID; break;
+    case ESP_OTA_IMG_INVALID: report.state = CTRL_FW_STATE_INVALID; break;
+    case ESP_OTA_IMG_ABORTED: report.state = CTRL_FW_STATE_ABORTED; break;
+    case ESP_OTA_IMG_UNDEFINED:
+    default: report.state = CTRL_FW_STATE_UNKNOWN; break;
+    }
+    snprintf(report.version, sizeof(report.version), "%s", info.version);
+    (void)control_link_send_firmware_report(&report);
+}
+
 static void heartbeat_task(void *arg)
 {
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
         control_link_send_heartbeat();
+        send_firmware_report();
 #if CONFIG_DDJ_FLX4_HOST_MODE && CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
         if (flx4_midi_host_refresh_connection_state()) {
             flx4_replay_known_input_snapshot();
         }
 #endif
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 #endif
@@ -327,6 +357,7 @@ static void flx4_translator_task(void *arg)
 void app_main(void)
 {
     ESP_ERROR_CHECK(firmware_health_init());
+    ESP_ERROR_CHECK(s3_ota_init());
     ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
     (void)wifi_debug_log_init();

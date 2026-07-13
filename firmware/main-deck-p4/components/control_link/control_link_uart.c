@@ -39,6 +39,9 @@ static TickType_t s_last_warn;
 static ctrl_bulk_parser_t s_bulk_parser;
 static control_link_descriptor_cb_t s_descriptor_cb;
 static control_link_profile_reply_cb_t s_profile_reply_cb;
+static portMUX_TYPE s_firmware_mux = portMUX_INITIALIZER_UNLOCKED;
+static ctrl_firmware_report_t s_s3_firmware;
+static bool s_s3_firmware_received;
 
 // ─── TX helpers ───────────────────────────────────────────────────────────────
 
@@ -115,6 +118,16 @@ void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb)
 void control_link_set_profile_reply_cb(control_link_profile_reply_cb_t cb)
 {
     s_profile_reply_cb = cb;
+}
+
+bool control_link_get_s3_firmware_report(ctrl_firmware_report_t *out_report)
+{
+    if (!out_report) return false;
+    portENTER_CRITICAL(&s_firmware_mux);
+    bool received = s_s3_firmware_received;
+    *out_report = s_s3_firmware;
+    portEXIT_CRITICAL(&s_firmware_mux);
+    return received;
 }
 
 esp_err_t control_link_send_profile_begin(uint32_t total_size, uint32_t crc32,
@@ -331,6 +344,26 @@ static void handle_bulk_frame(const uint8_t *frame, size_t frame_len)
         uint16_t vid, pid;
         if (ctrl_bulk_decode_profile_status(frame, frame_len, &state, &vid, &pid)) {
             ESP_LOGI(TAG, "profile status=%u VID=0x%04X PID=0x%04X", state, vid, pid);
+        }
+        break;
+    }
+    case CTRL_BULK_TYPE_FIRMWARE_REPORT: {
+        ctrl_firmware_report_t report;
+        if (!ctrl_bulk_decode_firmware_report(frame, frame_len, &report)) {
+            ESP_LOGW(TAG, "bad S3 firmware report (len=%u)", (unsigned)frame_len);
+            return;
+        }
+        portENTER_CRITICAL(&s_firmware_mux);
+        bool changed = !s_s3_firmware_received ||
+                       s_s3_firmware.slot != report.slot ||
+                       s_s3_firmware.state != report.state ||
+                       strcmp(s_s3_firmware.version, report.version) != 0;
+        s_s3_firmware = report;
+        s_s3_firmware_received = true;
+        portEXIT_CRITICAL(&s_firmware_mux);
+        if (changed) {
+            ESP_LOGW(TAG, "S3 firmware version=%s slot=%u state=%u",
+                     report.version, report.slot, report.state);
         }
         break;
     }

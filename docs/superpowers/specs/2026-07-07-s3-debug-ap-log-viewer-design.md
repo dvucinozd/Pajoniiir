@@ -1,5 +1,10 @@
 # S3 Debug AP Log Viewer Design
 
+> Follow-up: OTA Batch 4 adds a dedicated `/update` firmware-upload page and
+> `/api/firmware` status endpoint. The live log and `/events` stream described
+> here remain read-only; the OTA exception and its validation rules are defined
+> in `docs/OTA_UPDATE_PLAN.md`.
+
 ## Goal
 
 Add an on-demand S3-hosted Wi-Fi debug AP for bench diagnostics when the S3

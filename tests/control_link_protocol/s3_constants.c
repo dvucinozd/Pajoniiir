@@ -93,6 +93,10 @@ int s3_ctrl_bulk_type_profile_nack(void) { return CTRL_BULK_TYPE_PROFILE_NACK; }
 int s3_ctrl_bulk_type_profile_activate(void) { return CTRL_BULK_TYPE_PROFILE_ACTIVATE; }
 int s3_ctrl_bulk_type_profile_status(void) { return CTRL_BULK_TYPE_PROFILE_STATUS; }
 int s3_ctrl_bulk_type_profile_clear(void) { return CTRL_BULK_TYPE_PROFILE_CLEAR; }
+int s3_ctrl_bulk_type_firmware_report(void) { return CTRL_BULK_TYPE_FIRMWARE_REPORT; }
+int s3_ctrl_fw_report_len(void) { return CTRL_FW_REPORT_LEN; }
+int s3_ctrl_fw_slot_ota_0(void) { return CTRL_FW_SLOT_OTA_0; }
+int s3_ctrl_fw_state_valid(void) { return CTRL_FW_STATE_VALID; }
 int s3_ctrl_profile_begin_len(void) { return CTRL_PROFILE_BEGIN_LEN; }
 int s3_ctrl_profile_chunk_max(void) { return CTRL_PROFILE_CHUNK_MAX; }
 int s3_ctrl_profile_nack_crc(void) { return CTRL_PROFILE_NACK_CRC; }

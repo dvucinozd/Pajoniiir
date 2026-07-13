@@ -8,12 +8,17 @@
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
+#include "p4_ota.h"
+#include "p4_ota_policy.h"
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
 #endif
 #include <stdlib.h>
 #include <string.h>
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
@@ -112,6 +117,174 @@ static esp_err_t app_js_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, (const char *)app_js_start, size);
+}
+
+static const char *peer_fw_slot_name(uint8_t slot)
+{
+    switch (slot) {
+    case CTRL_FW_SLOT_OTA_0: return "ota_0";
+    case CTRL_FW_SLOT_OTA_1: return "ota_1";
+    case CTRL_FW_SLOT_FACTORY: return "factory";
+    default: return "unknown";
+    }
+}
+
+static const char *peer_fw_state_name(uint8_t state)
+{
+    switch (state) {
+    case CTRL_FW_STATE_NEW: return "new";
+    case CTRL_FW_STATE_PENDING_VERIFY: return "pending_verify";
+    case CTRL_FW_STATE_VALID: return "valid";
+    case CTRL_FW_STATE_INVALID: return "invalid";
+    case CTRL_FW_STATE_ABORTED: return "aborted";
+    default: return "unknown";
+    }
+}
+
+static esp_err_t api_firmware_handler(httpd_req_t *req)
+{
+    p4_ota_status_t status;
+    p4_ota_get_status(&status);
+    ctrl_firmware_report_t s3 = {0};
+    bool s3_available = control_link_get_s3_firmware_report(&s3);
+    char json[640];
+    int len = snprintf(json, sizeof(json),
+                       "{\"target\":\"p4\",\"state\":\"%s\","
+                       "\"running_slot\":\"%s\",\"running_version\":\"%s\","
+                       "\"target_slot\":\"%s\",\"target_version\":\"%s\","
+                       "\"expected_size\":%u,\"received_size\":%u,"
+                       "\"last_error\":\"%s\","
+                       "\"s3\":{\"available\":%s,\"slot\":\"%s\","
+                       "\"state\":\"%s\",\"version\":\"%s\"}}",
+                       p4_ota_state_name(status.state),
+                       status.running_slot, status.running_version,
+                       status.target_slot, status.target_version,
+                       (unsigned)status.expected_size,
+                       (unsigned)status.received_size,
+                       status.last_error,
+                       s3_available ? "true" : "false",
+                       peer_fw_slot_name(s3.slot), peer_fw_state_name(s3.state),
+                       s3.version);
+    if (len < 0 || (size_t)len >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)len);
+}
+
+static void ota_restart_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+}
+
+static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
+{
+    const unsigned max_timeouts = 5;
+    for (unsigned timeout_count = 0; timeout_count < max_timeouts; ++timeout_count) {
+        int received = httpd_req_recv(req, (char *)buffer, wanted);
+        if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
+    }
+    return HTTPD_SOCK_ERR_TIMEOUT;
+}
+
+static esp_err_t api_p4_ota_handler(httpd_req_t *req)
+{
+    char target[8] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-DDJ-OTA", target, sizeof(target)) != ESP_OK ||
+        strcmp(target, "p4") != 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: p4");
+    }
+    if (req->content_len < P4_OTA_IMAGE_HEADER_SIZE) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware image is too small");
+    }
+
+    uint8_t *buffer = malloc(4096);
+    if (!buffer) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
+    }
+
+    size_t remaining = (size_t)req->content_len;
+    size_t buffered = 0;
+    while (buffered < P4_OTA_IMAGE_HEADER_SIZE) {
+        size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
+        int received = ota_http_recv(req, buffer + buffered, wanted);
+        if (received <= 0) {
+            free(buffer);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        buffered += (size_t)received;
+        remaining -= (size_t)received;
+    }
+    if (!p4_ota_policy_header_valid(buffer, buffered)) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Not an ESP32-P4 firmware image");
+    }
+
+    esp_err_t rc = audio_engine_stop_all();
+    if (rc != ESP_OK) {
+        free(buffer);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Cannot stop playback");
+    }
+    rc = p4_ota_begin((size_t)req->content_len);
+    if (rc != ESP_OK) {
+        free(buffer);
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
+    }
+    rc = p4_ota_write(buffer, buffered);
+    if (rc != ESP_OK) {
+        free(buffer);
+        p4_ota_abort(esp_err_to_name(rc));
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Flash write failed");
+    }
+    while (remaining > 0) {
+        size_t wanted = remaining < 4096u ? remaining : 4096u;
+        int received = ota_http_recv(req, buffer, wanted);
+        if (received <= 0) {
+            free(buffer);
+            p4_ota_abort("HTTP upload interrupted");
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        rc = p4_ota_write(buffer, (size_t)received);
+        if (rc != ESP_OK) {
+            free(buffer);
+            p4_ota_abort(esp_err_to_name(rc));
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Flash write failed");
+        }
+        remaining -= (size_t)received;
+    }
+    free(buffer);
+
+    rc = p4_ota_finish();
+    if (rc != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Firmware validation failed");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    esp_err_t send_rc = httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
+                                        HTTPD_RESP_USE_STRLEN);
+    if (xTaskCreate(ota_restart_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create OTA reboot task");
+        esp_restart();
+    }
+    return send_rc;
 }
 
 // GET /api/status
@@ -672,6 +845,24 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t firmware_uri = {
+        .uri = "/api/firmware*",
+        .method = HTTP_GET,
+        .handler = api_firmware_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &firmware_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_p4_uri = {
+        .uri = "/api/ota/p4",
+        .method = HTTP_POST,
+        .handler = api_p4_ota_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_p4_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t library_uri = {
