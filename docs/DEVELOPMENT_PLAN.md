@@ -1357,6 +1357,9 @@ Status: R5A-R5F complete. Both host suites and signed builds pass; matching
 `RC1-121-gb7ac66a5` images were wired-flashed and the final dual-target scratch
 soak was accepted on 2026-07-14.
 
+Ordered enclosure-readiness and production-hardening continuation batches are
+recorded in `POST_R5_PLAN.md`; resume with E1 signed OTA hardware acceptance.
+
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
 - An audit-only S3 defaults profile proved the imported legacy CDJ

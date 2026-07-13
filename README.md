@@ -65,6 +65,7 @@ tests/                PC-side test harnesses inherited from CDJ100S-XXX
 - [Controller profile schema](docs/CONTROLLER_PROFILE_SCHEMA.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
+- [Post-R5 continuation plan](docs/POST_R5_PLAN.md)
 - [Startup checklist](docs/STARTUP_CHECKLIST.md)
 - [Risk register](docs/RISK_REGISTER.md)
 - [Documentation status and source-of-truth policy](docs/DOCUMENTATION_STATUS.md)
