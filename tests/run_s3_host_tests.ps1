@@ -234,6 +234,11 @@ Assert-FileContains `
     -Patterns @("a failed re-push is a real lost event and must be counted", "s_flx4_dropped_count")
 
 Assert-FileContains `
+    -Name "flx4 priority touch supersedes stale edges and survives button-only saturation" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("flx4_event_is_jog_touch(&cur) && cur.id == ev->id", "Latest level supersedes any undelivered edge", "Button-only saturation", "xQueueSendToFront(s_flx4_event_queue, ev, portMAX_DELAY)")
+
+Assert-FileContains `
     -Name "flx4 usb audio drops to STOPPED so autostart can recover the stream" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
     -Patterns @("s_consecutive_errors >= FLX4_USB_AUDIO_MAX_CONSECUTIVE_ERRORS", "s_mode = FLX4_USB_AUDIO_MODE_STOPPED;")

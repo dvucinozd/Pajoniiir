@@ -274,32 +274,56 @@ static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
     return true;
 }
 
-/* Touch edges are state transitions, not lossy high-rate motion. If the queue is
- * saturated by jog/fader traffic, evict one high-rate event and put the touch at
- * the front so a release can never leave the P4 stuck in scratch mode. */
+/* Touch edges are state transitions, not lossy high-rate motion. Keep only the
+ * newest queued state for this platter, otherwise pushing a release to the
+ * front ahead of an older press would invert the edges and leave scratch stuck.
+ * Prefer sacrificing high-rate motion; if a queue contains buttons only, evict
+ * one arbitrary oldest event as the final safety net. */
 static bool flx4_enqueue_priority_touch(const flx4_control_event_t *ev)
 {
     if (!flx4_event_is_jog_touch(ev) || !s_flx4_event_queue) return false;
 
     flx4_control_event_t stash[FLX4_EVENT_QUEUE_LEN];
     int stash_len = 0;
-    bool evicted = false;
     flx4_control_event_t cur;
     while (stash_len < FLX4_EVENT_QUEUE_LEN &&
            xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
-        if (!evicted && flx4_event_is_high_rate(&cur)) {
-            evicted = true;
-            s_flx4_dropped_count++;
+        if (flx4_event_is_jog_touch(&cur) && cur.id == ev->id) {
+            /* Latest level supersedes any undelivered edge for this platter. */
+            s_flx4_coalesced_count++;
             continue;
         }
         stash[stash_len++] = cur;
+    }
+
+    if (stash_len == FLX4_EVENT_QUEUE_LEN) {
+        for (int i = 0; i < stash_len; i++) {
+            if (flx4_event_is_high_rate(&stash[i])) {
+                for (int j = i + 1; j < stash_len; j++) {
+                    stash[j - 1] = stash[j];
+                }
+                stash_len--;
+                s_flx4_dropped_count++;
+                break;
+            }
+        }
     }
     for (int i = 0; i < stash_len; i++) {
         if (xQueueSend(s_flx4_event_queue, &stash[i], 0) != pdTRUE) {
             s_flx4_dropped_count++;
         }
     }
-    return evicted && xQueueSendToFront(s_flx4_event_queue, ev, 0) == pdTRUE;
+    /* The translator may have drained a slot while the queue was rebuilt. */
+    if (xQueueSendToFront(s_flx4_event_queue, ev, 0) == pdTRUE) return true;
+
+    /* Button-only saturation: preserving the platter level is more important
+     * than any single queued button edge. There is only one producer for this
+     * queue, so the slot freed here cannot be stolen before SendToFront. */
+    if (xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
+        s_flx4_dropped_count++;
+        return xQueueSendToFront(s_flx4_event_queue, ev, portMAX_DELAY) == pdTRUE;
+    }
+    return false;
 }
 
 static void flx4_enqueue_event(const flx4_control_event_t *ev)

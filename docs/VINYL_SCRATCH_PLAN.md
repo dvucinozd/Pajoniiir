@@ -253,6 +253,20 @@ normal playback.
 - Added a scratch-enabled `deck_core_dual` host-test build and disconnect/side-
   ring regressions. Full firmware hardware feel/stress validation remains open.
 
+### Priority-touch remediation R3 (implemented, HW smoke passed 2026-07-13)
+
+- Both queue boundaries supersede older undelivered touch levels for the same
+  platter before placing the newest level at the front. This prevents a queued
+  press from executing after its newer release.
+- Full queues prefer evicting high-rate motion, retry after rebuild, and finally
+  evict one oldest event even when saturation consists only of buttons.
+- The last priority send applies blocking backpressure until the permanent
+  consumer makes room. Latest platter state therefore has a lossless delivery
+  path even under simultaneous queue producers.
+- Both signed OTA-layout targets were flashed with hash verification. The
+  subsequent user scratch smoke passed on both platters without a latched
+  touch/release state.
+
 ### Timeline remediation batch 2 (implemented, HW validation pending)
 
 - Scratch capture buffers now carry a non-zero generation counter which changes

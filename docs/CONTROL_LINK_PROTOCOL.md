@@ -132,6 +132,13 @@ In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 channel fader, and crossfader events are locally coalesced before UART send;
 button edges and load/PFL events remain FIFO.
 
+Jog-touch is the exception under saturation because it is a safety-critical
+level, not an ordinary button edge. At both the S3 translator queue and P4
+control-event queue, the newest touch level supersedes older queued levels for
+the same platter and is inserted at the front. High-rate motion is the preferred
+eviction victim; a button-only full queue sacrifices one oldest event rather
+than dropping the latest platter release.
+
 `CTRL_ID_HEADPHONE_LEVEL`, `CTRL_ID_SMART_CFX_SHIFT`,
 `CTRL_ID_SMART_FADER_SHIFT`, `CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT`, and
 `CTRL_ID_BEAT_FX_BEAT_INC_SHIFT` are literal `0x7D`, `0x7E`, `0x7F`, `0x83`,

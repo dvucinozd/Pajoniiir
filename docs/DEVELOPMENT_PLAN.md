@@ -1276,3 +1276,39 @@ Initial hardware acceptance:
   monitor PCM drop; link throughput remained approximately 172 blocks/s;
 - two isolated 11.92/12.13 ms output-late warnings did not cause a drop or
   repeat into a sustained overload.
+
+## Phase 17: Audio Remediation R3 — Lossless Priority Touch (2026-07-13)
+
+Status: implemented; both host suites and firmware builds pass, and dual-target
+hardware smoke passed on 2026-07-13.
+
+- S3 and P4 priority queues now remove every undelivered jog-touch event for
+  the same platter before inserting the latest level. A release can therefore
+  never be placed ahead of an older queued press and leave scratch latched.
+- When no stale same-platter edge exists, priority insertion first sacrifices a
+  coalescible high-rate jog/fader event.
+- If a full queue contains button events only, it retries after the drain and
+  rebuild, then evicts one oldest event as the final safety net. The final
+  priority insertion applies blocking backpressure until the permanent consumer
+  makes room, so a concurrent P4-local producer cannot steal the newly freed
+  slot and create another touch-drop path.
+- Superseded platter levels increment the coalesced counter; actual high-rate or
+  arbitrary fallback victims increment the drop counter.
+- Static regression guards require the same policy on the S3 MIDI translator
+  queue and the P4 control-link queue.
+
+Software acceptance:
+
+- complete S3 host suite passes;
+- complete P4 host suite passes, including 318/318 `audio_engine` assertions;
+- ESP-IDF S3 signed OTA build passes; `control-board-s3.bin` is `0xE6170`
+  bytes with 52% free in the smallest app partition;
+- ESP-IDF P4 build passes; `main-deck-p4.bin` is `0x205AF0` bytes with 49% free
+  in the smallest app partition.
+
+Initial hardware acceptance:
+
+- both signed OTA-layout builds were flashed over the wired recovery ports and
+  every written image passed esptool hash verification;
+- user scratch smoke on both platters passed after the dual-target flash, with
+  correct operation and no platter remaining latched after release.

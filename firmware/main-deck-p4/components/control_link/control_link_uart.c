@@ -231,23 +231,46 @@ static bool enqueue_priority_touch(const ctrl_event_t *ev)
 
     ctrl_event_t stash[32];
     int stash_len = 0;
-    bool evicted = false;
     ctrl_event_t cur;
     while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
            xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
-        if (!evicted && event_is_high_rate(&cur)) {
-            evicted = true;
-            s_event_drop_count++;
+        if (event_is_jog_touch(&cur) && cur.id == ev->id) {
+            /* A queued older edge must never execute after the latest level. */
+            s_event_coalesce_count++;
             continue;
         }
         stash[stash_len++] = cur;
+    }
+
+    if (stash_len == (int)(sizeof(stash) / sizeof(stash[0]))) {
+        for (int i = 0; i < stash_len; i++) {
+            if (event_is_high_rate(&stash[i])) {
+                for (int j = i + 1; j < stash_len; j++) {
+                    stash[j - 1] = stash[j];
+                }
+                stash_len--;
+                s_event_drop_count++;
+                break;
+            }
+        }
     }
     for (int i = 0; i < stash_len; i++) {
         if (xQueueSend(s_event_queue, &stash[i], 0) != pdTRUE) {
             s_event_drop_count++;
         }
     }
-    return evicted && xQueueSendToFront(s_event_queue, ev, 0) == pdTRUE;
+    if (xQueueSendToFront(s_event_queue, ev, 0) == pdTRUE) return true;
+
+    /* Under button-only saturation, evict one oldest event so a platter release
+     * cannot be dropped and latch scratch. Other local producers can race this
+     * queue, so the final safety insertion applies backpressure until the
+     * permanent consumer task makes room. This path is reached only after an
+     * already-full queue and a failed immediate retry. */
+    if (xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
+        s_event_drop_count++;
+        return xQueueSendToFront(s_event_queue, ev, portMAX_DELAY) == pdTRUE;
+    }
+    return false;
 }
 
 static void dispatch_frame(const uint8_t *f)

@@ -159,6 +159,9 @@ P4-built and basic hardware-smoked. R2 hardens concurrent PCM timeline reads
 used by Master Tempo and guards invalid source-less estimated seeks; its host
 tests and P4 build pass, and its initial dual-deck scratch/USB hardware smoke
 completed without writer timeout, DWC assert, reboot or PCM-link drop.
+R3 hardens both control queues so the newest platter touch/release level cannot
+be lost or reordered under saturation; both target builds pass and dual-target
+hardware smoke passed on 2026-07-13 after flashing both targets.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure
