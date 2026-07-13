@@ -501,14 +501,27 @@ does not migrate the legacy single-app layout.
 HTTP OTA implementation status:
 
 - P4 Wi-Fi Remote exposes `/api/firmware` and `/api/ota/p4` plus its firmware
-  upload panel. Code/build/bootstrap flash are complete; A/B and rollback
-  acceptance are pending.
-- S3 Debug AP exposes `/api/firmware`, `/api/ota/s3`, and `/update`. Code,
-  build, wired bootstrap flash, and stable `ota_0` boot verification are
-  complete; HTTP A/B and rollback acceptance are pending.
-- Perform the AP tests when the laptop has Ethernet for Internet access; do not
-  disconnect the active development Wi-Fi session merely to satisfy the smoke
-  test early.
+  upload panel. Code/build/bootstrap flash and `factory -> ota_0 -> ota_1`
+  hardware acceptance are complete.
+- S3 Debug AP exposes `/api/firmware`, `/api/ota/s3`, and `/update`. Code, build,
+  wired bootstrap flash, and `ota_0 -> ota_1 -> ota_0` hardware acceptance are
+  complete.
+- Both targets reject missing/wrong target headers, undersized payloads, and the
+  other target's chip image with HTTP 400 before activation.
+- A client disconnect after 64 KiB aborts the inactive-slot write without a
+  reboot on both targets; a following complete upload succeeds normally.
+- Each new slot booted as `pending_verify` and was marked valid only after the
+  mandatory startup health check. Test-only non-confirming P4 and S3 images both
+  rolled back to the prior valid slot.
+- A valid target header declaring one byte more than the inactive slot capacity
+  is rejected with `ESP_ERR_INVALID_SIZE` on both targets.
+- Physical power loss during an inactive-slot write leaves the current image
+  bootable on both targets. The accepted S3 run used a throttled 20 KiB/s upload
+  to guarantee the power cut occurred before transfer completion.
+- AP testing passed on 2026-07-13 with Internet retained over `Ethernet 2` while
+  Wi-Fi was dedicated to `PAJONIIR` and `PajoNiiiR-S3-DEBUG` in turn. Final
+  status was P4 `ota_1 / valid`, S3 `ota_0 / valid`, both
+  `RC1-105-gf1c176e2`.
 
 Batch 5 firmware-status verification:
 

@@ -1104,9 +1104,9 @@ is intentionally deferred.
 
 ## Phase 14: Dual-Target OTA Foundation (2026-07-13)
 
-Status: partition migration and rollback health-gates are hardware-smoked on
-both targets. P4 and S3 HTTP OTA implementations build successfully; their A/B,
-interruption, invalid-image, and rollback acceptance cycles remain pending.
+Status: partition migration, rollback health-gates, and both HTTP OTA paths are
+hardware-smoked. A/B, client-interruption, invalid/oversized-image, forced
+rollback, and physical power-loss acceptance pass on P4 and S3.
 
 - P4 retains a wired recovery `factory` image and alternates normal updates
   between two 4 MB OTA slots through the Wi-Fi Remote web application.
@@ -1127,6 +1127,16 @@ interruption, invalid-image, and rollback acceptance cycles remain pending.
   versions, and slot limits before producing a deterministic SHA-256 manifest.
 - Newly booted OTA images are marked valid only after mandatory subsystem
   startup reaches the shared `firmware_health_mark_ready()` gate.
+- AP acceptance passed with release `RC1-105-gf1c176e2`: P4 cycled
+  `factory -> ota_0 -> ota_1`, S3 cycled `ota_0 -> ota_1 -> ota_0`, and both
+  targets remained on their current valid slot after a client disconnected at
+  64 KiB during a write to the inactive slot.
+- Test-only `ROLLBACK-TEST-*` images restarted before OTA confirmation and both
+  bootloaders returned to the prior valid production slot. The guarded Kconfig
+  option is off in normal P4 and S3 builds.
+- Removing system power during an inactive-slot write left the current valid
+  image bootable on both targets. The accepted S3 run used a 20 KiB/s throttled
+  upload so power was demonstrably removed before transfer completion.
 
 See `docs/OTA_UPDATE_PLAN.md` for the remaining acceptance matrix and signed
 release-package work.

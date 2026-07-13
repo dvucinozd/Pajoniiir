@@ -9,10 +9,10 @@ Batch 1 completed and hardware-smoked on 2026-07-13:
   completed subsystem startup;
 - both targets were fully wired-flashed with the rollback bootloader,
   partition table, initial OTA data, and application;
-- P4 HTTP upload, S3 HTTP upload, and intentional rollback-cycle testing remain
-  for the following development batches.
+- P4 HTTP upload, S3 HTTP upload, and intentional rollback-cycle testing were
+  left for the following development batches.
 
-Batch 2 implementation is now present pending hardware OTA smoke:
+Batch 2 implementation and hardware OTA smoke are complete:
 
 - `GET /api/firmware` reports the running/target slot, version, byte progress,
   state, and last error;
@@ -26,7 +26,7 @@ Batch 2 implementation is now present pending hardware OTA smoke:
 - the Wi-Fi Remote page exposes firmware status, file selection, upload
   progress, confirmation, and failure text.
 
-Batch 4 implementation is now present pending hardware OTA smoke:
+Batch 4 implementation and hardware OTA smoke are complete:
 
 - `GET /api/firmware` on the S3 Debug AP reports the S3 running slot, version,
   upload progress, state, and last error;
@@ -43,8 +43,11 @@ Batch 4 implementation is now present pending hardware OTA smoke:
 
 The Batch 4 image was wired-flashed to S3 on 2026-07-13. Boot verification
 reported `slot=ota_0`, `state=valid`, completed mandatory subsystem startup,
-and showed no reset or panic during the observation window. HTTP A/B and
-rollback behavior remain pending.
+and showed no reset or panic during the observation window. HTTP acceptance
+then passed for `ota_0 -> ota_1 -> ota_0`, including wrong-target/chip rejection
+and an interrupted 64 KiB upload that left the current image bootable. A
+deliberately non-confirming image then proved rollback from `ota_1` to the prior
+valid `ota_0` image.
 
 Batch 5 firmware reporting was implemented and hardware-smoked on 2026-07-13:
 
@@ -57,8 +60,8 @@ Batch 5 firmware reporting was implemented and hardware-smoked on 2026-07-13:
 
 After both targets were wired-flashed, a P4-only restart recovered the periodic
 S3 report at 3150 ms: `version=RC1-104-g2f710fb7-dirty slot=1 state=3`, meaning
-`ota_0 / VALID`. S3 rollback testing remains pending with the AP acceptance
-work.
+`ota_0 / VALID`. The later AP acceptance independently confirmed both OTA slots
+and the P4-visible S3 report after reboot.
 
 An unsigned combined release package tool is also available at
 `tools/package_ota_release.ps1`. It checks project metadata, binary chip IDs,
@@ -66,10 +69,9 @@ slot limits, and matching P4/S3 versions, then emits both images plus a
 deterministic SHA-256 manifest under ignored `releases/`. Cryptographic manifest
 signing remains Batch 6 work.
 
-Batch 3 hardware testing was intentionally deferred until the development
-laptop can retain Internet access over Ethernet while its Wi-Fi adapter is
-connected to the target AP. The same setup will be used for the S3 Batch 4
-hardware smoke.
+Batch 3 and Batch 4 AP testing completed on 2026-07-13 while the development
+laptop retained Internet access over its wired `Ethernet 2` route and dedicated
+its Wi-Fi adapter to each target AP in turn.
 
 ## Safety baseline
 
@@ -108,13 +110,14 @@ the final recovery path.
 ## Delivery batches
 
 1. Install and hardware-smoke the dual-slot layouts and rollback health gate.
-2. Add P4 HTTP streaming OTA to the existing Wi-Fi Remote web server. Code
-   complete; hardware A/B smoke pending.
+2. Add P4 HTTP streaming OTA to the existing Wi-Fi Remote web server. Code and
+   hardware A/B smoke complete.
 3. Test P4 success, interrupted upload, invalid image, and rollback paths.
-4. Add S3 HTTP streaming OTA to the existing S3 Debug AP. Code complete;
-   hardware A/B smoke pending.
-5. Report S3 version/update state to P4 and test S3 rollback. Reporting and
-   wired smoke complete; rollback test pending.
+   All four paths and physical power-loss interruption pass.
+4. Add S3 HTTP streaming OTA to the existing S3 Debug AP. Code and hardware A/B
+   smoke complete.
+5. Report S3 version/update state to P4 and test S3 rollback. Reporting, wired
+   smoke, and forced rollback complete.
 6. Add signed manifests after both independent update paths are stable. The
    unsigned checked release package is complete.
 
@@ -126,8 +129,36 @@ the safer first implementation for firmware-sized payloads.
 
 - [x] full wired flash boots both new partition layouts;
 - [x] running slot, image version, and image state are logged correctly;
-- a valid OTA image boots and is marked valid only after startup completes;
-- a deliberately non-confirming image rolls back to the prior slot;
-- power loss during upload leaves the current image bootable;
-- wrong-target and oversized images are rejected before activation;
-- at least two successive A/B update cycles pass on each processor.
+- [x] valid P4 and S3 OTA images boot as `PENDING_VERIFY` and are marked valid
+  only after mandatory startup completes;
+- [x] deliberately non-confirming P4 and S3 images roll back to the prior slot;
+- [x] client disconnect after 64 KiB aborts the inactive-slot write and leaves
+  the current image bootable on both processors;
+- [x] physical power loss during an inactive-slot write leaves the current image
+  bootable on both processors;
+- [x] missing/wrong target, undersized image, and wrong-chip image are rejected
+  before activation on both processors;
+- [x] a valid target header with a declared image size one byte over the slot
+  limit is rejected with `ESP_ERR_INVALID_SIZE` before flash activation on both
+  processors;
+- [x] two successive A/B update cycles pass on each processor (`P4 factory ->
+  ota_0 -> ota_1`; `S3 ota_0 -> ota_1 -> ota_0`).
+
+The 2026-07-13 AP acceptance used release `RC1-105-gf1c176e2`. Final status via
+the P4 endpoint was P4 `ota_1 / valid` and S3 `ota_0 / valid`, with the same
+version reported for both targets.
+
+Forced rollback is reproducible without timing a manual reset. The shared
+`CONFIG_DDJ_OTA_FORCE_ROLLBACK_TEST` option defaults off. Test builds explicitly
+include `firmware/common/sdkconfig.rollback_test.defaults`, use a clearly marked
+`ROLLBACK-TEST-*` application version, and restart only when the running image is
+`PENDING_VERIFY`. On 2026-07-13 the P4 test image booted once from `ota_0` and
+returned to valid `ota_1`; the S3 test image booted once from `ota_1` and returned
+to valid `ota_0`. Normal P4 and S3 build configurations were separately checked
+to confirm the option remained unset.
+
+Physical power-loss acceptance also passed on 2026-07-13. P4 lost power during
+an upload to inactive `ota_0` and returned to valid `ota_1`. The first S3 attempt
+completed before power was removed and was not counted; the repeated upload was
+limited to 20 KiB/s, lost power while writing inactive `ota_0`, and returned to
+valid `ota_1` without activating the partial image.

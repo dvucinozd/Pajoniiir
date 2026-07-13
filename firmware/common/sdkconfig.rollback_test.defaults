@@ -1,0 +1,3 @@
+# Test-only overlay for a deliberately non-confirming OTA image.
+# Never include this overlay in production or release-package builds.
+CONFIG_DDJ_OTA_FORCE_ROLLBACK_TEST=y

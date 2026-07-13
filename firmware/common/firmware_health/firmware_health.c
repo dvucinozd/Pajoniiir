@@ -2,9 +2,11 @@
 
 #include <string.h>
 
+#include "sdkconfig.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 
 static const char *TAG = "fw_health";
 static bool s_initialized;
@@ -78,6 +80,12 @@ esp_err_t firmware_health_mark_ready(void)
         if (rc != ESP_OK) return rc;
     }
     if (!s_pending_verify) return ESP_OK;
+
+#if CONFIG_DDJ_OTA_FORCE_ROLLBACK_TEST
+    ESP_LOGE(TAG, "forced rollback test: restarting before OTA confirmation");
+    esp_restart();
+    return ESP_FAIL;
+#endif
 
     esp_err_t rc = esp_ota_mark_app_valid_cancel_rollback();
     if (rc == ESP_OK) {
