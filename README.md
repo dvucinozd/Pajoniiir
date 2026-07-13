@@ -154,7 +154,8 @@ remaining Batch 6 step.
 The `master` branch contains the complete dual-deck controller path, vinyl
 scratch, Master Tempo/key lock, simultaneous PCM5102A MAIN and FLX4 USB
 headphone cue, data-driven controller profiles, and hardware-accepted P4/S3
-OTA with rollback.
+OTA with rollback. The R1 end-of-track drain/replay correction is host-tested,
+P4-built and basic hardware-smoked.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure

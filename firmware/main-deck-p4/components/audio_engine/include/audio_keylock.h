@@ -7,7 +7,12 @@ typedef bool (*audio_keylock_read_fn)(void *, uint64_t, audio_mixer_frame_t *);
 typedef struct {
     bool initialized, initial_half;
     uint32_t phase;
-    double grain_a, grain_b, logical_seq;
+    /* Float is hardware-accelerated on ESP32-P4; double is software-emulated.
+     * Coordinates stay relative to origin_seq and are periodically rebased, so
+     * float retains sub-frame precision even on hour-long tracks. */
+    uint64_t origin_seq;
+    uint64_t logical_seq;
+    float grain_a, grain_b, logical_fraction;
     float tempo_factor, rate_ratio;
 } audio_keylock_t;
 void audio_keylock_reset(audio_keylock_t *, uint64_t);

@@ -24,3 +24,8 @@ uint32_t audio_output_remaining_delay_ms(uint32_t sample_rate, uint32_t elapsed_
     (void)elapsed_us;
     return 0u;
 }
+
+bool audio_output_should_force_idle(uint32_t consecutive_busy_blocks)
+{
+    return consecutive_busy_blocks >= AUDIO_OUTPUT_MAX_BUSY_BLOCKS;
+}

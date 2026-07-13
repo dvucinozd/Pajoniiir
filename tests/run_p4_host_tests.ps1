@@ -580,6 +580,31 @@ Assert-FileContains `
     -LiteralPatterns @("AE_TIMELINE_FORWARD_MS", "deck_pcm_push", "pop_deck_source", "sync_scratch_view_from_timeline", "audio_pcm_timeline_set_playhead_frames_back")
 
 Assert-FileContains `
+    -Name "p4 decoder EOF drains pending PCM before natural transport completion" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @(
+        "complete_eof_drain_if_ready",
+        "audio_eof_policy_should_finish",
+        "playback_finished",
+        "Decoder EOF is not transport EOF"
+    )
+
+Assert-FileDoesNotContain `
+    -Name "p4 transport flags use atomic access across decode output and control tasks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
+
+Assert-FileDoesNotContain `
+    -Name "p4 key-lock hot path avoids software-emulated double arithmetic" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_keylock.c") `
+    -RegexPattern "\bdouble\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:[=,;()]|\[)"
+
+Assert-FileContains `
+    -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_output_should_force_idle", "vTaskDelay(pdMS_TO_TICKS(1))", "IDLE0 one real tick")
+
+Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
@@ -595,6 +620,18 @@ Assert-FileContains `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
 
 $tests = @(
+    @{
+        Name = "audio_eof_policy"
+        Dir = "tests/audio_eof_policy"
+        Target = "test_audio_eof_policy.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_eof_policy.exe",
+            "test_audio_eof_policy.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c"
+        )
+    },
     @{
         Name = "audio_keylock"
         Dir = "tests/audio_keylock"
@@ -679,6 +716,7 @@ $tests = @(
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_format.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_wav_decoder.c",

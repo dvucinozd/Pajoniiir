@@ -40,6 +40,14 @@ static void test_remaining_delay_is_disabled_when_codec_write_paces_output(void)
     assert(audio_output_remaining_delay_ms(0, 0) == 0u);
 }
 
+static void test_continuous_output_periodically_forces_an_idle_tick(void)
+{
+    assert(!audio_output_should_force_idle(0u));
+    assert(!audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS - 1u));
+    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS));
+    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS + 1u));
+}
+
 int main(void)
 {
     test_block_period_ms_uses_ceil_division();
@@ -47,6 +55,7 @@ int main(void)
     test_block_period_us_uses_precise_ceil_division();
     test_late_warning_threshold_allows_codec_write_pacing_slack();
     test_remaining_delay_is_disabled_when_codec_write_paces_output();
+    test_continuous_output_periodically_forces_an_idle_tick();
     puts("audio_output_timing tests passed");
     return 0;
 }

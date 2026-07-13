@@ -11,6 +11,9 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
 - [x] PCM5102A MAIN and FLX4 USB headphone cue operate together.
+- [x] R1 EOF drain/replay implementation passes P4 host tests and firmware build.
+- [x] R1 basic hardware smoke: full track tail plays and PLAY restarts after natural EOF.
+- [x] Dual-deck MT watchdog fix host/build-verified and 45-second serial-smoked without WDT/drop.
 
 ## Repeat before enclosure close
 
@@ -18,6 +21,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
 - [ ] Run both host suites and both firmware builds from a clean checkout.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
+- [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
+- [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [ ] Perform one OTA update per target and record slot/version/state.
 - [ ] Preserve a wired recovery path or validated service connector.

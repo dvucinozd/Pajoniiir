@@ -15,6 +15,14 @@ static bool read_source(void *ctx, uint64_t seq, audio_mixer_frame_t *out)
     return true;
 }
 
+static bool read_repeating_source(void *ctx, uint64_t seq, audio_mixer_frame_t *out)
+{
+    (void)ctx;
+    if (!out) return false;
+    *out = source[seq % SOURCE_FRAMES];
+    return true;
+}
+
 static int count_positive_crossings(const int16_t *samples, int count)
 {
     int crossings = 0;
@@ -62,6 +70,23 @@ int main(void)
         assert(audio_keylock_next(&state, read_source, NULL, &frame, NULL, NULL));
         assert(frame.left == source[i].left);
     }
+
+
+    /* Coordinates must retain exact long-track position while their float
+     * working set rebases back into a small, sub-frame-precise window. */
+    const uint64_t long_start = 100000000u;
+    audio_keylock_reset(&state, long_start);
+    audio_keylock_configure(&state, 1.0f, 1.0f);
+    uint64_t play_seq = long_start;
+    for (uint32_t i = 0u; i < 20000u; i++) {
+        audio_mixer_frame_t frame;
+        assert(audio_keylock_next(&state, read_repeating_source, NULL, &frame,
+                                  NULL, &play_seq));
+        assert(frame.left == source[(long_start + i) % SOURCE_FRAMES].left);
+    }
+    assert(play_seq == long_start + 20000u);
+    assert(state.origin_seq > long_start);
+    assert(state.grain_a < 16384.0f);
     puts("audio_keylock tests passed");
     return 0;
 }

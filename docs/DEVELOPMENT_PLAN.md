@@ -11,6 +11,7 @@ Status: current phase ledger, audited 2026-07-13.
 | MAIN + USB headphone cue audio | Implemented and hardware-smoked |
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
+| End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Controller profiles | Firmware path implemented, host-tested and FLX4-profile hardware-verified |
 | P4/S3 OTA and rollback | Unsigned path hardware-accepted 2026-07-13; signed path implemented and host/build-verified |
 
@@ -1164,3 +1165,59 @@ Batch 6 signed OTA is software-complete: common manifest parsing/verification,
 both target integrations, packaging, tamper/wrong-key host tests and isolated
 release-layout builds pass. See `docs/OTA_UPDATE_PLAN.md` for the remaining
 hardware acceptance matrix and key-custody work.
+
+## Phase 15: Audio Remediation R1 — EOF Drain And Replay (2026-07-13)
+
+Status: implemented, host-tested, P4 firmware-built and basic hardware-smoked.
+
+- Decoder EOF no longer clears the deck's `playing` state. It only means the
+  producer has no more source frames; the shared output task remains active
+  until the canonical PCM timeline/ring has drained.
+- A separate deck-local `playback_finished` flag is set by the output consumer
+  only when decoder EOF is present and no decoded future PCM remains. Paused,
+  platter-held and scratch-active decks cannot be falsely completed.
+- PLAY rewinds to 0 only after consumer-confirmed natural completion. A short
+  track that was fully decoded before its first PLAY retains its buffered audio
+  and starts normally instead of being mistaken for a replay.
+- `playing`, `paused`, decoder `eof`, and `playback_finished` accesses now use
+  acquire/release atomic helpers across control, decode and output tasks.
+- Natural completion and replay reset the deck resampler and invalidate the
+  key-lock reader so stale held/interpolated samples cannot leak into the next
+  playback generation.
+- A follow-up 45-second dual-deck capture found `IDLE0` watchdog warnings every
+  five seconds while `ae_output` was inside key-lock/EQ/mixer DSP. The key-lock
+  hot path used software-emulated `double` arithmetic on the P4's single-
+  precision FPU. Its WSOLA coordinates now use a small relative `float` window
+  plus a 64-bit absolute origin and periodic rebase, preserving long-track
+  position accuracy while keeping DSP on the hardware FPU.
+- Continuous output also forces one real scheduler delay after at most 64 busy
+  blocks. Unlike `taskYIELD`, this gives lower-priority `IDLE0` a guaranteed
+  watchdog service window without adding a delay to every audio block.
+- Post-flash dual-deck Master Tempo serial acceptance ran for 45 seconds on
+  2026-07-13 with no `task_wdt`, no 100+ ms WDT-induced output stalls and no
+  monitor-link drops. Throughput held at approximately 172 blocks/s, matching
+  44.1 kHz / 256 frames. Only two isolated 11.7/12.2 ms late warnings appeared
+  during refill/state activity and did not recur.
+- `audio_eof_policy` isolates the completion/rewind decision for host testing.
+  The P4 host runner also guards against direct non-atomic writes to the four
+  transport flags.
+
+Software acceptance:
+
+- focused `audio_eof_policy` test passes;
+- key-lock tone/tempo and 100-million-frame rebase tests pass; the P4 key-lock
+  object has no unresolved software double-arithmetic helpers;
+- 45-second dual-deck MT hardware/serial watchdog acceptance passes;
+- full P4 host suite passes, including 318/318 `audio_engine` assertions;
+- isolated ESP-IDF P4 build passes; `main-deck-p4.bin` is `0x205db0` bytes with
+  49% free in the smallest app partition.
+
+Hardware acceptance still required:
+
+- [x] Play a track through its actual last sample and confirm the former roughly
+  two-second early cut is gone; accepted on hardware 2026-07-13.
+- [x] Press PLAY after natural completion and confirm clean restart from 0;
+  accepted on hardware 2026-07-13.
+- repeat with Master Tempo off/on and with a short track that can be completely
+  predecoded before first PLAY;
+- confirm pause, platter hold and scratch near EOF do not falsely end the deck.

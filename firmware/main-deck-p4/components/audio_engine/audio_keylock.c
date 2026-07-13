@@ -5,23 +5,25 @@ static float clamp_factor(float v, float lo, float hi)
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-static int16_t lerp_i16(int16_t a, int16_t b, double f)
+static int16_t lerp_i16(int16_t a, int16_t b, float f)
 {
-    double v = (double)a + ((double)b - (double)a) * f;
-    if (v > 32767.0) v = 32767.0;
-    if (v < -32768.0) v = -32768.0;
-    return (int16_t)(v >= 0.0 ? v + 0.5 : v - 0.5);
+    float v = (float)a + ((float)b - (float)a) * f;
+    if (v > 32767.0f) v = 32767.0f;
+    if (v < -32768.0f) v = -32768.0f;
+    return (int16_t)(v >= 0.0f ? v + 0.5f : v - 0.5f);
 }
 
-static bool read_fractional(audio_keylock_read_fn read, void *ctx, double seq,
+static bool read_fractional(audio_keylock_read_fn read, void *ctx,
+                            uint64_t origin_seq, float seq,
                             audio_mixer_frame_t *out)
 {
-    if (!read || !out || seq < 0.0) return false;
-    uint64_t whole = (uint64_t)seq;
-    double fraction = seq - (double)whole;
+    if (!read || !out || seq < 0.0f) return false;
+    uint32_t whole = (uint32_t)seq;
+    float fraction = seq - (float)whole;
     audio_mixer_frame_t a = {0}, b = {0};
-    if (!read(ctx, whole, &a)) return false;
-    if (fraction <= 0.000001 || !read(ctx, whole + 1u, &b)) {
+    uint64_t absolute = origin_seq + whole;
+    if (!read(ctx, absolute, &a)) return false;
+    if (fraction <= 0.000001f || !read(ctx, absolute + 1u, &b)) {
         *out = a;
         return true;
     }
@@ -30,25 +32,25 @@ static bool read_fractional(audio_keylock_read_fn read, void *ctx, double seq,
     return true;
 }
 
-static double select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
-                                 void *ctx, double nominal)
+static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
+                                void *ctx, float nominal)
 {
     if (s->tempo_factor > 0.9999f && s->tempo_factor < 1.0001f) return nominal;
-    double reference = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * s->rate_ratio;
-    double best = nominal;
+    float reference = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * s->rate_ratio;
+    float best = nominal;
     uint64_t best_error = UINT64_MAX;
-    int radius = (int)(48.0 * s->rate_ratio + 0.5);
+    int radius = (int)(48.0f * s->rate_ratio + 0.5f);
     if (radius < 12) radius = 12;
     for (int delta = -radius; delta <= radius; delta++) {
-        double candidate = nominal + delta;
-        if (candidate < 0.0) continue;
+        float candidate = nominal + (float)delta;
+        if (candidate < 0.0f) continue;
         uint64_t error = 0u;
         bool valid = true;
         for (uint32_t i = 0; i < 64u; i += 4u) {
             audio_mixer_frame_t a, b;
-            double offset = i * s->rate_ratio;
-            if (!read_fractional(read, ctx, reference + offset, &a) ||
-                !read_fractional(read, ctx, candidate + offset, &b)) {
+            float offset = i * s->rate_ratio;
+            if (!read_fractional(read, ctx, s->origin_seq, reference + offset, &a) ||
+                !read_fractional(read, ctx, s->origin_seq, candidate + offset, &b)) {
                 valid = false;
                 break;
             }
@@ -64,11 +66,24 @@ static double select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
     return best;
 }
 
+static void rebase_coordinates(audio_keylock_t *s)
+{
+    /* Keep float coordinates small enough for stable sub-frame precision and
+     * retain one grain of history before grain_a for overlap reads. */
+    const float rebase_threshold = 16384.0f;
+    if (!s || s->grain_a < rebase_threshold) return;
+    uint32_t shift = (uint32_t)(s->grain_a - (float)AUDIO_KEYLOCK_SYNTH_HOP);
+    s->origin_seq += shift;
+    s->grain_a -= (float)shift;
+    s->grain_b -= (float)shift;
+}
+
 void audio_keylock_reset(audio_keylock_t *s, uint64_t start)
 {
     if (!s) return;
     *s = (audio_keylock_t){ .initialized = true, .initial_half = true,
-        .grain_a = (double)start, .logical_seq = (double)start,
+        .origin_seq = start, .logical_seq = start,
+        .grain_a = 0.0f, .logical_fraction = 0.0f,
         .tempo_factor = 1.0f, .rate_ratio = 1.0f };
     s->grain_b = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP;
 }
@@ -86,36 +101,42 @@ bool audio_keylock_next(audio_keylock_t *s, audio_keylock_read_fn read, void *ct
     if (out) *out = (audio_mixer_frame_t){0};
     if (consumed) *consumed = 0u;
     if (!s || !s->initialized || !read || !out) return false;
-    double ratio = s->rate_ratio;
+    float ratio = s->rate_ratio;
     if (s->initial_half) {
-        if (!read_fractional(read, ctx, s->grain_a + s->phase * ratio, out)) return false;
+        if (!read_fractional(read, ctx, s->origin_seq,
+                             s->grain_a + s->phase * ratio, out)) return false;
     } else {
         audio_mixer_frame_t a = {0}, b = {0};
-        double pa = s->grain_a + (AUDIO_KEYLOCK_SYNTH_HOP + s->phase) * ratio;
-        double pb = s->grain_b + s->phase * ratio;
-        if (!read_fractional(read, ctx, pa, &a) || !read_fractional(read, ctx, pb, &b)) return false;
-        double fade = (double)(s->phase + 1u) / AUDIO_KEYLOCK_SYNTH_HOP;
+        float pa = s->grain_a + (AUDIO_KEYLOCK_SYNTH_HOP + s->phase) * ratio;
+        float pb = s->grain_b + s->phase * ratio;
+        if (!read_fractional(read, ctx, s->origin_seq, pa, &a) ||
+            !read_fractional(read, ctx, s->origin_seq, pb, &b)) return false;
+        float fade = (float)(s->phase + 1u) / AUDIO_KEYLOCK_SYNTH_HOP;
         out->left = lerp_i16(a.left, b.left, fade);
         out->right = lerp_i16(a.right, b.right, fade);
     }
-    uint64_t before = (uint64_t)s->logical_seq;
-    s->logical_seq += s->tempo_factor * ratio;
-    uint64_t after = (uint64_t)s->logical_seq;
+    uint64_t before = s->logical_seq;
+    s->logical_fraction += s->tempo_factor * ratio;
+    uint32_t advance = (uint32_t)s->logical_fraction;
+    s->logical_seq += advance;
+    s->logical_fraction -= (float)advance;
+    uint64_t after = s->logical_seq;
     if (consumed) *consumed = (uint32_t)(after - before);
     if (play_seq) *play_seq = after;
     if (++s->phase >= AUDIO_KEYLOCK_SYNTH_HOP) {
         s->phase = 0u;
         if (s->initial_half) {
             s->initial_half = false;
-            double nominal = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * ratio *
-                             s->tempo_factor;
+            float nominal = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * ratio *
+                            s->tempo_factor;
             s->grain_b = select_grain_start(s, read, ctx, nominal);
         } else {
             s->grain_a = s->grain_b;
-            double nominal = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * ratio *
-                             s->tempo_factor;
+            float nominal = s->grain_a + AUDIO_KEYLOCK_SYNTH_HOP * ratio *
+                            s->tempo_factor;
             s->grain_b = select_grain_start(s, read, ctx, nominal);
         }
+        rebase_coordinates(s);
     }
     return true;
 }
