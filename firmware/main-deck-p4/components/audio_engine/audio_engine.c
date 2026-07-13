@@ -77,7 +77,6 @@ static const char *TAG = "audio";
 #   define AE_PC  0
 #endif
 
-#define AE_SDL 0
 
 /* Firmware (ESP32-P4): real-time I2S output through the PCM5102A MAIN out */
 #if !AE_PC
@@ -97,6 +96,8 @@ static const char *TAG = "audio";
 #else
 #   define AE_FW 0
 #endif
+
+#define AE_DECK_0 0u
 
 #if AE_FW
 static int64_t ae_now_us(void)
@@ -316,7 +317,7 @@ static inline audio_pcm_ring_t *pcm_ring_for_deck(uint8_t deck)
     if (deck < AUDIO_ENGINE_DECK_COUNT) {
         return &s_pcm_rings[deck];
     }
-    return &s_pcm_rings[AUDIO_ENGINE_COMPAT_DECK];
+    return &s_pcm_rings[AE_DECK_0];
 }
 
 static inline audio_scratch_buffer_t *scratch_buffer_for_deck(uint8_t deck)
@@ -324,7 +325,7 @@ static inline audio_scratch_buffer_t *scratch_buffer_for_deck(uint8_t deck)
     if (deck < AUDIO_ENGINE_DECK_COUNT) {
         return &s_scratch_buf[deck];
     }
-    return &s_scratch_buf[AUDIO_ENGINE_COMPAT_DECK];
+    return &s_scratch_buf[AE_DECK_0];
 }
 
 static uint16_t         s_channel_volume[AUDIO_ENGINE_DECK_COUNT] = {
@@ -424,8 +425,8 @@ static inline bool timeline_active(uint8_t deck)
 
 static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
 {
-    uint8_t deck = ctx ? *(const uint8_t *)ctx : AUDIO_ENGINE_COMPAT_DECK;
-    if (deck >= AUDIO_ENGINE_DECK_COUNT) deck = AUDIO_ENGINE_COMPAT_DECK;
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) deck = AE_DECK_0;
     if (timeline_active(deck)) {
         bool ok = audio_pcm_timeline_pop(&s_pcm_timelines[deck], out_frame);
         if (!ok) s_pcm_underrun_count[deck]++;
@@ -694,12 +695,12 @@ static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
     if (deck < AUDIO_ENGINE_DECK_COUNT) {
         return &s_resamplers[deck];
     }
-    return &s_resamplers[AUDIO_ENGINE_COMPAT_DECK];
+    return &s_resamplers[AE_DECK_0];
 }
 
 static bool keylock_timeline_read(void *ctx, uint64_t seq, audio_mixer_frame_t *out)
 {
-    uint8_t deck = ctx ? *(const uint8_t *)ctx : AUDIO_ENGINE_COMPAT_DECK;
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     return deck < AUDIO_ENGINE_DECK_COUNT &&
            audio_pcm_timeline_read(&s_pcm_timelines[deck], seq, out);
 }
@@ -708,7 +709,7 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
                                  audio_mixer_frame_t *out,
                                  uint32_t *out_consumed)
 {
-    uint8_t deck = ctx ? *(const uint8_t *)ctx : AUDIO_ENGINE_COMPAT_DECK;
+    uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     if (deck >= AUDIO_ENGINE_DECK_COUNT || !timeline_active(deck) || !out) return false;
     audio_pcm_timeline_t *timeline = &s_pcm_timelines[deck];
     uint32_t generation = audio_pcm_timeline_generation(timeline);
@@ -2170,7 +2171,7 @@ static void ae_decode_task(void *arg)
     }
 
 cleanup:
-    /* The preload buffer / file are owned by the loader + audio_engine_stop(). */
+    /* The preload buffer / file are owned by the loader + deck stop path. */
     runtime->decode_task = NULL;
     xSemaphoreGive(ctx_tasks_done(ctx));
     vTaskDeleteWithCaps(NULL);
@@ -2447,13 +2448,13 @@ static void ae_output_task(void *arg)
         float deck1_prefader_gain =
             pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * s_master_trim;
         bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
-        bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AUDIO_ENGINE_COMPAT_DECK]);
+        bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AE_DECK_0]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
         bool master_cue_enabled = atomic_load_bool(&s_master_cue_enabled);
         uint16_t headphone_mix = atomic_load_u16(&s_headphone_mix);
         uint16_t headphone_level = atomic_load_u16(&s_headphone_level);
 
-        const uint8_t deck0_index = AUDIO_ENGINE_COMPAT_DECK;
+        const uint8_t deck0_index = AE_DECK_0;
         const uint8_t deck1_index = 1u;
         audio_output_mixer_deck_t deck0 = {
             .active = deck_output_active(deck0_index),
@@ -2932,7 +2933,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     audio_fw_preload_begin_load(fw);
     audio_fw_task_plan_t task_plan =
         audio_fw_task_plan_for_deck(deck,
-                                    AUDIO_ENGINE_COMPAT_DECK,
+                                    AE_DECK_0,
                                     audio_fw_output_task_running());
     audio_fw_task_context_bind(task_ctx,
                                deck,
@@ -3044,14 +3045,6 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     return ESP_OK;
 }
 
-/* ── audio_engine_load ────────────────────────────────────────────────────── */
-esp_err_t audio_engine_load(const char     *mp3_path,
-                             const uint32_t *pvbr_400,
-                             uint32_t        duration_ms)
-{
-    return audio_engine_load_for_deck(AUDIO_ENGINE_COMPAT_DECK, mp3_path, pvbr_400, duration_ms);
-}
-
 static esp_err_t audio_engine_play_for_deck(uint8_t deck)
 {
     audio_engine_state_t *eng = &s_engines[deck];
@@ -3076,12 +3069,6 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
     return ESP_OK;
 }
 
-/* ── audio_engine_play ────────────────────────────────────────────────────── */
-esp_err_t audio_engine_play(void)
-{
-    return audio_engine_play_for_deck(AUDIO_ENGINE_COMPAT_DECK);
-}
-
 static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
 {
     audio_engine_state_t *eng = &s_engines[deck];
@@ -3090,12 +3077,6 @@ static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
     atomic_store_bool(&eng->paused, true);
     atomic_store_bool(&eng->playing, false);
     return ESP_OK;
-}
-
-/* ── audio_engine_pause ───────────────────────────────────────────────────── */
-esp_err_t audio_engine_pause(void)
-{
-    return audio_engine_pause_for_deck(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 /* ── audio_engine_stop ────────────────────────────────────────────────────── */
@@ -3185,11 +3166,6 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
     return ESP_OK;
 }
 
-esp_err_t audio_engine_stop(void)
-{
-    return audio_engine_stop_for_deck(AUDIO_ENGINE_COMPAT_DECK);
-}
-
 /* ── audio_engine_seek ────────────────────────────────────────────────────── */
 static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
                                                    uint32_t position_ms,
@@ -3243,11 +3219,6 @@ static esp_err_t audio_engine_request_user_seek(uint8_t deck, uint32_t position_
     return audio_engine_seek_for_deck_reason(deck, position_ms, AE_SEEK_REASON_USER);
 }
 
-esp_err_t audio_engine_seek(uint32_t position_ms)
-{
-    return audio_engine_request_user_seek(AUDIO_ENGINE_COMPAT_DECK, position_ms);
-}
-
 /* ── audio_engine_set_pitch ───────────────────────────────────────────────── */
 /*
  * raw_pitch:  0 = +10% faster, 8192 = ±0% normal, 16383 = −10% slower.
@@ -3258,11 +3229,6 @@ esp_err_t audio_engine_seek(uint32_t position_ms)
  * Keep audio_engine_raw_pitch_to_percent() and the UI pitch label on the same
  * sign convention so the label matches the actual resampling factor.
  */
-void audio_engine_set_pitch(int16_t raw_pitch)
-{
-    audio_engine_deck_set_pitch(AUDIO_ENGINE_COMPAT_DECK, raw_pitch);
-}
-
 static void audio_engine_set_pitch_percent_for_deck(uint8_t deck, float percent)
 {
     float factor = 1.0f + (percent / 100.0f);
@@ -3285,17 +3251,6 @@ static void audio_engine_set_pitch_for_deck(uint8_t deck, int16_t raw_pitch)
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch)
 {
     return ((8192.0f - (float)raw_pitch) / 8192.0f) * 10.0f;
-}
-
-void audio_engine_set_pitch_percent(float percent)
-{
-    audio_engine_deck_set_pitch_percent(AUDIO_ENGINE_COMPAT_DECK, percent);
-}
-
-/* ── audio_engine_position_ms ─────────────────────────────────────────────── */
-uint32_t audio_engine_position_ms(void)
-{
-    return audio_engine_deck_position_ms(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
@@ -3328,12 +3283,6 @@ static uint32_t audio_engine_position_ms_for_deck(uint8_t deck)
     uint32_t pos = eng->output_base_ms + from_frames;
     AE_UNLOCK();
     return pos;
-}
-
-/* ── audio_engine_is_playing ──────────────────────────────────────────────── */
-bool audio_engine_is_playing(void)
-{
-    return audio_engine_deck_is_playing(AUDIO_ENGINE_COMPAT_DECK);
 }
 
 static bool deck_is_valid(uint8_t deck);
@@ -3378,45 +3327,6 @@ esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t 
     }
 
     return ESP_OK;
-}
-
-/* ── audio_engine_get_state / load_progress (P5a) ─────────────────────────── */
-ae_state_t audio_engine_get_state(void)
-{
-    return engine_lifecycle_state(&s_engines[AUDIO_ENGINE_COMPAT_DECK]);
-}
-
-uint8_t audio_engine_load_progress(void)
-{
-    return s_engines[AUDIO_ENGINE_COMPAT_DECK].load_progress;
-}
-
-esp_err_t audio_engine_last_error(void)
-{
-    return s_engines[AUDIO_ENGINE_COMPAT_DECK].last_error;
-}
-
-const char *audio_engine_last_error_text(void)
-{
-    return s_engines[AUDIO_ENGINE_COMPAT_DECK].last_error_text;
-}
-
-/* ── audio_engine_set_loop ────────────────────────────────────────────────── */
-void audio_engine_set_loop(uint32_t start_ms, uint32_t end_ms)
-{
-    (void)audio_engine_deck_set_loop(AUDIO_ENGINE_COMPAT_DECK, start_ms, end_ms);
-}
-
-/* ── audio_engine_clear_loop ──────────────────────────────────────────────── */
-void audio_engine_clear_loop(void)
-{
-    (void)audio_engine_deck_clear_loop(AUDIO_ENGINE_COMPAT_DECK);
-}
-
-/* ── audio_engine_get_loop_state ───────────────────────────────────────────── */
-void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end_ms)
-{
-    (void)audio_engine_deck_get_loop_state(AUDIO_ENGINE_COMPAT_DECK, active, start_ms, end_ms);
 }
 
 #if AE_FW
@@ -3479,7 +3389,7 @@ static bool deck_is_valid(uint8_t deck)
 static bool deck_transport_supported(uint8_t deck)
 {
     return audio_fw_task_plan_for_deck(deck,
-                                       AUDIO_ENGINE_COMPAT_DECK,
+                                       AE_DECK_0,
                                        true).transport_supported;
 }
 #endif
@@ -4580,7 +4490,7 @@ static void wav_write_header(FILE      *wav,
  */
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms)
 {
-    audio_engine_state_t *eng = &s_engines[AUDIO_ENGINE_COMPAT_DECK];
+    audio_engine_state_t *eng = &s_engines[AE_DECK_0];
     if (!eng->loaded || (!eng->fp && !eng->decoder_open && !eng->file_buf)) {
         return ESP_ERR_INVALID_STATE;
     }

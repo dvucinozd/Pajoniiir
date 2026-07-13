@@ -1353,7 +1353,8 @@ Initial hardware acceptance:
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
 
-Status: R5A audit and baseline implemented; later cleanup batches pending.
+Status: R5A audit/baseline and R5B P4 facade removal implemented; R5C-R5F
+pending.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.
@@ -1362,3 +1363,9 @@ Status: R5A audit and baseline implemented; later cleanup batches pending.
   support retirement, not deletion of unreachable preprocessor text.
 - The P4 host runner now rejects new production callers of the single-deck
   transport facade and simple mixer entry point before their removal batches.
+- R5B removed the public single-deck audio transport/state/error/loop facade,
+  its compatibility deck constant and unused `AE_SDL` state. UI/library and
+  host-test callers now use the authoritative deck API.
+- R5B software acceptance: complete P4 host suite passes with 319/319
+  `audio_engine` assertions; signed P4 build is `0x205AF0` bytes with 49% app
+  partition headroom.

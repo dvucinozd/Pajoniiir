@@ -210,13 +210,15 @@ the FLX4 USB audio path.)
 ```c
 // Typical usage:
 audio_engine_init();
-audio_engine_load(mp3_path, track->has_pvbr ? track->pvbr : NULL, track->duration_ms);
-audio_engine_play();
-audio_engine_set_pitch(raw_pitch);   // 0=+10%, 8192=±0%, 16383=-10%
-uint32_t pos = audio_engine_position_ms();
-audio_engine_seek(30000);            // seek to 30 s
-audio_engine_pause();
-audio_engine_stop();
+audio_engine_deck_load(deck, mp3_path,
+                       track->has_pvbr ? track->pvbr : NULL,
+                       track->duration_ms);
+audio_engine_deck_play(deck);
+audio_engine_deck_set_pitch(deck, raw_pitch); // 0=+10%, 8192=±0%, 16383=-10%
+uint32_t pos = audio_engine_deck_position_ms(deck);
+audio_engine_deck_seek(deck, 30000);          // seek to 30 s
+audio_engine_deck_pause(deck);
+audio_engine_deck_stop(deck);
 ```
 
 **Platform compile-time defines:**
@@ -230,16 +232,16 @@ audio_engine_stop();
 - `bsp_audio_init()` sets up the PCM5102A I2S MAIN channel (I2S_NUM_1);
   `audio_engine_init()` retrieves it via `bsp_audio_get_main_i2s_tx()` and writes
   with `i2s_channel_write` (blocks on I2S DMA → real-time tempo).
-- `audio_engine_load()` does not read USB on the caller stack — the **decode task preloads the entire MP3
+- `audio_engine_deck_load()` does not read USB on the caller stack — the **decode task preloads the entire MP3
   into PSRAM**, opens it, and decodes from memory. (Streaming from /usb during
   playback crashes the USB-DWC driver: `usb_dwc_hal.c:502`.)
 - minimp3 needs **~26 KB stack** → decode task is 32 KB (NOT on the LVGL/caller stack).
 - The output task pitch-resamples/mixes the ring buffer and writes MAIN via `i2s_channel_write()` (blocks on I2S DMA → real-time tempo); headphone cue goes out over the FLX4 USB audio path.
 - The PCM5102A I2S clock opens at the sample rate of the first frame (44.1/48k both observed).
-- **Control flows through `deck_core`**: UI "LOAD TRACK" → `audio_engine_load`; touch PLAY/CUE/loop/
-  hot-cue/beat-jump → `deck_core`/`audio_engine`. `audio_engine_seek()` only sets
+- **Control flows through `deck_core`**: UI "LOAD TRACK" → `audio_engine_deck_load`; touch PLAY/CUE/loop/
+  hot-cue/beat-jump → `deck_core`/`audio_engine`. `audio_engine_deck_seek()` only sets
   `seek_target_ms` — the actual seek (PVBR O(1) or linear) is handled by the **decode task** (32 KB stack).
-- **Loop:** `audio_engine_set_loop/clear_loop/get_loop_state`; output/decode loop performs auto-seek
+- **Loop:** `audio_engine_deck_set_loop/clear_loop/get_loop_state`; output/decode loop performs auto-seek
   to `loop_start` when position reaches `loop_end`.
 
 **PVBR Seek:** `library_track_t.pvbr[400]` populated by `library_load_anlz()` from ANLZ.  

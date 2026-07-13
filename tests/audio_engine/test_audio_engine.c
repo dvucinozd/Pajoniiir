@@ -143,11 +143,11 @@ static void test_init(void)
     printf("\n[Test 1] Init and uninitialised-state guards\n");
 
     /* play/pause/stop/seek on uninitialised engine should return errors */
-    EXPECT(audio_engine_play()        == ESP_ERR_INVALID_STATE, "play before init returns INVALID_STATE");
-    EXPECT(audio_engine_pause()       == ESP_ERR_INVALID_STATE, "pause before init returns INVALID_STATE");
-    EXPECT(audio_engine_seek(0)       == ESP_ERR_INVALID_STATE, "seek before init returns INVALID_STATE");
-    EXPECT(audio_engine_is_playing()  == false,                 "is_playing false before init");
-    EXPECT(audio_engine_position_ms() == 0,                     "position_ms 0 before init");
+    EXPECT(audio_engine_deck_play(0)        == ESP_ERR_INVALID_STATE, "play before init returns INVALID_STATE");
+    EXPECT(audio_engine_deck_pause(0)       == ESP_ERR_INVALID_STATE, "pause before init returns INVALID_STATE");
+    EXPECT(audio_engine_deck_seek(0, 0)     == ESP_ERR_INVALID_STATE, "seek before init returns INVALID_STATE");
+    EXPECT(audio_engine_deck_is_playing(0)  == false,                 "is_playing false before init");
+    EXPECT(audio_engine_deck_position_ms(0) == 0,                     "position_ms 0 before init");
 
     esp_err_t rc = audio_engine_init();
     EXPECT(rc == ESP_OK, "audio_engine_init returns ESP_OK");
@@ -158,12 +158,15 @@ static void test_load_missing(void)
 {
     printf("\n[Test 2] Load non-existent file\n");
 
-    esp_err_t rc = audio_engine_load("/nonexistent/file.mp3", NULL, 0);
+    esp_err_t rc = audio_engine_deck_load(0, "/nonexistent/file.mp3", NULL, 0);
     EXPECT(rc == ESP_ERR_NOT_FOUND, "load missing file returns NOT_FOUND");
-    EXPECT(!audio_engine_is_playing(), "not playing after failed load");
-    EXPECT(audio_engine_get_state() == AE_ERROR, "state is ERROR after failed load");
-    EXPECT(audio_engine_load_progress() == 100, "load progress is reset after failed load");
-    EXPECT(audio_engine_last_error() == ESP_ERR_NOT_FOUND, "last error is NOT_FOUND after failed load");
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK,
+           "deck status readable after failed load");
+    EXPECT(!status.playing, "not playing after failed load");
+    EXPECT(status.state == AE_ERROR, "state is ERROR after failed load");
+    EXPECT(status.load_progress == 100, "load progress is reset after failed load");
+    EXPECT(status.last_error == ESP_ERR_NOT_FOUND, "last error is NOT_FOUND after failed load");
 }
 
 /* ── Test 3: pitch factor calculation ────────────────────────────────────── */
@@ -184,23 +187,23 @@ static void test_pitch(void)
     /* We can't inspect s_eng.pitch_factor directly, but we can set + check
      * position advances faster/slower (done in real-file test below).
      * Here we just smoke-test the API with boundary values. */
-    audio_engine_set_pitch(8192);  /* ±0% */
+    audio_engine_deck_set_pitch(0, 8192);  /* ±0% */
     EXPECT(true, "set_pitch(8192) no crash");
 
-    audio_engine_set_pitch(0);     /* +10% faster */
+    audio_engine_deck_set_pitch(0, 0);     /* +10% faster */
     EXPECT(true, "set_pitch(0) no crash");
 
-    audio_engine_set_pitch(16383); /* -10% slower */
+    audio_engine_deck_set_pitch(0, 16383); /* -10% slower */
     EXPECT(true, "set_pitch(16383) no crash");
 
-    audio_engine_set_pitch_percent(16.0f);
+    audio_engine_deck_set_pitch_percent(0, 16.0f);
     EXPECT(true, "set_pitch_percent(+16%) no crash");
 
     audio_engine_deck_set_pitch_percent(1, -6.0f);
     EXPECT(true, "deck 1 set_pitch_percent(-6%) no crash");
 
     /* Reset to normal */
-    audio_engine_set_pitch_percent(0.0f);
+    audio_engine_deck_set_pitch_percent(0, 0.0f);
 }
 
 static int nearf(float actual, float expected)
@@ -937,7 +940,7 @@ static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
     printf("  Limit:  %u ms (%s)\n", (unsigned)max_ms,
            max_ms == 0 ? "full track" : "truncated");
 
-    esp_err_t rc = audio_engine_load(mp3_path, NULL, 0);
+    esp_err_t rc = audio_engine_deck_load(0, mp3_path, NULL, 0);
     if (rc != ESP_OK) {
         printf("  SKIP: cannot open %s (err %d)\n", mp3_path, rc);
         return;
@@ -971,15 +974,15 @@ static void test_decode_to_wav(const char *mp3_path, uint32_t max_ms)
     }
 
     /* Test seek + position */
-    EXPECT(audio_engine_seek(5000) == ESP_OK, "seek(5000) returns ESP_OK");
-    EXPECT(audio_engine_position_ms() == 5000, "position_ms() == 5000 after seek");
+    EXPECT(audio_engine_deck_seek(0, 5000) == ESP_OK, "seek(5000) returns ESP_OK");
+    EXPECT(audio_engine_deck_position_ms(0) == 5000, "position_ms() == 5000 after seek");
 
     /* Decode a short window after seek */
     rc = audio_engine_decode_to_wav("out_from5s.wav", 3000);
     EXPECT(rc == ESP_OK, "decode_to_wav from 5 s, 3 s window returns ESP_OK");
 
-    audio_engine_stop();
-    EXPECT(!audio_engine_is_playing(), "not playing after stop");
+    (void)audio_engine_deck_stop(0);
+    EXPECT(!audio_engine_deck_is_playing(0), "not playing after stop");
 }
 
 /* ── main ─────────────────────────────────────────────────────────────────── */

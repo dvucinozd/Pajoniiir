@@ -41,20 +41,45 @@ function Assert-NoUnexpectedCalls {
     Write-Host ("R5 audit: {0} -> {1} expected source hit(s)" -f $Symbol, $hits.Count)
 }
 
+function Assert-SymbolAbsent {
+    param([Parameter(Mandatory = $true)][string]$Symbol)
+
+    & $Rg --quiet --fixed-strings --glob "*.c" --glob "*.h" `
+        --glob "!**/build*/**" --glob "!**/managed_components/**" `
+        -- "$Symbol(" firmware
+    if ($LASTEXITCODE -eq 0) {
+        throw "Removed compatibility symbol returned: $Symbol"
+    }
+    if ($LASTEXITCODE -ne 1) {
+        throw "rg compatibility-symbol scan failed with exit code $LASTEXITCODE"
+    }
+    Write-Host "R5 audit: $Symbol removed"
+}
+
 $AudioEngineImpl = "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
 $MixerImpl = "firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c"
 $LibraryImpl = "firmware/main-deck-p4/components/ui/ui_library.c"
 
 foreach ($symbol in @(
+    "audio_engine_load",
     "audio_engine_play",
     "audio_engine_pause",
     "audio_engine_stop",
     "audio_engine_seek",
-    "audio_engine_set_loop"
+    "audio_engine_set_pitch",
+    "audio_engine_set_pitch_percent",
+    "audio_engine_position_ms",
+    "audio_engine_is_playing",
+    "audio_engine_get_state",
+    "audio_engine_load_progress",
+    "audio_engine_last_error",
+    "audio_engine_last_error_text",
+    "audio_engine_set_loop",
+    "audio_engine_clear_loop",
+    "audio_engine_get_loop_state"
 )) {
-    Assert-NoUnexpectedCalls $symbol @($AudioEngineImpl)
+    Assert-SymbolAbsent $symbol
 }
-Assert-NoUnexpectedCalls "audio_engine_clear_loop" @($AudioEngineImpl, $LibraryImpl)
 Assert-NoUnexpectedCalls "audio_output_mixer_next" @($MixerImpl)
 
 $scratchStorageHits = Find-CSourceCalls "s_scratch_storage"

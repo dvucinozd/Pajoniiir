@@ -396,7 +396,7 @@ static void ui_track_load_worker(void *arg)
             ui_track_load_set_status(result, "LOAD ERR", "LOAD ERR");
         } else {
             if (req.deck == CTRL_DECK_1) {
-                audio_engine_clear_loop();
+                (void)audio_engine_deck_clear_loop(req.deck);
             }
             deck_core_reset_deck(req.deck);
             result->rc = audio_engine_deck_load(req.deck,

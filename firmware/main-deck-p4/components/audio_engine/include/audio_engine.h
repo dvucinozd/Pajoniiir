@@ -13,13 +13,13 @@
  *
  * Typical call sequence:
  *   audio_engine_init();
- *   audio_engine_load(path, pvbr, duration_ms);
- *   audio_engine_play();
- *   audio_engine_set_pitch(raw_pitch);   // 0–16383, center 8192 = ±10%
+ *   audio_engine_deck_load(deck, path, pvbr, duration_ms);
+ *   audio_engine_deck_play(deck);
+ *   audio_engine_deck_set_pitch(deck, raw_pitch); // 0–16383, center 8192 = ±10%
  *   ...
- *   audio_engine_seek(position_ms);
+ *   audio_engine_deck_seek(deck, position_ms);
  *   ...
- *   audio_engine_stop();
+ *   audio_engine_deck_stop(deck);
  */
 
 #include <stdint.h>
@@ -45,7 +45,6 @@
 
 #define AUDIO_PVBR_LEN  400u   /* entries in Rekordbox PVBR seek table */
 #define AUDIO_ENGINE_DECK_COUNT 2u
-#define AUDIO_ENGINE_COMPAT_DECK 0u
 
 /*
  * Initialise the audio engine.
@@ -53,43 +52,6 @@
  * Must be called before any other function.
  */
 esp_err_t audio_engine_init(void);
-
-/*
- * Load a track for playback.
- *
- * @param mp3_path    Absolute path to the MP3 file (full path incl. drive letter on PC).
- * @param pvbr_400    Pointer to 400-entry uint32_t PVBR seek table, or NULL if absent.
- *                    When present, seek() uses it for instant byte-level positioning.
- * @param duration_ms Track duration from ANLZ beat-grid (0 = unknown).
- */
-esp_err_t audio_engine_load(const char     *mp3_path,
-                             const uint32_t *pvbr_400,
-                             uint32_t        duration_ms);
-
-/*
- * Start or resume playback.
- * Returns ESP_ERR_INVALID_STATE if no track is loaded.
- */
-esp_err_t audio_engine_play(void);
-
-/*
- * Pause playback (can be resumed with audio_engine_play).
- */
-esp_err_t audio_engine_pause(void);
-
-/*
- * Stop playback and unload the current track.
- * Frees file handles and resets position to 0.
- */
-esp_err_t audio_engine_stop(void);
-
-/*
- * Seek to a position in the current track.
- * Uses PVBR table when available (fast), otherwise scans from beginning (slow).
- *
- * @param position_ms  Target position in milliseconds.
- */
-esp_err_t audio_engine_seek(uint32_t position_ms);
 
 /*
  * Set playback pitch/rate.
@@ -105,26 +67,9 @@ esp_err_t audio_engine_seek(uint32_t position_ms);
  * when enabled, the WSOLA-style key-lock path changes tempo while preserving
  * the perceived musical key.
  */
-void audio_engine_set_pitch(int16_t raw_pitch);
 float audio_engine_raw_pitch_to_percent(int16_t raw_pitch);
-void audio_engine_set_pitch_percent(float percent);
 
-/*
- * Current audible playback position in the track (milliseconds), based on
- * output-consumed frames rather than the decoder read-ahead cursor.
- * Thread-safe.
- */
-uint32_t audio_engine_position_ms(void);
-
-bool audio_engine_is_playing(void);
-
-/*
- * Transitional deck-aware API for the DDJ-FLX4 port.
- *
- * Deck 0 is the compatibility deck that owns codec/output startup. Deck 1
- * has deck-local load/play/pause/seek/pitch state and can participate in the
- * shared firmware output mixer once the compatibility output task is running.
- */
+/* Authoritative per-deck DDJ-FLX4 playback API. */
 esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const char *mp3_path,
                                  const uint32_t *pvbr_400,
@@ -303,7 +248,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
  *   AE_LOADING  — preloading the MP3 from USB into PSRAM (not playable yet)
  *   AE_READY    — loaded/decodable, paused
  *   AE_PLAYING  — actively playing
- *   AE_ERROR    — load/decode failed; inspect audio_engine_last_error*()
+ *   AE_ERROR    — load/decode failed; inspect audio_engine_deck_get_status()
  */
 typedef enum { AE_IDLE = 0, AE_LOADING, AE_READY, AE_PLAYING, AE_ERROR } ae_state_t;
 
@@ -319,29 +264,6 @@ typedef struct {
 
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
 esp_err_t audio_engine_stop_all(void);
-
-ae_state_t audio_engine_get_state(void);
-esp_err_t audio_engine_last_error(void);
-const char *audio_engine_last_error_text(void);
-
-/* Preload progress 0–100 while AE_LOADING (100 otherwise). */
-uint8_t    audio_engine_load_progress(void);
-
-/*
- * Set real-time audio loop boundaries.
- * When playing, if position reaches end_ms, it immediately seeks back to start_ms.
- */
-void audio_engine_set_loop(uint32_t start_ms, uint32_t end_ms);
-
-/*
- * Disable the active real-time loop.
- */
-void audio_engine_clear_loop(void);
-
-/*
- * Get the current loop boundaries and active state.
- */
-void audio_engine_get_loop_state(bool *active, uint32_t *start_ms, uint32_t *end_ms);
 
 esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
 esp_err_t audio_engine_deck_clear_loop(uint8_t deck);

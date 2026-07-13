@@ -1,16 +1,17 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A baseline recorded 2026-07-13. This document is the evidence and
-decision log for cleanup batches R5A-R5F; it is not authorization to remove a
-working compatibility path without its batch acceptance gate.
+Status: R5A baseline and R5B P4 facade removal completed 2026-07-13. This
+document is the evidence and decision log for cleanup batches R5A-R5F; it is
+not authorization to remove a working compatibility path without its batch
+acceptance gate.
 
 ## Confirmed Call Graph
 
 | Candidate | Production evidence | R5 disposition |
 |---|---|---|
-| `AE_SDL` | Defined once and never read | Remove in R5B |
-| single-deck play/pause/stop/seek/set-loop API | Definitions only; tests use part of the facade | Migrate tests and remove in R5B |
-| `audio_engine_clear_loop()` | Still called by `ui_library.c` for Deck 1 load | Migrate to `audio_engine_deck_clear_loop(req.deck)` before removal |
+| `AE_SDL` | Defined once and never read | Removed in R5B |
+| single-deck play/pause/stop/seek/set-loop API | Definitions only; tests used part of the facade | Tests migrated and facade removed in R5B |
+| `audio_engine_clear_loop()` | Was called by `ui_library.c` for track load | Migrated to `audio_engine_deck_clear_loop(req.deck)` in R5B |
 | `audio_output_mixer_next()` | No firmware caller; tests exercise it | Move tests to the canonical full mixer in R5C |
 | `audio_output_mixer_next_full()` | Wrapper used only by tests | Move tests to `_with_headphone_level()` in R5C |
 | `s_scratch_storage` | Real PSRAM allocation fallback when canonical timeline allocation fails | Replace with explicit safe degraded-mode in R5E; not dead today |
@@ -62,3 +63,19 @@ flashed onto the installed DDJ-FLX4 control board.
   scratch history is unavailable.
 - R5F compares final size output against this baseline and records hardware
   acceptance.
+
+## R5B Result
+
+The public `audio_engine` contract is now deck-authoritative. The compatibility
+deck constant, single-deck transport/state/error/loop wrappers and unused
+`AE_SDL` state were removed. Library load clears the loop on the requested deck,
+and Overview loading state is read from the active deck rather than implicitly
+from Deck 1.
+
+Acceptance on 2026-07-13:
+
+- complete P4 host suite passes, including 319/319 `audio_engine` assertions;
+- the static audit confirms that all removed facade symbols have zero firmware
+  declarations, definitions or callers;
+- ESP-IDF P4 signed build passes; `main-deck-p4.bin` is `0x205AF0` bytes with
+  49% free in the smallest app partition.

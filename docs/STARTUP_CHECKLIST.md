@@ -591,3 +591,13 @@ Batch 6 signed-OTA transition and acceptance:
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.
+
+R5 cleanup status:
+
+- [x] R5A call-graph, signed-size and legacy S3 build baseline recorded;
+- [x] R5B single-deck P4 audio facade removed and callers migrated to the
+  authoritative deck API;
+- [ ] R5C mixer entry points consolidated;
+- [ ] R5D legacy S3 product-support decision confirmed before deletion;
+- [ ] R5E scratch allocation fallback converted to explicit safe degraded mode;
+- [ ] R5F final size, documentation and hardware soak acceptance recorded.

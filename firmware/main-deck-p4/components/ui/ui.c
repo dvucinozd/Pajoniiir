@@ -977,8 +977,15 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     }
 
 #ifndef WIN32
-    ctx->ae_loading = (audio_engine_get_state() == AE_LOADING);
-    ctx->ae_load_pct = audio_engine_load_progress();
+    audio_engine_deck_status_t audio_status = {0};
+    if (audio_engine_deck_get_status(ui_deck_index(ctx->active_deck),
+                                     &audio_status) == ESP_OK) {
+        ctx->ae_loading = (audio_status.state == AE_LOADING);
+        ctx->ae_load_pct = audio_status.load_progress;
+    } else {
+        ctx->ae_loading = false;
+        ctx->ae_load_pct = 100;
+    }
     audio_engine_get_mixer_snapshot(&ctx->mixer_snapshot);
 #else
     ctx->ae_loading = false;
