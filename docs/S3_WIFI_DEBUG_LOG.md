@@ -1,5 +1,8 @@
 # S3 Wi-Fi Debug Log
 
+Document status: current service-mode guide, audited 2026-07-13. The Debug AP
+also exposes S3 firmware status and OTA; use `OTA-UPDATE.md` for update steps.
+
 Use this when the XIAO ESP32S3 UART adapter is disconnected because the FLX4
 headphones path is physically connected, so the same `P4_AUDIO_LINK` and
 `FLX4_USB_AUDIO` counters can be captured without changing the audio path.

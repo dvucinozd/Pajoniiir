@@ -1,5 +1,8 @@
 # ESP32-S3-DevKitC-1 N16R8 — Pinout Scheme
 
+Documentation status: legacy DevKitC/compatibility reference, reviewed
+2026-07-13. The active compact build uses `PINOUT_XIAO_ESP32S3.md`.
+
 Complete wiring scheme for the CDJ100S-XXX control board firmware.  
 All constants are mapped directly from the source code (`components/panel_io/`, `components/control_link/`).
 

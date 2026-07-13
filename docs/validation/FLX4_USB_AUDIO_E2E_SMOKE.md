@@ -1,5 +1,8 @@
 # FLX4 USB Audio End-to-End Smoke
 
+Document status: hardware acceptance record for simultaneous MAIN/headphone
+audio and rate-match regressions, reviewed 2026-07-13.
+
 Date: 2026-07-02
 Branch: `codex/flx4-usb-audio-headphones`
 Boards: P4 on COM15, S3 on COM3, DDJ-FLX4 on the S3 USB host.

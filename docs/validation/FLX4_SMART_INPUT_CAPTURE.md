@@ -1,5 +1,7 @@
 # FLX4 Smart Controls Raw MIDI Input Capture
 
+Document status: completed physical capture record, reviewed 2026-07-13.
+
 Status: complete for the physical SMART CFX and SMART FADER buttons.
 
 Capture date: 2026-06-20

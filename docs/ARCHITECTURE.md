@@ -1,5 +1,8 @@
 # Architecture
 
+Status: current architecture, audited 2026-07-13. P4 remains authoritative;
+S3 remains a transport/translation and USB-audio bridge.
+
 ## High-Level Flow
 
 ```text
@@ -36,6 +39,8 @@ Responsibilities:
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
 - emit FLX4 MIDI LED feedback using XML/official-list output addresses.
+- host the runtime-only S3 service AP and S3 OTA endpoint when requested by P4;
+- stream P4 monitor PCM to the FLX4 USB Audio headphone endpoint.
 
 The S3 must not:
 

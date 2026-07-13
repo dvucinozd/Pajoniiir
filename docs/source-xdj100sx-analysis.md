@@ -1,5 +1,8 @@
 # XDJ100SX Source Project Analysis
 
+Document status: historical upstream analysis, reviewed 2026-07-13. It
+describes a source project, not current DDJ-FFL4 architecture.
+
 Source reviewed: `../upstream/XDJ100SX`, cloned from `https://github.com/marcmonka/XDJ100SX`.
 
 ## Project Intent

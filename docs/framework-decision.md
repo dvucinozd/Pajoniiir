@@ -1,5 +1,8 @@
 # Framework Decision: ESP-IDF With Arduino Smoke Tests
 
+Document status: accepted decision, reviewed 2026-07-13. ESP-IDF v5.5 remains
+the production build environment for both firmware targets.
+
 ## Decision
 
 Use ESP-IDF as the main production framework for the JC4880P443C_I_W port.

@@ -1,5 +1,8 @@
 # JC4880P443C_I_W Board Analysis
 
+Document status: historical board-analysis record, reviewed 2026-07-13. Use
+`HARDWARE_WIRING.md` and `firmware/main-deck-p4/PINOUT_P4.md` for active wiring.
+
 Local board docs reviewed from `../JC4880P443C_I_W`.
 
 ## Board Summary

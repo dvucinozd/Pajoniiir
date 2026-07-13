@@ -1,7 +1,11 @@
 # UI Polish: Overview + Library
 
+Document status (2026-07-13): implemented and subsequently refined; retain as
+historical design rationale, not a pixel-exact current UI specification.
+
 Date: 2026-05-26
-Status: Approved concept, pending implementation plan
+Original status superseded: Overview and Library were implemented and later
+refined.
 
 ## Scope
 

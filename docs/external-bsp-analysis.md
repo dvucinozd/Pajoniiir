@@ -1,5 +1,8 @@
 # External BSP Repo Analysis
 
+Document status: historical comparison, reviewed 2026-07-13. The repository's
+current P4 BSP and pinout files supersede candidate assumptions recorded here.
+
 Repo reviewed locally: `../upstream/esp32_p4_jc4880p433c_bsp`
 
 Source URL: `https://github.com/csvke/esp32_p4_jc4880p433c_bsp`

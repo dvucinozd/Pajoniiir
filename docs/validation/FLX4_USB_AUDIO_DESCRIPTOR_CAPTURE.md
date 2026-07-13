@@ -1,5 +1,8 @@
 # FLX4 USB Audio Descriptor Capture
 
+Document status: completed descriptor evidence used by the current S3 USB
+Audio path, reviewed 2026-07-13.
+
 Date: 2026-07-02
 Controller: Pioneer DDJ-FLX4
 S3 port: COM3

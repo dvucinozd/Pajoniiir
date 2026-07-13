@@ -1,5 +1,8 @@
 # UI Polish: Settings
 
+Document status (2026-07-13): historical and partially superseded. Current
+Settings includes Wi-Fi/Debug AP, diagnostics and OTA-related firmware status.
+
 Date: 2026-05-26
 Status: Historical design; superseded for CDJ Link role controls
 

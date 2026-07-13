@@ -1,5 +1,8 @@
 # FLX4 Beat Jump Behavior Design
 
+Document status (2026-07-13): implemented behavior record. Current acceptance
+details live in `../../DDJ_FLX4_MIDI_MAP.md`.
+
 Date: 2026-06-22  
 Branch: `codex/phase7-extended-controls-vu`
 

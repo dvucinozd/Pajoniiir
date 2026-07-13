@@ -1,5 +1,8 @@
 # Hardware Wiring
 
+Status: current bench wiring, audited 2026-07-13. Revalidate cable routing,
+power budget, cooling and RF behavior after final enclosure installation.
+
 ## Inter-Board UART
 
 Keep the inherited CDJ100S-XXX UART wiring.

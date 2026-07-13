@@ -1,5 +1,9 @@
 # DDJ-FFL4 OTA Update Plan
 
+Status: design and acceptance record; all planned P4/S3 OTA hardware batches
+completed 2026-07-13. For the operator workflow use
+[`OTA-UPDATE.md`](OTA-UPDATE.md). Signed manifests remain future hardening.
+
 ## Implementation status
 
 Batch 1 completed and hardware-smoked on 2026-07-13:

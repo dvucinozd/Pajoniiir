@@ -1,5 +1,8 @@
 # DDJ-FFL4 Project Overview
 
+Status: current product overview, audited 2026-07-13. The inherited baseline
+below is historical context; `Current Port Status` describes the active system.
+
 ## Goal
 
 DDJ-FFL4 is a standalone two-deck DJ player using the Pioneer DDJ-FLX4 as the
@@ -15,12 +18,15 @@ boards.
 
 The system is split into two firmware targets:
 
-- `firmware/control-board-s3`: USB MIDI host and protocol translator.
+- `firmware/control-board-s3`: USB MIDI host and protocol translator, FLX4
+  USB-headphone output bridge, runtime diagnostics and S3 OTA service.
 - `firmware/main-deck-p4`: media library, dual deck engine, UI, audio mixer.
 
-The S3 should stay simple. It reads raw FLX4 MIDI input, maps it to semantic
-events, forwards those events over UART, and mirrors P4 LED feedback back to
-the FLX4. It must not own playback state.
+The S3 stays non-authoritative. It reads raw FLX4 MIDI input, maps it to
+semantic events, forwards those events over UART, mirrors P4 LED feedback back
+to the FLX4 and streams P4 monitor PCM to the controller headphones. Its
+service AP exposes logs and S3 OTA only when P4 requests it. It must not own
+playback state.
 
 The P4 owns all authoritative deck state. It loads Rekordbox media from USB,
 tracks current position, controls audio decode, drives the local display, and
@@ -49,8 +55,8 @@ The fork is no longer only the imported single-deck baseline:
 - Physical DDJ-FLX4 enumeration and raw packet capture were completed on
   2026-06-14. All MVP controls matched the vendored Mixxx XML mapping, and the
   translator is enabled by default.
-- Extended controls will use XML status/midino and encoding as implementation
-  seeds. Mixxx script callbacks are not runtime logic; the P4 remains
+- Remaining extended controls use XML status/midino and encoding as
+  implementation seeds. Mixxx script callbacks are not runtime logic; the P4 remains
   authoritative for standalone behavior and state.
 - The official Pioneer MIDI message list is vendored beside the Mixxx XML and
   is used as the secondary reference for LED outputs and documented conflicts;
@@ -166,12 +172,24 @@ The fork is no longer only the imported single-deck baseline:
   including the old experimental `codex/flx4-extended-controls`, whose verified
   slices had already been salvaged into `master`. No non-master feature branches
   remain.
+- Vinyl/scratch is hardware-validated on both decks: platter touch selects a
+  canonical PSRAM PCM timeline for forward/reverse scratch, including paused
+  and CUE states, active-loop wrapping, clean window edges and click-free
+  release/re-grab.
+- Master Tempo/key lock is implemented in the P4 audio callback and exposed by
+  the Overview `MT` control. Basic pitch/key behavior passed hardware smoke;
+  longer simultaneous-deck quality and CPU tuning remains an optimization item.
+- OTA is hardware-accepted for both processors. P4 and S3 use alternating OTA
+  slots, validate target/chip/project, confirm health after mandatory startup,
+  preserve the active image on interrupted upload and roll back an unconfirmed
+  image. The accepted 2026-07-13 release was `RC1-106-g717b6ab3` on both boards.
 
 ## Non-Goals For The First Milestone
 
 - Full Mixxx feature parity.
-- Continuous beat following, master tempo/key lock, or full Rekordbox-style
-  sync state.
+- Continuous beat following or full Rekordbox-style sync state. Master Tempo
+  key lock is implemented; advanced phase-vocoder quality work remains outside
+  the first milestone.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
   smoothstep curve, Smart Fader transition-assist V1 behavior, the Beat FX
   Filter/Echo/Flanger DSP, and host-tested Pad FX DSP/input/LED slice.
@@ -199,8 +217,9 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
   highlight, hot-cue markers, mini played-progress).
 
 Remaining hardware-facing items: selected shifted-control hardware acceptance
-where still marked in the MIDI map, and a full end-to-end S3/P4/FLX4 regression
-pass after the next major control or UI batch. (Beat feedback from the PQTZ
+where still marked in the MIDI map, enclosure power/thermal/RF soak and a full
+end-to-end S3/P4/FLX4 regression pass after the next major control or UI batch.
+(Beat feedback from the PQTZ
 beatgrid is already shown on the Overview beat strip with a red downbeat marker;
 a dedicated controller beat LED was declined, so that item is closed.)
 

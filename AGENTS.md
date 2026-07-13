@@ -21,8 +21,10 @@ Cilj je standalone dual-deck DJ sustav:
 - Postojeci `0xA5` UART `control_link` ostaje interna komunikacija izmedu S3 i
   P4.
 
-Ne tretiraj trenutni firmware kao vec DDJ-FLX4-ready. Uvezeni kod je stabilna
-single-deck CDJ100S baza koju treba postupno portati.
+Projekt je prerastao uvezeni single-deck CDJ100S baseline. Trenutni `master`
+ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master Tempo, dualni
+MAIN/cue audio i P4/S3 OTA. I dalje ga ne tretiraj kao production-ready bez
+provjere aktualnih rizika, buildova i relevantnog hardware smoke testa.
 
 ## Najvaznije putanje
 
@@ -37,6 +39,8 @@ D:\Documents\DDJ-FFL4
   docs\DEVELOPMENT_PLAN.md
   docs\STARTUP_CHECKLIST.md
   docs\RISK_REGISTER.md
+  docs\DOCUMENTATION_STATUS.md
+  docs\OTA-UPDATE.md
   docs\reference\Pioneer-DDJ-FLX4.midi.xml
   docs\reference\CDJ100S-XXX-README.md
   firmware\control-board-s3
@@ -135,7 +139,7 @@ Branch prefix za agent promjene je `codex/`.
 
 ## DDJ-FLX4 MVP kontrole
 
-MVP kontrole su u potpunosti potvrđene raw MIDI captureom i implementirane u firmwareu. Preostale kontrole iz proširenog inventara u `docs/DDJ_FLX4_MIDI_MAP.md` uvode se izravno iz Mixxx XML-a. Fizički smoke capture radi se samo kao naknadni test prihvaćanja, a ne kao preduvjet za kodiranje.
+MVP kontrole su u potpunosti potvrđene raw MIDI captureom i implementirane u firmwareu. Preostale kontrole iz proširenog inventara u `docs/DDJ_FLX4_MIDI_MAP.md` uvode se izravno iz Mixxx XML-a. Fizički smoke capture radi se kao naknadni test prihvaćanja, a ne kao preduvjet za kodiranje.
 
 Primarni mapping dokument je:
 

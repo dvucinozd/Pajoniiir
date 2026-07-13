@@ -1,8 +1,12 @@
 # Porting Architecture
 
+Document status: historical initial port record, reviewed 2026-07-13. For the
+implemented dual-deck system use `ARCHITECTURE.md`.
+
 ## Recommended Direction
 
-Build a native two-board standalone single-deck player that re-implements the XDJ100SX behavior, instead of trying to run Mixxx on the board.
+Build a native two-board standalone dual-deck player, using the XDJ100SX
+analysis as input instead of trying to run Mixxx on the board.
 
 Reason: the upstream project depends on Linux + Mixxx for the actual deck engine. The JC4880P443C_I_W is an MCU/HMI board, so Mixxx, the Mixxx skin, and the Mixxx JavaScript controller layer cannot be moved over directly. The CDJ front panel also needs more I/O than the P4 board exposes cleanly, so the physical controls move to a dedicated ESP32-S3 control/MIDI board.
 

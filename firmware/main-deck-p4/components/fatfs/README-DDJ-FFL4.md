@@ -1,5 +1,8 @@
 # DDJ-FFL4 P4 FatFs Override
 
+Documentation status: active local integration note, reviewed 2026-07-13.
+FAT32/exFAT on superfloppy, MBR and GPT media is hardware-validated.
+
 This component was copied from:
 
 ```text

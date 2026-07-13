@@ -1,5 +1,8 @@
 # Wireless FLX4 over BLE-MIDI — feasibility note
 
+Document status: active decision note, reviewed 2026-07-13. Wired USB remains
+the product path; OTA Wi-Fi does not change this decision.
+
 Status: **hard / low-priority development option — not planned.** Recorded
 2026-07-10 after investigating whether the ESP32 could talk to the DDJ-FLX4 over
 Bluetooth instead of USB.
@@ -30,7 +33,7 @@ The FLX4 MIDI mapping is already done (from the USB path); only the BLE transpor
   (the FLX4 headphone cue/monitor). BLE gives control only, so the headphone cue
   is lost — a dealbreaker for DJ use.
 - **Latency** — BLE-MIDI latency (connection-interval bound, ~7.5–30+ ms) is far
-  worse than USB (~1 ms). The jog nudge and the planned vinyl/scratch work need
+  worse than USB (~1 ms). Jog nudge and the implemented vinyl/scratch path need
   low latency; BLE would feel sluggish.
 - **Throughput/jitter** — the fast jog/fader streams jitter more easily on BLE.
 - **Pairing** — needs reverse-engineering how the FLX4 enters BT pairing and

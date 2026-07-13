@@ -1,5 +1,7 @@
 # ANLZ Parser Tests
 
+Documentation status: current host-test fixture guide, reviewed 2026-07-13.
+
 PC test harness for `rekordbox_anlz.c` — runs on the host without any ESP32 hardware.
 
 ## Build requirements

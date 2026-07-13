@@ -1,5 +1,8 @@
 # ESP32-P4 Pinout Inventory for JC4880P443C_I_W
 
+Documentation status: active P4 pin inventory, reviewed 2026-07-13. Keep it in
+sync with `docs/HARDWARE_WIRING.md` before enclosure installation.
+
 This file is the source of truth for P4-side peripheral wiring.
 Do not use `firmware/control-board-s3/PINOUT.md` for P4 peripherals.
 

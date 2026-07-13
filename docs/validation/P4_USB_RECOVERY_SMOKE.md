@@ -1,5 +1,7 @@
 # P4 USB Storage Recovery Smoke
 
+Document status: hardware recovery validation record, reviewed 2026-07-13.
+
 Date: 2026-07-11
 Firmware branch: `codex/usb-storage-recovery`
 P4 serial port: COM15

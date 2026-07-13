@@ -1,5 +1,8 @@
 # Rekordbox File Format Analysis
 
+Document status: active format reference, reviewed 2026-07-13. Runtime parser
+and host tests remain the authority when this exploratory analysis differs.
+
 Validated on real USB drive (308 tracks, 2026-05-20).
 
 ## Context

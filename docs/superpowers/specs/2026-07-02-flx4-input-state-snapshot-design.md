@@ -1,5 +1,7 @@
 # FLX4 Input State Snapshot Design
 
+Document status (2026-07-13): implemented reconnect/state-snapshot design.
+
 ## Goal
 
 When the ESP32-P4 boots or reconnects while the DDJ-FLX4 and ESP32-S3 remain powered, the P4 should receive the last known physical state of absolute controller inputs without requiring the operator to move each knob or fader first.

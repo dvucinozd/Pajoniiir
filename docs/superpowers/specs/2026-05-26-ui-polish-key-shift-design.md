@@ -1,7 +1,11 @@
 # UI Polish: Key Shift
 
+Document status (2026-07-13): superseded UI concept. The dedicated Key Shift
+screen was removed. Master Tempo/key lock is exposed by `MT` on Overview.
+
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Original status superseded: Key Shift touch UI was removed; Overview now owns
+the Master Tempo toggle.
 
 ## Scope
 

@@ -2,6 +2,11 @@
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 controller, an ESP32-S3 control board, and a JC4880P443C_I_W ESP32-P4 multimedia board.
 
+Current hardware-accepted baseline (2026-07-13): **`RC1-106-g717b6ab3`** on
+both processors, `ota_0 / valid`. See the
+[documentation status](docs/DOCUMENTATION_STATUS.md) for verified scope and
+remaining work.
+
 This repository is a fork-style port of [`dvucinozd/CDJ100S-XXX`](https://github.com/dvucinozd/CDJ100S-XXX). The upstream project already proves the hard platform pieces: ESP32-P4 display and touch, Rekordbox USB library parsing, MP3 preload/decode, ES8311 I2S output, ESP32-S3 support firmware, and the internal `0xA5` UART control link.
 
 DDJ-FFL4 changes the product target:
@@ -18,19 +23,15 @@ DDJ-FFL4 changes the product target:
 ![ESP32-P4 Development Board](docs/images/p4.jpg)
 
 ### Dual-Deck LVGL UI
-Below are the screens designed for the two-deck playback interface:
-
-<!-- TODO(docs): docs/images/hotcues.jpg is MISSING and must be added — a
-     screenshot of the Hot Cues tab. The Loop touch screen was removed
-     2026-07-10 and its screenshot (loop.jpg) was deleted; the Hot Cues cell
-     below references hotcues.jpg, which renders as a broken image until the
-     file is committed to docs/images/. -->
+The active interface has Overview, Library, Hot Cues and Settings tabs. The
+repository currently contains representative captures for three tabs; the live
+Hot Cues tab is implemented but does not yet have an archived screenshot.
 
 | Overview Screen | Library Navigation |
 | --- | --- |
 | ![Overview Screen](docs/images/overview.jpg) | ![Library Screen](docs/images/library.jpg) |
-| **Hot Cues** | **Settings & Diagnostics** |
-| ![Hot Cues Screen](docs/images/hotcues.jpg) | ![Settings Screen](docs/images/settings.jpg) |
+| **Settings & Diagnostics** | **Hot Cues** |
+| ![Settings Screen](docs/images/settings.jpg) | Implemented; screenshot not archived |
 
 ---
 
@@ -39,7 +40,7 @@ Below are the screens designed for the two-deck playback interface:
 | Device | Role |
 | --- | --- |
 | **Pioneer DDJ-FLX4** | Operator surface: transport, jogs, tempo, mixer, cue, pads, LEDs |
-| **ESP32-S3-DevKitC-1 N16R8** | USB MIDI host for FLX4, MIDI-to-control-link translator, LED feedback bridge |
+| **Seeed Studio XIAO ESP32S3** | USB MIDI host, semantic translator, LED bridge, FLX4 USB-headphone streamer and service OTA AP |
 | **JC4880P443C_I_W ESP32-P4** | LVGL UI, Rekordbox media library, two deck states, audio decode, mixer, master/cue output |
 
 ---
@@ -48,8 +49,8 @@ Below are the screens designed for the two-deck playback interface:
 
 ```text
 firmware/
-  control-board-s3/   ESP32-S3 firmware inherited from CDJ100S-XXX
-  main-deck-p4/       ESP32-P4 firmware inherited from CDJ100S-XXX
+  control-board-s3/   ESP32-S3 FLX4 host/translator/audio-bridge firmware
+  main-deck-p4/       ESP32-P4 authoritative dual-deck/audio/UI firmware
 docs/
   reference/          vendored upstream and FLX4 mapping inputs
   images/             Screenshots and hardware photos used in documentation
@@ -66,6 +67,8 @@ tests/                PC-side test harnesses inherited from CDJ100S-XXX
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Startup checklist](docs/STARTUP_CHECKLIST.md)
 - [Risk register](docs/RISK_REGISTER.md)
+- [Documentation status and source-of-truth policy](docs/DOCUMENTATION_STATUS.md)
+- [OTA update procedure](docs/OTA-UPDATE.md)
 - [OTA update plan](docs/OTA_UPDATE_PLAN.md)
 
 ### Multi-Controller Platform
@@ -137,17 +140,24 @@ checked local release directory with:
 
 The tool validates target chip IDs, project metadata, slot limits, and matching
 versions before writing both application binaries and `manifest.json` under the
-ignored `releases/` directory. See the [OTA update plan](docs/OTA_UPDATE_PLAN.md)
-for the remaining hardware acceptance and manifest-signing work.
+ignored `releases/` directory. See the [OTA update procedure](docs/OTA-UPDATE.md)
+for operation and the [OTA design record](docs/OTA_UPDATE_PLAN.md) for acceptance
+history. Hardware acceptance is complete; signed manifests remain future work.
 
 ---
 
 ## 📢 Current Status & Features
 
-The `master` branch is currently up to date and contains the Phase 7 extended-control work, Phase 9 Wi-Fi/web UI work, USB headphone support for the DDJ-FLX4, official MIDI gap closures, and the July 2026 P4 Settings/Overview UI polish. All stale experimental branches have been reviewed, merged where appropriate, and deleted.
+The `master` branch contains the complete dual-deck controller path, vinyl
+scratch, Master Tempo/key lock, simultaneous PCM5102A MAIN and FLX4 USB
+headphone cue, data-driven controller profiles, and hardware-accepted P4/S3
+OTA with rollback.
 
 > [!WARNING]
-> Do not treat the entire system as fully plug-and-play ready for the DDJ-FLX4 yet. Significant progress has been made, but active testing is ongoing.
+> The system is functional on the documented bench hardware, but enclosure
+> power/thermal/RF soak, signed OTA manifests, longer dual-deck key-lock quality
+> testing and selected hardware acceptance rows remain before a production
+> release.
 
 ### Implemented P4 Features (Audio & UI)
 - **Audio Engine & Mixer**:
@@ -175,6 +185,10 @@ The `master` branch is currently up to date and contains the Phase 7 extended-co
   - Hot Cue: Store, recall, and clear.
   - Loop controls: In/Out, Reloop/Exit, halve/double, Beat Jump, and Beat Loop pads.
   - Beat Sync: BPM-matching and one-shot phase alignment preserving intra-beat offset.
+  - Vinyl scratch: forward/reverse audio, paused/CUE scratch, loop wrapping,
+    click-free release/re-grab and dual-deck stress validation.
+  - Master Tempo/key lock with an Overview `MT` toggle; basic hardware behavior
+    accepted, with longer simultaneous-deck quality tuning deferred.
 
 ### Implemented S3 Features (USB Host & MIDI Translator)
 - **Host Middleware**:
@@ -206,5 +220,6 @@ The primary milestone for DDJ-FFL4 is a stable, stand-alone two-deck playback sy
 ## 🚀 Extended Controller Plan
 
 Additional controls are implemented based on the vendored Mixxx XML configuration mapping (for MIDI status, message encoding, and 14-bit pairings) and the official Pioneer MIDI message list.
-For full details on the development timeline, see Phases 7-10 of [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+For the full development and acceptance timeline, see
+[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 

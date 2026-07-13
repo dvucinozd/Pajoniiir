@@ -1,5 +1,8 @@
 # DDJ-FFL4 Bootstrap Design
 
+Document status (2026-07-13): completed historical bootstrap record. Current
+architecture is dual-deck and documented in `../../ARCHITECTURE.md`.
+
 Date: 2026-06-08
 
 ## Context

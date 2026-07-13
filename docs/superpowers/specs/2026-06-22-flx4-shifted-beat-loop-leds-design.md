@@ -1,5 +1,8 @@
 # FLX4 Shifted Beat Loop Pads and Beat Loop Pad LEDs Design
 
+Document status (2026-07-13): implemented design record. Hardware acceptance
+exceptions remain tracked in the current MIDI map and LED validation ledger.
+
 ## Goal
 
 Close the next Beat Loop slice by adding shifted Beat Loop pad behavior and

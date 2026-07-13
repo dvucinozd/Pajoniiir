@@ -1,5 +1,8 @@
 # Control Board Decision: ESP32-S3 MIDI/Input Controller
 
+Document status: accepted architecture decision, reviewed 2026-07-13. The S3
+role is implemented and now also bridges monitor PCM and hosts service-mode OTA.
+
 ## Decision
 
 Split the project into two cooperating boards:

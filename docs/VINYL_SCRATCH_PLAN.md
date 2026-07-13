@@ -8,6 +8,10 @@ scratch with centered pre-roll, active-loop wrapping and deferred pitch handoff.
 Phased roadmap for real turntable scratch on the
 P4. Written 2026-07-10 so work can resume cleanly.
 
+The phase-local `pending`, `starting point` and `no audible scratch yet` text
+below is preserved as implementation history. It is superseded by this status
+header and must not be read as current product state.
+
 ## Goal
 
 Touching the FLX4 jog **platter top** while a deck plays should let you drag

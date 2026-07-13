@@ -1,5 +1,9 @@
 # DDJ-FLX4 MIDI Map
 
+Status: current mapping and acceptance ledger, audited 2026-07-13. `Implemented`
+means a firmware path exists; hardware acceptance is stated separately per row
+or section. XML supplies addresses, never standalone runtime behavior.
+
 Source file:
 [docs/reference/Pioneer-DDJ-FLX4.midi.xml](reference/Pioneer-DDJ-FLX4.midi.xml)
 

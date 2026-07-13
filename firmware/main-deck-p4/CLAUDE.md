@@ -1,10 +1,14 @@
-# CDJ100S-XXX Main Deck Firmware — Claude Guide
+# DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
+
+Documentation status: current developer guide, audited 2026-07-13. The
+hardware-accepted OTA baseline is `RC1-106-g717b6ab3`, `ota_0 / valid`.
 
 ## Project Overview
 
-ESP32-P4 firmware for the CDJ100S-XXX main deck board (JC4880P443C_I_W).  
-Responsible for: UI (LVGL), deck state machine, audio decode/output, USB media library.  
-Communicates with the ESP32-S3 control board via UART1 (7-byte frame protocol).
+ESP32-P4 firmware for the DDJ-FFL4 main-deck board (JC4880P443C_I_W).
+Responsible for authoritative dual-deck state, LVGL UI, media library,
+decode/mixer/DSP, LED decisions, web service and P4 OTA. It communicates with
+the ESP32-S3 over UART1 using fixed `0xA5` events and `0xA6` bulk/status frames.
 
 **Status:** Display, touch, USB media library (FAT32/exFAT on MBR/GPT), audio
 (PCM5102A I2S MAIN, MP3/WAV/FLAC), SDMMC mount, display triple buffering, and the
@@ -17,8 +21,10 @@ region highlight, hot-cue markers on the large + mini waveforms, and a
 translucent played-progress highlight on the mini. The **ESP-Hosted Wi-Fi + web
 UI mobile controller** is re-enabled behind a Settings switch (default off). A
 2026-07-04 audit hardened thread-safety (atomics), load-failure abort, and the
-web status JSON. Line-out validation and native FLX4 LED feedback remain the main
-pending items.
+web status JSON. PCM5102A RCA MAIN, FLX4 USB headphone cue, FLX4 LED feedback,
+vinyl scratch, Master Tempo and P4/S3 OTA have since passed their recorded basic
+hardware acceptance. Remaining work is release/enclosure hardening and the
+explicitly pending rows in active validation documents.
 
 ---
 

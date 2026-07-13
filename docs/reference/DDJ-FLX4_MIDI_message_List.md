@@ -1,4 +1,7 @@
 # DDJ-FLX4
+
+> Vendor-derived reference, reviewed 2026-07-13. Preserve controller addresses;
+> use `../DDJ_FLX4_MIDI_MAP.md` for implemented semantics and acceptance state.
 ## List of MIDI messages
 
 | Group | Fig. | UI name | Deck | Trigger | +SHIFT Condition (mode) | MIDI Channel (Dec) | NOTE/CC (Dec) | MIDI Data (Data 1) (English scale) | MIDI-IN Status (Hex) | MIDI-IN Data 1 (Hex) | MIDI-IN Data 2 (Hex) | MIDI-OUT Status (Hex) | MIDI-OUT Data 1 (Hex) | MIDI-OUT Data 2 (Hex) | Details (Data 2) |

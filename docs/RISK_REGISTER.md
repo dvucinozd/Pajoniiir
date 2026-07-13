@@ -1,5 +1,8 @@
 # Risk Register
 
+Status: current, reviewed 2026-07-13. Mitigated risks remain listed because a
+future USB/audio/UI change can reintroduce them.
+
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | S3 USB host power or enumeration regresses | Blocks controller input | Enumeration and a 30-minute stability run passed on 2026-06-14; preserve raw logger diagnostics and recheck OTG port, powered hub orientation, 5 V VBUS, and shared ground after USB host changes |
@@ -21,3 +24,7 @@
 | P4 local build remains in debug optimization | Reduced UI/audio headroom and waveform jitter | `sdkconfig.defaults` now selects performance optimization and disables LVGL examples/demos. Regenerate or align ignored local `sdkconfig` files before flashing |
 | Upstream code changes are mixed with DDJ-specific changes without notes | Hard to reason about port | Keep DDJ docs explicit and update development plan after each phase |
 | Old experimental branches are merged accidentally | Reintroduces stale Smart/DSP or Wi-Fi-hosted code | Completed Codex branches were cleaned after the 2026-06-26 Phase 7 merge; the last experimental branch `codex/flx4-extended-controls` was reviewed and removed on 2026-07-03 after confirming its verified slices were already salvaged into `master`, so no non-master branches remain |
+| OTA release manifest is unsigned | A modified but structurally valid image could be accepted from an untrusted distribution channel | Keep release folders on a trusted channel, verify SHA-256 manually, and implement manifest signing plus device trust-key provisioning before production distribution |
+| Final enclosure changes power, temperature or RF behavior | Audio instability, brownout, USB disconnect or inaccessible service AP after USB ports become hard to reach | Run closed-enclosure dual-deck/audio soak, measure rail/temperature margins, verify AP reachability and retain a wired recovery/service path before sealing |
+| Master Tempo quality or CPU cost degrades under simultaneous demanding material | Artifacts or deadline misses with key lock active on both decks | Basic hardware behavior is accepted; add long two-deck quality/CPU regression material before declaring production DSP quality |
+| Only the FLX4 controller profile is end-to-end verified | Profile schema defects may remain hidden for other controller layouts | Validate one non-FLX4 controller including input, LED output, reconnect and profile fallback before advertising generic compatibility |

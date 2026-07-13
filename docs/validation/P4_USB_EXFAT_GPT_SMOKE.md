@@ -1,5 +1,8 @@
 # P4 USB exFAT + GPT Smoke
 
+Document status: hardware validation record, reviewed 2026-07-13. Current P4
+media support includes FAT32/exFAT and superfloppy/MBR/GPT layouts.
+
 Date: 2026-07-03
 Firmware branch: `codex/p4-usb-exfat-gpt`
 P4 serial port: COM15

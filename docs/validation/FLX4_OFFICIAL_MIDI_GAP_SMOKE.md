@@ -1,5 +1,8 @@
 # FLX4 Official MIDI Gap-Closure Smoke
 
+Document status: historical acceptance worksheet, reviewed 2026-07-13. Do not
+convert a `PENDING` row to pass without new physical evidence and firmware ID.
+
 Date: 2026-07-03
 Feature: official DDJ-FLX4 MIDI gap closure (merged to `master`, merge `ccafd13a`).
 Boards: P4 on COM15, S3 on COM3, DDJ-FLX4 on the S3 USB host.

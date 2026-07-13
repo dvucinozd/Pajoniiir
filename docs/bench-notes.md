@@ -1,5 +1,8 @@
 # Bench Notes
 
+Document status: dated hardware evidence, reviewed 2026-07-13. New observations
+should include date, firmware version, board, port and pass/fail evidence.
+
 ## Test Setup
 
 | Item | Value |

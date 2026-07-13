@@ -1,5 +1,8 @@
 # P4 UI Architecture Refactor Design
 
+Document status (2026-07-13): implemented historical refactor design; later UI
+stability and four-tab changes are documented in active project files.
+
 Date: 2026-06-12
 
 ## Goal

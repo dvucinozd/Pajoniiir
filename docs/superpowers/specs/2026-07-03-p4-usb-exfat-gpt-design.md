@@ -1,5 +1,7 @@
 # P4 USB exFAT And GPT Design
 
+Document status (2026-07-13): implemented and hardware-validated design record.
+
 ## Goal
 
 Make the ESP32-P4 read rekordbox USB media formatted as exFAT and/or partitioned with GPT, while preserving the existing `/usb` VFS path and the current library/audio code that uses `fopen`, `opendir`, and `stat`.

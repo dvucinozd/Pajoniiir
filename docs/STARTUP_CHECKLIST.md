@@ -1,5 +1,27 @@
 # Startup Checklist
 
+Status: audited 2026-07-13. Checked items below are historical bring-up
+evidence, not instructions to repeat old commit-specific flashes.
+
+## Current accepted baseline
+
+- [x] P4: `RC1-106-g717b6ab3`, `ota_0`, `valid`.
+- [x] S3: `RC1-106-g717b6ab3`, `ota_0`, `valid`.
+- [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
+- [x] Vinyl/scratch accepted on both platters.
+- [x] Master Tempo basic hardware behavior accepted.
+- [x] PCM5102A MAIN and FLX4 USB headphone cue operate together.
+
+## Repeat before enclosure close
+
+- [ ] Verify shared ground and that independent 5 V sources are not back-fed.
+- [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
+- [ ] Run both host suites and both firmware builds from a clean checkout.
+- [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
+- [ ] Measure enclosure temperature and check RF/AP reachability.
+- [ ] Perform one OTA update per target and record slot/version/state.
+- [ ] Preserve a wired recovery path or validated service connector.
+
 ## Repository
 
 - [x] Start from a fork-style import of `dvucinozd/CDJ100S-XXX`.
@@ -326,8 +348,9 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   rotate/press, Beat Sync master, Reloop/Exit+Shift stop, Loop Adjust In/Out,
   Quantize, and Play+Shift slip-censor MVP are implemented from the XML mapping
   with host-test coverage; hardware smoke remains pending for this shifted
-  control group. Vinyl mode is intentionally out
-  of scope as of 2026-07-02.
+  control group. The controller's MIDI Vinyl-mode output toggle remains outside
+  the controller-feedback scope; this is separate from the implemented audible
+  vinyl/scratch engine.
 - [x] Add supported mixer/monitoring controls and 14-bit range tests.
   Second slice implemented: Trim, EQ high/mid/low, filter, headphone mix,
   loop/beat-jump buttons, pad modes/actions, and P4-driven FLX4 VU meter output

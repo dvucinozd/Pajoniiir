@@ -1,7 +1,11 @@
 # UI Polish: Beat Jump
 
+Document status (2026-07-13): historical UI concept. Beat Jump behavior is
+implemented on the physical controller; its dedicated touch screen was removed.
+
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Original status superseded: behavior implemented on the controller; dedicated
+touch tab removed from the current four-tab UI.
 
 ## Scope
 

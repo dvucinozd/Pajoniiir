@@ -1,5 +1,8 @@
 # Seeed Studio XIAO ESP32S3 Wiring For DDJ-FFL4
 
+Documentation status: active S3 bench wiring, reviewed 2026-07-13. Revalidate
+power, ground and service access in the final enclosure.
+
 This document is the wiring reference for replacing the previous ESP32-S3
 control-board candidate with the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense
 board shown in the 2026-07-05 bench photo.

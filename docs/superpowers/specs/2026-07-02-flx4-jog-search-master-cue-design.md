@@ -1,5 +1,10 @@
 # FLX4 Jog Search And Master Cue Design
 
+Document status (2026-07-13): implemented for its original scope. Its explicit
+Vinyl exclusion is historical and superseded by `../../VINYL_SCRATCH_PLAN.md`;
+the controller's MIDI Vinyl-mode toggle and audible scratch engine are separate
+concerns.
+
 ## Goal
 
 Add the remaining practical DDJ-FLX4 controls for jog search and physical Master Cue while explicitly leaving Vinyl mode out of firmware behavior.

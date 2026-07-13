@@ -1,5 +1,8 @@
 # Control Link Protocol
 
+Status: current wire protocol, audited 2026-07-13. The fixed `0xA5` event layer
+and variable-length `0xA6` bulk layer are both active in production firmware.
+
 DDJ-FFL4 keeps the inherited UART `control_link` as the internal protocol
 between the ESP32-S3 and ESP32-P4.
 

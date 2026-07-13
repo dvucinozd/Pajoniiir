@@ -1,5 +1,24 @@
 # Development Plan
 
+Status: current phase ledger, audited 2026-07-13.
+
+## Executive status
+
+| Capability | State |
+| --- | --- |
+| FLX4 host, semantic controls and LEDs | Implemented and hardware-smoked |
+| Dual-deck playback, mixer and UI | Implemented and hardware-smoked |
+| MAIN + USB headphone cue audio | Implemented and hardware-smoked |
+| Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
+| Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
+| Controller profiles | Firmware path implemented, host-tested and FLX4-profile hardware-verified |
+| P4/S3 OTA and rollback | Implemented and hardware-accepted 2026-07-13 |
+
+Next release hardening is signed OTA manifests, enclosure power/thermal/RF
+soak, longer dual-deck key-lock quality testing, selected pending MIDI hardware
+rows and a first non-FLX4 profile acceptance. Historical phase text below is
+retained as the implementation record.
+
 ## Phase 0: Baseline Import And Documentation
 
 Status: complete.

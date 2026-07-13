@@ -1,5 +1,8 @@
 # CDJ100S-XXX
 
+> Preserved upstream reference. This single-deck README does not describe the
+> current DDJ-FFL4 product; see `../PROJECT_OVERVIEW.md`.
+
 Standalone single-deck DJ player built inside a Pioneer CDJ-100S chassis.  
 Replaces original internals with two ESP32 boards and a 4.3" touchscreen.
 
@@ -33,8 +36,8 @@ Heartbeat frame sent to P4 every 5 s so P4 can detect S3 disconnects.
 
 - USB MIDI device: `VID 0x303A / PID 0x4008`, product name `CDJ100S-XXX`
 - Flash via COM4 (CH343 UART bridge): `idf.py -p COM4 flash`
-- Wiring reference: [`firmware/control-board-s3/PINOUT.md`](firmware/control-board-s3/PINOUT.md)
-- Full build guide: [`firmware/control-board-s3/CLAUDE.md`](firmware/control-board-s3/CLAUDE.md)
+- Wiring reference: [`firmware/control-board-s3/PINOUT.md`](../../firmware/control-board-s3/PINOUT.md)
+- Full build guide: [`firmware/control-board-s3/CLAUDE.md`](../../firmware/control-board-s3/CLAUDE.md)
 
 ### ESP32-P4 status: **UI, media library & audio running on hardware** ✅
 
@@ -49,7 +52,7 @@ Heartbeat frame sent to P4 every 5 s so P4 can detect S3 disconnects.
 | `bsp_jc4880` | ✅ Display (ST7701S MIPI DSI) + touch (GT911) + audio (ES8311/I2S); SDMMC `/sd` config/cache mount verified on JC4880 TF slot |
 | `audio_engine` | ✅ Plays on hardware — minimp3 decode → ES8311/I2S, PSRAM preload, pitch resampling. Supports Instant Frame-Index (IFI) Seek with 1-2 ms latency for Hot Cue & Beat Jump |
 
-Build guide: [`firmware/main-deck-p4/CLAUDE.md`](firmware/main-deck-p4/CLAUDE.md)
+Build guide: [`firmware/main-deck-p4/CLAUDE.md`](../../firmware/main-deck-p4/CLAUDE.md)
 
 ---
 
@@ -100,9 +103,9 @@ Key insight: the PDB stores the ANLZ path directly per track — no directory wa
 
 Tested on real Rekordbox USB drive (308 tracks, GCC 16.1.0, 32 ANLZ unit tests pass).
 
-Test harnesses: [`tests/anlz/`](tests/anlz/) · [`tests/rekordbox_pdb/`](tests/rekordbox_pdb/)
+Test harnesses: [`tests/anlz/`](../../tests/anlz/) · [`tests/rekordbox_pdb/`](../../tests/rekordbox_pdb/)
 
-Format details: [`docs/rekordbox-format-analysis.md`](docs/rekordbox-format-analysis.md)
+Format details: [`docs/rekordbox-format-analysis.md`](../rekordbox-format-analysis.md)
 
 ---
 
@@ -156,7 +159,7 @@ mingw32-make test
 
 ## Documentation
 
-See [`docs/`](docs/) for architecture decisions, board analysis, development plan, and wiring map.
+See [`docs/`](../) for architecture decisions, board analysis, development plan, and wiring map.
 
 Local-only reference folders (not in git — large vendor/upstream inputs):
 

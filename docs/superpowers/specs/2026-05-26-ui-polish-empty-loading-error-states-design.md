@@ -1,7 +1,10 @@
 # UI Polish: Empty Loading Error States
 
+Document status (2026-07-13): historical design input; consult the current
+four-tab UI and source for final implemented presentation.
+
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Original status superseded: implementation evolved through later UI refactors.
 
 ## Scope
 

@@ -1,5 +1,8 @@
 # FLX4 LED MIDI OUT Capture Runbook
 
+Document status: dated validation ledger, reviewed 2026-07-13. Existing pending
+rows remain explicit; current mapping authority is `../DDJ_FLX4_MIDI_MAP.md`.
+
 Status: MVP reconnect resynchronization verified. Phase 7 LED addresses are
 seeded from the verified Mixxx XML and then promoted with host tests plus
 hardware smoke/capture notes recorded here.

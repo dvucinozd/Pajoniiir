@@ -1,7 +1,10 @@
 # UI Polish: Footer Tabs
 
+Document status (2026-07-13): superseded layout concept. Current tabs are
+Overview, Library, Hot Cues and Settings.
+
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Original status superseded: current footer contains four tabs.
 
 ## Scope
 

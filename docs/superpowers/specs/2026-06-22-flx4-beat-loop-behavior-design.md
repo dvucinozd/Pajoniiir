@@ -1,5 +1,8 @@
 # FLX4 Beat Loop Behavior Design
 
+Document status (2026-07-13): implemented behavior record; active loop handling
+was later extended for vinyl scratch wrapping.
+
 ## Goal
 
 Implement P4-owned DDJ-FLX4 Beat Loop pad behavior for the already-mapped

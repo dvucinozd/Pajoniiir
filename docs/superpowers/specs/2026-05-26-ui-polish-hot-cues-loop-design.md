@@ -1,7 +1,11 @@
 # UI Polish: Hot Cues + Loop
 
+Document status (2026-07-13): partially superseded. Hot Cues remains a touch
+tab; the dedicated Loop touch screen was removed and loop stays controller-led.
+
 Date: 2026-05-26
-Status: Approved design, pending implementation plan
+Original status superseded: Hot Cues is implemented; the Loop touch tab was
+removed.
 
 ## Scope
 

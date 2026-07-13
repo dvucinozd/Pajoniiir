@@ -1,5 +1,8 @@
 # DDJ-FFL4 S3 Control Board Firmware - Claude Guide
 
+Documentation status: current developer guide, audited 2026-07-13. The
+hardware-accepted OTA baseline is `RC1-106-g717b6ab3`, `ota_0 / valid`.
+
 ## Project Overview
 
 ESP32-S3-DevKitC-1 N16R8 firmware for the DDJ-FFL4 control board role.
