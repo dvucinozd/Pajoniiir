@@ -137,6 +137,13 @@ static esp_err_t validate_profile_file(const char *path,
 
 static esp_err_t ensure_directory(const char *path)
 {
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        return S_ISDIR(st.st_mode) ? ESP_OK : ESP_FAIL;
+    }
+    if (errno != ENOENT) {
+        return ESP_FAIL;
+    }
 #ifdef _WIN32
     int rc = _mkdir(path);
 #else
