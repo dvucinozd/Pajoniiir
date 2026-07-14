@@ -1,11 +1,13 @@
 # Documentation Status
 
-Last full audit: **2026-07-14** on `master` for the R5 closeout.
+Last full audit: **2026-07-14** on `master` after E1 signed-OTA acceptance.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. The hardware-accepted release at the
-time of the audit is **`RC1-121-gb7ac66a5`** on both processors, installed
-through their wired recovery ports and accepted under simultaneous monitoring.
+time of the audit is **`RC1-123-g587cd7a1`** on both processors, installed with
+signed OTA key ID `rel-001`. P4 runs from `ota_0` and S3 from `ota_1` after
+positive update, negative rejection, interrupted-upload, forced-rollback and
+final functional smoke acceptance.
 
 ## Source-of-truth order
 
@@ -34,13 +36,14 @@ in the active documents.
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
 | UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero |
-| OTA | Dual-slot update/rollback hardware-accepted 2026-07-13; ECDSA P-256 `.ddjota` verification implemented and host/build-verified, with signed-path hardware acceptance pending |
+| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14 |
 | Profiles | SD-card controller-profile loading, registry matching and S3 transfer implemented and hardware-verified with the FLX4 profile |
 
 ## Remaining work
 
-- hardware-accept the signed OTA transition and define production key custody,
-  provisioning and rotation beyond the current `rel-001` development key;
+- define production key provisioning and rotation beyond the current backed-up
+  `rel-001` development key, preferably with encrypted or hardware-backed
+  signing;
 - perform enclosure power, thermal, RF and long-duration audio soaks;
 - run longer simultaneous dual-deck key-lock quality/CPU testing;
 - validate a first non-FLX4 controller profile;

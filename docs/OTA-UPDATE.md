@@ -1,10 +1,9 @@
 # DDJ-FFL4 OTA Update Procedure
 
-Status: dual-slot OTA and rollback are hardware-accepted on both targets. The
-signed `.ddjota` implementation, host tests, release builds, valid A/B updates
-and core signature/target/hash rejection tests are hardware-accepted on
-2026-07-13. Signed interrupted-upload and forced-rollback repetition remain.
-See
+Status: signed dual-slot OTA and rollback are hardware-accepted on both targets.
+The `.ddjota` implementation, host tests, release builds, valid A/B updates,
+full rejection matrix, interrupted uploads and forced rollback passed on
+2026-07-14 with release `RC1-123-g587cd7a1`. See
 [`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for the design and acceptance record.
 
 ## Safety rules
@@ -168,6 +167,18 @@ hardware smoke used `RC1-108-g1be328a9-dirty`: P4 completed
 `factory -> ota_0 -> ota_1`, S3 completed `ota_0 -> ota_1 -> ota_0`, both
 targets rejected modified signed fields, wrong targets and modified image data,
 and final status was P4 `ota_1` plus S3 `ota_0 / valid`.
+
+The complete signed E1 acceptance on 2026-07-14 used clean release
+`RC1-123-g587cd7a1` and key ID `rel-001`. P4 updated from
+`factory / RC1-121-gb7ac66a5` to `ota_0`; S3 updated from
+`ota_0 / RC1-121-gb7ac66a5` to `ota_1`. Both targets rejected a wrong signing
+key (HTTP 403), wrong key ID, chip/project mismatch and truncated/extended
+bundles (HTTP 400) without changing the active slot. A client disconnect after
+128 KiB left each current release bootable. Signed `ROLLBACK-TEST-P4-123` and
+`ROLLBACK-TEST-S3-123` images restarted before confirmation and were rolled back
+to P4 `ota_0` and S3 `ota_1`. Final UI/touch, dual-deck playback and scratch,
+FLX4 controls/LEDs, MAIN and headphone-cue smoke passed. The private `rel-001`
+key has an offline USB backup; production key rotation remains future work.
 
 ## Wired recovery
 

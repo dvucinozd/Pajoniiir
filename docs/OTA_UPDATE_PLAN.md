@@ -1,10 +1,9 @@
 # DDJ-FFL4 OTA Update Plan
 
 Status: design and acceptance record. The unsigned dual-slot/rollback path was
-hardware-accepted on 2026-07-13. Batch 6 signed OTA is implemented,
-host/build-verified and core hardware-smoked. R4 WPA2 access was accepted on
-both target APs on 2026-07-13. Signed interrupted-upload and forced-rollback
-repetition remain. For the operator workflow use
+hardware-accepted on 2026-07-13. Batch 6 signed OTA, including complete
+rejection, interrupted-upload and forced-rollback testing, was hardware-
+accepted on both targets on 2026-07-14. For the operator workflow use
 [`OTA-UPDATE.md`](OTA-UPDATE.md).
 
 ## Implementation status
@@ -84,7 +83,7 @@ Batch 6 signed OTA is software-complete:
 - P4 and S3 reject an invalid manifest before flash erase and compare the
   streamed image SHA-256 and signed version before activation;
 - the committed public DER key has key ID `rel-001`; the ignored private PEM is
-  release infrastructure and requires restricted offline backup;
+  release infrastructure and has a restricted offline USB backup;
 - host coverage passes valid P4/S3 bundles, tampered manifest/image, wrong key,
   truncated/extended bundle and outer-manifest signature cases;
 - isolated `build_signed` release-layout builds pass for both targets.
@@ -145,8 +144,8 @@ the final recovery path.
 5. Report S3 version/update state to P4 and test S3 rollback. Reporting, wired
    smoke, and forced rollback complete.
 6. Add signed manifests after both independent update paths are stable.
-   Firmware, tooling, host tests and release builds are complete; hardware
-   transition and acceptance remain.
+   Firmware, tooling, host tests, release builds and complete dual-target
+   hardware acceptance are complete.
 
 P4-to-S3 firmware forwarding over the UART `0xA6` layer is deferred. Controller
 profile transfer has shown checksum/retry pressure, so independent Wi-Fi OTA is
@@ -178,17 +177,26 @@ Batch 6 signed-path acceptance before enclosure:
 - [x] valid signed P4 and S3 bundles boot from the inactive slot and reach
   `valid` after mandatory startup;
 - [x] a modified signed manifest is rejected before flash erase on both targets;
-- [ ] a bundle signed by the wrong key/key ID is rejected before flash erase;
+- [x] a bundle signed by the wrong key/key ID is rejected before flash erase;
 - [x] a modified image is rejected by streamed SHA-256 before activation on
   both targets;
 - [x] the other target's signed bundle is rejected without selecting the
   inactive slot on both targets;
-- [ ] wrong chip/project/version, truncated bundle and trailing bytes are
+- [x] wrong chip/project/version, truncated bundle and trailing bytes are
   rejected without selecting the inactive slot;
-- [ ] interrupted signed upload leaves the current slot bootable;
-- [ ] a signed non-confirming image still rolls back to the prior valid slot;
-- [ ] final release version, key ID, slots, states and functional smoke are
+- [x] interrupted signed upload leaves the current slot bootable;
+- [x] a signed non-confirming image still rolls back to the prior valid slot;
+- [x] final release version, key ID, slots, states and functional smoke are
   recorded in the release log.
+
+Complete Batch 6 acceptance ran on 2026-07-14 with clean release
+`RC1-123-g587cd7a1` and key ID `rel-001`. P4 moved from `factory` to `ota_0` and
+S3 from `ota_0` to `ota_1`. Both targets rejected the wrong signing key, wrong
+key ID, chip/project mismatch and truncated/extended bundles. Both remained
+bootable after a 128 KiB client disconnect. Signed `ROLLBACK-TEST-P4-123` and
+`ROLLBACK-TEST-S3-123` images returned to P4 `ota_0` and S3 `ota_1`; final
+UI/audio/controller/LED/headphone-cue smoke passed. The private key's offline
+USB backup was confirmed before closeout.
 
 The first signed hardware smoke on 2026-07-13 used the intentionally dirty test
 version `RC1-108-g1be328a9-dirty`. Both full wired migrations passed. Modified

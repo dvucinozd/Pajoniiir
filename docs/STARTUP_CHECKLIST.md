@@ -5,8 +5,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current accepted baseline
 
-- [x] P4: `RC1-121-gb7ac66a5`, wired `factory` recovery image, operational.
-- [x] S3: `RC1-121-gb7ac66a5`, wired `ota_0` image, operational.
+- [x] P4: `RC1-123-g587cd7a1`, signed OTA `ota_0`, operational.
+- [x] S3: `RC1-123-g587cd7a1`, signed OTA `ota_1`, operational.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
@@ -34,7 +34,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R4 smoke: both WPA2 APs accept `PajoNiiiR`; P4 web UI plus S3 log and OTA update pages load correctly.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
-- [ ] Perform one OTA update per target and record slot/version/state.
+- [x] Perform one OTA update per target and record slot/version/state.
 - [ ] Preserve a wired recovery path or validated service connector.
 
 ## Repository
@@ -575,19 +575,27 @@ Batch 5 firmware-status verification:
 
 Batch 6 signed-OTA transition and acceptance:
 
-- [ ] Back up `keys/ota_signing_private.pem` in restricted offline storage;
+- [x] back up `keys/ota_signing_private.pem` in restricted offline storage
+  (offline USB confirmed 2026-07-14);
 - [x] install the signed-OTA-capable P4 and S3 firmware once by full wired flash
   (preferred) or through each still-running legacy unsigned endpoint;
 - [x] upload valid signed P4 and S3 bundles and confirm version, opposite slot,
   and successful mandatory startup/validation;
-- [ ] confirm audio, UI, controller and LED behavior after the signed updates;
+- [x] confirm audio, UI, controller and LED behavior after the signed updates;
 - [x] confirm modified manifest, modified image and wrong target are rejected on
   both targets without activating the inactive slot;
-- [ ] confirm wrong key ID/key, chip/project mismatch and truncated/extended
+- [x] confirm wrong key ID/key, chip/project mismatch and truncated/extended
   bundles are rejected on hardware;
-- [ ] repeat interrupted-upload and forced-rollback checks with signed bundles;
-- [ ] record the accepted release version, key ID and final slots/states before
+- [x] repeat interrupted-upload and forced-rollback checks with signed bundles;
+- [x] record the accepted release version, key ID and final slots/states before
   enclosing the boards.
+
+Signed E1 acceptance record, 2026-07-14: release `RC1-123-g587cd7a1`, key ID
+`rel-001`; final P4 `ota_0`, S3 `ota_1`, both valid/operational. Both targets
+rejected wrong key/key ID, chip/project mismatch and truncated/extended bundles;
+both survived a 128 KiB interrupted upload and rolled back from signed
+`ROLLBACK-TEST-*` images. Final UI/touch, dual playback/scratch, controller,
+LED, MAIN and headphone-cue smoke passed.
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

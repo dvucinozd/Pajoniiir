@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: current phase ledger, audited 2026-07-13.
+Status: current phase ledger, audited 2026-07-14.
 
 ## Executive status
 
@@ -13,10 +13,10 @@ Status: current phase ledger, audited 2026-07-13.
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Controller profiles | Firmware path implemented, host-tested and FLX4-profile hardware-verified |
-| P4/S3 OTA and rollback | Unsigned path hardware-accepted 2026-07-13; signed path implemented and host/build-verified |
+| P4/S3 OTA and rollback | Signed update, rejection, interruption and forced rollback hardware-accepted on both targets 2026-07-14 |
 
-Next release hardening is signed-OTA hardware acceptance and production key
-custody/rotation, enclosure power/thermal/RF soak, longer dual-deck key-lock
+Next release hardening is production key provisioning/rotation, enclosure
+power/thermal/RF soak, longer dual-deck key-lock
 quality testing, selected pending MIDI hardware rows and a first non-FLX4
 profile acceptance. Historical phase text below is retained as the
 implementation record.
@@ -1161,10 +1161,12 @@ rollback, and physical power-loss acceptance pass on P4 and S3.
   image bootable on both targets. The accepted S3 run used a 20 KiB/s throttled
   upload so power was demonstrably removed before transfer completion.
 
-Batch 6 signed OTA is software-complete: common manifest parsing/verification,
-both target integrations, packaging, tamper/wrong-key host tests and isolated
-release-layout builds pass. See `docs/OTA_UPDATE_PLAN.md` for the remaining
-hardware acceptance matrix and key-custody work.
+Batch 6 signed OTA is hardware-complete as of 2026-07-14: common manifest
+parsing/verification, both target integrations, packaging, isolated release
+builds, positive updates, rejection cases, interrupted transfers and forced
+rollback pass. The `rel-001` private key has an offline USB backup; production
+provisioning, encrypted or hardware-backed custody and rotation remain future
+hardening. See `docs/OTA_UPDATE_PLAN.md` for the acceptance record.
 
 ## Phase 15: Audio Remediation R1 — EOF Drain And Replay (2026-07-13)
 
@@ -1358,7 +1360,8 @@ Status: R5A-R5F complete. Both host suites and signed builds pass; matching
 soak was accepted on 2026-07-14.
 
 Ordered enclosure-readiness and production-hardening continuation batches are
-recorded in `POST_R5_PLAN.md`; resume with E1 signed OTA hardware acceptance.
+recorded in `POST_R5_PLAN.md`; E1 signed OTA is complete and E2 enclosure wiring
+and service readiness is next.
 
 - The call graph, compatibility-path corrections and ESP-IDF size baseline are
   recorded in `R5_DEAD_CODE_AUDIT.md`.

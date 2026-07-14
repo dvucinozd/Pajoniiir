@@ -2,10 +2,11 @@
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 controller, an ESP32-S3 control board, and a JC4880P443C_I_W ESP32-P4 multimedia board.
 
-Current hardware-accepted baseline (2026-07-14): **`RC1-121-gb7ac66a5`** on
-both processors, installed through the wired recovery ports. See the
-[documentation status](docs/DOCUMENTATION_STATUS.md) for verified scope and
-remaining work.
+Current hardware-accepted baseline (2026-07-14): **`RC1-123-g587cd7a1`** on
+both processors, installed with signed OTA (`rel-001`). P4 runs from `ota_0`
+and S3 from `ota_1`; signed update, rejection, interrupted-upload and forced-
+rollback acceptance passes on both targets. See the [documentation
+status](docs/DOCUMENTATION_STATUS.md) for verified scope and remaining work.
 
 This repository is a fork-style port of [`dvucinozd/CDJ100S-XXX`](https://github.com/dvucinozd/CDJ100S-XXX). The upstream project already proves the hard platform pieces: ESP32-P4 display and touch, Rekordbox USB library parsing, MP3 preload/decode, ES8311 I2S output, ESP32-S3 support firmware, and the internal `0xA5` UART control link.
 
@@ -144,9 +145,9 @@ versions, then signs and verifies target-specific `.ddjota` bundles plus the
 outer release manifest under the ignored `releases/` directory. Raw `.bin`
 files are retained for wired recovery only. See the
 [OTA update procedure](docs/OTA-UPDATE.md) for operation and the
-[OTA design record](docs/OTA_UPDATE_PLAN.md) for acceptance history. Unsigned
-OTA and rollback are hardware-accepted; signed-path hardware acceptance is the
-remaining Batch 6 step.
+[OTA design record](docs/OTA_UPDATE_PLAN.md) for acceptance history. Signed OTA
+and rollback are hardware-accepted on both targets; production key rotation and
+hardware-backed signing remain future hardening.
 
 ---
 
@@ -169,8 +170,8 @@ release packaging aligns signed versions with the ESP image descriptor limit.
 
 > [!WARNING]
 > The system is functional on the documented bench hardware, but enclosure
-> power/thermal/RF soak, signed-OTA hardware acceptance and production key
-> custody/rotation, longer dual-deck key-lock quality testing and selected
+> power/thermal/RF soak, production key rotation/hardware-backed signing,
+> longer dual-deck key-lock quality testing and selected
 > hardware acceptance rows remain before a production release.
 
 ### Implemented P4 Features (Audio & UI)

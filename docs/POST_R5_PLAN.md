@@ -1,8 +1,9 @@
 # Post-R5 Plan
 
-Status: planned 2026-07-14. R5A-R5F remediation is complete and hardware
-accepted at `RC1-121-gb7ac66a5`. This document is the ordered continuation plan
-for enclosure readiness and production hardening.
+Status: active 2026-07-14. R5A-R5F remediation and E1 signed-OTA acceptance are
+complete. The current accepted release is `RC1-123-g587cd7a1` on P4 `ota_0`
+and S3 `ota_1`. This document is the ordered continuation plan for enclosure
+readiness and production hardening.
 
 ## Execution Order
 
@@ -10,6 +11,8 @@ The batches below are intentionally ordered so destructive OTA and wired
 recovery tests finish while both USB service ports are still accessible.
 
 ## E1 — Signed OTA Hardware Acceptance
+
+Status: complete 2026-07-14.
 
 Goal: close the remaining signed-update and rollback gates on both targets.
 
@@ -34,6 +37,21 @@ Acceptance:
 - forced rollback returns to the previous valid slot;
 - P4 and S3 finish on the same recorded release;
 - wired recovery remains available throughout the batch.
+
+Acceptance record:
+
+- `keys/ota_signing_private.pem` has an offline USB backup and remains ignored;
+- release `RC1-123-g587cd7a1` was built and packaged with key ID `rel-001`;
+- P4 updated `factory / RC1-121-gb7ac66a5 -> ota_0 /
+  RC1-123-g587cd7a1`; S3 updated `ota_0 / RC1-121-gb7ac66a5 -> ota_1 /
+  RC1-123-g587cd7a1`;
+- both targets rejected wrong signing key, wrong key ID, chip/project mismatch
+  and truncated/extended bundles without changing the active slot;
+- both targets survived a signed upload interrupted after 128 KiB;
+- signed `ROLLBACK-TEST-*` images were rejected by the bootloader and returned
+  P4 to `ota_0` and S3 to `ota_1` on the accepted release;
+- final UI/touch, dual-deck playback, scratch, FLX4 input/LED and headphone-cue
+  smoke passed.
 
 ## E2 — Enclosure Wiring And Service Readiness
 
@@ -134,9 +152,9 @@ Acceptance:
 
 ## Resume Point
 
-Start the next session with **E1 — Signed OTA Hardware Acceptance**, task 1:
-confirm the private-key backup location and inspect the current release-package
-inputs before generating or uploading a new bundle.
+Start the next session with **E2 — Enclosure Wiring And Service Readiness**,
+task 1: verify the final common-ground and independent 5 V power topology before
+the boards become difficult to access.
 
 Keep `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md`, `DOCUMENTATION_STATUS.md`
 and this plan synchronized as each acceptance gate closes.
