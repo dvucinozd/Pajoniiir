@@ -253,7 +253,10 @@ Roles:
 - **P4 `controller_profile_manager`**: scans `/sd/controllers` at boot, validates
   each S3CP header (magic/version/CRC), keeps a registry, and matches the
   connected controller by VID/PID. On a match it streams the `.s3bin` to the S3
-  and reports connection/profile state through `/api/status`.
+  and reports connection/profile state through `/api/status`. The same manager
+  serializes web installs against profile transfer, atomically swaps the SD
+  file, rescans into a new registry snapshot, invalidates the old activation
+  cache and queues the matching profile for S3 activation again.
 - **S3 `controller_profile` + `controller_profile_runtime`**: parse the received
   profile and run a table-driven MIDI-in mapper and LED-out mapper that emit the
   same `control_link` semantic vocabulary the built-in map uses.
@@ -268,6 +271,17 @@ controller connect
   -> S3 maps MIDI IN and LED OUT through the active profile (FLX4 map fallback)
   -> P4 deck_core / audio_engine / UI are unchanged: they still receive the
      same semantic events and send the same semantic LED frames
+```
+
+Maintenance flow:
+
+```text
+compiled profile.s3bin
+  -> P4 Wi-Fi Remote POST /api/controller-profile
+  -> strict directory ID + bounded body + S3CP length/CRC validation
+  -> same-directory upload, fsync, backup and atomic rename on SD
+  -> locked registry rescan + old S3 activation cache invalidation
+  -> profile sender transfers and activates the matching profile on S3
 ```
 
 `/api/status.controller.active_profile` is deliberately stricter than a VID/PID

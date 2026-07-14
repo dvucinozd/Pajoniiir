@@ -325,6 +325,158 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     return send_rc;
 }
 
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
+{
+    controller_profile_registry_t *reg = calloc(1, sizeof(*reg));
+    char *json = malloc(4096);
+    if (!reg || !json) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+    if (controller_profile_manager_get_registry_snapshot(reg) != ESP_OK) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile manager unavailable");
+    }
+    size_t used = 0;
+    int n = snprintf(json, 4096, "{\"profiles\":[");
+    if (n < 0 || n >= 4096) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile list overflow");
+    }
+    used = (size_t)n;
+    for (uint8_t i = 0; i < reg->count; i++) {
+        const controller_profile_meta_t *m = &reg->profiles[i];
+        n = snprintf(json + used, 4096 - used,
+                     "%s{\"id\":\"%s\",\"valid\":%s,\"vid\":\"0x%04X\","
+                     "\"pid\":\"0x%04X\",\"size\":%u}",
+                     i == 0 ? "" : ",", m->id,
+                     m->valid ? "true" : "false", m->vid, m->pid,
+                     (unsigned)m->size);
+        if (n < 0 || (size_t)n >= 4096 - used) {
+            free(reg);
+            free(json);
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Profile list overflow");
+        }
+        used += (size_t)n;
+    }
+    n = snprintf(json + used, 4096 - used, "],\"count\":%u}",
+                 (unsigned)reg->count);
+    if (n < 0 || (size_t)n >= 4096 - used) {
+        free(reg);
+        free(json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile list overflow");
+    }
+    used += (size_t)n;
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t rc = httpd_resp_send(req, json, used);
+    free(reg);
+    free(json);
+    return rc;
+}
+
+static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
+{
+    char id[CPM_ID_MAX] = {0};
+    if (httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-ID", id,
+                                    sizeof(id)) != ESP_OK ||
+        !controller_profile_id_valid(id)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid or missing X-DDJ-Profile-ID");
+    }
+    if (!web_api_profile_content_length_valid((size_t)req->content_len)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Profile size must be 32..16384 bytes");
+    }
+
+    char overwrite_header[4] = {0};
+    const char *overwrite_value = NULL;
+    size_t overwrite_len = httpd_req_get_hdr_value_len(
+        req, "X-DDJ-Profile-Overwrite");
+    if (overwrite_len > 0) {
+        if (overwrite_len >= sizeof(overwrite_header) ||
+            httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-Overwrite",
+                                        overwrite_header,
+                                        sizeof(overwrite_header)) != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "Invalid X-DDJ-Profile-Overwrite");
+        }
+        overwrite_value = overwrite_header;
+    }
+    bool overwrite = false;
+    if (!web_api_profile_overwrite_parse(overwrite_value, &overwrite)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Overwrite must be 0 or 1");
+    }
+
+    size_t expected = (size_t)req->content_len;
+    uint8_t *blob = malloc(expected);
+    if (!blob) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+    size_t received_total = 0;
+    while (received_total < expected) {
+        int received = ota_http_recv(req, blob + received_total,
+                                     expected - received_total);
+        if (received <= 0) {
+            free(blob);
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                httpd_resp_set_status(req, "408 Request Timeout");
+                return httpd_resp_send(req, "Profile upload timed out",
+                                       HTTPD_RESP_USE_STRLEN);
+            }
+            return ESP_FAIL;
+        }
+        received_total += (size_t)received;
+    }
+
+    controller_profile_meta_t meta = {0};
+    esp_err_t rc = controller_profile_manager_install_profile(
+        id, blob, received_total, overwrite, &meta);
+    free(blob);
+    if (rc == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid S3CP profile or CRC");
+    }
+    if (rc == ESP_ERR_INVALID_STATE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req,
+                               "Profile exists or manager is busy",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "profile '%s' install failed: %s", id,
+                 esp_err_to_name(rc));
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "SD profile install failed");
+    }
+
+    char json[256];
+    int n = snprintf(json, sizeof(json),
+                     "{\"ok\":true,\"id\":\"%s\",\"size\":%u,"
+                     "\"vid\":\"0x%04X\",\"pid\":\"0x%04X\"}",
+                     meta.id, (unsigned)meta.size, meta.vid, meta.pid);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Profile response overflow");
+    }
+    httpd_resp_set_status(req, overwrite ? "200 OK" : "201 Created");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+#endif
+
 // GET /api/status
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
@@ -402,8 +554,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     char controller_json[256] = {0};
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     {
-        const controller_profile_registry_t *reg =
-            controller_profile_manager_get_registry();
+        controller_profile_registry_t *reg = calloc(1, sizeof(*reg));
+        if (!reg) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "No memory for profile status");
+        }
+        (void)controller_profile_manager_get_registry_snapshot(reg);
         char product_esc[2 * CPM_PRODUCT_MAX + 8] = {0};
         web_api_json_escape(reg->connected_product, product_esc, sizeof(product_esc));
         const char *active = (reg->active_index >= 0 &&
@@ -422,6 +578,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                        (reg->connected_caps & CTRL_DESC_CAP_MIDI_OUT) != 0,
                                        (reg->connected_caps & CTRL_DESC_CAP_USB_AUDIO) != 0,
                                        active_esc, state_esc, reg->count);
+        free(reg);
     }
 #else
     web_api_format_controller_json(controller_json, sizeof(controller_json),
@@ -902,6 +1059,26 @@ esp_err_t web_server_start(void)
     };
     rc = register_uri_or_stop(s_web_server, &ota_p4_uri);
     if (rc != ESP_OK) return rc;
+
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    httpd_uri_t controller_profiles_uri = {
+        .uri = "/api/controller-profiles",
+        .method = HTTP_GET,
+        .handler = api_controller_profiles_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &controller_profiles_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t controller_profile_upload_uri = {
+        .uri = "/api/controller-profile",
+        .method = HTTP_POST,
+        .handler = api_controller_profile_upload_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &controller_profile_upload_uri);
+    if (rc != ESP_OK) return rc;
+#endif
 
     httpd_uri_t library_uri = {
         .uri = "/api/library*",

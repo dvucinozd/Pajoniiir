@@ -401,4 +401,83 @@ function uploadP4Firmware() {
     xhr.send(file);
 }
 
+async function refreshControllerProfiles() {
+    const info = document.getElementById('profile-list-info');
+    if (!info) return;
+    try {
+        const response = await fetch('/api/controller-profiles', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text());
+        const data = await response.json();
+        const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+        info.innerText = profiles.length
+            ? `SD profiles: ${profiles.map(p => `${p.id}${p.valid ? '' : ' (invalid)'}`).join(', ')}`
+            : 'No controller profiles found on the SD card.';
+    } catch (err) {
+        info.innerText = `Profile list unavailable: ${err.message}`;
+    }
+}
+
+function uploadControllerProfile() {
+    const idInput = document.getElementById('profile-id');
+    const fileInput = document.getElementById('profile-file');
+    const overwriteInput = document.getElementById('profile-overwrite');
+    const button = document.getElementById('profile-upload-btn');
+    const progress = document.getElementById('profile-progress');
+    const status = document.getElementById('profile-status');
+    const id = idInput ? idInput.value.trim() : '';
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    const overwrite = Boolean(overwriteInput && overwriteInput.checked);
+
+    if (!/^[A-Za-z0-9_-]{1,39}$/.test(id)) {
+        status.innerText = 'Profile ID may contain only letters, digits, _ and - (max 39).';
+        return;
+    }
+    if (!file) {
+        status.innerText = 'Select a compiled profile.s3bin first.';
+        return;
+    }
+    if (!file.name.toLowerCase().endsWith('.s3bin')) {
+        status.innerText = 'Select a compiled .s3bin profile, not profile.json.';
+        return;
+    }
+    if (file.size < 32 || file.size > 16384) {
+        status.innerText = 'Profile must be between 32 and 16384 bytes.';
+        return;
+    }
+
+    const action = overwrite ? 'OVERWRITE' : 'install';
+    if (!confirm(`${action} SD profile "${id}" with ${file.name} (${file.size} bytes)?`)) return;
+
+    button.disabled = true;
+    progress.value = 0;
+    status.innerText = 'Uploading and validating...';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/controller-profile');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-DDJ-Profile-ID', id);
+    xhr.setRequestHeader('X-DDJ-Profile-Overwrite', overwrite ? '1' : '0');
+    xhr.upload.onprogress = event => {
+        if (event.lengthComputable) progress.value = Math.round(event.loaded * 100 / event.total);
+    };
+    xhr.onload = () => {
+        button.disabled = false;
+        if (xhr.status >= 200 && xhr.status < 300) {
+            progress.value = 100;
+            status.innerText = 'Profile validated and stored; S3 activation is queued.';
+            refreshControllerProfiles();
+            refreshFirmwareStatus();
+        } else if (xhr.status === 409 && !overwrite) {
+            status.innerText = 'Profile already exists. Enable overwrite and confirm again.';
+        } else {
+            status.innerText = `Profile rejected: ${xhr.responseText || xhr.status}`;
+        }
+    };
+    xhr.onerror = () => {
+        button.disabled = false;
+        status.innerText = 'Upload connection failed. The previous SD profile remains intact.';
+    };
+    xhr.send(file);
+}
+
 refreshFirmwareStatus();
+refreshControllerProfiles();

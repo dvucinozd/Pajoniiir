@@ -185,3 +185,25 @@ uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_kn
     }
     return pos_ms;
 }
+
+bool web_api_profile_content_length_valid(size_t content_len)
+{
+    return content_len >= WEB_API_PROFILE_MIN_SIZE &&
+           content_len <= WEB_API_PROFILE_MAX_SIZE;
+}
+
+bool web_api_profile_overwrite_parse(const char *value, bool *overwrite)
+{
+    if (!overwrite) {
+        return false;
+    }
+    if (!value || value[0] == '\0' || strcmp(value, "0") == 0) {
+        *overwrite = false;
+        return true;
+    }
+    if (strcmp(value, "1") == 0) {
+        *overwrite = true;
+        return true;
+    }
+    return false;
+}

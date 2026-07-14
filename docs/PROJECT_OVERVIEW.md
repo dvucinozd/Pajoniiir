@@ -231,9 +231,14 @@ beyond the DDJ-FLX4 without a firmware rebuild. Profiles live on the SD/TF card
 (`/controllers/<name>/profile.s3bin`); the P4 matches the connected controller
 by VID/PID and transfers the profile to the S3 over the UART `0xA6` bulk layer,
 which then maps controller MIDI in/out through it (built-in FLX4 map is the
-fallback). The firmware side (Phases 1–7 + 11 of the multi-controller plan) is
+fallback). A compiled profile can also be atomically overwritten from the P4
+Wi-Fi Remote; the P4 validates it, preserves a recoverable backup, rescans and
+queues the matching profile for S3 activation without physical SD access. The
+firmware side (Phases 1–7 + 11 of the multi-controller plan) is
 implemented, host-tested, and hardware-verified on the profile-loading path;
 see [ARCHITECTURE.md](ARCHITECTURE.md) and
-[CONTROLLER_PROFILE_SCHEMA.md](CONTROLLER_PROFILE_SCHEMA.md). Out of firmware
+[CONTROLLER_PROFILE_SCHEMA.md](CONTROLLER_PROFILE_SCHEMA.md). The web overwrite
+path is software-complete and its hardware procedure is in
+[CONTROLLER_PROFILE_UPDATE.md](CONTROLLER_PROFILE_UPDATE.md). Out of firmware
 scope: the Windows Profile Builder tool and validating a first non-FLX4
 controller end-to-end.

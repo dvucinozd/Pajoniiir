@@ -34,3 +34,11 @@ int web_api_format_controller_json(char *dst,
                                    unsigned profile_count);
 int web_api_alloc_printf(char **out, const char *fmt, ...);
 uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known);
+
+#define WEB_API_PROFILE_MIN_SIZE 32u
+#define WEB_API_PROFILE_MAX_SIZE 16384u
+
+bool web_api_profile_content_length_valid(size_t content_len);
+/* Missing/empty means overwrite=false. Only the explicit values "0" and "1"
+ * are accepted; returns false for malformed input. */
+bool web_api_profile_overwrite_parse(const char *value, bool *overwrite);

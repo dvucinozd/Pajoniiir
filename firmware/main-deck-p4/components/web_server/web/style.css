@@ -1108,7 +1108,8 @@ body.browser-expanded .browser-card .library-container {
 
 }
 
-.ota-card {
+.ota-card,
+.profile-card {
     margin: var(--sp-3);
     padding: var(--sp-3);
     border: 1px solid var(--border);
@@ -1117,7 +1118,7 @@ body.browser-expanded .browser-card .library-container {
     gap: var(--sp-2);
 }
 
-.ota-warning {
+.maintenance-warning {
     color: #ffbf69;
     font-size: 12px;
 }
@@ -1129,4 +1130,38 @@ body.browser-expanded .browser-card .library-container {
 
 #ota-progress {
     width: 100%;
+}
+
+#profile-progress {
+    width: 100%;
+}
+
+.profile-field {
+    display: grid;
+    gap: 6px;
+    max-width: 420px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.profile-field input {
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+}
+
+.profile-overwrite {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #ffbf69;
+    font-size: 13px;
+}
+
+.btn-profile {
+    width: max-content;
+    background: #1d6b55;
 }

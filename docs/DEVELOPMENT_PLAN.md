@@ -1401,3 +1401,25 @@ and service readiness is next.
   45-second simultaneous capture while both platters were scratch-stressed had
   no reset, panic, stack overflow, watchdog, underrun/overrun, link gap or CRC
   error; the user confirmed correct operation on both decks.
+
+## Phase 19: Enclosure-Safe Controller Profile Updates (2026-07-14)
+
+Status: software implementation complete; signed OTA and hardware acceptance
+pending.
+
+- Batch 1 adds strict profile IDs, pre-write S3CP/CRC validation and a bounded
+  same-directory staging/backup swap with boot-scan recovery.
+- Batch 2 adds `GET /api/controller-profiles` and bounded binary
+  `POST /api/controller-profile` with explicit overwrite semantics and clear
+  400/408/409/500 failures.
+- Batch 3 adds the P4 Wi-Fi Remote profile card, upload progress, client-side
+  validation and a separate overwrite confirmation.
+- Batch 4 makes registry reads snapshot-based, serializes storage against the
+  sender task, preserves the live controller descriptor across rescans,
+  invalidates the previous activation cache and queues the matched profile for
+  S3 transfer again.
+- Host coverage includes ID traversal rejection, corrupt/no-overwrite safety,
+  successful replacement, interrupted-swap recovery, corrupt-target backup
+  restoration and descriptor-preserving reactivation state. The ESP32-P4
+  firmware build passes at `0x208020` bytes with 49% of the smallest app
+  partition free.

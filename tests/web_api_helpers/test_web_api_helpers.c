@@ -108,6 +108,25 @@ static void test_controller_json_formats_connected_and_absent(void)
         "\"profile_state\":\"idle\",\"profiles\":0}") == 0);
 }
 
+static void test_profile_upload_policy_is_bounded_and_explicit(void)
+{
+    bool overwrite = true;
+
+    assert(!web_api_profile_content_length_valid(0));
+    assert(!web_api_profile_content_length_valid(WEB_API_PROFILE_MIN_SIZE - 1u));
+    assert(web_api_profile_content_length_valid(WEB_API_PROFILE_MIN_SIZE));
+    assert(web_api_profile_content_length_valid(WEB_API_PROFILE_MAX_SIZE));
+    assert(!web_api_profile_content_length_valid(WEB_API_PROFILE_MAX_SIZE + 1u));
+
+    assert(web_api_profile_overwrite_parse(NULL, &overwrite) && !overwrite);
+    assert(web_api_profile_overwrite_parse("0", &overwrite) && !overwrite);
+    assert(web_api_profile_overwrite_parse("1", &overwrite) && overwrite);
+    assert(!web_api_profile_overwrite_parse("true", &overwrite));
+    assert(!web_api_profile_overwrite_parse("01", &overwrite));
+    assert(!web_api_profile_overwrite_parse("1 ", &overwrite));
+    assert(!web_api_profile_overwrite_parse("1", NULL));
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
@@ -118,6 +137,7 @@ int main(void)
     test_alloc_printf_handles_payload_larger_than_legacy_status_buffer();
     test_clamp_seek_ms_bounds_to_loaded_track_duration();
     test_controller_json_formats_connected_and_absent();
+    test_profile_upload_policy_is_bounded_and_explicit();
 
     puts("web_api_helpers tests passed");
     return 0;

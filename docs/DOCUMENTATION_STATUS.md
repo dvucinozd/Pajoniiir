@@ -1,6 +1,7 @@
 # Documentation Status
 
-Last full audit: **2026-07-14** on `master` after E1 signed-OTA acceptance.
+Last full audit: **2026-07-14** on `master` after E1 signed-OTA acceptance and
+the enclosure-safe controller-profile upload implementation.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. The hardware-accepted release at the
@@ -15,8 +16,8 @@ When documents disagree, use this order:
 
 1. current firmware, host tests and build configuration;
 2. active operational documents: `ARCHITECTURE.md`, `CONTROL_LINK_PROTOCOL.md`,
-   `DDJ_FLX4_MIDI_MAP.md`, `HARDWARE_WIRING.md`, `OTA-UPDATE.md` and
-   `STARTUP_CHECKLIST.md`;
+   `DDJ_FLX4_MIDI_MAP.md`, `HARDWARE_WIRING.md`, `OTA-UPDATE.md`,
+   `CONTROLLER_PROFILE_UPDATE.md` and `STARTUP_CHECKLIST.md`;
 3. dated validation records under `validation/`;
 4. dated design records under `superpowers/specs/`;
 5. imported or vendor reference material under `reference/`.
@@ -37,7 +38,7 @@ in the active documents.
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
 | UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero |
 | OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14 |
-| Profiles | SD-card controller-profile loading, registry matching and S3 transfer implemented and hardware-verified with the FLX4 profile |
+| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; atomic web overwrite/rescan/reactivation is software-complete and awaits signed-OTA hardware acceptance |
 
 ## Remaining work
 
@@ -47,6 +48,8 @@ in the active documents.
 - perform enclosure power, thermal, RF and long-duration audio soaks;
 - run longer simultaneous dual-deck key-lock quality/CPU testing;
 - validate a first non-FLX4 controller profile;
+- hardware-accept web profile overwrite, corrupt/interrupted rejection,
+  automatic S3 reactivation and reboot persistence;
 - complete only the still-pending hardware rows identified in the MIDI and
   validation documents.
 

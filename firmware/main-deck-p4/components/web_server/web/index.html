@@ -214,11 +214,31 @@
         </div>
     </section>
 
+    <section class="profile-card">
+        <div>
+            <h2 class="browser-title">CONTROLLER PROFILE</h2>
+            <p id="profile-list-info">Reading profiles from the SD card...</p>
+            <p class="maintenance-warning">Upload only a compiled <code>profile.s3bin</code>. The P4 validates its format and CRC before replacing anything on the SD card.</p>
+        </div>
+        <label class="profile-field">
+            <span>Profile ID / SD directory</span>
+            <input id="profile-id" type="text" value="pioneer_ddj_flx4" maxlength="39" pattern="[A-Za-z0-9_-]+" autocomplete="off" spellcheck="false">
+        </label>
+        <input id="profile-file" type="file" accept=".s3bin,application/octet-stream">
+        <label class="profile-overwrite">
+            <input id="profile-overwrite" type="checkbox">
+            <span>Allow overwrite of an existing profile</span>
+        </label>
+        <button class="btn btn-profile" id="profile-upload-btn" onclick="uploadControllerProfile()">UPLOAD PROFILE</button>
+        <progress id="profile-progress" max="100" value="0"></progress>
+        <span id="profile-status"></span>
+    </section>
+
     <section class="ota-card">
         <div>
             <h2 class="browser-title">P4 FIRMWARE UPDATE</h2>
             <p id="ota-firmware-info">Reading firmware status...</p>
-            <p class="ota-warning">Select only the signed P4 .ddjota bundle. Playback stops during upload. Keep power connected until the controller restarts.</p>
+            <p class="maintenance-warning">Select only the signed P4 .ddjota bundle. Playback stops during upload. Keep power connected until the controller restarts.</p>
         </div>
         <input id="ota-file" type="file" accept=".ddjota,application/octet-stream">
         <button class="btn btn-ota" id="ota-upload-btn" onclick="uploadP4Firmware()">UPDATE P4</button>
@@ -226,6 +246,6 @@
         <span id="ota-status"></span>
     </section>
 
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>

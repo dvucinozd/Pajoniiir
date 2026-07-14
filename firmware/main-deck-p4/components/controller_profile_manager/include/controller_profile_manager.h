@@ -29,6 +29,9 @@ extern "C" {
 #define CPM_ID_MAX           40
 #define CPM_PATH_MAX         160
 #define CPM_MAX_PROFILE_SIZE 16384
+#define CPM_PROFILE_FILENAME "profile.s3bin"
+#define CPM_UPLOAD_FILENAME  ".profile.s3bin.upload"
+#define CPM_BACKUP_FILENAME  ".profile.s3bin.backup"
 
 /* S3CP header layout (little-endian). Must match the schema/compiler. */
 #define CPM_MAGIC        "S3CP"
@@ -78,8 +81,15 @@ esp_err_t controller_profile_manager_init(void);
 /* Scan CONFIG_CONTROLLER_PROFILE_SD_PATH and log the discovered profiles. */
 esp_err_t controller_profile_manager_scan_storage(void);
 
-/* Read-only view of the singleton registry (for UI / web status). */
-const controller_profile_registry_t *controller_profile_manager_get_registry(void);
+/* Install a validated profile into the configured SD registry. Runtime rescan
+ * is completed and reactivation is queued before this returns. */
+esp_err_t controller_profile_manager_install_profile(
+    const char *id, const uint8_t *data, size_t len, bool overwrite,
+    controller_profile_meta_t *out_meta);
+
+/* Thread-safe registry snapshot for UI / web status. */
+esp_err_t controller_profile_manager_get_registry_snapshot(
+    controller_profile_registry_t *out_registry);
 
 /* Record a connected controller (fed by the S3 descriptor report in a later
  * phase) and re-select the active profile. Returns the matched index or -1. */
@@ -103,6 +113,23 @@ uint32_t controller_profile_crc32(const uint8_t *data, size_t len);
 esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
                                         controller_profile_meta_t *meta);
 
+/* Profile IDs are also directory names. Only ASCII letters, digits, '_' and
+ * '-' are accepted so an HTTP-provided ID can never escape `root`. */
+bool controller_profile_id_valid(const char *id);
+
+/* Recover a profile directory after an interrupted same-directory swap.
+ * A valid target is authoritative; otherwise a backup is restored. Any
+ * incomplete upload is discarded. */
+esp_err_t controller_profile_storage_recover(const char *root, const char *id);
+
+/* Validate and atomically install a complete S3CP blob as
+ * `<root>/<id>/profile.s3bin`. The previous target is retained unless the new
+ * file has been fully written, synced, renamed and revalidated. */
+esp_err_t controller_profile_storage_install(const char *root, const char *id,
+                                             const uint8_t *data, size_t len,
+                                             bool overwrite,
+                                             controller_profile_meta_t *out_meta);
+
 /* Scan `root` for `<name>/profile.s3bin` entries, validating each header and
  * populating `reg`. Returns ESP_OK (even if zero valid profiles are found),
  * ESP_ERR_NOT_FOUND when `root` cannot be opened, ESP_ERR_INVALID_ARG on bad
@@ -118,6 +145,13 @@ int controller_profile_registry_match(const controller_profile_registry_t *reg,
  * profile. Returns the matched index or -1. */
 int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg,
                                               uint16_t vid, uint16_t pid);
+
+/* Replace only the scanned profile inventory while preserving the connected
+ * controller descriptor. A present controller is re-matched and intentionally
+ * returned to MATCHED so the new bytes must be activated again. */
+void controller_profile_registry_apply_rescan(
+    controller_profile_registry_t *registry,
+    const controller_profile_registry_t *scanned);
 
 void controller_profile_registry_mark_transfer_started(controller_profile_registry_t *reg,
                                                        int index);

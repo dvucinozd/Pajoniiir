@@ -38,6 +38,14 @@ Design constraints:
         profile.s3bin     compiled runtime table (what P4 sends to S3)
 ```
 
+The P4 Wi-Fi Remote can install or overwrite the compiled `profile.s3bin`
+without physical SD-card access. It never accepts `profile.json`: compile on a
+development machine first, then follow
+[`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md). The upload path
+validates the S3CP header, exact length and CRC before touching the current
+profile, uses a same-directory upload file and backup, and recovers an
+interrupted swap during the next registry scan.
+
 ## profile.json
 
 ```json

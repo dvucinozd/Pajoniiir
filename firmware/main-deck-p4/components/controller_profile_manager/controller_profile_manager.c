@@ -1,9 +1,18 @@
 #include "controller_profile_manager.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 /* ── Pure helpers (host-testable) ──────────────────────────────────────────── */
 
@@ -71,12 +80,222 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
     return ESP_OK;
 }
 
+bool controller_profile_id_valid(const char *id)
+{
+    if (!id) {
+        return false;
+    }
+    size_t len = strlen(id);
+    if (len == 0 || len >= CPM_ID_MAX) {
+        return false;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)id[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool build_storage_path(char *out, size_t out_size, const char *root,
+                               const char *id, const char *filename)
+{
+    int n = snprintf(out, out_size, "%s/%s%s%s", root, id,
+                     filename ? "/" : "", filename ? filename : "");
+    return n >= 0 && (size_t)n < out_size;
+}
+
+static bool path_exists(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static esp_err_t validate_profile_file(const char *path,
+                                       controller_profile_meta_t *meta)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    uint8_t *buf = (uint8_t *)malloc(CPM_MAX_PROFILE_SIZE + 1);
+    if (!buf) {
+        fclose(f);
+        return ESP_ERR_NO_MEM;
+    }
+    size_t len = fread(buf, 1, CPM_MAX_PROFILE_SIZE + 1, f);
+    bool read_ok = !ferror(f);
+    fclose(f);
+    esp_err_t rc = read_ok
+                       ? controller_profile_meta_parse(buf, len, meta)
+                       : ESP_FAIL;
+    free(buf);
+    return rc;
+}
+
+static esp_err_t ensure_directory(const char *path)
+{
+#ifdef _WIN32
+    int rc = _mkdir(path);
+#else
+    int rc = mkdir(path, 0775);
+#endif
+    if (rc == 0 || errno == EEXIST) {
+        return ESP_OK;
+    }
+    return ESP_FAIL;
+}
+
+static esp_err_t sync_file(FILE *f)
+{
+    if (fflush(f) != 0) {
+        return ESP_FAIL;
+    }
+#ifdef _WIN32
+    return _commit(_fileno(f)) == 0 ? ESP_OK : ESP_FAIL;
+#else
+    return fsync(fileno(f)) == 0 ? ESP_OK : ESP_FAIL;
+#endif
+}
+
+esp_err_t controller_profile_storage_recover(const char *root, const char *id)
+{
+    char target[CPM_PATH_MAX];
+    char upload[CPM_PATH_MAX];
+    char backup[CPM_PATH_MAX];
+    if (!root || !controller_profile_id_valid(id) ||
+        !build_storage_path(target, sizeof(target), root, id,
+                            CPM_PROFILE_FILENAME) ||
+        !build_storage_path(upload, sizeof(upload), root, id,
+                            CPM_UPLOAD_FILENAME) ||
+        !build_storage_path(backup, sizeof(backup), root, id,
+                            CPM_BACKUP_FILENAME)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (path_exists(target)) {
+        controller_profile_meta_t target_meta = {0};
+        if (validate_profile_file(target, &target_meta) != ESP_OK &&
+            path_exists(backup)) {
+            controller_profile_meta_t backup_meta = {0};
+            if (validate_profile_file(backup, &backup_meta) == ESP_OK) {
+                if (remove(target) != 0 || rename(backup, target) != 0) {
+                    return ESP_FAIL;
+                }
+            }
+        }
+        (void)remove(upload);
+        (void)remove(backup);
+        return ESP_OK;
+    }
+    if (path_exists(backup) && rename(backup, target) != 0) {
+        return ESP_FAIL;
+    }
+    (void)remove(upload);
+    return ESP_OK;
+}
+
+esp_err_t controller_profile_storage_install(const char *root, const char *id,
+                                             const uint8_t *data, size_t len,
+                                             bool overwrite,
+                                             controller_profile_meta_t *out_meta)
+{
+    controller_profile_meta_t parsed = {0};
+    if (!root || !controller_profile_id_valid(id) || !data ||
+        controller_profile_meta_parse(data, len, &parsed) != ESP_OK) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char profile_dir[CPM_PATH_MAX];
+    char target[CPM_PATH_MAX];
+    char upload[CPM_PATH_MAX];
+    char backup[CPM_PATH_MAX];
+    if (!build_storage_path(profile_dir, sizeof(profile_dir), root, id, NULL) ||
+        !build_storage_path(target, sizeof(target), root, id,
+                            CPM_PROFILE_FILENAME) ||
+        !build_storage_path(upload, sizeof(upload), root, id,
+                            CPM_UPLOAD_FILENAME) ||
+        !build_storage_path(backup, sizeof(backup), root, id,
+                            CPM_BACKUP_FILENAME)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (ensure_directory(root) != ESP_OK ||
+        ensure_directory(profile_dir) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    esp_err_t rc = controller_profile_storage_recover(root, id);
+    if (rc != ESP_OK) {
+        return rc;
+    }
+
+    bool had_target = path_exists(target);
+    if (had_target && !overwrite) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    FILE *f = fopen(upload, "wb");
+    if (!f) {
+        return ESP_FAIL;
+    }
+    bool write_ok = fwrite(data, 1, len, f) == len && sync_file(f) == ESP_OK;
+    if (fclose(f) != 0) {
+        write_ok = false;
+    }
+    if (!write_ok) {
+        (void)remove(upload);
+        return ESP_FAIL;
+    }
+
+    controller_profile_meta_t disk_meta = {0};
+    rc = validate_profile_file(upload, &disk_meta);
+    if (rc != ESP_OK) {
+        (void)remove(upload);
+        return rc;
+    }
+
+    if (had_target) {
+        (void)remove(backup);
+        if (rename(target, backup) != 0) {
+            (void)remove(upload);
+            return ESP_FAIL;
+        }
+    }
+    if (rename(upload, target) != 0) {
+        if (had_target) {
+            (void)rename(backup, target);
+        }
+        (void)remove(upload);
+        return ESP_FAIL;
+    }
+
+    memset(&disk_meta, 0, sizeof(disk_meta));
+    rc = validate_profile_file(target, &disk_meta);
+    if (rc != ESP_OK) {
+        (void)remove(target);
+        if (had_target) {
+            (void)rename(backup, target);
+        }
+        return rc;
+    }
+    (void)remove(backup);
+
+    snprintf(disk_meta.id, sizeof(disk_meta.id), "%s", id);
+    snprintf(disk_meta.path, sizeof(disk_meta.path), "%s", target);
+    if (out_meta) {
+        *out_meta = disk_meta;
+    }
+    return ESP_OK;
+}
+
 /* Read <dir>/profile.s3bin (bounded) and header-validate it into *meta. */
 static bool load_profile_meta(const char *dir_path, const char *name,
                               controller_profile_meta_t *meta)
 {
     char path[CPM_PATH_MAX];
-    int n = snprintf(path, sizeof(path), "%s/%s/profile.s3bin", dir_path, name);
+    int n = snprintf(path, sizeof(path), "%s/%s/%s", dir_path, name,
+                     CPM_PROFILE_FILENAME);
     if (n < 0 || (size_t)n >= sizeof(path)) {
         return false;
     }
@@ -127,6 +346,12 @@ esp_err_t controller_profile_scan_dir(const char *root,
         if (entry->d_name[0] == '.') {
             continue;
         }
+        if (!controller_profile_id_valid(entry->d_name)) {
+            continue;
+        }
+        if (controller_profile_storage_recover(root, entry->d_name) != ESP_OK) {
+            continue;
+        }
         controller_profile_meta_t meta;
         if (load_profile_meta(root, entry->d_name, &meta)) {
             reg->profiles[reg->count++] = meta;
@@ -174,6 +399,32 @@ int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg
         reg->transfer_state = CPM_TRANSFER_UNSUPPORTED;
     }
     return idx;
+}
+
+void controller_profile_registry_apply_rescan(
+    controller_profile_registry_t *registry,
+    const controller_profile_registry_t *scanned)
+{
+    if (!registry || !scanned) {
+        return;
+    }
+    bool present = registry->controller_present;
+    uint16_t vid = registry->connected_vid;
+    uint16_t pid = registry->connected_pid;
+    uint16_t caps = registry->connected_caps;
+    char product[CPM_PRODUCT_MAX + 1];
+    memcpy(product, registry->connected_product, sizeof(product));
+
+    *registry = *scanned;
+    registry->controller_present = present;
+    registry->connected_vid = vid;
+    registry->connected_pid = pid;
+    registry->connected_caps = caps;
+    memcpy(registry->connected_product, product,
+           sizeof(registry->connected_product));
+    if (present) {
+        (void)controller_profile_registry_on_descriptor(registry, vid, pid);
+    }
 }
 
 void controller_profile_registry_mark_transfer_started(controller_profile_registry_t *reg,
@@ -233,6 +484,7 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 static const char *TAG = "ctrl_profile";
 
 static controller_profile_registry_t s_registry;
+static SemaphoreHandle_t s_manager_mutex;
 
 /* Profile-transfer sender: runs off the control-link RX task so the multi-KB
  * stream to the S3 never blocks event/descriptor handling. */
@@ -253,6 +505,17 @@ static volatile uint8_t s_reply_reason;
 static volatile bool s_transferred_valid;
 static volatile uint16_t s_transferred_vid;
 static volatile uint16_t s_transferred_pid;
+
+static bool cpm_lock(void)
+{
+    return s_manager_mutex &&
+           xSemaphoreTake(s_manager_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+static void cpm_unlock(void)
+{
+    xSemaphoreGive(s_manager_mutex);
+}
 
 static void cpm_on_reply(bool ack, uint8_t ref_type, uint8_t reason)
 {
@@ -275,18 +538,24 @@ static bool cpm_wait_reply(uint8_t expect_ref)
 
 static bool cpm_stream_profile(const controller_profile_meta_t *m)
 {
+    if (!cpm_lock()) {
+        return false;
+    }
     FILE *f = fopen(m->path, "rb");
     if (!f) {
         ESP_LOGW(TAG, "cannot open %s", m->path);
+        cpm_unlock();
         return false;
     }
     uint8_t *buf = malloc(m->size);
     if (!buf) {
         fclose(f);
+        cpm_unlock();
         return false;
     }
     size_t got = fread(buf, 1, m->size, f);
     fclose(f);
+    cpm_unlock();
     if (got != m->size) {
         free(buf);
         return false;
@@ -342,14 +611,22 @@ static void cpm_sender_task(void *arg)
         if (xQueueReceive(s_send_q, &idx, portMAX_DELAY) != pdTRUE) {
             continue;
         }
+        if (!cpm_lock()) {
+            continue;
+        }
         if (idx < 0 || idx >= (int)s_registry.count) {
+            cpm_unlock();
             continue;
         }
         controller_profile_meta_t m = s_registry.profiles[idx];
+        cpm_unlock();
         if (!m.valid) {
             continue;
         }
         bool ok = cpm_stream_profile(&m);
+        if (!cpm_lock()) {
+            continue;
+        }
         if (ok) {
             s_transferred_vid = m.vid;
             s_transferred_pid = m.pid;
@@ -359,6 +636,7 @@ static void cpm_sender_task(void *arg)
             s_transferred_valid = false;   /* retry on the next announcement */
             controller_profile_registry_mark_transfer_failed(&s_registry, idx);
         }
+        cpm_unlock();
         ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
                  ok ? "OK" : "FAILED");
     }
@@ -366,10 +644,21 @@ static void cpm_sender_task(void *arg)
 
 esp_err_t controller_profile_manager_init(void)
 {
+    if (!s_manager_mutex) {
+        s_manager_mutex = xSemaphoreCreateMutex();
+        if (!s_manager_mutex) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (!cpm_lock()) {
+        return ESP_FAIL;
+    }
     memset(&s_registry, 0, sizeof(s_registry));
     s_registry.matched_index = -1;
     s_registry.active_index = -1;
     s_registry.transfer_state = CPM_TRANSFER_IDLE;
+    s_transferred_valid = false;
+    cpm_unlock();
 
     if (!s_reply_sem) {
         s_reply_sem = xSemaphoreCreateBinary();
@@ -388,21 +677,43 @@ esp_err_t controller_profile_manager_init(void)
 
 esp_err_t controller_profile_manager_scan_storage(void)
 {
+    controller_profile_registry_t *scanned = calloc(1, sizeof(*scanned));
+    if (!scanned) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (!cpm_lock()) {
+        free(scanned);
+        return ESP_FAIL;
+    }
+    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
+        cpm_unlock();
+        free(scanned);
+        return ESP_ERR_INVALID_STATE;
+    }
     esp_err_t rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH,
-                                               &s_registry);
+                                               scanned);
     if (rc == ESP_ERR_NOT_FOUND) {
+        cpm_unlock();
+        free(scanned);
         ESP_LOGW(TAG, "no %s directory (SD missing or no profiles)",
                  CONFIG_CONTROLLER_PROFILE_SD_PATH);
         return rc;
     }
     if (rc != ESP_OK) {
+        cpm_unlock();
+        free(scanned);
         return rc;
     }
 
+    controller_profile_registry_apply_rescan(&s_registry, scanned);
+    *scanned = s_registry;
+    s_transferred_valid = false;
+    cpm_unlock();
+
     ESP_LOGI(TAG, "%u controller profile(s) in %s",
-             (unsigned)s_registry.count, CONFIG_CONTROLLER_PROFILE_SD_PATH);
-    for (uint8_t i = 0; i < s_registry.count; i++) {
-        const controller_profile_meta_t *m = &s_registry.profiles[i];
+             (unsigned)scanned->count, CONFIG_CONTROLLER_PROFILE_SD_PATH);
+    for (uint8_t i = 0; i < scanned->count; i++) {
+        const controller_profile_meta_t *m = &scanned->profiles[i];
         if (m->valid) {
             ESP_LOGI(TAG,
                      "  [%u] %s VID=0x%04X PID=0x%04X inputs=%u outputs=%u (%u B)",
@@ -414,16 +725,92 @@ esp_err_t controller_profile_manager_scan_storage(void)
                      (unsigned)i, m->id, m->path);
         }
     }
+    free(scanned);
     return ESP_OK;
 }
 
-const controller_profile_registry_t *controller_profile_manager_get_registry(void)
+esp_err_t controller_profile_manager_install_profile(
+    const char *id, const uint8_t *data, size_t len, bool overwrite,
+    controller_profile_meta_t *out_meta)
 {
-    return &s_registry;
+    controller_profile_registry_t *scanned = calloc(1, sizeof(*scanned));
+    if (!scanned) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (!cpm_lock()) {
+        free(scanned);
+        return ESP_FAIL;
+    }
+    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING ||
+        (s_send_q && uxQueueMessagesWaiting(s_send_q) > 0)) {
+        cpm_unlock();
+        free(scanned);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    controller_profile_meta_t installed;
+    esp_err_t rc = controller_profile_storage_install(
+        CONFIG_CONTROLLER_PROFILE_SD_PATH, id, data, len, overwrite,
+        &installed);
+    if (rc != ESP_OK) {
+        cpm_unlock();
+        free(scanned);
+        return rc;
+    }
+
+    rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH,
+                                     scanned);
+    if (rc != ESP_OK) {
+        cpm_unlock();
+        free(scanned);
+        return rc;
+    }
+    controller_profile_registry_apply_rescan(&s_registry, scanned);
+    bool reactivate = s_registry.controller_present;
+    uint16_t vid = s_registry.connected_vid;
+    uint16_t pid = s_registry.connected_pid;
+    uint16_t caps = s_registry.connected_caps;
+    char product[CPM_PRODUCT_MAX + 1];
+    memcpy(product, s_registry.connected_product, sizeof(product));
+    s_transferred_valid = false;
+    if (out_meta) {
+        *out_meta = installed;
+    }
+    cpm_unlock();
+    free(scanned);
+
+    ESP_LOGI(TAG, "profile '%s' installed (%u B), registry rescanned", id,
+             (unsigned)installed.size);
+    if (reactivate) {
+        (void)controller_profile_manager_on_descriptor_report(
+            vid, pid, caps, product);
+    }
+    return ESP_OK;
 }
 
-int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
+esp_err_t controller_profile_manager_get_registry_snapshot(
+    controller_profile_registry_t *out_registry)
 {
+    if (!out_registry) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!cpm_lock()) {
+        return ESP_FAIL;
+    }
+    *out_registry = s_registry;
+    cpm_unlock();
+    return ESP_OK;
+}
+
+static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid)
+{
+    if (s_registry.controller_present &&
+        s_registry.connected_vid == vid && s_registry.connected_pid == pid &&
+        s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
+        /* The S3 repeats its descriptor heartbeat. Do not reset MATCHED state
+         * or enqueue a second copy while the sender owns this profile. */
+        return controller_profile_registry_match(&s_registry, vid, pid);
+    }
     int idx = controller_profile_registry_on_descriptor(&s_registry, vid, pid);
     if (idx >= 0) {
         if (s_transferred_valid && s_transferred_vid == vid && s_transferred_pid == pid) {
@@ -452,10 +839,23 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
     return idx;
 }
 
+int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
+{
+    if (!cpm_lock()) {
+        return -1;
+    }
+    int idx = cpm_on_descriptor_locked(vid, pid);
+    cpm_unlock();
+    return idx;
+}
+
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                     uint16_t caps,
                                                     const char *product)
 {
+    if (!cpm_lock()) {
+        return -1;
+    }
     s_registry.connected_caps = caps;
     memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
     if (product) {
@@ -464,7 +864,9 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
     }
     ESP_LOGI(TAG, "connected controller '%s' caps=0x%04X",
              s_registry.connected_product, caps);
-    return controller_profile_manager_on_descriptor(vid, pid);
+    int idx = cpm_on_descriptor_locked(vid, pid);
+    cpm_unlock();
+    return idx;
 }
 
 #endif /* CONTROLLER_PROFILE_MANAGER_PC_TEST */

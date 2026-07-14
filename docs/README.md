@@ -19,6 +19,7 @@ scope, source-of-truth precedence and the accepted hardware baseline.
 - [`VINYL_SCRATCH_PLAN.md`](VINYL_SCRATCH_PLAN.md) — scratch design, remediation and hardware acceptance.
 - [`OTA-UPDATE.md`](OTA-UPDATE.md) — operator procedure for P4 and S3 OTA updates.
 - [`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) — OTA design, rollout batches and rollback evidence.
+- [`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md) — safe SD profile upload through the P4 web UI/API.
 - [`S3_WIFI_DEBUG_LOG.md`](S3_WIFI_DEBUG_LOG.md) — runtime S3 service AP/log viewer and OTA service.
 - [`bench-notes.md`](bench-notes.md) — dated hardware bench observations.
 

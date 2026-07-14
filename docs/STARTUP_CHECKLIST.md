@@ -493,7 +493,8 @@ supported controller) through a profile instead of the built-in map:
    drifts from `profile.json`).
 2. Copy to the SD/TF card so the layout is `SD:/controllers/<name>/profile.s3bin`
    (directory per controller; `profile.json` may sit alongside and is ignored by
-   the firmware). Rekordbox media stays on the USB drive.
+   the firmware), or upload the compiled file from the P4 Wi-Fi Remote
+   **CONTROLLER PROFILE** card. Rekordbox media stays on the USB drive.
 3. Insert the SD into the P4 and boot.
 
 Verification (hardware, 2026-07-09 — profile-loading path confirmed):
@@ -513,6 +514,12 @@ Verification (hardware, 2026-07-09 — profile-loading path confirmed):
   profile — pending controller being attached to the S3.
 
 Notes:
+
+- Web upload requires a profile ID containing only letters, digits, `_` and
+  `-` (1-39 characters), a 32-16384 byte `.s3bin`, and an explicit overwrite
+  confirmation if the ID already exists. See `CONTROLLER_PROFILE_UPDATE.md`.
+- [ ] Hardware-accept profile overwrite, automatic S3 reactivation, reboot
+  persistence, corrupt/truncated rejection and interrupted-upload recovery.
 
 - P4 serial is native USB-Serial-JTAG (COM15); early-boot app logs (including the
   `ctrl_profile:` scan line) are lost to non-interactive pyserial capture before
