@@ -1,4 +1,4 @@
-# DDJ-FFL4
+# PajoNiiiR BL-A1800
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4, a Seeed
 Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
