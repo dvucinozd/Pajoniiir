@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: current phase ledger, audited 2026-07-14.
+Status: current phase ledger, audited 2026-07-16.
 
 ## Executive status
 
@@ -12,14 +12,18 @@ Status: current phase ledger, audited 2026-07-14.
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
-| Controller profiles | Firmware path implemented, host-tested and FLX4-profile hardware-verified |
-| P4/S3 OTA and rollback | Signed update, rejection, interruption and forced rollback hardware-accepted on both targets 2026-07-14 |
+| Beat FX | Filter/Echo hardware-accepted; Flanger/Delay implemented, host-tested and deployed, with focused hardware smoke pending |
+| Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
+| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-131-gc391e306` deployed and boot-verified on both targets 2026-07-16 |
 
-Next release hardening is production key provisioning/rotation, enclosure
-power/thermal/RF soak, longer dual-deck key-lock
-quality testing, selected pending MIDI hardware rows and a first non-FLX4
-profile acceptance. Historical phase text below is retained as the
-implementation record.
+The latest fully functionally accepted hardware baseline remains
+`RC1-123-g587cd7a1`. Next release hardening starts with targeted functional
+acceptance of the installed `RC1-131-gc391e306` images, including Phase 20,
+Flanger/Delay and remote controller-profile paths. It then continues with
+production key provisioning/rotation, enclosure power/thermal/RF soak, longer
+dual-deck key-lock quality testing, selected pending MIDI hardware rows and a
+first non-FLX4 profile acceptance. Historical phase text below is retained as
+the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
@@ -634,14 +638,16 @@ startup remain gated behind successful ESP-Hosted Wi-Fi/AP init because starting
 assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
-Beat FX Echo has a BPM-synced DSP slice: P4 owns the delay lines, deck_core
+Beat FX Echo has a beat-time DSP slice: P4 owns the delay lines, deck_core
 routes the Echo state into the audio engine, depth controls wet/feedback amount,
 and `/api/status.diagnostics.beat_fx_echo` exposes allocation/enabled/delay
 telemetry. Beat-size mapping derives delay time from
-the target deck effective BPM, falls back to 120 BPM when BPM is unavailable,
-and caps delay at 1000 ms to match the current delay-line budget. Hardware
+the target deck effective BPM whenever Beat FX state is applied, falls back to
+120 BPM when BPM is unavailable, and caps delay at 1000 ms to match the current
+delay-line budget. Later tempo, Beat Sync or track-load changes do not
+automatically retime an already active time effect. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
-response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size changes, and
+response, CH1/CH2/1&2 target routing, beat-derived Echo beat-size changes, and
 the ON/OFF LED following P4 state.
 
 **2026-07-10 Beat FX DSP + rail update.** The one-knob channel filter (and the
@@ -649,7 +655,7 @@ shared Beat FX filter, both in `audio_filter.c`) became a resonant ZDF
 state-variable filter with an exponential low-pass/high-pass sweep to full kill;
 the Echo (`audio_delay_fx.c`) gained per-generation feedback damping and a ~2 s
 ring-out tail on switch-off; Smart CFX moved from the softened macro to a
-smoothstep response curve; and a beat-synced **Flanger** (`audio_flanger_fx.c`)
+smoothstep response curve; and a beat-derived **Flanger** (`audio_flanger_fx.c`)
 was added as a third Beat FX effect, so the deck_core cycle is now
 FILTER → ECHO → FLANGER. The Overview Beat FX rail was redesigned as an
 effect-colour-coded strip (Filter blue / Echo amber / Flanger magenta) with a
@@ -657,20 +663,27 @@ vertical depth meter. Host suites pass, and the FLX4 USB-headphones audio
 profile was made the default build on both boards (folded into
 `sdkconfig.defaults`; a plain `idf.py build` now has sound).
 
-**2026-07-16 Beat FX Delay update.** A distinct BPM-synchronized **DELAY** was
+**2026-07-16 Beat FX Delay update.** A distinct beat-sized **DELAY** was
 added as numeric effect value `4`; the existing `NONE=0`, `FILTER=1`, `ECHO=2`,
 and `FLANGER=3` values remain stable. DELAY is a full-band one-shot repeat with
 zero feedback, and Level/Depth controls its wet gain. ECHO remains the damped
 multi-repeat feedback mode. Both modes share the existing per-deck stereo
 `audio_delay_fx` line, so DELAY requires no additional PSRAM allocation; a live
 ECHO/DELAY mode change resets that shared line so stale repeats cannot cross
-between effect semantics. The selector is explicit rather than enum-modulo:
+between effect semantics. Delay time is sampled from effective BPM when Beat FX
+state is applied, uses only the valid 40–300 BPM range, otherwise falls back to
+120 BPM, and is capped at 1000 ms. It does not automatically follow a later
+tempo, Beat Sync or track-load change until another Beat FX event republishes
+the state.
+The combined `1&2` target currently uses Deck 1 BPM for the shared delay time.
+The selector is explicit rather than enum-modulo:
 `FILTER → ECHO → FLANGER → DELAY → FILTER`, with Previous traversing the exact
-reverse and `NONE` excluded from both selector paths. The S3 continues to send
-the existing semantic Next/Previous events over the unchanged `0xA5` wire
-protocol. P4 host tests plus `idf.py build` are the software acceptance path;
-hardware smoke for DELAY audio, target routing, beat size, and Level/Depth is
-still **PENDING**.
+reverse. `NONE=0` remains a compatibility sentinel, not a selectable effect or
+reset command. CLEAR restores disabled FILTER, beat size 1, target `1&2` and
+depth 64. The S3 continues to send the existing semantic Next/Previous events
+over the unchanged `0xA5` wire protocol. P4 host tests plus `idf.py build` are
+the software acceptance path; focused FLANGER and DELAY audio, target-routing,
+beat-size and Level/Depth hardware smoke is still **PENDING**.
 
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
@@ -685,13 +698,15 @@ Sampler, stem/Keyboard, and Key Shift behavior is out of product scope as of
 control-link events for those modes, and unsupported mode LEDs remain OFF while
 their numeric IDs stay reserved for compatibility.
 
-Integration status as of 2026-06-26: the Phase 7 implementation branch and the
-P4 splash-screen port are merged into `master`, host tests and both ESP-IDF
-targets passed before the merge, and the merged `master` was pushed. Stale
-completed Codex branches were removed locally and remotely. As of 2026-07-03 the
-last preserved branch, the old `codex/flx4-extended-controls` worktree, was also
-reviewed and removed after confirming its verified slices were already salvaged
-into `master`; no non-master branches remain.
+Integration snapshot from 2026-06-26 through 2026-07-03: the Phase 7
+implementation branch and P4 splash-screen port were merged into `master`,
+verified, and pushed. The then-stale completed branches, including
+`codex/flx4-extended-controls`, were reviewed and removed after confirming their
+verified slices were already salvaged. That is a dated cleanup record, not a
+permanent branch invariant. As of the 2026-07-16 audit,
+`codex/phase-8-implementation` still has unique unmerged history and an
+associated prunable worktree record; audit branch reachability and worktrees
+before any future merge or deletion.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -869,10 +884,13 @@ Implementation order:
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
-   - Beat FX DELAY is implemented on P4 as value `4`: a BPM-synchronized,
+   - Beat FX DELAY is implemented on P4 as value `4`: a beat-sized,
      full-band one-shot repeat with wet gain controlled by Level/Depth. It
-     shares the Echo delay line without additional PSRAM; DELAY hardware smoke
-     remains pending;
+     shares the Echo delay line without additional PSRAM, samples effective BPM
+     when Beat FX state is applied, uses only 40–300 BPM (otherwise 120 BPM),
+     caps the delay at 1000 ms, and uses Deck 1 BPM for target `1&2`. Later
+     tempo/track changes do not automatically retime it; FLANGER/DELAY hardware
+     smoke remains pending;
    - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
      expose no-op controls as completed functionality.
 9. **LED feedback expansion**
@@ -953,7 +971,7 @@ Exit criteria:
 - documentation distinguishes implemented, deferred, and unsupported Mixxx
   mappings.
 
-## Phase 8: Proposed Design Plans (not yet implemented)
+## Phase 8: Reviewed Design Plans (implemented)
 
 Two design plans were reviewed against the codebase on 2026-07-03 and have since
 been implemented in firmware.
@@ -1422,10 +1440,10 @@ and service readiness is next.
   no reset, panic, stack overflow, watchdog, underrun/overrun, link gap or CRC
   error; the user confirmed correct operation on both decks.
 
-## Phase 19: Enclosure-Safe Controller Profile Updates (2026-07-14)
+## Phase 19B: Enclosure-Safe Controller Profile Updates (2026-07-14)
 
-Status: software implementation complete; signed OTA and hardware acceptance
-pending.
+Status: software implementation complete, signed and deployed in
+`RC1-131-gc391e306`; focused remote-update hardware acceptance remains pending.
 
 - Batch 1 adds strict profile IDs, pre-write S3CP/CRC validation and a bounded
   same-directory staging/backup swap with boot-scan recovery.
@@ -1446,8 +1464,9 @@ pending.
 
 ## Phase 20: Full Code-Review Remediation (2026-07-16)
 
-Status: software remediation complete on `codex/code-review-fixes`; hardware
-acceptance is intentionally deferred.
+Status: software remediation merged into `master` at `c391e306`, signed and
+deployed as `RC1-131-gc391e306`; functional hardware acceptance is
+intentionally deferred to the next smoke session.
 
 - S3 USB host ownership and recovery were hardened: MIDI OUT transfers now stay
   on the USB client task, asynchronous control requests own their completion
@@ -1479,12 +1498,12 @@ acceptance is intentionally deferred.
 Software acceptance:
 
 - complete S3 host suite passes, including controller-profile golden parity;
-- complete P4 host suite passes, including 333/333 `audio_engine` assertions,
-  all DSP/parser/UI/web/protocol tests and the R5 dead-code audit;
+- complete P4 host suite passes, including the full `audio_engine` assertion
+  set, all DSP/parser/UI/web/protocol tests and the R5 dead-code audit;
 - OTA signing Python suite passes 6/6 and OTA release-helper tests pass;
 - clean ESP-IDF v5.5 S3 build passes; `control-board-s3.bin` is `0xE6500`
   bytes with 52% free in the smallest app partition;
-- clean ESP-IDF v5.5 P4 build passes; `main-deck-p4.bin` is `0x209520`
+- clean ESP-IDF v5.5 P4 build passes; the deployed `main-deck-p4.bin` is `0x209800`
   bytes with 49% free in the smallest app partition;
 - `git diff --check` passes.
 
@@ -1494,3 +1513,25 @@ Deferred hardware acceptance:
 - FLX4 USB MIDI/audio disconnect and recovery under queue pressure;
 - P4/S3 local web-control, profile upload and OTA mutation guards from a phone;
 - UART startup/recovery and long control-link integrity capture.
+
+## Phase 21: Signed RC1-131 Deployment (2026-07-16)
+
+Status: deployment and boot verification complete; focused functional hardware
+acceptance pending.
+
+- P4 accepted the signed bundle over OTA with HTTP 200 and moved from
+  `ota_0 / RC1-126-g812ad70f` to `ota_1 / RC1-131-gc391e306`.
+- S3 accepted the matching signed bundle over OTA with HTTP 200 and moved from
+  `ota_1 / RC1-123-g587cd7a1` to `ota_0 / RC1-131-gc391e306`.
+- P4 `/api/status` was healthy after reboot. Its direct firmware endpoint
+  correctly returned top-level transfer `state=idle`; P4's nested S3 report
+  independently confirmed `ota_0 / valid` and the matching version.
+- Both signed bundles and the outer release manifest were cryptographically
+  verified with key ID `rel-001` before upload.
+- This rollout proves artifact, transport, signature, boot and cross-target
+  version agreement. It does not replace the fully functional E1 acceptance of
+  `RC1-123-g587cd7a1`; Phase 20 plus FLANGER/DELAY and remote profile-update
+  functional smoke remains open.
+
+Exact artifact sizes, SHA-256 values and state transitions are recorded in
+[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).

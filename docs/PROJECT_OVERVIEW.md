@@ -1,7 +1,11 @@
 # DDJ-FFL4 Project Overview
 
-Status: current product overview, audited 2026-07-13. The inherited baseline
-below is historical context; `Current Port Status` describes the active system.
+Status: current product overview, audited 2026-07-16. The installed signed
+release is `RC1-131-gc391e306` on P4 `ota_1` and S3 `ota_0 / valid`; its
+boot/status path is verified, while targeted Phase 20 remediation,
+remote-profile-update and Flanger/Delay functional hardware smokes remain
+pending. The inherited baseline below is historical context; `Current Port
+Status` describes the active system.
 
 ## Goal
 
@@ -149,19 +153,24 @@ The fork is no longer only the imported single-deck baseline:
   touchy knob response: the one-knob channel Filter became a resonant ZDF
   state-variable filter with an exponential low-pass/high-pass sweep to full
   kill, the Echo gained per-generation feedback damping and a ring-out tail,
-  Smart CFX moved to a smoothstep response curve, and a beat-synced **Flanger**
+  Smart CFX moved to a smoothstep response curve, and a beat-derived **Flanger**
   was added as a third Beat FX effect (cycle FILTER → ECHO → FLANGER). The
   Overview Beat FX rail was redesigned to be effect-colour-coded
   (Filter blue / Echo amber / Flanger magenta) with a vertical depth meter.
 - On 2026-07-16, **Delay** was added as Beat FX value `4` without renumbering
-  the existing effects. It is a BPM-synchronized, full-band one-shot repeat
-  without feedback; Level/Depth controls its wet gain. Delay and Echo reuse the
+  the existing effects. It is a full-band one-shot repeat without feedback;
+  Level/Depth controls its wet gain. Its time is derived from effective BPM
+  when Beat FX state is applied, not continuously resynchronized after later
+  tempo, Beat Sync or track-load changes. Delay and Echo reuse the
   same per-deck stereo delay line, so the new mode does not allocate additional
-  PSRAM, while Echo keeps its damped multi-repeat feedback behavior. The
+  PSRAM, while Echo keeps its damped multi-repeat feedback behavior. Time is
+  calculated from 40–300 BPM with a 120 BPM fallback, capped at 1000 ms, and
+  target BOTH currently uses Deck 1 BPM. The
   selector now cycles `FILTER → ECHO → FLANGER → DELAY → FILTER`, with the
-  reverse order on Previous and no `NONE` slot in either direction. Software
-  acceptance is covered by the P4 host suites and `idf.py build`; physical
-  DELAY sound/target/beat/depth smoke remains pending.
+  reverse order on Previous; `NONE=0` is a non-selectable compatibility
+  sentinel and CLEAR restores disabled FILTER defaults. Software acceptance is
+  covered by the P4 host suites and `idf.py build`; physical FLANGER and DELAY
+  sound/target/beat/depth smoke remains pending.
 - The FLX4 USB-headphone audio profile was made the default build on both boards
   (folded into each `sdkconfig.defaults` on 2026-07-10), so a plain `idf.py
   build` now produces the sound firmware; the per-profile overlays and stale
@@ -180,8 +189,8 @@ The fork is no longer only the imported single-deck baseline:
   merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
   remaining stale Codex branches were reviewed and removed (local + remote),
   including the old experimental `codex/flx4-extended-controls`, whose verified
-  slices had already been salvaged into `master`. No non-master feature branches
-  remain.
+  slices had already been salvaged into `master`. That is a historical cleanup
+  record, not a claim about the repository's current branch inventory.
 - Vinyl/scratch is hardware-validated on both decks: platter touch selects a
   canonical PSRAM PCM timeline for forward/reverse scratch, including paused
   and CUE states, active-loop wrapping, clean window edges and click-free
@@ -192,7 +201,9 @@ The fork is no longer only the imported single-deck baseline:
 - OTA is hardware-accepted for both processors. P4 and S3 use alternating OTA
   slots, validate target/chip/project, confirm health after mandatory startup,
   preserve the active image on interrupted upload and roll back an unconfirmed
-  image. The accepted 2026-07-13 release was `RC1-106-g717b6ab3` on both boards.
+  image. Full signed-path acceptance used `RC1-123-g587cd7a1` on 2026-07-14;
+  the newer matching `RC1-131-gc391e306` rollout was boot/status-verified on
+  2026-07-16 without repeating the full functional smoke.
 
 ## Non-Goals For The First Milestone
 
@@ -202,14 +213,14 @@ The fork is no longer only the imported single-deck baseline:
   the first milestone.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
   smoothstep curve, Smart Fader transition-assist V1 behavior, the Beat FX
-  Filter/Echo/Flanger hardware baseline, the software-covered Delay mode, and
-  the host-tested Pad FX DSP/input/LED slice.
+  recorded Filter/Echo hardware baseline, the software-covered Flanger/Delay
+  modes, and the host-tested Pad FX DSP/input/LED slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.
 - Treating FLX4 MIDI XML as executable logic.
 
-## Proposed Next Work
+## Implemented Follow-Up And Remaining Acceptance
 
 Two design plans have since been implemented in firmware (details in Phase 8 of
 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)):
@@ -227,9 +238,13 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-Remaining hardware-facing items: selected shifted-control hardware acceptance
-where still marked in the MIDI map, enclosure power/thermal/RF soak and a full
-end-to-end S3/P4/FLX4 regression pass after the next major control or UI batch.
+Remaining hardware-facing items start with E1A acceptance of the installed
+RC1-131 release: Phase 20 USB recovery/queue pressure, guarded web/profile/OTA
+mutations, UART integrity, controller-profile replacement/recovery and focused
+Flanger/Delay audio/target/timing/depth behavior. They also include selected
+shifted-control rows still marked in the MIDI map, enclosure power/thermal/RF
+soak, and a full end-to-end S3/P4/FLX4 regression pass after the next major
+control or UI batch.
 (Beat feedback from the PQTZ
 beatgrid is already shown on the Overview beat strip with a red downbeat marker;
 a dedicated controller beat LED was declined, so that item is closed.)

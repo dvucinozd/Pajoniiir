@@ -1,6 +1,6 @@
 # Architecture
 
-Status: current architecture, audited 2026-07-13. P4 remains authoritative;
+Status: current architecture, audited 2026-07-16. P4 remains authoritative;
 S3 remains a transport/translation and USB-audio bridge.
 
 ## High-Level Flow
@@ -116,11 +116,20 @@ Current P4 audio ownership rule:
 - Beat FX state is P4-owned and read by both the physical Overview UI and
   `/api/status`. The effect selector uses the explicit cycle
   `FILTER → ECHO → FLANGER → DELAY → FILTER` (and the exact reverse for
-  previous); `NONE` is a reset/off state, not a selectable slot. DELAY is a
-  BPM-synchronized full-band one-shot repeat whose Level/Depth controls wet
-  gain, while ECHO remains a damped feedback effect with multiple repeats.
+  previous); `NONE=0` is a compatibility/sentinel enum value, not a selectable
+  slot. CLEAR restores disabled FILTER defaults. DELAY is a full-band one-shot
+  repeat whose Level/Depth controls wet gain, while ECHO remains a damped
+  feedback effect with multiple repeats. Time is derived from effective BPM
+  when Beat FX state is applied; it is not automatically retimed after later
+  tempo, Beat Sync or track-load changes. Valid BPM is 40–300, with a 120 BPM
+  fallback; time is capped at 1000 ms, and target BOTH currently derives one
+  shared time from Deck 1 BPM.
   Both time effects share the existing per-deck stereo delay line, so DELAY
-  adds no PSRAM allocation. ESP-Hosted Wi-Fi is enabled only when the Settings
+  adds no PSRAM allocation. The audio engine applies a square-root wet taper
+  (maximum 0.70); Echo uses 0.20–0.68 feedback and Delay forces feedback to
+  zero. Delay-time changes move the read head immediately, while switch-off
+  leaves a bounded tail (~2 s for Echo, the previous period for Delay);
+- ESP-Hosted Wi-Fi is enabled only when the Settings
   `wifi_remote` switch requests it; the HTTP server and captive DNS start after
   hosted Wi-Fi/AP init succeeds and are fully torn down when the switch is off;
 - the shared output service relies on codec/I2S write pacing and does not add a

@@ -1,9 +1,12 @@
 # DDJ-FFL4 OTA Update Plan
 
-Status: design and acceptance record. The unsigned dual-slot/rollback path was
-hardware-accepted on 2026-07-13. Batch 6 signed OTA, including complete
-rejection, interrupted-upload and forced-rollback testing, was hardware-
-accepted on both targets on 2026-07-14. For the operator workflow use
+Status: design and acceptance record, reviewed 2026-07-16. The unsigned
+dual-slot/rollback path was hardware-accepted on 2026-07-13. Batch 6 signed OTA,
+including complete rejection, interrupted-upload and forced-rollback testing,
+was hardware-accepted on both targets on 2026-07-14. A later matching
+`RC1-131-gc391e306` signed release was deployed and boot-verified on both
+targets on 2026-07-16; its functional smoke remains separate. For the operator
+workflow use
 [`OTA-UPDATE.md`](OTA-UPDATE.md).
 
 ## Implementation status
@@ -197,6 +200,28 @@ bootable after a 128 KiB client disconnect. Signed `ROLLBACK-TEST-P4-123` and
 `ROLLBACK-TEST-S3-123` images returned to P4 `ota_0` and S3 `ota_1`; final
 UI/audio/controller/LED/headphone-cue smoke passed. The private key's offline
 USB backup was confirmed before closeout.
+
+## Routine signed deployment after E1 qualification — 2026-07-16
+
+The already accepted signed path was used to deploy matching
+`RC1-131-gc391e306` images with key ID `rel-001`. Both bundles and the outer
+manifest were cryptographically verified before upload, and both HTTP uploads
+completed with status 200.
+
+- P4: `ota_0 / RC1-126-g812ad70f -> ota_1 /
+  RC1-131-gc391e306`; `/api/status` was healthy after reboot. The direct
+  firmware endpoint's top-level `state=idle` denotes OTA transfer state, not
+  image validity.
+- S3: `ota_1 / RC1-123-g587cd7a1 -> ota_0 / valid /
+  RC1-131-gc391e306`, confirmed through the P4 nested S3 firmware report.
+
+This routine rollout did not repeat wrong-key/target, interruption or forced
+rollback tests, because those belong to the E1 path qualification above. It
+also did not include functional audio/UI/controller smoke, so
+`RC1-123-g587cd7a1` remains the latest fully functionally accepted baseline
+until E1A completes. Exact sizes, SHA-256 values and observations are recorded
+in
+[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
 The first signed hardware smoke on 2026-07-13 used the intentionally dirty test
 version `RC1-108-g1be328a9-dirty`. Both full wired migrations passed. Modified

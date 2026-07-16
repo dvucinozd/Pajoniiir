@@ -1,9 +1,10 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-13. The
-hardware-accepted unsigned OTA baseline is `RC1-106-g717b6ab3`,
-`ota_0 / valid`. Signed `.ddjota` verification is implemented and awaits
-hardware acceptance.
+Documentation status: current developer guide, audited 2026-07-16. The
+installed signed release is `RC1-131-gc391e306` on `ota_1`, with OTA boot/status
+verification complete. The latest full functional hardware acceptance remains
+`RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX Flanger/Delay smoke is
+pending.
 
 ## Project Overview
 
@@ -49,7 +50,7 @@ under repository-root `keys/` must never be copied into firmware or committed.
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
@@ -267,28 +268,40 @@ not per sample.
   (~4.5 kHz) so repeats darken per generation (tape-style); wet/feedback gains
   ramp (de-click); **switch-off rings the tail out ~2 s** instead of cutting
   (`audio_delay_fx_is_ringing()`, the output mixer keeps processing while ringing).
-  `deck_core` depth→wet uses a sqrt taper (audible early), feedback 0.20–0.68.
-- **Delay** (`audio_delay_fx.c`) — BPM-synchronized full-band one-shot repeat
-  with zero feedback; Level/Depth controls wet gain. It shares the existing
-  per-deck stereo Echo line, so there is no additional PSRAM allocation.
-  ECHO↔DELAY mode changes reset the shared line to prevent stale repeats. Its
-  stable enum value is `4`; previous effect values are unchanged.
+  `audio_engine` maps depth→wet with a sqrt taper (audible early) and maps Echo
+  feedback across 0.20–0.68; wet tops out at 0.70 and `deck_core` forwards the
+  raw depth.
+- **Delay** (`audio_delay_fx.c`) — full-band one-shot repeat with zero feedback;
+  Level/Depth controls wet gain. It shares the existing per-deck stereo Echo
+  line, so there is no additional PSRAM allocation. ECHO↔DELAY mode changes
+  reset the shared line to prevent stale repeats. Its stable enum value is `4`;
+  previous effect values are unchanged. Time is derived from effective BPM
+  when `sync_beat_fx_audio_state()` publishes a Beat FX state change, not on
+  later tempo, Beat Sync or track-load changes. Valid BPM is 40–300 with a
+  120 BPM fallback; time is capped at 1000 ms and target BOTH currently derives
+  it from Deck 1 BPM. Delay-time/read-head changes are immediate rather than
+  interpolated. Switch-off retains exactly the previous Delay period for the
+  pending tap; Echo retains its ~2 s tail. Tail state is not in the web API.
 - **Flanger** (`audio_flanger_fx.c`, new) — triangle-LFO fractional delay
   **0.6–6 ms** (linear interpolation) with feedback for the resonant jet; the
-  BEAT selector sets the LFO period (beat-synced, `beat_fx_flanger_period_ms`).
+  BEAT selector sets the LFO period from the sampled beat time
+  (`beat_fx_flanger_period_ms`).
   The `deck_core` selector cycle is now
   FILTER → ECHO → FLANGER → DELAY → FILTER; Previous is the exact reverse and
-  `NONE` is not selectable.
+  `NONE=0` is only a non-selectable compatibility sentinel. CLEAR restores
+  disabled FILTER, beat `1`, target BOTH and depth `64`.
 - **Smart CFX** (`audio_smart_cfx.c`) — response curve is now a **smoothstep**
   S-curve on the channel-filter knob (fine near the detent, ~1:1 at half turn,
   precise near full kill) instead of the old x² curve that deadened the whole
   first half. Endpoints + a min-audible clamp are preserved.
 
-PC test harness: `tests/audio_engine/` (run all P4 host tests via
+Relevant PC harnesses include `tests/audio_delay_fx/`, `tests/audio_engine/`,
+`tests/audio_output_mixer/`, `tests/deck_core_dual/`,
+`tests/ui_beat_fx_format/` and `tests/web_api_helpers/` (run all P4 host tests via
 `.\tests\run_p4_host_tests.ps1`; `make`/`mingw32-make` is not installed — the
 runner compiles each suite with `gcc` from `C:\msys64\ucrt64\bin`).
-P4 host suites plus `idf.py build` are the DELAY software-acceptance path;
-physical DELAY audio/target/beat/depth smoke is still pending.
+P4 host suites plus `idf.py build` are the FLANGER/DELAY software-acceptance
+path; physical FLANGER/DELAY audio/target/beat/depth smoke is still pending.
 
 ---
 
@@ -508,7 +521,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~USB host + VFS mount `/usb`~~ — WORKS (FAT32/exFAT on MBR/GPT via `usb_media_mount`, library auto-load)
 - ✅ ~~GPIO28/29 UART link~~ — verified end-to-end with S3
 - ✅ ~~S3 DDJ-FLX4 raw MIDI capture~~ — FLX4 enumerates on hardware; translator maps the MVP + extended controls to control-link frames
-- **S3 deck_core → audio_engine control** (play/pause/cue/jog/pitch/seek from S3) — mapped; full hardware pass pending
+- ✅ **S3/FLX4 → deck_core → audio_engine control** — implemented and hardware-verified for the accepted rows; only the explicitly pending rows in `docs/DDJ_FLX4_MIDI_MAP.md` remain open
 - ✅ ~~**Beat LED** feedback (PQTZ beatgrid → `control_link_send_led`)~~ — dropped 2026-07-10: the beatgrid beat feedback already lives on the Overview screen (`s_beat_pulses` phase strip + red downbeat marker, beatgrid-driven). A controller LED was declined (FLX4 has no dedicated beat LED and hijacking a state LED was not wanted); legacy CDJ-panel GPIO38 BEAT is unused hardware. No hardware LED path needed.
 - ✅ ~~WAV/FLAC decode~~ — decoder-abstraction layer (`audio_decoder`/`audio_format`); WAV inline + FLAC via dr_flac over the PSRAM preload; MP3 stays on minimp3
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
@@ -523,5 +536,5 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~Hot-cue pad LEDs stale on FLX4 track load~~ — fixed 2026-07-09: load path now republishes the full FLX4 LED snapshot so the loaded deck's hot-cue pads light immediately
 - ✅ ~~`/sd` not mounting on cold boot~~ — fixed 2026-07-09: `bsp_sd_init` retries the mount 3× (150 ms) to ride out the transient power-up `send_op_cond` timeout
 - ✅ ~~Jog does nothing while playing~~ — fixed 2026-07-10: a jog while playing now does a transient pitch-bend **nudge** for manual beat matching (`audio_engine_deck_jog_nudge` bumps a per-deck `s_jog_bend`; the output task applies `pitch_factor × (1+bend)` and decays it back). Both the platter (`JOG_SCRATCH`) and the ring (`JOG_BEND`) nudge while playing; both scrub the position while paused. The Overview waveform tracks the bend because the mixer snapshot now carries `effective_speed_permille` (fader × bend), fed into the position interpolator instead of the fader-only speed.
-- **Line-out (RCA) validation** — hardware measurement of the RCA/monitor output path pending
+- ✅ **Line-out (RCA) validation** — PCM5102A MAIN RCA and onboard 3.5 mm output accepted on hardware 2026-06-30; ES8311 is not the product path
 - ✅ **True scratch / "vinyl mode"** — implemented and hardware-validated 2026-07-11. `JOG_TOUCH` gates platter-top scratch from side-ring bend; a per-deck canonical PSRAM PCM timeline provides retained history plus forward lookahead, bidirectional interpolated playback, click-free release/re-grab, paused/CUE scratch, active-loop wrapping, waveform-head tracking and deferred pitch handoff. Dual-deck stress passed without WDT or monitor PCM drops. **Detailed design and validation record: [`docs/VINYL_SCRATCH_PLAN.md`](../../docs/VINYL_SCRATCH_PLAN.md).**

@@ -1,6 +1,6 @@
 # S3 Wi-Fi Debug Log
 
-Document status: current service-mode guide, audited 2026-07-13. The Debug AP
+Document status: current service-mode guide, audited 2026-07-16. The Debug AP
 also exposes S3 firmware status and OTA; use `OTA-UPDATE.md` for update steps.
 
 Use this when the XIAO ESP32S3 UART adapter is disconnected because the FLX4
@@ -42,13 +42,18 @@ long-lived SSE connection before the firmware upload starts.
 
 - Select only the signed `control-board-s3.ddjota` release bundle.
 - The browser sends the bundle to `POST /api/ota/s3` with
-  `X-DDJ-OTA: s3`.
+  `X-DDJ-Control: 1` and `X-DDJ-OTA: s3`.
 - Firmware verifies the ECDSA P-256 manifest before flash erase, then validates
   the signed image SHA-256, ESP32-S3 chip ID, slot size, complete ESP image,
   project name and version before selecting the new boot slot.
 - A successful upload restarts S3. The Debug AP is OFF after reboot, so enable
   it again from P4 Settings when further diagnostics are needed.
 - An interrupted or rejected upload does not replace the running boot slot.
+- For final acceptance, reconnect to the P4 Wi-Fi Remote and read its
+  `/api/firmware` response: nested `s3.slot`, `s3.version` and `s3.state` come
+  from the authoritative UART firmware report and must show the expected slot,
+  release and `valid`. Direct S3 `state: idle` only means its OTA transfer
+  service is idle.
 
 The AP uses WPA2-PSK. Signed bundles remain the firmware-authenticity boundary;
 the shared default AP password is only an access-control baseline, so keep the

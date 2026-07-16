@@ -1,14 +1,15 @@
 # DDJ-FFL4 S3 Control Board Firmware - Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-13. The
-hardware-accepted unsigned OTA baseline is `RC1-106-g717b6ab3`,
-`ota_0 / valid`. Signed `.ddjota` verification is implemented and awaits
-hardware acceptance.
+Documentation status: current developer guide, audited 2026-07-16. The
+installed signed release is `RC1-131-gc391e306` on `ota_0 / valid`, confirmed
+through the P4 firmware report. The latest full functional hardware acceptance
+remains `RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX Flanger/Delay smoke is
+pending.
 
 ## Project Overview
 
-ESP32-S3-DevKitC-1 N16R8 firmware for the DDJ-FFL4 control board role.
-The active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
+Seeed Studio XIAO ESP32S3 firmware for the DDJ-FFL4 control-board role. The
+active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
 deck-aware `0xA5` UART control-link frames to the ESP32-P4.
 
 The inherited CDJ-100S GPIO panel/TinyUSB-device path was permanently retired
@@ -127,14 +128,14 @@ byte-for-byte identical with the P4 copies (runner asserts).
 
 ---
 
-## Dual USB Architecture
+## USB Host Architecture
 
-ESP32-S3 has two USB peripherals on the same GPIO19/20:
-1. **USB-Serial/JTAG** (built-in, default) → formerly COM5
-2. **USB-OTG** (TinyUSB) → becomes MIDI device after flashing
-
-Mutually exclusive. `CONFIG_ESP_CONSOLE_SECONDARY_NONE=y` prevents conflicts.  
-After first flash: **physically replug the USB-OTG cable** for enumeration in Windows.
+The ESP32-S3 USB OTG peripheral on GPIO19/20 is unconditionally the FLX4 host.
+R5D removed the alternative TinyUSB MIDI-device product mode and its direct
+dependency. Use the external CH343 UART bridge for flashing/logging while the
+XIAO USB-C/OTG connection enumerates the externally powered FLX4. Preserve a
+valid host-VBUS arrangement and shared ground as documented in
+`docs/HARDWARE_WIRING.md`.
 
 ---
 
@@ -147,15 +148,15 @@ checksum = type ^ id ^ val_lo ^ val_hi ^ seq
 
 | Type | Direction | Content |
 |------|-------|---------|
-| 0x01 BUTTON | S3→P4 | legacy button id or deck-aware semantic id |
-| 0x02 ENCODER | S3→P4 | legacy encoder id or deck-aware jog/browse semantic id |
-| 0x03 PITCH | S3→P4 | legacy pitch id or deck-aware analog semantic id |
+| 0x01 BUTTON | S3→P4 | deck-aware semantic button id |
+| 0x02 ENCODER | S3→P4 | deck-aware relative jog/browse semantic id |
+| 0x03 PITCH | S3→P4 | deck-aware absolute-control semantic id |
 | 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime seconds |
-| 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
+| 0x81 LED | P4→S3 | P4-owned shared LED id and value |
 | 0x82 STATE | both | id=CTRL_ID_S3_DEBUG_AP (0x85): P4→S3 request 0/1, S3→P4 status 0-3; also FLX4 connection state S3→P4 |
 | 0xA6 BULK | both | variable-length frame `[A6][type][seq][len][payload][crc16]`: controller descriptor (S3→P4) + profile transfer (P4→S3). See `docs/CONTROL_LINK_PROTOCOL.md` |
 
-UART1: TX=GPIO40 → P4 GPIO28, RX=GPIO41 ← P4 GPIO29, 460800 baud.
+UART1: TX=GPIO5 → P4 GPIO28, RX=GPIO6 ← P4 GPIO29, 460800 baud.
 
 Deck-aware semantic IDs are documented in
 `docs/CONTROL_LINK_PROTOCOL.md`. S3 and P4 headers are kept aligned by the
@@ -163,20 +164,19 @@ Deck-aware semantic IDs are documented in
 
 ---
 
-## PCNT Encoders
+## Retired Direct-Panel Notes
 
-- IDF 5.5 API: `pcnt_channel_handle_t` (not old `pcnt_unit_t`)
-- X4 quadrature: two channels per unit, `accum_count=true`
-- Glitch filter: 1µs
-- JOG: GPIO15(A)/GPIO16(B)
-- BROWSE: GPIO17(A)/GPIO18(B)
+The former PCNT jog/browse encoders, direct pitch ADC, CDJ buttons and panel LED
+GPIO assignments were removed with the legacy product mode in R5D. Current jog,
+browse, pitch, buttons and LEDs travel through the FLX4 USB MIDI path; do not use
+the old direct-panel GPIO assignments as wiring instructions.
 
 ---
 
 ## Pending
 
-- Validate DDJ-FLX4 physical USB host wiring: correct OTG port, powered hub or
-  valid VBUS source, and shared ground.
+- Revalidate DDJ-FLX4 OTG/VBUS/shared-ground wiring after final enclosure or
+  power-topology changes; the current bench enumeration path is accepted.
 - Use `docs/reference/Pioneer-DDJ-FLX4.midi.xml` and
   `docs/DDJ_FLX4_MIDI_MAP.md` as the authoritative source for remaining
   controls; physical capture is now acceptance smoke, not a coding prerequisite.

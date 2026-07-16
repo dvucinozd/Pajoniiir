@@ -3,10 +3,16 @@
 Status: audited 2026-07-16. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes.
 
-## Current accepted baseline
+## Current installed and accepted baselines
 
-- [x] P4: `RC1-123-g587cd7a1`, signed OTA `ota_0`, operational.
-- [x] S3: `RC1-123-g587cd7a1`, signed OTA `ota_1`, operational.
+- [x] Installed and boot-verified P4: `RC1-131-gc391e306`, signed OTA
+  `ota_1`; `/api/status` responds after mandatory startup.
+- [x] Installed and boot-verified S3: `RC1-131-gc391e306`, signed OTA
+  `ota_0 / valid` through the P4 firmware report.
+- [x] Latest fully functionally accepted P4/S3 release:
+  `RC1-123-g587cd7a1` (acceptance-time slots on 2026-07-14: P4 `ota_0`, S3
+  `ota_1`). After the RC1-131 rollout, the current inactive slots contain P4
+  `ota_0 / RC1-126-g812ad70f` and S3 `ota_1 / RC1-123-g587cd7a1`.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
@@ -36,7 +42,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R4 smoke: both WPA2 APs accept `PajoNiiiR`; P4 web UI plus S3 log and OTA update pages load correctly.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
-- [x] Perform one OTA update per target and record slot/version/state.
+- [x] Perform one OTA update per target and record slot/version/state; the
+  2026-07-16 `RC1-131-gc391e306` rollout is recorded below.
 - [ ] Preserve a wired recovery path or validated service connector.
 - [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, FLX4 USB
   disconnect recovery, guarded web/profile/OTA mutations and UART-link capture.
@@ -85,9 +92,13 @@ evidence, not instructions to repeat old commit-specific flashes.
   extended-control surface.
 - Phase 7 was merged into `master` and pushed on 2026-06-26. Completed stale
   Codex branches were removed locally and remotely after the merge.
-- No non-master branches remain: the old experimental `codex/flx4-extended-controls`
-  was reviewed and removed (local + remote) on 2026-07-03 after confirming its
-  verified slices were already salvaged into `master`.
+- The old experimental `codex/flx4-extended-controls` was reviewed and removed
+  (local + remote) on 2026-07-03 after confirming its verified slices were
+  already salvaged into `master`. This is a dated cleanup snapshot, not a
+  permanent invariant. The 2026-07-16 audit found
+  `codex/phase-8-implementation` with unique unmerged history and a prunable
+  linked-worktree record; inspect reachability and worktrees before merging or
+  deleting any retained branch.
 - The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
@@ -143,33 +154,41 @@ evidence, not instructions to repeat old commit-specific flashes.
   master output.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
-  implemented as a target-aware low-pass slice. Beat FX Echo has a BPM-synced
+  implemented as a target-aware low-pass slice. Beat FX Echo has a beat-time
   DSP slice with P4-owned delay buffers, target-aware routing, and
   `/api/status.diagnostics.beat_fx_echo` telemetry; delay time is derived from
-  target deck effective BPM with a 120 BPM fallback and 1000 ms cap. The
+  target deck effective BPM when Beat FX state is applied, with a 120 BPM
+  fallback and 1000 ms cap. Later tempo/track changes do not automatically
+  retime the active line. The
   Overview Beat FX rail renders the same P4-owned state with compact active
   status, target/effect/depth readouts, and reduced overlap risk, and
   `/api/status.beat_fx` remains available for hardware smoke verification
   instead of raw serial logging when a network transport is present. Hardware
   smoke passed on 2026-07-01 for the Beat FX FILTER and Echo behavior, gradual
-  depth response, CH1/CH2/1&2 target routing, BPM-synced Echo beat-size
+  depth response, CH1/CH2/1&2 target routing, beat-derived Echo beat-size
   changes, and physical ON/OFF LED feedback.
 - **2026-07-10 update:** the Beat FX audio DSP was reworked for better sound and
   less touchy knobs — resonant state-variable channel/Beat-FX filter with an
   exponential kill sweep, tape-style Echo with feedback damping + ring-out tail,
-  and a smoothstep Smart CFX curve — and a beat-synced **Flanger** was added as a
+  and a smoothstep Smart CFX curve — and a beat-derived **Flanger** was added as a
   third Beat FX effect (cycle FILTER → ECHO → FLANGER). The Overview Beat FX rail
   is now an effect-colour-coded strip with a vertical depth meter. Sound is now
   the default build on both boards (`idf.py build`); the per-profile sdkconfig
   overlays were removed.
 - **2026-07-16 update:** Beat FX **DELAY** value `4` is implemented as a
-  BPM-synchronized, full-band one-shot repeat with zero feedback; Level/Depth
-  controls wet gain. ECHO remains the damped multi-repeat effect. Both modes
-  share the existing per-deck stereo delay line without another PSRAM
-  allocation. The selector cycle is
+  beat-sized, full-band one-shot repeat with zero feedback; Level/Depth controls
+  wet gain. ECHO remains the damped multi-repeat effect. Both modes share the
+  existing per-deck stereo delay line without another PSRAM allocation. Delay
+  time samples effective BPM when Beat FX state is applied, uses only the
+  40–300 BPM range, falls back to 120 BPM, is capped at 1000 ms, and uses Deck
+  1 BPM for target `1&2`. A later tempo, Beat Sync or track-load change does not
+  automatically retime it until another Beat FX event republishes the state.
+  The selector is
   `FILTER → ECHO → FLANGER → DELAY → FILTER`, Previous runs in reverse, and
-  `NONE` is excluded. P4 host suites and `idf.py build` provide software
-  acceptance; DELAY hardware smoke is still **PENDING**.
+  `NONE=0` remains an unselectable compatibility sentinel. CLEAR restores
+  disabled FILTER, beat size 1, target `1&2` and depth 64. P4 host suites,
+  signed builds and OTA deployment provide software/release acceptance;
+  focused FLANGER and DELAY hardware smoke is still **PENDING**.
 - Pad FX DSP first slice is implemented in P4 and host-tested through
   `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical FLX4 Pad FX pad input
   mapping is implemented from the official MIDI message PDF (`0x10..0x17` for
@@ -351,11 +370,18 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   are intentionally out of scope for this smoke.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
-- [ ] Hardware smoke Beat FX DELAY: select it in both directions and confirm
-  there is no selectable `NONE` gap; verify one full-band BPM-synchronized
-  repeat (no feedback regeneration), Level/Depth wet response, beat-size timing,
-  CH1/CH2/1&2 target routing, ON/OFF behavior, and a clean ECHO↔DELAY mode
-  change on the physical FLX4.
+- [ ] Hardware smoke Beat FX FLANGER/DELAY: select both in both directions and
+  confirm there is no selectable `NONE` gap. For DELAY, verify one full-band
+  repeat with no feedback regeneration, Level/Depth wet response, beat-size
+  timing including the 1000 ms cap/fallback, CH1/CH2/1&2 target routing (current
+  `1&2` timing follows Deck 1 BPM), and changes of beat size, tempo/Beat Sync
+  and track while active. Verify OFF/CLEAR retains exactly the previous Delay
+  period for its pending tap, Echo rings for about 2 s, and re-enabling a time
+  effect or changing live ECHO↔DELAY mode clears stale shared-line content. A
+  bounded old time-effect tail may briefly overlap a newly selected
+  Filter/Flanger. Confirm CLEAR defaults (disabled FILTER, beat 1, `1&2`, depth
+  64). For FLANGER, verify audible sweep, beat-size timing, Level/Depth response
+  and all targets.
 - [x] Build the extended control inventory from the vendored Mixxx XML.
 - [x] Add deck modifiers and transport extensions with P4-owned semantics.
   First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and
@@ -620,6 +646,15 @@ rejected wrong key/key ID, chip/project mismatch and truncated/extended bundles;
 both survived a 128 KiB interrupted upload and rolled back from signed
 `ROLLBACK-TEST-*` images. Final UI/touch, dual playback/scratch, controller,
 LED, MAIN and headphone-cue smoke passed.
+
+Signed deployment record, 2026-07-16: matching `RC1-131-gc391e306` bundles
+with key ID `rel-001` were uploaded successfully to both targets. P4 moved
+`ota_0 / RC1-126-g812ad70f -> ota_1 / RC1-131-gc391e306`; S3 moved
+`ota_1 / RC1-123-g587cd7a1 -> ota_0 / valid / RC1-131-gc391e306`. P4 status
+was healthy after reboot and its nested report confirmed S3. This was an OTA
+deployment/boot check, not a full functional smoke; the latest fully accepted
+functional baseline remains E1 `RC1-123-g587cd7a1`. See
+[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

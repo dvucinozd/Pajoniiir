@@ -1,6 +1,6 @@
 # Bench Notes
 
-Document status: dated hardware evidence, reviewed 2026-07-13. New observations
+Document status: dated hardware evidence, reviewed 2026-07-16. New observations
 should include date, firmware version, board, port and pass/fail evidence.
 
 ## Test Setup
@@ -193,6 +193,24 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | C6 firmware version | **FIXED** | Upgraded onboard C6 over `COM12` to ESP-Hosted slave `2.12.8` using USB-TTL on `PROG_C6`. Boot log now identifies `esp32c6`, reports `Transport active`, and no longer prints the Host/Co-proc version mismatch warning. |
 | C6 slave firmware build | **PASS** | Built and flashed `firmware/main-deck-p4/managed_components/espressif__esp_hosted/slave/build/network_adapter.bin`; stable flashing required P4 held in bootloader and C6 flashing at 115200 baud because 460800 stopped responding through the jumper wiring. |
 | SD cache mount | **FIXED** | `/sd` now mounts on boot with the inserted `SA32G` 29.5 GB card: 4-bit SDMMC, 20 MHz. Root cause was missing vendor SD power control: on-chip LDO channel 4 must be attached to `host.pwr_ctrl_handle` before `esp_vfs_fat_sdmmc_mount()`. |
+
+## 2026-07-16 Signed OTA Deployment
+
+This entry records OTA delivery and boot/version observations only. No complete
+functional audio/UI/controller smoke was run after this rollout.
+
+| Target board | Transport/endpoint | Before | After | Upload | Result |
+| --- | --- | --- | --- | --- | --- |
+| JC4880P443C_I_W ESP32-P4 | P4 Wi-Fi Remote, `POST /api/ota/p4` | `ota_0 / RC1-126-g812ad70f` | `ota_1 / RC1-131-gc391e306`; healthy `/api/status` | HTTP 200 | **DEPLOYMENT PASS** |
+| Seeed XIAO ESP32S3 | P4 Wi-Fi Remote forwarding, `POST /api/ota/s3` | `ota_1 / RC1-123-g587cd7a1` | `ota_0 / valid / RC1-131-gc391e306`, confirmed through P4 | HTTP 200 | **DEPLOYMENT PASS** |
+
+Both `rel-001` bundles and the outer manifest verified before upload. P4's
+top-level firmware `state=idle` after reboot is the local transfer state, not an
+image-validity result; the nested S3 report supplied S3's image state. Overall
+result: **SIGNED DEPLOYMENT/BOOT PASS; FUNCTIONAL HARDWARE SMOKE NOT RUN**. The
+latest fully functionally accepted release remains `RC1-123-g587cd7a1`.
+Artifact hashes, sizes and state transitions are in
+[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
 ---
 

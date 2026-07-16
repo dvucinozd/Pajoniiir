@@ -1,7 +1,9 @@
 # Controller Profile Update Procedure
 
-Status: software-complete on 2026-07-14; signed-OTA deployment and hardware
-acceptance are pending.
+Status: software-complete and deployed on both processors in signed release
+`RC1-131-gc391e306` on 2026-07-16. Dedicated hardware acceptance of overwrite,
+corrupt/interrupted rejection, automatic reactivation and reboot persistence is
+still pending.
 
 This procedure replaces `SD:/controllers/<id>/profile.s3bin` through the P4
 Wi-Fi Remote, so the enclosed SD card does not need to be removed. The P4 does

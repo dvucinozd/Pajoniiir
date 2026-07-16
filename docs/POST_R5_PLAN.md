@@ -1,9 +1,13 @@
 # Post-R5 Plan
 
-Status: active 2026-07-14. R5A-R5F remediation and E1 signed-OTA acceptance are
-complete. The current accepted release is `RC1-123-g587cd7a1` on P4 `ota_0`
-and S3 `ota_1`. This document is the ordered continuation plan for enclosure
-readiness and production hardening.
+Status: active 2026-07-16. R5A-R5F remediation and E1 signed-OTA acceptance are
+complete. `RC1-131-gc391e306` is installed and boot-verified on P4 `ota_1` and
+S3 `ota_0`; the latest fully functionally accepted release remains
+`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
+Those are acceptance-time slots, not both current inactive images: RC1-131 left
+P4 `ota_0 / RC1-126-g812ad70f` and S3 `ota_1 / RC1-123-g587cd7a1` inactive.
+This document is the ordered continuation plan for targeted RC1-131 acceptance,
+enclosure readiness and production hardening.
 
 ## Execution Order
 
@@ -52,6 +56,57 @@ Acceptance record:
   P4 to `ota_0` and S3 to `ota_1` on the accepted release;
 - final UI/touch, dual-deck playback, scratch, FLX4 input/LED and headphone-cue
   smoke passed.
+
+## E1A — RC1-131 Targeted Functional Acceptance
+
+Status: deployment/boot verification complete 2026-07-16; functional hardware
+smoke pending.
+
+Goal: prove the installed review-remediation, controller-profile and new Beat FX
+release on the physical P4/S3/FLX4 system before enclosure work continues.
+
+Deployment record:
+
+- both `rel-001` signed bundles and the outer manifest were verified before
+  upload and both targets returned HTTP 200;
+- P4 moved `ota_0 / RC1-126-g812ad70f -> ota_1 /
+  RC1-131-gc391e306` and returned healthy status after reboot;
+- S3 moved `ota_1 / RC1-123-g587cd7a1 -> ota_0 / valid /
+  RC1-131-gc391e306`, independently confirmed through P4's nested report;
+- exact hashes, sizes and observations are in
+  [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+
+Tasks:
+
+1. Smoke P4 UI/touch, media browsing/loading, dual-deck PLAY/CUE/scratch and
+   Master Tempo with MAIN and FLX4 USB headphone cue active.
+2. Exercise FLANGER and DELAY on CH1, CH2 and `1&2`: selector directions,
+   Level/Depth, beat sizes, ON/OFF/CLEAR, mode transitions and audible tails.
+   Confirm Delay's one-shot/no-feedback behavior, 1000 ms cap/fallback and the
+   current Deck 1 timing source for `1&2`; confirm tempo/Beat Sync/track changes
+   do not retime until another Beat FX event, and listen for unacceptable clicks
+   during immediate beat-size/read-head changes.
+3. Disconnect/reconnect FLX4 USB MIDI/audio under activity and confirm priority
+   touch events, LED resynchronization and audio-stream recovery.
+4. From an AP client, verify guarded P4/S3 web control, controller-profile and
+   OTA mutations, including the expected Host and control header behavior.
+5. Install/overwrite a valid FLX4 controller profile, reject corrupt and
+   no-overwrite cases, confirm S3 activation/reconnect, and exercise the
+   documented backup/recovery path without sacrificing the built-in fallback.
+6. Capture UART startup/recovery and sustained control-link diagnostics while
+   both decks and FX are active.
+
+Acceptance:
+
+- no panic, watchdog, reboot, stuck touch/platter, audio drop or persistent
+  queue/link error;
+- UI, playback, MAIN/cue, controller input and LED state remain correct;
+- Flanger/Delay behavior matches the documented target, depth, timing and tail
+  semantics without unacceptable transition clicks;
+- guarded mutations reject malformed/unauthorized requests and valid profile
+  replacement remains recoverable;
+- only after these checks may `RC1-131-gc391e306` replace RC1-123 as the latest
+  fully functionally accepted baseline.
 
 ## E2 — Enclosure Wiring And Service Readiness
 
@@ -152,9 +207,10 @@ Acceptance:
 
 ## Resume Point
 
-Start the next session with **E2 — Enclosure Wiring And Service Readiness**,
-task 1: verify the final common-ground and independent 5 V power topology before
-the boards become difficult to access.
+Start the next session with **E1A — RC1-131 Targeted Functional Acceptance**,
+task 1: smoke the installed release's core P4/S3/FLX4 playback and audio paths
+before the boards become difficult to access. Continue with E2 only after E1A
+passes or every deferral is explicitly accepted.
 
 Keep `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md`, `DOCUMENTATION_STATUS.md`
 and this plan synchronized as each acceptance gate closes.

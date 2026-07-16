@@ -23,8 +23,11 @@ Cilj je standalone dual-deck DJ sustav:
 
 Projekt je prerastao uvezeni single-deck CDJ100S baseline. Trenutni `master`
 ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master Tempo, dualni
-MAIN/cue audio i P4/S3 OTA. I dalje ga ne tretiraj kao production-ready bez
-provjere aktualnih rizika, buildova i relevantnog hardware smoke testa.
+MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4/S3 OTA. Flanger, Delay i
+zadnji code-review remediation su software-testirani i OTA-deployani, ali
+njihov ciljani hardware smoke još nije zatvoren. I dalje ga ne tretiraj kao
+production-ready bez provjere aktualnih rizika, buildova i relevantnog
+hardware smoke testa.
 
 ## Najvaznije putanje
 

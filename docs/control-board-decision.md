@@ -1,9 +1,27 @@
 # Control Board Decision: ESP32-S3 MIDI/Input Controller
 
-Document status: accepted architecture decision, reviewed 2026-07-13. The S3
-role is implemented and now also bridges monitor PCM and hosts service-mode OTA.
+Document status: historical origin of the accepted two-board split, audited
+2026-07-16. The split and S3 state-ownership boundary remain valid; the original
+DevKitC/CDJ-panel/USB-device implementation details below are superseded.
 
-## Decision
+## Current Disposition
+
+- The active control board is a **Seeed Studio XIAO ESP32S3**, not the original
+  ESP32-S3-DevKitC-1 candidate.
+- It is the USB host for the Pioneer DDJ-FLX4, maps MIDI input to semantic
+  `0xA5` events, returns P4-owned LED state, streams FLX4 USB-headphone audio
+  from the P4 monitor PCM link, and provides the service Debug AP/OTA path.
+- P4 remains authoritative for playback, mixer, position, effect and LED state.
+- R5D permanently removed the inherited CDJ-100S GPIO panel, TinyUSB-device
+  mode, `panel_io`, `midi_compat` and `calibration` product paths.
+
+Use [`ARCHITECTURE.md`](ARCHITECTURE.md),
+[`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) and
+[`../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`](../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md)
+for the current design and wiring. The remainder of this file is retained as
+the original decision history.
+
+## Historical Original Decision
 
 Split the project into two cooperating boards:
 

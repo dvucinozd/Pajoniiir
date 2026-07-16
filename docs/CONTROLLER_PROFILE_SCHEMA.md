@@ -1,7 +1,9 @@
 # Controller Profile Schema v1
 
-Document status: current schema, audited 2026-07-13. Firmware loading and FLX4
-profile transfer are verified; a first non-FLX4 controller remains pending.
+Document status: current schema, audited 2026-07-16. Firmware loading and FLX4
+profile transfer are verified. The guarded web replacement path is deployed in
+`RC1-131-gc391e306` and still awaits focused hardware acceptance; a first
+non-FLX4 controller also remains pending.
 
 Data-driven controller profiles let the S3 map a USB MIDI controller to the
 existing deck-aware `control_link` semantic events without a firmware rebuild.

@@ -1,6 +1,6 @@
 # Hardware Wiring
 
-Status: current bench wiring, audited 2026-07-13. Revalidate cable routing,
+Status: current bench wiring, audited 2026-07-16. Revalidate cable routing,
 power budget, cooling and RF behavior after final enclosure installation.
 
 ## Inter-Board UART
@@ -23,7 +23,7 @@ enumerate the FLX4 as a USB MIDI device.
 
 For the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense replacement board, use
 the dedicated wiring note in `firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`.
-This migration branch maps the S3-P4 UART to XIAO header pins GPIO5/GPIO6
+The current product wiring maps the S3-P4 UART to XIAO header pins GPIO5/GPIO6
 instead of the previous DevKitC GPIO40/GPIO41 pair or the abandoned SuperMini
 GPIO12/GPIO13 candidate.
 

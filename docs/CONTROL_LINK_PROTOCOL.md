@@ -1,6 +1,6 @@
 # Control Link Protocol
 
-Status: current wire protocol, audited 2026-07-13. The fixed `0xA5` event layer
+Status: current wire protocol, audited 2026-07-16. The fixed `0xA5` event layer
 and variable-length `0xA6` bulk layer are both active in production firmware.
 
 DDJ-FFL4 keeps the inherited UART `control_link` as the internal protocol
@@ -260,14 +260,38 @@ The object contains `effect`, its additive human-readable `effect_name`,
 `beat`, `target`, `depth`, and `enabled`; numeric effect values are `0=NONE`,
 `1=FILTER`, `2=ECHO`, `3=FLANGER`, and `4=DELAY`. The new
 DELAY value does not change the wire protocol: S3 still sends only the semantic
-Next/Previous events above, and P4 owns selection/state. DELAY is a
-BPM-synchronized full-band one-shot repeat with Level/Depth as wet gain, while
-ECHO remains a damped multi-repeat feedback effect. They share the existing
-per-deck stereo delay line without an additional PSRAM allocation; diagnostics
-retain the `beat_fx_echo` compatibility object and expose the active shared-line
-mode for Echo/Delay distinction. DELAY hardware smoke remains pending.
-The same `enabled` state also drives the physical FLX4 Beat FX ON/OFF LED via
-`LED_BEAT_FX_ON`; S3 maps it to USB MIDI note `0x47` on `0x94`/`0x95`.
+Next/Previous events above, and P4 owns selection/state. DELAY is a full-band
+one-shot repeat with Level/Depth as wet gain, while ECHO remains a damped
+multi-repeat feedback effect. Time is derived from effective BPM when a Beat FX
+state-changing event applies the audio state; it is not automatically retimed
+by a later tempo, Beat Sync or track-load change. The valid BPM range is
+40–300, with a 120 BPM fallback. Both modes cap delay time at 1000 ms; target
+BOTH currently derives one shared time from Deck 1 BPM. They share the existing
+per-deck stereo delay line without an additional PSRAM allocation.
+`NONE` is a compatibility sentinel only; CLEAR restores disabled FILTER,
+beat `1`, target BOTH and depth `64`. Diagnostics retain the `beat_fx_echo`
+compatibility object with per-deck fields `allocated1/2`, `enabled1/2`,
+`mode1/2` and `delay_ms1/2`. `mode1/2` is the last commanded/retained shared
+lane mode, and `delay_ms1/2` becomes zero while that lane is disabled.
+`enabled1/2` means the DSP lane is actually active: top-level Beat FX is ON,
+depth is nonzero, that deck is targeted, and its buffer is allocated. It can
+therefore be false while top-level `beat_fx.enabled` and the controller LED are
+true. Tail-ringing state is not exposed. Use top-level
+`beat_fx.effect_name` as the selected-effect authority. Flanger and DELAY
+hardware smoke remains pending.
+
+The audio engine, not `deck_core`, maps raw depth through a square-root wet
+taper up to 0.70. Echo feedback spans 0.20–0.68; Delay forces feedback to zero.
+Wet/feedback gains ramp, but a live beat-size change moves the delay read head
+immediately without time interpolation. On switch-off or CLEAR, Echo can ring
+for about 2 s and Delay keeps exactly its previous delay period so the pending
+tap can leave the line. A live Echo↔Delay mode change resets the shared line;
+tail state is intentionally absent from the diagnostics object.
+The top-level Beat FX `enabled` state also drives the physical FLX4 Beat FX
+ON/OFF LED via `LED_BEAT_FX_ON`. The production P4 snapshot emits the
+global/deck-1 LED lane,
+which S3 maps to note `0x47` on `0x94`; the generic S3 encoder also supports the
+deck-2 `0x95` form for profile/compatibility use.
 
 The physical FLX4 MASTER CUE button is mapped from the official MIDI list to
 `CTRL_ID_MASTER_CUE` (`0x96/0x63`, shifted `0x96/0x78`). P4 owns the monitor
@@ -421,6 +445,12 @@ P4 stores the latest report under a short critical section. Settings shows the
 real P4 and S3 version/slot/state, and P4 `GET /api/firmware` includes the same
 S3 data. The report carries metadata only; firmware binaries are never
 forwarded over UART.
+
+For OTA acceptance, the nested P4 response field `s3.state` is the S3
+ESP-IDF image state from this report and can be used to confirm `valid`. The
+top-level `state` returned by either target's own HTTP OTA service is instead
+the transfer state (`idle`, `receiving`, `ready_to_reboot` or `failed`) and must
+not be misread as partition validity.
 
 ### Dynamic mapping and fallback
 

@@ -12,11 +12,13 @@ replacing the original single-deck/CDJ-panel product model with a dual-deck
 FLX4 workflow.
 
 > [!IMPORTANT]
-> The latest fully audited hardware baseline is **`RC1-123-g587cd7a1`** on
-> both processors, accepted on 2026-07-14 with signed OTA key `rel-001`.
-> The system is functional on the documented bench hardware, but it is not yet
-> production-ready. See [Documentation Status](docs/DOCUMENTATION_STATUS.md)
-> for verified scope and remaining acceptance work.
+> The installed signed-OTA baseline is **`RC1-131-gc391e306`** on both
+> processors: P4 `ota_1`, S3 `ota_0 / valid`, deployed and boot/status-verified
+> on 2026-07-16 with key `rel-001`. The latest complete functional hardware
+> acceptance remains **`RC1-123-g587cd7a1`** from 2026-07-14; the subsequent
+> code-review remediation and Beat FX Flanger/Delay still need their targeted
+> hardware smoke. The system is not yet production-ready. See
+> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
 
 ## System at a Glance
 
@@ -38,6 +40,9 @@ layer. The detailed ownership and data flow are documented in
   playback.
 - FLX4 transport, jog/vinyl scratch, tempo and Master Tempo, mixer/EQ,
   headphone cue, hot cues, loops, beat jump/sync, Pad FX and Beat FX control.
+  Beat FX Filter and Echo have recorded hardware acceptance; Flanger and the
+  new one-shot Delay are software-tested and deployed, with focused physical
+  audio/routing smoke still pending.
 - Simultaneous PCM5102A RCA MAIN output and FLX4 USB headphone cue.
 - P4-owned FLX4 LED feedback with reconnect and board-reboot resynchronization.
 - LVGL Overview, Library, Hot Cues and Settings tabs, plus the optional P4

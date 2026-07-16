@@ -1,8 +1,9 @@
 # DDJ-FFL4 Documentation
 
-Complete documentation index, audited 2026-07-13. Start with
+Complete documentation index, audited 2026-07-16. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
-scope, source-of-truth precedence and the accepted hardware baseline.
+scope, source-of-truth precedence, the installed baseline and the latest fully
+accepted hardware baseline.
 
 ## Current product documents
 
@@ -14,8 +15,10 @@ scope, source-of-truth precedence and the accepted hardware baseline.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — MIDI addresses, semantics and hardware-acceptance ledger.
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — UART, I2S, USB and audio wiring.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — completed phases and remaining work.
+- [`POST_R5_PLAN.md`](POST_R5_PLAN.md) — ordered RC1-131 acceptance and enclosure-hardening plan.
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — bring-up history and recurring pre-enclosure checks.
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) — open, monitored and accepted risks.
+- [`R5_DEAD_CODE_AUDIT.md`](R5_DEAD_CODE_AUDIT.md) — completed R5 legacy-path cleanup evidence.
 - [`VINYL_SCRATCH_PLAN.md`](VINYL_SCRATCH_PLAN.md) — scratch design, remediation and hardware acceptance.
 - [`OTA-UPDATE.md`](OTA-UPDATE.md) — operator procedure for P4 and S3 OTA updates.
 - [`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) — OTA design, rollout batches and rollback evidence.
@@ -30,7 +33,7 @@ whether they remain active or are historical context.
 
 - [`BLE_MIDI_FLX4_FEASIBILITY.md`](BLE_MIDI_FLX4_FEASIBILITY.md) — why BLE-MIDI FLX4 support is not planned.
 - [`board-jc4880p443c-i-w-analysis.md`](board-jc4880p443c-i-w-analysis.md) — target P4 board analysis.
-- [`control-board-decision.md`](control-board-decision.md) — dedicated S3 control-board decision.
+- [`control-board-decision.md`](control-board-decision.md) — historical origin and current disposition of the two-board/S3 decision.
 - [`external-bsp-analysis.md`](external-bsp-analysis.md) — external BSP comparison.
 - [`framework-decision.md`](framework-decision.md) — ESP-IDF production framework decision.
 - [`porting-architecture.md`](porting-architecture.md) — original port architecture record.
@@ -46,6 +49,7 @@ whether they remain active or are historical context.
 - [`validation/FLX4_USB_AUDIO_E2E_SMOKE.md`](validation/FLX4_USB_AUDIO_E2E_SMOKE.md)
 - [`validation/P4_USB_EXFAT_GPT_SMOKE.md`](validation/P4_USB_EXFAT_GPT_SMOKE.md)
 - [`validation/P4_USB_RECOVERY_SMOKE.md`](validation/P4_USB_RECOVERY_SMOKE.md)
+- [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md)
 
 Validation files are dated evidence. A `PENDING` row remains pending unless a
 newer active document explicitly records acceptance; do not infer a pass from

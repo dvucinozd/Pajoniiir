@@ -5,6 +5,10 @@ The `.ddjota` implementation, host tests, release builds, valid A/B updates,
 full rejection matrix, interrupted uploads and forced rollback passed on
 2026-07-14 with release `RC1-123-g587cd7a1`. See
 [`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for the design and acceptance record.
+The latest matching rollout, `RC1-131-gc391e306`, was signed, independently
+verified and installed on 2026-07-16: P4 finished on `ota_1`, S3 on
+`ota_0 / valid`. This rollout proved package/install/boot health but intentionally
+did not repeat the complete functional hardware smoke.
 
 ## Safety rules
 
@@ -94,12 +98,16 @@ Independent verification is available with:
 ```powershell
 python .\tools\ota_signing.py verify-bundle `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  .\releases\ddj-ffl4-<version>\main-deck-p4.ddjota
+  --input .\releases\ddj-ffl4-<version>\main-deck-p4.ddjota
+
+python .\tools\ota_signing.py verify-bundle `
+  --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
+  --input .\releases\ddj-ffl4-<version>\control-board-s3.ddjota
 
 python .\tools\ota_signing.py verify-file `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  --signature .\releases\ddj-ffl4-<version>\manifest.sig `
-  .\releases\ddj-ffl4-<version>\manifest.json
+  --input .\releases\ddj-ffl4-<version>\manifest.json `
+  --signature .\releases\ddj-ffl4-<version>\manifest.sig
 ```
 
 ## Update P4
@@ -110,8 +118,12 @@ python .\tools\ota_signing.py verify-file `
 3. Record the running P4 version, slot and state.
 4. Select **`main-deck-p4.ddjota`**, confirm and upload.
 5. Wait for success and restart; reconnect and refresh `/api/firmware`.
-6. Confirm the expected version, opposite OTA slot and `valid` state, then
-   check display/touch, USB library, MAIN audio, UART and S3 status.
+6. Confirm the expected version, opposite OTA slot, empty `last_error` and a
+   stable `/api/status` response after mandatory startup. The P4 response's
+   top-level `state` is the OTA transfer-service state (`idle` after reboot),
+   not the ESP-IDF image state; explicit partition-state evidence comes from
+   the `fw_health` boot log. Then check display/touch, USB library, MAIN audio,
+   UART and S3 status.
 
 Raw API equivalent:
 
@@ -135,9 +147,12 @@ validation remains the firmware-authenticity boundary.
    `http://192.168.4.1/update`.
 3. Record the S3 running version, slot and state.
 4. Select **`control-board-s3.ddjota`**, confirm and upload.
-5. After restart, re-enable the AP, reconnect and inspect `/api/firmware`.
-6. Confirm expected version, opposite slot and `valid`, then turn the AP off
-   and verify FLX4 controls, LEDs, UART and USB headphone cue.
+5. After restart, the S3 Debug AP turns OFF by design. Reconnect to the P4
+   `PAJONIIR` Wi-Fi Remote and inspect its `/api/firmware` response.
+6. Confirm nested `s3.available=true` plus the expected `s3.version`, opposite
+   `s3.slot` and `s3.state=valid`. Re-enable the S3 Debug AP only if local logs
+   are needed, then turn it off and verify FLX4 controls, LEDs, UART and USB
+   headphone cue.
 
 Raw API equivalent:
 
@@ -152,9 +167,11 @@ curl.exe -X POST `
 
 ## Acceptance and failure behavior
 
-For both targets record project, version, slot, state and last error. Confirm
-FLX4 reconnect/control/LED behavior, PCM5102A MAIN, FLX4 headphone cue and P4
-UI/media access.
+For both targets record project, version, slot and last error. Record image
+state from `fw_health`/serial for the local target or, for S3, from the P4
+nested `s3.state` firmware report. Do not interpret the HTTP OTA service's
+top-level `idle` as an image state. Confirm FLX4 reconnect/control/LED behavior,
+PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
 
 - Invalid signature/key ID/target/chip/project/version/size or image SHA is
   rejected without selecting the inactive slot.
@@ -181,6 +198,15 @@ bundles (HTTP 400) without changing the active slot. A client disconnect after
 to P4 `ota_0` and S3 `ota_1`. Final UI/touch, dual-deck playback and scratch,
 FLX4 controls/LEDs, MAIN and headphone-cue smoke passed. The private `rel-001`
 key has an offline USB backup; production key rotation remains future work.
+
+The non-destructive 2026-07-16 rollout used clean release
+`RC1-131-gc391e306`, key ID `rel-001`, signed P4/S3 bundles and a signed outer
+manifest. P4 updated `ota_0 / RC1-126-g812ad70f -> ota_1 /
+RC1-131-gc391e306`; S3 updated `ota_1 / RC1-123-g587cd7a1 -> ota_0 / valid /
+RC1-131-gc391e306`. Both uploads returned HTTP 200, P4 status remained stable,
+and the P4-visible periodic S3 report confirmed the matching valid S3 image.
+Exact artifact sizes, hashes and deferred checks are recorded in
+[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
 ## Wired recovery
 
