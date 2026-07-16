@@ -108,12 +108,19 @@ Current P4 audio ownership rule:
   FLX4 LEDs and are included in the mixer snapshot/status API;
 - the audio engine exposes a central diagnostics snapshot with output codec
   state/sample-rate, late-output counters, per-deck ring fill and active flags,
-  limiter counters, Beat FX Echo allocation/enabled/delay state, and
+  limiter counters, shared Beat FX Echo/Delay-line allocation/enabled/delay/mode
+  state, and
   heap/internal/PSRAM free space. `/api/status` includes these values under
   `diagnostics` so hardware smoke tests can read one structured report instead
   of scraping log lines;
 - Beat FX state is P4-owned and read by both the physical Overview UI and
-  `/api/status`. ESP-Hosted Wi-Fi is enabled only when the Settings
+  `/api/status`. The effect selector uses the explicit cycle
+  `FILTER → ECHO → FLANGER → DELAY → FILTER` (and the exact reverse for
+  previous); `NONE` is a reset/off state, not a selectable slot. DELAY is a
+  BPM-synchronized full-band one-shot repeat whose Level/Depth controls wet
+  gain, while ECHO remains a damped feedback effect with multiple repeats.
+  Both time effects share the existing per-deck stereo delay line, so DELAY
+  adds no PSRAM allocation. ESP-Hosted Wi-Fi is enabled only when the Settings
   `wifi_remote` switch requests it; the HTTP server and captive DNS start after
   hosted Wi-Fi/AP init succeeds and are fully torn down when the switch is off;
 - the shared output service relies on codec/I2S write pacing and does not add a
@@ -136,7 +143,7 @@ Current P4 Overview waveform ownership rule:
   but it does not directly render the large main waveform;
 - Overview owns the visual chrome around that state: compact D1/D2 badges, the
   title strip, BPM/pitch readouts, transport controls, deck VU meters, beat/phase
-  strip, and effect-colour-coded Beat FX rail (Filter/Echo/Flanger, with a
+  strip, and effect-colour-coded Beat FX rail (Filter/Echo/Flanger/Delay, with a
   vertical depth meter). Those widgets render P4-owned deck, mixer, and Beat FX
   state; they do not become new state owners;
 - the Overview scheduler owns main-waveform render/blit timing, including the

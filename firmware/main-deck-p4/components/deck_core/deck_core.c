@@ -348,6 +348,41 @@ static uint32_t beat_fx_flanger_period_ms(deck_core_beat_fx_beat_t beat,
     return period_ms;
 }
 
+static deck_core_beat_fx_effect_t beat_fx_next_effect(
+    deck_core_beat_fx_effect_t effect)
+{
+    switch (effect) {
+    case DECK_CORE_BEAT_FX_FILTER:
+        return DECK_CORE_BEAT_FX_ECHO;
+    case DECK_CORE_BEAT_FX_ECHO:
+        return DECK_CORE_BEAT_FX_FLANGER;
+    case DECK_CORE_BEAT_FX_FLANGER:
+        return DECK_CORE_BEAT_FX_DELAY;
+    case DECK_CORE_BEAT_FX_DELAY:
+    case DECK_CORE_BEAT_FX_NONE:
+    default:
+        return DECK_CORE_BEAT_FX_FILTER;
+    }
+}
+
+static deck_core_beat_fx_effect_t beat_fx_previous_effect(
+    deck_core_beat_fx_effect_t effect)
+{
+    switch (effect) {
+    case DECK_CORE_BEAT_FX_FILTER:
+        return DECK_CORE_BEAT_FX_DELAY;
+    case DECK_CORE_BEAT_FX_DELAY:
+        return DECK_CORE_BEAT_FX_FLANGER;
+    case DECK_CORE_BEAT_FX_FLANGER:
+        return DECK_CORE_BEAT_FX_ECHO;
+    case DECK_CORE_BEAT_FX_ECHO:
+        return DECK_CORE_BEAT_FX_FILTER;
+    case DECK_CORE_BEAT_FX_NONE:
+    default:
+        return DECK_CORE_BEAT_FX_DELAY;
+    }
+}
+
 static void sync_beat_fx_audio_state(void)
 {
     audio_engine_beat_fx_target_t target = beat_fx_audio_target(s_beat_fx.target);
@@ -355,16 +390,28 @@ static void sync_beat_fx_audio_state(void)
                           s_beat_fx.effect == DECK_CORE_BEAT_FX_FILTER;
     bool echo_enabled = s_beat_fx.enabled &&
                         s_beat_fx.effect == DECK_CORE_BEAT_FX_ECHO;
+    bool delay_enabled = s_beat_fx.enabled &&
+                         s_beat_fx.effect == DECK_CORE_BEAT_FX_DELAY;
     bool flanger_enabled = s_beat_fx.enabled &&
                            s_beat_fx.effect == DECK_CORE_BEAT_FX_FLANGER;
 
     audio_engine_set_beat_fx_filter(target,
                                     s_beat_fx.depth,
                                     filter_enabled);
-    audio_engine_set_beat_fx_echo(target,
-                                  s_beat_fx.depth,
-                                  beat_fx_delay_ms(s_beat_fx.beat, s_beat_fx.target),
-                                  echo_enabled);
+    uint32_t delay_ms = beat_fx_delay_ms(s_beat_fx.beat, s_beat_fx.target);
+    /* ECHO and DELAY share one per-deck stereo delay line. Publish exactly
+     * one time-effect command so a second setter cannot overwrite the first. */
+    if (s_beat_fx.effect == DECK_CORE_BEAT_FX_DELAY) {
+        audio_engine_set_beat_fx_delay(target,
+                                       s_beat_fx.depth,
+                                       delay_ms,
+                                       delay_enabled);
+    } else {
+        audio_engine_set_beat_fx_echo(target,
+                                      s_beat_fx.depth,
+                                      delay_ms,
+                                      echo_enabled);
+    }
     audio_engine_set_beat_fx_flanger(target,
                                      s_beat_fx.depth,
                                      beat_fx_flanger_period_ms(s_beat_fx.beat, s_beat_fx.target),
@@ -1499,17 +1546,14 @@ static bool on_system_button(const ctrl_event_t *ev)
         return true;
     case CTRL_ID_BEAT_FX_SELECT_NEXT:
         if (ev->value != 0) {
-            s_beat_fx.effect = (deck_core_beat_fx_effect_t)((s_beat_fx.effect + 1) %
-                                                            DECK_CORE_BEAT_FX_COUNT);
+            s_beat_fx.effect = beat_fx_next_effect(s_beat_fx.effect);
             sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
         }
         return true;
     case CTRL_ID_BEAT_FX_SELECT_PREV:
         if (ev->value != 0) {
-            s_beat_fx.effect = s_beat_fx.effect == 0
-                ? (deck_core_beat_fx_effect_t)(DECK_CORE_BEAT_FX_COUNT - 1)
-                : (deck_core_beat_fx_effect_t)(s_beat_fx.effect - 1);
+            s_beat_fx.effect = beat_fx_previous_effect(s_beat_fx.effect);
             sync_beat_fx_audio_state();
             ESP_LOGI(TAG, "beat fx effect -> %d", (int)s_beat_fx.effect);
         }

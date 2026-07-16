@@ -70,7 +70,11 @@ static void test_beat_fx_json_formats_status_block(void)
     int n = web_api_format_beat_fx_json(out, sizeof(out), 2, 3, 1, 42, true);
 
     assert(n > 0);
-    assert(strcmp(out, "\"beat_fx\":{\"effect\":2,\"beat\":3,\"target\":1,\"depth\":42,\"enabled\":true}") == 0);
+    assert(strcmp(out, "\"beat_fx\":{\"effect\":2,\"effect_name\":\"echo\",\"beat\":3,\"target\":1,\"depth\":42,\"enabled\":true}") == 0);
+
+    n = web_api_format_beat_fx_json(out, sizeof(out), 4, 3, 1, 42, true);
+    assert(n > 0);
+    assert(strstr(out, "\"effect\":4,\"effect_name\":\"delay\"") != NULL);
 }
 
 static void test_beat_fx_echo_diag_json_formats_status_block(void)
@@ -83,11 +87,13 @@ static void test_beat_fx_echo_diag_json_formats_status_block(void)
                                                   false,
                                                   true,
                                                   false,
+                                                  true,
+                                                  false,
                                                   250,
                                                   500);
 
     assert(n > 0);
-    assert(strcmp(out, "\"beat_fx_echo\":{\"allocated1\":true,\"allocated2\":false,\"enabled1\":true,\"enabled2\":false,\"delay_ms1\":250,\"delay_ms2\":500}") == 0);
+    assert(strcmp(out, "\"beat_fx_echo\":{\"allocated1\":true,\"allocated2\":false,\"enabled1\":true,\"enabled2\":false,\"mode1\":\"delay\",\"mode2\":\"echo\",\"delay_ms1\":250,\"delay_ms2\":500}") == 0);
 }
 
 static void test_alloc_printf_handles_payload_larger_than_legacy_status_buffer(void)

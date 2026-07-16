@@ -634,10 +634,10 @@ startup remain gated behind successful ESP-Hosted Wi-Fi/AP init because starting
 assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
-Beat FX Echo/delay has a BPM-synced DSP slice: P4 owns the delay lines,
-deck_core routes the existing Echo state into the audio engine, depth controls
-wet/feedback amount, and `/api/status.diagnostics.beat_fx_echo` exposes
-allocation/enabled/delay telemetry. Beat-size mapping derives delay time from
+Beat FX Echo has a BPM-synced DSP slice: P4 owns the delay lines, deck_core
+routes the Echo state into the audio engine, depth controls wet/feedback amount,
+and `/api/status.diagnostics.beat_fx_echo` exposes allocation/enabled/delay
+telemetry. Beat-size mapping derives delay time from
 the target deck effective BPM, falls back to 120 BPM when BPM is unavailable,
 and caps delay at 1000 ms to match the current delay-line budget. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
@@ -656,6 +656,22 @@ effect-colour-coded strip (Filter blue / Echo amber / Flanger magenta) with a
 vertical depth meter. Host suites pass, and the FLX4 USB-headphones audio
 profile was made the default build on both boards (folded into
 `sdkconfig.defaults`; a plain `idf.py build` now has sound).
+
+**2026-07-16 Beat FX Delay update.** A distinct BPM-synchronized **DELAY** was
+added as numeric effect value `4`; the existing `NONE=0`, `FILTER=1`, `ECHO=2`,
+and `FLANGER=3` values remain stable. DELAY is a full-band one-shot repeat with
+zero feedback, and Level/Depth controls its wet gain. ECHO remains the damped
+multi-repeat feedback mode. Both modes share the existing per-deck stereo
+`audio_delay_fx` line, so DELAY requires no additional PSRAM allocation; a live
+ECHO/DELAY mode change resets that shared line so stale repeats cannot cross
+between effect semantics. The selector is explicit rather than enum-modulo:
+`FILTER → ECHO → FLANGER → DELAY → FILTER`, with Previous traversing the exact
+reverse and `NONE` excluded from both selector paths. The S3 continues to send
+the existing semantic Next/Previous events over the unchanged `0xA5` wire
+protocol. P4 host tests plus `idf.py build` are the software acceptance path;
+hardware smoke for DELAY audio, target routing, beat size, and Level/Depth is
+still **PENDING**.
+
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
 delay primitives. Full FLX4 Pad FX physical pad input mapping is implemented
@@ -853,6 +869,10 @@ Implementation order:
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
+   - Beat FX DELAY is implemented on P4 as value `4`: a BPM-synchronized,
+     full-band one-shot repeat with wet gain controlled by Level/Depth. It
+     shares the Echo delay line without additional PSRAM; DELAY hardware smoke
+     remains pending;
    - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
      expose no-op controls as completed functionality.
 9. **LED feedback expansion**

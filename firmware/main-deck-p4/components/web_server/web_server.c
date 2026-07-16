@@ -569,13 +569,15 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                 (int)beat_fx.target,
                                 (unsigned)beat_fx.depth,
                                 beat_fx.enabled);
-    char beat_fx_echo_diag_json[160] = {0};
+    char beat_fx_echo_diag_json[224] = {0};
     web_api_format_beat_fx_echo_diag_json(beat_fx_echo_diag_json,
                                           sizeof(beat_fx_echo_diag_json),
                                           diagnostics.beat_fx_echo_allocated[0],
                                           diagnostics.beat_fx_echo_allocated[1],
                                           diagnostics.beat_fx_echo_enabled[0],
                                           diagnostics.beat_fx_echo_enabled[1],
+                                          diagnostics.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_DELAY,
+                                          diagnostics.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
 

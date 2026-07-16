@@ -9,6 +9,7 @@ static const char *ui_beat_fx_effect_text(deck_core_beat_fx_effect_t effect)
     case DECK_CORE_BEAT_FX_FILTER: return "FILTER";
     case DECK_CORE_BEAT_FX_ECHO: return "ECHO";
     case DECK_CORE_BEAT_FX_FLANGER: return "FLANG";
+    case DECK_CORE_BEAT_FX_DELAY: return "DELAY";
     case DECK_CORE_BEAT_FX_NONE:
     case DECK_CORE_BEAT_FX_COUNT:
     default:

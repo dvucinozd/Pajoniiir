@@ -5,8 +5,16 @@
 
 #include "audio_mixer.h"
 
+typedef enum {
+    /* Keep ECHO at zero so existing zero-initialized configurations retain
+     * their historical feedback-delay behaviour. */
+    AUDIO_DELAY_FX_MODE_ECHO = 0,
+    AUDIO_DELAY_FX_MODE_DELAY,
+} audio_delay_fx_mode_t;
+
 typedef struct {
     bool enabled;
+    audio_delay_fx_mode_t mode;
     uint32_t delay_ms;
     uint16_t wet_q15;
     uint16_t feedback_q15;

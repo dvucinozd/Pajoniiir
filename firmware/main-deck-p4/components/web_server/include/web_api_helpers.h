@@ -18,6 +18,8 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                                           bool allocated2,
                                           bool enabled1,
                                           bool enabled2,
+                                          bool delay_mode1,
+                                          bool delay_mode2,
                                           unsigned delay_ms1,
                                           unsigned delay_ms2);
 int web_api_format_controller_json(char *dst,

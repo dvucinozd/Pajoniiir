@@ -38,6 +38,11 @@ int audio_engine_stub_beat_fx_echo_depth;
 uint32_t audio_engine_stub_beat_fx_echo_delay_ms;
 bool audio_engine_stub_beat_fx_echo_enabled;
 int audio_engine_stub_beat_fx_echo_set_count;
+int audio_engine_stub_beat_fx_delay_target;
+int audio_engine_stub_beat_fx_delay_depth;
+uint32_t audio_engine_stub_beat_fx_delay_delay_ms;
+bool audio_engine_stub_beat_fx_delay_enabled;
+int audio_engine_stub_beat_fx_delay_set_count;
 int audio_engine_stub_beat_fx_flanger_target;
 int audio_engine_stub_beat_fx_flanger_depth;
 uint32_t audio_engine_stub_beat_fx_flanger_period_ms;
@@ -326,6 +331,11 @@ static void reset_audio_engine_stub(void)
     audio_engine_stub_beat_fx_echo_delay_ms = 0;
     audio_engine_stub_beat_fx_echo_enabled = false;
     audio_engine_stub_beat_fx_echo_set_count = 0;
+    audio_engine_stub_beat_fx_delay_target = -1;
+    audio_engine_stub_beat_fx_delay_depth = -1;
+    audio_engine_stub_beat_fx_delay_delay_ms = 0;
+    audio_engine_stub_beat_fx_delay_enabled = false;
+    audio_engine_stub_beat_fx_delay_set_count = 0;
     audio_engine_stub_beat_fx_flanger_target = -1;
     audio_engine_stub_beat_fx_flanger_depth = -1;
     audio_engine_stub_beat_fx_flanger_period_ms = 0;
@@ -1682,10 +1692,37 @@ static void test_beat_fx_flanger_cycles_and_syncs_to_audio_engine(void)
     /* The other effects stay off while the flanger is selected. */
     assert(!audio_engine_stub_beat_fx_filter_enabled);
     assert(!audio_engine_stub_beat_fx_echo_enabled);
+    assert(!audio_engine_stub_beat_fx_delay_enabled);
 
     ctrl_event_t off = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
     deck_core_test_apply_event(&off);
     assert(!audio_engine_stub_beat_fx_flanger_enabled);
+}
+
+static void test_beat_fx_selector_cycles_through_delay_without_none(void)
+{
+    deck_core_test_reset();
+
+    ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    ctrl_event_t prev = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_PREV, 1);
+
+    deck_core_test_apply_event(&next);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_ECHO);
+    deck_core_test_apply_event(&next);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_FLANGER);
+    deck_core_test_apply_event(&next);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_DELAY);
+    deck_core_test_apply_event(&next);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_FILTER);
+
+    deck_core_test_apply_event(&prev);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_DELAY);
+    deck_core_test_apply_event(&prev);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_FLANGER);
+    deck_core_test_apply_event(&prev);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_ECHO);
+    deck_core_test_apply_event(&prev);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_FILTER);
 }
 
 static void test_beat_fx_public_snapshot_matches_state_controls(void)
@@ -1824,10 +1861,52 @@ static void test_beat_fx_echo_state_updates_audio_engine(void)
     assert(audio_engine_stub_beat_fx_echo_delay_ms == 1000);
     assert(audio_engine_stub_beat_fx_echo_enabled);
     assert(!audio_engine_stub_beat_fx_filter_enabled);
+    assert(!audio_engine_stub_beat_fx_delay_enabled);
+    assert(!audio_engine_stub_beat_fx_flanger_enabled);
 
     ctrl_event_t clear = beat_fx_button(CTRL_ID_BEAT_FX_CLEAR, 1);
     deck_core_test_apply_event(&clear);
     assert(!audio_engine_stub_beat_fx_echo_enabled);
+}
+
+static void test_beat_fx_delay_state_updates_audio_engine(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+
+    ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
+    ctrl_event_t target = beat_fx_button(CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH2);
+    ctrl_event_t beat_inc = beat_fx_button(CTRL_ID_BEAT_FX_BEAT_INC, 1);
+    ctrl_event_t depth = beat_fx_depth(101);
+    ctrl_event_t on = beat_fx_button(CTRL_ID_BEAT_FX_ON, 1);
+
+    /* FILTER -> ECHO -> FLANGER -> DELAY. */
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&next);
+    deck_core_test_apply_event(&target);
+    deck_core_test_apply_event(&beat_inc);
+    deck_core_test_apply_event(&depth);
+    deck_core_test_apply_event(&on);
+
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_DELAY);
+    assert(audio_engine_stub_beat_fx_delay_set_count > 0);
+    assert(audio_engine_stub_beat_fx_delay_target == AUDIO_ENGINE_BEAT_FX_TARGET_CH2);
+    assert(audio_engine_stub_beat_fx_delay_depth == 101);
+    /* 2 beats at the 120 BPM fallback = 1000 ms. */
+    assert(audio_engine_stub_beat_fx_delay_delay_ms == 1000u);
+    assert(audio_engine_stub_beat_fx_delay_enabled);
+    assert(!audio_engine_stub_beat_fx_filter_enabled);
+    assert(!audio_engine_stub_beat_fx_echo_enabled);
+    assert(!audio_engine_stub_beat_fx_flanger_enabled);
+
+    /* Switching to FILTER keeps Beat FX on, but disables the DELAY path. */
+    deck_core_test_apply_event(&next);
+    assert(deck_core_test_get_beat_fx_state().effect == DECK_CORE_BEAT_FX_FILTER);
+    assert(audio_engine_stub_beat_fx_filter_enabled);
+    assert(!audio_engine_stub_beat_fx_echo_enabled);
+    assert(!audio_engine_stub_beat_fx_flanger_enabled);
+    assert(!audio_engine_stub_beat_fx_delay_enabled);
 }
 
 static void test_beat_fx_echo_delay_uses_target_deck_bpm(void)
@@ -2570,12 +2649,14 @@ int main(void)
     test_shifted_smart_buttons_are_noop_placeholders();
     test_beat_fx_defaults_and_state_controls();
     test_beat_fx_flanger_cycles_and_syncs_to_audio_engine();
+    test_beat_fx_selector_cycles_through_delay_without_none();
     test_beat_fx_public_snapshot_matches_state_controls();
     test_shifted_beat_fx_beat_buttons_step_by_two_and_saturate();
     test_shifted_beat_fx_beat_button_release_does_not_change_state();
     test_beat_fx_on_toggles_on_press_only_and_clear_resets();
     test_beat_fx_filter_state_updates_audio_engine();
     test_beat_fx_echo_state_updates_audio_engine();
+    test_beat_fx_delay_state_updates_audio_engine();
     test_beat_fx_echo_delay_uses_target_deck_bpm();
     test_active_beat_fx_echo_resyncs_on_normal_beat_buttons();
     test_duplicate_flx4_connected_state_does_not_resend_forced_snapshot();

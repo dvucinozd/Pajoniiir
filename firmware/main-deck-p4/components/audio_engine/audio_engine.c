@@ -353,6 +353,7 @@ static int16_t         *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
 typedef struct {
     uint32_t sequence;
     uint32_t word0;
@@ -640,6 +641,7 @@ static inline void scratch_handoff_store(uint8_t *value, uint8_t new_value)
  * and retries next block rather than waiting on a preempted lower-priority
  * producer. */
 #define AE_FILTER_CMD_ENABLED       (1u << 16)
+#define AE_FX_CMD_DELAY_MODE        (1u << 30)
 #define AE_FX_CMD_ENABLED           (1u << 31)
 
 static uint32_t pack_filter_command(uint16_t raw, bool enabled)
@@ -661,7 +663,6 @@ static uint32_t fx_command_publish(ae_fx_command_t *command,
     return sequence;
 }
 
-#if AE_FW
 static bool fx_command_snapshot(const ae_fx_command_t *command,
                                 uint32_t *out_sequence,
                                 uint32_t *out_word0,
@@ -678,7 +679,6 @@ static bool fx_command_snapshot(const ae_fx_command_t *command,
     if (out_word1) *out_word1 = word1;
     return true;
 }
-#endif
 
 static uint32_t publish_echo_command(uint8_t deck,
                                      const audio_delay_fx_config_t *config)
@@ -687,13 +687,33 @@ static uint32_t publish_echo_command(uint8_t deck,
     uint32_t word1 = 0u;
     if (config) {
         if (config->enabled) word0 |= AE_FX_CMD_ENABLED;
+        if (config->mode == AUDIO_DELAY_FX_MODE_DELAY) word0 |= AE_FX_CMD_DELAY_MODE;
         word1 = (uint32_t)config->wet_q15 |
                 ((uint32_t)config->feedback_q15 << 16);
     }
     return fx_command_publish(&s_beat_fx_echo_command[deck], word0, word1);
 }
 
-#if AE_FW
+static void read_echo_command_status(uint8_t deck,
+                                     bool *out_enabled,
+                                     uint32_t *out_delay_ms,
+                                     audio_delay_fx_mode_t *out_mode)
+{
+    /* All status fields live in the same native 32-bit command word, so a
+     * low-rate UI/web snapshot sees either the old or new state as one
+     * coherent value even if the producer is publishing concurrently. */
+    uint32_t word0 = __atomic_load_n(&s_beat_fx_echo_command[deck].word0,
+                                     __ATOMIC_ACQUIRE);
+    bool enabled = (word0 & AE_FX_CMD_ENABLED) != 0u;
+    if (out_enabled) *out_enabled = enabled;
+    if (out_delay_ms) *out_delay_ms = enabled ? (word0 & 0x3FFu) : 0u;
+    if (out_mode) {
+        *out_mode = (word0 & AE_FX_CMD_DELAY_MODE) != 0u
+            ? AUDIO_DELAY_FX_MODE_DELAY
+            : AUDIO_DELAY_FX_MODE_ECHO;
+    }
+}
+
 static bool snapshot_echo_command(uint8_t deck,
                                   uint32_t *out_sequence,
                                   audio_delay_fx_config_t *out_config)
@@ -705,13 +725,15 @@ static bool snapshot_echo_command(uint8_t deck,
     }
     *out_config = (audio_delay_fx_config_t) {
         .enabled = (word0 & AE_FX_CMD_ENABLED) != 0u,
+        .mode = (word0 & AE_FX_CMD_DELAY_MODE) != 0u
+            ? AUDIO_DELAY_FX_MODE_DELAY
+            : AUDIO_DELAY_FX_MODE_ECHO,
         .delay_ms = word0 & 0x3FFu,
         .wet_q15 = (uint16_t)(word1 & 0xFFFFu),
         .feedback_q15 = (uint16_t)(word1 >> 16),
     };
     return true;
 }
-#endif
 
 static uint32_t publish_flanger_command(uint8_t deck,
                                         const audio_flanger_fx_config_t *config)
@@ -4013,9 +4035,12 @@ static void init_beat_fx_echo_buffers(void)
                             AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
         atomic_store_bool(&s_beat_fx_echo_enabled[deck], false);
         atomic_store_u32(&s_beat_fx_echo_delay_ms[deck], 0u);
+        atomic_store_u32(&s_beat_fx_echo_mode[deck], AUDIO_DELAY_FX_MODE_ECHO);
         s_beat_fx_echo_command[deck] = (ae_fx_command_t) { 0 };
         s_beat_fx_echo_applied[deck] = publish_echo_command(
-            deck, &(audio_delay_fx_config_t) { 0 });
+            deck, &(audio_delay_fx_config_t) {
+                .mode = AUDIO_DELAY_FX_MODE_ECHO,
+            });
     }
 }
 
@@ -4121,6 +4146,15 @@ static void init_scratch_buffers(void)
 }
 
 #if defined(AUDIO_ENGINE_PC_TEST)
+bool audio_engine_test_snapshot_beat_fx_time_command(
+    uint8_t deck,
+    audio_delay_fx_config_t *out_config)
+{
+    if (!deck_is_valid(deck) || !out_config) return false;
+    uint32_t sequence = 0u;
+    return snapshot_echo_command(deck, &sequence, out_config);
+}
+
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right)
 {
     AE_LOCK();
@@ -4323,7 +4357,7 @@ esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
     return ESP_OK;
 }
 
-static uint16_t beat_fx_echo_wet_from_depth(uint8_t depth)
+static uint16_t beat_fx_time_wet_from_depth(uint8_t depth)
 {
     if (depth > 127u) depth = 127u;
     /* sqrt taper: audible repeats early on the knob, 0.70 wet at full. */
@@ -4339,14 +4373,20 @@ static uint16_t beat_fx_echo_feedback_from_depth(uint8_t depth)
     return (uint16_t)(6554.0f + x * (22282.0f - 6554.0f) + 0.5f);
 }
 
-esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
-                                        uint8_t depth,
-                                        uint32_t delay_ms,
-                                        bool enabled)
+static esp_err_t audio_engine_set_beat_fx_time_effect(
+    audio_engine_beat_fx_target_t target,
+    uint8_t depth,
+    uint32_t delay_ms,
+    audio_delay_fx_mode_t requested_mode,
+    bool enabled)
 {
     if (target != AUDIO_ENGINE_BEAT_FX_TARGET_CH1 &&
         target != AUDIO_ENGINE_BEAT_FX_TARGET_CH2 &&
         target != AUDIO_ENGINE_BEAT_FX_TARGET_BOTH) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (requested_mode != AUDIO_DELAY_FX_MODE_ECHO &&
+        requested_mode != AUDIO_DELAY_FX_MODE_DELAY) {
         return ESP_ERR_INVALID_ARG;
     }
     if (delay_ms == 0u) {
@@ -4364,17 +4404,26 @@ esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
         if (active &&
             beat_fx_target_includes_deck(target, deck) &&
             !audio_delay_fx_is_allocated(&s_beat_fx_echo[deck])) {
-            ESP_LOGW(TAG, "beat fx echo deck %u buffer not allocated", (unsigned)deck);
+            ESP_LOGW(TAG, "beat fx time effect deck %u buffer not allocated", (unsigned)deck);
         }
+        /* A generic disable must retain the currently active mode so a DELAY
+         * tail cannot accidentally acquire ECHO feedback while ringing out. */
+        audio_delay_fx_mode_t mode = deck_enabled
+            ? requested_mode
+            : (audio_delay_fx_mode_t)atomic_load_u32(&s_beat_fx_echo_mode[deck]);
         atomic_store_bool(&s_beat_fx_echo_enabled[deck], deck_enabled);
         atomic_store_u32(&s_beat_fx_echo_delay_ms[deck], deck_enabled ? delay_ms : 0u);
+        atomic_store_u32(&s_beat_fx_echo_mode[deck], (uint32_t)mode);
         /* No reset on switch-off: audio_delay_fx keeps the tail ringing and
          * the output mixer keeps processing until it decays. */
         audio_delay_fx_config_t config = {
             .enabled = deck_enabled,
+            .mode = mode,
             .delay_ms = delay_ms,
-            .wet_q15 = beat_fx_echo_wet_from_depth(depth),
-            .feedback_q15 = beat_fx_echo_feedback_from_depth(depth),
+            .wet_q15 = beat_fx_time_wet_from_depth(depth),
+            .feedback_q15 = mode == AUDIO_DELAY_FX_MODE_ECHO
+                ? beat_fx_echo_feedback_from_depth(depth)
+                : 0u,
         };
         (void)publish_echo_command(deck, &config);
     }
@@ -4439,6 +4488,30 @@ esp_err_t audio_engine_set_pad_fx(uint8_t deck,
     __atomic_store_n(&s_pad_fx_command[deck], pack_pad_fx_command(config),
                      __ATOMIC_RELEASE);
     return ESP_OK;
+}
+
+esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
+                                        uint8_t depth,
+                                        uint32_t delay_ms,
+                                        bool enabled)
+{
+    return audio_engine_set_beat_fx_time_effect(target,
+                                                depth,
+                                                delay_ms,
+                                                AUDIO_DELAY_FX_MODE_ECHO,
+                                                enabled);
+}
+
+esp_err_t audio_engine_set_beat_fx_delay(audio_engine_beat_fx_target_t target,
+                                         uint8_t depth,
+                                         uint32_t delay_ms,
+                                         bool enabled)
+{
+    return audio_engine_set_beat_fx_time_effect(target,
+                                                depth,
+                                                delay_ms,
+                                                AUDIO_DELAY_FX_MODE_DELAY,
+                                                enabled);
 }
 
 esp_err_t audio_engine_set_master_trim(float gain)
@@ -4563,8 +4636,10 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->beat_fx_filter_raw[deck] =
             (uint16_t)(filter_command & 0xFFFFu);
         out_snapshot->beat_fx_filter_enabled[deck] = atomic_load_bool(&s_beat_fx_filter_enabled[deck]);
-        out_snapshot->beat_fx_echo_enabled[deck] = atomic_load_bool(&s_beat_fx_echo_enabled[deck]);
-        out_snapshot->beat_fx_echo_delay_ms[deck] = atomic_load_u32(&s_beat_fx_echo_delay_ms[deck]);
+        read_echo_command_status(deck,
+                                 &out_snapshot->beat_fx_echo_enabled[deck],
+                                 &out_snapshot->beat_fx_echo_delay_ms[deck],
+                                 &out_snapshot->beat_fx_echo_mode[deck]);
         out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
         uint32_t pad_command = __atomic_load_n(&s_pad_fx_command[deck],
                                                __ATOMIC_ACQUIRE);
@@ -4644,8 +4719,10 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         out_snapshot->deck_load_progress[deck] =
             (eng->loaded || eng->loading) ? eng->load_progress : 0u;
         out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
-        out_snapshot->beat_fx_echo_enabled[deck] = atomic_load_bool(&s_beat_fx_echo_enabled[deck]);
-        out_snapshot->beat_fx_echo_delay_ms[deck] = atomic_load_u32(&s_beat_fx_echo_delay_ms[deck]);
+        read_echo_command_status(deck,
+                                 &out_snapshot->beat_fx_echo_enabled[deck],
+                                 &out_snapshot->beat_fx_echo_delay_ms[deck],
+                                 &out_snapshot->beat_fx_echo_mode[deck]);
         uint32_t pad_command = __atomic_load_n(&s_pad_fx_command[deck],
                                                __ATOMIC_ACQUIRE);
         out_snapshot->pad_fx_active[deck] =

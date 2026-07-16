@@ -451,6 +451,113 @@ static void test_mixer_state_api(void)
     EXPECT(snapshot.limiter.peak_input_abs == 0, "limiter peak resets on init");
 }
 
+static void test_beat_fx_delay_state_api(void)
+{
+    puts("\n[Test 4a] Beat FX DELAY state API");
+
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets Beat FX time-effect state");
+
+    audio_engine_mixer_snapshot_t snapshot = { 0 };
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.beat_fx_echo_enabled[0] &&
+           !snapshot.beat_fx_echo_enabled[1],
+           "Beat FX shared delay lines default disabled");
+    EXPECT(snapshot.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_ECHO &&
+           snapshot.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_ECHO,
+           "Beat FX shared delay lines default to ECHO mode");
+
+    EXPECT(audio_engine_set_beat_fx_delay(AUDIO_ENGINE_BEAT_FX_TARGET_CH2,
+                                          96,
+                                          500,
+                                          true) == ESP_OK,
+           "Beat FX DELAY accepts CH2 target");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.beat_fx_echo_enabled[0],
+           "Beat FX DELAY leaves untargeted deck 0 disabled");
+    EXPECT(snapshot.beat_fx_echo_enabled[1],
+           "Beat FX DELAY enables targeted deck 1");
+    EXPECT(snapshot.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_ECHO,
+           "Beat FX DELAY leaves untargeted deck 0 mode unchanged");
+    EXPECT(snapshot.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
+           "Beat FX DELAY publishes DELAY mode for targeted deck 1");
+    EXPECT(snapshot.beat_fx_echo_delay_ms[1] == 500u,
+           "Beat FX DELAY stores the targeted delay time");
+    audio_delay_fx_config_t command = { 0 };
+    EXPECT(audio_engine_test_snapshot_beat_fx_time_command(1, &command),
+           "Beat FX DELAY command snapshots coherently on the host");
+    EXPECT(command.enabled && command.mode == AUDIO_DELAY_FX_MODE_DELAY,
+           "Beat FX command pack/unpack preserves the DELAY mode bit");
+    EXPECT(command.delay_ms == 500u && command.wet_q15 > 0u &&
+           command.feedback_q15 == 0u,
+           "Beat FX DELAY command pack/unpack preserves timing and one-shot parameters");
+
+    audio_engine_diagnostics_snapshot_t diagnostics = { 0 };
+    audio_engine_get_diagnostics_snapshot(&diagnostics);
+    EXPECT(diagnostics.beat_fx_echo_enabled[1],
+           "diagnostics report the active DELAY line");
+    EXPECT(diagnostics.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
+           "diagnostics distinguish DELAY from ECHO mode");
+    EXPECT(diagnostics.beat_fx_echo_delay_ms[1] == 500u,
+           "diagnostics report DELAY time");
+
+    EXPECT(audio_engine_set_beat_fx_echo(AUDIO_ENGINE_BEAT_FX_TARGET_CH2,
+                                         64,
+                                         250,
+                                         true) == ESP_OK,
+           "Beat FX time line can switch live from DELAY to ECHO");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.beat_fx_echo_enabled[1],
+           "Beat FX ECHO remains enabled after live mode switch");
+    EXPECT(snapshot.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_ECHO,
+           "Beat FX live switch publishes ECHO mode");
+    EXPECT(snapshot.beat_fx_echo_delay_ms[1] == 250u,
+           "Beat FX ECHO replaces the previous DELAY time");
+    EXPECT(audio_engine_test_snapshot_beat_fx_time_command(1, &command),
+           "Beat FX ECHO command snapshots coherently on the host");
+    EXPECT(command.enabled && command.mode == AUDIO_DELAY_FX_MODE_ECHO &&
+           command.delay_ms == 250u && command.feedback_q15 > 0u,
+           "Beat FX command pack/unpack clears DELAY mode and restores ECHO feedback");
+
+    EXPECT(audio_engine_set_beat_fx_delay(AUDIO_ENGINE_BEAT_FX_TARGET_BOTH,
+                                          127,
+                                          0,
+                                          true) == ESP_OK,
+           "Beat FX DELAY accepts BOTH target and clamps zero delay");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(snapshot.beat_fx_echo_enabled[0] &&
+           snapshot.beat_fx_echo_enabled[1],
+           "Beat FX DELAY enables both targeted decks");
+    EXPECT(snapshot.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_DELAY &&
+           snapshot.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
+           "Beat FX DELAY publishes DELAY mode for both decks");
+    EXPECT(snapshot.beat_fx_echo_delay_ms[0] == 1u &&
+           snapshot.beat_fx_echo_delay_ms[1] == 1u,
+           "Beat FX DELAY clamps zero delay to one millisecond");
+
+    EXPECT(audio_engine_set_beat_fx_delay(AUDIO_ENGINE_BEAT_FX_TARGET_BOTH,
+                                          0,
+                                          250,
+                                          true) == ESP_OK,
+           "Beat FX DELAY zero depth bypasses both decks");
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(!snapshot.beat_fx_echo_enabled[0] &&
+           !snapshot.beat_fx_echo_enabled[1],
+           "Beat FX DELAY zero depth disables both decks");
+    EXPECT(snapshot.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_DELAY &&
+           snapshot.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
+           "Beat FX DELAY disable retains mode for its bounded tail");
+    EXPECT(snapshot.beat_fx_echo_delay_ms[0] == 0u &&
+           snapshot.beat_fx_echo_delay_ms[1] == 0u,
+           "Beat FX DELAY disabled snapshot clears active delay time");
+
+    EXPECT(audio_engine_set_beat_fx_delay((audio_engine_beat_fx_target_t)99,
+                                          64,
+                                          250,
+                                          true) == ESP_ERR_INVALID_ARG,
+           "Beat FX DELAY rejects invalid target");
+}
+
 static void test_deck_peak_meter_api_returns_and_resets_peak(void)
 {
     puts("\n[Test 4b] Deck peak meter API");
@@ -1042,6 +1149,7 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
+    test_beat_fx_delay_state_api();
     test_deck_peak_meter_api_returns_and_resets_peak();
     test_mixer_snapshot_reports_deck_peak_without_reset();
     test_diagnostics_snapshot_reports_audio_health_state();

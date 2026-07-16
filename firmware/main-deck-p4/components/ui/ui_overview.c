@@ -1005,13 +1005,14 @@ static lv_obj_t *ui_fx_panel_label(lv_obj_t *parent, const char *text,
 }
 
 /* Per-effect accent colour so a glance tells you which FX is armed. FILTER and
- * ECHO reuse existing theme tokens; FLANGER gets one inline magenta (feature
- * colours stay inline, like the beat-jump reds). */
+ * ECHO reuse existing theme tokens; FLANGER and DELAY use distinct inline
+ * feature colours, like the beat-jump reds. */
 static lv_color_t ui_overview_fx_effect_color(deck_core_beat_fx_effect_t effect)
 {
     switch (effect) {
     case DECK_CORE_BEAT_FX_ECHO:    return COL_AMBER;
     case DECK_CORE_BEAT_FX_FLANGER: return lv_color_hex(0xB44AE0);
+    case DECK_CORE_BEAT_FX_DELAY:   return lv_color_hex(0x27C7C7);
     case DECK_CORE_BEAT_FX_FILTER:
     default:                        return COL_ACCENT;
     }

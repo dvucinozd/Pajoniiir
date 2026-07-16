@@ -49,7 +49,7 @@ under repository-root `keys/` must never be copied into firmware or committed.
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger) + Smart CFX; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
@@ -251,9 +251,9 @@ Seek O(1) when PVBR present; linear scan from start when absent.
 **Pitch Resampling:** linear interpolation (SDL callback on PC / output task on HW).  
 `factor = 1.0 + (8192 − raw_pitch) / 8192.0 × 0.10`
 
-**FX chain (2026-07-10 DSP pass — "sound better, less touchy on the knobs"):**
+**FX chain (2026-07-10 DSP pass, DELAY added 2026-07-16):**
 per deck the output task runs `EQ → channel filter → pad-FX → beat-FX filter →
-beat-FX flanger → beat-FX echo` (`audio_output_mixer.c`). All FX DSP is fixed-
+beat-FX flanger → beat-FX echo/delay` (`audio_output_mixer.c`). All FX DSP is fixed-
 point/integer on the hot path; coefficient/`tanf`/`expf` work is done per block,
 not per sample.
 - **Channel filter** (`audio_filter.c`) — ZDF (TPT) state-variable filter with a
@@ -268,10 +268,17 @@ not per sample.
   ramp (de-click); **switch-off rings the tail out ~2 s** instead of cutting
   (`audio_delay_fx_is_ringing()`, the output mixer keeps processing while ringing).
   `deck_core` depth→wet uses a sqrt taper (audible early), feedback 0.20–0.68.
+- **Delay** (`audio_delay_fx.c`) — BPM-synchronized full-band one-shot repeat
+  with zero feedback; Level/Depth controls wet gain. It shares the existing
+  per-deck stereo Echo line, so there is no additional PSRAM allocation.
+  ECHO↔DELAY mode changes reset the shared line to prevent stale repeats. Its
+  stable enum value is `4`; previous effect values are unchanged.
 - **Flanger** (`audio_flanger_fx.c`, new) — triangle-LFO fractional delay
   **0.6–6 ms** (linear interpolation) with feedback for the resonant jet; the
   BEAT selector sets the LFO period (beat-synced, `beat_fx_flanger_period_ms`).
-  Third effect in the `deck_core` cycle: FILTER → ECHO → FLANGER.
+  The `deck_core` selector cycle is now
+  FILTER → ECHO → FLANGER → DELAY → FILTER; Previous is the exact reverse and
+  `NONE` is not selectable.
 - **Smart CFX** (`audio_smart_cfx.c`) — response curve is now a **smoothstep**
   S-curve on the channel-filter knob (fine near the detent, ~1:1 at half turn,
   precise near full kill) instead of the old x² curve that deadened the whole
@@ -280,6 +287,8 @@ not per sample.
 PC test harness: `tests/audio_engine/` (run all P4 host tests via
 `.\tests\run_p4_host_tests.ps1`; `make`/`mingw32-make` is not installed — the
 runner compiles each suite with `gcc` from `C:\msys64\ucrt64\bin`).
+P4 host suites plus `idf.py build` are the DELAY software-acceptance path;
+physical DELAY audio/target/beat/depth smoke is still pending.
 
 ---
 
