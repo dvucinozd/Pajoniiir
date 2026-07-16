@@ -132,6 +132,20 @@ static uint8_t s_library_load_request_deck = CTRL_DECK_1;
 static uint32_t s_deck_loaded_track_key[DECK_CORE_DECK_COUNT] = {0, 0};
 static bool s_deck_loaded_track_valid[DECK_CORE_DECK_COUNT] = {false, false};
 
+static const anlz_metadata_t *ui_library_clone_loaded_anlz(anlz_metadata_t *snapshot)
+{
+    if (!snapshot) {
+        return NULL;
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+#ifdef WIN32
+    esp_err_t rc = library_clone_current_anlz(snapshot);
+#else
+    esp_err_t rc = media_catalog_clone_loaded_anlz(snapshot);
+#endif
+    return rc == ESP_OK ? snapshot : NULL;
+}
+
 #ifndef WIN32
 static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
@@ -534,7 +548,8 @@ static void ui_poll_track_load_result(void)
             lv_obj_invalidate(s_library_table);
         }
         const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz();
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         ui_library_apply_loaded_track(deck,
                                       result.item.title,
                                       result.item.artist,
@@ -543,6 +558,7 @@ static void ui_poll_track_load_result(void)
                                       result.loaded.waveform_low,
                                       result.loaded.has_waveform != 0,
                                       meta);
+        anlz_free(&meta_snapshot);
 
         ESP_LOGI(TAG, "Audio: loaded deck %u: %s (autoplay off)",
                  (unsigned)result.deck + 1u, result.loaded.audio_path);
@@ -574,7 +590,8 @@ static void ui_library_load_selected_deck(uint8_t deck)
     mock_library_load_track_to_deck(s_selected_track_idx);
     library_load_anlz(track);
     library_load_current_anlz(track);
-    const anlz_metadata_t *meta = library_get_current_anlz();
+    anlz_metadata_t meta_snapshot;
+    const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
     s_deck_loaded_track_key[deck] = track->track_id;
     s_deck_loaded_track_valid[deck] = true;
     if (s_library_table) {
@@ -588,6 +605,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
                                   track->waveform_low,
                                   track->has_waveform != 0,
                                   meta);
+    anlz_free(&meta_snapshot);
 
     ESP_LOGI(TAG, "Loaded track to deck %u: %s by %s (waveform=%d)",
              (unsigned)deck + 1u, track->title, track->artist, track->has_waveform);
@@ -1043,7 +1061,8 @@ void ui_library_load_initial_track(void)
     if (track) {
         library_load_anlz(track);
         library_load_current_anlz(track);
-        const anlz_metadata_t *meta = library_get_current_anlz();
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         s_deck_loaded_track_key[CTRL_DECK_1] = track->track_id;
         s_deck_loaded_track_valid[CTRL_DECK_1] = true;
         ui_library_apply_loaded_track(CTRL_DECK_1,
@@ -1054,6 +1073,7 @@ void ui_library_load_initial_track(void)
                                       track->waveform_low,
                                       track->has_waveform != 0,
                                       meta);
+        anlz_free(&meta_snapshot);
     }
 #else
     media_catalog_row_t row;
@@ -1065,7 +1085,8 @@ void ui_library_load_initial_track(void)
         s_deck_loaded_track_key[CTRL_DECK_1] = loaded.track_key;
         s_deck_loaded_track_valid[CTRL_DECK_1] = true;
         const uint16_t bpm = loaded.bpm ? loaded.bpm : row.bpm;
-        const anlz_metadata_t *meta = media_catalog_get_loaded_anlz();
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         ui_library_apply_loaded_track(CTRL_DECK_1,
                                       row.title,
                                       row.artist,
@@ -1074,6 +1095,7 @@ void ui_library_load_initial_track(void)
                                       loaded.waveform_low,
                                       loaded.has_waveform != 0,
                                       meta);
+        anlz_free(&meta_snapshot);
     }
 #endif
     if (s_library_table) {
@@ -1389,7 +1411,8 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (track) {
         library_load_anlz(track);
         library_load_current_anlz(track);
-        const anlz_metadata_t *meta = library_get_current_anlz();
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         s_deck_loaded_track_key[deck] = track->track_id;
         s_deck_loaded_track_valid[deck] = true;
         if (s_library_table) {
@@ -1403,6 +1426,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
                                       track->waveform_low,
                                       track->has_waveform != 0,
                                       meta);
+        anlz_free(&meta_snapshot);
     }
     ui_library_finish_track_load();
     return ESP_OK;

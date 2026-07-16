@@ -1,5 +1,7 @@
 #include "audio_mixer.h"
 #include <assert.h>
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
 
 static void test_fader_gain_clamps_to_unit_range(void)
@@ -24,6 +26,10 @@ static void test_crossfader_keeps_center_both_decks_open(void)
     assert(deck2 == 1.0f);
 
     audio_mixer_crossfader_gains(AUDIO_MIXER_CONTROL_MAX, &deck1, &deck2);
+    assert(deck1 == 0.0f);
+    assert(deck2 == 1.0f);
+
+    audio_mixer_crossfader_gains(UINT16_MAX, &deck1, &deck2);
     assert(deck1 == 0.0f);
     assert(deck2 == 1.0f);
 }
@@ -97,6 +103,23 @@ static void test_master_limiter_soft_knee_is_transparent_until_hot_peak(void)
     assert(stats.peak_input_abs == 32000);
 }
 
+static void test_master_limiter_handles_full_int32_domain(void)
+{
+    audio_mixer_limiter_stats_t stats = { 0 };
+
+    assert(audio_mixer_limit_master_sample(INT32_MAX, &stats) == 32767);
+    assert(audio_mixer_limit_master_sample(INT32_MIN, &stats) == -32768);
+    assert(stats.limited_samples == 2u);
+    assert(stats.positive_overloads == 1u);
+    assert(stats.negative_overloads == 1u);
+    assert(stats.peak_input_abs == INT32_MAX);
+}
+
+static void test_non_finite_gain_mutes_instead_of_invoking_undefined_conversion(void)
+{
+    assert(audio_mixer_mix_sample(12000, 0, NAN, 0.0f) == 0);
+}
+
 int main(void)
 {
     test_fader_gain_clamps_to_unit_range();
@@ -105,6 +128,8 @@ int main(void)
     test_stereo_frame_uses_channel_and_crossfader_gains();
     test_apply_gain_scales_stereo_frame();
     test_master_limiter_soft_knee_is_transparent_until_hot_peak();
+    test_master_limiter_handles_full_int32_domain();
+    test_non_finite_gain_mutes_instead_of_invoking_undefined_conversion();
     puts("audio_mixer tests passed");
     return 0;
 }

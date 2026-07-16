@@ -634,10 +634,10 @@ startup remain gated behind successful ESP-Hosted Wi-Fi/AP init because starting
 assertion on P4. Beat FX FILTER now applies
 a conservative target-aware low-pass DSP from the Beat FX depth control; Beat FX
 ON/OFF LED feedback is P4-owned and hardware-smoke verified as of 2026-07-01.
-Beat FX Echo/delay has a BPM-synced DSP slice: P4 owns the delay lines,
-deck_core routes the existing Echo state into the audio engine, depth controls
-wet/feedback amount, and `/api/status.diagnostics.beat_fx_echo` exposes
-allocation/enabled/delay telemetry. Beat-size mapping derives delay time from
+Beat FX Echo has a BPM-synced DSP slice: P4 owns the delay lines, deck_core
+routes the Echo state into the audio engine, depth controls wet/feedback amount,
+and `/api/status.diagnostics.beat_fx_echo` exposes allocation/enabled/delay
+telemetry. Beat-size mapping derives delay time from
 the target deck effective BPM, falls back to 120 BPM when BPM is unavailable,
 and caps delay at 1000 ms to match the current delay-line budget. Hardware
 smoke on 2026-07-01 confirmed FILTER and Echo audio behavior, gradual depth
@@ -656,6 +656,22 @@ effect-colour-coded strip (Filter blue / Echo amber / Flanger magenta) with a
 vertical depth meter. Host suites pass, and the FLX4 USB-headphones audio
 profile was made the default build on both boards (folded into
 `sdkconfig.defaults`; a plain `idf.py build` now has sound).
+
+**2026-07-16 Beat FX Delay update.** A distinct BPM-synchronized **DELAY** was
+added as numeric effect value `4`; the existing `NONE=0`, `FILTER=1`, `ECHO=2`,
+and `FLANGER=3` values remain stable. DELAY is a full-band one-shot repeat with
+zero feedback, and Level/Depth controls its wet gain. ECHO remains the damped
+multi-repeat feedback mode. Both modes share the existing per-deck stereo
+`audio_delay_fx` line, so DELAY requires no additional PSRAM allocation; a live
+ECHO/DELAY mode change resets that shared line so stale repeats cannot cross
+between effect semantics. The selector is explicit rather than enum-modulo:
+`FILTER → ECHO → FLANGER → DELAY → FILTER`, with Previous traversing the exact
+reverse and `NONE` excluded from both selector paths. The S3 continues to send
+the existing semantic Next/Previous events over the unchanged `0xA5` wire
+protocol. P4 host tests plus `idf.py build` are the software acceptance path;
+hardware smoke for DELAY audio, target routing, beat size, and Level/Depth is
+still **PENDING**.
+
 Pad FX now has a first P4-owned DSP slice behind synthetic/control-link
 `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2, using the existing filter and
 delay primitives. Full FLX4 Pad FX physical pad input mapping is implemented
@@ -853,6 +869,10 @@ Implementation order:
 8. **Effects controls**
    - map only controls backed by a defined P4 effect engine and parameter
      model;
+   - Beat FX DELAY is implemented on P4 as value `4`: a BPM-synchronized,
+     full-band one-shot repeat with wet gain controlled by Level/Depth. It
+     shares the Echo delay line without additional PSRAM; DELAY hardware smoke
+     remains pending;
    - keep unsupported Mixxx QuickEffect/BeatFX bindings documented but do not
      expose no-op controls as completed functionality.
 9. **LED feedback expansion**
@@ -1423,3 +1443,54 @@ pending.
   restoration and descriptor-preserving reactivation state. The ESP32-P4
   firmware build passes at `0x208020` bytes with 49% of the smallest app
   partition free.
+
+## Phase 20: Full Code-Review Remediation (2026-07-16)
+
+Status: software remediation complete on `codex/code-review-fixes`; hardware
+acceptance is intentionally deferred.
+
+- S3 USB host ownership and recovery were hardened: MIDI OUT transfers now stay
+  on the USB client task, asynchronous control requests own their completion
+  context, audio-stream failures return to a recoverable stopped state, and
+  queue-pressure/coalescing behavior preserves priority touch transitions.
+- Controller-profile install and activation now validate identity and transfer
+  state, preserve the previous working profile across failures, and recover
+  interrupted atomic swaps without publishing partially installed data.
+- P4 library/catalog and ANLZ/PDB paths now validate offsets, row groups,
+  allocation results and object lifetimes before publishing data to the UI or
+  playback engine. Web library streaming also aborts cleanly on disconnect.
+- P4 and S3 mutating HTTP endpoints require an expected local Host plus an
+  explicit control marker. Numeric query parsing is strict and range checked;
+  JSON output escapes all control bytes; upload, load and control handlers
+  propagate malformed input, queue pressure and response-send failures.
+- DSP numeric boundaries now cover non-finite gain, pitch, scratch and resample
+  inputs, full-width limiter arithmetic and full-scale flanger interpolation.
+  Delay, flanger and scratch hot paths avoid unnecessary modulo operations.
+- EQ, filter, pitch, jog and Beat/Pad FX control state crosses task boundaries
+  through atomic values or block-boundary commands. The audio task snapshots
+  controls once per block; filter coefficients are not recomputed after
+  convergence; key-lock correlation reuses reference samples and rejects losing
+  candidates early; output mixer ratios and headphone controls are prepared
+  once per block.
+- UART initialization on both targets unwinds a partially installed driver on
+  failure. Shared bulk-frame CRC code no longer emits signedness warnings, and
+  firmware-only audio helpers are excluded from PC builds.
+
+Software acceptance:
+
+- complete S3 host suite passes, including controller-profile golden parity;
+- complete P4 host suite passes, including 333/333 `audio_engine` assertions,
+  all DSP/parser/UI/web/protocol tests and the R5 dead-code audit;
+- OTA signing Python suite passes 6/6 and OTA release-helper tests pass;
+- clean ESP-IDF v5.5 S3 build passes; `control-board-s3.bin` is `0xE6500`
+  bytes with 52% free in the smallest app partition;
+- clean ESP-IDF v5.5 P4 build passes; `main-deck-p4.bin` is `0x209520`
+  bytes with 49% free in the smallest app partition;
+- `git diff --check` passes.
+
+Deferred hardware acceptance:
+
+- dual-deck scratch, pitch, Master Tempo and simultaneous Beat/Pad FX soak;
+- FLX4 USB MIDI/audio disconnect and recovery under queue pressure;
+- P4/S3 local web-control, profile upload and OTA mutation guards from a phone;
+- UART startup/recovery and long control-link integrity capture.

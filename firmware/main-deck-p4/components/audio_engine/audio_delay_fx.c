@@ -71,19 +71,46 @@ void audio_delay_fx_configure(audio_delay_fx_t *fx, const audio_delay_fx_config_
 {
     if (!fx || !config) return;
     bool was_enabled = fx->config.enabled;
+    bool was_ringing = fx->tail_frames_remaining > 0u;
+    audio_delay_fx_mode_t previous_mode = fx->config.mode;
     audio_delay_fx_config_t next = *config;
+    if (next.mode != AUDIO_DELAY_FX_MODE_ECHO &&
+        next.mode != AUDIO_DELAY_FX_MODE_DELAY) {
+        next.mode = AUDIO_DELAY_FX_MODE_ECHO;
+    }
     if (next.wet_q15 > 32767u) next.wet_q15 = 32767u;
     if (next.feedback_q15 > 24576u) next.feedback_q15 = 24576u;
+    if (next.mode == AUDIO_DELAY_FX_MODE_DELAY) {
+        /* DELAY is a single full-band tap; ECHO owns the damped feedback
+         * behaviour.  Enforce that distinction inside the DSP as well as at
+         * the audio-engine API boundary. */
+        next.feedback_q15 = 0u;
+    }
 
-    if (next.enabled && !was_enabled) {
+    if (!next.enabled && (was_enabled || was_ringing)) {
+        /* The tail belongs to the configuration that filled the line. Control
+         * changes can publish another disabled command while it is ringing
+         * (for example after changing target, beat or depth); do not let that
+         * command retime or recolour an already buffered ECHO/DELAY tail. */
+        next.mode = fx->config.mode;
+        next.delay_ms = fx->config.delay_ms;
+        next.wet_q15 = fx->config.wet_q15;
+        next.feedback_q15 = fx->config.feedback_q15;
+    }
+
+    if (next.enabled && (!was_enabled || next.mode != previous_mode)) {
         /* Fresh engage: drop any stale tail and start the gains at their
-         * targets — the buffer is silent, so there is nothing to de-click. */
+         * targets. A live ECHO/DELAY mode change also resets the shared line
+         * so old feedback cannot leak into a one-shot delay (or vice versa). */
         audio_delay_fx_reset(fx);
         fx->wet_cur_q15 = next.wet_q15;
         fx->feedback_cur_q15 = next.feedback_q15;
     } else if (!next.enabled && was_enabled && fx->allocated) {
-        /* Switch-off: let the buffered repeats ring out instead of cutting. */
-        fx->tail_frames_remaining = fx->sample_rate * AUDIO_DELAY_FX_TAIL_SECONDS;
+        /* Switch-off: ECHO keeps its bounded feedback tail. DELAY only needs
+         * enough processing for the one pending tap to leave the line. */
+        fx->tail_frames_remaining = previous_mode == AUDIO_DELAY_FX_MODE_DELAY
+            ? fx->delay_frames
+            : fx->sample_rate * AUDIO_DELAY_FX_TAIL_SECONDS;
     }
 
     fx->config = next;
@@ -121,8 +148,9 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     fx->wet_cur_q15 = smooth_q15(fx->wet_cur_q15, fx->config.wet_q15);
     fx->feedback_cur_q15 = smooth_q15(fx->feedback_cur_q15, fx->config.feedback_q15);
 
-    uint32_t read_index = (fx->write_index + fx->capacity_frames - fx->delay_frames) %
-                          fx->capacity_frames;
+    uint32_t read_index = fx->write_index >= fx->delay_frames
+        ? fx->write_index - fx->delay_frames
+        : fx->write_index + fx->capacity_frames - fx->delay_frames;
     int16_t delayed_l = fx->left[read_index];
     int16_t delayed_r = fx->right[read_index];
 
@@ -137,7 +165,10 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     int32_t write_r = active ? (int32_t)in.right + fb_r : fb_r;
     fx->left[fx->write_index] = clamp_i16(write_l);
     fx->right[fx->write_index] = clamp_i16(write_r);
-    fx->write_index = (fx->write_index + 1u) % fx->capacity_frames;
+    fx->write_index++;
+    if (fx->write_index >= fx->capacity_frames) {
+        fx->write_index = 0u;
+    }
 
     if (!active && ringing) {
         fx->tail_frames_remaining--;

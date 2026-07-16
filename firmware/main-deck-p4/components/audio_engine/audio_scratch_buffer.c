@@ -87,9 +87,11 @@ bool audio_scratch_buffer_index_for_ms(const audio_scratch_buffer_t *b,
     }
 
     /* The newest frame lives at (write_index - 1) mod capacity; step back. */
-    uint32_t newest_idx = (b->write_index + b->capacity - 1u) % b->capacity;
-    uint32_t idx =
-        (newest_idx + b->capacity - (uint32_t)back_frames) % b->capacity;
+    uint32_t newest_idx = b->write_index == 0u ? b->capacity - 1u
+                                               : b->write_index - 1u;
+    uint32_t back = (uint32_t)back_frames;
+    uint32_t idx = newest_idx >= back ? newest_idx - back
+                                      : newest_idx + b->capacity - back;
     *out_index = idx;
     return true;
 }
@@ -113,8 +115,10 @@ bool audio_scratch_buffer_read_frame_back(const audio_scratch_buffer_t *b,
         frames_back >= b->filled) {
         return false;
     }
-    uint32_t newest_idx = (b->write_index + b->capacity - 1u) % b->capacity;
-    uint32_t idx = (newest_idx + b->capacity - frames_back) % b->capacity;
+    uint32_t newest_idx = b->write_index == 0u ? b->capacity - 1u
+                                               : b->write_index - 1u;
+    uint32_t idx = newest_idx >= frames_back ? newest_idx - frames_back
+                                             : newest_idx + b->capacity - frames_back;
     *out_left = b->frames[idx * 2u];
     *out_right = b->frames[idx * 2u + 1u];
     return true;

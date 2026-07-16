@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "audio_delay_fx.h"
 #include "audio_eq.h"
 #include "audio_filter.h"
 #include "audio_mixer.h"
@@ -116,6 +117,7 @@ typedef struct {
     bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
     uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
+    audio_delay_fx_mode_t beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
     bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_pad_fx_kind_t pad_fx_kind[AUDIO_ENGINE_DECK_COUNT];
     float output_gain[AUDIO_ENGINE_DECK_COUNT];
@@ -169,6 +171,7 @@ typedef struct {
     bool beat_fx_echo_allocated[AUDIO_ENGINE_DECK_COUNT];
     bool beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
     uint32_t beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
+    audio_delay_fx_mode_t beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
     bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
     uint32_t usb_headphone_submitted_blocks;
@@ -205,6 +208,12 @@ esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
                                         uint8_t depth,
                                         uint32_t delay_ms,
                                         bool enabled);
+/* One BPM-synchronised full-band repeat using the same allocated delay line as
+ * ECHO, but with feedback forced to zero. */
+esp_err_t audio_engine_set_beat_fx_delay(audio_engine_beat_fx_target_t target,
+                                         uint8_t depth,
+                                         uint32_t delay_ms,
+                                         bool enabled);
 esp_err_t audio_engine_set_pad_fx(uint8_t deck,
                                   audio_pad_fx_mode_t mode,
                                   uint8_t pad,
@@ -278,6 +287,9 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
  */
 #if defined(AUDIO_ENGINE_PC_TEST)
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
+bool audio_engine_test_snapshot_beat_fx_time_command(
+    uint8_t deck,
+    audio_delay_fx_config_t *out_config);
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);

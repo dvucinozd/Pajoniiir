@@ -143,7 +143,7 @@ esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
     return ESP_OK;
 }
 
-const anlz_metadata_t *media_catalog_get_loaded_anlz(void)
+esp_err_t media_catalog_clone_loaded_anlz(anlz_metadata_t *out)
 {
-    return library_get_current_anlz();
+    return library_clone_current_anlz(out);
 }

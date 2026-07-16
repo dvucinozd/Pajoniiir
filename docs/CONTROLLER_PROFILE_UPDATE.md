@@ -42,6 +42,7 @@ letters, digits, `_` and `-`, with a maximum of 39 characters.
 ```powershell
 curl.exe -X POST "http://192.168.4.1/api/controller-profile" `
   -H "Content-Type: application/octet-stream" `
+  -H "X-DDJ-Control: 1" `
   -H "X-DDJ-Profile-ID: pioneer_ddj_flx4" `
   -H "X-DDJ-Profile-Overwrite: 1" `
   --data-binary "@controllers/pioneer_ddj_flx4/profile.s3bin"

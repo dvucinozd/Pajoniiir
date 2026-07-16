@@ -322,8 +322,15 @@ static void iter_page_rows(const struct pdb_s *p, uint32_t page_num,
 
     for (uint32_t idx = 0u; idx < n; ) {
         uint32_t m = (n - idx < 16u) ? (n - idx) : 16u;
+        size_t group_bytes = 4u + (size_t)m * 2u;
 
-        if (ptr < pb + 4u) break;
+        /* Validate the whole row-slot group before reading any of it.  Merely
+         * checking for the 4-byte group header is insufficient: a malformed
+         * nrows value can leave fewer than m slots in the page.  Subtracting
+         * group_bytes in that state underflows ptr on page zero and turns the
+         * next rowpf read into an out-of-bounds access.  Use a difference after
+         * establishing ptr >= pb so the guard itself cannot overflow. */
+        if (ptr > p->data_len || ptr < pb || ptr - pb < group_bytes) break;
         uint16_t rowpf = rd_le16(p->data + ptr - 4u);
 
         for (uint32_t i = 0u; i < m; i++) {
@@ -339,7 +346,7 @@ static void iter_page_rows(const struct pdb_s *p, uint32_t page_num,
             }
         }
 
-        ptr -= 4u + (size_t)m * 2u;
+        ptr -= group_bytes;
         idx += m;
     }
 }

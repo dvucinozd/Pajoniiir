@@ -15,6 +15,7 @@ typedef struct {
      * coefficient block (not per sample) to keep tanf/expf off the hot path. */
     float smoothed_raw;
     uint32_t block_frames_left;
+    bool coefficients_dirty;
     bool bypassed;
     bool hp_mode;
     float k;
@@ -27,6 +28,7 @@ typedef struct {
 } audio_filter_state_t;
 
 void audio_filter_init(audio_filter_state_t *filter, uint32_t sample_rate_hz);
+void audio_filter_set_sample_rate(audio_filter_state_t *filter, uint32_t sample_rate_hz);
 void audio_filter_reset(audio_filter_state_t *filter);
 void audio_filter_set_raw(audio_filter_state_t *filter, uint16_t raw);
 uint16_t audio_filter_get_raw(const audio_filter_state_t *filter);

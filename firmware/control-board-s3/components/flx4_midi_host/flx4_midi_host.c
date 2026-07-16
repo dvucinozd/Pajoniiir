@@ -353,7 +353,6 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 #include "status_led.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "usb/usb_helpers.h"
 #include "usb/usb_host.h"
@@ -462,17 +461,37 @@ typedef struct {
 
 static flx4_host_state_t s_host;
 static QueueHandle_t s_midi_out_queue = NULL;
-static SemaphoreHandle_t s_midi_out_mutex = NULL;
+static usb_host_client_handle_t s_midi_client_handle;
+static bool s_midi_out_accepting;
+static uint32_t s_midi_out_producers;
 static uint32_t s_midi_out_full_drop_count;
 static TickType_t s_last_midi_out_full_warn;
 
-/* Caller holds s_midi_out_mutex. Starts the next queued OUT transfer when the
- * endpoint is idle. Batches as many queued 4-byte USB-MIDI event packets as
- * fit in one bulk transfer (16 at mps 64) — draining one packet per transfer
- * round-trip loses most of the forced LED snapshot the P4 bursts on connect
- * (observed "MIDI OUT queue full, drops=32"). Packets popped for a failed
- * submit are dropped — a later LED refresh supersedes them. */
-static esp_err_t midi_out_submit_next_locked(flx4_host_state_t *host)
+static void midi_out_set_accepting(bool accepting)
+{
+    __atomic_store_n(&s_midi_out_accepting, accepting, __ATOMIC_RELEASE);
+}
+
+static bool midi_out_is_accepting(void)
+{
+    return __atomic_load_n(&s_midi_out_accepting, __ATOMIC_ACQUIRE);
+}
+
+static void midi_out_producer_enter(void)
+{
+    (void)__atomic_add_fetch(&s_midi_out_producers, 1u, __ATOMIC_ACQUIRE);
+}
+
+static void midi_out_producer_leave(void)
+{
+    (void)__atomic_sub_fetch(&s_midi_out_producers, 1u, __ATOMIC_RELEASE);
+}
+
+/* Runs only in the USB client task (directly or from a transfer callback
+ * dispatched by that task). Batches as many queued 4-byte USB-MIDI event
+ * packets as fit in one bulk transfer. Packets popped for a failed submit are
+ * dropped because a later LED refresh supersedes them. */
+static esp_err_t midi_out_submit_next(flx4_host_state_t *host)
 {
     if (host->out_transfer_active || !host->out_xfer || !s_midi_out_queue ||
         !host->opened || !host->claimed || host->closing) {
@@ -503,19 +522,11 @@ static esp_err_t midi_out_submit_next_locked(flx4_host_state_t *host)
     return rc;
 }
 
-/* Watchdog pump, run from the client task loop: restarts a stalled OUT queue
- * (e.g. after the completion callback missed the mutex) within one loop
- * iteration instead of waiting for the next send_packet call. */
+/* Watchdog pump, run from the client task loop, restarts a stalled OUT queue
+ * after a submit failure or a producer wakeup. */
 static void midi_out_pump(void)
 {
-    if (!s_midi_out_mutex) {
-        return;
-    }
-    if (xSemaphoreTake(s_midi_out_mutex, 0) != pdTRUE) {
-        return;
-    }
-    (void)midi_out_submit_next_locked(&s_host);
-    xSemaphoreGive(s_midi_out_mutex);
+    (void)midi_out_submit_next(&s_host);
 }
 
 /* Watchdog pump for the IN endpoint: re-arms the MIDI IN transfer if the
@@ -597,8 +608,9 @@ static void midi_in_transfer_cb(usb_transfer_t *transfer)
             esp_err_t rc = usb_host_transfer_free(host->in_xfer);
             if (rc != ESP_OK) {
                 ESP_LOGW(TAG, "free MIDI IN transfer after disconnect: %s", esp_err_to_name(rc));
+            } else {
+                host->in_xfer = NULL;
             }
-            host->in_xfer = NULL;
         }
         return;
     }
@@ -617,6 +629,7 @@ static void midi_in_transfer_cb(usb_transfer_t *transfer)
 static void midi_out_transfer_cb(usb_transfer_t *transfer)
 {
     flx4_host_state_t *host = (flx4_host_state_t *)transfer->context;
+    host->out_transfer_active = false;
 
     if (transfer->status != USB_TRANSFER_STATUS_COMPLETED &&
         transfer->status != USB_TRANSFER_STATUS_NO_DEVICE) {
@@ -628,21 +641,14 @@ static void midi_out_transfer_cb(usb_transfer_t *transfer)
             esp_err_t rc = usb_host_transfer_free(host->out_xfer);
             if (rc != ESP_OK) {
                 ESP_LOGW(TAG, "free MIDI OUT transfer after disconnect: %s", esp_err_to_name(rc));
+            } else {
+                host->out_xfer = NULL;
             }
-            host->out_xfer = NULL;
         }
         return;
     }
 
-    if (s_midi_out_mutex && xSemaphoreTake(s_midi_out_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        host->out_transfer_active = false;
-        (void)midi_out_submit_next_locked(host);
-        xSemaphoreGive(s_midi_out_mutex);
-    } else {
-        /* Missed the lock: mark the endpoint idle and let the client-task
-           pump restart the queue on its next loop iteration. */
-        host->out_transfer_active = false;
-    }
+    (void)midi_out_submit_next(host);
 }
 
 
@@ -741,10 +747,24 @@ static esp_err_t start_midi_in_transfer(flx4_host_state_t *host)
     return ESP_OK;
 }
 
-static void close_device(flx4_host_state_t *host)
+/* Advance teardown without blocking inside the USB client event callback.
+ * Returns true only after every transfer callback has dequeued, both claimed
+ * interfaces are released, and the shared device handle is closed. */
+static bool close_device_step(flx4_host_state_t *host)
 {
     host->closing = true;
+    midi_out_set_accepting(false);
     s_desc_report_valid = false;
+    /* A producer may have observed the old accepting state immediately before
+     * teardown began.  Wait until that bounded queue operation exits before
+     * clearing the queue, otherwise one stale LED packet can survive into the
+     * next controller connection. */
+    if (__atomic_load_n(&s_midi_out_producers, __ATOMIC_ACQUIRE) != 0u) {
+        return false;
+    }
+    if (s_midi_out_queue) {
+        (void)xQueueReset(s_midi_out_queue);
+    }
 #if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
     flx4_usb_audio_stop();
 #endif
@@ -752,20 +772,32 @@ static void close_device(flx4_host_state_t *host)
         esp_err_t rc = usb_host_transfer_free(host->in_xfer);
         if (rc != ESP_OK) {
             ESP_LOGW(TAG, "free MIDI IN transfer: %s", esp_err_to_name(rc));
+        } else {
+            host->in_xfer = NULL;
         }
-        host->in_xfer = NULL;
     }
     if (host->out_xfer && !host->out_transfer_active) {
         esp_err_t rc = usb_host_transfer_free(host->out_xfer);
         if (rc != ESP_OK) {
             ESP_LOGW(TAG, "free MIDI OUT transfer: %s", esp_err_to_name(rc));
+        } else {
+            host->out_xfer = NULL;
         }
-        host->out_xfer = NULL;
     }
+    if (host->in_xfer || host->out_xfer ||
+        host->transfer_active || host->out_transfer_active) {
+        return false;
+    }
+#if CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES
+    if (!flx4_usb_audio_stop_complete()) {
+        return false;
+    }
+#endif
     if (host->claimed) {
         esp_err_t rc = usb_host_interface_release(host->client_hdl, host->dev_hdl, host->interface_num);
         if (rc != ESP_OK) {
             ESP_LOGW(TAG, "release MIDI interface: %s", esp_err_to_name(rc));
+            return false;
         }
         host->claimed = false;
     }
@@ -773,6 +805,7 @@ static void close_device(flx4_host_state_t *host)
         esp_err_t rc = usb_host_device_close(host->client_hdl, host->dev_hdl);
         if (rc != ESP_OK) {
             ESP_LOGW(TAG, "close USB device: %s", esp_err_to_name(rc));
+            return false;
         }
         host->dev_hdl = NULL;
         host->opened = false;
@@ -783,13 +816,16 @@ static void close_device(flx4_host_state_t *host)
     host->out_ep_mps = 0;
     host->transfer_active = false;
     host->out_transfer_active = false;
+    host->closing = false;
     publish_connection_state(false);
     ESP_LOGW(TAG, "DDJ-FLX4 device closed/disconnected");
+    return true;
 }
 
 static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
 {
     ESP_LOGI(TAG, "opening USB device addr=%u", dev_addr);
+    midi_out_set_accepting(false);
     host->closing = false;
     ESP_RETURN_ON_ERROR(usb_host_device_open(host->client_hdl, dev_addr, &host->dev_hdl),
                         TAG, "open device");
@@ -846,6 +882,9 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
         ESP_LOGW(TAG, "FLX4 USB Audio configure failed, MIDI will continue: %s",
                  esp_err_to_name(audio_rc));
     }
+    if (host->closing) {
+        return ESP_ERR_INVALID_STATE;
+    }
 #endif
 
     if (!find_midi_streaming_endpoints(cfg,
@@ -884,6 +923,7 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
 
     esp_err_t rc = start_midi_in_transfer(host);
     if (rc == ESP_OK) {
+        midi_out_set_accepting(true);
         publish_connection_state(true);
     }
     return rc;
@@ -899,7 +939,11 @@ static void client_event_cb(const usb_host_client_event_msg_t *event_msg, void *
         host->has_pending_dev = true;
         break;
     case USB_HOST_CLIENT_EVENT_DEV_GONE:
-        close_device(host);
+        /* Transfer callbacks and DEV_GONE can be delivered in either order.
+         * Defer release/close until the outer client loop has observed all
+         * dequeues; never tear USB objects down from this callback. */
+        host->closing = true;
+        midi_out_set_accepting(false);
         break;
     default:
         break;
@@ -951,10 +995,15 @@ static void midi_client_task(void *arg)
     };
 
     ESP_ERROR_CHECK(usb_host_client_register(&client_cfg, &s_host.client_hdl));
+    __atomic_store_n(&s_midi_client_handle, s_host.client_hdl, __ATOMIC_RELEASE);
     ESP_LOGI(TAG, "USB host client registered; connect the DDJ-FLX4");
 
     while (1) {
         usb_host_client_handle_events(s_host.client_hdl, pdMS_TO_TICKS(100));
+        if (s_host.closing) {
+            (void)close_device_step(&s_host);
+            continue;
+        }
         if (s_host.has_pending_dev) {
             const uint8_t addr = s_host.pending_dev_addr;
             s_host.has_pending_dev = false;
@@ -965,7 +1014,9 @@ static void midi_client_task(void *arg)
             esp_err_t rc = open_device(&s_host, addr);
             if (rc != ESP_OK) {
                 ESP_LOGE(TAG, "device open/probe failed: %s", esp_err_to_name(rc));
-                close_device(&s_host);
+                s_host.closing = true;
+                (void)close_device_step(&s_host);
+                continue;
             }
         }
         midi_in_pump(&s_host);
@@ -989,18 +1040,12 @@ esp_err_t flx4_midi_host_init(void)
     if (!s_midi_out_queue) {
         return ESP_ERR_NO_MEM;
     }
-    s_midi_out_mutex = xSemaphoreCreateMutex();
-    if (!s_midi_out_mutex) {
-        vQueueDelete(s_midi_out_queue);
-        s_midi_out_queue = NULL;
-        return ESP_ERR_NO_MEM;
-    }
+    midi_out_set_accepting(false);
+    __atomic_store_n(&s_midi_out_producers, 0u, __ATOMIC_RELEASE);
 
     TaskHandle_t usb_task_hdl = NULL;
     if (xTaskCreate(usb_lib_task, "usb_host", USB_LIB_TASK_STACK,
                     xTaskGetCurrentTaskHandle(), USB_LIB_TASK_PRIO, &usb_task_hdl) != pdPASS) {
-        vSemaphoreDelete(s_midi_out_mutex);
-        s_midi_out_mutex = NULL;
         vQueueDelete(s_midi_out_queue);
         s_midi_out_queue = NULL;
         return ESP_ERR_NO_MEM;
@@ -1022,30 +1067,27 @@ esp_err_t flx4_midi_host_init(void)
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 {
-    if (!s_midi_out_queue || !s_midi_out_mutex) {
+    if (!packet) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    midi_out_producer_enter();
+    if (!s_midi_out_queue || !midi_out_is_accepting()) {
+        midi_out_producer_leave();
         return ESP_ERR_INVALID_STATE;
-    }
-
-    if (xSemaphoreTake(s_midi_out_mutex, pdMS_TO_TICKS(50)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
-    }
-
-    esp_err_t ret = ESP_OK;
-    if (!s_host.opened || !s_host.claimed || s_host.closing) {
-        ret = ESP_ERR_INVALID_STATE;
-        goto exit;
     }
 
     const uint32_t queue_spaces = (uint32_t)uxQueueSpacesAvailable(s_midi_out_queue);
     const bool drop_silently =
         flx4_midi_host_should_drop_out_packet(packet, queue_spaces, MIDI_OUT_QUEUE_DEPTH);
     if (drop_silently) {
-        goto exit;
+        midi_out_producer_leave();
+        return ESP_OK;
     }
 
     if (xQueueSend(s_midi_out_queue, packet, 0) != pdTRUE) {
         if (flx4_midi_host_is_vu_meter_packet(packet)) {
-            goto exit;
+            midi_out_producer_leave();
+            return ESP_OK;
         }
         s_midi_out_full_drop_count++;
         TickType_t now = xTaskGetTickCount();
@@ -1054,20 +1096,19 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
             ESP_LOGW(TAG, "MIDI OUT queue full, dropping packet, drops=%" PRIu32,
                      s_midi_out_full_drop_count);
         }
-        ret = ESP_ERR_TIMEOUT;
-        goto exit;
+        midi_out_producer_leave();
+        return ESP_ERR_TIMEOUT;
     }
 
-    {
-        esp_err_t pump_rc = midi_out_submit_next_locked(&s_host);
-        if (pump_rc != ESP_OK) {
-            ret = pump_rc;
-        }
+    /* Wake the single USB owner so it can submit promptly.  The producer never
+     * touches the device handle, transfer object, or endpoint state. */
+    usb_host_client_handle_t client =
+        __atomic_load_n(&s_midi_client_handle, __ATOMIC_ACQUIRE);
+    if (client) {
+        (void)usb_host_client_unblock(client);
     }
-
-exit:
-    xSemaphoreGive(s_midi_out_mutex);
-    return ret;
+    midi_out_producer_leave();
+    return ESP_OK;
 }
 
 #endif

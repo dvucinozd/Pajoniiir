@@ -116,6 +116,14 @@ int main(void)
     assert(id == 0x10);
     printf("  failed parse keeps prior profile active           PASS\n");
 
+    /* Transfer metadata must match the profile header, and a rejected
+     * activation must leave the currently active profile untouched. */
+    assert(!controller_profile_runtime_activate(g_blob, g_blob_len, 0x2B73, 0x9999));
+    assert(controller_profile_runtime_active());
+    assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
+    assert(id == 0x10);
+    printf("  VID/PID mismatch keeps prior profile active       PASS\n");
+
     /* Clear (and the NULL-blob clear path) drops the profile. */
     controller_profile_runtime_clear();
     assert(!controller_profile_runtime_active());

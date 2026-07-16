@@ -1,6 +1,6 @@
 # Startup Checklist
 
-Status: audited 2026-07-14. Checked items below are historical bring-up
+Status: audited 2026-07-16. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current accepted baseline
@@ -20,6 +20,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R3 lossless priority-touch policy passes both host suites and firmware builds.
 - [x] R4 WPA2 AP, OTA finish-state and signed-version packaging fixes pass both host suites and firmware builds.
 - [x] R5A call-graph, signed-build size and legacy S3 build baselines recorded.
+- [x] Full code-review software remediation passes both host suites, OTA signing,
+  OTA release helpers and clean ESP-IDF v5.5 builds for both targets.
 
 ## Repeat before enclosure close
 
@@ -36,6 +38,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [x] Perform one OTA update per target and record slot/version/state.
 - [ ] Preserve a wired recovery path or validated service connector.
+- [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, FLX4 USB
+  disconnect recovery, guarded web/profile/OTA mutations and UART-link capture.
 
 ## Repository
 
@@ -139,8 +143,8 @@ evidence, not instructions to repeat old commit-specific flashes.
   master output.
 - Beat FX section mapping and P4-owned state are implemented for effect select,
   beat size, target, depth, on/off, and clear/reset. Beat FX FILTER audio DSP is
-  implemented as a target-aware low-pass slice. Beat FX Echo/delay now has a
-  BPM-synced DSP slice with P4-owned delay buffers, target-aware routing, and
+  implemented as a target-aware low-pass slice. Beat FX Echo has a BPM-synced
+  DSP slice with P4-owned delay buffers, target-aware routing, and
   `/api/status.diagnostics.beat_fx_echo` telemetry; delay time is derived from
   target deck effective BPM with a 120 BPM fallback and 1000 ms cap. The
   Overview Beat FX rail renders the same P4-owned state with compact active
@@ -158,6 +162,14 @@ evidence, not instructions to repeat old commit-specific flashes.
   is now an effect-colour-coded strip with a vertical depth meter. Sound is now
   the default build on both boards (`idf.py build`); the per-profile sdkconfig
   overlays were removed.
+- **2026-07-16 update:** Beat FX **DELAY** value `4` is implemented as a
+  BPM-synchronized, full-band one-shot repeat with zero feedback; Level/Depth
+  controls wet gain. ECHO remains the damped multi-repeat effect. Both modes
+  share the existing per-deck stereo delay line without another PSRAM
+  allocation. The selector cycle is
+  `FILTER → ECHO → FLANGER → DELAY → FILTER`, Previous runs in reverse, and
+  `NONE` is excluded. P4 host suites and `idf.py build` provide software
+  acceptance; DELAY hardware smoke is still **PENDING**.
 - Pad FX DSP first slice is implemented in P4 and host-tested through
   `CTRL_PAD_ACTION` events for PAD_FX1/PAD_FX2. Physical FLX4 Pad FX pad input
   mapping is implemented from the official MIDI message PDF (`0x10..0x17` for
@@ -339,6 +351,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   are intentionally out of scope for this smoke.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
+- [ ] Hardware smoke Beat FX DELAY: select it in both directions and confirm
+  there is no selectable `NONE` gap; verify one full-band BPM-synchronized
+  repeat (no feedback regeneration), Level/Depth wet response, beat-size timing,
+  CH1/CH2/1&2 target routing, ON/OFF behavior, and a clean ECHO↔DELAY mode
+  change on the physical FLX4.
 - [x] Build the extended control inventory from the vendored Mixxx XML.
 - [x] Add deck modifiers and transport extensions with P4-owned semantics.
   First slice implemented: Shift, Cue+Shift track-start, Beat Sync, and

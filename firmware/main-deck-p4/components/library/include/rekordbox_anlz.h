@@ -153,6 +153,10 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out);
  */
 esp_err_t anlz_parse_ext(const char *ext_path, anlz_metadata_t *meta);
 
+/** Deep-copy metadata, including heap-owned beats and high-resolution
+ * waveform data. `out` must not already own allocations. */
+esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out);
+
 /**
  * Free all heap-allocated fields inside meta (beats, waveform_high).
  * Does NOT free the struct itself (caller-allocated).

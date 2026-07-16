@@ -17,12 +17,17 @@
  * -> silence). Consumes nothing from the ring. */
 typedef bool (*audio_output_scratch_fn)(void *ctx, audio_mixer_frame_t *out);
 typedef bool (*audio_output_keylock_fn)(void *ctx, float tempo_factor,
+                                        float rate_ratio,
                                         audio_mixer_frame_t *out,
                                         uint32_t *out_consumed);
 
 typedef struct {
     bool active;
     float pitch_factor;
+    /* Optional block-precomputed values. Zero retains the compatibility
+     * fallback for standalone callers. */
+    float resample_factor;
+    float keylock_rate_ratio;
     uint32_t source_sample_rate;
     uint32_t output_sample_rate;
     float gain;
@@ -58,6 +63,37 @@ typedef struct {
     audio_mixer_frame_t headphone;
     audio_mixer_frame_t deck_frame[2];
 } audio_output_mix_result_t;
+
+typedef struct {
+    bool deck0_pfl;
+    bool deck1_pfl;
+    audio_output_headphone_mode_t headphone_mode;
+    float headphone_master_gain;
+    float headphone_cue_gain;
+    float headphone_level_gain;
+    bool master_cue_enabled;
+} audio_output_mixer_controls_t;
+
+float audio_output_mixer_rate_ratio(uint32_t source_sample_rate,
+                                    uint32_t output_sample_rate);
+float audio_output_mixer_resample_factor(float pitch_factor,
+                                         uint32_t source_sample_rate,
+                                         uint32_t output_sample_rate);
+void audio_output_mixer_prepare_controls(audio_output_mixer_controls_t *out,
+                                         bool deck0_pfl,
+                                         bool deck1_pfl,
+                                         audio_output_headphone_mode_t headphone_mode,
+                                         uint16_t headphone_mix,
+                                         uint16_t headphone_level,
+                                         bool master_cue_enabled);
+
+audio_output_mix_result_t audio_output_mixer_next_prepared(
+                                                       const audio_output_mixer_deck_t *deck0,
+                                                       const audio_output_mixer_deck_t *deck1,
+                                                       const audio_output_mixer_controls_t *controls,
+                                                       uint32_t *out_deck0_consumed,
+                                                       uint32_t *out_deck1_consumed,
+                                                       audio_mixer_limiter_stats_t *limiter_stats);
 
 audio_output_mix_result_t audio_output_mixer_next_full_with_headphone_level(
                                                        const audio_output_mixer_deck_t *deck0,

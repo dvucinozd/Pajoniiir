@@ -233,6 +233,37 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
     -Patterns @("s_consecutive_errors >= FLX4_USB_AUDIO_MAX_CONSECUTIVE_ERRORS", "s_mode = FLX4_USB_AUDIO_MODE_STOPPED;")
 
+Assert-FileContains `
+    -Name "flx4 usb audio late control completions own their request context" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
+    -Patterns @("flx4_usb_audio_ctrl_request_t", "ctrl->context = request", "request->abandoned = true", "free(request)")
+
+Assert-FileNotContains `
+    -Name "flx4 usb audio does not share completion flags across control requests" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_usb_audio/flx4_usb_audio.c") `
+    -Patterns @("s_ctrl_done", "s_ctrl_status")
+
+Assert-FileContains `
+    -Name "flx4 MIDI OUT USB objects are owned by the client task" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @(
+        "Runs only in the USB client task",
+        "usb_host_client_unblock(client)",
+        "close_device_step",
+        "flx4_usb_audio_stop_complete()"
+    )
+
+Assert-FileNotContains `
+    -Name "flx4 MIDI OUT producer does not lock or submit USB transfers" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("s_midi_out_mutex", "midi_out_submit_next_locked")
+
+Assert-CFunctionDoesNotContain `
+    -Name "flx4 MIDI OUT producer only enqueues and wakes the USB owner" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -FunctionSignature "esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])" `
+    -ForbiddenPattern "usb_host_transfer_submit"
+
 # Control-link baud must be identical on both boards or framing never syncs.
 Assert-FileContains `
     -Name "control link baud is 460800 on the S3 side" `
@@ -328,6 +359,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -Patterns @(
         "/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA",
+        "s3_api_request_allowed(req, true)", "S3_DEBUG_AP_IP", "X-DDJ-Control",
         "s3_ota_policy_header_valid", "ddj_ota_manifest_parse",
         "ddj_ota_manifest_verify_signature", ".ddjota"
     )

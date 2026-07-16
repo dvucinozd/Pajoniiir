@@ -1,5 +1,7 @@
 #include "web_api_helpers.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +33,8 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
     }
 
     for (size_t i = 0; src[i] != '\0'; i++) {
-        switch (src[i]) {
+        unsigned char ch = (unsigned char)src[i];
+        switch (ch) {
         case '"':
             append_json_seq("\\\"", 2u, dst, dst_size, &written, &stored);
             break;
@@ -48,7 +51,13 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
             append_json_seq("\\t", 2u, dst, dst_size, &written, &stored);
             break;
         default:
-            append_json_seq(&src[i], 1u, dst, dst_size, &written, &stored);
+            if (ch < 0x20u) {
+                char escaped[7];
+                (void)snprintf(escaped, sizeof(escaped), "\\u%04X", ch);
+                append_json_seq(escaped, 6u, dst, dst_size, &written, &stored);
+            } else {
+                append_json_seq(&src[i], 1u, dst, dst_size, &written, &stored);
+            }
             break;
         }
     }
@@ -58,6 +67,19 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
     }
 
     return written;
+}
+
+static const char *web_api_beat_fx_effect_name(int effect)
+{
+    /* These values are part of the existing /api/status contract. Keep the
+     * established FILTER/ECHO/FLANGER numbers stable and append DELAY at 4. */
+    switch (effect) {
+    case 1: return "filter";
+    case 2: return "echo";
+    case 3: return "flanger";
+    case 4: return "delay";
+    default: return "none";
+    }
 }
 
 int web_api_format_beat_fx_json(char *dst,
@@ -73,8 +95,9 @@ int web_api_format_beat_fx_json(char *dst,
     }
     return snprintf(dst,
                     dst_size,
-                    "\"beat_fx\":{\"effect\":%d,\"beat\":%d,\"target\":%d,\"depth\":%u,\"enabled\":%s}",
+                    "\"beat_fx\":{\"effect\":%d,\"effect_name\":\"%s\",\"beat\":%d,\"target\":%d,\"depth\":%u,\"enabled\":%s}",
                     effect,
+                    web_api_beat_fx_effect_name(effect),
                     beat,
                     target,
                     depth,
@@ -87,6 +110,8 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                                           bool allocated2,
                                           bool enabled1,
                                           bool enabled2,
+                                          bool delay_mode1,
+                                          bool delay_mode2,
                                           unsigned delay_ms1,
                                           unsigned delay_ms2)
 {
@@ -95,11 +120,13 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
     }
     return snprintf(dst,
                     dst_size,
-                    "\"beat_fx_echo\":{\"allocated1\":%s,\"allocated2\":%s,\"enabled1\":%s,\"enabled2\":%s,\"delay_ms1\":%u,\"delay_ms2\":%u}",
+                    "\"beat_fx_echo\":{\"allocated1\":%s,\"allocated2\":%s,\"enabled1\":%s,\"enabled2\":%s,\"mode1\":\"%s\",\"mode2\":\"%s\",\"delay_ms1\":%u,\"delay_ms2\":%u}",
                     allocated1 ? "true" : "false",
                     allocated2 ? "true" : "false",
                     enabled1 ? "true" : "false",
                     enabled2 ? "true" : "false",
+                    delay_mode1 ? "delay" : "echo",
+                    delay_mode2 ? "delay" : "echo",
                     delay_ms1,
                     delay_ms2);
 }
@@ -171,6 +198,32 @@ int web_api_alloc_printf(char **out, const char *fmt, ...)
 
     *out = buf;
     return written;
+}
+
+bool web_api_parse_int32(const char *value,
+                         int32_t minimum,
+                         int32_t maximum,
+                         int32_t *out)
+{
+    if (!value || !out || value[0] == '\0' || minimum > maximum) {
+        return false;
+    }
+    /* Query parameters are generated as canonical decimal values.  Reject
+     * whitespace and a leading plus instead of accepting ambiguous prefixes. */
+    if (value[0] == '+' || value[0] == ' ' || value[0] == '\t' ||
+        value[0] == '\r' || value[0] == '\n') {
+        return false;
+    }
+
+    errno = 0;
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (errno == ERANGE || end == value || !end || *end != '\0' ||
+        parsed < (long)minimum || parsed > (long)maximum) {
+        return false;
+    }
+    *out = (int32_t)parsed;
+    return true;
 }
 
 uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known)

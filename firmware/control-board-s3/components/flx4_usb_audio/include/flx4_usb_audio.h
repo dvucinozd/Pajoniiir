@@ -39,6 +39,10 @@ esp_err_t flx4_usb_audio_start_ring(void);
 esp_err_t flx4_usb_audio_poll_ring_autostart(void);
 
 void flx4_usb_audio_stop(void);
+/* True once all USB audio/control transfers have been dequeued and the audio
+ * interface has been released. The owning USB client task should keep pumping
+ * client events and calling stop() until this becomes true during teardown. */
+bool flx4_usb_audio_stop_complete(void);
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out);
 
 /*

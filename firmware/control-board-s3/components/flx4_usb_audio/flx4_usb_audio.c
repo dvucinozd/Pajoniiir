@@ -1,5 +1,6 @@
 #include "flx4_usb_audio.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
@@ -47,6 +48,7 @@ static const char *TAG = "flx4_usb_audio";
 #define FLX4_USB_AUDIO_TRANSFER_COUNT 4u
 #define FLX4_USB_AUDIO_PACKETS_PER_TRANSFER 8u
 #define FLX4_USB_AUDIO_CTRL_TIMEOUT_MS 500u
+#define FLX4_USB_AUDIO_MAX_ORPHAN_CTRL_REQUESTS 4u
 #define FLX4_USB_AUDIO_MAX_CONSECUTIVE_ERRORS 100u
 #define FLX4_USB_AUDIO_STATS_LOG_INTERVAL_MS 5000u
 
@@ -58,13 +60,25 @@ static usb_transfer_t *s_transfers[FLX4_USB_AUDIO_TRANSFER_COUNT];
 /* Set when a transfer's submit failed so it dropped out of the self-resubmit
  * rotation; flx4_usb_audio_pump() re-arms these from the client task. */
 static bool s_transfer_idle[FLX4_USB_AUDIO_TRANSFER_COUNT];
+static bool s_transfer_active[FLX4_USB_AUDIO_TRANSFER_COUNT];
 static bool s_streaming;
+static bool s_stop_requested;
 static usb_host_client_handle_t s_client;
 static usb_device_handle_t s_device;
 static bool s_interface_claimed;
 static uint8_t s_claimed_interface_num;
-static volatile bool s_ctrl_done;
-static volatile usb_transfer_status_t s_ctrl_status;
+typedef struct {
+    usb_transfer_t *transfer;
+    volatile bool completed;
+    volatile bool abandoned;
+    usb_transfer_status_t status;
+} flx4_usb_audio_ctrl_request_t;
+
+/* Timed-out control requests remain owned by the host stack until their late
+ * callback runs.  Bound their retained memory and reject further requests if
+ * a broken device never completes them.  Access is confined to the FLX4 USB
+ * client task, including callbacks dispatched by client_handle_events(). */
+static uint8_t s_orphan_ctrl_requests;
 static uint32_t s_consecutive_errors;
 static TickType_t s_last_stats_log_tick;
 #endif
@@ -105,11 +119,37 @@ static esp_err_t match_stream_rate_to_link(uint32_t link_sample_rate);
 
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
 static void submit_stream_transfer(usb_transfer_t *transfer);
+static int transfer_index(const usb_transfer_t *transfer);
 
 static void ctrl_transfer_cb(usb_transfer_t *transfer)
 {
-    s_ctrl_status = transfer->status;
-    s_ctrl_done = true;
+    if (!transfer) {
+        return;
+    }
+    flx4_usb_audio_ctrl_request_t *request =
+        (flx4_usb_audio_ctrl_request_t *)transfer->context;
+    if (!request || request->transfer != transfer) {
+        ESP_LOGE(TAG, "control transfer callback context mismatch");
+        return;
+    }
+
+    request->status = transfer->status;
+    request->completed = true;
+    if (!request->abandoned) {
+        return;
+    }
+
+    /* The waiting call returned on timeout and transferred ownership here.
+     * A late completion must release its own transfer/context and must not be
+     * able to complete a newer request. */
+    esp_err_t rc = usb_host_transfer_free(transfer);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "free late control transfer: %s", esp_err_to_name(rc));
+    }
+    if (s_orphan_ctrl_requests > 0u) {
+        s_orphan_ctrl_requests--;
+    }
+    free(request);
 }
 
 /*
@@ -131,12 +171,24 @@ static esp_err_t send_control_request(uint8_t bmRequestType,
     if (!client || !device) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_orphan_ctrl_requests >= FLX4_USB_AUDIO_MAX_ORPHAN_CTRL_REQUESTS) {
+        ESP_LOGE(TAG, "too many timed-out control requests still in flight");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     usb_transfer_t *ctrl = NULL;
     esp_err_t rc = usb_host_transfer_alloc(sizeof(usb_setup_packet_t) + wLength, 0, &ctrl);
     if (rc != ESP_OK) {
         return rc;
     }
+    flx4_usb_audio_ctrl_request_t *request =
+        (flx4_usb_audio_ctrl_request_t *)calloc(1u, sizeof(*request));
+    if (!request) {
+        (void)usb_host_transfer_free(ctrl);
+        return ESP_ERR_NO_MEM;
+    }
+    request->transfer = ctrl;
+    request->status = USB_TRANSFER_STATUS_ERROR;
 
     usb_setup_packet_t *setup = (usb_setup_packet_t *)ctrl->data_buffer;
     setup->bmRequestType = bmRequestType;
@@ -151,33 +203,37 @@ static esp_err_t send_control_request(uint8_t bmRequestType,
     ctrl->device_handle = device;
     ctrl->bEndpointAddress = 0;
     ctrl->callback = ctrl_transfer_cb;
-    ctrl->context = NULL;
+    ctrl->context = request;
 
-    s_ctrl_done = false;
-    s_ctrl_status = USB_TRANSFER_STATUS_ERROR;
     rc = usb_host_transfer_submit_control(client, ctrl);
     if (rc != ESP_OK) {
         (void)usb_host_transfer_free(ctrl);
+        free(request);
         return rc;
     }
 
     TickType_t waited = 0;
     const TickType_t step = pdMS_TO_TICKS(10);
-    while (!s_ctrl_done && waited < pdMS_TO_TICKS(FLX4_USB_AUDIO_CTRL_TIMEOUT_MS)) {
+    while (!request->completed && waited < pdMS_TO_TICKS(FLX4_USB_AUDIO_CTRL_TIMEOUT_MS)) {
         (void)usb_host_client_handle_events(client, step);
         waited += step;
     }
 
-    if (!s_ctrl_done) {
-        /* The host stack may still own the transfer; freeing now would hand
-           the controller a dangling buffer, so leak it instead. */
+    if (!request->completed) {
+        /* The host stack still owns the transfer.  Hand its heap-backed
+         * context to the late callback instead of leaking it or leaving the
+         * callback pointing at this function's stack frame. */
+        request->abandoned = true;
+        s_orphan_ctrl_requests++;
         ESP_LOGE(TAG, "control request 0x%02X/0x%02X timed out",
                  (unsigned)bmRequestType, (unsigned)bRequest);
         return ESP_ERR_TIMEOUT;
     }
 
-    const bool completed = s_ctrl_status == USB_TRANSFER_STATUS_COMPLETED;
+    const bool completed = request->status == USB_TRANSFER_STATUS_COMPLETED;
+    ctrl->context = NULL;
     (void)usb_host_transfer_free(ctrl);
+    free(request);
     return completed ? ESP_OK : ESP_FAIL;
 }
 
@@ -231,7 +287,29 @@ static void audio_transfer_cb(usb_transfer_t *transfer)
         return;
     }
 
-    if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE || !s_streaming) {
+    const int idx = transfer_index(transfer);
+    if (idx >= 0) {
+        s_transfer_active[idx] = false;
+    }
+
+    if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE) {
+        s_stop_requested = true;
+        s_streaming = false;
+    }
+    if (s_stop_requested) {
+        if (idx >= 0 && s_transfers[idx] == transfer) {
+            esp_err_t rc = usb_host_transfer_free(transfer);
+            if (rc == ESP_OK) {
+                s_transfers[idx] = NULL;
+                s_transfer_idle[idx] = false;
+            } else {
+                ESP_LOGW(TAG, "free stopped audio transfer %d: %s",
+                         idx, esp_err_to_name(rc));
+            }
+        }
+        return;
+    }
+    if (!s_streaming) {
         return;
     }
 
@@ -278,9 +356,13 @@ static void free_transfers(void)
     for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
         s_transfer_idle[i] = false;
         if (s_transfers[i]) {
+            if (s_transfer_active[i]) {
+                continue;
+            }
             esp_err_t rc = usb_host_transfer_free(s_transfers[i]);
             if (rc == ESP_OK) {
                 s_transfers[i] = NULL;
+                s_transfer_active[i] = false;
             } else {
                 /* Still owned by the host stack (in flight); keep the pointer
                    so the next configure pass can retry the free. */
@@ -300,6 +382,7 @@ static esp_err_t allocate_transfers(const flx4_uac_playback_format_t *fmt)
         if (s_transfers[i]) {
             return ESP_ERR_INVALID_STATE;
         }
+        s_transfer_active[i] = false;
     }
 
     const size_t bytes_per_transfer = (size_t)fmt->max_packet_size * FLX4_USB_AUDIO_PACKETS_PER_TRANSFER;
@@ -359,10 +442,12 @@ static void submit_stream_transfer(usb_transfer_t *transfer)
         s_stats.skipped_packets++;
         if (idx >= 0) {
             s_transfer_idle[idx] = true;
+            s_transfer_active[idx] = false;
         }
         ESP_LOGW(TAG, "submit stream transfer failed: %s", esp_err_to_name(rc));
     } else if (idx >= 0) {
         s_transfer_idle[idx] = false;
+        s_transfer_active[idx] = true;
     }
 }
 
@@ -376,7 +461,9 @@ static esp_err_t start_stream_transfers(void)
             s_streaming = false;
             return ESP_ERR_INVALID_STATE;
         }
-        submit_stream_transfer(s_transfers[i]);
+        if (!s_transfer_active[i]) {
+            submit_stream_transfer(s_transfers[i]);
+        }
     }
     return ESP_OK;
 }
@@ -396,7 +483,12 @@ esp_err_t flx4_usb_audio_configure(usb_host_client_handle_t client,
     }
 
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
-    free_transfers();
+    flx4_usb_audio_stop();
+    if (!flx4_usb_audio_stop_complete()) {
+        ESP_LOGW(TAG, "previous USB audio transfers are still draining");
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_stop_requested = false;
     s_client = client;
     s_device = device;
     esp_err_t claim_rc = usb_host_interface_claim(client,
@@ -588,23 +680,35 @@ static esp_err_t match_stream_rate_to_link(uint32_t link_sample_rate)
 void flx4_usb_audio_stop(void)
 {
 #if !defined(FLX4_USB_AUDIO_PC_TEST)
+    s_stop_requested = true;
     s_streaming = false;
     free_transfers();
-    /* Host-side release only: this runs from client_event_cb (DEV_GONE)
-       context where pumping client events for a SET_INTERFACE(alt 0) control
-       transfer would re-enter usb_host_client_handle_events(). Without the
-       release, usb_host_device_close() fails and the device object leaks. */
-    if (s_interface_claimed && s_client && s_device) {
+    bool transfers_pending = false;
+    for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
+        if (s_transfers[i] || s_transfer_active[i]) {
+            transfers_pending = true;
+            break;
+        }
+    }
+
+    /* Release the interface only after all isochronous and timed-out control
+     * transfers have been dequeued.  The FLX4 MIDI owner calls stop again from
+     * its client-task close state until this step completes. */
+    if (!transfers_pending && s_orphan_ctrl_requests == 0u &&
+        s_interface_claimed && s_client && s_device) {
         esp_err_t rc = usb_host_interface_release(s_client, s_device, s_claimed_interface_num);
-        if (rc != ESP_OK) {
+        if (rc == ESP_OK) {
+            s_interface_claimed = false;
+            s_claimed_interface_num = 0u;
+        } else {
             ESP_LOGW(TAG, "release audio interface %u: %s",
                      (unsigned)s_claimed_interface_num, esp_err_to_name(rc));
         }
     }
-    s_interface_claimed = false;
-    s_claimed_interface_num = 0u;
-    s_client = NULL;
-    s_device = NULL;
+    if (!transfers_pending && s_orphan_ctrl_requests == 0u && !s_interface_claimed) {
+        s_client = NULL;
+        s_device = NULL;
+    }
     s_consecutive_errors = 0u;
 #endif
     memset(&s_stats, 0, sizeof(s_stats));
@@ -615,6 +719,21 @@ void flx4_usb_audio_stop(void)
     s_tone_step_q16 = 0u;
     s_reported_unsupported_link_rate = 0u;
     s_reported_failed_link_rate = 0u;
+}
+
+bool flx4_usb_audio_stop_complete(void)
+{
+#if !defined(FLX4_USB_AUDIO_PC_TEST)
+    if (s_interface_claimed || s_orphan_ctrl_requests != 0u) {
+        return false;
+    }
+    for (uint8_t i = 0; i < FLX4_USB_AUDIO_TRANSFER_COUNT; ++i) {
+        if (s_transfers[i] || s_transfer_active[i]) {
+            return false;
+        }
+    }
+#endif
+    return true;
 }
 
 void flx4_usb_audio_get_stats(flx4_usb_audio_stats_t *out)

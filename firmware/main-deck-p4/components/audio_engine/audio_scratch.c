@@ -1,5 +1,10 @@
 #include "audio_scratch.h"
 
+#include <limits.h>
+#include <math.h>
+
+#define AUDIO_SCRATCH_FRAMES_PER_TICK_MAX 100000.0f
+
 void audio_scratch_init(audio_scratch_t *s)
 {
     if (!s) return;
@@ -24,6 +29,21 @@ void audio_scratch_config(audio_scratch_t *s, float frames_per_tick,
                           float velocity_max, uint32_t hold_windows)
 {
     if (!s) return;
+    if (!isfinite(frames_per_tick) || frames_per_tick <= 0.0f) {
+        frames_per_tick = AUDIO_SCRATCH_DEFAULT_FRAMES_PER_TICK;
+    } else if (frames_per_tick > AUDIO_SCRATCH_FRAMES_PER_TICK_MAX) {
+        frames_per_tick = AUDIO_SCRATCH_FRAMES_PER_TICK_MAX;
+    }
+    if (!isfinite(slew_coef)) {
+        slew_coef = AUDIO_SCRATCH_DEFAULT_SLEW_COEF;
+    } else if (slew_coef < 0.0f) {
+        slew_coef = 0.0f;
+    } else if (slew_coef > 1.0f) {
+        slew_coef = 1.0f;
+    }
+    if (!isfinite(velocity_max) || velocity_max <= 0.0f) {
+        velocity_max = AUDIO_SCRATCH_DEFAULT_VELOCITY_MAX;
+    }
     s->frames_per_tick = frames_per_tick;
     s->rate_window_samples = rate_window_samples > 0u ? rate_window_samples : 1u;
     s->slew_coef = slew_coef;
@@ -34,6 +54,7 @@ void audio_scratch_config(audio_scratch_t *s, float frames_per_tick,
 void audio_scratch_seed(audio_scratch_t *s, float head_back)
 {
     if (!s) return;
+    if (!isfinite(head_back)) head_back = 0.0f;
     s->head_back = head_back < 0.0f ? 0.0f : head_back;
     s->velocity = 0.0f;
     s->velocity_target = 0.0f;
@@ -58,8 +79,20 @@ void audio_scratch_jog(audio_scratch_t *s, int16_t ticks)
 {
     if (!s || ticks == 0) return;
     /* Bank the motion; the render loop turns the banked ticks into a rate over a
-     * fixed window. Atomic: the control task adds while the output task snapshots. */
-    (void)__atomic_fetch_add(&s->pending_ticks, (int32_t)ticks, __ATOMIC_RELAXED);
+     * fixed window. Saturating CAS avoids signed overflow if the output task is
+     * stalled while a pathological stream keeps delivering jog events. */
+    int32_t current = __atomic_load_n(&s->pending_ticks, __ATOMIC_RELAXED);
+    for (;;) {
+        int64_t sum = (int64_t)current + (int32_t)ticks;
+        int32_t next = sum > INT32_MAX ? INT32_MAX
+                       : sum < INT32_MIN ? INT32_MIN
+                                           : (int32_t)sum;
+        if (__atomic_compare_exchange_n(&s->pending_ticks, &current, next,
+                                        true, __ATOMIC_RELAXED,
+                                        __ATOMIC_RELAXED)) {
+            break;
+        }
+    }
 }
 
 float audio_scratch_head_back(const audio_scratch_t *s)
@@ -189,9 +222,13 @@ uint32_t audio_scratch_track_position_ms(uint32_t newest_pos_ms,
                                          uint32_t loop_end_ms)
 {
     if (sample_rate == 0u) return newest_pos_ms;
-    uint32_t back_ms = head_back_frames > 0.0f
-        ? (uint32_t)((head_back_frames * 1000.0f) / (float)sample_rate)
-        : 0u;
+    uint32_t back_ms = 0u;
+    if (isfinite(head_back_frames) && head_back_frames > 0.0f) {
+        double calculated = ((double)head_back_frames * 1000.0) /
+                            (double)sample_rate;
+        back_ms = calculated >= (double)UINT32_MAX ? UINT32_MAX
+                                                    : (uint32_t)calculated;
+    }
 
     if (loop_active && loop_end_ms > loop_start_ms &&
         newest_pos_ms >= loop_start_ms && newest_pos_ms <= loop_end_ms) {

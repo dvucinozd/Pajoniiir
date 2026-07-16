@@ -111,8 +111,8 @@ test.
 | `0x70` | FLX4 connection state | `0` disconnected, `1` connected; sent with `CTRL_TYPE_STATE` |
 | `0x71` | Smart CFX | `0` release, `1` press; press toggles P4 Smart CFX state |
 | `0x72` | Smart Fader | `0` release, `1` press; press toggles P4 Smart Fader state |
-| `0x73` | Beat FX select next | `0` release, `1` press; press cycles P4 Beat FX effect forward |
-| `0x74` | Beat FX select previous | `0` release, `1` press; press cycles P4 Beat FX effect backward |
+| `0x73` | Beat FX select next | `0` release, `1` press; P4 cycle is `FILTER → ECHO → FLANGER → DELAY → FILTER` (`NONE` excluded) |
+| `0x74` | Beat FX select previous | `0` release, `1` press; P4 traverses the same cycle in exact reverse (`NONE` excluded) |
 | `0x75` | Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down |
 | `0x76` | Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up |
 | `0x77` | Beat FX target | `0` CH1, `1` CH2, `2` both; S3 derives `2` when both FLX4 target selector signals are active |
@@ -256,7 +256,16 @@ Beat Sync.
 
 The current P4 Beat FX snapshot is exposed through `/api/status` under
 `beat_fx` for low-rate hardware smoke verification without raw MIDI logging.
-The object contains `effect`, `beat`, `target`, `depth`, and `enabled`.
+The object contains `effect`, its additive human-readable `effect_name`,
+`beat`, `target`, `depth`, and `enabled`; numeric effect values are `0=NONE`,
+`1=FILTER`, `2=ECHO`, `3=FLANGER`, and `4=DELAY`. The new
+DELAY value does not change the wire protocol: S3 still sends only the semantic
+Next/Previous events above, and P4 owns selection/state. DELAY is a
+BPM-synchronized full-band one-shot repeat with Level/Depth as wet gain, while
+ECHO remains a damped multi-repeat feedback effect. They share the existing
+per-deck stereo delay line without an additional PSRAM allocation; diagnostics
+retain the `beat_fx_echo` compatibility object and expose the active shared-line
+mode for Echo/Delay distinction. DELAY hardware smoke remains pending.
 The same `enabled` state also drives the physical FLX4 Beat FX ON/OFF LED via
 `LED_BEAT_FX_ON`; S3 maps it to USB MIDI note `0x47` on `0x94`/`0x95`.
 

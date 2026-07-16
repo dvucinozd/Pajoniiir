@@ -87,6 +87,10 @@ int main(void)
     assert(play_seq == long_start + 20000u);
     assert(state.origin_seq > long_start);
     assert(state.grain_a < 16384.0f);
+
+    audio_keylock_configure(&state, NAN, INFINITY);
+    assert(state.tempo_factor == 1.0f);
+    assert(state.rate_ratio == 1.0f);
     puts("audio_keylock tests passed");
     return 0;
 }

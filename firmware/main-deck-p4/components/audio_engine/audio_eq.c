@@ -5,6 +5,7 @@
 #define AUDIO_EQ_LOW_CUTOFF_HZ  800.0f
 #define AUDIO_EQ_HIGH_CUTOFF_HZ 4000.0f
 #define AUDIO_EQ_PI             3.14159265358979323846f
+#define AUDIO_EQ_GAIN_BLOCK     32u
 
 static uint16_t clamp_raw(uint16_t raw)
 {
@@ -54,7 +55,12 @@ void audio_eq_init(audio_eq_state_t *eq, uint32_t sample_rate_hz)
 {
     if (!eq) return;
     audio_eq_set_sample_rate(eq, sample_rate_hz);
-    audio_eq_set_raw(eq, AUDIO_EQ_RAW_CENTER, AUDIO_EQ_RAW_CENTER, AUDIO_EQ_RAW_CENTER);
+    for (uint8_t band = 0u; band < AUDIO_EQ_BAND_COUNT; band++) {
+        __atomic_store_n(&eq->raw[band], AUDIO_EQ_RAW_CENTER, __ATOMIC_RELAXED);
+        eq->applied_raw[band] = AUDIO_EQ_RAW_CENTER;
+        eq->gain[band] = 1.0f;
+    }
+    eq->gain_frames_left = 0u;
     audio_eq_reset_filters(eq);
 }
 
@@ -82,14 +88,24 @@ void audio_eq_set_band_raw(audio_eq_state_t *eq, audio_eq_band_t band, uint16_t 
 {
     if (!eq || band >= AUDIO_EQ_BAND_COUNT) return;
     raw = clamp_raw(raw);
-    eq->raw[band] = raw;
-    eq->gain[band] = audio_eq_raw_to_gain(raw);
+    __atomic_store_n(&eq->raw[band], raw, __ATOMIC_RELEASE);
 }
 
 uint16_t audio_eq_get_band_raw(const audio_eq_state_t *eq, audio_eq_band_t band)
 {
     if (!eq || band >= AUDIO_EQ_BAND_COUNT) return AUDIO_EQ_RAW_CENTER;
-    return eq->raw[band];
+    return __atomic_load_n(&eq->raw[band], __ATOMIC_ACQUIRE);
+}
+
+static void refresh_gains(audio_eq_state_t *eq)
+{
+    for (uint8_t band = 0u; band < AUDIO_EQ_BAND_COUNT; band++) {
+        uint16_t raw = __atomic_load_n(&eq->raw[band], __ATOMIC_ACQUIRE);
+        if (raw != eq->applied_raw[band]) {
+            eq->applied_raw[band] = raw;
+            eq->gain[band] = audio_eq_raw_to_gain(raw);
+        }
+    }
 }
 
 static float process_sample(audio_eq_state_t *eq, float sample, uint8_t channel)
@@ -111,6 +127,11 @@ static float process_sample(audio_eq_state_t *eq, float sample, uint8_t channel)
 audio_mixer_frame_t audio_eq_process_frame(audio_eq_state_t *eq, audio_mixer_frame_t in)
 {
     if (!eq) return in;
+    if (eq->gain_frames_left == 0u) {
+        refresh_gains(eq);
+        eq->gain_frames_left = AUDIO_EQ_GAIN_BLOCK;
+    }
+    eq->gain_frames_left--;
     return (audio_mixer_frame_t) {
         .left = clamp_i16_from_float(process_sample(eq, (float)in.left, 0)),
         .right = clamp_i16_from_float(process_sample(eq, (float)in.right, 1)),

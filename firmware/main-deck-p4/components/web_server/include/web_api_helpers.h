@@ -18,6 +18,8 @@ int web_api_format_beat_fx_echo_diag_json(char *dst,
                                           bool allocated2,
                                           bool enabled1,
                                           bool enabled2,
+                                          bool delay_mode1,
+                                          bool delay_mode2,
                                           unsigned delay_ms1,
                                           unsigned delay_ms2);
 int web_api_format_controller_json(char *dst,
@@ -33,6 +35,10 @@ int web_api_format_controller_json(char *dst,
                                    const char *profile_state_escaped,
                                    unsigned profile_count);
 int web_api_alloc_printf(char **out, const char *fmt, ...);
+bool web_api_parse_int32(const char *value,
+                         int32_t minimum,
+                         int32_t maximum,
+                         int32_t *out);
 uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known);
 
 #define WEB_API_PROFILE_MIN_SIZE 32u

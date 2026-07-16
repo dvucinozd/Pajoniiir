@@ -96,17 +96,6 @@ void app_main(void)
     app_settings_init();   // also initialises NVS; falls back to defaults
     ESP_ERROR_CHECK(media_io_gate_init());
 
-    // ── Core subsystems ──────────────────────────────────────────────────────
-    // deck_core creates the event queue; control_link pushes frames onto it.
-    QueueHandle_t ctrl_queue;
-    ESP_ERROR_CHECK(deck_core_init(&ctrl_queue));
-    deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
-    ESP_ERROR_CHECK(control_link_init(ctrl_queue));
-    control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);
-#if CONFIG_CONTROLLER_PROFILE_MANAGER
-    control_link_set_descriptor_report_cb(on_controller_descriptor);
-#endif
-
     // ── Board support (stubs until hardware arrives) ─────────────────────────
     ESP_ERROR_CHECK(bsp_display_init());
     ESP_ERROR_CHECK(bsp_touch_init());
@@ -139,15 +128,6 @@ void app_main(void)
     if (wifi_rc != ESP_OK) {
         ESP_LOGW(TAG, "wifi_link_init: %s", esp_err_to_name(wifi_rc));
     }
-    // Let the Settings tab toggle the Wi-Fi remote without the UI depending on
-    // the wifi_link/web_server components directly.
-    ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
-    ui_settings_set_s3_debug_ap_toggle_cb(on_s3_debug_ap_toggle);
-    if (app_settings_get().wifi_remote) {
-        ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
-        wifi_link_request_enable(true);
-    }
-
     // ── Media and audio ──────────────────────────────────────────────────────
     // library_init() returns NOT_FOUND when USB is not mounted — that is
     // normal at startup; the library will be re-initialised when USB connects.
@@ -161,8 +141,33 @@ void app_main(void)
     audio_engine_set_cue_mode(settings.cue_mode);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(settings.master_trim_preset));
 
+    // ── Authoritative deck state ─────────────────────────────────────────────
+    // Build the playback queue before constructing the UI, but delay the S3
+    // UART consumer until every event target (profiles, audio and UI) is ready.
+    QueueHandle_t ctrl_queue;
+    ESP_ERROR_CHECK(deck_core_init(&ctrl_queue));
+
     // ── UI ───────────────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(ui_init());
+
+    // ── External control producers ───────────────────────────────────────────
+    // From this point onward incoming S3 frames may update deck/UI state.
+    deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
+#if CONFIG_CONTROLLER_PROFILE_MANAGER
+    control_link_set_descriptor_report_cb(on_controller_descriptor);
+#endif
+    ESP_ERROR_CHECK(control_link_init(ctrl_queue));
+    control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);
+
+    // Settings callbacks are published only after their downstream services
+    // exist.  A saved Wi-Fi setting is likewise activated after the UI and
+    // playback state are fully initialized, so web requests cannot race boot.
+    ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
+    ui_settings_set_s3_debug_ap_toggle_cb(on_s3_debug_ap_toggle);
+    if (app_settings_get().wifi_remote) {
+        ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
+        wifi_link_request_enable(true);
+    }
 
     // ── USB host (Rekordbox media drive) ─────────────────────────────────────
     // Starts the host + MSC stack; when a drive is plugged into the HS USB-C

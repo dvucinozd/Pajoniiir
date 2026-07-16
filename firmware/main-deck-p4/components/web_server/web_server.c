@@ -58,6 +58,33 @@ static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *
     return rc;
 }
 
+/* The captive UI is deliberately served from the fixed AP address. Enforce
+ * that host on every API request to block DNS rebinding, and require a custom
+ * header for mutations so third-party pages cannot trigger deck actions with
+ * an image, link or plain HTML form. */
+static bool api_request_allowed(httpd_req_t *req, bool mutation)
+{
+    char host[32] = {0};
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
+        (strcmp(host, "192.168.4.1") != 0 && strcmp(host, "192.168.4.1:80") != 0)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        (void)httpd_resp_send(req, "Invalid API host", HTTPD_RESP_USE_STRLEN);
+        return false;
+    }
+    if (mutation) {
+        char marker[4] = {0};
+        if (httpd_req_get_hdr_value_str(req, "X-DDJ-Control", marker,
+                                        sizeof(marker)) != ESP_OK ||
+            strcmp(marker, "1") != 0) {
+            httpd_resp_set_status(req, "403 Forbidden");
+            (void)httpd_resp_send(req, "Missing control request marker",
+                                  HTTPD_RESP_USE_STRLEN);
+            return false;
+        }
+    }
+    return true;
+}
+
 // Simboli za ugrađene datoteke
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
@@ -75,7 +102,6 @@ static bool redirect_if_needed(httpd_req_t *req)
             ESP_LOGD(TAG, "Redirecting Host '%s' to 192.168.4.1", host);
             httpd_resp_set_status(req, "302 Found");
             httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/index.html");
-            httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
             httpd_resp_send(req, NULL, 0);
             return true;
         }
@@ -93,7 +119,6 @@ static esp_err_t index_html_handler(httpd_req_t *req)
     size_t size = strlen((const char *)index_html_start);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, (const char *)index_html_start, size);
 }
 
@@ -104,7 +129,6 @@ static esp_err_t style_css_handler(httpd_req_t *req)
     size_t size = strlen((const char *)style_css_start);
     httpd_resp_set_type(req, "text/css");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, (const char *)style_css_start, size);
 }
 
@@ -115,7 +139,6 @@ static esp_err_t app_js_handler(httpd_req_t *req)
     size_t size = strlen((const char *)app_js_start);
     httpd_resp_set_type(req, "application/javascript");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, (const char *)app_js_start, size);
 }
 
@@ -143,6 +166,7 @@ static const char *peer_fw_state_name(uint8_t state)
 
 static esp_err_t api_firmware_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
     p4_ota_status_t status;
     p4_ota_get_status(&status);
     ctrl_firmware_report_t s3 = {0};
@@ -192,6 +216,7 @@ static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
 
 static esp_err_t api_p4_ota_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
     char target[8] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-DDJ-OTA", target, sizeof(target)) != ESP_OK ||
         strcmp(target, "p4") != 0) {
@@ -328,6 +353,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
     controller_profile_registry_t *reg = calloc(1, sizeof(*reg));
     char *json = malloc(4096);
     if (!reg || !json) {
@@ -386,6 +412,7 @@ static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
 
 static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
     char id[CPM_ID_MAX] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-ID", id,
                                     sizeof(id)) != ESP_OK ||
@@ -480,6 +507,7 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 // GET /api/status
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
     ESP_LOGD(TAG, "GET /api/status: %s", req->uri);
     audio_engine_deck_status_t deck1 = {0};
     audio_engine_deck_status_t deck2 = {0};
@@ -541,13 +569,15 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                 (int)beat_fx.target,
                                 (unsigned)beat_fx.depth,
                                 beat_fx.enabled);
-    char beat_fx_echo_diag_json[160] = {0};
+    char beat_fx_echo_diag_json[224] = {0};
     web_api_format_beat_fx_echo_diag_json(beat_fx_echo_diag_json,
                                           sizeof(beat_fx_echo_diag_json),
                                           diagnostics.beat_fx_echo_allocated[0],
                                           diagnostics.beat_fx_echo_allocated[1],
                                           diagnostics.beat_fx_echo_enabled[0],
                                           diagnostics.beat_fx_echo_enabled[1],
+                                          diagnostics.beat_fx_echo_mode[0] == AUDIO_DELAY_FX_MODE_DELAY,
+                                          diagnostics.beat_fx_echo_mode[1] == AUDIO_DELAY_FX_MODE_DELAY,
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[0],
                                           (unsigned)diagnostics.beat_fx_echo_delay_ms[1]);
 
@@ -716,7 +746,6 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     }
 
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_send(req, json, (size_t)json_len);
     free(json);
     return ESP_OK;
@@ -725,27 +754,30 @@ static esp_err_t api_status_handler(httpd_req_t *req)
 // GET /api/library
 static esp_err_t api_library_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
     ESP_LOGD(TAG, "GET /api/library: %s", req->uri);
     int count = media_catalog_count();
-    
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-
-    // Pošalji početak JSON-a
-    const char *header = "{\"tracks\":[";
-    httpd_resp_send_chunk(req, header, strlen(header));
 
     // Alociramo manji buffer u RAM-u za chunkove
     size_t chunk_sz = 4096;
     char *chunk = malloc(chunk_sz);
     if (!chunk) {
-        httpd_resp_send_chunk(req, NULL, 0);
-        return ESP_ERR_NO_MEM;
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory");
+    }
+
+    httpd_resp_set_type(req, "application/json");
+
+    // Pošalji početak JSON-a
+    const char *header = "{\"tracks\":[";
+    esp_err_t send_rc = httpd_resp_send_chunk(req, header, strlen(header));
+    if (send_rc != ESP_OK) {
+        free(chunk);
+        return send_rc;
     }
 
     int chunk_len = 0;
     bool first = true;
-    esp_err_t send_rc = ESP_OK;
 
     for (int i = 0; i < count; i++) {
         media_catalog_row_t row;
@@ -795,33 +827,74 @@ static esp_err_t api_library_handler(httpd_req_t *req)
 
     // Pošalji kraj JSON-a
     const char *footer = "]}";
-    httpd_resp_send_chunk(req, footer, strlen(footer));
+    send_rc = httpd_resp_send_chunk(req, footer, strlen(footer));
+    if (send_rc != ESP_OK) {
+        return send_rc;
+    }
 
     // Pošalji prazan chunk za označavanje kraja prijenosa
-    httpd_resp_send_chunk(req, NULL, 0);
-
-    return ESP_OK;
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
-// GET /api/control
+// POST /api/control (query parameters, protected by X-DDJ-Control)
+static bool api_parse_deck(const char *value, uint8_t *out_deck)
+{
+    int32_t parsed = 0;
+    if (!out_deck || !web_api_parse_int32(value, 1, 2, &parsed)) {
+        return false;
+    }
+    *out_deck = parsed == 2 ? CTRL_DECK_2 : CTRL_DECK_1;
+    return true;
+}
+
 static esp_err_t api_control_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
     char query[128] = {0};
     char deck_str[16] = {0};
     char action[32] = {0};
     char value_str[32] = {0};
 
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        httpd_query_key_value(query, "deck", deck_str, sizeof(deck_str));
-        httpd_query_key_value(query, "action", action, sizeof(action));
-        httpd_query_key_value(query, "value", value_str, sizeof(value_str));
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "action", action, sizeof(action)) != ESP_OK ||
+        action[0] == '\0') {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or oversized action");
+    }
+    bool has_deck = httpd_query_key_value(query, "deck", deck_str,
+                                           sizeof(deck_str)) == ESP_OK;
+    bool has_value = httpd_query_key_value(query, "value", value_str,
+                                            sizeof(value_str)) == ESP_OK;
+
+    uint8_t deck = CTRL_DECK_NONE;
+    bool deck_required = strcmp(action, "crossfader") != 0;
+    if ((deck_required && !has_deck) ||
+        (has_deck && !api_parse_deck(deck_str, &deck))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Deck must be 1 or 2");
     }
 
-    uint8_t deck = (deck_str[0] == '2') ? CTRL_DECK_2 : CTRL_DECK_1;
-    int value = atoi(value_str);
+    int32_t value = 0;
+    bool control_value_required = strcmp(action, "volume") == 0 ||
+                                  strcmp(action, "crossfader") == 0 ||
+                                  strcmp(action, "pitch") == 0;
+    bool seek_value_required = strcmp(action, "seek") == 0;
+    if (control_value_required &&
+        (!has_value || !web_api_parse_int32(value_str, 0,
+                                             AUDIO_MIXER_CONTROL_MAX, &value))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Control value must be 0..16383");
+    }
+    if (seek_value_required &&
+        (!has_value || !web_api_parse_int32(value_str, 0, INT32_MAX, &value))) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Seek value must be a non-negative integer");
+    }
 
-    ESP_LOGI(TAG, "Control action: deck=%d, action=%s, value=%d", deck, action, value);
+    ESP_LOGI(TAG, "Control action: deck=%d, action=%s, value=%ld", deck,
+             action, (long)value);
 
+    esp_err_t queue_rc = ESP_OK;
     if (strcmp(action, "play_pause") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -830,7 +903,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "cue") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -839,7 +912,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "pfl") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -848,7 +921,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "volume") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -857,7 +930,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "crossfader") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -866,7 +939,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "pitch") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_PITCH,
@@ -875,7 +948,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_event(&ev);
     } else if (strcmp(action, "loop_4") == 0) {
         audio_engine_deck_status_t status = {0};
         esp_err_t rc = audio_engine_deck_get_status(deck, &status);
@@ -890,7 +963,9 @@ static esp_err_t api_control_handler(httpd_req_t *req)
         }
         uint32_t beat_len_ms = 60000u / bpm;
         uint32_t loop_len_ms = 4u * beat_len_ms;
-        rc = audio_engine_deck_set_loop(deck, pos, pos + loop_len_ms);
+        uint32_t loop_end = pos > UINT32_MAX - loop_len_ms
+            ? UINT32_MAX : pos + loop_len_ms;
+        rc = audio_engine_deck_set_loop(deck, pos, loop_end);
         if (rc != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop failed");
             return ESP_FAIL;
@@ -922,31 +997,44 @@ static esp_err_t api_control_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    if (queue_rc != ESP_OK) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "Control queue busy", HTTPD_RESP_USE_STRLEN);
+    }
     httpd_resp_send(req, "OK", 2);
     return ESP_OK;
 }
 
-// GET /api/load
+// POST /api/load (query parameters, protected by X-DDJ-Control)
 static esp_err_t api_load_handler(httpd_req_t *req)
 {
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
     char query[64] = {0};
     char index_str[16] = {0};
     char deck_str[16] = {0};
 
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-        httpd_query_key_value(query, "index", index_str, sizeof(index_str));
-        httpd_query_key_value(query, "deck", deck_str, sizeof(deck_str));
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "index", index_str,
+                              sizeof(index_str)) != ESP_OK ||
+        httpd_query_key_value(query, "deck", deck_str,
+                              sizeof(deck_str)) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or oversized load parameters");
     }
 
-    int index = atoi(index_str);
-    uint8_t deck = (deck_str[0] == '2') ? CTRL_DECK_2 : CTRL_DECK_1;
+    int32_t index = 0;
+    uint8_t deck = CTRL_DECK_NONE;
+    if (!web_api_parse_int32(index_str, 0, INT32_MAX, &index) ||
+        !api_parse_deck(deck_str, &deck) ||
+        index >= media_catalog_count()) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Invalid track index or deck");
+    }
 
-    ESP_LOGI(TAG, "API Load Request: index=%d, deck=%d", index, deck);
+    ESP_LOGI(TAG, "API Load Request: index=%ld, deck=%d", (long)index, deck);
 
-    esp_err_t rc = ui_library_load_track_index_for_deck(index, deck);
+    esp_err_t rc = ui_library_load_track_index_for_deck((int)index, deck);
     if (rc != ESP_OK) {
-        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
         if (rc == ESP_ERR_INVALID_STATE) {
             httpd_resp_set_status(req, "409 Conflict");
             httpd_resp_send(req, "Load busy", HTTPD_RESP_USE_STRLEN);
@@ -956,7 +1044,6 @@ static esp_err_t api_load_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_send(req, "OK", 2);
     return ESP_OK;
 }
@@ -968,7 +1055,6 @@ static esp_err_t catch_all_handler(httpd_req_t *req)
     ESP_LOGD(TAG, "Catch-all request: %s", req->uri);
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/index.html");
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
@@ -1091,7 +1177,7 @@ esp_err_t web_server_start(void)
 
     httpd_uri_t control_uri = {
         .uri = "/api/control*",
-        .method = HTTP_GET,
+        .method = HTTP_POST,
         .handler = api_control_handler,
         .user_ctx = NULL
     };
@@ -1100,7 +1186,7 @@ esp_err_t web_server_start(void)
 
     httpd_uri_t load_uri = {
         .uri = "/api/load*",
-        .method = HTTP_GET,
+        .method = HTTP_POST,
         .handler = api_load_handler,
         .user_ctx = NULL
     };

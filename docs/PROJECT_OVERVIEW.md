@@ -153,6 +153,15 @@ The fork is no longer only the imported single-deck baseline:
   was added as a third Beat FX effect (cycle FILTER → ECHO → FLANGER). The
   Overview Beat FX rail was redesigned to be effect-colour-coded
   (Filter blue / Echo amber / Flanger magenta) with a vertical depth meter.
+- On 2026-07-16, **Delay** was added as Beat FX value `4` without renumbering
+  the existing effects. It is a BPM-synchronized, full-band one-shot repeat
+  without feedback; Level/Depth controls its wet gain. Delay and Echo reuse the
+  same per-deck stereo delay line, so the new mode does not allocate additional
+  PSRAM, while Echo keeps its damped multi-repeat feedback behavior. The
+  selector now cycles `FILTER → ECHO → FLANGER → DELAY → FILTER`, with the
+  reverse order on Previous and no `NONE` slot in either direction. Software
+  acceptance is covered by the P4 host suites and `idf.py build`; physical
+  DELAY sound/target/beat/depth smoke remains pending.
 - The FLX4 USB-headphone audio profile was made the default build on both boards
   (folded into each `sdkconfig.defaults` on 2026-07-10), so a plain `idf.py
   build` now produces the sound firmware; the per-profile overlays and stale
@@ -193,7 +202,8 @@ The fork is no longer only the imported single-deck baseline:
   the first milestone.
 - Deeper Beat FX and Pad FX hardware acceptance beyond the current Smart CFX
   smoothstep curve, Smart Fader transition-assist V1 behavior, the Beat FX
-  Filter/Echo/Flanger DSP, and host-tested Pad FX DSP/input/LED slice.
+  Filter/Echo/Flanger hardware baseline, the software-covered Delay mode, and
+  the host-tested Pad FX DSP/input/LED slice.
 - Four-deck support.
 - Rekordbox library editing.
 - Running JavaScript Mixxx mappings on-device.

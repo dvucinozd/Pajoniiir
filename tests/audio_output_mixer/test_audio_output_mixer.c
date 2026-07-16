@@ -440,7 +440,9 @@ static void test_beat_fx_filter_applies_only_to_target_deck(void)
     assert(bypass_abs > 64 * 10000);
 }
 
-static void test_beat_fx_echo_applies_only_to_target_deck(void)
+static void assert_beat_fx_time_effect_applies_only_to_target_deck(
+    audio_delay_fx_mode_t mode,
+    uint16_t feedback_q15)
 {
     audio_mixer_frame_t deck0_frames[8] = {
         { .left = 10000, .right = 10000 },
@@ -455,17 +457,18 @@ static void test_beat_fx_echo_applies_only_to_target_deck(void)
     audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
 
-    int16_t echo_l[16] = { 0 };
-    int16_t echo_r[16] = { 0 };
-    audio_delay_fx_t echo;
-    audio_delay_fx_init(&echo, echo_l, echo_r, 16u, 1000u);
-    audio_delay_fx_configure(&echo, &(audio_delay_fx_config_t) {
+    int16_t effect_l[16] = { 0 };
+    int16_t effect_r[16] = { 0 };
+    audio_delay_fx_t effect;
+    audio_delay_fx_init(&effect, effect_l, effect_r, 16u, 1000u);
+    audio_delay_fx_configure(&effect, &(audio_delay_fx_config_t) {
         .enabled = true,
+        .mode = mode,
         .delay_ms = 2,
         .wet_q15 = 16384,
-        .feedback_q15 = 0,
+        .feedback_q15 = feedback_q15,
     });
-    deck0.beat_fx_echo = &echo;
+    deck0.beat_fx_echo = &effect;
     deck0.beat_fx_echo_enabled = true;
 
     prime_output_mixer(&deck0, &deck1);
@@ -488,6 +491,21 @@ static void test_beat_fx_echo_applies_only_to_target_deck(void)
 
     assert(delayed.deck_frame[0].left > 0);
     assert(delayed.deck_frame[1].left == 0);
+}
+
+static void test_beat_fx_echo_applies_only_to_target_deck(void)
+{
+    assert_beat_fx_time_effect_applies_only_to_target_deck(
+        AUDIO_DELAY_FX_MODE_ECHO,
+        8192u);
+}
+
+static void test_beat_fx_delay_applies_only_to_target_deck(void)
+{
+    /* DELAY must suppress this non-zero caller feedback internally. */
+    assert_beat_fx_time_effect_applies_only_to_target_deck(
+        AUDIO_DELAY_FX_MODE_DELAY,
+        20000u);
 }
 
 static void test_pad_fx_applies_before_beat_fx_layer(void)
@@ -618,6 +636,7 @@ int main(void)
     test_full_mix_master_cue_disabled_removes_master_from_headphone_mix_only();
     test_beat_fx_filter_applies_only_to_target_deck();
     test_beat_fx_echo_applies_only_to_target_deck();
+    test_beat_fx_delay_applies_only_to_target_deck();
     test_pad_fx_applies_before_beat_fx_layer();
     puts("audio_output_mixer tests passed");
     return 0;
