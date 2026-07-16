@@ -110,16 +110,16 @@ void audio_flanger_fx_configure(audio_flanger_fx_t *fx,
 }
 
 static int32_t read_delayed(const int16_t *buffer,
-                            uint32_t capacity,
-                            uint32_t write_index,
-                            uint32_t delay_int,
+                            uint32_t idx0,
+                            uint32_t idx1,
                             uint32_t frac_q16)
 {
-    uint32_t idx0 = (write_index + capacity - delay_int) % capacity;
-    uint32_t idx1 = (idx0 + capacity - 1u) % capacity;
     int32_t s0 = buffer[idx0];
     int32_t s1 = buffer[idx1];
-    return s0 + (((s1 - s0) * (int32_t)frac_q16) >> 16);
+    /* A full-scale -32768 -> +32767 step multiplied by 0xffff exceeds
+     * signed int32.  Widen before the multiply so hostile or clipped input
+     * cannot invoke undefined behaviour in the audio task. */
+    return s0 + (int32_t)(((int64_t)(s1 - s0) * (int64_t)frac_q16) >> 16);
 }
 
 audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
@@ -146,10 +146,12 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
     uint32_t delay_int = delay_q16 >> 16;
     uint32_t frac_q16 = delay_q16 & 0xFFFFu;
 
-    int32_t delayed_l = read_delayed(fx->left, fx->capacity_frames,
-                                     fx->write_index, delay_int, frac_q16);
-    int32_t delayed_r = read_delayed(fx->right, fx->capacity_frames,
-                                     fx->write_index, delay_int, frac_q16);
+    uint32_t idx0 = fx->write_index >= delay_int
+        ? fx->write_index - delay_int
+        : fx->write_index + fx->capacity_frames - delay_int;
+    uint32_t idx1 = idx0 == 0u ? fx->capacity_frames - 1u : idx0 - 1u;
+    int32_t delayed_l = read_delayed(fx->left, idx0, idx1, frac_q16);
+    int32_t delayed_r = read_delayed(fx->right, idx0, idx1, frac_q16);
 
     int32_t out_l = (int32_t)in.left + ((delayed_l * (int32_t)fx->wet_cur_q15) >> 15);
     int32_t out_r = (int32_t)in.right + ((delayed_r * (int32_t)fx->wet_cur_q15) >> 15);
@@ -158,7 +160,10 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
         (int32_t)in.left + ((delayed_l * (int32_t)fx->feedback_cur_q15) >> 15));
     fx->right[fx->write_index] = clamp_i16(
         (int32_t)in.right + ((delayed_r * (int32_t)fx->feedback_cur_q15) >> 15));
-    fx->write_index = (fx->write_index + 1u) % fx->capacity_frames;
+    fx->write_index++;
+    if (fx->write_index >= fx->capacity_frames) {
+        fx->write_index = 0u;
+    }
 
     return (audio_mixer_frame_t) {
         .left = clamp_i16(out_l),

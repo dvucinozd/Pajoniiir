@@ -297,6 +297,27 @@ static void run_unit_tests(void)
     TEST("waveform_high[0] = 0");
     CHECK(meta.waveform_high && meta.waveform_high[0] == 0, "wrong value");
 
+    printf("\n=== anlz_clone() ===\n");
+    anlz_metadata_t cloned;
+    rc = anlz_clone(&meta, &cloned);
+
+    TEST("clone returns ESP_OK");
+    CHECK(rc == ESP_OK, "unexpected clone error");
+
+    TEST("clone owns an independent beat array");
+    CHECK(cloned.beats && cloned.beats != meta.beats &&
+          cloned.beat_count == meta.beat_count &&
+          cloned.beats[1].time_ms == meta.beats[1].time_ms,
+          "beat array not deeply copied");
+
+    TEST("clone owns an independent high waveform");
+    CHECK(cloned.waveform_high && cloned.waveform_high != meta.waveform_high &&
+          cloned.waveform_high_len == meta.waveform_high_len &&
+          memcmp(cloned.waveform_high, meta.waveform_high, meta.waveform_high_len) == 0,
+          "high waveform not deeply copied");
+
+    anlz_free(&cloned);
+
     printf("\n=== anlz_free() ===\n");
     anlz_free(&meta);
 

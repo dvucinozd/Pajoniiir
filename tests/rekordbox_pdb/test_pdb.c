@@ -84,6 +84,52 @@ static void test_devicesql_utf16_to_utf8(void)
           decoded);
 }
 
+static void put_le32(uint8_t *dst, uint32_t value)
+{
+    dst[0] = (uint8_t)(value & 0xFFu);
+    dst[1] = (uint8_t)((value >> 8u) & 0xFFu);
+    dst[2] = (uint8_t)((value >> 16u) & 0xFFu);
+    dst[3] = (uint8_t)((value >> 24u) & 0xFFu);
+}
+
+static void test_malformed_page_zero_row_groups(void)
+{
+    const char *path = "test_malformed_page_zero.pdb";
+    uint8_t data[64] = {0};
+
+    /* A one-page file whose only table points at page zero.  The packed nrows
+     * value claims far more row-slot groups than the 64-byte page can hold.
+     * The second group has only 28 bytes remaining and used to underflow the
+     * backwards size_t cursor before the following rowpf read. */
+    put_le32(data + 4, (uint32_t)sizeof(data)); /* page_size */
+    put_le32(data + 8, 1u);                    /* num_tables */
+    put_le32(data + 12, 0xFFFFFFFFu);          /* page_next */
+    put_le32(data + 24, 0x1FFFu);              /* packed nrows */
+    put_le32(data + 28, 0u);                   /* tracks table type */
+    put_le32(data + 36, 0u);                   /* first_page */
+
+    FILE *fp = fopen(path, "wb");
+    TEST("malformed page-zero row groups do not underflow cursor");
+    if (!fp) {
+        FAIL("cannot create malformed fixture");
+        return;
+    }
+    bool wrote = fwrite(data, 1u, sizeof(data), fp) == sizeof(data);
+    bool closed = fclose(fp) == 0;
+    if (!wrote || !closed) {
+        remove(path);
+        FAIL("cannot write malformed fixture");
+        return;
+    }
+
+    pdb_t *pdb = NULL;
+    esp_err_t rc = pdb_open(path, &pdb);
+    bool safe_empty_result = rc == ESP_OK && pdb != NULL && pdb_track_count(pdb) == 0;
+    pdb_close(pdb);
+    remove(path);
+    CHECK(safe_empty_result, "malformed page should be safely truncated");
+}
+
 /* ── Real-file integration test ──────────────────────────────────────────── */
 
 static void test_real_file(const char *pdb_path, int limit)
@@ -172,6 +218,7 @@ int main(int argc, char *argv[])
     /* Always run API contract tests */
     test_api_contracts();
     test_devicesql_utf16_to_utf8();
+    test_malformed_page_zero_row_groups();
 
     /* Real-file test if a path is provided */
     if (argc >= 2) {

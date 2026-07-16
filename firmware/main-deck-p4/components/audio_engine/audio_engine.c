@@ -146,7 +146,9 @@ static uint8_t           s_scratch_ctx_deck[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_capture_freeze[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_capture_writing[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t          s_scratch_head_back_bits[AUDIO_ENGINE_DECK_COUNT];
+#if AE_FW
 static uint32_t          s_scratch_handoff_consumed[AUDIO_ENGINE_DECK_COUNT];
+#endif
 static bool              s_scratch_abort_seek_requested[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_abort_seek_waiting[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t          s_scratch_abort_seek_target_ms[AUDIO_ENGINE_DECK_COUNT];
@@ -267,7 +269,7 @@ typedef struct {
     bool     timeline_preroll_pending;
 
     /* Pitch: 1.0 = ±0%, > 1.0 = faster, < 1.0 = slower  (range 0.9 – 1.1) */
-    float    pitch_factor;
+    uint32_t pitch_factor_bits;
 
     bool     loaded;
     bool     playing;
@@ -327,7 +329,7 @@ static uint16_t         s_pregain[AUDIO_ENGINE_DECK_COUNT] = {
     AUDIO_MIXER_CONTROL_CENTER,
 };
 static uint16_t         s_crossfader = AUDIO_MIXER_CONTROL_CENTER;
-static float            s_master_trim = 1.0f;
+static uint32_t         s_master_trim_bits = 0x3F800000u; /* float 1.0f */
 static uint16_t         s_master_volume = AUDIO_MIXER_CONTROL_MAX;
 static uint16_t         s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
 static uint16_t         s_headphone_level = AUDIO_MIXER_CONTROL_MAX;
@@ -344,41 +346,54 @@ static uint16_t         s_deck_filter_raw[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_filter_effective[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_beat_fx_filter[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_filter_command[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_filter_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_delay_fx_t s_beat_fx_echo[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
+typedef struct {
+    uint32_t sequence;
+    uint32_t word0;
+    uint32_t word1;
+} ae_fx_command_t;
+static ae_fx_command_t  s_beat_fx_echo_command[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_echo_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_flanger_fx_t s_beat_fx_flanger[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_beat_fx_flanger_left[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_beat_fx_flanger_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_flanger_enabled[AUDIO_ENGINE_DECK_COUNT];
+static ae_fx_command_t  s_beat_fx_flanger_command[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_beat_fx_flanger_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_pad_fx_state_t s_pad_fx[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
 static int16_t         *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_pad_fx_command[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_pad_fx_applied[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
 static bool             s_smart_fader_enabled;
 /* Transient jog pitch-bend (nudge) per deck: a jog while playing bumps this, the
  * output task adds it on top of pitch_factor and decays it back to 0, so tempo
- * returns to the fader setting when the jog stops. Plain float — written by the
- * control task, read+decayed by the output task; a 32-bit aligned store is not
- * torn and the effect is transient, so no lock (matches pitch_factor access).
+ * returns to the fader setting when the jog stops. The IEEE-754 bits are atomic:
+ * relying on aligned non-torn loads would still be a C data race, and a plain
+ * read/modify/write could discard a control-task nudge during output decay.
  * Feel constants — tune on hardware: each jog tick adds *_PER_TICK (clamped to
  * ±*_MAX = a momentary tempo change); the output task multiplies toward 0 by
  * *_DECAY each ~5.8 ms block so tempo springs back to the fader on release. */
 #define AE_JOG_BEND_PER_TICK 0.02f
 #define AE_JOG_BEND_MAX      0.30f
 #define AE_JOG_BEND_DECAY    0.88f
-static float            s_jog_bend[AUDIO_ENGINE_DECK_COUNT];
-static float            s_pending_pitch_factor[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_jog_bend_bits[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_pending_pitch_factor_bits[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_pending_pitch_valid[AUDIO_ENGINE_DECK_COUNT];
 
 /* Platter-hold (vinyl mode Phase 1): while the jog platter top is touched during
  * playback, deck_core sets this so the deck output is silenced and its position
  * frozen (an output-level mute, the logical play state stays "playing" for LEDs).
  * Releasing clears it and forward playback resumes instantly from wherever the
- * position was scrubbed to. Plain atomic bool: written by the control task, read
- * by the output task; no lock (matches the s_jog_bend / pitch_factor pattern). */
+ * position was scrubbed to. Atomic because the control task writes it while the
+ * output task reads it. */
 static bool             s_deck_hold[AUDIO_ENGINE_DECK_COUNT];
 
 static inline uint16_t atomic_load_u16(const uint16_t *value)
@@ -413,6 +428,7 @@ static inline bool timeline_active(uint8_t deck)
            s_pcm_timelines[deck].capacity > 0u;
 }
 
+#if AE_FW
 static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
@@ -426,6 +442,7 @@ static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
     if (!ok) s_pcm_underrun_count[deck]++;
     return ok;
 }
+#endif
 
 static uint32_t deck_pcm_used(uint8_t deck)
 {
@@ -438,6 +455,7 @@ static uint32_t deck_pcm_used(uint8_t deck)
 static void complete_eof_drain_if_ready(uint8_t deck);
 #endif
 
+#if AE_FW
 static uint32_t deck_pcm_free(uint8_t deck, uint32_t sample_rate)
 {
     if (!timeline_active(deck)) return audio_pcm_ring_free(&s_pcm_rings[deck]);
@@ -448,6 +466,7 @@ static uint32_t deck_pcm_free(uint8_t deck, uint32_t sample_rate)
     uint32_t future = audio_pcm_timeline_future_frames(&s_pcm_timelines[deck]);
     return future < target ? target - future : 0u;
 }
+#endif
 
 static void deck_pcm_reset(uint8_t deck)
 {
@@ -455,12 +474,14 @@ static void deck_pcm_reset(uint8_t deck)
     if (timeline_active(deck)) audio_pcm_timeline_reset(&s_pcm_timelines[deck]);
 }
 
+#if AE_FW
 static bool deck_pcm_push(uint8_t deck, int16_t left, int16_t right)
 {
     return timeline_active(deck)
         ? audio_pcm_timeline_push(&s_pcm_timelines[deck], left, right)
         : audio_pcm_ring_push(&s_pcm_rings[deck], left, right);
 }
+#endif
 
 /* Present the immutable canonical store to the existing scratch DSP. This is a
  * metadata-only view; both objects refer to the same interleaved PSRAM frames. */
@@ -497,6 +518,91 @@ static float bits_to_float(uint32_t bits)
     return value;
 }
 
+static void engine_pitch_store(uint8_t deck, float factor)
+{
+    __atomic_store_n(&s_engines[deck].pitch_factor_bits,
+                     float_to_bits(factor), __ATOMIC_RELEASE);
+}
+
+static float engine_pitch_load(uint8_t deck)
+{
+    return bits_to_float(__atomic_load_n(&s_engines[deck].pitch_factor_bits,
+                                         __ATOMIC_ACQUIRE));
+}
+
+static void pending_pitch_store(uint8_t deck, float factor)
+{
+    __atomic_store_n(&s_pending_pitch_factor_bits[deck],
+                     float_to_bits(factor), __ATOMIC_RELEASE);
+}
+
+#if AE_FW
+static float pending_pitch_load(uint8_t deck)
+{
+    return bits_to_float(__atomic_load_n(&s_pending_pitch_factor_bits[deck],
+                                         __ATOMIC_ACQUIRE));
+}
+#endif
+
+static void jog_bend_store(uint8_t deck, float bend)
+{
+    __atomic_store_n(&s_jog_bend_bits[deck], float_to_bits(bend),
+                     __ATOMIC_RELEASE);
+}
+
+static float jog_bend_load(uint8_t deck)
+{
+    return bits_to_float(__atomic_load_n(&s_jog_bend_bits[deck],
+                                         __ATOMIC_ACQUIRE));
+}
+
+static void jog_bend_add(uint8_t deck, float delta)
+{
+    uint32_t expected = __atomic_load_n(&s_jog_bend_bits[deck], __ATOMIC_ACQUIRE);
+    for (;;) {
+        float bend = bits_to_float(expected);
+        if (!isfinite(bend)) bend = 0.0f;
+        bend += delta;
+        if (bend > AE_JOG_BEND_MAX) bend = AE_JOG_BEND_MAX;
+        if (bend < -AE_JOG_BEND_MAX) bend = -AE_JOG_BEND_MAX;
+        uint32_t desired = float_to_bits(bend);
+        if (__atomic_compare_exchange_n(&s_jog_bend_bits[deck], &expected,
+                                        desired, false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
+            return;
+        }
+    }
+}
+
+#if AE_FW
+static void jog_bend_decay(uint8_t deck)
+{
+    uint32_t expected = __atomic_load_n(&s_jog_bend_bits[deck], __ATOMIC_ACQUIRE);
+    for (;;) {
+        float bend = bits_to_float(expected);
+        if (!isfinite(bend)) bend = 0.0f;
+        bend *= AE_JOG_BEND_DECAY;
+        if (bend < 0.0005f && bend > -0.0005f) bend = 0.0f;
+        uint32_t desired = float_to_bits(bend);
+        if (__atomic_compare_exchange_n(&s_jog_bend_bits[deck], &expected,
+                                        desired, false, __ATOMIC_ACQ_REL,
+                                        __ATOMIC_ACQUIRE)) {
+            return;
+        }
+    }
+}
+#endif
+
+static void master_trim_store(float gain)
+{
+    __atomic_store_n(&s_master_trim_bits, float_to_bits(gain), __ATOMIC_RELEASE);
+}
+
+static float master_trim_load(void)
+{
+    return bits_to_float(__atomic_load_n(&s_master_trim_bits, __ATOMIC_ACQUIRE));
+}
+
 static void scratch_head_publish(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
@@ -526,6 +632,183 @@ static inline void scratch_handoff_store(uint8_t *value, uint8_t new_value)
 {
     __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
 }
+
+/* Effect configuration is produced by the deck/control task and consumed by
+ * the real-time output task.  Single-word commands are atomic directly; wider
+ * commands use a non-spinning sequence snapshot made entirely from 32-bit
+ * atomics (native on ESP32-P4).  The output task skips an in-progress update
+ * and retries next block rather than waiting on a preempted lower-priority
+ * producer. */
+#define AE_FILTER_CMD_ENABLED       (1u << 16)
+#define AE_FX_CMD_ENABLED           (1u << 31)
+
+static uint32_t pack_filter_command(uint16_t raw, bool enabled)
+{
+    return (uint32_t)raw | (enabled ? AE_FILTER_CMD_ENABLED : 0u);
+}
+
+static uint32_t fx_command_publish(ae_fx_command_t *command,
+                                   uint32_t word0,
+                                   uint32_t word1)
+{
+    uint32_t sequence = __atomic_load_n(&command->sequence, __ATOMIC_RELAXED);
+    if ((sequence & 1u) != 0u) sequence++;
+    __atomic_store_n(&command->sequence, sequence + 1u, __ATOMIC_RELEASE);
+    __atomic_store_n(&command->word0, word0, __ATOMIC_RELAXED);
+    __atomic_store_n(&command->word1, word1, __ATOMIC_RELAXED);
+    sequence += 2u;
+    __atomic_store_n(&command->sequence, sequence, __ATOMIC_RELEASE);
+    return sequence;
+}
+
+#if AE_FW
+static bool fx_command_snapshot(const ae_fx_command_t *command,
+                                uint32_t *out_sequence,
+                                uint32_t *out_word0,
+                                uint32_t *out_word1)
+{
+    uint32_t before = __atomic_load_n(&command->sequence, __ATOMIC_ACQUIRE);
+    if ((before & 1u) != 0u) return false;
+    uint32_t word0 = __atomic_load_n(&command->word0, __ATOMIC_RELAXED);
+    uint32_t word1 = __atomic_load_n(&command->word1, __ATOMIC_RELAXED);
+    uint32_t after = __atomic_load_n(&command->sequence, __ATOMIC_ACQUIRE);
+    if (before != after || (after & 1u) != 0u) return false;
+    if (out_sequence) *out_sequence = after;
+    if (out_word0) *out_word0 = word0;
+    if (out_word1) *out_word1 = word1;
+    return true;
+}
+#endif
+
+static uint32_t publish_echo_command(uint8_t deck,
+                                     const audio_delay_fx_config_t *config)
+{
+    uint32_t word0 = config ? (config->delay_ms & 0x3FFu) : 0u;
+    uint32_t word1 = 0u;
+    if (config) {
+        if (config->enabled) word0 |= AE_FX_CMD_ENABLED;
+        word1 = (uint32_t)config->wet_q15 |
+                ((uint32_t)config->feedback_q15 << 16);
+    }
+    return fx_command_publish(&s_beat_fx_echo_command[deck], word0, word1);
+}
+
+#if AE_FW
+static bool snapshot_echo_command(uint8_t deck,
+                                  uint32_t *out_sequence,
+                                  audio_delay_fx_config_t *out_config)
+{
+    uint32_t word0 = 0u, word1 = 0u;
+    if (!out_config || !fx_command_snapshot(&s_beat_fx_echo_command[deck],
+                                             out_sequence, &word0, &word1)) {
+        return false;
+    }
+    *out_config = (audio_delay_fx_config_t) {
+        .enabled = (word0 & AE_FX_CMD_ENABLED) != 0u,
+        .delay_ms = word0 & 0x3FFu,
+        .wet_q15 = (uint16_t)(word1 & 0xFFFFu),
+        .feedback_q15 = (uint16_t)(word1 >> 16),
+    };
+    return true;
+}
+#endif
+
+static uint32_t publish_flanger_command(uint8_t deck,
+                                        const audio_flanger_fx_config_t *config)
+{
+    uint32_t word0 = config ? config->period_ms : 0u;
+    uint32_t word1 = config ? (uint32_t)config->depth_q15 : 0u;
+    if (config && config->enabled) word1 |= AE_FX_CMD_ENABLED;
+    return fx_command_publish(&s_beat_fx_flanger_command[deck], word0, word1);
+}
+
+#if AE_FW
+static bool snapshot_flanger_command(uint8_t deck,
+                                     uint32_t *out_sequence,
+                                     audio_flanger_fx_config_t *out_config)
+{
+    uint32_t word0 = 0u, word1 = 0u;
+    if (!out_config || !fx_command_snapshot(&s_beat_fx_flanger_command[deck],
+                                             out_sequence, &word0, &word1)) {
+        return false;
+    }
+    *out_config = (audio_flanger_fx_config_t) {
+        .enabled = (word1 & AE_FX_CMD_ENABLED) != 0u,
+        .period_ms = word0,
+        .depth_q15 = (uint16_t)(word1 & 0xFFFFu),
+    };
+    return true;
+}
+#endif
+
+static uint32_t pack_pad_fx_command(audio_pad_fx_config_t config)
+{
+    return (config.active ? 1u : 0u) |
+           (((uint32_t)config.mode & 0x3u) << 1) |
+           ((uint32_t)config.pad << 3);
+}
+
+static audio_pad_fx_config_t unpack_pad_fx_command(uint32_t packed)
+{
+    return (audio_pad_fx_config_t) {
+        .active = (packed & 1u) != 0u,
+        .mode = (audio_pad_fx_mode_t)((packed >> 1) & 0x3u),
+        .pad = (uint8_t)((packed >> 3) & 0xFFu),
+    };
+}
+
+static audio_pad_fx_kind_t pad_fx_kind_from_command(uint32_t packed)
+{
+    audio_pad_fx_config_t config = unpack_pad_fx_command(packed);
+    if (!config.active) return AUDIO_PAD_FX_KIND_NONE;
+    if (config.pad < 2u) return AUDIO_PAD_FX_KIND_FILTER;
+    if (config.pad < 4u) return AUDIO_PAD_FX_KIND_ECHO;
+    return AUDIO_PAD_FX_KIND_NONE;
+}
+
+#if AE_FW
+static void audio_output_apply_pending_fx_commands(void)
+{
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        uint32_t filter_command = __atomic_load_n(
+            &s_beat_fx_filter_command[deck], __ATOMIC_ACQUIRE);
+        if (filter_command != s_beat_fx_filter_applied[deck]) {
+            bool enabled = (filter_command & AE_FILTER_CMD_ENABLED) != 0u;
+            uint16_t raw = (uint16_t)(filter_command & 0xFFFFu);
+            audio_filter_set_raw(&s_beat_fx_filter[deck], raw);
+            if (!enabled) {
+                audio_filter_reset(&s_beat_fx_filter[deck]);
+            }
+            s_beat_fx_filter_applied[deck] = filter_command;
+        }
+
+        uint32_t echo_sequence = 0u;
+        audio_delay_fx_config_t echo_config;
+        if (snapshot_echo_command(deck, &echo_sequence, &echo_config) &&
+            echo_sequence != s_beat_fx_echo_applied[deck]) {
+            audio_delay_fx_config_t config = echo_config;
+            audio_delay_fx_configure(&s_beat_fx_echo[deck], &config);
+            s_beat_fx_echo_applied[deck] = echo_sequence;
+        }
+
+        uint32_t flanger_sequence = 0u;
+        audio_flanger_fx_config_t flanger_config;
+        if (snapshot_flanger_command(deck, &flanger_sequence, &flanger_config) &&
+            flanger_sequence != s_beat_fx_flanger_applied[deck]) {
+            audio_flanger_fx_config_t config = flanger_config;
+            audio_flanger_fx_configure(&s_beat_fx_flanger[deck], &config);
+            s_beat_fx_flanger_applied[deck] = flanger_sequence;
+        }
+
+        uint32_t pad_command = __atomic_load_n(
+            &s_pad_fx_command[deck], __ATOMIC_ACQUIRE);
+        if (pad_command != s_pad_fx_applied[deck]) {
+            audio_pad_fx_set(&s_pad_fx[deck], unpack_pad_fx_command(pad_command));
+            s_pad_fx_applied[deck] = pad_command;
+        }
+    }
+}
+#endif
 
 #define AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS 1000u
 #define AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE 48000u
@@ -588,6 +871,7 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
  * the pre-fader gain (pregain x master trim) here. This makes the VU track the
  * TRIM knob (which sets pregain) like a real DJ channel meter, independent of
  * the fader/crossfader. */
+#if AE_FW
 static uint16_t frame_peak_prefader(audio_mixer_frame_t frame, float prefader_gain)
 {
     float peak = (float)frame_peak(frame) * prefader_gain * AE_VU_SENSITIVITY;
@@ -599,6 +883,7 @@ static uint16_t frame_peak_prefader(audio_mixer_frame_t frame, float prefader_ga
     }
     return (uint16_t)(peak + 0.5f);
 }
+#endif
 
 static void record_deck_peak_value(uint8_t deck, uint16_t peak)
 {
@@ -696,6 +981,7 @@ static bool keylock_timeline_read(void *ctx, uint64_t seq, audio_mixer_frame_t *
 }
 
 static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
+                                 float rate_ratio,
                                  audio_mixer_frame_t *out,
                                  uint32_t *out_consumed)
 {
@@ -706,10 +992,6 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
     if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation) {
         audio_keylock_reset(&s_keylocks[deck], audio_pcm_timeline_play_seq(timeline));
         s_keylock_generation[deck] = generation;
-    }
-    float rate_ratio = 1.0f;
-    if (s_engines[deck].sample_rate > 0u && s_output_sample_rate > 0u) {
-        rate_ratio = (float)s_engines[deck].sample_rate / (float)s_output_sample_rate;
     }
     audio_keylock_configure(&s_keylocks[deck], tempo_factor, rate_ratio);
     uint64_t play_seq = audio_pcm_timeline_play_seq(timeline);
@@ -763,7 +1045,7 @@ static void apply_pending_pitch(uint8_t deck)
                              __ATOMIC_ACQ_REL)) {
         return;
     }
-    s_engines[deck].pitch_factor = s_pending_pitch_factor[deck];
+    engine_pitch_store(deck, pending_pitch_load(deck));
     audio_resampler_reset(&s_resamplers[deck]);
 }
 
@@ -2182,7 +2464,7 @@ static bool ae_scratch_render_cb(void *ctx, audio_mixer_frame_t *out)
         if (deck_pcm_used(deck) == 0u) {
             return false;
         }
-        float effective_pitch = s_engines[deck].pitch_factor * (1.0f + s_jog_bend[deck]);
+        float effective_pitch = engine_pitch_load(deck) * (1.0f + jog_bend_load(deck));
         if (s_engines[deck].sample_rate > 0u && s_output_sample_rate > 0u) {
             effective_pitch *= (float)s_engines[deck].sample_rate /
                                (float)s_output_sample_rate;
@@ -2230,9 +2512,9 @@ static void audio_output_apply_fx_sample_rate(uint32_t sample_rate)
 {
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_eq_set_sample_rate(&s_deck_eq[deck], sample_rate);
-        s_deck_filter[deck].sample_rate_hz = sample_rate;
-        s_beat_fx_filter[deck].sample_rate_hz = sample_rate;
-        s_pad_fx[deck].filter.sample_rate_hz = sample_rate;
+        audio_filter_set_sample_rate(&s_deck_filter[deck], sample_rate);
+        audio_filter_set_sample_rate(&s_beat_fx_filter[deck], sample_rate);
+        audio_filter_set_sample_rate(&s_pad_fx[deck].filter, sample_rate);
         s_beat_fx_echo[deck].sample_rate = sample_rate;
         audio_delay_fx_configure(&s_beat_fx_echo[deck], &s_beat_fx_echo[deck].config);
         s_pad_fx[deck].echo.sample_rate = sample_rate;
@@ -2387,27 +2669,46 @@ static void ae_output_task(void *arg)
             }
         }
 
+        audio_output_apply_pending_fx_commands();
+
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
         /* Pre-fader gain (pregain x master trim) for the VU meters, so they track
          * the TRIM knob independent of the channel fader/crossfader. */
         float deck0_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[0])) * s_master_trim;
+            pregain_gain_from_raw(atomic_load_u16(&s_pregain[0])) * master_trim_load();
         float deck1_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * s_master_trim;
+            pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * master_trim_load();
         bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
         bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AE_DECK_0]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
         bool master_cue_enabled = atomic_load_bool(&s_master_cue_enabled);
         uint16_t headphone_mix = atomic_load_u16(&s_headphone_mix);
         uint16_t headphone_level = atomic_load_u16(&s_headphone_level);
+        audio_output_mixer_controls_t mixer_controls;
+        audio_output_mixer_prepare_controls(&mixer_controls,
+                                             pfl0_enabled,
+                                             pfl1_enabled,
+                                             output_headphone_mode(),
+                                             headphone_mix,
+                                             headphone_level,
+                                             master_cue_enabled);
 
         const uint8_t deck0_index = AE_DECK_0;
         const uint8_t deck1_index = 1u;
+        const float deck0_pitch = engine_pitch_load(deck0_index) *
+                                  (1.0f + jog_bend_load(deck0_index));
+        const float deck1_pitch = engine_pitch_load(deck1_index) *
+                                  (1.0f + jog_bend_load(deck1_index));
         audio_output_mixer_deck_t deck0 = {
             .active = deck_output_active(deck0_index),
-            .pitch_factor = s_engines[deck0_index].pitch_factor * (1.0f + s_jog_bend[deck0_index]),
+            .pitch_factor = deck0_pitch,
+            .resample_factor = audio_output_mixer_resample_factor(
+                deck0_pitch,
+                s_engines[deck0_index].sample_rate, s_output_sample_rate),
+            .keylock_rate_ratio = audio_output_mixer_rate_ratio(
+                s_engines[deck0_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck0_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
             .gain = deck0_gain,
@@ -2415,11 +2716,12 @@ static void ae_output_task(void *arg)
             .filter = &s_deck_filter[deck0_index],
             .filter_enabled = smart_cfx_enabled,
             .beat_fx_filter = &s_beat_fx_filter[deck0_index],
-            .beat_fx_filter_enabled = atomic_load_bool(&s_beat_fx_filter_enabled[deck0_index]),
+            .beat_fx_filter_enabled =
+                (s_beat_fx_filter_applied[deck0_index] & AE_FILTER_CMD_ENABLED) != 0u,
             .beat_fx_flanger = &s_beat_fx_flanger[deck0_index],
-            .beat_fx_flanger_enabled = atomic_load_bool(&s_beat_fx_flanger_enabled[deck0_index]),
+            .beat_fx_flanger_enabled = s_beat_fx_flanger[deck0_index].config.enabled,
             .beat_fx_echo = &s_beat_fx_echo[deck0_index],
-            .beat_fx_echo_enabled = atomic_load_bool(&s_beat_fx_echo_enabled[deck0_index]),
+            .beat_fx_echo_enabled = s_beat_fx_echo[deck0_index].config.enabled,
             .pad_fx = &s_pad_fx[deck0_index],
             .resampler = resampler_for_deck(deck0_index),
             .pop_source = pop_deck_source,
@@ -2434,7 +2736,12 @@ static void ae_output_task(void *arg)
         };
         audio_output_mixer_deck_t deck1 = {
             .active = deck_output_active(deck1_index),
-            .pitch_factor = s_engines[deck1_index].pitch_factor * (1.0f + s_jog_bend[deck1_index]),
+            .pitch_factor = deck1_pitch,
+            .resample_factor = audio_output_mixer_resample_factor(
+                deck1_pitch,
+                s_engines[deck1_index].sample_rate, s_output_sample_rate),
+            .keylock_rate_ratio = audio_output_mixer_rate_ratio(
+                s_engines[deck1_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck1_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
             .gain = deck1_gain,
@@ -2442,11 +2749,12 @@ static void ae_output_task(void *arg)
             .filter = &s_deck_filter[deck1_index],
             .filter_enabled = smart_cfx_enabled,
             .beat_fx_filter = &s_beat_fx_filter[deck1_index],
-            .beat_fx_filter_enabled = atomic_load_bool(&s_beat_fx_filter_enabled[deck1_index]),
+            .beat_fx_filter_enabled =
+                (s_beat_fx_filter_applied[deck1_index] & AE_FILTER_CMD_ENABLED) != 0u,
             .beat_fx_flanger = &s_beat_fx_flanger[deck1_index],
-            .beat_fx_flanger_enabled = atomic_load_bool(&s_beat_fx_flanger_enabled[deck1_index]),
+            .beat_fx_flanger_enabled = s_beat_fx_flanger[deck1_index].config.enabled,
             .beat_fx_echo = &s_beat_fx_echo[deck1_index],
-            .beat_fx_echo_enabled = atomic_load_bool(&s_beat_fx_echo_enabled[deck1_index]),
+            .beat_fx_echo_enabled = s_beat_fx_echo[deck1_index].config.enabled,
             .pad_fx = &s_pad_fx[deck1_index],
             .resampler = resampler_for_deck(deck1_index),
             .pop_source = pop_deck_source,
@@ -2462,10 +2770,7 @@ static void ae_output_task(void *arg)
 
         /* Decay the jog nudge once per output block; snap tiny residuals to 0. */
         for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
-            s_jog_bend[d] *= AE_JOG_BEND_DECAY;
-            if (s_jog_bend[d] < 0.0005f && s_jog_bend[d] > -0.0005f) {
-                s_jog_bend[d] = 0.0f;
-            }
+            jog_bend_decay(d);
         }
 
         if (!deck0.active && !deck1.active) {
@@ -2486,15 +2791,10 @@ static void ae_output_task(void *arg)
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
 
-            audio_output_mix_result_t mix = audio_output_mixer_next_full_with_headphone_level(
+            audio_output_mix_result_t mix = audio_output_mixer_next_prepared(
                 &deck0,
                 &deck1,
-                pfl0_enabled,
-                pfl1_enabled,
-                output_headphone_mode(),
-                headphone_mix,
-                headphone_level,
-                master_cue_enabled,
+                &mixer_controls,
                 &frame_consumed0,
                 &frame_consumed1,
                 &block_limiter_stats);
@@ -2662,7 +2962,7 @@ static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, c
         clear_scratch_playback_state(deck);
     }
     memset(eng, 0, sizeof(*eng));
-    eng->pitch_factor = 1.0f;
+    engine_pitch_store((uint8_t)(eng - s_engines), 1.0f);
     eng->load_progress = 100;
     eng->last_error = err;
     snprintf(eng->last_error_text, sizeof(eng->last_error_text), "%s", err_text ? err_text : "OK");
@@ -2698,13 +2998,17 @@ esp_err_t audio_engine_init(void)
         atomic_store_u16(&s_deck_filter_effective[i], AUDIO_FILTER_RAW_CENTER);
         audio_filter_init(&s_beat_fx_filter[i], 44100u);
         atomic_store_bool(&s_beat_fx_filter_enabled[i], false);
+        uint32_t filter_command = pack_filter_command(AUDIO_FILTER_RAW_CENTER, false);
+        __atomic_store_n(&s_beat_fx_filter_command[i], filter_command,
+                         __ATOMIC_RELAXED);
+        s_beat_fx_filter_applied[i] = filter_command;
     }
     init_beat_fx_echo_buffers();
     init_beat_fx_flanger_buffers();
     init_pad_fx_buffers();
     init_scratch_buffers();
     atomic_store_u16(&s_crossfader, AUDIO_MIXER_CONTROL_CENTER);
-    s_master_trim = 1.0f;
+    master_trim_store(1.0f);
     atomic_store_u16(&s_master_volume, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_u16(&s_headphone_mix, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_u16(&s_headphone_level, AUDIO_MIXER_CONTROL_MAX);
@@ -3179,16 +3483,17 @@ static esp_err_t audio_engine_request_user_seek(uint8_t deck, uint32_t position_
  */
 static void audio_engine_set_pitch_percent_for_deck(uint8_t deck, float percent)
 {
+    if (!isfinite(percent)) percent = 0.0f;
     float factor = 1.0f + (percent / 100.0f);
     /* Clamp to ±20% to stay sane even if fader value is out of range */
     if (factor < 0.80f) factor = 0.80f;
     if (factor > 1.20f) factor = 1.20f;
     if (atomic_load_bool(&s_scratch_playing[deck])) {
-        s_pending_pitch_factor[deck] = factor;
+        pending_pitch_store(deck, factor);
         atomic_store_bool(&s_pending_pitch_valid[deck], true);
         return;
     }
-    s_engines[deck].pitch_factor = factor;
+    engine_pitch_store(deck, factor);
 }
 
 static void audio_engine_set_pitch_for_deck(uint8_t deck, int16_t raw_pitch)
@@ -3445,10 +3750,7 @@ bool audio_engine_deck_master_tempo_enabled(uint8_t deck)
 void audio_engine_deck_jog_nudge(uint8_t deck, int16_t delta)
 {
     if (!deck_is_valid(deck) || delta == 0) return;
-    float bend = s_jog_bend[deck] + (float)delta * AE_JOG_BEND_PER_TICK;
-    if (bend > AE_JOG_BEND_MAX) bend = AE_JOG_BEND_MAX;
-    if (bend < -AE_JOG_BEND_MAX) bend = -AE_JOG_BEND_MAX;
-    s_jog_bend[deck] = bend;
+    jog_bend_add(deck, (float)delta * AE_JOG_BEND_PER_TICK);
 }
 
 void audio_engine_deck_set_hold(uint8_t deck, bool held)
@@ -3457,7 +3759,7 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held)
     /* Leaving hold cancels any leftover jog nudge so the deck resumes at exactly
      * the fader tempo, not with a stray bend from before the platter was grabbed. */
     if (!held) {
-        s_jog_bend[deck] = 0.0f;
+        jog_bend_store(deck, 0.0f);
     }
     atomic_store_bool(&s_deck_hold[deck], held);
 }
@@ -3711,6 +4013,9 @@ static void init_beat_fx_echo_buffers(void)
                             AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
         atomic_store_bool(&s_beat_fx_echo_enabled[deck], false);
         atomic_store_u32(&s_beat_fx_echo_delay_ms[deck], 0u);
+        s_beat_fx_echo_command[deck] = (ae_fx_command_t) { 0 };
+        s_beat_fx_echo_applied[deck] = publish_echo_command(
+            deck, &(audio_delay_fx_config_t) { 0 });
     }
 }
 
@@ -3731,6 +4036,9 @@ static void init_beat_fx_flanger_buffers(void)
                               frames,
                               AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
         atomic_store_bool(&s_beat_fx_flanger_enabled[deck], false);
+        s_beat_fx_flanger_command[deck] = (ae_fx_command_t) { 0 };
+        s_beat_fx_flanger_applied[deck] = publish_flanger_command(
+            deck, &(audio_flanger_fx_config_t) { 0 });
     }
 }
 
@@ -3755,6 +4063,13 @@ static void init_pad_fx_buffers(void)
                                            s_pad_fx_echo_left[deck],
                                            s_pad_fx_echo_right[deck],
                                            frames);
+        uint32_t command = pack_pad_fx_command((audio_pad_fx_config_t) {
+            .mode = AUDIO_PAD_FX_MODE_PAD_FX1,
+            .pad = 0u,
+            .active = false,
+        });
+        __atomic_store_n(&s_pad_fx_command[deck], command, __ATOMIC_RELAXED);
+        s_pad_fx_applied[deck] = command;
     }
 }
 
@@ -3792,7 +4107,7 @@ static void init_scratch_buffers(void)
         atomic_store_bool(&s_scratch_started_paused[deck], false);
         atomic_store_bool(&s_scratch_return_paused[deck], false);
         atomic_store_bool(&s_pending_pitch_valid[deck], false);
-        s_pending_pitch_factor[deck] = 1.0f;
+        pending_pitch_store(deck, 1.0f);
         s_scratch_origin_pos_ms[deck] = 0u;
         s_scratch_origin_play_seq[deck] = 0u;
         __atomic_store_n(&s_scratch_abort_seek_target_ms[deck], 0u,
@@ -4000,10 +4315,10 @@ esp_err_t audio_engine_set_beat_fx_filter(audio_engine_beat_fx_target_t target,
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         bool deck_enabled = active && beat_fx_target_includes_deck(target, deck);
         atomic_store_bool(&s_beat_fx_filter_enabled[deck], deck_enabled);
-        audio_filter_set_raw(&s_beat_fx_filter[deck], deck_enabled ? raw : AUDIO_FILTER_RAW_CENTER);
-        if (!deck_enabled) {
-            audio_filter_reset(&s_beat_fx_filter[deck]);
-        }
+        uint32_t command = pack_filter_command(
+            deck_enabled ? raw : AUDIO_FILTER_RAW_CENTER, deck_enabled);
+        __atomic_store_n(&s_beat_fx_filter_command[deck], command,
+                         __ATOMIC_RELEASE);
     }
     return ESP_OK;
 }
@@ -4055,12 +4370,13 @@ esp_err_t audio_engine_set_beat_fx_echo(audio_engine_beat_fx_target_t target,
         atomic_store_u32(&s_beat_fx_echo_delay_ms[deck], deck_enabled ? delay_ms : 0u);
         /* No reset on switch-off: audio_delay_fx keeps the tail ringing and
          * the output mixer keeps processing until it decays. */
-        audio_delay_fx_configure(&s_beat_fx_echo[deck], &(audio_delay_fx_config_t) {
+        audio_delay_fx_config_t config = {
             .enabled = deck_enabled,
             .delay_ms = delay_ms,
             .wet_q15 = beat_fx_echo_wet_from_depth(depth),
             .feedback_q15 = beat_fx_echo_feedback_from_depth(depth),
-        });
+        };
+        (void)publish_echo_command(deck, &config);
     }
     return ESP_OK;
 }
@@ -4093,11 +4409,12 @@ esp_err_t audio_engine_set_beat_fx_flanger(audio_engine_beat_fx_target_t target,
             ESP_LOGW(TAG, "beat fx flanger deck %u buffer not allocated", (unsigned)deck);
         }
         atomic_store_bool(&s_beat_fx_flanger_enabled[deck], deck_enabled);
-        audio_flanger_fx_configure(&s_beat_fx_flanger[deck], &(audio_flanger_fx_config_t) {
+        audio_flanger_fx_config_t config = {
             .enabled = deck_enabled,
             .period_ms = period_ms,
             .depth_q15 = beat_fx_flanger_depth_q15(depth),
-        });
+        };
+        (void)publish_flanger_command(deck, &config);
     }
     return ESP_OK;
 }
@@ -4114,28 +4431,30 @@ esp_err_t audio_engine_set_pad_fx(uint8_t deck,
         mode != AUDIO_PAD_FX_MODE_PAD_FX2) {
         return ESP_ERR_INVALID_ARG;
     }
-    audio_pad_fx_set(&s_pad_fx[deck], (audio_pad_fx_config_t) {
+    audio_pad_fx_config_t config = {
         .mode = mode,
         .pad = pad,
         .active = active,
-    });
+    };
+    __atomic_store_n(&s_pad_fx_command[deck], pack_pad_fx_command(config),
+                     __ATOMIC_RELEASE);
     return ESP_OK;
 }
 
 esp_err_t audio_engine_set_master_trim(float gain)
 {
-    if (gain < 0.0f) {
+    if (!(gain >= 0.0f)) {
         gain = 0.0f;
     } else if (gain > 1.0f) {
         gain = 1.0f;
     }
-    s_master_trim = gain;
+    master_trim_store(gain);
     return ESP_OK;
 }
 
 float audio_engine_get_master_trim(void)
 {
-    return s_master_trim;
+    return master_trim_load();
 }
 
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
@@ -4162,14 +4481,14 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
                       pregain_gain_from_raw(pregain0) *
                       xf0 *
                       audio_mixer_fader_gain(master_volume) *
-                      s_master_trim;
+                      master_trim_load();
     }
     if (deck1_gain) {
         *deck1_gain = audio_mixer_fader_gain(channel_volume1) *
                       pregain_gain_from_raw(pregain1) *
                       xf1 *
                       audio_mixer_fader_gain(master_volume) *
-                      s_master_trim;
+                      master_trim_load();
     }
 }
 
@@ -4239,13 +4558,20 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         }
         out_snapshot->filter[deck] = atomic_load_u16(&s_deck_filter_raw[deck]);
         out_snapshot->smart_cfx_filter_effective[deck] = atomic_load_u16(&s_deck_filter_effective[deck]);
-        out_snapshot->beat_fx_filter_raw[deck] = audio_filter_get_raw(&s_beat_fx_filter[deck]);
+        uint32_t filter_command = __atomic_load_n(
+            &s_beat_fx_filter_command[deck], __ATOMIC_ACQUIRE);
+        out_snapshot->beat_fx_filter_raw[deck] =
+            (uint16_t)(filter_command & 0xFFFFu);
         out_snapshot->beat_fx_filter_enabled[deck] = atomic_load_bool(&s_beat_fx_filter_enabled[deck]);
         out_snapshot->beat_fx_echo_enabled[deck] = atomic_load_bool(&s_beat_fx_echo_enabled[deck]);
         out_snapshot->beat_fx_echo_delay_ms[deck] = atomic_load_u32(&s_beat_fx_echo_delay_ms[deck]);
         out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
-        out_snapshot->pad_fx_active[deck] = audio_pad_fx_is_active(&s_pad_fx[deck]);
-        out_snapshot->pad_fx_kind[deck] = audio_pad_fx_kind(&s_pad_fx[deck]);
+        uint32_t pad_command = __atomic_load_n(&s_pad_fx_command[deck],
+                                               __ATOMIC_ACQUIRE);
+        out_snapshot->pad_fx_active[deck] =
+            unpack_pad_fx_command(pad_command).active &&
+            pad_fx_kind_from_command(pad_command) != AUDIO_PAD_FX_KIND_NONE;
+        out_snapshot->pad_fx_kind[deck] = pad_fx_kind_from_command(pad_command);
     }
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         out_snapshot->deck_peak[deck] = atomic_load_u16(&s_deck_peak[deck]);
@@ -4259,12 +4585,12 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
         out_snapshot->scratch_position_authoritative[deck] =
             scratch_position_authoritative;
         float speed = scratch_position_authoritative ? 0.0f :
-            s_engines[deck].pitch_factor * (1.0f + s_jog_bend[deck]) * 1000.0f;
+            engine_pitch_load(deck) * (1.0f + jog_bend_load(deck)) * 1000.0f;
         if (speed < 0.0f) speed = 0.0f;
         if (speed > 65535.0f) speed = 65535.0f;
         out_snapshot->effective_speed_permille[deck] = (uint16_t)(speed + 0.5f);
     }
-    out_snapshot->master_trim = s_master_trim;
+    out_snapshot->master_trim = master_trim_load();
     out_snapshot->master_volume = atomic_load_u16(&s_master_volume);
     out_snapshot->headphone_mix = atomic_load_u16(&s_headphone_mix);
     out_snapshot->headphone_level = atomic_load_u16(&s_headphone_level);
@@ -4320,7 +4646,11 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         out_snapshot->beat_fx_echo_allocated[deck] = audio_delay_fx_is_allocated(&s_beat_fx_echo[deck]);
         out_snapshot->beat_fx_echo_enabled[deck] = atomic_load_bool(&s_beat_fx_echo_enabled[deck]);
         out_snapshot->beat_fx_echo_delay_ms[deck] = atomic_load_u32(&s_beat_fx_echo_delay_ms[deck]);
-        out_snapshot->pad_fx_active[deck] = audio_pad_fx_is_active(&s_pad_fx[deck]);
+        uint32_t pad_command = __atomic_load_n(&s_pad_fx_command[deck],
+                                               __ATOMIC_ACQUIRE);
+        out_snapshot->pad_fx_active[deck] =
+            unpack_pad_fx_command(pad_command).active &&
+            pad_fx_kind_from_command(pad_command) != AUDIO_PAD_FX_KIND_NONE;
     }
     out_snapshot->limiter = s_limiter_stats;
     monitor_pcm_link_stats_t monitor_stats = { 0 };

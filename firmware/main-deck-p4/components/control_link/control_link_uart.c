@@ -454,6 +454,7 @@ static void uart_rx_task(void *arg)
 
 esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
 {
+    if (!ctrl_event_queue) return ESP_ERR_INVALID_ARG;
     s_event_queue = ctrl_event_queue;
 
     uart_config_t ucfg = {
@@ -464,12 +465,20 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
         .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    ESP_RETURN_ON_ERROR(uart_driver_install(UART_PORT, RX_BUF_SIZE, TX_BUF_SIZE,
-                                            0, NULL, 0), TAG, "driver install");
-    ESP_RETURN_ON_ERROR(uart_param_config(UART_PORT, &ucfg), TAG, "param config");
-    ESP_RETURN_ON_ERROR(uart_set_pin(UART_PORT, PIN_UART_TX, PIN_UART_RX,
-                                     UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE),
-                        TAG, "set pin");
+    esp_err_t rc = uart_driver_install(UART_PORT, RX_BUF_SIZE, TX_BUF_SIZE,
+                                       0, NULL, 0);
+    if (rc != ESP_OK) return rc;
+    rc = uart_param_config(UART_PORT, &ucfg);
+    if (rc != ESP_OK) {
+        uart_driver_delete(UART_PORT);
+        return rc;
+    }
+    rc = uart_set_pin(UART_PORT, PIN_UART_TX, PIN_UART_RX,
+                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    if (rc != ESP_OK) {
+        uart_driver_delete(UART_PORT);
+        return rc;
+    }
 
     if (xTaskCreate(uart_rx_task, "ctrl_rx", 4096, NULL, 5, NULL) != pdPASS) {
         uart_driver_delete(UART_PORT);

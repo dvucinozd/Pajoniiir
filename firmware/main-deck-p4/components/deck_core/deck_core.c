@@ -102,11 +102,43 @@ static deck_ui_command_t s_test_ui_commands[DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN]
 static size_t s_test_ui_command_count;
 #endif
 #if !defined(DECK_CORE_PC_TEST)
+static TaskHandle_t s_deck_task;
+static TaskHandle_t s_deck_ui_task;
 static TaskHandle_t s_vu_task;
 /* Tracks whether the VU meters were last driven non-idle, so a single "all
  * zero" frame is emitted on the play->idle transition and then sending stops. */
 static bool s_vu_meters_active;
 #endif
+
+static void deck_core_cleanup_init_failure(void)
+{
+#if !defined(DECK_CORE_PC_TEST)
+    if (s_vu_task) {
+        vTaskDelete(s_vu_task);
+        s_vu_task = NULL;
+    }
+    if (s_deck_ui_task) {
+        vTaskDelete(s_deck_ui_task);
+        s_deck_ui_task = NULL;
+    }
+    if (s_deck_task) {
+        vTaskDelete(s_deck_task);
+        s_deck_task = NULL;
+    }
+#endif
+    if (s_ui_command_queue) {
+        vQueueDelete(s_ui_command_queue);
+        s_ui_command_queue = NULL;
+    }
+    if (s_queue) {
+        vQueueDelete(s_queue);
+        s_queue = NULL;
+    }
+    if (s_mutex) {
+        vSemaphoreDelete(s_mutex);
+        s_mutex = NULL;
+    }
+}
 #if defined(DECK_CORE_PC_TEST)
 static uint16_t          s_deferred_mixer_last[256];
 static bool              s_deferred_mixer_seen[256];
@@ -2537,23 +2569,25 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
         return ESP_ERR_NO_MEM;
     }
 
-    if (xTaskCreate(deck_task, "deck", DECK_TASK_STACK_BYTES, NULL, 5, NULL) != pdPASS) {
-        vQueueDelete(s_ui_command_queue);
-        s_ui_command_queue = NULL;
-        vQueueDelete(s_queue);
-        s_queue = NULL;
-        vSemaphoreDelete(s_mutex);
-        s_mutex = NULL;
+    if (xTaskCreate(deck_task, "deck", DECK_TASK_STACK_BYTES, NULL, 5,
+#if !defined(DECK_CORE_PC_TEST)
+                    &s_deck_task
+#else
+                    NULL
+#endif
+                    ) != pdPASS) {
+        deck_core_cleanup_init_failure();
         return ESP_ERR_NO_MEM;
     }
 
-    if (xTaskCreate(deck_ui_command_task, "deck_ui", DECK_UI_TASK_STACK_BYTES, NULL, 4, NULL) != pdPASS) {
-        vQueueDelete(s_ui_command_queue);
-        s_ui_command_queue = NULL;
-        vQueueDelete(s_queue);
-        s_queue = NULL;
-        vSemaphoreDelete(s_mutex);
-        s_mutex = NULL;
+    if (xTaskCreate(deck_ui_command_task, "deck_ui", DECK_UI_TASK_STACK_BYTES, NULL, 4,
+#if !defined(DECK_CORE_PC_TEST)
+                    &s_deck_ui_task
+#else
+                    NULL
+#endif
+                    ) != pdPASS) {
+        deck_core_cleanup_init_failure();
         return ESP_ERR_NO_MEM;
     }
 
@@ -2561,12 +2595,7 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     s_vu_meters_active = false;
     if (!s_vu_task) {
         if (xTaskCreate(vu_task, "flx4_vu", 3072, NULL, 3, &s_vu_task) != pdPASS) {
-            vQueueDelete(s_ui_command_queue);
-            s_ui_command_queue = NULL;
-            vQueueDelete(s_queue);
-            s_queue = NULL;
-            vSemaphoreDelete(s_mutex);
-            s_mutex = NULL;
+            deck_core_cleanup_init_failure();
             return ESP_ERR_NO_MEM;
         }
     }

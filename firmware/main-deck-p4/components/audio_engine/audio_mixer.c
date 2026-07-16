@@ -2,7 +2,10 @@
 
 static float clamp_gain(float gain)
 {
-    if (gain < 0.0f) return 0.0f;
+    /* The negated comparison also rejects NaN.  Letting NaN reach a float to
+     * integer conversion is undefined behaviour and can poison the real-time
+     * output path. */
+    if (!(gain > 0.0f)) return 0.0f;
     if (gain > 1.0f) return 1.0f;
     return gain;
 }
@@ -15,6 +18,9 @@ float audio_mixer_fader_gain(uint16_t raw)
 
 void audio_mixer_crossfader_gains(uint16_t raw, float *deck1_gain, float *deck2_gain)
 {
+    if (raw > AUDIO_MIXER_CONTROL_MAX) {
+        raw = AUDIO_MIXER_CONTROL_MAX;
+    }
     float d1 = 1.0f;
     float d2 = 1.0f;
 
@@ -42,44 +48,42 @@ int16_t audio_mixer_mix_sample(int16_t deck1,
     return (int16_t)(mixed >= 0.0f ? mixed + 0.5f : mixed - 0.5f);
 }
 
-static int16_t round_to_i16(float sample)
+static int32_t sample_abs_i32_saturated(int32_t sample)
 {
-    if (sample > 32767.0f) return 32767;
-    if (sample < -32768.0f) return -32768;
-    return (int16_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
-}
-
-static int32_t sample_abs_i32(int32_t sample)
-{
+    if (sample == INT32_MIN) {
+        return INT32_MAX;
+    }
     return sample < 0 ? -sample : sample;
 }
 
-static int16_t soft_limit_abs_sample(int32_t abs_sample, int32_t knee, int32_t ceiling)
+static int32_t soft_limit_abs_sample(int64_t abs_sample, int32_t knee, int32_t ceiling)
 {
     if (abs_sample <= knee) {
-        return (int16_t)abs_sample;
+        return (int32_t)abs_sample;
     }
 
     const float range = (float)(ceiling - knee);
     const float excess = (float)(abs_sample - knee);
     const float shaped = (float)knee + ((range * excess) / (excess + range));
-    return round_to_i16(shaped);
+    if (shaped >= (float)ceiling) return ceiling;
+    return (int32_t)(shaped + 0.5f);
 }
 
 static int16_t limit_positive_sample(int32_t sample)
 {
-    return soft_limit_abs_sample(sample, 30000, 32767);
+    return (int16_t)soft_limit_abs_sample(sample, 30000, 32767);
 }
 
 static int16_t limit_negative_sample(int32_t sample)
 {
-    return (int16_t)-soft_limit_abs_sample(-sample, 30000, 32768);
+    int32_t magnitude = soft_limit_abs_sample(-(int64_t)sample, 30000, 32768);
+    return magnitude >= 32768 ? INT16_MIN : (int16_t)-magnitude;
 }
 
 int16_t audio_mixer_limit_master_sample(int32_t mixed,
                                         audio_mixer_limiter_stats_t *stats)
 {
-    int32_t abs_mixed = sample_abs_i32(mixed);
+    int32_t abs_mixed = sample_abs_i32_saturated(mixed);
     if (stats && abs_mixed > stats->peak_input_abs) {
         stats->peak_input_abs = abs_mixed;
     }

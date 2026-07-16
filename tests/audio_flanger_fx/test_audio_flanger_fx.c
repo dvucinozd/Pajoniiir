@@ -152,6 +152,45 @@ static void test_reenable_clears_stale_buffer(void)
     }
 }
 
+static void test_full_scale_fractional_interpolation_does_not_overflow(void)
+{
+    audio_flanger_fx_t fx;
+    make_fx(&fx);
+    audio_flanger_fx_configure(&fx, &(audio_flanger_fx_config_t) {
+        .enabled = true,
+        .period_ms = 333,
+        .depth_q15 = 32767,
+    });
+    for (uint32_t i = 0; i < TEST_CAPACITY; i++) {
+        buffer_left[i] = (i & 1u) ? INT16_MAX : INT16_MIN;
+        buffer_right[i] = buffer_left[i];
+    }
+
+    uint32_t phase = fx.lfo_phase_q32 + fx.lfo_step_q32;
+    uint32_t tri_q16 = phase < 0x80000000u ? (phase >> 15)
+                                               : ((0xFFFFFFFFu - phase) >> 15);
+    uint32_t delay_q16 = fx.min_delay_q16 +
+        (uint32_t)(((uint64_t)fx.span_delay_q16 * tri_q16) >> 16);
+    uint32_t delay_int = delay_q16 >> 16;
+    uint32_t frac_q16 = delay_q16 & 0xFFFFu;
+    uint32_t idx0 = fx.write_index >= delay_int
+        ? fx.write_index - delay_int
+        : fx.write_index + fx.capacity_frames - delay_int;
+    uint32_t idx1 = idx0 == 0u ? fx.capacity_frames - 1u : idx0 - 1u;
+    int32_t s0 = buffer_left[idx0];
+    int32_t s1 = buffer_left[idx1];
+    int32_t delayed = s0 +
+        (int32_t)(((int64_t)(s1 - s0) * frac_q16) >> 16);
+    int32_t expected = (delayed * (int32_t)fx.wet_cur_q15) >> 15;
+    if (expected > INT16_MAX) expected = INT16_MAX;
+    if (expected < INT16_MIN) expected = INT16_MIN;
+
+    audio_mixer_frame_t out = audio_flanger_fx_process_frame(
+        &fx, (audio_mixer_frame_t) { 0 });
+    assert(out.left == (int16_t)expected);
+    assert(out.right == (int16_t)expected);
+}
+
 int main(void)
 {
     test_required_frames_fit_max_delay();
@@ -161,6 +200,7 @@ int main(void)
     test_impulse_reappears_within_delay_bounds();
     test_enabled_flanger_colours_a_tone();
     test_reenable_clears_stale_buffer();
+    test_full_scale_fractional_interpolation_does_not_overflow();
     puts("audio_flanger_fx tests passed");
     return 0;
 }

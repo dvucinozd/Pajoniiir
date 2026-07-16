@@ -29,6 +29,7 @@ static int              s_active_buf = 0;
 static int              s_track_count = 0;
 static uint32_t         s_generation = 0;
 static SemaphoreHandle_t s_library_mutex = NULL;
+static bool             s_index_building = false;
 
 static anlz_metadata_t s_current_meta;
 static bool            s_current_meta_valid = false;
@@ -160,18 +161,38 @@ static void library_apply_meta_to_track(library_track_t *track, const anlz_metad
 esp_err_t library_init(void)
 {
     ESP_RETURN_ON_ERROR(ensure_library_mutex(), TAG, "library mutex");
-    ESP_RETURN_ON_ERROR(ensure_index_buffers(), TAG, "index buffers");
 
+    /* Reserve the inactive buffer before doing slow media I/O.  A mount event,
+     * startup probe and UI sort may otherwise select and mutate the same
+     * buffer concurrently. */
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_index_building) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Library index build already in progress");
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t rc = ensure_index_buffers();
+    if (rc != ESP_OK) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return rc;
+    }
+    s_index_building = true;
     int build_buf = s_active_buf ^ 1;
+    uint32_t build_generation = s_generation;
+    xSemaphoreGiveRecursive(s_library_mutex);
+
     library_track_t *build_index = s_index_buf[build_buf];
     int build_count = 0;
     memset(build_index, 0, LIBRARY_MAX_TRACKS * sizeof(library_track_t));
 
     pdb_t *pdb = NULL;
     media_io_gate_begin();
-    esp_err_t rc = pdb_open(USB_PDB_PATH, &pdb);
+    rc = pdb_open(USB_PDB_PATH, &pdb);
     if (rc != ESP_OK) {
         media_io_gate_end();
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
         ESP_LOGW(TAG, "PDB not found at %s (USB not mounted?)", USB_PDB_PATH);
         return rc;
     }
@@ -203,9 +224,18 @@ esp_err_t library_init(void)
     media_io_gate_end();
 
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_generation != build_generation) {
+        /* library_clear() ran while the media was being parsed (for example,
+         * because the drive was removed).  Never republish that stale index. */
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Discarding stale library index build");
+        return ESP_ERR_INVALID_STATE;
+    }
     s_active_buf = build_buf;
     s_track_count = build_count;
     s_generation++;
+    s_index_building = false;
     xSemaphoreGiveRecursive(s_library_mutex);
 
     ESP_LOGI(TAG, "Library ready: %d tracks from PDB", build_count);
@@ -432,16 +462,17 @@ esp_err_t library_load_current_anlz(const library_track_t *track)
     return ESP_OK;
 }
 
-const anlz_metadata_t *library_get_current_anlz(void)
+esp_err_t library_clone_current_anlz(anlz_metadata_t *out)
 {
-    if (ensure_library_mutex() != ESP_OK) return NULL;
+    if (!out) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    ESP_RETURN_ON_ERROR(ensure_library_mutex(), TAG, "library mutex");
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    const anlz_metadata_t *meta = NULL;
-    if (s_current_meta_valid) {
-        meta = &s_current_meta;
-    }
+    esp_err_t rc = s_current_meta_valid
+                       ? anlz_clone(&s_current_meta, out)
+                       : ESP_ERR_NOT_FOUND;
     xSemaphoreGiveRecursive(s_library_mutex);
-    return meta;
+    return rc;
 }
 
 static int compare_artist_asc(const void *a, const void *b)
@@ -552,6 +583,11 @@ void library_sort(int field_type, bool descending)
 {
     if (ensure_library_mutex() != ESP_OK) return;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_index_building) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Ignoring sort while library index build is in progress");
+        return;
+    }
     library_track_t *src = active_index();
     if (!src || s_track_count <= 1) {
         xSemaphoreGiveRecursive(s_library_mutex);

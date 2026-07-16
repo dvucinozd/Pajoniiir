@@ -44,4 +44,5 @@ esp_err_t media_catalog_get(int index, media_catalog_track_t *out_track);
 esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row);
 void media_catalog_sort(int field_type, bool descending);
 esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded);
-const anlz_metadata_t *media_catalog_get_loaded_anlz(void);
+/* Return an owned deep copy. Caller calls anlz_free(). */
+esp_err_t media_catalog_clone_loaded_anlz(anlz_metadata_t *out);

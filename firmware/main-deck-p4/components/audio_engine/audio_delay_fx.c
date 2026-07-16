@@ -121,8 +121,9 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     fx->wet_cur_q15 = smooth_q15(fx->wet_cur_q15, fx->config.wet_q15);
     fx->feedback_cur_q15 = smooth_q15(fx->feedback_cur_q15, fx->config.feedback_q15);
 
-    uint32_t read_index = (fx->write_index + fx->capacity_frames - fx->delay_frames) %
-                          fx->capacity_frames;
+    uint32_t read_index = fx->write_index >= fx->delay_frames
+        ? fx->write_index - fx->delay_frames
+        : fx->write_index + fx->capacity_frames - fx->delay_frames;
     int16_t delayed_l = fx->left[read_index];
     int16_t delayed_r = fx->right[read_index];
 
@@ -137,7 +138,10 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     int32_t write_r = active ? (int32_t)in.right + fb_r : fb_r;
     fx->left[fx->write_index] = clamp_i16(write_l);
     fx->right[fx->write_index] = clamp_i16(write_r);
-    fx->write_index = (fx->write_index + 1u) % fx->capacity_frames;
+    fx->write_index++;
+    if (fx->write_index >= fx->capacity_frames) {
+        fx->write_index = 0u;
+    }
 
     if (!active && ringing) {
         fx->tail_frames_remaining--;

@@ -1,6 +1,5 @@
 #include "ui_deck_anlz_store.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 static bool deck_index(uint8_t deck, uint8_t *out_idx)
@@ -9,48 +8,6 @@ static bool deck_index(uint8_t deck, uint8_t *out_idx)
         return false;
     }
     *out_idx = deck;
-    return true;
-}
-
-static bool clone_anlz_metadata(anlz_metadata_t *dst, const anlz_metadata_t *src)
-{
-    if (!dst || !src) {
-        return false;
-    }
-
-    memset(dst, 0, sizeof(*dst));
-    *dst = *src;
-    dst->beats = NULL;
-    dst->waveform_high = NULL;
-
-    if (src->beat_count > 0) {
-        if (!src->beats) {
-            memset(dst, 0, sizeof(*dst));
-            return false;
-        }
-        dst->beats = malloc((size_t)src->beat_count * sizeof(*dst->beats));
-        if (!dst->beats) {
-            memset(dst, 0, sizeof(*dst));
-            return false;
-        }
-        memcpy(dst->beats, src->beats, (size_t)src->beat_count * sizeof(*dst->beats));
-    }
-
-    if (src->waveform_high_len > 0) {
-        if (!src->waveform_high) {
-            anlz_free(dst);
-            memset(dst, 0, sizeof(*dst));
-            return false;
-        }
-        dst->waveform_high = malloc(src->waveform_high_len);
-        if (!dst->waveform_high) {
-            anlz_free(dst);
-            memset(dst, 0, sizeof(*dst));
-            return false;
-        }
-        memcpy(dst->waveform_high, src->waveform_high, src->waveform_high_len);
-    }
-
     return true;
 }
 
@@ -96,7 +53,7 @@ bool ui_deck_anlz_store_set(ui_deck_anlz_store_t *store,
     }
 
     anlz_metadata_t next;
-    if (!clone_anlz_metadata(&next, meta)) {
+    if (anlz_clone(meta, &next) != ESP_OK) {
         return false;
     }
 

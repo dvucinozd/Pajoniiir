@@ -587,7 +587,17 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 pitch changes are deferred until scratch fade-out reaches silence" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("s_pending_pitch_factor", "s_pending_pitch_valid", "apply_pending_pitch(deck)", "atomic_load_bool(&s_scratch_playing[deck])")
+    -LiteralPatterns @("s_pending_pitch_factor_bits", "s_pending_pitch_valid", "apply_pending_pitch(deck)", "atomic_load_bool(&s_scratch_playing[deck])")
+
+Assert-FileContains `
+    -Name "p4 pitch and jog state use atomic float bits across control and output tasks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @(
+        "pitch_factor_bits",
+        "s_jog_bend_bits",
+        "__atomic_compare_exchange_n(&s_jog_bend_bits[deck]",
+        "engine_pitch_load(deck)"
+    )
 
 Assert-FileContains `
     -Name "p4 canonical PCM timeline drives decode, output and frame-accurate scratch release" `
@@ -650,14 +660,60 @@ Assert-FileContains `
     -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
 
 Assert-FileContains `
-    -Name "p4 pdb row-slot iterator guards both ends of the slot cursor" `
+    -Name "p4 pdb row-slot iterator validates the whole group before subtraction" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
-    -LiteralPatterns @("if (slot < pb || slot + 2u > p->data_len) continue;")
+    -LiteralPatterns @(
+        "if (ptr > p->data_len || ptr < pb || ptr - pb < group_bytes) break;",
+        "if (slot < pb || slot + 2u > p->data_len) continue;",
+        "ptr -= group_bytes;"
+    )
 
 Assert-FileContains `
     -Name "p4 web library stream aborts when the client disconnects" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
+
+Assert-FileContains `
+    -Name "p4 web mutations require fixed-host marked POST requests and report queue pressure" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_request_allowed(req, true)",
+        'strcmp(host, "192.168.4.1")',
+        '"X-DDJ-Control"',
+        "queue_rc = deck_core_queue_event(&ev);",
+        '"503 Service Unavailable"',
+        '.method = HTTP_POST'
+    )
+
+Assert-FileContains `
+    -Name "p4 DSP applies control-task FX commands on output block boundaries" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @(
+        "audio_output_apply_pending_fx_commands();",
+        "publish_echo_command(deck, &config)",
+        "publish_flanger_command(deck, &config)",
+        "pack_pad_fx_command(config)"
+    )
+
+Assert-FileContains `
+    -Name "p4 filter skips stable coefficient recomputation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
+    -LiteralPatterns @("!position_changed", "!filter->coefficients_dirty")
+
+Assert-FileDoesNotContain `
+    -Name "p4 filter does not recompute invariant logarithms" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
+    -LiteralPatterns @("logf(")
+
+Assert-FileDoesNotContain `
+    -Name "p4 web server does not expose wildcard CORS" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("Access-Control-Allow-Origin")
+
+Assert-FileDoesNotContain `
+    -Name "p4 web mutations do not use permissive atoi parsing" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("atoi(")
 
 $tests = @(
     @{

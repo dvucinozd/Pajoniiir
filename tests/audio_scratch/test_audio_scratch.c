@@ -53,6 +53,22 @@ static void test_inactive_and_stopped_are_silent(void)
     assert(l == 0 && r == 0);
 }
 
+static void test_invalid_configuration_is_sanitized(void)
+{
+    audio_scratch_t s;
+    audio_scratch_init(&s);
+    audio_scratch_config(&s, NAN, 0u, INFINITY, -1.0f, 3u);
+    assert(s.frames_per_tick == AUDIO_SCRATCH_DEFAULT_FRAMES_PER_TICK);
+    assert(s.rate_window_samples == 1u);
+    assert(s.slew_coef == AUDIO_SCRATCH_DEFAULT_SLEW_COEF);
+    assert(s.velocity_max == AUDIO_SCRATCH_DEFAULT_VELOCITY_MAX);
+
+    audio_scratch_seed(&s, NAN);
+    assert(s.head_back == 0.0f);
+    assert(audio_scratch_track_position_ms(1234u, INFINITY, 44100u,
+                                           false, 0u, 0u) == 1234u);
+}
+
 static void test_forward_playback_ascends_toward_newest(void)
 {
     audio_scratch_buffer_t b;
@@ -318,6 +334,7 @@ static void test_track_position_wraps_backward_inside_active_loop(void)
 int main(void)
 {
     test_inactive_and_stopped_are_silent();
+    test_invalid_configuration_is_sanitized();
     test_forward_playback_ascends_toward_newest();
     test_reverse_playback_descends_toward_oldest();
     test_linear_interpolation();

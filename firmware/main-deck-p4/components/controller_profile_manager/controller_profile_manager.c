@@ -71,10 +71,46 @@ esp_err_t controller_profile_meta_parse(const uint8_t *data, size_t len,
         return ESP_ERR_INVALID_ARG;
     }
 
+    uint16_t input_count = rd_u16(data + 24);
+    uint16_t output_count = rd_u16(data + 26);
+    uint8_t pair_slot_count = data[28];
+    if (input_count > CPM_MAX_INPUTS || output_count > CPM_MAX_OUTPUTS ||
+        pair_slot_count > CPM_MAX_PAIR_SLOTS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t expected_size = CPM_HEADER_SIZE +
+                           (size_t)input_count * CPM_INPUT_ENTRY_SIZE +
+                           (size_t)output_count * CPM_OUTPUT_ENTRY_SIZE;
+    if (expected_size != len) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint8_t *entry = data + CPM_HEADER_SIZE;
+    for (uint16_t i = 0; i < input_count;
+         i++, entry += CPM_INPUT_ENTRY_SIZE) {
+        uint8_t raw_type = entry[2];
+        uint8_t pair_slot = entry[3];
+        if (raw_type > CPM_MAX_RAW_TYPE) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        bool needs_pair_slot = raw_type == 4 || raw_type == 5 || raw_type == 7;
+        if (needs_pair_slot &&
+            (pair_slot == CPM_PAIR_SLOT_NONE || pair_slot >= pair_slot_count)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+    for (uint16_t i = 0; i < output_count;
+         i++, entry += CPM_OUTPUT_ENTRY_SIZE) {
+        if (entry[2] > CPM_MAX_OUTPUT_KIND) {
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+
     meta->vid = rd_u16(data + 16);
     meta->pid = rd_u16(data + 18);
-    meta->input_count = rd_u16(data + 24);
-    meta->output_count = rd_u16(data + 26);
+    meta->input_count = input_count;
+    meta->output_count = output_count;
     meta->size = profile_size;
     meta->valid = true;
     return ESP_OK;

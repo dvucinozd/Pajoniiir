@@ -1,5 +1,6 @@
 #include "audio_resampler.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 
 typedef struct {
@@ -107,12 +108,28 @@ static void test_underrun_holds_last_frame(void)
     assert(consumed == 0);
 }
 
+static void test_non_finite_pitch_is_sanitized(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 123, .right = -123 },
+    };
+    source_t source = { .frames = frames, .count = 1, .index = 0 };
+    audio_resampler_state_t state;
+    audio_resampler_reset(&state);
+
+    uint32_t consumed = 0;
+    (void)audio_resampler_next(&state, NAN, pop_source, &source, &consumed);
+    assert(consumed == 1u);
+    assert(isfinite((float)state.fraction));
+}
+
 int main(void)
 {
     test_reset_outputs_silence_without_source();
     test_unity_pitch_preserves_existing_one_frame_latency();
     test_fractional_pitch_interpolates_between_source_frames();
     test_underrun_holds_last_frame();
+    test_non_finite_pitch_is_sanitized();
     puts("audio_resampler tests passed");
     return 0;
 }

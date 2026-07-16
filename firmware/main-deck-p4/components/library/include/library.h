@@ -65,7 +65,8 @@ void      library_sort(int field_type, bool descending);     // Sort track list 
 
 /* Detailed metadata of the currently loaded track (beats, cues, high-res waveform) */
 esp_err_t library_load_current_anlz(const library_track_t *track);
-const anlz_metadata_t *library_get_current_anlz(void);
+/* Return an owned deep copy of the current metadata. Caller calls anlz_free(). */
+esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);
 
 /* UI track selection helpers — track which track index is loaded. */

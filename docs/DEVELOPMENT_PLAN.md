@@ -1423,3 +1423,54 @@ pending.
   restoration and descriptor-preserving reactivation state. The ESP32-P4
   firmware build passes at `0x208020` bytes with 49% of the smallest app
   partition free.
+
+## Phase 20: Full Code-Review Remediation (2026-07-16)
+
+Status: software remediation complete on `codex/code-review-fixes`; hardware
+acceptance is intentionally deferred.
+
+- S3 USB host ownership and recovery were hardened: MIDI OUT transfers now stay
+  on the USB client task, asynchronous control requests own their completion
+  context, audio-stream failures return to a recoverable stopped state, and
+  queue-pressure/coalescing behavior preserves priority touch transitions.
+- Controller-profile install and activation now validate identity and transfer
+  state, preserve the previous working profile across failures, and recover
+  interrupted atomic swaps without publishing partially installed data.
+- P4 library/catalog and ANLZ/PDB paths now validate offsets, row groups,
+  allocation results and object lifetimes before publishing data to the UI or
+  playback engine. Web library streaming also aborts cleanly on disconnect.
+- P4 and S3 mutating HTTP endpoints require an expected local Host plus an
+  explicit control marker. Numeric query parsing is strict and range checked;
+  JSON output escapes all control bytes; upload, load and control handlers
+  propagate malformed input, queue pressure and response-send failures.
+- DSP numeric boundaries now cover non-finite gain, pitch, scratch and resample
+  inputs, full-width limiter arithmetic and full-scale flanger interpolation.
+  Delay, flanger and scratch hot paths avoid unnecessary modulo operations.
+- EQ, filter, pitch, jog and Beat/Pad FX control state crosses task boundaries
+  through atomic values or block-boundary commands. The audio task snapshots
+  controls once per block; filter coefficients are not recomputed after
+  convergence; key-lock correlation reuses reference samples and rejects losing
+  candidates early; output mixer ratios and headphone controls are prepared
+  once per block.
+- UART initialization on both targets unwinds a partially installed driver on
+  failure. Shared bulk-frame CRC code no longer emits signedness warnings, and
+  firmware-only audio helpers are excluded from PC builds.
+
+Software acceptance:
+
+- complete S3 host suite passes, including controller-profile golden parity;
+- complete P4 host suite passes, including 333/333 `audio_engine` assertions,
+  all DSP/parser/UI/web/protocol tests and the R5 dead-code audit;
+- OTA signing Python suite passes 6/6 and OTA release-helper tests pass;
+- clean ESP-IDF v5.5 S3 build passes; `control-board-s3.bin` is `0xE6500`
+  bytes with 52% free in the smallest app partition;
+- clean ESP-IDF v5.5 P4 build passes; `main-deck-p4.bin` is `0x209520`
+  bytes with 49% free in the smallest app partition;
+- `git diff --check` passes.
+
+Deferred hardware acceptance:
+
+- dual-deck scratch, pitch, Master Tempo and simultaneous Beat/Pad FX soak;
+- FLX4 USB MIDI/audio disconnect and recovery under queue pressure;
+- P4/S3 local web-control, profile upload and OTA mutation guards from a phone;
+- UART startup/recovery and long control-link integrity capture.

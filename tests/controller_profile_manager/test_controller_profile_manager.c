@@ -57,6 +57,17 @@ static void wr_u32(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)((v >> 24) & 0xFF);
 }
 
+static void wr_u16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void refresh_crc(uint8_t *blob, size_t len)
+{
+    wr_u32(blob + 12, controller_profile_crc32(blob + 16, len - 16));
+}
+
 static void test_meta_parse(void)
 {
     controller_profile_meta_t meta;
@@ -97,6 +108,43 @@ static void test_meta_parse(void)
     /* Declared size beyond CPM_MAX_PROFILE_SIZE is rejected up front. */
     memcpy(bad, g_blob, g_blob_len);
     wr_u32(bad + 8, CPM_MAX_PROFILE_SIZE + 1);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
+           ESP_ERR_INVALID_ARG);
+
+    /* Structural constraints must match the authoritative S3 parser too. */
+    memcpy(bad, g_blob, g_blob_len);
+    wr_u16(bad + 24, CPM_MAX_INPUTS + 1);
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
+           ESP_ERR_INVALID_ARG);
+
+    memcpy(bad, g_blob, g_blob_len);
+    wr_u16(bad + 24, 0);
+    wr_u16(bad + 26, 0);
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
+           ESP_ERR_INVALID_ARG);
+
+    memcpy(bad, g_blob, g_blob_len);
+    bad[CPM_HEADER_SIZE + 2] = CPM_MAX_RAW_TYPE + 1;
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
+           ESP_ERR_INVALID_ARG);
+
+    memcpy(bad, g_blob, g_blob_len);
+    bad[CPM_HEADER_SIZE + 2] = 4; /* CC14 MSB requires a valid pair slot. */
+    bad[CPM_HEADER_SIZE + 3] = CPM_PAIR_SLOT_NONE;
+    refresh_crc(bad, g_blob_len);
+    assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
+           ESP_ERR_INVALID_ARG);
+
+    memcpy(bad, g_blob, g_blob_len);
+    uint16_t fixture_inputs = (uint16_t)(g_blob[24] |
+                                         ((uint16_t)g_blob[25] << 8));
+    size_t first_output = CPM_HEADER_SIZE +
+                          (size_t)fixture_inputs * CPM_INPUT_ENTRY_SIZE;
+    bad[first_output + 2] = CPM_MAX_OUTPUT_KIND + 1;
+    refresh_crc(bad, g_blob_len);
     assert(controller_profile_meta_parse(bad, g_blob_len, &meta) ==
            ESP_ERR_INVALID_ARG);
 

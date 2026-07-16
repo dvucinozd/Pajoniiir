@@ -100,6 +100,30 @@ static atomic_bool s_log_hook_active;
 static bool s_wifi_initialized;
 static bool s_wifi_started;
 
+static bool s3_api_request_allowed(httpd_req_t *req, bool mutation)
+{
+    char host[32] = {0};
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
+        (strcmp(host, S3_DEBUG_AP_IP) != 0 &&
+         strcmp(host, S3_DEBUG_AP_IP ":80") != 0)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        (void)httpd_resp_send(req, "Invalid Host", HTTPD_RESP_USE_STRLEN);
+        return false;
+    }
+    if (mutation) {
+        char marker[4] = {0};
+        if (httpd_req_get_hdr_value_str(req, "X-DDJ-Control", marker,
+                                        sizeof(marker)) != ESP_OK ||
+            strcmp(marker, "1") != 0) {
+            httpd_resp_set_status(req, "403 Forbidden");
+            (void)httpd_resp_send(req, "Missing X-DDJ-Control",
+                                  HTTPD_RESP_USE_STRLEN);
+            return false;
+        }
+    }
+    return true;
+}
+
 /* AP bring-up/teardown runs in a dedicated worker task, not on the caller
  * (control-link RX task): the WiFi/httpd start takes hundreds of ms, long
  * enough to overflow the 256-byte UART RX ring and drop inbound P4 frames.
@@ -189,6 +213,7 @@ static esp_err_t events_send_sse(httpd_req_t *req, char *text)
 
 static esp_err_t events_get_handler(httpd_req_t *req)
 {
+    if (!s3_api_request_allowed(req, false)) return ESP_FAIL;
     httpd_resp_set_type(req, "text/event-stream");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
 
@@ -248,6 +273,7 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "if(!confirm('Upload S3 firmware and reboot the controller?'))return;"
         "button.disabled=true;msg.textContent='Uploading...';const x=new XMLHttpRequest();"
         "x.open('POST','/api/ota/s3');x.setRequestHeader('Content-Type','application/octet-stream');"
+        "x.setRequestHeader('X-DDJ-Control','1');"
         "x.setRequestHeader('X-DDJ-OTA','s3');x.upload.onprogress=e=>{if(e.lengthComputable)"
         "progress.value=Math.round(e.loaded*100/e.total);};"
         "x.onload=()=>{msg.textContent=x.status>=200&&x.status<300?"
@@ -262,6 +288,7 @@ static esp_err_t update_get_handler(httpd_req_t *req)
 
 static esp_err_t firmware_get_handler(httpd_req_t *req)
 {
+    if (!s3_api_request_allowed(req, false)) return ESP_FAIL;
     s3_ota_status_t status;
     s3_ota_get_status(&status);
     char json[384];
@@ -315,6 +342,7 @@ static void ota_restart_task(void *arg)
 
 static esp_err_t ota_post_handler(httpd_req_t *req)
 {
+    if (!s3_api_request_allowed(req, true)) return ESP_FAIL;
     char target[8] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-DDJ-OTA", target, sizeof(target)) != ESP_OK ||
         strcmp(target, "s3") != 0) {
@@ -470,11 +498,17 @@ static esp_err_t start_httpd(void)
         .method = HTTP_POST,
         .handler = ota_post_handler,
     };
-    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &root), TAG, "root handler");
-    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &events), TAG, "events handler");
-    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &update), TAG, "update handler");
-    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &firmware), TAG, "firmware handler");
-    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &ota), TAG, "OTA handler");
+    httpd_uri_t *uris[] = { &root, &events, &update, &firmware, &ota };
+    for (size_t i = 0u; i < sizeof(uris) / sizeof(uris[0]); i++) {
+        esp_err_t rc = httpd_register_uri_handler(s_httpd, uris[i]);
+        if (rc != ESP_OK) {
+            ESP_LOGE(TAG, "URI handler registration failed for %s: %s",
+                     uris[i]->uri, esp_err_to_name(rc));
+            httpd_stop(s_httpd);
+            s_httpd = NULL;
+            return rc;
+        }
+    }
     return ESP_OK;
 }
 

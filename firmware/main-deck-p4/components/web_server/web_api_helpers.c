@@ -1,5 +1,7 @@
 #include "web_api_helpers.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +33,8 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
     }
 
     for (size_t i = 0; src[i] != '\0'; i++) {
-        switch (src[i]) {
+        unsigned char ch = (unsigned char)src[i];
+        switch (ch) {
         case '"':
             append_json_seq("\\\"", 2u, dst, dst_size, &written, &stored);
             break;
@@ -48,7 +51,13 @@ size_t web_api_json_escape(const char *src, char *dst, size_t dst_size)
             append_json_seq("\\t", 2u, dst, dst_size, &written, &stored);
             break;
         default:
-            append_json_seq(&src[i], 1u, dst, dst_size, &written, &stored);
+            if (ch < 0x20u) {
+                char escaped[7];
+                (void)snprintf(escaped, sizeof(escaped), "\\u%04X", ch);
+                append_json_seq(escaped, 6u, dst, dst_size, &written, &stored);
+            } else {
+                append_json_seq(&src[i], 1u, dst, dst_size, &written, &stored);
+            }
             break;
         }
     }
@@ -171,6 +180,32 @@ int web_api_alloc_printf(char **out, const char *fmt, ...)
 
     *out = buf;
     return written;
+}
+
+bool web_api_parse_int32(const char *value,
+                         int32_t minimum,
+                         int32_t maximum,
+                         int32_t *out)
+{
+    if (!value || !out || value[0] == '\0' || minimum > maximum) {
+        return false;
+    }
+    /* Query parameters are generated as canonical decimal values.  Reject
+     * whitespace and a leading plus instead of accepting ambiguous prefixes. */
+    if (value[0] == '+' || value[0] == ' ' || value[0] == '\t' ||
+        value[0] == '\r' || value[0] == '\n') {
+        return false;
+    }
+
+    errno = 0;
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (errno == ERANGE || end == value || !end || *end != '\0' ||
+        parsed < (long)minimum || parsed > (long)maximum) {
+        return false;
+    }
+    *out = (int32_t)parsed;
+    return true;
 }
 
 uint32_t web_api_clamp_seek_ms(int value, uint32_t duration_ms, bool duration_known)

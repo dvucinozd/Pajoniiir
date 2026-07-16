@@ -38,8 +38,6 @@ void controller_profile_runtime_init(void)
 bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
                                          uint16_t vid, uint16_t pid)
 {
-    (void)vid;
-    (void)pid;
     if (!blob || len == 0) {
         controller_profile_runtime_clear();
         return true;
@@ -51,6 +49,11 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
     int rc = cp_profile_parse(blob, len, &parsed);
     if (rc != CP_OK) {
         RT_LOGW("profile parse failed rc=%d (VID=0x%04X PID=0x%04X)", rc, vid, pid);
+        return false;
+    }
+    if (parsed.vid != vid || parsed.pid != pid) {
+        RT_LOGW("profile VID/PID mismatch blob=0x%04X:0x%04X transfer=0x%04X:0x%04X",
+                parsed.vid, parsed.pid, vid, pid);
         return false;
     }
 
@@ -73,7 +76,10 @@ void controller_profile_runtime_clear(void)
 
 bool controller_profile_runtime_active(void)
 {
-    return s_active;
+    RT_LOCK();
+    bool active = s_active;
+    RT_UNLOCK();
+    return active;
 }
 
 bool controller_profile_runtime_map(uint8_t status, uint8_t data1, uint8_t data2,

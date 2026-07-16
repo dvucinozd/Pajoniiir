@@ -14,11 +14,16 @@ let deckDuration = { 1: 0, 2: 0 };
 // ESP httpd (5 sockets). Sends the latest value at most every minInterval ms,
 // always including a trailing send so the final position is not dropped.
 const _throttle = {};
+const mutationOptions = {
+    method: 'POST',
+    headers: { 'X-DDJ-Control': '1' },
+    cache: 'no-store'
+};
 function throttledSend(key, urlFor, value, minInterval = 90) {
     const st = _throttle[key] || (_throttle[key] = { last: 0, timer: null, pending: null });
     const send = (v) => {
         st.last = Date.now();
-        fetch(urlFor(v), { method: 'GET' }).catch(err => console.error(err));
+        fetch(urlFor(v), mutationOptions).catch(err => console.error(err));
     };
     const elapsed = Date.now() - st.last;
     if (elapsed >= minInterval) {
@@ -266,7 +271,7 @@ function updatePflButton(deckNum, active) {
 
 // REST Api slanje naredbi
 function sendControl(deck, action) {
-    fetch(`/api/control?deck=${deck}&action=${action}`, { method: 'GET' })
+    fetch(`/api/control?deck=${deck}&action=${action}`, mutationOptions)
         .then(res => {
             if (!res.ok) console.error(`Control failed: ${action}`);
         })
@@ -294,12 +299,12 @@ function onSeek(deck, event) {
     const rect = wrap.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const ms = Math.floor(frac * dur);
-    fetch(`/api/control?deck=${deck}&action=seek&value=${ms}`, { method: 'GET' })
+    fetch(`/api/control?deck=${deck}&action=seek&value=${ms}`, mutationOptions)
         .catch(err => console.error(err));
 }
 
 function loadTrack(index, deck) {
-    fetch(`/api/load?index=${index}&deck=${deck}`, { method: 'GET' })
+    fetch(`/api/load?index=${index}&deck=${deck}`, mutationOptions)
         .then(res => {
             if (res.ok) {
                 console.log(`Učitavanje pjesme ${index} na špil ${deck}`);
@@ -380,6 +385,7 @@ function uploadP4Firmware() {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/ota/p4');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-DDJ-Control', '1');
     xhr.setRequestHeader('X-DDJ-OTA', 'p4');
     xhr.upload.onprogress = event => {
         if (event.lengthComputable) progress.value = Math.round(event.loaded * 100 / event.total);
@@ -454,6 +460,7 @@ function uploadControllerProfile() {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/controller-profile');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-DDJ-Control', '1');
     xhr.setRequestHeader('X-DDJ-Profile-ID', id);
     xhr.setRequestHeader('X-DDJ-Profile-Overwrite', overwrite ? '1' : '0');
     xhr.upload.onprogress = event => {

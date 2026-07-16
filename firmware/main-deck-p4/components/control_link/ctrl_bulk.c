@@ -16,7 +16,10 @@ static uint16_t bulk_crc16(const uint8_t *data, size_t len)
     for (size_t i = 0; i < len; i++) {
         crc ^= (uint16_t)data[i] << 8;
         for (int b = 0; b < 8; b++) {
-            crc = (uint16_t)((crc & 0x8000u) ? (crc << 1) ^ 0x1021u : crc << 1);
+            uint16_t shifted = (uint16_t)(crc << 1);
+            crc = (crc & 0x8000u) != 0u
+                ? (uint16_t)(shifted ^ (uint16_t)0x1021u)
+                : shifted;
         }
     }
     return crc;

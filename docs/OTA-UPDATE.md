@@ -118,6 +118,7 @@ Raw API equivalent:
 ```powershell
 curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
+  -H "X-DDJ-Control: 1" `
   -H "X-DDJ-OTA: p4" `
   --data-binary "@releases\ddj-ffl4-<version>\main-deck-p4.ddjota" `
   http://192.168.4.1/api/ota/p4
@@ -143,6 +144,7 @@ Raw API equivalent:
 ```powershell
 curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
+  -H "X-DDJ-Control: 1" `
   -H "X-DDJ-OTA: s3" `
   --data-binary "@releases\ddj-ffl4-<version>\control-board-s3.ddjota" `
   http://192.168.4.1/api/ota/s3

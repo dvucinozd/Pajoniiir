@@ -1,5 +1,18 @@
 #include "audio_resampler.h"
 
+#include <math.h>
+
+#define AUDIO_RESAMPLER_MIN_FACTOR 0.01f
+#define AUDIO_RESAMPLER_MAX_FACTOR 16.0f
+
+static float sanitize_pitch_factor(float factor)
+{
+    if (!isfinite(factor)) return 1.0f;
+    if (factor < AUDIO_RESAMPLER_MIN_FACTOR) return AUDIO_RESAMPLER_MIN_FACTOR;
+    if (factor > AUDIO_RESAMPLER_MAX_FACTOR) return AUDIO_RESAMPLER_MAX_FACTOR;
+    return factor;
+}
+
 void audio_resampler_reset(audio_resampler_state_t *state)
 {
     if (!state) return;
@@ -17,7 +30,7 @@ audio_mixer_frame_t audio_resampler_next(audio_resampler_state_t *state,
     if (out_consumed) *out_consumed = 0u;
     if (!state) return (audio_mixer_frame_t){ 0 };
 
-    state->fraction += (double)pitch_factor;
+    state->fraction += (double)sanitize_pitch_factor(pitch_factor);
     while (state->fraction >= 1.0) {
         state->previous = state->current;
 

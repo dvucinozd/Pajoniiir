@@ -21,8 +21,12 @@ typedef struct {
     float high_lp2[2];
     float low_alpha;
     float high_alpha;
+    /* Control-task writes are published through atomic raw values.  The
+     * output task snapshots them once per short block and owns gain[]. */
     uint16_t raw[AUDIO_EQ_BAND_COUNT];
+    uint16_t applied_raw[AUDIO_EQ_BAND_COUNT];
     float gain[AUDIO_EQ_BAND_COUNT];
+    uint32_t gain_frames_left;
 } audio_eq_state_t;
 
 void audio_eq_init(audio_eq_state_t *eq, uint32_t sample_rate_hz);

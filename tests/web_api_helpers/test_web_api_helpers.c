@@ -34,6 +34,35 @@ static void test_json_escape_accepts_null_and_zero_buffer(void)
     assert(web_api_json_escape("abc", NULL, 0) == 3);
 }
 
+static void test_json_escape_encodes_all_control_characters(void)
+{
+    char source[] = { 'a', '\x01', '\b', 'z', '\0' };
+    char out[32];
+
+    size_t n = web_api_json_escape(source, out, sizeof(out));
+
+    assert(strcmp(out, "a\\u0001\\u0008z") == 0);
+    assert(n == strlen(out));
+}
+
+static void test_strict_int_parser_rejects_partial_and_out_of_range_values(void)
+{
+    int32_t value = -1;
+
+    assert(web_api_parse_int32("0", 0, 16383, &value) && value == 0);
+    assert(web_api_parse_int32("16383", 0, 16383, &value) && value == 16383);
+    assert(web_api_parse_int32("-12", -20, 20, &value) && value == -12);
+    assert(!web_api_parse_int32(NULL, 0, 10, &value));
+    assert(!web_api_parse_int32("", 0, 10, &value));
+    assert(!web_api_parse_int32(" 1", 0, 10, &value));
+    assert(!web_api_parse_int32("+1", 0, 10, &value));
+    assert(!web_api_parse_int32("1x", 0, 10, &value));
+    assert(!web_api_parse_int32("11", 0, 10, &value));
+    assert(!web_api_parse_int32("999999999999999999999", 0, INT32_MAX, &value));
+    assert(!web_api_parse_int32("1", 10, 0, &value));
+    assert(!web_api_parse_int32("1", 0, 10, NULL));
+}
+
 static void test_beat_fx_json_formats_status_block(void)
 {
     char out[128];
@@ -132,6 +161,8 @@ int main(void)
     test_json_escape_handles_quotes_backslash_and_controls();
     test_json_escape_truncates_and_terminates();
     test_json_escape_accepts_null_and_zero_buffer();
+    test_json_escape_encodes_all_control_characters();
+    test_strict_int_parser_rejects_partial_and_out_of_range_values();
     test_beat_fx_json_formats_status_block();
     test_beat_fx_echo_diag_json_formats_status_block();
     test_alloc_printf_handles_payload_larger_than_legacy_status_buffer();

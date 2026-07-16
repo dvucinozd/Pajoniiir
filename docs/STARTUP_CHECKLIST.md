@@ -1,6 +1,6 @@
 # Startup Checklist
 
-Status: audited 2026-07-14. Checked items below are historical bring-up
+Status: audited 2026-07-16. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current accepted baseline
@@ -20,6 +20,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R3 lossless priority-touch policy passes both host suites and firmware builds.
 - [x] R4 WPA2 AP, OTA finish-state and signed-version packaging fixes pass both host suites and firmware builds.
 - [x] R5A call-graph, signed-build size and legacy S3 build baselines recorded.
+- [x] Full code-review software remediation passes both host suites, OTA signing,
+  OTA release helpers and clean ESP-IDF v5.5 builds for both targets.
 
 ## Repeat before enclosure close
 
@@ -36,6 +38,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [x] Perform one OTA update per target and record slot/version/state.
 - [ ] Preserve a wired recovery path or validated service connector.
+- [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, FLX4 USB
+  disconnect recovery, guarded web/profile/OTA mutations and UART-link capture.
 
 ## Repository
 

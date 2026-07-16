@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -202,6 +203,12 @@ static void test_pitch(void)
     audio_engine_deck_set_pitch_percent(1, -6.0f);
     EXPECT(true, "deck 1 set_pitch_percent(-6%) no crash");
 
+    audio_engine_deck_set_pitch_percent(0, NAN);
+    audio_engine_mixer_snapshot_t pitch_snapshot;
+    audio_engine_get_mixer_snapshot(&pitch_snapshot);
+    EXPECT(pitch_snapshot.effective_speed_permille[0] == 1000u,
+           "non-finite pitch percent falls back to normal speed");
+
     /* Reset to normal */
     audio_engine_deck_set_pitch_percent(0, 0.0f);
 }
@@ -279,6 +286,8 @@ static void test_mixer_state_api(void)
     EXPECT(nearf(audio_engine_get_master_trim(), 1.0f), "master trim never boosts above unity");
     EXPECT(audio_engine_set_master_trim(-1.0f) == ESP_OK, "master trim clamps negative gain to mute");
     EXPECT(nearf(audio_engine_get_master_trim(), 0.0f), "master trim clamps negative gain to zero");
+    EXPECT(audio_engine_set_master_trim(NAN) == ESP_OK, "master trim rejects NaN as mute");
+    EXPECT(nearf(audio_engine_get_master_trim(), 0.0f), "master trim never stores NaN");
     EXPECT(audio_engine_set_master_trim(1.0f) == ESP_OK, "master trim can restore unity");
     EXPECT(audio_engine_set_master_volume(AUDIO_MIXER_CONTROL_CENTER) == ESP_OK,
            "controller master volume accepts center raw value");

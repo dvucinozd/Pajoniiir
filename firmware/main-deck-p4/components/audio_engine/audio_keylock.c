@@ -1,7 +1,10 @@
 #include "audio_keylock.h"
 
+#include <math.h>
+
 static float clamp_factor(float v, float lo, float hi)
 {
+    if (!isfinite(v)) return 1.0f;
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
@@ -41,22 +44,39 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
     uint64_t best_error = UINT64_MAX;
     int radius = (int)(48.0f * s->rate_ratio + 0.5f);
     if (radius < 12) radius = 12;
+
+    /* The reference window is identical for every candidate.  Reading and
+     * interpolating it inside the candidate loop doubled canonical-timeline
+     * traffic in the most expensive Master Tempo hot path. */
+    audio_mixer_frame_t reference_frames[16];
+    uint32_t reference_count = 0u;
+    for (uint32_t i = 0; i < 64u; i += 4u) {
+        float offset = (float)i * s->rate_ratio;
+        if (!read_fractional(read, ctx, s->origin_seq, reference + offset,
+                             &reference_frames[reference_count])) {
+            return nominal;
+        }
+        reference_count++;
+    }
+
     for (int delta = -radius; delta <= radius; delta++) {
         float candidate = nominal + (float)delta;
         if (candidate < 0.0f) continue;
         uint64_t error = 0u;
         bool valid = true;
-        for (uint32_t i = 0; i < 64u; i += 4u) {
-            audio_mixer_frame_t a, b;
-            float offset = i * s->rate_ratio;
-            if (!read_fractional(read, ctx, s->origin_seq, reference + offset, &a) ||
-                !read_fractional(read, ctx, s->origin_seq, candidate + offset, &b)) {
+        for (uint32_t sample = 0u; sample < reference_count; sample++) {
+            audio_mixer_frame_t b;
+            float offset = (float)(sample * 4u) * s->rate_ratio;
+            if (!read_fractional(read, ctx, s->origin_seq, candidate + offset, &b)) {
                 valid = false;
                 break;
             }
-            int32_t dl = (int32_t)a.left - b.left;
-            int32_t dr = (int32_t)a.right - b.right;
+            int32_t dl = (int32_t)reference_frames[sample].left - b.left;
+            int32_t dr = (int32_t)reference_frames[sample].right - b.right;
             error += (uint64_t)((int64_t)dl * dl + (int64_t)dr * dr);
+            if (error >= best_error) {
+                break;
+            }
         }
         if (valid && error < best_error) {
             best_error = error;
@@ -91,8 +111,11 @@ void audio_keylock_reset(audio_keylock_t *s, uint64_t start)
 void audio_keylock_configure(audio_keylock_t *s, float tempo, float ratio)
 {
     if (!s) return;
-    s->tempo_factor = clamp_factor(tempo, 0.50f, 2.00f);
-    s->rate_ratio = clamp_factor(ratio, 0.25f, 4.00f);
+    float next_tempo = clamp_factor(tempo, 0.50f, 2.00f);
+    float next_ratio = clamp_factor(ratio, 0.25f, 4.00f);
+    if (s->tempo_factor == next_tempo && s->rate_ratio == next_ratio) return;
+    s->tempo_factor = next_tempo;
+    s->rate_ratio = next_ratio;
 }
 
 bool audio_keylock_next(audio_keylock_t *s, audio_keylock_read_fn read, void *ctx,
