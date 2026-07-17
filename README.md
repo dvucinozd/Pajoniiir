@@ -12,15 +12,18 @@ replacing the original single-deck/CDJ-panel product model with a dual-deck
 FLX4 workflow.
 
 > [!IMPORTANT]
-> The signed-OTA release baseline remains **`RC1-131-gc391e306`** on both
-> processors (P4 `ota_1`, S3 `ota_0 / valid`), deployed and boot/status-verified
-> on 2026-07-16 with key `rel-001`. On 2026-07-17 the bench P4 was wired-flashed
-> to its factory slot with development build **`RC1-132-g2b0cfd59-dirty`** for
-> the DSI-synchronised waveform fix; S3 remains on signed RC1-131. That P4 build
-> passed a focused 132-second dual-waveform smoke, but it is not a signed release
-> or a full functional acceptance. The latest complete functional hardware
-> acceptance remains **`RC1-123-g587cd7a1`** from 2026-07-14. The system is not
-> yet production-ready. See
+> The last matching P4/S3 signed-OTA rollout baseline remains
+> **`RC1-131-gc391e306`** (P4 `ota_1`, S3 `ota_0 / valid`), deployed and
+> boot/status-verified on 2026-07-16 with key `rel-001`. The DSI-synchronised
+> waveform fix was then committed at `bd5e43ce`, packaged as signed candidate
+> **`RC1-133-gbd5e43ce`**, and its exact P4 payload was wired-flashed to the
+> factory slot over COM15. That image passed more than 71 seconds of active
+> dual-waveform playback with zero PCM drops or DSI underruns; the operator saw
+> neither a flash nor jitter. S3 was not reflashed and remains on RC1-131. This
+> wired run did not exercise an OTA-slot transition or the full functional
+> checklist. The latest complete functional hardware acceptance remains
+> **`RC1-123-g587cd7a1`** from 2026-07-14, so the system is not yet
+> production-ready. See
 > [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
 
 ## System at a Glance

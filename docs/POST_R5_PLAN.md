@@ -1,13 +1,15 @@
 # Post-R5 Plan
 
-Status: active 2026-07-16. R5A-R5F remediation and E1 signed-OTA acceptance are
-complete. `RC1-131-gc391e306` is installed and boot-verified on P4 `ota_1` and
-S3 `ota_0`; the latest fully functionally accepted release remains
-`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
-Those are acceptance-time slots, not both current inactive images: RC1-131 left
-P4 `ota_0 / RC1-126-g812ad70f` and S3 `ota_1 / RC1-123-g587cd7a1` inactive.
-This document is the ordered continuation plan for targeted RC1-131 acceptance,
-enclosure readiness and production hardening.
+Status: active 2026-07-17. R5A-R5F remediation and E1 signed-OTA acceptance are
+complete. The last matching OTA rollout was `RC1-131-gc391e306` on P4 `ota_1`
+and S3 `ota_0`. The current bench P4 is instead the exact factory-slot payload
+from clean signed candidate `RC1-133-gbd5e43ce`; S3 was not reflashed and
+remains `RC1-131-gc391e306` on `ota_0 / valid`. The latest fully functionally
+accepted release remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3
+`ota_1` on 2026-07-14). The P4 wired full flash reset OTA selection, leaving
+its `ota_0 / RC1-126-g812ad70f` and `ota_1 / RC1-131-gc391e306` images
+inactive. This document is the ordered continuation plan for current-candidate
+functional acceptance, enclosure readiness and production hardening.
 
 ## Execution Order
 
@@ -57,13 +59,15 @@ Acceptance record:
 - final UI/touch, dual-deck playback, scratch, FLX4 input/LED and headphone-cue
   smoke passed.
 
-## E1A — RC1-131 Targeted Functional Acceptance
+## E1A — Current-Candidate Targeted Functional Acceptance
 
-Status: deployment/boot verification complete 2026-07-16; functional hardware
-smoke pending.
+Status: matching RC1-131 deployment/boot verification complete 2026-07-16;
+P4 `RC1-133-gbd5e43ce` exact-image display acceptance complete 2026-07-17;
+remaining functional hardware smoke pending.
 
-Goal: prove the installed review-remediation, controller-profile and new Beat FX
-release on the physical P4/S3/FLX4 system before enclosure work continues.
+Goal: prove the installed review-remediation, controller-profile, new Beat FX
+and P4 display candidate on the physical P4/S3/FLX4 system before enclosure
+work continues.
 
 Deployment record:
 
@@ -75,6 +79,10 @@ Deployment record:
   RC1-131-gc391e306`, independently confirmed through P4's nested report;
 - exact hashes, sizes and observations are in
   [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+- P4 follow-up source commit `bd5e43ce` was packaged with both target builds as
+  signed candidate `RC1-133-gbd5e43ce`; its exact verified P4 payload was
+  wired-flashed to factory and passed the focused dual-waveform smoke. S3 was
+  not flashed, and this wired deployment did not exercise a new OTA transition.
 
 Tasks:
 
@@ -95,6 +103,8 @@ Tasks:
    documented backup/recovery path without sacrificing the built-in fallback.
 6. Capture UART startup/recovery and sustained control-link diagnostics while
    both decks and FX are active.
+7. Before promoting a new baseline, deploy and boot-verify one matching P4/S3
+   candidate version, then record both slots, states and versions.
 
 Acceptance:
 
@@ -105,8 +115,9 @@ Acceptance:
   semantics without unacceptable transition clicks;
 - guarded mutations reject malformed/unauthorized requests and valid profile
   replacement remains recoverable;
-- only after these checks may `RC1-131-gc391e306` replace RC1-123 as the latest
-  fully functionally accepted baseline.
+- only after these checks and a recorded matching-version deployment may the
+  selected candidate replace RC1-123 as the latest fully functionally accepted
+  baseline.
 
 ## E2 — Enclosure Wiring And Service Readiness
 
@@ -207,10 +218,10 @@ Acceptance:
 
 ## Resume Point
 
-Start the next session with **E1A — RC1-131 Targeted Functional Acceptance**,
-task 1: smoke the installed release's core P4/S3/FLX4 playback and audio paths
-before the boards become difficult to access. Continue with E2 only after E1A
-passes or every deferral is explicitly accepted.
+Start the next session with **E1A — Current-Candidate Targeted Functional
+Acceptance**, task 1: smoke the installed P4/S3/FLX4 core playback and audio
+paths before the boards become difficult to access. Continue with E2 only after
+E1A passes or every deferral is explicitly accepted.
 
 Keep `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md`, `DOCUMENTATION_STATUS.md`
 and this plan synchronized as each acceptance gate closes.

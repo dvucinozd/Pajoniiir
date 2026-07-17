@@ -1,6 +1,6 @@
 # DDJ-FFL4 Documentation
 
-Complete documentation index, audited 2026-07-16. Start with
+Complete documentation index, audited 2026-07-17. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
 scope, source-of-truth precedence, the installed baseline and the latest fully
 accepted hardware baseline.
@@ -15,7 +15,7 @@ accepted hardware baseline.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — MIDI addresses, semantics and hardware-acceptance ledger.
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — UART, I2S, USB and audio wiring.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — completed phases and remaining work.
-- [`POST_R5_PLAN.md`](POST_R5_PLAN.md) — ordered RC1-131 acceptance and enclosure-hardening plan.
+- [`POST_R5_PLAN.md`](POST_R5_PLAN.md) — ordered current-candidate acceptance and enclosure-hardening plan.
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — bring-up history and recurring pre-enclosure checks.
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) — open, monitored and accepted risks.
 - [`R5_DEAD_CODE_AUDIT.md`](R5_DEAD_CODE_AUDIT.md) — completed R5 legacy-path cleanup evidence.
@@ -49,6 +49,7 @@ whether they remain active or are historical context.
 - [`validation/FLX4_USB_AUDIO_E2E_SMOKE.md`](validation/FLX4_USB_AUDIO_E2E_SMOKE.md)
 - [`validation/P4_USB_EXFAT_GPT_SMOKE.md`](validation/P4_USB_EXFAT_GPT_SMOKE.md)
 - [`validation/P4_USB_RECOVERY_SMOKE.md`](validation/P4_USB_RECOVERY_SMOKE.md)
+- [`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md)
 - [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md)
 
 Validation files are dated evidence. A `PENDING` row remains pending unless a

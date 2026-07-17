@@ -5,10 +5,10 @@ evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current installed and accepted baselines
 
-- [x] Current bench P4: factory-slot development build
-  `RC1-132-g2b0cfd59-dirty`, wired-flashed on 2026-07-17 for the
-  DSI-synchronised waveform smoke. This is not a signed release candidate.
-- [x] Last signed and boot-verified P4 release baseline:
+- [x] Current bench P4: factory-slot `RC1-133-gbd5e43ce`, the exact payload
+  from the clean `rel-001` signed candidate built at source commit `bd5e43ce`;
+  wired-flashed and focused-display-smoked on 2026-07-17.
+- [x] Last matching signed and boot-verified P4/S3 OTA rollout baseline:
   `RC1-131-gc391e306`, deployed to `ota_1` on 2026-07-16.
 - [x] Installed and boot-verified S3: `RC1-131-gc391e306`, signed OTA
   `ota_0 / valid` through the P4 firmware report.
@@ -33,6 +33,9 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R5A call-graph, signed-build size and legacy S3 build baselines recorded.
 - [x] Full code-review software remediation passes both host suites, OTA signing,
   OTA release helpers and clean ESP-IDF v5.5 builds for both targets.
+- [x] Clean `RC1-133-gbd5e43ce` P4/S3 packaging builds, both signed bundles and
+  the outer manifest verified with `rel-001`; only the exact P4 payload was
+  wired-flashed, while S3 remained installed on RC1-131.
 
 ## Repeat before enclosure close
 
@@ -324,9 +327,9 @@ unconditional since R5D; disabling the translator leaves the raw logger.
 
 ## P4 Overview Waveform Smoke Test
 
-- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-07-17 with
-  factory-slot development build `RC1-132-g2b0cfd59-dirty` after the
-  DSI-synchronised waveform fix.
+- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-07-17 with the
+  factory-slot exact payload from signed candidate `RC1-133-gbd5e43ce` after
+  the DSI-synchronised waveform fix.
 - [x] Load Deck 1 from Library and confirm the main waveform appears without
   touching the screen.
 - [x] Load Deck 2 and confirm the Deck 2 waveform appears while the Deck 1
@@ -335,12 +338,13 @@ unconditional since R5D; disabling the translator leaves the raw logger.
   shared 4/8/12/16/24-beat zoom steps on the Overview tab.
 - [x] Press Beat Sync with both decks loaded and confirm the Overview
   beat-match guide lines align after the one-shot seek.
-- [x] On 2026-07-17 keep Deck 1 and Deck 2 loaded and playing for approximately
-  132 seconds while monitoring COM15. The operator confirmed fluid waveforms,
-  no "underwater" motion and no visible flash.
-- [x] Confirm zero `lcd.dsi.dpi` PSRAM-fetch underruns, zero monitor-PCM drops,
-  and no panic, watchdog timeout, brownout or unexpected reset in that smoke.
-  The final live monitor sample reported `submitted=22882 sent=22882 dropped=0`.
+- [x] Development A/B winner: approximately 132 seconds of dual-deck playback;
+  fluid waveforms, no "underwater" motion or visible flash, zero DSI underruns
+  or PCM drops, final `submitted=22882 sent=22882 dropped=0`.
+- [x] Exact signed-candidate payload re-smoke: more than 71 seconds of active
+  playback; no flash or jitter, zero DSI underruns or PCM drops and no panic,
+  watchdog timeout, brownout or unexpected reset. Final sample:
+  `submitted=13392 sent=13391 dropped=0`.
 - [x] Temporary timing/cache diagnostics isolated the problem from audio and
   waveform-cache generation: both full-cadence RGB565 strips are PSRAM-backed,
   while one-deck scheduling reduced display pressure but caused the visible
@@ -669,10 +673,14 @@ deployment/boot check, not a full functional smoke; the latest fully accepted
 functional baseline remains E1 `RC1-123-g587cd7a1`. See
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
-Bench display record, 2026-07-17: a wired P4 factory-slot flash installed
-development build `RC1-132-g2b0cfd59-dirty`; S3 remained on signed RC1-131.
-The P4 build passed the focused 132-second dual-waveform/COM15 smoke above but
-has not been packaged, signed or given the full RC1 functional checklist.
+Bench display record, 2026-07-17: development build
+`RC1-132-g2b0cfd59-dirty` first passed the focused 132-second smoke. The fix was
+then committed at `bd5e43ce`, built and packaged for both targets as signed
+candidate `RC1-133-gbd5e43ce`, and independently verified with key `rel-001`.
+The exact P4 payload was wired-flashed to factory over COM15 and passed the
+more-than-71-second re-smoke above. S3 was built only for the canonical paired
+package and was not flashed. This wired deployment did not exercise a new
+P4 OTA-slot transition and is not the full RC1 functional checklist.
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

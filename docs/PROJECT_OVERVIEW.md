@@ -1,10 +1,10 @@
 # DDJ-FFL4 Project Overview
 
-Status: current product overview, audited 2026-07-17. The signed release
-baseline is `RC1-131-gc391e306` on P4 `ota_1` and S3 `ota_0 / valid`. The
-active bench P4 is a wired-flashed factory-slot development build,
-`RC1-132-g2b0cfd59-dirty`, containing the focused DSI-synchronised waveform
-fix; S3 remains on signed RC1-131. Targeted Phase 20 remediation,
+Status: current product overview, audited 2026-07-17. The last matching signed
+OTA rollout baseline is `RC1-131-gc391e306` on P4 `ota_1` and S3
+`ota_0 / valid`. The active bench P4 is the exact wired-flashed factory-slot
+payload from signed candidate `RC1-133-gbd5e43ce` (source commit `bd5e43ce`);
+S3 remains installed on signed RC1-131. Targeted Phase 20 remediation,
 remote-profile-update and Flanger/Delay functional hardware smokes remain
 pending. The inherited baseline below is historical context; `Current Port
 Status` describes the active system.
@@ -106,9 +106,10 @@ The fork is no longer only the imported single-deck baseline:
 - The 2026-07-17 P4 display pass phase-locks the firmware UI update to delivered
   DSI refresh events and runs the panel at 49.981 Hz by extending vertical front
   porch. Both playing deck waveforms retain full per-frame scheduling without
-  the one-deck alternation that looked "underwater". A focused 132-second COM15
-  smoke ended with zero DSI underruns and zero monitor-PCM drops; the operator
-  confirmed fluid motion and no visible flash. See the
+  the one-deck alternation that looked "underwater". The original 132-second
+  development smoke and a subsequent more-than-71-second exact-candidate COM15
+  re-smoke both ended with zero DSI underruns and zero monitor-PCM drops; the
+  operator confirmed fluid motion with no visible flash or jitter. See the
   [focused validation record](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
@@ -247,10 +248,9 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-Remaining hardware-facing work starts by turning the successful P4 waveform
-development build into a clean, signed release candidate and repeating its
-focused display smoke. It then continues with Phase 20 USB recovery/queue
-pressure, guarded web/profile/OTA mutations, UART integrity,
+The clean P4 waveform candidate, signed paired package and exact-image focused
+display re-smoke are complete. Remaining hardware-facing work continues with
+Phase 20 USB recovery/queue pressure, guarded web/profile/OTA mutations, UART integrity,
 controller-profile replacement/recovery and focused Flanger/Delay
 audio/target/timing/depth behavior. Remaining product work also includes
 selected shifted-control rows still marked in the MIDI map, one non-FLX4

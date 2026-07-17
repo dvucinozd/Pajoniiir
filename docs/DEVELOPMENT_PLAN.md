@@ -17,11 +17,11 @@ Status: current phase ledger, audited 2026-07-17.
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-131-gc391e306` deployed and boot-verified on both targets 2026-07-16 |
 
 The latest fully functionally accepted hardware baseline remains
-`RC1-123-g587cd7a1`. The signed release baseline is RC1-131, while the active
-bench P4 is the wired factory-slot development build
-`RC1-132-g2b0cfd59-dirty` containing the 2026-07-17 waveform refresh-sync fix.
-Next release hardening starts by turning that fix into a clean signed candidate
-and repeating its focused display smoke. Targeted Phase 20, Flanger/Delay and
+`RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is RC1-131,
+while the active bench P4 is the wired factory-slot payload from clean signed
+candidate `RC1-133-gbd5e43ce` (source commit `bd5e43ce`). Its exact-image
+focused display re-smoke passed; S3 was not reflashed and remains on RC1-131.
+Targeted Phase 20, Flanger/Delay and
 remote controller-profile acceptance then follows, before production key
 provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
 key-lock quality testing, selected pending MIDI hardware rows and a first
@@ -1553,9 +1553,8 @@ Exact artifact sizes, SHA-256 values and state transitions are recorded in
 
 ## Phase 22: DSI-Synchronised Overview Cadence (2026-07-17)
 
-Status: implementation, P4 build, host tests and focused hardware smoke
-complete; clean commit, signed release packaging and exact-image re-smoke
-pending.
+Status: implementation, clean commit, host tests, paired signed release
+packaging and exact-P4-image focused hardware re-smoke complete.
 
 - The panel keeps its 34 MHz DPI clock and uses vertical front porch `371`,
   yielding 49.981 Hz for the 576 x 1181 total timing envelope.
@@ -1569,11 +1568,23 @@ pending.
   with zero failures and all remaining P4 host-test groups; its standalone
   Python OTA-signing subset was skipped because `python` was not found by the
   wrapper and is unrelated to this UI/BSP change.
-- The active bench image is the wired factory-slot development build
+- The A/B winner first ran as factory-slot development build
   `RC1-132-g2b0cfd59-dirty`. During approximately 132 seconds of dual-deck
   Overview playback, COM15 showed no DSI underrun, panic, watchdog, brownout or
   reset, monitor PCM remained `dropped=0`, and the operator reported fluid
   waveforms with neither watery motion nor a visible flash.
+- Source commit `bd5e43cef448aab8701363bf2b23f8ddea74c0f8` was then built cleanly
+  for both targets as `RC1-133-gbd5e43ce`. P4 and S3 builds passed; the
+  canonical packager signed both bundles and the outer manifest with
+  `rel-001`, and independent public-key verification passed.
+- The release P4 payload (2,137,344 bytes, SHA-256
+  `b3dedb8c8bab9782962867d16c179e5e0cabe9d2f83f5816ce1e873551f71b8e`)
+  was byte-for-byte identical to the build image and was wired-flashed over
+  COM15. More than 71 seconds of active playback ended at
+  `submitted=13392 dropped=0 sent=13391`, with no display/runtime fault and
+  operator confirmation of no flash or jitter. S3 was not flashed.
+- Because deployment was wired by request, this exact-image pass does not
+  repeat the P4 HTTP OTA upload or an OTA-slot transition.
 
 The complete A/B table and focused acceptance evidence are recorded in
 [`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
