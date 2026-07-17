@@ -16,7 +16,14 @@ typedef struct {
     uint32_t total_us;
 } ui_lvgl_backend_blit_perf_t;
 
+typedef void (*ui_lvgl_backend_frame_cb_t)(void *user_ctx);
+
 esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res);
+// Runs callback from the LVGL task on each delivered panel-refresh event.
+// Register it before ui_lvgl_backend_start(). Refreshes that arrive while the
+// task is busy are coalesced so stale UI work cannot build up.
+esp_err_t ui_lvgl_backend_set_frame_callback(ui_lvgl_backend_frame_cb_t callback,
+                                             void *user_ctx);
 esp_err_t ui_lvgl_backend_start(void);
 void ui_lvgl_lock(void);
 void ui_lvgl_unlock(void);

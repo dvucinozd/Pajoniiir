@@ -1,21 +1,26 @@
 # Documentation Status
 
-Last full audit: **2026-07-16** on `master` after the full code-review
-remediation, Beat FX Delay implementation and signed dual-target rollout.
+Last full audit: **2026-07-17** after the P4 DSI-synchronised Overview
+waveform implementation and focused hardware smoke.
 
 This page explains which documents describe the current product and which are
-historical design or validation records. Two baselines must not be conflated:
+historical design or validation records. Three states must not be conflated:
 
-- **installed/boot-verified:** `RC1-131-gc391e306` on both processors, signed
-  with key ID `rel-001`, with P4 on `ota_1` and S3 on `ota_0 / valid` after the
-  2026-07-16 rollout;
+- **signed release baseline:** `RC1-131-gc391e306` on both processors, signed
+  with key ID `rel-001`, with P4 recorded on `ota_1` and S3 on `ota_0 / valid`
+  after the 2026-07-16 rollout;
+- **current bench state:** P4 factory-slot development build
+  `RC1-132-g2b0cfd59-dirty`, wired-flashed on 2026-07-17 for the
+  DSI-synchronised waveform test; S3 remains on signed RC1-131. See the
+  [focused display validation](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md);
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
   forced rollback and final UI/audio/controller smoke.
 
-The newer release includes the code-review remediation and Beat FX Flanger and
-Delay. Its signed update and mandatory startup paths passed, but the targeted
-Phase 20 and Flanger/Delay hardware-smoke rows remain open.
+RC1-131 includes the code-review remediation and Beat FX Flanger and Delay. Its
+signed update and mandatory startup paths passed, but the targeted Phase 20 and
+Flanger/Delay hardware-smoke rows remain open. The newer P4 development build
+has only focused display-path acceptance and must not be treated as a release.
 
 ## Source-of-truth order
 
@@ -44,13 +49,15 @@ in the active documents.
 | Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12 |
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
-| UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero |
+| UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero; DSI-synchronised 49.981 Hz dual-waveform path passed a focused 132-second COM15 smoke on 2026-07-17 with no underrun, visible flash or watery motion |
 | Effects | Beat FX Filter/Echo have recorded hardware acceptance; Flanger and Delay value `4` are software-tested and OTA-deployed, with focused physical audio/target/beat/depth smoke pending |
 | OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; matching `RC1-131-gc391e306` rollout boot/status-verified 2026-07-16 |
 | Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits its dedicated hardware acceptance |
 
 ## Remaining work
 
+- commit, package and sign the P4 DSI-synchronised waveform change as a clean
+  release candidate, then repeat the focused display smoke on that exact image;
 - define production key provisioning and rotation beyond the current backed-up
   `rel-001` development key, preferably with encrypted or hardware-backed
   signing;

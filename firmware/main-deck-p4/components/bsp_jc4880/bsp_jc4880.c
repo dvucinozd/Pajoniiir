@@ -75,15 +75,19 @@ static const char *TAG = "bsp";
 #define BSP_DSI_LANE_MBPS       500     // bit rate per data lane
 
 // ── ST7701S video timing (480x800 portrait) ──────────────────────────────────
-//    Values taken verbatim from the JC4880P443C_I_W vendor demo (lvgl_sw_rotation).
-//    Panel runs RGB565 at a 34 MHz DPI pixel clock.
+//    Horizontal and sync/back-porch values come from the JC4880P443C_I_W
+//    vendor demo. VFP is extended to phase-lock UI work to an approximately
+//    50 Hz panel refresh while retaining the panel's 34 MHz DPI pixel clock:
+//      Htotal = 480 + 12 + 42 + 42 = 576
+//      VFP = round(34 MHz / (576 * 50 Hz)) - (800 + 2 + 8) = 371
+//      actual refresh = 34 MHz / (576 * 1181) = 49.981 Hz
 #define BSP_DPI_CLK_MHZ         34
 #define BSP_LCD_HSYNC           12
 #define BSP_LCD_HBP             42
 #define BSP_LCD_HFP             42
 #define BSP_LCD_VSYNC           2
 #define BSP_LCD_VBP             8
-#define BSP_LCD_VFP             166
+#define BSP_LCD_VFP             371
 
 static esp_lcd_panel_handle_t   s_panel    = NULL;
 static esp_ldo_channel_handle_t s_mipi_ldo = NULL;

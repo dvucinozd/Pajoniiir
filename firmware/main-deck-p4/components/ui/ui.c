@@ -54,7 +54,9 @@
 #define UI_CONTENT_H  (UI_VER_RES - UI_TOPBAR_H)
 #endif
 
+#ifdef WIN32
 #define UI_UPDATE_PERIOD_MS 16u
+#endif
 
 static const char *TAG = "ui";
 
@@ -695,10 +697,18 @@ static void ui_update_overview_cue_markers(uint8_t deck)
 
 // ─── Global Interface Functions ──────────────────────────────────────────────
 
+#ifdef WIN32
 static void ui_timer_cb(lv_timer_t *timer) {
     (void)timer;
     ui_update();
 }
+#else
+static void ui_frame_cb(void *user_ctx)
+{
+    (void)user_ctx;
+    ui_update();
+}
+#endif
 
 #ifndef WIN32
 static void ui_perf_log_us(const char *label, const ui_overview_perf_report_t *report)
@@ -869,8 +879,16 @@ esp_err_t ui_init(void) {
 
     ui_library_load_initial_track();
 
-    // Register self-running LVGL timer to periodically refresh the UI states
+    // Keep the simulator's historical 16 ms timer. Firmware updates once per
+    // physical panel refresh so waveform work is phase-locked to DSI scanout.
+#ifdef WIN32
     lv_timer_create(ui_timer_cb, UI_UPDATE_PERIOD_MS, NULL);
+#else
+    esp_err_t frame_cb_rc = ui_lvgl_backend_set_frame_callback(ui_frame_cb, NULL);
+    if (frame_cb_rc != ESP_OK) {
+        return frame_cb_rc;
+    }
+#endif
 
     splash_screen_show(ui_splash_screen_finished_cb);
 

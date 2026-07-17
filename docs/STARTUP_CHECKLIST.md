@@ -1,18 +1,23 @@
 # Startup Checklist
 
-Status: audited 2026-07-16. Checked items below are historical bring-up
+Status: audited 2026-07-17. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes.
 
 ## Current installed and accepted baselines
 
-- [x] Installed and boot-verified P4: `RC1-131-gc391e306`, signed OTA
-  `ota_1`; `/api/status` responds after mandatory startup.
+- [x] Current bench P4: factory-slot development build
+  `RC1-132-g2b0cfd59-dirty`, wired-flashed on 2026-07-17 for the
+  DSI-synchronised waveform smoke. This is not a signed release candidate.
+- [x] Last signed and boot-verified P4 release baseline:
+  `RC1-131-gc391e306`, deployed to `ota_1` on 2026-07-16.
 - [x] Installed and boot-verified S3: `RC1-131-gc391e306`, signed OTA
   `ota_0 / valid` through the P4 firmware report.
 - [x] Latest fully functionally accepted P4/S3 release:
   `RC1-123-g587cd7a1` (acceptance-time slots on 2026-07-14: P4 `ota_0`, S3
-  `ota_1`). After the RC1-131 rollout, the current inactive slots contain P4
-  `ota_0 / RC1-126-g812ad70f` and S3 `ota_1 / RC1-123-g587cd7a1`.
+  `ota_1`). After the RC1-131 rollout and subsequent P4 factory flash, both P4
+  OTA slots are inactive: `ota_0 / RC1-126-g812ad70f` and
+  `ota_1 / RC1-131-gc391e306`. The inactive S3 slot remains
+  `ota_1 / RC1-123-g587cd7a1`.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
@@ -319,8 +324,9 @@ unconditional since R5D; disabling the translator leaves the raw logger.
 
 ## P4 Overview Waveform Smoke Test
 
-- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-07-01 after the
-  overview waveform load/reblit and Beat Sync phase-align fixes.
+- [x] Flash current P4 firmware to COM15. Last confirmed: 2026-07-17 with
+  factory-slot development build `RC1-132-g2b0cfd59-dirty` after the
+  DSI-synchronised waveform fix.
 - [x] Load Deck 1 from Library and confirm the main waveform appears without
   touching the screen.
 - [x] Load Deck 2 and confirm the Deck 2 waveform appears while the Deck 1
@@ -329,13 +335,20 @@ unconditional since R5D; disabling the translator leaves the raw logger.
   shared 4/8/12/16/24-beat zoom steps on the Overview tab.
 - [x] Press Beat Sync with both decks loaded and confirm the Overview
   beat-match guide lines align after the one-shot seek.
-- [ ] During the next diagnostic capture, keep the serial monitor running for
-  at least 60 seconds while Deck 1 and Deck 2 are both loaded and playing.
-- [ ] Confirm no panic, watchdog timeout, brownout, or unexpected reset appears
-  in that capture.
-- [ ] If UI diagnostics are enabled, confirm steady logs are mostly
-  `kind=OFFSET` with `cols=0`; `EDGE` should appear only occasionally with
-  bounded column counts.
+- [x] On 2026-07-17 keep Deck 1 and Deck 2 loaded and playing for approximately
+  132 seconds while monitoring COM15. The operator confirmed fluid waveforms,
+  no "underwater" motion and no visible flash.
+- [x] Confirm zero `lcd.dsi.dpi` PSRAM-fetch underruns, zero monitor-PCM drops,
+  and no panic, watchdog timeout, brownout or unexpected reset in that smoke.
+  The final live monitor sample reported `submitted=22882 sent=22882 dropped=0`.
+- [x] Temporary timing/cache diagnostics isolated the problem from audio and
+  waveform-cache generation: both full-cadence RGB565 strips are PSRAM-backed,
+  while one-deck scheduling reduced display pressure but caused the visible
+  watery cadence. The retained fix is refresh synchronisation, not a reduced
+  scheduler budget or GDMA QoS override.
+
+Detailed A/B evidence and the exact acceptance boundary are recorded in
+[`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
 
 S3 status: USB host was successfully brought up on native OTG port. By increasing
 `CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512`, the large configuration descriptors
@@ -655,6 +668,11 @@ was healthy after reboot and its nested report confirmed S3. This was an OTA
 deployment/boot check, not a full functional smoke; the latest fully accepted
 functional baseline remains E1 `RC1-123-g587cd7a1`. See
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+
+Bench display record, 2026-07-17: a wired P4 factory-slot flash installed
+development build `RC1-132-g2b0cfd59-dirty`; S3 remained on signed RC1-131.
+The P4 build passed the focused 132-second dual-waveform/COM15 smoke above but
+has not been packaged, signed or given the full RC1 functional checklist.
 
 Wired report smoke passed on 2026-07-13: after a P4-only restart COM15 logged
 `S3 firmware version=RC1-104-g2f710fb7-dirty slot=1 state=3` at 3150 ms.

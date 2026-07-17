@@ -58,6 +58,14 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
     return ESP_OK;
 }
 
+esp_err_t ui_lvgl_backend_set_frame_callback(ui_lvgl_backend_frame_cb_t callback,
+                                             void *user_ctx)
+{
+    (void)callback;
+    (void)user_ctx;
+    return ESP_OK;
+}
+
 esp_err_t ui_lvgl_backend_start(void)
 {
     return ESP_OK;
@@ -131,6 +139,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
 }
 #else
 #include "bsp_jc4880.h"
+#include "esp_attr.h"
 #include "esp_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_mipi_dsi.h"
@@ -148,6 +157,7 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
 #define UI_DSI_FB_COUNT            3
 #define UI_LVGL_PARTIAL_BUF_ROWS   80u
 #define UI_PERF_SPIKE_THRESHOLD_US 20000u
+#define UI_LVGL_NOTIFY_REFRESH     (1u << 0)
 #define ALIGN_UP_BY(n, a)          (((n) + ((a) - 1)) & ~((a) - 1))
 
 static _lock_t s_lvgl_lock;
@@ -158,6 +168,9 @@ static int s_dsi_active_fb_idx = 0;
 static size_t s_cache_align = 64;
 static uint16_t s_hor_res = 800;
 static uint16_t s_ver_res = 480;
+static TaskHandle_t s_lvgl_task_handle = NULL;
+static ui_lvgl_backend_frame_cb_t s_frame_callback = NULL;
+static void *s_frame_callback_ctx = NULL;
 
 static ui_overview_perf_counter_t s_lvgl_handler_interval_perf;
 static ui_overview_perf_counter_t s_lvgl_handler_duration_perf;
@@ -179,6 +192,27 @@ static uint32_t s_lvgl_frame_inval_count = 0;
 static uint32_t s_lvgl_frame_inval_total_px = 0;
 static uint32_t s_lvgl_frame_inval_max_px = 0;
 static lv_area_t s_lvgl_frame_inval_max_area = {0};
+
+static bool IRAM_ATTR ui_lvgl_dpi_refresh_done_cb(esp_lcd_panel_handle_t panel,
+                                                  esp_lcd_dpi_panel_event_data_t *edata,
+                                                  void *user_ctx)
+{
+    (void)panel;
+    (void)edata;
+    (void)user_ctx;
+
+    TaskHandle_t task = s_lvgl_task_handle;
+    if (task == NULL) {
+        return false;
+    }
+
+    BaseType_t higher_priority_task_woken = pdFALSE;
+    xTaskNotifyFromISR(task,
+                       UI_LVGL_NOTIFY_REFRESH,
+                       eSetBits,
+                       &higher_priority_task_woken);
+    return higher_priority_task_woken == pdTRUE;
+}
 
 static void ui_lvgl_backend_perf_log_us(const char *label, const ui_overview_perf_report_t *report)
 {
@@ -486,6 +520,7 @@ static void ui_lvgl_task(void *arg)
     (void)arg;
     ESP_LOGI(TAG, "LVGL handler task started");
     uint64_t last_handler_start_us = 0;
+    bool refresh_pending = false;
     while (1) {
         uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
         if (ui_diagnostics_enabled() && last_handler_start_us != 0) {
@@ -499,6 +534,9 @@ static void ui_lvgl_task(void *arg)
         last_handler_start_us = handler_start_us;
 
         _lock_acquire_recursive(&s_lvgl_lock);
+        if (refresh_pending && s_frame_callback != NULL) {
+            s_frame_callback(s_frame_callback_ctx);
+        }
         uint32_t next_ms = lv_timer_handler();
         _lock_release_recursive(&s_lvgl_lock);
 
@@ -514,7 +552,17 @@ static void ui_lvgl_task(void *arg)
 
         if (next_ms > 100) next_ms = 100;
         if (next_ms < 5)   next_ms = 5;
-        vTaskDelay(pdMS_TO_TICKS(next_ms));
+
+        // Panel refreshes wake the task immediately. The timeout still follows
+        // LVGL's requested cadence, preserving timers, input and animations
+        // even if the display interrupt stops arriving.
+        uint32_t notifications = 0;
+        BaseType_t notified = xTaskNotifyWait(0,
+                                              UINT32_MAX,
+                                              &notifications,
+                                              pdMS_TO_TICKS(next_ms));
+        refresh_pending = notified == pdTRUE &&
+                          (notifications & UI_LVGL_NOTIFY_REFRESH) != 0;
     }
 }
 
@@ -578,6 +626,22 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
         ESP_LOGW(TAG, "no touch handle - UI will be display-only");
     }
 
+    // Register last so a partially initialised backend can never receive a
+    // refresh notification. The ISR only wakes the LVGL task; it does no UI
+    // or LVGL work itself.
+    const esp_lcd_dpi_panel_event_callbacks_t panel_cbs = {
+        .on_refresh_done = ui_lvgl_dpi_refresh_done_cb,
+    };
+    esp_err_t panel_cb_rc = esp_lcd_dpi_panel_register_event_callbacks(panel,
+                                                                       &panel_cbs,
+                                                                       NULL);
+    if (panel_cb_rc != ESP_OK) {
+        ESP_LOGE(TAG,
+                 "failed to register DPI refresh callback: %s",
+                 esp_err_to_name(panel_cb_rc));
+        return panel_cb_rc;
+    }
+
     ESP_LOGI(TAG, "LVGL backend ready (%ux%u canvas -> PPA-rotated to %dx%d, RGB565)",
              (unsigned)s_hor_res,
              (unsigned)s_ver_res,
@@ -586,9 +650,30 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
     return ESP_OK;
 }
 
+esp_err_t ui_lvgl_backend_set_frame_callback(ui_lvgl_backend_frame_cb_t callback,
+                                             void *user_ctx)
+{
+    if (s_lvgl_task_handle != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_frame_callback = callback;
+    s_frame_callback_ctx = user_ctx;
+    return ESP_OK;
+}
+
 esp_err_t ui_lvgl_backend_start(void)
 {
-    if (xTaskCreatePinnedToCore(ui_lvgl_task, "lvgl", LVGL_TASK_STACK, NULL, LVGL_TASK_PRIO, NULL, 1) != pdPASS) {
+    if (s_lvgl_task_handle != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (xTaskCreatePinnedToCore(ui_lvgl_task,
+                                "lvgl",
+                                LVGL_TASK_STACK,
+                                NULL,
+                                LVGL_TASK_PRIO,
+                                &s_lvgl_task_handle,
+                                1) != pdPASS) {
+        s_lvgl_task_handle = NULL;
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;

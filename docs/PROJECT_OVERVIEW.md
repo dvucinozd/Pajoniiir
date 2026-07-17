@@ -1,8 +1,10 @@
 # DDJ-FFL4 Project Overview
 
-Status: current product overview, audited 2026-07-16. The installed signed
-release is `RC1-131-gc391e306` on P4 `ota_1` and S3 `ota_0 / valid`; its
-boot/status path is verified, while targeted Phase 20 remediation,
+Status: current product overview, audited 2026-07-17. The signed release
+baseline is `RC1-131-gc391e306` on P4 `ota_1` and S3 `ota_0 / valid`. The
+active bench P4 is a wired-flashed factory-slot development build,
+`RC1-132-g2b0cfd59-dirty`, containing the focused DSI-synchronised waveform
+fix; S3 remains on signed RC1-131. Targeted Phase 20 remediation,
 remote-profile-update and Flanger/Delay functional hardware smokes remain
 pending. The inherited baseline below is historical context; `Current Port
 Status` describes the active system.
@@ -101,6 +103,13 @@ The fork is no longer only the imported single-deck baseline:
   Overview scheduler, and both deck overlays are briefly reblitted after any
   load so one deck's direct overlay does not disappear when the other deck is
   loaded.
+- The 2026-07-17 P4 display pass phase-locks the firmware UI update to delivered
+  DSI refresh events and runs the panel at 49.981 Hz by extending vertical front
+  porch. Both playing deck waveforms retain full per-frame scheduling without
+  the one-deck alternation that looked "underwater". A focused 132-second COM15
+  smoke ended with zero DSI underruns and zero monitor-PCM drops; the operator
+  confirmed fluid motion and no visible flash. See the
+  [focused validation record](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
 - FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
   control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
   pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from pending marker and
@@ -238,13 +247,15 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-Remaining hardware-facing items start with E1A acceptance of the installed
-RC1-131 release: Phase 20 USB recovery/queue pressure, guarded web/profile/OTA
-mutations, UART integrity, controller-profile replacement/recovery and focused
-Flanger/Delay audio/target/timing/depth behavior. They also include selected
-shifted-control rows still marked in the MIDI map, enclosure power/thermal/RF
-soak, and a full end-to-end S3/P4/FLX4 regression pass after the next major
-control or UI batch.
+Remaining hardware-facing work starts by turning the successful P4 waveform
+development build into a clean, signed release candidate and repeating its
+focused display smoke. It then continues with Phase 20 USB recovery/queue
+pressure, guarded web/profile/OTA mutations, UART integrity,
+controller-profile replacement/recovery and focused Flanger/Delay
+audio/target/timing/depth behavior. Remaining product work also includes
+selected shifted-control rows still marked in the MIDI map, one non-FLX4
+profile acceptance, production signing-key provisioning, enclosure
+power/thermal/RF soak, and a full end-to-end S3/P4/FLX4 regression pass.
 (Beat feedback from the PQTZ
 beatgrid is already shown on the Overview beat strip with a red downbeat marker;
 a dedicated controller beat LED was declined, so that item is closed.)

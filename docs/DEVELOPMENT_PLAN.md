@@ -1,13 +1,13 @@
 # Development Plan
 
-Status: current phase ledger, audited 2026-07-16.
+Status: current phase ledger, audited 2026-07-17.
 
 ## Executive status
 
 | Capability | State |
 | --- | --- |
 | FLX4 host, semantic controls and LEDs | Implemented and hardware-smoked |
-| Dual-deck playback, mixer and UI | Implemented and hardware-smoked |
+| Dual-deck playback, mixer and UI | Implemented and hardware-smoked; DSI-synchronised dual-waveform cadence accepted in focused P4 smoke 2026-07-17 |
 | MAIN + USB headphone cue audio | Implemented and hardware-smoked |
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
@@ -17,13 +17,16 @@ Status: current phase ledger, audited 2026-07-16.
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-131-gc391e306` deployed and boot-verified on both targets 2026-07-16 |
 
 The latest fully functionally accepted hardware baseline remains
-`RC1-123-g587cd7a1`. Next release hardening starts with targeted functional
-acceptance of the installed `RC1-131-gc391e306` images, including Phase 20,
-Flanger/Delay and remote controller-profile paths. It then continues with
-production key provisioning/rotation, enclosure power/thermal/RF soak, longer
-dual-deck key-lock quality testing, selected pending MIDI hardware rows and a
-first non-FLX4 profile acceptance. Historical phase text below is retained as
-the implementation record.
+`RC1-123-g587cd7a1`. The signed release baseline is RC1-131, while the active
+bench P4 is the wired factory-slot development build
+`RC1-132-g2b0cfd59-dirty` containing the 2026-07-17 waveform refresh-sync fix.
+Next release hardening starts by turning that fix into a clean signed candidate
+and repeating its focused display smoke. Targeted Phase 20, Flanger/Delay and
+remote controller-profile acceptance then follows, before production key
+provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
+key-lock quality testing, selected pending MIDI hardware rows and a first
+non-FLX4 profile acceptance. Historical phase text below is retained as the
+implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
@@ -199,8 +202,20 @@ TODO:
   hardware testing showed that the perceived stutter remained once the audio
   path was healthy. The scheduler now allows both playing deck waveforms to
   redraw in the same UI tick so each deck keeps full visual cadence.
-  `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus total rendered columns and
-  blits; the existing Overview diagnostics log includes those totals.
+  The cache diagnostics report `FULL`, `OFFSET`, `EDGE`, and `NONE` updates plus
+  total rendered columns and blits.
+- The 2026-07-17 COM15 investigation found the remaining rare full-screen flash
+  below the renderer logic: the original approximately 60.48 Hz full-cadence
+  path produced three user-visible flashes paired one-for-one with DSI
+  `can't fetch data from external memory fast enough` underruns. Both RGB565
+  waveform strips are PSRAM-backed. One-deck-per-tick variants reduced memory
+  pressure but produced the operator's watery motion, and a DW-GDMA QoS trial
+  still produced two flashes, so neither workaround was retained. Firmware now
+  extends vertical front porch for a 49.981 Hz panel refresh and runs
+  `ui_update()` from coalesced `on_refresh_done` notifications on the LVGL task.
+  The full two-deck redraw budget remains intact. A focused approximately
+  132-second dual-play smoke ended with zero DSI underruns, zero monitor-PCM
+  drops and no panic/reset; the operator confirmed fluid motion and no flash.
 - Mixed 44.1/48 kHz dual-deck playback was fixed on 2026-07-01. Hardware
   diagnosis showed the OK pair France Gall + Comanchero were both 44.1 kHz,
   while the failing Men At Work + Caribbean Blue pair mixed 44.1 kHz and
@@ -1535,3 +1550,30 @@ acceptance pending.
 
 Exact artifact sizes, SHA-256 values and state transitions are recorded in
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+
+## Phase 22: DSI-Synchronised Overview Cadence (2026-07-17)
+
+Status: implementation, P4 build, host tests and focused hardware smoke
+complete; clean commit, signed release packaging and exact-image re-smoke
+pending.
+
+- The panel keeps its 34 MHz DPI clock and uses vertical front porch `371`,
+  yielding 49.981 Hz for the 576 x 1181 total timing envelope.
+- The DPI `on_refresh_done` ISR only sends a task notification. The existing
+  LVGL task coalesces missed refreshes and performs `ui_update()` once for each
+  delivered pending refresh before normal LVGL timer handling.
+- WIN32 keeps its historical 16 ms UI timer. Firmware LVGL timers, touch and
+  animations still wake through their own bounded timeout if refresh events
+  stop.
+- P4 `idf.py build` passed. The P4 host suite passed 363 audio-engine checks
+  with zero failures and all remaining P4 host-test groups; its standalone
+  Python OTA-signing subset was skipped because `python` was not found by the
+  wrapper and is unrelated to this UI/BSP change.
+- The active bench image is the wired factory-slot development build
+  `RC1-132-g2b0cfd59-dirty`. During approximately 132 seconds of dual-deck
+  Overview playback, COM15 showed no DSI underrun, panic, watchdog, brownout or
+  reset, monitor PCM remained `dropped=0`, and the operator reported fluid
+  waveforms with neither watery motion nor a visible flash.
+
+The complete A/B table and focused acceptance evidence are recorded in
+[`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
