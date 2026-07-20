@@ -1588,3 +1588,784 @@ packaging and exact-P4-image focused hardware re-smoke complete.
 
 The complete A/B table and focused acceptance evidence are recorded in
 [`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
+
+## TODO: Unify P4 Summary And Full ANLZ Metadata Loading
+
+Status: planned 2026-07-20; not implemented or performance-benchmarked.
+
+### Problem
+
+The current local-track load path calls `library_load_anlz()` and then
+`library_load_current_anlz()` for the same track. On a warm metadata-cache path
+this opens the same `/sd/trackcache/<track-key>/meta.bin` twice, repeats the
+summary/VBR/cue/beat-grid read and performs two DAT/EXT signature-validation
+passes against the USB medium. On a cold path the first call parses DAT/EXT and
+writes the cache, after which the second call immediately reads that new cache
+entry again. The cache remains useful, but this duplicate path wastes metadata
+I/O and makes its actual benefit harder to measure.
+
+### Implementation plan
+
+1. Add one internal resolver in `components/library/library.c`, for example
+   `library_resolve_anlz()`, which returns one owned, full
+   `anlz_metadata_t` object plus a cache/USB source result.
+2. Have the resolver build the DAT/EXT paths and track key once, call
+   `track_meta_cache_load(..., true, ...)` once, and on a miss parse DAT once
+   and EXT once before performing one best-effort cache write.
+3. Keep `library_load_anlz(library_track_t *track)` as the public entry point,
+   but make it consume the one resolved object for both responsibilities:
+   populate the track summary fields (precise BPM, duration, low waveform and
+   PVBR table), then publish the same full beat/cue/high-waveform object as the
+   current metadata.
+4. Publish transactionally: resolve into a local object first; only after full
+   success swap it into `s_current_meta` under the library mutex. Free the old
+   object after the swap and outside the mutex. A failed new load must not erase
+   the previously valid current metadata.
+5. Remove the `library_load_current_anlz()` declaration and implementation.
+   Retain `library_clone_current_anlz()` and `library_free_current_anlz()` so UI
+   consumers keep their existing owned-snapshot contract.
+6. Replace every paired call in `media_catalog.c` and the WIN32 simulator paths
+   in `ui_library.c` with the single `library_load_anlz()` call. Confirm with
+   `rg` that no declaration or call of `library_load_current_anlz()` remains.
+7. Preserve the existing cache file format and invalidation rules so deployed
+   `/sd/trackcache` contents remain compatible. A missing SD card or rejected
+   cache entry must continue to fall back to the USB ANLZ parser, and cache
+   write failure must remain non-fatal after a successful parse.
+
+### Measurement and host coverage
+
+- Add one bounded timing record around the unified path using
+  `esp_timer_get_time()`, reporting track key, `cache` or `usb` source, elapsed
+  microseconds and cache-write result without adding high-rate log spam.
+- Cover a full cache hit: one cache load with high waveform requested, no DAT or
+  EXT parse and no cache write.
+- Cover a cache miss: one cache lookup, one DAT parse, at most one EXT parse and
+  one cache write.
+- Cover cache rejection/corruption fallback, missing SD, non-fatal cache-write
+  failure and best-effort EXT failure.
+- Verify that a parser failure preserves the previously published metadata.
+- Verify two sequential track loads, deep-clone ownership, replacement cleanup
+  and absence of double-free or leaked beat/high-waveform buffers.
+- Register the new host test in `tests/run_p4_host_tests.ps1` and retain the
+  existing Rekordbox ANLZ/cache parser coverage.
+
+### Hardware acceptance
+
+1. Delete only one selected track's cache entry, load it once and confirm one
+   miss, one parse and one write with no immediate second cache read.
+2. Reload the same track and confirm one full cache hit with no parser or write.
+3. Record cold and warm metadata elapsed time over repeated runs on the same
+   USB drive and SD card; report median and worst observed time rather than an
+   assumed speedup.
+4. Load alternating tracks to Deck 1 and Deck 2 and verify precise BPM,
+   duration, low and high waveforms, beat grid, hot cues and PVBR seeking.
+5. Repeat without the SD card to prove USB fallback, and repeat the existing USB
+   disconnect/recovery case because cache signature checks touch the USB MSC
+   medium.
+6. Alternate at least 50 dual-deck loads while monitoring internal heap and
+   PSRAM for ownership leaks or fragmentation.
+
+### Completion checks
+
+- Run the complete P4 host suite.
+- Build `firmware/main-deck-p4` with ESP-IDF v5.5.
+- Run `git diff --check` and inspect `git status --short`.
+- Record what passed and which hardware acceptance rows, if any, remain open.
+
+Expected structural result: a warm load performs one DAT/EXT validation pair
+and one SD cache open instead of two of each; a cold load no longer rereads the
+entry immediately after creating it. Overall track-to-audio latency must be
+measured separately because USB audio preload can remain the dominant cost.
+
+## TODO: Expand The P4 microSD Service Log
+
+Status: planned 2026-07-20; not implemented. A temporary or high-rate detailed
+trace mode is explicitly out of scope.
+
+### Goal and real-time boundary
+
+Replace the current boot/cache-only `/sd/logs/system.log` writer with a bounded,
+structured service-event journal that is useful for field diagnosis without
+blocking audio, USB, UI or control-link tasks. The implementation must not
+capture the complete `ESP_LOG` stream and must not record MIDI packets, jog
+events, audio blocks, continuous VU/ring values or per-frame UI/render data.
+
+Producers enqueue fixed-size events without allocation or waiting. One
+low-priority writer task owns the log file and performs all FAT writes:
+
+```text
+P4 component -> non-blocking event -> FreeRTOS queue -> SD writer task
+```
+
+- Use a fixed queue of 128 structured events.
+- Enqueue with `xQueueSend(..., 0)`; a full queue increments a drop counter and
+  never stalls the caller.
+- Do not allocate memory in producer hot paths.
+- Batch approximately 16-32 events per write, flush about every two seconds and
+  sync every 5-10 seconds plus before a controlled reboot.
+- An unavailable or failing SD logger remains non-fatal for boot and playback.
+
+### Event API and on-card format
+
+Add a stable event API carrying an event ID, severity, four numeric arguments
+and one short bounded text field. The internal fixed-size record also carries a
+monotonic sequence number, NVS-backed boot ID and uptime in milliseconds. The
+writer sanitizes newline/control characters and formats human-readable
+`key=value` records, for example:
+
+```text
+seq=381 boot=42 ms=184230 level=I event=TRACK_LOAD_DONE deck=1 key=832 cache=hit metadata_us=8200 result=ok
+```
+
+Write a schema/boot header once per startup with the log schema, boot ID,
+firmware version, running partition and reset reason. Wall-clock time is
+optional; boot ID plus monotonic uptime is the required ordering source.
+
+### Rotation and storage bound
+
+Retain four generations:
+
+```text
+/sd/logs/system.log
+/sd/logs/system.log.1
+/sd/logs/system.log.2
+/sd/logs/system.log.3
+```
+
+Each file is limited to 1 MiB, for an approximate 4 MiB total bound. Only the
+writer task may append, close or rotate these files. Keep controller-profile
+and track-cache storage outside the log lock.
+
+### Always-on event inventory
+
+Boot/storage events:
+
+- `BOOT`, `RESET_REASON`, `FIRMWARE_INFO`;
+- `SD_MOUNTED`, `SD_ERROR`, `LOG_OPEN_FAILED`, `LOG_QUEUE_DROPPED`;
+- threshold-crossing `LOW_INTERNAL_HEAP` and `LOW_PSRAM` warnings.
+
+USB/library events:
+
+- `USB_MOUNTED`, `USB_UNMOUNTED`, `USB_MOUNT_FAILED`;
+- `LIBRARY_LOADED`, `LIBRARY_LOAD_FAILED`;
+- `TRACK_LOAD_START`, `TRACK_LOAD_DONE`, `TRACK_LOAD_FAILED`.
+
+The final `TRACK_LOAD_DONE` event should combine deck, track key, metadata
+cache source, metadata time, audio format/sample rate, preload time and result.
+Land this metric with or after the unified summary/full ANLZ metadata TODO so
+the logger records one authoritative metadata load rather than the current two
+passes.
+
+Audio events:
+
+- `AUDIO_LOAD_DONE`, `AUDIO_LOAD_FAILED`, `AUDIO_DEVICE_ERROR`;
+- `AUDIO_UNDERRUN`, `AUDIO_OUTPUT_LATE`, `AUDIO_RING_STARVATION`;
+- `AUDIO_SAMPLE_RATE_CHANGED`.
+
+Repeated audio anomalies must be aggregated and rate-limited, for example one
+five-second summary containing counts and the worst observed value. Normal VU,
+limiter and ring-fill samples are not persistent log events.
+
+S3/controller events:
+
+- `CONTROL_LINK_ONLINE`, `CONTROL_LINK_OFFLINE`, `CONTROL_LINK_CRC_ERROR`,
+  `CONTROL_LINK_GAP`;
+- `CONTROLLER_CONNECTED`, `CONTROLLER_DISCONNECTED`;
+- `PROFILE_MATCHED`, `PROFILE_TRANSFER_DONE`, `PROFILE_TRANSFER_FAILED`.
+
+OTA/web events:
+
+- `P4_OTA_STARTED`, `P4_OTA_VERIFIED`, `P4_OTA_FAILED`;
+- `S3_OTA_STARTED`, `S3_OTA_DONE`, `S3_OTA_FAILED`;
+- `PROFILE_UPLOAD_DONE`, `PROFILE_UPLOAD_FAILED`,
+  `WEB_LOAD_REQUEST_FAILED`.
+
+Never persist firmware/profile payloads, HTTP bodies, signing material or other
+secrets. Record mutation type and bounded result metadata only.
+
+### Status and retrieval
+
+Expose logger health in `/api/status`: availability, queue depth, dropped-event
+count, current-file bytes and last error. Add a compact Settings status such as
+`SD Log: OK - 284 KB - dropped 0`.
+
+After the writer is stable, add a read-only `GET /api/diagnostic-log` endpoint.
+The writer must flush before the snapshot is streamed, and read/rotation access
+must be serialized without blocking event producers. Do not add a remote log
+delete endpoint in the first implementation.
+
+### Host coverage
+
+- non-blocking enqueue, ordering and monotonic sequence numbers;
+- exact queue-full drop accounting;
+- bounded text copy and newline/control-character sanitization;
+- stable formatting for every event type;
+- batch write, periodic flush and controlled-reboot sync;
+- four-generation size-bounded rotation;
+- open/write failure recovery and operation without `/sd`;
+- rate limiting and aggregation of repeated audio/UART anomalies;
+- concurrent producers without record corruption;
+- writer shutdown and ownership cleanup.
+
+Register the new host test group in `tests/run_p4_host_tests.ps1`.
+
+### Hardware acceptance
+
+1. Boot with a working SD card and verify the schema/boot record.
+2. Boot without a card and confirm normal USB library and playback operation.
+3. Exercise USB mount, track load and disconnect/reconnect records.
+4. Run at least 30 minutes of dual-deck playback and confirm the logger adds no
+   PCM drops, audio late regressions, UI stalls, watchdogs or resets.
+5. Produce one controlled track-load failure and verify its bounded record.
+6. Use a test build to fill the event queue and verify the drop counter without
+   blocking producers.
+7. Use a reduced test-only rotation threshold to validate all four generations.
+8. Power-cycle during normal logging and verify that retained files remain
+   mountable and readable on the next boot.
+9. Alternate track loads while monitoring internal heap and PSRAM for leaks or
+   fragmentation.
+
+### Implementation order and completion checks
+
+1. Implement the fixed event schema, non-blocking queue and single writer task.
+2. Add batching, sync, rotation, status snapshot and failure accounting.
+3. Integrate boot, SD, USB and library events.
+4. Add authoritative track-load/cache timing after the metadata-load merge.
+5. Add rate-limited audio anomalies, then S3/profile and OTA/web events.
+6. Add Settings status and finally the read-only download endpoint.
+7. Run the complete P4 host suite, build `firmware/main-deck-p4` with ESP-IDF
+   v5.5, run `git diff --check`, inspect `git status --short`, and record which
+   hardware acceptance rows remain open.
+
+## TODO: Record The P4 Master Output To microSD
+
+Status: planned 2026-07-20; not implemented or hardware-benchmarked. The
+existing `audio_engine_decode_to_wav()` helper is PC-test-only, rewinds and
+decodes Deck 1 offline, and is not a live master recorder. It may supply small
+WAV-header helpers after they are extracted, but it must not be enabled as the
+firmware recording path.
+
+### Product definition and capture point
+
+Record the exact stereo 16-bit PCM master bus produced for the PCM5102A MAIN
+output. The tap belongs after both decks have passed pitch/scratch/key-lock,
+EQ, channel filter, Pad/Beat FX, channel/crossfader/master gains and the final
+master limiter, and immediately before the existing I2S write. Capture
+`master_out`; do not capture `hp_out`, pre-fader deck frames or the offline
+decoder output.
+
+The recorder is optional and subordinate to playback. Any allocation, queue,
+SD or writer failure must fail/stop the recording while leaving MAIN audio,
+headphone cue, UI and controller operation running. The audio output task must
+never call FAT/VFS functions, allocate memory, wait for recorder space or take
+a storage mutex.
+
+### Component boundary and state model
+
+Add a P4 `audio_recorder` component with a small public API:
+
+```c
+typedef enum {
+    AUDIO_RECORDER_STOPPED = 0,
+    AUDIO_RECORDER_STARTING,
+    AUDIO_RECORDER_RECORDING,
+    AUDIO_RECORDER_STOPPING,
+    AUDIO_RECORDER_ERROR,
+} audio_recorder_state_t;
+
+esp_err_t audio_recorder_init(void);
+esp_err_t audio_recorder_start(uint32_t sample_rate);
+esp_err_t audio_recorder_stop(void);
+bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
+                                uint32_t sample_rate);
+esp_err_t audio_recorder_get_status(audio_recorder_status_t *out);
+```
+
+`audio_recorder_push_master()` is the single-producer real-time boundary. It
+copies one already-rendered master block into preallocated storage and returns
+immediately. It performs no logging, formatting, file operation, allocation or
+blocking synchronization. A full ring increments an atomic drop counter,
+requests recorder shutdown and returns false; the caller continues normal I2S
+output.
+
+Start is allowed only when `/sd` is mounted, a writable recordings directory
+can be prepared, minimum free-space and PSRAM checks pass, and the output
+sample rate is known. Recording is never restored automatically after reboot.
+
+### PCM ring and writer task
+
+- Use a fixed single-producer/single-consumer ring in PSRAM. Start with a
+  512 KiB target, providing about 2.7 seconds at 48 kHz stereo PCM; make
+  256 KiB, 512 KiB and 1 MiB build-time choices for hardware comparison.
+- Allocate the complete ring before entering `RECORDING`; never resize it while
+  active. Allocation failure returns a visible `NO MEMORY` start error without
+  changing playback state.
+- Store fixed 256-frame blocks matching `AE_OUT_FRAMES`, with sequence and
+  sample-rate metadata published through release/acquire indices so rate
+  transitions remain ordered with PCM.
+- Run one low-priority writer task below audio/decode and LVGL priorities. Begin
+  on the non-audio core and change affinity only from measured evidence.
+- Drain PCM in 32-64 KiB sequential batches. The writer owns the open recording
+  file, WAV header updates, sync, segment changes and final rename.
+- Report ring used/high-water, dropped blocks/frames, bytes written, elapsed
+  recording time, current segment, sample rate and last error through a copied
+  status snapshot.
+
+The output task currently skips rendering when both decks are inactive. While
+recording, preserve the recording timeline by producing/pushing correctly
+paced silent master blocks at the established output rate. Do not busy-loop;
+retain I2S or calculated block-period pacing. Starting REC before an output
+rate exists should fail rather than invent a rate.
+
+### WAV files, segmentation and crash recovery
+
+Store recordings under:
+
+```text
+/sd/recordings/REC_B<boot-id>_<session>_<segment>_<rate>Hz.wav.part
+```
+
+Use PCM WAV, stereo, signed 16-bit little-endian at the actual master output
+rate. On clean segment completion, patch the RIFF/data sizes, flush/sync and
+atomically rename `.wav.part` to `.wav`.
+
+- Limit a segment to 1 GiB, safely below the classic RIFF/FAT 4 GiB boundary;
+  continue automatically in the next numbered segment.
+- A master output sample-rate change closes the current segment and opens a new
+  segment at the new rate. Never place multiple PCM rates inside one WAV file.
+- Checkpoint the WAV sizes and sync approximately every ten seconds so a sudden
+  power loss leaves a bounded repair window without excessive FAT traffic.
+- At boot, scan only `/sd/recordings/*.wav.part`, validate the placeholder
+  header and file length, truncate an incomplete stereo frame if necessary,
+  patch sizes and rename the result with a recovered marker. Never rewrite an
+  already final `.wav` file.
+- Use an NVS-backed boot ID plus session/segment counters because wall-clock
+  time may not be available. A valid clock may additionally supply a display
+  label but is not the uniqueness source.
+
+At 44.1 kHz the raw data rate is 176.4 kB/s (about 635 MB/h); at 48 kHz it is
+192 kB/s (about 691 MB/h). Query free space in the writer/storage context, not
+the LVGL task. Start with at least 128 MiB free and stop cleanly at a 64 MiB
+reserve, with both thresholds centralized for later product tuning.
+
+### Shared microSD coordination
+
+Introduce a small SD I/O gate/arbiter before enabling continuous recording.
+Recorder, `track_meta_cache`, controller-profile install, service-log writes
+and free-space queries must use the same storage boundary for administrative
+and FAT operations. The recorder acquires it only around bounded 32-64 KiB
+writes and releases it between batches so cache/profile/service work can run.
+No audio producer ever acquires this gate.
+
+- Raise the SD VFS `max_files` from the current four only after auditing the
+  simultaneous recorder, service log, cache/profile and web-download handles.
+- Move Settings free-space polling away from direct `f_getfree()` on the LVGL
+  path; publish a cached storage/recorder status instead.
+- Reject profile upload or log download with a clear busy/error result if the
+  bounded storage policy cannot service it safely during REC; never allow such
+  operations to back-pressure audio.
+- Detect write/card-removal failures, close or abandon the `.part` file as far
+  as the medium permits, set recorder `ERROR` and disable further pushes.
+
+The planned structured SD service logger should reuse this arbiter later. The
+recorder must not depend on the service-log TODO being complete first.
+
+### Controls and operator feedback
+
+Add explicit start/stop controls to the P4 UI and guarded web API; do not infer
+recording from deck play state and do not add an FLX4 mapping without a separate
+documented control decision.
+
+- Show a persistent red `REC` indicator outside transient status text while
+  active, plus elapsed time and remaining/free-space summary.
+- Refresh time/space at no more than 1 Hz and invalidate only changed labels;
+  do not add frame-rate animation that could disturb Overview waveforms.
+- Show `STARTING`, `STOPPING`, `SD FULL`, `SD ERROR`, `NO MEMORY` and dropped-PCM
+  failure states explicitly. REC must never remain visually active after the
+  component has stopped accepting PCM.
+- Add guarded `POST /api/recording/start` and `/api/recording/stop`; expose the
+  copied recorder snapshot under `/api/status`. Repeated start/stop requests
+  must be idempotent or return a precise conflict.
+- Stop transitions disable new pushes first, drain the finite ring in the
+  writer, finalize the header, sync, rename and only then publish `STOPPED`.
+
+### Host and integration coverage
+
+- WAV header encode/patch, exact stereo byte counts and little-endian samples;
+- SPSC ring wrap, ordered block metadata and concurrent producer/consumer;
+- non-blocking full-ring behavior, exact drop accounting and auto-stop request;
+- start rejection for missing SD, unknown rate, insufficient space and failed
+  PSRAM allocation;
+- normal start/stop, stop-with-backlog drain and repeated control requests;
+- 44.1/48 kHz rate transition producing two independently valid WAV files;
+- 1 GiB boundary logic using a reduced test threshold;
+- silent-block timeline behavior while no deck is active;
+- write/open/sync/rename/card-removal failures without playback-state changes;
+- `.wav.part` recovery, malformed-part rejection and idempotent reboot scan;
+- status snapshot consistency and 1 Hz UI update planning;
+- SD gate fairness between recorder batches and cache/profile/log clients.
+
+Register new tests in `tests/run_p4_host_tests.ps1`. Keep the PC offline
+`audio_engine_decode_to_wav()` tests separate so they cannot falsely satisfy
+live post-mix recorder coverage.
+
+### Hardware acceptance and performance gates
+
+1. Record and play back single-deck 44.1 kHz and 48 kHz material; validate WAV
+   headers, duration, stereo channels and absence of discontinuities.
+2. Record the dual-deck master while exercising channel faders, crossfader,
+   EQ/filter, Pad/Beat FX, loops, scratch, pitch and Master Tempo; verify the
+   file matches the audible RCA master behavior and excludes headphone PFL.
+3. Load mixed-rate decks and force an output-rate transition; require clean
+   segment finalization and no invalid mixed-rate WAV.
+4. Verify recorded silence and continuous duration across a paused/no-active-
+   deck interval.
+5. Run at least 60 minutes of worst-case dual-deck recording using the normal
+   20 MHz four-bit SDMMC configuration. Require recorder dropped frames `0`,
+   monitor PCM dropped `0`, no new audio-output late events, DSI underruns `0`,
+   no watchdog/reset and operator confirmation of fluid, flash-free waveforms.
+6. Capture recorder push timing. Target p99 below 100 us per 256-frame block;
+   the decisive gate remains zero playback/output regression.
+7. Record ring high-water and writer latency with the selected production SD
+   card and one deliberately slower card. A sustained/full ring must stop REC,
+   not audio.
+8. Exercise low-space stop, SD removal/write failure, queue saturation and
+   controlled stop while both decks continue playing.
+9. Interrupt power during recording, reboot and verify bounded `.part` recovery
+   without modifying completed recordings.
+10. Compare internal heap, largest free block and PSRAM before/during/after REC,
+    including two of the largest supported track preloads; require no leak and
+    document the chosen 512 KiB/1 MiB ring tradeoff.
+
+### Implementation order and completion checks
+
+1. Add pure WAV/segment/recovery helpers and host tests.
+2. Add the SPSC PCM ring, recorder state machine and writer with fake storage.
+3. Add the bounded SD arbiter and migrate direct free-space/cache/profile
+   administrative operations needed for safe concurrency.
+4. Wire the post-limiter `master_out` tap and inactive-deck silence behavior.
+5. Add real SD file handling, checkpoint/finalize/recovery and status counters.
+6. Add UI/API controls and low-rate feedback.
+7. Run the complete P4 host suite and an ESP-IDF v5.5 P4 build.
+8. Complete the hardware matrix above before marking recording production-
+   ready; update `ARCHITECTURE.md`, `STARTUP_CHECKLIST.md`, `RISK_REGISTER.md`,
+   `DOCUMENTATION_STATUS.md` and the P4 component guide with measured results.
+9. Run `git diff --check`, inspect `git status --short`, and explicitly list any
+   hardware rows not executed.
+
+## TODO: Add P4 Pull OTA Through Temporary Wi-Fi STA Mode
+
+Status: planned 2026-07-20; not implemented or hardware-benchmarked. Preserve
+the current standalone P4 Wi-Fi Remote as the normal operating mode and add a
+temporary client mode only for checking and downloading signed P4 updates. The
+canonical mDNS hostname is exactly `pajoniiir.local`; do not introduce another
+product hostname or a differently spelled alias.
+
+The existing signed `.ddjota` upload over the `PAJONIIR` AP remains the offline
+and service fallback. S3 OTA and `PajoNiiiR-S3-DEBUG` remain outside this first
+implementation batch.
+
+### Operating model and ownership
+
+The P4/C6 Wi-Fi path has two mutually exclusive operational modes:
+
+- `REMOTE_AP`: the existing `PAJONIIR` SoftAP, captive UI and full secondary
+  web control;
+- `OTA_STA`: a temporary connection to a configured service Wi-Fi network or
+  phone hotspot for update discovery and bundle download.
+
+The normal success path is:
+
+```text
+REMOTE_AP -> STA_CONNECTING -> UPDATE_CHECK -> DOWNLOAD -> VERIFY -> REBOOT
+```
+
+Every non-reboot exit must restore the standalone service surface:
+
+```text
+STA_CONNECTING / UPDATE_CHECK / DOWNLOAD / VERIFY failure
+    -> RESTORE_AP -> REMOTE_AP
+```
+
+Use one worker task as the sole owner of AP/STA transitions. UI callbacks, web
+handlers and OTA code submit commands and read copied status snapshots; they
+must not call blocking ESP-Hosted, Wi-Fi or DNS lifecycle functions directly.
+Serialize rapid toggles, duplicate update requests and concurrent AP/STA
+requests.
+
+Keep network mode separate from OTA transfer state. Add explicit models such
+as:
+
+```c
+typedef enum {
+    WIFI_LINK_OFF = 0,
+    WIFI_LINK_REMOTE_AP,
+    WIFI_LINK_SWITCHING_TO_STA,
+    WIFI_LINK_OTA_STA,
+    WIFI_LINK_RESTORING_AP,
+    WIFI_LINK_ERROR,
+} wifi_link_mode_t;
+
+typedef enum {
+    P4_OTA_PULL_IDLE = 0,
+    P4_OTA_PULL_CHECKING,
+    P4_OTA_PULL_AVAILABLE,
+    P4_OTA_PULL_DOWNLOADING,
+    P4_OTA_PULL_VERIFYING,
+    P4_OTA_PULL_READY_TO_REBOOT,
+    P4_OTA_PULL_FAILED,
+} p4_ota_pull_state_t;
+```
+
+### Wi-Fi lifecycle refactor
+
+Split the current all-or-nothing `wifi_link_stop()` path into independently
+owned operations for:
+
+- stopping captive DNS and the HTTP service;
+- stopping/destroying the AP interface;
+- stopping/destroying the STA interface;
+- fully deinitializing `esp_wifi` and ESP-Hosted when no mode needs the C6.
+
+An AP-to-STA transition should reuse the active ESP-Hosted transport rather
+than tear down and immediately recreate the C6 link. Stop the AP service,
+switch the Wi-Fi interface/mode, create the STA netif, register its event/IP
+handlers and wait for an authoritative IP event before starting update
+discovery.
+
+Fix the existing failure-loop behavior while doing this work. A failed AP or
+STA start must not immediately retry forever while `desired != active`. Use a
+bounded policy, initially three attempts with 1/2/4-second backoff, then publish
+an error and restore the previous stable mode. A later attempt requires a new
+operator request.
+
+Before leaving `REMOTE_AP`, reject the request if:
+
+- either deck is playing or the audio engine cannot stop cleanly;
+- another OTA transfer is active;
+- a controller-profile install/activation is in progress;
+- a critical media/storage operation owns the required gate;
+- the planned master recorder is active when that component is later added.
+
+Do not perform automatic background update checks during playback.
+
+### Service-network configuration
+
+Persist bounded OTA-client configuration in P4 NVS:
+
+- service-network SSID;
+- service-network password;
+- update base URL or selected release channel;
+- optional last accepted release identifier/security counter.
+
+Never log the password, place credentials in a URL/query string or return them
+from a status API. Provide explicit save, replace and clear operations. Validate
+SSID, password and URL lengths before persistence. Keep production NVS/flash
+encryption as an explicit release-security gate if credentials are retained on
+shipped devices.
+
+Allow configuration through the current guarded P4 web UI. The physical P4
+Settings view must at minimum provide `CHECK FOR UPDATE`, `CANCEL`, `CLEAR
+WI-FI` and a copied low-rate status/progress display; it must not require the
+web connection to remain alive after the AP is stopped.
+
+### Mandatory mDNS identity
+
+Add the ESP-IDF mDNS component to the P4 target with:
+
+- hostname `pajoniiir`;
+- canonical URL `http://pajoniiir.local`;
+- `_http._tcp` service on port 80;
+- a stable instance name such as `DDJ-FFL4 P4`.
+
+Register `pajoniiir.local` on the AP interface during normal operation and
+re-register it on the STA interface after an IP address is obtained. Remove
+the interface registration before destroying that netif. The normal AP web UI
+must remain reachable through both `http://192.168.4.1` and
+`http://pajoniiir.local`.
+
+When P4 is connected to the service network, the web/status surface may also
+be reached at `http://pajoniiir.local` by clients on that network. Treat this as
+best-effort convenience: an upstream AP may use client isolation, and a phone
+hosting a hotspot may not route mDNS or client traffic back to its own UI.
+Standalone secondary control remains guaranteed by restoring `PAJONIIR`.
+
+Replace the current fixed `Host: 192.168.4.1` API guard with a tested dynamic
+allow-list containing only:
+
+- `pajoniiir.local` and `pajoniiir.local:80`;
+- `192.168.4.1` and `192.168.4.1:80` while the AP interface is active;
+- the authoritative local STA IPv4 address, with optional `:80`, while STA is
+  active.
+
+Do not accept an arbitrary hostname merely because P4 is in STA mode. Preserve
+the existing mutation header and strict request parsing; mDNS is discovery, not
+authentication.
+
+### AP-to-STA operator flow
+
+For an update initiated from the web UI:
+
+1. Validate prerequisites and persist the accepted operation before switching
+   modes.
+2. Return `202 Accepted` with a clear warning that `PAJONIIR` will temporarily
+   disappear and that progress continues on the physical display.
+3. Delay the network transition only long enough for the HTTP response to be
+   transmitted; do not block the HTTP handler on association or download.
+4. Stop the AP web/DNS services and switch the C6 to STA mode.
+5. Connect with bounded association and DHCP timeouts.
+6. Start mDNS and, where the network permits it, the guarded status/web service
+   on `pajoniiir.local`.
+7. Check the signed update metadata and require explicit install confirmation.
+8. On no-update, cancel or failure, tear down STA and restore the AP, captive
+   DNS, web service and mDNS identity.
+
+Show `CONNECTING`, `CHECKING`, `UPDATE AVAILABLE`, download percentage,
+`VERIFYING`, `RESTORING PAJONIIR`, `ERROR` and `REBOOTING` explicitly. Do not
+leave the Settings switch claiming that the Remote AP is on while it is
+temporarily unavailable.
+
+### Pull-OTA component and signed update metadata
+
+Add a P4 `p4_ota_pull` component using `esp_http_client`. It owns server
+connection, certificate validation, bounded metadata parsing, download
+timeouts, cancellation and copied progress/status. Start with HTTPS server
+certificate validation in addition to the existing firmware signature; TLS
+protects update-source privacy and availability, while the embedded ECDSA key
+remains the firmware-authenticity boundary.
+
+The device-consumable signed update metadata must identify:
+
+- release/channel ID and version;
+- target `p4` and project `main-deck-p4`;
+- `.ddjota` URL, exact size and SHA-256;
+- minimum compatible release where needed;
+- a future monotonic security/release counter.
+
+Reuse or extend the canonical release packager so device metadata is generated
+from the same artifacts as the existing outer release manifest. Do not create
+a separately maintained unsigned update index. Because Git-derived version
+strings are not a monotonic anti-rollback value, never auto-install a release
+only because its version text looks newer. A downgrade requires an explicit
+warning and physical confirmation; a future security counter may block silent
+downgrades while preserving a documented service-recovery override.
+
+### One transport-independent `.ddjota` receiver
+
+Do not duplicate bundle parsing and verification between the current HTTP POST
+upload and the new HTTP client download. Extract a streaming receiver with an
+API equivalent to:
+
+```c
+esp_err_t p4_ota_bundle_begin(size_t content_length);
+esp_err_t p4_ota_bundle_feed(const void *data, size_t size);
+esp_err_t p4_ota_bundle_finish(void);
+void p4_ota_bundle_abort(const char *reason);
+```
+
+The receiver accumulates only the fixed bundle/image headers, then:
+
+1. validates bundle format, target, ESP32-P4 chip, project, key ID, declared
+   size and exact transport length;
+2. verifies the ECDSA P-256 manifest signature before `esp_ota_begin()` or any
+   flash erase;
+3. validates the embedded ESP32-P4 image header;
+4. streams the image directly into the inactive OTA slot without buffering the
+   complete bundle in RAM or on microSD;
+5. calculates and checks the signed image SHA-256;
+6. checks the image project name and exact signed version;
+7. calls `esp_ota_set_boot_partition()` only after every check succeeds.
+
+The existing AP upload handler and `p4_ota_pull` must both feed this component.
+For the first implementation require an authoritative `Content-Length`; reject
+chunked, trailing or truncated bundles rather than adding resume complexity.
+
+### Failure and recovery contract
+
+Before boot-partition activation, every network, timeout, cancellation,
+allocation, TLS, metadata, signature, length, hash or flash error must:
+
+- abort any open OTA handle;
+- leave the running/current boot slot unchanged;
+- stop and destroy the temporary STA interface;
+- restore `PAJONIIR`, captive DNS, the web server and `pajoniiir.local`;
+- publish one bounded operator-visible error and structured service event.
+
+After successful activation, reboot normally and retain the existing
+`PENDING_VERIFY` startup-health/rollback behavior. A successful HTTP download
+or `READY_TO_REBOOT` state is not functional acceptance; the new image becomes
+authoritative only after boot health marks it `valid`.
+
+### Host and integration coverage
+
+- Wi-Fi mode and OTA-pull state transitions, including every recovery edge;
+- rapid toggles, duplicate requests and command serialization;
+- bounded retries/backoff with no tight failure loop;
+- SSID/password/URL validation and credential-redacted status/log output;
+- exact `pajoniiir.local` registration lifecycle on AP and STA interfaces;
+- dynamic Host allow-list for AP IP, current STA IP and canonical mDNS name;
+- fragmented `.ddjota` headers/payload across arbitrary feed boundaries;
+- wrong target, chip, project, key, signature, version, size, SHA and trailing
+  data rejection before boot-slot activation;
+- timeout/disconnect/cancel before and after `esp_ota_begin()`;
+- AP restoration after association, DHCP, DNS, TLS, HTTP and OTA failures;
+- retained behavior of the existing signed AP upload endpoint;
+- copied UI/API status under concurrent reads.
+
+Register new tests in `tests/run_p4_host_tests.ps1` and retain the common OTA
+signing/release-helper suites.
+
+### Hardware acceptance
+
+1. Confirm existing `PAJONIIR` web control is unchanged before any OTA-client
+   operation.
+2. Resolve and use `http://pajoniiir.local` while connected directly to the P4
+   AP; retain `192.168.4.1` as the recovery address.
+3. Configure a service AP, switch to STA, obtain DHCP and resolve
+   `pajoniiir.local` from at least the supported phone and PC workflows where
+   the AP permits client communication.
+4. Check for an update without installing it, cancel and confirm automatic AP
+   restoration.
+5. Download a valid signed bundle, boot the inactive slot, confirm exact
+   version/slot and wait for image state `valid`.
+6. Exercise invalid signature, wrong target, truncated body, trailing data,
+   server stall and connection loss. Require no boot-slot change and automatic
+   restoration of `PAJONIIR` after every case.
+7. Test wrong Wi-Fi credentials, missing DHCP, DNS failure, TLS failure and low
+   RSSI without a watchdog, retry storm or permanent loss of the service AP.
+8. Interrupt power during download and during first boot, verifying intact
+   current firmware and the existing forced-rollback behavior respectively.
+9. Confirm update entry is rejected while either deck plays and that no normal
+   background check adds audio, UART, UI or DSI timing regressions.
+10. Re-run the existing signed `.ddjota` upload through `PAJONIIR` to prove the
+    offline fallback remains functional.
+11. During repeated AP/STA/AP cycles monitor internal heap, largest free block,
+    C6/ESP-Hosted resources and netif/event-handler counts for leaks.
+12. Require no PCM drops, audio-output late regression, UART frame loss, DSI
+    underrun, watchdog, panic or reset during accepted transitions.
+
+### Implementation order and completion checks
+
+1. Add pure state models, command serialization, bounded retry/backoff and host
+   tests; fix the existing AP start-failure loop first.
+2. Refactor ESP-Hosted/Wi-Fi/AP service lifecycle without changing the normal
+   `PAJONIIR` behavior.
+3. Add `pajoniiir.local`, dynamic Host validation and AP-mode discovery tests.
+4. Add bounded NVS-backed service-network configuration and redacted UI/API
+   status.
+5. Implement AP-to-STA-to-AP transitions and failure restoration before adding
+   any remote download.
+6. Extract the shared streaming `.ddjota` receiver and migrate the existing AP
+   upload handler to it without changing accepted artifacts.
+7. Extend the release tooling with signed device-consumable update metadata and
+   add `p4_ota_pull` HTTPS check/download support.
+8. Add physical UI and guarded web controls, asynchronous `202 Accepted`
+   behavior, progress, cancel and explicit AP-restoration feedback.
+9. Run the complete P4 host suite, common OTA signing/package suites and an
+   ESP-IDF v5.5 P4 build.
+10. Complete the hardware matrix before marking pull OTA ready; update
+    `OTA-UPDATE.md`, `ARCHITECTURE.md`, `STARTUP_CHECKLIST.md`,
+    `RISK_REGISTER.md`, `DOCUMENTATION_STATUS.md` and the P4 component guide
+    with measured results.
+11. Run `git diff --check`, inspect `git status --short`, and explicitly list
+    every hardware row not executed.
