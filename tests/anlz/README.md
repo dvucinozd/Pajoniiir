@@ -18,7 +18,7 @@ make test
 Expected output (all PASS):
 
 ```
-CDJ100S-XXX ANLZ Parser Test
+DDJ-FFL4 ANLZ Parser Test
 ============================
 
 === Building synthetic test files ===

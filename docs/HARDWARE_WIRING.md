@@ -5,8 +5,6 @@ power budget, cooling and RF behavior after final enclosure installation.
 
 ## Inter-Board UART
 
-Keep the inherited CDJ100S-XXX UART wiring.
-
 | Signal | ESP32-S3 | ESP32-P4 JC4880 JP1 | Direction |
 | --- | --- | --- | --- |
 | GND | GND | JP1 pin 3 or 4 | shared |

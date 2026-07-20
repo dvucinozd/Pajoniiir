@@ -12,7 +12,7 @@ DevKitC/CDJ-panel/USB-device implementation details below are superseded.
   `0xA5` events, returns P4-owned LED state, streams FLX4 USB-headphone audio
   from the P4 monitor PCM link, and provides the service Debug AP/OTA path.
 - P4 remains authoritative for playback, mixer, position, effect and LED state.
-- R5D permanently removed the inherited CDJ-100S GPIO panel, TinyUSB-device
+- R5D permanently removed the inherited GPIO panel, TinyUSB-device
   mode, `panel_io`, `midi_compat` and `calibration` product paths.
 
 Use [`ARCHITECTURE.md`](ARCHITECTURE.md),
@@ -32,7 +32,7 @@ Split the project into two cooperating boards:
    - Deck state and visual feedback.
 
 2. **ESP32-S3 control/MIDI board**
-   - CDJ-100S buttons.
+   - Panel buttons.
    - Jog encoder.
    - Browse encoder.
    - Pitch fader.
@@ -59,7 +59,7 @@ The ESP32-S3-DevKitC-1 is also convenient because Espressif breaks most module I
 | --- | --- | --- |
 | ESP32-S3 | Recommended | Native USB device, enough GPIO, good ESP-IDF/Arduino support |
 | RP2040 | Good alternative | Excellent USB MIDI and PIO, but different ecosystem |
-| Teensy | Very compatible with original XDJ100SX | Original firmware is Teensy-based, but less aligned with ESP-IDF work |
+| Teensy | Very compatible with the original controller design | Original firmware is Teensy-based, but less aligned with ESP-IDF work |
 | ESP32-WROOM | Not recommended for USB MIDI | No native USB device peripheral |
 
 ## Benefits
@@ -68,7 +68,7 @@ The ESP32-S3-DevKitC-1 is also convenient because Espressif breaks most module I
 - Keeps high-rate controls close to a simple, dedicated controller.
 - Makes wiring cleaner and easier to replace.
 - Lets us test CDJ controls independently from display/audio firmware.
-- Preserves a USB MIDI compatibility path close to the original XDJ100SX Teensy design.
+- Preserves a USB MIDI compatibility path close to the original Teensy-based design.
 - Reduces risk on the ESP32-P4, which can focus on UI, audio, and storage.
 
 ## Trade-Offs

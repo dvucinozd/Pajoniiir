@@ -36,9 +36,7 @@ whether they remain active or are historical context.
 - [`control-board-decision.md`](control-board-decision.md) — historical origin and current disposition of the two-board/S3 decision.
 - [`external-bsp-analysis.md`](external-bsp-analysis.md) — external BSP comparison.
 - [`framework-decision.md`](framework-decision.md) — ESP-IDF production framework decision.
-- [`porting-architecture.md`](porting-architecture.md) — original port architecture record.
 - [`rekordbox-format-analysis.md`](rekordbox-format-analysis.md) — PDB/ANLZ/media layout analysis.
-- [`source-xdj100sx-analysis.md`](source-xdj100sx-analysis.md) — upstream source assessment.
 
 ## Validation records
 
@@ -82,7 +80,6 @@ touch screens. Current vinyl behavior is documented in `VINYL_SCRATCH_PLAN.md`.
 
 ## Reference material
 
-- [`reference/CDJ100S-XXX-README.md`](reference/CDJ100S-XXX-README.md) — preserved upstream README.
 - [`reference/DDJ-FLX4_MIDI_message_List.md`](reference/DDJ-FLX4_MIDI_message_List.md) — searchable transcription/reference notes.
 - [`reference/DDJ-FLX4_MIDI_message_List_E1.pdf`](reference/DDJ-FLX4_MIDI_message_List_E1.pdf) — vendor PDF.
 - [`reference/Pioneer-DDJ-FLX4.midi.xml`](reference/Pioneer-DDJ-FLX4.midi.xml) — Mixxx mapping used as the authoritative MIDI address seed.
@@ -114,7 +111,6 @@ illustrative and may lag small firmware polish changes.
 
 ## Local inputs not committed
 
-- `../upstream/XDJ100SX/`
 - `../upstream/esp32_p4_jc4880p433c_bsp/`
 - `../JC4880P443C_I_W/`
 

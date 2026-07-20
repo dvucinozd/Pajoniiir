@@ -58,8 +58,6 @@ evidence, not instructions to repeat old commit-specific flashes.
 
 ## Repository
 
-- [x] Start from a fork-style import of `dvucinozd/CDJ100S-XXX`.
-- [x] Preserve upstream README in `docs/reference/CDJ100S-XXX-README.md`.
 - [x] Add `docs/reference/Pioneer-DDJ-FLX4.midi.xml`.
 - [x] Commit the baseline import and DDJ-FFL4 documentation.
 

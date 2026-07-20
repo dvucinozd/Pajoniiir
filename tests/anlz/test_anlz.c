@@ -425,7 +425,7 @@ static void parse_real_file(const char *dat_path, const char *ext_path)
 
 int main(int argc, char *argv[])
 {
-    printf("CDJ100S-XXX ANLZ Parser Test\n");
+    printf("DDJ-FFL4 ANLZ Parser Test\n");
     printf("============================\n");
 
     if (argc >= 2) {

@@ -5,7 +5,7 @@ removed the corresponding `panel_io`, `calibration` and TinyUSB-device firmware;
 none of the GPIO panel wiring below is supported by the product build. The
 active compact build uses `PINOUT_XIAO_ESP32S3.md`.
 
-Complete wiring scheme for the CDJ100S-XXX control board firmware.  
+Complete wiring scheme for the imported historical control board firmware.  
 Values below document the imported historical design and are no longer mapped
 by S3 source code.
 
@@ -180,7 +180,7 @@ Notes:
 | VID | 0x303A (Espressif) |
 | PID | 0x4008 |
 | Manufacturer | DIY CDJ |
-| Product | CDJ100S-XXX |
+| Product | (historical device) |
 | MIDI channel buttons | Ch1 (0x90/0x80) |
 | MIDI channel jog | Ch2 (0xB1 CC20) |
 | MIDI channel browse | Ch3 (0x92/0x82) |

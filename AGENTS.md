@@ -11,8 +11,6 @@ je to prirodnije za firmware projekt.
 
 ## Projekt
 
-DDJ-FFL4 je fork-style port projekta `dvucinozd/CDJ100S-XXX`.
-
 Cilj je standalone dual-deck DJ sustav:
 
 - Pioneer DDJ-FLX4 je operator surface.
@@ -21,7 +19,7 @@ Cilj je standalone dual-deck DJ sustav:
 - Postojeci `0xA5` UART `control_link` ostaje interna komunikacija izmedu S3 i
   P4.
 
-Projekt je prerastao uvezeni single-deck CDJ100S baseline. Trenutni `master`
+Trenutni `master`
 ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master Tempo, dualni
 MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4/S3 OTA. Flanger, Delay i
 zadnji code-review remediation su software-testirani i OTA-deployani, ali
@@ -45,7 +43,6 @@ D:\Documents\DDJ-FFL4
   docs\DOCUMENTATION_STATUS.md
   docs\OTA-UPDATE.md
   docs\reference\Pioneer-DDJ-FLX4.midi.xml
-  docs\reference\CDJ100S-XXX-README.md
   firmware\control-board-s3
   firmware\main-deck-p4
   tests

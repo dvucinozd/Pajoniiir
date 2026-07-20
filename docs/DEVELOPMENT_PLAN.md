@@ -34,7 +34,6 @@ Status: complete.
 
 Deliverables:
 
-- import CDJ100S-XXX codebase;
 - vendor the FLX4 Mixxx XML mapping under `docs/reference/`;
 - document architecture, MIDI map, protocol, wiring, risks, and startup tasks;
 - run a repository sanity check.

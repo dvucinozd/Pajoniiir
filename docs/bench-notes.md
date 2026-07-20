@@ -297,5 +297,5 @@ Artifact hashes, sizes and state transitions are in
   overlay only for Deck 1. The scheduler still has an adaptive two-deck redraw budget when both
   decks are playing. Verified with host UI tests, `idf.py build` for `firmware/main-deck-p4`,
   COM15 flash/smoke capture (`bad_lines=0`), and hardware visual confirmation.
-- **Deferred to S3/chassis phase:** physical CDJ controls → `deck_core` queue; Beat LED feedback
-  (PQTZ → S3 LED); wire CDJ front panel to the S3 per `PINOUT.md`; mount display in the CDJ-100S opening.
+- **Deferred to S3/chassis phase:** physical panel controls → `deck_core` queue; Beat LED feedback
+  (PQTZ → S3 LED); wire the front panel to the S3 per `PINOUT.md`; mount display in the chassis opening.

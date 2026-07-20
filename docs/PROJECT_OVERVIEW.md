@@ -16,10 +16,6 @@ operator surface. It does not run Mixxx and it does not require a PC during
 performance. The DDJ-FLX4 supplies controls and LEDs; the ESP32 boards provide
 media browsing, playback, audio output, and display.
 
-The project starts as a fork-style port of CDJ100S-XXX because that codebase
-already proves the most important hardware and firmware surfaces on the target
-boards.
-
 ## Product Shape
 
 The system is split into two firmware targets:
@@ -38,9 +34,9 @@ The P4 owns all authoritative deck state. It loads Rekordbox media from USB,
 tracks current position, controls audio decode, drives the local display, and
 decides which LEDs should be on.
 
-## Baseline Inherited From CDJ100S-XXX
+## Inherited Firmware Baseline
 
-The imported upstream code already provides:
+The imported baseline code already provides:
 
 - ESP32-P4 JC4880 board support for ST7701S display, GT911 touch, ES8311 audio,
   USB mass storage, and SD card cache/config.

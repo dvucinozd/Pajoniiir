@@ -130,7 +130,7 @@ Available direct ESP32-P4 GPIOs on the header appear to be:
 
 The external BSP WiFi notes state that `GPIO28`, `GPIO29`, `GPIO30`, `GPIO31`, `GPIO34`, `GPIO35`, `GPIO49`, `GPIO50`, `GPIO51`, and `GPIO52` are RMII/Ethernet-related pins and are not used for ESP32-C6 WiFi. They may therefore be usable for CDJ controls if Ethernet is out of scope, but each pin still needs bench verification before assignment.
 
-This is not enough for the original XDJ100SX 23-signal contract if wired one-to-one.
+This is not enough for the original 23-signal panel contract if wired one-to-one.
 
 Earlier single-board fallback I/O strategy:
 

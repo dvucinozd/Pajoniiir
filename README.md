@@ -5,12 +5,6 @@ Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
 board. It reads Rekordbox media directly and does not require a PC during
 performance.
 
-DDJ-FFL4 is a fork-style port of
-[`dvucinozd/CDJ100S-XXX`](https://github.com/dvucinozd/CDJ100S-XXX). It keeps
-the proven display, touch, media-library, audio and UART foundations while
-replacing the original single-deck/CDJ-panel product model with a dual-deck
-FLX4 workflow.
-
 > [!IMPORTANT]
 > The last matching P4/S3 signed-OTA rollout baseline remains
 > **`RC1-131-gc391e306`** (P4 `ota_1`, S3 `ota_0 / valid`), deployed and

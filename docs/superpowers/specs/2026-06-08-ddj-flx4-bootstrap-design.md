@@ -8,7 +8,7 @@ Date: 2026-06-08
 ## Context
 
 The workspace started as an empty git repository. The project will use
-`dvucinozd/CDJ100S-XXX` as a fork-style technical base. The user supplied a
+an earlier ESP32 DJ-firmware project as a fork-style technical base. The user supplied a
 Croatian project note describing a standalone ESP32-P4 plus ESP32-S3 DDJ-FLX4
 system, and supplied a local Mixxx MIDI mapping XML:
 
@@ -24,10 +24,10 @@ docs/reference/Pioneer-DDJ-FLX4.midi.xml
 
 ## Decision
 
-Use a fork-style port. Import the CDJ100S-XXX codebase first, then layer
+Use a fork-style port. Import that earlier codebase first, then layer
 DDJ-FFL4 documentation and later firmware changes on top.
 
-This is preferred over a clean rewrite because CDJ100S-XXX already proves the
+This is preferred over a clean rewrite because that codebase already proves the
 JC4880P443C_I_W P4 board, S3 support firmware, Rekordbox parsing, LVGL UI,
 single-deck audio playback, and `0xA5` UART control link.
 

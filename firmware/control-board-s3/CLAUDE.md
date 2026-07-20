@@ -15,7 +15,7 @@ Seeed Studio XIAO ESP32S3 firmware for the DDJ-FFL4 control-board role. The
 active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
 deck-aware `0xA5` UART control-link frames to the ESP32-P4.
 
-The inherited CDJ-100S GPIO panel/TinyUSB-device path was permanently retired
+The inherited GPIO panel/TinyUSB-device path was permanently retired
 in R5D. The S3 USB OTG peripheral is always the controller host.
 
 Status:
