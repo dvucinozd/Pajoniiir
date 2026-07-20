@@ -790,6 +790,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_recorder_pipeline"
+        Dir = "tests/audio_recorder_pipeline"
+        Target = "test_audio_recorder_pipeline.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-o", "test_audio_recorder_pipeline.exe",
+            "test_audio_recorder_pipeline.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_ring.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_writer.c"
+        )
+    },
+    @{
         Name = "audio_wav_decoder"
         Dir = "tests/audio_wav_decoder"
         Target = "test_audio_wav_decoder.exe"
