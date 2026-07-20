@@ -47,6 +47,7 @@
 #include <math.h>
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
+#include "audio_recorder.h"
 #endif
 
 /* ESP-IDF logging — stubbed out in PC test builds */
@@ -2799,6 +2800,14 @@ static void ae_output_task(void *arg)
             /* No audio block will reach the normal peak-recording path below,
              * but the UI meter still needs zero-input release ticks. */
             decay_idle_deck_ui_peaks();
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            /* Keep the recording timeline continuous across an idle gap by
+             * pushing correctly paced silence at the established output rate. */
+            if (audio_recorder_get_state() == AUDIO_RECORDER_RECORDING) {
+                memset(master_out, 0, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+                audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
+            }
+#endif
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
@@ -2836,6 +2845,11 @@ static void ae_output_task(void *arg)
         }
         consumed[deck0_index] += s_scratch_handoff_consumed[deck0_index];
         consumed[deck1_index] += s_scratch_handoff_consumed[deck1_index];
+#if !defined(AUDIO_ENGINE_PC_TEST)
+        /* Tap the exact post-limiter MAIN block for the optional recorder. This
+         * is a no-op (single atomic load) unless recording is active. */
+        audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
+#endif
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
         /* When ES8311 is disabled the loop paces on the PCM5102A blocking
