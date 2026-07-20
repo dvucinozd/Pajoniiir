@@ -60,11 +60,13 @@ esp_err_t library_get_summary(int index,                     // copy bpm/duratio
 library_track_t *library_get_ptr(int index);
 #endif
 uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI/cache use
-esp_err_t library_load_anlz(library_track_t *track);         // populate precise BPM/cues from ANLZ
+/* Resolve one authoritative full ANLZ object and, in a single pass, populate the
+ * track summary fields (precise BPM/duration/low waveform/PVBR) and publish the
+ * same full beat/cue/high-res-waveform object as the current metadata. The
+ * publish is transactional: a failed load preserves the previous current. */
+esp_err_t library_load_anlz(library_track_t *track);
 void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
 
-/* Detailed metadata of the currently loaded track (beats, cues, high-res waveform) */
-esp_err_t library_load_current_anlz(const library_track_t *track);
 /* Return an owned deep copy of the current metadata. Caller calls anlz_free(). */
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);

@@ -589,7 +589,6 @@ static void ui_library_load_selected_deck(uint8_t deck)
 
     mock_library_load_track_to_deck(s_selected_track_idx);
     library_load_anlz(track);
-    library_load_current_anlz(track);
     anlz_metadata_t meta_snapshot;
     const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
     s_deck_loaded_track_key[deck] = track->track_id;
@@ -1060,7 +1059,6 @@ void ui_library_load_initial_track(void)
     library_track_t *track = library_get_ptr(0);
     if (track) {
         library_load_anlz(track);
-        library_load_current_anlz(track);
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         s_deck_loaded_track_key[CTRL_DECK_1] = track->track_id;
@@ -1410,7 +1408,6 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     library_track_t *track = library_get_ptr(index);
     if (track) {
         library_load_anlz(track);
-        library_load_current_anlz(track);
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         s_deck_loaded_track_key[deck] = track->track_id;

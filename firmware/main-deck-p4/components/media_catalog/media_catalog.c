@@ -115,9 +115,6 @@ esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
     }
 
     rc = library_load_anlz(track);
-    if (rc == ESP_OK) {
-        rc = library_load_current_anlz(track);
-    }
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "local ANLZ failed: %s", esp_err_to_name(rc));
         free(track);

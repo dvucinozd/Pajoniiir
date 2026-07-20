@@ -1596,7 +1596,19 @@ The complete A/B table and focused acceptance evidence are recorded in
 
 ## TODO: Unify P4 Summary And Full ANLZ Metadata Loading
 
-Status: planned 2026-07-20; not implemented or performance-benchmarked.
+Status: firmware implementation complete on branch `codex/anlz-metadata-merge`
+(2026-07-20). One internal `library_resolve_anlz()` now returns a single owned
+full ANLZ object (cache load once with high waveform; on a miss, DAT once + EXT
+once + one best-effort cache write). `library_load_anlz()` consumes that one
+object for both the track summary and the transactional current-metadata
+publish, so a failed load no longer erases the previously valid current
+metadata. `library_load_current_anlz()` is removed and all callers
+(`media_catalog.c`, WIN32 `ui_library.c`) use the single entry point. ESP-IDF
+v5.5 P4 build passes (`main-deck-p4.bin` 0x2097f0, 49% app free) and the
+`ui_library` host test passes. Still open: a dedicated `library.c` host-test
+harness (the suite does not currently compile `library.c`) and the hardware
+acceptance rows below; cache/USB timing is logged via `esp_timer_get_time()` but
+not yet benchmarked on hardware.
 
 ### Problem
 
