@@ -8,6 +8,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_random.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -26,6 +27,7 @@ static const char *TAG = "audio_recorder";
 #define AUDIO_RECORDER_WRITER_PRIO    3          /* below audio/decode and LVGL */
 #define AUDIO_RECORDER_IDLE_MS        10u        /* poll cadence when ring empty */
 #define AUDIO_RECORDER_MIN_FREE_BYTES (128ull * 1024ull * 1024ull)  /* to start */
+#define AUDIO_RECORDER_STOP_RESERVE_BYTES (64ull * 1024ull * 1024ull) /* stop at */
 #define AUDIO_RECORDER_CHECKPOINT_US  (10ll * 1000000ll)            /* 10 s */
 
 #define WRITER_EXITED_BIT (1u << 0)
@@ -61,6 +63,29 @@ static inline audio_recorder_state_t load_state(void)
 static inline void store_state(audio_recorder_state_t st)
 {
     __atomic_store_n(&s_state, (int)st, __ATOMIC_RELEASE);
+}
+
+/* Monotonic, NVS-persisted boot id so segment names are unique and ordered
+ * across reboots. Falls back to esp_random() when NVS is unavailable. */
+static uint32_t load_persistent_boot_id(void)
+{
+    nvs_handle_t h;
+    uint32_t id = 0u;
+    if (nvs_open("audio_rec", NVS_READWRITE, &h) == ESP_OK) {
+        (void)nvs_get_u32(h, "boot_id", &id);
+        id++;
+        if (id == 0u) {
+            id = 1u;
+        }
+        if (nvs_set_u32(h, "boot_id", id) == ESP_OK) {
+            (void)nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (id == 0u) {
+        id = esp_random() | 1u;
+    }
+    return id;
 }
 
 /* Free the ring and reset the stopped bookkeeping. */
@@ -111,6 +136,15 @@ static void writer_task(void *arg)
             if (now - s_last_checkpoint_us >= AUDIO_RECORDER_CHECKPOINT_US) {
                 audio_recorder_sink_checkpoint(&s_sink);
                 s_last_checkpoint_us = now;
+                uint64_t freeb = 0u;
+                if (audio_recorder_sink_free_bytes(&freeb) == ESP_OK &&
+                    freeb < AUDIO_RECORDER_STOP_RESERVE_BYTES) {
+                    ESP_LOGW(TAG, "microSD reserve reached (%llu B); stopping REC",
+                             (unsigned long long)freeb);
+                    s_last_error = ESP_ERR_NO_MEM;
+                    store_state(AUDIO_RECORDER_ERROR);
+                    break;
+                }
             }
             continue;
         }
@@ -132,6 +166,11 @@ esp_err_t audio_recorder_init(void)
         if (!s_writer_exited) {
             return ESP_ERR_NO_MEM;
         }
+        if (s_boot_id == 0u) {
+            s_boot_id = load_persistent_boot_id();
+        }
+        /* Recover any .part left by a crash/power loss before new recording. */
+        audio_recorder_sink_recover_orphans();
     }
     store_state(AUDIO_RECORDER_STOPPED);
     return ESP_OK;

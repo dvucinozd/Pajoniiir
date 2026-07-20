@@ -61,6 +61,15 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s);
  * .wav.part -> .wav. Idempotent when nothing is open. */
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s);
 
+/* Report free bytes on /sd (thin wrapper over esp_vfs_fat_info). */
+esp_err_t audio_recorder_sink_free_bytes(uint64_t *out_free_bytes);
+
+/* Boot recovery: scan /sd/recordings for orphan *.wav.part files left by a crash
+ * or power loss, truncate each to whole stereo frames, patch its WAV sizes and
+ * rename it to *.recovered.wav. Empty placeholders are removed. Never rewrites an
+ * already-final .wav. Safe to call when /sd is absent (no-op). */
+esp_err_t audio_recorder_sink_recover_orphans(void);
+
 #ifdef __cplusplus
 }
 #endif

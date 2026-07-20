@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <dirent.h>
 
 static const char *TAG = "rec_sink";
 
@@ -193,4 +194,103 @@ esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)
                  (unsigned long long)s->data_bytes);
     }
     return rc;
+}
+
+esp_err_t audio_recorder_sink_free_bytes(uint64_t *out_free_bytes)
+{
+    uint64_t total = 0, freeb = 0;
+    esp_err_t rc = esp_vfs_fat_info("/sd", &total, &freeb);
+    if (rc == ESP_OK && out_free_bytes) {
+        *out_free_bytes = freeb;
+    }
+    return rc;
+}
+
+static bool ends_with(const char *s, const char *suffix)
+{
+    size_t ls = strlen(s), lf = strlen(suffix);
+    return ls > lf && strcmp(s + ls - lf, suffix) == 0;
+}
+
+/* Recover a single orphan .wav.part. The caller holds sd_io_gate. */
+static void recover_one(const char *path)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return;
+    }
+    uint32_t data_bytes = 0u;
+    if (!audio_recorder_wav_recover_data_bytes((uint64_t)st.st_size, &data_bytes)) {
+        remove(path);   /* no complete frame -> drop the empty placeholder */
+        return;
+    }
+
+    FILE *f = fopen(path, "r+b");
+    if (!f) {
+        return;
+    }
+    uint8_t hdr[AUDIO_RECORDER_WAV_HEADER_BYTES];
+    if (fread(hdr, 1, sizeof(hdr), f) != sizeof(hdr) ||
+        memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
+        fclose(f);   /* not one of our placeholders; leave it alone */
+        return;
+    }
+    audio_recorder_wav_patch_sizes(hdr, data_bytes);
+    fflush(f);
+    if (fseek(f, 0, SEEK_SET) == 0) {
+        (void)fwrite(hdr, 1, sizeof(hdr), f);
+    }
+    fflush(f);
+    (void)ftruncate(fileno(f), (off_t)(AUDIO_RECORDER_WAV_HEADER_BYTES + data_bytes));
+    fsync(fileno(f));
+    fclose(f);
+
+    /* Publish as *.recovered.wav (never overwrite an existing final .wav). */
+    char final_path[AUDIO_RECORDER_SINK_PATH_MAX];
+    const char *suffix = ".wav.part";
+    size_t plen = strlen(path);
+    size_t slen = strlen(suffix);
+    if (ends_with(path, suffix) &&
+        (plen - slen) + strlen(".recovered.wav") < sizeof(final_path)) {
+        memcpy(final_path, path, plen - slen);
+        final_path[plen - slen] = '\0';
+        strncat(final_path, ".recovered.wav",
+                sizeof(final_path) - strlen(final_path) - 1u);
+        if (rename(path, final_path) == 0) {
+            ESP_LOGI(TAG, "recovered %s (%u B)", final_path, (unsigned)data_bytes);
+        }
+    }
+}
+
+esp_err_t audio_recorder_sink_recover_orphans(void)
+{
+    struct stat st;
+    if (stat(AUDIO_RECORDER_SINK_DIR, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        return ESP_OK;   /* no recordings dir yet */
+    }
+    DIR *d = opendir(AUDIO_RECORDER_SINK_DIR);
+    if (!d) {
+        return ESP_OK;
+    }
+    int recovered = 0;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (!ends_with(e->d_name, ".wav.part")) {
+            continue;
+        }
+        char path[AUDIO_RECORDER_SINK_PATH_MAX];
+        if (snprintf(path, sizeof(path), "%s/%s", AUDIO_RECORDER_SINK_DIR,
+                     e->d_name) >= (int)sizeof(path)) {
+            continue;
+        }
+        sd_io_gate_begin();
+        recover_one(path);
+        sd_io_gate_end();
+        recovered++;
+    }
+    closedir(d);
+    if (recovered > 0) {
+        ESP_LOGI(TAG, "scanned %d orphan .part file(s)", recovered);
+    }
+    return ESP_OK;
 }
