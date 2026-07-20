@@ -1844,8 +1844,32 @@ Register the new host test group in `tests/run_p4_host_tests.ps1`.
 
 ## TODO: Record The P4 Master Output To microSD
 
-Status: planned 2026-07-20; not implemented or hardware-benchmarked. The
-existing `audio_engine_decode_to_wav()` helper is PC-test-only, rewinds and
+Status: firmware implementation complete on branch `codex/p4-master-recorder`
+(2026-07-21), signed and OTA-deployed as `RC1-147-gb9bc8134` on P4 (S3 remains
+`RC1-146-g75feb6f1`; the recorder is P4-only). Implemented across seven slices:
+pure WAV/segment/recovery helpers (host-tested); a single-producer/single-
+consumer PSRAM block ring plus writer-drain core (host-tested); the STOPPED/
+STARTING/RECORDING/STOPPING/ERROR state machine with a PSRAM-guarded ring
+lifecycle and a low-priority writer task; a bounded `sd_io_gate` SD I/O arbiter
+with a host-tested admission policy; the post-limiter `master_out` tap in the
+audio output task (`audio_recorder_push_master`, a single atomic load when idle)
+plus paced idle silence; a real microSD WAV segment sink under `/sd/recordings`
+with 1 GiB / sample-rate segment rollover, 10 s checkpointing and atomic
+`.wav.part` -> `.wav` finalize; boot `.part` recovery, an NVS-persistent boot id
+and a 64 MiB free-space reserve auto-stop; and a Settings RECORD button wired
+through `audio_engine_get_output_sample_rate()`. Free-space start gate is
+128 MiB. The P4 build passes and the RECORD control is confirmed on hardware.
+
+Still open: the functional hardware `.wav` acceptance (record a live master mix,
+then confirm the file plays back as the exact MAIN output), the p99 push-timing
+and dropped-frame gates under sustained dual-deck load, the recovery smoke, and
+migrating the other `/sd` consumers (track_meta_cache, controller-profile,
+service log, Settings free-space) plus web-handler `admit()` onto `sd_io_gate`.
+The optional guarded `POST /api/recording/{start,stop}` + `/api/status` recorder
+object was deferred in favour of the Settings control. The notes below are the
+original design record.
+
+The existing `audio_engine_decode_to_wav()` helper is PC-test-only, rewinds and
 decodes Deck 1 offline, and is not a live master recorder. It may supply small
 WAV-header helpers after they are extracted, but it must not be enabled as the
 firmware recording path.
