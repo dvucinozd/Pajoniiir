@@ -128,6 +128,15 @@ korisnik eksplicitno trazi drugacije.
 
 Branch prefix za agent promjene je `codex/`.
 
+Repo je na `https://github.com/dvucinozd/Pajoniiir.git` (preimenovan sa starog
+`ESP32-DDJ-FLX4`; stari URL zasad redirecta). Od 2026-07-20 postoji samo
+`master` grana — lokalno i na `origin`; sve dovrsene `codex/*` i `feature/*`
+grane su mergane i obrisane. Jedinstveni odbaceni rad se ne brise nego arhivira
+pod anotiranim tagom `attic/*` (npr. `attic/phase-8-status-led-policy` = GPIO48
+WS2812 RGB status-LED policy engine, superseded XIAO GPIO21 jednobojnim LED-om).
+Prije brisanja bilo koje grane pokreni `git branch --no-merged master` i po
+potrebi tagiraj u `attic/*`.
+
 ## Arhitektonska pravila
 
 - P4 je autoritativan za playback state, deck state, audio position, mixer

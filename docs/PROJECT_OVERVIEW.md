@@ -200,7 +200,12 @@ The fork is no longer only the imported single-deck baseline:
   remaining stale Codex branches were reviewed and removed (local + remote),
   including the old experimental `codex/flx4-extended-controls`, whose verified
   slices had already been salvaged into `master`. That is a historical cleanup
-  record, not a claim about the repository's current branch inventory.
+  record, not a claim about the repository's current branch inventory. As of the
+  2026-07-20 audit the inventory is a single `master` branch: all merged
+  `codex/*` and `feature/*` branches were pruned local + remote, and the last
+  branch `codex/phase-8-implementation` was archived under tag
+  `attic/phase-8-status-led-policy` before removal. The repository also moved to
+  `https://github.com/dvucinozd/Pajoniiir.git`.
 - Vinyl/scratch is hardware-validated on both decks: platter touch selects a
   canonical PSRAM PCM timeline for forward/reverse scratch, including paused
   and CUE states, active-loop wrapping, clean window edges and click-free

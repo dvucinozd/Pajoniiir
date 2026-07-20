@@ -718,10 +718,16 @@ implementation branch and P4 splash-screen port were merged into `master`,
 verified, and pushed. The then-stale completed branches, including
 `codex/flx4-extended-controls`, were reviewed and removed after confirming their
 verified slices were already salvaged. That is a dated cleanup record, not a
-permanent branch invariant. As of the 2026-07-16 audit,
-`codex/phase-8-implementation` still has unique unmerged history and an
-associated prunable worktree record; audit branch reachability and worktrees
-before any future merge or deletion.
+permanent branch invariant. A 2026-07-20 branch audit then retired the last
+outstanding branch: `codex/phase-8-implementation` was confirmed superseded by
+`master` (which already carries its WAV/FLAC decode and S3 status-LED work), its
+only unique content — the GPIO48 WS2812 RGB status-LED policy engine — was
+archived under the annotated tag `attic/phase-8-status-led-policy`, and its
+branch plus linked worktree were removed. All merged `codex/*` and `feature/*`
+branches were then pruned locally and on `origin`, leaving only `master`. The
+repository also moved to `https://github.com/dvucinozd/Pajoniiir.git` (the old
+`ESP32-DDJ-FLX4` URL redirects). Re-run `git branch --no-merged master` and
+archive unique work under `attic/*` before deleting any future branch.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.

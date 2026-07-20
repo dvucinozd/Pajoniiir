@@ -103,10 +103,14 @@ evidence, not instructions to repeat old commit-specific flashes.
 - The old experimental `codex/flx4-extended-controls` was reviewed and removed
   (local + remote) on 2026-07-03 after confirming its verified slices were
   already salvaged into `master`. This is a dated cleanup snapshot, not a
-  permanent invariant. The 2026-07-16 audit found
-  `codex/phase-8-implementation` with unique unmerged history and a prunable
-  linked-worktree record; inspect reachability and worktrees before merging or
-  deleting any retained branch.
+  permanent invariant. A 2026-07-20 audit then retired the last branch:
+  `codex/phase-8-implementation` was confirmed superseded by `master`, its
+  unique GPIO48 RGB status-LED policy engine archived under tag
+  `attic/phase-8-status-led-policy`, and its branch + worktree removed. All
+  merged branches were pruned local + remote, leaving only `master`, and the
+  repository moved to `https://github.com/dvucinozd/Pajoniiir.git`. Still
+  inspect reachability and archive unique work under `attic/*` before deleting
+  any future branch.
 - The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host

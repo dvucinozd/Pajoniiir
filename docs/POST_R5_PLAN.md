@@ -121,6 +121,8 @@ Acceptance:
 
 ## E2 — Enclosure Wiring And Service Readiness
 
+Status: complete 2026-07-20.
+
 Goal: prove the final wiring is electrically safe and serviceable before the
 boards become difficult to reach.
 
