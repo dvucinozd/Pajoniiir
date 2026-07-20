@@ -803,6 +803,19 @@ $tests = @(
         )
     },
     @{
+        Name = "sd_io_gate"
+        Dir = "tests/sd_io_gate"
+        Target = "test_sd_io_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-DSD_IO_GATE_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/sd_io_gate/include",
+            "-o", "test_sd_io_gate.exe",
+            "test_sd_io_gate.c",
+            "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c"
+        )
+    },
+    @{
         Name = "audio_wav_decoder"
         Dir = "tests/audio_wav_decoder"
         Target = "test_audio_wav_decoder.exe"

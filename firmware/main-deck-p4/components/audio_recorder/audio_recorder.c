@@ -2,6 +2,7 @@
 #include "audio_recorder_ring.h"
 #include "audio_recorder_writer.h"
 #include "audio_recorder_wav.h"   /* AUDIO_RECORDER_WAV_FRAME_BYTES */
+#include "sd_io_gate.h"
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -173,6 +174,9 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         return ESP_ERR_NO_MEM;
     }
 
+    /* Make the shared SD arbiter defer heavy optional admin work while REC. */
+    sd_io_gate_set_recorder_active(true);
+
     ESP_LOGI(TAG, "recording started @ %u Hz, ring %u slots (%u B)",
              (unsigned)sample_rate, (unsigned)capacity, (unsigned)bytes);
     return ESP_OK;
@@ -203,6 +207,7 @@ esp_err_t audio_recorder_stop(void)
     s_capacity = 0u;
     s_sample_rate = 0u;
     store_state(AUDIO_RECORDER_STOPPED);
+    sd_io_gate_set_recorder_active(false);
     ESP_LOGI(TAG, "recording stopped (bytes=%llu err=%d)",
              (unsigned long long)s_bytes_written, (int)s_last_error);
     return ESP_OK;
