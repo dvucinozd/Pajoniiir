@@ -34,7 +34,6 @@ whether they remain active or are historical context.
 - [`BLE_MIDI_FLX4_FEASIBILITY.md`](BLE_MIDI_FLX4_FEASIBILITY.md) — why BLE-MIDI FLX4 support is not planned.
 - [`board-jc4880p443c-i-w-analysis.md`](board-jc4880p443c-i-w-analysis.md) — target P4 board analysis.
 - [`control-board-decision.md`](control-board-decision.md) — historical origin and current disposition of the two-board/S3 decision.
-- [`external-bsp-analysis.md`](external-bsp-analysis.md) — external BSP comparison.
 - [`framework-decision.md`](framework-decision.md) — ESP-IDF production framework decision.
 - [`rekordbox-format-analysis.md`](rekordbox-format-analysis.md) — PDB/ANLZ/media layout analysis.
 
