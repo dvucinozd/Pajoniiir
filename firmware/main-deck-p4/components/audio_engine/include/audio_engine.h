@@ -226,6 +226,9 @@ esp_err_t audio_engine_set_headphone_level(uint16_t raw_level);
 uint16_t audio_engine_get_headphone_level(void);
 esp_err_t audio_engine_set_master_trim(float gain);
 float audio_engine_get_master_trim(void);
+
+/* Current MAIN output sample rate in Hz, or 0 before output is configured. */
+uint32_t audio_engine_get_output_sample_rate(void);
 void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain);
 esp_err_t audio_engine_toggle_pfl(uint8_t deck);
 bool audio_engine_get_pfl_enabled(uint8_t deck);

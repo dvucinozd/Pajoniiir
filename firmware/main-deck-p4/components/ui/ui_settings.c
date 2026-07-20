@@ -1,5 +1,8 @@
 #include "ui_settings.h"
 #include "control_link.h"
+#ifndef WIN32
+#include "audio_recorder.h"
+#endif
 
 #include <limits.h>
 #include <stdio.h>
@@ -145,6 +148,10 @@ static lv_obj_t *s_switch_s3_debug_ap = NULL;
 static lv_obj_t *s_label_s3_firmware = NULL;
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
+static ui_settings_recording_toggle_cb_t s_recording_toggle_cb = NULL;
+static lv_obj_t *s_btn_rec = NULL;
+static lv_obj_t *s_label_rec_btn = NULL;
+static lv_obj_t *s_label_rec_status = NULL;
 static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
 static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
 static uint8_t s_s3_debug_ap_displayed_status = UINT8_MAX;
@@ -360,6 +367,59 @@ static void wifi_remote_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
 }
 
+#ifndef WIN32
+static void ui_settings_update_recording_label(void)
+{
+    audio_recorder_status_t st;
+    if (audio_recorder_get_status(&st) != ESP_OK) {
+        return;
+    }
+    bool active = (st.state == AUDIO_RECORDER_RECORDING ||
+                   st.state == AUDIO_RECORDER_STARTING ||
+                   st.state == AUDIO_RECORDER_STOPPING);
+    if (s_label_rec_btn) {
+        lv_label_set_text(s_label_rec_btn, active ? "STOP REC" : "RECORD");
+    }
+    if (s_label_rec_status) {
+        char buf[48];
+        lv_color_t col = COL_TEXT_DIM;
+        if (st.state == AUDIO_RECORDER_ERROR) {
+            snprintf(buf, sizeof(buf), "SD error - press to reset");
+            col = COL_RED;
+        } else if (active && st.sample_rate > 0u) {
+            uint32_t secs = (uint32_t)(st.frames_written / st.sample_rate);
+            snprintf(buf, sizeof(buf), "REC %02u:%02u  %llu MB",
+                     (unsigned)(secs / 60u), (unsigned)(secs % 60u),
+                     (unsigned long long)(st.bytes_written >> 20));
+            col = COL_RED;
+        } else {
+            snprintf(buf, sizeof(buf), "Master out -> /sd/recordings");
+        }
+        lv_label_set_text(s_label_rec_status, buf);
+        lv_obj_set_style_text_color(s_label_rec_status, col, LV_PART_MAIN);
+    }
+}
+
+static void recording_event_cb(lv_event_t *event)
+{
+    (void)event;
+    if (!s_recording_toggle_cb) {
+        return;
+    }
+    audio_recorder_state_t st = audio_recorder_get_state();
+    bool active = (st == AUDIO_RECORDER_RECORDING || st == AUDIO_RECORDER_STARTING);
+    bool ok = s_recording_toggle_cb(!active);
+    ESP_LOGI(TAG, "recording toggle -> %s (%s)", active ? "stop" : "start",
+             ok ? "ok" : "failed");
+    ui_settings_update_recording_label();
+}
+#endif
+
+void ui_settings_set_recording_toggle_cb(ui_settings_recording_toggle_cb_t cb)
+{
+    s_recording_toggle_cb = cb;
+}
+
 static lv_color_t s3_debug_ap_status_color(uint8_t status)
 {
     switch (status) {
@@ -555,6 +615,33 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             &lv_font_montserrat_12,
                             176,
                             56);
+
+    lv_obj_t *rec_section = ui_settings_section(screen, left_x, 312, left_w, 96, "RECORDING");
+    s_btn_rec = lv_button_create(rec_section);
+    lv_obj_remove_style_all(s_btn_rec);
+    if (s_config.btn_secondary) {
+        lv_obj_add_style(s_btn_rec, s_config.btn_secondary, LV_PART_MAIN);
+    }
+    if (s_config.pressed) {
+        lv_obj_add_style(s_btn_rec, s_config.pressed, LV_STATE_PRESSED);
+    }
+    lv_obj_set_size(s_btn_rec, 168, 32);
+    lv_obj_set_pos(s_btn_rec, 16, 36);
+#ifndef WIN32
+    lv_obj_add_event_cb(s_btn_rec, recording_event_cb, LV_EVENT_CLICKED, NULL);
+#endif
+    s_label_rec_btn = lv_label_create(s_btn_rec);
+    lv_label_set_text(s_label_rec_btn, "RECORD");
+    lv_obj_set_style_text_font(s_label_rec_btn, &lv_font_montserrat_12, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_rec_btn, COL_TEXT, LV_PART_MAIN);
+    lv_obj_align(s_label_rec_btn, LV_ALIGN_CENTER, 0, 0);
+
+    s_label_rec_status = ui_settings_value_label(rec_section,
+                                                 "Master out -> /sd/recordings",
+                                                 COL_TEXT_DIM,
+                                                 &lv_font_montserrat_12, 16, 72);
+    lv_obj_set_width(s_label_rec_status, 320);
+    lv_label_set_long_mode(s_label_rec_status, LV_LABEL_LONG_CLIP);
 
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
@@ -864,6 +951,7 @@ void ui_settings_update(const ui_frame_context_t *ctx)
     ui_settings_update_sd_status_label(false);
     ui_settings_update_s3_firmware_label();
     ui_settings_apply_s3_debug_ap_status();
+    ui_settings_update_recording_label();
 #endif
 }
 

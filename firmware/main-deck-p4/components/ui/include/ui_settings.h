@@ -44,6 +44,11 @@ typedef struct {
 typedef void (*ui_settings_wifi_toggle_cb_t)(bool enable);
 void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb);
 
+/* Master-output recorder toggle. The callback starts (enable=true) or stops
+ * (enable=false) recording and returns true on success. */
+typedef bool (*ui_settings_recording_toggle_cb_t)(bool enable);
+void ui_settings_set_recording_toggle_cb(ui_settings_recording_toggle_cb_t cb);
+
 typedef void (*ui_settings_s3_debug_ap_toggle_cb_t)(bool enable);
 void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t cb);
 void ui_settings_set_s3_debug_ap_status(uint8_t status);

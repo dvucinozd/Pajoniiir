@@ -4539,6 +4539,11 @@ esp_err_t audio_engine_set_master_trim(float gain)
     return ESP_OK;
 }
 
+uint32_t audio_engine_get_output_sample_rate(void)
+{
+    return s_output_sample_rate;
+}
+
 float audio_engine_get_master_trim(void)
 {
     return master_trim_load();
