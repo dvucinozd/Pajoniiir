@@ -1,11 +1,13 @@
 #include "audio_recorder.h"
 #include "audio_recorder_ring.h"
-#include "audio_recorder_writer.h"
+#include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"   /* AUDIO_RECORDER_WAV_FRAME_BYTES */
 #include "sd_io_gate.h"
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -22,20 +24,25 @@ static const char *TAG = "audio_recorder";
 
 #define AUDIO_RECORDER_WRITER_STACK   4096
 #define AUDIO_RECORDER_WRITER_PRIO    3          /* below audio/decode and LVGL */
-#define AUDIO_RECORDER_DRAIN_BATCH    16u        /* blocks per writer pass */
 #define AUDIO_RECORDER_IDLE_MS        10u        /* poll cadence when ring empty */
+#define AUDIO_RECORDER_MIN_FREE_BYTES (128ull * 1024ull * 1024ull)  /* to start */
+#define AUDIO_RECORDER_CHECKPOINT_US  (10ll * 1000000ll)            /* 10 s */
 
 #define WRITER_EXITED_BIT (1u << 0)
 
 /* State holds audio_recorder_state_t values, published with release/acquire so
- * push_master() observes a coherent transition without a lock on the hot path.
- * A plain int (not the enum, not volatile) keeps __atomic well-defined. */
+ * push_master() observes a coherent transition without a lock on the hot path. */
 static int s_state = AUDIO_RECORDER_STOPPED;
 
 static audio_recorder_ring_t   s_ring;
 static audio_recorder_block_t *s_slots = NULL;
 static uint32_t                s_capacity = 0u;
 static uint32_t                s_sample_rate = 0u;
+
+static audio_recorder_sink_t s_sink;
+static uint32_t              s_boot_id = 0u;
+static uint32_t              s_session = 0u;
+static int64_t               s_last_checkpoint_us = 0;
 
 static TaskHandle_t       s_writer = NULL;   /* marker only; never dereferenced after exit */
 static EventGroupHandle_t s_writer_exited = NULL;
@@ -56,18 +63,20 @@ static inline void store_state(audio_recorder_state_t st)
     __atomic_store_n(&s_state, (int)st, __ATOMIC_RELEASE);
 }
 
-/* Placeholder storage sink. Real microSD WAV segment writes replace this in a
- * later slice; for now it validates the drain path and accounts bytes. */
-static int counting_sink(void *ctx, const void *data, size_t len)
+/* Free the ring and reset the stopped bookkeeping. */
+static void release_ring(void)
 {
-    (void)ctx;
-    (void)data;
-    return (int)len;
+    if (s_slots) {
+        heap_caps_free(s_slots);
+        s_slots = NULL;
+    }
+    s_capacity = 0u;
+    s_sample_rate = 0u;
 }
 
-/* The writer never frees the ring or sets STOPPED — audio_recorder_stop() owns
- * that after joining on WRITER_EXITED_BIT. On a fault it sets ERROR; on a clean
- * drain it leaves STOPPING for stop() to finalize. */
+/* The writer never frees the ring, finalizes the sink or sets STOPPED —
+ * audio_recorder_stop() owns that after joining on WRITER_EXITED_BIT. On a fault
+ * it sets ERROR; on a clean drain it leaves STOPPING for stop() to finalize. */
 static void writer_task(void *arg)
 {
     (void)arg;
@@ -85,21 +94,29 @@ static void writer_task(void *arg)
             break;
         }
 
-        audio_recorder_drain_result_t res = audio_recorder_writer_drain(
-            &s_ring, counting_sink, NULL, AUDIO_RECORDER_DRAIN_BATCH);
-        s_bytes_written += res.bytes_written;
-        s_frames_written += res.bytes_written / AUDIO_RECORDER_WAV_FRAME_BYTES;
-        if (res.sink_error) {
-            s_last_error = ESP_FAIL;
-            store_state(AUDIO_RECORDER_ERROR);
-            break;
+        const audio_recorder_block_t *blk = audio_recorder_ring_peek(&s_ring);
+        if (blk) {
+            esp_err_t rc = audio_recorder_sink_write_block(
+                &s_sink, blk->samples, blk->frames, blk->sample_rate);
+            if (rc != ESP_OK) {
+                s_last_error = rc;
+                store_state(AUDIO_RECORDER_ERROR);
+                break;
+            }
+            s_bytes_written += (uint64_t)blk->frames * AUDIO_RECORDER_WAV_FRAME_BYTES;
+            s_frames_written += blk->frames;
+            audio_recorder_ring_consume(&s_ring);
+
+            int64_t now = esp_timer_get_time();
+            if (now - s_last_checkpoint_us >= AUDIO_RECORDER_CHECKPOINT_US) {
+                audio_recorder_sink_checkpoint(&s_sink);
+                s_last_checkpoint_us = now;
+            }
+            continue;
         }
-        if (st == AUDIO_RECORDER_STOPPING &&
-            audio_recorder_ring_used(&s_ring) == 0u) {
-            break;   /* fully drained; stop() finalizes */
-        }
-        if (res.blocks_written > 0u) {
-            continue;   /* keep draining while data is flowing */
+
+        if (st == AUDIO_RECORDER_STOPPING) {
+            break;   /* ring empty and stopping -> done; stop() finalizes */
         }
         vTaskDelay(pdMS_TO_TICKS(AUDIO_RECORDER_IDLE_MS));
     }
@@ -132,7 +149,7 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         return ESP_ERR_INVALID_STATE;
     }
     if (sample_rate == 0u) {
-        return ESP_ERR_INVALID_ARG;
+        return ESP_ERR_INVALID_ARG;   /* an output rate must exist first */
     }
 
     uint32_t capacity = (uint32_t)(CONFIG_AUDIO_RECORDER_RING_BYTES /
@@ -152,12 +169,42 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         store_state(AUDIO_RECORDER_STOPPED);
         return ESP_ERR_NO_MEM;
     }
+
+    /* Verify /sd, ensure the recordings directory and gate on free space. */
+    uint64_t free_bytes = 0u;
+    esp_err_t prep = audio_recorder_sink_prepare(&free_bytes);
+    if (prep != ESP_OK) {
+        ESP_LOGE(TAG, "microSD not ready for recording (%d)", (int)prep);
+        release_ring();
+        store_state(AUDIO_RECORDER_STOPPED);
+        return prep;
+    }
+    if (free_bytes < AUDIO_RECORDER_MIN_FREE_BYTES) {
+        ESP_LOGE(TAG, "microSD low on space: %llu B free", (unsigned long long)free_bytes);
+        release_ring();
+        store_state(AUDIO_RECORDER_STOPPED);
+        return ESP_ERR_NO_MEM;
+    }
+
+    if (s_boot_id == 0u) {
+        s_boot_id = esp_random() | 1u;   /* nonzero session-unique prefix */
+    }
+    s_session++;
+    esp_err_t orc = audio_recorder_sink_open(&s_sink, sample_rate, s_boot_id, s_session);
+    if (orc != ESP_OK) {
+        ESP_LOGE(TAG, "recording segment open failed (%d)", (int)orc);
+        release_ring();
+        store_state(AUDIO_RECORDER_STOPPED);
+        return orc;
+    }
+
     audio_recorder_ring_init(&s_ring, s_slots, capacity);
     s_capacity = capacity;
     s_sample_rate = sample_rate;
     s_bytes_written = 0u;
     s_frames_written = 0u;
     s_last_error = ESP_OK;
+    s_last_checkpoint_us = esp_timer_get_time();
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
 
     xEventGroupClearBits(s_writer_exited, WRITER_EXITED_BIT);
@@ -167,18 +214,15 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
                     NULL, AUDIO_RECORDER_WRITER_PRIO, &s_writer) != pdPASS) {
         ESP_LOGE(TAG, "writer task create failed");
         store_state(AUDIO_RECORDER_STOPPED);
-        heap_caps_free(s_slots);
-        s_slots = NULL;
-        s_capacity = 0u;
-        s_sample_rate = 0u;
+        audio_recorder_sink_finalize(&s_sink);
+        release_ring();
         return ESP_ERR_NO_MEM;
     }
 
-    /* Make the shared SD arbiter defer heavy optional admin work while REC. */
     sd_io_gate_set_recorder_active(true);
-
-    ESP_LOGI(TAG, "recording started @ %u Hz, ring %u slots (%u B)",
-             (unsigned)sample_rate, (unsigned)capacity, (unsigned)bytes);
+    ESP_LOGI(TAG, "recording started @ %u Hz, ring %u slots (%u B), %llu MiB free",
+             (unsigned)sample_rate, (unsigned)capacity, (unsigned)bytes,
+             (unsigned long long)(free_bytes >> 20));
     return ESP_OK;
 }
 
@@ -200,12 +244,9 @@ esp_err_t audio_recorder_stop(void)
         s_writer = NULL;
     }
 
-    if (s_slots) {
-        heap_caps_free(s_slots);
-        s_slots = NULL;
-    }
-    s_capacity = 0u;
-    s_sample_rate = 0u;
+    /* Finalize whatever was written (bounded salvage on an ERROR session). */
+    audio_recorder_sink_finalize(&s_sink);
+    release_ring();
     store_state(AUDIO_RECORDER_STOPPED);
     sd_io_gate_set_recorder_active(false);
     ESP_LOGI(TAG, "recording stopped (bytes=%llu err=%d)",
