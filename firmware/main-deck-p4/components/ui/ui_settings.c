@@ -616,7 +616,9 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             176,
                             56);
 
-    lv_obj_t *rec_section = ui_settings_section(screen, left_x, 312, left_w, 96, "RECORDING");
+    /* Compact section that fits the gap between OUTPUT and the full-width
+     * MIXER STATUS bar (y=356): button and status share one row. */
+    lv_obj_t *rec_section = ui_settings_section(screen, left_x, 304, left_w, 48, "RECORDING");
     s_btn_rec = lv_button_create(rec_section);
     lv_obj_remove_style_all(s_btn_rec);
     if (s_config.btn_secondary) {
@@ -625,8 +627,8 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     if (s_config.pressed) {
         lv_obj_add_style(s_btn_rec, s_config.pressed, LV_STATE_PRESSED);
     }
-    lv_obj_set_size(s_btn_rec, 168, 32);
-    lv_obj_set_pos(s_btn_rec, 16, 36);
+    lv_obj_set_size(s_btn_rec, 150, 24);
+    lv_obj_set_pos(s_btn_rec, 16, 20);
 #ifndef WIN32
     lv_obj_add_event_cb(s_btn_rec, recording_event_cb, LV_EVENT_CLICKED, NULL);
 #endif
@@ -637,10 +639,10 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_align(s_label_rec_btn, LV_ALIGN_CENTER, 0, 0);
 
     s_label_rec_status = ui_settings_value_label(rec_section,
-                                                 "Master out -> /sd/recordings",
+                                                 "-> /sd/recordings",
                                                  COL_TEXT_DIM,
-                                                 &lv_font_montserrat_12, 16, 72);
-    lv_obj_set_width(s_label_rec_status, 320);
+                                                 &lv_font_montserrat_12, 176, 24);
+    lv_obj_set_width(s_label_rec_status, 160);
     lv_label_set_long_mode(s_label_rec_status, LV_LABEL_LONG_CLIP);
 
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
