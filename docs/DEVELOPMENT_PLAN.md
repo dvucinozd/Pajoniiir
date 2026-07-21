@@ -1605,10 +1605,16 @@ publish, so a failed load no longer erases the previously valid current
 metadata. `library_load_current_anlz()` is removed and all callers
 (`media_catalog.c`, WIN32 `ui_library.c`) use the single entry point. ESP-IDF
 v5.5 P4 build passes (`main-deck-p4.bin` 0x2097f0, 49% app free) and the
-`ui_library` host test passes. Still open: a dedicated `library.c` host-test
-harness (the suite does not currently compile `library.c`) and the hardware
-acceptance rows below; cache/USB timing is logged via `esp_timer_get_time()` but
-not yet benchmarked on hardware.
+`ui_library` host test passes. A dedicated `library.c` host-test harness now
+exists: `tests/library_anlz` compiles the real `library.c` against controllable
+cache/ANLZ/PDB stubs plus a counting allocator, covering the warm cache hit (no
+parse/write), the cold miss (one DAT + one EXT + one write), cache-rejection
+fallback, non-fatal cache-write failure, parser-failure preservation of the
+previously published current metadata, and balanced ownership across sequential
+replacement (no leak/double-free). Still open: the hardware acceptance rows
+below (cold/warm timing benchmark, ~50 alternating dual-deck loads, USB fallback
+and disconnect/recovery); cache/USB timing is logged via `esp_timer_get_time()`
+but not yet benchmarked on hardware.
 
 ### Problem
 
