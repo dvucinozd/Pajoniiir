@@ -1234,6 +1234,8 @@ $tests = @(
             "-DUI_SETTINGS_HOST_TEST",
             "-I../../firmware/main-deck-p4/components/ui/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-I../../firmware/main-deck-p4/components/service_log/include",
             "-I../control_link_protocol/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
@@ -1463,21 +1465,42 @@ foreach ($test in $tests) {
     Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments @()
 }
 
-$python = Get-Command python -ErrorAction SilentlyContinue
-if ($python) {
+# Prefer the ESP-IDF virtualenv interpreter: it is the one guaranteed to carry a
+# working `cryptography`. A bare `python` from PATH may be an unrelated install
+# whose cryptography bindings fail to load, which would fail this suite for
+# reasons that have nothing to do with the code under test.
+$pythonSource = $null
+foreach ($candidate in @($env:IDF_PYTHON_ENV_PATH, "C:\Espressif\python_env\idf5.5_py3.11_env")) {
+    if ($candidate) {
+        $exe = Join-Path $candidate "Scripts\python.exe"
+        if (Test-Path $exe) { $pythonSource = $exe; break }
+    }
+}
+if (-not $pythonSource) {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) { $pythonSource = $python.Source }
+}
+if ($pythonSource) {
     Invoke-Step -Name "run ota_signing" `
         -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
-        -Executable $python.Source `
+        -Executable $pythonSource `
         -Arguments @("test_ota_signing.py")
 } else {
     Write-Warning "python not found; skipping OTA signing Python tests"
 }
 
 $pwsh = Get-Command pwsh -ErrorAction Stop
-Invoke-Step -Name "run R5 dead-code call-graph audit" `
-    -WorkingDirectory $RepoRoot `
-    -Executable $pwsh.Source `
-    -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
+# The call-graph audit greps the tree with ripgrep. Without `rg` it cannot run at
+# all, and hard-failing there would also skip every step below it. Skip loudly
+# instead, the same way a missing python skips the signing tests.
+if (Get-Command rg -ErrorAction SilentlyContinue) {
+    Invoke-Step -Name "run R5 dead-code call-graph audit" `
+        -WorkingDirectory $RepoRoot `
+        -Executable $pwsh.Source `
+        -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
+} else {
+    Write-Warning "ripgrep (rg) not found; SKIPPING the R5 dead-code call-graph audit"
+}
 Invoke-Step -Name "run OTA release helper tests" `
     -WorkingDirectory $RepoRoot `
     -Executable $pwsh.Source `

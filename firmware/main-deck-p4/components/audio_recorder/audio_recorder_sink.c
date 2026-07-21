@@ -1,6 +1,7 @@
 #include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"
 #include "sd_io_gate.h"
+#include "service_log.h"
 
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
@@ -291,6 +292,11 @@ esp_err_t audio_recorder_sink_recover_orphans(void)
     closedir(d);
     if (recovered > 0) {
         ESP_LOGI(TAG, "scanned %d orphan .part file(s)", recovered);
+        /* Journalled so a power-loss recovery is provable after the fact,
+         * without pulling the card. */
+        service_log_event(SERVICE_LOG_RECORDING_RECOVERED, SERVICE_LOG_WARN,
+                          1u, (uint32_t)recovered, 0u, 0u, 0u,
+                          "orphan .part recovered");
     }
     return ESP_OK;
 }

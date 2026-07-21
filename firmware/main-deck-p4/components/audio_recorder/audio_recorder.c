@@ -3,6 +3,7 @@
 #include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"   /* AUDIO_RECORDER_WAV_FRAME_BYTES */
 #include "sd_io_gate.h"
+#include "service_log.h"
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -129,6 +130,10 @@ static void writer_task(void *arg)
             if (rc != ESP_OK) {
                 s_last_error = rc;
                 store_state(AUDIO_RECORDER_ERROR);
+                service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                                  2u, (uint32_t)rc,
+                                  (uint32_t)(s_frames_written / 1000u), 0u, 0u,
+                                  "segment write failed");
                 break;
             }
             s_bytes_written += (uint64_t)blk->frames * AUDIO_RECORDER_WAV_FRAME_BYTES;
@@ -146,6 +151,10 @@ static void writer_task(void *arg)
                              (unsigned long long)freeb);
                     s_last_error = ESP_ERR_NO_MEM;
                     store_state(AUDIO_RECORDER_ERROR);
+                    service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                                      2u, (uint32_t)ESP_ERR_NO_MEM,
+                                      (uint32_t)(freeb >> 20), 0u, 0u,
+                                      "microSD reserve reached");
                     break;
                 }
             }
@@ -209,6 +218,9 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         ESP_LOGE(TAG, "PSRAM ring alloc %u B failed; recording not started",
                  (unsigned)bytes);
         store_state(AUDIO_RECORDER_STOPPED);
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)ESP_ERR_NO_MEM, (uint32_t)bytes, 0u, 0u,
+                          "PSRAM ring alloc failed");
         return ESP_ERR_NO_MEM;
     }
 
@@ -219,12 +231,17 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         ESP_LOGE(TAG, "microSD not ready for recording (%d)", (int)prep);
         release_ring();
         store_state(AUDIO_RECORDER_STOPPED);
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)prep, 0u, 0u, 0u, "microSD not ready");
         return prep;
     }
     if (free_bytes < AUDIO_RECORDER_MIN_FREE_BYTES) {
         ESP_LOGE(TAG, "microSD low on space: %llu B free", (unsigned long long)free_bytes);
         release_ring();
         store_state(AUDIO_RECORDER_STOPPED);
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)ESP_ERR_NO_MEM, (uint32_t)(free_bytes >> 20),
+                          0u, 0u, "microSD low on space");
         return ESP_ERR_NO_MEM;
     }
 
@@ -237,6 +254,9 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         ESP_LOGE(TAG, "recording segment open failed (%d)", (int)orc);
         release_ring();
         store_state(AUDIO_RECORDER_STOPPED);
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)orc, s_session, 0u, 0u,
+                          "segment open failed");
         return orc;
     }
 
@@ -261,10 +281,16 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         store_state(AUDIO_RECORDER_STOPPED);
         audio_recorder_sink_finalize(&s_sink);
         release_ring();
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)ESP_ERR_NO_MEM, 0u, 0u, 0u,
+                          "writer task create failed");
         return ESP_ERR_NO_MEM;
     }
 
     sd_io_gate_set_recorder_active(true);
+    service_log_event(SERVICE_LOG_RECORDING_STARTED, SERVICE_LOG_INFO,
+                      4u, sample_rate, capacity, (uint32_t)(free_bytes >> 20),
+                      s_session, NULL);
     ESP_LOGI(TAG, "recording started @ %u Hz, ring %u slots (%u B), %llu MiB free",
              (unsigned)sample_rate, (unsigned)capacity, (unsigned)bytes,
              (unsigned long long)(free_bytes >> 20));
@@ -289,11 +315,22 @@ esp_err_t audio_recorder_stop(void)
         s_writer = NULL;
     }
 
+    /* Snapshot the session evidence before release_ring() clears the rate. */
+    uint32_t rec_seconds = s_sample_rate
+        ? (uint32_t)(s_frames_written / s_sample_rate) : 0u;
+    uint32_t rec_drops = s_ring.dropped_blocks;
+
     /* Finalize whatever was written (bounded salvage on an ERROR session). */
     audio_recorder_sink_finalize(&s_sink);
     release_ring();
     store_state(AUDIO_RECORDER_STOPPED);
     sd_io_gate_set_recorder_active(false);
+    /* Carry the real-time gate evidence into the journal: seconds captured,
+     * producer drops, and the push-latency tail (count >= 100 us, worst case). */
+    service_log_event(SERVICE_LOG_RECORDING_STOPPED,
+                      (s_last_error == ESP_OK) ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
+                      4u, rec_seconds, rec_drops, s_push_over_100us,
+                      s_push_max_us, NULL);
     ESP_LOGI(TAG, "recording stopped (bytes=%llu err=%d)",
              (unsigned long long)s_bytes_written, (int)s_last_error);
     return ESP_OK;
