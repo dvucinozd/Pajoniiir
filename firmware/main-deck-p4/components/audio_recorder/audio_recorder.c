@@ -51,6 +51,9 @@ static EventGroupHandle_t s_writer_exited = NULL;
 static bool               s_overflow = false;
 
 /* Consumer-owned accumulators (writer task only). */
+static uint32_t  s_push_count = 0u;
+static uint32_t  s_push_max_us = 0u;
+static uint32_t  s_push_over_100us = 0u;
 static uint64_t  s_bytes_written = 0u;
 static uint64_t  s_frames_written = 0u;
 static esp_err_t s_last_error = ESP_OK;
@@ -242,6 +245,9 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     s_sample_rate = sample_rate;
     s_bytes_written = 0u;
     s_frames_written = 0u;
+    s_push_count = 0u;
+    s_push_max_us = 0u;
+    s_push_over_100us = 0u;
     s_last_error = ESP_OK;
     s_last_checkpoint_us = esp_timer_get_time();
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
@@ -299,7 +305,19 @@ bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
     if (load_state() != AUDIO_RECORDER_RECORDING) {
         return false;
     }
+    int64_t t0 = esp_timer_get_time();
     bool ok = audio_recorder_ring_push(&s_ring, stereo, (uint32_t)frames, sample_rate);
+    uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - t0);
+
+    /* Producer-owned counters: only the audio output task updates them. */
+    s_push_count++;
+    if (elapsed_us > s_push_max_us) {
+        s_push_max_us = elapsed_us;
+    }
+    if (elapsed_us >= 100u) {
+        s_push_over_100us++;
+    }
+
     if (!ok) {
         __atomic_store_n(&s_overflow, true, __ATOMIC_RELEASE);
     }
@@ -321,6 +339,9 @@ esp_err_t audio_recorder_get_status(audio_recorder_status_t *out)
     out->dropped_frames = s_ring.dropped_frames;
     out->bytes_written = s_bytes_written;
     out->frames_written = s_frames_written;
+    out->push_count = s_push_count;
+    out->push_max_us = s_push_max_us;
+    out->push_over_100us = s_push_over_100us;
     out->last_error = s_last_error;
     return ESP_OK;
 }

@@ -422,6 +422,15 @@ static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
 static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, true)) return ESP_FAIL;
+
+    /* A profile install is a multi-file SD swap; refuse it while the recorder
+     * owns the card rather than letting it back-pressure the writer. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_PROFILE_UPLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to install a profile",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
     char id[CPM_ID_MAX] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-ID", id,
                                     sizeof(id)) != ESP_OK ||
@@ -545,13 +554,16 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      "\"ring_used\":%u,\"ring_capacity\":%u,\"ring_high_water\":%u,"
                      "\"dropped_blocks\":%u,\"dropped_frames\":%llu,"
                      "\"bytes_written\":%llu,\"frames_written\":%llu,"
+                     "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
                      "\"last_error\":%d}",
                      recording_state_name(st.state), (unsigned)st.sample_rate,
                      (unsigned)st.ring_used, (unsigned)st.ring_capacity,
                      (unsigned)st.ring_high_water, (unsigned)st.dropped_blocks,
                      (unsigned long long)st.dropped_frames,
                      (unsigned long long)st.bytes_written,
-                     (unsigned long long)st.frames_written, (int)st.last_error);
+                     (unsigned long long)st.frames_written,
+                     (unsigned)st.push_count, (unsigned)st.push_max_us,
+                     (unsigned)st.push_over_100us, (int)st.last_error);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Recorder response overflow");
@@ -604,6 +616,14 @@ static esp_err_t api_recording_stop_handler(httpd_req_t *req)
 static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
+
+    /* Streaming the whole journal is heavy optional admin work; keep it off the
+     * card while the recorder is writing. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_LOG_DOWNLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to download the log",
+                               HTTPD_RESP_USE_STRLEN);
+    }
 
     service_log_sync();   /* flush pending records before the snapshot */
     httpd_resp_set_type(req, "text/plain; charset=utf-8");

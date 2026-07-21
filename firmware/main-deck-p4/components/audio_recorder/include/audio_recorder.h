@@ -44,6 +44,12 @@ typedef struct {
     uint64_t dropped_frames;   /* frames lost to drops */
     uint64_t bytes_written;    /* PCM bytes drained to the sink */
     uint64_t frames_written;   /* stereo frames drained to the sink */
+    /* Real-time producer cost, for the "p99 under 100 us per block" gate. The
+     * push is a bounded copy, so a max plus an over-threshold count bounds the
+     * tail without keeping a histogram on the audio path. */
+    uint32_t push_count;       /* blocks accepted by push_master() */
+    uint32_t push_max_us;      /* slowest single push since start */
+    uint32_t push_over_100us;  /* pushes that took 100 us or more */
     esp_err_t last_error;      /* last error that stopped/failed a session */
 } audio_recorder_status_t;
 
