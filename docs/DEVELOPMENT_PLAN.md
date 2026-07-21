@@ -1702,8 +1702,28 @@ measured separately because USB audio preload can remain the dominant cost.
 
 ## TODO: Expand The P4 microSD Service Log
 
-Status: planned 2026-07-20; not implemented. A temporary or high-rate detailed
-trace mode is explicitly out of scope.
+Status: core implemented on branch `codex/p4-service-log` (2026-07-21). A new
+`service_log` component replaces the old `sd_diag_log` writer (now deleted) with
+a bounded structured journal: a dependency-free host-tested format core (event
+X-macro inventory + I/W/E severity, a fixed record with up to four numeric args
+and a bounded text field, control-character sanitization, key=value line and
+boot-header formatting, rotation-size decision); a fixed 128-record FreeRTOS
+queue with non-blocking `xQueueSend(...,0)` drop accounting, an atomic seq and
+an NVS-persisted boot id; and one low-priority writer task that batches up to 32
+records, appends to `/sd/logs/system.log`, rotates four 1 MiB generations and
+fflush/fsyncs at most every ~5 s, all serialised through `sd_io_gate`, non-fatal
+when microSD is absent. Producers wired: boot/reset-reason/firmware-info header,
+SD mount, USB mount/unmount, library load result and the authoritative
+TRACK_LOAD_START/DONE/FAILED (metadata source + resolve time from the merged
+ANLZ resolver via `library_last_anlz_load_stats`). A read-only guarded
+`GET /api/diagnostic-log` streams the journal. All P4 host tests plus the new
+`service_log` test pass and the ESP-IDF v5.5 build is clean.
+
+Still open (documented follow-ups, low risk): rate-limited audio-anomaly
+aggregation and the remaining OTA/web/controller event producers; a `service_log`
+object inside the `/api/status` JSON and a Settings "SD Log" status line; and the
+hardware acceptance rows below. A temporary or high-rate detailed trace mode is
+explicitly out of scope.
 
 ### Goal and real-time boundary
 
