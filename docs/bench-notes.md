@@ -365,3 +365,27 @@ Related: an earlier attempt on this bench recorded `reset=PANIC` on `RC1-170`
 (boot 23) and two unexplained `POWERON` resets (boots 20 and 22), one of which
 killed an OTA upload mid-transfer. Cause not established; coredump cannot be
 enabled on this board (it boot-loops before `app_main`).
+
+## Web layer: socket exhaustion looks exactly like a dead board (2026-07-21)
+
+While verifying the redesigned web controller, `curl` from a second machine got
+`HTTP=000` on every endpoint while the operator's phone was rendering and
+driving the same page normally. ICMP answered in 2-6 ms and the SoftAP was
+healthy, so the board looked alive and the web layer looked dead.
+
+It was neither. `httpd` ran with `max_open_sockets = 5` and
+`lru_purge_enable` unset (defaults false), so once five keep-alive sockets were
+held the server **refused** further connections instead of evicting the oldest.
+The controller page holds sockets while polling `/api/status` every 250 ms, so
+one busy browser could occupy the pool and lock every other client out —
+including `/api/ota/p4`, which is the only remote recovery path.
+
+Confirmed by closing the browser: access returned on its own after roughly 20 s,
+as the idle sockets timed out. Fixed by setting `lru_purge_enable = true`
+(`RC1-175-ge40b7225`) and verified on hardware — 8 concurrent requests against
+the 5-socket server all returned 200, plus a follow-up request.
+
+Diagnostic value: "pings fine, one client works, every new client gets nothing"
+means socket exhaustion, not a crash. Do not reach for a wired COM15 recovery on
+that signature alone. Compare with the separate `max_uri_handlers` trap, where a
+single failed registration stops the entire server at boot.

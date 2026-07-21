@@ -1,14 +1,27 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-171-gacc2aa5a` on `ota_0`; the S3 is **not** matched and
+signed release is `RC1-175-ge40b7225` on `ota_0`; the S3 is **not** matched and
 still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
 run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
 recorder (Settings control plus guarded `/api/recording`); the recorder's
 functional `.wav` acceptance passed on hardware. RC1-170/171 add recorder push
 timing (`push_count` / `push_max_us` / `push_over_100us`) and recorder journal
-events (RECORDING_STARTED/STOPPED/FAILED/RECOVERED).
+events (RECORDING_STARTED/STOPPED/FAILED/RECOVERED). RC1-173/175 replace the web
+controller UI with the "Modern Glass Mono" design (`components/web_server/web/`),
+add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
+
+> ⚠️ **Web assets must not reference the network.** The page is served from the
+> P4's own SoftAP with no internet route, and the captive DNS resolves every
+> hostname to 192.168.4.1 — so a Google Fonts `<link>`/`@import` comes back to
+> this device, fails the TLS handshake and blocks first paint. Both the previous
+> UI and the delivered design carried one; keep font stacks local.
+
+> ⚠️ **`max_open_sockets` is 5.** With `lru_purge_enable` unset, five held
+> keep-alive sockets made the server refuse every new client — including
+> `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
+> `docs/bench-notes.md` for the diagnostic signature.
 
 > ⚠️ **The recorder is not yet established as timing-neutral.** The producer
 > copy is cheap (0.04 % of pushes >= 100 us, zero dropped blocks over 120 s of

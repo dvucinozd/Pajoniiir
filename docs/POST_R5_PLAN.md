@@ -11,8 +11,9 @@ still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
 2026-07-14).
 
 Bench state now differs from that rollout: the P4 alone runs
-`RC1-171-gacc2aa5a` from `ota_0` (recorder journal events plus host-runner
-repairs), while the S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
+`RC1-175-ge40b7225` from `ota_0` (recorder journal events, host-runner repairs,
+the redesigned web controller and the httpd `lru_purge_enable` fix), while the
+S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
 any acceptance run.
 
 Open item raised by the 2026-07-21 recorder bench: the producer-side push gate
