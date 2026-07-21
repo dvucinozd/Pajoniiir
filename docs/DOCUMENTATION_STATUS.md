@@ -11,8 +11,9 @@ historical design or validation records. Three states must not be conflated:
   processors, signed with key ID `rel-001`, with P4 and S3 both on `ota_0` after
   the 2026-07-21 rollout (S3 reported `valid`, independently confirmed through
   P4's nested firmware report);
-- **current bench state:** identical to that rollout — both boards run
-  `RC1-168-gb69f1b19`;
+- **current bench state:** boards are **no longer matched** — the P4 runs
+  `RC1-171-gacc2aa5a` from `ota_0` (recorder service-journal events plus host
+  test-runner repairs) while the S3 remains on `RC1-168-gb69f1b19`;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
   forced rollback and final UI/audio/controller smoke. RC1-168 is **not** a full

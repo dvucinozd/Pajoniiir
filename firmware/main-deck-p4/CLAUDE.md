@@ -1,11 +1,22 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-21. The
-installed signed release is `RC1-168-gb69f1b19` on `ota_0`, matching the S3, with
-OTA boot/status verification complete. That build adds the unified ANLZ metadata
-loader, the structured microSD service journal (`GET /api/diagnostic-log`) and
-the master-output recorder (Settings control plus guarded `/api/recording`); the
-recorder's functional `.wav` acceptance passed on hardware. The latest full
+Documentation status: current developer guide, audited 2026-07-21. The installed
+signed release is `RC1-171-gacc2aa5a` on `ota_0`; the S3 is **not** matched and
+still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
+run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
+microSD service journal (`GET /api/diagnostic-log`) and the master-output
+recorder (Settings control plus guarded `/api/recording`); the recorder's
+functional `.wav` acceptance passed on hardware. RC1-170/171 add recorder push
+timing (`push_count` / `push_max_us` / `push_over_100us`) and recorder journal
+events (RECORDING_STARTED/STOPPED/FAILED/RECOVERED).
+
+> ⚠️ **The recorder is not yet established as timing-neutral.** The producer
+> copy is cheap (0.04 % of pushes >= 100 us, zero dropped blocks over 120 s of
+> dual-deck recording), but the same boots logged repeated `AUDIO_OUTPUT_LATE`
+> (worst 370 ms) and `AUDIO_UNDERRUN` inside the recording window and not
+> outside it. Explaining that is open work — see `docs/bench-notes.md`. Also
+> unexplained: one `reset=PANIC` and two `POWERON` resets on that bench, one of
+> which aborted an OTA upload mid-transfer. The latest full
 functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
 Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all

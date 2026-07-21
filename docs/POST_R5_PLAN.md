@@ -3,12 +3,26 @@
 Status: active 2026-07-21. R5A-R5F remediation and E1 signed-OTA acceptance are
 complete. The last matching OTA rollout is `RC1-168-gb69f1b19`, deployed to both
 boards on 2026-07-21 and running from `ota_0` on each (S3 `valid`, independently
-confirmed through P4's nested firmware report); the bench state is identical to
-that rollout. That build carries the unified ANLZ metadata loader, the
-structured microSD service journal and the master-output recorder, and its
-recorder `.wav` capture plus the service journal were accepted on hardware. The
-latest **fully** functionally accepted release still remains
-`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
+confirmed through P4's nested firmware report). That build carries the unified
+ANLZ metadata loader, the structured microSD service journal and the
+master-output recorder, and its recorder `.wav` capture plus the service journal
+were accepted on hardware. The latest **fully** functionally accepted release
+still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
+2026-07-14).
+
+Bench state now differs from that rollout: the P4 alone runs
+`RC1-171-gacc2aa5a` from `ota_0` (recorder journal events plus host-runner
+repairs), while the S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
+any acceptance run.
+
+Open item raised by the 2026-07-21 recorder bench: the producer-side push gate
+passes comfortably (0.04 % of pushes >= 100 us, zero dropped blocks), but the
+same boots logged repeated `AUDIO_OUTPUT_LATE` (worst 370 ms) and
+`AUDIO_UNDERRUN` inside the recording window and not outside it. The recorder is
+therefore **not** yet established as timing-neutral. Numbers and caveats are in
+`bench-notes.md`. Also unexplained on that bench: one `reset=PANIC` on
+`RC1-170` and two `POWERON` resets, one of which aborted an OTA upload
+mid-transfer.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 

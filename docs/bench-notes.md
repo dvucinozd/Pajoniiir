@@ -325,3 +325,43 @@ audio/UI/controller smoke, so the latest fully accepted release remains
   COM15 flash/smoke capture (`bad_lines=0`), and hardware visual confirmation.
 - **Deferred to S3/chassis phase:** physical panel controls → `deck_core` queue; Beat LED feedback
   (PQTZ → S3 LED); wire the front panel to the S3 per `PINOUT.md`; mount display in the chassis opening.
+
+## Recorder real-time bench (2026-07-21, `RC1-170` / `RC1-171`)
+
+Instrumented `audio_recorder_push_master()` with a wall-clock bracket
+(`push_count`, `push_max_us`, `push_over_100us`, exposed on `GET /api/recording`
+and written into the journal by `RECORDING_STOPPED`) to settle the "p99 under
+100 us per block" gate.
+
+**Producer copy cost — passes.** 120 s of dual-deck playback while recording
+(48 kHz, boot 23):
+
+| measure | result |
+|---|---|
+| pushes >= 100 us | 9 of 22 593 = **0.04 %** |
+| dropped blocks / frames | **0 / 0** |
+| ring high-water | 172 / 508 slots (34 %) |
+| throughput | 192 281 B/s vs 192 000 B/s theoretical |
+| byte/frame agreement | 14 744 064 x 4 = 58 976 256, exact |
+
+**But end-to-end output timing degrades while recording — open item.** The same
+boot logged ten `AUDIO_OUTPUT_LATE` warnings between ms 205 417 and 340 417,
+with the worst-case late time growing to **370 305 us**. The cluster falls
+entirely inside the recording window and stops when recording stops. A later
+single-deck session (boot 24) logged `AUDIO_UNDERRUN` during recording and a
+single **167 662 us** push.
+
+Caveat on the metric: the bracket measures wall-clock across the copy, so it
+cannot separate "the copy was slow" from "the audio output task was preempted
+mid-copy". The 167 ms sample almost certainly reflects preemption, since it
+coincides with an underrun rather than with any change in copy size. The
+aggregate distribution is still the useful signal; the single max is not.
+
+Conclusion: the producer boundary is cheap enough, but recording perturbs output
+scheduling. Do not treat the recorder as timing-neutral until the
+`AUDIO_OUTPUT_LATE` cluster is explained.
+
+Related: an earlier attempt on this bench recorded `reset=PANIC` on `RC1-170`
+(boot 23) and two unexplained `POWERON` resets (boots 20 and 22), one of which
+killed an OTA upload mid-transfer. Cause not established; coredump cannot be
+enabled on this board (it boot-loops before `app_main`).

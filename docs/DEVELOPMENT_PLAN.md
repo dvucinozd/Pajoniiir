@@ -1737,6 +1737,15 @@ while the periodic health monitor logs CONTROL_LINK_ONLINE/OFFLINE edges from
 the heartbeat-derived `control_link_connected` state. The pure, host-tested
 registry half of `controller_profile_manager` is deliberately untouched.
 
+Recorder producers were added on 2026-07-21 (`RC1-171-gacc2aa5a`), closing a gap
+where the one subsystem that writes to microSD contributed nothing to the
+microSD journal: RECORDING_STARTED (rate, ring slots, free MiB, session),
+RECORDING_STOPPED (seconds, dropped blocks, pushes >= 100 us, worst push — so a
+session's real-time behaviour can be judged from the log alone), RECORDING_FAILED
+on every `start()` exit and both writer fault paths, and RECORDING_RECOVERED from
+boot orphan recovery, which makes a power-loss `.part` salvage provable without
+pulling the card. All four were confirmed on hardware.
+
 Still open (documented follow-ups, low value): CONTROLLER_DISCONNECTED (the S3
 reports presence, not removal, so there is no P4-side disconnect edge yet) and
 CONTROL_LINK_CRC_ERROR/GAP (the 0xA5 path keeps no P4-side error counters; the
@@ -1926,6 +1935,27 @@ sustained exactly 176.4 kB/s (44.1 kHz stereo) with the ring draining to 0-2
 slots, and `bytes_written` 9 561 088 matched `frames_written` 2 390 272 x 4 B
 exactly. The finalized `/sd/recordings/REC_*.wav` was played back off the card
 and confirmed to be the expected MAIN mix.
+
+Hardware-matrix row 6 (push timing) was measured on 2026-07-21 with
+`RC1-170`/`RC1-171`, which add `push_count` / `push_max_us` /
+`push_over_100us` to `GET /api/recording` and to the `RECORDING_STOPPED`
+journal record. Over 120 s of dual-deck recording only 9 of 22 593 pushes
+reached 100 us (0.04 %), with zero dropped blocks or frames and a 34 % ring
+high-water, so the producer-copy target is met. **Row 6 is not signed off**,
+because its decisive clause is "zero playback/output regression" and the same
+boots logged ten `AUDIO_OUTPUT_LATE` warnings (worst 370 ms) plus
+`AUDIO_UNDERRUN`, clustered inside the recording window and absent outside it.
+Explaining that cluster is the blocking work; see `bench-notes.md` for the
+figures and for the caveat that the push bracket cannot distinguish a slow copy
+from a preempted audio task. Row 9 (power-interrupted `.part` recovery) is still
+unexecuted, though `RC1-171` now journals `RECORDING_RECOVERED` so the result
+will be provable from the log alone.
+
+Deliberately not done: migrating `track_meta_cache` and the controller-profile
+paths onto `sd_io_gate`. Those file sections have several exit points, so an
+unbalanced `begin`/`end` would deadlock SD permanently, while FATFS already
+serializes volume access — only fairness, not correctness, is at stake. The
+Settings free-space read is already throttled to 1000 ms.
 
 The guarded recorder API is implemented after all: `GET /api/recording` returns
 the snapshot, `POST /api/recording/start` starts at the live MAIN rate (409 when
