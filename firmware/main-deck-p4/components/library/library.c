@@ -6,6 +6,7 @@
 #include "sd_diag_log.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -329,16 +330,28 @@ esp_err_t library_get_summary(int index, uint16_t *out_bpm, uint32_t *out_durati
     return ESP_OK;
 }
 
-/* ── library_load_anlz ────────────────────────────────────────────────────── *
+/* ── ANLZ resolver ────────────────────────────────────────────────────────── *
  *
- * Loads ANLZ metadata for a track using its anlz_path directly.
- * Populates track->bpm (precise), track->duration_ms, track->has_anlz.
- *
- * Requires the USB drive to be mounted.
+ * Resolve one owned, full anlz_metadata_t for a track (high-resolution waveform
+ * included). On ESP_OK, *out owns the metadata and the caller must anlz_free it.
+ * Reads the metadata cache exactly once; on a miss it parses DAT once and EXT
+ * once from the USB medium and performs one best-effort cache write. On any
+ * failure *out is left zeroed (track_meta_cache_load zeroes it, and anlz_free of
+ * a zeroed object is a no-op) and the USB/cache media state is unchanged.
  */
-esp_err_t library_load_anlz(library_track_t *track)
+typedef enum {
+    LIBRARY_ANLZ_SRC_CACHE = 0,
+    LIBRARY_ANLZ_SRC_USB,
+} library_anlz_source_t;
+
+static esp_err_t library_resolve_anlz(const library_track_t *track,
+                                      anlz_metadata_t *out,
+                                      library_anlz_source_t *source,
+                                      bool *cache_written)
 {
-    if (!track) return ESP_ERR_INVALID_ARG;
+    if (source) *source = LIBRARY_ANLZ_SRC_USB;
+    if (cache_written) *cache_written = false;
+    if (!track || !out) return ESP_ERR_INVALID_ARG;
 
     if (track->anlz_path[0] == '\0') {
         ESP_LOGE(TAG, "No ANLZ path for track: %s", track->title);
@@ -350,40 +363,91 @@ esp_err_t library_load_anlz(library_track_t *track)
     library_build_anlz_paths(track, dat_path, sizeof(dat_path), ext_path, sizeof(ext_path));
     uint32_t track_key = library_track_key(track);
 
-    anlz_metadata_t cached;
-    esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, false, &cached);
+    /* Warm path: a single cache load carrying the high-resolution waveform. */
+    esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, out);
     if (cache_rc == ESP_OK) {
-        library_apply_meta_to_track(track, &cached);
-        anlz_free(&cached);
-        sd_diag_log_write("meta_cache", "local summary cache hit");
+        if (source) *source = LIBRARY_ANLZ_SRC_CACHE;
         return ESP_OK;
     }
 
+    /* Cold path: parse DAT once and EXT once, then one best-effort cache write.
+     * track_meta_cache_load already zeroed *out on its miss return. */
     media_io_gate_begin();
-
-    /* Parse DAT */
-    anlz_metadata_t meta;
-    esp_err_t rc = anlz_parse_dat(dat_path, &meta);
+    esp_err_t rc = anlz_parse_dat(dat_path, out);
     if (rc != ESP_OK) {
         media_io_gate_end();
         ESP_LOGE(TAG, "anlz_parse_dat failed: %s", dat_path);
         return rc;
     }
+    anlz_parse_ext(ext_path, out);           /* best-effort high-res waveform */
+    media_io_gate_end();
 
+    esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, out);
+    if (cache_written) *cache_written = (save_rc == ESP_OK);
+    return ESP_OK;
+}
+
+/* ── library_load_anlz ────────────────────────────────────────────────────── *
+ *
+ * Resolve one authoritative full ANLZ object for a track and use it for both
+ * responsibilities in a single pass: populate the track summary fields (precise
+ * BPM, duration, low waveform, PVBR table) and publish the same full beat/cue/
+ * high-resolution-waveform object as the current metadata.
+ *
+ * The publish is transactional: the new object is swapped into s_current_meta
+ * only after a fully successful resolve, and the previous object is freed after
+ * the swap and outside the mutex. A failed load therefore never erases the
+ * previously valid current metadata. Requires the USB drive mounted only on a
+ * cache miss.
+ */
+esp_err_t library_load_anlz(library_track_t *track)
+{
+    if (!track) return ESP_ERR_INVALID_ARG;
+    ESP_RETURN_ON_ERROR(ensure_library_mutex(), TAG, "library mutex");
+
+    int64_t t_start = esp_timer_get_time();
+
+    anlz_metadata_t meta;
+    library_anlz_source_t source = LIBRARY_ANLZ_SRC_USB;
+    bool cache_written = false;
+    esp_err_t rc = library_resolve_anlz(track, &meta, &source, &cache_written);
+    if (rc != ESP_OK) {
+        /* Previously published current metadata is deliberately preserved. */
+        return rc;
+    }
+
+    /* Populate the summary fields on the track from the resolved object. This
+     * only copies values out of meta; it retains no pointers into it. */
     library_apply_meta_to_track(track, &meta);
 
-    /* Parse EXT for high-res waveform (best-effort, ignore failure) */
-    anlz_parse_ext(ext_path, &meta);
-    media_io_gate_end();
-    esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, &meta);
-    sd_diag_log_write("meta_cache", save_rc == ESP_OK ? "local summary cache write" : "local summary cache write failed");
+    /* Publish transactionally: swap the new object in, capture the old one, then
+     * free the old one outside the lock so a UI clone in flight is never blocked
+     * on a free. Ownership of meta moves into s_current_meta. */
+    anlz_metadata_t old_meta;
+    bool have_old = false;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_current_meta_valid) {
+        old_meta = s_current_meta;
+        have_old = true;
+    }
+    s_current_meta = meta;
+    s_current_meta_valid = true;
+    xSemaphoreGiveRecursive(s_library_mutex);
+    if (have_old) {
+        anlz_free(&old_meta);
+    }
 
-    ESP_LOGI(TAG, "ANLZ: \"%s\" bpm=%u dur=%lums cues=%u hi-wav=%u",
-             track->title[0] ? track->title : track->path,
+    int64_t elapsed_us = esp_timer_get_time() - t_start;
+    const char *src_name = (source == LIBRARY_ANLZ_SRC_CACHE) ? "cache" : "usb";
+    sd_diag_log_write("meta_cache", (source == LIBRARY_ANLZ_SRC_CACHE)
+                          ? "anlz load cache hit"
+                          : (cache_written ? "anlz load usb + cache write"
+                                           : "anlz load usb, cache write failed"));
+    ESP_LOGI(TAG, "ANLZ \"%s\" src=%s bpm=%u dur=%lums cues=%u beats=%u hi-wav=%u %lldus",
+             track->title[0] ? track->title : track->path, src_name,
              track->bpm, (unsigned long)track->duration_ms,
-             meta.cue_count, meta.waveform_high_len);
-
-    anlz_free(&meta);
+             meta.cue_count, meta.beat_count, meta.waveform_high_len,
+             (long long)elapsed_us);
     return ESP_OK;
 }
 
@@ -399,67 +463,6 @@ void library_free_current_anlz(void)
         ESP_LOGI(TAG, "Freed currently loaded track ANLZ metadata");
     }
     xSemaphoreGiveRecursive(s_library_mutex);
-}
-
-esp_err_t library_load_current_anlz(const library_track_t *track)
-{
-    if (!track) return ESP_ERR_INVALID_ARG;
-
-    /* First, free the previous track's ANLZ metadata */
-    library_free_current_anlz();
-
-    if (track->anlz_path[0] == '\0') {
-        ESP_LOGE(TAG, "No ANLZ path for track: %s", track->title);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    char dat_path[LIBRARY_PATH_MAX + 8];
-    char ext_path[LIBRARY_PATH_MAX + 8];
-    library_build_anlz_paths(track, dat_path, sizeof(dat_path), ext_path, sizeof(ext_path));
-    uint32_t track_key = library_track_key(track);
-
-    anlz_metadata_t cached;
-    esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, &cached);
-    if (cache_rc == ESP_OK) {
-        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-        s_current_meta = cached;
-        s_current_meta_valid = true;
-        xSemaphoreGiveRecursive(s_library_mutex);
-
-        sd_diag_log_write("meta_cache", "current track cache hit");
-        ESP_LOGI(TAG, "Loaded current track ANLZ from cache: \"%s\" (cues=%u, beats=%u, hi-wav=%u)",
-                 track->title[0] ? track->title : track->path,
-                 s_current_meta.cue_count, s_current_meta.beat_count, s_current_meta.waveform_high_len);
-        return ESP_OK;
-    }
-
-    media_io_gate_begin();
-
-    /* Parse DAT */
-    anlz_metadata_t meta;
-    esp_err_t rc = anlz_parse_dat(dat_path, &meta);
-    if (rc != ESP_OK) {
-        media_io_gate_end();
-        ESP_LOGE(TAG, "Failed to load current ANLZ DAT: %s", dat_path);
-        return rc;
-    }
-
-    /* Parse EXT (best effort) */
-    anlz_parse_ext(ext_path, &meta);
-    media_io_gate_end();
-    esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, &meta);
-    sd_diag_log_write("meta_cache", save_rc == ESP_OK ? "current track cache write" : "current track cache write failed");
-
-    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    s_current_meta = meta;
-    s_current_meta_valid = true;
-    xSemaphoreGiveRecursive(s_library_mutex);
-
-    ESP_LOGI(TAG, "Successfully loaded current track ANLZ: \"%s\" (cues=%u, beats=%u, hi-wav=%u)",
-             track->title[0] ? track->title : track->path,
-             s_current_meta.cue_count, s_current_meta.beat_count, s_current_meta.waveform_high_len);
-
-    return ESP_OK;
 }
 
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out)

@@ -1346,6 +1346,21 @@ $tests = @(
         )
     },
     @{
+        Name = "library_anlz"
+        Dir = "tests/library_anlz"
+        Target = "test_library_anlz.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-Istubs",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-I../../firmware/main-deck-p4/components/sd_diag_log/include",
+            "-o", "test_library_anlz.exe",
+            "test_library_anlz.c",
+            "../../firmware/main-deck-p4/components/library/library.c"
+        )
+    },
+    @{
         Name = "rekordbox_pdb"
         Dir = "tests/rekordbox_pdb"
         Target = "test_pdb.exe"
