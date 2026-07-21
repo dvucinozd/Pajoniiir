@@ -2,6 +2,7 @@
 #include "control_link.h"
 #ifndef WIN32
 #include "audio_recorder.h"
+#include "service_log.h"
 #endif
 
 #include <limits.h>
@@ -152,6 +153,7 @@ static ui_settings_recording_toggle_cb_t s_recording_toggle_cb = NULL;
 static lv_obj_t *s_btn_rec = NULL;
 static lv_obj_t *s_label_rec_btn = NULL;
 static lv_obj_t *s_label_rec_status = NULL;
+static lv_obj_t *s_label_svc_log = NULL;
 static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
 static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
 static uint8_t s_s3_debug_ap_displayed_status = UINT8_MAX;
@@ -398,6 +400,27 @@ static void ui_settings_update_recording_label(void)
         lv_label_set_text(s_label_rec_status, buf);
         lv_obj_set_style_text_color(s_label_rec_status, col, LV_PART_MAIN);
     }
+}
+
+static void ui_settings_update_service_log_label(void)
+{
+    if (!s_label_svc_log) {
+        return;
+    }
+    service_log_status_t st;
+    if (service_log_get_status(&st) != ESP_OK) {
+        return;
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "SD Log: %s  %luKB  drop %lu",
+             st.available ? "OK" : "off",
+             (unsigned long)(st.current_bytes >> 10),
+             (unsigned long)st.dropped);
+    lv_label_set_text(s_label_svc_log, buf);
+    lv_obj_set_style_text_color(s_label_svc_log,
+                                st.dropped > 0u ? COL_RED
+                                    : (st.available ? COL_TEXT_DIM : COL_TEXT_MUTED),
+                                LV_PART_MAIN);
 }
 
 static void recording_event_cb(lv_event_t *event)
@@ -661,6 +684,11 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                 COL_TEXT_DIM, &lv_font_montserrat_12, 16, 96);
     lv_obj_set_width(label_sd_status, 320);
     lv_label_set_long_mode(label_sd_status, LV_LABEL_LONG_CLIP);
+
+    s_label_svc_log = ui_settings_value_label(status_section, "SD Log: --",
+                                              COL_TEXT_DIM, &lv_font_montserrat_12, 16, 118);
+    lv_obj_set_width(s_label_svc_log, 320);
+    lv_label_set_long_mode(s_label_svc_log, LV_LABEL_LONG_CLIP);
 
     {
         firmware_health_info_t info;
@@ -954,6 +982,7 @@ void ui_settings_update(const ui_frame_context_t *ctx)
     ui_settings_update_s3_firmware_label();
     ui_settings_apply_s3_debug_ap_status();
     ui_settings_update_recording_label();
+    ui_settings_update_service_log_label();
 #endif
 }
 

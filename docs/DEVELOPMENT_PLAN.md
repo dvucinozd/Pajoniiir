@@ -1719,11 +1719,19 @@ ANLZ resolver via `library_last_anlz_load_stats`). A read-only guarded
 `GET /api/diagnostic-log` streams the journal. All P4 host tests plus the new
 `service_log` test pass and the ESP-IDF v5.5 build is clean.
 
-Still open (documented follow-ups, low risk): rate-limited audio-anomaly
-aggregation and the remaining OTA/web/controller event producers; a `service_log`
-object inside the `/api/status` JSON and a Settings "SD Log" status line; and the
-hardware acceptance rows below. A temporary or high-rate detailed trace mode is
-explicitly out of scope.
+Additional producers wired: a periodic esp_timer health monitor (off the audio
+path) emits rate-limited AUDIO_OUTPUT_LATE / AUDIO_UNDERRUN / AUDIO_SAMPLE_RATE
+_CHANGED summaries plus LOW_INTERNAL_HEAP / LOW_PSRAM edges from the counters the
+audio engine already maintains; the web layer emits P4_OTA_STARTED/VERIFIED/
+FAILED, PROFILE_UPLOAD_DONE/FAILED and WEB_LOAD_REQUEST_FAILED; and the Settings
+SYSTEM STATUS panel shows a live "SD Log: OK  <n>KB  drop <n>" line.
+
+Still open (documented follow-ups, low risk): the controller/control-link event
+producers (CONTROLLER_CONNECTED/DISCONNECTED, PROFILE_MATCHED/TRANSFER_*,
+CONTROL_LINK_ONLINE/OFFLINE/CRC/GAP); a `service_log` object inside the large
+`/api/status` JSON (deferred to avoid churn in the 40-argument status
+formatter); and the hardware acceptance rows below. A temporary or high-rate
+detailed trace mode is explicitly out of scope.
 
 ### Goal and real-time boundary
 
