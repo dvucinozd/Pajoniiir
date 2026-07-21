@@ -389,3 +389,46 @@ Diagnostic value: "pings fine, one client works, every new client gets nothing"
 means socket exhaustion, not a crash. Do not reach for a wired COM15 recovery on
 that signature alone. Compare with the separate `max_uri_handlers` trap, where a
 single failed registration stops the entire server at boot.
+
+## Attributing AUDIO_OUTPUT_LATE (2026-07-22, `RC1-178-g8c689d27`)
+
+The 2026-07-21 entry above concluded the recorder was "not timing-neutral" from
+a correlation: `AUDIO_OUTPUT_LATE` clustered inside the recording window. That
+correlation was confounded — the web controller page was open and polling
+throughout the same window. This entry supersedes that conclusion.
+
+`RC1-178` times each phase of one output block (snapshot prep, the 256-frame
+mixer loop, the recorder tap, the monitor link write, the blocking PCM5102A
+write, the codec write, AE_LOCK bookkeeping), exposes the maxima in
+`/api/status` diagnostics, and zeroes them when a recording starts.
+
+Measured on hardware, two decks playing, 44.1 kHz, threshold 11 610 us:
+
+| condition | late blocks | worst block |
+|---|---|---|
+| playback only, 90 s | **0** | — |
+| playback + recording, sparse polling, 90 s | 1 | 11 919 us (2.6 % over) |
+| playback + recording, shipped UI poll rate (~2.5 req/s), 60 s | **0** | — |
+| playback + recording, forced ~9 req/s, 60 s | **50** | 20 248 us |
+| playback + forced ~9 req/s, **no recording**, 642 requests | **0** | — |
+
+Neither recording nor web traffic alone produces late blocks; only the two
+together, and only well above the rate the shipped page actually polls at.
+
+The mechanism is preemption, not slow code. Under the forced load **every phase
+inflated proportionally, including phases with no extra work to do** — the codec
+write went 57 -> 1539 us and the pure struct-prep head phase went 160 -> 3002 us.
+Nothing started doing more; the output task was being descheduled at arbitrary
+points. A plausible shared resource is the PSRAM bus: the recorder ring,
+decoded PCM, the DSI framebuffer and the ESP-Hosted C6 mempool (which
+deliberately prefers SPIRAM) all sit on it.
+
+What recording actually costs: roughly 15-20 % of the headroom in every phase
+(mixer 6633 -> 7829 us, bookkeeping 1847 -> 2384 us) plus the 512 KiB PSRAM
+ring. That is a narrower margin, not a defect at the operating point.
+
+**Residual, deliberately left open:** the 370 305 us worst case recorded on
+2026-07-21 did **not** reproduce. The worst this bench could force was 20 ms,
+and only under deliberate overload. An outlier an order of magnitude larger
+remains unexplained, on a bench that also logged an unexplained `reset=PANIC`
+the same day. Do not treat the 370 ms event as covered by this analysis.

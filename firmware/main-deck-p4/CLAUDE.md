@@ -1,7 +1,7 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-175-ge40b7225` on `ota_0`; the S3 is **not** matched and
+signed release is `RC1-178-g8c689d27` on `ota_1`; the S3 is **not** matched and
 still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
 run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
@@ -23,13 +23,19 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
 > `docs/bench-notes.md` for the diagnostic signature.
 
-> ⚠️ **The recorder is not yet established as timing-neutral.** The producer
-> copy is cheap (0.04 % of pushes >= 100 us, zero dropped blocks over 120 s of
-> dual-deck recording), but the same boots logged repeated `AUDIO_OUTPUT_LATE`
-> (worst 370 ms) and `AUDIO_UNDERRUN` inside the recording window and not
-> outside it. Explaining that is open work — see `docs/bench-notes.md`. Also
-> unexplained: one `reset=PANIC` and two `POWERON` resets on that bench, one of
-> which aborted an OTA upload mid-transfer. The latest full
+> ⚠️ **The recorder narrows the audio timing margin; it does not break it.**
+> Measured 2026-07-22 with per-phase block timing (`RC1-178`): two decks playing
+> plus recording plus the web UI polling at its own rate gives **zero** late
+> blocks. Late blocks appear only when web polling is forced to roughly four
+> times the shipped rate — and recording alone, or forced polling alone, gives
+> zero. Under that combined load every phase inflates proportionally, including
+> phases with no extra work, which is the signature of preemption rather than
+> slow code. Recording costs about 15-20 % of the headroom in every phase plus
+> the 512 KiB PSRAM ring. **Still unexplained:** the 370 ms worst case seen on
+> 2026-07-21 never reproduced (worst forced here: 20 ms), on a bench that also
+> logged a `reset=PANIC` that day. See `docs/bench-notes.md`.
+
+The latest full
 functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
 Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all

@@ -11,19 +11,24 @@ still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
 2026-07-14).
 
 Bench state now differs from that rollout: the P4 alone runs
-`RC1-175-ge40b7225` from `ota_0` (recorder journal events, host-runner repairs,
+`RC1-178-g8c689d27` from `ota_1` (recorder journal events, host-runner repairs,
 the redesigned web controller and the httpd `lru_purge_enable` fix), while the
 S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
 any acceptance run.
 
-Open item raised by the 2026-07-21 recorder bench: the producer-side push gate
-passes comfortably (0.04 % of pushes >= 100 us, zero dropped blocks), but the
-same boots logged repeated `AUDIO_OUTPUT_LATE` (worst 370 ms) and
-`AUDIO_UNDERRUN` inside the recording window and not outside it. The recorder is
-therefore **not** yet established as timing-neutral. Numbers and caveats are in
-`bench-notes.md`. Also unexplained on that bench: one `reset=PANIC` on
-`RC1-170` and two `POWERON` resets, one of which aborted an OTA upload
-mid-transfer.
+Recorder timing, resolved 2026-07-22 with per-phase output-block timing
+(`RC1-178`): the producer push is cheap (0.04 % of pushes >= 100 us, zero
+dropped blocks) and, at the operating point, two decks plus recording plus the
+web UI polling at its own rate produce **zero** late blocks. The 2026-07-21
+reading that the recorder is "not timing-neutral" was drawn from a confounded
+correlation and is superseded — late blocks need recording *and* web polling
+forced to roughly four times the shipped rate, and under that load every phase
+inflates proportionally, which is preemption rather than slow code. Recording
+costs about 15-20 % of the per-phase headroom plus a 512 KiB PSRAM ring.
+Still open on that bench: the 370 ms worst case never reproduced (worst forced:
+20 ms), alongside one unexplained `reset=PANIC` on `RC1-170` and two `POWERON`
+resets, one of which aborted an OTA upload mid-transfer. Full matrix in
+`bench-notes.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 
