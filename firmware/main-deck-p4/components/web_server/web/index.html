@@ -3,52 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PAJoNIIR Web Controller</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=7">
+    <title>PajoNiiiR Web Controller</title>
+    <!--
+      No webfont <link> here on purpose. This page is served from the P4's own
+      SoftAP, which has no route to the internet, and the captive DNS answers
+      every name with 192.168.4.1 — so a fonts.googleapis.com stylesheet link
+      resolves back to this device, fails the TLS handshake, and blocks first
+      paint until it times out. style.css falls back to system faces instead.
+    -->
+    <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
     <!-- ── Top Bar ──────────────────────────────────────────────────────── -->
     <header class="topbar">
-        <div class="topbar-brand">PAJoNIIR</div>
+        <div class="topbar-brand">PajoNiiiR</div>
         <div class="topbar-right">
-            <span class="topbar-label">WEB CONTROLLER</span>
+            <span class="topbar-label">LIVE</span>
             <span class="status-dot" id="conn-dot" title="API status"></span>
         </div>
     </header>
 
+    <main class="app">
+
     <!-- ── Performance Zone: DECK 1 | MIXER | DECK 2 ───────────────────── -->
-    <main class="perf-zone">
+    <div class="perf-zone">
 
         <!-- DECK 1 ──────────────────────────────────────────────────────── -->
         <div class="deck-card" id="deck-1-card">
-            <div class="deck-title-strip">
+            <div class="deck-head">
                 <span class="deck-name">DECK 1</span>
                 <span class="badge" id="deck-1-status">IDLE</span>
             </div>
 
-            <div class="deck-header-info">
+            <div class="deck-titlerow">
                 <div class="track-meta">
                     <div class="track-title" id="deck-1-title">No Track</div>
                     <div class="track-artist" id="deck-1-artist">Unknown Artist</div>
-                    <div class="track-stats">
-                        <span class="stat-label">BPM</span>
-                        <span class="val stat-val" id="deck-1-bpm">0</span>
-                        <div class="stat-sep"></div>
-                        <span class="stat-label">PITCH</span>
-                        <span class="val stat-val" id="deck-1-pitch">+0.00%</span>
-                    </div>
                 </div>
-                <div class="time-display" id="deck-1-time">00:00:00</div>
+                <div class="time-block">
+                    <div class="time-display" id="deck-1-time">00:00:00</div>
+                    <div class="time-remain-top" id="deck-1-remain-top"></div>
+                </div>
             </div>
+
+            <!-- Decorative waveform (played portion tracks real position) -->
+            <div class="wave" id="deck-1-wave"></div>
 
             <!-- Progress / seek -->
             <div class="progress-wrap" id="deck-1-progress" onclick="onSeek(1, event)" title="Tap to seek">
                 <div class="progress-fill" id="deck-1-fill"></div>
                 <span class="time-remain" id="deck-1-remain">-00:00:00</span>
+            </div>
+
+            <!-- Stat chips -->
+            <div class="stat-chips">
+                <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-1-bpm">0</span></div>
+                <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent" id="deck-1-pitch">+0.00%</span></div>
             </div>
 
             <!-- Pitch / Tempo control -->
@@ -85,7 +96,7 @@
                     </div>
                 </div>
 
-                <!-- Decorative VU meter -->
+                <!-- Master VU meter -->
                 <div class="vu-column">
                     <div class="vu-bar-container" id="vu-master" title="Master output level">
                         <div class="vu-seg vu-red"></div>
@@ -128,33 +139,34 @@
 
         <!-- DECK 2 ──────────────────────────────────────────────────────── -->
         <div class="deck-card" id="deck-2-card">
-            <div class="deck-title-strip">
+            <div class="deck-head">
                 <span class="deck-name">DECK 2</span>
                 <span class="badge" id="deck-2-status">IDLE</span>
             </div>
 
-            <div class="deck-header-info">
+            <div class="deck-titlerow">
                 <div class="track-meta">
                     <div class="track-title" id="deck-2-title">No Track</div>
                     <div class="track-artist" id="deck-2-artist">Unknown Artist</div>
-                    <div class="track-stats">
-                        <span class="stat-label">BPM</span>
-                        <span class="val stat-val" id="deck-2-bpm">0</span>
-                        <div class="stat-sep"></div>
-                        <span class="stat-label">PITCH</span>
-                        <span class="val stat-val" id="deck-2-pitch">+0.00%</span>
-                    </div>
                 </div>
-                <div class="time-display" id="deck-2-time">00:00:00</div>
+                <div class="time-block">
+                    <div class="time-display" id="deck-2-time">00:00:00</div>
+                    <div class="time-remain-top" id="deck-2-remain-top"></div>
+                </div>
             </div>
 
-            <!-- Progress / seek -->
+            <div class="wave" id="deck-2-wave"></div>
+
             <div class="progress-wrap" id="deck-2-progress" onclick="onSeek(2, event)" title="Tap to seek">
                 <div class="progress-fill" id="deck-2-fill"></div>
                 <span class="time-remain" id="deck-2-remain">-00:00:00</span>
             </div>
 
-            <!-- Pitch / Tempo control -->
+            <div class="stat-chips">
+                <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-2-bpm">0</span></div>
+                <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent" id="deck-2-pitch">+0.00%</span></div>
+            </div>
+
             <div class="pitch-control">
                 <span class="pitch-control-label">TEMPO</span>
                 <input type="range" id="deck-2-pitch-slider"
@@ -170,15 +182,15 @@
             </div>
         </div>
 
-    </main>
+    </div>
 
     <!-- ── USB Browser ──────────────────────────────────────────────────── -->
-    <section class="browser-card">
-        <div class="browser-header">
-            <div class="browser-header-left">
-                <h2 class="browser-title">USB BROWSER</h2>
-                <button class="btn btn-expand" id="browser-expand-btn" onclick="toggleBrowserExpand()">SHOW</button>
-            </div>
+    <section class="card collapsible collapsed" id="browser-card">
+        <div class="card-head">
+            <h2 class="card-title">USB BROWSER</h2>
+            <button class="btn btn-toggle" id="browser-expand-btn" onclick="toggleCollapse('browser-card', this)">SHOW</button>
+        </div>
+        <div class="card-body">
             <div class="search-wrap">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" stroke-width="2"
@@ -190,62 +202,68 @@
                        placeholder="Search collection..."
                        oninput="filterLibrary()">
             </div>
-        </div>
-        <div class="library-container">
-            <table class="library-table">
-                <colgroup>
-                    <col><col><col><col><col>
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th>TITLE</th>
-                        <th>ARTIST</th>
-                        <th>BPM</th>
-                        <th>DURATION</th>
-                        <th>ACTION</th>
-                    </tr>
-                </thead>
-                <tbody id="library-body">
-                    <tr>
-                        <td colspan="5" class="loading-cell">Učitavanje knjižnice...</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="library-container">
+                <table class="library-table">
+                    <colgroup><col><col><col></colgroup>
+                    <thead>
+                        <tr>
+                            <th>TITLE</th>
+                            <th>BPM</th>
+                            <th>ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="library-body">
+                        <tr>
+                            <td colspan="3" class="loading-cell">Učitavanje knjižnice...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </section>
 
-    <section class="profile-card">
-        <div>
-            <h2 class="browser-title">CONTROLLER PROFILE</h2>
-            <p id="profile-list-info">Reading profiles from the SD card...</p>
+    <!-- ── Controller Profile ───────────────────────────────────────────── -->
+    <section class="card collapsible collapsed" id="profile-card">
+        <div class="card-head">
+            <h2 class="card-title">CONTROLLER PROFILE</h2>
+            <button class="btn btn-toggle" onclick="toggleCollapse('profile-card', this)">SHOW</button>
+        </div>
+        <div class="card-body">
+            <p id="profile-list-info" class="card-info">Reading profiles from the SD card...</p>
             <p class="maintenance-warning">Upload only a compiled <code>profile.s3bin</code>. The P4 validates its format and CRC before replacing anything on the SD card.</p>
+            <label class="profile-field">
+                <span>Profile ID / SD directory</span>
+                <input id="profile-id" type="text" value="pioneer_ddj_flx4" maxlength="39" pattern="[A-Za-z0-9_-]+" autocomplete="off" spellcheck="false">
+            </label>
+            <input id="profile-file" type="file" accept=".s3bin,application/octet-stream">
+            <label class="profile-overwrite">
+                <input id="profile-overwrite" type="checkbox">
+                <span>Allow overwrite of an existing profile</span>
+            </label>
+            <button class="btn btn-profile" id="profile-upload-btn" onclick="uploadControllerProfile()">UPLOAD PROFILE</button>
+            <progress id="profile-progress" max="100" value="0"></progress>
+            <span id="profile-status"></span>
         </div>
-        <label class="profile-field">
-            <span>Profile ID / SD directory</span>
-            <input id="profile-id" type="text" value="pioneer_ddj_flx4" maxlength="39" pattern="[A-Za-z0-9_-]+" autocomplete="off" spellcheck="false">
-        </label>
-        <input id="profile-file" type="file" accept=".s3bin,application/octet-stream">
-        <label class="profile-overwrite">
-            <input id="profile-overwrite" type="checkbox">
-            <span>Allow overwrite of an existing profile</span>
-        </label>
-        <button class="btn btn-profile" id="profile-upload-btn" onclick="uploadControllerProfile()">UPLOAD PROFILE</button>
-        <progress id="profile-progress" max="100" value="0"></progress>
-        <span id="profile-status"></span>
     </section>
 
-    <section class="ota-card">
-        <div>
-            <h2 class="browser-title">P4 FIRMWARE UPDATE</h2>
-            <p id="ota-firmware-info">Reading firmware status...</p>
+    <!-- ── P4 Firmware Update ───────────────────────────────────────────── -->
+    <section class="card collapsible collapsed" id="ota-card">
+        <div class="card-head">
+            <h2 class="card-title">P4 FIRMWARE UPDATE</h2>
+            <button class="btn btn-toggle" onclick="toggleCollapse('ota-card', this)">SHOW</button>
+        </div>
+        <div class="card-body">
+            <p id="ota-firmware-info" class="card-info">Reading firmware status...</p>
             <p class="maintenance-warning">Select only the signed P4 .ddjota bundle. Playback stops during upload. Keep power connected until the controller restarts.</p>
+            <input id="ota-file" type="file" accept=".ddjota,application/octet-stream">
+            <button class="btn btn-ota" id="ota-upload-btn" onclick="uploadP4Firmware()">UPDATE P4</button>
+            <progress id="ota-progress" max="100" value="0"></progress>
+            <span id="ota-status"></span>
         </div>
-        <input id="ota-file" type="file" accept=".ddjota,application/octet-stream">
-        <button class="btn btn-ota" id="ota-upload-btn" onclick="uploadP4Firmware()">UPDATE P4</button>
-        <progress id="ota-progress" max="100" value="0"></progress>
-        <span id="ota-status"></span>
     </section>
 
-    <script src="app.js?v=10"></script>
+    </main>
+
+    <script src="app.js?v=12"></script>
 </body>
 </html>
