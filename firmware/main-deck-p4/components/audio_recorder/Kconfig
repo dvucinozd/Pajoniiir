@@ -1,0 +1,26 @@
+menu "Audio Recorder (P4 master output)"
+
+choice AUDIO_RECORDER_RING_SIZE
+    prompt "Master recorder PSRAM ring size"
+    default AUDIO_RECORDER_RING_512K
+    help
+        Size of the preallocated PSRAM ring that buffers rendered master blocks
+        between the audio output task and the writer task. A larger ring
+        tolerates longer microSD write stalls at the cost of PSRAM. The ring is
+        allocated only while recording is active.
+
+    config AUDIO_RECORDER_RING_256K
+        bool "256 KiB (~1.4 s @ 48 kHz)"
+    config AUDIO_RECORDER_RING_512K
+        bool "512 KiB (~2.7 s @ 48 kHz)"
+    config AUDIO_RECORDER_RING_1M
+        bool "1 MiB (~5.5 s @ 48 kHz)"
+endchoice
+
+config AUDIO_RECORDER_RING_BYTES
+    int
+    default 262144 if AUDIO_RECORDER_RING_256K
+    default 524288 if AUDIO_RECORDER_RING_512K
+    default 1048576 if AUDIO_RECORDER_RING_1M
+
+endmenu

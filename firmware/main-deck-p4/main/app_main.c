@@ -3,6 +3,7 @@
 #include "bsp_jc4880.h"
 #include "library.h"
 #include "audio_engine.h"
+#include "audio_recorder.h"
 #include "ui.h"
 #include "ui_settings.h"
 #include "usb_storage.h"
@@ -31,6 +32,21 @@ void p4_tcm_heap_guard_keep(void);
 static void on_s3_debug_ap_toggle(bool enable)
 {
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
+}
+
+// Settings RECORD button -> master-output microSD recorder. Recording taps the
+// exact post-limiter MAIN block, so it needs an established output rate.
+static bool on_recording_toggle(bool enable)
+{
+    if (enable) {
+        uint32_t rate = audio_engine_get_output_sample_rate();
+        if (rate == 0u) {
+            ESP_LOGW(TAG, "recorder: no output rate yet (load and play a track first)");
+            return false;
+        }
+        return audio_recorder_start(rate) == ESP_OK;
+    }
+    return audio_recorder_stop() == ESP_OK;
 }
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
@@ -137,6 +153,9 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(audio_engine_init());
+    /* Prepare the recorder early so any crash-orphaned .part files on the SD
+     * card are recovered before a new session starts. */
+    audio_recorder_init();
     app_settings_t settings = app_settings_get();
     audio_engine_set_cue_mode(settings.cue_mode);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(settings.master_trim_preset));
@@ -163,6 +182,7 @@ void app_main(void)
     // exist.  A saved Wi-Fi setting is likewise activated after the UI and
     // playback state are fully initialized, so web requests cannot race boot.
     ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
+    ui_settings_set_recording_toggle_cb(on_recording_toggle);
     ui_settings_set_s3_debug_ap_toggle_cb(on_s3_debug_ap_toggle);
     if (app_settings_get().wifi_remote) {
         ESP_LOGI(TAG, "Wi-Fi remote enabled in settings — starting web UI AP");
