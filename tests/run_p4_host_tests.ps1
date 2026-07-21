@@ -816,6 +816,18 @@ $tests = @(
         )
     },
     @{
+        Name = "service_log"
+        Dir = "tests/service_log"
+        Target = "test_service_log.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/service_log/include",
+            "-o", "test_service_log.exe",
+            "test_service_log.c",
+            "../../firmware/main-deck-p4/components/service_log/service_log_format.c"
+        )
+    },
+    @{
         Name = "audio_wav_decoder"
         Dir = "tests/audio_wav_decoder"
         Target = "test_audio_wav_decoder.exe"
