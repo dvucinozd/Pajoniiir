@@ -2056,14 +2056,28 @@ static void ae_loader_task(void *arg)
     eng->fp        = NULL;
     AE_UNLOCK();
 
+    /* Release the media gate between chunks. Holding it across the whole
+     * multi-megabyte preload blocked every other /usb access for the duration —
+     * notably the track metadata cache's DAT/EXT signature stat, measured at
+     * 2.4 s while another deck preloaded, versus 47 ms idle. Every actual
+     * transfer below still runs under the gate, so a disconnect can never tear
+     * down an in-flight READ10. */
+    media_io_gate_end();
+
     int64_t t0  = esp_timer_get_time();
     size_t  off = 0;
     while (off < (size_t)fsz && runtime->run && media_io_gate_is_available()) {
         size_t want = audio_fw_preload_chunk_bytes((size_t)fsz - off,
                                                    audio_fw_output_task_running());
+        media_io_gate_begin();
+        if (!media_io_gate_is_available()) {
+            media_io_gate_end();   /* media went away between chunks */
+            break;
+        }
         int64_t chunk_start_us = esp_timer_get_time();
         size_t got = fread(fw->buf + off, 1, want, src);
         uint32_t chunk_us = (uint32_t)(esp_timer_get_time() - chunk_start_us);
+        media_io_gate_end();
         if (got == 0) {
             /* READ10 may fail just before the MSC callback publishes media
              * loss.  Allow one scheduler window before classifying the short
@@ -2076,6 +2090,7 @@ static void ae_loader_task(void *arg)
         eng->load_progress = (uint8_t)(off * 100u / (size_t)fsz);
         ae_diag_record_preload_chunk(ctx->deck, chunk_us, got, off, (size_t)fsz);
     }
+    media_io_gate_begin();
     fclose(src);
     media_io_gate_end();
 
@@ -4541,7 +4556,11 @@ esp_err_t audio_engine_set_master_trim(float gain)
 
 uint32_t audio_engine_get_output_sample_rate(void)
 {
+#if AE_PC
+    return 0u;   /* no I2S output stage in the offline PC build */
+#else
     return s_output_sample_rate;
+#endif
 }
 
 float audio_engine_get_master_trim(void)
