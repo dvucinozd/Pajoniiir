@@ -1,10 +1,12 @@
 # DDJ-FFL4 S3 Control Board Firmware - Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-16. The
-installed signed release is `RC1-131-gc391e306` on `ota_0 / valid`, confirmed
-through the P4 firmware report. The latest full functional hardware acceptance
-remains `RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX Flanger/Delay smoke is
-pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
+Documentation status: current developer guide, audited 2026-07-21. The
+installed signed release is `RC1-168-gb69f1b19` on `ota_0 / valid`, matching the
+P4 and confirmed through the P4 firmware report. It was uploaded over the S3
+Debug AP (`POST /api/ota/s3`); the S3 itself is unchanged by the P4-side
+recorder/service-journal work in that release. The latest full functional
+hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX
+Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all
 merged branches were pruned local + remote, with unique retired work archived
 under `attic/*` tags.

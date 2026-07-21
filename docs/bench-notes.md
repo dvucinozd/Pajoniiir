@@ -212,6 +212,32 @@ latest fully functionally accepted release remains `RC1-123-g587cd7a1`.
 Artifact hashes, sizes and state transitions are in
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
+### Matching `RC1-168-gb69f1b19` rollout, 2026-07-21
+
+| Target board | Transport/endpoint | Before | After | Upload | Result |
+| --- | --- | --- | --- | --- | --- |
+| Seeed XIAO ESP32S3 | S3 Debug AP, `POST /api/ota/s3` | `ota_1 / RC1-146-g75feb6f1` | `ota_0 / valid / RC1-168-gb69f1b19` | HTTP 200, 9.1 s | **DEPLOYMENT PASS** |
+| JC4880P443C_I_W ESP32-P4 | P4 Wi-Fi Remote, `POST /api/ota/p4` | `factory / RC1-166-g4bda7976` | `ota_0 / RC1-168-gb69f1b19` | connection closed at reboot, transfer completed | **DEPLOYMENT PASS** |
+
+Both boards now run the same signed release from `ota_0`, confirmed directly and
+through P4's nested S3 report. The P4 upload returned no HTTP status because the
+board rebooted before answering — always confirm an OTA through `/api/firmware`
+rather than trusting the curl exit status.
+
+Two hardware-found defects were fixed on the way to this build: the USB preload
+held `media_io_gate` for the whole file (a cached metadata load measured 2367 ms
+under a concurrent preload versus 47 ms idle; now released per 32 KB chunk,
+measured 267 ms), and adding three recorder endpoints exceeded
+`max_uri_handlers`, which made `register_uri_or_stop()` stop the entire web
+server — the SoftAP stayed up while every endpoint including OTA was dead, and
+recovery required a wired COM15 flash.
+
+Accepted on hardware in this build: the master-output recorder functional `.wav`
+capture (about 54 s, 0 dropped blocks/frames, 4.7 % ring high-water, exact
+176.4 kB/s) and the structured service journal. Not run: the full functional
+audio/UI/controller smoke, so the latest fully accepted release remains
+`RC1-123-g587cd7a1`.
+
 ---
 
 ## Open Items

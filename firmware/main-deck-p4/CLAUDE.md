@@ -1,10 +1,13 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-16. The
-installed signed release is `RC1-131-gc391e306` on `ota_1`, with OTA boot/status
-verification complete. The latest full functional hardware acceptance remains
-`RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX Flanger/Delay smoke is
-pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
+Documentation status: current developer guide, audited 2026-07-21. The
+installed signed release is `RC1-168-gb69f1b19` on `ota_0`, matching the S3, with
+OTA boot/status verification complete. That build adds the unified ANLZ metadata
+loader, the structured microSD service journal (`GET /api/diagnostic-log`) and
+the master-output recorder (Settings control plus guarded `/api/recording`); the
+recorder's functional `.wav` acceptance passed on hardware. The latest full
+functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
+Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all
 merged branches were pruned local + remote, with unique retired work archived
 under `attic/*` tags.

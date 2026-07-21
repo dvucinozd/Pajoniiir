@@ -1,27 +1,33 @@
 # Documentation Status
 
-Last full audit: **2026-07-17** after the clean, signed P4
-DSI-synchronised Overview candidate and its exact-image focused hardware smoke.
+Last full audit: **2026-07-21** after the matching `RC1-168-gb69f1b19` rollout
+that carries the unified ANLZ metadata loader, the structured microSD service
+journal and the accepted master-output recorder.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **last matching signed OTA rollout baseline:** `RC1-131-gc391e306` on both
-  processors, signed with key ID `rel-001`, with P4 recorded on `ota_1` and S3
-  on `ota_0 / valid` after the 2026-07-16 rollout;
-- **current bench state:** P4 factory-slot `RC1-133-gbd5e43ce`, the exact
-  wired-flashed payload from the clean `rel-001` signed candidate built from
-  source commit `bd5e43ce`; S3 remains installed on signed RC1-131. See the
-  [focused display validation](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md);
+- **last matching signed OTA rollout baseline:** `RC1-168-gb69f1b19` on both
+  processors, signed with key ID `rel-001`, with P4 and S3 both on `ota_0` after
+  the 2026-07-21 rollout (S3 reported `valid`, independently confirmed through
+  P4's nested firmware report);
+- **current bench state:** identical to that rollout — both boards run
+  `RC1-168-gb69f1b19`;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
-  forced rollback and final UI/audio/controller smoke.
+  forced rollback and final UI/audio/controller smoke. RC1-168 is **not** a full
+  functional acceptance.
 
-RC1-131 includes the code-review remediation and Beat FX Flanger and Delay. Its
-signed update and mandatory startup paths passed, but the targeted Phase 20 and
-Flanger/Delay hardware-smoke rows remain open. The newer P4 candidate has clean
-signed-package and focused exact-image display acceptance, but not full
-functional acceptance or a newly exercised OTA-slot transition.
+RC1-168 adds, on top of the earlier code-review remediation and Beat FX
+Flanger/Delay: the single-resolver ANLZ metadata path, the structured
+`/sd/logs/system.log` service journal with its read-only
+`GET /api/diagnostic-log`, the master-output microSD recorder with its Settings
+control and guarded `/api/recording` API, and two fixes found on hardware (the
+USB preload media gate is now released between chunks, and the httpd URI-handler
+limit sits above the registered endpoint count). Accepted on hardware in this
+build: the recorder functional `.wav` acceptance and the service journal.
+Still open: the targeted Phase 20 rows, Flanger/Delay audio smoke and the
+remaining E1A functional set.
 
 ## Source-of-truth order
 

@@ -14,14 +14,18 @@ Status: current phase ledger, audited 2026-07-17.
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Beat FX | Filter/Echo hardware-accepted; Flanger/Delay implemented, host-tested and deployed, with focused hardware smoke pending |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
-| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-131-gc391e306` deployed and boot-verified on both targets 2026-07-16 |
+| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
+| ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
+| microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
+| Master-output recorder | Implemented with Settings control and guarded `/api/recording` API; functional `.wav` hardware acceptance passed 2026-07-21 (0 dropped frames) |
 
 The latest fully functionally accepted hardware baseline remains
-`RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is RC1-131,
-while the active bench P4 is the wired factory-slot payload from clean signed
-candidate `RC1-133-gbd5e43ce` (source commit `bd5e43ce`). Its exact-image
-focused display re-smoke passed; S3 was not reflashed and remains on RC1-131.
-Targeted Phase 20, Flanger/Delay and
+`RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is
+`RC1-168-gb69f1b19`, deployed to both boards on 2026-07-21 and running from
+`ota_0` on each; the bench state is identical to that rollout. RC1-168 carries
+the unified ANLZ loader, the service journal, the accepted recorder plus its
+API, and two hardware-found fixes (per-chunk USB preload media gate, httpd
+URI-handler limit). Targeted Phase 20, Flanger/Delay and
 remote controller-profile acceptance then follows, before production key
 provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
 key-lock quality testing, selected pending MIDI hardware rows and a first

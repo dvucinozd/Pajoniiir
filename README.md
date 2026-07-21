@@ -6,18 +6,18 @@ board. It reads Rekordbox media directly and does not require a PC during
 performance.
 
 > [!IMPORTANT]
-> The last matching P4/S3 signed-OTA rollout baseline remains
-> **`RC1-131-gc391e306`** (P4 `ota_1`, S3 `ota_0 / valid`), deployed and
-> boot/status-verified on 2026-07-16 with key `rel-001`. The DSI-synchronised
-> waveform fix was then committed at `bd5e43ce`, packaged as signed candidate
-> **`RC1-133-gbd5e43ce`**, and its exact P4 payload was wired-flashed to the
-> factory slot over COM15. That image passed more than 71 seconds of active
-> dual-waveform playback with zero PCM drops or DSI underruns; the operator saw
-> neither a flash nor jitter. S3 was not reflashed and remains on RC1-131. This
-> wired run did not exercise an OTA-slot transition or the full functional
-> checklist. The latest complete functional hardware acceptance remains
-> **`RC1-123-g587cd7a1`** from 2026-07-14, so the system is not yet
-> production-ready. See
+> The last matching P4/S3 signed-OTA rollout baseline is
+> **`RC1-168-gb69f1b19`** (both boards on `ota_0`, S3 reported `valid`),
+> deployed and boot/status-verified on 2026-07-21 with key `rel-001`; the bench
+> state is identical to that rollout. It adds the unified ANLZ metadata loader,
+> the structured microSD service journal with its read-only
+> `GET /api/diagnostic-log`, and the master-output recorder with its Settings
+> control and guarded `/api/recording` API. Accepted on hardware in this build:
+> the recorder functional `.wav` capture (about 54 s, zero dropped frames) and
+> the service journal. The latest **complete** functional hardware acceptance
+> still remains **`RC1-123-g587cd7a1`** from 2026-07-14 — targeted Phase 20,
+> Beat FX Flanger/Delay audio and the rest of the E1A set are outstanding — so
+> the system is not yet production-ready. See
 > [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
 
 ## System at a Glance

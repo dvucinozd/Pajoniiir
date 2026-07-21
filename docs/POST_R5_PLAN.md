@@ -1,15 +1,16 @@
 # Post-R5 Plan
 
-Status: active 2026-07-17. R5A-R5F remediation and E1 signed-OTA acceptance are
-complete. The last matching OTA rollout was `RC1-131-gc391e306` on P4 `ota_1`
-and S3 `ota_0`. The current bench P4 is instead the exact factory-slot payload
-from clean signed candidate `RC1-133-gbd5e43ce`; S3 was not reflashed and
-remains `RC1-131-gc391e306` on `ota_0 / valid`. The latest fully functionally
-accepted release remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3
-`ota_1` on 2026-07-14). The P4 wired full flash reset OTA selection, leaving
-its `ota_0 / RC1-126-g812ad70f` and `ota_1 / RC1-131-gc391e306` images
-inactive. This document is the ordered continuation plan for current-candidate
-functional acceptance, enclosure readiness and production hardening.
+Status: active 2026-07-21. R5A-R5F remediation and E1 signed-OTA acceptance are
+complete. The last matching OTA rollout is `RC1-168-gb69f1b19`, deployed to both
+boards on 2026-07-21 and running from `ota_0` on each (S3 `valid`, independently
+confirmed through P4's nested firmware report); the bench state is identical to
+that rollout. That build carries the unified ANLZ metadata loader, the
+structured microSD service journal and the master-output recorder, and its
+recorder `.wav` capture plus the service journal were accepted on hardware. The
+latest **fully** functionally accepted release still remains
+`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
+This document is the ordered continuation plan for current-candidate functional
+acceptance, enclosure readiness and production hardening.
 
 ## Execution Order
 
