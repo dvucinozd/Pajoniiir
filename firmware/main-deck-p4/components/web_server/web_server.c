@@ -1217,6 +1217,12 @@ esp_err_t web_server_start(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_open_sockets = 5;
+    /* Evict the least-recently-used socket instead of refusing the connection.
+     * The controller page holds keep-alive sockets while it polls /api/status,
+     * so without this a single busy browser can occupy all five and lock every
+     * other client out completely — including the OTA endpoint, from a device
+     * that still answers ping and looks perfectly healthy. */
+    config.lru_purge_enable = true;
     config.stack_size = 8192;
     config.ctrl_port = 32768; // pomaknuto da ne bude u konfliktu
     config.uri_match_fn = httpd_uri_match_wildcard;
