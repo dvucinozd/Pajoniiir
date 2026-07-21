@@ -1914,14 +1914,26 @@ and a 64 MiB free-space reserve auto-stop; and a Settings RECORD button wired
 through `audio_engine_get_output_sample_rate()`. Free-space start gate is
 128 MiB. The P4 build passes and the RECORD control is confirmed on hardware.
 
-Still open: the functional hardware `.wav` acceptance (record a live master mix,
-then confirm the file plays back as the exact MAIN output), the p99 push-timing
-and dropped-frame gates under sustained dual-deck load, the recovery smoke, and
-migrating the other `/sd` consumers (track_meta_cache, controller-profile,
-service log, Settings free-space) plus web-handler `admit()` onto `sd_io_gate`.
-The optional guarded `POST /api/recording/{start,stop}` + `/api/status` recorder
-object was deferred in favour of the Settings control. The notes below are the
-original design record.
+Functional hardware acceptance passed on 2026-07-21 (P4 `RC1-166-g4bda7976`):
+recording was started from the Settings RECORD control and stopped through the
+new API after ~54 s of live MAIN output. Counters reported `dropped_blocks` 0,
+`dropped_frames` 0 and a ring high-water of 24 of 508 slots (4.7 %), the writer
+sustained exactly 176.4 kB/s (44.1 kHz stereo) with the ring draining to 0-2
+slots, and `bytes_written` 9 561 088 matched `frames_written` 2 390 272 x 4 B
+exactly. The finalized `/sd/recordings/REC_*.wav` was played back off the card
+and confirmed to be the expected MAIN mix.
+
+The guarded recorder API is implemented after all: `GET /api/recording` returns
+the snapshot, `POST /api/recording/start` starts at the live MAIN rate (409 when
+no rate exists or a session is already running) and `POST /api/recording/stop`
+finalizes. Embedding the same snapshot in the large `/api/status` JSON remains
+deferred.
+
+Still open: the p99 push-timing and dropped-frame gates under sustained
+dual-deck load, the `.part` recovery smoke, and migrating the other `/sd`
+consumers (track_meta_cache, controller-profile, service log, Settings
+free-space) plus web-handler `admit()` onto `sd_io_gate`. The notes below are
+the original design record.
 
 The existing `audio_engine_decode_to_wav()` helper is PC-test-only, rewinds and
 decodes Deck 1 offline, and is not a live master recorder. It may supply small
