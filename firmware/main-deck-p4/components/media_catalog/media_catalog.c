@@ -3,6 +3,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "library.h"
+#include "service_log.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -108,8 +109,13 @@ esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
         return ESP_ERR_NO_MEM;
     }
 
+    service_log_event(SERVICE_LOG_TRACK_LOAD_START, SERVICE_LOG_INFO,
+                      1u, (uint32_t)index, 0u, 0u, 0u, NULL);
+
     esp_err_t rc = library_get(index, track);
     if (rc != ESP_OK) {
+        service_log_event(SERVICE_LOG_TRACK_LOAD_FAILED, SERVICE_LOG_WARN,
+                          2u, (uint32_t)index, (uint32_t)rc, 0u, 0u, "library_get");
         free(track);
         return ESP_ERR_NOT_FOUND;
     }
@@ -117,8 +123,22 @@ esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
     rc = library_load_anlz(track);
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "local ANLZ failed: %s", esp_err_to_name(rc));
+        service_log_event(SERVICE_LOG_TRACK_LOAD_FAILED, SERVICE_LOG_WARN,
+                          2u, (uint32_t)index, (uint32_t)rc, 0u, 0u, "anlz");
         free(track);
         return rc;
+    }
+
+    {
+        uint32_t meta_ms = 0u, cache_written = 0u;
+        uint8_t source = 0u;
+        bool written = false;
+        library_last_anlz_load_stats(&meta_ms, &source, &written);
+        cache_written = written ? 1u : 0u;
+        service_log_event(SERVICE_LOG_TRACK_LOAD_DONE, SERVICE_LOG_INFO,
+                          4u, library_track_key(track), (uint32_t)source,
+                          meta_ms, cache_written,
+                          track->title[0] ? track->title : track->path);
     }
 
     memset(out_loaded, 0, sizeof(*out_loaded));

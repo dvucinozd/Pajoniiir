@@ -1404,7 +1404,6 @@ $tests = @(
             "-Istubs",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
-            "-I../../firmware/main-deck-p4/components/sd_diag_log/include",
             "-o", "test_library_anlz.exe",
             "test_library_anlz.c",
             "../../firmware/main-deck-p4/components/library/library.c"

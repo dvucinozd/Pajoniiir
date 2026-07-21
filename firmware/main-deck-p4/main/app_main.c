@@ -11,7 +11,7 @@
 #include "media_io_gate.h"
 #include "wifi_link.h"
 #include "web_server.h"
-#include "sd_diag_log.h"
+#include "service_log.h"
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
@@ -32,6 +32,21 @@ void p4_tcm_heap_guard_keep(void);
 static void on_s3_debug_ap_toggle(bool enable)
 {
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
+}
+
+static const char *reset_reason_str(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    default:                return "OTHER";
+    }
 }
 
 // Settings RECORD button -> master-output microSD recorder. Recording taps the
@@ -63,15 +78,21 @@ static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
 static void on_usb_storage_event(bool mounted)
 {
     if (mounted) {
+        service_log_note(SERVICE_LOG_USB_MOUNTED, SERVICE_LOG_INFO, "rekordbox drive");
         esp_err_t rc = library_init();   // open export.pdb, build the track index
         if (rc == ESP_OK) {
             ESP_LOGW(TAG, "USB media library loaded: %d tracks", library_count());
+            service_log_event(SERVICE_LOG_LIBRARY_LOADED, SERVICE_LOG_INFO,
+                              1u, (uint32_t)library_count(), 0u, 0u, 0u, NULL);
         } else {
             ESP_LOGW(TAG, "library_init after USB mount: %s", esp_err_to_name(rc));
+            service_log_event(SERVICE_LOG_LIBRARY_LOAD_FAILED, SERVICE_LOG_WARN,
+                              1u, (uint32_t)rc, 0u, 0u, 0u, esp_err_to_name(rc));
         }
         ui_trigger_library_refresh();            // safely schedule table repopulation in the LVGL task context
     } else {
         ESP_LOGW(TAG, "USB drive removed");
+        service_log_note(SERVICE_LOG_USB_UNMOUNTED, SERVICE_LOG_INFO, "drive removed");
         esp_err_t stop_rc = audio_engine_stop_all();
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
@@ -117,7 +138,21 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_touch_init());
     ESP_ERROR_CHECK(bsp_audio_init());
     ESP_ERROR_CHECK(bsp_sd_init());
-    sd_diag_log_init();
+
+    // ── Structured microSD service journal ───────────────────────────────────
+    {
+        firmware_health_info_t fh;
+        const char *ver = "n/a", *part = "n/a";
+        if (firmware_health_get_info(&fh) == ESP_OK) {
+            ver = fh.version;
+            part = fh.partition_label;
+        }
+        service_log_init(ver, part, reset_reason_str());
+        service_log_note(SERVICE_LOG_SD_MOUNTED, SERVICE_LOG_INFO, "/sd ready");
+        service_log_event(SERVICE_LOG_RESET_REASON, SERVICE_LOG_INFO,
+                          1u, (uint32_t)esp_reset_reason(), 0u, 0u, 0u,
+                          reset_reason_str());
+    }
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     // Controller profiles live on the SD/TF card; a missing directory is

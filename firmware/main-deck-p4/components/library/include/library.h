@@ -67,6 +67,11 @@ uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI
 esp_err_t library_load_anlz(library_track_t *track);
 void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
 
+/* Timing (ms), source (0=cache, 1=USB) and cache-write result of the most
+ * recent library_load_anlz() resolve, for the service-log track-load event. */
+void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
+                                  bool *out_cache_written);
+
 /* Return an owned deep copy of the current metadata. Caller calls anlz_free(). */
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);
