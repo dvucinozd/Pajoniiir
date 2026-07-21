@@ -12,6 +12,7 @@
 #include "p4_ota_policy.h"
 #include "service_log.h"
 #include "sd_io_gate.h"
+#include "audio_recorder.h"
 #include <stdio.h>
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
@@ -517,6 +518,88 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 #endif
 
 // GET /api/status
+/* ── Master-output recorder API ────────────────────────────────────────────── */
+
+static const char *recording_state_name(audio_recorder_state_t s)
+{
+    switch (s) {
+    case AUDIO_RECORDER_STARTING:  return "STARTING";
+    case AUDIO_RECORDER_RECORDING: return "RECORDING";
+    case AUDIO_RECORDER_STOPPING:  return "STOPPING";
+    case AUDIO_RECORDER_ERROR:     return "ERROR";
+    case AUDIO_RECORDER_STOPPED:
+    default:                       return "STOPPED";
+    }
+}
+
+static esp_err_t recording_send_status(httpd_req_t *req)
+{
+    audio_recorder_status_t st;
+    if (audio_recorder_get_status(&st) != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Recorder status unavailable");
+    }
+    char json[320];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sample_rate\":%u,"
+                     "\"ring_used\":%u,\"ring_capacity\":%u,\"ring_high_water\":%u,"
+                     "\"dropped_blocks\":%u,\"dropped_frames\":%llu,"
+                     "\"bytes_written\":%llu,\"frames_written\":%llu,"
+                     "\"last_error\":%d}",
+                     recording_state_name(st.state), (unsigned)st.sample_rate,
+                     (unsigned)st.ring_used, (unsigned)st.ring_capacity,
+                     (unsigned)st.ring_high_water, (unsigned)st.dropped_blocks,
+                     (unsigned long long)st.dropped_frames,
+                     (unsigned long long)st.bytes_written,
+                     (unsigned long long)st.frames_written, (int)st.last_error);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Recorder response overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
+// GET /api/recording — recorder status snapshot.
+static esp_err_t api_recording_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return recording_send_status(req);
+}
+
+// POST /api/recording/start — begin recording at the live MAIN output rate.
+static esp_err_t api_recording_start_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+
+    uint32_t rate = audio_engine_get_output_sample_rate();
+    if (rate == 0u) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req,
+                               "No MAIN output rate yet - load and play a track first",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    esp_err_t rc = audio_recorder_start(rate);
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict"
+                                                               : "500 Internal Server Error");
+        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
+    }
+    return recording_send_status(req);
+}
+
+// POST /api/recording/stop — finalize the current segment.
+static esp_err_t api_recording_stop_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    esp_err_t rc = audio_recorder_stop();
+    if (rc != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   esp_err_to_name(rc));
+    }
+    return recording_send_status(req);
+}
+
 // GET /api/diagnostic-log — stream the active microSD service journal.
 static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
 {
@@ -1173,6 +1256,33 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t recording_status_uri = {
+        .uri = "/api/recording",
+        .method = HTTP_GET,
+        .handler = api_recording_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t recording_start_uri = {
+        .uri = "/api/recording/start",
+        .method = HTTP_POST,
+        .handler = api_recording_start_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_start_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t recording_stop_uri = {
+        .uri = "/api/recording/stop",
+        .method = HTTP_POST,
+        .handler = api_recording_stop_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &recording_stop_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t diag_log_uri = {
