@@ -10,6 +10,9 @@
 #include "control_link.h"
 #include "p4_ota.h"
 #include "p4_ota_policy.h"
+#include "service_log.h"
+#include "sd_io_gate.h"
+#include <stdio.h>
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
@@ -303,6 +306,8 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" : "400 Bad Request");
         return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
     }
+    service_log_event(SERVICE_LOG_P4_OTA_STARTED, SERVICE_LOG_INFO,
+                      1u, (uint32_t)manifest.image_size, 0u, 0u, 0u, NULL);
     rc = p4_ota_write(buffer, buffered);
     if (rc != ESP_OK) {
         free(buffer);
@@ -335,9 +340,12 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
 
     rc = p4_ota_finish();
     if (rc != ESP_OK) {
+        service_log_event(SERVICE_LOG_P4_OTA_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)rc, 0u, 0u, 0u, "validation");
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                                    "Firmware validation failed");
     }
+    service_log_note(SERVICE_LOG_P4_OTA_VERIFIED, SERVICE_LOG_INFO, "reboot pending");
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Connection", "close");
@@ -484,9 +492,13 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "profile '%s' install failed: %s", id,
                  esp_err_to_name(rc));
+        service_log_event(SERVICE_LOG_PROFILE_UPLOAD_FAILED, SERVICE_LOG_WARN,
+                          1u, (uint32_t)rc, 0u, 0u, 0u, id);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "SD profile install failed");
     }
+    service_log_event(SERVICE_LOG_PROFILE_UPLOAD_DONE, SERVICE_LOG_INFO,
+                      1u, (uint32_t)received_total, 0u, 0u, 0u, id);
 
     char json[256];
     int n = snprintf(json, sizeof(json),
@@ -505,6 +517,39 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 #endif
 
 // GET /api/status
+// GET /api/diagnostic-log — stream the active microSD service journal.
+static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+
+    service_log_sync();   /* flush pending records before the snapshot */
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+
+    sd_io_gate_begin();
+    FILE *fp = fopen("/sd/logs/system.log", "rb");
+    sd_io_gate_end();
+    if (!fp) {
+        return httpd_resp_send(req, "service log unavailable\n",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    char buf[512];
+    for (;;) {
+        sd_io_gate_begin();
+        size_t n = fread(buf, 1, sizeof(buf), fp);
+        sd_io_gate_end();
+        if (n == 0) {
+            break;
+        }
+        if (httpd_resp_send_chunk(req, buf, (ssize_t)n) != ESP_OK) {
+            fclose(fp);
+            return ESP_FAIL;
+        }
+    }
+    fclose(fp);
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
@@ -1035,6 +1080,8 @@ static esp_err_t api_load_handler(httpd_req_t *req)
 
     esp_err_t rc = ui_library_load_track_index_for_deck((int)index, deck);
     if (rc != ESP_OK) {
+        service_log_event(SERVICE_LOG_WEB_LOAD_REQ_FAILED, SERVICE_LOG_WARN,
+                          3u, (uint32_t)index, (uint32_t)deck, (uint32_t)rc, 0u, NULL);
         if (rc == ESP_ERR_INVALID_STATE) {
             httpd_resp_set_status(req, "409 Conflict");
             httpd_resp_send(req, "Load busy", HTTPD_RESP_USE_STRLEN);
@@ -1126,6 +1173,15 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t diag_log_uri = {
+        .uri = "/api/diagnostic-log",
+        .method = HTTP_GET,
+        .handler = api_diagnostic_log_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &diag_log_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t firmware_uri = {

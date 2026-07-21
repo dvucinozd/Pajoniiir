@@ -11,7 +11,7 @@
 #include "media_io_gate.h"
 #include "wifi_link.h"
 #include "web_server.h"
-#include "sd_diag_log.h"
+#include "service_log.h"
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
@@ -22,6 +22,8 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "firmware_health.h"
 #include "p4_ota.h"
 
@@ -32,6 +34,74 @@ void p4_tcm_heap_guard_keep(void);
 static void on_s3_debug_ap_toggle(bool enable)
 {
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, enable ? 1 : 0);
+}
+
+// Periodic health monitor (esp_timer task, not the audio path): reads the
+// counters the audio engine already maintains and emits rate-limited service-log
+// summaries for anomalies and low-memory edges. No hot-path work.
+#define AUDIO_MON_PERIOD_US       (5ll * 1000000ll)
+#define LOW_INTERNAL_HEAP_BYTES   (24u * 1024u)
+#define LOW_PSRAM_BYTES           (256u * 1024u)
+
+static void health_monitor_cb(void *arg)
+{
+    (void)arg;
+    static uint32_t last_late = 0u, last_underrun = 0u, last_rate = 0u;
+    static bool low_heap = false, low_psram = false;
+
+    audio_engine_diagnostics_snapshot_t d;
+    memset(&d, 0, sizeof(d));
+    audio_engine_get_diagnostics_snapshot(&d);
+
+    uint32_t underrun = d.pcm_underrun_count[0] + d.pcm_underrun_count[1];
+    if (d.output_late_count > last_late) {
+        service_log_event(SERVICE_LOG_AUDIO_OUTPUT_LATE, SERVICE_LOG_WARN,
+                          2u, d.output_late_count - last_late,
+                          d.output_late_max_us, 0u, 0u, NULL);
+        last_late = d.output_late_count;
+    }
+    if (underrun > last_underrun) {
+        service_log_event(SERVICE_LOG_AUDIO_UNDERRUN, SERVICE_LOG_WARN,
+                          1u, underrun - last_underrun, 0u, 0u, 0u, NULL);
+        last_underrun = underrun;
+    }
+    if (d.output_sample_rate != 0u && d.output_sample_rate != last_rate) {
+        service_log_event(SERVICE_LOG_AUDIO_RATE_CHANGED, SERVICE_LOG_INFO,
+                          1u, d.output_sample_rate, 0u, 0u, 0u, NULL);
+        last_rate = d.output_sample_rate;
+    }
+
+    size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    if (heap_free < LOW_INTERNAL_HEAP_BYTES && !low_heap) {
+        service_log_event(SERVICE_LOG_LOW_INTERNAL_HEAP, SERVICE_LOG_WARN,
+                          1u, (uint32_t)heap_free, 0u, 0u, 0u, NULL);
+        low_heap = true;
+    } else if (heap_free >= LOW_INTERNAL_HEAP_BYTES * 2u) {
+        low_heap = false;
+    }
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    if (psram_free < LOW_PSRAM_BYTES && !low_psram) {
+        service_log_event(SERVICE_LOG_LOW_PSRAM, SERVICE_LOG_WARN,
+                          1u, (uint32_t)psram_free, 0u, 0u, 0u, NULL);
+        low_psram = true;
+    } else if (psram_free >= LOW_PSRAM_BYTES * 2u) {
+        low_psram = false;
+    }
+}
+
+static const char *reset_reason_str(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_SW:        return "SW";
+    case ESP_RST_PANIC:     return "PANIC";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    default:                return "OTHER";
+    }
 }
 
 // Settings RECORD button -> master-output microSD recorder. Recording taps the
@@ -63,15 +133,21 @@ static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
 static void on_usb_storage_event(bool mounted)
 {
     if (mounted) {
+        service_log_note(SERVICE_LOG_USB_MOUNTED, SERVICE_LOG_INFO, "rekordbox drive");
         esp_err_t rc = library_init();   // open export.pdb, build the track index
         if (rc == ESP_OK) {
             ESP_LOGW(TAG, "USB media library loaded: %d tracks", library_count());
+            service_log_event(SERVICE_LOG_LIBRARY_LOADED, SERVICE_LOG_INFO,
+                              1u, (uint32_t)library_count(), 0u, 0u, 0u, NULL);
         } else {
             ESP_LOGW(TAG, "library_init after USB mount: %s", esp_err_to_name(rc));
+            service_log_event(SERVICE_LOG_LIBRARY_LOAD_FAILED, SERVICE_LOG_WARN,
+                              1u, (uint32_t)rc, 0u, 0u, 0u, esp_err_to_name(rc));
         }
         ui_trigger_library_refresh();            // safely schedule table repopulation in the LVGL task context
     } else {
         ESP_LOGW(TAG, "USB drive removed");
+        service_log_note(SERVICE_LOG_USB_UNMOUNTED, SERVICE_LOG_INFO, "drive removed");
         esp_err_t stop_rc = audio_engine_stop_all();
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
@@ -117,7 +193,21 @@ void app_main(void)
     ESP_ERROR_CHECK(bsp_touch_init());
     ESP_ERROR_CHECK(bsp_audio_init());
     ESP_ERROR_CHECK(bsp_sd_init());
-    sd_diag_log_init();
+
+    // ── Structured microSD service journal ───────────────────────────────────
+    {
+        firmware_health_info_t fh;
+        const char *ver = "n/a", *part = "n/a";
+        if (firmware_health_get_info(&fh) == ESP_OK) {
+            ver = fh.version;
+            part = fh.partition_label;
+        }
+        service_log_init(ver, part, reset_reason_str());
+        service_log_note(SERVICE_LOG_SD_MOUNTED, SERVICE_LOG_INFO, "/sd ready");
+        service_log_event(SERVICE_LOG_RESET_REASON, SERVICE_LOG_INFO,
+                          1u, (uint32_t)esp_reset_reason(), 0u, 0u, 0u,
+                          reset_reason_str());
+    }
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     // Controller profiles live on the SD/TF card; a missing directory is
@@ -156,6 +246,17 @@ void app_main(void)
     /* Prepare the recorder early so any crash-orphaned .part files on the SD
      * card are recovered before a new session starts. */
     audio_recorder_init();
+
+    /* Periodic health monitor -> rate-limited service-log anomaly summaries. */
+    {
+        const esp_timer_create_args_t mon_args = {
+            .callback = health_monitor_cb, .name = "svclog_mon"
+        };
+        esp_timer_handle_t mon = NULL;
+        if (esp_timer_create(&mon_args, &mon) == ESP_OK) {
+            esp_timer_start_periodic(mon, AUDIO_MON_PERIOD_US);
+        }
+    }
     app_settings_t settings = app_settings_get();
     audio_engine_set_cue_mode(settings.cue_mode);
     audio_engine_set_master_trim(ui_settings_master_trim_gain(settings.master_trim_preset));

@@ -14,7 +14,6 @@
 #include "track_meta_cache.h"
 #include "rekordbox_pdb.h"
 #include "media_io_gate.h"
-#include "sd_diag_log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -194,11 +193,6 @@ void anlz_free(anlz_metadata_t *meta)
 
 void media_io_gate_begin(void) { }
 void media_io_gate_end(void) { }
-esp_err_t sd_diag_log_write(const char *tag, const char *message)
-{
-    (void)tag; (void)message;
-    return ESP_OK;
-}
 
 esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
 {

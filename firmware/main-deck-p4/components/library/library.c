@@ -3,7 +3,6 @@
 #include "rekordbox_anlz.h"
 #include "track_meta_cache.h"
 #include "media_io_gate.h"
-#include "sd_diag_log.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -35,6 +34,12 @@ static bool             s_index_building = false;
 static anlz_metadata_t s_current_meta;
 static bool            s_current_meta_valid = false;
 static int             s_ui_track_idx = 0;
+
+/* Timing/source of the most recent library_load_anlz() resolve, published for
+ * the service log's authoritative track-load event. */
+static uint32_t        s_last_load_elapsed_ms = 0u;
+static uint32_t        s_last_load_source = 0u;        /* 0 = cache, 1 = USB */
+static uint32_t        s_last_load_cache_written = 0u; /* 0/1 */
 
 static void library_copy_str(char *dst, size_t dst_len, const char *src)
 {
@@ -439,16 +444,29 @@ esp_err_t library_load_anlz(library_track_t *track)
 
     int64_t elapsed_us = esp_timer_get_time() - t_start;
     const char *src_name = (source == LIBRARY_ANLZ_SRC_CACHE) ? "cache" : "usb";
-    sd_diag_log_write("meta_cache", (source == LIBRARY_ANLZ_SRC_CACHE)
-                          ? "anlz load cache hit"
-                          : (cache_written ? "anlz load usb + cache write"
-                                           : "anlz load usb, cache write failed"));
+    __atomic_store_n(&s_last_load_elapsed_ms, (uint32_t)(elapsed_us / 1000), __ATOMIC_RELAXED);
+    __atomic_store_n(&s_last_load_source, (uint32_t)source, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_last_load_cache_written, cache_written ? 1u : 0u, __ATOMIC_RELAXED);
     ESP_LOGI(TAG, "ANLZ \"%s\" src=%s bpm=%u dur=%lums cues=%u beats=%u hi-wav=%u %lldus",
              track->title[0] ? track->title : track->path, src_name,
              track->bpm, (unsigned long)track->duration_ms,
              meta.cue_count, meta.beat_count, meta.waveform_high_len,
              (long long)elapsed_us);
     return ESP_OK;
+}
+
+void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
+                                  bool *out_cache_written)
+{
+    if (out_elapsed_ms) {
+        *out_elapsed_ms = __atomic_load_n(&s_last_load_elapsed_ms, __ATOMIC_RELAXED);
+    }
+    if (out_source) {
+        *out_source = (uint8_t)__atomic_load_n(&s_last_load_source, __ATOMIC_RELAXED);
+    }
+    if (out_cache_written) {
+        *out_cache_written = __atomic_load_n(&s_last_load_cache_written, __ATOMIC_RELAXED) != 0u;
+    }
 }
 
 /* ── Active Track ANLZ Management ─────────────────────────────────────────── */
