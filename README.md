@@ -5,6 +5,7 @@ Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
 board. It reads Rekordbox media directly and does not require a PC during
 performance.
 
+![PajoNiiiR](docs/images/122.jpg)
 
 ## System at a Glance
 
