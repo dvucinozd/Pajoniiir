@@ -41,6 +41,7 @@ static uint32_t  s_written = 0u;
 static esp_err_t s_last_error = ESP_OK;
 static bool      s_available = false;
 static bool      s_dirty = false;
+static bool      s_header_written = false;
 static int64_t   s_last_sync_us = 0;
 
 static uint32_t load_boot_id(void)
@@ -107,13 +108,16 @@ static esp_err_t open_active(void)
     }
     struct stat st;
     s_current_bytes = (stat(LOG_BASE, &st) == 0) ? (uint64_t)st.st_size : 0u;
-    if (s_current_bytes == 0u) {
+    /* One header per boot, plus one at the top of every fresh generation, so a
+     * rotated file is self-describing even mid-session. */
+    if (!s_header_written || s_current_bytes == 0u) {
         char hdr[SERVICE_LOG_LINE_MAX];
         int n = service_log_format_header(hdr, sizeof(hdr), s_boot_id,
                                           s_fw_version, s_partition, s_reset_reason);
         if (n > 0 && fwrite(hdr, 1, (size_t)n, s_fp) == (size_t)n) {
             s_current_bytes += (uint64_t)n;
         }
+        s_header_written = true;
     }
     return ESP_OK;
 }

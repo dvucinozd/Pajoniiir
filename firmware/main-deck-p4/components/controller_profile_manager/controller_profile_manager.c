@@ -917,14 +917,24 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
     snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
     cpm_unlock();
 
-    service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
-                      3u, vid, pid, caps, 0u, product_copy);
-    if (idx >= 0) {
-        service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_INFO,
-                          3u, vid, pid, (uint32_t)idx, 0u, NULL);
-    } else {
-        service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
-                          2u, vid, pid, 0u, 0u, "unsupported");
+    /* The S3 re-announces the descriptor on every heartbeat, so only log the
+     * edges — otherwise the journal fills with identical entries. */
+    static uint16_t last_vid = 0xFFFFu, last_pid = 0xFFFFu, last_caps = 0xFFFFu;
+    static int last_idx = -2;
+    if (vid != last_vid || pid != last_pid || caps != last_caps || idx != last_idx) {
+        service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
+                          3u, vid, pid, caps, 0u, product_copy);
+        if (idx >= 0) {
+            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_INFO,
+                              3u, vid, pid, (uint32_t)idx, 0u, NULL);
+        } else {
+            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
+                              2u, vid, pid, 0u, 0u, "unsupported");
+        }
+        last_vid = vid;
+        last_pid = pid;
+        last_caps = caps;
+        last_idx = idx;
     }
     return idx;
 }
