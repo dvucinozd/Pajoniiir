@@ -1830,6 +1830,35 @@ static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRA
 
 static audio_diag_counter_t s_diag_output_blocks;
 static audio_diag_late_counter_t s_diag_output_late;
+
+/* Per-phase worst-case timing for one output block. Owned by the output task
+ * (write) and read without a lock for diagnostics; a torn read of a single
+ * uint32 is not worth a mutex on the audio path. See the header for why the
+ * gap phase is the interesting one. */
+typedef struct {
+    uint32_t mix_max_us;
+    uint32_t push_max_us;
+    uint32_t monitor_max_us;
+    uint32_t main_max_us;
+    uint32_t codec_max_us;
+    uint32_t book_max_us;
+    uint32_t head_max_us;
+} ae_output_phase_stats_t;
+
+static ae_output_phase_stats_t s_phase;
+
+void audio_engine_reset_output_phase_stats(void)
+{
+    s_phase = (ae_output_phase_stats_t){ 0 };
+}
+
+static inline void ae_phase_note(uint32_t *slot, int64_t elapsed_us)
+{
+    uint32_t v = elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
+    if (v > *slot) {
+        *slot = v;
+    }
+}
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
 static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
 
@@ -1841,6 +1870,7 @@ static void ae_diag_reset(void)
 {
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
+    s_phase = (ae_output_phase_stats_t){ 0 };
     s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
@@ -2833,6 +2863,10 @@ static void ae_output_task(void *arg)
         uint16_t block_peak[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         audio_mixer_limiter_stats_t block_limiter_stats = { 0 };
 
+        int64_t phase_t0 = esp_timer_get_time();
+        int64_t phase_mark = phase_t0;
+        ae_phase_note(&s_phase.head_max_us, phase_t0 - block_start_us);
+
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
@@ -2860,13 +2894,33 @@ static void ae_output_task(void *arg)
         }
         consumed[deck0_index] += s_scratch_handoff_consumed[deck0_index];
         consumed[deck1_index] += s_scratch_handoff_consumed[deck1_index];
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(&s_phase.mix_max_us, now - phase_mark);
+            phase_mark = now;
+        }
 #if !defined(AUDIO_ENGINE_PC_TEST)
         /* Tap the exact post-limiter MAIN block for the optional recorder. This
          * is a no-op (single atomic load) unless recording is active. */
         audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
 #endif
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(&s_phase.push_max_us, now - phase_mark);
+            phase_mark = now;
+        }
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(&s_phase.monitor_max_us, now - phase_mark);
+            phase_mark = now;
+        }
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(&s_phase.main_max_us, now - phase_mark);
+            phase_mark = now;
+        }
         /* When ES8311 is disabled the loop paces on the PCM5102A blocking
            write above; hp_out still reaches the FLX4 phones over the link. */
         esp_err_t hp_rc = ESP_ERR_NOT_SUPPORTED;
@@ -2874,6 +2928,11 @@ static void ae_output_task(void *arg)
             hp_rc = esp_codec_dev_write(s_codec, hp_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
         }
 
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(&s_phase.codec_max_us, now - phase_mark);
+            phase_mark = now;
+        }
         if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
@@ -2890,6 +2949,7 @@ static void ae_output_task(void *arg)
             }
             AE_UNLOCK();
         }
+        ae_phase_note(&s_phase.book_max_us, esp_timer_get_time() - phase_mark);
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
@@ -4779,6 +4839,13 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     out_snapshot->output_late_count = s_diag_output_late.count;
     out_snapshot->output_late_max_us = s_diag_output_late.max_us;
     out_snapshot->output_late_threshold_us = s_diag_output_late.threshold_us;
+    out_snapshot->phase_mix_max_us = s_phase.mix_max_us;
+    out_snapshot->phase_push_max_us = s_phase.push_max_us;
+    out_snapshot->phase_monitor_max_us = s_phase.monitor_max_us;
+    out_snapshot->phase_main_max_us = s_phase.main_max_us;
+    out_snapshot->phase_codec_max_us = s_phase.codec_max_us;
+    out_snapshot->phase_book_max_us = s_phase.book_max_us;
+    out_snapshot->phase_head_max_us = s_phase.head_max_us;
     out_snapshot->heap_free = esp_get_free_heap_size();
     out_snapshot->internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     out_snapshot->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);

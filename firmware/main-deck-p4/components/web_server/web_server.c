@@ -591,6 +591,9 @@ static esp_err_t api_recording_start_handler(httpd_req_t *req)
                                "No MAIN output rate yet - load and play a track first",
                                HTTPD_RESP_USE_STRLEN);
     }
+    /* Start the output-block phase maxima from zero so the numbers describe
+     * this recording window rather than whatever happened since boot. */
+    audio_engine_reset_output_phase_stats();
     esp_err_t rc = audio_recorder_start(rate);
     if (rc != ESP_OK) {
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict"
@@ -820,6 +823,13 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"output_late_count\":%u,"
         "\"output_late_max_us\":%u,"
         "\"output_late_threshold_us\":%u,"
+        "\"phase_head_us\":%u,"
+        "\"phase_mix_us\":%u,"
+        "\"phase_push_us\":%u,"
+        "\"phase_monitor_us\":%u,"
+        "\"phase_main_us\":%u,"
+        "\"phase_codec_us\":%u,"
+        "\"phase_book_us\":%u,"
         "\"ring_capacity\":%u,"
         "\"ring_used1\":%u,"
         "\"ring_used2\":%u,"
@@ -864,6 +874,13 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.output_late_count,
         (unsigned)diagnostics.output_late_max_us,
         (unsigned)diagnostics.output_late_threshold_us,
+        (unsigned)diagnostics.phase_head_max_us,
+        (unsigned)diagnostics.phase_mix_max_us,
+        (unsigned)diagnostics.phase_push_max_us,
+        (unsigned)diagnostics.phase_monitor_max_us,
+        (unsigned)diagnostics.phase_main_max_us,
+        (unsigned)diagnostics.phase_codec_max_us,
+        (unsigned)diagnostics.phase_book_max_us,
         (unsigned)diagnostics.ring_capacity,
         (unsigned)diagnostics.ring_used[0],
         (unsigned)diagnostics.ring_used[1],
