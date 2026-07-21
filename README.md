@@ -5,20 +5,6 @@ Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
 board. It reads Rekordbox media directly and does not require a PC during
 performance.
 
-> [!IMPORTANT]
-> The last matching P4/S3 signed-OTA rollout baseline is
-> **`RC1-168-gb69f1b19`** (both boards on `ota_0`, S3 reported `valid`),
-> deployed and boot/status-verified on 2026-07-21 with key `rel-001`; the bench
-> state is identical to that rollout. It adds the unified ANLZ metadata loader,
-> the structured microSD service journal with its read-only
-> `GET /api/diagnostic-log`, and the master-output recorder with its Settings
-> control and guarded `/api/recording` API. Accepted on hardware in this build:
-> the recorder functional `.wav` capture (about 54 s, zero dropped frames) and
-> the service journal. The latest **complete** functional hardware acceptance
-> still remains **`RC1-123-g587cd7a1`** from 2026-07-14 — targeted Phase 20,
-> Beat FX Flanger/Delay audio and the rest of the E1A set are outstanding — so
-> the system is not yet production-ready. See
-> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
 
 ## System at a Glance
 
