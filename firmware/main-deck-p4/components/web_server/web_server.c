@@ -1200,7 +1200,10 @@ esp_err_t web_server_start(void)
     config.stack_size = 8192;
     config.ctrl_port = 32768; // pomaknuto da ne bude u konfliktu
     config.uri_match_fn = httpd_uri_match_wildcard;
-    config.max_uri_handlers = 16;
+    /* Must stay above the number of register_uri_or_stop() calls below: a single
+     * failed registration stops the whole server, so an over-tight limit takes
+     * every endpoint (including OTA) down with it. */
+    config.max_uri_handlers = 24;
     config.task_priority = 3;
     config.core_id = 0;
 
