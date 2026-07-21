@@ -508,6 +508,7 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 #ifndef CONTROLLER_PROFILE_MANAGER_PC_TEST
 
 #include "control_link.h"
+#include "service_log.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -682,6 +683,10 @@ static void cpm_sender_task(void *arg)
         cpm_unlock();
         ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
                  ok ? "OK" : "FAILED");
+        service_log_event(ok ? SERVICE_LOG_PROFILE_TRANSFER_DONE
+                             : SERVICE_LOG_PROFILE_TRANSFER_FAILED,
+                          ok ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
+                          2u, m.vid, m.pid, 0u, 0u, m.id);
     }
 }
 
@@ -908,7 +913,19 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
     ESP_LOGI(TAG, "connected controller '%s' caps=0x%04X",
              s_registry.connected_product, caps);
     int idx = cpm_on_descriptor_locked(vid, pid);
+    char product_copy[CPM_PRODUCT_MAX + 1];
+    snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
     cpm_unlock();
+
+    service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
+                      3u, vid, pid, caps, 0u, product_copy);
+    if (idx >= 0) {
+        service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_INFO,
+                          3u, vid, pid, (uint32_t)idx, 0u, NULL);
+    } else {
+        service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
+                          2u, vid, pid, 0u, 0u, "unsupported");
+    }
     return idx;
 }
 

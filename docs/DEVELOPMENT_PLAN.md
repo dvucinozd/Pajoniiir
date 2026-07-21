@@ -1726,10 +1726,18 @@ audio engine already maintains; the web layer emits P4_OTA_STARTED/VERIFIED/
 FAILED, PROFILE_UPLOAD_DONE/FAILED and WEB_LOAD_REQUEST_FAILED; and the Settings
 SYSTEM STATUS panel shows a live "SD Log: OK  <n>KB  drop <n>" line.
 
-Still open (documented follow-ups, low risk): the controller/control-link event
-producers (CONTROLLER_CONNECTED/DISCONNECTED, PROFILE_MATCHED/TRANSFER_*,
-CONTROL_LINK_ONLINE/OFFLINE/CRC/GAP); a `service_log` object inside the large
-`/api/status` JSON (deferred to avoid churn in the 40-argument status
+Controller and control-link producers are wired too: the firmware-only glue in
+`controller_profile_manager` emits CONTROLLER_CONNECTED (VID/PID/caps/product),
+PROFILE_MATCHED (or an unsupported warning) and PROFILE_TRANSFER_DONE/FAILED,
+while the periodic health monitor logs CONTROL_LINK_ONLINE/OFFLINE edges from
+the heartbeat-derived `control_link_connected` state. The pure, host-tested
+registry half of `controller_profile_manager` is deliberately untouched.
+
+Still open (documented follow-ups, low value): CONTROLLER_DISCONNECTED (the S3
+reports presence, not removal, so there is no P4-side disconnect edge yet) and
+CONTROL_LINK_CRC_ERROR/GAP (the 0xA5 path keeps no P4-side error counters; the
+0xA6 bulk layer validates CRC without accounting); a `service_log` object inside
+the large `/api/status` JSON (deferred to avoid churn in the 40-argument status
 formatter); and the hardware acceptance rows below. A temporary or high-rate
 detailed trace mode is explicitly out of scope.
 

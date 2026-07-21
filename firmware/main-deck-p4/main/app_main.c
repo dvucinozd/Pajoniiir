@@ -71,6 +71,18 @@ static void health_monitor_cb(void *arg)
         last_rate = d.output_sample_rate;
     }
 
+    /* S3 control-link presence is derived from heartbeat age; log the edges. */
+    static int last_link = -1;   /* -1 unknown, 0 offline, 1 online */
+    deck_state_t ds = deck_core_get_deck_state(CTRL_DECK_1);
+    int link = ds.control_link_connected ? 1 : 0;
+    if (link != last_link) {
+        service_log_event(link ? SERVICE_LOG_CONTROL_LINK_ONLINE
+                               : SERVICE_LOG_CONTROL_LINK_OFFLINE,
+                          link ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
+                          1u, ds.last_heartbeat_age_ms, 0u, 0u, 0u, NULL);
+        last_link = link;
+    }
+
     size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     if (heap_free < LOW_INTERNAL_HEAP_BYTES && !low_heap) {
         service_log_event(SERVICE_LOG_LOW_INTERNAL_HEAP, SERVICE_LOG_WARN,
