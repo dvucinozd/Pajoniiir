@@ -120,21 +120,37 @@ esp_err_t media_catalog_load(int index, media_loaded_track_t *out_loaded)
         return ESP_ERR_NOT_FOUND;
     }
 
+    /* Analysis data is a refinement, not a prerequisite. The audio path, title,
+     * artist, BPM and duration all come from the PDB row that library_get()
+     * already returned; ANLZ only adds the beatgrid, waveform, cues and the PVBR
+     * seek table. A track whose ANLZ is missing or unreadable therefore still
+     * plays, with the waveform and cue overlays simply absent — refusing to load
+     * it at all left the deck silently showing "No Track".
+     *
+     * A genuinely missing media file is still caught, one stage later and with a
+     * more accurate error, when the audio engine fails to open it. */
+    bool anlz_ok = true;
     rc = library_load_anlz(track);
     if (rc != ESP_OK) {
-        ESP_LOGE(TAG, "local ANLZ failed: %s", esp_err_to_name(rc));
-        service_log_event(SERVICE_LOG_TRACK_LOAD_FAILED, SERVICE_LOG_WARN,
-                          2u, (uint32_t)index, (uint32_t)rc, 0u, 0u, "anlz");
-        free(track);
-        return rc;
+        anlz_ok = false;
+        ESP_LOGW(TAG, "no analysis data for index %d (%s); loading without it",
+                 index, esp_err_to_name(rc));
+        service_log_event(SERVICE_LOG_TRACK_ANLZ_MISSING, SERVICE_LOG_WARN,
+                          2u, (uint32_t)index, (uint32_t)rc, 0u, 0u,
+                          track->anlz_path[0] ? "unreadable" : "absent in pdb");
     }
 
     {
+        /* Always report the completed load. The resolve stats only mean anything
+         * when analysis data was actually read, so they stay zero otherwise and
+         * the preceding TRACK_ANLZ_MISSING record carries the reason. */
         uint32_t meta_ms = 0u, cache_written = 0u;
         uint8_t source = 0u;
-        bool written = false;
-        library_last_anlz_load_stats(&meta_ms, &source, &written);
-        cache_written = written ? 1u : 0u;
+        if (anlz_ok) {
+            bool written = false;
+            library_last_anlz_load_stats(&meta_ms, &source, &written);
+            cache_written = written ? 1u : 0u;
+        }
         service_log_event(SERVICE_LOG_TRACK_LOAD_DONE, SERVICE_LOG_INFO,
                           4u, library_track_key(track), (uint32_t)source,
                           meta_ms, cache_written,
