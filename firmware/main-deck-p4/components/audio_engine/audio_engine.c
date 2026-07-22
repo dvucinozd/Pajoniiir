@@ -1853,13 +1853,72 @@ void audio_engine_reset_output_phase_stats(void)
     s_phase = (ae_output_phase_stats_t){ 0 };
 }
 
-static inline void ae_phase_note(uint32_t *slot, int64_t elapsed_us)
+/* Phase identity, so one block's timings can be compared against each other and
+ * the worst one named. The running maxima answer "how bad does it get"; this
+ * answers "which part was slow in the block that actually blew", which is the
+ * open question behind the unexplained 370 ms outlier of 2026-07-21. */
+typedef enum {
+    AE_PH_HEAD = 0, AE_PH_MIX, AE_PH_PUSH, AE_PH_MONITOR,
+    AE_PH_MAIN, AE_PH_CODEC, AE_PH_BOOK, AE_PH_COUNT
+} ae_phase_id_t;
+
+static const char *const AE_PHASE_NAME[AE_PH_COUNT] = {
+    "head", "mix", "push", "monitor", "main", "codec", "book"
+};
+
+static uint32_t *const AE_PHASE_MAX_SLOT[AE_PH_COUNT] = {
+    &s_phase.head_max_us, &s_phase.mix_max_us, &s_phase.push_max_us,
+    &s_phase.monitor_max_us, &s_phase.main_max_us, &s_phase.codec_max_us,
+    &s_phase.book_max_us,
+};
+
+/* Timings of the block currently being rendered, overwritten every block. */
+static uint32_t s_phase_block[AE_PH_COUNT];
+
+static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
 {
     uint32_t v = elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
-    if (v > *slot) {
-        *slot = v;
+    s_phase_block[id] = v;
+    if (v > *AE_PHASE_MAX_SLOT[id]) {
+        *AE_PHASE_MAX_SLOT[id] = v;
     }
 }
+
+/* Well above the 2x-period late warning (~11.6 ms at 44.1 kHz), so this only
+ * fires on a genuine stall rather than ordinary jitter. Rate-limited because a
+ * storm of them would flood the journal queue from the audio task. */
+#define AE_BLOCK_OUTLIER_US     50000u
+#define AE_OUTLIER_MIN_GAP_US   2000000
+
+#if !defined(AUDIO_ENGINE_PC_TEST)
+static int64_t s_last_outlier_us;
+
+static void ae_report_block_outlier(uint32_t block_us)
+{
+    if (block_us < AE_BLOCK_OUTLIER_US) {
+        return;
+    }
+    int64_t now = esp_timer_get_time();
+    if (s_last_outlier_us != 0 && (now - s_last_outlier_us) < AE_OUTLIER_MIN_GAP_US) {
+        return;
+    }
+    s_last_outlier_us = now;
+
+    ae_phase_id_t worst = AE_PH_HEAD;
+    for (int i = 1; i < AE_PH_COUNT; i++) {
+        if (s_phase_block[i] > s_phase_block[worst]) {
+            worst = (ae_phase_id_t)i;
+        }
+    }
+    /* Total, the worst phase and its cost, plus the two normally dominant
+     * phases for context. If the worst phase is one that does no real work
+     * (head, codec), the block was preempted rather than slow. */
+    service_log_event(SERVICE_LOG_AUDIO_BLOCK_OUTLIER, SERVICE_LOG_WARN,
+                      4u, block_us, s_phase_block[worst],
+                      s_phase_block[AE_PH_MIX], s_phase_block[AE_PH_MAIN],
+                      AE_PHASE_NAME[worst]);
+}
+#endif
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
 static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
 
@@ -2881,7 +2940,7 @@ static void ae_output_task(void *arg)
 
         int64_t phase_t0 = esp_timer_get_time();
         int64_t phase_mark = phase_t0;
-        ae_phase_note(&s_phase.head_max_us, phase_t0 - block_start_us);
+        ae_phase_note(AE_PH_HEAD, phase_t0 - block_start_us);
 
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
@@ -2912,7 +2971,7 @@ static void ae_output_task(void *arg)
         consumed[deck1_index] += s_scratch_handoff_consumed[deck1_index];
         {
             int64_t now = esp_timer_get_time();
-            ae_phase_note(&s_phase.mix_max_us, now - phase_mark);
+            ae_phase_note(AE_PH_MIX, now - phase_mark);
             phase_mark = now;
         }
 #if !defined(AUDIO_ENGINE_PC_TEST)
@@ -2922,19 +2981,19 @@ static void ae_output_task(void *arg)
 #endif
         {
             int64_t now = esp_timer_get_time();
-            ae_phase_note(&s_phase.push_max_us, now - phase_mark);
+            ae_phase_note(AE_PH_PUSH, now - phase_mark);
             phase_mark = now;
         }
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
         {
             int64_t now = esp_timer_get_time();
-            ae_phase_note(&s_phase.monitor_max_us, now - phase_mark);
+            ae_phase_note(AE_PH_MONITOR, now - phase_mark);
             phase_mark = now;
         }
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
         {
             int64_t now = esp_timer_get_time();
-            ae_phase_note(&s_phase.main_max_us, now - phase_mark);
+            ae_phase_note(AE_PH_MAIN, now - phase_mark);
             phase_mark = now;
         }
         /* When ES8311 is disabled the loop paces on the PCM5102A blocking
@@ -2946,7 +3005,7 @@ static void ae_output_task(void *arg)
 
         {
             int64_t now = esp_timer_get_time();
-            ae_phase_note(&s_phase.codec_max_us, now - phase_mark);
+            ae_phase_note(AE_PH_CODEC, now - phase_mark);
             phase_mark = now;
         }
         if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
@@ -2965,8 +3024,11 @@ static void ae_output_task(void *arg)
             }
             AE_UNLOCK();
         }
-        ae_phase_note(&s_phase.book_max_us, esp_timer_get_time() - phase_mark);
+        ae_phase_note(AE_PH_BOOK, esp_timer_get_time() - phase_mark);
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
+#if !defined(AUDIO_ENGINE_PC_TEST)
+        ae_report_block_outlier(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
+#endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
