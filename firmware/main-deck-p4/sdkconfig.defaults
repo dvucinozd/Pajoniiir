@@ -134,4 +134,4 @@ CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
 # hold/scrub. Additive + behind the flag; flip to `is not set` to roll back to
 # the Phase 1 platter hold. See docs/VINYL_SCRATCH_PLAN.md.
 CONFIG_AUDIO_SCRATCH_ENABLED=y
-CONFIG_AUDIO_RECORDER_RING_INTERNAL=y
+# CONFIG_AUDIO_RECORDER_RING_INTERNAL is not set
