@@ -46,6 +46,14 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > before trying a better card** — the buffer is not undersized for one stall and
 > nothing reasonable covers a burst. Numbers and caveats in
 > `docs/bench-notes.md`.
+>
+> **Deliberately left on:** the output block is timed phase by phase on the
+> audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block, sixteen of
+> them purely to split the mixer loop into groups. That costs a few tenths of a
+> percent of the block period and is kept only so the card swap can be compared
+> against the numbers above. Gate it behind a Kconfig or remove the group split
+> once the microSD question is closed — the group breakdown has already given
+> its answer (group 0, 137 ms).
 
 The latest full
 functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
