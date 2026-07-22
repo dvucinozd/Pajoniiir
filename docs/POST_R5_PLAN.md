@@ -11,24 +11,26 @@ still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
 2026-07-14).
 
 Bench state now differs from that rollout: the P4 alone runs
-`RC1-184-ge1306ac1` from `ota_0` (recorder journal events, host-runner repairs,
+`RC1-191-gaa0533e5` from `ota_1` (recorder journal events, host-runner repairs,
 the redesigned web controller and the httpd `lru_purge_enable` fix), while the
 S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
 any acceptance run.
 
-Recorder timing, resolved 2026-07-22 with per-phase output-block timing
-(`RC1-178`): the producer push is cheap (0.04 % of pushes >= 100 us, zero
-dropped blocks) and, at the operating point, two decks plus recording plus the
-web UI polling at its own rate produce **zero** late blocks. The 2026-07-21
-reading that the recorder is "not timing-neutral" was drawn from a confounded
-correlation and is superseded — late blocks need recording *and* web polling
-forced to roughly four times the shipped rate, and under that load every phase
-inflates proportionally, which is preemption rather than slow code. Recording
-costs about 15-20 % of the per-phase headroom plus a 512 KiB PSRAM ring.
-Still open on that bench: the 370 ms worst case never reproduced (worst forced:
-20 ms), alongside one unexplained `reset=PANIC` on `RC1-170` and two `POWERON`
-resets, one of which aborted an OTA upload mid-transfer. Full matrix in
-`bench-notes.md`.
+Recorder timing, 2026-07-22, superseding two earlier readings that were both
+too optimistic. Two 25-minute soaks with two decks playing and recording active
+produced worst output blocks of 320 ms and 356 ms, and 66 and 293 late blocks;
+the first soak also lost two recordings outright. Both earlier conclusions — "not
+timing-neutral but marginal", then "fixed by trimming journal writes, 12x" —
+came from windows of 90 s and 7 min, which are shorter than the ~2-minute
+interval between failures.
+
+The cause is the microSD card: `RC1-191` times each block write and caught a
+single 1 KiB write blocking 553 ms, plus bursts of eight consecutive ~360 ms
+stalls that drain the entire 2.95 s ring. A candidate replacement card measured
+28.95 ms worst case with zero writes over 100 ms. Swapping the card and
+repeating the soak is the next step and needs the enclosure opened. Do not tune
+the ring or the writer first. Full numbers, and the caveat that the candidate
+was probed on a PC rather than the P4, are in `bench-notes.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 

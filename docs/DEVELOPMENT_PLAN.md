@@ -1942,17 +1942,16 @@ Hardware-matrix row 6 (push timing) was measured on 2026-07-21 with
 journal record. Over 120 s of dual-deck recording only 9 of 22 593 pushes
 reached 100 us (0.04 %), with zero dropped blocks or frames and a 34 % ring
 high-water, so the producer-copy target is met. Row 6's decisive clause is "zero playback/output
-regression", and that was settled on 2026-07-22 by timing every phase of the
-output block (`RC1-178`): at the operating point — two decks playing, recording
-active, the web UI polling at its own rate — there were **zero** late blocks.
-The 2026-07-21 cluster was confounded by a browser polling the same board
-throughout; late blocks require recording *and* polling forced to about four
-times the shipped rate, and under that load every phase inflates proportionally,
-including phases with no extra work, which is preemption rather than recorder
-cost. Row 6 is therefore met as measured, with one named residual: the 370 ms
-worst case from 2026-07-21 never reproduced (worst forced here: 20 ms) on a
-bench that also logged an unexplained `reset=PANIC`. Do not treat that outlier
-as covered. Row 9 (power-interrupted `.part` recovery) is still
+regression", and as of 2026-07-22 it is **not met**. Two 25-minute soaks with
+two decks playing and recording active produced worst output blocks of 320 ms
+and 356 ms. Two earlier readings that suggested otherwise were both taken over
+windows shorter than the ~2-minute interval between failures and are withdrawn.
+
+The producer side of the row is fine — the push is a cheap bounded copy. The
+blocker is the microSD card: a single block write measured 553 ms, and bursts of
+eight consecutive ~360 ms stalls drain the whole ring. A candidate replacement
+card probes at 28.95 ms worst case. Re-run the row after the card swap; tuning
+the ring or the writer beforehand would only paper over it. Row 9 (power-interrupted `.part` recovery) is still
 unexecuted, though `RC1-171` now journals `RECORDING_RECOVERED` so the result
 will be provable from the log alone.
 

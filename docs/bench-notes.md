@@ -471,3 +471,74 @@ itself. Repeating the cycle is the mechanism that works, so the off window was
 put back to 150 ms and the early retry shortened to 900 ms, which mounts at
 4 095 ms. The residual gap against a 1.4 s cold boot is the cost of those cycles
 and was accepted.
+
+## The recorder's real problem is the microSD card (2026-07-22, later)
+
+This supersedes the entry above it. That entry concluded, from a 7-minute run,
+that trimming journal writes had fixed the recorder's audio stalls (224 ms ->
+18.7 ms, "12x"). Two 25-minute soaks show that conclusion was drawn from a
+window too short to contain the failure, which arrives roughly once per two
+minutes.
+
+Soaks ran two decks continuously, reloading a deck as soon as it ran out so the
+run measured real audio rather than paced silence, with recording active
+throughout.
+
+| | 7 min (the claim) | soak 1, 25 min | soak 2, 25 min |
+|---|---|---|---|
+| worst block | 18 733 us | 320 617 us | 356 106 us |
+| late blocks | 7 | 66 | 293 |
+| recordings lost | — | 2 | 0 |
+
+### What the card actually does
+
+`RC1-191` times every block write. The answer was unambiguous — a single 1 KiB
+block write blocked for **553 ms**, against an expected sub-10 ms, and the
+journal caught the shape of it:
+
+```
+ms=523612  stall 362 ms   ring  80/508
+ms=523972  stall 359 ms   ring 147
+ms=524333  stall 361 ms   ring 213
+ms=524591  stall 257 ms   ring 260
+ms=525014  stall 366 ms   ring 334
+ms=525375  stall 360 ms   ring 400
+ms=525738  stall 362 ms   ring 468
+ms=525989  stall 251 ms   ring 508  -> dropped
+```
+
+The card periodically enters a state where **every** write costs ~360 ms, back
+to back. Eight consecutive stalls is ~2.9 s, and the 512 KiB ring holds ~2.95 s,
+so the ring drains exactly. The buffer is not undersized for one stall; no
+sane buffer covers a burst of them. The card had ~29 GB free, so this is not a
+full-card effect.
+
+### The replacement card
+
+Same probe on a candidate 58 GB exFAT card, 256 MB written in 32 KiB
+WriteThrough chunks (`scratchpad/sdbench.ps1`):
+
+| | old card, in the P4 | candidate, on the PC |
+|---|---|---|
+| worst single write | 553 ms | **28.95 ms** |
+| writes >= 100 ms | 24 | **0** |
+| writes >= 360 ms | 8, consecutive | **0** |
+| p99.9 | — | 10.56 ms |
+| throughput | — | 15.4 MB/s (0.18 needed) |
+
+Two caveats before treating this as settled: the probe ran on a PC host
+controller, not the P4's SDMMC, so a clean result is indicative rather than
+proof; and the candidate was empty, which is the easy case for a card, whereas
+the old one carried accumulated recordings.
+
+**Not yet done, pending an enclosure opening:** put the candidate in the P4 and
+repeat the soak, and run the same probe against the old card on the PC so both
+numbers come from one tool instead of comparing a PC probe against a P4
+measurement.
+
+### Still unexplained
+
+Why a microSD stall stalls the *mixer* loop, which touches no card and holds no
+lock, is not established. The trigger is now known; the mechanism is not. If a
+better card removes the trigger the question becomes academic, but it should not
+be recorded as answered.
