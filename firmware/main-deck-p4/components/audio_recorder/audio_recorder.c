@@ -203,8 +203,17 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
         return ESP_ERR_INVALID_ARG;   /* an output rate must exist first */
     }
 
-    uint32_t capacity = (uint32_t)(CONFIG_AUDIO_RECORDER_RING_BYTES /
-                                   sizeof(audio_recorder_block_t));
+#if CONFIG_AUDIO_RECORDER_RING_INTERNAL
+    const size_t ring_budget = CONFIG_AUDIO_RECORDER_RING_INTERNAL_BYTES;
+    const uint32_t ring_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const char *ring_where = "internal";
+#else
+    const size_t ring_budget = CONFIG_AUDIO_RECORDER_RING_BYTES;
+    const uint32_t ring_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    const char *ring_where = "PSRAM";
+#endif
+
+    uint32_t capacity = (uint32_t)(ring_budget / sizeof(audio_recorder_block_t));
     if (capacity < 2u) {
         capacity = 2u;
     }
@@ -212,15 +221,15 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
 
     store_state(AUDIO_RECORDER_STARTING);
 
-    /* Allocate the complete ring up front, in PSRAM, behind the free check. */
-    s_slots = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    /* Allocate the complete ring up front, behind the free check. */
+    s_slots = heap_caps_malloc(bytes, ring_caps);
     if (!s_slots) {
-        ESP_LOGE(TAG, "PSRAM ring alloc %u B failed; recording not started",
-                 (unsigned)bytes);
+        ESP_LOGE(TAG, "%s ring alloc %u B failed; recording not started",
+                 ring_where, (unsigned)bytes);
         store_state(AUDIO_RECORDER_STOPPED);
         service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
                           2u, (uint32_t)ESP_ERR_NO_MEM, (uint32_t)bytes, 0u, 0u,
-                          "PSRAM ring alloc failed");
+                          "ring alloc failed");
         return ESP_ERR_NO_MEM;
     }
 
@@ -291,8 +300,8 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     service_log_event(SERVICE_LOG_RECORDING_STARTED, SERVICE_LOG_INFO,
                       4u, sample_rate, capacity, (uint32_t)(free_bytes >> 20),
                       s_session, NULL);
-    ESP_LOGI(TAG, "recording started @ %u Hz, ring %u slots (%u B), %llu MiB free",
-             (unsigned)sample_rate, (unsigned)capacity, (unsigned)bytes,
+    ESP_LOGI(TAG, "recording started @ %u Hz, %s ring %u slots (%u B), %llu MiB free",
+             (unsigned)sample_rate, ring_where, (unsigned)capacity, (unsigned)bytes,
              (unsigned long long)(free_bytes >> 20));
     return ESP_OK;
 }
