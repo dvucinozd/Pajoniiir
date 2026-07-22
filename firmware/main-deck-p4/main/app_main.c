@@ -53,17 +53,37 @@ static void health_monitor_cb(void *arg)
     memset(&d, 0, sizeof(d));
     audio_engine_get_diagnostics_snapshot(&d);
 
+    /* Coalesce the anomaly summaries. Emitting on every 5 s tick where a counter
+     * moved produced long runs of records repeating an unchanged maximum — ten
+     * in a row carrying the same a1 during one bad boot — which is noise, and
+     * noise that costs microSD writes contending with the recorder on the same
+     * card. Report immediately when the worst case actually grows, otherwise
+     * accumulate and report at most once a minute. */
+    static uint32_t last_late_max = 0u;
+    static int64_t  late_report_us = 0, underrun_report_us = 0;
+    const int64_t now_us = esp_timer_get_time();
+    const int64_t QUIET_US = 60ll * 1000000ll;
+
     uint32_t underrun = d.pcm_underrun_count[0] + d.pcm_underrun_count[1];
     if (d.output_late_count > last_late) {
-        service_log_event(SERVICE_LOG_AUDIO_OUTPUT_LATE, SERVICE_LOG_WARN,
-                          2u, d.output_late_count - last_late,
-                          d.output_late_max_us, 0u, 0u, NULL);
-        last_late = d.output_late_count;
+        bool worse = d.output_late_max_us > last_late_max;
+        if (worse || late_report_us == 0 || (now_us - late_report_us) >= QUIET_US) {
+            service_log_event(SERVICE_LOG_AUDIO_OUTPUT_LATE, SERVICE_LOG_WARN,
+                              2u, d.output_late_count - last_late,
+                              d.output_late_max_us, 0u, 0u, NULL);
+            last_late = d.output_late_count;
+            last_late_max = d.output_late_max_us;
+            late_report_us = now_us;
+        }
+        /* else: leave last_late alone so the next report carries the full count */
     }
     if (underrun > last_underrun) {
-        service_log_event(SERVICE_LOG_AUDIO_UNDERRUN, SERVICE_LOG_WARN,
-                          1u, underrun - last_underrun, 0u, 0u, 0u, NULL);
-        last_underrun = underrun;
+        if (underrun_report_us == 0 || (now_us - underrun_report_us) >= QUIET_US) {
+            service_log_event(SERVICE_LOG_AUDIO_UNDERRUN, SERVICE_LOG_WARN,
+                              1u, underrun - last_underrun, 0u, 0u, 0u, NULL);
+            last_underrun = underrun;
+            underrun_report_us = now_us;
+        }
     }
     if (d.output_sample_rate != 0u && d.output_sample_rate != last_rate) {
         service_log_event(SERVICE_LOG_AUDIO_RATE_CHANGED, SERVICE_LOG_INFO,
