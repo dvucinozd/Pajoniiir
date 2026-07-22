@@ -38,6 +38,41 @@ static msc_host_device_handle_t s_msc_dev   = NULL;
 static usb_media_mount_t       *s_mount      = NULL;
 static uint32_t              s_event_drop_count;
 static TickType_t            s_last_drop_warn;
+/* Set by the MSC callback on the first connect of this boot. Read by the lib
+ * task to decide whether the root port needs another power cycle. */
+static volatile bool         s_seen_device = false;
+
+/* Root-port power cycling.
+ *
+ * A drive that is already attached when the firmware restarts does not connect
+ * on its own: after a software reset (an OTA reboot) the device is still
+ * powered and configured from the previous session, so the freshly installed
+ * host stack never sees a connection event and the library comes up empty. A
+ * power-on reset does not have this problem, because the drive genuinely
+ * powers up with the board — which is exactly the asymmetry observed in the
+ * service journal (USB_MOUNTED at ~1.4 s on reset=POWERON, never on reset=SW).
+ *
+ * So reproduce the power-on sequence deliberately: install the host with the
+ * root port unpowered, then power it on. Powering the port off disconnects
+ * everything downstream, so the drive re-attaches and enumerates normally. */
+#define ROOT_PORT_SETTLE_MS   120   /* port off long enough for the device to drop */
+#define ROOT_PORT_RETRY_MS    2500  /* wait for a connect before cycling again */
+#define ROOT_PORT_MAX_CYCLES  4     /* then fall back to the slow retry below */
+#define ROOT_PORT_SLOW_MS     30000 /* keep trying, quietly, for a late insertion */
+
+static void root_port_power_cycle(const char *why)
+{
+    ESP_LOGI(TAG, "root port power cycle (%s)", why ? why : "");
+    esp_err_t rc = usb_host_lib_set_root_port_power(false);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "root port power off: %s", esp_err_to_name(rc));
+    }
+    vTaskDelay(pdMS_TO_TICKS(ROOT_PORT_SETTLE_MS));
+    rc = usb_host_lib_set_root_port_power(true);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "root port power on: %s", esp_err_to_name(rc));
+    }
+}
 
 static void release_device(void)
 {
@@ -64,6 +99,11 @@ static void msc_event_cb(const msc_host_event_t *event, void *arg)
     (void)arg;
     storage_msg_t msg;
     if (event->event == MSC_DEVICE_CONNECTED) {
+        /* Stops the lib task from cycling the root port underneath a working
+         * device. Deliberately never cleared on disconnect: an unplug is the
+         * operator's doing and the normal connect path handles the replug, so
+         * re-arming the cycling here would only fight with them. */
+        s_seen_device = true;
         msg.id = EVT_CONNECTED;
         msg.dev_addr = event->device.address;
         if (xQueueSend(s_queue, &msg, 0) != pdTRUE) {
@@ -93,7 +133,12 @@ static void msc_event_cb(const msc_host_event_t *event, void *arg)
 static void usb_lib_task(void *arg)
 {
     (void)arg;
-    const usb_host_config_t host_cfg = { .intr_flags = ESP_INTR_FLAG_LEVEL1 };
+    /* Root port stays off until the MSC driver is ready, so the first power-on
+     * below is a real connection event for whatever is already plugged in. */
+    const usb_host_config_t host_cfg = {
+        .intr_flags = ESP_INTR_FLAG_LEVEL1,
+        .root_port_unpowered = true,
+    };
     ESP_ERROR_CHECK(usb_host_install(&host_cfg));
 
     const msc_host_driver_config_t msc_cfg = {
@@ -104,13 +149,37 @@ static void usb_lib_task(void *arg)
     };
     ESP_ERROR_CHECK(msc_host_install(&msc_cfg));
 
+    root_port_power_cycle("initial bring-up");
     ESP_LOGI(TAG, "USB host + MSC installed; waiting for a drive on the HS USB port");
 
+    uint32_t cycles = 1u;
+    TickType_t last_cycle = xTaskGetTickCount();
+
     while (1) {
-        uint32_t flags;
-        usb_host_lib_handle_events(portMAX_DELAY, &flags);
-        if (flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
+        uint32_t flags = 0;
+        /* Finite timeout rather than portMAX_DELAY: with no drive attached there
+         * are no events at all, and this task still has to decide whether to
+         * cycle the port again. */
+        esp_err_t rc = usb_host_lib_handle_events(pdMS_TO_TICKS(500), &flags);
+        if (rc == ESP_OK && (flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS)) {
             usb_host_device_free_all();
+        }
+
+        if (s_seen_device) {
+            continue;   /* the port works; leave it alone */
+        }
+
+        /* Nothing has ever connected on this boot. Retry briskly a few times to
+         * cover a drive that missed the first power-on, then keep retrying
+         * slowly so one plugged in later is still picked up even if its connect
+         * event was lost. */
+        TickType_t wait = (cycles < ROOT_PORT_MAX_CYCLES)
+                              ? pdMS_TO_TICKS(ROOT_PORT_RETRY_MS)
+                              : pdMS_TO_TICKS(ROOT_PORT_SLOW_MS);
+        if (xTaskGetTickCount() - last_cycle >= wait) {
+            cycles++;
+            last_cycle = xTaskGetTickCount();
+            root_port_power_cycle("no device seen yet");
         }
         // Note: we never uninstall — the host runs for the lifetime of the device.
     }
