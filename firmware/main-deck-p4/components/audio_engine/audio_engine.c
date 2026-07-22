@@ -48,6 +48,7 @@
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
 #include "audio_recorder.h"
+#include "service_log.h"
 #endif
 
 /* ESP-IDF logging — stubbed out in PC test builds */
@@ -2023,6 +2024,21 @@ static void ae_fail_load(audio_engine_state_t *eng,
         atomic_store_bool(&eng->paused, false);
         atomic_store_bool(&eng->playback_finished, false);
     }
+#if !defined(AUDIO_ENGINE_PC_TEST)
+    /* Every audio load failure funnels through here, so this is the one place
+     * that can tell the journal why a deck went to ERROR. Without it the deck
+     * shows ERROR and the log says nothing — which is exactly the gap left once
+     * a missing-analysis track is allowed through to the audio stage. */
+    if (eng >= s_engines && eng < s_engines + AUDIO_ENGINE_DECK_COUNT) {
+        service_log_event(SERVICE_LOG_AUDIO_LOAD_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)(eng - s_engines) + 1u, (uint32_t)err,
+                          0u, 0u, err_text ? err_text : "LOAD ERR");
+    } else {
+        service_log_event(SERVICE_LOG_AUDIO_LOAD_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)err, 0u, 0u, 0u,
+                          err_text ? err_text : "LOAD ERR");
+    }
+#endif
     audio_fw_preload_abort_load(fw, runtime);
 }
 
