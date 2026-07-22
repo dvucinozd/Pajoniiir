@@ -12,7 +12,7 @@ historical design or validation records. Three states must not be conflated:
   the 2026-07-21 rollout (S3 reported `valid`, independently confirmed through
   P4's nested firmware report);
 - **current bench state:** boards are **no longer matched** — the P4 runs
-  `RC1-178-g8c689d27` from `ota_1` (recorder service-journal events, host
+  `RC1-184-ge1306ac1` from `ota_0` (recorder service-journal events, host
   test-runner repairs, the redesigned web controller and the httpd
   `lru_purge_enable` fix) while the S3 remains on `RC1-168-gb69f1b19`;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on

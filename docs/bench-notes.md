@@ -432,3 +432,42 @@ ring. That is a narrower margin, not a defect at the operating point.
 and only under deliberate overload. An outlier an order of magnitude larger
 remains unexplained, on a bench that also logged an unexplained `reset=PANIC`
 the same day. Do not treat the 370 ms event as covered by this analysis.
+
+## USB did not re-enumerate after a software reset (2026-07-22)
+
+The track library came up empty after every OTA update until the stick was
+physically unplugged and replugged. The service journal separates the two reset
+paths cleanly:
+
+| boot | reset | firmware | USB_MOUNTED |
+|---|---|---|---|
+| 33 | POWERON | RC1-175 | 1 389 ms |
+| 35 | POWERON | RC1-178 | 1 437 ms |
+| 36 | SW | RC1-180 | 260 394 ms — only after a manual replug |
+| 37 | SW | RC1-181 | 138 939 ms — only after a manual replug |
+| 38 | SW | RC1-182 (fix) | **7 005 ms, unattended** |
+| 39 | SW | RC1-183 | 7 846 ms |
+| 40 | SW | RC1-184 (tuned) | **4 095 ms** |
+
+`reset=POWERON` mounted in about 1.4 s every time; `reset=SW` never mounted on
+its own, and silently — no `USB_MOUNT_FAILED`, the host simply never saw a
+device. After `esp_restart()` the drive is still powered and configured from the
+previous session, so the newly installed host stack waits for a connection event
+that cannot occur, because nothing about the connection changed.
+
+Fix: install the host with `root_port_unpowered` and then power the root port on
+with the public `usb_host_lib_set_root_port_power()`, reproducing the power-on
+sequence deliberately (rather than the deprecated `usb_phy_action()` disconnect).
+The lib task also stopped blocking forever on `usb_host_lib_handle_events()` —
+with no drive attached there are no events at all — and re-cycles the port while
+nothing has ever connected.
+
+**What the measurements corrected:** the first power-on does *not* re-enumerate
+an already-attached drive, and widening the port-off window does not help
+(120 ms → 7 005 ms, 400 ms → 7 846 ms, both mounted by the retry rather than the
+initial cycle). The likely reason is that the root port's logical power state
+does not cut VBUS on this board, so the drive never loses power and never resets
+itself. Repeating the cycle is the mechanism that works, so the off window was
+put back to 150 ms and the early retry shortened to 900 ms, which mounts at
+4 095 ms. The residual gap against a 1.4 s cold boot is the cost of those cycles
+and was accepted.

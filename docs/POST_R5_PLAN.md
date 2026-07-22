@@ -11,7 +11,7 @@ still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
 2026-07-14).
 
 Bench state now differs from that rollout: the P4 alone runs
-`RC1-178-g8c689d27` from `ota_1` (recorder journal events, host-runner repairs,
+`RC1-184-ge1306ac1` from `ota_0` (recorder journal events, host-runner repairs,
 the redesigned web controller and the httpd `lru_purge_enable` fix), while the
 S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
 any acceptance run.

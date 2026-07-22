@@ -1,7 +1,7 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-178-g8c689d27` on `ota_1`; the S3 is **not** matched and
+signed release is `RC1-184-ge1306ac1` on `ota_0`; the S3 is **not** matched and
 still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
 run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
@@ -17,6 +17,15 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > hostname to 192.168.4.1 — so a Google Fonts `<link>`/`@import` comes back to
 > this device, fails the TLS handshake and blocks first paint. Both the previous
 > UI and the delivered design carried one; keep font stacks local.
+
+> ⚠️ **USB needs a root-port cycle after a software reset.** A drive already
+> attached across `esp_restart()` never connects on its own — the host waits for
+> a connection event that cannot occur — so before RC1-182 the library was empty
+> after every OTA until someone replugged the stick. `usb_storage` now installs
+> the host with `root_port_unpowered` and cycles `usb_host_lib_set_root_port_power()`,
+> retrying while nothing has connected. Do not "simplify" that back to a plain
+> `usb_host_install()`. Lengthening the port-off window is not the lever; the
+> repeat is. See `docs/bench-notes.md`.
 
 > ⚠️ **`max_open_sockets` is 5.** With `lru_purge_enable` unset, five held
 > keep-alive sockets made the server refuse every new client — including
