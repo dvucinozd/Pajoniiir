@@ -1875,6 +1875,13 @@ static uint32_t *const AE_PHASE_MAX_SLOT[AE_PH_COUNT] = {
 /* Timings of the block currently being rendered, overwritten every block. */
 static uint32_t s_phase_block[AE_PH_COUNT];
 
+/* Coarse split of the mixer loop, so a mix-phase stall can be told apart:
+ * confined to one group = a single expensive call, spread across all of them =
+ * the whole loop running slow. */
+#define AE_MIX_GROUPS 16
+static uint32_t s_mix_group_max_us;
+static uint32_t s_mix_group_worst;
+
 static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
 {
     uint32_t v = elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
@@ -1913,9 +1920,11 @@ static void ae_report_block_outlier(uint32_t block_us)
     /* Total, the worst phase and its cost, plus the two normally dominant
      * phases for context. If the worst phase is one that does no real work
      * (head, codec), the block was preempted rather than slow. */
+    /* For a mix-phase stall the group breakdown is the informative part: which
+     * sixteenth of the loop ate the time, and how much of it. */
     service_log_event(SERVICE_LOG_AUDIO_BLOCK_OUTLIER, SERVICE_LOG_WARN,
                       4u, block_us, s_phase_block[worst],
-                      s_phase_block[AE_PH_MIX], s_phase_block[AE_PH_MAIN],
+                      s_mix_group_worst, s_mix_group_max_us,
                       AE_PHASE_NAME[worst]);
 }
 #endif
@@ -2942,6 +2951,17 @@ static void ae_output_task(void *arg)
         int64_t phase_mark = phase_t0;
         ae_phase_note(AE_PH_HEAD, phase_t0 - block_start_us);
 
+        /* Split the mixer loop into a few coarse groups. A stall confined to one
+         * group means a single expensive call; one spread evenly across all of
+         * them means the whole loop is running slow, which points at memory or
+         * cache rather than at any one operation. Sixteen timer reads per block
+         * is a fraction of a percent of the ~5.8 ms period, unlike timing every
+         * one of the 256 frames. */
+        uint32_t mix_group_max_us = 0u;
+        uint32_t mix_group_worst = 0u;
+        int64_t mix_group_mark = esp_timer_get_time();
+        const int mix_group_len = AE_OUT_FRAMES / AE_MIX_GROUPS;
+
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
@@ -2966,7 +2986,19 @@ static void ae_output_task(void *arg)
             master_out[i * 2 + 1] = mix.master.right;
             hp_out[i * 2] = mix.headphone.left;
             hp_out[i * 2 + 1] = mix.headphone.right;
+
+            if (mix_group_len > 0 && ((i + 1) % mix_group_len) == 0) {
+                int64_t now_g = esp_timer_get_time();
+                int64_t took = now_g - mix_group_mark;
+                mix_group_mark = now_g;
+                if (took > 0 && (uint32_t)took > mix_group_max_us) {
+                    mix_group_max_us = (uint32_t)took;
+                    mix_group_worst = (uint32_t)((i + 1) / mix_group_len) - 1u;
+                }
+            }
         }
+        s_mix_group_max_us = mix_group_max_us;
+        s_mix_group_worst = mix_group_worst;
         consumed[deck0_index] += s_scratch_handoff_consumed[deck0_index];
         consumed[deck1_index] += s_scratch_handoff_consumed[deck1_index];
         {
