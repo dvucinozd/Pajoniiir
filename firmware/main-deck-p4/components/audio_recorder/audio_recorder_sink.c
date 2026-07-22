@@ -4,6 +4,7 @@
 #include "service_log.h"
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_vfs_fat.h"
 
 #include <string.h>
@@ -13,6 +14,8 @@
 #include <dirent.h>
 
 static const char *TAG = "rec_sink";
+
+static void stage_release(audio_recorder_sink_t *s);
 
 /* Patch the 44-byte header at the file head to describe `data_bytes`, restoring
  * the append position. The caller holds sd_io_gate. */
@@ -100,11 +103,43 @@ esp_err_t audio_recorder_sink_open(audio_recorder_sink_t *s, uint32_t sample_rat
     if (!s || sample_rate == 0u) {
         return ESP_ERR_INVALID_ARG;
     }
+    stage_release(s);            /* never leak a buffer across sessions */
     memset(s, 0, sizeof(*s));
     s->boot_id = boot_id;
     s->session = session;
     s->segment = 0u;
     return open_segment(s, sample_rate);
+}
+
+/* Hand the staged bytes to the card in one sequential write.
+ *
+ * Must be called with the SD gate NOT held: sd_io_gate is a plain mutex, not a
+ * recursive one, so nesting it would deadlock. */
+static esp_err_t flush_stage(audio_recorder_sink_t *s)
+{
+    if (!s || !s->fp || !s->stage || s->stage_len == 0u) {
+        return ESP_OK;
+    }
+    size_t len = s->stage_len;
+    sd_io_gate_begin();
+    size_t n = fwrite(s->stage, 1, len, s->fp);
+    sd_io_gate_end();
+    s->stage_len = 0u;
+    if (n != len) {
+        ESP_LOGE(TAG, "short staged write %u/%u", (unsigned)n, (unsigned)len);
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+static void stage_release(audio_recorder_sink_t *s)
+{
+    if (s && s->stage) {
+        heap_caps_free(s->stage);
+        s->stage = NULL;
+        s->stage_len = 0u;
+        s->stage_cap = 0u;
+    }
 }
 
 esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
@@ -119,11 +154,29 @@ esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
         return ESP_OK;
     }
 
+    /* Allocated lazily so a rollover that released it simply takes a new one.
+     * PSRAM: this is a throughput buffer, not something the audio task touches,
+     * and internal RAM is far too scarce to spend 64 KiB on it. */
+    if (!s->stage) {
+        s->stage = heap_caps_malloc(AUDIO_RECORDER_SINK_STAGE_BYTES,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s->stage) {
+            s->stage_cap = AUDIO_RECORDER_SINK_STAGE_BYTES;
+            s->stage_len = 0u;
+        }
+        /* No buffer is not fatal — fall through to the direct write below. */
+    }
+
     /* Roll to a new segment on a rate change or when the 1 GiB cap is reached.
      * Never place two PCM rates in one WAV file. */
     if (sample_rate != s->sample_rate ||
         s->data_bytes + len > AUDIO_RECORDER_SEGMENT_DATA_MAX) {
-        esp_err_t rc = audio_recorder_sink_finalize(s);
+        /* finalize() flushes, but do it here too so the ordering is obvious. */
+        esp_err_t rc = flush_stage(s);
+        if (rc != ESP_OK) {
+            return rc;
+        }
+        rc = audio_recorder_sink_finalize(s);
         if (rc != ESP_OK) {
             return rc;
         }
@@ -132,6 +185,21 @@ esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
         if (rc != ESP_OK) {
             return rc;
         }
+    }
+
+    if (s->stage && len <= s->stage_cap) {
+        if (s->stage_len + len > s->stage_cap) {
+            esp_err_t rc = flush_stage(s);
+            if (rc != ESP_OK) {
+                return rc;
+            }
+        }
+        memcpy(s->stage + s->stage_len, samples, len);
+        s->stage_len += len;
+        /* Counted on staging, not on flush: every header patch flushes first,
+         * so the size written into the WAV always matches the file on disk. */
+        s->data_bytes += len;
+        return ESP_OK;
     }
 
     sd_io_gate_begin();
@@ -150,6 +218,11 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
     if (!s || !s->is_open) {
         return ESP_OK;
     }
+    /* Outside the gate: it is a plain mutex and the section below takes it. */
+    esp_err_t frc = flush_stage(s);
+    if (frc != ESP_OK) {
+        return frc;
+    }
     sd_io_gate_begin();
     esp_err_t rc = patch_header_locked(s->fp, s->sample_rate, (uint32_t)s->data_bytes);
     if (rc == ESP_OK) {
@@ -162,7 +235,13 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)
 {
     if (!s || !s->is_open) {
+        stage_release(s);
         return ESP_OK;
+    }
+
+    esp_err_t frc = flush_stage(s);
+    if (frc != ESP_OK) {
+        ESP_LOGE(TAG, "final staged flush failed; segment may be short");
     }
 
     sd_io_gate_begin();
@@ -189,11 +268,13 @@ esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)
         sd_io_gate_end();
         if (rrc != 0) {
             ESP_LOGE(TAG, "rename %s failed", s->part_path);
+            stage_release(s);
             return ESP_FAIL;
         }
         ESP_LOGI(TAG, "segment finalized: %s (%llu B)", final_path,
                  (unsigned long long)s->data_bytes);
     }
+    stage_release(s);
     return rc;
 }
 

@@ -27,6 +27,11 @@ extern "C" {
 /* Data-byte cap per segment (1 GiB), safely below the 4 GiB RIFF/FAT ceiling. */
 #define AUDIO_RECORDER_SEGMENT_DATA_MAX (1024ull * 1024ull * 1024ull)
 
+/* One card write instead of a burst of tiny ones. 64 KiB is ~0.37 s of audio
+ * at 44.1 kHz, so an unexpected power loss can lose at most that much of the
+ * tail; a checkpoint or stop flushes it first. */
+#define AUDIO_RECORDER_SINK_STAGE_BYTES (64u * 1024u)
+
 typedef struct {
     FILE    *fp;
     uint32_t sample_rate;   /* rate of the current segment */
@@ -36,6 +41,13 @@ typedef struct {
     uint64_t data_bytes;    /* PCM bytes in the current segment */
     char     part_path[AUDIO_RECORDER_SINK_PATH_MAX];
     bool     is_open;
+    /* Write staging. The recorder produces 1 KiB blocks, but newlib's default
+     * stdio buffer is 128 B, so each of those became eight tiny writes down to
+     * FATFS and on to a card that punishes small scattered I/O. Blocks are
+     * accumulated here and handed over in one large sequential write instead. */
+    uint8_t *stage;
+    size_t   stage_len;
+    size_t   stage_cap;
 } audio_recorder_sink_t;
 
 /* Verify /sd is mounted, ensure the recordings directory exists and report the
