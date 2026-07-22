@@ -555,6 +555,7 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      "\"dropped_blocks\":%u,\"dropped_frames\":%llu,"
                      "\"bytes_written\":%llu,\"frames_written\":%llu,"
                      "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
+                     "\"write_max_us\":%u,\"writes_over_100ms\":%u,"
                      "\"last_error\":%d}",
                      recording_state_name(st.state), (unsigned)st.sample_rate,
                      (unsigned)st.ring_used, (unsigned)st.ring_capacity,
@@ -563,7 +564,9 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      (unsigned long long)st.bytes_written,
                      (unsigned long long)st.frames_written,
                      (unsigned)st.push_count, (unsigned)st.push_max_us,
-                     (unsigned)st.push_over_100us, (int)st.last_error);
+                     (unsigned)st.push_over_100us,
+                     (unsigned)st.write_max_us, (unsigned)st.writes_over_100ms,
+                     (int)st.last_error);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Recorder response overflow");

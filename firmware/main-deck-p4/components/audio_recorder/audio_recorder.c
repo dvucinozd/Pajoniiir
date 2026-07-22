@@ -55,6 +55,10 @@ static bool               s_overflow = false;
 static uint32_t  s_push_count = 0u;
 static uint32_t  s_push_max_us = 0u;
 static uint32_t  s_push_over_100us = 0u;
+/* microSD write cost, writer-task owned. */
+static uint32_t  s_write_max_us = 0u;
+static uint32_t  s_writes_over_100ms = 0u;
+static uint32_t  s_reported_drops = 0u;
 static uint64_t  s_bytes_written = 0u;
 static uint64_t  s_frames_written = 0u;
 static esp_err_t s_last_error = ESP_OK;
@@ -110,12 +114,20 @@ static void writer_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        if (__atomic_load_n(&s_overflow, __ATOMIC_ACQUIRE)) {
-            if (s_last_error == ESP_OK) {
-                s_last_error = ESP_ERR_NO_MEM;
+        /* A full ring means the card stalled longer than the buffer covers. That
+         * is a lost stretch of audio, not a reason to end the session: killing
+         * it here turned one stall into a finalize-and-reopen cycle whose own
+         * microSD work then stalled playback again, and a 25 min soak lost two
+         * recordings that way. Drop, account, and keep going — the WAV loses the
+         * dropped span, so the file ends up shorter than the wall-clock take. */
+        if (__atomic_exchange_n(&s_overflow, false, __ATOMIC_ACQ_REL)) {
+            uint32_t lost = s_ring.dropped_blocks;
+            if (lost != s_reported_drops) {
+                service_log_event(SERVICE_LOG_RECORDING_DROPPED, SERVICE_LOG_WARN,
+                                  3u, lost - s_reported_drops, lost,
+                                  s_write_max_us, 0u, "ring full; card stalled");
+                s_reported_drops = lost;
             }
-            store_state(AUDIO_RECORDER_ERROR);
-            break;
         }
 
         audio_recorder_state_t st = load_state();
@@ -125,8 +137,22 @@ static void writer_task(void *arg)
 
         const audio_recorder_block_t *blk = audio_recorder_ring_peek(&s_ring);
         if (blk) {
+            /* Time the card. The ring exists to cover write stalls, so knowing
+             * how long a single block write actually blocks is what tells us
+             * whether the buffer is undersized or the card is simply too slow. */
+            int64_t w0 = esp_timer_get_time();
             esp_err_t rc = audio_recorder_sink_write_block(
                 &s_sink, blk->samples, blk->frames, blk->sample_rate);
+            uint32_t w_us = (uint32_t)(esp_timer_get_time() - w0);
+            if (w_us > s_write_max_us) {
+                s_write_max_us = w_us;
+            }
+            if (w_us >= 100000u) {
+                s_writes_over_100ms++;
+                service_log_event(SERVICE_LOG_RECORDING_SD_STALL, SERVICE_LOG_WARN,
+                                  3u, w_us, s_writes_over_100ms,
+                                  audio_recorder_ring_used(&s_ring), 0u, NULL);
+            }
             if (rc != ESP_OK) {
                 s_last_error = rc;
                 store_state(AUDIO_RECORDER_ERROR);
@@ -277,6 +303,9 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     s_push_count = 0u;
     s_push_max_us = 0u;
     s_push_over_100us = 0u;
+    s_write_max_us = 0u;
+    s_writes_over_100ms = 0u;
+    s_reported_drops = 0u;
     s_last_error = ESP_OK;
     s_last_checkpoint_us = esp_timer_get_time();
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
@@ -388,6 +417,8 @@ esp_err_t audio_recorder_get_status(audio_recorder_status_t *out)
     out->push_count = s_push_count;
     out->push_max_us = s_push_max_us;
     out->push_over_100us = s_push_over_100us;
+    out->write_max_us = s_write_max_us;
+    out->writes_over_100ms = s_writes_over_100ms;
     out->last_error = s_last_error;
     return ESP_OK;
 }
