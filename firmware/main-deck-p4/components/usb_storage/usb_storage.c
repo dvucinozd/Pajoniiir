@@ -55,7 +55,12 @@ static volatile bool         s_seen_device = false;
  * So reproduce the power-on sequence deliberately: install the host with the
  * root port unpowered, then power it on. Powering the port off disconnects
  * everything downstream, so the drive re-attaches and enumerates normally. */
-#define ROOT_PORT_SETTLE_MS   120   /* port off long enough for the device to drop */
+/* Port-off time. 120 ms was not enough for a drive that was still powered and
+ * configured from the previous session: the first cycle did not take and the
+ * 2.5 s retry below is what actually mounted it, at ms=7005 against ms=1389 for
+ * a cold boot. A device holds its own charge for a while after the port stops
+ * sourcing, so give it long enough to genuinely see the disconnect. */
+#define ROOT_PORT_SETTLE_MS   400
 #define ROOT_PORT_RETRY_MS    2500  /* wait for a connect before cycling again */
 #define ROOT_PORT_MAX_CYCLES  4     /* then fall back to the slow retry below */
 #define ROOT_PORT_SLOW_MS     30000 /* keep trying, quietly, for a late insertion */
