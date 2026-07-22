@@ -516,7 +516,7 @@ full-card effect.
 ### The replacement card
 
 Same probe on a candidate 58 GB exFAT card, 256 MB written in 32 KiB
-WriteThrough chunks (`scratchpad/sdbench.ps1`):
+WriteThrough chunks (`tools/sd_card_latency_probe.ps1`):
 
 | | old card, in the P4 | candidate, on the PC |
 |---|---|---|
