@@ -738,3 +738,66 @@ opportunistic garbage collection would vary; hitting ~370 ms repeatedly looks
 more like a fixed-cost operation or a timeout, which would survive a card swap.
 If the replacement stalls at the same number, suspect the SDMMC driver or bus
 configuration rather than the media.
+
+## FLX4 MASTER OUT as the main output — feasibility probe (2026-07-23)
+
+Question: the FLX4 has two physical outputs. We drive the headphone one over USB
+audio and use our own PCM5102A for MAIN. Could the controller's MASTER OUT
+replace the DAC?
+
+### The controller already exposes it
+
+The FLX4's USB playback format is **four channels**, and `flx4_usb_audio`
+already maps onto it — `fill_next_stream_packet()` writes the P4 monitor mix at
+`first_channel = 2` when `channels >= 4`. Channels 1/2 were being zero-filled
+every packet. There is even a diagnostic Kconfig switch,
+`DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2`, from the original bring-up.
+
+**Confirmed on hardware:** with that switch on, the monitor mix came out of the
+FLX4 **MASTER** output. Channels 1/2 are MASTER, channels 3/4 are the
+headphones. No new code was needed to establish this.
+
+### The blocker is the P4->S3 link, and it is not fatal
+
+`monitor_pcm_link` carries stereo only — `monitor_pcm_link_write_nonblocking()`
+takes `const int16_t *interleaved_stereo`, and the transport rejects anything
+but `channels == 2`. Carrying master and cue simultaneously needs four.
+
+The transport is an I2S pipe at `MONITOR_PCM_LINK_I2S_PIPE_RATE_HZ` = 64 kHz
+with 16-bit stereo slots, so 2.05 Mbit/s of framing capacity for `P4HP` blocks:
+
+| payload | rate |
+|---|---|
+| stereo @ 48 kHz (today) | 1.54 Mbit/s — fits |
+| four channels @ 48 kHz | 3.07 Mbit/s — **does not fit** |
+
+Widening the slots to `I2S_DATA_BIT_WIDTH_32BIT` doubles the pipe to
+4.10 Mbit/s, which carries four channels with margin. Prefer that over raising
+the pipe rate: the code already had to drop `mclk_multiple` to 128x because the
+P4's 40 MHz XTAL source made 256x abort with "sample rate is too large", so
+there is little clock headroom but plenty of slot headroom.
+
+### Sketch of the work, if it is ever wanted
+
+1. `monitor_pcm_link`: 16 -> 32-bit slots, accept `channels == 4`, widen the
+   framing.
+2. P4 `audio_engine`: send `master_out` alongside `hp_out` instead of `hp_out`
+   alone — both blocks already exist at that point in the output loop.
+3. S3 `flx4_usb_audio`: fill both channel pairs; the mapping already exists.
+4. Optionally drop the PCM5102A, freeing I2S unit 1 — worth something given the
+   P4 has only two usable units (unit 2 freezes on eco2).
+
+No wiring changes: same three GPIOs, same cable.
+
+### Recommendation
+
+Feasible, but **not an audio-quality win**. The PCM5102A is a competent
+dedicated DAC and the FLX4 is an entry-level controller; expect parity at best.
+The real gains are fewer boxes and cables, master and cue coming from one
+device, and a freed I2S unit. Two costs to weigh: master would gain the USB
+isochronous path's buffering latency that the direct RCA path does not have,
+and the FLX4's physical MASTER LEVEL knob would sit after our limiter and
+master trim, so the two gain stages would interact.
+
+Reverted after the probe — the switch routes the monitor mix to master, which
+leaves the headphones silent.
