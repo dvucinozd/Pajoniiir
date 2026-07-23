@@ -542,3 +542,46 @@ Why a microSD stall stalls the *mixer* loop, which touches no card and holds no
 lock, is not established. The trigger is now known; the mechanism is not. If a
 better card removes the trigger the question becomes academic, but it should not
 be recorded as answered.
+
+## Write staging made it worse, and named the mechanism (2026-07-23)
+
+Hypothesis under test: the recorder calls `fwrite` with 1 KiB blocks while
+newlib's default stdio buffer is 128 B, so each block became eight tiny writes
+down to FATFS. Small scattered writes are what push a flash controller into
+erase-block reorganisation, so accumulating blocks into a 64 KiB staging buffer
+and handing the card one large sequential write should have helped.
+
+It did the opposite, decisively:
+
+| | `RC1-191`, no staging | `RC1-195`, 64 KiB staging |
+|---|---|---|
+| run length | ~25 min | **~3.2 min** |
+| worst single write | 553 ms | **1 735 ms** |
+| writes >= 100 ms | 24 | **498** |
+| worst output block | 356 ms | **913 ms** |
+| worst `mix` phase | 356 ms | **730 ms** |
+
+Staging makes writes 64x less frequent, so ~520 writes occurred in that run and
+**498 of them blocked over 100 ms** — essentially every one. Reverted in
+`cea516e9`.
+
+### Why, and what it explains
+
+The staging buffer was allocated in PSRAM, so each 64 KiB `fwrite` streams from
+PSRAM to the SDMMC peripheral. That holds the PSRAM bus for one long continuous
+stretch instead of short bursts — and the mixer loop reads its per-deck PCM out
+of the same PSRAM. Hence `mix` doubling to 730 ms.
+
+This is the first direct evidence for the mechanism recorded as unexplained
+above: **a microSD stall damages the mixer loop because both contend for the
+PSRAM bus**, not because of any lock or shared code path. The mixer holds no
+lock and never touches the card, which is why the earlier phase breakdown was
+so confusing. Larger transfers made the contention worse in exactly the way the
+theory predicts, which is the strongest confirmation available without a bus
+analyser.
+
+Practical consequence: **do not move recorder bulk I/O into larger PSRAM-sourced
+transfers.** If staging is retried, the buffer must live in internal RAM so the
+DMA source is not the bus the audio path depends on — but internal RAM is
+scarce (~116 KiB free), so that caps the buffer far below 64 KiB and the benefit
+is unproven. The card swap remains the first thing to try.
