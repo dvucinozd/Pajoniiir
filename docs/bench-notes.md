@@ -801,3 +801,64 @@ master trim, so the two gain stages would interact.
 
 Reverted after the probe — the switch routes the monitor mix to master, which
 leaves the headphones silent.
+
+## Reboot on Wi-Fi enable — instrumented, two suspects ruled out (2026-07-23)
+
+Reported symptom: the P4 occasionally reboots when Wi-Fi is switched on from
+Settings. The journal held four `reset=PANIC` boots out of the last fifteen, so
+this is regular rather than rare.
+
+### Why the journal could not answer it
+
+Two reasons, and the second is a general trap worth remembering.
+
+**There was no Wi-Fi instrumentation at all.** Not one event in the inventory
+covered enable, start, failure or stop — zero hits searching the whole log. The
+reported symptom was invisible by construction.
+
+**A panic destroys the unflushed journal buffer.** The writer syncs at most
+every few seconds, so the last record before a panic is simply where the buffer
+was severed, not where the fault was. All four PANIC boots end on something
+unrelated — a `TRACK_LOAD_START` with no matching `DONE`, a
+`PROFILE_TRANSFER_DONE` then silence. Reading those as clues would point
+straight at the wrong subsystem. **Never treat the last record before a panic as
+evidence unless it was explicitly synced.**
+
+Also checked and clear: `LOW_INTERNAL_HEAP` and `LOW_PSRAM` have never fired in
+the entire log, so this is not a slow leak.
+
+### What was added
+
+`RC1-205` adds `WIFI_ENABLE_REQUESTED` / `WIFI_STARTED` / `WIFI_FAILED` /
+`WIFI_STOPPED`, and the enable path calls `service_log_sync()` **before**
+touching the Wi-Fi stack so the breadcrumb reaches the card even if the next
+call panics. Records carry free internal heap and the largest free internal
+block; completion records carry the worker task's stack high-water mark.
+
+### First measurement already eliminates both suspects
+
+```
+WIFI_ENABLE_REQUESTED  a0=160431  a1=92160   free / largest block, before
+WIFI_STARTED           a0=135263  a1=4044    free / stack words left, after
+```
+
+**Stack exhaustion is out.** The worker is a 6 KiB task and roughly 4 KB of that
+is still unused after bringing up ESP-Hosted, Wi-Fi and httpd. Enlarging it
+would have been wasted effort.
+
+**Memory pressure is out.** Bring-up costs about 25 KB of internal RAM
+(160431 -> 135263) against a 92 KB largest free block going in. Nowhere near
+exhaustion.
+
+### How to read the next occurrence
+
+- `WIFI_ENABLE_REQUESTED` with no `WIFI_STARTED` → the panic is inside the
+  Wi-Fi/ESP-Hosted bring-up itself.
+- both records present, reboot later → Wi-Fi is a trigger, not the fault; look
+  at what the newly-started web server, DNS server or the C6 radio disturbs.
+- neither record → the panic precedes the request, so the Settings/UI path is
+  implicated rather than the radio.
+
+Coredump remains unavailable on this board (it boot-loops before `app_main`),
+so a live COM15 capture during the toggle is the fallback if the journal
+breadcrumbs are not decisive.

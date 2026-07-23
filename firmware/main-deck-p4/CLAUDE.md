@@ -1,7 +1,7 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-202-g05c23a40` on `ota_0`; the S3 is **not** matched and
+signed release is `RC1-205-gdbda7a83` on `ota_1`; the S3 is **not** matched and
 still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
 run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
@@ -31,6 +31,14 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > keep-alive sockets made the server refuse every new client — including
 > `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
 > `docs/bench-notes.md` for the diagnostic signature.
+
+> ⚠️ **The last journal record before a panic is not evidence.** The service-log
+> writer syncs at most every few seconds, so a panic destroys whatever is still
+> buffered and the final record simply marks where the buffer was severed. Four
+> `reset=PANIC` boots each ended on an unrelated line — a `TRACK_LOAD_START`
+> with no `DONE`, a `PROFILE_TRANSFER_DONE` then silence — which would point at
+> the wrong subsystem entirely. Before a risky operation, emit the breadcrumb
+> and call `service_log_sync()`, as the Wi-Fi enable path now does.
 
 > ⚠️ **The recorder stalls on microSD and drops audio; the cause is below
 > FATFS.** 25-minute soaks with two decks playing lose 3+ seconds of recording
