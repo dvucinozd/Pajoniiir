@@ -61,6 +61,12 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s);
  * .wav.part -> .wav. Idempotent when nothing is open. */
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s);
 
+/* Worst SD-gate wait and worst raw fwrite seen since the session opened, in us.
+ * Kept apart because a long wait blames contention while a long fwrite blames
+ * the card, and the two demand completely different fixes. */
+void audio_recorder_sink_write_cost(uint32_t *out_gate_max_us,
+                                    uint32_t *out_fwrite_max_us);
+
 /* Report free bytes on /sd (thin wrapper over esp_vfs_fat_info). */
 esp_err_t audio_recorder_sink_free_bytes(uint64_t *out_free_bytes);
 

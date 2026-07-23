@@ -556,6 +556,7 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      "\"bytes_written\":%llu,\"frames_written\":%llu,"
                      "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
                      "\"write_max_us\":%u,\"writes_over_100ms\":%u,"
+                     "\"gate_wait_max_us\":%u,\"fwrite_max_us\":%u,"
                      "\"last_error\":%d}",
                      recording_state_name(st.state), (unsigned)st.sample_rate,
                      (unsigned)st.ring_used, (unsigned)st.ring_capacity,
@@ -566,6 +567,7 @@ static esp_err_t recording_send_status(httpd_req_t *req)
                      (unsigned)st.push_count, (unsigned)st.push_max_us,
                      (unsigned)st.push_over_100us,
                      (unsigned)st.write_max_us, (unsigned)st.writes_over_100ms,
+                     (unsigned)st.gate_wait_max_us, (unsigned)st.fwrite_max_us,
                      (int)st.last_error);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,

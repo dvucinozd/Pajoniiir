@@ -419,6 +419,7 @@ esp_err_t audio_recorder_get_status(audio_recorder_status_t *out)
     out->push_over_100us = s_push_over_100us;
     out->write_max_us = s_write_max_us;
     out->writes_over_100ms = s_writes_over_100ms;
+    audio_recorder_sink_write_cost(&out->gate_wait_max_us, &out->fwrite_max_us);
     out->last_error = s_last_error;
     return ESP_OK;
 }

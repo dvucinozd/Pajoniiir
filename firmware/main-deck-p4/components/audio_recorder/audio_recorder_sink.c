@@ -5,12 +5,24 @@
 
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "esp_timer.h"
 
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
 #include <dirent.h>
+
+/* Write-cost split, writer-task owned. Reset by audio_recorder_sink_open(). */
+static uint32_t s_gate_wait_max_us = 0u;
+static uint32_t s_fwrite_max_us    = 0u;
+
+void audio_recorder_sink_write_cost(uint32_t *out_gate_max_us,
+                                    uint32_t *out_fwrite_max_us)
+{
+    if (out_gate_max_us)   *out_gate_max_us = s_gate_wait_max_us;
+    if (out_fwrite_max_us) *out_fwrite_max_us = s_fwrite_max_us;
+}
 
 static const char *TAG = "rec_sink";
 
@@ -97,6 +109,8 @@ esp_err_t audio_recorder_sink_prepare(uint64_t *out_free_bytes)
 esp_err_t audio_recorder_sink_open(audio_recorder_sink_t *s, uint32_t sample_rate,
                                    uint32_t boot_id, uint32_t session)
 {
+    s_gate_wait_max_us = 0u;
+    s_fwrite_max_us = 0u;
     if (!s || sample_rate == 0u) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -134,9 +148,24 @@ esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
         }
     }
 
+    /* Split the cost. Timing the whole call conflated three different things:
+     * waiting for the SD gate (held by the journal writer, a diagnostic-log
+     * download or this sink's own checkpoint), waiting for the FATFS volume lock
+     * against writers that bypass the gate, and the card itself. That made a
+     * 1 KiB write look like it took 492 ms and pointed the blame at the card —
+     * which is hard to believe of a card that records 1080p60. */
+    int64_t g0 = esp_timer_get_time();
     sd_io_gate_begin();
+    int64_t g1 = esp_timer_get_time();
     size_t n = fwrite(samples, 1, len, s->fp);
+    int64_t g2 = esp_timer_get_time();
     sd_io_gate_end();
+
+    uint32_t gate_us = (uint32_t)(g1 - g0);
+    uint32_t write_us = (uint32_t)(g2 - g1);
+    if (gate_us > s_gate_wait_max_us)  s_gate_wait_max_us = gate_us;
+    if (write_us > s_fwrite_max_us)    s_fwrite_max_us = write_us;
+
     if (n != len) {
         ESP_LOGE(TAG, "short write %u/%u", (unsigned)n, (unsigned)len);
         return ESP_FAIL;

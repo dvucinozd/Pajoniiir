@@ -53,6 +53,10 @@ typedef struct {
     /* microSD cost, which is what the ring has to cover. */
     uint32_t write_max_us;     /* slowest single block write since start */
     uint32_t writes_over_100ms;/* block writes that blocked 100 ms or more */
+    /* The above splits into contention vs the card itself; a long gate wait and
+     * a long fwrite call for entirely different fixes. */
+    uint32_t gate_wait_max_us; /* worst wait for the shared SD gate */
+    uint32_t fwrite_max_us;    /* worst raw fwrite once the gate was held */
     esp_err_t last_error;      /* last error that stopped/failed a session */
 } audio_recorder_status_t;
 
