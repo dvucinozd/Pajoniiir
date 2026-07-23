@@ -622,3 +622,69 @@ Comparison across the 25-minute soaks:
 `RC1-197` lands back with `RC1-190`/`RC1-191`, confirming the staging attempt
 was the only regression and that the card remains the cause. Nothing in the
 firmware has moved the needle; the card swap is the outstanding experiment.
+
+## Splitting gate wait from card time (2026-07-23, `RC1-200`)
+
+The earlier "the card takes 553 ms to accept 1 KiB" figure was challenged by an
+obvious fact: the same card records 1080p60 video, roughly fifty times the
+176 kB/s the recorder needs. It turned out the measurement bracketed the whole
+sink call, which is `sd_io_gate_begin(); fwrite(); sd_io_gate_end()`, so gate
+contention and card time were indistinguishable. `RC1-199` split them.
+
+25-minute soak, two decks playing, recording throughout:
+
+| | T+0 | T+5 | T+10 | T+15 | T+20 | T+25 |
+|---|---|---|---|---|---|---|
+| `gate_wait` max | 0.0 ms | 8.3 ms | 8.3 ms | **185.0 ms** | 185.0 ms | 185.0 ms |
+| `fwrite` max | 17.2 ms | 369.7 ms | 369.7 ms | 369.8 ms | 369.8 ms | 369.8 ms |
+| writes >=100 ms | 0 | 4 | 12 | 33 | 41 | 56 |
+| dropped blocks | 0 | 0 | 0 | 327 | 327 | 426 |
+
+### Three findings
+
+**1. The stall is inside `fwrite`, not in our gate.** In steady state the gate
+wait is 7-8 us. `sd_io_gate` contention is not the cause.
+
+**2. `fwrite` maxima are suspiciously deterministic.** 369 665 / 369 665 /
+369 814 / 369 814 / 369 814 us — a 150 us spread across twenty minutes. Random
+flash housekeeping does not look like that; this resembles a fixed-cost
+operation or a timeout, and is worth chasing before blaming card wear.
+
+**3. The diagnostics amplify the failure — self-inflicted.** `gate_wait` jumps
+from 8 ms to 185 ms exactly when stalls begin, because every stall over 100 ms
+emits `RECORDING_SD_STALL` and every overrun emits `RECORDING_DROPPED`. The
+journal writer then writes those to the *same card* under the *same gate*. More
+stalls produce more journal traffic, which produces more stalls. This feedback
+loop was introduced with the stall instrumentation earlier the same day and must
+be rate-limited or deferred.
+
+### Bursts, and why a camera does not care
+
+Stalls arrive in bursts roughly every 2.2 minutes. Within a burst the writer is
+blocked continuously — the interval between stalls equals their duration:
+
+```
+ms=1355481  stall=364 ms  ring= 33
+ms=1355843  stall=362 ms  ring= 51
+ms=1356394  stall=551 ms  ring= 79
+...  fifteen consecutive, ~4.5 s total  ...
+ms=1359689  stall=365 ms  ring=508   <- full
+ms=1359944  stall=255 ms  ring=508   -> dropped
+```
+
+This reconciles the card recording 1080p60 with it failing here. A camera
+buffers in tens or hundreds of MB — many seconds of video — so a 4.5 s card
+stall is invisible to it. The recorder's ring is 508 blocks, **2.95 s**. The same
+stall that a camera absorbs drains our buffer completely. The card can be
+genuinely fine for video and still unusable for this without a larger buffer or
+a card that does not stall for seconds at a time.
+
+### Next, in order
+
+1. Stop the diagnostic feedback loop: rate-limit `RECORDING_SD_STALL`, or queue
+   stall records and emit them after the session ends.
+2. Test whether the 10 s checkpoint's header patch is the trigger. It seeks to
+   offset 0, writes 44 bytes and seeks back, breaking the sequential write
+   stream. `recover_orphans()` already rebuilds the header from the file size at
+   boot, so the in-session patch is arguably redundant.
+3. Only then compare cards, with the probe in `tools/sd_card_latency_probe.ps1`.
