@@ -1,5 +1,7 @@
 #include "wifi_link.h"
 #include "web_server.h"
+#include "service_log.h"
+#include "esp_heap_caps.h"
 
 #include "esp_check.h"
 #include "esp_event.h"
@@ -209,9 +211,46 @@ static void wifi_link_worker(void *arg)
         xSemaphoreGive(s_ctrl_lock);
 
         if (desired) {
-            wifi_link_start();
+            /* Breadcrumb before the risky part, then force it onto the card.
+             * The journal writer only syncs every few seconds, so anything
+             * still buffered is lost if the next call panics — which is
+             * exactly the failure being chased here (the P4 occasionally
+             * reboots when Wi-Fi is switched on, and the journal shows only
+             * an unrelated last record because the buffer never reached the
+             * card). Carries free internal heap, since the ESP-Hosted and
+             * Wi-Fi bring-up is the largest internal allocation the firmware
+             * ever makes. */
+            service_log_event(SERVICE_LOG_WIFI_ENABLE_REQ, SERVICE_LOG_INFO,
+                              2u,
+                              (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                              (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                              0u, 0u, "internal free/largest");
+            service_log_sync();
+
+            esp_err_t start_rc = wifi_link_start();
+
+            /* Stack high-water of this worker: bringing up ESP-Hosted, Wi-Fi
+             * and httpd from a 6 KiB task is the other plausible cause of an
+             * intermittent panic here, and this is the cheapest way to see how
+             * close it runs. */
+            uint32_t hw_words = uxTaskGetStackHighWaterMark(NULL);
+            if (start_rc == ESP_OK) {
+                service_log_event(SERVICE_LOG_WIFI_STARTED, SERVICE_LOG_INFO,
+                                  2u,
+                                  (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                                  hw_words, 0u, 0u, "internal free/stack words left");
+            } else {
+                service_log_event(SERVICE_LOG_WIFI_FAILED, SERVICE_LOG_ERROR,
+                                  2u, (uint32_t)start_rc, hw_words, 0u, 0u,
+                                  "rc/stack words left");
+            }
+            service_log_sync();
         } else {
             wifi_link_stop();
+            service_log_event(SERVICE_LOG_WIFI_STOPPED, SERVICE_LOG_INFO,
+                              1u,
+                              (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                              0u, 0u, 0u, NULL);
         }
     }
     vTaskDelete(NULL);
