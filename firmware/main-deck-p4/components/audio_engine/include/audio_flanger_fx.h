@@ -30,13 +30,6 @@ typedef struct {
     /* Ramped gains, de-clicking depth-knob moves while running. */
     uint16_t wet_cur_q15;
     uint16_t feedback_cur_q15;
-    /* Output normalisation, 1/(1+wet) in Q15, cached against the wet value it
-     * was derived from so the divide happens only when wet actually moves. */
-    uint16_t norm_q15;
-    uint16_t norm_for_wet_q15;
-    /* Bumped by audio_flanger_fx_tune(); forces the cached norm to refresh
-     * when the tuning changes but the wet gain happens not to. */
-    uint32_t norm_generation;
 } audio_flanger_fx_t;
 
 void audio_flanger_fx_init(audio_flanger_fx_t *fx,
@@ -55,10 +48,4 @@ bool audio_flanger_fx_is_allocated(const audio_flanger_fx_t *fx);
  * delay (plus interpolation guard) at the given sample rate. */
 uint32_t audio_flanger_fx_required_frames(uint32_t sample_rate);
 
-/* Live tuning of the ceilings, for converging the sound by ear without a
- * reflash per attempt. min_delay_us takes effect on the next configure(), which
- * deck_core issues whenever the depth knob moves or Beat FX is toggled. */
-void audio_flanger_fx_tune(uint16_t wet_max_q15, uint16_t fb_max_q15,
-                           uint32_t min_delay_us, bool normalize);
-void audio_flanger_fx_tuning(uint16_t *wet_max_q15, uint16_t *fb_max_q15,
-                             uint32_t *min_delay_us, bool *normalize);
+

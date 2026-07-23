@@ -83,13 +83,13 @@ static void test_impulse_reappears_within_delay_bounds(void)
         .depth_q15 = 32767,
     });
 
-    /* The dry path is no longer unity: the output is normalised by 1/(1+wet)
-     * so that dry+wet peaks at unity instead of 1.9x. At full depth that puts
-     * the lone dry impulse at roughly 0.53 of its input. Assert the scaling
-     * rather than pass-through, and assert it is not silence. */
+    /* Dry is unity, as on a hardware flanger. The delay line was just cleared
+     * by the engage reset, so the first frame carries no wet component and
+     * passes through untouched - it is also well below the soft-clip knee. */
     audio_mixer_frame_t first = audio_flanger_fx_process_frame(
         &fx, (audio_mixer_frame_t) { .left = 16000, .right = 16000 });
-    assert(first.left > 7000 && first.left < 9500);
+    assert(first.left == 16000);
+    assert(first.right == 16000);
 
     int first_wet_frame = -1;
     for (int i = 1; i < 400; ++i) {
@@ -101,8 +101,8 @@ static void test_impulse_reappears_within_delay_bounds(void)
         }
     }
 
-    /* 0.1 ms..6 ms at 48 kHz is roughly frame 5..289. */
-    assert(first_wet_frame >= 3);
+    /* 250 us..6 ms at 48 kHz is frame 12..288; the LFO starts at the minimum. */
+    assert(first_wet_frame >= 10);
     assert(first_wet_frame <= 292);
 }
 
@@ -143,8 +143,11 @@ static void test_sweep_produces_a_deep_notch(void)
     });
 
     /* 400 Hz: its first null needs a 1.25 ms delay, comfortably inside the
-     * 0.6-6 ms sweep, so a working flanger must pass through cancellation. */
-    const double amp = 10000.0;
+     * 250 us - 6 ms sweep, so a working flanger must pass through
+     * cancellation. Amplitude is kept low on purpose: the resonant peak of
+     * this tuning is 3.34x, so a louder test tone would run into the soft-clip
+     * knee and the measurement would be of the knee, not of the comb. */
+    const double amp = 3000.0;
     const double w = 2.0 * 3.14159265358979 * 400.0 / (double)TEST_SAMPLE_RATE;
     const int window = 128;
 
@@ -174,13 +177,50 @@ static void test_sweep_produces_a_deep_notch(void)
     assert(strongest > 0.0);
     assert(weakest < strongest * 0.25);
 
-    /* Normalisation must keep the level honest. Not at unity though: the
-     * feedback path lets the delay line build past the dry amplitude, so a
-     * resonant flanger genuinely peaks above it - measured at 1.56x here. The
-     * bound catches runaway while leaving the resonance alone, and the master
-     * bus has the headroom (limiter_peak sits near 16% of full scale in normal
-     * playback, with the limiter never engaging). */
-    assert(strongest <= amp * 2.5);
+    /* Dry is unity and the wet is added on top, so a resonant flanger peaks
+     * well above the input: the theoretical ceiling is 1 + wet/(1-fb) = 3.8x
+     * and the measured peak is 2.97x at this 300 ms sweep (3.34x at a slower
+     * one, where the resonance has longer to build at each delay). Bound it on
+     * both sides - the lower bound is what stops the resonance from being
+     * quietly tuned away again, the upper bound catches runaway. */
+    assert(strongest > amp * 2.8);
+    assert(strongest <= amp * 3.6);
+}
+
+/* The 3.34x resonant gain means loud material would otherwise hard-clip inside
+ * the effect, ahead of the master limiter, where nothing downstream can catch
+ * it. The soft knee has to absorb that without touching the quiet case, since
+ * the quiet case is the tuning that was accepted by ear. */
+static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
+{
+    audio_flanger_fx_t fx;
+    make_fx(&fx);
+    audio_flanger_fx_configure(&fx, &(audio_flanger_fx_config_t) {
+        .enabled = true,
+        .period_ms = 300,
+        .depth_q15 = 32767,
+    });
+
+    /* First frame: delay line is empty, so the output is the dry sample alone.
+     * Below the 24576 knee it must pass through bit-exact. */
+    audio_mixer_frame_t quiet = audio_flanger_fx_process_frame(
+        &fx, (audio_mixer_frame_t) { .left = 20000, .right = -20000 });
+    assert(quiet.left == 20000);
+    assert(quiet.right == -20000);
+
+    /* Drive it hard for long enough for the feedback to build, and confirm the
+     * knee holds the output inside full scale rather than wrapping. */
+    const double w = 2.0 * 3.14159265358979 * 400.0 / (double)TEST_SAMPLE_RATE;
+    const int total = (TEST_SAMPLE_RATE * 700) / 1000;
+    for (int i = 0; i < total; ++i) {
+        int16_t sample = (int16_t)(sin((double)i * w) * 26000.0);
+        audio_mixer_frame_t out = audio_flanger_fx_process_frame(
+            &fx, (audio_mixer_frame_t) { .left = sample, .right = sample });
+        /* int16 cannot exceed full scale, but it can wrap sign if the maths
+         * overflows on the way here - that is the failure this catches. */
+        assert(!(sample > 20000 && out.left < -20000));
+        assert(!(sample < -20000 && out.left > 20000));
+    }
 }
 
 static void test_reenable_clears_stale_buffer(void)
@@ -240,12 +280,10 @@ static void test_full_scale_fractional_interpolation_does_not_overflow(void)
     int32_t s1 = buffer_left[idx1];
     int32_t delayed = s0 +
         (int32_t)(((int64_t)(s1 - s0) * frac_q16) >> 16);
-    /* Mirror the output normalisation by 1/(1+wet) that keeps dry+wet from
-     * peaking at 1.9x. */
-    int32_t norm_q15 = (int32_t)(((uint32_t)32768u << 15) /
-                                 (32768u + (uint32_t)fx.wet_cur_q15));
+    /* Dry is zero here, so the output is the wet path alone. At wet <= 0.70 a
+     * full-scale delayed sample stays under the soft-clip knee, so the knee is
+     * the identity and the expected value is the raw wet mix. */
     int32_t expected = (delayed * (int32_t)fx.wet_cur_q15) >> 15;
-    expected = (expected * norm_q15) >> 15;
     if (expected > INT16_MAX) expected = INT16_MAX;
     if (expected < INT16_MIN) expected = INT16_MIN;
 
@@ -264,6 +302,7 @@ int main(void)
     test_impulse_reappears_within_delay_bounds();
     test_enabled_flanger_colours_a_tone();
     test_sweep_produces_a_deep_notch();
+    test_soft_knee_is_transparent_below_it_and_bounds_above();
     test_reenable_clears_stale_buffer();
     test_full_scale_fractional_interpolation_does_not_overflow();
     puts("audio_flanger_fx tests passed");
