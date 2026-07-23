@@ -2,6 +2,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#include "audio_flanger_fx.h"
 #include "media_catalog.h"
 #include "ui.h"
 #include "ui_library.h"
@@ -1040,7 +1041,8 @@ static esp_err_t api_control_handler(httpd_req_t *req)
                                             sizeof(value_str)) == ESP_OK;
 
     uint8_t deck = CTRL_DECK_NONE;
-    bool deck_required = strcmp(action, "crossfader") != 0;
+    bool deck_required = strcmp(action, "crossfader") != 0 &&
+                         strcmp(action, "flanger_tune") != 0;
     if ((deck_required && !has_deck) ||
         (has_deck && !api_parse_deck(deck_str, &deck))) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
@@ -1143,6 +1145,49 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop failed");
             return ESP_FAIL;
         }
+    } else if (strcmp(action, "flanger_tune") == 0) {
+        /* Development aid for converging the flanger by ear. Measured metrics
+         * rank the worst-sounding setting highest here - deep cancellation
+         * scores well and sounds choked - so the ceilings have to be chosen by
+         * listening, and reflashing per attempt is far too slow. Query params
+         * are wet/fb in Q15 (0..32767), mind in microseconds, norm 0/1; any
+         * omitted parameter keeps its current value. */
+        uint16_t wet = 0, fb = 0;
+        uint32_t mind = 0;
+        bool norm = true;
+        audio_flanger_fx_tuning(&wet, &fb, &mind, &norm);
+
+        char buf[16] = {0};
+        int32_t v = 0;
+        if (httpd_query_key_value(query, "wet", buf, sizeof(buf)) == ESP_OK &&
+            web_api_parse_int32(buf, 0, 32767, &v)) {
+            wet = (uint16_t)v;
+        }
+        if (httpd_query_key_value(query, "fb", buf, sizeof(buf)) == ESP_OK &&
+            web_api_parse_int32(buf, 0, 32767, &v)) {
+            fb = (uint16_t)v;
+        }
+        if (httpd_query_key_value(query, "mind", buf, sizeof(buf)) == ESP_OK &&
+            web_api_parse_int32(buf, 20, 3000, &v)) {
+            mind = (uint32_t)v;
+        }
+        if (httpd_query_key_value(query, "norm", buf, sizeof(buf)) == ESP_OK &&
+            web_api_parse_int32(buf, 0, 1, &v)) {
+            norm = (v != 0);
+        }
+        audio_flanger_fx_tune(wet, fb, mind, norm);
+
+        char json[128];
+        int n = snprintf(json, sizeof(json),
+                         "{\"wet\":%u,\"fb\":%u,\"mind_us\":%u,\"norm\":%s}",
+                         (unsigned)wet, (unsigned)fb, (unsigned)mind,
+                         norm ? "true" : "false");
+        if (n < 0 || (size_t)n >= sizeof(json)) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Tuning response overflow");
+        }
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, json, n);
     } else if (strcmp(action, "loop_clear") == 0) {
         esp_err_t rc = audio_engine_deck_clear_loop(deck);
         if (rc != ESP_OK) {

@@ -30,6 +30,48 @@
  * the delay line, the peak pins at 2.08x and the measured swing gets *worse*,
  * so the clipping destroys the resonance it was meant to build. */
 #define AUDIO_FLANGER_FB_MAX_Q15 24576u
+
+/* Live tuning. The four numbers that decide how this sounds are a listening
+ * decision, not a computable one: measured null-to-peak "swing" turned out to
+ * rank the *worst*-sounding setting highest, because swing rewards deep
+ * cancellation and deep cancellation is exactly what sounds choked. So the
+ * ceilings are runtime variables with the compiled constants as defaults, set
+ * over the web API while the effect is running, and the winning values are
+ * baked back into the defaults afterwards. */
+static uint16_t s_wet_max_q15 = AUDIO_FLANGER_WET_MAX_Q15;
+static uint16_t s_fb_max_q15  = AUDIO_FLANGER_FB_MAX_Q15;
+static uint32_t s_min_delay_us = AUDIO_FLANGER_MIN_DELAY_US;
+/* Output scaling. 0 = dry stays at unity and wet is added on top, which is what
+ * a hardware flanger does; 1 = divide by (1+wet). Normalising protects headroom
+ * but drops the whole output by 5.6 dB at wet 0.9, which reads as "the effect
+ * makes everything quieter and duller" rather than as protection. */
+static bool s_normalize = true;
+static uint32_t s_tune_generation = 1u;
+
+void audio_flanger_fx_tune(uint16_t wet_max_q15, uint16_t fb_max_q15,
+                           uint32_t min_delay_us, bool normalize)
+{
+    if (wet_max_q15 > 32767u) wet_max_q15 = 32767u;
+    if (fb_max_q15 > 32767u)  fb_max_q15 = 32767u;
+    if (min_delay_us < 20u)   min_delay_us = 20u;
+    if (min_delay_us > AUDIO_FLANGER_MAX_DELAY_US / 2u) {
+        min_delay_us = AUDIO_FLANGER_MAX_DELAY_US / 2u;
+    }
+    s_wet_max_q15 = wet_max_q15;
+    s_fb_max_q15 = fb_max_q15;
+    s_min_delay_us = min_delay_us;
+    s_normalize = normalize;
+    s_tune_generation++;
+}
+
+void audio_flanger_fx_tuning(uint16_t *wet_max_q15, uint16_t *fb_max_q15,
+                             uint32_t *min_delay_us, bool *normalize)
+{
+    if (wet_max_q15) *wet_max_q15 = s_wet_max_q15;
+    if (fb_max_q15)  *fb_max_q15 = s_fb_max_q15;
+    if (min_delay_us) *min_delay_us = s_min_delay_us;
+    if (normalize)   *normalize = s_normalize;
+}
 #define AUDIO_FLANGER_SMOOTH_SHIFT 6
 
 static int16_t clamp_i16(int32_t value)
@@ -84,6 +126,7 @@ void audio_flanger_fx_reset(audio_flanger_fx_t *fx)
      * a zeroed norm_q15 would silence the output instead of passing it. */
     fx->norm_q15 = 32768u;          /* 1/(1+0) in Q15 */
     fx->norm_for_wet_q15 = 0u;
+    fx->norm_generation = s_tune_generation;
     if (fx->left && fx->capacity_frames > 0u) {
         memset(fx->left, 0, fx->capacity_frames * sizeof(fx->left[0]));
     }
@@ -111,9 +154,9 @@ void audio_flanger_fx_configure(audio_flanger_fx_t *fx,
          * ramp needed. */
         audio_flanger_fx_reset(fx);
         fx->wet_cur_q15 = (uint16_t)(((uint32_t)next.depth_q15 *
-                                      AUDIO_FLANGER_WET_MAX_Q15) >> 15);
+                                      s_wet_max_q15) >> 15);
         fx->feedback_cur_q15 = (uint16_t)(((uint32_t)next.depth_q15 *
-                                           AUDIO_FLANGER_FB_MAX_Q15) >> 15);
+                                           s_fb_max_q15) >> 15);
     }
 
     fx->config = next;
@@ -123,7 +166,7 @@ void audio_flanger_fx_configure(audio_flanger_fx_t *fx,
     if (period_frames < 1u) period_frames = 1u;
     fx->lfo_step_q32 = (uint32_t)((1ull << 32) / period_frames);
 
-    uint64_t min_q16 = ((uint64_t)fs * AUDIO_FLANGER_MIN_DELAY_US << 16) / 1000000u;
+    uint64_t min_q16 = ((uint64_t)fs * s_min_delay_us << 16) / 1000000u;
     uint64_t max_q16 = ((uint64_t)fs * AUDIO_FLANGER_MAX_DELAY_US << 16) / 1000000u;
     fx->min_delay_q16 = (uint32_t)min_q16;
     fx->span_delay_q16 = (uint32_t)(max_q16 - min_q16);
@@ -150,9 +193,9 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
     }
 
     uint16_t wet_target = (uint16_t)(((uint32_t)fx->config.depth_q15 *
-                                      AUDIO_FLANGER_WET_MAX_Q15) >> 15);
+                                      s_wet_max_q15) >> 15);
     uint16_t fb_target = (uint16_t)(((uint32_t)fx->config.depth_q15 *
-                                     AUDIO_FLANGER_FB_MAX_Q15) >> 15);
+                                     s_fb_max_q15) >> 15);
     fx->wet_cur_q15 = smooth_q15(fx->wet_cur_q15, wet_target);
     fx->feedback_cur_q15 = smooth_q15(fx->feedback_cur_q15, fb_target);
 
@@ -176,10 +219,14 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
     /* Normalise the dry+wet sum so the peak stays at unity whatever the mix.
      * Recomputed only when the smoothed wet gain actually moves, so the divide
      * is absent from the steady-state hot path. */
-    if (fx->wet_cur_q15 != fx->norm_for_wet_q15) {
-        fx->norm_q15 = (uint16_t)(((uint32_t)32768u << 15) /
-                                  (32768u + (uint32_t)fx->wet_cur_q15));
+    if (fx->wet_cur_q15 != fx->norm_for_wet_q15 ||
+        fx->norm_generation != s_tune_generation) {
+        fx->norm_q15 = s_normalize
+            ? (uint16_t)(((uint32_t)32768u << 15) /
+                         (32768u + (uint32_t)fx->wet_cur_q15))
+            : 32768u;
         fx->norm_for_wet_q15 = fx->wet_cur_q15;
+        fx->norm_generation = s_tune_generation;
     }
 
     int32_t sum_l = (int32_t)in.left + ((delayed_l * (int32_t)fx->wet_cur_q15) >> 15);
