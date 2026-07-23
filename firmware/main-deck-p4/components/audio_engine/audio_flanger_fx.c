@@ -12,7 +12,13 @@
 #define AUDIO_FLANGER_MIN_PERIOD_MS 100u
 #define AUDIO_FLANGER_MAX_PERIOD_MS 8000u
 /* Wet tops out at 0.5 (equal-power-ish comb) and feedback at 0.6. */
-#define AUDIO_FLANGER_WET_MAX_Q15 16384u
+/* A flanger's whole character is the depth of the comb notches, and that comes
+ * from how nearly the delayed copy cancels the dry signal. The notch is
+ * 20*log10(1-wet): at the original 0.50 that is only -6 dB, a mild phasey
+ * wobble rather than a flanger, which is exactly how it was reported. 0.90
+ * gives -20 dB. The output is normalised by 1/(1+wet) below, so the deeper mix
+ * costs no headroom and does not jump the level when the effect engages. */
+#define AUDIO_FLANGER_WET_MAX_Q15 29491u   /* 0.90 */
 #define AUDIO_FLANGER_FB_MAX_Q15 19660u
 #define AUDIO_FLANGER_SMOOTH_SHIFT 6
 
@@ -64,6 +70,10 @@ void audio_flanger_fx_reset(audio_flanger_fx_t *fx)
     fx->lfo_phase_q32 = 0;
     fx->wet_cur_q15 = 0;
     fx->feedback_cur_q15 = 0;
+    /* Must agree with wet_cur_q15, or the lazy recompute below never fires and
+     * a zeroed norm_q15 would silence the output instead of passing it. */
+    fx->norm_q15 = 32768u;          /* 1/(1+0) in Q15 */
+    fx->norm_for_wet_q15 = 0u;
     if (fx->left && fx->capacity_frames > 0u) {
         memset(fx->left, 0, fx->capacity_frames * sizeof(fx->left[0]));
     }
@@ -153,8 +163,19 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
     int32_t delayed_l = read_delayed(fx->left, idx0, idx1, frac_q16);
     int32_t delayed_r = read_delayed(fx->right, idx0, idx1, frac_q16);
 
-    int32_t out_l = (int32_t)in.left + ((delayed_l * (int32_t)fx->wet_cur_q15) >> 15);
-    int32_t out_r = (int32_t)in.right + ((delayed_r * (int32_t)fx->wet_cur_q15) >> 15);
+    /* Normalise the dry+wet sum so the peak stays at unity whatever the mix.
+     * Recomputed only when the smoothed wet gain actually moves, so the divide
+     * is absent from the steady-state hot path. */
+    if (fx->wet_cur_q15 != fx->norm_for_wet_q15) {
+        fx->norm_q15 = (uint16_t)(((uint32_t)32768u << 15) /
+                                  (32768u + (uint32_t)fx->wet_cur_q15));
+        fx->norm_for_wet_q15 = fx->wet_cur_q15;
+    }
+
+    int32_t sum_l = (int32_t)in.left + ((delayed_l * (int32_t)fx->wet_cur_q15) >> 15);
+    int32_t sum_r = (int32_t)in.right + ((delayed_r * (int32_t)fx->wet_cur_q15) >> 15);
+    int32_t out_l = (sum_l * (int32_t)fx->norm_q15) >> 15;
+    int32_t out_r = (sum_r * (int32_t)fx->norm_q15) >> 15;
 
     fx->left[fx->write_index] = clamp_i16(
         (int32_t)in.left + ((delayed_l * (int32_t)fx->feedback_cur_q15) >> 15));

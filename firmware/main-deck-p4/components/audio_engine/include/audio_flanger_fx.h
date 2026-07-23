@@ -30,6 +30,10 @@ typedef struct {
     /* Ramped gains, de-clicking depth-knob moves while running. */
     uint16_t wet_cur_q15;
     uint16_t feedback_cur_q15;
+    /* Output normalisation, 1/(1+wet) in Q15, cached against the wet value it
+     * was derived from so the divide happens only when wet actually moves. */
+    uint16_t norm_q15;
+    uint16_t norm_for_wet_q15;
 } audio_flanger_fx_t;
 
 void audio_flanger_fx_init(audio_flanger_fx_t *fx,
