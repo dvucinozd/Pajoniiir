@@ -101,8 +101,8 @@ static void test_impulse_reappears_within_delay_bounds(void)
         }
     }
 
-    /* 0.6 ms..6 ms at 48 kHz is roughly frame 28..289. */
-    assert(first_wet_frame >= 26);
+    /* 0.1 ms..6 ms at 48 kHz is roughly frame 5..289. */
+    assert(first_wet_frame >= 3);
     assert(first_wet_frame <= 292);
 }
 

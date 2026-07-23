@@ -7,7 +7,13 @@
  * resonant "jet" character. Wet and feedback both scale with the depth knob.
  * All per-sample math is integer (Q15/16.16); the LFO advances one phase
  * step per frame so the sweep is sample-accurate and beat-syncable. */
-#define AUDIO_FLANGER_MIN_DELAY_US 600u
+/* 100 us, not the original 600. The first comb notch sits at 1/(2*delay), so a
+ * 600 us floor stopped the sweep at 833 Hz and kept the whole effect down in
+ * the low mids - present, but not the sweep through the presence region that
+ * makes a flanger sound like a jet. At 100 us the notch reaches 5 kHz.
+ * Measured swing at 4 kHz: 9.9 dB at 600 us, 15.7 dB here. Does not change the
+ * buffer, which is sized from the maximum. */
+#define AUDIO_FLANGER_MIN_DELAY_US 100u
 #define AUDIO_FLANGER_MAX_DELAY_US 6000u
 #define AUDIO_FLANGER_MIN_PERIOD_MS 100u
 #define AUDIO_FLANGER_MAX_PERIOD_MS 8000u
@@ -19,7 +25,11 @@
  * gives -20 dB. The output is normalised by 1/(1+wet) below, so the deeper mix
  * costs no headroom and does not jump the level when the effect engages. */
 #define AUDIO_FLANGER_WET_MAX_Q15 29491u   /* 0.90 */
-#define AUDIO_FLANGER_FB_MAX_Q15 19660u
+/* 0.75. Feedback is what sharpens the resonance into the jet. It does not pay
+ * to go higher: at 0.85 the recirculating sum starts hitting clamp_i16 inside
+ * the delay line, the peak pins at 2.08x and the measured swing gets *worse*,
+ * so the clipping destroys the resonance it was meant to build. */
+#define AUDIO_FLANGER_FB_MAX_Q15 24576u
 #define AUDIO_FLANGER_SMOOTH_SHIFT 6
 
 static int16_t clamp_i16(int32_t value)
