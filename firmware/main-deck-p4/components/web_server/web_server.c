@@ -548,7 +548,10 @@ static esp_err_t recording_send_status(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Recorder status unavailable");
     }
-    char json[320];
+    /* Sized with headroom: the fully-populated object with six-digit counters
+     * runs a little over 400 bytes, and 320 silently turned every request into
+     * a 500 the moment the gate/fwrite split was added. */
+    char json[512];
     int n = snprintf(json, sizeof(json),
                      "{\"state\":\"%s\",\"sample_rate\":%u,"
                      "\"ring_used\":%u,\"ring_capacity\":%u,\"ring_high_water\":%u,"
