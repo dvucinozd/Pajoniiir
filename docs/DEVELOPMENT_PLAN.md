@@ -2502,3 +2502,143 @@ signing/release-helper suites.
     with measured results.
 11. Run `git diff --check`, inspect `git status --short`, and explicitly list
     every hardware row not executed.
+
+## TODO: Revisit Beat FX Delay, Flanger And Echo
+
+Status: planned 2026-07-23. Operator reports all three sound weak in use. None
+of them has ever had a physical audio acceptance — `DOCUMENTATION_STATUS.md`
+has carried "Flanger and Delay are software-tested and OTA-deployed, with
+focused physical audio/target/beat/depth smoke pending" since they landed, and
+Echo's acceptance predates the 2026-07-10 DSP pass that changed its feedback
+damping and taper. So "sounds weak" is plausibly the first real listening test
+any of them has had.
+
+### Do not start by changing the DSP
+
+The single most likely explanation is not the filter maths. Depth, wet gain and
+beat time all pass through mappings that were tuned by reading code rather than
+by ear, and a wet signal that tops out too low sounds identical to a broken
+effect. Establish where the signal actually is before touching any algorithm.
+
+### Diagnosis first
+
+1. Confirm each effect is reaching the audio path at all. Feed a known input,
+   enable one effect at full depth, and capture the master output with the
+   microSD recorder. A `.wav` is objective in a way that a listening impression
+   is not, and the recorder is already there.
+2. For each of FILTER, ECHO, FLANGER, DELAY, record what actually changes
+   between depth 0 and depth 127: peak level, and whether the effect is audible
+   at all in the capture. Do this per target (CH1, CH2, `1&2`) — the combined
+   target derives its timing from Deck 1 only, which is a known asymmetry.
+3. Check the parameter journey end to end for one effect before generalising:
+   FLX4 MIDI value -> `flx4_map` -> control-link frame -> `deck_core` ->
+   `audio_engine_set_beat_fx_*` -> the DSP's own scaling. A value flattened at
+   any stage produces exactly the reported symptom.
+4. Note the existing suspicion recorded in the P4 guide: Echo maps feedback
+   across 0.20-0.68 and wet tops out at 0.70, and depth uses a sqrt taper.
+   Those numbers were chosen to be safe, not to be audible. Delay is one-shot
+   with zero feedback by design, which will sound much weaker than an Echo to
+   anyone expecting a repeat.
+
+### Then correct
+
+Only after the above says which stage is losing the signal:
+
+- if the mapping is the problem, widen the wet/feedback ranges and re-taper,
+  keeping the limiter downstream honest;
+- if the DSP is the problem, fix it with a host test that asserts the wet
+  signal's presence, not just that the code runs;
+- if beat timing is wrong, Delay's known constraints apply — it samples
+  effective BPM only when Beat FX state is applied, caps at 1000 ms, falls back
+  to 120 BPM outside 40-300, and derives `1&2` timing from Deck 1.
+
+### Acceptance
+
+- a recorded `.wav` per effect and target showing a clear, controllable change
+  from depth 0 to full;
+- audible on the physical MAIN output, confirmed by the operator, at settings a
+  DJ would actually use rather than only at extremes;
+- no new clicks at ON/OFF/CLEAR or during beat-size changes, and Echo's ~2 s
+  tail and Delay's previous-period tail still behave;
+- host tests extended so a silently-inaudible effect fails in CI rather than on
+  stage;
+- `DOCUMENTATION_STATUS.md` updated to record a real acceptance instead of the
+  standing "smoke pending".
+
+## TODO: Idle Screensaver
+
+Status: planned 2026-07-23.
+
+Goal: after two minutes with no deck playing and no operator input, replace the
+UI with the looping splash animation, with `press any button or don't...` along
+the bottom. Any touch or any controller button dismisses it instantly and
+restores the previous tab.
+
+### What already exists
+
+`components/ui/splash_screen.c` already renders "PajoNiiiR" in the Musieer_80
+font with a continuous fade animation, and `splash_screen_show(cb)` runs it for
+three seconds at boot before handing off to the main UI. The screensaver is
+that same animation without the timeout, plus a caption — not a new visual.
+
+### Design
+
+**Idle definition.** Idle requires *both* conditions: no deck playing
+(`deck_core_get_state().playing` false for both) and no input for the timeout.
+A paused deck with a track loaded still counts as idle; a playing deck never
+does, however long nobody touches anything. Recording must also inhibit it —
+blanking the UI mid-capture would be alarming even though it is harmless.
+
+**Activity sources.** Two, and both must reset the timer:
+- touch, from the LVGL indev read callback in `ui_lvgl_backend.c`;
+- any controller event, which all pass through `deck_core_queue_event()` —
+  a single hook there covers every FLX4 button, jog, fader and the web API.
+
+Feed both into one `ui_activity_notice()` so the timeout logic has a single
+input and can be host-tested.
+
+**Dismissal.** The screensaver consumes the first event that wakes it: a touch
+that dismisses must not also hit whatever button was underneath, and a FLX4
+PLAY press should wake the screen without starting playback. This is the part
+most likely to be got wrong and deserves an explicit test.
+
+**Restore.** Return to the tab that was active, not to Overview. The Overview
+waveform uses the direct PPA overlay path, so returning to it must re-arm the
+strip reblit exactly as tab switching already does (`s_overview_prev_tab`),
+otherwise the waveform comes back blank.
+
+### Implementation order
+
+1. Add `ui_activity_notice()` and a pure idle-timeout helper (elapsed, playing,
+   recording in; show/hide out). Host-test it, including that a playing deck
+   never idles and that recording inhibits.
+2. Hook touch and `deck_core_queue_event()`.
+3. Extend `splash_screen` with a loop mode and the caption, keeping the
+   existing three-second boot behaviour unchanged.
+4. Wire show/dismiss into `ui.c` with correct tab restore and first-event
+   consumption.
+5. Settings entry: timeout in minutes with an Off position, persisted through
+   `app_settings` like backlight is.
+
+### Notes and risks
+
+- Two minutes is the default, not a constant: make it configurable from the
+  start, since the right value is a taste question and will be argued about.
+- Consider dimming the backlight alongside, but keep it a separate decision —
+  `bsp_display_set_backlight()` already exists and the panel is the main power
+  draw. Do not couple the two until the screensaver itself is accepted.
+- The LVGL invalidate budget is delicate on this panel; the animation must not
+  reintroduce the full-screen redraws that the 2026-07-09 stability pass
+  removed. Watch for DSI underruns while it runs.
+
+### Acceptance
+
+- idles after the configured time with decks paused, and never while a deck
+  plays or a recording runs;
+- touch and any FLX4 button both dismiss it, and neither action leaks through
+  to the control underneath;
+- returns to the tab that was active, with the Overview waveform intact;
+- no DSI underrun, watchdog or audio disturbance while it runs — verify with a
+  deck paused mid-track and the recorder idle, then again immediately after
+  dismissal;
+- setting survives a reboot.
