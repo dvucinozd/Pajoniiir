@@ -12,7 +12,7 @@ Status: current phase ledger, audited 2026-07-17.
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
-| Beat FX | Filter/Echo hardware-accepted; Flanger/Delay implemented, host-tested and deployed, with focused hardware smoke pending |
+| Beat FX | Filter/Echo/Flanger hardware-accepted (Flanger re-tuned 2026-07-24); Delay implemented, host-tested and deployed, with focused hardware smoke pending |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -2505,7 +2505,60 @@ signing/release-helper suites.
 
 ## TODO: Revisit Beat FX Delay, Flanger And Echo
 
-Status: planned 2026-07-23. Operator reports all three sound weak in use. None
+Status: planned 2026-07-23. **FLANGER corrected and hardware-accepted
+2026-07-24 (RC1-221-g06516945); DELAY and ECHO still open.**
+
+### Flanger outcome (2026-07-24)
+
+Operator listening pass narrowed "all three sound weak" to FLANGER alone:
+"provjerio sam i samo FLANGER nije dobro". The plan's own advice held - the
+problem was mapping, not algorithm - but with one twist the plan did not
+anticipate.
+
+What was actually wrong, in the order it was found:
+
+1. **Wet mix far too shallow.** The comb notch is `20*log10(1-wet)`, so the
+   shipped 0.50 gave only -6 dB: a phasey wobble, not a flanger. Raised to
+   0.70 (-10.5 dB). 0.90 was tried and rejected by ear as "zagušen".
+2. **Sweep floor too low in frequency.** The first notch sits at
+   `1/(2*delay)`, so the 600 us minimum delay capped the sweep at 833 Hz and
+   kept the whole effect in the low mids. Lowered to 250 us.
+3. **Output normalisation was actively harmful.** Dividing by `1/(1+wet)` meant
+   turning the depth knob up made everything quieter and duller. Removed; dry
+   now stays at unity and wet is added on top, as on hardware.
+4. **The real missing piece was not in the DSP at all.** After the above, the
+   operator still heard it only as "jet na pola". It came good on a *faster
+   BEAT setting*: "s bržim beatom se čuje jet". A slow sweep spreads the
+   resonance over so long a period that it reads as tonal drift rather than
+   movement. Worth remembering before re-tuning Delay and Echo: the beat
+   selector is part of how these effects are judged, and testing at one beat
+   size can condemn a correctly-tuned effect.
+
+An automated swing metric was built during this pass and **ranked the
+worst-sounding configuration highest**. It was discarded. The lesson for the
+remaining two effects: a metric can confirm a comb notch exists, but it cannot
+decide whether the result sounds like a flanger.
+
+Two things were tried and measured as *not working*, recorded so they are not
+retried: a wet-signal normalisation (above), and a one-pole low-pass in the
+feedback path intended to bound the resonance - it attenuates highs while the
+resonant peak sits at 400-1000 Hz, so the measured peak did not move at all.
+
+**Clipping defect found by measurement, not by ear.** The accepted tuning has a
+resonant gain of **3.34x** (theoretical ceiling `1 + wet/(1-fb)` = 3.8x). The
+test track peaks near 16% of full scale so the operator never heard it, but on
+loud material the sum hits the int16 ceiling and hard-clips *inside*
+`audio_flanger_fx_process_frame`, ahead of the master limiter, where nothing
+downstream can catch it. `/api/status` corroborated it: `limiter_samples=5`,
+`limiter_peak=32189` after the tuning session. Fixed with a quadratic soft knee
+at 0.75 FS on both the output and the feedback write - identity below the knee,
+so the accepted tuning is bit-exact at normal levels, and rolling to zero gain
+at full scale above it. Host tests now bound the resonant peak on both sides
+(2.8x-3.6x) so it cannot be quietly tuned away again.
+
+### Original plan (still current for DELAY and ECHO)
+
+Operator reports all three sound weak in use. None
 of them has ever had a physical audio acceptance — `DOCUMENTATION_STATUS.md`
 has carried "Flanger and Delay are software-tested and OTA-deployed, with
 focused physical audio/target/beat/depth smoke pending" since they landed, and

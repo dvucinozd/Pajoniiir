@@ -862,3 +862,59 @@ exhaustion.
 Coredump remains unavailable on this board (it boot-loops before `app_main`),
 so a live COM15 capture during the toggle is the fallback if the journal
 breadcrumbs are not decisive.
+
+## 2026-07-24 — Beat FX Flanger: tuned by ear, defect found by measurement
+
+Deployed in `RC1-221-g06516945` over Wi-Fi OTA (no wired serial available).
+
+### The tuning that was accepted
+
+| parameter | before | after | why |
+| --- | --- | --- | --- |
+| wet max | 0.50 | 0.70 | notch depth is `20*log10(1-wet)`: -6 dB vs -10.5 dB |
+| minimum delay | 600 us | 250 us | first notch is `1/(2*delay)`: 833 Hz vs 2 kHz |
+| feedback max | 0.60 | 0.75 | sharpens the resonance into the jet |
+| output normalisation | `1/(1+wet)` | removed | made the depth knob quieter, not more intense |
+
+0.90 wet was tried and rejected as choked; 0.86 feedback was rejected as worse,
+not stronger.
+
+### The part that was not in the DSP
+
+After all four changes the operator still heard only "jet na pola". It came
+good on a **faster BEAT setting**. A slow sweep spreads the resonance over so
+long a period that it reads as tonal drift rather than movement. Test the beat
+selector before concluding an effect is mistuned.
+
+### Two measured dead ends
+
+- **Automated swing metric.** Built to rank configurations objectively; it
+  ranked the worst-sounding one highest. Discarded.
+- **Feedback low-pass.** Added to bound the resonance, then measured as doing
+  nothing: peak stayed at 3.34x byte for byte. It attenuates highs while the
+  resonant peak sits at 400-1000 Hz, below the cutoff. Removed rather than kept
+  as decoration.
+
+### Clipping defect, and why the ear missed it
+
+Measured resonant gain of the accepted tuning is **3.34x** (theoretical
+`1 + wet/(1-fb)` = 3.8x). The test track peaks near 16% of full scale, so the
+output never approached the ceiling during the listening pass. At a realistic
+loud level it does, and it hard-clips *inside* the effect - ahead of the master
+limiter, so nothing downstream can catch it. `/api/status` corroborated it after
+the session: `limiter_samples=5`, `limiter_peak=32189`.
+
+Fixed with a quadratic soft knee at 0.75 FS on both the output and the feedback
+write:
+
+```
+                      before fix        after fix
+ 400 Hz, in  6% FS    3.34x             3.34x, nothing pinned  (identity)
+ 400 Hz, in 49% FS    2.05x, clipped    2.04x, reaches FS, nothing pinned
+ 400 Hz, in 79% FS    -                 1.26x, saturates gently
+```
+
+Below the knee it is the identity, so the accepted tuning is bit-exact at the
+levels it was judged at. Soft-clipping the feedback write also explains why
+raising feedback past 0.85 sounded worse rather than stronger: the hard clamp
+squared off the recirculating signal and the distortion fed back on itself.
