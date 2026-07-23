@@ -918,3 +918,46 @@ Below the knee it is the identity, so the accepted tuning is bit-exact at the
 levels it was judged at. Soft-clipping the feedback write also explains why
 raising feedback past 0.85 sounded worse rather than stronger: the hard clamp
 squared off the recirculating signal and the distortion fed back on itself.
+
+## 2026-07-24 — Echo and Delay had the same headroom defect
+
+Deployed in `RC1-223-gdfa619a9`.
+
+The operator accepted both by ear on hardware — "oni su dobri, provjereno" —
+and no DSP or mapping change was needed for how they sound. Measurement then
+found the same defect the flanger had, for the same reason it went unheard
+there: the reference track peaks near 16% of full scale.
+
+Both share the flanger's structure, dry at unity with wet added on top, so a
+sustained signal builds to `1 + wet/(1-feedback)`.
+
+| effect, full depth | wet | feedback | peak gain | samples pinned at 49% FS in |
+| --- | --- | --- | --- | --- |
+| ECHO | 0.70 | 0.68 | 3.18x | 250400 of 529200 (47%) |
+| DELAY | 0.70 | 0 | 1.70x | 0 (clips above ~59% FS in) |
+
+47% of ECHO's output samples squared off against the int16 ceiling — inside the
+effect, ahead of the master limiter, where nothing downstream can catch it.
+
+Same quadratic soft knee at 0.75 FS as the flanger, on the output and the
+feedback write. After:
+
+```
+  ECHO   400 Hz at 49% FS : 236950 -> 0 pinned
+  ECHO   100 Hz at 49% FS : 250400 -> 0 pinned
+  DELAY  400 Hz at 79% FS :  72100 -> 40600 pinned (saturates gently instead
+                                                    of squaring off; 1.7x over
+                                                    full scale has to go
+                                                    somewhere)
+```
+
+Quiet case identical before and after: 3.18x / 3.10x / 1.70x.
+
+### The lesson worth keeping
+
+Twice in one session a listening pass passed an effect that measurement then
+failed, both times because the reference material never approached the ceiling.
+**An ear acceptance does not cover headroom.** Any effect that adds a wet signal
+on top of unity dry should have its peak gain measured before it is called done
+— it is a two-minute host probe, and the failure it catches is inaudible until
+someone plays a loud track.

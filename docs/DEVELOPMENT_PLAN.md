@@ -12,7 +12,7 @@ Status: current phase ledger, audited 2026-07-17.
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
-| Beat FX | Filter/Echo/Flanger hardware-accepted (Flanger re-tuned 2026-07-24); Delay implemented, host-tested and deployed, with focused hardware smoke pending |
+| Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -2505,8 +2505,9 @@ signing/release-helper suites.
 
 ## TODO: Revisit Beat FX Delay, Flanger And Echo
 
-Status: planned 2026-07-23. **FLANGER corrected and hardware-accepted
-2026-07-24 (RC1-221-g06516945); DELAY and ECHO still open.**
+Status: **closed 2026-07-24.** FLANGER corrected and hardware-accepted;
+DELAY and ECHO confirmed good by the operator without changes. All three
+additionally had a measured headroom defect fixed in `RC1-223-gdfa619a9`.
 
 ### Flanger outcome (2026-07-24)
 
@@ -2556,7 +2557,27 @@ so the accepted tuning is bit-exact at normal levels, and rolling to zero gain
 at full scale above it. Host tests now bound the resonant peak on both sides
 (2.8x-3.6x) so it cannot be quietly tuned away again.
 
-### Original plan (still current for DELAY and ECHO)
+### DELAY and ECHO outcome (2026-07-24)
+
+Both confirmed good by the operator on hardware - "oni su dobri, provjereno" -
+with no DSP or mapping change needed. The original report of all three sounding
+weak resolved to FLANGER alone.
+
+They were **not** left untouched, though. Both share the flanger's structure -
+dry at unity with wet added on top - so a sustained signal builds to
+`1 + wet/(1-feedback)`. Measured at full depth: **3.18x for ECHO**, 1.70x for
+DELAY. On a signal at half full scale, ECHO pinned **47% of its output samples**
+against the int16 ceiling, hard-clipping inside the effect where the master
+limiter cannot reach it. The same soft knee was applied.
+
+This is the second time in one session that a listening pass passed an effect
+that measurement then failed, for the same reason both times: the reference
+track peaks near 16% of full scale, so nothing ever approached the ceiling.
+**An ear acceptance does not cover headroom.** Any future effect that adds wet
+on top of unity dry should have its peak gain measured before it is called
+done.
+
+### Original plan (kept for reference)
 
 Operator reports all three sound weak in use. None
 of them has ever had a physical audio acceptance — `DOCUMENTATION_STATUS.md`
