@@ -585,3 +585,40 @@ transfers.** If staging is retried, the buffer must live in internal RAM so the
 DMA source is not the bus the audio path depends on — but internal RAM is
 scarce (~116 KiB free), so that caps the buffer far below 64 KiB and the benefit
 is unproven. The card swap remains the first thing to try.
+
+## Reverted-build baseline, 25 min with 5-minute checkpoints (2026-07-23)
+
+Run on `RC1-197-gdf07cdc1` (the staging revert), two decks playing continuously
+with tracks reloaded as they ran out, recording throughout.
+
+| checkpoint | late blocks | worst block | worst write | writes >=100 ms | dropped blocks |
+|---|---|---|---|---|---|
+| T+0 | 120 (inherited) | 322 ms | 5.6 ms | 0 | 0 |
+| T+5 | 131 | 322 ms | 374 ms | 14 | 92 |
+| T+10 | 159 | 337 ms | 454 ms | 37 | 127 |
+| T+15 | 167 | 337 ms | 492 ms | 42 | 127 |
+| T+20 | 175 | 337 ms | 492 ms | 57 | 458 |
+| T+25 | **184** | **337 ms** | **492 ms** | **80** | **549** |
+
+Note the audio counters are not reset when a recording starts, so the T+0 row
+carries 120 late blocks from an earlier run; the meaningful figure is the
+increase, **+64 over 25 minutes** (~2.6/min).
+
+549 dropped blocks is 140 544 frames, **3.19 s of audio missing from the
+recording**. Losses are bursty rather than steady: 92 blocks by T+5, then flat
+through T+15, then +331 in the T+15→T+20 window alone. That is the signature of
+a run of consecutive card stalls long enough to outlast the 2.95 s ring, not of
+a buffer that is merely a little too small.
+
+Comparison across the 25-minute soaks:
+
+| build | late blocks | worst block |
+|---|---|---|
+| `RC1-190` | 66 | 320 ms |
+| `RC1-191` | 293 | 356 ms |
+| `RC1-197` (staging reverted) | 64 | 337 ms |
+| `RC1-195` (64 KiB PSRAM staging) | 440 in 3 min | 913 ms |
+
+`RC1-197` lands back with `RC1-190`/`RC1-191`, confirming the staging attempt
+was the only regression and that the card remains the cause. Nothing in the
+firmware has moved the needle; the card swap is the outstanding experiment.
