@@ -179,13 +179,24 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
     if (!s || !s->is_open) {
         return ESP_OK;
     }
+    /* Durability only — deliberately no header patch here.
+     *
+     * This used to seek to offset 0, write 44 bytes and seek back every 10 s,
+     * which interrupts an otherwise strictly sequential append with a random
+     * write at the far end of a file that is hundreds of MB long. That is the
+     * access pattern flash controllers handle worst, and it is a plausible
+     * trigger for the multi-hundred-millisecond stalls seen in the soaks.
+     *
+     * Nothing is lost by dropping it: audio_recorder_sink_recover_orphans()
+     * already rebuilds the header of any `.part` at boot from the actual file
+     * size, truncating to whole frames. The in-session patch only mattered if
+     * the card were pulled and read elsewhere without this board ever booting
+     * again, and finalize() still writes a correct header on the normal path. */
     sd_io_gate_begin();
-    esp_err_t rc = patch_header_locked(s->fp, s->sample_rate, (uint32_t)s->data_bytes);
-    if (rc == ESP_OK) {
-        fsync(fileno(s->fp));
-    }
+    fflush(s->fp);
+    int rc = fsync(fileno(s->fp));
     sd_io_gate_end();
-    return rc;
+    return (rc == 0) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)

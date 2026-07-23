@@ -59,6 +59,17 @@ static uint32_t  s_push_over_100us = 0u;
 static uint32_t  s_write_max_us = 0u;
 static uint32_t  s_writes_over_100ms = 0u;
 static uint32_t  s_reported_drops = 0u;
+/* Stall-burst coalescing. Stalls arrive in runs of a dozen or more; one journal
+ * record per run keeps the timeline without feeding card traffic back into the
+ * stall it is describing. */
+#define STALL_BURST_QUIET_US   2000000   /* run considered over after this gap */
+#define DROP_REPORT_MIN_GAP_US 2000000
+static uint32_t s_stall_burst_count = 0u;
+static uint32_t s_stall_burst_worst_us = 0u;
+static uint32_t s_stall_burst_ring = 0u;
+static int64_t  s_stall_burst_started_us = 0;
+static int64_t  s_last_stall_us = 0;
+static int64_t  s_last_drop_report_us = 0;
 static uint64_t  s_bytes_written = 0u;
 static uint64_t  s_frames_written = 0u;
 static esp_err_t s_last_error = ESP_OK;
@@ -107,6 +118,23 @@ static void release_ring(void)
     s_sample_rate = 0u;
 }
 
+/* Emit the pending stall-burst summary, if any. Called when the card has been
+ * quiet long enough that the run is over, and once more at stop() so a burst
+ * that ends the session is still reported. */
+static void flush_stall_burst(void)
+{
+    if (s_stall_burst_count == 0u) {
+        return;
+    }
+    uint32_t span_ms = (uint32_t)((s_last_stall_us - s_stall_burst_started_us) / 1000);
+    service_log_event(SERVICE_LOG_RECORDING_SD_STALL, SERVICE_LOG_WARN,
+                      4u, s_stall_burst_worst_us, s_stall_burst_count,
+                      s_stall_burst_ring, span_ms, "worst/count/ring/span_ms");
+    s_stall_burst_count = 0u;
+    s_stall_burst_worst_us = 0u;
+    s_stall_burst_ring = 0u;
+}
+
 /* The writer never frees the ring, finalizes the sink or sets STOPPED —
  * audio_recorder_stop() owns that after joining on WRITER_EXITED_BIT. On a fault
  * it sets ERROR; on a clean drain it leaves STOPPING for stop() to finalize. */
@@ -122,11 +150,18 @@ static void writer_task(void *arg)
          * dropped span, so the file ends up shorter than the wall-clock take. */
         if (__atomic_exchange_n(&s_overflow, false, __ATOMIC_ACQ_REL)) {
             uint32_t lost = s_ring.dropped_blocks;
-            if (lost != s_reported_drops) {
+            int64_t now_us = esp_timer_get_time();
+            if (lost != s_reported_drops &&
+                (s_last_drop_report_us == 0 ||
+                 now_us - s_last_drop_report_us >= DROP_REPORT_MIN_GAP_US)) {
+                /* Same reasoning as the stall burst: during an overrun this
+                 * fired on every writer iteration, adding card traffic to a
+                 * card that was already the reason for the overrun. */
                 service_log_event(SERVICE_LOG_RECORDING_DROPPED, SERVICE_LOG_WARN,
                                   3u, lost - s_reported_drops, lost,
                                   s_write_max_us, 0u, "ring full; card stalled");
                 s_reported_drops = lost;
+                s_last_drop_report_us = now_us;
             }
         }
 
@@ -149,9 +184,30 @@ static void writer_task(void *arg)
             }
             if (w_us >= 100000u) {
                 s_writes_over_100ms++;
-                service_log_event(SERVICE_LOG_RECORDING_SD_STALL, SERVICE_LOG_WARN,
-                                  3u, w_us, s_writes_over_100ms,
-                                  audio_recorder_ring_used(&s_ring), 0u, NULL);
+                /* Report at most one record per burst. Journalling every stall
+                 * fed a loop back into the very thing being measured: each
+                 * record goes to the journal writer, which writes it to the
+                 * same card under the same gate, so a burst of fifteen stalls
+                 * produced fifteen extra card transactions exactly when the
+                 * card was already behind. Measured effect was gate_wait
+                 * jumping from 8 ms to 185 ms the moment stalls began.
+                 *
+                 * The per-stall detail is not lost: the burst summary carries
+                 * the worst stall and how many were folded into it, and the
+                 * live counters stay exact on GET /api/recording. */
+                if (s_stall_burst_worst_us == 0u) {
+                    s_stall_burst_started_us = esp_timer_get_time();
+                }
+                s_stall_burst_count++;
+                if (w_us > s_stall_burst_worst_us) {
+                    s_stall_burst_worst_us = w_us;
+                }
+                s_stall_burst_ring = audio_recorder_ring_used(&s_ring);
+            }
+            s_last_stall_us = (w_us >= 100000u) ? esp_timer_get_time() : s_last_stall_us;
+            if (s_stall_burst_count > 0u && w_us < 100000u &&
+                esp_timer_get_time() - s_last_stall_us >= STALL_BURST_QUIET_US) {
+                flush_stall_burst();
             }
             if (rc != ESP_OK) {
                 s_last_error = rc;
@@ -306,6 +362,12 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     s_write_max_us = 0u;
     s_writes_over_100ms = 0u;
     s_reported_drops = 0u;
+    s_stall_burst_count = 0u;
+    s_stall_burst_worst_us = 0u;
+    s_stall_burst_ring = 0u;
+    s_stall_burst_started_us = 0;
+    s_last_stall_us = 0;
+    s_last_drop_report_us = 0;
     s_last_error = ESP_OK;
     s_last_checkpoint_us = esp_timer_get_time();
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
@@ -362,6 +424,8 @@ esp_err_t audio_recorder_stop(void)
     audio_recorder_sink_finalize(&s_sink);
     release_ring();
     store_state(AUDIO_RECORDER_STOPPED);
+    /* A burst that runs into the stop would otherwise never be reported. */
+    flush_stall_burst();
     sd_io_gate_set_recorder_active(false);
     /* Carry the real-time gate evidence into the journal: seconds captured,
      * producer drops, and the push-latency tail (count >= 100 us, worst case). */
