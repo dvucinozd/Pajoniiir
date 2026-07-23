@@ -924,10 +924,12 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
     if (vid != last_vid || pid != last_pid || caps != last_caps || idx != last_idx) {
         service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
                           3u, vid, pid, caps, 0u, product_copy);
-        if (idx >= 0) {
-            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_INFO,
-                              3u, vid, pid, (uint32_t)idx, 0u, NULL);
-        } else {
+        /* A successful match is already implied by the CONTROLLER_CONNECTED
+         * record immediately above and named by the PROFILE_TRANSFER_DONE that
+         * follows, so recording it again only costs a microSD write on a card
+         * the recorder is also writing to. Log the failure, which nothing else
+         * reports. */
+        if (idx < 0) {
             service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
                               2u, vid, pid, 0u, 0u, "unsupported");
         }

@@ -48,6 +48,7 @@
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
 #include "audio_recorder.h"
+#include "service_log.h"
 #endif
 
 /* ESP-IDF logging — stubbed out in PC test builds */
@@ -1830,6 +1831,103 @@ static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRA
 
 static audio_diag_counter_t s_diag_output_blocks;
 static audio_diag_late_counter_t s_diag_output_late;
+
+/* Per-phase worst-case timing for one output block. Owned by the output task
+ * (write) and read without a lock for diagnostics; a torn read of a single
+ * uint32 is not worth a mutex on the audio path. See the header for why the
+ * gap phase is the interesting one. */
+typedef struct {
+    uint32_t mix_max_us;
+    uint32_t push_max_us;
+    uint32_t monitor_max_us;
+    uint32_t main_max_us;
+    uint32_t codec_max_us;
+    uint32_t book_max_us;
+    uint32_t head_max_us;
+} ae_output_phase_stats_t;
+
+static ae_output_phase_stats_t s_phase;
+
+void audio_engine_reset_output_phase_stats(void)
+{
+    s_phase = (ae_output_phase_stats_t){ 0 };
+}
+
+/* Phase identity, so one block's timings can be compared against each other and
+ * the worst one named. The running maxima answer "how bad does it get"; this
+ * answers "which part was slow in the block that actually blew", which is the
+ * open question behind the unexplained 370 ms outlier of 2026-07-21. */
+typedef enum {
+    AE_PH_HEAD = 0, AE_PH_MIX, AE_PH_PUSH, AE_PH_MONITOR,
+    AE_PH_MAIN, AE_PH_CODEC, AE_PH_BOOK, AE_PH_COUNT
+} ae_phase_id_t;
+
+static const char *const AE_PHASE_NAME[AE_PH_COUNT] = {
+    "head", "mix", "push", "monitor", "main", "codec", "book"
+};
+
+static uint32_t *const AE_PHASE_MAX_SLOT[AE_PH_COUNT] = {
+    &s_phase.head_max_us, &s_phase.mix_max_us, &s_phase.push_max_us,
+    &s_phase.monitor_max_us, &s_phase.main_max_us, &s_phase.codec_max_us,
+    &s_phase.book_max_us,
+};
+
+/* Timings of the block currently being rendered, overwritten every block. */
+static uint32_t s_phase_block[AE_PH_COUNT];
+
+/* Coarse split of the mixer loop, so a mix-phase stall can be told apart:
+ * confined to one group = a single expensive call, spread across all of them =
+ * the whole loop running slow. */
+#define AE_MIX_GROUPS 16
+static uint32_t s_mix_group_max_us;
+static uint32_t s_mix_group_worst;
+
+static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
+{
+    uint32_t v = elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
+    s_phase_block[id] = v;
+    if (v > *AE_PHASE_MAX_SLOT[id]) {
+        *AE_PHASE_MAX_SLOT[id] = v;
+    }
+}
+
+/* Well above the 2x-period late warning (~11.6 ms at 44.1 kHz), so this only
+ * fires on a genuine stall rather than ordinary jitter. Rate-limited because a
+ * storm of them would flood the journal queue from the audio task. */
+#define AE_BLOCK_OUTLIER_US     50000u
+#define AE_OUTLIER_MIN_GAP_US   2000000
+
+#if !defined(AUDIO_ENGINE_PC_TEST)
+static int64_t s_last_outlier_us;
+
+static void ae_report_block_outlier(uint32_t block_us)
+{
+    if (block_us < AE_BLOCK_OUTLIER_US) {
+        return;
+    }
+    int64_t now = esp_timer_get_time();
+    if (s_last_outlier_us != 0 && (now - s_last_outlier_us) < AE_OUTLIER_MIN_GAP_US) {
+        return;
+    }
+    s_last_outlier_us = now;
+
+    ae_phase_id_t worst = AE_PH_HEAD;
+    for (int i = 1; i < AE_PH_COUNT; i++) {
+        if (s_phase_block[i] > s_phase_block[worst]) {
+            worst = (ae_phase_id_t)i;
+        }
+    }
+    /* Total, the worst phase and its cost, plus the two normally dominant
+     * phases for context. If the worst phase is one that does no real work
+     * (head, codec), the block was preempted rather than slow. */
+    /* For a mix-phase stall the group breakdown is the informative part: which
+     * sixteenth of the loop ate the time, and how much of it. */
+    service_log_event(SERVICE_LOG_AUDIO_BLOCK_OUTLIER, SERVICE_LOG_WARN,
+                      4u, block_us, s_phase_block[worst],
+                      s_mix_group_worst, s_mix_group_max_us,
+                      AE_PHASE_NAME[worst]);
+}
+#endif
 static audio_diag_counter_t s_diag_decode_frames[AUDIO_ENGINE_DECK_COUNT];
 static audio_diag_counter_t s_diag_preload_chunks[AUDIO_ENGINE_DECK_COUNT];
 
@@ -1841,6 +1939,7 @@ static void ae_diag_reset(void)
 {
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
+    s_phase = (ae_output_phase_stats_t){ 0 };
     s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
@@ -1993,6 +2092,21 @@ static void ae_fail_load(audio_engine_state_t *eng,
         atomic_store_bool(&eng->paused, false);
         atomic_store_bool(&eng->playback_finished, false);
     }
+#if !defined(AUDIO_ENGINE_PC_TEST)
+    /* Every audio load failure funnels through here, so this is the one place
+     * that can tell the journal why a deck went to ERROR. Without it the deck
+     * shows ERROR and the log says nothing — which is exactly the gap left once
+     * a missing-analysis track is allowed through to the audio stage. */
+    if (eng >= s_engines && eng < s_engines + AUDIO_ENGINE_DECK_COUNT) {
+        service_log_event(SERVICE_LOG_AUDIO_LOAD_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)(eng - s_engines) + 1u, (uint32_t)err,
+                          0u, 0u, err_text ? err_text : "LOAD ERR");
+    } else {
+        service_log_event(SERVICE_LOG_AUDIO_LOAD_FAILED, SERVICE_LOG_ERROR,
+                          1u, (uint32_t)err, 0u, 0u, 0u,
+                          err_text ? err_text : "LOAD ERR");
+    }
+#endif
     audio_fw_preload_abort_load(fw, runtime);
 }
 
@@ -2833,6 +2947,21 @@ static void ae_output_task(void *arg)
         uint16_t block_peak[AUDIO_ENGINE_DECK_COUNT] = { 0 };
         audio_mixer_limiter_stats_t block_limiter_stats = { 0 };
 
+        int64_t phase_t0 = esp_timer_get_time();
+        int64_t phase_mark = phase_t0;
+        ae_phase_note(AE_PH_HEAD, phase_t0 - block_start_us);
+
+        /* Split the mixer loop into a few coarse groups. A stall confined to one
+         * group means a single expensive call; one spread evenly across all of
+         * them means the whole loop is running slow, which points at memory or
+         * cache rather than at any one operation. Sixteen timer reads per block
+         * is a fraction of a percent of the ~5.8 ms period, unlike timing every
+         * one of the 256 frames. */
+        uint32_t mix_group_max_us = 0u;
+        uint32_t mix_group_worst = 0u;
+        int64_t mix_group_mark = esp_timer_get_time();
+        const int mix_group_len = AE_OUT_FRAMES / AE_MIX_GROUPS;
+
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
@@ -2857,16 +2986,48 @@ static void ae_output_task(void *arg)
             master_out[i * 2 + 1] = mix.master.right;
             hp_out[i * 2] = mix.headphone.left;
             hp_out[i * 2 + 1] = mix.headphone.right;
+
+            if (mix_group_len > 0 && ((i + 1) % mix_group_len) == 0) {
+                int64_t now_g = esp_timer_get_time();
+                int64_t took = now_g - mix_group_mark;
+                mix_group_mark = now_g;
+                if (took > 0 && (uint32_t)took > mix_group_max_us) {
+                    mix_group_max_us = (uint32_t)took;
+                    mix_group_worst = (uint32_t)((i + 1) / mix_group_len) - 1u;
+                }
+            }
         }
+        s_mix_group_max_us = mix_group_max_us;
+        s_mix_group_worst = mix_group_worst;
         consumed[deck0_index] += s_scratch_handoff_consumed[deck0_index];
         consumed[deck1_index] += s_scratch_handoff_consumed[deck1_index];
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(AE_PH_MIX, now - phase_mark);
+            phase_mark = now;
+        }
 #if !defined(AUDIO_ENGINE_PC_TEST)
         /* Tap the exact post-limiter MAIN block for the optional recorder. This
          * is a no-op (single atomic load) unless recording is active. */
         audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
 #endif
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(AE_PH_PUSH, now - phase_mark);
+            phase_mark = now;
+        }
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(AE_PH_MONITOR, now - phase_mark);
+            phase_mark = now;
+        }
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(AE_PH_MAIN, now - phase_mark);
+            phase_mark = now;
+        }
         /* When ES8311 is disabled the loop paces on the PCM5102A blocking
            write above; hp_out still reaches the FLX4 phones over the link. */
         esp_err_t hp_rc = ESP_ERR_NOT_SUPPORTED;
@@ -2874,6 +3035,11 @@ static void ae_output_task(void *arg)
             hp_rc = esp_codec_dev_write(s_codec, hp_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
         }
 
+        {
+            int64_t now = esp_timer_get_time();
+            ae_phase_note(AE_PH_CODEC, now - phase_mark);
+            phase_mark = now;
+        }
         if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
@@ -2890,7 +3056,11 @@ static void ae_output_task(void *arg)
             }
             AE_UNLOCK();
         }
+        ae_phase_note(AE_PH_BOOK, esp_timer_get_time() - phase_mark);
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
+#if !defined(AUDIO_ENGINE_PC_TEST)
+        ae_report_block_outlier(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
+#endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
@@ -4779,6 +4949,13 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     out_snapshot->output_late_count = s_diag_output_late.count;
     out_snapshot->output_late_max_us = s_diag_output_late.max_us;
     out_snapshot->output_late_threshold_us = s_diag_output_late.threshold_us;
+    out_snapshot->phase_mix_max_us = s_phase.mix_max_us;
+    out_snapshot->phase_push_max_us = s_phase.push_max_us;
+    out_snapshot->phase_monitor_max_us = s_phase.monitor_max_us;
+    out_snapshot->phase_main_max_us = s_phase.main_max_us;
+    out_snapshot->phase_codec_max_us = s_phase.codec_max_us;
+    out_snapshot->phase_book_max_us = s_phase.book_max_us;
+    out_snapshot->phase_head_max_us = s_phase.head_max_us;
     out_snapshot->heap_free = esp_get_free_heap_size();
     out_snapshot->internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     out_snapshot->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);

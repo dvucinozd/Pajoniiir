@@ -308,9 +308,9 @@ static void test_write_failure_non_fatal(void)
     CHECK(s_alloc_balance == 0);
 }
 
-static void test_failure_preserves_previous(void)
+static void test_failure_retires_previous(void)
 {
-    printf("== parser failure preserves previous current metadata ==\n");
+    printf("== parser failure retires the previous current metadata ==\n");
     reset_state(128, 4);
     s_cache_load_result = ESP_OK;
     library_track_t tr;
@@ -318,16 +318,47 @@ static void test_failure_preserves_previous(void)
     CHECK(library_load_anlz(&tr) == ESP_OK);   /* current = A (128, 4) */
     CHECK(current_bpm() == 128 && current_beats() == 4);
 
-    /* A load that fails after publishing must not erase the valid current. */
+    /* The caller now loads the track anyway when analysis data is unavailable,
+     * so holding on to A would draw the previous track's beatgrid, waveform and
+     * cues over the newly loaded one. The failed resolve must retire A instead,
+     * leaving consumers on their existing "no metadata" path. */
     reset_state(200, 2);
     s_cache_load_result = ESP_ERR_NOT_FOUND;
     s_parse_dat_result = ESP_FAIL;
     library_track_t tr2;
     make_track(&tr2);
     CHECK(library_load_anlz(&tr2) == ESP_FAIL);
-    CHECK(current_bpm() == 128 && current_beats() == 4);   /* A preserved */
+    CHECK(current_bpm() == 0 && current_beats() == 0);   /* A retired, not kept */
 
-    library_free_current_anlz();
+    /* Retiring must free A rather than leak it, without needing an explicit
+     * library_free_current_anlz() from the caller. */
+    CHECK(s_alloc_balance == 0);
+
+    library_free_current_anlz();                /* idempotent after a retire */
+    CHECK(s_alloc_balance == 0);
+}
+
+static void test_missing_anlz_path_keeps_pdb_summary(void)
+{
+    printf("== track with no ANLZ path keeps its PDB summary ==\n");
+    reset_state(128, 4);
+    s_cache_load_result = ESP_OK;
+
+    /* A PDB row that carries no analysis file at all. The audio path, BPM and
+     * duration come from the row and must survive untouched, so the caller can
+     * still play the track; only has_anlz stays clear. */
+    library_track_t tr;
+    make_track(&tr);
+    tr.anlz_path[0] = '\0';
+    tr.bpm = 174;
+    tr.duration_ms = 210000u;
+
+    CHECK(library_load_anlz(&tr) == ESP_ERR_NOT_FOUND);
+    CHECK(s_cache_load_calls == 0);      /* never touches cache or USB */
+    CHECK(s_parse_dat_calls == 0);
+    CHECK(tr.bpm == 174 && tr.duration_ms == 210000u);
+    CHECK(tr.has_anlz == 0 && tr.has_waveform == 0 && tr.has_pvbr == 0);
+    CHECK(current_bpm() == 0);           /* nothing published */
     CHECK(s_alloc_balance == 0);
 }
 
@@ -356,7 +387,8 @@ int main(void)
     test_cache_miss();
     test_cache_rejection_fallback();
     test_write_failure_non_fatal();
-    test_failure_preserves_previous();
+    test_failure_retires_previous();
+    test_missing_anlz_path_keeps_pdb_summary();
     test_sequential_replacement();
 
     if (s_failures == 0) {

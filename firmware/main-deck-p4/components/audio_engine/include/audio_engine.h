@@ -149,6 +149,20 @@ typedef struct {
     uint32_t output_late_count;
     uint32_t output_late_max_us;
     uint32_t output_late_threshold_us;
+    /* Worst observed duration of each phase of one output block, so a late
+     * block can be attributed instead of guessed at. The phases are measured
+     * with the same wall clock as output_late_max_us and therefore include any
+     * preemption, which is itself the answer we are looking for: if the phase
+     * maxima stay small while the block total spikes, the task was descheduled
+     * rather than delayed by its own work. Reset via
+     * audio_engine_reset_output_phase_stats(). */
+    uint32_t phase_mix_max_us;      /* per-frame mixer/decode loop */
+    uint32_t phase_push_max_us;     /* recorder tap */
+    uint32_t phase_monitor_max_us;  /* monitor PCM link write (non-blocking) */
+    uint32_t phase_main_max_us;     /* blocking PCM5102A I2S write (paces the loop) */
+    uint32_t phase_codec_max_us;    /* headphone codec write */
+    uint32_t phase_book_max_us;     /* AE_LOCK acquire + per-block bookkeeping */
+    uint32_t phase_head_max_us;     /* block start to mixer entry: snapshot prep */
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;
@@ -252,6 +266,11 @@ esp_err_t audio_engine_set_cue_mode(uint8_t mode);
 uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot);
+
+/* Zero the per-phase output-block maxima so a measurement window starts clean.
+ * Without this a single boot-time transient pins every maximum for the life of
+ * the session and the numbers say nothing about the window under test. */
+void audio_engine_reset_output_phase_stats(void);
 
 /*
  * Engine lifecycle state, for UI feedback (e.g. a "LOADING…" indicator).

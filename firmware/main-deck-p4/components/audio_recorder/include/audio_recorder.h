@@ -44,6 +44,19 @@ typedef struct {
     uint64_t dropped_frames;   /* frames lost to drops */
     uint64_t bytes_written;    /* PCM bytes drained to the sink */
     uint64_t frames_written;   /* stereo frames drained to the sink */
+    /* Real-time producer cost, for the "p99 under 100 us per block" gate. The
+     * push is a bounded copy, so a max plus an over-threshold count bounds the
+     * tail without keeping a histogram on the audio path. */
+    uint32_t push_count;       /* blocks accepted by push_master() */
+    uint32_t push_max_us;      /* slowest single push since start */
+    uint32_t push_over_100us;  /* pushes that took 100 us or more */
+    /* microSD cost, which is what the ring has to cover. */
+    uint32_t write_max_us;     /* slowest single block write since start */
+    uint32_t writes_over_100ms;/* block writes that blocked 100 ms or more */
+    /* The above splits into contention vs the card itself; a long gate wait and
+     * a long fwrite call for entirely different fixes. */
+    uint32_t gate_wait_max_us; /* worst wait for the shared SD gate */
+    uint32_t fwrite_max_us;    /* worst raw fwrite once the gate was held */
     esp_err_t last_error;      /* last error that stopped/failed a session */
 } audio_recorder_status_t;
 

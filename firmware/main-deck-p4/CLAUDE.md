@@ -1,11 +1,68 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-21. The
-installed signed release is `RC1-168-gb69f1b19` on `ota_0`, matching the S3, with
-OTA boot/status verification complete. That build adds the unified ANLZ metadata
-loader, the structured microSD service journal (`GET /api/diagnostic-log`) and
-the master-output recorder (Settings control plus guarded `/api/recording`); the
-recorder's functional `.wav` acceptance passed on hardware. The latest full
+Documentation status: current developer guide, audited 2026-07-21. The installed
+signed release is `RC1-205-gdbda7a83` on `ota_1`; the S3 is **not** matched and
+still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
+run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
+microSD service journal (`GET /api/diagnostic-log`) and the master-output
+recorder (Settings control plus guarded `/api/recording`); the recorder's
+functional `.wav` acceptance passed on hardware. RC1-170/171 add recorder push
+timing (`push_count` / `push_max_us` / `push_over_100us`) and recorder journal
+events (RECORDING_STARTED/STOPPED/FAILED/RECOVERED). RC1-173/175 replace the web
+controller UI with the "Modern Glass Mono" design (`components/web_server/web/`),
+add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
+
+> ⚠️ **Web assets must not reference the network.** The page is served from the
+> P4's own SoftAP with no internet route, and the captive DNS resolves every
+> hostname to 192.168.4.1 — so a Google Fonts `<link>`/`@import` comes back to
+> this device, fails the TLS handshake and blocks first paint. Both the previous
+> UI and the delivered design carried one; keep font stacks local.
+
+> ⚠️ **USB needs a root-port cycle after a software reset.** A drive already
+> attached across `esp_restart()` never connects on its own — the host waits for
+> a connection event that cannot occur — so before RC1-182 the library was empty
+> after every OTA until someone replugged the stick. `usb_storage` now installs
+> the host with `root_port_unpowered` and cycles `usb_host_lib_set_root_port_power()`,
+> retrying while nothing has connected. Do not "simplify" that back to a plain
+> `usb_host_install()`. Lengthening the port-off window is not the lever; the
+> repeat is. See `docs/bench-notes.md`.
+
+> ⚠️ **`max_open_sockets` is 5.** With `lru_purge_enable` unset, five held
+> keep-alive sockets made the server refuse every new client — including
+> `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
+> `docs/bench-notes.md` for the diagnostic signature.
+
+> ⚠️ **The last journal record before a panic is not evidence.** The service-log
+> writer syncs at most every few seconds, so a panic destroys whatever is still
+> buffered and the final record simply marks where the buffer was severed. Four
+> `reset=PANIC` boots each ended on an unrelated line — a `TRACK_LOAD_START`
+> with no `DONE`, a `PROFILE_TRANSFER_DONE` then silence — which would point at
+> the wrong subsystem entirely. Before a risky operation, emit the breadcrumb
+> and call `service_log_sync()`, as the Wi-Fi enable path now does.
+
+> ⚠️ **The recorder stalls on microSD and drops audio; the cause is below
+> FATFS.** 25-minute soaks with two decks playing lose 3+ seconds of recording
+> and produce output blocks of 320-356 ms. Everything the firmware contributes
+> has been measured and removed: `sd_io_gate` contention is 7-8 us in steady
+> state, the diagnostic feedback loop is closed (`gate_wait` 185 -> 16.5 ms), and
+> the checkpoint no longer patches the header mid-file. A single `fwrite` still
+> blocks ~370 ms, landing within a few hundred microseconds of the same value
+> every run, and stalls arrive in bursts of a dozen or more that drain the whole
+> 2.95 s ring.
+>
+> **Do not enlarge the ring or restructure the writer.** No buffer of a sane
+> size covers a 4.5 s burst, and both the PSRAM write-staging attempt and the
+> checkpoint change were measured to make no difference or make things worse.
+> The next step is a card swap, qualified with
+> `tools/sd_card_latency_probe.ps1`. If a known-good card stalls at the same
+> ~370 ms, suspect the SDMMC driver or bus configuration rather than the media.
+> Full history and numbers in `docs/bench-notes.md`.
+>
+> **Deliberately left on:** the output block is timed phase by phase on the
+> audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block. Gate or
+> remove it once the microSD question is closed.
+
+The latest full
 functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
 Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all

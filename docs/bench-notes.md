@@ -325,3 +325,540 @@ audio/UI/controller smoke, so the latest fully accepted release remains
   COM15 flash/smoke capture (`bad_lines=0`), and hardware visual confirmation.
 - **Deferred to S3/chassis phase:** physical panel controls → `deck_core` queue; Beat LED feedback
   (PQTZ → S3 LED); wire the front panel to the S3 per `PINOUT.md`; mount display in the chassis opening.
+
+## Recorder real-time bench (2026-07-21, `RC1-170` / `RC1-171`)
+
+Instrumented `audio_recorder_push_master()` with a wall-clock bracket
+(`push_count`, `push_max_us`, `push_over_100us`, exposed on `GET /api/recording`
+and written into the journal by `RECORDING_STOPPED`) to settle the "p99 under
+100 us per block" gate.
+
+**Producer copy cost — passes.** 120 s of dual-deck playback while recording
+(48 kHz, boot 23):
+
+| measure | result |
+|---|---|
+| pushes >= 100 us | 9 of 22 593 = **0.04 %** |
+| dropped blocks / frames | **0 / 0** |
+| ring high-water | 172 / 508 slots (34 %) |
+| throughput | 192 281 B/s vs 192 000 B/s theoretical |
+| byte/frame agreement | 14 744 064 x 4 = 58 976 256, exact |
+
+**But end-to-end output timing degrades while recording — open item.** The same
+boot logged ten `AUDIO_OUTPUT_LATE` warnings between ms 205 417 and 340 417,
+with the worst-case late time growing to **370 305 us**. The cluster falls
+entirely inside the recording window and stops when recording stops. A later
+single-deck session (boot 24) logged `AUDIO_UNDERRUN` during recording and a
+single **167 662 us** push.
+
+Caveat on the metric: the bracket measures wall-clock across the copy, so it
+cannot separate "the copy was slow" from "the audio output task was preempted
+mid-copy". The 167 ms sample almost certainly reflects preemption, since it
+coincides with an underrun rather than with any change in copy size. The
+aggregate distribution is still the useful signal; the single max is not.
+
+Conclusion: the producer boundary is cheap enough, but recording perturbs output
+scheduling. Do not treat the recorder as timing-neutral until the
+`AUDIO_OUTPUT_LATE` cluster is explained.
+
+Related: an earlier attempt on this bench recorded `reset=PANIC` on `RC1-170`
+(boot 23) and two unexplained `POWERON` resets (boots 20 and 22), one of which
+killed an OTA upload mid-transfer. Cause not established; coredump cannot be
+enabled on this board (it boot-loops before `app_main`).
+
+## Web layer: socket exhaustion looks exactly like a dead board (2026-07-21)
+
+While verifying the redesigned web controller, `curl` from a second machine got
+`HTTP=000` on every endpoint while the operator's phone was rendering and
+driving the same page normally. ICMP answered in 2-6 ms and the SoftAP was
+healthy, so the board looked alive and the web layer looked dead.
+
+It was neither. `httpd` ran with `max_open_sockets = 5` and
+`lru_purge_enable` unset (defaults false), so once five keep-alive sockets were
+held the server **refused** further connections instead of evicting the oldest.
+The controller page holds sockets while polling `/api/status` every 250 ms, so
+one busy browser could occupy the pool and lock every other client out —
+including `/api/ota/p4`, which is the only remote recovery path.
+
+Confirmed by closing the browser: access returned on its own after roughly 20 s,
+as the idle sockets timed out. Fixed by setting `lru_purge_enable = true`
+(`RC1-175-ge40b7225`) and verified on hardware — 8 concurrent requests against
+the 5-socket server all returned 200, plus a follow-up request.
+
+Diagnostic value: "pings fine, one client works, every new client gets nothing"
+means socket exhaustion, not a crash. Do not reach for a wired COM15 recovery on
+that signature alone. Compare with the separate `max_uri_handlers` trap, where a
+single failed registration stops the entire server at boot.
+
+## Attributing AUDIO_OUTPUT_LATE (2026-07-22, `RC1-178-g8c689d27`)
+
+The 2026-07-21 entry above concluded the recorder was "not timing-neutral" from
+a correlation: `AUDIO_OUTPUT_LATE` clustered inside the recording window. That
+correlation was confounded — the web controller page was open and polling
+throughout the same window. This entry supersedes that conclusion.
+
+`RC1-178` times each phase of one output block (snapshot prep, the 256-frame
+mixer loop, the recorder tap, the monitor link write, the blocking PCM5102A
+write, the codec write, AE_LOCK bookkeeping), exposes the maxima in
+`/api/status` diagnostics, and zeroes them when a recording starts.
+
+Measured on hardware, two decks playing, 44.1 kHz, threshold 11 610 us:
+
+| condition | late blocks | worst block |
+|---|---|---|
+| playback only, 90 s | **0** | — |
+| playback + recording, sparse polling, 90 s | 1 | 11 919 us (2.6 % over) |
+| playback + recording, shipped UI poll rate (~2.5 req/s), 60 s | **0** | — |
+| playback + recording, forced ~9 req/s, 60 s | **50** | 20 248 us |
+| playback + forced ~9 req/s, **no recording**, 642 requests | **0** | — |
+
+Neither recording nor web traffic alone produces late blocks; only the two
+together, and only well above the rate the shipped page actually polls at.
+
+The mechanism is preemption, not slow code. Under the forced load **every phase
+inflated proportionally, including phases with no extra work to do** — the codec
+write went 57 -> 1539 us and the pure struct-prep head phase went 160 -> 3002 us.
+Nothing started doing more; the output task was being descheduled at arbitrary
+points. A plausible shared resource is the PSRAM bus: the recorder ring,
+decoded PCM, the DSI framebuffer and the ESP-Hosted C6 mempool (which
+deliberately prefers SPIRAM) all sit on it.
+
+What recording actually costs: roughly 15-20 % of the headroom in every phase
+(mixer 6633 -> 7829 us, bookkeeping 1847 -> 2384 us) plus the 512 KiB PSRAM
+ring. That is a narrower margin, not a defect at the operating point.
+
+**Residual, deliberately left open:** the 370 305 us worst case recorded on
+2026-07-21 did **not** reproduce. The worst this bench could force was 20 ms,
+and only under deliberate overload. An outlier an order of magnitude larger
+remains unexplained, on a bench that also logged an unexplained `reset=PANIC`
+the same day. Do not treat the 370 ms event as covered by this analysis.
+
+## USB did not re-enumerate after a software reset (2026-07-22)
+
+The track library came up empty after every OTA update until the stick was
+physically unplugged and replugged. The service journal separates the two reset
+paths cleanly:
+
+| boot | reset | firmware | USB_MOUNTED |
+|---|---|---|---|
+| 33 | POWERON | RC1-175 | 1 389 ms |
+| 35 | POWERON | RC1-178 | 1 437 ms |
+| 36 | SW | RC1-180 | 260 394 ms — only after a manual replug |
+| 37 | SW | RC1-181 | 138 939 ms — only after a manual replug |
+| 38 | SW | RC1-182 (fix) | **7 005 ms, unattended** |
+| 39 | SW | RC1-183 | 7 846 ms |
+| 40 | SW | RC1-184 (tuned) | **4 095 ms** |
+
+`reset=POWERON` mounted in about 1.4 s every time; `reset=SW` never mounted on
+its own, and silently — no `USB_MOUNT_FAILED`, the host simply never saw a
+device. After `esp_restart()` the drive is still powered and configured from the
+previous session, so the newly installed host stack waits for a connection event
+that cannot occur, because nothing about the connection changed.
+
+Fix: install the host with `root_port_unpowered` and then power the root port on
+with the public `usb_host_lib_set_root_port_power()`, reproducing the power-on
+sequence deliberately (rather than the deprecated `usb_phy_action()` disconnect).
+The lib task also stopped blocking forever on `usb_host_lib_handle_events()` —
+with no drive attached there are no events at all — and re-cycles the port while
+nothing has ever connected.
+
+**What the measurements corrected:** the first power-on does *not* re-enumerate
+an already-attached drive, and widening the port-off window does not help
+(120 ms → 7 005 ms, 400 ms → 7 846 ms, both mounted by the retry rather than the
+initial cycle). The likely reason is that the root port's logical power state
+does not cut VBUS on this board, so the drive never loses power and never resets
+itself. Repeating the cycle is the mechanism that works, so the off window was
+put back to 150 ms and the early retry shortened to 900 ms, which mounts at
+4 095 ms. The residual gap against a 1.4 s cold boot is the cost of those cycles
+and was accepted.
+
+## The recorder's real problem is the microSD card (2026-07-22, later)
+
+This supersedes the entry above it. That entry concluded, from a 7-minute run,
+that trimming journal writes had fixed the recorder's audio stalls (224 ms ->
+18.7 ms, "12x"). Two 25-minute soaks show that conclusion was drawn from a
+window too short to contain the failure, which arrives roughly once per two
+minutes.
+
+Soaks ran two decks continuously, reloading a deck as soon as it ran out so the
+run measured real audio rather than paced silence, with recording active
+throughout.
+
+| | 7 min (the claim) | soak 1, 25 min | soak 2, 25 min |
+|---|---|---|---|
+| worst block | 18 733 us | 320 617 us | 356 106 us |
+| late blocks | 7 | 66 | 293 |
+| recordings lost | — | 2 | 0 |
+
+### What the card actually does
+
+`RC1-191` times every block write. The answer was unambiguous — a single 1 KiB
+block write blocked for **553 ms**, against an expected sub-10 ms, and the
+journal caught the shape of it:
+
+```
+ms=523612  stall 362 ms   ring  80/508
+ms=523972  stall 359 ms   ring 147
+ms=524333  stall 361 ms   ring 213
+ms=524591  stall 257 ms   ring 260
+ms=525014  stall 366 ms   ring 334
+ms=525375  stall 360 ms   ring 400
+ms=525738  stall 362 ms   ring 468
+ms=525989  stall 251 ms   ring 508  -> dropped
+```
+
+The card periodically enters a state where **every** write costs ~360 ms, back
+to back. Eight consecutive stalls is ~2.9 s, and the 512 KiB ring holds ~2.95 s,
+so the ring drains exactly. The buffer is not undersized for one stall; no
+sane buffer covers a burst of them. The card had ~29 GB free, so this is not a
+full-card effect.
+
+### The replacement card
+
+Same probe on a candidate 58 GB exFAT card, 256 MB written in 32 KiB
+WriteThrough chunks (`tools/sd_card_latency_probe.ps1`):
+
+| | old card, in the P4 | candidate, on the PC |
+|---|---|---|
+| worst single write | 553 ms | **28.95 ms** |
+| writes >= 100 ms | 24 | **0** |
+| writes >= 360 ms | 8, consecutive | **0** |
+| p99.9 | — | 10.56 ms |
+| throughput | — | 15.4 MB/s (0.18 needed) |
+
+Two caveats before treating this as settled: the probe ran on a PC host
+controller, not the P4's SDMMC, so a clean result is indicative rather than
+proof; and the candidate was empty, which is the easy case for a card, whereas
+the old one carried accumulated recordings.
+
+**Not yet done, pending an enclosure opening:** put the candidate in the P4 and
+repeat the soak, and run the same probe against the old card on the PC so both
+numbers come from one tool instead of comparing a PC probe against a P4
+measurement.
+
+### Still unexplained
+
+Why a microSD stall stalls the *mixer* loop, which touches no card and holds no
+lock, is not established. The trigger is now known; the mechanism is not. If a
+better card removes the trigger the question becomes academic, but it should not
+be recorded as answered.
+
+## Write staging made it worse, and named the mechanism (2026-07-23)
+
+Hypothesis under test: the recorder calls `fwrite` with 1 KiB blocks while
+newlib's default stdio buffer is 128 B, so each block became eight tiny writes
+down to FATFS. Small scattered writes are what push a flash controller into
+erase-block reorganisation, so accumulating blocks into a 64 KiB staging buffer
+and handing the card one large sequential write should have helped.
+
+It did the opposite, decisively:
+
+| | `RC1-191`, no staging | `RC1-195`, 64 KiB staging |
+|---|---|---|
+| run length | ~25 min | **~3.2 min** |
+| worst single write | 553 ms | **1 735 ms** |
+| writes >= 100 ms | 24 | **498** |
+| worst output block | 356 ms | **913 ms** |
+| worst `mix` phase | 356 ms | **730 ms** |
+
+Staging makes writes 64x less frequent, so ~520 writes occurred in that run and
+**498 of them blocked over 100 ms** — essentially every one. Reverted in
+`cea516e9`.
+
+### Why, and what it explains
+
+The staging buffer was allocated in PSRAM, so each 64 KiB `fwrite` streams from
+PSRAM to the SDMMC peripheral. That holds the PSRAM bus for one long continuous
+stretch instead of short bursts — and the mixer loop reads its per-deck PCM out
+of the same PSRAM. Hence `mix` doubling to 730 ms.
+
+This is the first direct evidence for the mechanism recorded as unexplained
+above: **a microSD stall damages the mixer loop because both contend for the
+PSRAM bus**, not because of any lock or shared code path. The mixer holds no
+lock and never touches the card, which is why the earlier phase breakdown was
+so confusing. Larger transfers made the contention worse in exactly the way the
+theory predicts, which is the strongest confirmation available without a bus
+analyser.
+
+Practical consequence: **do not move recorder bulk I/O into larger PSRAM-sourced
+transfers.** If staging is retried, the buffer must live in internal RAM so the
+DMA source is not the bus the audio path depends on — but internal RAM is
+scarce (~116 KiB free), so that caps the buffer far below 64 KiB and the benefit
+is unproven. The card swap remains the first thing to try.
+
+## Reverted-build baseline, 25 min with 5-minute checkpoints (2026-07-23)
+
+Run on `RC1-197-gdf07cdc1` (the staging revert), two decks playing continuously
+with tracks reloaded as they ran out, recording throughout.
+
+| checkpoint | late blocks | worst block | worst write | writes >=100 ms | dropped blocks |
+|---|---|---|---|---|---|
+| T+0 | 120 (inherited) | 322 ms | 5.6 ms | 0 | 0 |
+| T+5 | 131 | 322 ms | 374 ms | 14 | 92 |
+| T+10 | 159 | 337 ms | 454 ms | 37 | 127 |
+| T+15 | 167 | 337 ms | 492 ms | 42 | 127 |
+| T+20 | 175 | 337 ms | 492 ms | 57 | 458 |
+| T+25 | **184** | **337 ms** | **492 ms** | **80** | **549** |
+
+Note the audio counters are not reset when a recording starts, so the T+0 row
+carries 120 late blocks from an earlier run; the meaningful figure is the
+increase, **+64 over 25 minutes** (~2.6/min).
+
+549 dropped blocks is 140 544 frames, **3.19 s of audio missing from the
+recording**. Losses are bursty rather than steady: 92 blocks by T+5, then flat
+through T+15, then +331 in the T+15→T+20 window alone. That is the signature of
+a run of consecutive card stalls long enough to outlast the 2.95 s ring, not of
+a buffer that is merely a little too small.
+
+Comparison across the 25-minute soaks:
+
+| build | late blocks | worst block |
+|---|---|---|
+| `RC1-190` | 66 | 320 ms |
+| `RC1-191` | 293 | 356 ms |
+| `RC1-197` (staging reverted) | 64 | 337 ms |
+| `RC1-195` (64 KiB PSRAM staging) | 440 in 3 min | 913 ms |
+
+`RC1-197` lands back with `RC1-190`/`RC1-191`, confirming the staging attempt
+was the only regression and that the card remains the cause. Nothing in the
+firmware has moved the needle; the card swap is the outstanding experiment.
+
+## Splitting gate wait from card time (2026-07-23, `RC1-200`)
+
+The earlier "the card takes 553 ms to accept 1 KiB" figure was challenged by an
+obvious fact: the same card records 1080p60 video, roughly fifty times the
+176 kB/s the recorder needs. It turned out the measurement bracketed the whole
+sink call, which is `sd_io_gate_begin(); fwrite(); sd_io_gate_end()`, so gate
+contention and card time were indistinguishable. `RC1-199` split them.
+
+25-minute soak, two decks playing, recording throughout:
+
+| | T+0 | T+5 | T+10 | T+15 | T+20 | T+25 |
+|---|---|---|---|---|---|---|
+| `gate_wait` max | 0.0 ms | 8.3 ms | 8.3 ms | **185.0 ms** | 185.0 ms | 185.0 ms |
+| `fwrite` max | 17.2 ms | 369.7 ms | 369.7 ms | 369.8 ms | 369.8 ms | 369.8 ms |
+| writes >=100 ms | 0 | 4 | 12 | 33 | 41 | 56 |
+| dropped blocks | 0 | 0 | 0 | 327 | 327 | 426 |
+
+### Three findings
+
+**1. The stall is inside `fwrite`, not in our gate.** In steady state the gate
+wait is 7-8 us. `sd_io_gate` contention is not the cause.
+
+**2. `fwrite` maxima are suspiciously deterministic.** 369 665 / 369 665 /
+369 814 / 369 814 / 369 814 us — a 150 us spread across twenty minutes. Random
+flash housekeeping does not look like that; this resembles a fixed-cost
+operation or a timeout, and is worth chasing before blaming card wear.
+
+**3. The diagnostics amplify the failure — self-inflicted.** `gate_wait` jumps
+from 8 ms to 185 ms exactly when stalls begin, because every stall over 100 ms
+emits `RECORDING_SD_STALL` and every overrun emits `RECORDING_DROPPED`. The
+journal writer then writes those to the *same card* under the *same gate*. More
+stalls produce more journal traffic, which produces more stalls. This feedback
+loop was introduced with the stall instrumentation earlier the same day and must
+be rate-limited or deferred.
+
+### Bursts, and why a camera does not care
+
+Stalls arrive in bursts roughly every 2.2 minutes. Within a burst the writer is
+blocked continuously — the interval between stalls equals their duration:
+
+```
+ms=1355481  stall=364 ms  ring= 33
+ms=1355843  stall=362 ms  ring= 51
+ms=1356394  stall=551 ms  ring= 79
+...  fifteen consecutive, ~4.5 s total  ...
+ms=1359689  stall=365 ms  ring=508   <- full
+ms=1359944  stall=255 ms  ring=508   -> dropped
+```
+
+This reconciles the card recording 1080p60 with it failing here. A camera
+buffers in tens or hundreds of MB — many seconds of video — so a 4.5 s card
+stall is invisible to it. The recorder's ring is 508 blocks, **2.95 s**. The same
+stall that a camera absorbs drains our buffer completely. The card can be
+genuinely fine for video and still unusable for this without a larger buffer or
+a card that does not stall for seconds at a time.
+
+### Next, in order
+
+1. Stop the diagnostic feedback loop: rate-limit `RECORDING_SD_STALL`, or queue
+   stall records and emit them after the session ends.
+2. Test whether the 10 s checkpoint's header patch is the trigger. It seeks to
+   offset 0, writes 44 bytes and seeks back, breaking the sequential write
+   stream. `recover_orphans()` already rebuilds the header from the file size at
+   boot, so the in-session patch is arguably redundant.
+3. Only then compare cards, with the probe in `tools/sd_card_latency_probe.ps1`.
+
+## Removing our own contribution: one fix worked, one hypothesis died (2026-07-23)
+
+Two changes went in together as `RC1-202-g05c23a40`, both aimed at things the
+firmware was doing to itself rather than at the card:
+
+1. **Stall reporting coalesced.** Every write over 100 ms had emitted a journal
+   record, and the journal writer put it on the same card under the same gate,
+   so a burst of fifteen stalls added fifteen card transactions precisely when
+   the card was already behind. Now one record per burst, drops rate-limited to
+   one per two seconds.
+2. **The 10 s checkpoint stopped patching the WAV header.** It had seeked to
+   offset 0, written 44 bytes and seeked back, interrupting a strictly
+   sequential append with a random write at the far end of a large file.
+
+Measured against `RC1-200` at the same point in the run:
+
+| | `RC1-200` | `RC1-202` | |
+|---|---|---|---|
+| `gate_wait` max | 185.0 ms | **16.5 ms** | fixed |
+| `fwrite` max | 369.8 ms | **375.8 ms** | unchanged |
+
+**The diagnostics fix worked.** Gate contention fell by an order of magnitude,
+confirming the feedback loop was real and is now gone.
+
+**The checkpoint hypothesis was wrong.** Removing the in-place header patch left
+`fwrite` exactly where it was, 375.8 ms against 369.8 ms, which is noise. The
+non-sequential 44-byte write was not the trigger. The change is kept anyway —
+it removes pointless I/O and `recover_orphans()` already rebuilds the header at
+boot — but it is not a fix for the stalls.
+
+### Where that leaves it
+
+Everything the firmware contributes has now been measured and removed:
+`sd_io_gate` contention is ruled out (7-8 us in steady state), the diagnostic
+feedback loop is closed, and the checkpoint's random write is gone. The ~370 ms
+`fwrite` stall survives all of it, still landing within a few hundred
+microseconds of the same value run after run.
+
+That leaves the card or the SDMMC layer beneath FATFS. **The card swap is now
+the next step and, unlike before, it is the right one**: it is being reached by
+elimination rather than by assumption. Qualify the replacement with
+`tools/sd_card_latency_probe.ps1` before fitting it, and note the candidate was
+probed on a PC host controller while empty, which is the easy case.
+
+Worth carrying into that test: the stall value's determinism. A worn card doing
+opportunistic garbage collection would vary; hitting ~370 ms repeatedly looks
+more like a fixed-cost operation or a timeout, which would survive a card swap.
+If the replacement stalls at the same number, suspect the SDMMC driver or bus
+configuration rather than the media.
+
+## FLX4 MASTER OUT as the main output — feasibility probe (2026-07-23)
+
+Question: the FLX4 has two physical outputs. We drive the headphone one over USB
+audio and use our own PCM5102A for MAIN. Could the controller's MASTER OUT
+replace the DAC?
+
+### The controller already exposes it
+
+The FLX4's USB playback format is **four channels**, and `flx4_usb_audio`
+already maps onto it — `fill_next_stream_packet()` writes the P4 monitor mix at
+`first_channel = 2` when `channels >= 4`. Channels 1/2 were being zero-filled
+every packet. There is even a diagnostic Kconfig switch,
+`DDJ_FLX4_USB_AUDIO_TONE_ON_CHANNELS_1_2`, from the original bring-up.
+
+**Confirmed on hardware:** with that switch on, the monitor mix came out of the
+FLX4 **MASTER** output. Channels 1/2 are MASTER, channels 3/4 are the
+headphones. No new code was needed to establish this.
+
+### The blocker is the P4->S3 link, and it is not fatal
+
+`monitor_pcm_link` carries stereo only — `monitor_pcm_link_write_nonblocking()`
+takes `const int16_t *interleaved_stereo`, and the transport rejects anything
+but `channels == 2`. Carrying master and cue simultaneously needs four.
+
+The transport is an I2S pipe at `MONITOR_PCM_LINK_I2S_PIPE_RATE_HZ` = 64 kHz
+with 16-bit stereo slots, so 2.05 Mbit/s of framing capacity for `P4HP` blocks:
+
+| payload | rate |
+|---|---|
+| stereo @ 48 kHz (today) | 1.54 Mbit/s — fits |
+| four channels @ 48 kHz | 3.07 Mbit/s — **does not fit** |
+
+Widening the slots to `I2S_DATA_BIT_WIDTH_32BIT` doubles the pipe to
+4.10 Mbit/s, which carries four channels with margin. Prefer that over raising
+the pipe rate: the code already had to drop `mclk_multiple` to 128x because the
+P4's 40 MHz XTAL source made 256x abort with "sample rate is too large", so
+there is little clock headroom but plenty of slot headroom.
+
+### Sketch of the work, if it is ever wanted
+
+1. `monitor_pcm_link`: 16 -> 32-bit slots, accept `channels == 4`, widen the
+   framing.
+2. P4 `audio_engine`: send `master_out` alongside `hp_out` instead of `hp_out`
+   alone — both blocks already exist at that point in the output loop.
+3. S3 `flx4_usb_audio`: fill both channel pairs; the mapping already exists.
+4. Optionally drop the PCM5102A, freeing I2S unit 1 — worth something given the
+   P4 has only two usable units (unit 2 freezes on eco2).
+
+No wiring changes: same three GPIOs, same cable.
+
+### Recommendation
+
+Feasible, but **not an audio-quality win**. The PCM5102A is a competent
+dedicated DAC and the FLX4 is an entry-level controller; expect parity at best.
+The real gains are fewer boxes and cables, master and cue coming from one
+device, and a freed I2S unit. Two costs to weigh: master would gain the USB
+isochronous path's buffering latency that the direct RCA path does not have,
+and the FLX4's physical MASTER LEVEL knob would sit after our limiter and
+master trim, so the two gain stages would interact.
+
+Reverted after the probe — the switch routes the monitor mix to master, which
+leaves the headphones silent.
+
+## Reboot on Wi-Fi enable — instrumented, two suspects ruled out (2026-07-23)
+
+Reported symptom: the P4 occasionally reboots when Wi-Fi is switched on from
+Settings. The journal held four `reset=PANIC` boots out of the last fifteen, so
+this is regular rather than rare.
+
+### Why the journal could not answer it
+
+Two reasons, and the second is a general trap worth remembering.
+
+**There was no Wi-Fi instrumentation at all.** Not one event in the inventory
+covered enable, start, failure or stop — zero hits searching the whole log. The
+reported symptom was invisible by construction.
+
+**A panic destroys the unflushed journal buffer.** The writer syncs at most
+every few seconds, so the last record before a panic is simply where the buffer
+was severed, not where the fault was. All four PANIC boots end on something
+unrelated — a `TRACK_LOAD_START` with no matching `DONE`, a
+`PROFILE_TRANSFER_DONE` then silence. Reading those as clues would point
+straight at the wrong subsystem. **Never treat the last record before a panic as
+evidence unless it was explicitly synced.**
+
+Also checked and clear: `LOW_INTERNAL_HEAP` and `LOW_PSRAM` have never fired in
+the entire log, so this is not a slow leak.
+
+### What was added
+
+`RC1-205` adds `WIFI_ENABLE_REQUESTED` / `WIFI_STARTED` / `WIFI_FAILED` /
+`WIFI_STOPPED`, and the enable path calls `service_log_sync()` **before**
+touching the Wi-Fi stack so the breadcrumb reaches the card even if the next
+call panics. Records carry free internal heap and the largest free internal
+block; completion records carry the worker task's stack high-water mark.
+
+### First measurement already eliminates both suspects
+
+```
+WIFI_ENABLE_REQUESTED  a0=160431  a1=92160   free / largest block, before
+WIFI_STARTED           a0=135263  a1=4044    free / stack words left, after
+```
+
+**Stack exhaustion is out.** The worker is a 6 KiB task and roughly 4 KB of that
+is still unused after bringing up ESP-Hosted, Wi-Fi and httpd. Enlarging it
+would have been wasted effort.
+
+**Memory pressure is out.** Bring-up costs about 25 KB of internal RAM
+(160431 -> 135263) against a 92 KB largest free block going in. Nowhere near
+exhaustion.
+
+### How to read the next occurrence
+
+- `WIFI_ENABLE_REQUESTED` with no `WIFI_STARTED` → the panic is inside the
+  Wi-Fi/ESP-Hosted bring-up itself.
+- both records present, reboot later → Wi-Fi is a trigger, not the fault; look
+  at what the newly-started web server, DNS server or the C6 radio disturbs.
+- neither record → the panic precedes the request, so the Settings/UI path is
+  implicated rather than the radio.
+
+Coredump remains unavailable on this board (it boot-loops before `app_main`),
+so a live COM15 capture during the toggle is the fallback if the journal
+breadcrumbs are not decisive.

@@ -21,7 +21,9 @@
 #define WRITER_PRIO    2
 #define WRITER_WAIT_MS 2000
 #define WRITER_BATCH   32u
-#define SYNC_PERIOD_US (5ll * 1000000ll)
+#define SYNC_PERIOD_US     (5ll * 1000000ll)
+/* Recorder active: the card is busy with the WAV stream, so sync rarely. */
+#define SYNC_PERIOD_REC_US (60ll * 1000000ll)
 
 static QueueHandle_t s_queue = NULL;
 static TaskHandle_t  s_writer = NULL;
@@ -164,10 +166,17 @@ static void flush_if_dirty(bool force_sync)
     if (!s_fp || !s_dirty) {
         return;
     }
+    /* While the recorder owns the card, sync far less often. An fsync is a real
+     * microSD transaction competing with a continuous 176 kB/s WAV stream on the
+     * same device, and journal durability matters much less than the recording
+     * surviving intact. Records are not dropped, only held in the file buffer
+     * longer; a stop() forces a sync, and so does rotation. */
+    const int64_t sync_period = sd_io_gate_recorder_active()
+                                    ? SYNC_PERIOD_REC_US : SYNC_PERIOD_US;
     sd_io_gate_begin();
     fflush(s_fp);
     int64_t now = esp_timer_get_time();
-    if (force_sync || now - s_last_sync_us >= SYNC_PERIOD_US) {
+    if (force_sync || now - s_last_sync_us >= sync_period) {
         fsync(fileno(s_fp));
         s_last_sync_us = now;
         s_dirty = false;

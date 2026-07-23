@@ -422,6 +422,15 @@ static esp_err_t api_controller_profiles_handler(httpd_req_t *req)
 static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, true)) return ESP_FAIL;
+
+    /* A profile install is a multi-file SD swap; refuse it while the recorder
+     * owns the card rather than letting it back-pressure the writer. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_PROFILE_UPLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to install a profile",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
     char id[CPM_ID_MAX] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-DDJ-Profile-ID", id,
                                     sizeof(id)) != ESP_OK ||
@@ -539,19 +548,30 @@ static esp_err_t recording_send_status(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Recorder status unavailable");
     }
-    char json[320];
+    /* Sized with headroom: the fully-populated object with six-digit counters
+     * runs a little over 400 bytes, and 320 silently turned every request into
+     * a 500 the moment the gate/fwrite split was added. */
+    char json[512];
     int n = snprintf(json, sizeof(json),
                      "{\"state\":\"%s\",\"sample_rate\":%u,"
                      "\"ring_used\":%u,\"ring_capacity\":%u,\"ring_high_water\":%u,"
                      "\"dropped_blocks\":%u,\"dropped_frames\":%llu,"
                      "\"bytes_written\":%llu,\"frames_written\":%llu,"
+                     "\"push_count\":%u,\"push_max_us\":%u,\"push_over_100us\":%u,"
+                     "\"write_max_us\":%u,\"writes_over_100ms\":%u,"
+                     "\"gate_wait_max_us\":%u,\"fwrite_max_us\":%u,"
                      "\"last_error\":%d}",
                      recording_state_name(st.state), (unsigned)st.sample_rate,
                      (unsigned)st.ring_used, (unsigned)st.ring_capacity,
                      (unsigned)st.ring_high_water, (unsigned)st.dropped_blocks,
                      (unsigned long long)st.dropped_frames,
                      (unsigned long long)st.bytes_written,
-                     (unsigned long long)st.frames_written, (int)st.last_error);
+                     (unsigned long long)st.frames_written,
+                     (unsigned)st.push_count, (unsigned)st.push_max_us,
+                     (unsigned)st.push_over_100us,
+                     (unsigned)st.write_max_us, (unsigned)st.writes_over_100ms,
+                     (unsigned)st.gate_wait_max_us, (unsigned)st.fwrite_max_us,
+                     (int)st.last_error);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Recorder response overflow");
@@ -579,6 +599,9 @@ static esp_err_t api_recording_start_handler(httpd_req_t *req)
                                "No MAIN output rate yet - load and play a track first",
                                HTTPD_RESP_USE_STRLEN);
     }
+    /* Start the output-block phase maxima from zero so the numbers describe
+     * this recording window rather than whatever happened since boot. */
+    audio_engine_reset_output_phase_stats();
     esp_err_t rc = audio_recorder_start(rate);
     if (rc != ESP_OK) {
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict"
@@ -604,6 +627,14 @@ static esp_err_t api_recording_stop_handler(httpd_req_t *req)
 static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
+
+    /* Streaming the whole journal is heavy optional admin work; keep it off the
+     * card while the recorder is writing. */
+    if (!sd_io_gate_admit(SD_IO_CLASS_LOG_DOWNLOAD, sd_io_gate_recorder_active())) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Recording in progress - stop it to download the log",
+                               HTTPD_RESP_USE_STRLEN);
+    }
 
     service_log_sync();   /* flush pending records before the snapshot */
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
@@ -800,6 +831,13 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"output_late_count\":%u,"
         "\"output_late_max_us\":%u,"
         "\"output_late_threshold_us\":%u,"
+        "\"phase_head_us\":%u,"
+        "\"phase_mix_us\":%u,"
+        "\"phase_push_us\":%u,"
+        "\"phase_monitor_us\":%u,"
+        "\"phase_main_us\":%u,"
+        "\"phase_codec_us\":%u,"
+        "\"phase_book_us\":%u,"
         "\"ring_capacity\":%u,"
         "\"ring_used1\":%u,"
         "\"ring_used2\":%u,"
@@ -844,6 +882,13 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.output_late_count,
         (unsigned)diagnostics.output_late_max_us,
         (unsigned)diagnostics.output_late_threshold_us,
+        (unsigned)diagnostics.phase_head_max_us,
+        (unsigned)diagnostics.phase_mix_max_us,
+        (unsigned)diagnostics.phase_push_max_us,
+        (unsigned)diagnostics.phase_monitor_max_us,
+        (unsigned)diagnostics.phase_main_max_us,
+        (unsigned)diagnostics.phase_codec_max_us,
+        (unsigned)diagnostics.phase_book_max_us,
         (unsigned)diagnostics.ring_capacity,
         (unsigned)diagnostics.ring_used[0],
         (unsigned)diagnostics.ring_used[1],
@@ -1197,6 +1242,12 @@ esp_err_t web_server_start(void)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_open_sockets = 5;
+    /* Evict the least-recently-used socket instead of refusing the connection.
+     * The controller page holds keep-alive sockets while it polls /api/status,
+     * so without this a single busy browser can occupy all five and lock every
+     * other client out completely — including the OTA endpoint, from a device
+     * that still answers ping and looks perfectly healthy. */
+    config.lru_purge_enable = true;
     config.stack_size = 8192;
     config.ctrl_port = 32768; // pomaknuto da ne bude u konfliktu
     config.uri_match_fn = httpd_uri_match_wildcard;

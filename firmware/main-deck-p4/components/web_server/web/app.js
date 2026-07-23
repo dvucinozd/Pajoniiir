@@ -10,6 +10,10 @@ let isInteracting = {
 // Track duration per deck (ms), used to map the progress bar to a seek target.
 let deckDuration = { 1: 0, 2: 0 };
 
+// Waveform palette (matches the on-device "Punchy"-style colour bands).
+const WAVE_PAL = { lo: '#1E8F87', mid: '#3FE0D0', hi: '#F5B841' };
+const WAVE_BARS = 120;
+
 // Rate-limit continuous slider requests so dragging a fader does not flood the
 // ESP httpd (5 sockets). Sends the latest value at most every minInterval ms,
 // always including a trailing send so the final position is not dropped.
@@ -46,7 +50,39 @@ function setConnected(ok) {
     dot.classList.toggle('offline', !ok);
 }
 
+// Build the decorative waveform strip once per deck. The bar heights are a fixed
+// stylised pattern (the /api/status stream carries no waveform data); the played
+// portion is tinted live from the real playback position (see updateWaveform).
+function buildWaveform(deckNum) {
+    const el = document.getElementById(`deck-${deckNum}-wave`);
+    if (!el) return;
+    let seed = 91 + deckNum * 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    let html = '';
+    for (let i = 0; i < WAVE_BARS; i++) {
+        const env = Math.pow(Math.abs(Math.sin(i * 0.09)) * 0.6 + rnd() * 0.55, 1.15);
+        const h = Math.max(8, Math.min(100, env * 100));
+        const r = h / 100;
+        const c = r > 0.8 ? WAVE_PAL.hi : (r > 0.48 ? WAVE_PAL.mid : WAVE_PAL.lo);
+        html += `<div class="wave-bar" style="height:${h.toFixed(1)}%;background:${c}"></div>`;
+    }
+    el.innerHTML = html;
+}
+
+function updateWaveform(deckNum, frac) {
+    const el = document.getElementById(`deck-${deckNum}-wave`);
+    if (!el) return;
+    const bars = el.children;
+    const lit = Math.round(frac * bars.length);
+    for (let i = 0; i < bars.length; i++) {
+        bars[i].classList.toggle('played', i < lit);
+    }
+}
+
 function init() {
+    buildWaveform(1);
+    buildWaveform(2);
+
     // Pokreni status loop odmah da sučelje odmah oživi. Ulančani setTimeout
     // (umjesto setInterval) šalje sljedeći zahtjev tek nakon što prethodni
     // završi, pa se zahtjevi ne gomilaju na sporom linku (httpd ima 5 socketa).
@@ -83,29 +119,30 @@ function fetchLibrary() {
         })
         .catch(err => {
             console.error('Greška kod dohvaćanja knjižnice:', err);
-            document.getElementById('library-body').innerHTML = 
-                '<tr><td colspan="5" class="loading-cell" style="color: var(--col-red)">Pogreška u komunikaciji.</td></tr>';
+            document.getElementById('library-body').innerHTML =
+                '<tr><td colspan="3" class="loading-cell" style="color: var(--col-red)">Pogreška u komunikaciji.</td></tr>';
         });
 }
 
 function renderLibrary(tracks) {
     const tbody = document.getElementById('library-body');
     if (tracks.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="loading-cell">Nema pjesama na USB-u.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" class="loading-cell">Nema pjesama na USB-u.</td></tr>';
         return;
     }
 
     tbody.innerHTML = tracks.map(track => {
         return `
             <tr>
-                <td>${escapeHtml(track.title)}</td>
-                <td style="color: var(--text-muted)">${escapeHtml(track.artist)}</td>
-                <td>${track.bpm}</td>
-                <td>${formatMs(track.duration_ms)}</td>
+                <td>
+                    <div class="lib-title">${escapeHtml(track.title)}</div>
+                    <div class="lib-artist">${escapeHtml(track.artist)}</div>
+                </td>
+                <td class="lib-bpm">${track.bpm}</td>
                 <td>
                     <div class="library-actions">
-                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 1)">LOAD D1</button>
-                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 2)">LOAD D2</button>
+                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 1)">D1</button>
+                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 2)">D2</button>
                     </div>
                 </td>
             </tr>
@@ -189,10 +226,10 @@ function updateDeckUI(deckNum, data) {
     document.getElementById(`deck-${deckNum}-artist`).innerText = data.artist || "Unknown Artist";
     // API sends whole BPM (already pitch-adjusted), matching the on-device UI.
     document.getElementById(`deck-${deckNum}-bpm`).innerText = Number(data.bpm).toFixed(2);
-    document.getElementById(`deck-${deckNum}-pitch`).innerText = data.pitch_percent >= 0 
-        ? `+${data.pitch_percent.toFixed(2)}%` 
+    document.getElementById(`deck-${deckNum}-pitch`).innerText = data.pitch_percent >= 0
+        ? `+${data.pitch_percent.toFixed(2)}%`
         : `${data.pitch_percent.toFixed(2)}%`;
-    
+
     // Vrijeme + progress / preostalo
     const pos = data.position_ms || 0;
     const dur = data.duration_ms || 0;
@@ -200,14 +237,16 @@ function updateDeckUI(deckNum, data) {
     document.getElementById(`deck-${deckNum}-time`).innerText = formatMs(pos);
 
     const fill = document.getElementById(`deck-${deckNum}-fill`);
-    const remain = document.getElementById(`deck-${deckNum}-remain`);
+    const remainTop = document.getElementById(`deck-${deckNum}-remain-top`);
     if (dur > 0) {
-        const pct = Math.max(0, Math.min(100, (pos / dur) * 100));
-        if (fill) fill.style.width = pct + '%';
-        if (remain) remain.innerText = '-' + formatMs(dur > pos ? dur - pos : 0);
+        const frac = Math.max(0, Math.min(1, pos / dur));
+        if (fill) fill.style.width = (frac * 100) + '%';
+        if (remainTop) remainTop.innerText = '-' + formatMs(dur > pos ? dur - pos : 0);
+        updateWaveform(deckNum, frac);
     } else {
         if (fill) fill.style.width = '0%';
-        if (remain) remain.innerText = '';
+        if (remainTop) remainTop.innerText = '';
+        updateWaveform(deckNum, 0);
     }
 
     // Status badge
@@ -335,31 +374,58 @@ function escapeHtml(str) {
               .replace(/'/g, '&#039;');
 }
 
-function toggleBrowserExpand() {
-    const body = document.body;
-    const btn = document.getElementById('browser-expand-btn');
-    if (body.classList.contains('browser-expanded')) {
-        body.classList.remove('browser-expanded');
-        btn.innerText = 'SHOW';
-    } else {
-        body.classList.add('browser-expanded');
-        btn.innerText = 'HIDE';
-    }
+// Generic show/hide for the collapsible maintenance cards (USB browser,
+// controller profile, P4 firmware update).
+function toggleCollapse(cardId, btn) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const collapsed = card.classList.toggle('collapsed');
+    if (btn) btn.innerText = collapsed ? 'SHOW' : 'HIDE';
 }
 
+// Fills the P4 update card and the read-only S3 card from one /api/firmware
+// read. The S3 half is reported separately rather than appended to the P4 line,
+// because the two boards drift apart whenever only one of them is updated and a
+// single run-on line makes that easy to miss.
 async function refreshFirmwareStatus() {
     const info = document.getElementById('ota-firmware-info');
-    if (!info) return;
+    const s3Info = document.getElementById('s3-firmware-info');
+    const s3Badge = document.getElementById('s3-state-badge');
+    if (!info && !s3Info) return;
     try {
         const response = await fetch('/api/firmware', { cache: 'no-store' });
         if (!response.ok) throw new Error(await response.text());
         const fw = await response.json();
-        const s3 = fw.s3 && fw.s3.available
-            ? ` | S3 ${fw.s3.version || 'unknown'} from ${fw.s3.slot || 'unknown'} (${fw.s3.state || 'unknown'})`
-            : ' | S3 status unavailable';
-        info.innerText = `P4 ${fw.running_version || 'unknown'} from ${fw.running_slot || 'unknown'}${s3}`;
+
+        if (info) {
+            info.innerText = `P4 ${fw.running_version || 'unknown'} from ${fw.running_slot || 'unknown'}`;
+        }
+
+        const s3 = fw.s3 || {};
+        if (s3Info) {
+            s3Info.innerText = s3.available
+                ? `${s3.version || 'unknown'} from ${s3.slot || 'unknown'}`
+                : 'S3 did not report firmware status. Check the UART control link.';
+        }
+        if (s3Badge) {
+            s3Badge.innerText = s3.available ? (s3.state || 'unknown') : 'offline';
+            s3Badge.className = 'badge';
+            if (!s3.available) {
+                s3Badge.classList.add('error');
+            } else if (s3.state === 'valid') {
+                s3Badge.classList.add('ready');
+            }
+            // A matching pair is the normal case; flag a mismatch, since running
+            // different builds on the two boards is a real source of confusion.
+            if (s3.available && fw.running_version && s3.version &&
+                s3.version !== fw.running_version) {
+                s3Badge.innerText = 'mismatch';
+                s3Badge.className = 'badge error';
+            }
+        }
     } catch (err) {
-        info.innerText = `Firmware status unavailable: ${err.message}`;
+        if (info) info.innerText = `Firmware status unavailable: ${err.message}`;
+        if (s3Info) s3Info.innerText = `S3 status unavailable: ${err.message}`;
     }
 }
 
@@ -488,3 +554,7 @@ function uploadControllerProfile() {
 
 refreshFirmwareStatus();
 refreshControllerProfiles();
+
+// The S3 card is a live readout, so re-read it periodically — slowly, because
+// this shares five httpd sockets with the 250 ms status poll.
+setInterval(refreshFirmwareStatus, 15000);

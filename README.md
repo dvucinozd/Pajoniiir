@@ -7,6 +7,23 @@ performance.
 
 ![PajoNiiiR](docs/images/122.jpg)
 
+> [!IMPORTANT]
+> The last matching P4/S3 signed-OTA rollout baseline is
+> **`RC1-168-gb69f1b19`** (both boards on `ota_0`, S3 reported `valid`),
+> deployed and boot/status-verified on 2026-07-21 with key `rel-001`. The bench
+> state no longer matches it: the P4 alone has moved to `RC1-205-gdbda7a83` for
+> P4-only recorder instrumentation, the redesigned web controller and an httpd
+> socket fix. It adds the unified ANLZ metadata loader,
+> the structured microSD service journal with its read-only
+> `GET /api/diagnostic-log`, and the master-output recorder with its Settings
+> control and guarded `/api/recording` API. Accepted on hardware in this build:
+> the recorder functional `.wav` capture (about 54 s, zero dropped frames) and
+> the service journal. The latest **complete** functional hardware acceptance
+> still remains **`RC1-123-g587cd7a1`** from 2026-07-14 — targeted Phase 20,
+> Beat FX Flanger/Delay audio and the rest of the E1A set are outstanding — so
+> the system is not yet production-ready. See
+> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
+
 ## System at a Glance
 
 | Device | Responsibility |

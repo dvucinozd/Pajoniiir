@@ -1,15 +1,28 @@
 #include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"
 #include "sd_io_gate.h"
+#include "service_log.h"
 
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
+#include "esp_timer.h"
 
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
 #include <dirent.h>
+
+/* Write-cost split, writer-task owned. Reset by audio_recorder_sink_open(). */
+static uint32_t s_gate_wait_max_us = 0u;
+static uint32_t s_fwrite_max_us    = 0u;
+
+void audio_recorder_sink_write_cost(uint32_t *out_gate_max_us,
+                                    uint32_t *out_fwrite_max_us)
+{
+    if (out_gate_max_us)   *out_gate_max_us = s_gate_wait_max_us;
+    if (out_fwrite_max_us) *out_fwrite_max_us = s_fwrite_max_us;
+}
 
 static const char *TAG = "rec_sink";
 
@@ -96,6 +109,8 @@ esp_err_t audio_recorder_sink_prepare(uint64_t *out_free_bytes)
 esp_err_t audio_recorder_sink_open(audio_recorder_sink_t *s, uint32_t sample_rate,
                                    uint32_t boot_id, uint32_t session)
 {
+    s_gate_wait_max_us = 0u;
+    s_fwrite_max_us = 0u;
     if (!s || sample_rate == 0u) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -133,9 +148,24 @@ esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
         }
     }
 
+    /* Split the cost. Timing the whole call conflated three different things:
+     * waiting for the SD gate (held by the journal writer, a diagnostic-log
+     * download or this sink's own checkpoint), waiting for the FATFS volume lock
+     * against writers that bypass the gate, and the card itself. That made a
+     * 1 KiB write look like it took 492 ms and pointed the blame at the card —
+     * which is hard to believe of a card that records 1080p60. */
+    int64_t g0 = esp_timer_get_time();
     sd_io_gate_begin();
+    int64_t g1 = esp_timer_get_time();
     size_t n = fwrite(samples, 1, len, s->fp);
+    int64_t g2 = esp_timer_get_time();
     sd_io_gate_end();
+
+    uint32_t gate_us = (uint32_t)(g1 - g0);
+    uint32_t write_us = (uint32_t)(g2 - g1);
+    if (gate_us > s_gate_wait_max_us)  s_gate_wait_max_us = gate_us;
+    if (write_us > s_fwrite_max_us)    s_fwrite_max_us = write_us;
+
     if (n != len) {
         ESP_LOGE(TAG, "short write %u/%u", (unsigned)n, (unsigned)len);
         return ESP_FAIL;
@@ -149,13 +179,24 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
     if (!s || !s->is_open) {
         return ESP_OK;
     }
+    /* Durability only — deliberately no header patch here.
+     *
+     * This used to seek to offset 0, write 44 bytes and seek back every 10 s,
+     * which interrupts an otherwise strictly sequential append with a random
+     * write at the far end of a file that is hundreds of MB long. That is the
+     * access pattern flash controllers handle worst, and it is a plausible
+     * trigger for the multi-hundred-millisecond stalls seen in the soaks.
+     *
+     * Nothing is lost by dropping it: audio_recorder_sink_recover_orphans()
+     * already rebuilds the header of any `.part` at boot from the actual file
+     * size, truncating to whole frames. The in-session patch only mattered if
+     * the card were pulled and read elsewhere without this board ever booting
+     * again, and finalize() still writes a correct header on the normal path. */
     sd_io_gate_begin();
-    esp_err_t rc = patch_header_locked(s->fp, s->sample_rate, (uint32_t)s->data_bytes);
-    if (rc == ESP_OK) {
-        fsync(fileno(s->fp));
-    }
+    fflush(s->fp);
+    int rc = fsync(fileno(s->fp));
     sd_io_gate_end();
-    return rc;
+    return (rc == 0) ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)
@@ -291,6 +332,11 @@ esp_err_t audio_recorder_sink_recover_orphans(void)
     closedir(d);
     if (recovered > 0) {
         ESP_LOGI(TAG, "scanned %d orphan .part file(s)", recovered);
+        /* Journalled so a power-loss recovery is provable after the fact,
+         * without pulling the card. */
+        service_log_event(SERVICE_LOG_RECORDING_RECOVERED, SERVICE_LOG_WARN,
+                          1u, (uint32_t)recovered, 0u, 0u, 0u,
+                          "orphan .part recovered");
     }
     return ESP_OK;
 }

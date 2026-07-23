@@ -3,12 +3,39 @@
 Status: active 2026-07-21. R5A-R5F remediation and E1 signed-OTA acceptance are
 complete. The last matching OTA rollout is `RC1-168-gb69f1b19`, deployed to both
 boards on 2026-07-21 and running from `ota_0` on each (S3 `valid`, independently
-confirmed through P4's nested firmware report); the bench state is identical to
-that rollout. That build carries the unified ANLZ metadata loader, the
-structured microSD service journal and the master-output recorder, and its
-recorder `.wav` capture plus the service journal were accepted on hardware. The
-latest **fully** functionally accepted release still remains
-`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
+confirmed through P4's nested firmware report). That build carries the unified
+ANLZ metadata loader, the structured microSD service journal and the
+master-output recorder, and its recorder `.wav` capture plus the service journal
+were accepted on hardware. The latest **fully** functionally accepted release
+still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
+2026-07-14).
+
+Bench state now differs from that rollout: the P4 alone runs
+`RC1-205-gdbda7a83` from `ota_1` (recorder journal events, host-runner repairs,
+the redesigned web controller and the httpd `lru_purge_enable` fix), while the
+S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
+any acceptance run.
+
+Recorder timing, as of 2026-07-23. The recorder stalls on microSD and loses
+audio: 25-minute dual-deck soaks drop 3+ seconds of recording and produce output
+blocks of 320-356 ms. Three earlier readings that suggested the recorder was
+fine or fixed were all taken over windows shorter than the ~2-minute interval
+between failures and are withdrawn.
+
+The firmware's own contribution has now been measured and eliminated in turn:
+`sd_io_gate` contention is 7-8 us in steady state; a diagnostic feedback loop
+(stall records written to the same card under the same gate) was closed, taking
+`gate_wait` from 185 ms to 16.5 ms; and the checkpoint's mid-file header patch
+was removed with no effect on the stall. A PSRAM write-staging attempt made it
+markedly worse and was reverted. What survives is a ~370 ms `fwrite`, repeatable
+to within a few hundred microseconds, arriving in bursts that drain the entire
+2.95 s ring.
+
+Next step is the card swap, reached by elimination rather than assumption, and
+it needs the enclosure opened. Qualify any replacement with
+`tools/sd_card_latency_probe.ps1` first. If a known-good card stalls at the same
+value, the suspect becomes the SDMMC driver or bus configuration. Full numbers
+in `bench-notes.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 

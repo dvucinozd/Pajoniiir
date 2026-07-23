@@ -401,9 +401,17 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
  *
  * The publish is transactional: the new object is swapped into s_current_meta
  * only after a fully successful resolve, and the previous object is freed after
- * the swap and outside the mutex. A failed load therefore never erases the
- * previously valid current metadata. Requires the USB drive mounted only on a
- * cache miss.
+ * the swap and outside the mutex.
+ *
+ * A failed resolve retires the published metadata instead of preserving it, and
+ * returns the error while leaving the track's PDB-derived summary (path, title,
+ * artist, BPM, duration) untouched. The caller is expected to continue loading
+ * the track without analysis data: the audio only needs the media path, whereas
+ * BPM/beatgrid/waveform/cues are refinements the UI already knows how to omit.
+ * Preserving the previous track's object here would be worse than having none,
+ * because it would be drawn over the newly loaded track.
+ *
+ * Requires the USB drive mounted only on a cache miss.
  */
 esp_err_t library_load_anlz(library_track_t *track)
 {
@@ -417,7 +425,26 @@ esp_err_t library_load_anlz(library_track_t *track)
     bool cache_written = false;
     esp_err_t rc = library_resolve_anlz(track, &meta, &source, &cache_written);
     if (rc != ESP_OK) {
-        /* Previously published current metadata is deliberately preserved. */
+        /* The caller now continues loading this track without analysis data, so
+         * the previously published metadata must NOT survive: it belongs to a
+         * different track, and leaving it would draw the old waveform, beatgrid
+         * and hot cues over the newly loaded one. Retire it with the same
+         * swap-then-free-outside-the-lock discipline as a successful publish, so
+         * a UI clone in flight is never blocked on a free.
+         * library_clone_current_anlz() then reports NOT_FOUND and every consumer
+         * takes its existing "no metadata" path. */
+        anlz_metadata_t stale_meta;
+        bool have_stale = false;
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        if (s_current_meta_valid) {
+            stale_meta = s_current_meta;
+            have_stale = true;
+        }
+        s_current_meta_valid = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        if (have_stale) {
+            anlz_free(&stale_meta);
+        }
         return rc;
     }
 

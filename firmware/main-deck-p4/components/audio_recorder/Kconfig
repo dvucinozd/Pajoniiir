@@ -23,4 +23,29 @@ config AUDIO_RECORDER_RING_BYTES
     default 524288 if AUDIO_RECORDER_RING_512K
     default 1048576 if AUDIO_RECORDER_RING_1M
 
+config AUDIO_RECORDER_RING_INTERNAL
+    bool "Allocate the recorder ring in internal RAM"
+    default n
+    help
+        Diagnostic. Recording was measured to stall the audio output task for
+        170-224 ms at a time, always inside the mixer loop, which holds no locks
+        and only reads PCM out of PSRAM. Moving the ring out of PSRAM removes the
+        recorder's own PSRAM traffic and tells us whether that traffic is the
+        cause.
+
+        Internal RAM is scarce (about 116 KiB free with two tracks loaded), so
+        the internal ring is necessarily far smaller than the PSRAM one and
+        tolerates a much shorter microSD write stall before dropping blocks.
+        Dropped blocks with clean audio timing would still confirm the
+        hypothesis. Do not ship this on unless the size below is proven
+        sufficient.
+
+config AUDIO_RECORDER_RING_INTERNAL_BYTES
+    int "Internal recorder ring size (bytes)"
+    default 32768
+    depends on AUDIO_RECORDER_RING_INTERNAL
+    help
+        Keep well under the free internal heap: it is also needed for DMA
+        buffers, task stacks and ISRs.
+
 endmenu
