@@ -688,3 +688,53 @@ a card that does not stall for seconds at a time.
    stream. `recover_orphans()` already rebuilds the header from the file size at
    boot, so the in-session patch is arguably redundant.
 3. Only then compare cards, with the probe in `tools/sd_card_latency_probe.ps1`.
+
+## Removing our own contribution: one fix worked, one hypothesis died (2026-07-23)
+
+Two changes went in together as `RC1-202-g05c23a40`, both aimed at things the
+firmware was doing to itself rather than at the card:
+
+1. **Stall reporting coalesced.** Every write over 100 ms had emitted a journal
+   record, and the journal writer put it on the same card under the same gate,
+   so a burst of fifteen stalls added fifteen card transactions precisely when
+   the card was already behind. Now one record per burst, drops rate-limited to
+   one per two seconds.
+2. **The 10 s checkpoint stopped patching the WAV header.** It had seeked to
+   offset 0, written 44 bytes and seeked back, interrupting a strictly
+   sequential append with a random write at the far end of a large file.
+
+Measured against `RC1-200` at the same point in the run:
+
+| | `RC1-200` | `RC1-202` | |
+|---|---|---|---|
+| `gate_wait` max | 185.0 ms | **16.5 ms** | fixed |
+| `fwrite` max | 369.8 ms | **375.8 ms** | unchanged |
+
+**The diagnostics fix worked.** Gate contention fell by an order of magnitude,
+confirming the feedback loop was real and is now gone.
+
+**The checkpoint hypothesis was wrong.** Removing the in-place header patch left
+`fwrite` exactly where it was, 375.8 ms against 369.8 ms, which is noise. The
+non-sequential 44-byte write was not the trigger. The change is kept anyway —
+it removes pointless I/O and `recover_orphans()` already rebuilds the header at
+boot — but it is not a fix for the stalls.
+
+### Where that leaves it
+
+Everything the firmware contributes has now been measured and removed:
+`sd_io_gate` contention is ruled out (7-8 us in steady state), the diagnostic
+feedback loop is closed, and the checkpoint's random write is gone. The ~370 ms
+`fwrite` stall survives all of it, still landing within a few hundred
+microseconds of the same value run after run.
+
+That leaves the card or the SDMMC layer beneath FATFS. **The card swap is now
+the next step and, unlike before, it is the right one**: it is being reached by
+elimination rather than by assumption. Qualify the replacement with
+`tools/sd_card_latency_probe.ps1` before fitting it, and note the candidate was
+probed on a PC host controller while empty, which is the easy case.
+
+Worth carrying into that test: the stall value's determinism. A worn card doing
+opportunistic garbage collection would vary; hitting ~370 ms repeatedly looks
+more like a fixed-cost operation or a timeout, which would survive a card swap.
+If the replacement stalls at the same number, suspect the SDMMC driver or bus
+configuration rather than the media.

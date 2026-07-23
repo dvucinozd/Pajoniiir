@@ -11,26 +11,31 @@ still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
 2026-07-14).
 
 Bench state now differs from that rollout: the P4 alone runs
-`RC1-191-gaa0533e5` from `ota_1` (recorder journal events, host-runner repairs,
+`RC1-202-g05c23a40` from `ota_0` (recorder journal events, host-runner repairs,
 the redesigned web controller and the httpd `lru_purge_enable` fix), while the
 S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
 any acceptance run.
 
-Recorder timing, 2026-07-22, superseding two earlier readings that were both
-too optimistic. Two 25-minute soaks with two decks playing and recording active
-produced worst output blocks of 320 ms and 356 ms, and 66 and 293 late blocks;
-the first soak also lost two recordings outright. Both earlier conclusions — "not
-timing-neutral but marginal", then "fixed by trimming journal writes, 12x" —
-came from windows of 90 s and 7 min, which are shorter than the ~2-minute
-interval between failures.
+Recorder timing, as of 2026-07-23. The recorder stalls on microSD and loses
+audio: 25-minute dual-deck soaks drop 3+ seconds of recording and produce output
+blocks of 320-356 ms. Three earlier readings that suggested the recorder was
+fine or fixed were all taken over windows shorter than the ~2-minute interval
+between failures and are withdrawn.
 
-The cause is the microSD card: `RC1-191` times each block write and caught a
-single 1 KiB write blocking 553 ms, plus bursts of eight consecutive ~360 ms
-stalls that drain the entire 2.95 s ring. A candidate replacement card measured
-28.95 ms worst case with zero writes over 100 ms. Swapping the card and
-repeating the soak is the next step and needs the enclosure opened. Do not tune
-the ring or the writer first. Full numbers, and the caveat that the candidate
-was probed on a PC rather than the P4, are in `bench-notes.md`.
+The firmware's own contribution has now been measured and eliminated in turn:
+`sd_io_gate` contention is 7-8 us in steady state; a diagnostic feedback loop
+(stall records written to the same card under the same gate) was closed, taking
+`gate_wait` from 185 ms to 16.5 ms; and the checkpoint's mid-file header patch
+was removed with no effect on the stall. A PSRAM write-staging attempt made it
+markedly worse and was reverted. What survives is a ~370 ms `fwrite`, repeatable
+to within a few hundred microseconds, arriving in bursts that drain the entire
+2.95 s ring.
+
+Next step is the card swap, reached by elimination rather than assumption, and
+it needs the enclosure opened. Qualify any replacement with
+`tools/sd_card_latency_probe.ps1` first. If a known-good card stalls at the same
+value, the suspect becomes the SDMMC driver or bus configuration. Full numbers
+in `bench-notes.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 

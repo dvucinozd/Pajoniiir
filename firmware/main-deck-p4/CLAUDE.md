@@ -1,7 +1,7 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-191-gaa0533e5` on `ota_1`; the S3 is **not** matched and
+signed release is `RC1-202-g05c23a40` on `ota_0`; the S3 is **not** matched and
 still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
 run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
@@ -32,28 +32,27 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
 > `docs/bench-notes.md` for the diagnostic signature.
 
-> ⚠️ **The recorder is limited by the microSD card, and currently disturbs
-> playback.** Two 25-minute soaks with two decks playing and recording active
-> produced output blocks of 320 ms and 356 ms and 66 / 293 late blocks. An
-> earlier claim here that recording only "narrows the margin" came from a
-> 7-minute window, which is shorter than the ~2-minute interval between
-> failures; it was wrong and is withdrawn.
+> ⚠️ **The recorder stalls on microSD and drops audio; the cause is below
+> FATFS.** 25-minute soaks with two decks playing lose 3+ seconds of recording
+> and produce output blocks of 320-356 ms. Everything the firmware contributes
+> has been measured and removed: `sd_io_gate` contention is 7-8 us in steady
+> state, the diagnostic feedback loop is closed (`gate_wait` 185 -> 16.5 ms), and
+> the checkpoint no longer patches the header mid-file. A single `fwrite` still
+> blocks ~370 ms, landing within a few hundred microseconds of the same value
+> every run, and stalls arrive in bursts of a dozen or more that drain the whole
+> 2.95 s ring.
 >
-> `RC1-191` times each block write and found the cause: a single 1 KiB write
-> blocking **553 ms**, and bursts of eight consecutive ~360 ms stalls that drain
-> the whole 2.95 s ring. A candidate replacement card measured 28.95 ms worst
-> case with zero writes over 100 ms. **Do not tune the ring size or the writer
-> before trying a better card** — the buffer is not undersized for one stall and
-> nothing reasonable covers a burst. Numbers and caveats in
-> `docs/bench-notes.md`.
+> **Do not enlarge the ring or restructure the writer.** No buffer of a sane
+> size covers a 4.5 s burst, and both the PSRAM write-staging attempt and the
+> checkpoint change were measured to make no difference or make things worse.
+> The next step is a card swap, qualified with
+> `tools/sd_card_latency_probe.ps1`. If a known-good card stalls at the same
+> ~370 ms, suspect the SDMMC driver or bus configuration rather than the media.
+> Full history and numbers in `docs/bench-notes.md`.
 >
 > **Deliberately left on:** the output block is timed phase by phase on the
-> audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block, sixteen of
-> them purely to split the mixer loop into groups. That costs a few tenths of a
-> percent of the block period and is kept only so the card swap can be compared
-> against the numbers above. Gate it behind a Kconfig or remove the group split
-> once the microSD question is closed — the group breakdown has already given
-> its answer (group 0, 137 ms).
+> audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block. Gate or
+> remove it once the microSD question is closed.
 
 The latest full
 functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
