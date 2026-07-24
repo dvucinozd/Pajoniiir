@@ -862,3 +862,161 @@ exhaustion.
 Coredump remains unavailable on this board (it boot-loops before `app_main`),
 so a live COM15 capture during the toggle is the fallback if the journal
 breadcrumbs are not decisive.
+
+## 2026-07-24 — Beat FX Flanger: tuned by ear, defect found by measurement
+
+Deployed in `RC1-221-g06516945` over Wi-Fi OTA (no wired serial available).
+
+### The tuning that was accepted
+
+| parameter | before | after | why |
+| --- | --- | --- | --- |
+| wet max | 0.50 | 0.70 | notch depth is `20*log10(1-wet)`: -6 dB vs -10.5 dB |
+| minimum delay | 600 us | 250 us | first notch is `1/(2*delay)`: 833 Hz vs 2 kHz |
+| feedback max | 0.60 | 0.75 | sharpens the resonance into the jet |
+| output normalisation | `1/(1+wet)` | removed | made the depth knob quieter, not more intense |
+
+0.90 wet was tried and rejected as choked; 0.86 feedback was rejected as worse,
+not stronger.
+
+### The part that was not in the DSP
+
+After all four changes the operator still heard only "jet na pola". It came
+good on a **faster BEAT setting**. A slow sweep spreads the resonance over so
+long a period that it reads as tonal drift rather than movement. Test the beat
+selector before concluding an effect is mistuned.
+
+### Two measured dead ends
+
+- **Automated swing metric.** Built to rank configurations objectively; it
+  ranked the worst-sounding one highest. Discarded.
+- **Feedback low-pass.** Added to bound the resonance, then measured as doing
+  nothing: peak stayed at 3.34x byte for byte. It attenuates highs while the
+  resonant peak sits at 400-1000 Hz, below the cutoff. Removed rather than kept
+  as decoration.
+
+### Clipping defect, and why the ear missed it
+
+Measured resonant gain of the accepted tuning is **3.34x** (theoretical
+`1 + wet/(1-fb)` = 3.8x). The test track peaks near 16% of full scale, so the
+output never approached the ceiling during the listening pass. At a realistic
+loud level it does, and it hard-clips *inside* the effect - ahead of the master
+limiter, so nothing downstream can catch it. `/api/status` corroborated it after
+the session: `limiter_samples=5`, `limiter_peak=32189`.
+
+Fixed with a quadratic soft knee at 0.75 FS on both the output and the feedback
+write:
+
+```
+                      before fix        after fix
+ 400 Hz, in  6% FS    3.34x             3.34x, nothing pinned  (identity)
+ 400 Hz, in 49% FS    2.05x, clipped    2.04x, reaches FS, nothing pinned
+ 400 Hz, in 79% FS    -                 1.26x, saturates gently
+```
+
+Below the knee it is the identity, so the accepted tuning is bit-exact at the
+levels it was judged at. Soft-clipping the feedback write also explains why
+raising feedback past 0.85 sounded worse rather than stronger: the hard clamp
+squared off the recirculating signal and the distortion fed back on itself.
+
+## 2026-07-24 — Echo and Delay had the same headroom defect
+
+Deployed in `RC1-223-gdfa619a9`.
+
+The operator accepted both by ear on hardware — "oni su dobri, provjereno" —
+and no DSP or mapping change was needed for how they sound. Measurement then
+found the same defect the flanger had, for the same reason it went unheard
+there: the reference track peaks near 16% of full scale.
+
+Both share the flanger's structure, dry at unity with wet added on top, so a
+sustained signal builds to `1 + wet/(1-feedback)`.
+
+| effect, full depth | wet | feedback | peak gain | samples pinned at 49% FS in |
+| --- | --- | --- | --- | --- |
+| ECHO | 0.70 | 0.68 | 3.18x | 250400 of 529200 (47%) |
+| DELAY | 0.70 | 0 | 1.70x | 0 (clips above ~59% FS in) |
+
+47% of ECHO's output samples squared off against the int16 ceiling — inside the
+effect, ahead of the master limiter, where nothing downstream can catch it.
+
+Same quadratic soft knee at 0.75 FS as the flanger, on the output and the
+feedback write. After:
+
+```
+  ECHO   400 Hz at 49% FS : 236950 -> 0 pinned
+  ECHO   100 Hz at 49% FS : 250400 -> 0 pinned
+  DELAY  400 Hz at 79% FS :  72100 -> 40600 pinned (saturates gently instead
+                                                    of squaring off; 1.7x over
+                                                    full scale has to go
+                                                    somewhere)
+```
+
+Quiet case identical before and after: 3.18x / 3.10x / 1.70x.
+
+### The lesson worth keeping
+
+Twice in one session a listening pass passed an effect that measurement then
+failed, both times because the reference material never approached the ceiling.
+**An ear acceptance does not cover headroom.** Any effect that adds a wet signal
+on top of unity dry should have its peak gain measured before it is called done
+— it is a two-minute host probe, and the failure it catches is inaudible until
+someone plays a loud track.
+
+## 2026-07-24 — Recorder shelved (compiled out by default)
+
+`CONFIG_AUDIO_RECORDER_ENABLED`, default `n`. Nothing deleted; the component,
+its host tests and the UI/API surface stay in the tree, only the wiring is
+gated. Binary is 12,976 bytes smaller with it off.
+
+### Why
+
+The recorder needs 176 kB/s and cards deliver ~12 MB/s, so throughput was never
+the problem. The problem is a card that stops answering for hundreds of
+milliseconds while it does internal housekeeping; a burst of those drains the
+2.95 s ring regardless of how the writer is arranged.
+
+Every firmware-side contribution was eliminated first, and none was the cause —
+see the "Why it was shelved" table in `DEVELOPMENT_PLAN.md`. After all of it,
+~370 ms of `fwrite` survived while `gate_wait` fell to single-digit ms: the
+firmware was no longer in the way at all.
+
+### What the new card measurement actually showed
+
+A replacement card was fitted and the soak was **cut short by the decision to
+shelve the feature**, so there is no completed 25-minute run for it. What exists
+is the first five minutes:
+
+```
+T+0    fwrite  72.9 ms   ring 13/508   drops 0
+T+5    fwrite  86.3 ms   ring 27/508   drops 0
+```
+
+Encouraging against the old card's ~370 ms, but **five minutes is not a result**
+— cards begin stalling once they fill and internal remapping starts, which is
+precisely why the protocol is 25 minutes. Do not cite these numbers as evidence
+the card swap fixed anything.
+
+The old card was measured separately on a PC (`tools/sd_card_latency_probe.ps1`,
+256 MB in 32 KiB WriteThrough chunks):
+
+```
+median 1.93 ms   p99 8.86 ms   p99.9 39.03 ms   MAX 1415 ms
+>=360 ms: 1      throughput 11.9 MB/s (recorder needs 0.18)
+```
+
+One 1.4 s stall on a PC, against bursts of eight ~360 ms stalls seen on the P4.
+Same failure mode, rarer on the PC — better power delivery and different request
+ordering.
+
+### Two loose ends found during the soak
+
+- **Loading a track killed an in-progress recording.** `deck2 <- track 75` at
+  01:39:45, recorder `STOPPED` at 01:39:54. Never diagnosed.
+- ~~96 kHz/24-bit FLAC fails to load on deck 1~~ — **withdrawn 2026-07-24, this
+  was not a defect.** The load returns `AUDIO_LOAD_FAILED a1=261 msg=NOT FOUND`
+  (`ESP_ERR_NOT_FOUND`): the file is listed in the rekordbox PDB but was never
+  copied to the USB drive. FLAC is supported (dr_flac, decoded from the PSRAM
+  preload). The trap: every non-mp3 entry in this library — indices 0, 1, 2 and
+  5, both FLACs and both WAVs — is a dead PDB row, so picking any of them to
+  "test FLAC" tests a missing file instead. Use `/api/diagnostic-log` to read
+  the actual error code before concluding a format is broken.

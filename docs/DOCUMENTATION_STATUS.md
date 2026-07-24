@@ -24,7 +24,9 @@ RC1-168 adds, on top of the earlier code-review remediation and Beat FX
 Flanger/Delay: the single-resolver ANLZ metadata path, the structured
 `/sd/logs/system.log` service journal with its read-only
 `GET /api/diagnostic-log`, the master-output microSD recorder with its Settings
-control and guarded `/api/recording` API, and two fixes found on hardware (the
+control and guarded `/api/recording` API (**compiled out by default since
+2026-07-24** — see the shelving note in `DEVELOPMENT_PLAN.md`), and two fixes
+found on hardware (the
 USB preload media gate is now released between chunks, and the httpd URI-handler
 limit sits above the registered endpoint count). Accepted on hardware in this
 build: the recorder functional `.wav` acceptance and the service journal.
@@ -59,7 +61,7 @@ in the active documents.
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
 | UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
-| Effects | Beat FX Filter/Echo have recorded hardware acceptance; Flanger and Delay value `4` are software-tested and OTA-deployed, with focused physical audio/target/beat/depth smoke pending |
+| Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
 | OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; matching `RC1-131-gc391e306` rollout boot/status-verified 2026-07-16; paired `RC1-133-gbd5e43ce` bundles and manifest verified 2026-07-17, with only the exact P4 payload deployed by wired flash |
 | Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits its dedicated hardware acceptance |
 

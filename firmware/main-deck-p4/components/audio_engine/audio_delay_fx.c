@@ -11,12 +11,34 @@
 /* Gain ramps move 1/64th of the remaining distance per frame (~1.5 ms
  * time constant at 44.1 kHz). */
 #define AUDIO_DELAY_FX_SMOOTH_SHIFT 6
+/* Soft-clip knee, matching audio_flanger_fx. Dry is unity and wet is added on
+ * top, so a sustained signal builds to 1 + wet/(1-feedback): 3.18x measured
+ * for ECHO at full depth, 1.70x for DELAY, which has no feedback. A hard clamp
+ * there squares the signal off *inside* the effect, ahead of the master
+ * limiter, where nothing downstream can catch it - measured at 47% of samples
+ * pinned for ECHO on a signal at 49% of full scale. Below the knee this is the
+ * identity, so the tuning that was accepted by ear is unchanged. */
+#define AUDIO_DELAY_FX_KNEE 24576   /* 0.75 FS */
 
-static int16_t clamp_i16(int32_t value)
+/* Quadratic soft knee: unity gain and unity slope up to the knee, then the
+ * gain rolls off smoothly to zero exactly at full scale, so there is no slope
+ * discontinuity to buzz. Above 2*FS-knee it saturates flat. */
+static int16_t soft_clip(int32_t value)
 {
-    if (value > 32767) return 32767;
-    if (value < -32768) return -32768;
-    return (int16_t)value;
+    const int32_t knee = AUDIO_DELAY_FX_KNEE;
+    const int32_t span = 32767 - knee;
+    int32_t sign = value < 0 ? -1 : 1;
+    int32_t mag = value < 0 ? -value : value;
+    if (mag <= knee) {
+        return (int16_t)value;
+    }
+    int32_t over = mag - knee;
+    if (over >= 2 * span) {
+        mag = 32767;
+    } else {
+        mag = knee + over - (over * over) / (4 * span);
+    }
+    return (int16_t)(sign * mag);
 }
 
 static int32_t q15_mul_i32(int32_t sample, uint16_t gain_q15)
@@ -163,8 +185,8 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
      * damped feedback keeps circulating until the tail window closes. */
     int32_t write_l = active ? (int32_t)in.left + fb_l : fb_l;
     int32_t write_r = active ? (int32_t)in.right + fb_r : fb_r;
-    fx->left[fx->write_index] = clamp_i16(write_l);
-    fx->right[fx->write_index] = clamp_i16(write_r);
+    fx->left[fx->write_index] = soft_clip(write_l);
+    fx->right[fx->write_index] = soft_clip(write_r);
     fx->write_index++;
     if (fx->write_index >= fx->capacity_frames) {
         fx->write_index = 0u;
@@ -175,8 +197,8 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     }
 
     return (audio_mixer_frame_t) {
-        .left = clamp_i16(out_l),
-        .right = clamp_i16(out_r),
+        .left = soft_clip(out_l),
+        .right = soft_clip(out_r),
     };
 }
 

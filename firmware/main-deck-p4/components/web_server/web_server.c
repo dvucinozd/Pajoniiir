@@ -12,7 +12,9 @@
 #include "p4_ota_policy.h"
 #include "service_log.h"
 #include "sd_io_gate.h"
+#if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
+#endif
 #include <stdio.h>
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
@@ -527,6 +529,7 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
 #endif
 
 // GET /api/status
+#if CONFIG_AUDIO_RECORDER_ENABLED
 /* ── Master-output recorder API ────────────────────────────────────────────── */
 
 static const char *recording_state_name(audio_recorder_state_t s)
@@ -622,6 +625,7 @@ static esp_err_t api_recording_stop_handler(httpd_req_t *req)
     }
     return recording_send_status(req);
 }
+#endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
 
 // GET /api/diagnostic-log — stream the active microSD service journal.
 static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
@@ -1312,6 +1316,7 @@ esp_err_t web_server_start(void)
     rc = register_uri_or_stop(s_web_server, &status_uri);
     if (rc != ESP_OK) return rc;
 
+#if CONFIG_AUDIO_RECORDER_ENABLED
     httpd_uri_t recording_status_uri = {
         .uri = "/api/recording",
         .method = HTTP_GET,
@@ -1338,6 +1343,8 @@ esp_err_t web_server_start(void)
     };
     rc = register_uri_or_stop(s_web_server, &recording_stop_uri);
     if (rc != ESP_OK) return rc;
+
+#endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
 
     httpd_uri_t diag_log_uri = {
         .uri = "/api/diagnostic-log",

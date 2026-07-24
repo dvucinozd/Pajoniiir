@@ -47,3 +47,5 @@ bool audio_flanger_fx_is_allocated(const audio_flanger_fx_t *fx);
 /* Frames a caller must allocate per channel to cover the maximum modulated
  * delay (plus interpolation guard) at the given sample rate. */
 uint32_t audio_flanger_fx_required_frames(uint32_t sample_rate);
+
+

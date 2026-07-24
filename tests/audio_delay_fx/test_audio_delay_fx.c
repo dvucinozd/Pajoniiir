@@ -370,9 +370,48 @@ static void test_null_or_zero_buffer_bypasses(void)
     assert(out.right == in.right);
 }
 
+/* Dry is unity and wet is added on top, so ECHO at full depth builds to
+ * 1 + wet/(1-feedback) = 3.18x on a sustained signal. A hard clamp squared that
+ * off inside the effect, ahead of the master limiter - 47% of samples pinned on
+ * a signal at half full scale. The soft knee has to absorb it without touching
+ * the quiet case, which is the tuning that was accepted by ear. */
+static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
+{
+    enum { CAP = 4410u, SR = 44100u };
+    static int16_t left[CAP];
+    static int16_t right[CAP];
+    audio_delay_fx_t fx;
+    audio_delay_fx_init(&fx, left, right, CAP, SR);
+    audio_delay_fx_configure(&fx, &(audio_delay_fx_config_t) {
+        .enabled = true,
+        .mode = AUDIO_DELAY_FX_MODE_ECHO,
+        .delay_ms = 50,
+        .wet_q15 = 22938,      /* 0.70, full depth */
+        .feedback_q15 = 22282, /* 0.68, full depth */
+    });
+
+    /* First frame: the line was cleared on engage, so the output is the dry
+     * sample alone. Below the 24576 knee it must pass through bit-exact. */
+    audio_mixer_frame_t quiet = audio_delay_fx_process_frame(
+        &fx, (audio_mixer_frame_t) { .left = 20000, .right = -20000 });
+    assert(quiet.left == 20000);
+    assert(quiet.right == -20000);
+
+    /* Now hold it at a level that used to pin, long enough for the feedback to
+     * build through many repeats, and confirm nothing wraps sign. */
+    for (int i = 0; i < (int)SR * 3; ++i) {
+        int16_t sample = (i % 200) < 100 ? 16000 : -16000;
+        audio_mixer_frame_t out = audio_delay_fx_process_frame(
+            &fx, (audio_mixer_frame_t) { .left = sample, .right = sample });
+        assert(!(sample > 0 && out.left < -20000));
+        assert(!(sample < 0 && out.left > 20000));
+    }
+}
+
 int main(void)
 {
     test_disabled_bypasses_input();
+    test_soft_knee_is_transparent_below_it_and_bounds_above();
     test_impulse_reappears_after_delay();
     test_feedback_decays_and_reset_clears_tail();
     test_switch_off_rings_tail_then_goes_silent();

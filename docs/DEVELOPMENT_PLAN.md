@@ -12,12 +12,12 @@ Status: current phase ledger, audited 2026-07-17.
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
-| Beat FX | Filter/Echo hardware-accepted; Flanger/Delay implemented, host-tested and deployed, with focused hardware smoke pending |
+| Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
-| Master-output recorder | Implemented with Settings control and guarded `/api/recording` API; functional `.wav` hardware acceptance passed 2026-07-21 (0 dropped frames) |
+| Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |
 
 The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is
@@ -1911,6 +1911,15 @@ Register the new host test group in `tests/run_p4_host_tests.ps1`.
 
 ## TODO: Record The P4 Master Output To microSD
 
+> **Shelved 2026-07-24 — compiled out by default.** The feature is complete and
+> was functionally accepted, but every remaining problem is the microSD card's
+> write latency rather than the firmware's, and it is not on the critical path.
+> It now sits behind `CONFIG_AUDIO_RECORDER_ENABLED` (default `n`): the code,
+> its host tests and the Settings/API surface all remain in the tree, but
+> nothing is compiled or wired in. See "Why it was shelved" at the end of this
+> section before turning it back on. Everything below describes the feature as
+> built and stays accurate for when it is re-enabled.
+
 Status: firmware implementation complete on branch `codex/p4-master-recorder`
 (2026-07-21), signed and OTA-deployed as `RC1-147-gb9bc8134` on P4 (S3 remains
 `RC1-146-g75feb6f1`; the recorder is P4-only). Implemented across seven slices:
@@ -2185,6 +2194,51 @@ live post-mix recorder coverage.
    `DOCUMENTATION_STATUS.md` and the P4 component guide with measured results.
 9. Run `git diff --check`, inspect `git status --short`, and explicitly list any
    hardware rows not executed.
+
+### Why it was shelved (2026-07-24)
+
+The recorder needs 176 kB/s. Cards deliver 12 MB/s. Throughput was never the
+issue — the issue is that a card stops answering for hundreds of milliseconds at
+a time while it does internal housekeeping, and a burst of those drains the
+2.95 s ring no matter how the writer is arranged.
+
+Every firmware-side contribution was found and eliminated, and none of them was
+the cause:
+
+| tried | result |
+| --- | --- |
+| PSRAM write staging | made it **worse**: 553 ms -> 1735 ms (bus contention) |
+| checkpoint no longer patches the WAV header | no change: 369.8 ms -> 375.8 ms |
+| stall-burst coalescing + drop rate limiting | fixed a **self-inflicted** loop: stall records were being written to the same card under the same gate, so a burst of stalls generated extra card transactions exactly when the card was already behind (gate_wait 8 ms -> 185 ms) |
+| reduced journal writes | helped the system, not the recorder |
+
+After all of it, roughly **370 ms of `fwrite`** survived, and `gate_wait` fell to
+single-digit milliseconds — that is, the firmware was no longer in the way at
+all.
+
+A replacement card was fitted on 2026-07-24. Early numbers were better
+(`fwrite` 73-89 ms over the first five minutes, ring high-water 27/508, zero
+dropped blocks) but the run was cut short, so **this is not a completed
+measurement** — do not cite it as one. The old card was separately measured on a
+PC with `tools/sd_card_latency_probe.ps1`: median 1.93 ms, p99.9 39 ms, but one
+stall of **1415 ms**, confirming the failure mode is real even if the PC's
+better power delivery makes it rarer than on the P4.
+
+Two things also surfaced during the soak and remain unexplained; anyone
+re-enabling this should expect to meet them:
+
+- **Loading a track killed an in-progress recording.** Log shows the load at
+  01:39:45 and the recorder at `STOPPED` nine seconds later. Never diagnosed.
+- ~~96 kHz/24-bit FLAC fails to load on deck 1~~ — **withdrawn: not a defect.**
+  The error is `AUDIO_LOAD_FAILED a1=261 NOT FOUND`; the file is a dead PDB row
+  with no file behind it. FLAC decoding works. See `bench-notes.md` for why
+  every non-mp3 entry in this library is a dead row and how not to repeat the
+  mistake.
+
+To re-enable: set `CONFIG_AUDIO_RECORDER_ENABLED=y`. Note that changing
+`sdkconfig.defaults` does **not** modify an existing `sdkconfig` — verify the
+flag in the actual build's `sdkconfig`, or a build that looks enabled will
+silently ship disabled.
 
 ## TODO: Add P4 Pull OTA Through Temporary Wi-Fi STA Mode
 
@@ -2505,7 +2559,81 @@ signing/release-helper suites.
 
 ## TODO: Revisit Beat FX Delay, Flanger And Echo
 
-Status: planned 2026-07-23. Operator reports all three sound weak in use. None
+Status: **closed 2026-07-24.** FLANGER corrected and hardware-accepted;
+DELAY and ECHO confirmed good by the operator without changes. All three
+additionally had a measured headroom defect fixed in `RC1-223-gdfa619a9`.
+
+### Flanger outcome (2026-07-24)
+
+Operator listening pass narrowed "all three sound weak" to FLANGER alone:
+"provjerio sam i samo FLANGER nije dobro". The plan's own advice held - the
+problem was mapping, not algorithm - but with one twist the plan did not
+anticipate.
+
+What was actually wrong, in the order it was found:
+
+1. **Wet mix far too shallow.** The comb notch is `20*log10(1-wet)`, so the
+   shipped 0.50 gave only -6 dB: a phasey wobble, not a flanger. Raised to
+   0.70 (-10.5 dB). 0.90 was tried and rejected by ear as "zagušen".
+2. **Sweep floor too low in frequency.** The first notch sits at
+   `1/(2*delay)`, so the 600 us minimum delay capped the sweep at 833 Hz and
+   kept the whole effect in the low mids. Lowered to 250 us.
+3. **Output normalisation was actively harmful.** Dividing by `1/(1+wet)` meant
+   turning the depth knob up made everything quieter and duller. Removed; dry
+   now stays at unity and wet is added on top, as on hardware.
+4. **The real missing piece was not in the DSP at all.** After the above, the
+   operator still heard it only as "jet na pola". It came good on a *faster
+   BEAT setting*: "s bržim beatom se čuje jet". A slow sweep spreads the
+   resonance over so long a period that it reads as tonal drift rather than
+   movement. Worth remembering before re-tuning Delay and Echo: the beat
+   selector is part of how these effects are judged, and testing at one beat
+   size can condemn a correctly-tuned effect.
+
+An automated swing metric was built during this pass and **ranked the
+worst-sounding configuration highest**. It was discarded. The lesson for the
+remaining two effects: a metric can confirm a comb notch exists, but it cannot
+decide whether the result sounds like a flanger.
+
+Two things were tried and measured as *not working*, recorded so they are not
+retried: a wet-signal normalisation (above), and a one-pole low-pass in the
+feedback path intended to bound the resonance - it attenuates highs while the
+resonant peak sits at 400-1000 Hz, so the measured peak did not move at all.
+
+**Clipping defect found by measurement, not by ear.** The accepted tuning has a
+resonant gain of **3.34x** (theoretical ceiling `1 + wet/(1-fb)` = 3.8x). The
+test track peaks near 16% of full scale so the operator never heard it, but on
+loud material the sum hits the int16 ceiling and hard-clips *inside*
+`audio_flanger_fx_process_frame`, ahead of the master limiter, where nothing
+downstream can catch it. `/api/status` corroborated it: `limiter_samples=5`,
+`limiter_peak=32189` after the tuning session. Fixed with a quadratic soft knee
+at 0.75 FS on both the output and the feedback write - identity below the knee,
+so the accepted tuning is bit-exact at normal levels, and rolling to zero gain
+at full scale above it. Host tests now bound the resonant peak on both sides
+(2.8x-3.6x) so it cannot be quietly tuned away again.
+
+### DELAY and ECHO outcome (2026-07-24)
+
+Both confirmed good by the operator on hardware - "oni su dobri, provjereno" -
+with no DSP or mapping change needed. The original report of all three sounding
+weak resolved to FLANGER alone.
+
+They were **not** left untouched, though. Both share the flanger's structure -
+dry at unity with wet added on top - so a sustained signal builds to
+`1 + wet/(1-feedback)`. Measured at full depth: **3.18x for ECHO**, 1.70x for
+DELAY. On a signal at half full scale, ECHO pinned **47% of its output samples**
+against the int16 ceiling, hard-clipping inside the effect where the master
+limiter cannot reach it. The same soft knee was applied.
+
+This is the second time in one session that a listening pass passed an effect
+that measurement then failed, for the same reason both times: the reference
+track peaks near 16% of full scale, so nothing ever approached the ceiling.
+**An ear acceptance does not cover headroom.** Any future effect that adds wet
+on top of unity dry should have its peak gain measured before it is called
+done.
+
+### Original plan (kept for reference)
+
+Operator reports all three sound weak in use. None
 of them has ever had a physical audio acceptance — `DOCUMENTATION_STATUS.md`
 has carried "Flanger and Delay are software-tested and OTA-deployed, with
 focused physical audio/target/beat/depth smoke pending" since they landed, and

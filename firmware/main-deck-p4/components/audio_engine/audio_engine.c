@@ -47,7 +47,9 @@
 #include <math.h>
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "media_io_gate.h"
+#if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
+#endif
 #include "service_log.h"
 #endif
 
@@ -2929,7 +2931,7 @@ static void ae_output_task(void *arg)
             /* No audio block will reach the normal peak-recording path below,
              * but the UI meter still needs zero-input release ticks. */
             decay_idle_deck_ui_peaks();
-#if !defined(AUDIO_ENGINE_PC_TEST)
+#if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED
             /* Keep the recording timeline continuous across an idle gap by
              * pushing correctly paced silence at the established output rate. */
             if (audio_recorder_get_state() == AUDIO_RECORDER_RECORDING) {
@@ -3006,7 +3008,7 @@ static void ae_output_task(void *arg)
             ae_phase_note(AE_PH_MIX, now - phase_mark);
             phase_mark = now;
         }
-#if !defined(AUDIO_ENGINE_PC_TEST)
+#if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED
         /* Tap the exact post-limiter MAIN block for the optional recorder. This
          * is a no-op (single atomic load) unless recording is active. */
         audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);

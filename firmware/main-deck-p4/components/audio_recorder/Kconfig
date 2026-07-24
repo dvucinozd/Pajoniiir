@@ -1,6 +1,26 @@
 menu "Audio Recorder (P4 master output)"
 
+config AUDIO_RECORDER_ENABLED
+    bool "Enable the master-output microSD recorder"
+    default n
+    help
+        Records the post-limiter MAIN block to a WAV on the microSD card.
+
+        Off by default. The feature works, but its write latency is dominated by
+        the microSD card rather than by the firmware: a card that stalls for
+        hundreds of milliseconds at a time drains the ring no matter how the
+        writer is arranged, and chasing that consumed a great deal of bench time
+        for something that is not on the critical path. See the recorder entries
+        in docs/bench-notes.md before turning it back on - the firmware-side
+        contributions were already eliminated, so the next step is card
+        selection, not more code.
+
+        With this off the audio output path does not even test for the
+        recorder's state, the Settings RECORD control is not built, and the
+        /api/recording endpoints are not registered.
+
 choice AUDIO_RECORDER_RING_SIZE
+    depends on AUDIO_RECORDER_ENABLED
     prompt "Master recorder PSRAM ring size"
     default AUDIO_RECORDER_RING_512K
     help
@@ -26,6 +46,7 @@ config AUDIO_RECORDER_RING_BYTES
 config AUDIO_RECORDER_RING_INTERNAL
     bool "Allocate the recorder ring in internal RAM"
     default n
+    depends on AUDIO_RECORDER_ENABLED
     help
         Diagnostic. Recording was measured to stall the audio output task for
         170-224 ms at a time, always inside the mixer loop, which holds no locks
