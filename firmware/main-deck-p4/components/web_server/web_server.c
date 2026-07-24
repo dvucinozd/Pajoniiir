@@ -225,6 +225,17 @@ static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
 
 /* ── Pull-OTA service-network configuration ───────────────────────────────── */
 
+/* Wired by app_main; see web_server.h for why this is not a direct call. */
+static web_server_probe_start_fn s_probe_start_fn;
+static web_server_probe_status_fn s_probe_status_fn;
+
+void web_server_set_probe_hooks(web_server_probe_start_fn start,
+                                web_server_probe_status_fn status)
+{
+    s_probe_start_fn = start;
+    s_probe_status_fn = status;
+}
+
 /* GET reports the SSID and base URL, and only WHETHER a passphrase is stored.
  * There is deliberately no path that returns the passphrase over the network;
  * to change it you send a new one. */
@@ -235,11 +246,23 @@ static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
     char url[APP_SETTINGS_OTA_URL_CAP] = {0};
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     app_settings_ota_get_url(url, sizeof(url));
-    char json[APP_SETTINGS_OTA_SSID_CAP + APP_SETTINGS_OTA_URL_CAP + 64u];
+    /* The probe result rides along here rather than on its own endpoint: the
+     * httpd is capped at 24 URI handlers, and going over takes down the whole
+     * web layer including OTA, recoverable only by a wired flash. */
+    web_server_probe_status_t probe = {0};
+    if (s_probe_status_fn) s_probe_status_fn(&probe);
+    static const char *k_probe_names[] = { "idle", "running", "ok", "failed" };
+    const char *probe_name = (probe.state >= 0 && probe.state <= 3)
+        ? k_probe_names[probe.state] : "idle";
+
+    char json[APP_SETTINGS_OTA_SSID_CAP + APP_SETTINGS_OTA_URL_CAP + 192u];
     int n = snprintf(json, sizeof(json),
-                     "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s}",
+                     "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s,"
+                     "\"probe\":{\"state\":\"%s\",\"detail\":\"%s\","
+                     "\"address\":\"%s\"}}",
                      ssid, url,
-                     app_settings_ota_has_password() ? "true" : "false");
+                     app_settings_ota_has_password() ? "true" : "false",
+                     probe_name, probe.detail, probe.address);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
     }
@@ -265,6 +288,36 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body read failed");
     }
     size_t len = (size_t)got;
+
+    /* A connectivity probe leaves the AP for up to ~25 s. Refuse while audio is
+     * playing: the check is here rather than in wifi_link because wifi_link
+     * deliberately knows nothing about decks, and because this is the layer
+     * that can tell the operator why. */
+    if (p4_ota_cfg_extract_true(body, len, "probe")) {
+        memset(body, 0, sizeof(body));
+        if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "a deck is playing");
+        }
+        if (!s_probe_start_fn) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "probe not wired");
+        }
+        esp_err_t rc = (esp_err_t)s_probe_start_fn();
+        if (rc == ESP_ERR_INVALID_ARG) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "no service network configured");
+        }
+        if (rc != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                       "probe already running or Wi-Fi is off");
+        }
+        httpd_resp_set_type(req, "application/json");
+        /* 202: the AP is about to disappear for a moment, so the answer has to
+         * be sent before the work starts rather than after it. */
+        httpd_resp_set_status(req, "202 Accepted");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"probe\":\"started\"}");
+    }
 
     if (p4_ota_cfg_extract_true(body, len, "clear")) {
         app_settings_ota_clear();

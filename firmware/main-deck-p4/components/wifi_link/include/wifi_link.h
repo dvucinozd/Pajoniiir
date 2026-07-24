@@ -51,6 +51,41 @@ esp_err_t wifi_link_restore_ap(void);
 /* True while the deck is on the service network rather than its own AP. */
 bool wifi_link_is_sta(void);
 
+/*
+ * One-shot connectivity probe: leave the AP, join the configured service
+ * network, report the address obtained, come back.
+ *
+ * Exists so the transition can be proven on hardware before any download code
+ * is built on top of it. It performs no HTTP and touches no firmware image; if
+ * this cannot make the round trip reliably, nothing built above it would work
+ * either, and the failure would be much harder to read.
+ *
+ * Runs on its own short-lived task because the round trip takes seconds. The
+ * caller gets a copied snapshot rather than live state.
+ */
+
+typedef enum {
+    WIFI_LINK_PROBE_IDLE = 0,
+    WIFI_LINK_PROBE_RUNNING,
+    WIFI_LINK_PROBE_OK,
+    WIFI_LINK_PROBE_FAILED,
+} wifi_link_probe_state_t;
+
+typedef struct {
+    wifi_link_probe_state_t state;
+    esp_err_t last_error;
+    char detail[48];     /* human-readable stage or failure */
+    char address[16];    /* IPv4 obtained, empty when none */
+} wifi_link_probe_status_t;
+
+/* Rejected with ESP_ERR_INVALID_STATE if a probe is already running, and with
+ * ESP_ERR_INVALID_ARG if no service network is configured. The caller is
+ * responsible for refusing while audio is playing - wifi_link deliberately
+ * knows nothing about decks. */
+esp_err_t wifi_link_probe_start(void);
+
+wifi_link_probe_status_t wifi_link_probe_status(void);
+
 // One-time lightweight init (status + control mutex). Does NOT touch the radio.
 // Call once at boot before wifi_link_start()/wifi_link_request_enable().
 esp_err_t wifi_link_init(void);

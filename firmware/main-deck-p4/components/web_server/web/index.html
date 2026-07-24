@@ -283,8 +283,10 @@
             <label class="field"><span>Update base URL</span>
                 <input id="ota-net-url" type="text" maxlength="160" autocomplete="off" placeholder="https://host/ota"></label>
             <button class="btn btn-ota" id="ota-net-save" onclick="saveOtaNetwork()">SAVE</button>
+            <button class="btn" id="ota-net-test" onclick="testOtaNetwork()">TEST CONNECTION</button>
             <button class="btn" id="ota-net-clear" onclick="clearOtaNetwork()">CLEAR WI-FI</button>
             <span id="ota-net-status"></span>
+            <p class="maintenance-warning" id="ota-net-probe">Connection test not run.</p>
         </div>
     </section>
 

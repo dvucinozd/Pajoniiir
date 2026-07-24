@@ -404,8 +404,44 @@ async function refreshOtaNetwork() {
         info.textContent = cfg.ssid
             ? `Network: ${cfg.ssid} — passphrase ${cfg.has_password ? 'stored' : 'not set'}`
             : 'No update server configured.';
+        renderProbe(cfg.probe);
     } catch (err) {
         info.textContent = `Update-server settings unavailable: ${err.message}`;
+    }
+}
+
+function renderProbe(probe) {
+    const el = document.getElementById('ota-net-probe');
+    if (!el || !probe) return;
+    if (probe.state === 'ok') {
+        el.textContent = `Connection test passed — address ${probe.address}, and the access point came back.`;
+    } else if (probe.state === 'running') {
+        el.textContent = `Connection test running: ${probe.detail}`;
+    } else if (probe.state === 'failed') {
+        el.textContent = `Connection test failed: ${probe.detail}`;
+    } else {
+        el.textContent = 'Connection test not run.';
+    }
+}
+
+// Leaves the access point for up to ~25 s. This page therefore goes dead
+// mid-test, which is expected rather than a fault: the browser has to rejoin
+// PAJONIIIR before the result can be read back.
+async function testOtaNetwork() {
+    const status = document.getElementById('ota-net-status');
+    if (!confirm('The controller will leave PAJONIIIR for up to 25 seconds to test the update network, then return. This page will be unreachable until it does. Continue?')) return;
+    if (status) status.textContent = 'Testing...';
+    try {
+        const response = await fetch('/api/ota/config', {
+            method: 'POST',
+            headers: { 'X-DDJ-Control': '1', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ probe: true })
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || response.statusText);
+        if (status) status.textContent = 'Test started. Rejoin PAJONIIIR and reload to see the result.';
+    } catch (err) {
+        if (status) status.textContent = `Test refused: ${err.message}`;
     }
 }
 

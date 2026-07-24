@@ -138,6 +138,22 @@ static const char *reset_reason_str(void)
     }
 }
 
+/* Adapters between the web layer and wifi_link. Thin on purpose: the only job
+ * is to keep the two components from depending on each other. */
+static int app_probe_start(void)
+{
+    return (int)wifi_link_probe_start();
+}
+
+static void app_probe_status(web_server_probe_status_t *out)
+{
+    if (!out) return;
+    wifi_link_probe_status_t s = wifi_link_probe_status();
+    out->state = (int)s.state;
+    snprintf(out->detail, sizeof(out->detail), "%s", s.detail);
+    snprintf(out->address, sizeof(out->address), "%s", s.address);
+}
+
 #if CONFIG_AUDIO_RECORDER_ENABLED
 // Settings RECORD button -> master-output microSD recorder. Recording taps the
 // exact post-limiter MAIN block, so it needs an established output rate.
@@ -322,6 +338,10 @@ void app_main(void)
     // playback state are fully initialized, so web requests cannot race boot.
     /* Every controller/UI event resets the idle screensaver, and one that
      * wakes it is consumed there rather than acted on. */
+    /* wifi_link already owns web_server's lifetime, so the web layer reaches
+     * the connectivity probe through here rather than calling back into it. */
+    web_server_set_probe_hooks(app_probe_start, app_probe_status);
+
     deck_core_set_activity_cb(ui_activity_notice);
     ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
 #if CONFIG_AUDIO_RECORDER_ENABLED

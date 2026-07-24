@@ -2,6 +2,7 @@
 #include "wifi_link_retry.h"
 #include "web_server.h"
 #include "service_log.h"
+#include "app_settings.h"
 #include "esp_heap_caps.h"
 
 #include "esp_check.h"
@@ -340,6 +341,92 @@ esp_err_t wifi_link_restore_ap(void)
 bool wifi_link_is_sta(void)
 {
     return s_sta_mode;
+}
+
+/* ── One-shot connectivity probe ──────────────────────────────────────────── */
+
+static wifi_link_probe_status_t s_probe;
+static volatile bool s_probe_running;
+
+static void probe_note(wifi_link_probe_state_t state, esp_err_t err,
+                       const char *detail)
+{
+    s_probe.state = state;
+    s_probe.last_error = err;
+    snprintf(s_probe.detail, sizeof(s_probe.detail), "%s", detail ? detail : "");
+}
+
+static void wifi_link_probe_task(void *arg)
+{
+    (void)arg;
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
+    app_settings_ota_get_ssid(ssid, sizeof(ssid));
+    app_settings_ota_copy_password(pass, sizeof(pass));
+
+    probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "joining service network");
+    s_probe.address[0] = '\0';
+
+    /* 20 s: long enough for a slow DHCP lease, short enough that a network
+     * which will never answer does not strand the deck off its own AP. */
+    esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, 20000u);
+    /* The passphrase has done its job; do not leave it on this stack. */
+    memset(pass, 0, sizeof(pass));
+
+    if (rc == ESP_OK) {
+        esp_netif_ip_info_t ip = {0};
+        if (s_sta_netif && esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
+            snprintf(s_probe.address, sizeof(s_probe.address), IPSTR, IP2STR(&ip.ip));
+        }
+        probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "connected, returning to AP");
+        /* Hold briefly so the address is observable on the deck's own display
+         * before the AP comes back and the web client can read it. */
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    } else {
+        probe_note(WIFI_LINK_PROBE_RUNNING, rc,
+                   rc == ESP_ERR_TIMEOUT ? "no address from network"
+                                         : "association refused");
+    }
+
+    /* Unconditional, and the reason the whole probe exists: getting back. */
+    esp_err_t back = wifi_link_restore_ap();
+    if (back != ESP_OK) {
+        probe_note(WIFI_LINK_PROBE_FAILED, back, "AP DID NOT COME BACK");
+    } else if (rc == ESP_OK) {
+        probe_note(WIFI_LINK_PROBE_OK, ESP_OK, "round trip complete");
+    } else {
+        s_probe.state = WIFI_LINK_PROBE_FAILED;   /* keep the failure detail */
+    }
+
+    s_probe_running = false;
+    vTaskDelete(NULL);
+}
+
+esp_err_t wifi_link_probe_start(void)
+{
+    if (s_probe_running) return ESP_ERR_INVALID_STATE;
+    if (!s_active || s_sta_mode) return ESP_ERR_INVALID_STATE;
+
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    app_settings_ota_get_ssid(ssid, sizeof(ssid));
+    if (ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+
+    s_probe_running = true;
+    probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "starting");
+    s_probe.address[0] = '\0';
+    /* 5 KiB: the task itself does little, but wifi_link_switch_to_sta runs the
+     * netif and association work on it. */
+    if (xTaskCreate(wifi_link_probe_task, "wifi_probe", 5120, NULL, 4, NULL) != pdPASS) {
+        s_probe_running = false;
+        probe_note(WIFI_LINK_PROBE_FAILED, ESP_ERR_NO_MEM, "could not start task");
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+wifi_link_probe_status_t wifi_link_probe_status(void)
+{
+    return s_probe;
 }
 
 esp_err_t wifi_link_stop(void)
