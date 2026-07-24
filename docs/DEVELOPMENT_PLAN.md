@@ -16,7 +16,8 @@ Status: current phase ledger, audited 2026-07-17.
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
-| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
+| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; both targets matched at `RC1-254-g21f21963` 2026-07-24 |
+| Pull OTA (P4, Wi-Fi STA) | **Implemented and proven end to end on hardware 2026-07-24**: AP→STA→AP, HTTPS check against `pajoniiir.zadar.click/ota`, signed-bundle download + verify + install + reboot. Follow-ups: check should offer newer-only (not just different), and mDNS/dynamic Host allow-list not yet done |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |

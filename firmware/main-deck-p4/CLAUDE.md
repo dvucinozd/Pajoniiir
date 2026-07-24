@@ -1,9 +1,15 @@
 # DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-205-gdbda7a83` on `ota_1`; the S3 is **not** matched and
-still runs `RC1-168-gb69f1b19`, so re-match both boards before any acceptance
-run. The RC1-168 baseline added the unified ANLZ metadata loader, the structured
+Documentation status: current developer guide, audited 2026-07-21 (version line
+refreshed 2026-07-24). Both boards are matched at `RC1-254-g21f21963`. Since the
+last full audit the notable additions are: Beat FX Flanger re-tuned and all four
+effects given a headroom soft-clip; the loop-timing fix (the loop no longer takes
+effect ~2 s late); the idle screensaver; the microSD recorder compiled out by
+default (`CONFIG_AUDIO_RECORDER_ENABLED`, off); the SoftAP SSID corrected to
+`PAJONIIIR` (three i's) and no longer advertising itself as a gateway; and **pull
+OTA** — the P4 leaving its AP for a temporary Wi-Fi STA visit to check and install
+signed updates from `pajoniiir.zadar.click/ota`, proven end to end on hardware.
+The RC1-168 baseline added the unified ANLZ metadata loader, the structured
 microSD service journal (`GET /api/diagnostic-log`) and the master-output
 recorder (Settings control plus guarded `/api/recording`); the recorder's
 functional `.wav` acceptance passed on hardware. RC1-170/171 add recorder push
