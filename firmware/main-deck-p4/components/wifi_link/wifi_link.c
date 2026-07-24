@@ -1,4 +1,5 @@
 #include "wifi_link.h"
+#include "wifi_link_retry.h"
 #include "web_server.h"
 #include "service_log.h"
 #include "esp_heap_caps.h"
@@ -199,6 +200,10 @@ esp_err_t wifi_link_stop(void)
 static void wifi_link_worker(void *arg)
 {
     (void)arg;
+    /* Per-worker, not global: the worker exits once desired == active, so a
+     * later operator request spawns a fresh one with a fresh budget. */
+    wifi_link_retry_t retry;
+    wifi_link_retry_reset(&retry);
     for (;;) {
         xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
         bool desired = s_desired;
@@ -245,7 +250,40 @@ static void wifi_link_worker(void *arg)
                                   "rc/stack words left");
             }
             service_log_sync();
+
+            if (start_rc != ESP_OK) {
+                /* Without this the loop simply comes round again - active is
+                 * still false, desired is still true - and re-runs the whole
+                 * ESP-Hosted and Wi-Fi bring-up with no delay, forever. Bound
+                 * it, back off, and after the third failure give up and leave
+                 * the radio off until the operator asks again. */
+                uint32_t wait_ms = wifi_link_retry_note_failure(&retry);
+                if (wait_ms == 0u) {
+                    ESP_LOGE(TAG, "Wi-Fi start failed %u times; giving up",
+                             (unsigned)wifi_link_retry_attempts(&retry));
+                    service_log_event(SERVICE_LOG_WIFI_FAILED, SERVICE_LOG_ERROR,
+                                      2u, (uint32_t)start_rc,
+                                      (uint32_t)wifi_link_retry_attempts(&retry),
+                                      0u, 0u, "giving up, radio stays off");
+                    service_log_sync();
+                    /* Stop asking for it, so the loop can exit rather than
+                     * spin: a further attempt needs a new operator request. */
+                    xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+                    s_desired = false;
+                    xSemaphoreGive(s_ctrl_lock);
+                    /* Leave nothing half-initialised behind. */
+                    wifi_link_stop();
+                    continue;
+                }
+                ESP_LOGW(TAG, "Wi-Fi start failed (attempt %u); retrying in %u ms",
+                         (unsigned)wifi_link_retry_attempts(&retry),
+                         (unsigned)wait_ms);
+                vTaskDelay(pdMS_TO_TICKS(wait_ms));
+                continue;
+            }
+            wifi_link_retry_reset(&retry);
         } else {
+            wifi_link_retry_reset(&retry);
             wifi_link_stop();
             service_log_event(SERVICE_LOG_WIFI_STOPPED, SERVICE_LOG_INFO,
                               1u,

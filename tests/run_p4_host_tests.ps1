@@ -1305,6 +1305,18 @@ $tests = @(
         )
     },
     @{
+        Name = "wifi_link_retry"
+        Dir = "tests/wifi_link_retry"
+        Target = "test_wifi_link_retry.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/wifi_link/include",
+            "-o", "test_wifi_link_retry.exe",
+            "test_wifi_link_retry.c",
+            "../../firmware/main-deck-p4/components/wifi_link/wifi_link_retry.c"
+        )
+    },
+    @{
         Name = "p4_ota_pull_config"
         Dir = "tests/p4_ota_pull_config"
         Target = "test_p4_ota_pull_config.exe"
