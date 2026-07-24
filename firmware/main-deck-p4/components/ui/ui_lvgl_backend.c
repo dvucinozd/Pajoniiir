@@ -1,4 +1,5 @@
 #include "ui_lvgl_backend.h"
+#include "ui.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -507,6 +508,10 @@ static void ui_touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     esp_lcd_touch_read_data(tp);
     esp_err_t rc = esp_lcd_touch_get_data(tp, &point, &cnt, 1);
     if (rc == ESP_OK && cnt > 0) {
+        /* Any touch counts as activity. The screensaver is a separate LVGL
+         * screen with no widgets, so a dismissing touch cannot also press
+         * whatever sits underneath. */
+        (void)ui_activity_notice();
         data->point.x = point.x;
         data->point.y = point.y;
         data->state   = LV_INDEV_STATE_PRESSED;

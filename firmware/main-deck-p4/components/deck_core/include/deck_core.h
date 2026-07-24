@@ -108,6 +108,16 @@ typedef struct {
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck);
 
 // Queue a control event (from touch screen or other source).
+/* Called for every queued controller/UI event, from whatever task produced
+ * it. Returning true means the event was consumed elsewhere (the idle
+ * screensaver spent it on waking up) and must not reach the deck.
+ *
+ * A callback rather than a direct call so deck_core keeps no dependency on
+ * the UI component, the same way the Wi-Fi toggle is wired.
+ */
+typedef bool (*deck_core_activity_cb_t)(void);
+void deck_core_set_activity_cb(deck_core_activity_cb_t cb);
+
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
 
 // Reset the deck state synchronously (on track load).

@@ -18,6 +18,7 @@
 #include "ui_settings.h"
 #include "ui_status.h"
 #include "splash_screen.h"
+#include "ui_idle.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,6 +58,26 @@
 #ifdef WIN32
 #define UI_UPDATE_PERIOD_MS 16u
 #endif
+
+/* ── Idle screensaver ─────────────────────────────────────────────────────── */
+
+/* Two minutes, matching the plan. Step 5 moves this to a persisted Settings
+ * entry with an Off position; until then it is the compile-time default so the
+ * behaviour can be exercised on hardware. */
+#define UI_IDLE_DEFAULT_TIMEOUT_MS (2u * 60u * 1000u)
+
+static ui_idle_t s_idle;
+/* Written by any task, read by the UI task. A lost concurrent set only delays
+ * the dismissal by one 16 ms tick, so a plain volatile flag is sufficient and
+ * keeps deck_core_queue_event free of locks. */
+static volatile bool s_idle_activity_flag;
+static volatile bool s_idle_shown_pub;
+
+bool ui_activity_notice(void)
+{
+    s_idle_activity_flag = true;
+    return s_idle_shown_pub;
+}
 
 static const char *TAG = "ui";
 
@@ -879,6 +900,11 @@ esp_err_t ui_init(void) {
 
     ui_library_load_initial_track();
 
+#ifndef WIN32
+    ui_idle_init(&s_idle, UI_IDLE_DEFAULT_TIMEOUT_MS,
+                 (uint32_t)(esp_timer_get_time() / 1000));
+#endif
+
     // Keep the simulator's historical 16 ms timer. Firmware updates once per
     // physical panel refresh so waveform work is phase-locked to DSI scanout.
 #ifdef WIN32
@@ -1011,6 +1037,47 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
 #endif
 }
 
+
+#ifndef WIN32
+static uint32_t ui_now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static void ui_idle_service(const ui_frame_context_t *ctx)
+{
+    uint32_t now = ui_now_ms();
+    if (s_idle_activity_flag) {
+        s_idle_activity_flag = false;
+        ui_idle_notice_activity(&s_idle, now);
+    }
+
+    bool playing = false;
+    for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
+        if (ctx->deck_state[d].playing) { playing = true; break; }
+    }
+    /* The recorder is compiled out by default; the inhibit stays in the pure
+     * helper so re-enabling it needs no rediscovery here. */
+    bool recording = false;
+
+    switch (ui_idle_tick(&s_idle, now, playing, recording)) {
+    case UI_IDLE_ACTION_SHOW:
+        splash_screen_screensaver_show();
+        s_idle_shown_pub = true;
+        break;
+    case UI_IDLE_ACTION_HIDE:
+        splash_screen_screensaver_hide();
+        s_idle_shown_pub = false;
+        /* LVGL repaints the restored tab, which erases the direct-PPA
+         * waveforms exactly as a tab switch does. */
+        ui_overview_note_screen_restored();
+        break;
+    default:
+        break;
+    }
+}
+#endif
+
 void ui_update(void) {
 #ifndef WIN32
     uint64_t update_start_us = 0;
@@ -1031,6 +1098,9 @@ void ui_update(void) {
 
     ui_frame_context_t ctx;
     ui_build_frame_context(&ctx);
+#ifndef WIN32
+    ui_idle_service(&ctx);
+#endif
     ui_library_update(&ctx);
 
 #ifdef WIN32

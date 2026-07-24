@@ -2650,9 +2650,20 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     return ESP_OK;
 }
 
+static deck_core_activity_cb_t s_activity_cb = NULL;
+
+void deck_core_set_activity_cb(deck_core_activity_cb_t cb)
+{
+    s_activity_cb = cb;
+}
+
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev)
 {
     if (!s_queue || !ev) return ESP_ERR_INVALID_ARG;
+    /* Single choke point for every FLX4 button, jog, fader and web mutation.
+     * Swallowing the waking event here is what stops a PLAY press that
+     * dismisses the screensaver from also starting the deck. */
+    if (s_activity_cb && s_activity_cb()) return ESP_OK;
     if (xQueueSend(s_queue, ev, 0) != pdTRUE) {
         s_drop_count++;
         TickType_t now = xTaskGetTickCount();

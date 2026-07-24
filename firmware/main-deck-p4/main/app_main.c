@@ -320,6 +320,9 @@ void app_main(void)
     // Settings callbacks are published only after their downstream services
     // exist.  A saved Wi-Fi setting is likewise activated after the UI and
     // playback state are fully initialized, so web requests cannot race boot.
+    /* Every controller/UI event resets the idle screensaver, and one that
+     * wakes it is consumed there rather than acted on. */
+    deck_core_set_activity_cb(ui_activity_notice);
     ui_settings_set_wifi_toggle_cb(wifi_link_request_enable);
 #if CONFIG_AUDIO_RECORDER_ENABLED
     ui_settings_set_recording_toggle_cb(on_recording_toggle);

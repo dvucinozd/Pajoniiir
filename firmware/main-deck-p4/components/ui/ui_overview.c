@@ -389,6 +389,15 @@ static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
 static uint8_t s_overview_prev_tab = 0xFFu;
+
+/* Another LVGL screen covered ours and LVGL will repaint the whole tab when it
+ * comes back, erasing the direct-PPA waveforms. Forcing the tab-return path to
+ * fire is exactly the recovery it already performs, so reuse it rather than
+ * inventing a second one. */
+void ui_overview_note_screen_restored(void)
+{
+    s_overview_prev_tab = 0xFFu;
+}
 static uint8_t s_overview_zoom_step = 2u;
 #ifndef WIN32
 static uint8_t s_overview_wave_load_reblit_remaining[DECK_CORE_DECK_COUNT];
@@ -2294,7 +2303,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
      * so both decks are restored even while paused (center unchanged would
      * otherwise skip the redraw). The old unconditional 1 Hz cue-marker reset
      * used to mask this by rebuilding the strip every second. */
-    if (ctx->active_tab == 0 && s_overview_prev_tab != 0) {
+    if (ctx->active_tab == 0 && s_overview_prev_tab != 0u) {
         ui_overview_arm_all_wave_reblits();
         for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
             s_overview_decks[i].last_wave_center_ms = UINT32_MAX;

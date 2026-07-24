@@ -32,3 +32,13 @@ void      ui_lvgl_lock(void);
 void      ui_lvgl_unlock(void);
 
 void ui_get_deck_track_info(uint8_t deck, char *out_title, size_t title_max, char *out_artist, size_t artist_max, uint16_t *out_bpm, uint32_t *out_duration_ms);
+
+/**
+ * Note operator activity for the idle screensaver. Safe to call from any task:
+ * it only sets a flag, and the UI task does the LVGL work on its next tick.
+ *
+ * Returns true when the screensaver was showing, which means this event has
+ * been spent dismissing it and the caller must not also act on it — a PLAY
+ * press that wakes the screen should not also start the deck.
+ */
+bool ui_activity_notice(void);

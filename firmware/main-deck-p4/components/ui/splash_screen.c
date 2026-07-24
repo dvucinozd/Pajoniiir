@@ -15,7 +15,6 @@ static const char *TAG = "splash";
 
 // Keep a handle to the splash screen and container so we can clean up later
 static lv_obj_t *splash_scr = NULL;
-static lv_obj_t *splash_container = NULL;
 
 /**
  * Animation execution callback.  Updates the opacity of an individual
@@ -49,7 +48,6 @@ static void timer_cb(lv_timer_t *timer)
     if (splash_scr) {
         lv_obj_del(splash_scr);
         splash_scr = NULL;
-        splash_container = NULL;
     }
     
     // 3. Stop and delete the timer
@@ -59,35 +57,87 @@ static void timer_cb(lv_timer_t *timer)
 /**
  * @see splash_screen.h
  */
+/*
+ * Build the animated wordmark on a fresh screen. Shared by the boot splash and
+ * the idle screensaver so the two can never drift apart visually; `caption` is
+ * NULL at boot and carries the screensaver's prompt otherwise.
+ */
+static lv_obj_t *splash_build(const char *caption);
+
 void splash_screen_show(void (*loaded_cb)(void))
 {
     ESP_LOGI(TAG, "Displaying splash screen with text 'PajoNiiiR'...");
 
+    splash_scr = splash_build(NULL);
+
+    // Create a one-shot timer to end the splash after 3 seconds.  The timer will call timer_cb.
+    (void)lv_timer_create(timer_cb, 3000, (void *)loaded_cb);
+
+    // Load the splash screen using LVGL 9 screen load
+    lv_screen_load(splash_scr);
+}
+
+/* ── Idle screensaver ─────────────────────────────────────────────────────── */
+
+static lv_obj_t *saver_scr = NULL;
+static lv_obj_t *saver_prev_scr = NULL;
+
+void splash_screen_screensaver_show(void)
+{
+    if (saver_scr) return;
+    saver_prev_scr = lv_screen_active();
+    saver_scr = splash_build("press any button or don't...");
+    if (!saver_scr) return;
+    lv_screen_load(saver_scr);
+    ESP_LOGI(TAG, "screensaver on");
+}
+
+void splash_screen_screensaver_hide(void)
+{
+    if (!saver_scr) return;
+    /* Load the previous screen first: deleting the screen LVGL is currently
+     * showing leaves it drawing into freed objects. */
+    if (saver_prev_scr) {
+        lv_screen_load(saver_prev_scr);
+    }
+    lv_obj_del(saver_scr);   /* also cancels the per-label opacity animations */
+    saver_scr = NULL;
+    saver_prev_scr = NULL;
+    ESP_LOGI(TAG, "screensaver off");
+}
+
+bool splash_screen_screensaver_active(void)
+{
+    return saver_scr != NULL;
+}
+
+static lv_obj_t *splash_build(const char *caption)
+{
     // Create a new blank screen for the splash and store it globally so we can clean up later
-    splash_scr = lv_obj_create(NULL);
-    lv_obj_clear_flag(splash_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     
     // Set background color to black (COL_BG in ui_theme is dark, but let's make it explicitly black for splash)
-    lv_obj_set_style_bg_color(splash_scr, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(splash_scr, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
     // Create a container for each character.  Use the flex layout to arrange labels horizontally.
-    splash_container = lv_obj_create(splash_scr);
-    lv_obj_clear_flag(splash_container, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_opa(splash_container, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(splash_container, 0, 0);
-    lv_obj_set_style_border_width(splash_container, 0, 0);
-    lv_obj_set_size(splash_container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_t *container = lv_obj_create(scr);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(container, 0, 0);
+    lv_obj_set_style_border_width(container, 0, 0);
+    lv_obj_set_size(container, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     // Use flex layout in LVGL 9
-    lv_obj_set_flex_flow(splash_container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(splash_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     static const char *splash_text = "PajoNiiiR";
     const size_t len = strlen(splash_text);
     // Create a label for each character
     for (size_t i = 0; i < len; i++) {
-        lv_obj_t *lbl = lv_label_create(splash_container);
+        lv_obj_t *lbl = lv_label_create(container);
         char buf[2];
         buf[0] = splash_text[i];
         buf[1] = '\0';
@@ -116,11 +166,18 @@ void splash_screen_show(void (*loaded_cb)(void))
     }
 
     // Center the container on the screen
-    lv_obj_center(splash_container);
+    lv_obj_center(container);
 
-    // Create a one-shot timer to end the splash after 3 seconds.  The timer will call timer_cb.
-    (void)lv_timer_create(timer_cb, 3000, (void *)loaded_cb);
+    if (caption) {
+        /* Deliberately static: the wordmark already animates nine labels, and
+         * the 2026-07-09 stability pass showed this panel is sensitive to the
+         * invalidate budget. A second animation buys nothing. */
+        lv_obj_t *cap = lv_label_create(scr);
+        lv_label_set_text(cap, caption);
+        lv_obj_set_style_text_font(cap, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(cap, lv_color_hex(0x808080), 0);
+        lv_obj_align(cap, LV_ALIGN_BOTTOM_MID, 0, -24);
+    }
 
-    // Load the splash screen using LVGL 9 screen load
-    lv_screen_load(splash_scr);
+    return scr;
 }
