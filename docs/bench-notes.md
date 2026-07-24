@@ -1020,3 +1020,82 @@ ordering.
   5, both FLACs and both WAVs — is a dead PDB row, so picking any of them to
   "test FLAC" tests a missing file instead. Use `/api/diagnostic-log` to read
   the actual error code before concluding a format is broken.
+
+## 2026-07-24 — Loop took effect ~2 s late
+
+Reported as "the loop sometimes skips a beat at the beginning". Fixed in
+`RC1-229-g6b54fcad`.
+
+### Cause
+
+The decoder runs ahead of playback — measured on hardware, steadily:
+
+```
+ring_used1 = 86272-86912 frames = 1.95-1.97 s ahead
+```
+
+`audio_engine_deck_set_loop()` sets three fields and nothing else, and the
+decode-side wrap seeks back to `loop_start` with `AE_SEEK_REASON_LOOP`, which
+deliberately does not flush the ring. So arming a loop whose out point is at or
+behind the playhead leaves that whole ~1.96 s lead already published — and it
+plays before the loop's first pass. The ring never dips across an arm:
+
+```
+PRE   ring_used=86528     >>> ARM loop_4
+T+1   ring_used=86528         (no flush)
+T+2   ring_used=86016
+```
+
+### Why "sometimes" — it is purely tempo
+
+The extra material is always ~1.96 s, so whether it lands on the grid depends
+only on the track:
+
+| BPM | beat | 1.96 s in beats | off-grid by |
+| --- | --- | --- | --- |
+| 108 | 556 ms | 3.53 | 294 ms — half a beat |
+| 120 | 500 ms | 3.92 | 40 ms |
+| 125 | 480 ms | 4.08 | 40 ms |
+| 128 | 469 ms | 4.18 | 85 ms |
+| 135 | 444 ms | 4.41 | 183 ms |
+
+That is the whole "sometimes": at 120-125 it sounds nearly right, at 135 and 108
+it clearly lurches.
+
+### Fix
+
+The wrap withdraws what it published past `loop_end`. It splits in two because
+the push loop runs *after* the wrap check: already-published frames are taken
+back from the store, and the current batch is clamped by a separate
+`publish_frames` limit.
+
+The trim is **precise, not a flush** — that distinction matters:
+
+- manual LOOP IN/OUT: out point is at the playhead, so the whole runway goes and
+  the loop starts immediately, as a CDJ does;
+- beat-loop pad / `loop_4`: out point is ahead of the playhead, so only tens of
+  ms are outside the loop. A flush here would have discarded nearly two seconds
+  of valid in-loop audio and opened a real gap.
+
+It also fixes the waveform playhead drifting out of the loop region: the output
+task's bookkeeping wraps on time at `loop_end`, and now the store's wrap point
+is exactly there instead of approximately there.
+
+### Verified on hardware
+
+`loop_4` on a 129 BPM track (4 beats = 1860.5 ms expected):
+
+```
+position range observed : 1858 ms
+wrap periods (ms)       : 1835, 1866, 1870, 1852, 1894, 1851  -> mean 1861.3
+output_late_count       : 0
+```
+
+Mean is 0.8 ms off the expected length over six passes; the ±30 ms scatter is
+the HTTP polling interval, not the loop. A surviving per-pass overshoot would
+have pushed the mean to ~1886 ms.
+
+**Not verified:** the manual LOOP IN/OUT case — the severe one, where the whole
+1.96 s runway is withdrawn — needs the FLX4, which is not enumerating (see the
+bench-power note). `loop_4` only ever had ~56 ms outside the loop, so hardware
+testing so far exercises the mild case plus the steady state.
