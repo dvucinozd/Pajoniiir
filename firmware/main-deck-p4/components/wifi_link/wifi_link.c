@@ -129,6 +129,27 @@ static esp_err_t start_web_ap(void)
         ip_info.netmask.addr = ESP_IP4TOADDR(255, 255, 255, 0);
         esp_netif_dhcps_stop(s_ap_netif);
         esp_netif_set_ip_info(s_ap_netif, &ip_info);
+
+        /* Hand out an address, but do not claim to be the way to the internet.
+         *
+         * Offering ourselves as router and DNS made every client install a
+         * default route through a deck that leads nowhere, so joining this AP
+         * killed the operator's internet - on a phone completely, since it has
+         * no second interface to fall back on. The deck is a local island; it
+         * has no business being anyone's default gateway.
+         *
+         * Clients still reach 192.168.4.1 because it is on-link. The cost is
+         * that captive-portal auto-open stops working and the address is typed
+         * by hand, which the operator accepted in exchange for keeping
+         * internet, and which mDNS will make moot. */
+        uint8_t offer = 0;
+        esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET,
+                               ESP_NETIF_ROUTER_SOLICITATION_ADDRESS,
+                               &offer, sizeof(offer));
+        esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET,
+                               ESP_NETIF_DOMAIN_NAME_SERVER,
+                               &offer, sizeof(offer));
+
         esp_netif_dhcps_start(s_ap_netif);
     }
 
