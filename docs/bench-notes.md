@@ -1284,3 +1284,42 @@ The AP now hands out addresses without advertising a router or DNS. Clients
 reach 192.168.4.1 because it is on-link and keep their existing route out. The
 cost is that captive-portal auto-open stops working and the address is typed by
 hand; accepted explicitly, and moot once mDNS lands.
+
+## 2026-07-24 — Pull OTA download + install proven end to end
+
+`RC1-254-g21f21963` running, `CHECK FOR UPDATE` offered `RC1-246-g63997094`
+(older, deliberately - see below), `INSTALL` downloaded it over the service
+network, verified the signature, wrote the inactive slot and rebooted. The deck
+came back on `RC1-246`. That is the whole pipeline confirmed on hardware:
+
+```
+AP -> STA -> GET latest.json (TLS) -> parse -> GET .ddjota (2.3 MB, chunked)
+   -> manifest signature verify -> flash inactive slot -> restore AP -> reboot
+```
+
+### Why the target was older, on purpose
+
+The channel served `RC1-246`, older than the running build, and the comparison
+is "differs" not "newer". Two reasons, both deliberate:
+
+- first-ever download test: if it fails mid-flash, the worst landing is a build
+  the deck has already run, not an unproven one;
+- on a bench, downgrade is a legitimate operation.
+
+For production this is wrong: a deck should not silently offer to move backward.
+Left as a follow-up - the check needs "newer only", or at least a clear "this is
+older" label before install.
+
+### Two real findings from the session
+
+- **"Failed to fetch" on INSTALL was not a network fault.** The offer had
+  expired (its state lives in RAM and a reboot clears it), so the install
+  returned a clean HTTP 400 - which the UI rendered as a generic fetch failure.
+  The fix is procedural for now: CHECK, then INSTALL while the result is fresh.
+  Worth a UI follow-up so an expired offer says so instead of looking like a
+  dropped connection.
+- **The AP hands out only 4 leases and the operator plus this workstation
+  routinely need 2.** Even with max_connection raised to 4, a Windows adapter
+  that associates without completing DHCP sits on 169.254 and looks identical to
+  a full AP. Re-associating usually fixes it; occasionally it does not, and that
+  cost real time here.
