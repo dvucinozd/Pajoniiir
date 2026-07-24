@@ -961,3 +961,56 @@ failed, both times because the reference material never approached the ceiling.
 on top of unity dry should have its peak gain measured before it is called done
 — it is a two-minute host probe, and the failure it catches is inaudible until
 someone plays a loud track.
+
+## 2026-07-24 — Recorder shelved (compiled out by default)
+
+`CONFIG_AUDIO_RECORDER_ENABLED`, default `n`. Nothing deleted; the component,
+its host tests and the UI/API surface stay in the tree, only the wiring is
+gated. Binary is 12,976 bytes smaller with it off.
+
+### Why
+
+The recorder needs 176 kB/s and cards deliver ~12 MB/s, so throughput was never
+the problem. The problem is a card that stops answering for hundreds of
+milliseconds while it does internal housekeeping; a burst of those drains the
+2.95 s ring regardless of how the writer is arranged.
+
+Every firmware-side contribution was eliminated first, and none was the cause —
+see the "Why it was shelved" table in `DEVELOPMENT_PLAN.md`. After all of it,
+~370 ms of `fwrite` survived while `gate_wait` fell to single-digit ms: the
+firmware was no longer in the way at all.
+
+### What the new card measurement actually showed
+
+A replacement card was fitted and the soak was **cut short by the decision to
+shelve the feature**, so there is no completed 25-minute run for it. What exists
+is the first five minutes:
+
+```
+T+0    fwrite  72.9 ms   ring 13/508   drops 0
+T+5    fwrite  86.3 ms   ring 27/508   drops 0
+```
+
+Encouraging against the old card's ~370 ms, but **five minutes is not a result**
+— cards begin stalling once they fill and internal remapping starts, which is
+precisely why the protocol is 25 minutes. Do not cite these numbers as evidence
+the card swap fixed anything.
+
+The old card was measured separately on a PC (`tools/sd_card_latency_probe.ps1`,
+256 MB in 32 KiB WriteThrough chunks):
+
+```
+median 1.93 ms   p99 8.86 ms   p99.9 39.03 ms   MAX 1415 ms
+>=360 ms: 1      throughput 11.9 MB/s (recorder needs 0.18)
+```
+
+One 1.4 s stall on a PC, against bursts of eight ~360 ms stalls seen on the P4.
+Same failure mode, rarer on the PC — better power delivery and different request
+ordering.
+
+### Two loose ends found during the soak
+
+- **Loading a track killed an in-progress recording.** `deck2 <- track 75` at
+  01:39:45, recorder `STOPPED` at 01:39:54. Never diagnosed.
+- 96 kHz/24-bit FLAC fails to load on deck 1 (`ERROR`); mp3 on the same deck is
+  fine. Probably unrelated, but it was found here.

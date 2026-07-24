@@ -24,7 +24,9 @@ RC1-168 adds, on top of the earlier code-review remediation and Beat FX
 Flanger/Delay: the single-resolver ANLZ metadata path, the structured
 `/sd/logs/system.log` service journal with its read-only
 `GET /api/diagnostic-log`, the master-output microSD recorder with its Settings
-control and guarded `/api/recording` API, and two fixes found on hardware (the
+control and guarded `/api/recording` API (**compiled out by default since
+2026-07-24** — see the shelving note in `DEVELOPMENT_PLAN.md`), and two fixes
+found on hardware (the
 USB preload media gate is now released between chunks, and the httpd URI-handler
 limit sits above the registered endpoint count). Accepted on hardware in this
 build: the recorder functional `.wav` acceptance and the service journal.

@@ -17,7 +17,7 @@ Status: current phase ledger, audited 2026-07-17.
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
-| Master-output recorder | Implemented with Settings control and guarded `/api/recording` API; functional `.wav` hardware acceptance passed 2026-07-21 (0 dropped frames) |
+| Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |
 
 The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is
@@ -1911,6 +1911,15 @@ Register the new host test group in `tests/run_p4_host_tests.ps1`.
 
 ## TODO: Record The P4 Master Output To microSD
 
+> **Shelved 2026-07-24 — compiled out by default.** The feature is complete and
+> was functionally accepted, but every remaining problem is the microSD card's
+> write latency rather than the firmware's, and it is not on the critical path.
+> It now sits behind `CONFIG_AUDIO_RECORDER_ENABLED` (default `n`): the code,
+> its host tests and the Settings/API surface all remain in the tree, but
+> nothing is compiled or wired in. See "Why it was shelved" at the end of this
+> section before turning it back on. Everything below describes the feature as
+> built and stays accurate for when it is re-enabled.
+
 Status: firmware implementation complete on branch `codex/p4-master-recorder`
 (2026-07-21), signed and OTA-deployed as `RC1-147-gb9bc8134` on P4 (S3 remains
 `RC1-146-g75feb6f1`; the recorder is P4-only). Implemented across seven slices:
@@ -2185,6 +2194,48 @@ live post-mix recorder coverage.
    `DOCUMENTATION_STATUS.md` and the P4 component guide with measured results.
 9. Run `git diff --check`, inspect `git status --short`, and explicitly list any
    hardware rows not executed.
+
+### Why it was shelved (2026-07-24)
+
+The recorder needs 176 kB/s. Cards deliver 12 MB/s. Throughput was never the
+issue — the issue is that a card stops answering for hundreds of milliseconds at
+a time while it does internal housekeeping, and a burst of those drains the
+2.95 s ring no matter how the writer is arranged.
+
+Every firmware-side contribution was found and eliminated, and none of them was
+the cause:
+
+| tried | result |
+| --- | --- |
+| PSRAM write staging | made it **worse**: 553 ms -> 1735 ms (bus contention) |
+| checkpoint no longer patches the WAV header | no change: 369.8 ms -> 375.8 ms |
+| stall-burst coalescing + drop rate limiting | fixed a **self-inflicted** loop: stall records were being written to the same card under the same gate, so a burst of stalls generated extra card transactions exactly when the card was already behind (gate_wait 8 ms -> 185 ms) |
+| reduced journal writes | helped the system, not the recorder |
+
+After all of it, roughly **370 ms of `fwrite`** survived, and `gate_wait` fell to
+single-digit milliseconds — that is, the firmware was no longer in the way at
+all.
+
+A replacement card was fitted on 2026-07-24. Early numbers were better
+(`fwrite` 73-89 ms over the first five minutes, ring high-water 27/508, zero
+dropped blocks) but the run was cut short, so **this is not a completed
+measurement** — do not cite it as one. The old card was separately measured on a
+PC with `tools/sd_card_latency_probe.ps1`: median 1.93 ms, p99.9 39 ms, but one
+stall of **1415 ms**, confirming the failure mode is real even if the PC's
+better power delivery makes it rarer than on the P4.
+
+Two things also surfaced during the soak and remain unexplained; anyone
+re-enabling this should expect to meet them:
+
+- **Loading a track killed an in-progress recording.** Log shows the load at
+  01:39:45 and the recorder at `STOPPED` nine seconds later. Never diagnosed.
+- 96 kHz/24-bit FLAC fails to load on deck 1 (`ERROR`) while mp3 on the same
+  deck is fine. Probably unrelated to the recorder, but it was found here.
+
+To re-enable: set `CONFIG_AUDIO_RECORDER_ENABLED=y`. Note that changing
+`sdkconfig.defaults` does **not** modify an existing `sdkconfig` — verify the
+flag in the actual build's `sdkconfig`, or a build that looks enabled will
+silently ship disabled.
 
 ## TODO: Add P4 Pull OTA Through Temporary Wi-Fi STA Mode
 
