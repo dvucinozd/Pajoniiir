@@ -13,6 +13,7 @@ Status: current phase ledger, audited 2026-07-17.
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
+| Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -2692,6 +2693,39 @@ Only after the above says which stage is losing the signal:
   stage;
 - `DOCUMENTATION_STATUS.md` updated to record a real acceptance instead of the
   standing "smoke pending".
+
+## TODO: Small Open Items Found 2026-07-24
+
+Three things surfaced while fixing the loop and shelving the recorder. None is
+blocking, all are cheap, and none has been investigated.
+
+### Dead PDB rows are offered in the library and fail on load
+
+Indices 0, 1, 2 and 5 on the current USB stick — `sample-15s.wav`,
+`Sample_BeeMoved_96kHz24bit.flac`, `file_example_WAV_10MG.wav`,
+`Symphony No.6 (1st movement).flac` — are rekordbox database rows with no file
+behind them. Loading one returns `AUDIO_LOAD_FAILED a1=261 NOT FOUND` and
+leaves the deck in `ERROR`.
+
+They cost a real diagnosis this session: every non-mp3 entry in the library is
+one of these, so a load failure was briefly read as "FLAC is broken" when FLAC
+is fine. Either filter unresolvable rows out of the library listing at load
+time, or mark them in the UI so they cannot be selected by accident.
+
+### Underrun at track start
+
+`AUDIO_UNDERRUN a0=512` fires shortly after a track starts playing, before any
+loop is armed. Separate from the loop-trim regression fixed in
+`RC1-232-g8f6656cb` and never investigated. Now visible live as
+`pcm_underrun1` in `/api/status` rather than only as a journal record.
+
+### Bench power keeps producing BROWNOUT and unexplained POWERON
+
+`boot=84 reset=BROWNOUT` then `boot=85 reset=POWERON` on 2026-07-24, and the
+FLX4 stopped enumerating from boot 85 until it was physically reconnected. This
+has been on the open list since 2026-07-22 and keeps recurring; it also
+contaminates other measurements, because a board that brownouts mid-test looks
+like a firmware fault.
 
 ## TODO: Idle Screensaver
 
