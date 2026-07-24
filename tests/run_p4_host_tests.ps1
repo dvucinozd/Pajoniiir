@@ -1287,6 +1287,18 @@ $tests = @(
         )
     },
     @{
+        Name = "p4_ota_pull_manifest"
+        Dir = "tests/p4_ota_pull_manifest"
+        Target = "test_p4_ota_pull_manifest.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/p4_ota_pull/include",
+            "-o", "test_p4_ota_pull_manifest.exe",
+            "test_p4_ota_pull_manifest.c",
+            "../../firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull_manifest.c"
+        )
+    },
+    @{
         Name = "ui_idle"
         Dir = "tests/ui_idle"
         Target = "test_ui_idle.exe"
