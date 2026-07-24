@@ -174,8 +174,8 @@ static lv_obj_t *splash_build(const char *caption)
          * invalidate budget. A second animation buys nothing. */
         lv_obj_t *cap = lv_label_create(scr);
         lv_label_set_text(cap, caption);
-        lv_obj_set_style_text_font(cap, &lv_font_montserrat_16, 0);
-        lv_obj_set_style_text_color(cap, lv_color_hex(0x808080), 0);
+        lv_obj_set_style_text_font(cap, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(cap, lv_color_hex(0xB0B0B0), 0);
         lv_obj_align(cap, LV_ALIGN_BOTTOM_MID, 0, -24);
     }
 
