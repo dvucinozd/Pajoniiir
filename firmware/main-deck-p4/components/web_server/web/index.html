@@ -262,6 +262,32 @@
         </div>
     </section>
 
+    <!-- ── Pull-OTA service network ──────────────────────────────────────── -->
+    <!--
+      Entry lives here rather than on the deck screen: typing a WPA2
+      passphrase on the touch panel is miserable, and the physical Settings
+      view only needs the action buttons.
+    -->
+    <section class="card collapsible collapsed" id="ota-net-card">
+        <div class="card-head">
+            <h2 class="card-title">UPDATE SERVER</h2>
+            <button class="btn btn-toggle" onclick="toggleCollapse('ota-net-card', this)">SHOW</button>
+        </div>
+        <div class="card-body">
+            <p id="ota-net-info" class="card-info">Reading update-server settings...</p>
+            <p class="maintenance-warning">The controller joins this network only while checking for and downloading an update, then returns to its own <code>PAJONIIIR</code> access point. The passphrase is stored on the deck and is never sent back to this page.</p>
+            <label class="field"><span>Wi-Fi network (SSID)</span>
+                <input id="ota-net-ssid" type="text" maxlength="32" autocomplete="off" placeholder="service network name"></label>
+            <label class="field"><span>Passphrase</span>
+                <input id="ota-net-pass" type="password" maxlength="64" autocomplete="new-password" placeholder="leave blank to keep the stored one"></label>
+            <label class="field"><span>Update base URL</span>
+                <input id="ota-net-url" type="text" maxlength="160" autocomplete="off" placeholder="https://host/ota"></label>
+            <button class="btn btn-ota" id="ota-net-save" onclick="saveOtaNetwork()">SAVE</button>
+            <button class="btn" id="ota-net-clear" onclick="clearOtaNetwork()">CLEAR WI-FI</button>
+            <span id="ota-net-status"></span>
+        </div>
+    </section>
+
     <!-- ── S3 Firmware (status only) ────────────────────────────────────── -->
     <!--
       Read-only on purpose. The P4 has no channel for pushing an S3 image: the

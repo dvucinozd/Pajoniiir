@@ -383,6 +383,80 @@ function toggleCollapse(cardId, btn) {
     if (btn) btn.innerText = collapsed ? 'SHOW' : 'HIDE';
 }
 
+// ── Pull-OTA service network ────────────────────────────────────────────────
+//
+// The passphrase travels in the POST body, never in the URL, and the deck has
+// no route that hands it back: the status read reports only whether one is
+// stored. That is why the field loads blank, and why an empty field means
+// "keep what is saved" rather than "clear it".
+async function refreshOtaNetwork() {
+    const info = document.getElementById('ota-net-info');
+    if (!info) return;
+    try {
+        const response = await fetch('/api/ota/config', { cache: 'no-store' });
+        if (!response.ok) throw new Error(await response.text());
+        const cfg = await response.json();
+        const ssid = document.getElementById('ota-net-ssid');
+        const url = document.getElementById('ota-net-url');
+        // Do not overwrite a field the operator is typing into.
+        if (ssid && document.activeElement !== ssid) ssid.value = cfg.ssid || '';
+        if (url && document.activeElement !== url) url.value = cfg.url || '';
+        info.textContent = cfg.ssid
+            ? `Network: ${cfg.ssid} — passphrase ${cfg.has_password ? 'stored' : 'not set'}`
+            : 'No update server configured.';
+    } catch (err) {
+        info.textContent = `Update-server settings unavailable: ${err.message}`;
+    }
+}
+
+async function saveOtaNetwork() {
+    const status = document.getElementById('ota-net-status');
+    const ssid = document.getElementById('ota-net-ssid');
+    const pass = document.getElementById('ota-net-pass');
+    const url = document.getElementById('ota-net-url');
+    if (!ssid || !pass || !url) return;
+    const payload = { ssid: ssid.value.trim(), url: url.value.trim() };
+    // Only send a passphrase when one was typed, so correcting an SSID does
+    // not require retyping it.
+    if (pass.value.length > 0) payload.password = pass.value;
+    if (status) status.textContent = 'Saving...';
+    try {
+        const response = await fetch('/api/ota/config', {
+            method: 'POST',
+            headers: { 'X-DDJ-Control': '1', 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || response.statusText);
+        // Do not leave the secret in the DOM once the deck has it.
+        pass.value = '';
+        if (status) status.textContent = 'Saved.';
+        refreshOtaNetwork();
+    } catch (err) {
+        if (status) status.textContent = `Rejected: ${err.message}`;
+    }
+}
+
+async function clearOtaNetwork() {
+    const status = document.getElementById('ota-net-status');
+    if (!confirm('Forget the update network, passphrase and URL?')) return;
+    if (status) status.textContent = 'Clearing...';
+    try {
+        const response = await fetch('/api/ota/config', {
+            method: 'POST',
+            headers: { 'X-DDJ-Control': '1', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clear: true })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const pass = document.getElementById('ota-net-pass');
+        if (pass) pass.value = '';
+        if (status) status.textContent = 'Cleared.';
+        refreshOtaNetwork();
+    } catch (err) {
+        if (status) status.textContent = `Failed: ${err.message}`;
+    }
+}
+
 // Fills the P4 update card and the read-only S3 card from one /api/firmware
 // read. The S3 half is reported separately rather than appended to the P4 line,
 // because the two boards drift apart whenever only one of them is updated and a
@@ -554,6 +628,7 @@ function uploadControllerProfile() {
 
 refreshFirmwareStatus();
 refreshControllerProfiles();
+refreshOtaNetwork();
 
 // The S3 card is a live readout, so re-read it periodically — slowly, because
 // this shares five httpd sockets with the 250 ms status poll.
