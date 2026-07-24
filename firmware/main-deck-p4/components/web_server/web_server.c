@@ -293,7 +293,9 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
      * playing: the check is here rather than in wifi_link because wifi_link
      * deliberately knows nothing about decks, and because this is the layer
      * that can tell the operator why. */
-    if (p4_ota_cfg_extract_true(body, len, "probe")) {
+    bool want_probe = p4_ota_cfg_extract_true(body, len, "probe");
+    bool want_check = p4_ota_cfg_extract_true(body, len, "check");
+    if (want_probe || want_check) {
         memset(body, 0, sizeof(body));
         if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
@@ -303,10 +305,10 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                        "probe not wired");
         }
-        esp_err_t rc = (esp_err_t)s_probe_start_fn();
+        esp_err_t rc = (esp_err_t)s_probe_start_fn(want_check ? 1 : 0);
         if (rc == ESP_ERR_INVALID_ARG) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                       "no service network configured");
+                                       "no service network or update URL configured");
         }
         if (rc != ESP_OK) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,

@@ -12,6 +12,7 @@
 #include "app_settings.h"
 #include "media_io_gate.h"
 #include "wifi_link.h"
+#include "p4_ota_pull.h"
 #include "web_server.h"
 #include "service_log.h"
 #include "sdkconfig.h"
@@ -140,14 +141,40 @@ static const char *reset_reason_str(void)
 
 /* Adapters between the web layer and wifi_link. Thin on purpose: the only job
  * is to keep the two components from depending on each other. */
-static int app_probe_start(void)
+static int app_probe_start(int mode)
 {
-    return (int)wifi_link_probe_start();
+    /* 1 = check the update channel, 0 = prove the link only. Both make the
+     * same AP->STA->AP round trip; the check adds one HTTPS GET. */
+    return mode == 1 ? (int)p4_ota_pull_check_start()
+                     : (int)wifi_link_probe_start();
 }
 
 static void app_probe_status(web_server_probe_status_t *out)
 {
     if (!out) return;
+
+    /* Whichever ran more recently is what the operator wants to see. The
+     * update check is reported in preference because it is the operation with
+     * something to say beyond "the link works". */
+    p4_ota_pull_status_t chk = p4_ota_pull_get_status();
+    if (chk.state != P4_OTA_PULL_IDLE) {
+        switch (chk.state) {
+        case P4_OTA_PULL_CHECKING:    out->state = 1; break;
+        case P4_OTA_PULL_UP_TO_DATE:  out->state = 2; break;
+        case P4_OTA_PULL_AVAILABLE:   out->state = 2; break;
+        case P4_OTA_PULL_FAILED:      out->state = 3; break;
+        default:                      out->state = 0; break;
+        }
+        if (chk.state == P4_OTA_PULL_AVAILABLE) {
+            snprintf(out->detail, sizeof(out->detail), "update available: %s",
+                     chk.available_release);
+        } else {
+            snprintf(out->detail, sizeof(out->detail), "%s", chk.detail);
+        }
+        out->address[0] = '\0';
+        return;
+    }
+
     wifi_link_probe_status_t s = wifi_link_probe_status();
     out->state = (int)s.state;
     snprintf(out->detail, sizeof(out->detail), "%s", s.detail);

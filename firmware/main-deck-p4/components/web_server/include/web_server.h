@@ -13,11 +13,11 @@
  */
 typedef struct {
     int  state;          /* 0 idle, 1 running, 2 ok, 3 failed */
-    char detail[48];
+    char detail[96];   /* long enough for "update available: <release>" */
     char address[16];
 } web_server_probe_status_t;
 
-typedef int  (*web_server_probe_start_fn)(void);   /* esp_err_t as int */
+typedef int  (*web_server_probe_start_fn)(int mode);  /* 0 = link probe, 1 = update check; esp_err_t as int */
 typedef void (*web_server_probe_status_fn)(web_server_probe_status_t *out);
 
 void web_server_set_probe_hooks(web_server_probe_start_fn start,

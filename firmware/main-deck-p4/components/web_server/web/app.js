@@ -445,6 +445,28 @@ async function testOtaNetwork() {
     }
 }
 
+// Same AP -> STA -> AP round trip as the link test, plus one HTTPS GET of the
+// channel document. Reports what is available and installs nothing: an update
+// that installs itself the moment it is noticed is the last thing wanted
+// mid-set.
+async function checkForUpdate() {
+    const status = document.getElementById('ota-net-status');
+    if (!confirm('The controller will leave PAJONIIIR for up to 30 seconds to check the update server, then return. Nothing is installed. Continue?')) return;
+    if (status) status.textContent = 'Checking...';
+    try {
+        const response = await fetch('/api/ota/config', {
+            method: 'POST',
+            headers: { 'X-DDJ-Control': '1', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ check: true })
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || response.statusText);
+        if (status) status.textContent = 'Check started. Rejoin PAJONIIIR and reload to see the result.';
+    } catch (err) {
+        if (status) status.textContent = `Check refused: ${err.message}`;
+    }
+}
+
 async function saveOtaNetwork() {
     const status = document.getElementById('ota-net-status');
     const ssid = document.getElementById('ota-net-ssid');
