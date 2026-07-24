@@ -167,28 +167,56 @@ esp_err_t wifi_link_start(void)
     return rc;
 }
 
-esp_err_t wifi_link_stop(void)
+/*
+ * Teardown split into independently owned steps.
+ *
+ * wifi_link_stop() still runs all four in the same order and has exactly the
+ * behaviour it always had; the split exists because an AP-to-STA transition
+ * needs the first two without the last two. Tearing down ESP-Hosted only to
+ * recreate the C6 link a moment later is both slow and an unnecessary chance
+ * for the transport to come back wrong.
+ *
+ * Each step is best-effort and idempotent, so a partial bring-up from a failed
+ * start still unwinds completely.
+ */
+
+/* Captive DNS and the HTTP service. Safe to call when they are not running. */
+static void stop_ap_services(void)
 {
-    // Tear down in reverse order; each step is best-effort so a partial
-    // bring-up (from a failed start) still fully unwinds.
     dns_server_stop();
     web_server_stop();
+}
 
-    if (s_wifi_ready) {
-        esp_wifi_stop();
-        esp_wifi_deinit();
-        s_wifi_ready = false;
-    }
-    if (s_ap_netif) {
-        esp_netif_destroy_default_wifi(s_ap_netif);
-        s_ap_netif = NULL;
-    }
-    // Release the ESP-Hosted transport / C6 link so it stops consuming RAM and
-    // radio while the remote is off.
-    if (s_hosted_ready) {
-        esp_hosted_deinit();
-        s_hosted_ready = false;
-    }
+static void stop_wifi_stack(void)
+{
+    if (!s_wifi_ready) return;
+    esp_wifi_stop();
+    esp_wifi_deinit();
+    s_wifi_ready = false;
+}
+
+static void stop_ap_netif(void)
+{
+    if (!s_ap_netif) return;
+    esp_netif_destroy_default_wifi(s_ap_netif);
+    s_ap_netif = NULL;
+}
+
+/* Releases the C6 link so it stops drawing RAM and radio. Deliberately the
+ * last thing to go and the one an AP/STA switch must NOT do. */
+static void stop_hosted_transport(void)
+{
+    if (!s_hosted_ready) return;
+    esp_hosted_deinit();
+    s_hosted_ready = false;
+}
+
+esp_err_t wifi_link_stop(void)
+{
+    stop_ap_services();
+    stop_wifi_stack();
+    stop_ap_netif();
+    stop_hosted_transport();
 
     s_active = false;
     s_status.active = false;

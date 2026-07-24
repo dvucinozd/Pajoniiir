@@ -570,6 +570,19 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/app_settings.c") `
     -LiteralPatterns @('s_ota_pass[0] ? "set" : "none"')
 
+# An AP-to-STA switch must stop the AP service without tearing down the C6
+# link; if these are ever folded back into one all-or-nothing teardown the
+# transition silently becomes a full radio restart.
+Assert-FileContains `
+    -Name "p4 Wi-Fi teardown keeps the AP service and the C6 transport separable" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("static void stop_ap_services(void)", "static void stop_hosted_transport(void)", "static void stop_ap_netif(void)")
+
+Assert-FileContains `
+    -Name "p4 Wi-Fi start retries are bounded" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("wifi_link_retry_note_failure(&retry)", "giving up, radio stays off")
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and
