@@ -410,9 +410,19 @@ async function refreshOtaNetwork() {
     }
 }
 
+// Remembers the release the page was actually shown, so INSTALL can name it
+// back. The deck refuses anything else, which stops a stale tab installing
+// something the operator never saw.
+let otaOfferedRelease = null;
+
 function renderProbe(probe) {
     const el = document.getElementById('ota-net-probe');
+    const btn = document.getElementById('ota-net-install');
     if (!el || !probe) return;
+
+    const offer = /^update available: (.+)$/.exec(probe.detail || '');
+    otaOfferedRelease = offer ? offer[1] : null;
+    if (btn) btn.style.display = otaOfferedRelease ? '' : 'none';
     if (probe.state === 'ok') {
         // Two different operations land here. The link test reports an address;
         // the update check reports what the channel offers and clears it. This
@@ -470,6 +480,27 @@ async function checkForUpdate() {
         if (status) status.textContent = 'Check started. Rejoin PAJONIIIR and reload to see the result.';
     } catch (err) {
         if (status) status.textContent = `Check refused: ${err.message}`;
+    }
+}
+
+// The irreversible half: writes the inactive slot and reboots into it. Names
+// the release back so the deck can refuse anything this page did not display.
+async function installUpdate() {
+    const status = document.getElementById('ota-net-status');
+    if (!otaOfferedRelease) return;
+    if (!confirm(`Install ${otaOfferedRelease}? The controller downloads it over your network, verifies the signature, and restarts. Do not cut power until it comes back.`)) return;
+    if (status) status.textContent = 'Installing...';
+    try {
+        const response = await fetch('/api/ota/config', {
+            method: 'POST',
+            headers: { 'X-DDJ-Control': '1', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ install: otaOfferedRelease })
+        });
+        const text = await response.text();
+        if (!response.ok) throw new Error(text || response.statusText);
+        if (status) status.textContent = 'Download started. The controller restarts on its own; rejoin PAJONIIIR afterwards.';
+    } catch (err) {
+        if (status) status.textContent = `Install refused: ${err.message}`;
     }
 }
 

@@ -17,7 +17,9 @@ typedef struct {
     char address[16];
 } web_server_probe_status_t;
 
-typedef int  (*web_server_probe_start_fn)(int mode);  /* 0 = link probe, 1 = update check; esp_err_t as int */
+typedef int  (*web_server_probe_start_fn)(int mode, const char *arg);
+/* mode: 0 = link probe, 1 = update check, 2 = install `arg` (the release the
+ * page saw). esp_err_t returned as int. */
 typedef void (*web_server_probe_status_fn)(web_server_probe_status_t *out);
 
 void web_server_set_probe_hooks(web_server_probe_start_fn start,

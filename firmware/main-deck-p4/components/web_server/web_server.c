@@ -295,7 +295,10 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
      * that can tell the operator why. */
     bool want_probe = p4_ota_cfg_extract_true(body, len, "probe");
     bool want_check = p4_ota_cfg_extract_true(body, len, "check");
-    if (want_probe || want_check) {
+    char install_rel[64] = {0};
+    bool want_install = p4_ota_cfg_extract_string(body, len, "install",
+                                                  install_rel, sizeof(install_rel));
+    if (want_probe || want_check || want_install) {
         memset(body, 0, sizeof(body));
         if (deck_core_get_deck_state(0).playing || deck_core_get_deck_state(1).playing) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
@@ -305,7 +308,9 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                        "probe not wired");
         }
-        esp_err_t rc = (esp_err_t)s_probe_start_fn(want_check ? 1 : 0);
+        esp_err_t rc = (esp_err_t)s_probe_start_fn(
+            want_install ? 2 : (want_check ? 1 : 0),
+            want_install ? install_rel : NULL);
         if (rc == ESP_ERR_INVALID_ARG) {
             return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                                        "no service network or update URL configured");

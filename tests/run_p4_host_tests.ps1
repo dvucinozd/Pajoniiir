@@ -596,6 +596,18 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -RegexPattern 'wifi_link_switch_to_sta[\s\S]*?stop_hosted_transport\(\)[\s\S]*?^\}'
 
+# Pull OTA must gain no authority from having arrived over TLS: the same signed
+# manifest, verified by the same code, before anything reaches flash.
+Assert-FileContains `
+    -Name "p4 pull OTA verifies the bundle signature before writing flash" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("ddj_ota_manifest_verify_signature(header, sizeof(header))", "rc = p4_ota_begin(&manifest);")
+
+Assert-FileContains `
+    -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strncmp(expected_release, s_status.available_release")
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and

@@ -141,10 +141,11 @@ static const char *reset_reason_str(void)
 
 /* Adapters between the web layer and wifi_link. Thin on purpose: the only job
  * is to keep the two components from depending on each other. */
-static int app_probe_start(int mode)
+static int app_probe_start(int mode, const char *arg)
 {
     /* 1 = check the update channel, 0 = prove the link only. Both make the
      * same AP->STA->AP round trip; the check adds one HTTPS GET. */
+    if (mode == 2) return (int)p4_ota_pull_install_start(arg);
     return mode == 1 ? (int)p4_ota_pull_check_start()
                      : (int)wifi_link_probe_start();
 }
@@ -162,10 +163,15 @@ static void app_probe_status(web_server_probe_status_t *out)
         case P4_OTA_PULL_CHECKING:    out->state = 1; break;
         case P4_OTA_PULL_UP_TO_DATE:  out->state = 2; break;
         case P4_OTA_PULL_AVAILABLE:   out->state = 2; break;
+        case P4_OTA_PULL_DOWNLOADING: out->state = 1; break;
+        case P4_OTA_PULL_READY_TO_REBOOT: out->state = 2; break;
         case P4_OTA_PULL_FAILED:      out->state = 3; break;
         default:                      out->state = 0; break;
         }
-        if (chk.state == P4_OTA_PULL_AVAILABLE) {
+        if (chk.state == P4_OTA_PULL_DOWNLOADING && chk.available_size > 0u) {
+            snprintf(out->detail, sizeof(out->detail), "%s %u%%", chk.detail,
+                     (unsigned)((uint64_t)chk.downloaded * 100u / chk.available_size));
+        } else if (chk.state == P4_OTA_PULL_AVAILABLE) {
             snprintf(out->detail, sizeof(out->detail), "update available: %s",
                      chk.available_release);
         } else {
