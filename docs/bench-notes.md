@@ -1012,5 +1012,11 @@ ordering.
 
 - **Loading a track killed an in-progress recording.** `deck2 <- track 75` at
   01:39:45, recorder `STOPPED` at 01:39:54. Never diagnosed.
-- 96 kHz/24-bit FLAC fails to load on deck 1 (`ERROR`); mp3 on the same deck is
-  fine. Probably unrelated, but it was found here.
+- ~~96 kHz/24-bit FLAC fails to load on deck 1~~ — **withdrawn 2026-07-24, this
+  was not a defect.** The load returns `AUDIO_LOAD_FAILED a1=261 msg=NOT FOUND`
+  (`ESP_ERR_NOT_FOUND`): the file is listed in the rekordbox PDB but was never
+  copied to the USB drive. FLAC is supported (dr_flac, decoded from the PSRAM
+  preload). The trap: every non-mp3 entry in this library — indices 0, 1, 2 and
+  5, both FLACs and both WAVs — is a dead PDB row, so picking any of them to
+  "test FLAC" tests a missing file instead. Use `/api/diagnostic-log` to read
+  the actual error code before concluding a format is broken.

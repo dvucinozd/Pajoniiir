@@ -2229,8 +2229,11 @@ re-enabling this should expect to meet them:
 
 - **Loading a track killed an in-progress recording.** Log shows the load at
   01:39:45 and the recorder at `STOPPED` nine seconds later. Never diagnosed.
-- 96 kHz/24-bit FLAC fails to load on deck 1 (`ERROR`) while mp3 on the same
-  deck is fine. Probably unrelated to the recorder, but it was found here.
+- ~~96 kHz/24-bit FLAC fails to load on deck 1~~ — **withdrawn: not a defect.**
+  The error is `AUDIO_LOAD_FAILED a1=261 NOT FOUND`; the file is a dead PDB row
+  with no file behind it. FLAC decoding works. See `bench-notes.md` for why
+  every non-mp3 entry in this library is a dead row and how not to repeat the
+  mistake.
 
 To re-enable: set `CONFIG_AUDIO_RECORDER_ENABLED=y`. Note that changing
 `sdkconfig.defaults` does **not** modify an existing `sdkconfig` — verify the
