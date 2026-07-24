@@ -835,6 +835,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"output_late_count\":%u,"
         "\"output_late_max_us\":%u,"
         "\"output_late_threshold_us\":%u,"
+        "\"pcm_underrun1\":%u,"
+        "\"pcm_underrun2\":%u,"
+        "\"loop_trim_wraps1\":%u,"
+        "\"loop_trim_dropped_max1\":%u,"
+        "\"loop_trim_dropped_total1\":%u,"
+        "\"loop_trim_clamped_total1\":%u,"
         "\"phase_head_us\":%u,"
         "\"phase_mix_us\":%u,"
         "\"phase_push_us\":%u,"
@@ -886,6 +892,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.output_late_count,
         (unsigned)diagnostics.output_late_max_us,
         (unsigned)diagnostics.output_late_threshold_us,
+        (unsigned)diagnostics.pcm_underrun_count[0],
+        (unsigned)diagnostics.pcm_underrun_count[1],
+        (unsigned)diagnostics.loop_trim_wraps[0],
+        (unsigned)diagnostics.loop_trim_dropped_max[0],
+        (unsigned)diagnostics.loop_trim_dropped_total[0],
+        (unsigned)diagnostics.loop_trim_clamped_total[0],
         (unsigned)diagnostics.phase_head_max_us,
         (unsigned)diagnostics.phase_mix_max_us,
         (unsigned)diagnostics.phase_push_max_us,

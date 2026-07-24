@@ -130,6 +130,14 @@ static audio_pcm_timeline_t s_pcm_timelines[AUDIO_ENGINE_DECK_COUNT];
 static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
 static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+/* Loop-wrap trim accounting. The trim runs on the decode task and is otherwise
+ * invisible: it withdraws already-published frames and clamps the current
+ * batch, and neither shows up in the late-block or underrun counters. Without
+ * these, a regression in it can only be found by ear. */
+static uint32_t s_loop_trim_wraps[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_loop_trim_dropped_max[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_loop_trim_dropped_total[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_loop_trim_clamped_total[AUDIO_ENGINE_DECK_COUNT];
 
 /* Scratch is a metadata/read-head view over the canonical timeline. It owns no
  * second PCM allocation: normal playback can fall back to s_pcm_rings[], while
@@ -2506,15 +2514,23 @@ static void ae_decode_task(void *arg)
                          * preemption while write_seq moves down, exactly as the
                          * user-seek ring flush below does. */
                         taskENTER_CRITICAL(&s_ring_flush_mux);
-                        (void)deck_pcm_drop_newest(ctx->deck, excess);
+                        uint32_t dropped = deck_pcm_drop_newest(ctx->deck, excess);
                         taskEXIT_CRITICAL(&s_ring_flush_mux);
+                        s_loop_trim_dropped_total[ctx->deck] += dropped;
+                        if (dropped > s_loop_trim_dropped_max[ctx->deck]) {
+                            s_loop_trim_dropped_max[ctx->deck] = dropped;
+                        }
+                        s_loop_trim_clamped_total[ctx->deck] += (uint32_t)publish_frames;
                         publish_frames = 0;  /* none of this batch is in the loop */
                     } else {
                         uint64_t room = keep_frames - published;
                         if ((uint64_t)publish_frames > room) {
+                            s_loop_trim_clamped_total[ctx->deck] +=
+                                (uint32_t)(publish_frames - (int)room);
                             publish_frames = (int)room;
                         }
                     }
+                    s_loop_trim_wraps[ctx->deck]++;
                     eng->seek_target_ms = eng->loop_start_ms;
                     eng->seek_reason    = AE_SEEK_REASON_LOOP; /* gapless ring */
                     eng->seek_requested = true;
@@ -3261,6 +3277,10 @@ esp_err_t audio_engine_init(void)
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         atomic_store_u16(&s_channel_volume[i], AUDIO_MIXER_CONTROL_MAX);
         s_pcm_underrun_count[i] = 0u;
+        s_loop_trim_wraps[i] = 0u;
+        s_loop_trim_dropped_max[i] = 0u;
+        s_loop_trim_dropped_total[i] = 0u;
+        s_loop_trim_clamped_total[i] = 0u;
         atomic_store_u16(&s_pregain[i], AUDIO_MIXER_CONTROL_CENTER);
         atomic_store_bool(&s_pfl_enabled[i], false);
         s_deck_peak[i] = 0;
@@ -4961,6 +4981,10 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         out_snapshot->pcm_timeline_generation[deck] = timeline_active(deck)
             ? audio_pcm_timeline_generation(&s_pcm_timelines[deck]) : 0u;
         out_snapshot->pcm_underrun_count[deck] = s_pcm_underrun_count[deck];
+        out_snapshot->loop_trim_wraps[deck] = s_loop_trim_wraps[deck];
+        out_snapshot->loop_trim_dropped_max[deck] = s_loop_trim_dropped_max[deck];
+        out_snapshot->loop_trim_dropped_total[deck] = s_loop_trim_dropped_total[deck];
+        out_snapshot->loop_trim_clamped_total[deck] = s_loop_trim_clamped_total[deck];
         out_snapshot->scratch_edge_hit_count[deck] =
             s_scratch_engine[deck].edge_hits;
         out_snapshot->scratch_active[deck] = atomic_load_bool(&s_scratch_playing[deck]);

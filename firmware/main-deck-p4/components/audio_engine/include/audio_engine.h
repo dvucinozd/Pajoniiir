@@ -171,6 +171,11 @@ typedef struct {
     uint32_t pcm_timeline_future[AUDIO_ENGINE_DECK_COUNT];
     uint32_t pcm_timeline_generation[AUDIO_ENGINE_DECK_COUNT];
     uint32_t pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+    /* Loop-wrap trim accounting (see audio_engine.c). */
+    uint32_t loop_trim_wraps[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t loop_trim_dropped_max[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t loop_trim_dropped_total[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t loop_trim_clamped_total[AUDIO_ENGINE_DECK_COUNT];
     uint32_t scratch_edge_hit_count[AUDIO_ENGINE_DECK_COUNT];
     bool scratch_active[AUDIO_ENGINE_DECK_COUNT];
     bool scratch_capture_frozen[AUDIO_ENGINE_DECK_COUNT];
