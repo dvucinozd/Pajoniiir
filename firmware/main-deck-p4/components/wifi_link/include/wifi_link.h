@@ -19,6 +19,38 @@ typedef struct {
     char ssid[33];
 } wifi_link_status_t;
 
+/*
+ * Temporary client mode, for checking and downloading updates.
+ *
+ * The SoftAP is the normal operating mode and the only guaranteed service
+ * surface; STA is a visit, not a state to live in. Every exit from it - success
+ * or failure - must end back on the AP, because the AP is how the deck is
+ * reached at all.
+ *
+ * Both calls are blocking and must run on the wifi_link worker, never on a UI
+ * or HTTP handler: association and DHCP take seconds.
+ */
+
+/* Stop the AP service and associate with `ssid`. The ESP-Hosted transport and
+ * the Wi-Fi stack stay up across the switch; only the AP interface and its
+ * services are torn down.
+ *
+ * `password` may be NULL or empty for an open network. Returns ESP_OK only
+ * once an IP address has actually been assigned - association alone is not
+ * enough to fetch anything. On any failure the caller must still call
+ * wifi_link_restore_ap(); this function does not restore on its own, so the
+ * caller can log the specific failure first.
+ */
+esp_err_t wifi_link_switch_to_sta(const char *ssid, const char *password,
+                                  uint32_t timeout_ms);
+
+/* Tear down STA and bring the SoftAP, captive DNS and web service back.
+ * Safe to call whether or not the switch succeeded. */
+esp_err_t wifi_link_restore_ap(void);
+
+/* True while the deck is on the service network rather than its own AP. */
+bool wifi_link_is_sta(void);
+
 // One-time lightweight init (status + control mutex). Does NOT touch the radio.
 // Call once at boot before wifi_link_start()/wifi_link_request_enable().
 esp_err_t wifi_link_init(void);

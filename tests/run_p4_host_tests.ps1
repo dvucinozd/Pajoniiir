@@ -583,6 +583,19 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_retry_note_failure(&retry)", "giving up, radio stays off")
 
+# Every exit from the STA visit must end back on the AP; the AP is the only way
+# the deck is reachable at all, so a path that leaves it down is unrecoverable
+# without a wired flash.
+Assert-FileContains `
+    -Name "p4 STA visit keeps the C6 transport and always has a way back" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("wifi_link_restore_ap", "STA_BIT_GOT_IP", "xEventGroupWaitBits")
+
+Assert-FileDoesNotContain `
+    -Name "p4 STA switch does not tear down ESP-Hosted" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -RegexPattern 'wifi_link_switch_to_sta[\s\S]*?stop_hosted_transport\(\)[\s\S]*?^\}'
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and

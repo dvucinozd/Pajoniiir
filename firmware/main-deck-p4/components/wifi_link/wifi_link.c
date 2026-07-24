@@ -12,6 +12,7 @@
 #include "esp_wifi.h"
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
@@ -48,10 +49,31 @@ static void copy_wifi_bytes(uint8_t *dst, size_t dst_len, const char *src)
     memcpy(dst, src, n);
 }
 
+/* STA association is asynchronous, so the worker has to wait on events rather
+ * than on a return code. GOT_IP is the only success signal that means anything:
+ * associating without an address fetches nothing. */
+#define STA_BIT_GOT_IP       BIT0
+#define STA_BIT_DISCONNECTED BIT1
+
+static EventGroupHandle_t s_sta_events;
+static esp_netif_t *s_sta_netif;
+static volatile bool s_sta_mode;
+
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     (void)arg;
     (void)event_data;
+    if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        if (s_sta_events) xEventGroupSetBits(s_sta_events, STA_BIT_GOT_IP);
+        return;
+    }
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        /* Reported for a refused association and for a later drop alike. The
+         * waiter treats it as failure; a drop after we already have an address
+         * is handled by the caller finishing and restoring. */
+        if (s_sta_events) xEventGroupSetBits(s_sta_events, STA_BIT_DISCONNECTED);
+        return;
+    }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
         s_status.ap_clients++;
         ESP_LOGI(TAG, "web client connected (%u)", (unsigned)s_status.ap_clients);
@@ -73,6 +95,11 @@ static esp_err_t ensure_wifi_stack(void)
         }
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_event_handler_instance_register(
             WIFI_EVENT, ESP_EVENT_ANY_ID, event_handler, NULL, NULL));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_event_handler_instance_register(
+            IP_EVENT, IP_EVENT_STA_GOT_IP, event_handler, NULL, NULL));
+        if (!s_sta_events) {
+            s_sta_events = xEventGroupCreate();
+        }
         s_netif_ready = true;
     }
 
@@ -211,8 +238,117 @@ static void stop_hosted_transport(void)
     s_hosted_ready = false;
 }
 
+static void stop_sta_netif(void)
+{
+    if (!s_sta_netif) return;
+    esp_netif_destroy_default_wifi(s_sta_netif);
+    s_sta_netif = NULL;
+}
+
+/* ── Temporary STA visit ──────────────────────────────────────────────────── */
+
+esp_err_t wifi_link_switch_to_sta(const char *ssid, const char *password,
+                                  uint32_t timeout_ms)
+{
+    if (!ssid || ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+    if (!s_wifi_ready || !s_hosted_ready) return ESP_ERR_INVALID_STATE;
+    if (!s_sta_events) return ESP_ERR_INVALID_STATE;
+
+    /* Drop the AP's services and interface but keep esp_wifi and the C6 link
+     * up — that separation is the whole reason the teardown was split. */
+    stop_ap_services();
+    ESP_RETURN_ON_ERROR(esp_wifi_stop(), TAG, "stop before STA");
+    stop_ap_netif();
+    s_status.active = false;
+    s_status.ap_clients = 0;
+
+    s_sta_netif = esp_netif_create_default_wifi_sta();
+    if (!s_sta_netif) return ESP_ERR_NO_MEM;
+
+    wifi_config_t cfg = {0};
+    copy_wifi_bytes(cfg.sta.ssid, sizeof(cfg.sta.ssid), ssid);
+    copy_wifi_bytes(cfg.sta.password, sizeof(cfg.sta.password), password);
+    /* An empty password means an open network; anything else was already
+     * validated against WPA2 bounds before it reached storage. */
+    cfg.sta.threshold.authmode =
+        (password && password[0]) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+
+    xEventGroupClearBits(s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED);
+
+    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set STA mode");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &cfg), TAG, "set STA config");
+    ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start STA");
+    s_sta_mode = true;
+    ESP_LOGI(TAG, "joining service network \"%s\"", ssid);
+    ESP_RETURN_ON_ERROR(esp_wifi_connect(), TAG, "connect");
+
+    /* Bounded on purpose: a wrong passphrase produces a disconnect, but a
+     * network that associates and never serves DHCP produces nothing at all,
+     * and the deck must not sit off-AP indefinitely waiting for it. */
+    EventBits_t bits = xEventGroupWaitBits(
+        s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED,
+        pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+
+    if (bits & STA_BIT_GOT_IP) {
+        esp_netif_ip_info_t ip = {0};
+        if (esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
+            ESP_LOGI(TAG, "service network address " IPSTR, IP2STR(&ip.ip));
+        }
+        return ESP_OK;
+    }
+    if (bits & STA_BIT_DISCONNECTED) {
+        ESP_LOGW(TAG, "service network refused the association");
+        return ESP_ERR_WIFI_NOT_CONNECT;
+    }
+    ESP_LOGW(TAG, "service network gave no address within %u ms",
+             (unsigned)timeout_ms);
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t wifi_link_restore_ap(void)
+{
+    /* Unconditional: this is the path back to being reachable at all, so it
+     * runs the same way whether the visit succeeded, failed or never got
+     * started. */
+    if (s_sta_mode) {
+        esp_wifi_disconnect();
+        esp_wifi_stop();
+        s_sta_mode = false;
+    }
+    stop_sta_netif();
+
+    esp_err_t rc = start_web_ap();
+    if (rc == ESP_OK) rc = web_server_start();
+    if (rc == ESP_OK) rc = dns_server_start();
+
+    s_status.last_error = rc;
+    if (rc == ESP_OK) {
+        s_active = true;
+        s_status.active = true;
+        ESP_LOGI(TAG, "%s restored", s_status.ssid);
+    } else {
+        /* Nothing left to fall back to: say so loudly rather than leave a
+         * half-configured radio looking healthy. Recovery is a wired flash. */
+        ESP_LOGE(TAG, "FAILED to restore %s: %s", s_status.ssid,
+                 esp_err_to_name(rc));
+        s_active = false;
+        s_status.active = false;
+    }
+    return rc;
+}
+
+bool wifi_link_is_sta(void)
+{
+    return s_sta_mode;
+}
+
 esp_err_t wifi_link_stop(void)
 {
+    if (s_sta_mode) {
+        esp_wifi_disconnect();
+        s_sta_mode = false;
+    }
+    stop_sta_netif();
     stop_ap_services();
     stop_wifi_stack();
     stop_ap_netif();
