@@ -1228,3 +1228,59 @@ meaningful target to test against.
 
 `CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y` is already set, so TLS against a public
 CA needs no further configuration.
+
+## 2026-07-24 — Pull OTA reads the channel; bench power finally explained
+
+### The update check works end to end
+
+`RC1-252-g4970ef02`. The deck leaves `PAJONIIIR`, joins the service network,
+fetches `latest.json` from the VPS over TLS, parses it, compares against its own
+build and comes back:
+
+```
+"probe": {"state":"ok","detail":"update available: RC1-246-g63997094","address":""}
+```
+
+That is the whole read half of pull OTA proven on hardware. Nothing is
+installed; downloading is a separate step.
+
+### Bench power was the reboot cause, and it is now closed
+
+The deck began rebooting roughly once a minute. Three consecutive
+`reset=BROWNOUT` records made it unambiguous: supply voltage below the detector
+threshold, not a firmware fault. Confirmed by the state at the time — both decks
+idle, no controller attached, heap healthy. The board was browning out at its
+*lowest* possible draw.
+
+Replacing the power supply fixed it.
+
+This closes the "bench power" item open since 2026-07-22. The journal holds
+**18 brownouts** across its history, including boots 84, 100 and 101 — well
+before any of today's changes. Worth stating plainly because raising the AP's
+`max_connection` from 1 to 4 earlier the same evening was a plausible-looking
+suspect, and it was not the cause.
+
+### Two UI lessons, the same mistake twice
+
+Both times the firmware was correct and the page was not:
+
+- the service-network endpoint shipped with no field to type into, leaving the
+  operator with `fetch()` in a browser console;
+- the update check reported itself as "Connection test passed", because the
+  renderer was written when the link probe was the only thing publishing to
+  that status field and it ignored `detail` for the success case.
+
+Extending the backend without revisiting the page turns a working feature into a
+confusing one. It is not caught by any test here, because nothing tests the
+page.
+
+### The AP no longer advertises itself as a gateway
+
+Joining `PAJONIIIR` used to kill the operator's internet: the DHCP server
+offered itself as router and DNS, so clients installed a default route through a
+deck that leads nowhere — total on a phone, which has no second interface.
+
+The AP now hands out addresses without advertising a router or DNS. Clients
+reach 192.168.4.1 because it is on-link and keep their existing route out. The
+cost is that captive-portal auto-open stops working and the address is typed by
+hand; accepted explicitly, and moot once mDNS lands.
