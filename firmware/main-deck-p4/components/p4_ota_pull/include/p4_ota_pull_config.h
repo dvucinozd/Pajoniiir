@@ -49,3 +49,19 @@ p4_ota_cfg_result_t p4_ota_cfg_check_password(const char *password);
  * they end up in logs and status output, which is exactly what must not happen.
  */
 p4_ota_cfg_result_t p4_ota_cfg_check_url(const char *url);
+
+/* Extract one bounded JSON string field from a request body.
+ *
+ * Exists because credentials must arrive in a POST body, never in a query
+ * string where they would land in logs. Same strictness as the manifest
+ * parser: no allocation, no escape handling, an over-long value is a refusal
+ * rather than a truncation.
+ *
+ * Returns false when the key is absent or the value does not fit; `out` is
+ * left empty in both cases so a caller cannot act on a partial secret.
+ */
+bool p4_ota_cfg_extract_string(const char *json, size_t len, const char *key,
+                               char *out, size_t cap);
+
+/* Whether a boolean field is present and true. */
+bool p4_ota_cfg_extract_true(const char *json, size_t len, const char *key);

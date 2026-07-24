@@ -6,6 +6,8 @@
 // immediately (small, infrequent writes). Firmware-only (uses NVS); the PC
 // simulator should not link this.
 //
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
 
@@ -31,3 +33,37 @@ void app_settings_set_time_remain(uint8_t remain);
 void app_settings_set_cue_mode(uint8_t mode);
 void app_settings_set_master_trim_preset(uint8_t preset);
 void app_settings_set_wifi_remote(uint8_t on);
+
+/* ── Pull-OTA service network ─────────────────────────────────────────────
+ *
+ * Deliberately NOT part of app_settings_t. That struct is returned by value
+ * and its whole contents are logged at boot; a passphrase inside it would
+ * leak through both. These accessors keep the secret reachable only by the
+ * code that actually associates.
+ *
+ * Validate with p4_ota_pull_config.h before calling the setter - this layer
+ * stores what it is given.
+ */
+#define APP_SETTINGS_OTA_SSID_CAP 33u   /* 32 + NUL */
+#define APP_SETTINGS_OTA_PASS_CAP 65u   /* 64 + NUL */
+#define APP_SETTINGS_OTA_URL_CAP  161u
+
+/* Copy the SSID / base URL out. Safe to show in the UI and in status. */
+void app_settings_ota_get_ssid(char *out, size_t cap);
+void app_settings_ota_get_url(char *out, size_t cap);
+
+/* Whether a passphrase is stored. This is what status APIs report; there is
+ * deliberately no way to read the passphrase back out over the network. */
+bool app_settings_ota_has_password(void);
+
+/* For the Wi-Fi association path only. Never log, never serialise, never
+ * return over an API. */
+void app_settings_ota_copy_password(char *out, size_t cap);
+
+/* Persist. A NULL password keeps whatever is stored, so the SSID or URL can
+ * be corrected without retyping the passphrase; an empty string clears it
+ * (open network). */
+esp_err_t app_settings_ota_set(const char *ssid, const char *password, const char *url);
+
+/* Forget the network entirely - the CLEAR WI-FI action. */
+void app_settings_ota_clear(void);

@@ -15,6 +15,8 @@
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
 #endif
+#include "p4_ota_pull_config.h"
+#include "app_settings.h"
 #include <stdio.h>
 #include "sdkconfig.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
@@ -218,6 +220,102 @@ static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
         if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
     }
     return HTTPD_SOCK_ERR_TIMEOUT;
+}
+
+
+/* ── Pull-OTA service-network configuration ───────────────────────────────── */
+
+/* GET reports the SSID and base URL, and only WHETHER a passphrase is stored.
+ * There is deliberately no path that returns the passphrase over the network;
+ * to change it you send a new one. */
+static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
+    app_settings_ota_get_ssid(ssid, sizeof(ssid));
+    app_settings_ota_get_url(url, sizeof(url));
+    char json[APP_SETTINGS_OTA_SSID_CAP + APP_SETTINGS_OTA_URL_CAP + 64u];
+    int n = snprintf(json, sizeof(json),
+                     "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s}",
+                     ssid, url,
+                     app_settings_ota_has_password() ? "true" : "false");
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
+
+/* POST body: {"ssid":..., "password":..., "url":...} or {"clear":true}.
+ *
+ * A body rather than query parameters because the passphrase must never reach
+ * a URL, where it would be logged. Omitting "password" keeps the stored one,
+ * so the SSID or URL can be corrected without retyping it.
+ */
+static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    char body[512];
+    if (req->content_len <= 0 || (size_t)req->content_len >= sizeof(body)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body size");
+    }
+    int got = ota_http_recv(req, (uint8_t *)body, (size_t)req->content_len);
+    if (got <= 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body read failed");
+    }
+    size_t len = (size_t)got;
+
+    if (p4_ota_cfg_extract_true(body, len, "clear")) {
+        app_settings_ota_clear();
+        memset(body, 0, sizeof(body));
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_sendstr(req, "{\"ok\":true,\"cleared\":true}");
+    }
+
+    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
+    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
+    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
+    bool have_ssid = p4_ota_cfg_extract_string(body, len, "ssid", ssid, sizeof(ssid));
+    bool have_url  = p4_ota_cfg_extract_string(body, len, "url", url, sizeof(url));
+    bool have_pass = p4_ota_cfg_extract_string(body, len, "password", pass, sizeof(pass));
+    /* The body held a passphrase; do not leave it lying in the request buffer
+     * for the next handler to reuse. */
+    memset(body, 0, sizeof(body));
+
+    const char *reject = NULL;
+    if (have_ssid) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_ssid(ssid);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    if (!reject && have_url) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_url(url);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    /* An empty password is the legitimate way to say "open network"; anything
+     * else must satisfy WPA2 bounds, because a short one would associate never
+     * and look like a firmware fault. */
+    if (!reject && have_pass && pass[0] != 0) {
+        p4_ota_cfg_result_t r = p4_ota_cfg_check_password(pass);
+        if (r != P4_OTA_CFG_OK) reject = p4_ota_cfg_result_name(r);
+    }
+    if (!have_ssid && !have_url && !have_pass) reject = "nothing-to-set";
+
+    if (reject) {
+        memset(pass, 0, sizeof(pass));
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, reject);
+    }
+
+    esp_err_t rc = app_settings_ota_set(have_ssid ? ssid : NULL,
+                                        have_pass ? pass : NULL,
+                                        have_url ? url : NULL);
+    memset(pass, 0, sizeof(pass));
+    if (rc != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   esp_err_to_name(rc));
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"ok\":true}");
 }
 
 static esp_err_t api_p4_ota_handler(httpd_req_t *req)
@@ -1374,6 +1472,24 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &firmware_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_cfg_get_uri = {
+        .uri = "/api/ota/config",
+        .method = HTTP_GET,
+        .handler = api_ota_config_get_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_cfg_get_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t ota_cfg_post_uri = {
+        .uri = "/api/ota/config",
+        .method = HTTP_POST,
+        .handler = api_ota_config_post_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &ota_cfg_post_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t ota_p4_uri = {

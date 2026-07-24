@@ -552,6 +552,24 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("deck_pcm_drop_newest", "publish_frames", "uint64_t published = eng->frames_since_seek", "AE_LOOP_TRIM_MIN_RUNWAY_FRAMES")
 
+# The one rule that must not rot: the service-network passphrase is never
+# returned over the network, and never reaches a query string where it would
+# be logged. Status reports only whether one is stored.
+Assert-FileContains `
+    -Name "p4 OTA config status reports only whether a password is stored" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @('app_settings_ota_has_password()', '\"has_password\":%s')
+
+Assert-FileDoesNotContain `
+    -Name "p4 web server never serialises the OTA passphrase" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("app_settings_ota_copy_password")
+
+Assert-FileContains `
+    -Name "p4 settings log the OTA passphrase's presence, never its value" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/app_settings.c") `
+    -LiteralPatterns @('s_ota_pass[0] ? "set" : "none"')
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and

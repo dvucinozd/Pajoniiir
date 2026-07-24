@@ -90,3 +90,50 @@ p4_ota_cfg_result_t p4_ota_cfg_check_url(const char *url)
 
     return P4_OTA_CFG_OK;
 }
+
+/* Locate `"key" :` and return the offset of the value, or SIZE_MAX. */
+static size_t value_offset(const char *json, size_t len, const char *key)
+{
+    size_t klen = strlen(key);
+    if (!json || len < klen + 3u) return (size_t)-1;
+    for (size_t i = 0; i + klen + 2u <= len; i++) {
+        if (json[i] != 0x22) continue;
+        if (memcmp(json + i + 1u, key, klen) != 0) continue;
+        if (json[i + 1u + klen] != 0x22) continue;
+        size_t j = i + 2u + klen;
+        while (j < len && (json[j] == 0x20 || json[j] == 0x09 ||
+                           json[j] == 0x0D || json[j] == 0x0A)) j++;
+        if (j >= len || json[j] != 0x3A) continue;
+        j++;
+        while (j < len && (json[j] == 0x20 || json[j] == 0x09 ||
+                           json[j] == 0x0D || json[j] == 0x0A)) j++;
+        return j;
+    }
+    return (size_t)-1;
+}
+
+bool p4_ota_cfg_extract_string(const char *json, size_t len, const char *key,
+                               char *out, size_t cap)
+{
+    if (!out || cap == 0u) return false;
+    out[0] = 0;
+    size_t j = value_offset(json, len, key);
+    if (j == (size_t)-1 || j >= len || json[j] != 0x22) return false;
+    j++;
+    size_t n = 0;
+    while (j < len && json[j] != 0x22) {
+        if (json[j] == 0x5C) { out[0] = 0; return false; }   /* no escapes */
+        if (n + 1u >= cap) { out[0] = 0; return false; }     /* refuse, do not truncate */
+        out[n++] = json[j++];
+    }
+    if (j >= len) { out[0] = 0; return false; }              /* unterminated */
+    out[n] = 0;
+    return true;
+}
+
+bool p4_ota_cfg_extract_true(const char *json, size_t len, const char *key)
+{
+    size_t j = value_offset(json, len, key);
+    if (j == (size_t)-1) return false;
+    return (len - j) >= 4u && memcmp(json + j, "true", 4u) == 0;
+}

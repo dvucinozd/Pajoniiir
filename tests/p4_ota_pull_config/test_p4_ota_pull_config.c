@@ -99,6 +99,45 @@ static void test_result_names_exist(void)
                   "url-has-credentials") == 0);
 }
 
+/* The body carries the passphrase, so a partial or over-long value must
+ * never be handed back as if it were the real one. */
+static void test_body_extraction_is_all_or_nothing(void)
+{
+    char out[16];
+    const char *b = "{\"ssid\":\"ZAKLJUCANO\",\"password\":\"secret123\",\"clear\":true}";
+    size_t n = strlen(b);
+    assert(p4_ota_cfg_extract_string(b, n, "ssid", out, sizeof(out)));
+    assert(strcmp(out, "ZAKLJUCANO") == 0);
+    assert(p4_ota_cfg_extract_string(b, n, "password", out, sizeof(out)));
+    assert(strcmp(out, "secret123") == 0);
+    assert(!p4_ota_cfg_extract_string(b, n, "absent", out, sizeof(out)));
+    assert(out[0] == 0);
+
+    /* Too small a buffer refuses and clears rather than truncating. */
+    char tiny[5];
+    assert(!p4_ota_cfg_extract_string(b, n, "ssid", tiny, sizeof(tiny)));
+    assert(tiny[0] == 0);
+
+    assert(p4_ota_cfg_extract_true(b, n, "clear"));
+    assert(!p4_ota_cfg_extract_true(b, n, "ssid"));
+    assert(!p4_ota_cfg_extract_true(b, n, "absent"));
+
+    /* Truncation at every byte must never yield a value. */
+    for (size_t cut = 1; cut < n; cut++) {
+        char part[64];
+        if (p4_ota_cfg_extract_string(b, cut, "password", part, sizeof(part))) {
+            assert(strcmp(part, "secret123") == 0);
+        }
+    }
+
+    /* Escapes refused, unterminated refused. */
+    const char *esc = "{\"ssid\":\"a\\b\"}";
+    assert(!p4_ota_cfg_extract_string(esc, strlen(esc), "ssid", out, sizeof(out)));
+    const char *unterm = "{\"ssid\":\"abc";
+    assert(!p4_ota_cfg_extract_string(unterm, strlen(unterm), "ssid", out, sizeof(out)));
+    assert(out[0] == 0);
+}
+
 int main(void)
 {
     test_ssid_bounds();
@@ -107,6 +146,7 @@ int main(void)
     test_url_refuses_embedded_credentials();
     test_url_length_bound();
     test_result_names_exist();
+    test_body_extraction_is_all_or_nothing();
     puts("p4_ota_pull_config tests passed");
     return 0;
 }

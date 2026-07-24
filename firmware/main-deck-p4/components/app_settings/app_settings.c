@@ -2,6 +2,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include <string.h>
 
 static const char *TAG = "settings";
 #define NS  "cdjcfg"
@@ -16,6 +17,9 @@ static app_settings_t s_cfg = {
     .wifi_remote   = 0,   /* Wi-Fi remote off by default */
 };
 
+
+/* Defined with the rest of the pull-OTA config at the bottom of the file. */
+static void load_ota_config(nvs_handle_t h);
 
 static void save_u8(const char *key, uint8_t v)
 {
@@ -51,6 +55,7 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(h, "cue_mode",  &v) == ESP_OK && v <= 1) s_cfg.cue_mode = v;
         if (nvs_get_u8(h, "master_trim", &v) == ESP_OK && v <= 2) s_cfg.master_trim_preset = v;
         if (nvs_get_u8(h, "wifi_rem",   &v) == ESP_OK && v <= 1) s_cfg.wifi_remote = v;
+        load_ota_config(h);
         nvs_close(h);
     }
     ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u wifi_remote=%s",
@@ -110,4 +115,79 @@ void app_settings_set_wifi_remote(uint8_t on)
     if (s_cfg.wifi_remote == on) return;
     s_cfg.wifi_remote = on;
     save_u8("wifi_rem", on);
+}
+
+/* ── Pull-OTA service network ─────────────────────────────────────────────
+ *
+ * Held outside app_settings_t on purpose; see the header. The passphrase is
+ * never logged here, not even its length, and there is no path that returns
+ * it to a caller other than app_settings_ota_copy_password().
+ */
+static char s_ota_ssid[APP_SETTINGS_OTA_SSID_CAP];
+static char s_ota_pass[APP_SETTINGS_OTA_PASS_CAP];
+static char s_ota_url[APP_SETTINGS_OTA_URL_CAP];
+
+static void copy_bounded(char *dst, size_t cap, const char *src)
+{
+    if (!dst || cap == 0u) return;
+    if (!src) { dst[0] = '\0'; return; }
+    size_t n = strnlen(src, cap - 1u);
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+static void load_ota_config(nvs_handle_t h)
+{
+    size_t len = sizeof(s_ota_ssid);
+    if (nvs_get_str(h, "ota_ssid", s_ota_ssid, &len) != ESP_OK) s_ota_ssid[0] = '\0';
+    len = sizeof(s_ota_pass);
+    if (nvs_get_str(h, "ota_pass", s_ota_pass, &len) != ESP_OK) s_ota_pass[0] = '\0';
+    len = sizeof(s_ota_url);
+    if (nvs_get_str(h, "ota_url", s_ota_url, &len) != ESP_OK) s_ota_url[0] = '\0';
+}
+
+void app_settings_ota_get_ssid(char *out, size_t cap) { copy_bounded(out, cap, s_ota_ssid); }
+void app_settings_ota_get_url(char *out, size_t cap)  { copy_bounded(out, cap, s_ota_url); }
+bool app_settings_ota_has_password(void)              { return s_ota_pass[0] != '\0'; }
+void app_settings_ota_copy_password(char *out, size_t cap) { copy_bounded(out, cap, s_ota_pass); }
+
+esp_err_t app_settings_ota_set(const char *ssid, const char *password, const char *url)
+{
+    if (ssid) copy_bounded(s_ota_ssid, sizeof(s_ota_ssid), ssid);
+    if (url)  copy_bounded(s_ota_url,  sizeof(s_ota_url),  url);
+    /* NULL keeps the stored passphrase so the SSID or URL can be corrected
+     * without retyping it; "" clears it for an open network. */
+    if (password) copy_bounded(s_ota_pass, sizeof(s_ota_pass), password);
+
+    nvs_handle_t h;
+    esp_err_t rc = nvs_open(NS, NVS_READWRITE, &h);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "nvs_open(rw) failed for ota config");
+        return rc;
+    }
+    nvs_set_str(h, "ota_ssid", s_ota_ssid);
+    nvs_set_str(h, "ota_pass", s_ota_pass);
+    nvs_set_str(h, "ota_url", s_ota_url);
+    rc = nvs_commit(h);
+    nvs_close(h);
+    /* SSID and URL only. */
+    ESP_LOGI(TAG, "ota config saved: ssid=\"%s\" url=\"%s\" password=%s",
+             s_ota_ssid, s_ota_url,
+             s_ota_pass[0] ? "set" : "none");
+    return rc;
+}
+
+void app_settings_ota_clear(void)
+{
+    memset(s_ota_ssid, 0, sizeof(s_ota_ssid));
+    memset(s_ota_pass, 0, sizeof(s_ota_pass));
+    memset(s_ota_url, 0, sizeof(s_ota_url));
+    nvs_handle_t h;
+    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_erase_key(h, "ota_ssid");
+    nvs_erase_key(h, "ota_pass");
+    nvs_erase_key(h, "ota_url");
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGI(TAG, "ota config cleared");
 }
