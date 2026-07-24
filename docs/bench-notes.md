@@ -1099,3 +1099,38 @@ have pushed the mean to ~1886 ms.
 1.96 s runway is withdrawn — needs the FLX4, which is not enumerating (see the
 bench-power note). `loop_4` only ever had ~56 ms outside the loop, so hardware
 testing so far exercises the mild case plus the steady state.
+
+### Follow-up: the trim emptied the ring and clicked (RC1-232-g8f6656cb)
+
+The first version of the trim shipped a regression. Arming a manual loop puts
+the out point at the playhead, so the whole decoder lead is genuinely past it
+and the trim withdrew all of it — correct in principle, but the decode task
+still has to reseek, reinit the MP3 decoder and produce a first batch, and the
+output empties the ring before it can.
+
+Neither the late-block counter nor the journal saw it, which is why three
+rounds of reasoning failed to find it. Two counters were added and it fell out
+immediately:
+
+```
+                          before   after
+pcm_underrun1              512  ->   0
+output_late_count            1  ->   0
+output_late_max_us       11694  ->   0
+
+loop_trim_wraps1            14
+loop_trim_dropped_max1   83799 frames (1900.2 ms)   one withdrawal, at arm
+loop_trim_clamped_total1 15933 (361.3 ms)           13 wraps, ~28 ms each
+```
+
+The trim now leaves `AE_LOOP_TRIM_MIN_RUNWAY_FRAMES` (2048, four times the
+observed 512-frame shortfall). The arithmetic checks out on hardware: runway
+was 85847, withdrawal 83799, difference exactly 2048. Cost is up to ~46 ms of
+overrun on the loop's first pass, against the 1946 ms it removed.
+
+**The lesson, and it is the same one as the recorder and the flanger.**
+`pcm_underrun_count` already existed in the diagnostics snapshot and was
+surfaced nowhere; it counts per-frame pop failures, which is exactly the shape
+of a click that leaves no journal record. The trim itself had no accounting at
+all. A change to the audio hot path needs a counter for what it does, or its
+regressions are only findable by ear — and by then they have shipped.
