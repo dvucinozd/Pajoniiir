@@ -1287,6 +1287,18 @@ $tests = @(
         )
     },
     @{
+        Name = "ui_idle"
+        Dir = "tests/ui_idle"
+        Target = "test_ui_idle.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_idle.exe",
+            "test_ui_idle.c",
+            "../../firmware/main-deck-p4/components/ui/ui_idle.c"
+        )
+    },
+    @{
         Name = "ui_beat_fx_format"
         Dir = "tests/ui_beat_fx_format"
         Target = "test_ui_beat_fx_format.exe"
