@@ -13,6 +13,7 @@ Status: current phase ledger, audited 2026-07-17.
 | Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
+| Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
 | Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; matching `RC1-168-gb69f1b19` deployed and boot-verified on both targets 2026-07-21 |
@@ -2727,7 +2728,49 @@ has been on the open list since 2026-07-22 and keeps recurring; it also
 contaminates other measurements, because a board that brownouts mid-test looks
 like a firmware fault.
 
-## TODO: Idle Screensaver
+## Idle Screensaver
+
+Status: **implemented and hardware-accepted 2026-07-24** in
+`RC1-237-g7bf0fd3c`. Steps 1-4 shipped; step 5 was dropped by decision, see
+below.
+
+### Outcome
+
+Operator confirmed all four behaviours on hardware: it appears after two idle
+minutes, touch dismisses it, an FLX4 button dismisses it without acting on the
+deck, and it never appears while a deck plays.
+
+Two implementation points were not obvious from the plan and are worth keeping:
+
+- **Consuming the waking event splits in two.** Touch is free — the screensaver
+  is its own LVGL screen with no widgets, so a dismissing tap cannot reach what
+  is underneath. Controller events are not, because they all pass through
+  `deck_core_queue_event()`; that callback returns `bool` and the event is
+  swallowed when it woke the screen, which is what stops a PLAY press from also
+  starting the deck.
+- **Restoring the screen is not enough.** LVGL repaints the whole tab on return
+  and erases the direct-PPA waveform strips, exactly as a tab switch does.
+  `ui_overview_note_screen_restored()` forces the existing tab-return recovery
+  rather than adding a second one.
+
+The caption ships at 24 px / `0xB0B0B0`; 16 px at `0x808080` was reported as
+barely visible at the distance the panel is actually read from. It is static on
+purpose — the wordmark already animates nine labels and this panel is sensitive
+to the invalidate budget.
+
+### Step 5 (Settings timeout entry) — dropped, not forgotten
+
+The plan argued the timeout should be configurable from the start because "the
+right value is a taste question and will be argued about". It was not argued
+about: the operator settled on two minutes and explicitly declined the control
+("ne treba mi kontrola timeouta jer želim da bude 2 minute").
+
+So `UI_IDLE_DEFAULT_TIMEOUT_MS` in `ui.c` stays a compile-time constant. The
+timing core (`ui_idle.c`) already takes the timeout as a parameter and supports
+an Off position at 0, so adding the Settings entry later is wiring only — no
+redesign. **Do not re-add it as an oversight; it was a decision.**
+
+### Original plan (kept for reference)
 
 Status: planned 2026-07-23.
 

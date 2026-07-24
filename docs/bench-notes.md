@@ -1134,3 +1134,48 @@ surfaced nowhere; it counts per-frame pop failures, which is exactly the shape
 of a click that leaves no journal record. The trim itself had no accounting at
 all. A change to the audio hot path needs a counter for what it does, or its
 regressions are only findable by ear — and by then they have shipped.
+
+## 2026-07-24 — Idle screensaver
+
+Shipped in `RC1-237-g7bf0fd3c`; operator confirmed all four behaviours on
+hardware. Two-minute timeout, fixed by decision — the plan's Settings entry was
+explicitly declined, so `UI_IDLE_DEFAULT_TIMEOUT_MS` stays a constant. The
+timing core already takes the timeout as a parameter and treats 0 as Off, so
+adding the control later is wiring, not redesign.
+
+### The two parts that were not obvious
+
+**Consuming the event that wakes it** splits in two, and only one half is free.
+Touch costs nothing: the screensaver is its own LVGL screen with no widgets, so
+a dismissing tap cannot press whatever sits underneath. Controller events do
+cost something, because every FLX4 button, jog, fader and web mutation passes
+through `deck_core_queue_event()` — that callback returns `bool` and the event
+is swallowed when it woke the screen. Without it a PLAY press that wakes the
+panel would also start the deck.
+
+`ui_activity_notice()` only sets a flag and reports whether the screensaver was
+up; the LVGL work happens on the UI task's next 16 ms tick, so
+`deck_core_queue_event()` stays lock-free on whatever task produced the event.
+Events arriving inside that window are also swallowed, which reads as debounce.
+
+**Restoring the screen is not enough.** LVGL repaints the whole tab on return
+and erases the direct-PPA waveform strips — the same failure the 2026-07-09
+stability pass fixed for tab switching. `ui_overview_note_screen_restored()`
+forces that existing recovery rather than adding a parallel one.
+
+### Design points worth keeping
+
+Playback and recording are treated as *activity*, not merely as a veto. Without
+that, a deck playing past the timeout would blank the UI the instant the track
+ended — precisely when the operator is looking at it. Changing the timeout
+likewise restarts the countdown instead of back-dating it.
+
+The caption is 24 px at `0xB0B0B0`; 16 px at `0x808080` was reported as barely
+visible at the distance the panel is actually read from. It is static because
+the wordmark already animates nine labels and this panel's invalidate budget is
+delicate.
+
+Host tests cover the show edge firing once, dismissal restarting the full
+countdown, playback inhibiting and re-arming, recording hiding an active
+screensaver, the Off position, the timeout-change case, and the 49.7-day
+millisecond wrap.
