@@ -163,3 +163,22 @@ uint32_t audio_pcm_timeline_generation(const audio_pcm_timeline_t *t)
 {
     return t ? t->generation : 0u;
 }
+
+uint32_t audio_pcm_timeline_drop_newest(audio_pcm_timeline_t *t, uint32_t frames)
+{
+    if (!t || !t->frames || t->capacity == 0u || frames == 0u) return 0u;
+    /* Producer-side rewind of the forward runway. play_seq is the floor: frames
+     * at or before it have been handed to the output and are not ours to take
+     * back. History below play_seq is untouched, so scratch keeps its window.
+     * The caller must exclude the consumer while this runs. */
+    uint32_t write_seq = __atomic_load_n(&t->write_seq, __ATOMIC_RELAXED);
+    uint32_t play_seq = __atomic_load_n(&t->play_seq, __ATOMIC_ACQUIRE);
+    uint32_t runway = write_seq - play_seq;
+    if (frames > runway) frames = runway;
+    if (frames == 0u) return 0u;
+    uint32_t index = t->write_index;
+    index = index >= frames ? index - frames : index + t->capacity - frames;
+    t->write_index = index;
+    __atomic_store_n(&t->write_seq, write_seq - frames, __ATOMIC_RELEASE);
+    return frames;
+}

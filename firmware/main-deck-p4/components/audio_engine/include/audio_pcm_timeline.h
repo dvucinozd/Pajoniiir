@@ -43,6 +43,12 @@ bool audio_pcm_timeline_push(audio_pcm_timeline_t *t, int16_t left, int16_t righ
 /* Pop the next normal-playback frame. */
 bool audio_pcm_timeline_pop(audio_pcm_timeline_t *t, audio_mixer_frame_t *out);
 
+/* Withdraw up to `frames` of the most recently pushed frames that normal
+ * playback has not reached yet. Returns how many were actually withdrawn
+ * (clamped to the forward runway, write_seq - play_seq). Producer-side only,
+ * and the consumer must be excluded while it runs. */
+uint32_t audio_pcm_timeline_drop_newest(audio_pcm_timeline_t *t, uint32_t frames);
+
 /* Random-access read by monotonic absolute frame sequence. */
 bool audio_pcm_timeline_read(const audio_pcm_timeline_t *t, uint64_t seq,
                              audio_mixer_frame_t *out);

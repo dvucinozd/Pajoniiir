@@ -486,6 +486,16 @@ static bool deck_pcm_push(uint8_t deck, int16_t left, int16_t right)
         ? audio_pcm_timeline_push(&s_pcm_timelines[deck], left, right)
         : audio_pcm_ring_push(&s_pcm_rings[deck], left, right);
 }
+
+/* Withdraw already-published frames the loop just made unreachable. Both stores
+ * clamp to what playback has not consumed, so this can never claw back audio
+ * that is already on its way out. */
+static uint32_t deck_pcm_drop_newest(uint8_t deck, uint32_t frames)
+{
+    return timeline_active(deck)
+        ? audio_pcm_timeline_drop_newest(&s_pcm_timelines[deck], frames)
+        : audio_pcm_ring_drop_newest(&s_pcm_rings[deck], frames);
+}
 #endif
 
 /* Present the immutable canonical store to the existing scratch DSP. This is a
@@ -2453,6 +2463,12 @@ static void ae_decode_task(void *arg)
         int64_t decode_start_us = esp_timer_get_time();
         int  samples = decode_one_frame(eng, fw, decode_pcm);
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+        /* How much of this batch may be published. Only a loop wrap lowers it,
+         * and it is kept separate from `samples` on purpose: `samples <= 0` is
+         * the decoder's own end-of-input signal further down, and borrowing it
+         * to mean "publish nothing" would divert a mid-file loop wrap into the
+         * EOF wait, which only the pending seek could release. */
+        int publish_frames = samples;
         if (samples > 0) {
             eng->frames_since_seek += (uint64_t)samples;
             /* Source position of this batch's last frame, for scratch capture
@@ -2465,6 +2481,40 @@ static void ae_decode_task(void *arg)
             if (eng->loop_active && eng->sample_rate > 0) {
                 uint32_t current_ms = eng->seek_base_ms + (uint32_t)(eng->frames_since_seek * 1000u / eng->sample_rate);
                 if (current_ms >= eng->loop_end_ms) {
+                    /* Everything past loop_end has to go, or the loop plays it.
+                     * The decoder runs ~2 s ahead of the playhead (measured), so
+                     * arming a loop whose out point is at or behind the playhead
+                     * leaves that whole lead already published and audible before
+                     * the first pass — 1.96 s, about four beats, landing off the
+                     * grid at most tempos. Trimming here also keeps the ring's
+                     * wrap point exactly on loop_end, which is where the output
+                     * task's time-based bookkeeping already assumes it is.
+                     *
+                     * `samples` has not been published yet (the push loop runs
+                     * after this block), so the trim splits in two: withdraw what
+                     * previous iterations already pushed past loop_end, and clamp
+                     * this batch to whatever is still inside the loop. */
+                    uint64_t keep_frames = 0u;
+                    if (eng->loop_end_ms > eng->seek_base_ms) {
+                        keep_frames = ((uint64_t)(eng->loop_end_ms - eng->seek_base_ms) *
+                                       (uint64_t)eng->sample_rate) / 1000u;
+                    }
+                    uint64_t published = eng->frames_since_seek - (uint64_t)samples;
+                    if (published > keep_frames) {
+                        uint32_t excess = (uint32_t)(published - keep_frames);
+                        /* The output task pops without AE_LOCK; shut out
+                         * preemption while write_seq moves down, exactly as the
+                         * user-seek ring flush below does. */
+                        taskENTER_CRITICAL(&s_ring_flush_mux);
+                        (void)deck_pcm_drop_newest(ctx->deck, excess);
+                        taskEXIT_CRITICAL(&s_ring_flush_mux);
+                        publish_frames = 0;  /* none of this batch is in the loop */
+                    } else {
+                        uint64_t room = keep_frames - published;
+                        if ((uint64_t)publish_frames > room) {
+                            publish_frames = (int)room;
+                        }
+                    }
                     eng->seek_target_ms = eng->loop_start_ms;
                     eng->seek_reason    = AE_SEEK_REASON_LOOP; /* gapless ring */
                     eng->seek_requested = true;
@@ -2512,7 +2562,7 @@ static void ae_decode_task(void *arg)
             }
         }
         bool capture_interrupted = false;
-        for (int i = 0; i < samples && runtime->run; i++) {
+        for (int i = 0; i < publish_frames && runtime->run; i++) {
             /* scratch_begin may freeze the canonical producer while this
              * decoded batch is being published. Stop at the next frame so the
              * writer flag can be released promptly; scratch release performs

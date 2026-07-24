@@ -17,3 +17,8 @@ uint32_t audio_pcm_ring_used(const audio_pcm_ring_t *ring);
 uint32_t audio_pcm_ring_free(const audio_pcm_ring_t *ring);
 bool audio_pcm_ring_push(audio_pcm_ring_t *ring, int16_t left, int16_t right);
 bool audio_pcm_ring_pop(audio_pcm_ring_t *ring, audio_mixer_frame_t *out_frame);
+
+/* Withdraw up to `frames` of the most recently pushed, still-unread frames.
+ * Returns how many were actually withdrawn (clamped to the unread span).
+ * Producer-side only, and the consumer must be excluded while it runs. */
+uint32_t audio_pcm_ring_drop_newest(audio_pcm_ring_t *ring, uint32_t frames);

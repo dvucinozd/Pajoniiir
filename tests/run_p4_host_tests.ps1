@@ -544,6 +544,14 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("CONFIG_AUDIO_SCRATCH_ENABLED=y")
 
+# The decoder runs ~2 s ahead of playback, so a loop wrap must withdraw whatever
+# it already published past the out point. Without the trim the loop's first
+# pass plays that lead — about four beats, off the grid at most tempos.
+Assert-FileContains `
+    -Name "p4 loop wrap withdraws decoded frames published past the loop out point" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("deck_pcm_drop_newest", "publish_frames", "uint64_t published = eng->frames_since_seek")
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and

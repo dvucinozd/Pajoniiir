@@ -138,8 +138,87 @@ static void test_random_read_derives_slot_from_sequence_after_many_evictions(voi
     }
 }
 
+/* A loop wrap has to withdraw decoded frames that fell outside the loop. The
+ * decoder runs ~2 s ahead of playback, so without this the audio past the loop
+ * out point is already published and plays before the loop's first pass. */
+static void test_drop_newest_withdraws_only_the_unplayed_runway(void)
+{
+    audio_pcm_timeline_t t;
+    audio_pcm_timeline_init(&t, s_storage, CAP);
+    for (int16_t v = 1; v <= 5; ++v) push_value(&t, v);
+
+    audio_mixer_frame_t out;
+    assert(audio_pcm_timeline_pop(&t, &out) && out.left == 1);
+    assert(audio_pcm_timeline_pop(&t, &out) && out.left == 2);
+
+    /* 3,4,5 are the runway; asking for more than that must clamp to it and
+     * must not claw back 1 and 2, which playback has already taken. */
+    assert(audio_pcm_timeline_drop_newest(&t, 99u) == 3u);
+    assert(audio_pcm_timeline_write_seq(&t) == 2u);
+    assert(audio_pcm_timeline_play_seq(&t) == 2u);
+    assert(!audio_pcm_timeline_pop(&t, &out));
+
+    /* History below play_seq survives, so scratch keeps its window. */
+    assert(audio_pcm_timeline_read(&t, 0u, &out) && out.left == 1);
+    assert(audio_pcm_timeline_read(&t, 1u, &out) && out.left == 2);
+
+    /* The store stays usable: the next push lands where the withdrawn frame
+     * was, and playback picks it up rather than replaying a stale slot. */
+    push_value(&t, 42);
+    assert(audio_pcm_timeline_pop(&t, &out) && out.left == 42);
+}
+
+static void test_drop_newest_partial_keeps_the_frames_still_inside_the_loop(void)
+{
+    audio_pcm_timeline_t t;
+    audio_pcm_timeline_init(&t, s_storage, CAP);
+    for (int16_t v = 1; v <= 5; ++v) push_value(&t, v);
+
+    /* Beat-loop case: the out point is ahead of the playhead, so only the tail
+     * is outside the loop. Everything before it must survive. */
+    assert(audio_pcm_timeline_drop_newest(&t, 2u) == 2u);
+    assert(audio_pcm_timeline_write_seq(&t) == 3u);
+
+    audio_mixer_frame_t out;
+    for (int16_t v = 1; v <= 3; ++v) {
+        assert(audio_pcm_timeline_pop(&t, &out) && out.left == v);
+    }
+    assert(!audio_pcm_timeline_pop(&t, &out));
+    assert(audio_pcm_timeline_drop_newest(&t, 1u) == 0u);   /* nothing left */
+    assert(audio_pcm_timeline_drop_newest(&t, 0u) == 0u);
+    assert(audio_pcm_timeline_drop_newest(NULL, 1u) == 0u);
+}
+
+/* The physical write cursor must rewind across the buffer wrap, not clamp at
+ * zero — otherwise the next push overwrites the wrong slot. */
+static void test_drop_newest_rewinds_across_the_physical_wrap(void)
+{
+    audio_pcm_timeline_t t;
+    audio_pcm_timeline_init(&t, s_storage, CAP);
+    audio_mixer_frame_t out;
+    for (int16_t v = 1; v <= 5; ++v) {
+        push_value(&t, v);
+        assert(audio_pcm_timeline_pop(&t, &out));
+    }
+    /* write_index now sits at 5; pushing two more wraps it to 1. */
+    push_value(&t, 10);
+    push_value(&t, 11);
+    assert(t.write_index == 1u);
+
+    assert(audio_pcm_timeline_drop_newest(&t, 2u) == 2u);
+    assert(t.write_index == 5u);
+
+    push_value(&t, 20);
+    push_value(&t, 21);
+    assert(audio_pcm_timeline_pop(&t, &out) && out.left == 20);
+    assert(audio_pcm_timeline_pop(&t, &out) && out.left == 21);
+}
+
 int main(void)
 {
+    test_drop_newest_withdraws_only_the_unplayed_runway();
+    test_drop_newest_partial_keeps_the_frames_still_inside_the_loop();
+    test_drop_newest_rewinds_across_the_physical_wrap();
     test_initial_future_and_normal_pop();
     test_full_cache_protects_unplayed_audio();
     test_consumed_history_is_evicted_on_wrap();

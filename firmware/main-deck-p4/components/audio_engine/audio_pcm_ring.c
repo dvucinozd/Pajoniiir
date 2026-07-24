@@ -71,3 +71,21 @@ bool audio_pcm_ring_pop(audio_pcm_ring_t *ring, audio_mixer_frame_t *out_frame)
     ring_store_release(&ring->read_index, r + 1u);
     return true;
 }
+
+uint32_t audio_pcm_ring_drop_newest(audio_pcm_ring_t *ring, uint32_t frames)
+{
+    if (!ring || frames == 0u) return 0u;
+    /* Producer-side rewind. Only frames the consumer has not reached may be
+     * withdrawn, so clamp to the unread span rather than to capacity. The
+     * caller must exclude the consumer for the duration (see the loop-wrap
+     * critical section in audio_engine.c): lowering write_index while a pop is
+     * between its emptiness test and its read would let the consumer run past
+     * the producer and underflow the used count. */
+    uint32_t r = ring_load_acquire(&ring->read_index);
+    uint32_t w = ring->write_index;    /* producer owns write_index */
+    uint32_t unread = w - r;
+    if (frames > unread) frames = unread;
+    if (frames == 0u) return 0u;
+    ring_store_release(&ring->write_index, w - frames);
+    return frames;
+}
