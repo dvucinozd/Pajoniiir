@@ -371,6 +371,10 @@ static void wifi_link_probe_task(void *arg)
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     app_settings_ota_copy_password(pass, sizeof(pass));
 
+    /* Same reason as the update check: the caller's 202 has to leave before
+     * this task tears down the server that is sending it. */
+    vTaskDelay(pdMS_TO_TICKS(500));
+
     probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "joining service network");
     s_probe.address[0] = '\0';
 

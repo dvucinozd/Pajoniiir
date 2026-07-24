@@ -113,6 +113,13 @@ static void check_task(void *arg)
     app_settings_ota_get_url(url, sizeof(url));
     app_settings_ota_copy_password(pass, sizeof(pass));
 
+    /* Let the HTTP handler finish and its 202 reach the client before the
+     * transition starts. Without this the first thing this task does is stop
+     * the web server the handler is still executing inside: the reply never
+     * goes out, the caller sees a dead connection, and the operator is left
+     * unable to tell "started" from "crashed". */
+    vTaskDelay(pdMS_TO_TICKS(500));
+
     note(P4_OTA_PULL_CHECKING, ESP_OK, "joining service network");
     esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, STA_TIMEOUT_MS);
     memset(pass, 0, sizeof(pass));   /* done with it; do not leave it on the stack */
