@@ -130,6 +130,13 @@ static audio_pcm_timeline_t s_pcm_timelines[AUDIO_ENGINE_DECK_COUNT];
 static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
 static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+/* Runway the loop-wrap trim must leave behind, in frames. The decoder needs to
+ * reseek, reinit the MP3 decoder and produce its first batch before the output
+ * runs out; measured, that gap is 512 frames (11.6 ms at 44.1 kHz), so this is
+ * four times the observed need. Frames kept back are past loop_end, hence the
+ * cost of raising it is overrun at the loop's first pass. */
+#define AE_LOOP_TRIM_MIN_RUNWAY_FRAMES 2048u
+
 /* Loop-wrap trim accounting. The trim runs on the decode task and is otherwise
  * invisible: it withdraws already-published frames and clamps the current
  * batch, and neither shows up in the late-block or underrun counters. Without
@@ -2510,6 +2517,20 @@ static void ae_decode_task(void *arg)
                     uint64_t published = eng->frames_since_seek - (uint64_t)samples;
                     if (published > keep_frames) {
                         uint32_t excess = (uint32_t)(published - keep_frames);
+                        /* Leave the output something to play while the decoder
+                         * reseeks and refills. Withdrawing the entire runway is
+                         * right in principle and wrong in practice: measured on
+                         * hardware, arming a manual loop withdrew 85802 frames
+                         * (1.95 s) and the ring then ran dry for 512 frames -
+                         * 11.6 ms of silence, heard as a click. The frames kept
+                         * back are past loop_end, so this trades at most ~46 ms
+                         * of overrun for no dropout, against the 1946 ms of
+                         * overrun it replaced. */
+                        uint32_t runway = deck_pcm_used(ctx->deck);
+                        uint32_t max_drop = runway > AE_LOOP_TRIM_MIN_RUNWAY_FRAMES
+                            ? runway - AE_LOOP_TRIM_MIN_RUNWAY_FRAMES
+                            : 0u;
+                        if (excess > max_drop) excess = max_drop;
                         /* The output task pops without AE_LOCK; shut out
                          * preemption while write_seq moves down, exactly as the
                          * user-seek ring flush below does. */

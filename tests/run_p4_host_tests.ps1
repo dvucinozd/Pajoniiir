@@ -550,7 +550,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 loop wrap withdraws decoded frames published past the loop out point" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("deck_pcm_drop_newest", "publish_frames", "uint64_t published = eng->frames_since_seek")
+    -LiteralPatterns @("deck_pcm_drop_newest", "publish_frames", "uint64_t published = eng->frames_since_seek", "AE_LOOP_TRIM_MIN_RUNWAY_FRAMES")
 
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
