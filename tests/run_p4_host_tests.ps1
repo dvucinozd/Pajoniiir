@@ -544,6 +544,25 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("CONFIG_AUDIO_SCRATCH_ENABLED=y")
 
+# The recorder is off by default: its write latency is dominated by the microSD
+# card rather than by the firmware, and chasing that cost a great deal of bench
+# time for something off the critical path. These guards keep it that way, and
+# keep the audio hot path from paying for a feature that is not built.
+Assert-FileContains `
+    -Name "p4 gates the recorder master tap behind CONFIG_AUDIO_RECORDER_ENABLED" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("#if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED")
+
+Assert-FileContains `
+    -Name "p4 gates the recording endpoints behind CONFIG_AUDIO_RECORDER_ENABLED" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("#if CONFIG_AUDIO_RECORDER_ENABLED")
+
+Assert-FileDoesNotContain `
+    -Name "p4 ships with the microSD recorder disabled" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("CONFIG_AUDIO_RECORDER_ENABLED=y")
+
 Assert-FileContains `
     -Name "p4 audio_engine tears down scratch playback on reload/stop and when a deck stops mid-scratch" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `

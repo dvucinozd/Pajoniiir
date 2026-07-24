@@ -1,7 +1,9 @@
 #include "ui_settings.h"
 #include "control_link.h"
 #ifndef WIN32
+#if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
+#endif
 #include "service_log.h"
 #endif
 
@@ -150,9 +152,11 @@ static lv_obj_t *s_label_s3_firmware = NULL;
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
 static ui_settings_recording_toggle_cb_t s_recording_toggle_cb = NULL;
+#if CONFIG_AUDIO_RECORDER_ENABLED
 static lv_obj_t *s_btn_rec = NULL;
 static lv_obj_t *s_label_rec_btn = NULL;
 static lv_obj_t *s_label_rec_status = NULL;
+#endif
 static lv_obj_t *s_label_svc_log = NULL;
 static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
 static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
@@ -369,7 +373,7 @@ static void wifi_remote_event_cb(lv_event_t *event)
     ESP_LOGI(TAG, "Wi-Fi remote: %s", on ? "on" : "off");
 }
 
-#ifndef WIN32
+#if !defined(WIN32) && CONFIG_AUDIO_RECORDER_ENABLED
 static void ui_settings_update_recording_label(void)
 {
     audio_recorder_status_t st;
@@ -401,7 +405,9 @@ static void ui_settings_update_recording_label(void)
         lv_obj_set_style_text_color(s_label_rec_status, col, LV_PART_MAIN);
     }
 }
+#endif  /* !WIN32 && CONFIG_AUDIO_RECORDER_ENABLED */
 
+#ifndef WIN32
 static void ui_settings_update_service_log_label(void)
 {
     if (!s_label_svc_log) {
@@ -422,7 +428,9 @@ static void ui_settings_update_service_log_label(void)
                                     : (st.available ? COL_TEXT_DIM : COL_TEXT_MUTED),
                                 LV_PART_MAIN);
 }
+#endif  /* !WIN32 */
 
+#if !defined(WIN32) && CONFIG_AUDIO_RECORDER_ENABLED
 static void recording_event_cb(lv_event_t *event)
 {
     (void)event;
@@ -436,7 +444,7 @@ static void recording_event_cb(lv_event_t *event)
              ok ? "ok" : "failed");
     ui_settings_update_recording_label();
 }
-#endif
+#endif  /* !WIN32 && CONFIG_AUDIO_RECORDER_ENABLED */
 
 void ui_settings_set_recording_toggle_cb(ui_settings_recording_toggle_cb_t cb)
 {
@@ -639,6 +647,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                             176,
                             56);
 
+#if CONFIG_AUDIO_RECORDER_ENABLED
     /* Compact section that fits the gap between OUTPUT and the full-width
      * MIXER STATUS bar (y=356): button and status share one row. */
     lv_obj_t *rec_section = ui_settings_section(screen, left_x, 304, left_w, 48, "RECORDING");
@@ -667,6 +676,8 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                  &lv_font_montserrat_12, 176, 24);
     lv_obj_set_width(s_label_rec_status, 160);
     lv_label_set_long_mode(s_label_rec_status, LV_LABEL_LONG_CLIP);
+
+#endif  /* CONFIG_AUDIO_RECORDER_ENABLED */
 
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
@@ -981,7 +992,9 @@ void ui_settings_update(const ui_frame_context_t *ctx)
     ui_settings_update_sd_status_label(false);
     ui_settings_update_s3_firmware_label();
     ui_settings_apply_s3_debug_ap_status();
+#if CONFIG_AUDIO_RECORDER_ENABLED
     ui_settings_update_recording_label();
+#endif
     ui_settings_update_service_log_label();
 #endif
 }
