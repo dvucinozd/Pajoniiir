@@ -1287,6 +1287,18 @@ $tests = @(
         )
     },
     @{
+        Name = "p4_ota_pull_config"
+        Dir = "tests/p4_ota_pull_config"
+        Target = "test_p4_ota_pull_config.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/p4_ota_pull/include",
+            "-o", "test_p4_ota_pull_config.exe",
+            "test_p4_ota_pull_config.c",
+            "../../firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull_config.c"
+        )
+    },
+    @{
         Name = "p4_ota_pull_manifest"
         Dir = "tests/p4_ota_pull_manifest"
         Target = "test_p4_ota_pull_manifest.exe"
