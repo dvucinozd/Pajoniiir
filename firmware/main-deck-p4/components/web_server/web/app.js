@@ -414,7 +414,13 @@ function renderProbe(probe) {
     const el = document.getElementById('ota-net-probe');
     if (!el || !probe) return;
     if (probe.state === 'ok') {
-        el.textContent = `Connection test passed — address ${probe.address}, and the access point came back.`;
+        // Two different operations land here. The link test reports an address;
+        // the update check reports what the channel offers and clears it. This
+        // renderer was written for the first and silently mislabelled the
+        // second as "connection test passed" until the detail was used.
+        el.textContent = probe.address
+            ? `Connection test passed — address ${probe.address}, and the access point came back.`
+            : (probe.detail || 'Done.');
     } else if (probe.state === 'running') {
         el.textContent = `Connection test running: ${probe.detail}`;
     } else if (probe.state === 'failed') {
