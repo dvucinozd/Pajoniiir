@@ -137,7 +137,14 @@ static esp_err_t start_web_ap(void)
     cfg.ap.ssid_len = (uint8_t)strlen(s_status.ssid);
     copy_wifi_bytes(cfg.ap.password, sizeof(cfg.ap.password), WIFI_LINK_PASSWORD);
     cfg.ap.channel = 6;
-    cfg.ap.max_connection = 1;
+    /* Four, not one. With a single slot the operator's browser and any second
+     * client - a laptop reading /api/status, a phone left on the page - fight
+     * over it: the loser associates, gets no DHCP lease, ends up on a 169.254
+     * address and looks like a flaky access point rather than a full one. That
+     * cost a whole session of misdiagnosed "Windows wandered off the network".
+     * The AP serves a handful of small JSON requests; four clients is not a
+     * meaningful load. */
+    cfg.ap.max_connection = 4;
     cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
     cfg.ap.pmf_cfg.required = false;
 
