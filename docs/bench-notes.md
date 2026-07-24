@@ -1179,3 +1179,52 @@ Host tests cover the show edge firing once, dismissal restarting the full
 countdown, playback inhibiting and re-arming, recording hiding an active
 screensaver, the Off position, the timeout-change case, and the 49.7-day
 millisecond wrap.
+
+## 2026-07-24 — Pull OTA: STA round trip works, VPS is not ready
+
+### The transition is proven
+
+`RC1-246-g63997094`. The connectivity probe made the full round trip on
+hardware: left `PAJONIIIR`, joined the service network, obtained
+**192.168.0.245**, and came back.
+
+```
+"probe": {"state":"ok","detail":"round trip complete","address":"192.168.0.245"}
+```
+
+Afterwards: `late=0`, `pcm_underrun1=0`, controller and profile still attached,
+library loaded, and no WARN or ERROR in the journal. No reboot, and no wired
+recovery needed. The ESP-Hosted link survived the switch, which is what the
+teardown split was for.
+
+### The VPS serves a catch-all, and that blocks the download step
+
+Every path under `/ota` returns the same 81 590-byte landing page with HTTP 200:
+
+```
+/ota/latest.json                        -> 200  text/html  81590B
+/ota/ovo-ne-postoji-12345               -> 200  text/html  81590B
+/ota/RC1-246-.../main-deck-p4.ddjota    -> 200  text/html  81590B
+```
+
+Two consequences, and the first is the awkward one:
+
+- **The device cannot tell "no update published" from "wrong URL".** Both are
+  200 with a body. Any client written against this would have to infer failure
+  from content rather than status, which is exactly the kind of guessing that
+  produces a confident wrong answer.
+- A download would fetch 81 KB of HTML instead of the bundle. The signature
+  check would reject it, correctly, but the reported error would point at the
+  bundle rather than at the web server.
+
+The channel-metadata parser was fed the actual bytes the server returns and
+rejected them as `malformed`, so the strictness is confirmed against real data
+rather than against a fixture. That is the right behaviour, but it is not a
+substitute for the server serving files.
+
+**Needed before the download step can be tested:** static file serving under
+`/ota`, with a real 404 for paths that do not exist. Until then there is no
+meaningful target to test against.
+
+`CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y` is already set, so TLS against a public
+CA needs no further configuration.
