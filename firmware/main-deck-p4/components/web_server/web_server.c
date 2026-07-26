@@ -25,11 +25,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include "esp_system.h"
+#include "esp_netif.h"
+#include "mdns.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
+static bool s_mdns_started;
+
+static void current_ap_ipv4(char out[16])
+{
+    snprintf(out, 16, "192.168.4.1");
+    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    esp_netif_ip_info_t info = {0};
+    if (ap && esp_netif_get_ip_info(ap, &info) == ESP_OK) {
+        (void)esp_ip4addr_ntoa(&info.ip, out, 16);
+    }
+}
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 static const char *controller_profile_state_name(controller_profile_transfer_state_t state)
@@ -72,9 +85,11 @@ static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *
  * an image, link or plain HTML form. */
 static bool api_request_allowed(httpd_req_t *req, bool mutation)
 {
-    char host[32] = {0};
+    char host[64] = {0};
+    char ap_ipv4[16] = {0};
+    current_ap_ipv4(ap_ipv4);
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK ||
-        (strcmp(host, "192.168.4.1") != 0 && strcmp(host, "192.168.4.1:80") != 0)) {
+        !web_api_host_allowed(host, ap_ipv4)) {
         httpd_resp_set_status(req, "403 Forbidden");
         (void)httpd_resp_send(req, "Invalid API host", HTTPD_RESP_USE_STRLEN);
         return false;
@@ -105,11 +120,15 @@ extern const uint8_t app_js_end[]       asm("_binary_app_js_end");
 static bool redirect_if_needed(httpd_req_t *req)
 {
     char host[64] = {0};
+    char ap_ipv4[16] = {0};
+    current_ap_ipv4(ap_ipv4);
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) == ESP_OK) {
-        if (strstr(host, "192.168.4.1") == NULL) {
-            ESP_LOGD(TAG, "Redirecting Host '%s' to 192.168.4.1", host);
+        if (!web_api_host_allowed(host, ap_ipv4)) {
+            ESP_LOGD(TAG, "Redirecting Host '%s' to %s", host,
+                     WEB_API_CANONICAL_HOSTNAME);
             httpd_resp_set_status(req, "302 Found");
-            httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/index.html");
+            httpd_resp_set_hdr(req, "Location",
+                               "http://" WEB_API_CANONICAL_HOSTNAME "/index.html");
             httpd_resp_send(req, NULL, 0);
             return true;
         }
@@ -995,6 +1014,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"output_late_threshold_us\":%u,"
         "\"pcm_underrun1\":%u,"
         "\"pcm_underrun2\":%u,"
+        "\"startup_waiting1\":%s,"
+        "\"startup_waiting2\":%s,"
+        "\"startup_wait_count1\":%u,"
+        "\"startup_wait_count2\":%u,"
+        "\"startup_prebuffer_frames\":%u,"
         "\"loop_trim_wraps1\":%u,"
         "\"loop_trim_dropped_max1\":%u,"
         "\"loop_trim_dropped_total1\":%u,"
@@ -1052,6 +1076,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.output_late_threshold_us,
         (unsigned)diagnostics.pcm_underrun_count[0],
         (unsigned)diagnostics.pcm_underrun_count[1],
+        diagnostics.startup_waiting[0] ? "true" : "false",
+        diagnostics.startup_waiting[1] ? "true" : "false",
+        (unsigned)diagnostics.startup_wait_count[0],
+        (unsigned)diagnostics.startup_wait_count[1],
+        (unsigned)diagnostics.startup_prebuffer_frames,
         (unsigned)diagnostics.loop_trim_wraps[0],
         (unsigned)diagnostics.loop_trim_dropped_max[0],
         (unsigned)diagnostics.loop_trim_dropped_total[0],
@@ -1403,7 +1432,8 @@ static esp_err_t catch_all_handler(httpd_req_t *req)
     // Ako klijent traži bilo što, a mi smo u Captive Portal modu, preusmjeri na index.html
     ESP_LOGD(TAG, "Catch-all request: %s", req->uri);
     httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/index.html");
+    httpd_resp_set_hdr(req, "Location",
+                       "http://" WEB_API_CANONICAL_HOSTNAME "/index.html");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
@@ -1619,11 +1649,35 @@ esp_err_t web_server_start(void)
     rc = register_uri_or_stop(s_web_server, &catch_all_uri);
     if (rc != ESP_OK) return rc;
 
+    rc = mdns_init();
+    if (rc == ESP_OK) {
+        rc = mdns_hostname_set("pajoniiir");
+    }
+    if (rc == ESP_OK) {
+        rc = mdns_instance_name_set("Pajoniiir");
+    }
+    if (rc == ESP_OK) {
+        rc = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    }
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS startup failed: %s", esp_err_to_name(rc));
+        mdns_free();
+        httpd_stop(s_web_server);
+        s_web_server = NULL;
+        return rc;
+    }
+    s_mdns_started = true;
+    ESP_LOGI(TAG, "web UI available at http://%s", WEB_API_CANONICAL_HOSTNAME);
+
     return ESP_OK;
 }
 
 void web_server_stop(void)
 {
+    if (s_mdns_started) {
+        mdns_free();
+        s_mdns_started = false;
+    }
     if (s_web_server != NULL) {
         httpd_stop(s_web_server);
         s_web_server = NULL;

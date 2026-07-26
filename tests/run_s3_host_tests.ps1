@@ -379,29 +379,31 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -Patterns @("esp_log_set_vprintf", "s_prev_vprintf", "s3_debug_log_ring_append")
 
-# The FLX4 controller-profile fixture must stay in sync with profile.json.
+# Every committed controller-profile fixture must stay in sync with profile.json.
 # Regenerate through the compiler and byte-compare against the committed
 # .s3bin (skipped with a warning when python is unavailable).
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
-    Write-Host "==> controller profile fixture is up to date"
-    $fixtureJson = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.json"
-    $fixtureBin = Join-Path $RepoRoot "controllers/pioneer_ddj_flx4/profile.s3bin"
-    $fixtureTmp = Join-Path $RepoRoot "tests/controller_profile/profile_regen.s3bin"
-    & $python.Source (Join-Path $RepoRoot "tools/controller_profile/compile_profile.py") `
-        $fixtureJson -o $fixtureTmp | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "controller profile fixture regeneration failed"
-    }
-    try {
-        $expected = [System.IO.File]::ReadAllBytes($fixtureBin)
-        $actual = [System.IO.File]::ReadAllBytes($fixtureTmp)
-        if ($expected.Length -ne $actual.Length -or
-            -not [System.Linq.Enumerable]::SequenceEqual($expected, $actual)) {
-            throw "controllers/pioneer_ddj_flx4/profile.s3bin is stale; rerun tools/controller_profile/compile_profile.py"
+    foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci")) {
+        Write-Host "==> controller profile fixture is up to date: $fixtureId"
+        $fixtureJson = Join-Path $RepoRoot "controllers/$fixtureId/profile.json"
+        $fixtureBin = Join-Path $RepoRoot "controllers/$fixtureId/profile.s3bin"
+        $fixtureTmp = Join-Path $RepoRoot "tests/controller_profile/profile_regen.s3bin"
+        & $python.Source (Join-Path $RepoRoot "tools/controller_profile/compile_profile.py") `
+            $fixtureJson -o $fixtureTmp | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "controller profile fixture regeneration failed: $fixtureId"
         }
-    } finally {
-        Remove-Item -LiteralPath $fixtureTmp -Force -ErrorAction SilentlyContinue
+        try {
+            $expected = [System.IO.File]::ReadAllBytes($fixtureBin)
+            $actual = [System.IO.File]::ReadAllBytes($fixtureTmp)
+            if ($expected.Length -ne $actual.Length -or
+                -not [System.Linq.Enumerable]::SequenceEqual($expected, $actual)) {
+                throw "controllers/$fixtureId/profile.s3bin is stale; rerun tools/controller_profile/compile_profile.py"
+            }
+        } finally {
+            Remove-Item -LiteralPath $fixtureTmp -Force -ErrorAction SilentlyContinue
+        }
     }
 } else {
     Write-Warning "python not found; skipping controller profile fixture freshness check"

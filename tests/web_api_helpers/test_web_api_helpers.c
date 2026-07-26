@@ -162,6 +162,21 @@ static void test_profile_upload_policy_is_bounded_and_explicit(void)
     assert(!web_api_profile_overwrite_parse("1", NULL));
 }
 
+static void test_api_host_allow_list_tracks_ap_ip_and_mdns_name(void)
+{
+    assert(web_api_host_allowed("192.168.7.1", "192.168.7.1"));
+    assert(web_api_host_allowed("192.168.7.1:80", "192.168.7.1"));
+    assert(web_api_host_allowed("pajoniiir.local", "192.168.7.1"));
+    assert(web_api_host_allowed("PAJONIIIR.LOCAL:8080", "192.168.7.1"));
+    assert(web_api_host_allowed("pajoniiir.local.", "192.168.7.1"));
+    assert(!web_api_host_allowed("192.168.4.1", "192.168.7.1"));
+    assert(!web_api_host_allowed("pajoniiir.local.evil", "192.168.7.1"));
+    assert(!web_api_host_allowed("pajoniiir.local:", "192.168.7.1"));
+    assert(!web_api_host_allowed("pajoniiir.local:abc", "192.168.7.1"));
+    assert(!web_api_host_allowed("pajoniiir.local:0", "192.168.7.1"));
+    assert(!web_api_host_allowed(NULL, "192.168.7.1"));
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
@@ -175,6 +190,7 @@ int main(void)
     test_clamp_seek_ms_bounds_to_loaded_track_duration();
     test_controller_json_formats_connected_and_absent();
     test_profile_upload_policy_is_bounded_and_explicit();
+    test_api_host_allow_list_tracks_ap_ip_and_mdns_name();
 
     puts("web_api_helpers tests passed");
     return 0;

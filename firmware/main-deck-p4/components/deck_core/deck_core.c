@@ -30,7 +30,7 @@ static const char *TAG = "deck";
 #define CENSOR_REPEAT_BACK_MS 1000u
 #define DECK_TASK_STACK_BYTES 8192u
 #define DECK_UI_COMMAND_QUEUE_LEN 16
-#define DECK_UI_TASK_STACK_BYTES 4096u
+#define DECK_UI_COMMANDS_PER_FRAME 8u
 #define DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN 32u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
@@ -103,7 +103,6 @@ static size_t s_test_ui_command_count;
 #endif
 #if !defined(DECK_CORE_PC_TEST)
 static TaskHandle_t s_deck_task;
-static TaskHandle_t s_deck_ui_task;
 static TaskHandle_t s_vu_task;
 /* Tracks whether the VU meters were last driven non-idle, so a single "all
  * zero" frame is emitted on the play->idle transition and then sending stops. */
@@ -116,10 +115,6 @@ static void deck_core_cleanup_init_failure(void)
     if (s_vu_task) {
         vTaskDelete(s_vu_task);
         s_vu_task = NULL;
-    }
-    if (s_deck_ui_task) {
-        vTaskDelete(s_deck_ui_task);
-        s_deck_ui_task = NULL;
     }
     if (s_deck_task) {
         vTaskDelete(s_deck_task);
@@ -2573,17 +2568,6 @@ static void deck_task(void *arg)
     }
 }
 
-static void deck_ui_command_task(void *arg)
-{
-    (void)arg;
-    deck_ui_command_t cmd;
-    while (1) {
-        if (xQueueReceive(s_ui_command_queue, &cmd, portMAX_DELAY) == pdTRUE) {
-            execute_ui_command(&cmd);
-        }
-    }
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
@@ -2624,17 +2608,6 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
         return ESP_ERR_NO_MEM;
     }
 
-    if (xTaskCreate(deck_ui_command_task, "deck_ui", DECK_UI_TASK_STACK_BYTES, NULL, 4,
-#if !defined(DECK_CORE_PC_TEST)
-                    &s_deck_ui_task
-#else
-                    NULL
-#endif
-                    ) != pdPASS) {
-        deck_core_cleanup_init_failure();
-        return ESP_ERR_NO_MEM;
-    }
-
 #if !defined(DECK_CORE_PC_TEST)
     s_vu_meters_active = false;
     if (!s_vu_task) {
@@ -2648,6 +2621,39 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     *ctrl_event_queue_out = s_queue;
     ESP_LOGI(TAG, "deck core ready");
     return ESP_OK;
+}
+
+void deck_core_process_ui_commands(void)
+{
+    /*
+     * ui_update() is the sole firmware caller. Controller input only enqueues
+     * compact commands on the deck task, so table navigation, screen switching
+     * and track-load submission all execute in the LVGL task context.
+     *
+     * Bound the drain so an encoder burst cannot monopolize one display frame.
+     */
+    for (size_t processed = 0u;
+         processed < DECK_UI_COMMANDS_PER_FRAME;
+         processed++) {
+        deck_ui_command_t cmd;
+#if defined(DECK_CORE_PC_TEST)
+        if (s_test_ui_command_count == 0u) break;
+        cmd = s_test_ui_commands[0];
+        if (s_test_ui_command_count > 1u) {
+            memmove(&s_test_ui_commands[0],
+                    &s_test_ui_commands[1],
+                    (s_test_ui_command_count - 1u) *
+                        sizeof(s_test_ui_commands[0]));
+        }
+        s_test_ui_command_count--;
+#else
+        if (!s_ui_command_queue ||
+            xQueueReceive(s_ui_command_queue, &cmd, 0) != pdTRUE) {
+            break;
+        }
+#endif
+        execute_ui_command(&cmd);
+    }
 }
 
 static deck_core_activity_cb_t s_activity_cb = NULL;
@@ -2861,14 +2867,7 @@ void deck_core_test_reset(void)
 void deck_core_test_flush_ui_commands(void)
 {
     while (s_test_ui_command_count > 0) {
-        deck_ui_command_t cmd = s_test_ui_commands[0];
-        if (s_test_ui_command_count > 1) {
-            memmove(&s_test_ui_commands[0],
-                    &s_test_ui_commands[1],
-                    (s_test_ui_command_count - 1) * sizeof(s_test_ui_commands[0]));
-        }
-        s_test_ui_command_count--;
-        execute_ui_command(&cmd);
+        deck_core_process_ui_commands();
     }
 }
 

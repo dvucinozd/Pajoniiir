@@ -1104,6 +1104,11 @@ void ui_update(void) {
     }
 #endif
 
+    /* Controller browse/load events remain compact commands until this point.
+     * This is the LVGL task, so the resulting screen and library work has one
+     * owner and never runs on the deck-control task. */
+    deck_core_process_ui_commands();
+
     ui_frame_context_t ctx;
     ui_build_frame_context(&ctx);
 #ifndef WIN32

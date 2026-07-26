@@ -211,10 +211,13 @@ Tasks:
 
 1. Define production signing-key custody, provisioning and rotation beyond the
    current `rel-001` development key.
-2. Move controller-triggered UI/library work from the `deck` task to the
-   LVGL/UI task context.
-3. Validate one non-FLX4 controller profile end to end before advertising
-   generic controller compatibility.
+2. [software complete 2026-07-26] Move controller-triggered UI/library work
+   from the `deck` task to the LVGL/UI task context. The deck task now enqueues
+   bounded commands and `ui_update()` drains at most eight per LVGL frame.
+3. [host complete 2026-07-26] Validate the independent `generic_midi_ci`
+   non-FLX4 fixture through compile, P4 registry match, S3 activation, semantic
+   mapping, snapshot and LED output. Physical non-FLX4 acceptance remains
+   required before advertising broad device compatibility.
 4. Continue long two-deck Master Tempo quality/CPU regression testing.
 5. Leave the one-time initial pad sweep as a low-priority cosmetic issue unless
    a specific functional MIDI/state fault becomes reproducible.

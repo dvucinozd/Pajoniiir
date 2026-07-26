@@ -1,6 +1,7 @@
 #include "web_api_helpers.h"
 
 #include <errno.h>
+#include <ctype.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -259,4 +260,55 @@ bool web_api_profile_overwrite_parse(const char *value, bool *overwrite)
         return true;
     }
     return false;
+}
+
+static bool ascii_name_equal(const char *a, size_t a_len,
+                             const char *b, size_t b_len)
+{
+    if (!a || !b || a_len != b_len) return false;
+    for (size_t i = 0; i < a_len; i++) {
+        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool web_api_host_allowed(const char *host_header, const char *ap_ipv4)
+{
+    if (!host_header || !ap_ipv4 || host_header[0] == '\0' ||
+        ap_ipv4[0] == '\0') {
+        return false;
+    }
+
+    const char *colon = strchr(host_header, ':');
+    size_t host_len = colon ? (size_t)(colon - host_header)
+                            : strlen(host_header);
+    if (host_len == 0u) return false;
+    if (colon) {
+        const char *port = colon + 1;
+        if (*port == '\0') return false;
+        uint32_t value = 0u;
+        for (; *port; port++) {
+            if (!isdigit((unsigned char)*port)) return false;
+            value = value * 10u + (uint32_t)(*port - '0');
+            if (value > 65535u) return false;
+        }
+        if (value == 0u) return false;
+    }
+
+    size_t ip_len = strlen(ap_ipv4);
+    if (host_len == ip_len &&
+        memcmp(host_header, ap_ipv4, ip_len) == 0) {
+        return true;
+    }
+
+    static const char canonical[] = WEB_API_CANONICAL_HOSTNAME;
+    size_t canonical_len = sizeof(canonical) - 1u;
+    if (host_len == canonical_len + 1u &&
+        host_header[host_len - 1u] == '.') {
+        host_len--;
+    }
+    return ascii_name_equal(host_header, host_len,
+                            canonical, canonical_len);
 }

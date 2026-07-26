@@ -1,15 +1,16 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-07-26**. The repository baseline
-entering this audit is `RC1-257-g42b741a`; it contains the Pajoniiir rebrand and
-the synchronized host-simulator support. That source is newer than the firmware
-currently installed on the boards.
+Last full status reconciliation: **2026-07-26**. The clean repository baseline
+for this work is `RC1-258-g8c78cd8`; it contains the Pajoniiir rebrand,
+synchronized host-simulator support and repaired release gate. The current
+working tree adds the software-only hardening listed below and is newer than
+the firmware installed on the boards.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **current repository source:** `RC1-257-g42b741a` before the release-gate
-  repair from this audit; this source has not yet been packaged or deployed;
+- **current clean repository base:** `RC1-258-g8c78cd8`; the working-tree
+  hardening after it has not yet been signed, packaged or deployed;
 - **last known bench state:** P4 and S3 were rematched at
   `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
   P4; the boards match each other but are behind current source;
@@ -58,8 +59,8 @@ in the active documents.
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
 | UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
 | Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
-| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both boards last matched at `RC1-254-g21f21963` on 2026-07-24; P4 pull OTA AP→STA→HTTPS download→signature verify→inactive-slot flash→reboot is proven end to end |
-| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits its dedicated hardware acceptance |
+| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both boards last matched at `RC1-254-g21f21963` on 2026-07-24; pull OTA is hardware-proven and now software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation |
+| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; the independent `generic_midi_ci` profile is compile/registry/runtime/LED host-tested; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits dedicated hardware acceptance |
 
 ## Remaining work
 
@@ -72,7 +73,8 @@ in the active documents.
   the recorded per-effect sound and headroom acceptance;
 - run the Phase 20 USB queue-pressure/recovery, guarded web-mutation and UART
   integrity acceptance set;
-- validate a first non-FLX4 controller profile;
+- hardware-validate the host-proven `generic_midi_ci` path with a real
+  non-FLX4 controller before advertising generic compatibility;
 - hardware-accept web profile overwrite, corrupt/interrupted rejection,
   automatic S3 reactivation and reboot persistence;
 - complete only the still-pending hardware rows identified in the MIDI and

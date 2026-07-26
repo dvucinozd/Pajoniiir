@@ -19,15 +19,16 @@
 #define SEM_PITCH  0x03
 
 #define FLX4_FIXTURE "../../controllers/pioneer_ddj_flx4/profile.s3bin"
+#define GENERIC_FIXTURE "../../controllers/generic_midi_ci/profile.s3bin"
 
 static uint8_t g_blob[16384];
 static size_t g_blob_len;
 
-static void load_fixture(void)
+static void load_fixture(const char *path)
 {
-    FILE *f = fopen(FLX4_FIXTURE, "rb");
+    FILE *f = fopen(path, "rb");
     if (!f) {
-        fprintf(stderr, "cannot open fixture %s\n", FLX4_FIXTURE);
+        fprintf(stderr, "cannot open fixture %s\n", path);
         exit(1);
     }
     g_blob_len = fread(g_blob, 1, sizeof(g_blob), f);
@@ -55,7 +56,7 @@ static bool snap_cb(uint8_t type, uint8_t id, int16_t value, void *ctx)
 int main(void)
 {
     printf("=== controller_profile_runtime tests ===\n");
-    load_fixture();
+    load_fixture(FLX4_FIXTURE);
     controller_profile_runtime_init();
 
     uint8_t type = 0, id = 0;
@@ -131,6 +132,24 @@ int main(void)
     assert(controller_profile_runtime_activate(NULL, 0, 0, 0)); /* NULL == clear, true */
     assert(!controller_profile_runtime_active());
     printf("  clear + NULL-blob clear                           PASS\n");
+
+    /* A second, intentionally non-FLX4 fixture proves the runtime path is
+     * table-driven rather than accidentally coupled to the built-in mapper. */
+    load_fixture(GENERIC_FIXTURE);
+    assert(controller_profile_runtime_activate(g_blob, g_blob_len,
+                                               0x1209, 0xC0DE));
+    assert(controller_profile_runtime_map(0x90, 0x10, 0x7F,
+                                          &type, &id, &value));
+    assert(type == SEM_BUTTON && id == 0x10 && value == 1);
+    assert(!controller_profile_runtime_map(0xB1, 0x20, 0x7F,
+                                           &type, &id, &value));
+    assert(controller_profile_runtime_map(0xB1, 0x40, 0x7F,
+                                          &type, &id, &value));
+    assert(type == SEM_PITCH && id == 0x51 && value == 16383);
+    assert(controller_profile_runtime_map_led(1, 1, 1, packet));
+    assert(packet[1] == 0x91 && packet[2] == 0x10 && packet[3] == 0x7F);
+    controller_profile_runtime_clear();
+    printf("  activate + map + LED (generic non-FLX4 fixture)   PASS\n");
 
     printf("controller_profile_runtime tests passed\n");
     return 0;

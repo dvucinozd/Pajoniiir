@@ -380,9 +380,10 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [x] Browse press (`0x96/0x41`) is routed end to end as a P4
   Library/Overview toggle. Load 1 and Load 2 remain the only deck-load
   buttons, and Browse rotate moves the selected row one detent at a time.
-  Hardware smoke on 2026-06-25 verified the Browse path after increasing the
-  `deck` task stack to cover the current controller-triggered Library UI call
-  chain.
+  Hardware smoke on 2026-06-25 verified the Browse path. Since 2026-07-26 the
+  `deck` task only queues browse/load commands; `ui_update()` drains them in
+  the LVGL task (maximum eight per frame), so the old controller-triggered
+  Library call chain no longer runs on the deck stack.
 - [x] MVP Play/Cue/PFL LED reconnect resynchronization is routed end to end
   through S3 FLX4 connection state and P4 forced LED snapshots.
 - [ ] Hardware smoke S3-to-P4 input snapshot replay: move Master Level, channel

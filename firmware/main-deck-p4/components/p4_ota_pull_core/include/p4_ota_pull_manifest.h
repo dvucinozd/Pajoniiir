@@ -17,7 +17,7 @@
  * unsigned firmware.
  *
  * `size` and `sha256` are here so a truncated or corrupted transfer is rejected
- * before the bundle parser is even entered.
+ * before the inactive slot is activated.
  *
  * Expected shape:
  *
@@ -57,15 +57,36 @@ typedef struct {
     uint8_t  sha256[32];
 } p4_ota_pull_manifest_t;
 
+typedef enum {
+    P4_OTA_PULL_RELEASE_SAME = 0,
+    P4_OTA_PULL_RELEASE_NEWER,
+    P4_OTA_PULL_RELEASE_OLDER,
+    P4_OTA_PULL_RELEASE_UNORDERED,
+} p4_ota_pull_release_order_t;
+
 /* `json` need not be NUL-terminated; `len` bounds it. */
 p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
     const char *json, size_t len, p4_ota_pull_manifest_t *out);
 
 const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r);
 
-/* True when the advertised release differs from what is running, i.e. an
- * update is worth downloading. Comparison is exact: a build that reports a
- * different string is a different build, and downgrades are as legitimate as
- * upgrades on a bench. */
-bool p4_ota_pull_manifest_differs(const p4_ota_pull_manifest_t *m,
-                                  const char *running_version);
+/*
+ * Compare Pajoniiir's `git describe` versions:
+ *
+ *   RC<tag>-<commits-since-tag>-g<hash>[-dirty]
+ *
+ * Pull OTA accepts only NEWER. A signed older bundle remains installable
+ * through the local push-OTA service path, which keeps rollback possible
+ * without allowing an unauthenticated channel document to force it.
+ */
+p4_ota_pull_release_order_t p4_ota_pull_release_compare(
+    const char *offered_version, const char *running_version);
+
+/* Convenience wrapper used by the pull worker. */
+p4_ota_pull_release_order_t p4_ota_pull_manifest_order(
+    const p4_ota_pull_manifest_t *m, const char *running_version);
+
+/* Wrap-safe freshness predicate for an offer timestamp expressed in ticks. */
+bool p4_ota_pull_offer_fresh(uint32_t now_ticks,
+                             uint32_t offered_at_ticks,
+                             uint32_t ttl_ticks);

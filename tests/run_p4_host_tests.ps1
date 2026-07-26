@@ -757,11 +757,11 @@ Assert-FileContains `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
 
 Assert-FileContains `
-    -Name "p4 web mutations require fixed-host marked POST requests and report queue pressure" `
+    -Name "p4 web mutations require allow-listed-host marked POST requests and report queue pressure" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @(
         "api_request_allowed(req, true)",
-        'strcmp(host, "192.168.4.1")',
+        "web_api_host_allowed(host, ap_ipv4)",
         '"X-DDJ-Control"',
         "queue_rc = deck_core_queue_event(&ev);",
         '"503 Service Unavailable"',
@@ -809,6 +809,18 @@ $tests = @(
             "-o", "test_audio_eof_policy.exe",
             "test_audio_eof_policy.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eof_policy.c"
+        )
+    },
+    @{
+        Name = "audio_start_gate"
+        Dir = "tests/audio_start_gate"
+        Target = "test_audio_start_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_start_gate.exe",
+            "test_audio_start_gate.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_start_gate.c"
         )
     },
     @{

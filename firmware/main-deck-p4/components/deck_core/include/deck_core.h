@@ -120,6 +120,12 @@ void deck_core_set_activity_cb(deck_core_activity_cb_t cb);
 
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
 
+/*
+ * Drain controller-originated UI commands. ui_update() is the sole firmware
+ * caller so all LVGL/library work executes in the LVGL task context.
+ */
+void deck_core_process_ui_commands(void);
+
 // Reset the deck state synchronously (on track load).
 // Compatibility helper: resets Deck 1.
 void deck_core_reset(void);

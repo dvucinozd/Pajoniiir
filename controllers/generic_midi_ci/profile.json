@@ -1,0 +1,34 @@
+{
+  "schema": "p4-controller-profile-v1",
+  "name": "Generic MIDI CI Controller",
+  "vendor": "Pajoniiir Test Fixture",
+  "vid": "0x1209",
+  "pid": "0xC0DE",
+  "decks": 2,
+  "capabilities": {
+    "led_feedback": true,
+    "usb_audio": false,
+    "jog_touch": false,
+    "pitch_14bit": false
+  },
+  "inputs": [
+    { "type": "button", "event": "deck1.play", "status": "0x90", "data1": "0x10" },
+    { "type": "button", "event": "deck1.cue", "status": "0x90", "data1": "0x11" },
+    { "type": "button", "event": "deck2.play", "status": "0x91", "data1": "0x10" },
+    { "type": "button", "event": "deck2.cue", "status": "0x91", "data1": "0x11" },
+    { "type": "cc14", "event": "mixer.ch1_volume", "status": "0xB0", "msb": "0x20", "lsb": "0x40", "replay": true },
+    { "type": "cc14", "event": "mixer.ch2_volume", "status": "0xB1", "msb": "0x20", "lsb": "0x40", "replay": true },
+    { "type": "cc14", "event": "mixer.crossfader", "status": "0xB0", "msb": "0x21", "lsb": "0x41", "replay": true },
+    { "type": "encoder_2c", "event": "browser.delta", "status": "0xB0", "data1": "0x22" },
+    { "type": "button", "event": "browser.press", "status": "0x90", "data1": "0x12" },
+    { "type": "button", "event": "browser.load_deck1", "status": "0x90", "data1": "0x13" },
+    { "type": "button", "event": "browser.load_deck2", "status": "0x90", "data1": "0x14" }
+  ],
+  "outputs": [
+    { "kind": "note", "led": "play", "deck_status": ["0x90", "0x91"], "data1": "0x10" },
+    { "kind": "note", "led": "cue", "deck_status": ["0x90", "0x91"], "data1": "0x11" }
+  ],
+  "audio": {
+    "enabled": false
+  }
+}

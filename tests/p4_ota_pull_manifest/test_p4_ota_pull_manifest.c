@@ -33,17 +33,38 @@ static void test_parses_the_document_the_publisher_writes(void)
     assert(m.sha256[30] == 0xbe && m.sha256[31] == 0x22);
 }
 
-static void test_release_comparison_drives_the_decision(void)
+static void test_release_comparison_is_newer_only_and_monotonic(void)
 {
     p4_ota_pull_manifest_t m;
     assert(parse(GOOD, &m) == P4_OTA_PULL_MANIFEST_OK);
-    assert(!p4_ota_pull_manifest_differs(&m, "RC1-237-g7bf0fd3c"));
-    assert(p4_ota_pull_manifest_differs(&m, "RC1-236-gac97f145"));
-    /* A downgrade is a legitimate bench operation, so "different" is the
-     * question, not "newer". */
-    assert(p4_ota_pull_manifest_differs(&m, "RC1-999-gffffffff"));
-    assert(!p4_ota_pull_manifest_differs(&m, NULL));
-    assert(!p4_ota_pull_manifest_differs(NULL, "x"));
+    assert(p4_ota_pull_manifest_order(&m, "RC1-237-g7bf0fd3c") ==
+           P4_OTA_PULL_RELEASE_SAME);
+    assert(p4_ota_pull_manifest_order(&m, "RC1-236-gac97f145") ==
+           P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_manifest_order(&m, "RC1-999-gffffffff") ==
+           P4_OTA_PULL_RELEASE_OLDER);
+
+    assert(p4_ota_pull_release_compare("RC2", "RC1-999-gffffffff") ==
+           P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_release_compare("RC1-1-gabcdef0", "RC2") ==
+           P4_OTA_PULL_RELEASE_OLDER);
+    assert(p4_ota_pull_release_compare("RC1-7-gabcdef0",
+                                       "RC1-7-g1234567") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_release_compare("custom", "RC1") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_release_compare(NULL, "RC1") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_manifest_order(NULL, "RC1") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+}
+
+static void test_offer_freshness_is_wrap_safe(void)
+{
+    assert(p4_ota_pull_offer_fresh(150u, 100u, 50u));
+    assert(!p4_ota_pull_offer_fresh(151u, 100u, 50u));
+    assert(!p4_ota_pull_offer_fresh(100u, 100u, 0u));
+    assert(p4_ota_pull_offer_fresh(5u, UINT32_MAX - 4u, 10u));
 }
 
 static void test_unknown_schema_is_refused_not_guessed(void)
@@ -146,6 +167,31 @@ static void test_bad_values_are_refused(void)
         "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
         "\"url\":\"a\\/b\",\"size\":1,\"sha256\":\"" SHA "\"}}";
     assert(parse(escaped, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
+
+    const char *absolute_url =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"https://evil.example/fw.ddjota\",\"size\":1,\"sha256\":\"" SHA "\"}}";
+    assert(parse(absolute_url, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
+
+    const char *traversal =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"../old/fw.ddjota\",\"size\":1,\"sha256\":\"" SHA "\"}}";
+    assert(parse(traversal, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
+
+    const char *encoded_traversal =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"%2e%2e/old/fw.ddjota\",\"size\":1,\"sha256\":\"" SHA "\"}}";
+    assert(parse(encoded_traversal, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
+
+    const char *scheme_like_path =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"https:evil.example/fw.ddjota\",\"size\":1,\"sha256\":\"" SHA "\"}}";
+    assert(parse(scheme_like_path, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
+
+    const char *query =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"fw.ddjota?redirect=x\",\"size\":1,\"sha256\":\"" SHA "\"}}";
+    assert(parse(query, &m) == P4_OTA_PULL_MANIFEST_BAD_VALUE);
 }
 
 static void test_oversized_fields_are_refused_not_truncated(void)
@@ -174,7 +220,8 @@ static void test_null_and_empty_are_inert(void)
 int main(void)
 {
     test_parses_the_document_the_publisher_writes();
-    test_release_comparison_drives_the_decision();
+    test_release_comparison_is_newer_only_and_monotonic();
+    test_offer_freshness_is_wrap_safe();
     test_unknown_schema_is_refused_not_guessed();
     test_a_document_without_a_p4_target_is_distinguishable();
     test_fields_are_read_from_the_p4_object_only();

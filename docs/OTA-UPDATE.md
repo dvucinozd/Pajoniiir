@@ -51,9 +51,31 @@ the new signed endpoint.
 
 The current firmware trusts one key ID, `rel-001`. Adding or replacing trusted
 keys requires a firmware update signed by the existing key or a wired recovery
-flash. Signed older releases remain installable intentionally: the project does
-not yet enforce anti-rollback because Git-derived version strings are not a
-safe monotonic security counter and service rollback remains useful.
+flash. The remote pull channel accepts only a newer monotonic Pajoniiir
+`RC<tag>-<commits>-g<hash>` version. Older signed releases remain installable
+intentionally through the local push-OTA service path, preserving controlled
+rollback without allowing the unauthenticated discovery document to select it.
+
+## Pull OTA hardening
+
+The normal P4 remote is available at `http://pajoniiir.local` and at the active
+AP IPv4 recovery address. API Host validation accepts only those exact
+identities (with an optional numeric port); mDNS is discovery, not
+authentication, and the existing `X-DDJ-Control: 1` mutation marker remains
+mandatory.
+
+`latest.json` is discovery metadata, while authenticity remains in the signed
+`.ddjota` manifest. The pull worker nevertheless applies defense in depth:
+
+- only a strictly newer comparable release is offered;
+- an offer expires after ten minutes and must then be checked again;
+- bundle URLs must be relative paths without traversal, query or fragment;
+- advertised size must match the HTTP response and signed bundle layout;
+- SHA-256 of the complete downloaded bundle must match `latest.json`;
+- the embedded signature and image SHA-256 are still verified before the
+  inactive slot is activated.
+
+Use local signed upload when an intentional rollback is required.
 
 ## Build both targets
 

@@ -22,6 +22,7 @@
 #endif
 #include "audio_decoder.h"
 #include "audio_eof_policy.h"
+#include "audio_start_gate.h"
 #include "audio_format.h"
 #include "audio_diag.h"
 #include "audio_delay_fx.h"
@@ -130,6 +131,13 @@ static audio_pcm_timeline_t s_pcm_timelines[AUDIO_ENGINE_DECK_COUNT];
 static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
 static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+#if AE_FW
+/* Delay the first audible block until the producer has two output blocks of
+ * runway. The open bench issue was exactly 512 failed frame pops at startup. */
+#define AE_START_PREBUFFER_FRAMES 512u
+static bool     s_start_waiting[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_start_wait_count[AUDIO_ENGINE_DECK_COUNT];
+#endif
 /* Runway the loop-wrap trim must leave behind, in frames. The decoder needs to
  * reseek, reinit the MP3 decoder and produce its first batch before the output
  * runs out; measured, that gap is 512 frames (11.6 ms at 44.1 kHz), so this is
@@ -1137,7 +1145,20 @@ static bool deck_output_active(uint8_t deck)
     if (atomic_load_bool(&s_scratch_playing[deck]) &&
         (atomic_load_bool(&s_scratch_started_paused[deck]) ||
          (atomic_load_bool(&eng->playing) && !atomic_load_bool(&eng->paused)))) return true;
-    return atomic_load_bool(&eng->playing) && !atomic_load_bool(&eng->paused);
+    bool playing = atomic_load_bool(&eng->playing) &&
+                   !atomic_load_bool(&eng->paused);
+    if (!playing) return false;
+    if (atomic_load_bool(&s_start_waiting[deck])) {
+        uint32_t future = deck_pcm_used(deck);
+        if (!audio_start_gate_ready(future, AE_START_PREBUFFER_FRAMES,
+                                    atomic_load_bool(&eng->eof))) {
+            return false;
+        }
+        atomic_store_bool(&s_start_waiting[deck], false);
+        ESP_LOGI(TAG, "startup gate D%u released with %u future frames",
+                 (unsigned)deck + 1u, (unsigned)future);
+    }
+    return true;
 }
 
 static void update_deck_output_position(uint8_t deck, uint32_t consumed)
@@ -3270,6 +3291,9 @@ static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, c
         uint8_t deck = (uint8_t)(eng - s_engines);
         atomic_store_bool(&s_deck_hold[deck], false);
         clear_scratch_playback_state(deck);
+#if AE_FW
+        atomic_store_bool(&s_start_waiting[deck], false);
+#endif
     }
     memset(eng, 0, sizeof(*eng));
     engine_pitch_store((uint8_t)(eng - s_engines), 1.0f);
@@ -3298,6 +3322,10 @@ esp_err_t audio_engine_init(void)
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         atomic_store_u16(&s_channel_volume[i], AUDIO_MIXER_CONTROL_MAX);
         s_pcm_underrun_count[i] = 0u;
+#if AE_FW
+        atomic_store_bool(&s_start_waiting[i], false);
+        s_start_wait_count[i] = 0u;
+#endif
         s_loop_trim_wraps[i] = 0u;
         s_loop_trim_dropped_max[i] = 0u;
         s_loop_trim_dropped_total[i] = 0u;
@@ -3630,6 +3658,16 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
 #endif
     }
 
+#if AE_FW
+    bool wait_for_prebuffer =
+        !audio_start_gate_ready(deck_pcm_used(deck),
+                                AE_START_PREBUFFER_FRAMES,
+                                atomic_load_bool(&eng->eof));
+    atomic_store_bool(&s_start_waiting[deck], wait_for_prebuffer);
+    if (wait_for_prebuffer) {
+        __atomic_add_fetch(&s_start_wait_count[deck], 1u, __ATOMIC_RELAXED);
+    }
+#endif
     atomic_store_bool(&eng->paused, false);
     atomic_store_bool(&eng->playing, true);
     return ESP_OK;
@@ -3642,6 +3680,9 @@ static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
 
     atomic_store_bool(&eng->paused, true);
     atomic_store_bool(&eng->playing, false);
+#if AE_FW
+    atomic_store_bool(&s_start_waiting[deck], false);
+#endif
     return ESP_OK;
 }
 
@@ -3654,6 +3695,9 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
     atomic_store_bool(&eng->playing, false);
     atomic_store_bool(&eng->paused, false);
     atomic_store_bool(&eng->playback_finished, false);
+#if AE_FW
+    atomic_store_bool(&s_start_waiting[deck], false);
+#endif
     eng->loading = false;
     eng->load_progress = 100;
 
@@ -5002,6 +5046,12 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         out_snapshot->pcm_timeline_generation[deck] = timeline_active(deck)
             ? audio_pcm_timeline_generation(&s_pcm_timelines[deck]) : 0u;
         out_snapshot->pcm_underrun_count[deck] = s_pcm_underrun_count[deck];
+#if AE_FW
+        out_snapshot->startup_waiting[deck] =
+            atomic_load_bool(&s_start_waiting[deck]);
+        out_snapshot->startup_wait_count[deck] =
+            __atomic_load_n(&s_start_wait_count[deck], __ATOMIC_RELAXED);
+#endif
         out_snapshot->loop_trim_wraps[deck] = s_loop_trim_wraps[deck];
         out_snapshot->loop_trim_dropped_max[deck] = s_loop_trim_dropped_max[deck];
         out_snapshot->loop_trim_dropped_total[deck] = s_loop_trim_dropped_total[deck];
@@ -5034,6 +5084,12 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
             unpack_pad_fx_command(pad_command).active &&
             pad_fx_kind_from_command(pad_command) != AUDIO_PAD_FX_KIND_NONE;
     }
+    out_snapshot->startup_prebuffer_frames =
+#if AE_FW
+        AE_START_PREBUFFER_FRAMES;
+#else
+        0u;
+#endif
     out_snapshot->limiter = s_limiter_stats;
     monitor_pcm_link_stats_t monitor_stats = { 0 };
     monitor_pcm_link_get_stats(&monitor_stats);

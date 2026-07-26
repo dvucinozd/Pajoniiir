@@ -12,6 +12,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
+#include "mbedtls/sha256.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -30,10 +31,13 @@ static const char *TAG = "ota_pull";
  * sit off its own AP waiting for a server that never will. */
 #define HTTP_TIMEOUT_MS 15000
 #define STA_TIMEOUT_MS  20000u
+#define OFFER_TTL_MS    (10u * 60u * 1000u)
 
 static p4_ota_pull_status_t s_status;
 /* Bundle path from the last check that found something. */
 static char s_install_url[P4_OTA_PULL_URL_MAX + 1u];
+static uint8_t s_install_sha256[32];
+static TickType_t s_offer_tick;
 static volatile bool s_running;
 
 static void note(p4_ota_pull_state_t state, esp_err_t err, const char *detail)
@@ -155,11 +159,21 @@ static void check_task(void *arg)
                 snprintf(s_status.available_release,
                          sizeof(s_status.available_release), "%s", m.release);
                 s_status.available_size = m.size;
-                if (p4_ota_pull_manifest_differs(&m, me->version)) {
+                p4_ota_pull_release_order_t order =
+                    p4_ota_pull_manifest_order(&m, me->version);
+                if (order == P4_OTA_PULL_RELEASE_NEWER) {
                     snprintf(s_install_url, sizeof(s_install_url), "%s", m.url);
+                    memcpy(s_install_sha256, m.sha256, sizeof(s_install_sha256));
+                    s_offer_tick = xTaskGetTickCount();
                     note(P4_OTA_PULL_AVAILABLE, ESP_OK, m.release);
-                } else {
+                } else if (order == P4_OTA_PULL_RELEASE_SAME) {
                     note(P4_OTA_PULL_UP_TO_DATE, ESP_OK, "already running this build");
+                } else if (order == P4_OTA_PULL_RELEASE_OLDER) {
+                    note(P4_OTA_PULL_UP_TO_DATE, ESP_OK,
+                         "older release ignored; use signed local upload to roll back");
+                } else {
+                    note(P4_OTA_PULL_FAILED, ESP_ERR_NOT_SUPPORTED,
+                         "release version is not comparable");
                 }
             }
         }
@@ -188,7 +202,8 @@ static void check_task(void *arg)
  * order the push path uses, and the reason arriving over TLS grants the bundle
  * no additional trust. */
 static esp_err_t download_and_install(const char *base_url, const char *rel_url,
-                                      uint32_t expect_size)
+                                      uint32_t expect_size,
+                                      const uint8_t expect_sha256[32])
 {
     char url[APP_SETTINGS_OTA_URL_CAP + P4_OTA_PULL_URL_MAX + 4u];
     size_t n = strnlen(base_url, APP_SETTINGS_OTA_URL_CAP);
@@ -206,6 +221,16 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
 
     uint8_t *buf = malloc(DL_CHUNK);
     if (!buf) { esp_http_client_cleanup(client); return ESP_ERR_NO_MEM; }
+
+    mbedtls_sha256_context bundle_sha;
+    mbedtls_sha256_init(&bundle_sha);
+    bool sha_started = mbedtls_sha256_starts(&bundle_sha, 0) == 0;
+    if (!sha_started) {
+        free(buf);
+        esp_http_client_cleanup(client);
+        mbedtls_sha256_free(&bundle_sha);
+        return ESP_FAIL;
+    }
 
     esp_err_t rc = esp_http_client_open(client, 0);
     if (rc != ESP_OK) goto done;
@@ -232,6 +257,10 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
                                        (int)(sizeof(header) - have));
         if (got <= 0) { rc = ESP_ERR_INVALID_RESPONSE; goto done; }
         have += (size_t)got;
+    }
+    if (mbedtls_sha256_update(&bundle_sha, header, sizeof(header)) != 0) {
+        rc = ESP_FAIL;
+        goto done;
     }
 
     ddj_ota_manifest_t manifest;
@@ -271,8 +300,27 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
             p4_ota_abort("flash write failed");
             goto done;
         }
+        if (mbedtls_sha256_update(&bundle_sha, buf, (size_t)got) != 0) {
+            p4_ota_abort("bundle hash failed");
+            rc = ESP_FAIL;
+            goto done;
+        }
         written += (size_t)got;
         s_status.downloaded = (uint32_t)written;
+    }
+
+    uint8_t actual_sha256[32];
+    if (mbedtls_sha256_finish(&bundle_sha, actual_sha256) != 0) {
+        p4_ota_abort("bundle hash failed");
+        rc = ESP_FAIL;
+        goto done;
+    }
+    sha_started = false;
+    if (!expect_sha256 ||
+        memcmp(actual_sha256, expect_sha256, sizeof(actual_sha256)) != 0) {
+        p4_ota_abort("channel sha256 mismatch");
+        rc = ESP_ERR_INVALID_CRC;
+        goto done;
     }
 
     /* Verifies the image SHA-256 against the signed manifest and activates the
@@ -280,6 +328,11 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     rc = p4_ota_finish();
 
 done:
+    if (sha_started) {
+        uint8_t discard[32];
+        (void)mbedtls_sha256_finish(&bundle_sha, discard);
+    }
+    mbedtls_sha256_free(&bundle_sha);
     free(buf);
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
@@ -306,13 +359,16 @@ static void install_task(void *arg)
         note(P4_OTA_PULL_FAILED, rc, "could not join network");
     } else {
         note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "downloading");
-        rc = download_and_install(url, s_install_url, s_status.available_size);
+        rc = download_and_install(url, s_install_url, s_status.available_size,
+                                  s_install_sha256);
         if (rc == ESP_OK) {
             note(P4_OTA_PULL_READY_TO_REBOOT, ESP_OK, "verified, restarting");
         } else if (rc == ESP_ERR_INVALID_MAC) {
             note(P4_OTA_PULL_FAILED, rc, "signature is not ours - NOT installed");
         } else if (rc == ESP_ERR_INVALID_SIZE) {
             note(P4_OTA_PULL_FAILED, rc, "size does not match the manifest");
+        } else if (rc == ESP_ERR_INVALID_CRC) {
+            note(P4_OTA_PULL_FAILED, rc, "bundle hash does not match the channel");
         } else if (rc == ESP_ERR_NOT_FOUND) {
             note(P4_OTA_PULL_FAILED, rc, "bundle not on the server");
         } else {
@@ -342,6 +398,15 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     /* Only what a check actually offered, and only if the caller names it back.
      * A stale page must not be able to install something never seen. */
     if (s_status.state != P4_OTA_PULL_AVAILABLE) return ESP_ERR_INVALID_STATE;
+    if (!p4_ota_pull_offer_fresh((uint32_t)xTaskGetTickCount(),
+                                 (uint32_t)s_offer_tick,
+                                 (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
+        s_install_url[0] = '\0';
+        memset(s_install_sha256, 0, sizeof(s_install_sha256));
+        note(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
+             "update offer expired; check again");
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!expected_release ||
         strncmp(expected_release, s_status.available_release,
                 P4_OTA_PULL_RELEASE_MAX) != 0) {
@@ -378,6 +443,9 @@ esp_err_t p4_ota_pull_check_start(void)
     note(P4_OTA_PULL_CHECKING, ESP_OK, "starting");
     s_status.available_release[0] = '\0';
     s_status.available_size = 0u;
+    s_install_url[0] = '\0';
+    memset(s_install_sha256, 0, sizeof(s_install_sha256));
+    s_offer_tick = 0;
     /* 8 KiB: TLS handshake and the mbedTLS record buffers run on this task. */
     if (xTaskCreate(check_task, "ota_check", 8192, NULL, 4, NULL) != pdPASS) {
         s_running = false;
@@ -389,5 +457,14 @@ esp_err_t p4_ota_pull_check_start(void)
 
 p4_ota_pull_status_t p4_ota_pull_get_status(void)
 {
+    if (!s_running && s_status.state == P4_OTA_PULL_AVAILABLE &&
+        !p4_ota_pull_offer_fresh((uint32_t)xTaskGetTickCount(),
+                                 (uint32_t)s_offer_tick,
+                                 (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
+        s_install_url[0] = '\0';
+        memset(s_install_sha256, 0, sizeof(s_install_sha256));
+        note(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
+             "update offer expired; check again");
+    }
     return s_status;
 }

@@ -19,13 +19,16 @@ Cilj je standalone dual-deck DJ sustav:
 - Postojeci `0xA5` UART `control_link` ostaje interna komunikacija izmedu S3 i
   P4.
 
-Trenutni `master`
-ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master Tempo, dualni
-MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4/S3 OTA. Flanger, Delay i
-zadnji code-review remediation su software-testirani i OTA-deployani, ali
-njihov ciljani hardware smoke još nije zatvoren. I dalje ga ne tretiraj kao
-production-ready bez provjere aktualnih rizika, buildova i relevantnog
-hardware smoke testa.
+Trenutni `master` ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master
+Tempo, dualni MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4/S3 OTA.
+Pull OTA koristi newer-only politiku, desetominutni offer TTL, provjeru
+channel size/SHA-256, `pajoniiir.local` i dinamički Host allow-list; lokalni
+potpisani push OTA ostaje servisni rollback put. Controller browse/load UI
+naredbe izvršavaju se isključivo iz `ui_update()` u LVGL tasku. Uz FLX4
+fixture postoji i `controllers/generic_midi_ci` za host provjeru generičkog
+profile puta, ali ne predstavlja hardware prihvat stvarnog non-FLX4 uređaja.
+I dalje ga ne tretiraj kao production-ready bez provjere aktualnih rizika,
+buildova i relevantnog hardware smoke testa.
 
 ## Najvaznije putanje
 
@@ -45,6 +48,7 @@ hardware smoke testa.
   docs\reference\Pioneer-DDJ-FLX4.midi.xml
   firmware\control-board-s3
   firmware\main-deck-p4
+  controllers\generic_midi_ci
   tests
 ```
 

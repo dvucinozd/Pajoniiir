@@ -15,9 +15,9 @@ Status: current phase ledger, reconciled 2026-07-26.
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
-| Controller profiles | Firmware path implemented, host-tested, FLX4-profile hardware-verified and deployed in `RC1-131-gc391e306`; remote update acceptance pending |
+| Controller profiles | Firmware path implemented and host-tested with both FLX4 and the independent `generic_midi_ci` fixture; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; non-FLX4 hardware and remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; both targets matched at `RC1-254-g21f21963` 2026-07-24 |
-| Pull OTA (P4, Wi-Fi STA) | **Implemented and proven end to end on hardware 2026-07-24**: AP→STA→AP, HTTPS check against `pajoniiir.zadar.click/ota`, signed-bundle download + verify + install + reboot. Follow-ups: check should offer newer-only (not just different), and mDNS/dynamic Host allow-list not yet done |
+| Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |
@@ -2247,12 +2247,18 @@ silently ship disabled.
 
 ## Phase 23: P4 Pull OTA Through Temporary Wi-Fi STA Mode
 
-Status: core path implemented and proven end to end on hardware 2026-07-24.
+Status: core path implemented and proven end to end on hardware 2026-07-24;
+production software hardening implemented and host-tested 2026-07-26.
 `RC1-254-g21f21963` completed AP→STA→HTTPS channel read→signed bundle
 download→verification→inactive-slot flash→reboot, with AP restoration on the
-non-install paths. Remaining production follow-ups are newer-only/downgrade
-policy, a specific expired-offer UI message, canonical `pajoniiir.local` mDNS,
-the dynamic Host allow-list and the extended negative/recovery matrix below.
+non-install paths. Pull discovery now accepts only a newer monotonic
+`RC<tag>-<distance>-g<hash>` offer, expires it after ten minutes, rejects
+unorderable/older releases and verifies the downloaded bundle against the
+channel size and SHA-256 before activation. Signed local push OTA intentionally
+remains the service rollback path. The canonical `pajoniiir.local` mDNS
+identity, dynamic AP-IP/mDNS Host allow-list and strict relative bundle-path
+validation are implemented with host coverage. Hardware re-smoke and the
+remaining extended recovery matrix below are still open.
 The current standalone P4 Wi-Fi Remote remains the normal operating mode. The
 canonical mDNS hostname is exactly `pajoniiir.local`; do not introduce another
 product hostname or a differently spelled alias.
@@ -2367,16 +2373,16 @@ web connection to remain alive after the AP is stopped.
 
 ### Mandatory mDNS identity
 
-Add the ESP-IDF mDNS component to the P4 target with:
+The P4 target now uses the ESP-IDF mDNS component with:
 
 - hostname `pajoniiir`;
 - canonical URL `http://pajoniiir.local`;
 - `_http._tcp` service on port 80;
-- a stable instance name such as `Pajoniiir P4`.
+- stable instance name `Pajoniiir`.
 
-Register `pajoniiir.local` on the AP interface during normal operation and
-re-register it on the STA interface after an IP address is obtained. Remove
-the interface registration before destroying that netif. The normal AP web UI
+The web-server lifecycle registers `pajoniiir.local` while the normal AP web
+surface is active and removes it when that surface stops for the STA visit.
+The normal AP web UI
 must remain reachable through both `http://192.168.4.1` and
 `http://pajoniiir.local`.
 
@@ -2386,13 +2392,12 @@ best-effort convenience: an upstream AP may use client isolation, and a phone
 hosting a hotspot may not route mDNS or client traffic back to its own UI.
 Standalone secondary control remains guaranteed by restoring `Pajoniiir`.
 
-Replace the current fixed `Host: 192.168.4.1` API guard with a tested dynamic
+The former fixed `Host: 192.168.4.1` API guard is now a tested dynamic
 allow-list containing only:
 
-- `pajoniiir.local` and `pajoniiir.local:80`;
-- `192.168.4.1` and `192.168.4.1:80` while the AP interface is active;
-- the authoritative local STA IPv4 address, with optional `:80`, while STA is
-  active.
+- `pajoniiir.local`, with an optional numeric port;
+- the authoritative active AP IPv4 address, with an optional numeric port
+  (normally `192.168.4.1`).
 
 Do not accept an arbitrary hostname merely because P4 is in STA mode. Preserve
 the existing mutation header and strict request parsing; mDNS is discovery, not
@@ -2546,7 +2551,8 @@ signing/release-helper suites.
    tests; fix the existing AP start-failure loop first.
 2. Refactor ESP-Hosted/Wi-Fi/AP service lifecycle without changing the normal
    `Pajoniiir` behavior.
-3. Add `pajoniiir.local`, dynamic Host validation and AP-mode discovery tests.
+3. [software complete] Add `pajoniiir.local`, dynamic Host validation and
+   AP-mode discovery tests; physical client resolution remains an acceptance row.
 4. Add bounded NVS-backed service-network configuration and redacted UI/API
    status.
 5. Implement AP-to-STA-to-AP transitions and failure restoration before adding
@@ -2704,8 +2710,8 @@ Only after the above says which stage is losing the signal:
 
 ## TODO: Small Open Items Found 2026-07-24
 
-Three things surfaced while fixing the loop and shelving the recorder. None is
-blocking, all are cheap, and none has been investigated.
+Three things surfaced while fixing the loop and shelving the recorder. Their
+current disposition is recorded here rather than leaving stale TODOs.
 
 ### Dead PDB rows are offered in the library and fail on load
 
@@ -2717,23 +2723,30 @@ leaves the deck in `ERROR`.
 
 They cost a real diagnosis this session: every non-mp3 entry in the library is
 one of these, so a load failure was briefly read as "FLAC is broken" when FLAC
-is fine. Either filter unresolvable rows out of the library listing at load
-time, or mark them in the UI so they cannot be selected by accident.
+is fine. **Operator decision 2026-07-26: retain these rows unchanged as a
+repeatable corrupt/missing-media test fixture.** The expected result remains a
+bounded `NOT FOUND` load failure and recoverable deck state; do not silently
+filter this particular test database.
 
 ### Underrun at track start
 
 `AUDIO_UNDERRUN a0=512` fires shortly after a track starts playing, before any
 loop is armed. Separate from the loop-trim regression fixed in
-`RC1-232-g8f6656cb` and never investigated. Now visible live as
-`pcm_underrun1` in `/api/status` rather than only as a journal record.
+`RC1-232-g8f6656cb`. Software remediation on 2026-07-26 adds a 512-frame
+startup gate: PLAY can be latched while the producer fills, but the output
+mixer does not consume the deck until two 256-frame blocks are available (or a
+real short EOF tail exists). `/api/status` now reports
+`startup_waiting1/2`, `startup_wait_count1/2` and
+`startup_prebuffer_frames` alongside `pcm_underrun1/2`. Host policy coverage
+passes; hardware confirmation that the initial counter remains zero is pending.
 
-### Bench power keeps producing BROWNOUT and unexplained POWERON
+### Bench power BROWNOUT / POWERON — resolved externally
 
 `boot=84 reset=BROWNOUT` then `boot=85 reset=POWERON` on 2026-07-24, and the
-FLX4 stopped enumerating from boot 85 until it was physically reconnected. This
-has been on the open list since 2026-07-22 and keeps recurring; it also
-contaminates other measurements, because a board that brownouts mid-test looks
-like a firmware fault.
+FLX4 stopped enumerating until it was physically reconnected. The later bench
+session traced this to the power supply and replacement resolved it. This is no
+longer an open firmware item; future unexplained resets still invalidate the
+affected measurement and must be recorded as a new power/hardware observation.
 
 ## Idle Screensaver
 

@@ -1,5 +1,7 @@
 #include "p4_ota_pull_manifest.h"
 
+#include <ctype.h>
+#include <limits.h>
 #include <string.h>
 
 /*
@@ -107,6 +109,32 @@ static p4_ota_pull_manifest_result_t read_sha256(cur_t c, uint8_t out[32])
     return P4_OTA_PULL_MANIFEST_OK;
 }
 
+static bool relative_bundle_url_valid(const char *url)
+{
+    if (!url || url[0] == '\0' || url[0] == '/' || url[0] == '\\') return false;
+    if (strstr(url, "://") || strchr(url, '?') || strchr(url, '#') ||
+        strchr(url, '\\') || strchr(url, '%') || strchr(url, ':')) {
+        return false;
+    }
+    const char *segment = url;
+    for (const char *p = url; ; p++) {
+        if (*p == '/' || *p == '\0') {
+            size_t len = (size_t)(p - segment);
+            if (len == 0u ||
+                (len == 1u && segment[0] == '.') ||
+                (len == 2u && segment[0] == '.' && segment[1] == '.')) {
+                return false;
+            }
+            if (*p == '\0') break;
+            segment = p + 1;
+        } else if ((unsigned char)*p < 0x21u ||
+                   (unsigned char)*p > 0x7Eu) {
+            return false;
+        }
+    }
+    return true;
+}
+
 p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
     const char *json, size_t len, p4_ota_pull_manifest_t *out)
 {
@@ -150,6 +178,9 @@ p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
     if (!seek_key(obj, obj_len, "url", &c)) return P4_OTA_PULL_MANIFEST_MALFORMED;
     rc = copy_string(c, out->url, P4_OTA_PULL_URL_MAX);
     if (rc != P4_OTA_PULL_MANIFEST_OK) return rc;
+    if (!relative_bundle_url_valid(out->url)) {
+        return P4_OTA_PULL_MANIFEST_BAD_VALUE;
+    }
 
     if (!seek_key(obj, obj_len, "size", &c)) return P4_OTA_PULL_MANIFEST_MALFORMED;
     rc = read_u32(c, &out->size);
@@ -176,9 +207,92 @@ const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r)
     return "unknown";
 }
 
-bool p4_ota_pull_manifest_differs(const p4_ota_pull_manifest_t *m,
-                                  const char *running_version)
+typedef struct {
+    uint32_t tag;
+    uint32_t distance;
+} release_version_t;
+
+static bool parse_u32_part(const char **cursor, uint32_t *out)
 {
-    if (!m || !running_version) return false;
-    return strncmp(m->release, running_version, P4_OTA_PULL_RELEASE_MAX) != 0;
+    if (!cursor || !*cursor || !out || !isdigit((unsigned char)**cursor)) {
+        return false;
+    }
+    uint64_t value = 0u;
+    const char *p = *cursor;
+    while (isdigit((unsigned char)*p)) {
+        value = value * 10u + (uint32_t)(*p - '0');
+        if (value > UINT32_MAX) return false;
+        p++;
+    }
+    *cursor = p;
+    *out = (uint32_t)value;
+    return true;
+}
+
+static bool parse_release_version(const char *text, release_version_t *out)
+{
+    if (!text || !out || text[0] != 'R' || text[1] != 'C') return false;
+    const char *p = text + 2;
+    release_version_t parsed = {0};
+    if (!parse_u32_part(&p, &parsed.tag)) return false;
+    if (*p == '\0') {
+        *out = parsed;
+        return true;
+    }
+    if (*p++ != '-' || !parse_u32_part(&p, &parsed.distance) ||
+        *p++ != '-' || *p++ != 'g') {
+        return false;
+    }
+    size_t hash_digits = 0u;
+    while (isxdigit((unsigned char)*p)) {
+        hash_digits++;
+        p++;
+    }
+    if (hash_digits < 7u) return false;
+    if (strcmp(p, "-dirty") != 0 && *p != '\0') return false;
+    *out = parsed;
+    return true;
+}
+
+p4_ota_pull_release_order_t p4_ota_pull_release_compare(
+    const char *offered_version, const char *running_version)
+{
+    if (!offered_version || !running_version) {
+        return P4_OTA_PULL_RELEASE_UNORDERED;
+    }
+    if (strcmp(offered_version, running_version) == 0) {
+        return P4_OTA_PULL_RELEASE_SAME;
+    }
+
+    release_version_t offered;
+    release_version_t running;
+    if (!parse_release_version(offered_version, &offered) ||
+        !parse_release_version(running_version, &running)) {
+        return P4_OTA_PULL_RELEASE_UNORDERED;
+    }
+    if (offered.tag != running.tag) {
+        return offered.tag > running.tag ? P4_OTA_PULL_RELEASE_NEWER
+                                         : P4_OTA_PULL_RELEASE_OLDER;
+    }
+    if (offered.distance != running.distance) {
+        return offered.distance > running.distance ? P4_OTA_PULL_RELEASE_NEWER
+                                                    : P4_OTA_PULL_RELEASE_OLDER;
+    }
+    /* Same position with a different hash means the histories disagree. */
+    return P4_OTA_PULL_RELEASE_UNORDERED;
+}
+
+p4_ota_pull_release_order_t p4_ota_pull_manifest_order(
+    const p4_ota_pull_manifest_t *m, const char *running_version)
+{
+    if (!m) return P4_OTA_PULL_RELEASE_UNORDERED;
+    return p4_ota_pull_release_compare(m->release, running_version);
+}
+
+bool p4_ota_pull_offer_fresh(uint32_t now_ticks,
+                             uint32_t offered_at_ticks,
+                             uint32_t ttl_ticks)
+{
+    return ttl_ticks > 0u &&
+           (uint32_t)(now_ticks - offered_at_ticks) <= ttl_ticks;
 }

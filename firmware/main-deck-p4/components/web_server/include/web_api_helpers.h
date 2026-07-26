@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define WEB_API_CANONICAL_HOSTNAME "pajoniiir.local"
+
 size_t web_api_json_escape(const char *src, char *dst, size_t dst_size);
 int web_api_format_beat_fx_json(char *dst,
                                 size_t dst_size,
@@ -48,3 +50,10 @@ bool web_api_profile_content_length_valid(size_t content_len);
 /* Missing/empty means overwrite=false. Only the explicit values "0" and "1"
  * are accepted; returns false for malformed input. */
 bool web_api_profile_overwrite_parse(const char *value, bool *overwrite);
+
+/*
+ * DNS-rebinding allow-list for API and captive-portal requests. `ap_ipv4` is
+ * read from the active AP netif, so deployments are not coupled to
+ * 192.168.4.1. The canonical mDNS name is always accepted.
+ */
+bool web_api_host_allowed(const char *host_header, const char *ap_ipv4);
