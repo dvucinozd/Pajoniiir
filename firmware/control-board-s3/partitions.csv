@@ -1,4 +1,4 @@
-# DDJ-FFL4 S3 4 MB flash: two 1.875 MB OTA slots with rollback metadata.
+# Pajoniiir S3 4 MB flash: two 1.875 MB OTA slots with rollback metadata.
 # Install this table with a full wired flash when migrating from single-app.
 # Name,     Type, SubType,  Offset,    Size
 nvs,        data, nvs,      0x9000,    0x6000

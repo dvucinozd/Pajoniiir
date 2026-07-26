@@ -6,10 +6,10 @@
 #include "esp_err.h"
 
 /* Three i's, matching the product name, the mDNS hostname `pajoniiir.local` and
- * the update host. This shipped as PAJONIIR (two) until 2026-07-24, which is
+ * the update host. The former AP spelling omitted one i until 2026-07-24,
  * exactly the kind of near-miss that later produces a wrong URL by hand. */
-#define WIFI_LINK_SOFTAP_SSID "PAJONIIIR"
-#define WIFI_LINK_PASSWORD    "PajoNiiiR"
+#define WIFI_LINK_SOFTAP_SSID "Pajoniiir"
+#define WIFI_LINK_PASSWORD    "Pajoniiir"
 
 typedef struct {
     bool initialized;

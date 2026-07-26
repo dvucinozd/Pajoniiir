@@ -1,4 +1,4 @@
-# DDJ-FFL4 Project Overview
+# Pajoniiir Project Overview
 
 Status: current product overview, audited 2026-07-17. The last matching signed
 OTA rollout baseline is `RC1-131-gc391e306` on P4 `ota_1` and S3
@@ -11,7 +11,7 @@ Status` describes the active system.
 
 ## Goal
 
-DDJ-FFL4 is a standalone two-deck DJ player using the Pioneer DDJ-FLX4 as the
+Pajoniiir is a standalone two-deck DJ player using the Pioneer DDJ-FLX4 as the
 operator surface. It does not run Mixxx and it does not require a PC during
 performance. The DDJ-FLX4 supplies controls and LEDs; the ESP32 boards provide
 media browsing, playback, audio output, and display.
@@ -83,7 +83,7 @@ The fork is no longer only the imported single-deck baseline:
   mini — all baked into the scrolling RGB565 strip so they PPA-blit without
   LVGL-over-PPA flicker.
 - ESP-Hosted Wi-Fi is re-enabled behind a Settings switch (default off): the
-  onboard ESP32-C6 provides a WPA2 SoftAP (`PAJONIIR`) and P4 serves a mobile web
+  onboard ESP32-C6 provides a WPA2 SoftAP (`Pajoniiir`) and P4 serves a mobile web
   controller at `http://192.168.4.1` (deck status, library load, transport,
   mixer, seek). A 2026-07-04 audit added RELAXED atomics for shared audio/mixer
   state, clean load-failure abort, and dynamically-sized web status JSON, and a
@@ -196,11 +196,15 @@ The fork is no longer only the imported single-deck baseline:
   remaining stale Codex branches were reviewed and removed (local + remote),
   including the old experimental `codex/flx4-extended-controls`, whose verified
   slices had already been salvaged into `master`. That is a historical cleanup
-  record, not a claim about the repository's current branch inventory. As of the
-  2026-07-20 audit the inventory is a single `master` branch: all merged
+  record, not a claim about the repository's current branch inventory. The
+  2026-07-20 audit reduced the inventory to a single `master` branch: all merged
   `codex/*` and `feature/*` branches were pruned local + remote, and the last
   branch `codex/phase-8-implementation` was archived under tag
-  `attic/phase-8-status-led-policy` before removal. The repository also moved to
+  `attic/phase-8-status-led-policy` before removal. A follow-up audit on
+  2026-07-26 found five new remote maintenance branches and two stale local
+  tracking branches; every tip was already an ancestor of `master` with 0
+  unique commits, so all seven were removed. Only `master` remains locally and
+  on `origin`. The canonical repository is
   `https://github.com/dvucinozd/Pajoniiir.git`.
 - Vinyl/scratch is hardware-validated on both decks: platter touch selects a
   canonical PSRAM PCM timeline for forward/reverse scratch, including paused

@@ -18,7 +18,7 @@ make test
 Expected output (all PASS):
 
 ```
-DDJ-FFL4 ANLZ Parser Test
+Pajoniiir ANLZ Parser Test
 ============================
 
 === Building synthetic test files ===

@@ -379,7 +379,7 @@ Exit criteria:
 
 Status: complete for the current P4 touchscreen/UI scope.
 
-Goal: adapt the P4 display from single-deck CDJ UI to DDJ-FFL4 dual-deck status.
+Goal: adapt the P4 display from single-deck CDJ UI to Pajoniiir dual-deck status.
 
 Tasks:
 
@@ -618,7 +618,7 @@ Validation note, 2026-06-10:
   - Ported the P4 LVGL splash screen from `origin/codex/splash-screen` onto the
     current Phase 7 branch without merging the older branch state. The P4 UI now
     builds the main screen, shows a temporary black splash screen with
-    `PajoNiiiR` rendered in `Musieer_80`, then returns to the already-built main
+    `Pajoniiir` rendered in `Musieer_80`, then returns to the already-built main
     screen after three seconds.
   - Added a static regression guard in `tests/splash_port/test_splash_port.ps1`
     so future branch merges do not accidentally drop the splash source, CMake
@@ -732,8 +732,12 @@ archived under the annotated tag `attic/phase-8-status-led-policy`, and its
 branch plus linked worktree were removed. All merged `codex/*` and `feature/*`
 branches were then pruned locally and on `origin`, leaving only `master`. The
 repository also moved to `https://github.com/dvucinozd/Pajoniiir.git` (the old
-`ESP32-DDJ-FLX4` URL redirects). Re-run `git branch --no-merged master` and
-archive unique work under `attic/*` before deleting any future branch.
+`ESP32-DDJ-FLX4` URL redirects). A 2026-07-26 follow-up audit found five
+temporary remote maintenance branches and two stale local tracking branches.
+All seven tips were ancestors of `master` with 0 unique commits, so they were
+deleted locally/remotely and the inventory returned to only `master`. Re-run
+`git branch --no-merged master`, count `master..<branch>` commits and archive
+unique work under `attic/*` before deleting any future branch.
 
 Goal: implement the remaining useful DDJ-FLX4 controls without importing
 Mixxx runtime logic or moving authoritative state away from the P4.
@@ -1022,7 +1026,7 @@ correction made during the code review.
 Implemented and hardware-verified on COM15/COM3; all P4 and S3 host tests pass.
 
 - **ESP-Hosted Wi-Fi + web UI re-enabled behind a Settings switch.** The onboard
-  ESP32-C6 (SDIO ESP-Hosted) SoftAP `PAJONIIR` and the httpd mobile controller
+  ESP32-C6 (SDIO ESP-Hosted) SoftAP `Pajoniiir` and the httpd mobile controller
   (`http://192.168.4.1`) were un-parked. A new `wifi_remote` NVS setting (default
   **off**) gates it; the Settings tab switch calls `wifi_link_request_enable()`
   (async worker task, so the ~1-2 s SDIO/C6 bring-up never blocks the LVGL task),
@@ -1386,7 +1390,7 @@ Status: implemented; both host suites and signed-layout firmware builds pass,
 and dual-target WPA2 hardware smoke passed on 2026-07-13.
 
 - P4 Wi-Fi Remote and the on-demand S3 Debug AP now both use WPA2-PSK with the
-  accepted default password `PajoNiiiR`; S3 no longer starts an open network.
+  accepted default password `Pajoniiir`; S3 no longer starts an open network.
 - P4 and S3 OTA `finish()` policy distinguishes an invalid duplicate/idle call
   from an incomplete active transfer. Invalid calls preserve the authoritative
   state and error from the operation that already ended, while incomplete
@@ -1413,9 +1417,9 @@ Initial hardware acceptance:
 
 - both committed signed-layout images were wired-flashed and every bootloader,
   partition, OTA-data and application write passed esptool hash verification;
-- a phone authenticated to the P4 `PAJONIIR` WPA2 AP with `PajoNiiiR` and loaded
+- a phone authenticated to the P4 `Pajoniiir` WPA2 AP with `Pajoniiir` and loaded
   the P4 web UI at `http://192.168.4.1`;
-- the same phone authenticated to `PajoNiiiR-S3-DEBUG` with `PajoNiiiR`, loaded
+- the same phone authenticated to `Pajoniiir-S3-DEBUG` with `Pajoniiir`, loaded
   the live log, and opened the S3 `/update` OTA page successfully.
 
 ## Phase 19: R5 Dead-Code And Legacy-Path Cleanup (2026-07-13)
@@ -2251,15 +2255,15 @@ temporary client mode only for checking and downloading signed P4 updates. The
 canonical mDNS hostname is exactly `pajoniiir.local`; do not introduce another
 product hostname or a differently spelled alias.
 
-The existing signed `.ddjota` upload over the `PAJONIIR` AP remains the offline
-and service fallback. S3 OTA and `PajoNiiiR-S3-DEBUG` remain outside this first
+The existing signed `.ddjota` upload over the `Pajoniiir` AP remains the offline
+and service fallback. S3 OTA and `Pajoniiir-S3-DEBUG` remain outside this first
 implementation batch.
 
 ### Operating model and ownership
 
 The P4/C6 Wi-Fi path has two mutually exclusive operational modes:
 
-- `REMOTE_AP`: the existing `PAJONIIR` SoftAP, captive UI and full secondary
+- `REMOTE_AP`: the existing `Pajoniiir` SoftAP, captive UI and full secondary
   web control;
 - `OTA_STA`: a temporary connection to a configured service Wi-Fi network or
   phone hotspot for update discovery and bundle download.
@@ -2366,7 +2370,7 @@ Add the ESP-IDF mDNS component to the P4 target with:
 - hostname `pajoniiir`;
 - canonical URL `http://pajoniiir.local`;
 - `_http._tcp` service on port 80;
-- a stable instance name such as `DDJ-FFL4 P4`.
+- a stable instance name such as `Pajoniiir P4`.
 
 Register `pajoniiir.local` on the AP interface during normal operation and
 re-register it on the STA interface after an IP address is obtained. Remove
@@ -2378,7 +2382,7 @@ When P4 is connected to the service network, the web/status surface may also
 be reached at `http://pajoniiir.local` by clients on that network. Treat this as
 best-effort convenience: an upstream AP may use client isolation, and a phone
 hosting a hotspot may not route mDNS or client traffic back to its own UI.
-Standalone secondary control remains guaranteed by restoring `PAJONIIR`.
+Standalone secondary control remains guaranteed by restoring `Pajoniiir`.
 
 Replace the current fixed `Host: 192.168.4.1` API guard with a tested dynamic
 allow-list containing only:
@@ -2398,7 +2402,7 @@ For an update initiated from the web UI:
 
 1. Validate prerequisites and persist the accepted operation before switching
    modes.
-2. Return `202 Accepted` with a clear warning that `PAJONIIR` will temporarily
+2. Return `202 Accepted` with a clear warning that `Pajoniiir` will temporarily
    disappear and that progress continues on the physical display.
 3. Delay the network transition only long enough for the HTTP response to be
    transmitted; do not block the HTTP handler on association or download.
@@ -2411,7 +2415,7 @@ For an update initiated from the web UI:
    DNS, web service and mDNS identity.
 
 Show `CONNECTING`, `CHECKING`, `UPDATE AVAILABLE`, download percentage,
-`VERIFYING`, `RESTORING PAJONIIR`, `ERROR` and `REBOOTING` explicitly. Do not
+`VERIFYING`, `RESTORING Pajoniiir`, `ERROR` and `REBOOTING` explicitly. Do not
 leave the Settings switch claiming that the Remote AP is on while it is
 temporarily unavailable.
 
@@ -2478,7 +2482,7 @@ allocation, TLS, metadata, signature, length, hash or flash error must:
 - abort any open OTA handle;
 - leave the running/current boot slot unchanged;
 - stop and destroy the temporary STA interface;
-- restore `PAJONIIR`, captive DNS, the web server and `pajoniiir.local`;
+- restore `Pajoniiir`, captive DNS, the web server and `pajoniiir.local`;
 - publish one bounded operator-visible error and structured service event.
 
 After successful activation, reboot normally and retain the existing
@@ -2507,7 +2511,7 @@ signing/release-helper suites.
 
 ### Hardware acceptance
 
-1. Confirm existing `PAJONIIR` web control is unchanged before any OTA-client
+1. Confirm existing `Pajoniiir` web control is unchanged before any OTA-client
    operation.
 2. Resolve and use `http://pajoniiir.local` while connected directly to the P4
    AP; retain `192.168.4.1` as the recovery address.
@@ -2520,14 +2524,14 @@ signing/release-helper suites.
    version/slot and wait for image state `valid`.
 6. Exercise invalid signature, wrong target, truncated body, trailing data,
    server stall and connection loss. Require no boot-slot change and automatic
-   restoration of `PAJONIIR` after every case.
+   restoration of `Pajoniiir` after every case.
 7. Test wrong Wi-Fi credentials, missing DHCP, DNS failure, TLS failure and low
    RSSI without a watchdog, retry storm or permanent loss of the service AP.
 8. Interrupt power during download and during first boot, verifying intact
    current firmware and the existing forced-rollback behavior respectively.
 9. Confirm update entry is rejected while either deck plays and that no normal
    background check adds audio, UART, UI or DSI timing regressions.
-10. Re-run the existing signed `.ddjota` upload through `PAJONIIR` to prove the
+10. Re-run the existing signed `.ddjota` upload through `Pajoniiir` to prove the
     offline fallback remains functional.
 11. During repeated AP/STA/AP cycles monitor internal heap, largest free block,
     C6/ESP-Hosted resources and netif/event-handler counts for leaks.
@@ -2539,7 +2543,7 @@ signing/release-helper suites.
 1. Add pure state models, command serialization, bounded retry/backoff and host
    tests; fix the existing AP start-failure loop first.
 2. Refactor ESP-Hosted/Wi-Fi/AP service lifecycle without changing the normal
-   `PAJONIIR` behavior.
+   `Pajoniiir` behavior.
 3. Add `pajoniiir.local`, dynamic Host validation and AP-mode discovery tests.
 4. Add bounded NVS-backed service-network configuration and redacted UI/API
    status.
@@ -2782,7 +2786,7 @@ restores the previous tab.
 
 ### What already exists
 
-`components/ui/splash_screen.c` already renders "PajoNiiiR" in the Musieer_80
+`components/ui/splash_screen.c` already renders "Pajoniiir" in the Musieer_80
 font with a continuous fade animation, and `splash_screen_show(cb)` runs it for
 three seconds at boot before handing off to the main UI. The screensaver is
 that same animation without the timeout, plus a caption — not a new visual.

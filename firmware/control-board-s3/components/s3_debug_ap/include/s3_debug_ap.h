@@ -6,8 +6,8 @@
 
 #include "esp_err.h"
 
-#define S3_DEBUG_AP_SSID "PajoNiiiR-S3-DEBUG"
-#define S3_DEBUG_AP_PASSWORD "PajoNiiiR"
+#define S3_DEBUG_AP_SSID "Pajoniiir-S3-DEBUG"
+#define S3_DEBUG_AP_PASSWORD "Pajoniiir"
 #define S3_DEBUG_AP_IP "192.168.4.1"
 #define S3_DEBUG_LOG_RING_LINES 16
 #define S3_DEBUG_LOG_LINE_MAX 256

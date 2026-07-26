@@ -24,6 +24,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef WIN32
+// Declare mock deck functions for simulator UI actions
+void mock_deck_set_position(uint32_t position_ms);
+void mock_deck_set_playing(bool playing);
+void mock_deck_toggle_master_tempo(void);
+void mock_deck_toggle_play(void);
+#endif
+
 #ifndef WIN32
 // ── Firmware-only: LVGL ↔ MIPI-DSI panel plumbing ────────────────────────────
 #include "audio_engine.h"

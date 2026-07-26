@@ -150,7 +150,7 @@ firmware uses them.
 
 Status legend:
 
-- **Implemented:** routed and hardware-verified in the current DDJ-FFL4 path.
+- **Implemented:** routed and hardware-verified in the current Pajoniiir path.
 - **Mapped only:** semantic input exists, but no P4 behavior is attached yet.
 - **Pending:** XML address is recorded; firmware mapping is not implemented.
 - **Deferred:** address is recorded, but standalone P4 behavior is not defined.
@@ -242,7 +242,7 @@ MIDI note, so this table keeps the XML addresses but labels whether the control
 is direct or shifted.
 
 Project scope decision 2026-07-07: `Keyboard/Stems`, `Sampler`, and `Key Shift`
-are excluded from DDJ-FFL4 standalone behavior. Their XML addresses remain
+are excluded from Pajoniiir standalone behavior. Their XML addresses remain
 documented for trace analysis, and the `control_link` numeric constants are kept
 stable for compatibility, but S3 ignores those input messages and P4 ignores
 stale/manual events for those modes.
@@ -289,7 +289,7 @@ notes `0x10..0x17` and Pad FX2 pads as notes `0x50..0x57` on the existing Deck
 | --- | --- | --- | --- | --- | --- |
 | Play LEDs | `0x90/0x0B`, `0x91/0x0B` | deck playing | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
 | Play + Shift / Censor LEDs | official list/PDF output: `0x90/0x0E`, `0x91/0x0E` | P4 `deck_state_t.censor_active` | P4 `deck_core` snapshot | Implemented snapshot output | Host-tested from official packet; hardware smoke passed 2026-07-07 |
-| Play/Cue shifted alternate LEDs | XML output: `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for DDJ-FFL4 | Deferred | Not captured |
+| Play/Cue shifted alternate LEDs | XML output: `0x90/0x47`, `0x91/0x47` | Mixxx maps both play/cue indicators here | Not defined for Pajoniiir | Deferred | Not captured |
 | Cue LEDs | `0x90/0x0C`, `0x91/0x0C` | cue state | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
 | Cue + Shift / track-start LEDs | official list/PDF output: `0x90/0x48`, `0x91/0x48` | track-start action acknowledgement is momentary | P4 `deck_core` action sends on/off flash | Implemented momentary output | Host-tested packet mapping and P4 action flash; post-flash FLX4 behavior smoke passed 2026-07-07 |
 | Beat Sync LEDs | `0x90/0x58`, `0x91/0x58` | P4 sync-enabled state | P4 `deck_core.sync_enabled` | Implemented output | Hardware smoke passed 2026-06-21; output probe verified 2026-06-20 |

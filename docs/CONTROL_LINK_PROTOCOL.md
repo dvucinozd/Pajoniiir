@@ -3,7 +3,7 @@
 Status: current wire protocol, audited 2026-07-16. The fixed `0xA5` event layer
 and variable-length `0xA6` bulk layer are both active in production firmware.
 
-DDJ-FFL4 keeps the inherited UART `control_link` as the internal protocol
+Pajoniiir keeps the inherited UART `control_link` as the internal protocol
 between the ESP32-S3 and ESP32-P4.
 
 ## Current Frame
@@ -36,9 +36,9 @@ Baud rate: `460800` (8N1). Both boards must match; see `UART_BAUD` in each side'
 The `0xA6` byte starts a separate variable-length frame that never collides
 with the fixed 7-byte `0xA5` frame; a receiver routes on the start byte.
 
-## DDJ-FFL4 Semantic Namespace
+## Pajoniiir Semantic Namespace
 
-The current frame has only one `id` byte and one 16-bit value. DDJ-FFL4 keeps
+The current frame has only one `id` byte and one 16-bit value. Pajoniiir keeps
 that wire format for MVP and makes the `id` namespace deck-aware instead.
 
 Implemented namespace layout:
@@ -346,7 +346,7 @@ Status feedback (S3 -> P4), `ctrl_s3_debug_ap_status_t`:
 | ---: | --- | --- |
 | `0` | `OFF` | AP and HTTP server stopped |
 | `1` | `STARTING` | S3 is bringing up SoftAP/HTTP |
-| `2` | `ON` | WPA2 AP live at `PajoNiiiR-S3-DEBUG` / `http://192.168.4.1` |
+| `2` | `ON` | WPA2 AP live at `Pajoniiir-S3-DEBUG` / `http://192.168.4.1` |
 | `3` | `ERROR` | start failed; S3 tore down partial state and stays OFF |
 
 Handshake and ownership:

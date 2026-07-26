@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and verify DDJ-FFL4 signed OTA bundles.
+"""Create and verify Pajoniiir signed OTA bundles.
 
 The private P-256 key stays outside git. Firmware contains only the DER public
 key and accepts a bundle after both manifest-signature and image-hash checks.

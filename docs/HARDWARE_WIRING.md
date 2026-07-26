@@ -36,7 +36,7 @@ Open wiring questions:
 
 ## P4 Audio Outputs
 
-The current DDJ-FFL4 product topology uses two output paths:
+The current Pajoniiir product topology uses two output paths:
 
 - master output for speakers/PA/recording;
 - cue/PFL output for headphones.

@@ -47,7 +47,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
 - [x] R3 smoke after flashing both targets: dual-platter scratch/release operates correctly without a latched platter.
-- [x] R4 smoke: both WPA2 APs accept `PajoNiiiR`; P4 web UI plus S3 log and OTA update pages load correctly.
+- [x] R4 smoke: both WPA2 APs accept `Pajoniiir`; P4 web UI plus S3 log and OTA update pages load correctly.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
 - [x] Perform one OTA update per target and record slot/version/state; the
@@ -59,7 +59,7 @@ evidence, not instructions to repeat old commit-specific flashes.
 ## Repository
 
 - [x] Add `docs/reference/Pioneer-DDJ-FLX4.midi.xml`.
-- [x] Commit the baseline import and DDJ-FFL4 documentation.
+- [x] Commit the baseline import and Pajoniiir documentation.
 
 ## Local Tooling
 
@@ -106,9 +106,11 @@ evidence, not instructions to repeat old commit-specific flashes.
   unique GPIO48 RGB status-LED policy engine archived under tag
   `attic/phase-8-status-led-policy`, and its branch + worktree removed. All
   merged branches were pruned local + remote, leaving only `master`, and the
-  repository moved to `https://github.com/dvucinozd/Pajoniiir.git`. Still
-  inspect reachability and archive unique work under `attic/*` before deleting
-  any future branch.
+  repository moved to `https://github.com/dvucinozd/Pajoniiir.git`. A follow-up
+  audit on 2026-07-26 removed five fully merged remote maintenance branches and
+  two fully merged stale local branches, each with 0 unique commits; only
+  `master` remains locally and on `origin`. Still inspect reachability and
+  archive unique work under `attic/*` before deleting any future branch.
 - The former `codex/p4-review-fixes` scope is merged: per-deck audio status,
   shared output/codec lifecycle, deck-core lock scope cleanup, high-rate
   control coalescing, source-safe media load, parser hardening, and the P4 host
@@ -286,12 +288,12 @@ evidence, not instructions to repeat old commit-specific flashes.
   predates 2026-06-25, regenerate or align it before flashing so it does not
   keep `CONFIG_COMPILER_OPTIMIZATION_DEBUG`.
 - P4 now includes the ported LVGL splash screen from the former
-  `codex/splash-screen` branch. Boot shows `PajoNiiiR` in `Musieer_80` for
+  `codex/splash-screen` branch. Boot shows `Pajoniiir` in `Musieer_80` for
   roughly three seconds, then returns to the already-built main dual-deck UI.
   The `ctrl_rx` UART task stack is 4096 bytes in the same stabilization slice.
 - ESP-Hosted Wi-Fi was re-enabled on 2026-07-04 behind a Settings switch
   (`app_settings.wifi_remote`, default **off**). The onboard ESP32-C6 provides a
-  SoftAP `PAJONIIR` over SDIO; turning the switch on runs `wifi_link_start()`
+  SoftAP `Pajoniiir` over SDIO; turning the switch on runs `wifi_link_start()`
   (hosted + Wi-Fi + `web_server` + captive DNS) and off runs `wifi_link_stop()`
   (full teardown, incl. `esp_hosted_deinit`). HTTP status and captive DNS startup
   are still gated behind successful Wi-Fi/AP init because `esp_http_server`
@@ -301,7 +303,7 @@ evidence, not instructions to repeat old commit-specific flashes.
   RF-quiet development.)
 - A separate runtime **S3 Debug AP** was added and merged to `master`
   (`CONFIG_S3_DEBUG_AP_ENABLED=y`, default). It is independent of the P4
-  Wi-Fi remote: the S3 hosts its own WPA2 SoftAP `PajoNiiiR-S3-DEBUG` +
+  Wi-Fi remote: the S3 hosts its own WPA2 SoftAP `Pajoniiir-S3-DEBUG` +
   read-only live log viewer at `http://192.168.4.1`, toggled from a
   non-persisted P4 Settings switch over `CTRL_ID_S3_DEBUG_AP` (`0x82`/`0x85`).
   OFF at every boot; P4 also sends OFF at boot as a safe reset. Host tests and
@@ -502,11 +504,11 @@ Runtime S3 Wi-Fi debug AP on `master`. Hardware smoke passed on 2026-07-08
 (S3 on COM6, P4 on COM15) after two fixes below:
 
 - [x] Flash current S3 (COM6) and P4 (COM15) firmware.
-- [x] Boot with the P4 Settings `S3 DEBUG AP` switch OFF; no `PajoNiiiR-S3-DEBUG`
+- [x] Boot with the P4 Settings `S3 DEBUG AP` switch OFF; no `Pajoniiir-S3-DEBUG`
   AP visible.
 - [x] Enable the switch; S3 brings up SoftAP + DHCP on `192.168.4.1`
   (`s3_debug_ap: S3 debug AP active` on the S3 console).
-- [x] Connect a phone to `PajoNiiiR-S3-DEBUG`, open `http://192.168.4.1`; page
+- [x] Connect a phone to `Pajoniiir-S3-DEBUG`, open `http://192.168.4.1`; page
   loads and **live logs stream** over SSE without disconnecting.
 - [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while ON — not retested
   this session (FLX4 was unplugged; re-verify when the controller is attached).
@@ -566,7 +568,7 @@ Verification (hardware, 2026-07-09 — profile-loading path confirmed):
 - [x] P4 boots with the card and mounts `/sd`.
 - [x] P4 scans `/sd/controllers` at boot and loads the profile into the
   registry — confirmed via `http://192.168.4.1/api/status` reporting
-  `"controller":{...,"profiles":1}` over the `PAJONIIR` Wi-Fi remote AP.
+  `"controller":{...,"profiles":1}` over the `Pajoniiir` Wi-Fi remote AP.
 - [ ] Connect the DDJ-FLX4 to the S3: S3 sends the descriptor, P4 matches and
   streams the profile (`profile 'pioneer_ddj_flx4' transfer to S3 OK`),
   `/api/status` shows `"present":true`,
@@ -626,7 +628,7 @@ HTTP OTA implementation status:
   bootable on both targets. The accepted S3 run used a throttled 20 KiB/s upload
   to guarantee the power cut occurred before transfer completion.
 - AP testing passed on 2026-07-13 with Internet retained over `Ethernet 2` while
-  Wi-Fi was dedicated to `PAJONIIR` and `PajoNiiiR-S3-DEBUG` in turn. After the
+  Wi-Fi was dedicated to `Pajoniiir` and `Pajoniiir-S3-DEBUG` in turn. After the
   destructive tests, both targets were OTA-restored to packaged release
   `RC1-106-g717b6ab3`; final status was P4 `ota_0 / valid` and S3
   `ota_0 / valid`.

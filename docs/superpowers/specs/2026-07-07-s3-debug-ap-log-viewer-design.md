@@ -21,8 +21,8 @@ only be enabled from the P4 Settings UI during the current runtime session.
 - Enabling the switch sends a command to the S3 over the existing `0xA5`
   `control_link`.
 - Historical baseline: S3 originally started an open SoftAP. R4 replaced this
-  with WPA2-PSK using the default password `PajoNiiiR`:
-  - SSID: `PajoNiiiR-S3-DEBUG`
+  with WPA2-PSK using the default password `Pajoniiir`:
+  - SSID: `Pajoniiir-S3-DEBUG`
   - IP: `192.168.4.1`
 - A browser connected to the AP can open `http://192.168.4.1` and see a live
   S3 log viewer.
@@ -112,7 +112,7 @@ streaming must continue operating.
 The page served at `/` is intentionally minimal:
 
 - title: `S3 Debug Log`;
-- current connection target text: `PajoNiiiR-S3-DEBUG / http://192.168.4.1`;
+- current connection target text: `Pajoniiir-S3-DEBUG / http://192.168.4.1`;
 - live scrolling log region;
 - automatic reconnect if the stream disconnects.
 
@@ -158,10 +158,10 @@ Firmware verification:
 Hardware smoke:
 
 1. Boot with S3 debug AP OFF.
-2. Confirm no `PajoNiiiR-S3-DEBUG` AP is visible.
+2. Confirm no `Pajoniiir-S3-DEBUG` AP is visible.
 3. Enable `S3 DEBUG AP` in P4 Settings.
 4. Confirm P4 UI shows `STARTING` then `ON`.
-5. Connect a phone/laptop to `PajoNiiiR-S3-DEBUG`.
+5. Connect a phone/laptop to `Pajoniiir-S3-DEBUG`.
 6. Open `http://192.168.4.1`.
 7. Confirm live S3 logs update while FLX4 MIDI/audio remains responsive.
 8. Disable `S3 DEBUG AP`.

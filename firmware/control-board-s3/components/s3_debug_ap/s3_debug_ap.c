@@ -172,7 +172,7 @@ static esp_err_t root_get_handler(httpd_req_t *req)
         "header{padding:12px 16px;background:#1c2029;border-bottom:1px solid #333946;}"
         "#log{white-space:pre-wrap;padding:12px 16px;}</style></head>"
         "<body><header><strong>S3 Debug Log</strong><br>"
-        "PajoNiiiR-S3-DEBUG / http://192.168.4.1<br>"
+        "Pajoniiir-S3-DEBUG / http://192.168.4.1<br>"
         "<a href=\"/update\" style=\"color:#7fc7ff\">Firmware Update</a></header>"
         "<main id=\"log\"></main>"
         "<script>const log=document.getElementById('log');"

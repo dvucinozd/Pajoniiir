@@ -3,7 +3,7 @@
 ## Uloga
 
 Djeluj kao senior embedded C / ESP-IDF / real-time audio inzenjer za projekt
-DDJ-FFL4. Ovo nije NovaPlayout/Avalonia projekt.
+Pajoniiir. Ovo nije NovaPlayout/Avalonia projekt.
 
 Komunikacija s korisnikom neka bude na hrvatskom jeziku. Kod, nazivi datoteka,
 commit poruke, C simboli i tehnička dokumentacija mogu ostati na engleskom ako
@@ -30,7 +30,7 @@ hardware smoke testa.
 ## Najvaznije putanje
 
 ```text
-D:\Documents\DDJ-FFL4
+<repo-root>
   README.md
   docs\PROJECT_OVERVIEW.md
   docs\ARCHITECTURE.md
@@ -56,28 +56,37 @@ preostale kontrole mogu implementirati izravno iz XML reference.
 
 ## ESP-IDF okruzenje
 
-Lokalni ESP-IDF je instaliran ovdje:
+Projekt se razvija na dva Windows računala. Na računalu s klasičnom
+Espressif instalacijom inicijaliziraj ESP-IDF ovako:
 
 ```powershell
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
 ```
 
-Provjera:
+Na računalu s ESP-IDF v5.5.4 profilom koristi:
+
+```powershell
+. C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+```
+
+Nakon bilo koje od te dvije inicijalizacije provjeri:
 
 ```powershell
 idf.py --version
 ```
 
-Zadnje provjereno okruzenje:
+Podržana i provjerena okruženja:
 
-- ESP-IDF v5.5
-- Python: `C:\Espressif\python_env\idf5.5_py3.11_env\Scripts`
+- ESP-IDF v5.5, Python:
+  `C:\Espressif\python_env\idf5.5_py3.11_env\Scripts`
+- ESP-IDF v5.5.4, IDF: `C:\esp\v5.5.4\esp-idf`, Python:
+  `C:\Espressif\tools\python\v5.5.4\venv`
 - Git iz Espressif toolchaina: `C:\Espressif\tools\idf-git\2.44.0\cmd`
 - Host-test GCC: `C:\msys64\ucrt64\bin`
 
-Napomena: `idf.py` nije nuzno dostupan prije pokretanja
-`Initialize-Idf.ps1`.
+Napomena: `idf.py` nije nužno dostupan prije pokretanja odgovarajuće
+inicijalizacijske skripte.
 
 Za host testove koji traze `gcc`/`make`, ako nisu vec u `PATH`, koristi:
 
@@ -90,18 +99,18 @@ $env:Path = "C:\msys64\ucrt64\bin;$env:Path"
 S3 firmware:
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
+# Najprije inicijaliziraj jedno od podržanih ESP-IDF okruženja.
+$repoRoot = git rev-parse --show-toplevel
+Set-Location "$repoRoot\firmware\control-board-s3"
 idf.py build
 ```
 
 P4 firmware:
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-cd D:\Documents\DDJ-FFL4\firmware\main-deck-p4
+# Najprije inicijaliziraj jedno od podržanih ESP-IDF okruženja.
+$repoRoot = git rev-parse --show-toplevel
+Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
@@ -125,14 +134,16 @@ korisnik eksplicitno trazi drugacije.
 
 Branch prefix za agent promjene je `codex/`.
 
-Repo je na `https://github.com/dvucinozd/Pajoniiir.git` (preimenovan sa starog
-`ESP32-DDJ-FLX4`; stari URL zasad redirecta). Od 2026-07-20 postoji samo
-`master` grana — lokalno i na `origin`; sve dovrsene `codex/*` i `feature/*`
-grane su mergane i obrisane. Jedinstveni odbaceni rad se ne brise nego arhivira
-pod anotiranim tagom `attic/*` (npr. `attic/phase-8-status-led-policy` = GPIO48
+Canonical repo je `https://github.com/dvucinozd/Pajoniiir.git`, preimenovan sa
+starog `ESP32-DDJ-FLX4`. Stari URL jos redirecta, ali novi cloneovi i lokalni
+`origin` trebaju koristiti canonical URL. Audit i ciscenje od 2026-07-26
+potvrdili su da postoji samo `master` grana — lokalno i na `origin`; sve tada
+prisutne pomocne grane bile su potpuno mergane, imale su 0 jedinstvenih
+commitova i obrisane su. Jedinstveni odbaceni rad se ne brise nego arhivira pod
+anotiranim tagom `attic/*` (npr. `attic/phase-8-status-led-policy` = GPIO48
 WS2812 RGB status-LED policy engine, superseded XIAO GPIO21 jednobojnim LED-om).
-Prije brisanja bilo koje grane pokreni `git branch --no-merged master` i po
-potrebi tagiraj u `attic/*`.
+Prije brisanja bilo koje grane pokreni `git branch --no-merged master`, provjeri
+`git rev-list --count master..<branch>` i po potrebi tagiraj u `attic/*`.
 
 ## Arhitektonska pravila
 

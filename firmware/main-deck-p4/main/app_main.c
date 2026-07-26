@@ -249,7 +249,7 @@ void app_main(void)
     ESP_ERROR_CHECK(firmware_health_init());
     ESP_ERROR_CHECK(p4_ota_init());
 
-    ESP_LOGI(TAG, "DDJ-FFL4 P4 main deck firmware starting");
+    ESP_LOGI(TAG, "Pajoniiir P4 main deck firmware starting");
     ESP_LOGI(TAG, "Board: JC4880P443C_I_W (ESP32-P4)");
     // Log the reason for the most recent reset. A spontaneous reboot during use
     // that reports BROWNOUT points at power (bus-powered USB drive current

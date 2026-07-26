@@ -321,7 +321,7 @@ Assert-FileContains `
 Assert-FilePatternOrder `
     -Name "app logs boot before starting wifi debug log" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -First 'ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");' `
+    -First 'ESP_LOGI(TAG, "Pajoniiir control board firmware starting");' `
     -Second "wifi_debug_log_init();"
 
 Assert-FileContains `
@@ -342,7 +342,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "s3 debug ap uses the accepted default WPA2 credential" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/include/s3_debug_ap.h") `
-    -Patterns @('S3_DEBUG_AP_PASSWORD "PajoNiiiR"')
+    -Patterns @('S3_DEBUG_AP_PASSWORD "Pajoniiir"')
 
 Assert-FileNotContains `
     -Name "s3 debug ap cannot regress to an open network" `

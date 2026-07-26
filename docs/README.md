@@ -1,4 +1,4 @@
-# DDJ-FFL4 Documentation
+# Pajoniiir Documentation
 
 Complete documentation index, audited 2026-07-17. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
@@ -105,7 +105,7 @@ illustrative and may lag small firmware polish changes.
 - [`../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`](../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md) — active XIAO wiring.
 - [`../firmware/main-deck-p4/CLAUDE.md`](../firmware/main-deck-p4/CLAUDE.md) — P4 developer guide.
 - [`../firmware/main-deck-p4/PINOUT_P4.md`](../firmware/main-deck-p4/PINOUT_P4.md) — P4 pin assignments.
-- [`../firmware/main-deck-p4/components/fatfs/README-DDJ-FFL4.md`](../firmware/main-deck-p4/components/fatfs/README-DDJ-FFL4.md) — local FATFS integration notes.
+- [`../firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md`](../firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md) — local FATFS integration notes.
 - [`../tests/anlz/README.md`](../tests/anlz/README.md) — ANLZ host-test fixture guide.
 
 ## Local inputs not committed

@@ -1,4 +1,4 @@
-# DDJ-FFL4 P4 FatFs Override
+# Pajoniiir P4 FatFs Override Notes
 
 Documentation status: active local integration note, reviewed 2026-07-13.
 FAT32/exFAT on superfloppy, MBR and GPT media is hardware-validated.
@@ -10,7 +10,7 @@ C:\Espressif\frameworks\esp-idf-v5.5\components\fatfs
 ```
 
 Reason: ESP-IDF v5.5 hardcodes `FF_FS_EXFAT=0` in the bundled FatFs
-configuration, but the DDJ-FFL4 P4 USB media mount needs exFAT support for DJ
+configuration, but the Pajoniiir P4 USB media mount needs exFAT support for DJ
 USB media.
 
 Local delta:

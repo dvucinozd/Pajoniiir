@@ -23,8 +23,8 @@ The debug AP is OFF after every boot and is controlled entirely from the P4:
 1. Flash the default S3 and P4 firmware (no special build flags needed).
 2. On the P4, open **Settings** and enable the **S3 DEBUG AP** switch. The label
    tracks the S3 handshake: `OFF` -> `STARTING` -> `ON` (or `ERROR`).
-3. Connect a phone/laptop to **`PajoNiiiR-S3-DEBUG`** using the default WPA2
-   password **`PajoNiiiR`**.
+3. Connect a phone/laptop to **`Pajoniiir-S3-DEBUG`** using the default WPA2
+   password **`Pajoniiir`**.
 4. Open **`http://192.168.4.1`** for a live log viewer (Server-Sent Events
    auto-reconnect). It shows the same aggregate `P4_AUDIO_LINK` and
    `FLX4_USB_AUDIO` counters described below. The log remains read-only.
@@ -122,9 +122,14 @@ If Windows Firewall prompts for Python, allow private-network UDP traffic.
 ## Build And Flash
 
 ```powershell
+# Initialize one supported environment:
+#   Classic machine:
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
-cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
+#   Or the v5.5.4 profile machine:
+# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+$repoRoot = git rev-parse --show-toplevel
+Set-Location "$repoRoot\firmware\control-board-s3"
 idf.py -B build_wifi_debug `
   -D SDKCONFIG="build_wifi_debug/sdkconfig" `
   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.wifi_debug.local" `

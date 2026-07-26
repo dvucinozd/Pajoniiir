@@ -1,6 +1,6 @@
 CONFIG_IDF_TARGET="esp32s3"
 
-# DDJ-FFL4: the S3 USB OTG peripheral is permanently the Pioneer DDJ-FLX4 host.
+# Pajoniiir: the S3 USB OTG peripheral is permanently the Pioneer DDJ-FLX4 host.
 CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y
 
 # Default host mode is a raw MIDI capture logger. Enable

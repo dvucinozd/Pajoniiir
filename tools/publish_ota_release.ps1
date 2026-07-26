@@ -18,9 +18,9 @@ if (-not (Test-Path -LiteralPath $ReleaseDir)) {
     throw "No such release directory: $ReleaseDir"
 }
 $release = Split-Path -Leaf $ReleaseDir
-# Release directories are named ddj-ffl4-<version>; the device compares the
+# Release directories are named pajoniiir-<version>; the device compares the
 # version it is running against the "release" field, so they must match exactly.
-$version = $release -replace '^ddj-ffl4-', ''
+$version = $release -replace '^pajoniiir-', ''
 
 $bundle = Join-Path $ReleaseDir "main-deck-p4.ddjota"
 if (-not (Test-Path -LiteralPath $bundle)) {

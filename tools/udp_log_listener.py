@@ -9,7 +9,7 @@ import sys
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Listen for DDJ-FFL4 ESP32 UDP logs")
+    parser = argparse.ArgumentParser(description="Listen for Pajoniiir ESP32 UDP logs")
     parser.add_argument("--host", default="0.0.0.0", help="local bind address")
     parser.add_argument("--port", type=int, default=3333, help="local UDP port")
     args = parser.parse_args()

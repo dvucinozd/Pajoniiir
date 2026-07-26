@@ -26,7 +26,7 @@ letters, digits, `_` and `-`, with a maximum of 39 characters.
 ## Upload from the P4 web UI
 
 1. On P4 Settings, enable **Wi-Fi Remote**.
-2. Join `PAJONIIR` with password `PajoNiiiR` and open
+2. Join `Pajoniiir` with password `Pajoniiir` and open
    `http://192.168.4.1/`.
 3. In **CONTROLLER PROFILE**, enter the exact profile ID and select the compiled
    `.s3bin`.

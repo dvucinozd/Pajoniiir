@@ -1,4 +1,4 @@
-# DDJ-FFL4 OTA Update Plan
+# Pajoniiir OTA Update Plan
 
 Status: design and acceptance record, reviewed 2026-07-16. The unsigned
 dual-slot/rollback path was hardware-accepted on 2026-07-13. Batch 6 signed OTA,

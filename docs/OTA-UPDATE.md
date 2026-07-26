@@ -1,4 +1,4 @@
-# DDJ-FFL4 OTA Update Procedure
+# Pajoniiir OTA Update Procedure
 
 Status: signed dual-slot OTA and rollback are hardware-accepted on both targets.
 The `.ddjota` implementation, host tests, release builds, valid A/B updates,
@@ -61,13 +61,18 @@ Initialize ESP-IDF and use an isolated release build so stale ignored
 `sdkconfig` files cannot silently select an old partition layout:
 
 ```powershell
+# Initialize one supported environment:
+#   Classic machine:
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
+#   Or the v5.5.4 profile machine:
+# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+$repoRoot = git rev-parse --show-toplevel
 
-cd D:\Documents\DDJ-FFL4\firmware\main-deck-p4
+Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
-cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
+Set-Location "$repoRoot\firmware\control-board-s3"
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 ```
 
@@ -79,14 +84,15 @@ slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
 From the repository root:
 
 ```powershell
-cd D:\Documents\DDJ-FFL4
+$repoRoot = git rev-parse --show-toplevel
+Set-Location $repoRoot
 .\tools\package_ota_release.ps1
 ```
 
 The packager requires the initialized ESP-IDF Python environment and the local
 private key. It validates both builds, signs each bundle and the outer release
 manifest, and verifies its own output before succeeding. It creates the ignored
-directory `releases\ddj-ffl4-<version>\` with:
+directory `releases\pajoniiir-<version>\` with:
 
 - `main-deck-p4.ddjota` and `control-board-s3.ddjota` for web OTA;
 - raw `main-deck-p4.bin` and `control-board-s3.bin` for wired recovery only;
@@ -98,22 +104,22 @@ Independent verification is available with:
 ```powershell
 python .\tools\ota_signing.py verify-bundle `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  --input .\releases\ddj-ffl4-<version>\main-deck-p4.ddjota
+  --input .\releases\pajoniiir-<version>\main-deck-p4.ddjota
 
 python .\tools\ota_signing.py verify-bundle `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  --input .\releases\ddj-ffl4-<version>\control-board-s3.ddjota
+  --input .\releases\pajoniiir-<version>\control-board-s3.ddjota
 
 python .\tools\ota_signing.py verify-file `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  --input .\releases\ddj-ffl4-<version>\manifest.json `
-  --signature .\releases\ddj-ffl4-<version>\manifest.sig
+  --input .\releases\pajoniiir-<version>\manifest.json `
+  --signature .\releases\pajoniiir-<version>\manifest.sig
 ```
 
 ## Update P4
 
 1. Enable **Wi-Fi Remote** in P4 Settings.
-2. Connect to `PAJONIIR` using the default WPA2 password `PajoNiiiR`, then
+2. Connect to `Pajoniiir` using the default WPA2 password `Pajoniiir`, then
    open `http://192.168.4.1`.
 3. Record the running P4 version, slot and state.
 4. Select **`main-deck-p4.ddjota`**, confirm and upload.
@@ -132,7 +138,7 @@ curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
   -H "X-DDJ-Control: 1" `
   -H "X-DDJ-OTA: p4" `
-  --data-binary "@releases\ddj-ffl4-<version>\main-deck-p4.ddjota" `
+  --data-binary "@releases\pajoniiir-<version>\main-deck-p4.ddjota" `
   http://192.168.4.1/api/ota/p4
 ```
 
@@ -142,13 +148,13 @@ The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Signature
 validation remains the firmware-authenticity boundary.
 
 1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
-2. Connect to `PajoNiiiR-S3-DEBUG` using the default WPA2 password
-   `PajoNiiiR`, then open
+2. Connect to `Pajoniiir-S3-DEBUG` using the default WPA2 password
+   `Pajoniiir`, then open
    `http://192.168.4.1/update`.
 3. Record the S3 running version, slot and state.
 4. Select **`control-board-s3.ddjota`**, confirm and upload.
 5. After restart, the S3 Debug AP turns OFF by design. Reconnect to the P4
-   `PAJONIIR` Wi-Fi Remote and inspect its `/api/firmware` response.
+   `Pajoniiir` Wi-Fi Remote and inspect its `/api/firmware` response.
 6. Confirm nested `s3.available=true` plus the expected `s3.version`, opposite
    `s3.slot` and `s3.state=valid`. Re-enable the S3 Debug AP only if local logs
    are needed, then turn it off and verify FLX4 controls, LEDs, UART and USB
@@ -161,7 +167,7 @@ curl.exe -X POST `
   -H "Content-Type: application/octet-stream" `
   -H "X-DDJ-Control: 1" `
   -H "X-DDJ-OTA: s3" `
-  --data-binary "@releases\ddj-ffl4-<version>\control-board-s3.ddjota" `
+  --data-binary "@releases\pajoniiir-<version>\control-board-s3.ddjota" `
   http://192.168.4.1/api/ota/s3
 ```
 
@@ -215,10 +221,11 @@ must be replaced, or bootloader/partition data is damaged. Flash the complete
 ESP-IDF set at the offsets reported by the build:
 
 ```powershell
-cd D:\Documents\DDJ-FFL4\firmware\main-deck-p4
+$repoRoot = git rev-parse --show-toplevel
+Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py -p <P4-COM-PORT> flash monitor
 
-cd D:\Documents\DDJ-FFL4\firmware\control-board-s3
+Set-Location "$repoRoot\firmware\control-board-s3"
 idf.py -p <S3-COM-PORT> flash monitor
 ```
 

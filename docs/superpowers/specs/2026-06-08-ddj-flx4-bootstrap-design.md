@@ -1,4 +1,4 @@
-# DDJ-FFL4 Bootstrap Design
+# Pajoniiir Bootstrap Design
 
 Document status (2026-07-13): completed historical bootstrap record. Current
 architecture is dual-deck and documented in `../../ARCHITECTURE.md`.
@@ -25,7 +25,7 @@ docs/reference/Pioneer-DDJ-FLX4.midi.xml
 ## Decision
 
 Use a fork-style port. Import that earlier codebase first, then layer
-DDJ-FFL4 documentation and later firmware changes on top.
+Pajoniiir documentation and later firmware changes on top.
 
 This is preferred over a clean rewrite because that codebase already proves the
 JC4880P443C_I_W P4 board, S3 support firmware, Rekordbox parsing, LVGL UI,
@@ -33,7 +33,7 @@ single-deck audio playback, and `0xA5` UART control link.
 
 ## Initial Deliverables
 
-- Root `README.md` for DDJ-FFL4.
+- Root `README.md` for Pajoniiir.
 - Project overview.
 - Architecture document.
 - DDJ-FLX4 MIDI map derived from the supplied XML.

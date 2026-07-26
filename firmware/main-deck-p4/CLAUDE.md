@@ -1,4 +1,4 @@
-# DDJ-FFL4 P4 Main Deck Firmware — Claude Guide
+# Pajoniiir P4 Main Deck Firmware — Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21 (version line
 refreshed 2026-07-24). Both boards are matched at `RC1-254-g21f21963`. Since the
@@ -6,7 +6,7 @@ last full audit the notable additions are: Beat FX Flanger re-tuned and all four
 effects given a headroom soft-clip; the loop-timing fix (the loop no longer takes
 effect ~2 s late); the idle screensaver; the microSD recorder compiled out by
 default (`CONFIG_AUDIO_RECORDER_ENABLED`, off); the SoftAP SSID corrected to
-`PAJONIIIR` (three i's) and no longer advertising itself as a gateway; and **pull
+`Pajoniiir` (three i's) and no longer advertising itself as a gateway; and **pull
 OTA** — the P4 leaving its AP for a temporary Wi-Fi STA visit to check and install
 signed updates from `pajoniiir.zadar.click/ota`, proven end to end on hardware.
 The RC1-168 baseline added the unified ANLZ metadata loader, the structured
@@ -77,7 +77,7 @@ under `attic/*` tags.
 
 ## Project Overview
 
-ESP32-P4 firmware for the DDJ-FFL4 main-deck board (JC4880P443C_I_W).
+ESP32-P4 firmware for the Pajoniiir main-deck board (JC4880P443C_I_W).
 Responsible for authoritative dual-deck state, LVGL UI, media library,
 decode/mixer/DSP, LED decisions, web service and P4 OTA. It communicates with
 the ESP32-S3 over UART1 using fixed `0xA5` events and `0xA6` bulk/status frames.
@@ -120,7 +120,7 @@ under repository-root `keys/` must never be copied into firmware or committed.
 | `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
 | `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
-| `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `PAJONIIR`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
+| `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `Pajoniiir`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
 
@@ -128,7 +128,10 @@ under repository-root `keys/` must never be copied into firmware or committed.
 
 ## Build & Flash
 
-**IDF path**: `C:\Espressif\frameworks\esp-idf-v5.5\` | **Python venv**: `idf5.5_py3.11_env`
+**ESP-IDF environments**: classic
+`C:\Espressif\frameworks\esp-idf-v5.5\` / `idf5.5_py3.11_env`, or v5.5.4
+`C:\esp\v5.5.4\esp-idf` /
+`C:\Espressif\tools\python\v5.5.4\venv`
 
 > ⚠️ **P4 is rev v1.3 (eco2) silicon.** Works with IDF 5.5 ONLY with
 > `CONFIG_ESP32P4_REV_MIN_FULL=0` in `sdkconfig.defaults` (otherwise the bootloader rejects
@@ -136,8 +139,11 @@ under repository-root `keys/` must never be copied into firmware or committed.
 > 5.4.1 was required is no longer valid — 5.5 works with this config.)
 
 ```powershell
+# Classic development machine:
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
+# Alternative v5.5.4 profile machine:
+# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
 cd firmware/main-deck-p4
 idf.py build
 idf.py -p COM15 flash               # device is on COM15
@@ -182,13 +188,13 @@ control_link  →  ctrl_event_queue  →  deck_core
 > reset GPIO54). The **Settings tab has a WI-FI REMOTE switch** (default **off**,
 > persisted in NVS `app_settings.wifi_remote`). Turning it on runs
 > `wifi_link_start()` → `esp_hosted_init()` → `esp_wifi_init()` → SoftAP
-> **`PAJONIIR`** (WPA2, pw `PajoNiiiR`) on **192.168.4.1** + `web_server` +
+> **`Pajoniiir`** (WPA2, pw `Pajoniiir`) on **192.168.4.1** + `web_server` +
 > captive `dns_server`; turning it off runs `wifi_link_stop()` which tears the
 > whole stack back down (`esp_wifi_deinit` + `esp_hosted_deinit`) so the C6/RF
 > stops drawing RAM and power. Toggling is **asynchronous** — the UI event only
 > calls `wifi_link_request_enable()`, which spawns a worker task so the ~1-2 s
 > SDIO/C6 bring-up never blocks the LVGL task. At boot `app_main` re-starts the
-> AP only when the saved setting is on. Connect a phone/PC to `PAJONIIR` and
+> AP only when the saved setting is on. Connect a phone/PC to `Pajoniiir` and
 > open `http://192.168.4.1` for the mobile controller (captive portal redirects
 > there). Hardware-verified 2026-07-04: default-off, toggle on/off, and reboot
 > persistence all work. UI stays decoupled from the transport via
@@ -597,7 +603,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
 - ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
 - ✅ ~~Deck 2 lower Overview waveform jitter~~ — resolved 2026-06-13; both decks now use the direct PPA overlay path
-- ✅ ~~ESP-Hosted Wi-Fi + web UI mobile controller~~ — re-enabled 2026-07-04 behind a Settings switch (default off); SoftAP `PAJONIIR` + `http://192.168.4.1`
+- ✅ ~~ESP-Hosted Wi-Fi + web UI mobile controller~~ — re-enabled 2026-07-04 behind a Settings switch (default off); SoftAP `Pajoniiir` + `http://192.168.4.1`
 - ✅ ~~USB-disconnect crash~~ — fixed 2026-07-04 by gating the track-meta-cache USB `stat()` (a disconnect during it panicked the MSC driver + wedged USB)
 - ✅ ~~Overview waveform visualisations~~ — "Punchy" colours, loop-region highlight (active + armed), hot-cue markers (large + mini), mini played-progress overlay
 - ✅ ~~Overview waveform jitter after VU meters~~ — fixed 2026-07-09: cue-fingerprint guard (no 1 Hz strip reset), tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`

@@ -1,11 +1,16 @@
-# PajoNiiiR BL-A1800
+# Pajoniiir BL-A1800
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4, a Seeed
 Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
 board. It reads Rekordbox media directly and does not require a PC during
 performance.
 
-![PajoNiiiR](docs/images/122.jpg)
+Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`. The former
+`dvucinozd/ESP32-DDJ-FLX4` URL is deprecated and retained only as a GitHub
+redirect. The branch inventory was audited on 2026-07-26; only `master`
+remains locally and on `origin`.
+
+![Pajoniiir](docs/images/122.jpg)
 
 > [!IMPORTANT]
 > The last matching P4/S3 signed-OTA rollout baseline is
@@ -87,14 +92,25 @@ tools/                       Profile compiler, OTA packager and support tools
 
 ## Build and Test
 
-Required baseline: ESP-IDF v5.5 and the Espressif Python/toolchain environment;
-host tests additionally require native GCC/Make. On Windows, initialize
-ESP-IDF before building:
+Required baseline: ESP-IDF v5.5 (including the verified v5.5.4 patch release)
+and the Espressif Python/toolchain environment; host tests additionally require
+native GCC/Make. On Windows, initialize either supported development-machine
+environment before building.
+
+Classic Espressif installation:
 
 ```powershell
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
 ```
+
+ESP-IDF v5.5.4 profile installation:
+
+```powershell
+. C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+```
+
+Verify the selected environment with `idf.py --version`.
 
 Build each target from the repository root:
 

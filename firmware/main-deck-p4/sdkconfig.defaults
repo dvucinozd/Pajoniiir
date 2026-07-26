@@ -92,7 +92,7 @@ CONFIG_LV_USE_CLIB_MALLOC=y
 # Re-enabled 2026-07-04 for the web UI mobile controller. The P4 has no native
 # radio; the onboard ESP32-C6 provides Wi-Fi over the ESP-Hosted SDIO transport
 # (slot 1, 4-bit; CLK18/CMD19/D0-D3 14-17; C6 reset GPIO54). wifi_link starts a
-# SoftAP (SSID PAJONIIR) and app_main brings up web_server + dns_server.
+# SoftAP (SSID Pajoniiir) and app_main brings up web_server + dns_server.
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD=y

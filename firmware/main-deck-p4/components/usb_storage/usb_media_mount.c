@@ -14,7 +14,7 @@
 #include <string.h>
 
 #if !FF_FS_EXFAT
-#error "DDJ-FFL4 P4 USB media mount requires FatFs FF_FS_EXFAT=1"
+#error "Pajoniiir P4 USB media mount requires FatFs FF_FS_EXFAT=1"
 #endif
 
 #define USB_MEDIA_MAX_MOUNTS 4u

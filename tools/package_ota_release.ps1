@@ -104,7 +104,7 @@ if ($p4.SourceVersion -ne $p4.Version) {
 }
 
 $safeVersion = $p4.Version -replace '[^A-Za-z0-9._-]', '_'
-$outputDir = Join-Path (Join-Path $RepoRoot $OutputRoot) "ddj-ffl4-$safeVersion"
+$outputDir = Join-Path (Join-Path $RepoRoot $OutputRoot) "pajoniiir-$safeVersion"
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
 Copy-Item -LiteralPath $p4.Source -Destination (Join-Path $outputDir $p4.File) -Force

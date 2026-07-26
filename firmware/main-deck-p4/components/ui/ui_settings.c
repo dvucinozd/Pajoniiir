@@ -701,6 +701,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_set_width(s_label_svc_log, 320);
     lv_label_set_long_mode(s_label_svc_log, LV_LABEL_LONG_CLIP);
 
+#ifndef WIN32
     {
         firmware_health_info_t info;
         char p4_text[80];
@@ -713,6 +714,12 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
         ui_settings_value_label(status_section, p4_text,
                                 COL_GREEN, &lv_font_montserrat_12, 16, 146);
     }
+#else
+    {
+        ui_settings_value_label(status_section, "P4: Simulator Mode",
+                                COL_GREEN, &lv_font_montserrat_12, 16, 146);
+    }
+#endif
     s_label_s3_firmware =
         ui_settings_value_label(status_section, "S3: waiting for firmware report",
                                 COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);

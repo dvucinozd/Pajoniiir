@@ -1,4 +1,4 @@
-# Seeed Studio XIAO ESP32S3 Wiring For DDJ-FFL4
+# Seeed Studio XIAO ESP32S3 Wiring For Pajoniiir
 
 Documentation status: active S3 bench wiring, reviewed 2026-07-13. Revalidate
 power, ground and service access in the final enclosure.
@@ -44,7 +44,7 @@ CONFIG_CONTROL_LINK_UART_RX_GPIO=6
 ### USB-UART Adapter For Runtime Monitor
 
 Native USB-C can be used for initial flashing while the XIAO is in ROM download
-mode. After the DDJ-FFL4 firmware boots, the native USB peripheral is always
+mode. After the Pajoniiir firmware boots, the native USB peripheral is always
 used for the FLX4 host stack, so runtime logs should use an external USB-UART
 adapter.
 

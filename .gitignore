@@ -48,3 +48,6 @@ tests/audio_engine/out_from5s.wav
 Thumbs.db
 Desktop.ini
 
+# PC Simulator
+lv_port_pc_vscode/
+

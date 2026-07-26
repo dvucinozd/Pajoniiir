@@ -7,9 +7,7 @@
 #include "rekordbox_anlz.h"
 #include "ui_beat_indicator.h"
 
-#ifndef WIN32
 #include "audio_engine.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,14 +59,9 @@ typedef struct {
 
     bool overview_slow_update;
 
-#ifndef WIN32
     bool ae_loading;
     uint8_t ae_load_pct;
     audio_engine_mixer_snapshot_t mixer_snapshot;
-#else
-    bool ae_loading;
-    uint8_t ae_load_pct;
-#endif
 } ui_frame_context_t;
 
 #ifdef __cplusplus

@@ -1,4 +1,4 @@
-# DDJ-FFL4 S3 Control Board Firmware - Claude Guide
+# Pajoniiir S3 Control Board Firmware - Claude Guide
 
 Documentation status: current developer guide, audited 2026-07-21. The installed
 signed release is `RC1-168-gb69f1b19` on `ota_0 / valid`, confirmed through the
@@ -15,7 +15,7 @@ under `attic/*` tags.
 
 ## Project Overview
 
-Seeed Studio XIAO ESP32S3 firmware for the DDJ-FFL4 control-board role. The
+Seeed Studio XIAO ESP32S3 firmware for the Pajoniiir control-board role. The
 active target is a Pioneer DDJ-FLX4 USB MIDI host and translator feeding
 deck-aware `0xA5` UART control-link frames to the ESP32-P4.
 
@@ -66,9 +66,12 @@ USB-OTG port as a serial console while testing FLX4 host mode; GPIO19/20 are
 owned by the USB host/device stack.
 
 ```powershell
-# Prepare environment (once per shell) - same IDF as P4
+# Prepare one environment (once per shell) - same IDF as P4.
+# Classic development machine:
 $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 . C:\Espressif\Initialize-Idf.ps1
+# Alternative v5.5.4 profile machine:
+# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
 
 # Flash and monitor logs
 # NOTE: the CH343 COM number can move between replugs (seen as COM4, now COM3);
@@ -80,8 +83,9 @@ idf.py -p COM3 flash monitor
 idf.py build
 ```
 
-**ESP-IDF**: v5.5 | **Target**: `esp32s3` | **IDF path**: `C:\Espressif\frameworks\esp-idf-v5.5\`  
-**Venv**: `idf5.5_py3.11_env`
+**ESP-IDF**: v5.5/v5.5.4 | **Target**: `esp32s3`
+**Classic IDF path**: `C:\Espressif\frameworks\esp-idf-v5.5\` |
+**v5.5.4 IDF path**: `C:\esp\v5.5.4\esp-idf`
 
 ---
 
@@ -121,7 +125,7 @@ DDJ-FLX4 translator:
 | `p4_audio_link` | S3-side I2S receiver for the P4 `hp_out` monitor PCM (BCLK7/WS8/DIN9); recovers the link sample rate and feeds `flx4_usb_audio`. `CONFIG_P4_AUDIO_LINK_ENABLED` (default-on) |
 | `flx4_usb_audio` | FLX4 USB Audio Class output: drains the `p4_audio_link` monitor ring into isochronous OUT transfers to the controller headphone endpoint, tracking the active P4 link rate. `CONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES` (default-on) |
 | `status_led` | XIAO onboard user LED (GPIO21 active-low): reduced link state + MIDI activity |
-| `s3_debug_ap` | Runtime bench-only WPA2 SoftAP + live web log viewer (`PajoNiiiR-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). Default password: `PajoNiiiR`. `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
+| `s3_debug_ap` | Runtime bench-only WPA2 SoftAP + live web log viewer (`Pajoniiir-S3-DEBUG` / `http://192.168.4.1`); OFF at boot, toggled from P4 Settings over `CTRL_ID_S3_DEBUG_AP` (`0x85`). Default password: `Pajoniiir`. `CONFIG_S3_DEBUG_AP_ENABLED=y` by default |
 | `controller_profile` | Pure-C S3CP profile parser + table-driven MIDI-in matcher and LED-out mapper (`cp_profile_parse`, `cp_runtime_process`, `cp_profile_map_led`). No ESP deps; host-tested |
 | `controller_profile_runtime` | Holds the active dynamic profile (mutex-guarded); `control_link` ACTIVATE/CLEAR installs it. `app_main` prefers it for MIDI-in map + LED-out + reconnect snapshot, falling back to `flx4_map`/`flx4_led_midi` when none is active |
 | `wifi_debug_log` | Optional Wi-Fi UDP debug-log sink (`CONFIG_WIFI_DEBUG_LOG_ENABLED`, off by default); joins a configured AP and streams logs to a PC listener. Configure via `sdkconfig.wifi_debug.local` — see `docs/S3_WIFI_DEBUG_LOG.md` |

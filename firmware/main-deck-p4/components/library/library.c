@@ -16,7 +16,11 @@
 static const char *TAG = "library";
 
 /* USB drive mount point — set by USB host VFS when the drive is mounted */
+#ifndef WIN32
 #define USB_MOUNT_POINT  "/usb"
+#else
+#define USB_MOUNT_POINT  "C:/Users/klikn/Music/USB"
+#endif
 #define USB_PDB_PATH     USB_MOUNT_POINT "/PIONEER/rekordbox/export.pdb"
 
 /* Track index — heap-allocated in library_init() to avoid large BSS.

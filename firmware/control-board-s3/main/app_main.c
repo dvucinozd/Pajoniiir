@@ -359,7 +359,7 @@ void app_main(void)
 {
     ESP_ERROR_CHECK(firmware_health_init());
     ESP_ERROR_CHECK(s3_ota_init());
-    ESP_LOGI(TAG, "DDJ-FFL4 control board firmware starting");
+    ESP_LOGI(TAG, "Pajoniiir control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
     (void)wifi_debug_log_init();
 

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 48 px
  * Bpp: 4
- * Opts: --font C:\Users\Daniel\Desktop\splash screen\Musieer-L7nD.ttf --size 48 --format lvgl --bpp 4 --range 0x20-0x7F --no-compress --no-prefilter --force-fast-kern-format --lv-include lvgl.h -o D:\Documents\DDJ-FFL4\firmware\main-deck-p4\components\ui\Musieer_48.c
+ * Opts: --font C:\Users\Daniel\Desktop\splash screen\Musieer-L7nD.ttf --size 48 --format lvgl --bpp 4 --range 0x20-0x7F --no-compress --no-prefilter --force-fast-kern-format --lv-include lvgl.h -o <repo-root>\firmware\main-deck-p4\components\ui\Musieer_48.c
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

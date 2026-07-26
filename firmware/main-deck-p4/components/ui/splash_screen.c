@@ -2,7 +2,7 @@
 //
 // Implementation of the splash screen for the ESP32 UI.  This code
 // relies on LVGL for creating and animating the splash.  The splash
-// shows the word "PajoNiiiR" in the Musieer font and fades the text
+// shows the word "Pajoniiir" in the Musieer font and fades the text
 // in and out using a repeating animation.  After a fixed delay the
 // provided callback is invoked to load the main user interface.
 
@@ -66,7 +66,7 @@ static lv_obj_t *splash_build(const char *caption);
 
 void splash_screen_show(void (*loaded_cb)(void))
 {
-    ESP_LOGI(TAG, "Displaying splash screen with text 'PajoNiiiR'...");
+    ESP_LOGI(TAG, "Displaying splash screen with text 'Pajoniiir'...");
 
     splash_scr = splash_build(NULL);
 
@@ -133,7 +133,7 @@ static lv_obj_t *splash_build(const char *caption)
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    static const char *splash_text = "PajoNiiiR";
+    static const char *splash_text = "Pajoniiir";
     const size_t len = strlen(splash_text);
     // Create a label for each character
     for (size_t i = 0; i < len; i++) {

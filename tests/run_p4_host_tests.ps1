@@ -196,7 +196,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "P4 Wi-Fi Remote uses the accepted default WPA2 credential" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/include/wifi_link.h") `
-    -LiteralPatterns @('WIFI_LINK_PASSWORD    "PajoNiiiR"')
+    -LiteralPatterns @('WIFI_LINK_PASSWORD    "Pajoniiir"')
 
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `

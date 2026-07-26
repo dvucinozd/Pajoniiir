@@ -1,4 +1,4 @@
-menu "DDJ-FFL4 JC4880 BSP"
+menu "Pajoniiir JC4880 BSP"
 
 config BSP_PCM5102A_MAIN_OUT
     bool "Enable PCM5102A main I2S output"

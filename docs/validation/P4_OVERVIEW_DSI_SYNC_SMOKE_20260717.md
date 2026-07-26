@@ -143,7 +143,7 @@ waveform jitter.
   `RC1-131-gc391e306 slot=1 state=3` (`ota_0 / valid`).
 
 The three raw diagnostic monitor files were kept outside the repository under
-`C:\tmp\DDJ-FFL4-waveform-diagnostics-20260717`.
+`C:\tmp\Pajoniiir-waveform-diagnostics-20260717`.
 
 ## Next acceptance boundary
 

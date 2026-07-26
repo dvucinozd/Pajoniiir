@@ -1,7 +1,7 @@
 // splash_screen.h
 //
 // Provides a simple splash screen for the ESP32 UI using LVGL.  The splash
-// displays the text "PajoNiiiR" in the Musieer font and fades the text in
+// displays the text "Pajoniiir" in the Musieer font and fades the text in
 // and out.  After a configurable delay the provided callback is invoked
 // to load the main user interface.
 
@@ -19,7 +19,7 @@ extern "C" {
  * @brief Show the splash screen.
  *
  * This function creates a new LVGL screen containing a label with the
- * text "PajoNiiiR".  The text is displayed using the Musieer_80 font
+ * text "Pajoniiir".  The text is displayed using the Musieer_80 font
  * and animated to fade continuously.  After three seconds the screen
  * is automatically removed and the supplied callback is invoked.
  *

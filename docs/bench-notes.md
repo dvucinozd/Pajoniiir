@@ -105,7 +105,7 @@ Python/toolchain paths until the local Espressif export environment is repaired.
 | Test | Firmware/example | Expected | Result | Notes |
 | --- | --- | --- | --- | --- |
 | ESP32-C6 hosted Wi-Fi firmware | Current P4 build | P4 initializes hosted Wi-Fi only when Settings Wi-Fi Remote is ON | **PASS** | Re-enabled 2026-07-04 behind `app_settings.wifi_remote`; default off keeps RF quiet |
-| Web UI SoftAP | Current P4 startup | SoftAP starts after user enables Wi-Fi Remote | **PASS** | SoftAP `PAJONIIR` starts on `192.168.4.1` after hosted/AP init succeeds |
+| Web UI SoftAP | Current P4 startup | SoftAP starts after user enables Wi-Fi Remote | **PASS** | SoftAP `Pajoniiir` starts on `192.168.4.1` after hosted/AP init succeeds |
 | Captive portal HTTP | Phone/PC client | `/`, `/api/status`, `/api/library`, `/api/load` respond on AP IP | **PASS** | Mobile controller reachable at `http://192.168.4.1` when Wi-Fi Remote is enabled |
 | Captive DNS | Phone/PC client | arbitrary DNS queries resolve to the P4 AP IP without malformed-packet crash | **PASS** | Captive DNS starts only after the Wi-Fi/AP stack is initialized |
 | Concurrent web load | Browser double-click/load spam | Second `/api/load` is rejected while load worker is busy | **PENDING** | Prevents concurrent P4 track load workers |
@@ -188,7 +188,7 @@ To prevent core panic, memory exhaustion, and watchdog resets when loading large
 | P4 flash target | **PASS** | `COM15`, ESP32-P4 rev v1.3, MAC `80:f1:b2:d0:b4:9b` |
 | ESP-Hosted SDIO pins | **PASS** | Log confirms slot 1, 4-bit, CLK 18, CMD 19, D0-D3 14-17, C6 reset 54 |
 | Host transport init | **PASS** | C6 identified as `esp32c6`; SDIO card init successful; transport active |
-| SoftAP + web UI | **PASS** | Re-enabled 2026-07-04 behind the Settings switch; SoftAP `PAJONIIR` on `192.168.4.1`, mobile web controller reachable |
+| SoftAP + web UI | **PASS** | Re-enabled 2026-07-04 behind the Settings switch; SoftAP `Pajoniiir` on `192.168.4.1`, mobile web controller reachable |
 | ESP-Hosted mempool | **FIXED** | Initial HOST boot asserted in `sdio_mempool_create` because SDIO mempool allocated ~48 KB internal DMA RAM. Enabling `CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y` fixes boot on this P4 workload. |
 | C6 firmware version | **FIXED** | Upgraded onboard C6 over `COM12` to ESP-Hosted slave `2.12.8` using USB-TTL on `PROG_C6`. Boot log now identifies `esp32c6`, reports `Transport active`, and no longer prints the Host/Co-proc version mismatch warning. |
 | C6 slave firmware build | **PASS** | Built and flashed `firmware/main-deck-p4/managed_components/espressif__esp_hosted/slave/build/network_adapter.bin`; stable flashing required P4 held in bootloader and C6 flashing at 115200 baud because 460800 stopped responding through the jumper wiring. |
@@ -1185,7 +1185,7 @@ millisecond wrap.
 ### The transition is proven
 
 `RC1-246-g63997094`. The connectivity probe made the full round trip on
-hardware: left `PAJONIIIR`, joined the service network, obtained
+hardware: left `Pajoniiir`, joined the service network, obtained
 **192.168.0.245**, and came back.
 
 ```
@@ -1233,7 +1233,7 @@ CA needs no further configuration.
 
 ### The update check works end to end
 
-`RC1-252-g4970ef02`. The deck leaves `PAJONIIIR`, joins the service network,
+`RC1-252-g4970ef02`. The deck leaves `Pajoniiir`, joins the service network,
 fetches `latest.json` from the VPS over TLS, parses it, compares against its own
 build and comes back:
 
@@ -1276,7 +1276,7 @@ page.
 
 ### The AP no longer advertises itself as a gateway
 
-Joining `PAJONIIIR` used to kill the operator's internet: the DHCP server
+Joining `Pajoniiir` used to kill the operator's internet: the DHCP server
 offered itself as router and DNS, so clients installed a default route through a
 deck that leads nowhere — total on a phone, which has no second interface.
 
