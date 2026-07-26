@@ -223,7 +223,11 @@ Tasks:
    opposite tempo offsets, pitch preservation, source-position drift,
    long-coordinate rebasing, large sample jumps and clipping. Continue the
    hardware portion for P4 CPU/I2S deadlines and listening quality.
-5. Leave the one-time initial pad sweep as a low-priority cosmetic issue unless
+5. [host complete 2026-07-26] Keep the reproducible headless LVGL simulator
+   gate green. It builds the real P4 UI against a pinned LVGL commit, drives
+   actual button callbacks and compares exact 800x480 framebuffer hashes for
+   Overview D1/D2, Library, Hot Cues, Settings and the screensaver restore path.
+6. Leave the one-time initial pad sweep as a low-priority cosmetic issue unless
    a specific functional MIDI/state fault becomes reproducible.
 
 Acceptance:
@@ -233,6 +237,8 @@ Acceptance:
 - the profile platform is demonstrated with at least one non-FLX4 device;
 - the deterministic dual-deck key-lock host soak remains green and the
   hardware run confirms acceptable P4 deadline margin and listening quality;
+- UI navigation and rendering changes pass the pinned screenshot gate, while
+  DSI/PPA motion, touch and panel timing remain hardware acceptance items;
 - remaining cosmetic work does not displace functional or safety gates.
 
 ## Resume Point

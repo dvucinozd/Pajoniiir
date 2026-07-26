@@ -130,6 +130,19 @@ Run the host regression suites from the repository root:
 .\tests\run_p4_host_tests.ps1
 ```
 
+Run the headless LVGL navigation and exact-framebuffer screenshot gate:
+
+```powershell
+.\tests\ui_simulator\run_ui_simulator_e2e.ps1
+```
+
+The first run fetches the pinned LVGL source into the ignored `.cache`
+directory. The gate covers Overview Deck 1/2 selection, Library, Hot Cues,
+Settings, the screensaver and exact Settings restoration. See
+[`tests/ui_simulator/README.md`](tests/ui_simulator/README.md) for baseline
+review and update instructions. This PC gate does not replace P4 display,
+touch or waveform-motion hardware acceptance.
+
 Both default firmware configurations include the FLX4 USB-headphone path.
 Build, flashing, signed release packaging and rollback procedures are covered
 by [OTA Update](docs/OTA-UPDATE.md). Hardware bring-up and recurring acceptance

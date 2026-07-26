@@ -135,6 +135,18 @@ Zadani run simulira pet minuta oba decka i provjerava drift, pitch, DSP
 finite-state, velike sample skokove i clipping. To nije zamjena za P4 CPU/I2S
 deadline mjerenje ili slusni hardware acceptance.
 
+Za headless LVGL navigaciju i tocnu screenshot regresiju koristi:
+
+```powershell
+.\tests\ui_simulator\run_ui_simulator_e2e.ps1
+```
+
+Gate automatski koristi pinani LVGL commit i pokriva Overview D1/D2, Library,
+Hot Cues, Settings, screensaver i tocnu obnovu Settings ekrana. Baseline
+mijenjaj samo nakon vizualnog pregleda snimki uz
+`-UpdateBaselines -KeepArtifacts`. Ovaj PC gate ne zamjenjuje P4 DSI/PPA,
+touch, panel-timing ili fluidity hardware acceptance.
+
 ## Git i build artefakti
 
 Repo koristi `.gitignore` za ESP-IDF artefakte:
