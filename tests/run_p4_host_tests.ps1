@@ -837,6 +837,20 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_keylock_soak"
+        Dir = "tests/audio_keylock_soak"
+        Target = "test_audio_keylock_soak.exe"
+        RunArgs = @("5")
+        Args = @(
+            "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock_soak.exe",
+            "test_audio_keylock_soak.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_diag"
         Dir = "tests/audio_diag"
         Target = "test_audio_diag.exe"
@@ -1607,7 +1621,11 @@ foreach ($test in $tests) {
     $target = Join-Path $dir $test.Target
     Invoke-Step -Name "build $($test.Name)" -WorkingDirectory $dir -Executable $Gcc.Source -Arguments $test.Args
     $created.Add($target)
-    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments @()
+    $runArgs = @()
+    if ($test.ContainsKey("RunArgs")) {
+        $runArgs = $test.RunArgs
+    }
+    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments $runArgs
 }
 
 # Prefer the ESP-IDF virtualenv interpreter: it is the one guaranteed to carry a

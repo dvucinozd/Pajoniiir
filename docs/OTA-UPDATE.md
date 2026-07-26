@@ -92,14 +92,20 @@ $env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
 $repoRoot = git rev-parse --show-toplevel
 
 Set-Location "$repoRoot\firmware\main-deck-p4"
+idf.py -B build_signed fullclean
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
 Set-Location "$repoRoot\firmware\control-board-s3"
+idf.py -B build_signed fullclean
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 ```
 
 Do not package unless both commands exit with code 0. P4 must fit its 4 MiB
 slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
+
+The latest clean-build evidence, including raw-image sizes and SHA-256 values,
+is recorded in
+[`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
 
 ## Create and verify a signed release
 

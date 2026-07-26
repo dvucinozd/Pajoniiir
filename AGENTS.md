@@ -118,10 +118,22 @@ Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
-Zadnja poznata provjera na bootstrap commitu:
+Zadnja poznata clean release provjera:
 
-- `firmware\control-board-s3`: `idf.py build` prolazi.
-- `firmware\main-deck-p4`: `idf.py build` prolazi.
+- `RC1-259-gdaf4639`, 2026-07-26, ESP-IDF 5.5.4;
+- oba izolirana `build_signed` targeta prolaze;
+- tocne velicine i SHA-256 zapisi su u
+  `docs\validation\CLEAN_RELEASE_RC1_259_BUILD.md`.
+
+Za dugi deterministicki dual-deck Master Tempo PC regression koristi:
+
+```powershell
+.\tests\audio_keylock_soak\run_audio_keylock_soak.ps1
+```
+
+Zadani run simulira pet minuta oba decka i provjerava drift, pitch, DSP
+finite-state, velike sample skokove i clipping. To nije zamjena za P4 CPU/I2S
+deadline mjerenje ili slusni hardware acceptance.
 
 ## Git i build artefakti
 

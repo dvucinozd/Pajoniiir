@@ -1,14 +1,17 @@
 # Startup Checklist
 
 Status: reconciled 2026-07-26. Checked items below are historical bring-up
-evidence, not instructions to repeat old commit-specific flashes. Repository
-source entering this audit is newer than the installed firmware.
+evidence, not instructions to repeat old commit-specific flashes. The latest
+clean release build is newer than the installed firmware.
 
 ## Current installed and accepted baselines
 
-- [x] Repository source entering the audit: `RC1-257-g42b741a`; it includes the
-  Pajoniiir rebrand and synchronized simulator support and has not yet been
-  packaged or installed.
+- [x] Latest clean dual-target release build: `RC1-259-gdaf4639`; both
+  `build_signed` targets were rebuilt with ESP-IDF 5.5.4 on 2026-07-26. The
+  candidate includes the Pajoniiir rebrand, synchronized simulator support,
+  OTA/controller/startup hardening and has not yet been signed, packaged or
+  installed. Exact raw-image sizes and SHA-256 values are recorded in
+  `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
 - [x] Last known matching bench baseline: P4 and S3 both
   `RC1-254-g21f21963` as of 2026-07-24.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
@@ -21,6 +24,10 @@ source entering this audit is newer than the installed firmware.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
+- [x] Deterministic five-minute PC dual-deck Master Tempo soak: 14,400,000
+  output frames per deck, zero source-position drift, zero detected clicks,
+  zero per-deck/mixed clipping and finite rebased DSP state. This is host
+  regression evidence, not P4 CPU/deadline or listening acceptance.
 - [x] PCM5102A MAIN and FLX4 USB headphone cue operate together.
 - [x] R1 EOF drain/replay implementation passes P4 host tests and firmware build.
 - [x] R1 basic hardware smoke: full track tail plays and PLAY restarts after natural EOF.

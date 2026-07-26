@@ -10,7 +10,7 @@ Status: current phase ledger, reconciled 2026-07-26.
 | Dual-deck playback, mixer and UI | Implemented and hardware-smoked; DSI-synchronised dual-waveform cadence accepted in focused P4 smoke 2026-07-17 |
 | MAIN + USB headphone cue audio | Implemented and hardware-smoked |
 | Vinyl/scratch | Remediation complete; dual-deck hardware validation passed 2026-07-11 |
-| Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12 |
+| Master Tempo/key lock | Implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26, while long P4 CPU/listening acceptance remains |
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
@@ -25,13 +25,14 @@ Status: current phase ledger, reconciled 2026-07-26.
 The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last known matching bench baseline is
 `RC1-254-g21f21963` on both boards as of 2026-07-24; it proved the complete P4
-pull-OTA path. Repository source entering the 2026-07-26 audit is newer at
-`RC1-257-g42b741a` and has not yet been packaged or deployed. Next acceptance
-work is the remaining targeted Phase 20/E1A and remote controller-profile
-matrix, followed by production key provisioning/rotation, enclosure
-power/thermal/RF soak, longer dual-deck key-lock quality testing, selected
-pending MIDI hardware rows and a first non-FLX4 profile acceptance. Historical
-phase text below is retained as the implementation record.
+pull-OTA path. A clean ESP-IDF 5.5.4 dual-target release build was recorded at
+`RC1-259-gdaf4639` on 2026-07-26, but it has not yet been signed, packaged or
+deployed. Next acceptance work is the remaining targeted Phase 20/E1A and
+remote controller-profile matrix, followed by production key
+provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
+key-lock P4 CPU/listening testing, selected pending MIDI hardware rows and a
+first non-FLX4 profile acceptance. Historical phase text below is retained as
+the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
@@ -608,10 +609,11 @@ Validation note, 2026-06-10:
   - Hardware smoke after the performance build exposed a `deck` task stack
     protection fault when Browse entered the Library UI. The root cause was the
     controller event path calling `ui_show_library -> ui_library_fill_row ->
-    media_catalog_get_row` on the `deck` task stack. The stabilizing fix raises
-    the `deck` task stack from 4096 to 8192 bytes. A future architectural cleanup
-    should move controller-triggered UI navigation onto the LVGL/UI task context
-    instead of doing table work on the deck-control task.
+    media_catalog_get_row` on the `deck` task stack. The stabilizing fix raised
+    the `deck` task stack from 4096 to 8192 bytes. The architectural cleanup was
+    completed on 2026-07-26: controller-triggered browse/load work is queued and
+    drained by `ui_update()` on the LVGL task, with at most eight commands per
+    frame.
 - **Splash screen port (2026-06-26)**:
   - Ported the P4 LVGL splash screen from `origin/codex/splash-screen` onto the
     current Phase 7 branch without merging the older branch state. The P4 UI now

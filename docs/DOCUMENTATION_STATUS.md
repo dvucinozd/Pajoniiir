@@ -1,16 +1,17 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-07-26**. The clean repository baseline
-for this work is `RC1-258-g8c78cd8`; it contains the Pajoniiir rebrand,
-synchronized host-simulator support and repaired release gate. The current
-working tree adds the software-only hardening listed below and is newer than
+Last full status reconciliation: **2026-07-26**. The latest clean dual-target
+release build is `RC1-259-gdaf4639`; it contains the Pajoniiir rebrand,
+synchronized host-simulator support, repaired release gate and the
+software-only OTA/controller/startup hardening listed below. It is newer than
 the firmware installed on the boards.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **current clean repository base:** `RC1-258-g8c78cd8`; the working-tree
-  hardening after it has not yet been signed, packaged or deployed;
+- **latest clean release build:** `RC1-259-gdaf4639`; both raw application
+  images were rebuilt with ESP-IDF 5.5.4 on 2026-07-26, but have not been
+  signed, packaged or deployed;
 - **last known bench state:** P4 and S3 were rematched at
   `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
   P4; the boards match each other but are behind current source;
@@ -54,7 +55,7 @@ in the active documents.
 | Controller | Pioneer DDJ-FLX4 enumerates on the S3 USB host; input mapping and P4-owned LED feedback are operational |
 | Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls |
 | Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
-| Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12 |
+| Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26 with zero source drift, detected clicks or clipping |
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
 | Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
 | UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
@@ -68,7 +69,9 @@ in the active documents.
   `rel-001` development key, preferably with encrypted or hardware-backed
   signing;
 - perform enclosure power, thermal, RF and long-duration audio soaks;
-- run longer simultaneous dual-deck key-lock quality/CPU testing;
+- run longer simultaneous dual-deck key-lock quality/CPU testing on P4
+  hardware; the five-minute deterministic PC regression is complete but does
+  not measure device deadlines or listening quality;
 - close the detailed E1A Beat FX transition/timing/target rows that go beyond
   the recorded per-effect sound and headroom acceptance;
 - run the Phase 20 USB queue-pressure/recovery, guarded web-mutation and UART

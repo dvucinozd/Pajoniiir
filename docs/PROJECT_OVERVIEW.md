@@ -1,13 +1,14 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, reconciled 2026-07-26. Repository source
-entering the audit is `RC1-257-g42b741a`; the last known bench state has both
-boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end to end.
-Current source is therefore newer than installed hardware. The latest fully
-functionally accepted complete-system baseline remains `RC1-123-g587cd7a1`.
-Targeted Phase 20/E1A, remote-profile-update, enclosure-endurance and production
-hardening rows remain open. The inherited baseline below is historical context;
-`Current Port Status` describes the active system.
+Status: current product overview, reconciled 2026-07-26. The latest clean
+dual-target release build is `RC1-259-gdaf4639`; the last known bench state has
+both boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end to
+end. The clean candidate has not been signed, packaged or deployed, so source
+remains newer than installed hardware. The latest fully functionally accepted
+complete-system baseline remains `RC1-123-g587cd7a1`. Targeted Phase 20/E1A,
+remote-profile-update, enclosure-endurance and production-hardening rows remain
+open. The inherited baseline below is historical context; `Current Port Status`
+describes the active system.
 
 ## Goal
 

@@ -1,12 +1,12 @@
 # Post-R5 Plan
 
 Status: active and reconciled 2026-07-26. R5A-R5F remediation and E1 signed-OTA
-acceptance are complete. Repository source entering this audit is
-`RC1-257-g42b741a`; the last known bench state has both boards matched at
+acceptance are complete. The latest clean dual-target release build is
+`RC1-259-gdaf4639`; the last known bench state has both boards matched at
 `RC1-254-g21f21963` after the P4 pull-OTA path was proven end to end on
-2026-07-24. Current source has not yet been packaged or deployed. The latest
-**fully** functionally accepted release still remains `RC1-123-g587cd7a1`
-(accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
+2026-07-24. The clean candidate has not yet been signed, packaged or deployed.
+The latest **fully** functionally accepted release still remains
+`RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
 
 The master-output recorder is shelved and compiled out by default through
 `CONFIG_AUDIO_RECORDER_ENABLED=n`. Long soaks on the original microSD card
@@ -218,7 +218,11 @@ Tasks:
    non-FLX4 fixture through compile, P4 registry match, S3 activation, semantic
    mapping, snapshot and LED output. Physical non-FLX4 acceptance remains
    required before advertising broad device compatibility.
-4. Continue long two-deck Master Tempo quality/CPU regression testing.
+4. [host complete 2026-07-26] Keep the deterministic five-minute dual-deck
+   Master Tempo soak in the P4 host gate. It covers 48/44.1 kHz sources,
+   opposite tempo offsets, pitch preservation, source-position drift,
+   long-coordinate rebasing, large sample jumps and clipping. Continue the
+   hardware portion for P4 CPU/I2S deadlines and listening quality.
 5. Leave the one-time initial pad sweep as a low-priority cosmetic issue unless
    a specific functional MIDI/state fault becomes reproducible.
 
@@ -227,6 +231,8 @@ Acceptance:
 - signing and recovery processes are documented for production operation;
 - controller input cannot invoke heavy LVGL/library work on the control task;
 - the profile platform is demonstrated with at least one non-FLX4 device;
+- the deterministic dual-deck key-lock host soak remains green and the
+  hardware run confirms acceptable P4 deadline margin and listening quality;
 - remaining cosmetic work does not displace functional or safety gates.
 
 ## Resume Point

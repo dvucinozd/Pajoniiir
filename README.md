@@ -14,14 +14,21 @@ remains locally and on `origin`.
 
 > [!IMPORTANT]
 > The last matching P4/S3 bench rollout is **`RC1-254-g21f21963`** from
-> 2026-07-24. Repository source is newer, while the latest **complete**
+> 2026-07-24. The latest clean dual-target release build is
+> **`RC1-259-gdaf4639`** from 2026-07-26; it has not been signed, packaged or
+> deployed. Repository source is therefore newer than the installed boards,
+> while the latest **complete**
 > functional hardware acceptance remains **`RC1-123-g587cd7a1`** from
 > 2026-07-14. Current software adds release-gate repair, the Pajoniiir rebrand,
 > hardened pull OTA, canonical `http://pajoniiir.local`, LVGL-owned
 > controller/library commands, startup-underrun gating and a host-tested
-> non-FLX4 profile fixture. These changes still need their listed hardware
-> acceptance rows, so the system is not yet production-ready. See
-> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary.
+> non-FLX4 profile fixture. A deterministic five-minute dual-deck Master Tempo
+> host soak also passes with zero source-position drift, detected clicks or
+> clipping. These changes still need their listed hardware acceptance rows, so
+> the system is not yet production-ready. See
+> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary
+> and [the RC1-259 clean-build record](docs/validation/CLEAN_RELEASE_RC1_259_BUILD.md)
+> for binary sizes and SHA-256 values.
 
 ## System at a Glance
 
