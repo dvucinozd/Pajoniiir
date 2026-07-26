@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: current phase ledger, audited 2026-07-17.
+Status: current phase ledger, reconciled 2026-07-26.
 
 ## Executive status
 
@@ -23,17 +23,15 @@ Status: current phase ledger, audited 2026-07-17.
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |
 
 The latest fully functionally accepted hardware baseline remains
-`RC1-123-g587cd7a1`. The last matching signed OTA rollout baseline is
-`RC1-168-gb69f1b19`, deployed to both boards on 2026-07-21 and running from
-`ota_0` on each; the bench state is identical to that rollout. RC1-168 carries
-the unified ANLZ loader, the service journal, the accepted recorder plus its
-API, and two hardware-found fixes (per-chunk USB preload media gate, httpd
-URI-handler limit). Targeted Phase 20, Flanger/Delay and
-remote controller-profile acceptance then follows, before production key
-provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
-key-lock quality testing, selected pending MIDI hardware rows and a first
-non-FLX4 profile acceptance. Historical phase text below is retained as the
-implementation record.
+`RC1-123-g587cd7a1`. The last known matching bench baseline is
+`RC1-254-g21f21963` on both boards as of 2026-07-24; it proved the complete P4
+pull-OTA path. Repository source entering the 2026-07-26 audit is newer at
+`RC1-257-g42b741a` and has not yet been packaged or deployed. Next acceptance
+work is the remaining targeted Phase 20/E1A and remote controller-profile
+matrix, followed by production key provisioning/rotation, enclosure
+power/thermal/RF soak, longer dual-deck key-lock quality testing, selected
+pending MIDI hardware rows and a first non-FLX4 profile acceptance. Historical
+phase text below is retained as the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
@@ -2247,11 +2245,15 @@ To re-enable: set `CONFIG_AUDIO_RECORDER_ENABLED=y`. Note that changing
 flag in the actual build's `sdkconfig`, or a build that looks enabled will
 silently ship disabled.
 
-## TODO: Add P4 Pull OTA Through Temporary Wi-Fi STA Mode
+## Phase 23: P4 Pull OTA Through Temporary Wi-Fi STA Mode
 
-Status: planned 2026-07-20; not implemented or hardware-benchmarked. Preserve
-the current standalone P4 Wi-Fi Remote as the normal operating mode and add a
-temporary client mode only for checking and downloading signed P4 updates. The
+Status: core path implemented and proven end to end on hardware 2026-07-24.
+`RC1-254-g21f21963` completed AP→STA→HTTPS channel read→signed bundle
+download→verification→inactive-slot flash→reboot, with AP restoration on the
+non-install paths. Remaining production follow-ups are newer-only/downgrade
+policy, a specific expired-offer UI message, canonical `pajoniiir.local` mDNS,
+the dynamic Host allow-list and the extended negative/recovery matrix below.
+The current standalone P4 Wi-Fi Remote remains the normal operating mode. The
 canonical mDNS hostname is exactly `pajoniiir.local`; do not introduce another
 product hostname or a differently spelled alias.
 

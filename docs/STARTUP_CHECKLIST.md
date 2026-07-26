@@ -1,23 +1,23 @@
 # Startup Checklist
 
-Status: audited 2026-07-17. Checked items below are historical bring-up
-evidence, not instructions to repeat old commit-specific flashes.
+Status: reconciled 2026-07-26. Checked items below are historical bring-up
+evidence, not instructions to repeat old commit-specific flashes. Repository
+source entering this audit is newer than the installed firmware.
 
 ## Current installed and accepted baselines
 
-- [x] Current bench P4: factory-slot `RC1-133-gbd5e43ce`, the exact payload
-  from the clean `rel-001` signed candidate built at source commit `bd5e43ce`;
-  wired-flashed and focused-display-smoked on 2026-07-17.
-- [x] Last matching signed and boot-verified P4/S3 OTA rollout baseline:
-  `RC1-131-gc391e306`, deployed to `ota_1` on 2026-07-16.
-- [x] Installed and boot-verified S3: `RC1-131-gc391e306`, signed OTA
-  `ota_0 / valid` through the P4 firmware report.
+- [x] Repository source entering the audit: `RC1-257-g42b741a`; it includes the
+  Pajoniiir rebrand and synchronized simulator support and has not yet been
+  packaged or installed.
+- [x] Last known matching bench baseline: P4 and S3 both
+  `RC1-254-g21f21963` as of 2026-07-24.
+- [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
+  channel read, signed bundle download/verification, inactive-slot flash and
+  reboot.
 - [x] Latest fully functionally accepted P4/S3 release:
   `RC1-123-g587cd7a1` (acceptance-time slots on 2026-07-14: P4 `ota_0`, S3
-  `ota_1`). After the RC1-131 rollout and subsequent P4 factory flash, both P4
-  OTA slots are inactive: `ota_0 / RC1-126-g812ad70f` and
-  `ota_1 / RC1-131-gc391e306`. The inactive S3 slot remains
-  `ota_1 / RC1-123-g587cd7a1`.
+  `ota_1`). Later builds have extensive focused acceptance but have not yet
+  replaced this complete-system baseline.
 - [x] P4 and S3 OTA success, interruption safety and forced rollback accepted.
 - [x] Vinyl/scratch accepted on both platters.
 - [x] Master Tempo basic hardware behavior accepted.
@@ -41,7 +41,8 @@ evidence, not instructions to repeat old commit-specific flashes.
 
 - [ ] Verify shared ground and that independent 5 V sources are not back-fed.
 - [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
-- [ ] Run both host suites and both firmware builds from a clean checkout.
+- [x] Run both host suites and both firmware builds from fresh build directories —
+  passed 2026-07-26 with ESP-IDF v5.5.4; repeat for the final enclosure candidate.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.

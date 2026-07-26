@@ -3,6 +3,7 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -Wno-unused-variable -Wno-unused-parameter \
            -DDECK_CORE_PC_TEST \
            -Istubs \
+           -I../../firmware/main-deck-p4/components/audio_engine/include \
            -I../../firmware/main-deck-p4/components/beat_jump/include \
            -I../../firmware/main-deck-p4/components/deck_core/include \
            -I../../firmware/main-deck-p4/components/control_link/include \

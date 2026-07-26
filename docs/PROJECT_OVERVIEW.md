@@ -1,13 +1,13 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, audited 2026-07-17. The last matching signed
-OTA rollout baseline is `RC1-131-gc391e306` on P4 `ota_1` and S3
-`ota_0 / valid`. The active bench P4 is the exact wired-flashed factory-slot
-payload from signed candidate `RC1-133-gbd5e43ce` (source commit `bd5e43ce`);
-S3 remains installed on signed RC1-131. Targeted Phase 20 remediation,
-remote-profile-update and Flanger/Delay functional hardware smokes remain
-pending. The inherited baseline below is historical context; `Current Port
-Status` describes the active system.
+Status: current product overview, reconciled 2026-07-26. Repository source
+entering the audit is `RC1-257-g42b741a`; the last known bench state has both
+boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end to end.
+Current source is therefore newer than installed hardware. The latest fully
+functionally accepted complete-system baseline remains `RC1-123-g587cd7a1`.
+Targeted Phase 20/E1A, remote-profile-update, enclosure-endurance and production
+hardening rows remain open. The inherited baseline below is historical context;
+`Current Port Status` describes the active system.
 
 ## Goal
 

@@ -1209,6 +1209,7 @@ $tests = @(
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST",
             "-Istubs",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
@@ -1244,6 +1245,7 @@ $tests = @(
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST", "-DCONFIG_AUDIO_SCRATCH_ENABLED=1",
             "-Istubs",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
@@ -1620,21 +1622,24 @@ if ($pythonSource) {
     Write-Warning "python not found; skipping OTA signing Python tests"
 }
 
-$pwsh = Get-Command pwsh -ErrorAction Stop
+$powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
+if (-not $powerShell) {
+    $powerShell = Get-Command powershell -ErrorAction Stop
+}
 # The call-graph audit greps the tree with ripgrep. Without `rg` it cannot run at
 # all, and hard-failing there would also skip every step below it. Skip loudly
 # instead, the same way a missing python skips the signing tests.
 if (Get-Command rg -ErrorAction SilentlyContinue) {
     Invoke-Step -Name "run R5 dead-code call-graph audit" `
         -WorkingDirectory $RepoRoot `
-        -Executable $pwsh.Source `
+        -Executable $powerShell.Source `
         -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
 } else {
     Write-Warning "ripgrep (rg) not found; SKIPPING the R5 dead-code call-graph audit"
 }
 Invoke-Step -Name "run OTA release helper tests" `
     -WorkingDirectory $RepoRoot `
-    -Executable $pwsh.Source `
+    -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tests/ota_packaging/test_ota_release_helpers.ps1")
 
 if (-not $KeepArtifacts) {

@@ -1,41 +1,20 @@
 # Post-R5 Plan
 
-Status: active 2026-07-21. R5A-R5F remediation and E1 signed-OTA acceptance are
-complete. The last matching OTA rollout is `RC1-168-gb69f1b19`, deployed to both
-boards on 2026-07-21 and running from `ota_0` on each (S3 `valid`, independently
-confirmed through P4's nested firmware report). That build carries the unified
-ANLZ metadata loader, the structured microSD service journal and the
-master-output recorder, and its recorder `.wav` capture plus the service journal
-were accepted on hardware. The latest **fully** functionally accepted release
-still remains `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on
-2026-07-14).
+Status: active and reconciled 2026-07-26. R5A-R5F remediation and E1 signed-OTA
+acceptance are complete. Repository source entering this audit is
+`RC1-257-g42b741a`; the last known bench state has both boards matched at
+`RC1-254-g21f21963` after the P4 pull-OTA path was proven end to end on
+2026-07-24. Current source has not yet been packaged or deployed. The latest
+**fully** functionally accepted release still remains `RC1-123-g587cd7a1`
+(accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
 
-Bench state now differs from that rollout: the P4 alone runs
-`RC1-205-gdbda7a83` from `ota_1` (recorder journal events, host-runner repairs,
-the redesigned web controller and the httpd `lru_purge_enable` fix), while the
-S3 stays on `RC1-168-gb69f1b19`. Re-match both boards before
-any acceptance run.
-
-Recorder timing, as of 2026-07-23. The recorder stalls on microSD and loses
-audio: 25-minute dual-deck soaks drop 3+ seconds of recording and produce output
-blocks of 320-356 ms. Three earlier readings that suggested the recorder was
-fine or fixed were all taken over windows shorter than the ~2-minute interval
-between failures and are withdrawn.
-
-The firmware's own contribution has now been measured and eliminated in turn:
-`sd_io_gate` contention is 7-8 us in steady state; a diagnostic feedback loop
-(stall records written to the same card under the same gate) was closed, taking
-`gate_wait` from 185 ms to 16.5 ms; and the checkpoint's mid-file header patch
-was removed with no effect on the stall. A PSRAM write-staging attempt made it
-markedly worse and was reverted. What survives is a ~370 ms `fwrite`, repeatable
-to within a few hundred microseconds, arriving in bursts that drain the entire
-2.95 s ring.
-
-Next step is the card swap, reached by elimination rather than assumption, and
-it needs the enclosure opened. Qualify any replacement with
-`tools/sd_card_latency_probe.ps1` first. If a known-good card stalls at the same
-value, the suspect becomes the SDMMC driver or bus configuration. Full numbers
-in `bench-notes.md`.
+The master-output recorder is shelved and compiled out by default through
+`CONFIG_AUDIO_RECORDER_ENABLED=n`. Long soaks on the original microSD card
+showed card-level `fwrite` stalls that drained the 2.95 s ring. A replacement
+card produced encouraging first-five-minute figures but the required 25-minute
+soak was deliberately stopped when the feature was shelved, so it is not an
+acceptance result. Do not resume recorder optimization unless the product scope
+explicitly reopens it; full measurements remain in `bench-notes.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 
@@ -89,9 +68,10 @@ Acceptance record:
 
 ## E1A — Current-Candidate Targeted Functional Acceptance
 
-Status: matching RC1-131 deployment/boot verification complete 2026-07-16;
-P4 `RC1-133-gbd5e43ce` exact-image display acceptance complete 2026-07-17;
-remaining functional hardware smoke pending.
+Status: matching `RC1-254-g21f21963` bench state recorded 2026-07-24. The
+individual Beat FX sound/headroom, loop timing, screensaver and pull-OTA paths
+have focused hardware acceptance; the remaining full-system Phase 20/profile,
+USB recovery, UART integrity and endurance rows below are still pending.
 
 Goal: prove the installed review-remediation, controller-profile, new Beat FX
 and P4 display candidate on the physical P4/S3/FLX4 system before enclosure
@@ -248,10 +228,11 @@ Acceptance:
 
 ## Resume Point
 
-Start the next session with **E1A — Current-Candidate Targeted Functional
-Acceptance**, task 1: smoke the installed P4/S3/FLX4 core playback and audio
-paths before the boards become difficult to access. Continue with E2 only after
-E1A passes or every deferral is explicitly accepted.
+Start the next hardware session by deploying one matching current candidate,
+then close the remaining **E1A — Current-Candidate Targeted Functional
+Acceptance** and E4 rows. E2 wiring/service readiness is already recorded
+complete; follow the targeted matrix with E3 closed-enclosure endurance only
+after every E1A deferral is explicit.
 
 Keep `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md`, `DOCUMENTATION_STATUS.md`
 and this plan synchronized as each acceptance gate closes.
