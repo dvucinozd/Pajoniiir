@@ -8,6 +8,7 @@
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
+#include "control_link_p4_diagnostics.h"
 #include "p4_ota.h"
 #include "p4_ota_policy.h"
 #include "service_log.h"
@@ -895,6 +896,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
     deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
+    control_link_rx_stats_t link_stats = {0};
+    service_log_status_t service_status = {0};
+    control_link_get_rx_stats(&link_stats);
+    (void)service_log_get_status(&service_status);
 
     float p1 = deck_core_pitch_percent(&state1);
     float p2 = deck_core_pitch_percent(&state2);
@@ -955,6 +960,23 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                    false, 0, 0, "", false, false, false, "", "idle", 0);
 #endif
 
+    char control_link_json[320] = {0};
+    web_api_format_control_link_json(
+        control_link_json, sizeof(control_link_json),
+        state1.control_link_connected, state1.last_heartbeat_age_ms,
+        link_stats.rx_frames, link_stats.sequence_gaps,
+        link_stats.event_checksum_errors, link_stats.bulk_frames,
+        link_stats.bulk_crc_errors, link_stats.last_sequence,
+        link_stats.sequence_valid);
+
+    char service_log_json[256] = {0};
+    web_api_format_service_log_json(
+        service_log_json, sizeof(service_log_json),
+        service_status.available, service_status.queue_depth,
+        service_status.queue_capacity, service_status.dropped,
+        service_status.written, service_status.current_bytes,
+        service_status.last_error);
+
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
@@ -1004,6 +1026,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"pfl1\":%s,"
         "\"pfl2\":%s"
         "},"
+        "%s,"
+        "%s,"
         "%s,"
         "%s,"
         "\"diagnostics\":{"
@@ -1069,6 +1093,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
         beat_fx_json,
         controller_json,
+        control_link_json,
+        service_log_json,
         diagnostics.output_codec_open ? "true" : "false",
         (unsigned)diagnostics.output_sample_rate,
         (unsigned)diagnostics.output_late_count,

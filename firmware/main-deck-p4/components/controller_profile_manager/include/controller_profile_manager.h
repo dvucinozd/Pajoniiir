@@ -110,6 +110,10 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                     uint16_t caps,
                                                     const char *product);
 
+/* Clear the connected descriptor/profile state and emit one disconnect journal
+ * edge. Returns true only when a present controller was actually cleared. */
+bool controller_profile_manager_on_disconnect(void);
+
 /* ── Pure helpers (host-testable, no ESP logging) ──────────────────────────── */
 
 /* CRC-32 (IEEE 802.3, zlib-compatible). */
@@ -153,6 +157,10 @@ int controller_profile_registry_match(const controller_profile_registry_t *reg,
  * profile. Returns the matched index or -1. */
 int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg,
                                               uint16_t vid, uint16_t pid);
+
+/* Clear only live controller/profile selection state, preserving the scanned
+ * profile inventory. Returns true when the registry changed from present. */
+bool controller_profile_registry_on_disconnect(controller_profile_registry_t *reg);
 
 /* Replace only the scanned profile inventory while preserving the connected
  * controller descriptor. A present controller is re-matched and intentionally

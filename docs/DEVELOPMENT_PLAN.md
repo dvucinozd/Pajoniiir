@@ -1742,7 +1742,8 @@ Controller and control-link producers are wired too: the firmware-only glue in
 PROFILE_MATCHED (or an unsupported warning) and PROFILE_TRANSFER_DONE/FAILED,
 while the periodic health monitor logs CONTROL_LINK_ONLINE/OFFLINE edges from
 the heartbeat-derived `control_link_connected` state. The pure, host-tested
-registry half of `controller_profile_manager` is deliberately untouched.
+registry half of `controller_profile_manager` now also owns the disconnect
+state reset while preserving the scanned profile inventory.
 
 Recorder producers were added on 2026-07-21 (`RC1-171-gacc2aa5a`), closing a gap
 where the one subsystem that writes to microSD contributed nothing to the
@@ -1753,13 +1754,16 @@ on every `start()` exit and both writer fault paths, and RECORDING_RECOVERED fro
 boot orphan recovery, which makes a power-loss `.part` salvage provable without
 pulling the card. All four were confirmed on hardware.
 
-Still open (documented follow-ups, low value): CONTROLLER_DISCONNECTED (the S3
-reports presence, not removal, so there is no P4-side disconnect edge yet) and
-CONTROL_LINK_CRC_ERROR/GAP (the 0xA5 path keeps no P4-side error counters; the
-0xA6 bulk layer validates CRC without accounting); a `service_log` object inside
-the large `/api/status` JSON (deferred to avoid churn in the 40-argument status
-formatter); and the hardware acceptance rows below. A temporary or high-rate
-detailed trace mode is explicitly out of scope.
+Software follow-ups closed on 2026-07-26: the valid S3
+`CTRL_ID_FLX4_CONNECTION=DISCONNECTED` edge now clears the P4 live controller
+selection and emits `CONTROLLER_DISCONNECTED`; the P4 UART parser counts valid
+frames, shared-sequence gaps, 0xA5 checksum errors and 0xA6 CRC/format errors;
+the periodic health monitor records error/gap deltas; and `/api/status` exposes
+both `control_link` and `service_log` objects. Pure host tests cover counter
+wrap/gap/error behavior, disconnect registry reset and exact JSON formatting.
+Still open: the hardware acceptance rows below, including a physical FLX4
+disconnect/reconnect and a controlled bad-frame/gap injection. A temporary or
+high-rate detailed trace mode remains explicitly out of scope.
 
 ### Goal and real-time boundary
 

@@ -1,4 +1,5 @@
 #include "control_link.h"
+#include "control_link_p4_diagnostics.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -38,10 +39,13 @@ static uint32_t s_event_coalesce_count;
 static TickType_t s_last_warn;
 static ctrl_bulk_parser_t s_bulk_parser;
 static control_link_descriptor_cb_t s_descriptor_cb;
+static control_link_controller_state_cb_t s_controller_state_cb;
 static control_link_profile_reply_cb_t s_profile_reply_cb;
 static portMUX_TYPE s_firmware_mux = portMUX_INITIALIZER_UNLOCKED;
 static ctrl_firmware_report_t s_s3_firmware;
 static bool s_s3_firmware_received;
+static portMUX_TYPE s_rx_stats_mux = portMUX_INITIALIZER_UNLOCKED;
+static control_link_rx_stats_t s_rx_stats;
 
 // ─── TX helpers ───────────────────────────────────────────────────────────────
 
@@ -115,6 +119,11 @@ void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb)
     s_descriptor_cb = cb;
 }
 
+void control_link_set_controller_state_cb(control_link_controller_state_cb_t cb)
+{
+    s_controller_state_cb = cb;
+}
+
 void control_link_set_profile_reply_cb(control_link_profile_reply_cb_t cb)
 {
     s_profile_reply_cb = cb;
@@ -128,6 +137,30 @@ bool control_link_get_s3_firmware_report(ctrl_firmware_report_t *out_report)
     *out_report = s_s3_firmware;
     portEXIT_CRITICAL(&s_firmware_mux);
     return received;
+}
+
+void control_link_get_rx_stats(control_link_rx_stats_t *out_stats)
+{
+    if (!out_stats) {
+        return;
+    }
+    portENTER_CRITICAL(&s_rx_stats_mux);
+    *out_stats = s_rx_stats;
+    portEXIT_CRITICAL(&s_rx_stats_mux);
+}
+
+static void record_rx_frame(uint8_t sequence, bool bulk)
+{
+    portENTER_CRITICAL(&s_rx_stats_mux);
+    control_link_rx_stats_record_frame(&s_rx_stats, sequence, bulk);
+    portEXIT_CRITICAL(&s_rx_stats_mux);
+}
+
+static void record_rx_error(bool bulk)
+{
+    portENTER_CRITICAL(&s_rx_stats_mux);
+    control_link_rx_stats_record_error(&s_rx_stats, bulk);
+    portEXIT_CRITICAL(&s_rx_stats_mux);
 }
 
 esp_err_t control_link_send_profile_begin(uint32_t total_size, uint32_t crc32,
@@ -313,6 +346,13 @@ static void dispatch_frame(const uint8_t *f)
         return;
     }
 
+    if (ev.type == CTRL_EV_STATE && ev.id == CTRL_ID_FLX4_CONNECTION &&
+        (ev.value == CTRL_FLX4_CONNECTED ||
+         ev.value == CTRL_FLX4_DISCONNECTED) &&
+        s_controller_state_cb) {
+        s_controller_state_cb(ev.value == CTRL_FLX4_CONNECTED);
+    }
+
     if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE &&
         !enqueue_priority_touch(&ev) &&
         !try_coalesce_latest_event(&ev)) {
@@ -404,8 +444,10 @@ static void parse_byte(rx_state_t *st, uint8_t b)
         if (s_bulk_parser.pos > 0 || b == CTRL_BULK_FRAME_START) {
             int r = ctrl_bulk_parser_feed(&s_bulk_parser, b);
             if (r > 0) {
+                record_rx_frame(s_bulk_parser.buf[2], true);
                 handle_bulk_frame(s_bulk_parser.buf, (size_t)r);
             } else if (r < 0) {
+                record_rx_error(true);
                 ESP_LOGW(TAG, "bulk frame CRC/format error");
             }
             return;
@@ -420,6 +462,7 @@ static void parse_byte(rx_state_t *st, uint8_t b)
 
     uint8_t chk = st->buf[1] ^ st->buf[2] ^ st->buf[3] ^ st->buf[4] ^ st->buf[5];
     if (chk != st->buf[6]) {
+        record_rx_error(false);
         ESP_LOGW(TAG, "bad checksum (got 0x%02x expected 0x%02x)", st->buf[6], chk);
         /* A dropped byte shifts framing: the real frame start is likely inside
            the bytes just rejected. Resync on it instead of discarding all 7,
@@ -434,6 +477,7 @@ static void parse_byte(rx_state_t *st, uint8_t b)
         return;
     }
 
+    record_rx_frame(st->buf[5], false);
     dispatch_frame(st->buf);
 }
 
@@ -456,6 +500,10 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
 {
     if (!ctrl_event_queue) return ESP_ERR_INVALID_ARG;
     s_event_queue = ctrl_event_queue;
+    portENTER_CRITICAL(&s_rx_stats_mux);
+    control_link_rx_stats_reset(&s_rx_stats);
+    portEXIT_CRITICAL(&s_rx_stats_mux);
+    ctrl_bulk_parser_reset(&s_bulk_parser);
 
     uart_config_t ucfg = {
         .baud_rate  = UART_BAUD,

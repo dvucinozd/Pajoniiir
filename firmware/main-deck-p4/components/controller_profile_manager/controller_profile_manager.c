@@ -444,6 +444,23 @@ int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg
     return idx;
 }
 
+bool controller_profile_registry_on_disconnect(controller_profile_registry_t *reg)
+{
+    if (!reg) {
+        return false;
+    }
+    bool was_present = reg->controller_present;
+    reg->controller_present = false;
+    reg->connected_vid = 0u;
+    reg->connected_pid = 0u;
+    reg->connected_caps = 0u;
+    memset(reg->connected_product, 0, sizeof(reg->connected_product));
+    reg->matched_index = -1;
+    reg->active_index = -1;
+    reg->transfer_state = CPM_TRANSFER_IDLE;
+    return was_present;
+}
+
 void controller_profile_registry_apply_rescan(
     controller_profile_registry_t *registry,
     const controller_profile_registry_t *scanned)
@@ -529,6 +546,10 @@ static const char *TAG = "ctrl_profile";
 
 static controller_profile_registry_t s_registry;
 static SemaphoreHandle_t s_manager_mutex;
+static uint16_t s_log_vid = 0xFFFFu;
+static uint16_t s_log_pid = 0xFFFFu;
+static uint16_t s_log_caps = 0xFFFFu;
+static int s_log_idx = -2;
 
 /* Profile-transfer sender: runs off the control-link RX task so the multi-KB
  * stream to the S3 never blocks event/descriptor handling. */
@@ -658,7 +679,10 @@ static void cpm_sender_task(void *arg)
         if (!cpm_lock()) {
             continue;
         }
-        if (idx < 0 || idx >= (int)s_registry.count) {
+        if (idx < 0 || idx >= (int)s_registry.count ||
+            !s_registry.controller_present ||
+            s_registry.matched_index != idx ||
+            s_registry.transfer_state != CPM_TRANSFER_TRANSFERRING) {
             cpm_unlock();
             continue;
         }
@@ -671,14 +695,21 @@ static void cpm_sender_task(void *arg)
         if (!cpm_lock()) {
             continue;
         }
-        if (ok) {
+        bool still_connected = s_registry.controller_present &&
+                               s_registry.connected_vid == m.vid &&
+                               s_registry.connected_pid == m.pid &&
+                               s_registry.matched_index == idx;
+        if (ok && still_connected) {
             s_transferred_vid = m.vid;
             s_transferred_pid = m.pid;
             s_transferred_valid = true;
             controller_profile_registry_mark_transfer_active(&s_registry, idx);
-        } else {
+        } else if (still_connected) {
             s_transferred_valid = false;   /* retry on the next announcement */
             controller_profile_registry_mark_transfer_failed(&s_registry, idx);
+        } else {
+            ok = false;
+            s_transferred_valid = false;
         }
         cpm_unlock();
         ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
@@ -706,6 +737,10 @@ esp_err_t controller_profile_manager_init(void)
     s_registry.active_index = -1;
     s_registry.transfer_state = CPM_TRANSFER_IDLE;
     s_transferred_valid = false;
+    s_log_vid = 0xFFFFu;
+    s_log_pid = 0xFFFFu;
+    s_log_caps = 0xFFFFu;
+    s_log_idx = -2;
     cpm_unlock();
 
     if (!s_reply_sem) {
@@ -919,9 +954,8 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
 
     /* The S3 re-announces the descriptor on every heartbeat, so only log the
      * edges — otherwise the journal fills with identical entries. */
-    static uint16_t last_vid = 0xFFFFu, last_pid = 0xFFFFu, last_caps = 0xFFFFu;
-    static int last_idx = -2;
-    if (vid != last_vid || pid != last_pid || caps != last_caps || idx != last_idx) {
+    if (vid != s_log_vid || pid != s_log_pid || caps != s_log_caps ||
+        idx != s_log_idx) {
         service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
                           3u, vid, pid, caps, 0u, product_copy);
         /* A successful match is already implied by the CONTROLLER_CONNECTED
@@ -933,12 +967,38 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
             service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
                               2u, vid, pid, 0u, 0u, "unsupported");
         }
-        last_vid = vid;
-        last_pid = pid;
-        last_caps = caps;
-        last_idx = idx;
+        s_log_vid = vid;
+        s_log_pid = pid;
+        s_log_caps = caps;
+        s_log_idx = idx;
     }
     return idx;
+}
+
+bool controller_profile_manager_on_disconnect(void)
+{
+    if (!cpm_lock()) {
+        return false;
+    }
+    uint16_t vid = s_registry.connected_vid;
+    uint16_t pid = s_registry.connected_pid;
+    char product[CPM_PRODUCT_MAX + 1];
+    snprintf(product, sizeof(product), "%s", s_registry.connected_product);
+    bool changed = controller_profile_registry_on_disconnect(&s_registry);
+    s_transferred_valid = false;
+    s_log_vid = 0xFFFFu;
+    s_log_pid = 0xFFFFu;
+    s_log_caps = 0xFFFFu;
+    s_log_idx = -2;
+    cpm_unlock();
+
+    if (changed) {
+        service_log_event(SERVICE_LOG_CONTROLLER_DISCONNECTED, SERVICE_LOG_WARN,
+                          2u, vid, pid, 0u, 0u, product);
+        ESP_LOGW(TAG, "controller disconnected VID=0x%04X PID=0x%04X '%s'",
+                 vid, pid, product);
+    }
+    return changed;
 }
 
 #endif /* CONTROLLER_PROFILE_MANAGER_PC_TEST */

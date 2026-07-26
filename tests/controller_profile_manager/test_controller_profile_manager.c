@@ -312,6 +312,35 @@ static void test_rescan_preserves_descriptor_and_requires_reactivation(void)
     printf("  rescan preserves descriptor and forces reactivation PASS\n");
 }
 
+static void test_disconnect_clears_live_state_and_preserves_profiles(void)
+{
+    controller_profile_registry_t reg;
+
+    build_tree();
+    assert(controller_profile_scan_dir(ROOT, &reg) == ESP_OK);
+    int flx4 = controller_profile_registry_on_descriptor(&reg, 0x2B73, 0x0045);
+    assert(flx4 >= 0);
+    reg.connected_caps = 0x0007;
+    snprintf(reg.connected_product, sizeof(reg.connected_product),
+             "Pioneer DDJ-FLX4");
+    controller_profile_registry_mark_transfer_active(&reg, flx4);
+    uint8_t profile_count = reg.count;
+
+    assert(controller_profile_registry_on_disconnect(&reg));
+    assert(!reg.controller_present);
+    assert(reg.connected_vid == 0u && reg.connected_pid == 0u);
+    assert(reg.connected_caps == 0u);
+    assert(reg.connected_product[0] == '\0');
+    assert(reg.matched_index == -1);
+    assert(reg.active_index == -1);
+    assert(reg.transfer_state == CPM_TRANSFER_IDLE);
+    assert(reg.count == profile_count);
+    assert(!controller_profile_registry_on_disconnect(&reg));
+    assert(!controller_profile_registry_on_disconnect(NULL));
+
+    printf("  disconnect clears live state, preserves profiles      PASS\n");
+}
+
 static void test_profile_id_validation(void)
 {
     assert(controller_profile_id_valid("pioneer_ddj_flx4"));
@@ -436,6 +465,7 @@ int main(void)
     test_scan_and_match();
     test_descriptor_match_waits_for_activate_ack();
     test_rescan_preserves_descriptor_and_requires_reactivation();
+    test_disconnect_clears_live_state_and_preserves_profiles();
     test_profile_id_validation();
     test_atomic_install_and_recovery();
     cleanup_tree();

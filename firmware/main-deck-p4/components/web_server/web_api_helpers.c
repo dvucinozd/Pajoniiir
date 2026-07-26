@@ -166,6 +166,68 @@ int web_api_format_controller_json(char *dst,
                     profile_count);
 }
 
+int web_api_format_control_link_json(char *dst,
+                                     size_t dst_size,
+                                     bool connected,
+                                     uint32_t heartbeat_age_ms,
+                                     uint32_t rx_frames,
+                                     uint32_t sequence_gaps,
+                                     uint32_t event_checksum_errors,
+                                     uint32_t bulk_frames,
+                                     uint32_t bulk_crc_errors,
+                                     uint8_t last_sequence,
+                                     bool sequence_valid)
+{
+    if (!dst || dst_size == 0) {
+        return 0;
+    }
+    return snprintf(dst,
+                    dst_size,
+                    "\"control_link\":{\"connected\":%s,"
+                    "\"heartbeat_age_ms\":%u,\"rx_frames\":%u,"
+                    "\"sequence_gaps\":%u,\"crc_errors\":%u,"
+                    "\"event_checksum_errors\":%u,"
+                    "\"bulk_frames\":%u,\"bulk_crc_errors\":%u,"
+                    "\"last_sequence\":%u,\"sequence_valid\":%s}",
+                    connected ? "true" : "false",
+                    (unsigned)heartbeat_age_ms,
+                    (unsigned)rx_frames,
+                    (unsigned)sequence_gaps,
+                    (unsigned)(event_checksum_errors + bulk_crc_errors),
+                    (unsigned)event_checksum_errors,
+                    (unsigned)bulk_frames,
+                    (unsigned)bulk_crc_errors,
+                    (unsigned)last_sequence,
+                    sequence_valid ? "true" : "false");
+}
+
+int web_api_format_service_log_json(char *dst,
+                                    size_t dst_size,
+                                    bool available,
+                                    uint32_t queue_depth,
+                                    uint32_t queue_capacity,
+                                    uint32_t dropped,
+                                    uint32_t written,
+                                    uint64_t current_bytes,
+                                    int32_t last_error)
+{
+    if (!dst || dst_size == 0) {
+        return 0;
+    }
+    return snprintf(dst,
+                    dst_size,
+                    "\"service_log\":{\"available\":%s,\"queue_depth\":%u,"
+                    "\"queue_capacity\":%u,\"dropped\":%u,\"written\":%u,"
+                    "\"current_bytes\":%llu,\"last_error\":%d}",
+                    available ? "true" : "false",
+                    (unsigned)queue_depth,
+                    (unsigned)queue_capacity,
+                    (unsigned)dropped,
+                    (unsigned)written,
+                    (unsigned long long)current_bytes,
+                    (int)last_error);
+}
+
 int web_api_alloc_printf(char **out, const char *fmt, ...)
 {
     if (!out || !fmt) {

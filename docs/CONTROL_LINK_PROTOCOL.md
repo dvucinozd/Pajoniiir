@@ -392,6 +392,26 @@ receiver (`cp_xfer.c`) are kept **byte-for-byte identical** on the S3 and P4
 sides; the S3 host runner asserts the two file copies match, and
 `control_link_protocol` asserts the shared constants agree.
 
+### P4 receive-health telemetry
+
+The P4 counts every valid S3-to-P4 `0xA5` and `0xA6` frame against the S3's
+shared rolling sequence. The first valid frame establishes the baseline;
+subsequent non-contiguous values increment one `sequence_gaps` event, including
+across the `255 -> 0` wrap. Invalid `0xA5` checksums and invalid `0xA6`
+CRC/format frames increment separate counters and are not accepted as sequence
+baselines.
+
+`GET /api/status` exposes the snapshot under `control_link`:
+`connected`, `heartbeat_age_ms`, `rx_frames`, `sequence_gaps`, combined
+`crc_errors`, `event_checksum_errors`, `bulk_frames`, `bulk_crc_errors`,
+`last_sequence`, and `sequence_valid`. The periodic P4 health monitor also
+emits `CONTROL_LINK_CRC_ERROR` and `CONTROL_LINK_GAP` service-journal records
+when their totals change. These are low-rate summaries, not a raw UART trace.
+
+The same status response exposes service-journal health under `service_log`:
+`available`, `queue_depth`, `queue_capacity`, `dropped`, `written`,
+`current_bytes`, and `last_error`.
+
 | Type | Dir | Meaning |
 | ---: | --- | --- |
 | `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + product string |
@@ -413,6 +433,14 @@ product string. It is re-sent with every connection-state publish and heartbeat
 refresh, so a P4-only reboot re-learns the controller. The P4
 `controller_profile_manager` matches the VID/PID against profiles on the SD/TF
 card and selects the active profile.
+
+The S3 also sends the semantic
+`CTRL_ID_FLX4_CONNECTION=CTRL_FLX4_DISCONNECTED` state when the USB controller
+closes. P4 treats that state as the authoritative removal edge, clears only the
+live controller/profile selection (the scanned profile inventory remains
+loaded), cancels activation of an in-flight stale transfer, and emits one
+`CONTROLLER_DISCONNECTED` service-journal record. A later descriptor can match
+and activate the controller again.
 
 ### Profile transfer (P4 -> S3)
 

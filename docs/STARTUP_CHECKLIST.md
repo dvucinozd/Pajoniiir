@@ -593,6 +593,18 @@ Notes:
   confirmation if the ID already exists. See `CONTROLLER_PROFILE_UPDATE.md`.
 - [ ] Hardware-accept profile overwrite, automatic S3 reactivation, reboot
   persistence, corrupt/truncated rejection and interrupted-upload recovery.
+- [ ] Unplug the FLX4 from the running S3 and confirm `/api/status.controller`
+  changes to `"present":false`, the active profile clears, and
+  `/api/diagnostic-log` gains exactly one `CONTROLLER_DISCONNECTED` record;
+  reconnect and confirm descriptor matching/profile activation recover.
+- [ ] During a controlled control-link fault injection, confirm
+  `/api/status.control_link.crc_errors` and/or `sequence_gaps` increase and the
+  service journal receives the corresponding `CONTROL_LINK_CRC_ERROR` /
+  `CONTROL_LINK_GAP` summary. In a normal steady run both counters should stay
+  at zero.
+- [ ] Confirm `/api/status.service_log` reports the expected SD availability,
+  bounded queue depth/capacity, drop/write counters, current file bytes and
+  last writer error while the service journal is active.
 
 - P4 serial is native USB-Serial-JTAG (COM15); early-boot app logs (including the
   `ctrl_profile:` scan line) are lost to non-interactive pyserial capture before

@@ -1,4 +1,5 @@
 #include "control_link.h"
+#include "control_link_p4_diagnostics.h"
 #include "deck_core.h"
 #include "bsp_jc4880.h"
 #include "library.h"
@@ -50,6 +51,7 @@ static void health_monitor_cb(void *arg)
 {
     (void)arg;
     static uint32_t last_late = 0u, last_underrun = 0u, last_rate = 0u;
+    static uint32_t last_link_crc = 0u, last_link_gap = 0u;
     static bool low_heap = false, low_psram = false;
 
     audio_engine_diagnostics_snapshot_t d;
@@ -104,6 +106,26 @@ static void health_monitor_cb(void *arg)
                           link ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
                           1u, ds.last_heartbeat_age_ms, 0u, 0u, 0u, NULL);
         last_link = link;
+    }
+
+    control_link_rx_stats_t link_stats;
+    control_link_get_rx_stats(&link_stats);
+    uint32_t link_crc = link_stats.event_checksum_errors +
+                        link_stats.bulk_crc_errors;
+    if (link_crc != last_link_crc) {
+        service_log_event(SERVICE_LOG_CONTROL_LINK_CRC, SERVICE_LOG_WARN,
+                          4u, link_crc - last_link_crc, link_crc,
+                          link_stats.event_checksum_errors,
+                          link_stats.bulk_crc_errors,
+                          "event checksum + bulk crc/format");
+        last_link_crc = link_crc;
+    }
+    if (link_stats.sequence_gaps != last_link_gap) {
+        service_log_event(SERVICE_LOG_CONTROL_LINK_GAP, SERVICE_LOG_WARN,
+                          3u, link_stats.sequence_gaps - last_link_gap,
+                          link_stats.sequence_gaps,
+                          link_stats.last_sequence, 0u, NULL);
+        last_link_gap = link_stats.sequence_gaps;
     }
 
     size_t heap_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -211,6 +233,13 @@ static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
 {
     (void)controller_profile_manager_on_descriptor_report(rep->vid, rep->pid,
                                                           rep->caps, rep->product);
+}
+
+static void on_controller_connection_state(bool connected)
+{
+    if (!connected) {
+        (void)controller_profile_manager_on_disconnect();
+    }
 }
 #endif
 
@@ -362,6 +391,7 @@ void app_main(void)
     deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     control_link_set_descriptor_report_cb(on_controller_descriptor);
+    control_link_set_controller_state_cb(on_controller_connection_state);
 #endif
     ESP_ERROR_CHECK(control_link_init(ctrl_queue));
     control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0);

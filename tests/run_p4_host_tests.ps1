@@ -485,6 +485,26 @@ Assert-FileContains `
     -LiteralPatterns @("control_link_set_descriptor_report_cb", "controller_profile_manager_on_descriptor_report")
 
 Assert-FileContains `
+    -Name "p4 app wires controller disconnect and UART health into service telemetry" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @(
+        "control_link_set_controller_state_cb",
+        "controller_profile_manager_on_disconnect",
+        "SERVICE_LOG_CONTROL_LINK_CRC",
+        "SERVICE_LOG_CONTROL_LINK_GAP"
+    )
+
+Assert-FileContains `
+    -Name "p4 status API exposes control-link and service-log health" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "control_link_get_rx_stats",
+        "service_log_get_status",
+        "web_api_format_control_link_json",
+        "web_api_format_service_log_json"
+    )
+
+Assert-FileContains `
     -Name "p4 manager streams the matched profile to the S3 off the RX task" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
     -LiteralPatterns @("cpm_sender_task", "control_link_send_profile_begin", "control_link_send_profile_chunk", "cp_xfer_crc32", "CTRL_BULK_TYPE_PROFILE_ACTIVATE")
@@ -922,6 +942,18 @@ $tests = @(
             "-o", "test_sd_io_gate.exe",
             "test_sd_io_gate.c",
             "../../firmware/main-deck-p4/components/sd_io_gate/sd_io_gate.c"
+        )
+    },
+    @{
+        Name = "control_link_rx_stats"
+        Dir = "tests/control_link_rx_stats"
+        Target = "test_control_link_rx_stats.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-o", "test_control_link_rx_stats.exe",
+            "test_control_link_rx_stats.c",
+            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c"
         )
     },
     @{

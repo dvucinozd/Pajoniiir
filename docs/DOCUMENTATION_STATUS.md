@@ -23,7 +23,9 @@ historical design or validation records. Three states must not be conflated:
 Since RC1-168 the product added and hardware-tested the single-resolver ANLZ
 metadata path, the structured
 `/sd/logs/system.log` service journal with its read-only
-`GET /api/diagnostic-log`, Beat FX headroom fixes, corrected loop timing, the
+`GET /api/diagnostic-log`, controller disconnect and control-link CRC/gap
+summaries, `/api/status` control-link/service-log health, Beat FX headroom
+fixes, corrected loop timing, the
 idle screensaver and P4 pull OTA through a temporary STA visit. The
 master-output recorder and guarded `/api/recording` API remain in the tree but
 are **compiled out by default since 2026-07-24** because card-level latency
