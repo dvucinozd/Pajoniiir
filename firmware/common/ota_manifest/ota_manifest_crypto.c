@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "mbedtls/pk.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 extern const uint8_t release_public_key_start[]
     asm("_binary_ddj_ota_release_public_der_start");
@@ -41,7 +41,16 @@ bool ddj_ota_manifest_verify_signature(const uint8_t *header, size_t header_size
     if (!header || header_size < DDJ_OTA_HEADER_SIZE) return false;
 
     uint8_t digest[DDJ_OTA_SHA256_SIZE];
-    if (mbedtls_sha256(header, DDJ_OTA_SIGNED_SIZE, digest, 0) != 0) return false;
+    size_t digest_size = 0u;
+    if (psa_hash_compute(PSA_ALG_SHA_256,
+                         header,
+                         DDJ_OTA_SIGNED_SIZE,
+                         digest,
+                         sizeof(digest),
+                         &digest_size) != PSA_SUCCESS ||
+        digest_size != sizeof(digest)) {
+        return false;
+    }
 
     mbedtls_pk_context key;
     mbedtls_pk_init(&key);
