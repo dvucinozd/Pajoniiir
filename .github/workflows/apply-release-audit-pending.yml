@@ -1,0 +1,82 @@
+name: Apply pending release audit phases
+
+on:
+  push:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - "tools/run_pending_release_audit.py"
+      - ".github/workflows/apply-release-audit-pending.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2
+
+jobs:
+  apply-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+
+      - name: Apply pending phases serially
+        run: python3 tools/run_pending_release_audit.py
+
+      - name: Verify patch formatting and invariants
+        run: |
+          git diff --check
+          ! grep -q 'for (int i = 0; i < 600; i++)' firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c
+          ! grep -q 'xQueueReceive(s_event_queue' firmware/main-deck-p4/components/control_link/control_link_uart.c
+          grep -q 'ui_deck_anlz_store_clone' firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c
+          grep -q 'TRACK TOO LARGE' firmware/main-deck-p4/components/audio_engine/audio_engine.c
+
+      - name: Run host regression suites
+        shell: pwsh
+        run: |
+          & ./tests/run_s3_host_tests.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/run_p4_host_tests.ps1
+          exit $LASTEXITCODE
+
+      - name: Clean-build S3 on ESP-IDF 6.0.2
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          docker run --rm -e HOME=/tmp -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" -w /project/firmware/control-board-s3 \
+            "$IDF_IMAGE" bash -lc '
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32s3
+              idf.py build
+            '
+
+      - name: Clean-build P4 and assert silicon target
+        run: |
+          docker run --rm -e HOME=/tmp -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              idf.py build
+            '
+
+      - name: Commit validated pending phases
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware tests
+          if git diff --cached --quiet; then
+            echo "No pending source changes."
+            exit 0
+          fi
+          git commit -m "fix: close P1 ownership, audio and control races"
+          git pull --rebase origin fix/release-blockers-and-concurrency
+          git push origin HEAD:fix/release-blockers-and-concurrency
