@@ -826,6 +826,22 @@ static audio_pad_fx_kind_t pad_fx_kind_from_command(uint32_t packed)
 }
 
 #if AE_FW
+static void audio_output_apply_master_tempo_commands(void)
+{
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        const uint32_t epoch = __atomic_load_n(
+            &s_master_tempo_command_epoch[deck], __ATOMIC_ACQUIRE);
+        if (epoch == s_master_tempo_applied_epoch[deck]) {
+            continue;
+        }
+        /* Output task is the sole owner of keylock/resampler DSP mutation. The
+         * command takes effect exactly at an audio-block boundary. */
+        s_keylocks[deck].initialized = false;
+        audio_resampler_reset(&s_resamplers[deck]);
+        s_master_tempo_applied_epoch[deck] = epoch;
+    }
+}
+
 static void audio_output_apply_pending_fx_commands(void)
 {
     for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
@@ -1022,6 +1038,8 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
 static audio_keylock_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
 static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_master_tempo_command_epoch[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_master_tempo_applied_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_keylock_generation[AUDIO_ENGINE_DECK_COUNT];
 
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
@@ -1805,8 +1823,13 @@ static void seek_index(audio_engine_state_t *eng, uint32_t position_ms)
  */
 static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    uint32_t idx = (eng->duration_ms > 0)
-                   ? (position_ms * AUDIO_PVBR_LEN / eng->duration_ms)
+    if (eng->duration_ms > 0u && position_ms > eng->duration_ms) {
+        position_ms = eng->duration_ms;
+    }
+    uint32_t idx = (eng->duration_ms > 0u)
+                   ? (uint32_t)(((uint64_t)position_ms *
+                                 (uint64_t)AUDIO_PVBR_LEN) /
+                                (uint64_t)eng->duration_ms)
                    : 0u;
     if (idx >= AUDIO_PVBR_LEN) idx = AUDIO_PVBR_LEN - 1u;
     uint32_t target_byte = eng->pvbr[idx];
@@ -2201,12 +2224,23 @@ static void ae_loader_task(void *arg)
         goto park;
     }
 
-    fw->buf = heap_caps_malloc((size_t)fsz, MALLOC_CAP_SPIRAM);
+    const size_t track_bytes = (size_t)fsz;
+    const size_t largest_psram = heap_caps_get_largest_free_block(
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (track_bytes > largest_psram) {
+        ESP_LOGE(TAG, "TRACK TOO LARGE: need=%u largest_psram=%u",
+                 (unsigned)track_bytes, (unsigned)largest_psram);
+        fclose(src);
+        media_io_gate_end();
+        ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "TRACK TOO LARGE");
+        goto park;
+    }
+    fw->buf = heap_caps_malloc(track_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!fw->buf) {
         ESP_LOGE(TAG, "PSRAM alloc %ld B failed", fsz);
         fclose(src);
         media_io_gate_end();
-        ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "NO MEM");
+        ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "TRACK TOO LARGE");
         goto park;
     }
     ae_diag_log_memory("preload-alloc", ctx->deck);
@@ -2931,6 +2965,7 @@ static void ae_output_task(void *arg)
             }
         }
 
+        audio_output_apply_master_tempo_commands();
         audio_output_apply_pending_fx_commands();
 
         float deck0_gain = 1.0f;
@@ -3413,13 +3448,14 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (eng->loaded) {
-        esp_err_t stop_rc = audio_engine_stop_for_deck(deck);
-        if (stop_rc != ESP_OK) {
-            eng->last_error = stop_rc;
-            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
-            return stop_rc;
-        }
+    /* A failed asynchronous load can clear loaded while loader/decoder
+     * tasks and the PSRAM preload buffer still belong to the old session. Always
+     * stop and join the previous session before publishing run=true for a retry. */
+    esp_err_t stop_rc = audio_engine_stop_for_deck(deck);
+    if (stop_rc != ESP_OK) {
+        eng->last_error = stop_rc;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
+        return stop_rc;
     }
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
@@ -3690,7 +3726,9 @@ static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
 static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 {
     audio_engine_state_t *eng = &s_engines[deck];
-    if (!eng->loaded) return ESP_OK;
+    /* Do not key teardown on eng->loaded: error paths deliberately clear that
+     * flag before the parked tasks have exited. Runtime task ownership and the
+     * preload pointer are the authoritative session-liveness indicators. */
 
     atomic_store_bool(&eng->playing, false);
     atomic_store_bool(&eng->paused, false);
@@ -4088,8 +4126,8 @@ void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled)
     if (!deck_is_valid(deck)) return;
 #if AE_FW
     atomic_store_bool(&s_master_tempo_enabled[deck], enabled);
-    s_keylocks[deck].initialized = false;
-    audio_resampler_reset(&s_resamplers[deck]);
+    (void)__atomic_add_fetch(&s_master_tempo_command_epoch[deck],
+                             1u, __ATOMIC_RELEASE);
 #else
     (void)enabled;
 #endif
