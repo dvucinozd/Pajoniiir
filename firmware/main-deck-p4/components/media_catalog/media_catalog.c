@@ -230,9 +230,17 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
     service_log_event(SERVICE_LOG_TRACK_LOAD_START, SERVICE_LOG_INFO,
                       1u, track_key, 0u, 0u, 0u, NULL);
 
+    /* The PDB/audio duration includes any outro after the final beat. Preserve
+     * it across ANLZ enrichment; beatgrid duration is only a fallback when the
+     * catalog itself has no duration. */
+    const uint32_t catalog_duration_ms = track->duration_ms;
+
     /* Analysis data refines the PDB row but is not required for playback. */
     bool anlz_ok = true;
     esp_err_t anlz_rc = library_load_anlz(track);
+    if (catalog_duration_ms != 0u) {
+        track->duration_ms = catalog_duration_ms;
+    }
     if (anlz_rc != ESP_OK) {
         anlz_ok = false;
         ESP_LOGW(TAG, "no analysis data for track 0x%08x (%s); loading without it",
