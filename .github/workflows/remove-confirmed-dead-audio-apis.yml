@@ -6,6 +6,7 @@ on:
       - tmp/ordered-cleanup
     paths:
       - tools/remove_confirmed_dead_audio_apis.py
+      - tools/fix_dead_api_audit_exact.py
       - .github/workflows/remove-confirmed-dead-audio-apis.yml
 
 permissions:
@@ -19,6 +20,8 @@ jobs:
         with:
           ref: tmp/ordered-cleanup
           fetch-depth: 0
+      - name: Fix exact audit matching
+        run: python3 tools/fix_dead_api_audit_exact.py
       - name: Audit and remove dead APIs
         run: python3 tools/remove_confirmed_dead_audio_apis.py
       - name: Run P4 host regressions
@@ -30,7 +33,7 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git rm tools/remove_confirmed_dead_audio_apis.py .github/workflows/remove-confirmed-dead-audio-apis.yml
+          git rm tools/remove_confirmed_dead_audio_apis.py tools/fix_dead_api_audit_exact.py .github/workflows/remove-confirmed-dead-audio-apis.yml
           git add firmware/main-deck-p4/components/audio_engine tests
           git commit -m "refactor(audio): remove confirmed dead helper APIs"
           git push origin HEAD:tmp/ordered-cleanup
