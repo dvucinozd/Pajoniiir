@@ -143,7 +143,7 @@ esp_err_t monitor_pcm_link_start_transport(void)
        froze rev v1.3 (eco2) silicon. Bench uses unit 1 (ES8311 keeps unit 0);
        product uses unit 0 (ES8311 disabled, PCM5102A MAIN on unit 1). */
     i2s_chan_config_t chan_cfg =
-        I2S_CHANNEL_DEFAULT_CONFIG((i2s_port_t)CONFIG_MONITOR_PCM_LINK_I2S_UNIT, I2S_ROLE_MASTER);
+        I2S_CHANNEL_DEFAULT_CONFIG(CONFIG_MONITOR_PCM_LINK_I2S_UNIT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true; /* DMA sends zero filler when the queue idles */
 
     esp_err_t rc = i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
