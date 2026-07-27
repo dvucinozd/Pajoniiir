@@ -90,6 +90,21 @@ Assert-FileContains `
     -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
+
+Assert-FileDoesNotContain `
+    -Name "confirmed dead scratch APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
+    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
+
+Assert-FileDoesNotContain `
+    -Name "retired output timing APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
+    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
+
+Assert-FileDoesNotContain `
+    -Name "test-only stereo mixer API stays out of production" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
+    -LiteralPatterns @("audio_mixer_mix_stereo")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
