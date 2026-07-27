@@ -22,10 +22,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: S3 host tests
         shell: pwsh
-        run: ./tests/run_s3_host_tests.ps1
+        run: |
+          & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
+          $code = $LASTEXITCODE
+          Get-Content s3-host-tests.log -Tail 160
+          exit $code
       - name: P4 host tests
         shell: pwsh
-        run: ./tests/run_p4_host_tests.ps1
+        run: |
+          & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
+          $code = $LASTEXITCODE
+          Get-Content p4-host-tests.log -Tail 240
+          exit $code
 
   build-s3:
     name: ESP32-S3 firmware
