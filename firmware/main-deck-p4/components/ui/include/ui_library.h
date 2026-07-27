@@ -28,15 +28,15 @@ typedef struct {
 } ui_library_update_plan_t;
 
 void ui_library_format_row_text(ui_library_row_text_t *out,
-                                const char *title,
-                                const char *artist,
-                                const char *key,
-                                uint16_t bpm,
-                                uint32_t duration_ms);
+                                 const char *title,
+                                 const char *artist,
+                                 const char *key,
+                                 uint16_t bpm,
+                                 uint32_t duration_ms);
 
 ui_library_update_plan_t ui_library_plan_update(int active_tab,
-                                                bool needs_refresh,
-                                                bool usb_removed_pending);
+                                                 bool needs_refresh,
+                                                 bool usb_removed_pending);
 
 #ifndef UI_LIBRARY_HOST_TEST
 
@@ -107,5 +107,8 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
                                     const uint8_t **waveform_low,
                                     bool *has_waveform);
 esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck);
+esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
+                                                   uint32_t generation,
+                                                   uint8_t deck);
 
 #endif
