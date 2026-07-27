@@ -30,11 +30,20 @@ jobs:
           Set-Location repo
           & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
           $s3 = $LASTEXITCODE
-          Get-Content s3-host-tests.log -Tail 30
-          if ($s3 -ne 0) { exit $s3 }
+          if ($s3 -ne 0) {
+              Get-Content s3-host-tests.log | Select-String -Pattern "error:|fatal error|undefined reference|failed with exit" -Context 2,2 | Select-Object -Last 50
+              Get-Content s3-host-tests.log -Tail 20
+              exit $s3
+          }
+          Write-Host "S3 host tests passed."
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
           $p4 = $LASTEXITCODE
-          Get-Content p4-host-tests.log -Tail 60
+          if ($p4 -ne 0) {
+              Get-Content p4-host-tests.log | Select-String -Pattern "error:|fatal error|undefined reference|failed with exit" -Context 3,3 | Select-Object -Last 70
+              Get-Content p4-host-tests.log -Tail 20
+          } else {
+              Get-Content p4-host-tests.log -Tail 20
+          }
           exit $p4
 
   build-s3:
@@ -58,7 +67,12 @@ jobs:
               idf.py build
             ' > s3-idf-build.log 2>&1
           code=$?
-          tail -n 110 s3-idf-build.log
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' s3-idf-build.log | tail -n 75 || true
+            tail -n 20 s3-idf-build.log
+          else
+            tail -n 25 s3-idf-build.log
+          fi
           exit $code
       - name: Upload S3 binaries
         if: success()
@@ -92,7 +106,12 @@ jobs:
               idf.py build
             ' > p4-idf-build.log 2>&1
           code=$?
-          tail -n 130 p4-idf-build.log
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' p4-idf-build.log | tail -n 90 || true
+            tail -n 20 p4-idf-build.log
+          else
+            tail -n 25 p4-idf-build.log
+          fi
           exit $code
       - name: Upload P4 binaries
         if: success()
