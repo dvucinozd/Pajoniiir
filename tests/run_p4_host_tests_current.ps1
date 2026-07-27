@@ -49,6 +49,14 @@ if (-not $text.Contains($oldOta)) {
 $text = $text.Replace($oldQueue, $newQueue)
 $text = $text.Replace($oldOta, $newOta)
 
+$deckCoreSource = '"../../firmware/main-deck-p4/components/deck_core/deck_core.c"'
+$deckCoreWrapper = '"deck_core_test_snapshot_wrapper.c"'
+$deckCoreSourceCount = $text.Split($deckCoreSource).Count - 1
+if ($deckCoreSourceCount -ne 2) {
+    throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
+}
+$text = $text.Replace($deckCoreSource, $deckCoreWrapper)
+
 try {
     Set-Content -LiteralPath $temp -Value $text -Encoding utf8NoBOM
     & $temp -KeepArtifacts:$KeepArtifacts
