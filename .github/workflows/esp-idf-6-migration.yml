@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - migration/esp-idf-6.0.2
+      - fix/release-blockers-and-concurrency
   pull_request:
     paths:
       - "firmware/**"
@@ -15,7 +16,6 @@ permissions:
   contents: read
 
 env:
-  MIGRATION_BRANCH: migration/esp-idf-6.0.2
   IDF_IMAGE: espressif/idf:v6.0.2
 
 jobs:
@@ -23,11 +23,12 @@ jobs:
     name: Host regression tests
     runs-on: ubuntu-latest
     steps:
-      - name: Clone migration branch and run host tests
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Run host regression suites
         shell: pwsh
         run: |
-          git clone --quiet --depth 1 --branch $env:MIGRATION_BRANCH https://github.com/dvucinozd/Pajoniiir.git repo
-          Set-Location repo
           & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
           $s3 = $LASTEXITCODE
           if ($s3 -ne 0) {
@@ -35,6 +36,7 @@ jobs:
               exit $s3
           }
           Write-Host "S3 host tests passed."
+
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
           $p4 = $LASTEXITCODE
           $p4Lines = @(Get-Content p4-host-tests.log)
@@ -55,15 +57,17 @@ jobs:
     name: ESP32-S3 firmware
     runs-on: ubuntu-latest
     steps:
-      - name: Clone and build control board
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Build control board
         run: |
-          git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
           docker pull --quiet "$IDF_IMAGE" >/dev/null
           set +e
           docker run --rm \
             -e HOME=/tmp \
             -e IDF_GIT_SAFE_DIR='*' \
-            -v "$PWD/repo:/project" \
+            -v "$PWD:/project" \
             -w /project/firmware/control-board-s3 \
             "$IDF_IMAGE" bash -lc '
               idf.py --version
@@ -79,52 +83,62 @@ jobs:
             tail -n 25 s3-idf-build.log
           fi
           exit $code
+
       - name: Upload S3 binaries
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: control-board-s3-idf-6.0.2
           path: |
-            repo/firmware/control-board-s3/build/*.bin
-            repo/firmware/control-board-s3/build/*.elf
-            repo/firmware/control-board-s3/build/*.map
-            repo/firmware/control-board-s3/dependencies.lock
+            firmware/control-board-s3/build/*.bin
+            firmware/control-board-s3/build/*.elf
+            firmware/control-board-s3/build/*.map
+            firmware/control-board-s3/dependencies.lock
 
   build-p4:
     name: ESP32-P4 firmware
     runs-on: ubuntu-latest
     steps:
-      - name: Clone and build main deck
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Build main deck and verify silicon target
         run: |
-          git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
           docker pull --quiet "$IDF_IMAGE" >/dev/null
           set +e
           docker run --rm \
             -e HOME=/tmp \
             -e IDF_GIT_SAFE_DIR='*' \
-            -v "$PWD/repo:/project" \
+            -v "$PWD:/project" \
             -w /project/firmware/main-deck-p4 \
             "$IDF_IMAGE" bash -lc '
+              set -e
               idf.py --version
               rm -rf build sdkconfig sdkconfig.old managed_components
               idf.py set-target esp32p4
+              idf.py reconfigure
+              test -f build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              echo "Verified ESP32-P4 production silicon gate: pre-v3 selector enabled, minimum revision 1.0."
               idf.py build
             ' > p4-idf-build.log 2>&1
           code=$?
           if [ "$code" -ne 0 ]; then
-            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' p4-idf-build.log | tail -n 90 || true
-            tail -n 20 p4-idf-build.log
-          else
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped|CONFIG_ESP32P4)' p4-idf-build.log | tail -n 90 || true
             tail -n 25 p4-idf-build.log
+          else
+            tail -n 30 p4-idf-build.log
           fi
           exit $code
+
       - name: Upload P4 binaries
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: main-deck-p4-idf-6.0.2
           path: |
-            repo/firmware/main-deck-p4/build/*.bin
-            repo/firmware/main-deck-p4/build/*.elf
-            repo/firmware/main-deck-p4/build/*.map
-            repo/firmware/main-deck-p4/dependencies.lock
+            firmware/main-deck-p4/build/*.bin
+            firmware/main-deck-p4/build/*.elf
+            firmware/main-deck-p4/build/*.map
+            firmware/main-deck-p4/dependencies.lock
