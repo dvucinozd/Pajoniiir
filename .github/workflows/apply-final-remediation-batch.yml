@@ -1,0 +1,97 @@
+name: Apply final remediation batch
+
+on:
+  push:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - .github/remediation-batch.trigger
+
+permissions:
+  contents: write
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2
+
+jobs:
+  apply-validate-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out remediation branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+
+      - name: Apply complete remediation batch
+        run: python3 tools/apply_final_remediation_batch.py
+
+      - name: Validate patch structure
+        run: |
+          git diff --check
+          grep -q 'DECK_CORE_INTERNAL_RESET_ID' firmware/main-deck-p4/components/deck_core/deck_core.c
+          grep -q 's_descriptor_q' firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c
+          grep -q 'wifi_transition_lease_acquire' firmware/main-deck-p4/components/wifi_link/wifi_link.c
+          grep -q 'wifi_transition_lease_acquire' firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c
+          grep -q 'store_pending_continuous' firmware/main-deck-p4/components/control_link/control_link_uart.c
+          grep -q 's_master_tempo_command_epoch' firmware/main-deck-p4/components/audio_engine/audio_engine.c
+
+      - name: Run all host regression tests
+        shell: pwsh
+        run: |
+          & ./tests/run_s3_host_tests.ps1 2>&1 | Tee-Object -FilePath s3-host-tests.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/run_p4_host_tests.ps1 2>&1 | Tee-Object -FilePath p4-host-tests.log
+          exit $LASTEXITCODE
+
+      - name: Clean-build ESP32-S3
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/control-board-s3 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32s3
+              idf.py build
+            ' 2>&1 | tee s3-idf-build.log
+
+      - name: Clean-build ESP32-P4 and assert silicon target
+        run: |
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              idf.py build
+            ' 2>&1 | tee p4-idf-build.log
+
+      - name: Commit validated remediation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: complete release audit remediation"
+          git push origin HEAD:fix/release-blockers-and-concurrency
+
+      - name: Upload batch validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-remediation-batch-logs
+          if-no-files-found: ignore
+          path: |
+            s3-host-tests.log
+            p4-host-tests.log
+            s3-idf-build.log
+            p4-idf-build.log
