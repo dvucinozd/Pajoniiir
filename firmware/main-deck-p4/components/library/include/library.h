@@ -8,6 +8,7 @@
 //   • anlz_path  — direct path to ANLZ0000.DAT (/PIONEER/USBANLZ/.../ANLZ0000.DAT)
 //   • title, artist, album
 //   • bpm (from PDB; overwritten with more precise value from ANLZ beat-grid)
+//   • total audio duration (retained when ANLZ metadata is applied)
 //
 // ANLZ metadata (precise BPM, beat-grid, cues, waveform) is loaded on-demand
 // via library_load_anlz(), which reads ANLZ0000.DAT using the stored anlz_path.
@@ -36,9 +37,9 @@ typedef struct {
     char     key[16];                     // Camelot key (e.g. 8A, 9A)
     uint32_t track_id;                    // Rekordbox internal ID
     uint16_t bpm;                         // BPM from PDB (overwritten by ANLZ if loaded)
+    uint32_t duration_ms;                 // authoritative PDB/audio duration; beatgrid fallback only when zero
 
     /* Populated by library_load_anlz() */
-    uint32_t duration_ms;                 // total duration (from last beat-grid entry)
     uint8_t  waveform_low[400];           // PWAV 400-byte low-res waveform (0 if not loaded)
     uint8_t  has_waveform;                // 1 if waveform_low is valid
     uint8_t  has_anlz;                    // 1 if ANLZ metadata was loaded
@@ -61,9 +62,11 @@ library_track_t *library_get_ptr(int index);
 #endif
 uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI/cache use
 /* Resolve one authoritative full ANLZ object and, in a single pass, populate the
- * track summary fields (precise BPM/duration/low waveform/PVBR) and publish the
- * same full beat/cue/high-res-waveform object as the current metadata. The
- * publish is transactional: a failed load preserves the previous current. */
+ * track summary fields (precise BPM, low waveform and PVBR) and publish the same
+ * full beat/cue/high-res-waveform object as the current metadata. Existing
+ * nonzero PDB/audio duration is retained; the last beat is only a fallback.
+ * Publication is transactional. A failed resolve retires stale current metadata
+ * so consumers cannot display the previous track's analysis over a new load. */
 esp_err_t library_load_anlz(library_track_t *track);
 void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
 
@@ -76,6 +79,7 @@ void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);
 
-/* UI track selection helpers — track which track index is loaded. */
+/* Legacy simulator selection helpers. Firmware load paths use media_catalog
+ * identities and do not retain live-index pointers. */
 void mock_library_load_track_to_deck(int track_index);
 int  mock_library_get_current_track_index(void);
