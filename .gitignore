@@ -9,6 +9,8 @@ build/
 build_*/
 managed_components/
 dependencies.lock
+!firmware/control-board-s3/dependencies.lock
+!firmware/main-deck-p4/dependencies.lock
 sdkconfig
 sdkconfig.old
 firmware/control-board-s3/sdkconfig.wifi_debug.local
@@ -50,4 +52,3 @@ Desktop.ini
 
 # PC Simulator
 lv_port_pc_vscode/
-
