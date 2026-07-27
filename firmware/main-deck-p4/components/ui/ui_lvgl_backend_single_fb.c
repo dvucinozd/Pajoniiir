@@ -3,6 +3,9 @@
 #include "ui_lvgl_backend.c"
 #undef ui_lvgl_backend_init
 
+_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u,
+               "current LVGL backend supports exactly one DPI framebuffer");
+
 esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
 {
     if (hor_res == 0 || ver_res == 0) {
@@ -22,8 +25,8 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
     s_dsi_fb[1] = NULL;
     s_dsi_fb[2] = NULL;
     s_dsi_active_fb_idx = 0;
-    ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel, 1,
-                                                       &s_dsi_fb[0]));
+    ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(
+        panel, BSP_LCD_FRAMEBUFFER_COUNT, &s_dsi_fb[0]));
     ESP_ERROR_CHECK(esp_cache_get_alignment(MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM,
                                              &s_cache_align));
 
