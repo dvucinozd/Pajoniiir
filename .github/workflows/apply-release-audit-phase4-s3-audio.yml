@@ -1,0 +1,56 @@
+name: Apply release audit phase 4 S3 audio
+
+on:
+  push:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - "tools/apply_release_audit_phase4_s3_audio.py"
+      - ".github/workflows/apply-release-audit-phase4-s3-audio.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+
+      - name: Apply S3 audio safety fixes
+        run: python3 tools/apply_release_audit_phase4_s3_audio.py
+
+      - name: Verify and run focused tests
+        run: |
+          git diff --check
+          cd tests/p4_audio_link
+          gcc -Wall -Wextra -Wpedantic -std=c99 \
+            -I../control_link_protocol/stubs \
+            -I../../firmware/control-board-s3/components/p4_audio_link/include \
+            -o test_p4_audio_link.exe test_p4_audio_link.c \
+            ../../firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c
+          ./test_p4_audio_link.exe
+          cd ../flx4_usb_audio
+          gcc -Wall -Wextra -Wpedantic -Werror -std=c99 \
+            -I../../firmware/control-board-s3/components/flx4_usb_audio/include \
+            -o test_flx4_uac_descriptors.exe test_flx4_uac_descriptors.c \
+            ../../firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c
+          ./test_flx4_uac_descriptors.exe
+
+      - name: Commit S3 audio fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/control-board-s3/components/p4_audio_link/p4_audio_link.c \
+                  tests/p4_audio_link/test_p4_audio_link.c \
+                  firmware/control-board-s3/components/flx4_usb_audio/flx4_uac_descriptors.c \
+                  tests/flx4_usb_audio/test_flx4_uac_descriptors.c
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "fix(s3): prevent torn monitor frames and unsupported UAC"
+          git pull --rebase origin fix/release-blockers-and-concurrency
+          git push origin HEAD:fix/release-blockers-and-concurrency
