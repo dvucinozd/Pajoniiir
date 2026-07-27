@@ -737,15 +737,15 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu", "scratch freeze is waiting for its writer flag")
 
-Assert-FileContains `
-    -Name "p4 USB DWC BNA without CHHLTD uses the recoverable HCD pipe-error path" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c") `
-    -LiteralPatterns @("USB_DWC_LL_INTR_CHAN_BNAINTR", "USB_DWC_HAL_CHAN_ERROR_BNA", "USB_DWC_HAL_CHAN_EVENT_ERROR", "if (!halted && !bna_without_halt)", "abort()")
-
-Assert-FileContains `
-    -Name "p4 links the narrow USB DWC interrupt decoder compatibility wrapper" `
+Assert-FileDoesNotContain `
+    -Name "p4 IDF 6 USB storage does not link the retired IDF 5.5 DWC shim" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
     -LiteralPatterns @("usb_dwc_hal_compat.c", "--wrap=usb_dwc_hal_chan_decode_intr")
+
+$retiredShim = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
+if (Test-Path -LiteralPath $retiredShim) {
+    throw "retired ESP-IDF 5.5 USB DWC shim still exists: $retiredShim"
+}
 
 Assert-FileDoesNotContain `
     -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
