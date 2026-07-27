@@ -16,6 +16,7 @@ permissions:
 
 env:
   MIGRATION_BRANCH: migration/esp-idf-6.0.2
+  IDF_IMAGE: espressif/idf:v6.0.2
 
 jobs:
   host-tests:
@@ -39,25 +40,25 @@ jobs:
   build-s3:
     name: ESP32-S3 firmware
     runs-on: ubuntu-latest
-    container:
-      image: espressif/idf:v6.0.2
-      env:
-        HOME: /tmp
-        IDF_GIT_SAFE_DIR: "*"
     steps:
       - name: Clone and build control board
         run: |
           git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
-          cd repo/firmware/control-board-s3
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
           set +e
-          {
-            idf.py --version
-            rm -rf build sdkconfig sdkconfig.old managed_components
-            idf.py set-target esp32s3
-            idf.py build
-          } > idf-build.log 2>&1
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD/repo:/project" \
+            -w /project/firmware/control-board-s3 \
+            "$IDF_IMAGE" bash -lc '
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32s3
+              idf.py build
+            ' > s3-idf-build.log 2>&1
           code=$?
-          tail -n 90 idf-build.log
+          tail -n 110 s3-idf-build.log
           exit $code
       - name: Upload S3 binaries
         if: success()
@@ -73,25 +74,25 @@ jobs:
   build-p4:
     name: ESP32-P4 firmware
     runs-on: ubuntu-latest
-    container:
-      image: espressif/idf:v6.0.2
-      env:
-        HOME: /tmp
-        IDF_GIT_SAFE_DIR: "*"
     steps:
       - name: Clone and build main deck
         run: |
           git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
-          cd repo/firmware/main-deck-p4
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
           set +e
-          {
-            idf.py --version
-            rm -rf build sdkconfig sdkconfig.old managed_components
-            idf.py set-target esp32p4
-            idf.py build
-          } > idf-build.log 2>&1
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD/repo:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py build
+            ' > p4-idf-build.log 2>&1
           code=$?
-          tail -n 100 idf-build.log
+          tail -n 130 p4-idf-build.log
           exit $code
       - name: Upload P4 binaries
         if: success()
