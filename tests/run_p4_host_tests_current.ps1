@@ -57,14 +57,39 @@ Assert-FileContains `
     -LiteralPatterns @("catalog_duration_ms", "catalog_duration_ms != 0u", "track->duration_ms = catalog_duration_ms")
 
 Assert-FileContains `
-    -Name "p4 display allocates only the framebuffer the backend actually uses" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880_single_fb.c") `
-    -LiteralPatterns @(".num_fbs = 1", "single framebuffer")
+    -Name "p4 display shares one authoritative framebuffer count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/include/bsp_jc4880.h") `
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT 1")
 
 Assert-FileContains `
-    -Name "p4 LVGL backend requests one DPI framebuffer" `
+    -Name "p4 display allocates only the framebuffer the backend actually uses" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880_single_fb.c") `
+    -LiteralPatterns @(".num_fbs = BSP_LCD_FRAMEBUFFER_COUNT", "single framebuffer")
+
+Assert-FileContains `
+    -Name "p4 LVGL backend requests the shared framebuffer count" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend_single_fb.c") `
-    -LiteralPatterns @("esp_lcd_dpi_panel_get_frame_buffer(panel, 1", "s_dsi_active_fb_idx = 0")
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT", "esp_lcd_dpi_panel_get_frame_buffer")
+
+Assert-FileContains `
+    -Name "p4 firmware status strings are escaped before JSON formatting" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server_fixed.c") `
+    -LiteralPatterns @("web_bridge_p4_ota_get_status", "web_bridge_control_link_get_s3_firmware_report", "web_firmware_json_escape_in_place")
+
+Assert-FileContains `
+    -Name "p4 OTA handlers consume fragmented request bodies completely" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("while (len < wanted)", "wanted - len", "while (manifest_received < sizeof(manifest_header))")
+
+Assert-FileContains `
+    -Name "p4 product defaults explicitly disable the recorder" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("# CONFIG_AUDIO_RECORDER_ENABLED is not set")
+
+Assert-FileContains `
+    -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
+    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
@@ -84,6 +109,19 @@ if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
+
+$webTestSource = '"test_web_api_helpers.c"'
+if (($text.Split($webTestSource).Count - 1) -ne 1) {
+    throw "expected one web_api_helpers test source entry"
+}
+$text = $text.Replace($webTestSource, '"test_web_api_helpers_current.c"')
+
+$webHelperSource = '"../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"'
+if (($text.Split($webHelperSource).Count - 1) -ne 1) {
+    throw "expected one web_api_helpers implementation entry"
+}
+$webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"'
+$text = $text.Replace($webHelperSource, $webHelperSources)
 $text += $extraAuditGates
 
 try {
