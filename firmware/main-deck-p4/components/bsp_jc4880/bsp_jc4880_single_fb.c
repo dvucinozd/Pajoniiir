@@ -10,6 +10,9 @@
 #include "bsp_jc4880.c"
 #undef bsp_display_init
 
+_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u,
+               "current BSP wrapper supports exactly one DPI framebuffer");
+
 esp_err_t bsp_display_init(void)
 {
     esp_ldo_channel_config_t ldo_cfg = {
@@ -43,9 +46,9 @@ esp_err_t bsp_display_init(void)
         .dpi_clock_freq_mhz = BSP_DPI_CLK_MHZ,
         .pixel_format = LCD_COLOR_PIXEL_FORMAT_RGB565,
         /* The current partial LVGL/PPA backend writes one scanned buffer. Do not
-         * reserve two extra full-screen buffers until a real refresh-boundary
+         * reserve extra full-screen buffers until a real refresh-boundary
          * inactive-buffer swap is implemented and hardware-validated. */
-        .num_fbs = 1,
+        .num_fbs = BSP_LCD_FRAMEBUFFER_COUNT,
         .video_timing = {
             .h_size = BSP_LCD_H_RES,
             .v_size = BSP_LCD_V_RES,
