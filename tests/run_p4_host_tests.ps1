@@ -1665,11 +1665,18 @@ foreach ($test in $tests) {
 # whose cryptography bindings fail to load, which would fail this suite for
 # reasons that have nothing to do with the code under test.
 $pythonSource = $null
-foreach ($candidate in @($env:IDF_PYTHON_ENV_PATH, "C:\Espressif\python_env\idf5.5_py3.11_env")) {
-    if ($candidate) {
-        $exe = Join-Path $candidate "Scripts\python.exe"
-        if (Test-Path $exe) { $pythonSource = $exe; break }
-    }
+$isWindowsHost = $env:OS -eq "Windows_NT"
+$pythonCandidates = @()
+if ($env:IDF_PYTHON_ENV_PATH) {
+    $pythonCandidates += $env:IDF_PYTHON_ENV_PATH
+}
+if ($isWindowsHost) {
+    $pythonCandidates += "C:\Espressif\python_env\idf5.5_py3.11_env"
+}
+foreach ($candidate in $pythonCandidates) {
+    $relativeExe = $isWindowsHost ? "Scripts\python.exe" : "bin/python"
+    $exe = Join-Path $candidate $relativeExe
+    if (Test-Path -LiteralPath $exe) { $pythonSource = $exe; break }
 }
 if (-not $pythonSource) {
     $python = Get-Command python -ErrorAction SilentlyContinue
