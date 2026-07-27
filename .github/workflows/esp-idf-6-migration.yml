@@ -53,6 +53,16 @@ jobs:
           }
           exit $p4
 
+      - name: Upload host-test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-test-logs
+          if-no-files-found: ignore
+          path: |
+            s3-host-tests.log
+            p4-host-tests.log
+
   build-s3:
     name: ESP32-S3 firmware
     runs-on: ubuntu-latest
@@ -83,6 +93,13 @@ jobs:
             tail -n 25 s3-idf-build.log
           fi
           exit $code
+
+      - name: Upload S3 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-build-log
+          path: s3-idf-build.log
 
       - name: Upload S3 binaries
         if: success()
@@ -131,6 +148,13 @@ jobs:
             tail -n 30 p4-idf-build.log
           fi
           exit $code
+
+      - name: Upload P4 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-build-log
+          path: p4-idf-build.log
 
       - name: Upload P4 binaries
         if: success()
