@@ -1,4 +1,5 @@
 let libraryData = [];
+let libraryGeneration = 0;
 let isInteracting = {
     'deck-1-pitch-slider': false,
     'deck-2-pitch-slider': false,
@@ -114,6 +115,7 @@ function fetchLibrary() {
     fetch('/api/library')
         .then(res => res.json())
         .then(data => {
+            libraryGeneration = Number.isInteger(data.generation) ? data.generation : 0;
             libraryData = data.tracks || [];
             renderLibrary(libraryData);
         })
@@ -141,8 +143,8 @@ function renderLibrary(tracks) {
                 <td class="lib-bpm">${track.bpm}</td>
                 <td>
                     <div class="library-actions">
-                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 1)">D1</button>
-                        <button class="btn btn-load" onclick="loadTrack(${track.index}, 2)">D2</button>
+                        <button class="btn btn-load" onclick="loadTrack(${track.track_key}, libraryGeneration, 1)">D1</button>
+                        <button class="btn btn-load" onclick="loadTrack(${track.track_key}, libraryGeneration, 2)">D2</button>
                     </div>
                 </td>
             </tr>
@@ -342,14 +344,20 @@ function onSeek(deck, event) {
         .catch(err => console.error(err));
 }
 
-function loadTrack(index, deck) {
-    fetch(`/api/load?index=${index}&deck=${deck}`, mutationOptions)
-        .then(res => {
+function loadTrack(trackKey, generation, deck) {
+    const url = `/api/load?track_key=${encodeURIComponent(trackKey)}&generation=${encodeURIComponent(generation)}&deck=${deck}`;
+    fetch(url, mutationOptions)
+        .then(async res => {
             if (res.ok) {
-                console.log(`Učitavanje pjesme ${index} na špil ${deck}`);
-            } else {
-                alert('Greška prilikom učitavanja pjesme.');
+                console.log(`Učitavanje pjesme ${trackKey} na špil ${deck}`);
+                return;
             }
+            if (res.status === 409) {
+                await fetchLibrary();
+                alert('Knjižnica se promijenila. Popis je osvježen; ponovite učitavanje.');
+                return;
+            }
+            alert('Greška prilikom učitavanja pjesme.');
         })
         .catch(err => console.error(err));
 }

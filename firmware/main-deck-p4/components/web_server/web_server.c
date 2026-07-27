@@ -275,14 +275,23 @@ static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
     const char *probe_name = (probe.state >= 0 && probe.state <= 3)
         ? k_probe_names[probe.state] : "idle";
 
-    char json[APP_SETTINGS_OTA_SSID_CAP + APP_SETTINGS_OTA_URL_CAP + 192u];
+    char ssid_esc[APP_SETTINGS_OTA_SSID_CAP * 2u + 1u];
+    char url_esc[APP_SETTINGS_OTA_URL_CAP * 2u + 1u];
+    char detail_esc[sizeof(probe.detail) * 2u + 1u];
+    char address_esc[sizeof(probe.address) * 2u + 1u];
+    web_api_json_escape(ssid, ssid_esc, sizeof(ssid_esc));
+    web_api_json_escape(url, url_esc, sizeof(url_esc));
+    web_api_json_escape(probe.detail, detail_esc, sizeof(detail_esc));
+    web_api_json_escape(probe.address, address_esc, sizeof(address_esc));
+
+    char json[sizeof(ssid_esc) + sizeof(url_esc) + sizeof(detail_esc) + sizeof(address_esc) + 192u];
     int n = snprintf(json, sizeof(json),
                      "{\"ssid\":\"%s\",\"url\":\"%s\",\"has_password\":%s,"
                      "\"probe\":{\"state\":\"%s\",\"detail\":\"%s\","
                      "\"address\":\"%s\"}}",
-                     ssid, url,
+                     ssid_esc, url_esc,
                      app_settings_ota_has_password() ? "true" : "false",
-                     probe_name, probe.detail, probe.address);
+                     probe_name, detail_esc, address_esc);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
     }
@@ -303,11 +312,17 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
     if (req->content_len <= 0 || (size_t)req->content_len >= sizeof(body)) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad body size");
     }
-    int got = ota_http_recv(req, (uint8_t *)body, (size_t)req->content_len);
-    if (got <= 0) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body read failed");
+    size_t len = 0u;
+    const size_t wanted = (size_t)req->content_len;
+    while (len < wanted) {
+        int got = ota_http_recv(req, (uint8_t *)body + len, wanted - len);
+        if (got <= 0) {
+            memset(body, 0, sizeof(body));
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body read failed");
+        }
+        len += (size_t)got;
     }
-    size_t len = (size_t)got;
+    body[len] = '\0';
 
     /* A connectivity probe leaves the AP for up to ~25 s. Refuse while audio is
      * playing: the check is here rather than in wifi_link because wifi_link
@@ -1170,9 +1185,17 @@ static esp_err_t api_library_handler(httpd_req_t *req)
 
     httpd_resp_set_type(req, "application/json");
 
-    // Pošalji početak JSON-a
-    const char *header = "{\"tracks\":[";
-    esp_err_t send_rc = httpd_resp_send_chunk(req, header, strlen(header));
+    // Publish one catalog generation for every row in this response.
+    const uint32_t generation = media_catalog_generation();
+    char header[64];
+    int header_len = snprintf(header, sizeof(header),
+                              "{\"generation\":%u,\"tracks\":[",
+                              (unsigned)generation);
+    if (header_len < 0 || (size_t)header_len >= sizeof(header)) {
+        free(chunk);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
+    }
+    esp_err_t send_rc = httpd_resp_send_chunk(req, header, (size_t)header_len);
     if (send_rc != ESP_OK) {
         free(chunk);
         return send_rc;
@@ -1190,9 +1213,10 @@ static esp_err_t api_library_handler(httpd_req_t *req)
             web_api_json_escape(row.title, title_esc, sizeof(title_esc));
             web_api_json_escape(row.artist, artist_esc, sizeof(artist_esc));
             int item_len = snprintf(item, sizeof(item),
-                                    "%s{\"index\":%d,\"title\":\"%s\",\"artist\":\"%s\",\"bpm\":%u,\"duration_ms\":%u}",
+                                    "%s{\"index\":%d,\"track_key\":%u,\"title\":\"%s\",\"artist\":\"%s\",\"bpm\":%u,\"duration_ms\":%u}",
                                     first ? "" : ",",
-                                    i, title_esc, artist_esc, row.bpm, (unsigned)row.duration_ms);
+                                    i, (unsigned)row.track_key, title_esc, artist_esc,
+                                    row.bpm, (unsigned)row.duration_ms);
             if (item_len < 0 || (size_t)item_len >= sizeof(item)) {
                 ESP_LOGW(TAG, "Skipping oversized library JSON row index=%d", i);
                 continue;
@@ -1239,6 +1263,20 @@ static esp_err_t api_library_handler(httpd_req_t *req)
 }
 
 // POST /api/control (query parameters, protected by X-DDJ-Control)
+static bool api_parse_u32(const char *value, uint32_t *out_value)
+{
+    if (!value || !value[0] || !out_value) {
+        return false;
+    }
+    char *end = NULL;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (!end || *end != '\0' || parsed > UINT32_MAX) {
+        return false;
+    }
+    *out_value = (uint32_t)parsed;
+    return true;
+}
+
 static bool api_parse_deck(const char *value, uint8_t *out_deck)
 {
     int32_t parsed = 0;
@@ -1407,49 +1445,58 @@ static esp_err_t api_control_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// POST /api/load (query parameters, protected by X-DDJ-Control)
+// POST /api/load (stable track identity, protected by X-DDJ-Control)
 static esp_err_t api_load_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, true)) return ESP_FAIL;
-    char query[64] = {0};
-    char index_str[16] = {0};
+    char query[128] = {0};
+    char track_key_str[16] = {0};
+    char generation_str[16] = {0};
     char deck_str[16] = {0};
 
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
-        httpd_query_key_value(query, "index", index_str,
-                              sizeof(index_str)) != ESP_OK ||
+        httpd_query_key_value(query, "track_key", track_key_str,
+                              sizeof(track_key_str)) != ESP_OK ||
+        httpd_query_key_value(query, "generation", generation_str,
+                              sizeof(generation_str)) != ESP_OK ||
         httpd_query_key_value(query, "deck", deck_str,
                               sizeof(deck_str)) != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                                    "Missing or oversized load parameters");
     }
 
-    int32_t index = 0;
+    uint32_t track_key = 0u;
+    uint32_t generation = 0u;
     uint8_t deck = CTRL_DECK_NONE;
-    if (!web_api_parse_int32(index_str, 0, INT32_MAX, &index) ||
-        !api_parse_deck(deck_str, &deck) ||
-        index >= media_catalog_count()) {
+    if (!api_parse_u32(track_key_str, &track_key) || track_key == 0u ||
+        !api_parse_u32(generation_str, &generation) ||
+        !api_parse_deck(deck_str, &deck)) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Invalid track index or deck");
+                                   "Invalid track identity or deck");
+    }
+    if (generation != media_catalog_generation()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Library generation changed", HTTPD_RESP_USE_STRLEN);
     }
 
-    ESP_LOGI(TAG, "API Load Request: index=%ld, deck=%d", (long)index, deck);
+    ESP_LOGI(TAG, "API Load Request: key=0x%08x generation=%u deck=%d",
+             (unsigned)track_key, (unsigned)generation, deck);
 
-    esp_err_t rc = ui_library_load_track_index_for_deck((int)index, deck);
+    esp_err_t rc = ui_library_load_track_identity_for_deck(track_key, generation, deck);
     if (rc != ESP_OK) {
         service_log_event(SERVICE_LOG_WEB_LOAD_REQ_FAILED, SERVICE_LOG_WARN,
-                          3u, (uint32_t)index, (uint32_t)deck, (uint32_t)rc, 0u, NULL);
+                          4u, track_key, generation, (uint32_t)deck, (uint32_t)rc, NULL);
         if (rc == ESP_ERR_INVALID_STATE) {
             httpd_resp_set_status(req, "409 Conflict");
-            httpd_resp_send(req, "Load busy", HTTPD_RESP_USE_STRLEN);
-            return ESP_FAIL;
+            return httpd_resp_send(req, "Library changed or load busy", HTTPD_RESP_USE_STRLEN);
         }
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Load failed");
-        return ESP_FAIL;
+        if (rc == ESP_ERR_NOT_FOUND) {
+            return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Track not found");
+        }
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Load failed");
     }
 
-    httpd_resp_send(req, "OK", 2);
-    return ESP_OK;
+    return httpd_resp_send(req, "OK", 2);
 }
 
 // Catch-all handler za Captive Portal
