@@ -132,10 +132,15 @@ CONFIG_LV_FONT_MONTSERRAT_22=y
 # Surface the monitor-link INFO diagnostics (default runtime log level is WARN).
 CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
 
+# ── Master recorder release policy ───────────────────────────────────────────
+# The recorder remains unavailable in product firmware until its independent
+# producer/STOP/finalize ownership remediation and fault-injection suite pass.
+# CONFIG_AUDIO_RECORDER_ENABLED is not set
+# CONFIG_AUDIO_RECORDER_RING_INTERNAL is not set
+
 # ── Vinyl / scratch mode (Phase 4) ───────────────────────────────────────────
 # Touching the jog platter top while playing scratches the audio (forward +
 # reverse) via the per-deck scratch capture buffer, instead of the Phase 1
 # hold/scrub. Additive + behind the flag; flip to `is not set` to roll back to
 # the Phase 1 platter hold. See docs/VINYL_SCRATCH_PLAN.md.
 CONFIG_AUDIO_SCRATCH_ENABLED=y
-# CONFIG_AUDIO_RECORDER_RING_INTERNAL is not set
