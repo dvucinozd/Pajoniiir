@@ -129,12 +129,22 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "production library exposes selected-track API names" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
-    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Temporary source-compatibility aliases")
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "public library header no longer exports mock selected-track aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index", "Temporary source-compatibility aliases")
 
 Assert-FileContains `
-    -Name "library compatibility aliases delegate to production names" `
+    -Name "library wrapper emits production selected-track symbols from the legacy source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
-    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Compatibility aliases are intentionally thin")
+    -LiteralPatterns @("#define mock_library_load_track_to_deck      library_set_selected_track_index", "#define mock_library_get_current_track_index library_selected_track_index", "no public/linkable compatibility aliases remain")
+
+Assert-FileDoesNotContain `
+    -Name "library wrapper no longer emits public mock compatibility functions" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+    -LiteralPatterns @("void mock_library_load_track_to_deck", "int mock_library_get_current_track_index")
 
 Assert-FileContains `
     -Name "firmware UI compiles through the production library API bridge" `
