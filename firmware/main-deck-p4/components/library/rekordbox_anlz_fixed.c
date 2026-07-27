@@ -25,15 +25,58 @@ static int anlz_checked_fgetc(FILE *stream)
     return value;
 }
 
-#define fread          anlz_checked_fread
-#define fgetc          anlz_checked_fgetc
-#define anlz_parse_dat anlz_parse_dat_legacy_partial
-#define anlz_parse_ext anlz_parse_ext_legacy_partial
+#define fread                    anlz_checked_fread
+#define fgetc                    anlz_checked_fgetc
+#define anlz_parse_dat           anlz_parse_dat_legacy_partial
+#define anlz_parse_ext           anlz_parse_ext_legacy_partial
+#define walk_sections_for_tag    walk_sections_for_tag_legacy
 #include "rekordbox_anlz.c"
+#undef walk_sections_for_tag
 #undef anlz_parse_dat
 #undef anlz_parse_ext
 #undef fread
 #undef fgetc
+
+/* Production-only walker. The legacy parser keeps its byte-scan fallback,
+ * while the published parser accepts only a complete, bounded section chain. */
+static tag_walk_result_t walk_sections_for_tag(FILE *fp, uint32_t target)
+{
+    if (fseek(fp, 0, SEEK_END) != 0) return TAG_WALK_MALFORMED;
+    long fsz = ftell(fp);
+    if (fsz < 12 || (unsigned long)fsz > UINT32_MAX) {
+        return TAG_WALK_MALFORMED;
+    }
+
+    const uint32_t file_len = (uint32_t)fsz;
+    uint32_t pos = 0u;
+
+    while (pos + 12u <= file_len) {
+        if (fseek(fp, (long)pos, SEEK_SET) != 0) return TAG_WALK_MALFORMED;
+        const uint32_t tag = read_be32(fp);
+        const uint32_t header_size = read_be32(fp);
+        const uint32_t segment_size = read_be32(fp);
+        if (s_anlz_short_read) return TAG_WALK_MALFORMED;
+
+        const uint32_t advance = tag == ANLZ_TAG_PMAI ? header_size : segment_size;
+        if (header_size < 12u ||
+            (tag != ANLZ_TAG_PMAI && segment_size < header_size) ||
+            advance < 12u || advance > file_len - pos) {
+            return TAG_WALK_MALFORMED;
+        }
+
+        if (tag == target) {
+            if (fseek(fp, (long)(pos + 4u), SEEK_SET) != 0) {
+                return TAG_WALK_MALFORMED;
+            }
+            return TAG_WALK_FOUND;
+        }
+        pos += advance;
+    }
+
+    /* One to eleven trailing bytes are a partial section header, not a clean
+     * absence of an optional tag. */
+    return pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED;
+}
 
 static esp_err_t parse_one_strict(FILE *fp,
                                   uint32_t tag,
@@ -83,7 +126,7 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
     bool has_path = false;
     esp_err_t result = ESP_OK;
 
-    for (size_t i = 0; i < sizeof(tags) / sizeof(tags[0]); ++i) {
+    for (size_t i = 0u; i < sizeof(tags) / sizeof(tags[0]); ++i) {
         bool found = false;
         result = parse_one_strict(fp, tags[i], &next, &found);
         if (result != ESP_OK) break;

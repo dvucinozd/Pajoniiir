@@ -90,6 +90,51 @@ Assert-FileContains `
     -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
+
+Assert-FileDoesNotContain `
+    -Name "confirmed dead scratch APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
+    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
+
+Assert-FileDoesNotContain `
+    -Name "retired output timing APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
+    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
+
+Assert-FileDoesNotContain `
+    -Name "test-only stereo mixer API stays out of production" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
+    -LiteralPatterns @("audio_mixer_mix_stereo")
+
+Assert-FileContains `
+    -Name "production ANLZ walker rejects partial section envelopes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
+    -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+
+Assert-FileContains `
+    -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
+    -Path (Join-Path $RepoRoot "tests/anlz/test_anlz_current.c") `
+    -LiteralPatterns @("dat_truncation_corpus_rejects_partial_structures", "ext_truncation_corpus_retains_previous_metadata", "test_truncated.dat", "test_truncated.ext")
+
+Assert-FileContains `
+    -Name "library duration test covers preservation and beatgrid fallback" `
+    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
+    -LiteralPatterns @("test_nonzero_pdb_duration_survives_anlz_enrichment", "test_zero_pdb_duration_falls_back_to_last_beat", "213456u", "7000u")
+
+Assert-FileContains `
+    -Name "production library exposes selected-track API names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Temporary source-compatibility aliases")
+
+Assert-FileContains `
+    -Name "library compatibility aliases delegate to production names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Compatibility aliases are intentionally thin")
+
+Assert-FileContains `
+    -Name "firmware UI compiles through the production library API bridge" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_library_selected_api.c")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
@@ -122,6 +167,31 @@ if (($text.Split($webHelperSource).Count - 1) -ne 1) {
 }
 $webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"'
 $text = $text.Replace($webHelperSource, $webHelperSources)
+
+$anlzTestSource = '"test_anlz.c"'
+if (($text.Split($anlzTestSource).Count - 1) -ne 1) {
+    throw "expected one ANLZ test source entry"
+}
+$text = $text.Replace($anlzTestSource, '"test_anlz_current.c"')
+
+$anlzImplSource = '"../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"'
+if (($text.Split($anlzImplSource).Count - 1) -ne 1) {
+    throw "expected one ANLZ implementation source entry"
+}
+$text = $text.Replace($anlzImplSource, '"../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"')
+
+$libraryTestSource = '"test_library_anlz.c"'
+if (($text.Split($libraryTestSource).Count - 1) -ne 1) {
+    throw "expected one library_anlz test source entry"
+}
+$text = $text.Replace($libraryTestSource, '"test_library_anlz_current.c"')
+
+$libraryImplSource = '"../../firmware/main-deck-p4/components/library/library.c"'
+if (($text.Split($libraryImplSource).Count - 1) -ne 1) {
+    throw "expected one library implementation source entry"
+}
+$text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/components/library/library_duration_fixed.c"')
+
 $text += $extraAuditGates
 
 try {

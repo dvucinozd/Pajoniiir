@@ -29,57 +29,55 @@
 
 typedef struct {
     /* Populated by library_init() from export.pdb */
-    char     path[LIBRARY_PATH_MAX];      // audio file path on USB: /Contents/...
-    char     anlz_path[LIBRARY_PATH_MAX]; // ANLZ file: /PIONEER/USBANLZ/.../ANLZ0000.DAT
-    char     title[LIBRARY_STR_MAX];      // track title (or filename if no ID3 title)
-    char     artist[LIBRARY_STR_MAX];     // artist name (empty string if unknown)
-    char     album[LIBRARY_STR_MAX];      // album name  (empty string if unknown)
-    char     key[16];                     // Camelot key (e.g. 8A, 9A)
-    uint32_t track_id;                    // Rekordbox internal ID
-    uint16_t bpm;                         // BPM from PDB (overwritten by ANLZ if loaded)
-    uint32_t duration_ms;                 // authoritative PDB/audio duration; beatgrid fallback only when zero
+    char     path[LIBRARY_PATH_MAX];
+    char     anlz_path[LIBRARY_PATH_MAX];
+    char     title[LIBRARY_STR_MAX];
+    char     artist[LIBRARY_STR_MAX];
+    char     album[LIBRARY_STR_MAX];
+    char     key[16];
+    uint32_t track_id;
+    uint16_t bpm;
+    uint32_t duration_ms;
 
     /* Populated by library_load_anlz() */
-    uint8_t  waveform_low[400];           // PWAV 400-byte low-res waveform (0 if not loaded)
-    uint8_t  has_waveform;                // 1 if waveform_low is valid
-    uint8_t  has_anlz;                    // 1 if ANLZ metadata was loaded
-    uint32_t pvbr[400];                   // PVBR VBR seek table: 400 file-byte offsets
-    uint8_t  has_pvbr;                    // 1 if pvbr[] is valid
+    uint8_t  waveform_low[400];
+    uint8_t  has_waveform;
+    uint8_t  has_anlz;
+    uint32_t pvbr[400];
+    uint8_t  has_pvbr;
 } library_track_t;
 
-esp_err_t library_init(void);                                // mount USB, open PDB, build index
-void      library_clear(void);                               // clear active index after USB removal
-uint32_t  library_generation(void);                          // increments on init/clear/sort
-int       library_count(void);                               // number of tracks found
-esp_err_t library_get(int index, library_track_t *out);      // get track by index
-esp_err_t library_get_summary(int index,                     // copy bpm/duration under the lock
+esp_err_t library_init(void);
+void      library_clear(void);
+uint32_t  library_generation(void);
+int       library_count(void);
+esp_err_t library_get(int index, library_track_t *out);
+esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,
                               uint32_t *out_duration_ms);
 #ifdef WIN32
-// Simulator only: direct pointer into the live index. Reloads and sorts
-// republish the index, so firmware must use the copying accessors above.
+/* Simulator only: direct pointer into the live index. Firmware uses copies. */
 library_track_t *library_get_ptr(int index);
 #endif
-uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI/cache use
-/* Resolve one authoritative full ANLZ object and, in a single pass, populate the
- * track summary fields (precise BPM, low waveform and PVBR) and publish the same
- * full beat/cue/high-res-waveform object as the current metadata. Existing
- * nonzero PDB/audio duration is retained; the last beat is only a fallback.
- * Publication is transactional. A failed resolve retires stale current metadata
- * so consumers cannot display the previous track's analysis over a new load. */
-esp_err_t library_load_anlz(library_track_t *track);
-void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
+uint32_t library_track_key(const library_track_t *track);
 
-/* Timing (ms), source (0=cache, 1=USB) and cache-write result of the most
- * recent library_load_anlz() resolve, for the service-log track-load event. */
+/* Resolve and publish one authoritative ANLZ object. Existing nonzero PDB/audio
+ * duration is retained; the final beat is only a fallback when duration is zero.
+ * A failed resolve retires stale current metadata. */
+esp_err_t library_load_anlz(library_track_t *track);
+void      library_sort(int field_type, bool descending);
+
 void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
                                   bool *out_cache_written);
-
-/* Return an owned deep copy of the current metadata. Caller calls anlz_free(). */
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);
 
-/* Legacy simulator selection helpers. Firmware load paths use media_catalog
- * identities and do not retain live-index pointers. */
+/* Selected-row state used by the UI highlight/simulator bridge. This is not a
+ * deck-load API; real loads use media_catalog identity + generation. */
+void library_set_selected_track_index(int track_index);
+int  library_selected_track_index(void);
+
+/* Temporary source-compatibility aliases for simulator code and external tests.
+ * New firmware code must use the library_* names above. */
 void mock_library_load_track_to_deck(int track_index);
 int  mock_library_get_current_track_index(void);
