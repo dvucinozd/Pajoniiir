@@ -7,6 +7,11 @@ static inline SemaphoreHandle_t xSemaphoreCreateMutex(void)
     return (SemaphoreHandle_t)1;
 }
 
+static inline SemaphoreHandle_t xSemaphoreCreateBinary(void)
+{
+    return (SemaphoreHandle_t)3;
+}
+
 static inline int xSemaphoreTake(SemaphoreHandle_t sem, unsigned ticks)
 {
     (void)sem;

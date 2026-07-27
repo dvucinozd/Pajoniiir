@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 
 static inline TickType_t xTaskGetTickCount(void) { return 0; }
+static inline void taskYIELD(void) {}
 
 static inline int xTaskCreate(void (*task)(void *), const char *name,
                               unsigned stack, void *arg, unsigned priority,
