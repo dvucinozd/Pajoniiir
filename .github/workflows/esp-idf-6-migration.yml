@@ -1,0 +1,84 @@
+name: ESP-IDF 6.0.2 migration
+
+on:
+  push:
+    branches:
+      - migration/esp-idf-6.0.2
+  pull_request:
+    paths:
+      - "firmware/**"
+      - "tests/**"
+      - ".github/workflows/esp-idf-6-migration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: S3 host tests
+        shell: pwsh
+        run: ./tests/run_s3_host_tests.ps1
+      - name: P4 host tests
+        shell: pwsh
+        run: ./tests/run_p4_host_tests.ps1
+
+  build-s3:
+    name: ESP32-S3 firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.0.2
+      env:
+        HOME: /tmp
+        IDF_GIT_SAFE_DIR: "*"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build control board
+        working-directory: firmware/control-board-s3
+        run: |
+          idf.py --version
+          rm -rf build sdkconfig sdkconfig.old managed_components
+          idf.py set-target esp32s3
+          idf.py build
+      - name: Upload S3 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-board-s3-idf-6.0.2
+          path: |
+            firmware/control-board-s3/build/*.bin
+            firmware/control-board-s3/build/*.elf
+            firmware/control-board-s3/build/*.map
+            firmware/control-board-s3/dependencies.lock
+
+  build-p4:
+    name: ESP32-P4 firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v6.0.2
+      env:
+        HOME: /tmp
+        IDF_GIT_SAFE_DIR: "*"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build main deck
+        working-directory: firmware/main-deck-p4
+        run: |
+          idf.py --version
+          rm -rf build sdkconfig sdkconfig.old managed_components
+          idf.py set-target esp32p4
+          idf.py build
+      - name: Upload P4 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-deck-p4-idf-6.0.2
+          path: |
+            firmware/main-deck-p4/build/*.bin
+            firmware/main-deck-p4/build/*.elf
+            firmware/main-deck-p4/build/*.map
+            firmware/main-deck-p4/dependencies.lock
