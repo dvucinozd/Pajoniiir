@@ -17,7 +17,10 @@
 extern "C" {
 #endif
 
-typedef psa_hash_operation_t mbedtls_sha256_context;
+/* Mbed TLS 4 still has an internal typedef with this name, although the public
+ * SHA-256 header was removed. A macro alias avoids redeclaring that typedef and
+ * maps only the project source that includes this compatibility header. */
+#define mbedtls_sha256_context psa_hash_operation_t
 
 static inline void mbedtls_sha256_init(mbedtls_sha256_context *ctx)
 {
