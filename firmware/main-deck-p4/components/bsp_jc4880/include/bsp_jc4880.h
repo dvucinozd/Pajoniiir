@@ -1,6 +1,6 @@
 #pragma once
 
-// Board support for JC4880P443C_I_W (ESP32-P4 + ST7701S + GT911 + ES8311)
+// Board support for JC4880P443C_I_W (ESP32-P4 + ST7701S + GT911 + PCM5102A).
 //
 // Pin reference (from board analysis):
 //   LCD backlight  GPIO23      LCD reset     GPIO5
@@ -24,12 +24,17 @@
 #define BSP_LCD_H_RES   480
 #define BSP_LCD_V_RES   800
 
+// The current partial LVGL/PPA backend writes one scanned DPI buffer. Keep the
+// producer and consumer on one shared count until a refresh-boundary swap is
+// implemented and physically validated.
+#define BSP_LCD_FRAMEBUFFER_COUNT 1u
+
 esp_err_t bsp_display_init(void);   // ST7701S MIPI DSI, 480x800, landscape rotation
 
 // Set LCD backlight brightness 0..100 % (LEDC PWM on GPIO23).
 void      bsp_display_set_backlight(uint8_t pct);
 esp_err_t bsp_touch_init(void);     // GT911 on I2C GPIO7/8
-esp_err_t bsp_audio_init(void);     // ES8311 codec + I2S
+esp_err_t bsp_audio_init(void);     // PCM5102A MAIN plus optional legacy monitor path
 esp_err_t bsp_sd_init(void);        // SDMMC on GPIO39-44 (internal storage/config)
 
 typedef struct {
@@ -54,13 +59,11 @@ esp_lcd_touch_handle_t bsp_touch_get_handle(void);
 // Returns the shared I2C master bus (GPIO7/8), created on first touch/audio init.
 i2c_master_bus_handle_t bsp_get_i2c_bus(void);
 
-// Returns the ES8311 codec device created by bsp_audio_init(), or NULL. The
-// audio engine opens it (esp_codec_dev_open) at the track sample rate and writes
-// PCM frames via esp_codec_dev_write().
+// Returns the optional legacy codec device, or NULL. Product MAIN audio uses
+// the dedicated PCM5102A I2S transmitter returned below.
 esp_codec_dev_handle_t bsp_audio_get_codec_dev(void);
 
-// Legacy ES8311 output routing. The ES8311 DAC output feeds the board monitor
-// path; GPIO11 controls the onboard speaker power amp.
+// Legacy monitor-output routing. GPIO11 controls the onboard speaker power amp.
 //   SPEAKER — monitor speaker PA ON
 //   RCA     — compatibility name for PA OFF / headphones or external monitor tap
 typedef enum {
