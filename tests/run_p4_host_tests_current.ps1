@@ -107,6 +107,11 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("audio_mixer_mix_stereo")
 
 Assert-FileContains `
+    -Name "scratch transport test uses a local decode-writer bridge" `
+    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
+    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
+
+Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
     -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
@@ -154,6 +159,12 @@ if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
+
+$scratchTestSource = '"test_audio_scratch.c"'
+if (($text.Split($scratchTestSource).Count - 1) -ne 1) {
+    throw "expected one audio_scratch test source entry"
+}
+$text = $text.Replace($scratchTestSource, '"test_audio_scratch_current.c"')
 
 $webTestSource = '"test_web_api_helpers.c"'
 if (($text.Split($webTestSource).Count - 1) -ne 1) {
