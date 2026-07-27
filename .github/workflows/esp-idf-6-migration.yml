@@ -31,18 +31,23 @@ jobs:
           & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
           $s3 = $LASTEXITCODE
           if ($s3 -ne 0) {
-              Get-Content s3-host-tests.log | Select-String -Pattern "error:|fatal error|undefined reference|failed with exit" -Context 2,2 | Select-Object -Last 50
-              Get-Content s3-host-tests.log -Tail 20
+              Get-Content s3-host-tests.log -Tail 40
               exit $s3
           }
           Write-Host "S3 host tests passed."
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
           $p4 = $LASTEXITCODE
+          $p4Lines = @(Get-Content p4-host-tests.log)
           if ($p4 -ne 0) {
-              Get-Content p4-host-tests.log | Select-String -Pattern "error:|fatal error|undefined reference|failed with exit" -Context 3,3 | Select-Object -Last 70
-              Get-Content p4-host-tests.log -Tail 20
+              $lastBuild = $p4Lines | Select-String -Pattern '^==> build ' | Select-Object -Last 1
+              if ($lastBuild) {
+                  $start = [Math]::Max(0, $lastBuild.LineNumber - 1)
+                  $p4Lines[$start..($p4Lines.Count - 1)] | Select-Object -First 100
+              } else {
+                  $p4Lines | Select-Object -Last 60
+              }
           } else {
-              Get-Content p4-host-tests.log -Tail 20
+              $p4Lines | Select-Object -Last 20
           }
           exit $p4
 
