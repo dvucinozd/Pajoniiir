@@ -1,0 +1,25 @@
+name: Diagnose controller_profile_manager
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compile controller_profile_manager directly
+        run: |
+          git clone --quiet --depth 1 --branch migration/esp-idf-6.0.2 https://github.com/dvucinozd/Pajoniiir.git repo
+          cd repo/tests/controller_profile_manager
+          gcc -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c99 \
+            -DCONTROLLER_PROFILE_MANAGER_PC_TEST \
+            -I../control_link_protocol/stubs \
+            -I../../firmware/main-deck-p4/components/controller_profile_manager/include \
+            -o test_controller_profile_manager.exe \
+            test_controller_profile_manager.c \
+            ../../firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c
+          ./test_controller_profile_manager.exe
