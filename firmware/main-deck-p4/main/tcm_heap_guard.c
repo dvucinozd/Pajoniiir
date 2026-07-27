@@ -9,13 +9,12 @@
  * therefore receive TCM for idle/timer task TCB or stack memory, but the later
  * stack/TCB validator rejects that range during scheduler startup.
  *
- * The P4 firmware does not rely on TCM heap. Reserve nearly all unused TCM in
- * the image so heap initialization excludes it from malloc-capable regions.
- *
- * ESP-IDF 5.5.4 added 216 bytes of IDF-owned TCM text/data compared with the
- * older 5.5 installation. Keep both supported development environments
- * linkable while still leaving too little free TCM to form a heap block.
+ * The workaround is intentionally limited to ESP-IDF 5.x. ESP-IDF 6 has a
+ * different linker/heap layout and reusing a size derived from 5.5.4 could
+ * reserve IDF-owned TCM or create an orphan-section/link overflow.
  */
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
+
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 4)
 #define P4_TCM_HEAP_GUARD_SIZE 0x1e60U
 #else
@@ -29,3 +28,12 @@ void p4_tcm_heap_guard_keep(void)
 {
     s_tcm_heap_guard[0] = (uint8_t)(s_tcm_heap_guard[0] + 0U);
 }
+
+#else
+
+void p4_tcm_heap_guard_keep(void)
+{
+    /* No IDF 5.x TCM heap reservation on ESP-IDF 6. */
+}
+
+#endif
