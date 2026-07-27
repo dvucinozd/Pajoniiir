@@ -1,10 +1,9 @@
 /*
  * Production wrapper for deck_core.c.
  *
- * Public UI/web readers continue to consume the published seqlock snapshot.
- * FLX4 feedback runs inside the deck actor while the current event is still
- * being applied, so refresh state-driven LED values from actor-owned live data
- * immediately before they are sent.
+ * Public UI/web readers consume the seqlock snapshot. FLX4 feedback runs inside
+ * the deck actor, so refresh state-driven LED values from actor-owned live data
+ * and publish that state before the remaining LED cache helpers execute.
  */
 #include "deck_core.h"
 #include "flx4_led_snapshot.h"
@@ -48,6 +47,10 @@ static esp_err_t deck_core_live_led_publish(
         live.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1u : 0u;
     }
 
+    /* The original publish function invokes track/Beat-Jump cache helpers after
+     * this callback returns. Publish now so those helpers calculate and store the
+     * same value that is actually sent, including track unload transitions. */
+    publish_state_snapshot();
     return flx4_led_publisher_publish(publisher, &live, force, send, ctx);
 }
 

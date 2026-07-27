@@ -1,6 +1,4 @@
-/*
- * Host-only adapter matching the production deck actor publication model.
- */
+/* Host-only adapter matching the production deck actor publication model. */
 #include "../../firmware/main-deck-p4/components/deck_core/include/deck_core.h"
 #include "../../firmware/main-deck-p4/components/control_link/include/flx4_led_snapshot.h"
 
@@ -47,6 +45,7 @@ static esp_err_t deck_core_test_live_led_publish(
         live.censor_active[deck] = state.censor_active ? 1u : 0u;
         live.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1u : 0u;
     }
+    publish_state_snapshot();
     return flx4_led_publisher_publish(publisher, &live, force, send, ctx);
 }
 
