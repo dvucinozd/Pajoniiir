@@ -48,7 +48,7 @@ bool ddj_ota_manifest_verify_signature(const uint8_t *header, size_t header_size
     int rc = mbedtls_pk_parse_public_key(
         &key, release_public_key_start,
         (size_t)(release_public_key_end - release_public_key_start));
-    if (rc != 0 || !mbedtls_pk_can_do(&key, MBEDTLS_PK_ECDSA)) {
+    if (rc != 0) {
         mbedtls_pk_free(&key);
         return false;
     }
