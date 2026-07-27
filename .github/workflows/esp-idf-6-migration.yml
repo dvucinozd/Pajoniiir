@@ -48,10 +48,16 @@ jobs:
       - name: Build control board
         working-directory: firmware/control-board-s3
         run: |
-          idf.py --version
-          rm -rf build sdkconfig sdkconfig.old managed_components
-          idf.py set-target esp32s3
-          idf.py build
+          set +e
+          {
+            idf.py --version
+            rm -rf build sdkconfig sdkconfig.old managed_components
+            idf.py set-target esp32s3
+            idf.py build
+          } > idf-build.log 2>&1
+          code=$?
+          tail -n 320 idf-build.log
+          exit $code
       - name: Upload S3 binaries
         if: success()
         uses: actions/upload-artifact@v4
@@ -76,10 +82,16 @@ jobs:
       - name: Build main deck
         working-directory: firmware/main-deck-p4
         run: |
-          idf.py --version
-          rm -rf build sdkconfig sdkconfig.old managed_components
-          idf.py set-target esp32p4
-          idf.py build
+          set +e
+          {
+            idf.py --version
+            rm -rf build sdkconfig sdkconfig.old managed_components
+            idf.py set-target esp32p4
+            idf.py build
+          } > idf-build.log 2>&1
+          code=$?
+          tail -n 400 idf-build.log
+          exit $code
       - name: Upload P4 binaries
         if: success()
         uses: actions/upload-artifact@v4
