@@ -1,8 +1,5 @@
 /*
- * Host-only adapter: production publishes deck state from the actor loop.
- * Direct PC-test mutations bypass that loop, so mirror actor publication after
- * every reset/event. The LED callback is also refreshed from live actor state,
- * matching the production deck_core_live_led.c wrapper.
+ * Host-only adapter matching the production deck actor publication model.
  */
 #include "../../firmware/main-deck-p4/components/deck_core/include/deck_core.h"
 #include "../../firmware/main-deck-p4/components/control_link/include/flx4_led_snapshot.h"
@@ -13,12 +10,15 @@ static esp_err_t deck_core_test_live_led_publish(
     bool force,
     flx4_led_send_fn_t send,
     void *ctx);
+static void deck_core_test_live_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
 
 #define deck_core_test_reset deck_core_test_reset_unpublished
 #define deck_core_test_apply_event deck_core_test_apply_event_unpublished
 #define deck_core_test_get_beat_fx_state deck_core_test_get_beat_fx_state_unpublished
 #define flx4_led_publisher_publish deck_core_test_live_led_publish
+#define control_link_send_led_deck deck_core_test_live_send_led_deck
 #include "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+#undef control_link_send_led_deck
 #undef flx4_led_publisher_publish
 #undef deck_core_test_reset
 #undef deck_core_test_apply_event
@@ -48,6 +48,21 @@ static esp_err_t deck_core_test_live_led_publish(
         live.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1u : 0u;
     }
     return flx4_led_publisher_publish(publisher, &live, force, send, ctx);
+}
+
+static void deck_core_test_live_send_led_deck(led_id_t led, uint8_t state, uint8_t deck)
+{
+    if (deck < DECK_CORE_DECK_COUNT) {
+        const bool beat_jump_mode = s_decks[deck].pad_mode == CTRL_PAD_MODE_BEAT_JUMP;
+        const bool loaded = deck_has_loaded_track(deck);
+        if (led >= LED_BEAT_JUMP_PAD_1 && led <= LED_BEAT_JUMP_PAD_8) {
+            state = beat_jump_mode && loaded ? 1u : 0u;
+        } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
+                   led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+        }
+    }
+    control_link_send_led_deck(led, state, deck);
 }
 
 void deck_core_test_reset(void)

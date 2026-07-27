@@ -2,9 +2,9 @@
  * Production wrapper for deck_core.c.
  *
  * Public UI/web readers continue to consume the published seqlock snapshot.
- * The FLX4 LED publisher, however, runs inside the deck actor while the current
- * event is still being applied. Override only the final publisher call so LED
- * input is refreshed from actor-owned live state immediately before sending.
+ * FLX4 feedback runs inside the deck actor while the current event is still
+ * being applied, so refresh state-driven LED values from actor-owned live data
+ * immediately before they are sent.
  */
 #include "deck_core.h"
 #include "flx4_led_snapshot.h"
@@ -15,9 +15,12 @@ static esp_err_t deck_core_live_led_publish(
     bool force,
     flx4_led_send_fn_t send,
     void *ctx);
+static void deck_core_live_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
 
 #define flx4_led_publisher_publish deck_core_live_led_publish
+#define control_link_send_led_deck deck_core_live_send_led_deck
 #include "deck_core.c"
+#undef control_link_send_led_deck
 #undef flx4_led_publisher_publish
 
 static esp_err_t deck_core_live_led_publish(
@@ -46,4 +49,19 @@ static esp_err_t deck_core_live_led_publish(
     }
 
     return flx4_led_publisher_publish(publisher, &live, force, send, ctx);
+}
+
+static void deck_core_live_send_led_deck(led_id_t led, uint8_t state, uint8_t deck)
+{
+    if (deck < DECK_CORE_DECK_COUNT) {
+        const bool beat_jump_mode = s_decks[deck].pad_mode == CTRL_PAD_MODE_BEAT_JUMP;
+        const bool loaded = deck_has_loaded_track(deck);
+        if (led >= LED_BEAT_JUMP_PAD_1 && led <= LED_BEAT_JUMP_PAD_8) {
+            state = beat_jump_mode && loaded ? 1u : 0u;
+        } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
+                   led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+        }
+    }
+    control_link_send_led_deck(led, state, deck);
 }
