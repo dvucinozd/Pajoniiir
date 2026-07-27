@@ -1,0 +1,168 @@
+name: ESP-IDF 6.0.2 migration
+
+on:
+  push:
+    branches:
+      - migration/esp-idf-6.0.2
+      - fix/release-blockers-and-concurrency
+  pull_request:
+    paths:
+      - "firmware/**"
+      - "tests/**"
+      - ".github/workflows/esp-idf-6-migration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2
+
+jobs:
+  host-tests:
+    name: Host regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Run host regression suites
+        shell: pwsh
+        run: |
+          & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
+          $s3 = $LASTEXITCODE
+          if ($s3 -ne 0) {
+              Get-Content s3-host-tests.log -Tail 40
+              exit $s3
+          }
+          Write-Host "S3 host tests passed."
+
+          & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
+          $p4 = $LASTEXITCODE
+          $p4Lines = @(Get-Content p4-host-tests.log)
+          if ($p4 -ne 0) {
+              $lastBuild = $p4Lines | Select-String -Pattern '^==> build ' | Select-Object -Last 1
+              if ($lastBuild) {
+                  $start = [Math]::Max(0, $lastBuild.LineNumber - 1)
+                  $p4Lines[$start..($p4Lines.Count - 1)] | Select-Object -First 100
+              } else {
+                  $p4Lines | Select-Object -Last 60
+              }
+          } else {
+              $p4Lines | Select-Object -Last 20
+          }
+          exit $p4
+
+      - name: Upload host-test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-test-logs
+          if-no-files-found: ignore
+          path: |
+            s3-host-tests.log
+            p4-host-tests.log
+
+  build-s3:
+    name: ESP32-S3 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Build control board
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          set +e
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/control-board-s3 \
+            "$IDF_IMAGE" bash -lc '
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32s3
+              idf.py build
+            ' > s3-idf-build.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' s3-idf-build.log | tail -n 75 || true
+            tail -n 20 s3-idf-build.log
+          else
+            tail -n 25 s3-idf-build.log
+          fi
+          exit $code
+
+      - name: Upload S3 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-build-log
+          path: s3-idf-build.log
+
+      - name: Upload S3 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: control-board-s3-idf-6.0.2
+          path: |
+            firmware/control-board-s3/build/*.bin
+            firmware/control-board-s3/build/*.elf
+            firmware/control-board-s3/build/*.map
+            firmware/control-board-s3/dependencies.lock
+
+  build-p4:
+    name: ESP32-P4 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Build main deck and verify silicon target
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          set +e
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              test -f build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              echo "Verified ESP32-P4 production silicon gate: pre-v3 selector enabled, minimum revision 1.0."
+              idf.py build
+            ' > p4-idf-build.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped|CONFIG_ESP32P4)' p4-idf-build.log | tail -n 90 || true
+            tail -n 25 p4-idf-build.log
+          else
+            tail -n 30 p4-idf-build.log
+          fi
+          exit $code
+
+      - name: Upload P4 build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-build-log
+          path: p4-idf-build.log
+
+      - name: Upload P4 binaries
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-deck-p4-idf-6.0.2
+          path: |
+            firmware/main-deck-p4/build/*.bin
+            firmware/main-deck-p4/build/*.elf
+            firmware/main-deck-p4/build/*.map
+            firmware/main-deck-p4/dependencies.lock
