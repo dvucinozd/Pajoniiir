@@ -35,19 +35,22 @@ static bool write_prefix(const char *path, const uint8_t *data, size_t length)
 
 static bool dat_truncation_corpus_rejects_partial_structures(void)
 {
+    /* Generated layout: PMAI 0..27, PPTH 28..101, PVBR 102..129,
+     * PQTZ 130..157, PWAV 158..569, PCOB 570..693. */
     static const size_t cuts[] = {
         0u, 1u, 4u, 8u, 11u, 27u,
-        29u, 32u, 35u, 39u, 47u, 49u, 105u,
-        107u, 110u, 113u, 117u, 133u,
-        135u, 138u, 141u, 145u, 153u, 161u,
-        163u, 166u, 169u, 173u, 300u, 573u,
-        575u, 578u, 581u, 585u, 600u, 697u,
+        29u, 32u, 35u, 39u, 47u, 49u, 101u,
+        103u, 106u, 109u, 113u, 129u,
+        131u, 134u, 137u, 141u, 149u, 157u,
+        159u, 162u, 165u, 169u, 300u, 569u,
+        571u, 574u, 577u, 581u, 600u, 693u,
     };
 
     build_synthetic_dat();
     size_t full_len = 0u;
     uint8_t *full = read_entire_file(SYNTH_DAT, &full_len);
-    if (!full || full_len <= cuts[sizeof(cuts) / sizeof(cuts[0]) - 1u]) {
+    if (!full || full_len != 694u) {
+        fprintf(stderr, "unexpected synthetic DAT length: %zu\n", full_len);
         free(full);
         return false;
     }
@@ -96,7 +99,8 @@ static bool ext_truncation_corpus_retains_previous_metadata(void)
 
     size_t full_len = 0u;
     uint8_t *full = read_entire_file(SYNTH_EXT, &full_len);
-    if (!full || full_len <= cuts[sizeof(cuts) / sizeof(cuts[0]) - 1u]) {
+    if (!full || full_len != 812u) {
+        fprintf(stderr, "unexpected synthetic EXT length: %zu\n", full_len);
         free(full);
         anlz_free(&meta);
         return false;
