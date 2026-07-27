@@ -6,6 +6,7 @@
  * complete validation. Short reads can no longer become zero-valued fields or
  * persistent partial cache entries.
  */
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -94,7 +95,7 @@ static esp_err_t parse_one_strict(FILE *fp,
     }
 
     *found = true;
-    esp_err_t rc = ESP_ERR_NOT_SUPPORTED;
+    esp_err_t rc = ESP_ERR_INVALID_ARG;
     switch (tag) {
     case ANLZ_TAG_PPTH: rc = parse_ppth(fp, meta); break;
     case ANLZ_TAG_PVBR: rc = parse_pvbr(fp, meta); break;
