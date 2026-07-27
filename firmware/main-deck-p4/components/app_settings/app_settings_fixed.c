@@ -1,4 +1,5 @@
 /* Production wrapper: debounce brightness persistence outside the LVGL task. */
+#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #define app_settings_init          app_settings_init_legacy
