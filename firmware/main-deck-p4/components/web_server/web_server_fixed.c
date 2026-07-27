@@ -1,12 +1,45 @@
 /*
  * Production wrapper that keeps the existing web server implementation while
- * routing every web-originated loop mutation through deck_core.
+ * routing every web-originated loop mutation through deck_core and escaping the
+ * firmware-status snapshot before the legacy JSON formatter inserts it.
  */
-#define audio_engine_deck_set_loop   web_bridge_set_loop
-#define audio_engine_deck_clear_loop web_bridge_clear_loop
+#include "p4_ota.h"
+#include "control_link.h"
+#include "web_firmware_json.h"
+
+static void web_bridge_p4_ota_get_status(p4_ota_status_t *out);
+static bool web_bridge_control_link_get_s3_firmware_report(ctrl_firmware_report_t *out);
+
+#define audio_engine_deck_set_loop             web_bridge_set_loop
+#define audio_engine_deck_clear_loop           web_bridge_clear_loop
+#define p4_ota_get_status                      web_bridge_p4_ota_get_status
+#define control_link_get_s3_firmware_report    web_bridge_control_link_get_s3_firmware_report
 #include "web_server.c"
 #undef audio_engine_deck_set_loop
 #undef audio_engine_deck_clear_loop
+#undef p4_ota_get_status
+#undef control_link_get_s3_firmware_report
+
+static void web_bridge_p4_ota_get_status(p4_ota_status_t *out)
+{
+    p4_ota_get_status(out);
+    if (!out) return;
+
+    web_firmware_json_escape_in_place(out->running_slot, sizeof(out->running_slot));
+    web_firmware_json_escape_in_place(out->running_version, sizeof(out->running_version));
+    web_firmware_json_escape_in_place(out->target_slot, sizeof(out->target_slot));
+    web_firmware_json_escape_in_place(out->target_version, sizeof(out->target_version));
+    web_firmware_json_escape_in_place(out->last_error, sizeof(out->last_error));
+}
+
+static bool web_bridge_control_link_get_s3_firmware_report(ctrl_firmware_report_t *out)
+{
+    bool available = control_link_get_s3_firmware_report(out);
+    if (out) {
+        web_firmware_json_escape_in_place(out->version, sizeof(out->version));
+    }
+    return available;
+}
 
 esp_err_t web_bridge_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
 {
