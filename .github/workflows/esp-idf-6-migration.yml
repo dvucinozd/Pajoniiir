@@ -14,26 +14,27 @@ on:
 permissions:
   contents: read
 
+env:
+  MIGRATION_BRANCH: migration/esp-idf-6.0.2
+
 jobs:
   host-tests:
     name: Host regression tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: S3 host tests
+      - name: Clone migration branch and run host tests
         shell: pwsh
         run: |
+          git clone --quiet --depth 1 --branch $env:MIGRATION_BRANCH https://github.com/dvucinozd/Pajoniiir.git repo
+          Set-Location repo
           & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
-          $code = $LASTEXITCODE
-          Get-Content s3-host-tests.log -Tail 160
-          exit $code
-      - name: P4 host tests
-        shell: pwsh
-        run: |
+          $s3 = $LASTEXITCODE
+          Get-Content s3-host-tests.log -Tail 30
+          if ($s3 -ne 0) { exit $s3 }
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
-          $code = $LASTEXITCODE
-          Get-Content p4-host-tests.log -Tail 240
-          exit $code
+          $p4 = $LASTEXITCODE
+          Get-Content p4-host-tests.log -Tail 60
+          exit $p4
 
   build-s3:
     name: ESP32-S3 firmware
@@ -44,10 +45,10 @@ jobs:
         HOME: /tmp
         IDF_GIT_SAFE_DIR: "*"
     steps:
-      - uses: actions/checkout@v4
-      - name: Build control board
-        working-directory: firmware/control-board-s3
+      - name: Clone and build control board
         run: |
+          git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
+          cd repo/firmware/control-board-s3
           set +e
           {
             idf.py --version
@@ -56,7 +57,7 @@ jobs:
             idf.py build
           } > idf-build.log 2>&1
           code=$?
-          tail -n 320 idf-build.log
+          tail -n 90 idf-build.log
           exit $code
       - name: Upload S3 binaries
         if: success()
@@ -64,10 +65,10 @@ jobs:
         with:
           name: control-board-s3-idf-6.0.2
           path: |
-            firmware/control-board-s3/build/*.bin
-            firmware/control-board-s3/build/*.elf
-            firmware/control-board-s3/build/*.map
-            firmware/control-board-s3/dependencies.lock
+            repo/firmware/control-board-s3/build/*.bin
+            repo/firmware/control-board-s3/build/*.elf
+            repo/firmware/control-board-s3/build/*.map
+            repo/firmware/control-board-s3/dependencies.lock
 
   build-p4:
     name: ESP32-P4 firmware
@@ -78,10 +79,10 @@ jobs:
         HOME: /tmp
         IDF_GIT_SAFE_DIR: "*"
     steps:
-      - uses: actions/checkout@v4
-      - name: Build main deck
-        working-directory: firmware/main-deck-p4
+      - name: Clone and build main deck
         run: |
+          git clone --quiet --depth 1 --branch "$MIGRATION_BRANCH" https://github.com/dvucinozd/Pajoniiir.git repo
+          cd repo/firmware/main-deck-p4
           set +e
           {
             idf.py --version
@@ -90,7 +91,7 @@ jobs:
             idf.py build
           } > idf-build.log 2>&1
           code=$?
-          tail -n 400 idf-build.log
+          tail -n 100 idf-build.log
           exit $code
       - name: Upload P4 binaries
         if: success()
@@ -98,7 +99,7 @@ jobs:
         with:
           name: main-deck-p4-idf-6.0.2
           path: |
-            firmware/main-deck-p4/build/*.bin
-            firmware/main-deck-p4/build/*.elf
-            firmware/main-deck-p4/build/*.map
-            firmware/main-deck-p4/dependencies.lock
+            repo/firmware/main-deck-p4/build/*.bin
+            repo/firmware/main-deck-p4/build/*.elf
+            repo/firmware/main-deck-p4/build/*.map
+            repo/firmware/main-deck-p4/dependencies.lock
