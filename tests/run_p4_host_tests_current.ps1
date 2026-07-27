@@ -115,6 +115,26 @@ Assert-FileContains `
     -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
     -Path (Join-Path $RepoRoot "tests/anlz/test_anlz_current.c") `
     -LiteralPatterns @("dat_truncation_corpus_rejects_partial_structures", "ext_truncation_corpus_retains_previous_metadata", "test_truncated.dat", "test_truncated.ext")
+
+Assert-FileContains `
+    -Name "library duration test covers preservation and beatgrid fallback" `
+    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
+    -LiteralPatterns @("test_nonzero_pdb_duration_survives_anlz_enrichment", "test_zero_pdb_duration_falls_back_to_last_beat", "213456u", "7000u")
+
+Assert-FileContains `
+    -Name "production library exposes selected-track API names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Temporary source-compatibility aliases")
+
+Assert-FileContains `
+    -Name "library compatibility aliases delegate to production names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Compatibility aliases are intentionally thin")
+
+Assert-FileContains `
+    -Name "firmware UI compiles through the production library API bridge" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_library_selected_api.c")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
@@ -159,6 +179,18 @@ if (($text.Split($anlzImplSource).Count - 1) -ne 1) {
     throw "expected one ANLZ implementation source entry"
 }
 $text = $text.Replace($anlzImplSource, '"../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"')
+
+$libraryTestSource = '"test_library_anlz.c"'
+if (($text.Split($libraryTestSource).Count - 1) -ne 1) {
+    throw "expected one library_anlz test source entry"
+}
+$text = $text.Replace($libraryTestSource, '"test_library_anlz_current.c"')
+
+$libraryImplSource = '"../../firmware/main-deck-p4/components/library/library.c"'
+if (($text.Split($libraryImplSource).Count - 1) -ne 1) {
+    throw "expected one library implementation source entry"
+}
+$text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/components/library/library_duration_fixed.c"')
 
 $text += $extraAuditGates
 
