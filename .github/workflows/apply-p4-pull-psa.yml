@@ -1,0 +1,70 @@
+name: Apply P4 pull OTA PSA migration
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'migration/esp-idf-6.0.2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: migration/esp-idf-6.0.2
+          fetch-depth: 0
+      - name: Migrate pull OTA hashing and remove compatibility header
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c')
+          text = path.read_text(encoding='utf-8')
+          text, count = re.subn(r'#include "mbedtls/sha256\.h"', '#include "psa/crypto.h"', text, count=1)
+          if count != 1:
+              raise SystemExit('SHA include replacement failed')
+
+          start_pattern = re.compile(r'''    mbedtls_sha256_context bundle_sha;\n    mbedtls_sha256_init\(&bundle_sha\);\n    bool sha_started = mbedtls_sha256_starts\(&bundle_sha, 0\) == 0;\n    if \(!sha_started\) \{\n        free\(buf\);\n        esp_http_client_cleanup\(client\);\n        mbedtls_sha256_free\(&bundle_sha\);\n        return ESP_FAIL;\n    \}\n''')
+          start_replacement = '''    psa_hash_operation_t bundle_sha = PSA_HASH_OPERATION_INIT;\n    bool sha_started = psa_hash_setup(&bundle_sha, PSA_ALG_SHA_256) == PSA_SUCCESS;\n    if (!sha_started) {\n        free(buf);\n        esp_http_client_cleanup(client);\n        (void)psa_hash_abort(&bundle_sha);\n        return ESP_FAIL;\n    }\n'''
+          text, count = start_pattern.subn(start_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('streaming hash setup replacement failed')
+
+          replacements = {
+              'mbedtls_sha256_update(&bundle_sha, header, sizeof(header)) != 0':
+                  'psa_hash_update(&bundle_sha, header, sizeof(header)) != PSA_SUCCESS',
+              'mbedtls_sha256_update(&bundle_sha, buf, (size_t)got) != 0':
+                  'psa_hash_update(&bundle_sha, buf, (size_t)got) != PSA_SUCCESS',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'missing hash update anchor: {old}')
+              text = text.replace(old, new, 1)
+
+          finish_pattern = re.compile(r'''    uint8_t actual_sha256\[32\];\n    if \(mbedtls_sha256_finish\(&bundle_sha, actual_sha256\) != 0\) \{\n        p4_ota_abort\("bundle hash failed"\);\n        rc = ESP_FAIL;\n        goto done;\n    \}\n    sha_started = false;\n''')
+          finish_replacement = '''    uint8_t actual_sha256[32];\n    size_t actual_sha256_size = 0u;\n    if (psa_hash_finish(&bundle_sha,\n                        actual_sha256,\n                        sizeof(actual_sha256),\n                        &actual_sha256_size) != PSA_SUCCESS ||\n        actual_sha256_size != sizeof(actual_sha256)) {\n        p4_ota_abort("bundle hash failed");\n        rc = ESP_FAIL;\n        goto done;\n    }\n    sha_started = false;\n'''
+          text, count = finish_pattern.subn(finish_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('streaming hash finish replacement failed')
+
+          cleanup_pattern = re.compile(r'''done:\n    if \(sha_started\) \{\n        uint8_t discard\[32\];\n        \(void\)mbedtls_sha256_finish\(&bundle_sha, discard\);\n    \}\n    mbedtls_sha256_free\(&bundle_sha\);\n''')
+          cleanup_replacement = '''done:\n    if (sha_started) {\n        (void)psa_hash_abort(&bundle_sha);\n    }\n'''
+          text, count = cleanup_pattern.subn(cleanup_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit('streaming hash cleanup replacement failed')
+
+          path.write_text(text, encoding='utf-8')
+
+          shim = Path('firmware/common/ota_manifest/include/mbedtls/sha256.h')
+          if not shim.exists():
+              raise SystemExit('legacy compatibility header is already missing')
+          shim.unlink()
+          PY
+          git config user.name "Pajoniiir migration bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A firmware/common/ota_manifest firmware/main-deck-p4/components/p4_ota_pull
+          git commit -m "crypto(p4): migrate pull OTA hashing to PSA Crypto"
+          git push origin HEAD:migration/esp-idf-6.0.2
