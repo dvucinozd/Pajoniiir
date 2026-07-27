@@ -53,9 +53,9 @@ Statusi:
 | OTA GET ne escapea JSON | **Zatvoreno** | SSID, URL, detail i address prolaze kroz `web_api_json_escape`. |
 | Web loop zaobilazi `deck_core` | **Zatvoreno** | Web loop/exit se pretvaraju u autoritativne deck evente. |
 | Probe i pull-OTA paralelno mijenjaju Wi-Fi stack | **Zatvoreno** | Centralni `wifi_transition_lease` rezervira probe ili OTA prijelaz prije stvaranja workera. |
-| USB mount nema retry / disconnect se može izgubiti | **Zatvoreno u ovom batchu; HW pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. Replug i fault-injection test na stvarnom P4 ostaju. |
+| USB mount nema retry / disconnect se može izgubiti | **Zatvoreno; HW pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. Replug i fault-injection test na stvarnom P4 ostaju. |
 | ANLZ short-read postaje valjani cache | **Zatvoreno; fuzz pending** | Exact-read marker, bounded section walk, privremeni objekt i publish tek nakon pune validacije. Fuzz/truncation corpus još nije kompletan. |
-| PDB duration se zamijeni zadnjim beatom | **Zatvoreno** | Catalog/audio duration se čuva; beatgrid duration je samo fallback. |
+| PDB duration se zamijeni zadnjim beatom | **Zatvoreno** | Javni `library_load_anlz()` čuva svaki nonzero PDB/audio duration; beatgrid duration ostaje fallback kada duration nedostaje. |
 | PVBR 32-bit overflow | **Zatvoreno** | `uint64_t` račun i clamp na `duration_ms`. |
 | Javni AP PSK i CSRF marker umjesto autentikacije | **Otvoreno** | Potrebna je proizvodna odluka: per-device PSK ili fizički prikazan jednokratni token, fizička OTA potvrda i PMF/WPA3 politika. |
 | Secure boot i flash encryption nisu uključeni | **Provisioning odluka** | Ne uključivati običnim source commitom. Potreban je dokumentiran key/provisioning/recovery proces i potvrda nepovratnih eFuse koraka. |
@@ -65,12 +65,12 @@ Statusi:
 | Nalaz | Status | Sljedeći korak |
 |---|---|---|
 | Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Otvoreno** | Immutable track store + mali indeks/handle array i virtualizirana/paginirana tablica. |
-| Tri framebuffer buffera bez stvarnog swapa | **Otvoreno** | Implementirati inactive-buffer rotation na refresh granici ili alocirati samo jedan framebuffer i ispraviti dokumentaciju. |
+| Tri framebuffer buffera bez stvarnog swapa | **Zatvoreno konzervativnim putem; HW pending** | BSP i backend sada alociraju/traže samo jedan framebuffer, što odgovara stvarnom partial-LVGL/PPA ponašanju i vraća dvije nepotrebne full-screen PSRAM alokacije. Budući pravi swap bio bi zasebna, mjerena optimizacija. |
 | Master Tempo PSRAM hot path | **Otvoreno za optimizaciju** | Coarse-to-fine search, block-local PCM cache i mjerenje `mix_max_us` na stvarnom dual-deck P4. |
 | Cijeli komprimirani track mora stati u PSRAM | **Djelomično** | Kratkoročni largest-free-block preflight i `TRACK TOO LARGE` postoje; rolling compressed page cache nije implementiran. |
 | Legacy/dead ostaci i monoliti | **Otvoreno** | Ukloniti potvrđene mrtve API-je i refaktorirati prema task ownershipu, ne samo prema datotekama. |
 | Recorder nije spreman za ponovno uključivanje | **Otvoreno; funkcija ostaje disabled** | Producer/STOP handshake, finalize error propagation, `.part` rename samo nakon potpunog uspjeha i fault-injection testovi. |
-| Zastarjeli komentari/dokumentacija | **Otvoreno** | Uskladiti S3 translator default, broj UI screenova, 32 MB PSRAM i P4 revizijski vodič. |
+| Zastarjeli komentari/dokumentacija | **Djelomično** | S3 translator default komentar je ispravljen; `sdkconfig.defaults` već navodi četiri ekrana, 32 MB PSRAM i rev 1.0. `firmware/main-deck-p4/CLAUDE.md` još ima staru tvrdnju `REV_MIN_FULL=0` i mora se uskladiti. |
 | Dependency build nije reproducibilan | **Zatvoreno** | Oba `dependencies.lock` filea su commitana i clean CI ih koristi. |
 
 ## Testovi koji i dalje nisu zamijenjeni CI-em
@@ -80,14 +80,14 @@ Statusi:
 - sanitizer/TSan/fuzz i ciljane concurrency interleaving probe
 - stvarno P4 mjerenje keylock/PSRAM deadlinea
 - USB mount/disconnect fault injection
+- prikaz bez tearinga nakon single-framebuffer korekcije
 - dugotrajni dual-deck audio/control/USB/SD soak
 
 ## Preporučeni nastavak
 
-1. Završiti i validirati USB reconciliation batch.
-2. Ispraviti zastarjele konfiguracijske komentare i dokumentaciju.
-3. Odabrati framebuffer strategiju: stvarni swap ili jedan buffer.
-4. Napraviti library indeks/virtualizaciju kao zaseban performance PR.
-5. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
-6. Recorder zadržati isključen dok njegov zasebni safety PR ne prođe fault injection.
-7. AP autentikaciju i secure-boot/flash-encryption voditi kao zasebne security/provisioning odluke.
+1. Hardverski potvrditi USB reconciliation i single-framebuffer prikaz.
+2. Uskladiti preostalu revizijsku uputu u `firmware/main-deck-p4/CLAUDE.md`.
+3. Napraviti library indeks/virtualizaciju kao zaseban performance PR.
+4. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
+5. Recorder zadržati isključen dok njegov zasebni safety PR ne prođe fault injection.
+6. AP autentikaciju i secure-boot/flash-encryption voditi kao zasebne security/provisioning odluke.

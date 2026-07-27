@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "rekordbox_pdb.c" "library.c"
+    SRCS "rekordbox_pdb.c" "library_duration_fixed.c"
          "rekordbox_anlz_fixed.c"
          "track_meta_cache_fixed.c"
     INCLUDE_DIRS "include"
