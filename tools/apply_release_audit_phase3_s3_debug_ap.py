@@ -174,7 +174,6 @@ def main() -> None:
 }''',
     )
 
-    # Initialize all state deterministically on component startup.
     text = replace_once(
         text,
         """    s3_debug_log_ring_init(&s_log_ring);\n    s_status = S3_DEBUG_AP_STATUS_OFF;\n""",
@@ -188,3 +187,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# trigger: phase 3 retry after serialized audit workflows
