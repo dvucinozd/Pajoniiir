@@ -39,6 +39,19 @@ Assert-FileContains `
     -LiteralPatterns @('next_pass[0] ? "set" : "none"')
 '@
 
+$usbRecovery = @'
+
+Assert-FileContains `
+    -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("storage_desired_t", "s_desired.epoch++", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "Disconnect is level state")
+
+Assert-FileDoesNotContain `
+    -Name "p4 USB disconnect is not dependent on a finite event queue" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
+'@
+
 $text = Get-Content -LiteralPath $source -Raw
 if (-not $text.Contains($oldQueue)) {
     throw "stale P4 queue assertion block was not found"
@@ -56,6 +69,7 @@ if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
+$text += $usbRecovery
 
 try {
     Set-Content -LiteralPath $temp -Value $text -Encoding utf8NoBOM
