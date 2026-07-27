@@ -1,0 +1,47 @@
+name: Apply release audit phase 8 parser settings
+
+on:
+  push:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - "tools/apply_release_audit_phase8_parser_settings.py"
+      - ".github/workflows/apply-release-audit-phase8-parser-settings.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+
+      - name: Apply parser and settings fixes
+        run: python3 tools/apply_release_audit_phase8_parser_settings.py
+
+      - name: Verify and test
+        shell: pwsh
+        run: |
+          git diff --check
+          $anlz = Get-Content firmware/main-deck-p4/components/library/rekordbox_anlz.c -Raw
+          if ($anlz -match 'scan_bytes_for_tag') { throw 'unsafe ANLZ payload scanner remains' }
+          if ($anlz -notmatch 'DAT structure truncated or malformed') { throw 'ANLZ truncation gate missing' }
+          & ./tests/run_p4_host_tests.ps1
+          exit $LASTEXITCODE
+
+      - name: Commit validated P2 fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/main-deck-p4/components/ui/ui_settings.c \
+                  firmware/main-deck-p4/components/library/library.c \
+                  firmware/main-deck-p4/components/library/rekordbox_anlz.c
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "fix(p4): make parser and persisted settings transactional"
+          git pull --rebase origin fix/release-blockers-and-concurrency
+          git push origin HEAD:fix/release-blockers-and-concurrency
