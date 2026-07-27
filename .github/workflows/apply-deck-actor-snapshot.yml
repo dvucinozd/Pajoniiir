@@ -1,0 +1,36 @@
+name: Apply deck actor snapshot
+
+on:
+  push:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - tools/apply_deck_actor_snapshot.py
+      - .github/workflows/apply-deck-actor-snapshot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+      - run: python3 tools/apply_deck_actor_snapshot.py
+      - name: Verify
+        run: |
+          git diff --check
+          grep -q 'publish_state_snapshot' firmware/main-deck-p4/components/deck_core/deck_core.c
+          grep -q 'DECK_CORE_INTERNAL_RESET_ID' firmware/main-deck-p4/components/deck_core/deck_core.c
+      - name: Commit
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add firmware/main-deck-p4/components/deck_core/deck_core.c
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "fix(p4): publish coherent deck actor snapshots"
+          git pull --rebase origin fix/release-blockers-and-concurrency
+          git push origin HEAD:fix/release-blockers-and-concurrency
