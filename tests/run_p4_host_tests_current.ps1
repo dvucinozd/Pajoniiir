@@ -105,6 +105,16 @@ Assert-FileDoesNotContain `
     -Name "test-only stereo mixer API stays out of production" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
     -LiteralPatterns @("audio_mixer_mix_stereo")
+
+Assert-FileContains `
+    -Name "production ANLZ walker rejects partial section envelopes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
+    -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+
+Assert-FileContains `
+    -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
+    -Path (Join-Path $RepoRoot "tests/anlz/test_anlz_current.c") `
+    -LiteralPatterns @("dat_truncation_corpus_rejects_partial_structures", "ext_truncation_corpus_retains_previous_metadata", "test_truncated.dat", "test_truncated.ext")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
@@ -137,6 +147,19 @@ if (($text.Split($webHelperSource).Count - 1) -ne 1) {
 }
 $webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"'
 $text = $text.Replace($webHelperSource, $webHelperSources)
+
+$anlzTestSource = '"test_anlz.c"'
+if (($text.Split($anlzTestSource).Count - 1) -ne 1) {
+    throw "expected one ANLZ test source entry"
+}
+$text = $text.Replace($anlzTestSource, '"test_anlz_current.c"')
+
+$anlzImplSource = '"../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"'
+if (($text.Split($anlzImplSource).Count - 1) -ne 1) {
+    throw "expected one ANLZ implementation source entry"
+}
+$text = $text.Replace($anlzImplSource, '"../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"')
+
 $text += $extraAuditGates
 
 try {
