@@ -93,33 +93,40 @@ tools/                       Profile compiler, OTA packager and support tools
 
 ## Build and Test
 
-Required baseline: ESP-IDF v5.5 (including the verified v5.5.4 patch release)
-and the Espressif Python/toolchain environment; host tests additionally require
-native GCC/Make. On Windows, initialize either supported development-machine
-environment before building.
+Required baseline: **ESP-IDF v6.0.2** and its matching Espressif Python and
+toolchain environment. Host tests additionally require native GCC/Make and
+PowerShell 7 on Windows or Linux.
 
-Classic Espressif installation:
-
-```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-```
-
-ESP-IDF v5.5.4 profile installation:
+A standard ESP-IDF installation can be initialized on Windows with:
 
 ```powershell
-. C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
+. "$env:IDF_PATH\export.ps1"
 ```
 
-Verify the selected environment with `idf.py --version`.
+Verify the selected environment before configuring either target:
+
+```powershell
+idf.py --version
+```
+
+It must report `ESP-IDF v6.0.2`. For the first build after switching from IDF
+5.5.4, remove the previous generated configuration and managed components:
+
+```powershell
+Remove-Item -Recurse -Force build, managed_components -ErrorAction SilentlyContinue
+Remove-Item sdkconfig, sdkconfig.old -ErrorAction SilentlyContinue
+```
 
 Build each target from the repository root:
 
 ```powershell
 cd firmware\control-board-s3
+idf.py set-target esp32s3
 idf.py build
 
 cd ..\main-deck-p4
+idf.py set-target esp32p4
 idf.py build
 ```
 
@@ -157,7 +164,7 @@ operational documents are:
 | --- | --- |
 | Product status and source-of-truth policy | [Documentation Status](docs/DOCUMENTATION_STATUS.md) |
 | Product shape and implemented scope | [Project Overview](docs/PROJECT_OVERVIEW.md) |
-| S3/P4 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
+| P4/S3 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
 | FLX4 inputs, outputs and acceptance ledger | [DDJ-FLX4 MIDI Map](docs/DDJ_FLX4_MIDI_MAP.md) |
 | UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
 | Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |
