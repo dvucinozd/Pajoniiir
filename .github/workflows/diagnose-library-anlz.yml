@@ -1,0 +1,30 @@
+name: Diagnose library_anlz
+
+on:
+  push:
+    branches:
+      - migration/esp-idf-6.0.2
+    paths:
+      - ".github/workflows/diagnose-library-anlz.yml"
+      - "firmware/main-deck-p4/components/library/**"
+      - "tests/library_anlz/**"
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compile library_anlz directly
+        run: |
+          git clone --quiet --depth 1 --branch migration/esp-idf-6.0.2 https://github.com/dvucinozd/Pajoniiir.git repo
+          cd repo/tests/library_anlz
+          gcc -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c11 \
+            -Istubs \
+            -I../../firmware/main-deck-p4/components/library/include \
+            -I../../firmware/main-deck-p4/components/media_io_gate/include \
+            -o test_library_anlz.exe \
+            test_library_anlz.c \
+            ../../firmware/main-deck-p4/components/library/library.c
+          ./test_library_anlz.exe
