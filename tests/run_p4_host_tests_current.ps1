@@ -91,8 +91,28 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
 
+Assert-FileDoesNotContain `
+    -Name "confirmed dead scratch APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
+    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
+
+Assert-FileDoesNotContain `
+    -Name "retired output timing APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
+    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
+
+Assert-FileDoesNotContain `
+    -Name "test-only stereo mixer API stays out of production" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
+    -LiteralPatterns @("audio_mixer_mix_stereo")
+
 Assert-FileContains `
-    -Name "ANLZ strict section walker rejects trailing partial header headers" `
+    -Name "scratch transport test uses a local decode-writer bridge" `
+    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
+    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
+
+Assert-FileContains `
+    -Name "production ANLZ walker rejects partial section envelopes" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
     -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
 
@@ -183,6 +203,14 @@ Assert-FileContains `
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
+# Normalize line endings to avoid CRLF/LF nekonzistentnosti on Windows
+$text = $text -replace "`r`n", "`n"
+$oldQueue = $oldQueue -replace "`r`n", "`n"
+$newQueue = $newQueue -replace "`r`n", "`n"
+$oldOta = $oldOta -replace "`r`n", "`n"
+$newOta = $newOta -replace "`r`n", "`n"
+$extraAuditGates = $extraAuditGates -replace "`r`n", "`n"
+
 if (-not $text.Contains($oldQueue)) {
     throw "stale P4 queue assertion block was not found"
 }
