@@ -1,0 +1,36 @@
+name: Temporary mock API inventory
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/mock-api-inventory.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Inventory mock symbols
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@v4
+
+      - name: Collect mock symbol inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "# mock_ occurrences outside generated/build directories"
+            grep -RInE --exclude-dir=.git --exclude-dir=build --exclude-dir=managed_components --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' --include='*.cmake' --include='CMakeLists.txt' --include='*.ps1' '\bmock_[A-Za-z0-9_]+' firmware tests simulator 2>/dev/null || true
+            echo
+            echo "# files containing mock_"
+            grep -RIlE --exclude-dir=.git --exclude-dir=build --exclude-dir=managed_components --include='*.c' --include='*.h' --include='*.cpp' --include='*.hpp' --include='*.cmake' --include='CMakeLists.txt' --include='*.ps1' '\bmock_[A-Za-z0-9_]+' firmware tests simulator 2>/dev/null | sort || true
+          } > mock-api-inventory.txt
+          cat mock-api-inventory.txt
+
+      - name: Upload inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-api-inventory
+          path: mock-api-inventory.txt
