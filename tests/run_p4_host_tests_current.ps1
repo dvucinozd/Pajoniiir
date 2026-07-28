@@ -142,6 +142,21 @@ Assert-FileContains `
     -LiteralPatterns @("test_sort_republishes_compact_order_only", "title_asc", "artist_asc", "bpm_desc", "key_asc")
 
 Assert-FileContains `
+    -Name "library UI bounds LVGL cells to one eight-row page" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
+
+Assert-FileDoesNotContain `
+    -Name "library UI never materializes every catalog row in LVGL" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("lv_table_set_row_count(s_library_table, n)", "ui_library_fill_row(")
+
+Assert-FileContains `
+    -Name "library UI host test covers 1024-track pagination boundaries" `
+    -Path (Join-Path $RepoRoot "tests/ui_library/test_ui_library.c") `
+    -LiteralPatterns @("test_pagination_bounds_large_library_to_eight_rows", "ui_library_page_for_selection(1024, 1023)", "page_count == 128", "test_page_delta_keeps_relative_row_and_clamps_edges")
+
+Assert-FileContains `
     -Name "production library exposes selected-track API names" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
     -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")

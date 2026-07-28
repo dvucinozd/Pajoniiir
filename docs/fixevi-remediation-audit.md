@@ -64,7 +64,7 @@ Statusi:
 
 | Nalaz | Status | Sljedeći korak |
 |---|---|---|
-| Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Djelomično; sort zatvoren** | Track zapisi su nakon publish-a immutable, a sort kopira samo double-buffered `uint16_t` row-order (najviše 2 KiB po bufferu) umjesto približno 2,9 MiB track zapisa. Preostaje virtualizirana/paginirana tablica umjesto 1024×5 LVGL ćelija. |
+| Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Zatvoreno** | Track zapisi su nakon publish-a immutable, sort kopira samo double-buffered `uint16_t` row-order, a LVGL Library prikaz drži samo jednu stranicu od 8×5 ćelija s PREV/NEXT navigacijom umjesto do 1024×5 ćelija. |
 | Tri framebuffer buffera bez stvarnog swapa | **Zatvoreno konzervativnim putem; HW pending** | BSP i backend sada alociraju/traže samo jedan framebuffer, što odgovara stvarnom partial-LVGL/PPA ponašanju i vraća dvije nepotrebne full-screen PSRAM alokacije. Budući pravi swap bio bi zasebna, mjerena optimizacija. |
 | Master Tempo PSRAM hot path | **Otvoreno za optimizaciju** | Coarse-to-fine search, block-local PCM cache i mjerenje `mix_max_us` na stvarnom dual-deck P4. |
 | Cijeli komprimirani track mora stati u PSRAM | **Djelomično** | Kratkoročni largest-free-block preflight i `TRACK TOO LARGE` postoje; rolling compressed page cache nije implementiran. |

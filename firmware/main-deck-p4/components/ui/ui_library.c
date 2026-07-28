@@ -90,6 +90,65 @@ ui_library_update_plan_t ui_library_plan_update(int active_tab,
     };
 }
 
+ui_library_page_t ui_library_page_for_selection(int total_tracks,
+                                                 int selected_index)
+{
+    ui_library_page_t page = {0};
+    if (total_tracks <= 0) {
+        return page;
+    }
+
+    if (selected_index < 0) {
+        selected_index = 0;
+    } else if (selected_index >= total_tracks) {
+        selected_index = total_tracks - 1;
+    }
+
+    page.page_count = (total_tracks + UI_LIBRARY_PAGE_ROWS - 1) /
+                      UI_LIBRARY_PAGE_ROWS;
+    page.page_index = selected_index / UI_LIBRARY_PAGE_ROWS;
+    page.first_index = page.page_index * UI_LIBRARY_PAGE_ROWS;
+    page.row_count = total_tracks - page.first_index;
+    if (page.row_count > UI_LIBRARY_PAGE_ROWS) {
+        page.row_count = UI_LIBRARY_PAGE_ROWS;
+    }
+    page.selected_row = selected_index - page.first_index;
+    return page;
+}
+
+int ui_library_page_absolute_index(const ui_library_page_t *page,
+                                   int visible_row)
+{
+    if (!page || visible_row < 0 || visible_row >= page->row_count) {
+        return -1;
+    }
+    return page->first_index + visible_row;
+}
+
+int ui_library_page_selection_after_delta(int total_tracks,
+                                          int selected_index,
+                                          int page_delta)
+{
+    ui_library_page_t page = ui_library_page_for_selection(total_tracks,
+                                                            selected_index);
+    if (page.page_count == 0 || page_delta == 0) {
+        return page.page_count == 0 ? 0 : page.first_index + page.selected_row;
+    }
+
+    int target_page = page.page_index + page_delta;
+    if (target_page < 0) {
+        target_page = 0;
+    } else if (target_page >= page.page_count) {
+        target_page = page.page_count - 1;
+    }
+
+    int target = target_page * UI_LIBRARY_PAGE_ROWS + page.selected_row;
+    if (target >= total_tracks) {
+        target = total_tracks - 1;
+    }
+    return target;
+}
+
 #ifndef UI_LIBRARY_HOST_TEST
 
 #include "library.h"
@@ -114,6 +173,8 @@ static ui_library_config_t s_library_config;
 static lv_obj_t *s_library_screen = NULL;
 static lv_obj_t *s_library_table = NULL;
 static lv_obj_t *s_label_library_source = NULL;
+static lv_obj_t *s_btn_library_page_prev = NULL;
+static lv_obj_t *s_btn_library_page_next = NULL;
 static lv_obj_t *s_btn_library_load = NULL;
 static lv_obj_t *s_btn_library_load_deck2 = NULL;
 static lv_obj_t *s_active_deck_indicator = NULL;
@@ -284,19 +345,46 @@ static void ui_library_set_load_busy(bool busy, const char *hint)
     (void)hint;
 }
 
-static void ui_library_update_source_label(void)
+static void ui_library_set_page_button_enabled(lv_obj_t *button, bool enabled)
 {
-    if (!s_label_library_source) {
+    if (!button) {
         return;
     }
-#ifndef WIN32
-    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
-#else
-    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", library_count());
-#endif
+    if (enabled) {
+        lv_obj_clear_state(button, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(button, LV_STATE_DISABLED);
+    }
 }
 
-static void ui_library_fill_row(int i)
+static ui_library_page_t ui_library_current_page(void)
+{
+    return ui_library_page_for_selection(ui_library_media_count(),
+                                         s_selected_track_idx);
+}
+
+static void ui_library_update_source_label(void)
+{
+    int count = ui_library_media_count();
+    ui_library_page_t page = ui_library_page_for_selection(count,
+                                                            s_selected_track_idx);
+    if (s_label_library_source) {
+        if (page.page_count > 0) {
+            lv_label_set_text_fmt(s_label_library_source,
+                                  "LOCAL USB  %d TRACKS   PAGE %d/%d",
+                                  count, page.page_index + 1, page.page_count);
+        } else {
+            lv_label_set_text(s_label_library_source, "LOCAL USB  0 TRACKS");
+        }
+    }
+    ui_library_set_page_button_enabled(s_btn_library_page_prev,
+                                       page.page_index > 0);
+    ui_library_set_page_button_enabled(s_btn_library_page_next,
+                                       page.page_count > 0 &&
+                                       page.page_index + 1 < page.page_count);
+}
+
+static void ui_library_fill_visible_row(int visible_row, int track_index)
 {
     const char *title = NULL;
     const char *artist = NULL;
@@ -306,7 +394,7 @@ static void ui_library_fill_row(int i)
 
 #ifndef WIN32
     media_catalog_row_t row;
-    if (media_catalog_get_row(i, &row) != ESP_OK) {
+    if (media_catalog_get_row(track_index, &row) != ESP_OK) {
         return;
     }
     title = row.title;
@@ -315,7 +403,7 @@ static void ui_library_fill_row(int i)
     duration_ms = row.duration_ms;
     key = row.key;
 #else
-    const library_track_t *track = library_get_ptr(i);
+    const library_track_t *track = library_get_ptr(track_index);
     if (!track) {
         return;
     }
@@ -328,11 +416,20 @@ static void ui_library_fill_row(int i)
 
     ui_library_row_text_t text;
     ui_library_format_row_text(&text, title, artist, key, bpm, duration_ms);
-    lv_table_set_cell_value(s_library_table, i, 0, text.title);
-    lv_table_set_cell_value(s_library_table, i, 1, text.artist);
-    lv_table_set_cell_value(s_library_table, i, 2, text.key);
-    lv_table_set_cell_value(s_library_table, i, 3, text.bpm);
-    lv_table_set_cell_value(s_library_table, i, 4, text.duration);
+    lv_table_set_cell_value(s_library_table, visible_row, 0, text.title);
+    lv_table_set_cell_value(s_library_table, visible_row, 1, text.artist);
+    lv_table_set_cell_value(s_library_table, visible_row, 2, text.key);
+    lv_table_set_cell_value(s_library_table, visible_row, 3, text.bpm);
+    lv_table_set_cell_value(s_library_table, visible_row, 4, text.duration);
+}
+
+static void ui_library_select_visible_cell(void)
+{
+    ui_library_page_t page = ui_library_current_page();
+    if (s_library_table && page.row_count > 0) {
+        lv_table_set_selected_cell(s_library_table,
+                                   (uint32_t)page.selected_row, 0);
+    }
 }
 
 static void ui_library_populate_rows(void)
@@ -340,12 +437,16 @@ static void ui_library_populate_rows(void)
     if (!s_library_table) {
         return;
     }
-    int n_tracks = ui_library_media_count();
-    lv_table_set_row_count(s_library_table, n_tracks);
-    for (int i = 0; i < n_tracks; i++) {
-        ui_library_fill_row(i);
+
+    ui_library_page_t page = ui_library_current_page();
+    lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
+    for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
+        int track_index = ui_library_page_absolute_index(&page, visible_row);
+        ui_library_fill_visible_row(visible_row, track_index);
     }
+    ui_library_select_visible_cell();
     ui_library_update_source_label();
+    lv_obj_invalidate(s_library_table);
 }
 
 static void ui_library_apply_loaded_track(uint8_t deck,
@@ -741,7 +842,7 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_name_event_cb(lv_event_t *e)
@@ -763,7 +864,7 @@ static void library_sort_name_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_bpm_event_cb(lv_event_t *e)
@@ -785,7 +886,7 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_key_event_cb(lv_event_t *e)
@@ -807,7 +908,21 @@ static void library_sort_key_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
+}
+
+static void library_page_event_cb(lv_event_t *e)
+{
+    lv_obj_t *button = lv_event_get_target(e);
+    int page_delta = (int)(intptr_t)lv_obj_get_user_data(button);
+    int count = ui_library_media_count();
+    int new_idx = ui_library_page_selection_after_delta(count,
+                                                         s_selected_track_idx,
+                                                         page_delta);
+    if (count > 0 && new_idx != s_selected_track_idx) {
+        s_selected_track_idx = new_idx;
+        ui_library_populate_rows();
+    }
 }
 
 static void library_table_event_cb(lv_event_t *e)
@@ -817,16 +932,14 @@ static void library_table_event_cb(lv_event_t *e)
     uint32_t col;
     lv_table_get_selected_cell(table, &row, &col);
 
-    if ((int)row >= 0 && (int)row < ui_library_media_count()) {
-        int new_idx = (int)row;
-        if (new_idx != s_selected_track_idx) {
-            int old_idx = s_selected_track_idx;
-            s_selected_track_idx = new_idx;
-            ui_library_fill_row(old_idx);
-            ui_library_fill_row(new_idx);
-            lv_table_set_selected_cell(table, row, 0);
-            ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
-        }
+    ui_library_page_t page = ui_library_current_page();
+    int new_idx = ui_library_page_absolute_index(&page, (int)row);
+    if (new_idx >= 0 && new_idx < ui_library_media_count() &&
+        new_idx != s_selected_track_idx) {
+        s_selected_track_idx = new_idx;
+        ui_library_select_visible_cell();
+        lv_obj_invalidate(table);
+        ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
     }
 }
 
@@ -840,18 +953,22 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 
     if (base_dsc->part == LV_PART_ITEMS) {
         uint32_t row = base_dsc->id1;
+        ui_library_page_t page = ui_library_current_page();
+        int track_index = ui_library_page_absolute_index(&page, (int)row);
 
         uint32_t track_key = 0;
         bool has_track = false;
 
 #ifndef WIN32
         media_catalog_row_t row_data;
-        if (media_catalog_get_row((int)row, &row_data) == ESP_OK) {
+        if (track_index >= 0 && media_catalog_get_row(track_index, &row_data) == ESP_OK) {
             track_key = row_data.track_key;
             has_track = true;
         }
 #else
-        const library_track_t *track = library_get_ptr((int)row);
+        const library_track_t *track = track_index >= 0
+                                       ? library_get_ptr(track_index)
+                                       : NULL;
         if (track) {
             track_key = track->track_id;
             has_track = true;
@@ -970,8 +1087,11 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
 
     // Main scrollable tracks table (height stretched to the bottom of the screen)
     s_library_table = lv_table_create(s_library_screen);
-    lv_obj_set_size(s_library_table, 630, 378);
+    lv_obj_set_size(s_library_table, 630, 330);
     lv_obj_set_pos(s_library_table, 10, 46);
+    lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_library_table, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_library_table, library_table_draw_part_begin_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
     lv_obj_add_flag(s_library_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -1000,6 +1120,50 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_column_width(s_library_table, 3, 55);
     lv_table_set_column_width(s_library_table, 4, 65);
     lv_table_set_column_count(s_library_table, 5);
+
+    s_btn_library_page_prev = lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(s_btn_library_page_prev);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_btn_disabled,
+                     LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_size(s_btn_library_page_prev, 90, 36);
+    lv_obj_set_pos(s_btn_library_page_prev, 10, 384);
+    lv_obj_set_user_data(s_btn_library_page_prev, (void *)(intptr_t)-1);
+    lv_obj_add_event_cb(s_btn_library_page_prev, library_page_event_cb,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_page_prev, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_t *lbl_page_prev = lv_label_create(s_btn_library_page_prev);
+    lv_label_set_text(lbl_page_prev, "PREV");
+    lv_obj_set_style_text_font(lbl_page_prev, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_page_prev, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_page_prev, LV_ALIGN_CENTER, 0, 0);
+
+    s_label_library_source = lv_label_create(s_library_screen);
+    lv_obj_set_width(s_label_library_source, 430);
+    lv_obj_set_pos(s_label_library_source, 110, 394);
+    lv_obj_set_style_text_align(s_label_library_source, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
+
+    s_btn_library_page_next = lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(s_btn_library_page_next);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_btn_disabled,
+                     LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_size(s_btn_library_page_next, 90, 36);
+    lv_obj_set_pos(s_btn_library_page_next, 550, 384);
+    lv_obj_set_user_data(s_btn_library_page_next, (void *)(intptr_t)1);
+    lv_obj_add_event_cb(s_btn_library_page_next, library_page_event_cb,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_page_next, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_t *lbl_page_next = lv_label_create(s_btn_library_page_next);
+    lv_label_set_text(lbl_page_next, "NEXT");
+    lv_obj_set_style_text_font(lbl_page_next, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_page_next, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_page_next, LV_ALIGN_CENTER, 0, 0);
+
     ui_library_populate_rows();
 
     // Active Deck Indicator (130x90, reduced height and width)
@@ -1201,13 +1365,9 @@ void ui_refresh_library(void)
 
     ui_lvgl_lock();
     ui_library_cache_invalidate();
-    lv_table_set_row_count(s_library_table, n);
-
-    for (int i = 0; i < n; i++) {
-        ui_library_fill_row(i);
-    }
-
     s_selected_track_idx = 0;
+    ui_library_populate_rows();
+
 #ifdef WIN32
     const library_track_t *track = library_get_ptr(0);
     if (track) {
@@ -1221,7 +1381,6 @@ void ui_refresh_library(void)
                                     row.bpm);
     }
 #endif
-    ui_library_update_source_label();
     ui_lvgl_unlock();
 
 #ifndef WIN32
@@ -1260,16 +1419,20 @@ esp_err_t ui_library_select_delta(int delta)
     if (new_idx < 0) new_idx = 0;
     if (new_idx >= n) new_idx = n - 1;
     if (new_idx == s_selected_track_idx) {
-        lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+        ui_library_select_visible_cell();
         ui_lvgl_unlock();
         return ESP_OK;
     }
 
-    int old_idx = s_selected_track_idx;
+    ui_library_page_t old_page = ui_library_current_page();
     s_selected_track_idx = new_idx;
-    ui_library_fill_row(old_idx);
-    ui_library_fill_row(new_idx);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_page_t new_page = ui_library_current_page();
+    if (new_page.page_index != old_page.page_index) {
+        ui_library_populate_rows();
+    } else {
+        ui_library_select_visible_cell();
+        lv_obj_invalidate(s_library_table);
+    }
     ui_lvgl_unlock();
     return ESP_OK;
 }
@@ -1345,7 +1508,7 @@ void ui_library_update(const ui_frame_context_t *ctx)
         uint32_t sel_col = LV_TABLE_CELL_NONE;
         lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
         if (sel_row == LV_TABLE_CELL_NONE) {
-            lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+            ui_library_select_visible_cell();
         }
     }
 
