@@ -215,10 +215,17 @@ Assert-FileContains `
     -Name "migration CI runs UI simulator screenshot gate" `
     -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
     -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
-
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
+# Normalize line endings to avoid CRLF/LF inconsistencies on Windows
+$text = $text -replace "`r`n", "`n"
+$oldQueue = $oldQueue -replace "`r`n", "`n"
+$newQueue = $newQueue -replace "`r`n", "`n"
+$oldOta = $oldOta -replace "`r`n", "`n"
+$newOta = $newOta -replace "`r`n", "`n"
+$extraAuditGates = $extraAuditGates -replace "`r`n", "`n"
+
 if (-not $text.Contains($oldQueue)) {
     throw "stale P4 queue assertion block was not found"
 }
@@ -230,65 +237,73 @@ $text = $text.Replace($oldOta, $newOta)
 
 $deckCoreSource = '"../../firmware/main-deck-p4/components/deck_core/deck_core.c"'
 $deckCoreWrapper = '"deck_core_test_snapshot_wrapper.c"'
-$deckCoreSourceCount = $text.Split($deckCoreSource).Count - 1
+$deckCoreSourceCount = ([regex]::Matches($text, [regex]::Escape($deckCoreSource))).Count
 if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
 
 $scratchTestSource = '"test_audio_scratch.c"'
-if (($text.Split($scratchTestSource).Count - 1) -ne 1) {
-    throw "expected one audio_scratch test source entry"
+$scratchTestSourceCount = ([regex]::Matches($text, [regex]::Escape($scratchTestSource))).Count
+if ($scratchTestSourceCount -ne 1) {
+    throw "expected one audio_scratch test source entry, found $scratchTestSourceCount"
 }
 $text = $text.Replace($scratchTestSource, '"test_audio_scratch_current.c"')
 
 $webTestSource = '"test_web_api_helpers.c"'
-if (($text.Split($webTestSource).Count - 1) -ne 1) {
-    throw "expected one web_api_helpers test source entry"
+$webTestSourceCount = ([regex]::Matches($text, [regex]::Escape($webTestSource))).Count
+if ($webTestSourceCount -ne 1) {
+    throw "expected one web_api_helpers test source entry, found $webTestSourceCount"
 }
 $text = $text.Replace($webTestSource, '"test_web_api_helpers_current.c"')
 
 $webHelperSource = '"../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"'
-if (($text.Split($webHelperSource).Count - 1) -ne 1) {
-    throw "expected one web_api_helpers implementation entry"
+$webHelperSourceCount = ([regex]::Matches($text, [regex]::Escape($webHelperSource))).Count
+if ($webHelperSourceCount -ne 1) {
+    throw "expected one web_api_helpers implementation entry, found $webHelperSourceCount"
 }
 $webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"'
 $text = $text.Replace($webHelperSource, $webHelperSources)
 
 $anlzTestSource = '"test_anlz.c"'
-if (($text.Split($anlzTestSource).Count - 1) -ne 1) {
-    throw "expected one ANLZ test source entry"
+$anlzTestSourceCount = ([regex]::Matches($text, [regex]::Escape($anlzTestSource))).Count
+if ($anlzTestSourceCount -ne 1) {
+    throw "expected one ANLZ test source entry, found $anlzTestSourceCount"
 }
 $text = $text.Replace($anlzTestSource, '"test_anlz_current.c"')
 
 $anlzImplSource = '"../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"'
-if (($text.Split($anlzImplSource).Count - 1) -ne 1) {
-    throw "expected one ANLZ implementation source entry"
+$anlzImplSourceCount = ([regex]::Matches($text, [regex]::Escape($anlzImplSource))).Count
+if ($anlzImplSourceCount -ne 1) {
+    throw "expected one ANLZ implementation source entry, found $anlzImplSourceCount"
 }
 $text = $text.Replace($anlzImplSource, '"../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"')
 
 $libraryTestSource = '"test_library_anlz.c"'
-if (($text.Split($libraryTestSource).Count - 1) -ne 1) {
-    throw "expected one library_anlz test source entry"
+$libraryTestSourceCount = ([regex]::Matches($text, [regex]::Escape($libraryTestSource))).Count
+if ($libraryTestSourceCount -ne 1) {
+    throw "expected one library_anlz test source entry, found $libraryTestSourceCount"
 }
 $text = $text.Replace($libraryTestSource, '"test_library_anlz_current.c"')
 
 $libraryImplSource = '"../../firmware/main-deck-p4/components/library/library.c"'
-if (($text.Split($libraryImplSource).Count - 1) -ne 1) {
-    throw "expected one library implementation source entry"
+$libraryImplSourceCount = ([regex]::Matches($text, [regex]::Escape($libraryImplSource))).Count
+if ($libraryImplSourceCount -ne 1) {
+    throw "expected one library implementation source entry, found $libraryImplSourceCount"
 }
 $text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/components/library/library_duration_fixed.c"')
 
 $libraryCurrentTestSource = '"test_library_anlz_current.c"'
-if (($text.Split($libraryCurrentTestSource).Count - 1) -ne 1) {
-    throw "expected one current library_anlz test source entry"
+$libraryCurrentTestSourceCount = ([regex]::Matches($text, [regex]::Escape($libraryCurrentTestSource))).Count
+if ($libraryCurrentTestSourceCount -ne 1) {
+    throw "expected one current library_anlz test source entry, found $libraryCurrentTestSourceCount"
 }
 $text = $text.Replace($libraryCurrentTestSource, '"-DWIN32", "test_library_anlz_current.c"')
 
 $text += $extraAuditGates
 
 try {
-    Set-Content -LiteralPath $temp -Value $text -Encoding utf8NoBOM
+    [System.IO.File]::WriteAllText($temp, $text)
     & $temp -KeepArtifacts:$KeepArtifacts
     exit $LASTEXITCODE
 } finally {
