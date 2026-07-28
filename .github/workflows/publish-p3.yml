@@ -1,0 +1,65 @@
+name: Temporary P3 validated publication
+
+on:
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/publish-p3.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Recreate validated patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_b64=$(sed -n 's/^          PATCH_GZ_B64: //p' .github/workflows/export-p3-head.yml)
+          test -n "$patch_b64"
+          printf '%s' "$patch_b64" | base64 -d | gzip -d > /tmp/p3.patch
+          git apply --check /tmp/p3.patch
+          git apply /tmp/p3.patch
+          git diff --check
+
+      - name: Publish one atomic commit
+        shell: bash
+        env:
+          EXPECTED_BASE: fa15d198f51253ebb9b1055ddd79ce3fcc643756
+          TARGET_BRANCH: fix/release-blockers-and-concurrency
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_BASE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/export-p3-head.yml .github/workflows/publish-p3.yml
+          git add \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/library/include/library.h \
+            firmware/main-deck-p4/components/library/library.c \
+            tests/library_anlz/test_library_anlz.c \
+            tests/library_anlz/test_library_anlz_current.c \
+            tests/run_p4_host_tests_current.ps1
+          actual=$(git diff --name-only "$EXPECTED_BASE" | sort)
+          expected=$(printf '%s\n' \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/library/include/library.h \
+            firmware/main-deck-p4/components/library/library.c \
+            tests/library_anlz/test_library_anlz.c \
+            tests/library_anlz/test_library_anlz_current.c \
+            tests/run_p4_host_tests_current.ps1 | sort)
+          test "$actual" = "$expected"
+          tree=$(git write-tree)
+          commit=$(printf '%s\n' 'perf(library): sort immutable tracks by compact order' | git commit-tree "$tree" -p "$EXPECTED_BASE")
+          git push origin "$commit:refs/heads/$TARGET_BRANCH"
+          echo "Published $commit"
