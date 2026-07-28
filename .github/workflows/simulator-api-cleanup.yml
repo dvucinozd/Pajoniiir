@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - tooling/simulator-api-cleanup
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/simulator-api-cleanup.yml"
 
 permissions:
   contents: write
