@@ -171,26 +171,30 @@ $webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main
 $text = $text.Replace($webHelperSource, $webHelperSources)
 
 $anlzTestSource = '"test_anlz.c"'
-if (($text.Split($anlzTestSource).Count - 1) -ne 1) {
-    throw "expected one ANLZ test source entry"
+$anlzTestSourceCount = ([regex]::Matches($text, [regex]::Escape($anlzTestSource))).Count
+if ($anlzTestSourceCount -ne 1) {
+    throw "expected one ANLZ test source entry, found $anlzTestSourceCount"
 }
 $text = $text.Replace($anlzTestSource, '"test_anlz_current.c"')
 
 $anlzImplSource = '"../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"'
-if (($text.Split($anlzImplSource).Count - 1) -ne 1) {
-    throw "expected one ANLZ implementation source entry"
+$anlzImplSourceCount = ([regex]::Matches($text, [regex]::Escape($anlzImplSource))).Count
+if ($anlzImplSourceCount -ne 1) {
+    throw "expected one ANLZ implementation source entry, found $anlzImplSourceCount"
 }
 $text = $text.Replace($anlzImplSource, '"../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"')
 
 $libraryTestSource = '"test_library_anlz.c"'
-if (($text.Split($libraryTestSource).Count - 1) -ne 1) {
-    throw "expected one library_anlz test source entry"
+$libraryTestSourceCount = ([regex]::Matches($text, [regex]::Escape($libraryTestSource))).Count
+if ($libraryTestSourceCount -ne 1) {
+    throw "expected one library_anlz test source entry, found $libraryTestSourceCount"
 }
 $text = $text.Replace($libraryTestSource, '"test_library_anlz_current.c"')
 
 $libraryImplSource = '"../../firmware/main-deck-p4/components/library/library.c"'
-if (($text.Split($libraryImplSource).Count - 1) -ne 1) {
-    throw "expected one library implementation source entry"
+$libraryImplSourceCount = ([regex]::Matches($text, [regex]::Escape($libraryImplSource))).Count
+if ($libraryImplSourceCount -ne 1) {
+    throw "expected one library implementation source entry, found $libraryImplSourceCount"
 }
 $text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/components/library/library_duration_fixed.c"')
 
