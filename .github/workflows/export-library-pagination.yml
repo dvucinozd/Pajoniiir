@@ -1,3 +1,4 @@
+# Visual diagnostic pass after paginated-table background fix.
 name: Temporary library pagination validation
 
 on:
