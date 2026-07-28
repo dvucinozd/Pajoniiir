@@ -48,11 +48,26 @@ jobs:
           replace("tests/ui_simulator/simulator_library.c",
                   "mock_library_get_current_track_index",
                   "library_selected_track_index", 1)
+          replace(
+              "firmware/main-deck-p4/components/ui/ui_library.c",
+              '''    deck = ui_library_deck_index(deck);
+              s_loaded_media_valid[deck] = false;
+              memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
+              s_deck_loaded_track_valid[deck] = false;
+          ''',
+              '''    deck = ui_library_deck_index(deck);
+          #ifndef WIN32
+              s_loaded_media_valid[deck] = false;
+              memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
+          #endif
+              s_deck_loaded_track_valid[deck] = false;
+          ''',
+              1,
+          )
 
           host = Path("tests/run_p4_host_tests_current.ps1")
           text = host.read_text(encoding="utf-8")
           marker = "\n'@\n\n$text = Get-Content -LiteralPath $source -Raw"
-          print(f"host guard marker count={text.count(marker)}")
           guards = r'''
 
           Assert-FileContains `
@@ -92,7 +107,6 @@ jobs:
           workflow = Path(".github/workflows/esp-idf-6-migration.yml")
           text = workflow.read_text(encoding="utf-8")
           marker = "      - name: Upload host-test logs\n"
-          print(f"workflow step marker count={text.count(marker)}")
           step = '''      - name: Run UI simulator screenshot gate
                 shell: pwsh
                 run: |
@@ -114,7 +128,6 @@ jobs:
 
           lines = text.splitlines(keepends=True)
           matches = [i for i, line in enumerate(lines) if line.strip() == "p4-host-tests.log"]
-          print(f"workflow artifact line matches={len(matches)}")
           if len(matches) != 1:
               raise SystemExit("host artifact line mismatch")
           i = matches[0]
@@ -157,6 +170,7 @@ jobs:
           git rm .github/workflows/simulator-api-cleanup.yml
           git add .github/workflows/esp-idf-6-migration.yml \
                   firmware/main-deck-p4/components/ui/ui.c \
+                  firmware/main-deck-p4/components/ui/ui_library.c \
                   tests/run_p4_host_tests_current.ps1 \
                   tests/ui_simulator/simulator_library.c \
                   tests/ui_simulator/simulator_mocks.c
@@ -165,6 +179,7 @@ jobs:
           expected=$(printf '%s\n' \
             .github/workflows/esp-idf-6-migration.yml \
             firmware/main-deck-p4/components/ui/ui.c \
+            firmware/main-deck-p4/components/ui/ui_library.c \
             tests/run_p4_host_tests_current.ps1 \
             tests/ui_simulator/simulator_library.c \
             tests/ui_simulator/simulator_mocks.c | sort)
