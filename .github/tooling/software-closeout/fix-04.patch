@@ -1,0 +1,17 @@
+--- a/firmware/main-deck-p4/components/audio_engine/audio_engine.c
++++ b/firmware/main-deck-p4/components/audio_engine/audio_engine.c
+@@ -1414,10 +1414,12 @@
+                                         drflac_seek_origin origin)
+ {
+     int std_origin;
+-    if (origin == drflac_seek_origin_start) {
++    if (origin == DRFLAC_SEEK_SET) {
+         std_origin = SEEK_SET;
+-    } else if (origin == drflac_seek_origin_current) {
++    } else if (origin == DRFLAC_SEEK_CUR) {
+         std_origin = SEEK_CUR;
++    } else if (origin == DRFLAC_SEEK_END) {
++        std_origin = SEEK_END;
+     } else {
+         return DRFLAC_FALSE;
+     }
