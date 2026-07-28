@@ -64,7 +64,7 @@ Statusi:
 
 | Nalaz | Status | Sljedeći korak |
 |---|---|---|
-| Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Zatvoreno** | Track zapisi su nakon publish-a immutable, sort kopira samo double-buffered `uint16_t` row-order, a LVGL Library prikaz drži samo jednu stranicu od 8×5 ćelija s PREV/NEXT navigacijom umjesto do 1024×5 ćelija. |
+| Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Zatvoreno** | Track zapisi su nakon publish-a immutable, sort kopira samo double-buffered `uint16_t` row-order, a LVGL Library prikaz drži jednu stranicu od 8×5 — najviše 40 živih ćelija — s PREV/NEXT navigacijom umjesto do 5120 ćelija. |
 | Tri framebuffer buffera bez stvarnog swapa | **Zatvoreno konzervativnim putem; HW pending** | BSP i backend sada alociraju/traže samo jedan framebuffer, što odgovara stvarnom partial-LVGL/PPA ponašanju i vraća dvije nepotrebne full-screen PSRAM alokacije. Budući pravi swap bio bi zasebna, mjerena optimizacija. |
 | Master Tempo PSRAM hot path | **Otvoreno za optimizaciju** | Coarse-to-fine search, block-local PCM cache i mjerenje `mix_max_us` na stvarnom dual-deck P4. |
 | Cijeli komprimirani track mora stati u PSRAM | **Djelomično** | Kratkoročni largest-free-block preflight i `TRACK TOO LARGE` postoje; rolling compressed page cache nije implementiran. |
@@ -86,8 +86,8 @@ Statusi:
 ## Preporučeni nastavak
 
 1. Hardverski potvrditi USB reconciliation i single-framebuffer prikaz.
-2. Uskladiti preostalu revizijsku uputu u `firmware/main-deck-p4/CLAUDE.md`.
-3. Napraviti library indeks/virtualizaciju kao zaseban performance PR.
-4. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
+2. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
+3. Implementirati rolling/bounded compressed page cache za velike audio datoteke.
+4. Nastaviti ownership-oriented razlaganje preostalih monolita bez širokog refaktora ponašanja.
 5. Recorder zadržati isključen dok njegov zasebni safety PR ne prođe fault injection.
 6. AP autentikaciju i secure-boot/flash-encryption voditi kao zasebne security/provisioning odluke.
