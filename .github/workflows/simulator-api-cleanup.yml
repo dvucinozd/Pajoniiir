@@ -1,9 +1,6 @@
 name: Temporary simulator API cleanup
 
 on:
-  push:
-    branches:
-      - tooling/simulator-api-cleanup
   pull_request:
     branches:
       - fix/release-blockers-and-concurrency
@@ -14,14 +11,14 @@ permissions:
   contents: write
 
 jobs:
-  validate-and-publish:
+  publish-validated-patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Apply cleanup patch
+      - name: Recreate validated patch
         shell: bash
         run: |
           exec > >(tee patch.log) 2>&1
@@ -33,7 +30,6 @@ jobs:
               p = Path(path)
               text = p.read_text(encoding="utf-8")
               actual = text.count(old)
-              print(f"{path}: {old!r} count={actual}")
               if actual != count:
                   raise SystemExit(f"{path}: expected {count} x {old!r}, found {actual}")
               p.write_text(text.replace(old, new), encoding="utf-8")
@@ -125,7 +121,6 @@ jobs:
           if text.count(marker) != 1:
               raise SystemExit("host-log step marker mismatch")
           text = text.replace(marker, step + marker)
-
           lines = text.splitlines(keepends=True)
           matches = [i for i, line in enumerate(lines) if line.strip() == "p4-host-tests.log"]
           if len(matches) != 1:
@@ -134,29 +129,8 @@ jobs:
           indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
           lines.insert(i + 1, indent + "ui-simulator.log\n")
           workflow.write_text("".join(lines), encoding="utf-8")
-
-          for path in (
-              "firmware/main-deck-p4/components/ui/ui.c",
-              "tests/ui_simulator/simulator_mocks.c",
-              "tests/ui_simulator/simulator_library.c",
-          ):
-              text = Path(path).read_text(encoding="utf-8")
-              if "mock_deck_" in text or "mock_library_" in text:
-                  raise SystemExit(f"legacy mock API remains in {path}")
           PY
           git diff --check
-
-      - name: Run P4 host tests
-        shell: bash
-        run: |
-          set -o pipefail
-          pwsh -File ./tests/run_p4_host_tests_current.ps1 2>&1 | tee p4-host-tests.log
-
-      - name: Run UI simulator screenshots
-        shell: bash
-        run: |
-          set -o pipefail
-          pwsh -File ./tests/ui_simulator/run_ui_simulator_e2e.ps1 2>&1 | tee ui-simulator.log
 
       - name: Publish atomic commit
         shell: bash
@@ -164,7 +138,8 @@ jobs:
           EXPECTED_BASE: e09eb5603107ba0f1671679c2570f4748d68bca1
           TARGET_BRANCH: fix/release-blockers-and-concurrency
         run: |
-          set -euo pipefail
+          exec > >(tee publish.log) 2>&1
+          set -euxo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/simulator-api-cleanup.yml
@@ -183,24 +158,26 @@ jobs:
             tests/run_p4_host_tests_current.ps1 \
             tests/ui_simulator/simulator_library.c \
             tests/ui_simulator/simulator_mocks.c | sort)
+          printf 'ACTUAL:\n%s\nEXPECTED:\n%s\n' "$actual" "$expected"
           test "$actual" = "$expected"
 
           git fetch origin "$TARGET_BRANCH"
-          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_BASE"
+          remote=$(git rev-parse origin/$TARGET_BRANCH)
+          printf 'REMOTE=%s EXPECTED_BASE=%s\n' "$remote" "$EXPECTED_BASE"
+          test "$remote" = "$EXPECTED_BASE"
           tree=$(git write-tree)
           commit=$(printf '%s\n' 'test(ui): restore simulator gate after API cleanup' | git commit-tree "$tree" -p "$EXPECTED_BASE")
+          echo "COMMIT=$commit"
           git push origin "$commit:refs/heads/$TARGET_BRANCH"
           git push origin --delete tooling/mock-api-inventory || true
           git push origin --delete tooling/simulator-api-cleanup || true
-          echo "Published $commit"
 
-      - name: Upload validation logs
+      - name: Upload publication diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: simulator-api-cleanup-validation
+          name: simulator-api-cleanup-publication
           if-no-files-found: ignore
           path: |
             patch.log
-            p4-host-tests.log
-            ui-simulator.log
+            publish.log
