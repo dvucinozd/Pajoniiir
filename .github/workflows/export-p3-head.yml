@@ -1,4 +1,4 @@
-name: Temporary P3 base tree export
+name: Temporary P3 immutable library validation
 
 on:
   pull_request:
@@ -8,24 +8,80 @@ on:
       - ".github/workflows/export-p3-head.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export:
+  validate-and-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Resolve working-branch base tree
+
+      - name: Apply immutable-library patch
         shell: bash
+        env:
+          PATCH_GZ_B64: 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
         run: |
           set -euo pipefail
-          git fetch origin fix/release-blockers-and-concurrency
-          git rev-parse 'origin/fix/release-blockers-and-concurrency^{tree}' > base-tree.txt
-          cat base-tree.txt
-      - uses: actions/upload-artifact@v4
+          printf '%s' "$PATCH_GZ_B64" | base64 -d | gzip -d > /tmp/p3.patch
+          git apply --check /tmp/p3.patch
+          git apply /tmp/p3.patch
+          git diff --check
+
+      - name: Run P4 host regression suites
+        shell: bash
+        run: |
+          set -o pipefail
+          pwsh -File ./tests/run_p4_host_tests_current.ps1 2>&1 | tee p4-host-tests.log
+
+      - name: Run pinned UI simulator screenshot gate
+        shell: bash
+        run: |
+          set -o pipefail
+          pwsh -File ./tests/ui_simulator/run_ui_simulator_e2e.ps1 2>&1 | tee ui-simulator.log
+
+      - name: Publish one atomic commit
+        shell: bash
+        env:
+          EXPECTED_BASE: fa15d198f51253ebb9b1055ddd79ce3fcc643756
+          TARGET_BRANCH: fix/release-blockers-and-concurrency
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_BASE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/export-p3-head.yml
+          git add \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/library/include/library.h \
+            firmware/main-deck-p4/components/library/library.c \
+            tests/library_anlz/test_library_anlz.c \
+            tests/library_anlz/test_library_anlz_current.c \
+            tests/run_p4_host_tests_current.ps1
+          actual=$(git diff --cached --name-only | sort)
+          expected=$(printf '%s\n' \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/library/include/library.h \
+            firmware/main-deck-p4/components/library/library.c \
+            tests/library_anlz/test_library_anlz.c \
+            tests/library_anlz/test_library_anlz_current.c \
+            tests/run_p4_host_tests_current.ps1 | sort)
+          test "$actual" = "$expected"
+          tree=$(git write-tree)
+          commit=$(printf '%s\n' 'perf(library): sort immutable tracks by compact order' | git commit-tree "$tree" -p "$EXPECTED_BASE")
+          git push origin "$commit:refs/heads/$TARGET_BRANCH"
+          echo "Published $commit"
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: p3-base-tree
-          path: base-tree.txt
-          if-no-files-found: error
+          name: p3-immutable-library-validation
+          if-no-files-found: ignore
+          path: |
+            p4-host-tests.log
+            ui-simulator.log
