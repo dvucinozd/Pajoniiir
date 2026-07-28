@@ -673,16 +673,13 @@ void library_sort(int field_type, bool descending)
     ESP_LOGI(TAG, "Library sorted: field=%d, descending=%d", field_type, descending);
 }
 
-/* ── UI track selection stubs (firmware only) ─────────────────────────────── *
+/* ── UI selected-row state ───────────────────────────────────────────────── *
  *
- * In the PC simulator these functions are fully implemented in mocks.c.
- * On the real ESP32-P4 they provide a minimal index tracker so the UI can
- * call library_get(mock_library_get_current_track_index(), &track) without
- * knowing whether it's running on hardware or in the simulator.
- *
- * Phase 8/9: replace with a proper deck_core track-load API.
+ * The firmware and PC simulator share these production-named helpers. They
+ * track the currently selected library row only; actual deck loads continue to
+ * use media_catalog identity plus generation checks.
  */
-void mock_library_load_track_to_deck(int track_index)
+void library_set_selected_track_index(int track_index)
 {
     if (ensure_library_mutex() != ESP_OK) return;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
@@ -692,7 +689,7 @@ void mock_library_load_track_to_deck(int track_index)
     xSemaphoreGiveRecursive(s_library_mutex);
 }
 
-int mock_library_get_current_track_index(void)
+int library_selected_track_index(void)
 {
     if (ensure_library_mutex() != ESP_OK) return 0;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);

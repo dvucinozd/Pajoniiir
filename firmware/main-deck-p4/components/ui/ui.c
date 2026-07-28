@@ -223,7 +223,7 @@ static uint32_t ui_deck_duration_ms(uint8_t deck)
 {
     uint32_t fallback = 0;
     if (deck == CTRL_DECK_1) {
-        (void)library_get_summary(mock_library_get_current_track_index(), NULL, &fallback);
+        (void)library_get_summary(library_selected_track_index(), NULL, &fallback);
     }
     return ui_library_deck_duration_ms(deck, fallback);
 }
@@ -233,7 +233,7 @@ static uint16_t ui_deck_bpm(uint8_t deck)
     uint16_t fallback = 120;
     if (deck == CTRL_DECK_1) {
         uint16_t bpm = 0;
-        if (library_get_summary(mock_library_get_current_track_index(), &bpm, NULL) == ESP_OK) {
+        if (library_get_summary(library_selected_track_index(), &bpm, NULL) == ESP_OK) {
             fallback = bpm;
         }
     }

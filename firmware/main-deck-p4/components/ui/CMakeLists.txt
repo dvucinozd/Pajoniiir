@@ -1,9 +1,9 @@
 idf_component_register(
-    SRCS "ui_selected_api.c"
+    SRCS "ui.c"
          "splash_screen.c"
          "Musieer_80.c"
          "Musieer_48.c"
-         "ui_library_selected_api.c"
+         "ui_library.c"
          "ui_overview.c"
          "ui_lvgl_backend_single_fb.c"
          "ui_active_deck_leds.c"

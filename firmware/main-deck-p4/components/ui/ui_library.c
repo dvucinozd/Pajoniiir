@@ -580,7 +580,7 @@ static void ui_poll_track_load_result(void)
             continue;
         }
 
-        mock_library_load_track_to_deck(result.index);
+        library_set_selected_track_index(result.index);
         uint8_t deck = ui_library_deck_index(result.deck);
         s_loaded_media[deck] = result.loaded;
         s_loaded_media_valid[deck] = true;
@@ -630,7 +630,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
         return;
     }
 
-    mock_library_load_track_to_deck(s_selected_track_idx);
+    library_set_selected_track_index(s_selected_track_idx);
     library_load_anlz(track);
     anlz_metadata_t meta_snapshot;
     const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
@@ -1123,7 +1123,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
 
 void ui_library_load_initial_track(void)
 {
-    mock_library_load_track_to_deck(0);
+    library_set_selected_track_index(0);
 #ifdef WIN32
     library_track_t *track = library_get_ptr(0);
     if (track) {
@@ -1513,7 +1513,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (!ui_library_try_begin_track_load()) {
         return ESP_ERR_INVALID_STATE;
     }
-    mock_library_load_track_to_deck(index);
+    library_set_selected_track_index(index);
     library_track_t *track = library_get_ptr(index);
     if (track) {
         library_load_anlz(track);

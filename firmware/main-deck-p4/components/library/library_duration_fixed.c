@@ -1,17 +1,10 @@
 /*
- * Preserve the authoritative PDB/audio duration when ANLZ metadata is applied
- * and expose production-named selected-row helpers.
- *
- * The legacy implementation still uses mock_library_* names internally. Rename
- * those definitions at preprocessing time so only the production symbols are
- * emitted; no public/linkable compatibility aliases remain.
+ * Preserve the authoritative PDB/audio duration when ANLZ metadata is applied.
+ * The selected-row API now lives directly in library.c under production names,
+ * so this wrapper only intercepts the legacy duration-overwrite implementation.
  */
-#define library_load_anlz                    library_load_anlz_legacy_duration_override
-#define mock_library_load_track_to_deck      library_set_selected_track_index
-#define mock_library_get_current_track_index library_selected_track_index
+#define library_load_anlz library_load_anlz_legacy_duration_override
 #include "library.c"
-#undef mock_library_get_current_track_index
-#undef mock_library_load_track_to_deck
 #undef library_load_anlz
 
 esp_err_t library_load_anlz(library_track_t *track)

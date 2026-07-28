@@ -137,19 +137,39 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index", "Temporary source-compatibility aliases")
 
 Assert-FileContains `
-    -Name "library wrapper emits production selected-track symbols from the legacy source" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
-    -LiteralPatterns @("#define mock_library_load_track_to_deck      library_set_selected_track_index", "#define mock_library_get_current_track_index library_selected_track_index", "no public/linkable compatibility aliases remain")
+    -Name "library source defines production selected-row helpers directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
 
 Assert-FileDoesNotContain `
-    -Name "library wrapper no longer emits public mock compatibility functions" `
+    -Name "library sources no longer contain selected-track mock aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "duration wrapper no longer renames selected-track symbols" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
-    -LiteralPatterns @("void mock_library_load_track_to_deck", "int mock_library_get_current_track_index")
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI sources use only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared library UI source uses only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
 Assert-FileContains `
-    -Name "firmware UI compiles through the production library API bridge" `
+    -Name "firmware UI compiles shared sources directly" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
-    -LiteralPatterns @("ui_library_selected_api.c")
+    -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
+
+Assert-FileDoesNotContain `
+    -Name "firmware UI source-local selected API bridges stay retired" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
