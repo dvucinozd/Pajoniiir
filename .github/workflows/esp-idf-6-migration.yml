@@ -1,33 +1,199 @@
-name: Temporary selected API source export
+name: Temporary selected API cleanup builder
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/esp-idf-6-migration.yml"
-  workflow_dispatch:
+  push:
+    branches:
+      - tooling/source-export-selected-api
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export-sources:
-    name: Export selected API sources
+  build-cleanup-commit:
+    name: Build atomic cleanup commit
     runs-on: ubuntu-latest
     steps:
-      - name: Check out tested revision
+      - name: Check out exact target head
         uses: actions/checkout@v4
-
-      - name: Upload exact source snapshot
-        uses: actions/upload-artifact@v4
         with:
-          name: selected-api-source-snapshot
-          if-no-files-found: error
-          path: |
-            firmware/main-deck-p4/components/library/library.c
-            firmware/main-deck-p4/components/library/library_duration_fixed.c
-            firmware/main-deck-p4/components/ui/ui.c
-            firmware/main-deck-p4/components/ui/ui_library.c
-            firmware/main-deck-p4/components/ui/CMakeLists.txt
-            firmware/main-deck-p4/components/ui/ui_selected_api.c
-            firmware/main-deck-p4/components/ui/ui_library_selected_api.c
-            tests/run_p4_host_tests_current.ps1
+          ref: fix/release-blockers-and-concurrency
+          fetch-depth: 0
+
+      - name: Verify target head and apply cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=0fa73329fc6c6eff508c74dd4a844734ed063c46
+          actual=$(git rev-parse HEAD)
+          test "$actual" = "$expected"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          p = root / 'firmware/main-deck-p4/components/library/library.c'
+          s = p.read_text(encoding='utf-8')
+          old = '''/* ── UI track selection stubs (firmware only) ─────────────────────────────── *
+           *
+           * In the PC simulator these functions are fully implemented in mocks.c.
+           * On the real ESP32-P4 they provide a minimal index tracker so the UI can
+           * call library_get(mock_library_get_current_track_index(), &track) without
+           * knowing whether it's running on hardware or in the simulator.
+           *
+           * Phase 8/9: replace with a proper deck_core track-load API.
+           */
+          void mock_library_load_track_to_deck(int track_index)'''
+          new = '''/* ── UI selected-row state ───────────────────────────────────────────────── *
+           *
+           * The firmware and PC simulator share these production-named helpers. They
+           * track the currently selected library row only; actual deck loads continue to
+           * use media_catalog identity plus generation checks.
+           */
+          void library_set_selected_track_index(int track_index)'''
+          assert old in s
+          s = s.replace(old, new, 1)
+          assert s.count('int mock_library_get_current_track_index(void)') == 1
+          s = s.replace('int mock_library_get_current_track_index(void)',
+                        'int library_selected_track_index(void)', 1)
+          assert 'mock_library_' not in s
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = root / 'firmware/main-deck-p4/components/library/library_duration_fixed.c'
+          s = p.read_text(encoding='utf-8')
+          old = '''/*
+           * Preserve the authoritative PDB/audio duration when ANLZ metadata is applied
+           * and expose production-named selected-row helpers.
+           *
+           * The legacy implementation still uses mock_library_* names internally. Rename
+           * those definitions at preprocessing time so only the production symbols are
+           * emitted; no public/linkable compatibility aliases remain.
+           */
+          #define library_load_anlz                    library_load_anlz_legacy_duration_override
+          #define mock_library_load_track_to_deck      library_set_selected_track_index
+          #define mock_library_get_current_track_index library_selected_track_index
+          #include "library.c"
+          #undef mock_library_get_current_track_index
+          #undef mock_library_load_track_to_deck
+          #undef library_load_anlz
+          '''
+          new = '''/*
+           * Preserve the authoritative PDB/audio duration when ANLZ metadata is applied.
+           * The selected-row API now lives directly in library.c under production names,
+           * so this wrapper only intercepts the legacy duration-overwrite implementation.
+           */
+          #define library_load_anlz library_load_anlz_legacy_duration_override
+          #include "library.c"
+          #undef library_load_anlz
+          '''
+          assert old in s
+          s = s.replace(old, new, 1)
+          assert 'mock_library_' not in s
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          for rel in (
+              'firmware/main-deck-p4/components/ui/ui.c',
+              'firmware/main-deck-p4/components/ui/ui_library.c',
+          ):
+              p = root / rel
+              s = p.read_text(encoding='utf-8')
+              s = s.replace('mock_library_get_current_track_index',
+                            'library_selected_track_index')
+              s = s.replace('mock_library_load_track_to_deck',
+                            'library_set_selected_track_index')
+              assert 'mock_library_' not in s
+              p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = root / 'firmware/main-deck-p4/components/ui/CMakeLists.txt'
+          s = p.read_text(encoding='utf-8')
+          assert 'SRCS "ui_selected_api.c"' in s
+          assert '"ui_library_selected_api.c"' in s
+          s = s.replace('SRCS "ui_selected_api.c"', 'SRCS "ui.c"', 1)
+          s = s.replace('         "ui_library_selected_api.c"',
+                        '         "ui_library.c"', 1)
+          assert 'selected_api.c' not in s
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = root / 'tests/run_p4_host_tests_current.ps1'
+          s = p.read_text(encoding='utf-8')
+          old = '''Assert-FileContains `
+              -Name "library wrapper emits production selected-track symbols from the legacy source" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+              -LiteralPatterns @("#define mock_library_load_track_to_deck      library_set_selected_track_index", "#define mock_library_get_current_track_index library_selected_track_index", "no public/linkable compatibility aliases remain")
+
+          Assert-FileDoesNotContain `
+              -Name "library wrapper no longer emits public mock compatibility functions" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+              -LiteralPatterns @("void mock_library_load_track_to_deck", "int mock_library_get_current_track_index")
+
+          Assert-FileContains `
+              -Name "firmware UI compiles through the production library API bridge" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+              -LiteralPatterns @("ui_library_selected_api.c")
+          '''
+          new = '''Assert-FileContains `
+              -Name "library source defines production selected-row helpers directly" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+              -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+          Assert-FileDoesNotContain `
+              -Name "library sources no longer contain selected-track mock aliases" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+              -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+          Assert-FileDoesNotContain `
+              -Name "duration wrapper no longer renames selected-track symbols" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
+              -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+          Assert-FileDoesNotContain `
+              -Name "shared UI sources use only production selected-track names" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+              -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+          Assert-FileDoesNotContain `
+              -Name "shared library UI source uses only production selected-track names" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+              -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+          Assert-FileContains `
+              -Name "firmware UI compiles shared sources directly" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+              -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
+
+          Assert-FileDoesNotContain `
+              -Name "firmware UI source-local selected API bridges stay retired" `
+              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+              -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+          '''
+          assert old in s
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+          PY
+
+          git rm firmware/main-deck-p4/components/ui/ui_selected_api.c
+          git rm firmware/main-deck-p4/components/ui/ui_library_selected_api.c
+
+          git diff --check
+          ! grep -RIn 'mock_library_' \
+              firmware/main-deck-p4/components/library/library.c \
+              firmware/main-deck-p4/components/library/library_duration_fixed.c \
+              firmware/main-deck-p4/components/ui/ui.c \
+              firmware/main-deck-p4/components/ui/ui_library.c
+          ! grep -nE 'ui(_library)?_selected_api\.c' \
+              firmware/main-deck-p4/components/ui/CMakeLists.txt
+
+      - name: Commit exact cleanup result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add firmware/main-deck-p4/components/library/library.c
+          git add firmware/main-deck-p4/components/library/library_duration_fixed.c
+          git add firmware/main-deck-p4/components/ui/CMakeLists.txt
+          git add firmware/main-deck-p4/components/ui/ui.c
+          git add firmware/main-deck-p4/components/ui/ui_library.c
+          git add tests/run_p4_host_tests_current.ps1
+          git commit -m "refactor(ui): remove selected-track source bridges"
+          git push --force origin HEAD:refs/heads/tooling/selected-api-cleanup-result
