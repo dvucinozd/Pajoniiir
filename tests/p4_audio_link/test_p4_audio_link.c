@@ -182,7 +182,7 @@ static int test_underrun_returns_silence(void)
     return 0;
 }
 
-static int test_overrun_drops_oldest_frames(void)
+static int test_overrun_drops_newest_frames(void)
 {
     uint8_t block[64] = { 0 };
     int16_t pcm[2] = { 0 };
@@ -198,11 +198,11 @@ static int test_overrun_drops_oldest_frames(void)
     p4_audio_link_stats_t stats = { 0 };
     p4_audio_link_get_stats(&stats);
     EXPECT_EQ_U32(stats.ring_frames, P4_AUDIO_LINK_RING_CAPACITY_FRAMES, "ring remains capped");
-    EXPECT_EQ_U32(stats.overruns, 8u, "oldest frames dropped on overrun");
+    EXPECT_EQ_U32(stats.overruns, 8u, "newest frames dropped on overrun");
 
     int16_t first[2] = { 0 };
     EXPECT_EQ_U32(p4_audio_link_read_frames(first, 1u), 1u, "can read first retained frame");
-    EXPECT_EQ_U32((uint16_t)first[0], 8u, "oldest eight frames were dropped");
+    EXPECT_EQ_U32((uint16_t)first[0], 0u, "oldest frame remains intact while newest frames drop");
     return 0;
 }
 
@@ -276,7 +276,7 @@ int main(void)
     if (test_sequence_gap_and_crc_error_are_counted() != 0) return 1;
     if (test_corrupted_header_is_rejected_before_sequence_tracking() != 0) return 1;
     if (test_underrun_returns_silence() != 0) return 1;
-    if (test_overrun_drops_oldest_frames() != 0) return 1;
+    if (test_overrun_drops_newest_frames() != 0) return 1;
     if (test_deframer_reassembles_chunked_stream_with_filler() != 0) return 1;
     if (test_deframer_resyncs_after_corrupted_payload() != 0) return 1;
 

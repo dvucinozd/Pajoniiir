@@ -196,114 +196,108 @@ typedef struct {
     int     pos;
 } rx_state_t;
 
-static bool event_is_high_rate(const ctrl_event_t *ev)
-{
-    return ev && (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_PITCH);
-}
+typedef struct {
+    bool valid;
+    ctrl_event_t event;
+} pending_value_t;
 
-static bool event_is_jog_touch(const ctrl_event_t *ev)
-{
-    return ev && ev->type == CTRL_EV_BUTTON &&
-           (ev->id == CTRL_ID_DECK1_JOG_TOUCH ||
-            ev->id == CTRL_ID_DECK2_JOG_TOUCH);
-}
+/* UART RX is the sole owner of these pending slots. Absolute values keep the
+ * latest sample; jog deltas accumulate. No producer ever drains/reorders the
+ * deck queue, so web/UI producers cannot race a remove-and-reinsert cycle. */
+static pending_value_t s_pending_values[256];
+static bool s_pending_jog_valid[256];
+static int32_t s_pending_jog_delta[256];
 
-static int16_t accumulate_jog_delta(int16_t a, int16_t b)
+static bool event_is_continuous_value(const ctrl_event_t *ev)
 {
-    int32_t sum = (int32_t)a + (int32_t)b;
-    if (sum > INT16_MAX) return INT16_MAX;
-    if (sum < INT16_MIN) return INT16_MIN;
-    return (int16_t)sum;
-}
-
-static bool try_coalesce_latest_event(const ctrl_event_t *ev)
-{
-    if (!event_is_high_rate(ev) || !s_event_queue) {
+    if (!ev) return false;
+    if (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_PITCH ||
+        ev->type == CTRL_EV_HEARTBEAT) {
+        return true;
+    }
+    if (ev->type != CTRL_EV_BUTTON) return false;
+    switch (ev->id) {
+    case CTRL_ID_CH1_VOLUME:
+    case CTRL_ID_CH2_VOLUME:
+    case CTRL_ID_CROSSFADER:
+    case CTRL_ID_CH1_TRIM:
+    case CTRL_ID_CH2_TRIM:
+    case CTRL_ID_CH1_EQ_HIGH:
+    case CTRL_ID_CH2_EQ_HIGH:
+    case CTRL_ID_CH1_EQ_MID:
+    case CTRL_ID_CH2_EQ_MID:
+    case CTRL_ID_CH1_EQ_LOW:
+    case CTRL_ID_CH2_EQ_LOW:
+    case CTRL_ID_CH1_FILTER:
+    case CTRL_ID_CH2_FILTER:
+    case CTRL_ID_MASTER_VOLUME:
+    case CTRL_ID_HEADPHONE_MIX:
+        return true;
+    default:
         return false;
     }
+}
 
-    ctrl_event_t stash[32];
-    int stash_len = 0;
-    bool replaced = false;
-    ctrl_event_t cur;
+static int16_t clamp_jog_delta(int32_t value)
+{
+    if (value > INT16_MAX) return INT16_MAX;
+    if (value < INT16_MIN) return INT16_MIN;
+    return (int16_t)value;
+}
 
-    while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
-           xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
-        if (!replaced && cur.type == ev->type && cur.id == ev->id) {
-            if (ev->type == CTRL_EV_JOG) {
-                cur.value = accumulate_jog_delta(cur.value, ev->value);
-            } else {
-                cur = *ev;  /* absolute pitch/fader control: newest wins */
-            }
-            stash[stash_len++] = cur;
-            replaced = true;
-            continue;
-        }
-        stash[stash_len++] = cur;
+static void store_pending_continuous(const ctrl_event_t *ev)
+{
+    if (!ev) return;
+    if (ev->type == CTRL_EV_JOG) {
+        int32_t sum = s_pending_jog_delta[ev->id] + (int32_t)ev->value;
+        if (sum > INT16_MAX) sum = INT16_MAX;
+        if (sum < INT16_MIN) sum = INT16_MIN;
+        s_pending_jog_delta[ev->id] = sum;
+        s_pending_jog_valid[ev->id] = true;
+    } else {
+        s_pending_values[ev->id].event = *ev;
+        s_pending_values[ev->id].valid = true;
     }
-
-    for (int i = 0; i < stash_len; i++) {
-        if (xQueueSend(s_event_queue, &stash[i], 0) != pdTRUE) {
-            /* UI/web producers can refill the queue while it is drained here;
-               a failed re-push is a real event loss and must be counted. */
-            s_event_drop_count++;
-        }
-    }
-
-    if (!replaced) {
-        return false;
-    }
-
     s_event_coalesce_count++;
-    return true;
 }
 
-static bool enqueue_priority_touch(const ctrl_event_t *ev)
+static void flush_pending_control_events(void)
 {
-    if (!event_is_jog_touch(ev) || !s_event_queue) return false;
-
-    ctrl_event_t stash[32];
-    int stash_len = 0;
-    ctrl_event_t cur;
-    while (stash_len < (int)(sizeof(stash) / sizeof(stash[0])) &&
-           xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
-        if (event_is_jog_touch(&cur) && cur.id == ev->id) {
-            /* A queued older edge must never execute after the latest level. */
-            s_event_coalesce_count++;
-            continue;
+    if (!s_event_queue) return;
+    for (unsigned id = 0; id < 256u; ++id) {
+        if (s_pending_jog_valid[id]) {
+            ctrl_event_t ev = {
+                .type = CTRL_EV_JOG,
+                .id = (uint8_t)id,
+                .value = clamp_jog_delta(s_pending_jog_delta[id]),
+                .deck = control_link_id_deck((uint8_t)id),
+                .control = control_link_id_control((uint8_t)id),
+            };
+            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) return;
+            s_pending_jog_valid[id] = false;
+            s_pending_jog_delta[id] = 0;
         }
-        stash[stash_len++] = cur;
-    }
-
-    if (stash_len == (int)(sizeof(stash) / sizeof(stash[0]))) {
-        for (int i = 0; i < stash_len; i++) {
-            if (event_is_high_rate(&stash[i])) {
-                for (int j = i + 1; j < stash_len; j++) {
-                    stash[j - 1] = stash[j];
-                }
-                stash_len--;
-                s_event_drop_count++;
-                break;
-            }
+        if (s_pending_values[id].valid) {
+            ctrl_event_t ev = s_pending_values[id].event;
+            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) return;
+            s_pending_values[id].valid = false;
         }
     }
-    for (int i = 0; i < stash_len; i++) {
-        if (xQueueSend(s_event_queue, &stash[i], 0) != pdTRUE) {
-            s_event_drop_count++;
-        }
-    }
-    if (xQueueSendToFront(s_event_queue, ev, 0) == pdTRUE) return true;
+}
 
-    /* Under button-only saturation, evict one oldest event so a platter release
-     * cannot be dropped and latch scratch. Other local producers can race this
-     * queue, so the final safety insertion applies backpressure until the
-     * permanent consumer task makes room. This path is reached only after an
-     * already-full queue and a failed immediate retry. */
-    if (xQueueReceive(s_event_queue, &cur, 0) == pdTRUE) {
-        s_event_drop_count++;
-        return xQueueSendToFront(s_event_queue, ev, portMAX_DELAY) == pdTRUE;
+static bool enqueue_control_event(const ctrl_event_t *ev)
+{
+    if (!ev || !s_event_queue) return false;
+
+    if (event_is_continuous_value(ev)) {
+        if (xQueueSend(s_event_queue, ev, 0) == pdTRUE) return true;
+        store_pending_continuous(ev);
+        return true;
     }
-    return false;
+
+    /* Button/state edges are lossless. Backpressure is preferable to a missing
+     * release that leaves scratch, Censor, roll, Pad FX or SHIFT latched. */
+    return xQueueSend(s_event_queue, ev, portMAX_DELAY) == pdTRUE;
 }
 
 static void dispatch_frame(const uint8_t *f)
@@ -353,14 +347,13 @@ static void dispatch_frame(const uint8_t *f)
         s_controller_state_cb(ev.value == CTRL_FLX4_CONNECTED);
     }
 
-    if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE &&
-        !enqueue_priority_touch(&ev) &&
-        !try_coalesce_latest_event(&ev)) {
+    flush_pending_control_events();
+    if (!enqueue_control_event(&ev)) {
         s_event_drop_count++;
         TickType_t now = xTaskGetTickCount();
         if (now - s_last_warn >= pdMS_TO_TICKS(1000)) {
             s_last_warn = now;
-            ESP_LOGW(TAG, "control event queue full, drops=%" PRIu32
+            ESP_LOGW(TAG, "control event enqueue failed, drops=%" PRIu32
                      " coalesced=%" PRIu32 " write_fail=%" PRIu32,
                      s_event_drop_count, s_event_coalesce_count, s_uart_write_fail_count);
         }
@@ -491,6 +484,9 @@ static void uart_rx_task(void *arg)
         for (int i = 0; i < n; i++) {
             parse_byte(&st, buf[i]);
         }
+        /* A pending final fader/jog sample must be delivered even when UART goes
+         * quiet immediately after the queue-full interval. */
+        flush_pending_control_events();
     }
 }
 
@@ -504,6 +500,9 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
     control_link_rx_stats_reset(&s_rx_stats);
     portEXIT_CRITICAL(&s_rx_stats_mux);
     ctrl_bulk_parser_reset(&s_bulk_parser);
+    memset(s_pending_values, 0, sizeof(s_pending_values));
+    memset(s_pending_jog_valid, 0, sizeof(s_pending_jog_valid));
+    memset(s_pending_jog_delta, 0, sizeof(s_pending_jog_delta));
 
     uart_config_t ucfg = {
         .baud_rate  = UART_BAUD,

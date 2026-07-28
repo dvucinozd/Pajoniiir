@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "app_settings.c"
+    SRCS "app_settings_fixed.c"
     INCLUDE_DIRS "include"
-    REQUIRES log nvs_flash
+    REQUIRES log nvs_flash freertos
 )

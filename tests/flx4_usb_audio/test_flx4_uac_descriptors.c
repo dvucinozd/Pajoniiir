@@ -116,6 +116,25 @@ static int test_parse_real_flx4_descriptor(void)
     return 0;
 }
 
+static int test_rejects_unsupported_or_oversized_formats(void)
+{
+    flx4_uac_descriptor_result_t result = {
+        .formats = {
+            { .interface_num = 1, .alternate_setting = 1, .endpoint_addr = 0x01,
+              .max_packet_size = 576, .channels = 4, .bits_per_sample = 24,
+              .bytes_per_sample = 3, .sample_rates = { 48000 }, .sample_rate_count = 1 },
+            { .interface_num = 1, .alternate_setting = 2, .endpoint_addr = 0x01,
+              .max_packet_size = 100, .channels = 4, .bits_per_sample = 16,
+              .bytes_per_sample = 2, .sample_rates = { 48000 }, .sample_rate_count = 1 },
+        },
+        .format_count = 2,
+    };
+    flx4_uac_playback_format_t selected = {0};
+    EXPECT_TRUE(!flx4_uac_select_preferred_format(&result, &selected),
+                "24-bit and undersized-MPS formats rejected");
+    return 0;
+}
+
 static int test_select_preferred_format(void)
 {
     flx4_uac_descriptor_result_t result = {
@@ -144,6 +163,9 @@ int main(void)
         return 1;
     }
     if (test_select_preferred_format() != 0) {
+        return 1;
+    }
+    if (test_rejects_unsupported_or_oversized_formats() != 0) {
         return 1;
     }
     puts("flx4_uac_descriptors: PASS");

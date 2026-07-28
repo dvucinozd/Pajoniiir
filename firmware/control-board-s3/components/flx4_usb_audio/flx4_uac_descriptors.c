@@ -51,6 +51,32 @@ static bool format_has_rate(const flx4_uac_playback_format_t *fmt, uint32_t rate
     return false;
 }
 
+static uint32_t packet_bytes_for_rate(const flx4_uac_playback_format_t *fmt,
+                                      uint32_t rate)
+{
+    if (!fmt || rate == 0u) {
+        return UINT32_MAX;
+    }
+    const uint32_t frames_per_ms = (rate + 999u) / 1000u;
+    return frames_per_ms * (uint32_t)fmt->channels * (uint32_t)fmt->bytes_per_sample;
+}
+
+static bool format_has_supported_packetization(const flx4_uac_playback_format_t *fmt)
+{
+    if (!fmt || fmt->bits_per_sample != 16u || fmt->bytes_per_sample != 2u ||
+        (fmt->channels != 2u && fmt->channels != 4u)) {
+        return false;
+    }
+    for (uint8_t i = 0; i < fmt->sample_rate_count; ++i) {
+        const uint32_t rate = fmt->sample_rates[i];
+        if ((rate == 44100u || rate == 48000u) &&
+            packet_bytes_for_rate(fmt, rate) <= fmt->max_packet_size) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool is_complete_playback_format(const flx4_uac_playback_format_t *fmt)
 {
     return fmt &&
@@ -154,7 +180,8 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
 
     for (uint8_t i = 0; i < result->format_count && i < FLX4_UAC_MAX_FORMATS; ++i) {
         const flx4_uac_playback_format_t *fmt = &result->formats[i];
-        if (!is_complete_playback_format(fmt)) {
+        if (!is_complete_playback_format(fmt) ||
+            !format_has_supported_packetization(fmt)) {
             continue;
         }
 
@@ -165,11 +192,8 @@ bool flx4_uac_select_preferred_format(const flx4_uac_descriptor_result_t *result
         if (format_has_rate(fmt, 44100u)) {
             score += 500;
         }
-        if (fmt->bits_per_sample == 16u) {
-            score += 200;
-        } else if (fmt->bits_per_sample == 24u) {
-            score += 100;
-        }
+        /* Unsupported sample widths never reach scoring. */
+        score += 200;
         if (fmt->channels == 4u) {
             score += 40;
         } else if (fmt->channels == 2u) {

@@ -69,6 +69,78 @@ static void test_finds_midi_streaming_in_endpoint(void)
     assert(in_ep_mps == 64);
 }
 
+static void test_midi_in_and_out_must_share_interface_and_alt(void)
+{
+    const uint8_t split_cfg[] = {
+        9, 2, 55, 0, 3, 1, 0, 0x80, 50,
+        9, 4, 1, 0, 1, 0x01, 0x03, 0x00, 0,
+        7, 5, 0x81, 0x02, 64, 0, 0,
+        9, 4, 2, 0, 1, 0x01, 0x03, 0x00, 0,
+        7, 5, 0x02, 0x02, 64, 0, 0,
+        9, 4, 3, 0, 0, 0xFF, 0x00, 0x00, 0,
+    };
+    uint8_t interface_num = 0;
+    uint8_t alternate_setting = 0;
+    uint8_t in_ep_addr = 0;
+    uint16_t in_ep_mps = 0;
+    uint8_t out_ep_addr = 0;
+    uint16_t out_ep_mps = 0;
+
+    assert(!flx4_midi_find_streaming_endpoints(split_cfg, sizeof(split_cfg),
+                                                &interface_num, &alternate_setting,
+                                                &in_ep_addr, &in_ep_mps,
+                                                &out_ep_addr, &out_ep_mps));
+}
+
+static void test_midi_endpoint_parser_rejects_zero_mps(void)
+{
+    const uint8_t cfg[] = {
+        9, 2, 32, 0, 1, 1, 0, 0x80, 50,
+        9, 4, 1, 0, 2, 0x01, 0x03, 0x00, 0,
+        7, 5, 0x81, 0x02, 0, 0, 0,
+        7, 5, 0x02, 0x02, 64, 0, 0,
+    };
+    uint8_t interface_num = 0;
+    uint8_t alternate_setting = 0;
+    uint8_t in_ep_addr = 0;
+    uint16_t in_ep_mps = 0;
+    uint8_t out_ep_addr = 0;
+    uint16_t out_ep_mps = 0;
+
+    assert(!flx4_midi_find_streaming_in_endpoint(cfg, sizeof(cfg),
+                                                 &interface_num, &alternate_setting,
+                                                 &in_ep_addr, &in_ep_mps));
+    assert(!flx4_midi_find_streaming_endpoints(cfg, sizeof(cfg),
+                                               &interface_num, &alternate_setting,
+                                               &in_ep_addr, &in_ep_mps,
+                                               &out_ep_addr, &out_ep_mps));
+}
+
+static void test_finds_midi_in_and_out_on_same_alt(void)
+{
+    const uint8_t cfg[] = {
+        9, 2, 32, 0, 1, 1, 0, 0x80, 50,
+        9, 4, 4, 2, 2, 0x01, 0x03, 0x00, 0,
+        7, 5, 0x84, 0x02, 64, 0, 0,
+        7, 5, 0x04, 0x02, 64, 0, 0,
+    };
+    uint8_t interface_num = 0;
+    uint8_t alternate_setting = 0;
+    uint8_t in_ep_addr = 0;
+    uint16_t in_ep_mps = 0;
+    uint8_t out_ep_addr = 0;
+    uint16_t out_ep_mps = 0;
+
+    assert(flx4_midi_find_streaming_endpoints(cfg, sizeof(cfg),
+                                              &interface_num, &alternate_setting,
+                                              &in_ep_addr, &in_ep_mps,
+                                              &out_ep_addr, &out_ep_mps));
+    assert(interface_num == 4);
+    assert(alternate_setting == 2);
+    assert(in_ep_addr == 0x84 && in_ep_mps == 64);
+    assert(out_ep_addr == 0x04 && out_ep_mps == 64);
+}
+
 static void test_rejects_truncated_descriptor(void)
 {
     const uint8_t truncated_cfg[] = {
@@ -200,6 +272,9 @@ int main(void)
     test_parse_control_change_packet();
     test_rejects_reserved_or_null_arguments();
     test_finds_midi_streaming_in_endpoint();
+    test_midi_in_and_out_must_share_interface_and_alt();
+    test_midi_endpoint_parser_rejects_zero_mps();
+    test_finds_midi_in_and_out_on_same_alt();
     test_rejects_truncated_descriptor();
     test_connection_state_publications_are_edge_triggered();
     test_connected_state_can_be_refreshed_after_edge_publication();

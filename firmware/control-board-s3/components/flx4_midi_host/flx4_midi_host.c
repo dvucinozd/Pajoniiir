@@ -8,6 +8,7 @@ static flx4_midi_message_cb_t s_message_cb;
 static void *s_message_cb_ctx;
 static bool s_connection_state_valid;
 static bool s_connection_state_connected;
+static bool s_connection_refresh_requested;
 
 #define FLX4_MIDI_OUT_QUEUE_DEPTH 64u
 
@@ -24,21 +25,24 @@ void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_c
 
 static bool should_publish_connection_state(bool connected)
 {
-    if (!s_connection_state_valid) {
-        s_connection_state_valid = true;
-        s_connection_state_connected = connected;
+    const bool valid = __atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE);
+    const bool current = __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE);
+    if (!valid) {
+        __atomic_store_n(&s_connection_state_connected, connected, __ATOMIC_RELEASE);
+        __atomic_store_n(&s_connection_state_valid, true, __ATOMIC_RELEASE);
         return connected;
     }
-    if (s_connection_state_connected == connected) {
+    if (current == connected) {
         return false;
     }
-    s_connection_state_connected = connected;
+    __atomic_store_n(&s_connection_state_connected, connected, __ATOMIC_RELEASE);
     return true;
 }
 
 static bool should_refresh_connection_state(void)
 {
-    return s_connection_state_valid && s_connection_state_connected;
+    return __atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE) &&
+           __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE);
 }
 
 static uint8_t cin_payload_len(uint8_t cin)
@@ -118,7 +122,9 @@ bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
     }
 
     size_t offset = config_desc[0];
-    bool in_midi_streaming_interface = false;
+    bool candidate_active = false;
+    uint8_t candidate_interface = 0;
+    uint8_t candidate_alt = 0;
 
     while (offset + 2 <= total_len) {
         uint8_t len = config_desc[offset];
@@ -131,25 +137,26 @@ bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
             if (len < 9) {
                 return false;
             }
-            in_midi_streaming_interface =
+            candidate_active =
                 config_desc[offset + 5] == FLX4_USB_CLASS_AUDIO &&
                 config_desc[offset + 6] == FLX4_MIDI_STREAM_SUBCLASS;
-            if (in_midi_streaming_interface) {
-                *interface_num = config_desc[offset + 2];
-                *alternate_setting = config_desc[offset + 3];
-            }
-        } else if (in_midi_streaming_interface && type == FLX4_USB_DESC_TYPE_ENDPOINT) {
+            candidate_interface = config_desc[offset + 2];
+            candidate_alt = config_desc[offset + 3];
+        } else if (candidate_active && type == FLX4_USB_DESC_TYPE_ENDPOINT) {
             if (len < 7) {
                 return false;
             }
-            uint8_t ep_addr = config_desc[offset + 2];
-            uint8_t xfer_type = config_desc[offset + 3] & FLX4_USB_EP_XFER_TYPE_MASK;
-            bool is_stream_endpoint = xfer_type == FLX4_USB_EP_XFER_BULK ||
-                                      xfer_type == FLX4_USB_EP_XFER_INTR;
-            if ((ep_addr & FLX4_USB_EP_DIR_IN_MASK) && is_stream_endpoint) {
+            const uint8_t ep_addr = config_desc[offset + 2];
+            const uint8_t xfer_type = config_desc[offset + 3] & FLX4_USB_EP_XFER_TYPE_MASK;
+            const uint16_t mps = (uint16_t)config_desc[offset + 4] |
+                                 ((uint16_t)config_desc[offset + 5] << 8);
+            const bool is_stream_endpoint = xfer_type == FLX4_USB_EP_XFER_BULK ||
+                                            xfer_type == FLX4_USB_EP_XFER_INTR;
+            if ((ep_addr & FLX4_USB_EP_DIR_IN_MASK) && is_stream_endpoint && mps != 0u) {
+                *interface_num = candidate_interface;
+                *alternate_setting = candidate_alt;
                 *in_ep_addr = ep_addr;
-                *in_ep_mps = (uint16_t)config_desc[offset + 4] |
-                             ((uint16_t)config_desc[offset + 5] << 8);
+                *in_ep_mps = mps;
                 return true;
             }
         }
@@ -185,9 +192,15 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
     }
 
     size_t offset = config_desc[0];
-    bool in_midi_streaming_interface = false;
+    bool candidate_active = false;
     bool found_in = false;
     bool found_out = false;
+    uint8_t candidate_interface = 0;
+    uint8_t candidate_alt = 0;
+    uint8_t candidate_in = 0;
+    uint8_t candidate_out = 0;
+    uint16_t candidate_in_mps = 0;
+    uint16_t candidate_out_mps = 0;
 
     while (offset + 2 <= total_len) {
         uint8_t len = config_desc[offset];
@@ -200,31 +213,45 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
             if (len < 9) {
                 return false;
             }
-            in_midi_streaming_interface =
+            if (candidate_active && found_in && found_out) {
+                *interface_num = candidate_interface;
+                *alternate_setting = candidate_alt;
+                *in_ep_addr = candidate_in;
+                *in_ep_mps = candidate_in_mps;
+                *out_ep_addr = candidate_out;
+                *out_ep_mps = candidate_out_mps;
+                return true;
+            }
+
+            candidate_active =
                 config_desc[offset + 5] == FLX4_USB_CLASS_AUDIO &&
                 config_desc[offset + 6] == FLX4_MIDI_STREAM_SUBCLASS;
-            if (in_midi_streaming_interface) {
-                *interface_num = config_desc[offset + 2];
-                *alternate_setting = config_desc[offset + 3];
-            }
-        } else if (in_midi_streaming_interface && type == FLX4_USB_DESC_TYPE_ENDPOINT) {
+            candidate_interface = config_desc[offset + 2];
+            candidate_alt = config_desc[offset + 3];
+            found_in = false;
+            found_out = false;
+            candidate_in = 0;
+            candidate_out = 0;
+            candidate_in_mps = 0;
+            candidate_out_mps = 0;
+        } else if (candidate_active && type == FLX4_USB_DESC_TYPE_ENDPOINT) {
             if (len < 7) {
                 return false;
             }
-            uint8_t ep_addr = config_desc[offset + 2];
-            uint8_t xfer_type = config_desc[offset + 3] & FLX4_USB_EP_XFER_TYPE_MASK;
-            bool is_stream_endpoint = xfer_type == FLX4_USB_EP_XFER_BULK ||
-                                      xfer_type == FLX4_USB_EP_XFER_INTR;
-            if (is_stream_endpoint) {
-                if (ep_addr & FLX4_USB_EP_DIR_IN_MASK) {
-                    *in_ep_addr = ep_addr;
-                    *in_ep_mps = (uint16_t)config_desc[offset + 4] |
+            const uint8_t ep_addr = config_desc[offset + 2];
+            const uint8_t xfer_type = config_desc[offset + 3] & FLX4_USB_EP_XFER_TYPE_MASK;
+            const uint16_t mps = (uint16_t)config_desc[offset + 4] |
                                  ((uint16_t)config_desc[offset + 5] << 8);
+            const bool is_stream_endpoint = xfer_type == FLX4_USB_EP_XFER_BULK ||
+                                            xfer_type == FLX4_USB_EP_XFER_INTR;
+            if (is_stream_endpoint && mps != 0u) {
+                if (ep_addr & FLX4_USB_EP_DIR_IN_MASK) {
+                    candidate_in = ep_addr;
+                    candidate_in_mps = mps;
                     found_in = true;
                 } else {
-                    *out_ep_addr = ep_addr;
-                    *out_ep_mps = (uint16_t)config_desc[offset + 4] |
-                                  ((uint16_t)config_desc[offset + 5] << 8);
+                    candidate_out = ep_addr;
+                    candidate_out_mps = mps;
                     found_out = true;
                 }
             }
@@ -233,7 +260,16 @@ bool flx4_midi_find_streaming_endpoints(const uint8_t *config_desc,
         offset += len;
     }
 
-    return found_in && found_out;
+    if (!(candidate_active && found_in && found_out)) {
+        return false;
+    }
+    *interface_num = candidate_interface;
+    *alternate_setting = candidate_alt;
+    *in_ep_addr = candidate_in;
+    *in_ep_mps = candidate_in_mps;
+    *out_ep_addr = candidate_out;
+    *out_ep_mps = candidate_out_mps;
+    return true;
 }
 
 bool flx4_midi_format_descriptor_hex_row(const uint8_t *data,
@@ -300,8 +336,9 @@ bool flx4_midi_host_should_drop_out_packet(const uint8_t packet[4],
 #if defined(FLX4_MIDI_HOST_PC_TEST)
 void flx4_midi_host_test_reset_connection_state(void)
 {
-    s_connection_state_valid = false;
-    s_connection_state_connected = false;
+    __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_connected, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_refresh_requested, false, __ATOMIC_RELEASE);
 }
 
 bool flx4_midi_host_test_publish_connection_state(
@@ -422,20 +459,32 @@ static void publish_connection_state(bool connected)
     }
 }
 
-bool flx4_midi_host_refresh_connection_state(void)
+static void publish_connection_refresh_from_usb_owner(void)
 {
     if (!should_refresh_connection_state()) {
-        return false;
+        return;
     }
-
     esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE,
                                               CTRL_ID_FLX4_CONNECTION,
                                               CTRL_FLX4_CONNECTED);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "refresh FLX4 connection state failed: %s", esp_err_to_name(rc));
-        return false;
+        return;
     }
     desc_report_send_if_valid();
+}
+
+bool flx4_midi_host_refresh_connection_state(void)
+{
+    if (!should_refresh_connection_state()) {
+        return false;
+    }
+    __atomic_store_n(&s_connection_refresh_requested, true, __ATOMIC_RELEASE);
+    usb_host_client_handle_t client =
+        __atomic_load_n(&s_midi_client_handle, __ATOMIC_ACQUIRE);
+    if (client) {
+        (void)usb_host_client_unblock(client);
+    }
     return true;
 }
 
@@ -653,18 +702,24 @@ static void midi_out_transfer_cb(usb_transfer_t *transfer)
 
 
 static bool find_midi_streaming_endpoints(const usb_config_desc_t *cfg,
-                                         uint8_t *interface_num,
-                                         uint8_t *alternate_setting,
-                                         uint8_t *in_ep_addr,
-                                         uint16_t *in_ep_mps,
-                                         uint8_t *out_ep_addr,
-                                         uint16_t *out_ep_mps)
+                                          uint8_t *interface_num,
+                                          uint8_t *alternate_setting,
+                                          uint8_t *in_ep_addr,
+                                          uint16_t *in_ep_mps,
+                                          uint8_t *out_ep_addr,
+                                          uint16_t *out_ep_mps)
 {
     const uint8_t *base = (const uint8_t *)cfg;
     int offset = cfg->bLength;
-    bool in_midi_streaming_interface = false;
+    bool candidate_active = false;
     bool found_in = false;
     bool found_out = false;
+    uint8_t candidate_interface = 0;
+    uint8_t candidate_alt = 0;
+    uint8_t candidate_in = 0;
+    uint8_t candidate_out = 0;
+    uint16_t candidate_in_mps = 0;
+    uint16_t candidate_out_mps = 0;
 
     while (offset + USB_STANDARD_DESC_SIZE <= cfg->wTotalLength) {
         const usb_standard_desc_t *std = (const usb_standard_desc_t *)(base + offset);
@@ -679,10 +734,29 @@ static bool find_midi_streaming_endpoints(const usb_config_desc_t *cfg,
 
         if (std->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE &&
             std->bLength >= USB_INTF_DESC_SIZE) {
+            if (candidate_active && found_in && found_out) {
+                *interface_num = candidate_interface;
+                *alternate_setting = candidate_alt;
+                *in_ep_addr = candidate_in;
+                *in_ep_mps = candidate_in_mps;
+                *out_ep_addr = candidate_out;
+                *out_ep_mps = candidate_out_mps;
+                return true;
+            }
+
             const usb_intf_desc_t *intf = (const usb_intf_desc_t *)std;
-            in_midi_streaming_interface =
+            candidate_active =
                 intf->bInterfaceClass == USB_CLASS_AUDIO &&
                 intf->bInterfaceSubClass == FLX4_MIDI_STREAM_SUBCLASS;
+            candidate_interface = intf->bInterfaceNumber;
+            candidate_alt = intf->bAlternateSetting;
+            found_in = false;
+            found_out = false;
+            candidate_in = 0;
+            candidate_out = 0;
+            candidate_in_mps = 0;
+            candidate_out_mps = 0;
+
             ESP_LOGI(TAG,
                      "interface=%u alt=%u class=0x%02X subclass=0x%02X endpoints=%u%s",
                      intf->bInterfaceNumber,
@@ -690,34 +764,28 @@ static bool find_midi_streaming_endpoints(const usb_config_desc_t *cfg,
                      intf->bInterfaceClass,
                      intf->bInterfaceSubClass,
                      intf->bNumEndpoints,
-                     in_midi_streaming_interface ? " MIDIStreaming" : "");
-            if (in_midi_streaming_interface) {
-                *interface_num = intf->bInterfaceNumber;
-                *alternate_setting = intf->bAlternateSetting;
-            }
-        } else if (in_midi_streaming_interface &&
+                     candidate_active ? " MIDIStreaming" : "");
+        } else if (candidate_active &&
                    std->bDescriptorType == USB_B_DESCRIPTOR_TYPE_ENDPOINT &&
                    std->bLength >= USB_EP_DESC_SIZE) {
             const usb_ep_desc_t *ep = (const usb_ep_desc_t *)std;
             const bool is_in = (ep->bEndpointAddress & USB_B_ENDPOINT_ADDRESS_EP_DIR_MASK) != 0;
             const uint8_t xfer_type = ep->bmAttributes & USB_BM_ATTRIBUTES_XFERTYPE_MASK;
+            const uint16_t mps = USB_EP_DESC_GET_MPS(ep);
             const bool is_stream_endpoint =
                 xfer_type == USB_BM_ATTRIBUTES_XFER_BULK ||
                 xfer_type == USB_BM_ATTRIBUTES_XFER_INT;
             ESP_LOGI(TAG,
                      "  endpoint=0x%02X attr=0x%02X mps=%u interval=%u",
-                     ep->bEndpointAddress,
-                     ep->bmAttributes,
-                     USB_EP_DESC_GET_MPS(ep),
-                     ep->bInterval);
-            if (is_stream_endpoint) {
+                     ep->bEndpointAddress, ep->bmAttributes, mps, ep->bInterval);
+            if (is_stream_endpoint && mps != 0u) {
                 if (is_in) {
-                    *in_ep_addr = ep->bEndpointAddress;
-                    *in_ep_mps = USB_EP_DESC_GET_MPS(ep);
+                    candidate_in = ep->bEndpointAddress;
+                    candidate_in_mps = mps;
                     found_in = true;
                 } else {
-                    *out_ep_addr = ep->bEndpointAddress;
-                    *out_ep_mps = USB_EP_DESC_GET_MPS(ep);
+                    candidate_out = ep->bEndpointAddress;
+                    candidate_out_mps = mps;
                     found_out = true;
                 }
             }
@@ -726,7 +794,16 @@ static bool find_midi_streaming_endpoints(const usb_config_desc_t *cfg,
         offset += std->bLength;
     }
 
-    return found_in && found_out;
+    if (!(candidate_active && found_in && found_out)) {
+        return false;
+    }
+    *interface_num = candidate_interface;
+    *alternate_setting = candidate_alt;
+    *in_ep_addr = candidate_in;
+    *in_ep_mps = candidate_in_mps;
+    *out_ep_addr = candidate_out;
+    *out_ep_mps = candidate_out_mps;
+    return true;
 }
 
 static esp_err_t start_midi_in_transfer(flx4_host_state_t *host)
@@ -1001,8 +1078,12 @@ static void midi_client_task(void *arg)
     while (1) {
         usb_host_client_handle_events(s_host.client_hdl, pdMS_TO_TICKS(100));
         if (s_host.closing) {
+            __atomic_store_n(&s_connection_refresh_requested, false, __ATOMIC_RELEASE);
             (void)close_device_step(&s_host);
             continue;
+        }
+        if (__atomic_exchange_n(&s_connection_refresh_requested, false, __ATOMIC_ACQ_REL)) {
+            publish_connection_refresh_from_usb_owner();
         }
         if (s_host.has_pending_dev) {
             const uint8_t addr = s_host.pending_dev_addr;
