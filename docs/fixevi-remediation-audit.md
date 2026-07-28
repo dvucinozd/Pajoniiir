@@ -85,9 +85,8 @@ Statusi:
 
 ## Preporučeni nastavak
 
-1. Hardverski potvrditi USB reconciliation i single-framebuffer prikaz.
-2. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
-3. Implementirati rolling/bounded compressed page cache za velike audio datoteke.
-4. Nastaviti ownership-oriented razlaganje preostalih monolita bez širokog refaktora ponašanja.
-5. Recorder zadržati isključen dok njegov zasebni safety PR ne prođe fault injection.
-6. AP autentikaciju i secure-boot/flash-encryption voditi kao zasebne security/provisioning odluke.
+1. Hardverski potvrditi USB reconciliation, single-framebuffer prikaz i bounded-cache reprodukciju s realnim MP3/FLAC/WAV fixtureima pod dual-deck opterećenjem.
+2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
+3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.
+4. Dovršiti FLX4 MIDI/audio, PCM5102A i monitor/headphone, S3↔P4 reconnect, Wi-Fi/OTA exclusion te dugotrajne soak fizičke gateove.
+5. AP autentikaciju, fizičku OTA potvrdu, PMF/WPA3 te Secure Boot/Flash Encryption voditi kao zasebne proizvodne i provisioning odluke.
