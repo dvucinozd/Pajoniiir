@@ -384,8 +384,10 @@ static void ui_library_apply_loaded_track(uint8_t deck,
 static void ui_library_apply_empty_track(uint8_t deck)
 {
     deck = ui_library_deck_index(deck);
+#ifndef WIN32
     s_loaded_media_valid[deck] = false;
     memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
+#endif
     s_deck_loaded_track_valid[deck] = false;
     s_deck_loaded_track_key[deck] = 0u;
     if (s_library_config.actions.clear_deck_track_info) {
