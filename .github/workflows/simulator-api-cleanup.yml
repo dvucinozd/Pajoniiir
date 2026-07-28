@@ -24,6 +24,7 @@ jobs:
       - name: Apply cleanup patch
         shell: bash
         run: |
+          exec > >(tee patch.log) 2>&1
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
@@ -32,6 +33,7 @@ jobs:
               p = Path(path)
               text = p.read_text(encoding="utf-8")
               actual = text.count(old)
+              print(f"{path}: {old!r} count={actual}")
               if actual != count:
                   raise SystemExit(f"{path}: expected {count} x {old!r}, found {actual}")
               p.write_text(text.replace(old, new), encoding="utf-8")
@@ -50,6 +52,7 @@ jobs:
           host = Path("tests/run_p4_host_tests_current.ps1")
           text = host.read_text(encoding="utf-8")
           marker = "\n'@\n\n$text = Get-Content -LiteralPath $source -Raw"
+          print(f"host guard marker count={text.count(marker)}")
           guards = r'''
 
           Assert-FileContains `
@@ -84,6 +87,7 @@ jobs:
           workflow = Path(".github/workflows/esp-idf-6-migration.yml")
           text = workflow.read_text(encoding="utf-8")
           marker = "      - name: Upload host-test logs\n"
+          print(f"workflow step marker count={text.count(marker)}")
           step = '''      - name: Run UI simulator screenshot gate
                 shell: pwsh
                 run: |
@@ -97,6 +101,7 @@ jobs:
               raise SystemExit("host-log step marker mismatch")
           text = text.replace(marker, step + marker)
           log_marker = "              p4-host-tests.log\n"
+          print(f"workflow log marker count={text.count(log_marker)}")
           if text.count(log_marker) != 1:
               raise SystemExit("host artifact marker mismatch")
           workflow.write_text(
@@ -168,5 +173,6 @@ jobs:
           name: simulator-api-cleanup-validation
           if-no-files-found: ignore
           path: |
+            patch.log
             p4-host-tests.log
             ui-simulator.log
