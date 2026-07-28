@@ -20,9 +20,9 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .git
-          tar -czf ../pajoniiir-p3-source.tar.gz .
+          tar -czf pajoniiir-p3-source.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: pajoniiir-p3-source
-          path: ../pajoniiir-p3-source.tar.gz
+          path: pajoniiir-p3-source.tar.gz
           if-no-files-found: error
