@@ -1,0 +1,65 @@
+name: Temporary migration integration diagnose
+
+on:
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/integrate-migration-diagnose.yml"
+
+permissions:
+  contents: read
+
+env:
+  FEATURE_BRANCH: fix/release-blockers-and-concurrency
+  FEATURE_SHA: 3744902b3afb19971fd5345966ae943abe7af722
+  MIGRATION_BRANCH: migration/esp-idf-6.0.2
+  MIGRATION_SHA: 838e78186521abb998af9c9cef9f93dc25cde633
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Diagnose real merge
+        shell: bash
+        run: |
+          set -u
+          git fetch origin "$FEATURE_BRANCH" "$MIGRATION_BRANCH"
+          test "$(git rev-parse origin/$FEATURE_BRANCH)" = "$FEATURE_SHA"
+          test "$(git rev-parse origin/$MIGRATION_BRANCH)" = "$MIGRATION_SHA"
+          git checkout -B integration-work "origin/$FEATURE_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set +e
+          git merge --no-commit --no-ff "origin/$MIGRATION_BRANCH" > merge-output.txt 2>&1
+          rc=$?
+          set -e
+          git status --short > merge-status.txt
+          git diff --name-only --diff-filter=U > conflict-files.txt
+          mkdir -p conflict-snapshot
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            mkdir -p "conflict-snapshot/$(dirname "$path")"
+            cp "$path" "conflict-snapshot/$path"
+            git show ":1:$path" > "conflict-snapshot/$path.base" || true
+            git show ":2:$path" > "conflict-snapshot/$path.feature" || true
+            git show ":3:$path" > "conflict-snapshot/$path.migration" || true
+          done < conflict-files.txt
+          printf '%s\n' "$rc" > merge-exit-code.txt
+          cat merge-output.txt
+          cat merge-status.txt
+          cat conflict-files.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migration-integration-diagnose
+          if-no-files-found: error
+          path: |
+            merge-output.txt
+            merge-status.txt
+            conflict-files.txt
+            merge-exit-code.txt
+            conflict-snapshot
