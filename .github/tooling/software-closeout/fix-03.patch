@@ -1,0 +1,14 @@
+--- a/tests/run_p4_host_tests.ps1
++++ b/tests/run_p4_host_tests.ps1
+@@ -753,9 +753,9 @@
+     -LiteralPatterns @("oldest_index")
+ 
+ Assert-FileContains `
+-    -Name "p4 estimated seek rejects a missing file source" `
++    -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
+     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+-    -LiteralPatterns @("else if (eng->fp)", "Estimate seek rejected: no file source")
++    -LiteralPatterns @("A cache miss after the cursor move", "eng->file_pos = target_byte", "Estimate seek %u ms")
+ 
+ Assert-FileContains `
+     -Name "p4 deck_core quantize binary-searches the beatgrid" `
