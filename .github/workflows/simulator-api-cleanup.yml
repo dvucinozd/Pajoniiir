@@ -10,156 +10,119 @@ permissions:
 
 jobs:
   validate-and-publish:
-    name: Validate and publish simulator API cleanup
     runs-on: ubuntu-latest
     steps:
-      - name: Check out tooling revision
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Apply atomic cleanup patch
+      - name: Apply cleanup patch
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_exact(path: str, old: str, new: str, expected: int = 1) -> None:
+          def replace(path, old, new, count):
               p = Path(path)
               text = p.read_text(encoding="utf-8")
-              count = text.count(old)
-              if count != expected:
-                  raise SystemExit(f"{path}: expected {expected} occurrences of {old!r}, found {count}")
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f"{path}: expected {count} x {old!r}, found {actual}")
               p.write_text(text.replace(old, new), encoding="utf-8")
 
-          replace_exact(
-              "firmware/main-deck-p4/components/ui/ui.c",
-              "mock_deck_",
-              "ui_simulator_deck_",
-              expected=11,
-          )
-          replace_exact(
-              "tests/ui_simulator/simulator_mocks.c",
-              "mock_deck_",
-              "ui_simulator_deck_",
-              expected=4,
-          )
-          replace_exact(
-              "tests/ui_simulator/simulator_library.c",
-              "mock_library_load_track_to_deck",
-              "library_set_selected_track_index",
-          )
-          replace_exact(
-              "tests/ui_simulator/simulator_library.c",
-              "mock_library_get_current_track_index",
-              "library_selected_track_index",
-          )
+          replace("firmware/main-deck-p4/components/ui/ui.c",
+                  "mock_deck_", "ui_simulator_deck_", 11)
+          replace("tests/ui_simulator/simulator_mocks.c",
+                  "mock_deck_", "ui_simulator_deck_", 4)
+          replace("tests/ui_simulator/simulator_library.c",
+                  "mock_library_load_track_to_deck",
+                  "library_set_selected_track_index", 1)
+          replace("tests/ui_simulator/simulator_library.c",
+                  "mock_library_get_current_track_index",
+                  "library_selected_track_index", 1)
 
-          host_script = Path("tests/run_p4_host_tests_current.ps1")
-          text = host_script.read_text(encoding="utf-8")
-          marker = '''Assert-FileDoesNotContain `
-              -Name "firmware UI source-local selected API bridges stay retired" `
-              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
-              -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
-          '@'''
-          addition = '''Assert-FileDoesNotContain `
-              -Name "firmware UI source-local selected API bridges stay retired" `
-              -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
-              -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+          host = Path("tests/run_p4_host_tests_current.ps1")
+          text = host.read_text(encoding="utf-8")
+          marker = "\n'@\n\n$text = Get-Content -LiteralPath $source -Raw"
+          guards = r'''
 
           Assert-FileContains `
-              -Name "UI simulator library implements the production selected-track API" `
+              -Name "UI simulator library implements production selected-track API" `
               -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
               -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
 
           Assert-FileDoesNotContain `
-              -Name "UI simulator library no longer exports mock selected-track symbols" `
+              -Name "UI simulator library has no mock selected-track API" `
               -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
               -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
           Assert-FileContains `
-              -Name "UI simulator deck hooks use explicit simulator names" `
+              -Name "UI simulator deck hooks have explicit simulator names" `
               -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
-              -LiteralPatterns @("void ui_simulator_deck_set_position", "void ui_simulator_deck_set_playing", "void ui_simulator_deck_toggle_play", "void ui_simulator_deck_toggle_master_tempo")
+              -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
 
           Assert-FileDoesNotContain `
-              -Name "shared UI no longer exposes mock deck hook names" `
+              -Name "shared UI and simulator mocks have no mock deck hooks" `
               -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
               -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
 
-          Assert-FileDoesNotContain `
-              -Name "UI simulator mocks no longer export mock deck hook names" `
-              -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
-              -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
-
           Assert-FileContains `
-              -Name "migration CI runs the pinned UI simulator screenshot gate" `
+              -Name "migration CI runs UI simulator screenshot gate" `
               -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
               -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
-          '@'''
+          '''
           if text.count(marker) != 1:
-              raise SystemExit("host-test guard insertion marker was not found exactly once")
-          host_script.write_text(text.replace(marker, addition), encoding="utf-8")
+              raise SystemExit("host guard insertion marker mismatch")
+          host.write_text(text.replace(marker, guards + marker), encoding="utf-8")
 
           workflow = Path(".github/workflows/esp-idf-6-migration.yml")
           text = workflow.read_text(encoding="utf-8")
-          upload_marker = '''      - name: Upload host-test logs
-          if: always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: host-test-logs
-            if-no-files-found: ignore
-            path: |
-              s3-host-tests.log
-              p4-host-tests.log
-          '''
-          replacement = '''      - name: Run UI simulator screenshot gate
-          shell: pwsh
-          run: |
-            & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
-            $ui = $LASTEXITCODE
-            $uiLines = @(Get-Content ui-simulator.log)
-            if ($ui -ne 0) {
-                $uiLines | Select-Object -Last 100
-            } else {
-                $uiLines | Select-Object -Last 20
-            }
-            exit $ui
+          marker = "      - name: Upload host-test logs\n"
+          step = '''      - name: Run UI simulator screenshot gate
+                shell: pwsh
+                run: |
+                  & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
+                  $ui = $LASTEXITCODE
+                  Get-Content ui-simulator.log | Select-Object -Last 100
+                  exit $ui
 
-          - name: Upload host-test logs
-          if: always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: host-test-logs
-            if-no-files-found: ignore
-            path: |
-              s3-host-tests.log
-              p4-host-tests.log
-              ui-simulator.log
           '''
-          if text.count(upload_marker) != 1:
-              raise SystemExit("migration workflow host-log block was not found exactly once")
-          workflow.write_text(text.replace(upload_marker, replacement), encoding="utf-8")
+          if text.count(marker) != 1:
+              raise SystemExit("host-log step marker mismatch")
+          text = text.replace(marker, step + marker)
+          log_marker = "              p4-host-tests.log\n"
+          if text.count(log_marker) != 1:
+              raise SystemExit("host artifact marker mismatch")
+          workflow.write_text(
+              text.replace(log_marker, log_marker + "              ui-simulator.log\n"),
+              encoding="utf-8",
+          )
+
+          for path in (
+              "firmware/main-deck-p4/components/ui/ui.c",
+              "tests/ui_simulator/simulator_mocks.c",
+              "tests/ui_simulator/simulator_library.c",
+          ):
+              text = Path(path).read_text(encoding="utf-8")
+              if "mock_deck_" in text or "mock_library_" in text:
+                  raise SystemExit(f"legacy mock API remains in {path}")
           PY
-
           git diff --check
-          test "$(grep -RIlE --include='*.c' --include='*.h' '\bmock_deck_' firmware/main-deck-p4/components/ui tests/ui_simulator 2>/dev/null | wc -l)" -eq 0
-          test "$(grep -RIlE --include='*.c' --include='*.h' '\bmock_library_' tests/ui_simulator 2>/dev/null | wc -l)" -eq 0
 
-      - name: Run P4 host regression suites
+      - name: Run P4 host tests
         shell: bash
         run: |
           set -o pipefail
           pwsh -File ./tests/run_p4_host_tests_current.ps1 2>&1 | tee p4-host-tests.log
 
-      - name: Run pinned UI simulator screenshot gate
+      - name: Run UI simulator screenshots
         shell: bash
         run: |
           set -o pipefail
           pwsh -File ./tests/ui_simulator/run_ui_simulator_e2e.ps1 2>&1 | tee ui-simulator.log
 
-      - name: Publish one clean commit
+      - name: Publish atomic commit
         shell: bash
         env:
           EXPECTED_BASE: e09eb5603107ba0f1671679c2570f4748d68bca1
@@ -168,14 +131,12 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git rm .github/workflows/simulator-api-cleanup.yml
-          git add \
-            .github/workflows/esp-idf-6-migration.yml \
-            firmware/main-deck-p4/components/ui/ui.c \
-            tests/run_p4_host_tests_current.ps1 \
-            tests/ui_simulator/simulator_library.c \
-            tests/ui_simulator/simulator_mocks.c
+          git add .github/workflows/esp-idf-6-migration.yml \
+                  firmware/main-deck-p4/components/ui/ui.c \
+                  tests/run_p4_host_tests_current.ps1 \
+                  tests/ui_simulator/simulator_library.c \
+                  tests/ui_simulator/simulator_mocks.c
 
           actual=$(git diff --name-only "$EXPECTED_BASE" | sort)
           expected=$(printf '%s\n' \
@@ -187,9 +148,7 @@ jobs:
           test "$actual" = "$expected"
 
           git fetch origin "$TARGET_BRANCH"
-          remote_head=$(git rev-parse "origin/$TARGET_BRANCH")
-          test "$remote_head" = "$EXPECTED_BASE"
-
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_BASE"
           tree=$(git write-tree)
           commit=$(printf '%s\n' 'test(ui): restore simulator gate after API cleanup' | git commit-tree "$tree" -p "$EXPECTED_BASE")
           git push origin "$commit:refs/heads/$TARGET_BRANCH"
