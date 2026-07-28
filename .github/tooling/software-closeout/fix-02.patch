@@ -1,0 +1,22 @@
+--- a/tests/audio_recorder_finalize/test_audio_recorder_finalize.c
++++ b/tests/audio_recorder_finalize/test_audio_recorder_finalize.c
+@@ -47,7 +47,7 @@
+         r = audio_recorder_finalize_run(&f, patch, sync_step, close_step, publish, true);
+         CHECK(r.failed_stage == durability_failure_stages[fail]);
+         CHECK(r.closed && !r.published);
+-        CHECK(strcmp(f.calls, "PSC") == 0); /* never rename a failed `.part` */
++        CHECK(strcmp(f.calls, "PSC") == 0); /* never rename a failed .part */
+     }
+ 
+     f = good();
+--- a/tests/run_p4_host_tests_current.ps1
++++ b/tests/run_p4_host_tests_current.ps1
+@@ -270,7 +270,7 @@
+ Assert-FileContains `
+     -Name "recorder finalize fault injection forbids rename after every durability failure" `
+     -Path (Join-Path $RepoRoot "tests/audio_recorder_finalize/test_audio_recorder_finalize.c") `
+-    -LiteralPatterns @("never rename a failed `.part`", "AUDIO_RECORDER_FINALIZE_STAGE_PATCH", "AUDIO_RECORDER_FINALIZE_STAGE_SYNC", "AUDIO_RECORDER_FINALIZE_STAGE_CLOSE", "AUDIO_RECORDER_FINALIZE_STAGE_PUBLISH")
++    -LiteralPatterns @("never rename a failed .part", "AUDIO_RECORDER_FINALIZE_STAGE_PATCH", "AUDIO_RECORDER_FINALIZE_STAGE_SYNC", "AUDIO_RECORDER_FINALIZE_STAGE_CLOSE", "AUDIO_RECORDER_FINALIZE_STAGE_PUBLISH")
+ 
+ Assert-FileContains `
+     -Name "recorder producer gate test covers the close versus in-flight producer race" `
