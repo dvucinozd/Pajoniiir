@@ -34,15 +34,18 @@ jobs:
           echo "736a364b132690de440ea714b82ed7a1a684edd40dac60ade7fdd2e63c99ed23  /tmp/software-closeout.patch.gz.b64" | sha256sum -c -
           base64 -d /tmp/software-closeout.patch.gz.b64 | gzip -d > /tmp/software-closeout.patch
           echo "7ecd9ad5c53779973a2b502686d3d2c237fe4f85d10f2bc91a16e4c91d5bdc7a  /tmp/software-closeout.patch" | sha256sum -c -
-          cp .github/tooling/software-closeout/fix-01.patch /tmp/software-closeout-fix-01.patch
-          echo "b738b0ec626aa459afeedf6e54d7356a02227e8c311f4da5c69560ecb93f2d9f  /tmp/software-closeout-fix-01.patch" | sha256sum -c -
+          cp .github/tooling/software-closeout/fix-*.patch /tmp/
+          echo "b738b0ec626aa459afeedf6e54d7356a02227e8c311f4da5c69560ecb93f2d9f  /tmp/fix-01.patch" | sha256sum -c -
+          echo "a97d1c83c576a34a7141876de730bb252c2cde66d258745e29acdc006b441e19  /tmp/fix-02.patch" | sha256sum -c -
 
           git fetch origin "$TARGET_BRANCH"
           actual_parent="$(git rev-parse "origin/$TARGET_BRANCH")"
           test "$actual_parent" = "$EXPECTED_PARENT"
           git checkout -B software-closeout-publish "origin/$TARGET_BRANCH"
           patch -p1 --forward < /tmp/software-closeout.patch
-          patch -p1 --forward < /tmp/software-closeout-fix-01.patch
+          for fix in /tmp/fix-*.patch; do
+            patch -p1 --forward < "$fix"
+          done
           git diff --check
 
           test ! -e docs/software-closeout-plan.md
