@@ -41,29 +41,6 @@ static void test_mixer_saturates_instead_of_wrapping(void)
     assert(audio_mixer_mix_sample(10000, -4000, 0.5f, 0.25f) == 4000);
 }
 
-static void test_stereo_frame_uses_channel_and_crossfader_gains(void)
-{
-    audio_mixer_frame_t out = audio_mixer_mix_stereo(
-        (audio_mixer_frame_t){ .left = 10000, .right = -10000 },
-        (audio_mixer_frame_t){ .left = 10000, .right = 10000 },
-        1.0f,
-        1.0f,
-        AUDIO_MIXER_CONTROL_CENTER);
-
-    assert(out.left == 20000);
-    assert(out.right == 0);
-
-    out = audio_mixer_mix_stereo(
-        (audio_mixer_frame_t){ .left = 12000, .right = 12000 },
-        (audio_mixer_frame_t){ .left = 30000, .right = 30000 },
-        1.0f,
-        1.0f,
-        0);
-
-    assert(out.left == 12000);
-    assert(out.right == 12000);
-}
-
 static void test_apply_gain_scales_stereo_frame(void)
 {
     audio_mixer_frame_t out = audio_mixer_apply_gain(
@@ -125,7 +102,6 @@ int main(void)
     test_fader_gain_clamps_to_unit_range();
     test_crossfader_keeps_center_both_decks_open();
     test_mixer_saturates_instead_of_wrapping();
-    test_stereo_frame_uses_channel_and_crossfader_gains();
     test_apply_gain_scales_stereo_frame();
     test_master_limiter_soft_knee_is_transparent_until_hot_peak();
     test_master_limiter_handles_full_int32_domain();

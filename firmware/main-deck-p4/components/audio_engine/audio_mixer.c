@@ -2,7 +2,7 @@
 
 static float clamp_gain(float gain)
 {
-    /* The negated comparison also rejects NaN.  Letting NaN reach a float to
+    /* The negated comparison also rejects NaN. Letting NaN reach a float to
      * integer conversion is undefined behaviour and can poison the real-time
      * output path. */
     if (!(gain > 0.0f)) return 0.0f;
@@ -110,24 +110,5 @@ audio_mixer_frame_t audio_mixer_apply_gain(audio_mixer_frame_t frame, float gain
     return (audio_mixer_frame_t) {
         .left = audio_mixer_mix_sample(frame.left, 0, gain, 0.0f),
         .right = audio_mixer_mix_sample(frame.right, 0, gain, 0.0f),
-    };
-}
-
-audio_mixer_frame_t audio_mixer_mix_stereo(audio_mixer_frame_t deck1,
-                                           audio_mixer_frame_t deck2,
-                                           float deck1_channel_gain,
-                                           float deck2_channel_gain,
-                                           uint16_t crossfader)
-{
-    float xf1 = 1.0f;
-    float xf2 = 1.0f;
-    audio_mixer_crossfader_gains(crossfader, &xf1, &xf2);
-
-    float g1 = clamp_gain(deck1_channel_gain) * xf1;
-    float g2 = clamp_gain(deck2_channel_gain) * xf2;
-
-    return (audio_mixer_frame_t) {
-        .left = audio_mixer_mix_sample(deck1.left, deck2.left, g1, g2),
-        .right = audio_mixer_mix_sample(deck1.right, deck2.right, g1, g2),
     };
 }
