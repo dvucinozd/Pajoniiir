@@ -80,3 +80,4 @@ void library_free_current_anlz(void);
  * deck-load API; real loads use media_catalog identity + generation. */
 void library_set_selected_track_index(int track_index);
 int  library_selected_track_index(void);
+

@@ -12,6 +12,7 @@ clean release build is newer than the installed firmware.
   OTA/controller/startup hardening and has not yet been signed, packaged or
   installed. Exact raw-image sizes and SHA-256 values are recorded in
   `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
+- [x] ESP-IDF v6.0.2 Migration: Svi softverski buildovi i host testovi za P4 i S3 u potpunosti prolaze pod ESP-IDF v6.0.2 na dan 2026-07-28 (grana `migration/esp-idf-6.0.2`).
 - [x] Last known matching bench baseline: P4 and S3 both
   `RC1-254-g21f21963` as of 2026-07-24.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
@@ -71,14 +72,12 @@ clean release build is newer than the installed firmware.
 
 ## Local Tooling
 
-- [x] Confirm ESP-IDF v5.5 is installed.
-- [x] Confirm `Initialize-Idf.ps1` works in PowerShell.
+- [x] Confirm ESP-IDF v6.0.2 is installed (migrated from v5.5.4).
+- [x] Confirm v6.0.2 PowerShell profile init script works in PowerShell.
 - [x] Confirm `idf.py --version`.
-- [x] Confirm MinGW/GCC is available for PC tests.
-- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions when `make`
-  is not present in PATH.
-- [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions when `make`
-  is not present in PATH.
+- [x] Confirm MinGW/GCC is available for PC tests (msys64 ucrt64).
+- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions (adapted for PowerShell 5.1 compatibility).
+- [x] Use `tests/run_p4_host_tests_current.ps1` for P4 host regressions (adapted for PowerShell 5.1 compatibility).
 
 ## Baseline Builds
 
