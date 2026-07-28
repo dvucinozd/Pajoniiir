@@ -104,28 +104,30 @@ $text = $text.Replace($oldOta, $newOta)
 
 $deckCoreSource = '"../../firmware/main-deck-p4/components/deck_core/deck_core.c"'
 $deckCoreWrapper = '"deck_core_test_snapshot_wrapper.c"'
-$deckCoreSourceCount = $text.Split($deckCoreSource).Count - 1
+$deckCoreSourceCount = ([regex]::Matches($text, [regex]::Escape($deckCoreSource))).Count
 if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
 
 $webTestSource = '"test_web_api_helpers.c"'
-if (($text.Split($webTestSource).Count - 1) -ne 1) {
-    throw "expected one web_api_helpers test source entry"
+$webTestSourceCount = ([regex]::Matches($text, [regex]::Escape($webTestSource))).Count
+if ($webTestSourceCount -ne 1) {
+    throw "expected one web_api_helpers test source entry, found $webTestSourceCount"
 }
 $text = $text.Replace($webTestSource, '"test_web_api_helpers_current.c"')
 
 $webHelperSource = '"../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"'
-if (($text.Split($webHelperSource).Count - 1) -ne 1) {
-    throw "expected one web_api_helpers implementation entry"
+$webHelperSourceCount = ([regex]::Matches($text, [regex]::Escape($webHelperSource))).Count
+if ($webHelperSourceCount -ne 1) {
+    throw "expected one web_api_helpers implementation entry, found $webHelperSourceCount"
 }
 $webHelperSources = $webHelperSource + ",`n            " + '"../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"'
 $text = $text.Replace($webHelperSource, $webHelperSources)
 $text += $extraAuditGates
 
-try {
-    Set-Content -LiteralPath $temp -Value $text -Encoding utf8NoBOM
+    try {
+    [System.IO.File]::WriteAllText($temp, $text)
     & $temp -KeepArtifacts:$KeepArtifacts
     exit $LASTEXITCODE
 } finally {
