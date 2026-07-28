@@ -71,8 +71,13 @@ jobs:
               -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
 
           Assert-FileDoesNotContain `
-              -Name "shared UI and simulator mocks have no mock deck hooks" `
+              -Name "shared UI has no mock deck hooks" `
               -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+              -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+          Assert-FileDoesNotContain `
+              -Name "UI simulator mocks have no mock deck hooks" `
+              -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
               -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
 
           Assert-FileContains `
@@ -97,17 +102,25 @@ jobs:
                   exit $ui
 
           '''
+          step = step.replace("                shell:", "        shell:")
+          step = step.replace("                run:", "        run:")
+          step = step.replace("                  &", "          &")
+          step = step.replace("                  $", "          $")
+          step = step.replace("                  Get-Content", "          Get-Content")
+          step = step.replace("                  exit", "          exit")
           if text.count(marker) != 1:
               raise SystemExit("host-log step marker mismatch")
           text = text.replace(marker, step + marker)
-          log_marker = "              p4-host-tests.log\n"
-          print(f"workflow log marker count={text.count(log_marker)}")
-          if text.count(log_marker) != 1:
-              raise SystemExit("host artifact marker mismatch")
-          workflow.write_text(
-              text.replace(log_marker, log_marker + "              ui-simulator.log\n"),
-              encoding="utf-8",
-          )
+
+          lines = text.splitlines(keepends=True)
+          matches = [i for i, line in enumerate(lines) if line.strip() == "p4-host-tests.log"]
+          print(f"workflow artifact line matches={len(matches)}")
+          if len(matches) != 1:
+              raise SystemExit("host artifact line mismatch")
+          i = matches[0]
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines.insert(i + 1, indent + "ui-simulator.log\n")
+          workflow.write_text("".join(lines), encoding="utf-8")
 
           for path in (
               "firmware/main-deck-p4/components/ui/ui.c",
