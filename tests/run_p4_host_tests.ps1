@@ -753,9 +753,9 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("oldest_index")
 
 Assert-FileContains `
-    -Name "p4 estimated seek rejects a missing file source" `
+    -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("else if (eng->fp)", "Estimate seek rejected: no file source")
+    -LiteralPatterns @("A cache miss after the cursor move", "eng->file_pos = target_byte", "Estimate seek %u ms")
 
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
@@ -932,6 +932,30 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_recorder_stop_gate"
+        Dir = "tests/audio_recorder_stop_gate"
+        Target = "test_audio_recorder_stop_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-o", "test_audio_recorder_stop_gate.exe",
+            "test_audio_recorder_stop_gate.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c"
+        )
+    },
+    @{
+        Name = "audio_recorder_finalize"
+        Dir = "tests/audio_recorder_finalize"
+        Target = "test_audio_recorder_finalize.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-o", "test_audio_recorder_finalize.exe",
+            "test_audio_recorder_finalize.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c"
+        )
+    },
+    @{
         Name = "sd_io_gate"
         Dir = "tests/sd_io_gate"
         Target = "test_sd_io_gate.exe"
@@ -1023,6 +1047,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
@@ -1107,6 +1132,18 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_compressed_cache"
+        Dir = "tests/audio_compressed_cache"
+        Target = "test_audio_compressed_cache.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_compressed_cache.exe",
+            "test_audio_compressed_cache.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c"
+        )
+    },
+    @{
         Name = "audio_fw_preload"
         Dir = "tests/audio_fw_preload"
         Target = "test_audio_fw_preload.exe"
@@ -1115,6 +1152,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_fw_preload.exe",
             "test_audio_fw_preload.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
         )

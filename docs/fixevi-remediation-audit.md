@@ -66,22 +66,22 @@ Statusi:
 |---|---|---|
 | Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Zatvoreno** | Track zapisi su nakon publish-a immutable, sort kopira samo double-buffered `uint16_t` row-order, a LVGL Library prikaz drži jednu stranicu od 8×5 — najviše 40 živih ćelija — s PREV/NEXT navigacijom umjesto do 5120 ćelija. |
 | Tri framebuffer buffera bez stvarnog swapa | **Zatvoreno konzervativnim putem; HW pending** | BSP i backend sada alociraju/traže samo jedan framebuffer, što odgovara stvarnom partial-LVGL/PPA ponašanju i vraća dvije nepotrebne full-screen PSRAM alokacije. Budući pravi swap bio bi zasebna, mjerena optimizacija. |
-| Master Tempo PSRAM hot path | **Otvoreno za optimizaciju** | Coarse-to-fine search, block-local PCM cache i mjerenje `mix_max_us` na stvarnom dual-deck P4. |
-| Cijeli komprimirani track mora stati u PSRAM | **Djelomično** | Kratkoročni largest-free-block preflight i `TRACK TOO LARGE` postoje; rolling compressed page cache nije implementiran. |
-| Legacy/dead ostaci i monoliti | **Otvoreno** | Ukloniti potvrđene mrtve API-je i refaktorirati prema task ownershipu, ne samo prema datotekama. |
-| Recorder nije spreman za ponovno uključivanje | **Otvoreno; funkcija ostaje disabled** | Producer/STOP handshake, finalize error propagation, `.part` rename samo nakon potpunog uspjeha i fault-injection testovi. |
-| Zastarjeli komentari/dokumentacija | **Djelomično** | S3 translator default komentar je ispravljen; `sdkconfig.defaults` već navodi četiri ekrana, 32 MB PSRAM i rev 1.0. `firmware/main-deck-p4/CLAUDE.md` još ima staru tvrdnju `REV_MIN_FULL=0` i mora se uskladiti. |
+| Master Tempo PSRAM hot path | **Software instrumentacija zatvorena; HW mjerenje pending** | Output task već vodi `mix_max_us`, per-phase i worst-group outlier podatke bez dodatne alokacije. Daljnja DSP optimizacija smije se raditi tek nakon stvarnog dual-deck P4 mjerenja; to je fizički acceptance gate, ne nedovršeni source fix. |
+| Cijeli komprimirani track mora stati u PSRAM | **Zatvoreno; HW stress pending** | MP3/WAV/FLAC koriste seekable bounded cache od 8 × 32 KiB po decku. Cache miss radi jedan gated `read-at`, FLAC koristi `drflac_open` callbackove, a whole-file PSRAM alokacija, `TRACK TOO LARGE` i full-file frame scan su uklonjeni. |
+| Legacy/dead ostaci i monoliti | **Zatvoreno za auditirani scope** | Uklonjeni su mrtvi `file_buf`/full-track seek-table ostaci; compressed cache, recorder producer gate i finalize transakcija izdvojeni su u male ownership module s čistim host testovima. Daljnja dekompozicija je redovno održavanje, ne otvoreni release nalaz. |
+| Recorder nije spreman za ponovno uključivanje | **Software safety zatvoren; funkcija ostaje disabled do HW fault injectiona** | STOP prvo zatvara producer gate i čeka aktivnog producera, zatim writer drenira zatvoreni ring. Checkpoint/write/finalize greške propagiraju se; `.part` se objavljuje kao obični `.wav` samo nakon uspješnog patch+fsync+close niza. Host fault-injection pokriva svaku fazu. |
+| Zastarjeli komentari/dokumentacija | **Zatvoreno** | S3 translator default, P4 revizija, bounded audio cache, paginirana Library tablica i recorder release-gate dokumentacija usklađeni su sa sourceom. |
 | Dependency build nije reproducibilan | **Zatvoreno** | Oba `dependencies.lock` filea su commitana i clean CI ih koristi. |
 
 ## Testovi koji i dalje nisu zamijenjeni CI-em
 
 - flash/boot na fizičkom P4 i S3
 - realni MP3/FLAC/WAV decode fixture i realni `export.pdb`
-- sanitizer/TSan/fuzz i ciljane concurrency interleaving probe
-- stvarno P4 mjerenje keylock/PSRAM deadlinea
+- širi TSan/fuzz corpus izvan novih bounded-cache i recorder fault-injection host testova
+- stvarno dual-deck P4 mjerenje keylock/PSRAM deadlinea i odluka treba li DSP optimizaciju
 - USB mount/disconnect fault injection
 - prikaz bez tearinga nakon single-framebuffer korekcije
-- dugotrajni dual-deck audio/control/USB/SD soak
+- dugotrajni dual-deck audio/control/USB/SD soak, uključujući cache-miss i recorder power-loss fault injection
 
 ## Preporučeni nastavak
 

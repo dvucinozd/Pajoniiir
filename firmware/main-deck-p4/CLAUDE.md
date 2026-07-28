@@ -4,8 +4,9 @@ Documentation status: current ESP-IDF 6.0.2 developer guide, refreshed after
 the `fixevi.md` remediation audit. The release branch now uses transactional
 media loading, strict ANLZ parsing, actor-owned deck snapshots, bounded S3 Debug
 AP/SSE handling, USB desired/current reconciliation, a shared Wi-Fi transition
-lease, and a single real DPI framebuffer. The master-output recorder is
-deliberately release-disabled until its STOP/finalize safety work is complete.
+lease, a single real DPI framebuffer and a bounded compressed-audio page cache.
+The master-output recorder has software STOP/finalize safety coverage but remains
+release-disabled until physical microSD and power-loss fault injection passes.
 
 Software acceptance is enforced by `.github/workflows/esp-idf-6-migration.yml`:
 host regressions plus clean ESP32-S3 and ESP32-P4 builds using ESP-IDF 6.0.2.
@@ -40,7 +41,13 @@ PR #8 rather than being inferred from a successful build.
 > the wrong subsystem entirely. Before a risky operation, emit the breadcrumb
 > and call `service_log_sync()`, as the Wi-Fi enable path now does.
 
-> ⚠️ **The recorder stalls on microSD and drops audio; the cause is below
+> ⚠️ **The recorder remains release-disabled pending physical fault injection.**
+> Software ownership is now explicit: STOP closes producer admission, waits for
+> any in-flight master block, then lets the writer drain; failed sessions remain
+> `.part`, and rename occurs only after patch + fsync + close all succeed. Host
+> tests inject every finalize failure. The remaining risk is the actual card/bus:
+>
+> **The recorder stalls on microSD and drops audio; the cause is below
 > FATFS.** 25-minute soaks with two decks playing lose 3+ seconds of recording
 > and produce output blocks of 320-356 ms. Everything the firmware contributes
 > has been measured and removed: `sd_io_gate` contention is 7-8 us in steady
@@ -113,7 +120,7 @@ under repository-root `keys/` must never be copied into firmware or committed.
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; fixed 8 × 32 KiB compressed-page cache per deck instead of whole-track PSRAM preload; pitch resampling; PVBR/estimated seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY and cache-miss hardware stress pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `Pajoniiir`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
@@ -307,9 +314,11 @@ audio_engine_deck_stop(deck);
 - `bsp_audio_init()` sets up the PCM5102A I2S MAIN channel (I2S_NUM_1);
   `audio_engine_init()` retrieves it via `bsp_audio_get_main_i2s_tx()` and writes
   with `i2s_channel_write` (blocks on I2S DMA → real-time tempo).
-- `audio_engine_deck_load()` does not read USB on the caller stack — the **decode task preloads the entire MP3
-  into PSRAM**, opens it, and decodes from memory. (Streaming from /usb during
-  playback crashes the USB-DWC driver: `usb_dwc_hal.c:502`.)
+- `audio_engine_deck_load()` does not read USB on the caller stack. A loader opens
+  the source and binds a fixed **256 KiB compressed cache per deck** (8 × 32 KiB).
+  MP3/WAV use cache `read-at`; FLAC uses `drflac_open` read/seek/tell callbacks.
+  Every cache miss is serialized through `media_io_gate`, while the decoded PCM
+  timeline supplies playback runway. Whole-track PSRAM allocation is not used.
 - minimp3 needs **~26 KB stack** → decode task is 32 KB (NOT on the LVGL/caller stack).
 - The output task pitch-resamples/mixes the ring buffer and writes MAIN via `i2s_channel_write()` (blocks on I2S DMA → real-time tempo); headphone cue goes out over the FLX4 USB audio path.
 - The PCM5102A I2S clock opens at the sample rate of the first frame (44.1/48k both observed).

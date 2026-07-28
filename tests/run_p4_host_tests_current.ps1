@@ -89,7 +89,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
-    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
+    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
 
 Assert-FileDoesNotContain `
     -Name "confirmed dead scratch APIs stay removed" `
@@ -230,6 +230,53 @@ Assert-FileContains `
     -Name "migration CI runs UI simulator screenshot gate" `
     -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
     -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
+
+
+Assert-FileContains `
+    -Name "compressed audio uses a fixed bounded PSRAM page cache" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_fw_preload.h") `
+    -LiteralPatterns @("AUDIO_FW_CACHE_PAGE_BYTES", "AUDIO_FW_CACHE_PAGE_COUNT", "AUDIO_FW_CACHE_BYTES", "audio_compressed_cache_t cache")
+
+Assert-FileContains `
+    -Name "firmware loader binds the fixed cache instead of allocating the whole track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
+
+Assert-FileDoesNotContain `
+    -Name "firmware audio never requires one contiguous allocation per compressed track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("TRACK TOO LARGE", "heap_caps_malloc(track_bytes", "heap_caps_get_largest_free_block", "drflac_open_memory", "build_seek_table", "audio_fw_preload_chunk_bytes", "file_buf")
+
+Assert-FileContains `
+    -Name "bounded cache host test covers LRU replacement, cross-page reads and seeks" `
+    -Path (Join-Path $RepoRoot "tests/audio_compressed_cache/test_audio_compressed_cache.c") `
+    -LiteralPatterns @("test_cross_page_read_and_eof_clamp", "test_hits_and_lru_eviction_stay_bounded", "cache.hits == 1u", "audio_compressed_cache_read")
+
+Assert-FileContains `
+    -Name "recorder STOP closes admission and waits for active producers before drain" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("audio_recorder_stop_gate_close", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_try_enter", "STOP is a three-stage ownership barrier")
+
+Assert-FileContains `
+    -Name "recorder finalize publishes only after patch sync and close succeed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder_sink.c") `
+    -LiteralPatterns @("audio_recorder_finalize_run", "recorder_finalize_patch", "recorder_finalize_sync", "recorder_finalize_close", "recorder_finalize_publish", "audio_recorder_sink_abort")
+
+Assert-FileContains `
+    -Name "recorder stop propagates writer and finalize failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
+
+Assert-FileContains `
+    -Name "recorder finalize fault injection forbids rename after every durability failure" `
+    -Path (Join-Path $RepoRoot "tests/audio_recorder_finalize/test_audio_recorder_finalize.c") `
+    -LiteralPatterns @("never rename a failed .part", "AUDIO_RECORDER_FINALIZE_STAGE_PATCH", "AUDIO_RECORDER_FINALIZE_STAGE_SYNC", "AUDIO_RECORDER_FINALIZE_STAGE_CLOSE", "AUDIO_RECORDER_FINALIZE_STAGE_PUBLISH")
+
+Assert-FileContains `
+    -Name "recorder producer gate test covers the close versus in-flight producer race" `
+    -Path (Join-Path $RepoRoot "tests/audio_recorder_stop_gate/test_audio_recorder_stop_gate.c") `
+    -LiteralPatterns @("STOP closes admission", "audio_recorder_stop_gate_active", "audio_recorder_stop_gate_is_quiescent")
+
 '@
 
 $text = Get-Content -LiteralPath $source -Raw

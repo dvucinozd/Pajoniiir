@@ -58,8 +58,14 @@ esp_err_t audio_recorder_sink_write_block(audio_recorder_sink_t *s,
 esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s);
 
 /* Finalize the current segment: patch sizes, fsync, close and atomically rename
- * .wav.part -> .wav. Idempotent when nothing is open. */
+ * .wav.part -> .wav. The rename occurs only when every durability step succeeds.
+ * On failure the `.part` remains for recovery. Idempotent when nothing is open. */
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s);
+
+/* Durably close the current segment but deliberately leave the `.part` name.
+ * Used after a writer/session failure so incomplete audio is never published as
+ * a normal final WAV; boot recovery may later expose it as `.recovered.wav`. */
+esp_err_t audio_recorder_sink_abort(audio_recorder_sink_t *s);
 
 /* Worst SD-gate wait and worst raw fwrite seen since the session opened, in us.
  * Kept apart because a long wait blames contention while a long fwrite blames

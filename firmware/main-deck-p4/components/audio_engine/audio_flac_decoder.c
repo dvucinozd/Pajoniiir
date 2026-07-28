@@ -4,8 +4,8 @@
  * This translation unit holds the one DR_FLAC_IMPLEMENTATION for the whole
  * component: the PC/simulator build reaches FLAC through the audio_decoder
  * abstraction here (drflac_open_file), while the firmware decode task in
- * audio_engine.c decodes from the PSRAM preload buffer with drflac_open_memory
- * and links against this same implementation.
+ * audio_engine.c uses drflac_open callbacks over the bounded compressed-page
+ * cache and links against this same implementation.
  */
 
 /* Native FLAC only — DJ media is never Ogg-encapsulated; drop it to save flash. */
