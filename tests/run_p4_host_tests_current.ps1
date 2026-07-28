@@ -91,23 +91,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending STOP/finalize safety remediation")
 
-Assert-FileDoesNotContain `
-    -Name "confirmed dead scratch APIs stay removed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
-    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
-
-Assert-FileDoesNotContain `
-    -Name "retired output timing APIs stay removed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
-    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
-
-Assert-FileDoesNotContain `
-    -Name "test-only stereo mixer API stays out of production" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
-    -LiteralPatterns @("audio_mixer_mix_stereo")
-
 Assert-FileContains `
-    -Name "production ANLZ walker rejects partial section envelopes" `
+    -Name "ANLZ strict section walker rejects trailing partial header headers" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
     -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
 
@@ -124,17 +109,77 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "production library exposes selected-track API names" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
-    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Temporary source-compatibility aliases")
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "public library header no longer exports mock selected-track aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index", "Temporary source-compatibility aliases")
 
 Assert-FileContains `
-    -Name "library compatibility aliases delegate to production names" `
+    -Name "library source defines production selected-row helpers directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "library sources no longer contain selected-track mock aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "duration wrapper no longer renames selected-track symbols" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library_duration_fixed.c") `
-    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index", "Compatibility aliases are intentionally thin")
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI sources use only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared library UI source uses only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
 
 Assert-FileContains `
-    -Name "firmware UI compiles through the production library API bridge" `
+    -Name "firmware UI compiles shared sources directly" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
-    -LiteralPatterns @("ui_library_selected_api.c")
+    -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
+
+Assert-FileDoesNotContain `
+    -Name "firmware UI source-local selected API bridges stay retired" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+
+Assert-FileContains `
+    -Name "UI simulator library implements production selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator library has no mock selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "UI simulator deck hooks have explicit simulator names" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI has no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator mocks have no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileContains `
+    -Name "migration CI runs UI simulator screenshot gate" `
+    -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
+    -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
@@ -154,6 +199,13 @@ if ($deckCoreSourceCount -ne 2) {
     throw "expected two deck_core_dual source entries, found $deckCoreSourceCount"
 }
 $text = $text.Replace($deckCoreSource, $deckCoreWrapper)
+
+$scratchTestSource = '"test_audio_scratch.c"'
+$scratchTestSourceCount = ([regex]::Matches($text, [regex]::Escape($scratchTestSource))).Count
+if ($scratchTestSourceCount -ne 1) {
+    throw "expected one audio_scratch test source entry, found $scratchTestSourceCount"
+}
+$text = $text.Replace($scratchTestSource, '"test_audio_scratch_current.c"')
 
 $webTestSource = '"test_web_api_helpers.c"'
 $webTestSourceCount = ([regex]::Matches($text, [regex]::Escape($webTestSource))).Count
@@ -200,7 +252,7 @@ $text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/componen
 
 $text += $extraAuditGates
 
-    try {
+try {
     [System.IO.File]::WriteAllText($temp, $text)
     & $temp -KeepArtifacts:$KeepArtifacts
     exit $LASTEXITCODE

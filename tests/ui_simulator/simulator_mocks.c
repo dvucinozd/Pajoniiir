@@ -187,19 +187,19 @@ int64_t esp_timer_get_time(void)
 
 extern void deck_core_test_apply_event(const ctrl_event_t *event);
 
-void mock_deck_set_position(uint32_t position_ms)
+void ui_simulator_deck_set_position(uint32_t position_ms)
 {
     audio_engine_stub_deck_position_ms[0] = position_ms;
     audio_engine_stub_deck_position_ms[1] = position_ms;
 }
 
-void mock_deck_set_playing(bool playing)
+void ui_simulator_deck_set_playing(bool playing)
 {
     audio_engine_stub_deck_playing[0] = playing;
     audio_engine_stub_deck_playing[1] = playing;
 }
 
-void mock_deck_toggle_play(void)
+void ui_simulator_deck_toggle_play(void)
 {
     ctrl_event_t event = {
         .type = CTRL_EV_BUTTON,
@@ -210,7 +210,7 @@ void mock_deck_toggle_play(void)
     deck_core_test_apply_event(&event);
 }
 
-void mock_deck_toggle_master_tempo(void)
+void ui_simulator_deck_toggle_master_tempo(void)
 {
     ctrl_event_t event = {
         .type = CTRL_EV_BUTTON,

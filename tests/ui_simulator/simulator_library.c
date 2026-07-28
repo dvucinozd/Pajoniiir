@@ -205,14 +205,14 @@ void library_sort(int field_type, bool descending)
     s_generation++;
 }
 
-void mock_library_load_track_to_deck(int track_index)
+void library_set_selected_track_index(int track_index)
 {
     if (track_index >= 0 && track_index < library_count()) {
         s_loaded_index = track_index;
     }
 }
 
-int mock_library_get_current_track_index(void)
+int library_selected_track_index(void)
 {
     return s_loaded_index;
 }

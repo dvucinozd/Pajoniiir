@@ -53,6 +53,14 @@ jobs:
           }
           exit $p4
 
+      - name: Run UI simulator screenshot gate
+        shell: pwsh
+        run: |
+          & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
+          $ui = $LASTEXITCODE
+          Get-Content ui-simulator.log | Select-Object -Last 100
+          exit $ui
+
       - name: Upload host-test logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,6 +70,7 @@ jobs:
           path: |
             s3-host-tests.log
             p4-host-tests.log
+            ui-simulator.log
 
   build-s3:
     name: ESP32-S3 firmware

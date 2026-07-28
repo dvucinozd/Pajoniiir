@@ -77,7 +77,3 @@ void library_free_current_anlz(void);
 void library_set_selected_track_index(int track_index);
 int  library_selected_track_index(void);
 
-/* Temporary source-compatibility aliases for simulator code and external tests.
- * New firmware code must use the library_* names above. */
-void mock_library_load_track_to_deck(int track_index);
-int  mock_library_get_current_track_index(void);
