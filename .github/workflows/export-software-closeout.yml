@@ -1,0 +1,30 @@
+name: Temporary software closeout export
+
+on:
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/export-software-closeout.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Export exact source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --output=software-closeout-source.tar.gz HEAD \
+            firmware/main-deck-p4 tests docs .github/workflows/esp-idf-6-migration.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: software-closeout-source
+          path: software-closeout-source.tar.gz
+          if-no-files-found: error
