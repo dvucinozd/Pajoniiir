@@ -1,0 +1,28 @@
+name: Temporary P3 source export
+
+on:
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/export-p3-head.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package tested source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .git
+          tar -czf ../pajoniiir-p3-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pajoniiir-p3-source
+          path: ../pajoniiir-p3-source.tar.gz
+          if-no-files-found: error
