@@ -26,8 +26,10 @@ The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last known matching bench baseline is
 `RC1-254-g21f21963` on both boards as of 2026-07-24; it proved the complete P4
 pull-OTA path. A clean ESP-IDF 5.5.4 dual-target release build was recorded at
-`RC1-259-gdaf4639` on 2026-07-26, but it has not yet been signed, packaged or
-deployed. Next acceptance work is the remaining targeted Phase 20/E1A and
+`RC1-259-gdaf4639` on 2026-07-26. Na dan 2026-07-28 uspješno je dovršena migracija na
+**ESP-IDF v6.0.2** na lokalnoj grani `migration/esp-idf-6.0.2` (svi softverski buildovi,
+host testovi i UI simulator u potpunosti prolaze; fizički bench/hardware testovi su preostali).
+Next acceptance work is the remaining targeted Phase 20/E1A and
 remote controller-profile matrix, followed by production key
 provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
 key-lock P4 CPU/listening testing, selected pending MIDI hardware rows and a

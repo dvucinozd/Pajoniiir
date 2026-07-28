@@ -70,7 +70,7 @@ Statusi:
 | Cijeli komprimirani track mora stati u PSRAM | **Djelomično** | Kratkoročni largest-free-block preflight i `TRACK TOO LARGE` postoje; rolling compressed page cache nije implementiran. |
 | Legacy/dead ostaci i monoliti | **Otvoreno** | Ukloniti potvrđene mrtve API-je i refaktorirati prema task ownershipu, ne samo prema datotekama. |
 | Recorder nije spreman za ponovno uključivanje | **Otvoreno; funkcija ostaje disabled** | Producer/STOP handshake, finalize error propagation, `.part` rename samo nakon potpunog uspjeha i fault-injection testovi. |
-| Zastarjeli komentari/dokumentacija | **Djelomično** | S3 translator default komentar je ispravljen; `sdkconfig.defaults` već navodi četiri ekrana, 32 MB PSRAM i rev 1.0. `firmware/main-deck-p4/CLAUDE.md` još ima staru tvrdnju `REV_MIN_FULL=0` i mora se uskladiti. |
+| Zastarjeli komentari/dokumentacija | **Zatvoreno** | S3 translator default komentar je ispravljen; `sdkconfig.defaults` već navodi četiri ekrana, 32 MB PSRAM i rev 1.0. `firmware/main-deck-p4/CLAUDE.md` je usklađen na `REV_MIN_FULL=100`. |
 | Dependency build nije reproducibilan | **Zatvoreno** | Oba `dependencies.lock` filea su commitana i clean CI ih koristi. |
 
 ## Testovi koji i dalje nisu zamijenjeni CI-em
@@ -86,7 +86,7 @@ Statusi:
 ## Preporučeni nastavak
 
 1. Hardverski potvrditi USB reconciliation i single-framebuffer prikaz.
-2. Uskladiti preostalu revizijsku uputu u `firmware/main-deck-p4/CLAUDE.md`.
+2. Uskladiti preostalu revizijsku uputu u `firmware/main-deck-p4/CLAUDE.md` (Zatvoreno).
 3. Napraviti library indeks/virtualizaciju kao zaseban performance PR.
 4. Napraviti Master Tempo mjerni build i optimizirati samo prema stvarnim deadline podacima.
 5. Recorder zadržati isključen dok njegov zasebni safety PR ne prođe fault injection.

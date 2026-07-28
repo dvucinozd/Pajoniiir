@@ -1,24 +1,23 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-07-26**. The latest clean dual-target
+Last full status reconciliation: **2026-07-28**. The latest clean dual-target
 release build is `RC1-259-gdaf4639`; it contains the Pajoniiir rebrand,
 synchronized host-simulator support, repaired release gate and the
-software-only OTA/controller/startup hardening listed below. It is newer than
-the firmware installed on the boards.
+software-only OTA/controller/startup hardening listed below. Na dan 2026-07-28
+uspješno je dovršena migracija na **ESP-IDF v6.0.2** na lokalnoj grani
+`migration/esp-idf-6.0.2` (svi softverski buildovi, host testovi i UI simulator u potpunosti prolaze).
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **latest clean release build:** `RC1-259-gdaf4639`; both raw application
-  images were rebuilt with ESP-IDF 5.5.4 on 2026-07-26, but have not been
-  signed, packaged or deployed;
+- **latest clean release build:** `RC1-259-gdaf4639` (prevodeno s ESP-IDF 5.5.4) te najnoviji migracijski build na grani `migration/esp-idf-6.0.2` (prevodeno s ESP-IDF 6.0.2 na dan 2026-07-28);
 - **last known bench state:** P4 and S3 were rematched at
   `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
   P4; the boards match each other but are behind current source;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
   forced rollback and final UI/audio/controller smoke. Later releases have
-  extensive focused acceptance but have not replaced this full-system baseline.
+  extensive focused acceptance but have not replaced this complete-system baseline.
 
 Since RC1-168 the product added and hardware-tested the single-resolver ANLZ
 metadata path, the structured

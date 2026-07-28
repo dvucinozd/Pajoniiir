@@ -22,14 +22,14 @@ build and existing host regression suites are green.
 
 ## Required validation before merge
 
-- Both IDF 6.0.2 firmware builds pass from clean configuration.
-- Existing S3 and P4 host regression tests pass.
-- P4 display/touch/PSRAM smoke passes.
-- P4 USB MSC cold boot, software reboot, disconnect and reconnect pass without
+- [x] Both IDF 6.0.2 firmware builds pass from clean configuration.
+- [x] Existing S3 and P4 host regression tests pass (including PowerShell 5.1 compatibility fixes).
+- [ ] P4 display/touch/PSRAM smoke passes.
+- [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass without
   the old DWC HAL shim.
-- FLX4 MIDI IN/OUT and UAC isochronous headphone output pass on S3.
-- P4 PCM5102A MAIN output and S3/P4 monitor link pass without underruns.
-- ESP-Hosted AP and AP-to-STA-to-AP OTA round trip pass.
-- Signed OTA verification, rollback and partition-size gates pass on both boards.
+- [ ] FLX4 MIDI IN/OUT and UAC isochronous headphone output pass on S3.
+- [ ] P4 PCM5102A MAIN output and S3/P4 monitor link pass without underruns.
+- [ ] ESP-Hosted AP and AP-to-STA-to-AP OTA round trip pass.
+- [ ] Signed OTA verification, rollback and partition-size gates pass on both boards.
 
 The branch must remain a draft until the hardware acceptance rows are complete.
