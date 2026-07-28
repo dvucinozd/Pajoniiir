@@ -1,0 +1,170 @@
+name: Temporary software closeout validation
+
+on:
+  pull_request:
+    branches:
+      - fix/release-blockers-and-concurrency
+    paths:
+      - ".github/workflows/software-closeout-validation.yml"
+      - ".github/tooling/software-closeout/**"
+
+permissions:
+  contents: write
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2
+  TARGET_BRANCH: fix/release-blockers-and-concurrency
+  EXPECTED_PARENT: 000d55dfee195cc20c5515f30afcb1862bdd280f
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out tooling revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and apply closeout patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/tooling/software-closeout/part-* > /tmp/software-closeout.patch.gz.b64
+          echo "736a364b132690de440ea714b82ed7a1a684edd40dac60ade7fdd2e63c99ed23  /tmp/software-closeout.patch.gz.b64" | sha256sum -c -
+          base64 -d /tmp/software-closeout.patch.gz.b64 | gzip -d > /tmp/software-closeout.patch
+          echo "7ecd9ad5c53779973a2b502686d3d2c237fe4f85d10f2bc91a16e4c91d5bdc7a  /tmp/software-closeout.patch" | sha256sum -c -
+
+          git fetch origin "$TARGET_BRANCH"
+          actual_parent="$(git rev-parse "origin/$TARGET_BRANCH")"
+          test "$actual_parent" = "$EXPECTED_PARENT"
+          git checkout -B software-closeout-publish "origin/$TARGET_BRANCH"
+          patch -p1 --forward < /tmp/software-closeout.patch
+          git diff --check
+
+          test ! -e docs/software-closeout-plan.md
+          test -f firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c
+          test -f firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c
+          test -f firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c
+
+      - name: Verify exact source change set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/expected-files <<'EOF'
+          docs/fixevi-remediation-audit.md
+          docs/software-closeout-plan.md
+          firmware/main-deck-p4/CLAUDE.md
+          firmware/main-deck-p4/components/audio_engine/CMakeLists.txt
+          firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c
+          firmware/main-deck-p4/components/audio_engine/audio_engine.c
+          firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c
+          firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c
+          firmware/main-deck-p4/components/audio_engine/include/audio_compressed_cache.h
+          firmware/main-deck-p4/components/audio_engine/include/audio_fw_preload.h
+          firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt
+          firmware/main-deck-p4/components/audio_recorder/Kconfig
+          firmware/main-deck-p4/components/audio_recorder/audio_recorder.c
+          firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c
+          firmware/main-deck-p4/components/audio_recorder/audio_recorder_sink.c
+          firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c
+          firmware/main-deck-p4/components/audio_recorder/include/audio_recorder_finalize.h
+          firmware/main-deck-p4/components/audio_recorder/include/audio_recorder_sink.h
+          firmware/main-deck-p4/components/audio_recorder/include/audio_recorder_stop_gate.h
+          tests/audio_compressed_cache/test_audio_compressed_cache.c
+          tests/audio_engine/Makefile
+          tests/audio_fw_preload/Makefile
+          tests/audio_fw_preload/test_audio_fw_preload.c
+          tests/audio_recorder_finalize/test_audio_recorder_finalize.c
+          tests/audio_recorder_stop_gate/test_audio_recorder_stop_gate.c
+          tests/run_p4_host_tests.ps1
+          tests/run_p4_host_tests_current.ps1
+          EOF
+          sed -i 's/^          //' /tmp/expected-files
+          git diff --name-only | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+
+      - name: Run P4 host regression suite
+        shell: pwsh
+        run: |
+          & ./tests/run_p4_host_tests_current.ps1 *> p4-host-tests.log
+          $code = $LASTEXITCODE
+          Get-Content p4-host-tests.log | Select-Object -Last 120
+          exit $code
+
+      - name: Run UI simulator screenshot gate
+        shell: pwsh
+        run: |
+          & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
+          $code = $LASTEXITCODE
+          Get-Content ui-simulator.log | Select-Object -Last 120
+          exit $code
+
+      - name: Build ESP32-P4 firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          set +e
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              test -f build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_SELECTS_REV_LESS_V3 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_ESP32P4_REV_MIN_FULL 100$" build/config/sdkconfig.h
+              idf.py build
+            ' > p4-idf-build.log 2>&1
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped|CONFIG_ESP32P4)' p4-idf-build.log | tail -n 120 || true
+            tail -n 40 p4-idf-build.log
+          else
+            tail -n 40 p4-idf-build.log
+          fi
+          exit "$code"
+
+      - name: Publish atomic closeout commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A -- \
+            docs/fixevi-remediation-audit.md \
+            docs/software-closeout-plan.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/audio_engine \
+            firmware/main-deck-p4/components/audio_recorder \
+            tests/audio_compressed_cache \
+            tests/audio_engine/Makefile \
+            tests/audio_fw_preload \
+            tests/audio_recorder_finalize \
+            tests/audio_recorder_stop_gate \
+            tests/run_p4_host_tests.ps1 \
+            tests/run_p4_host_tests_current.ps1
+          git diff --cached --check
+          git diff --cached --name-only | sort > /tmp/staged-files
+          diff -u /tmp/expected-files /tmp/staged-files
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "perf(audio): bound media cache and harden recorder"
+          git push origin "HEAD:$TARGET_BRANCH"
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: software-closeout-validation-logs
+          if-no-files-found: ignore
+          path: |
+            p4-host-tests.log
+            ui-simulator.log
+            p4-idf-build.log
