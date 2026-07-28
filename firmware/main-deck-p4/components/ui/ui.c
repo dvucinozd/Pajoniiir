@@ -26,10 +26,10 @@
 
 #ifdef WIN32
 // Declare mock deck functions for simulator UI actions
-void mock_deck_set_position(uint32_t position_ms);
-void mock_deck_set_playing(bool playing);
-void mock_deck_toggle_master_tempo(void);
-void mock_deck_toggle_play(void);
+void ui_simulator_deck_set_position(uint32_t position_ms);
+void ui_simulator_deck_set_playing(bool playing);
+void ui_simulator_deck_toggle_master_tempo(void);
+void ui_simulator_deck_toggle_play(void);
 #endif
 
 #ifndef WIN32
@@ -284,7 +284,7 @@ static void ui_performance_seek(uint8_t deck, uint32_t position_ms)
     audio_engine_deck_seek(deck, position_ms);
 #else
     (void)deck;
-    mock_deck_set_position(position_ms);
+    ui_simulator_deck_set_position(position_ms);
 #endif
 }
 
@@ -294,7 +294,7 @@ static void ui_performance_play(uint8_t deck)
     audio_engine_deck_play(deck);
 #else
     (void)deck;
-    mock_deck_set_playing(true);
+    ui_simulator_deck_set_playing(true);
 #endif
 }
 
@@ -399,7 +399,7 @@ static void ui_overview_action_play_pause(uint8_t deck)
 {
 #ifdef WIN32
     (void)deck;
-    mock_deck_toggle_play();
+    ui_simulator_deck_toggle_play();
     deck_state_t state = deck_core_get_state();
     ESP_LOGI(TAG, "Simulator Play/Pause: %s", state.playing ? "PLAYING" : "PAUSED");
 #else
@@ -418,8 +418,8 @@ static void ui_overview_action_cue(uint8_t deck)
 {
 #ifdef WIN32
     (void)deck;
-    mock_deck_set_playing(false);
-    mock_deck_set_position(0);
+    ui_simulator_deck_set_playing(false);
+    ui_simulator_deck_set_position(0);
 #else
     ctrl_event_t ev = {
         .type  = CTRL_EV_BUTTON,
@@ -438,7 +438,7 @@ static void ui_overview_action_seek(uint8_t deck, uint32_t target_ms)
     audio_engine_deck_seek(deck, target_ms);
 #else
     (void)deck;
-    mock_deck_set_position(target_ms);
+    ui_simulator_deck_set_position(target_ms);
 #endif
 }
 
@@ -1121,7 +1121,7 @@ void ui_update(void) {
     ui_controls_loop_state_t active_loop = ui_controls_active_loop(&s_controls);
     if (active_loop.active) {
         if (state.position_ms >= active_loop.end_ms) {
-            mock_deck_set_position(active_loop.start_ms);
+            ui_simulator_deck_set_position(active_loop.start_ms);
             ctx.deck_state[CTRL_DECK_1].position_ms = active_loop.start_ms;
             if (ctx.active_deck == CTRL_DECK_1) {
                 ctx.active_state.position_ms = active_loop.start_ms;

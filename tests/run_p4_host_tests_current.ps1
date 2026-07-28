@@ -170,6 +170,37 @@ Assert-FileDoesNotContain `
     -Name "firmware UI source-local selected API bridges stay retired" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
     -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+
+Assert-FileContains `
+    -Name "UI simulator library implements production selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator library has no mock selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "UI simulator deck hooks have explicit simulator names" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI has no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator mocks have no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileContains `
+    -Name "migration CI runs UI simulator screenshot gate" `
+    -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
+    -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
+
 '@
 
 $text = Get-Content -LiteralPath $source -Raw
