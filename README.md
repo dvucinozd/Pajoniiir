@@ -14,18 +14,19 @@ remains locally and on `origin`.
 
 > [!IMPORTANT]
 > The last matching P4/S3 bench rollout is **`RC1-254-g21f21963`** from
-> 2026-07-24. The latest clean dual-target release build is
+> 2026-07-24. The latest clean ESP-IDF 5.5.4 dual-target release build is
 > **`RC1-259-gdaf4639`** from 2026-07-26; it has not been signed, packaged or
-> deployed. Na dan 2026-07-28 uspješno je dovršena migracija na **ESP-IDF v6.0.2**
-> na lokalnoj grani `migration/esp-idf-6.0.2` (svi softverski buildovi i host/simulator testovi
-> u potpunosti prolaze). Repository source je stoga noviji od instaliranih ploča,
-> dok najnovija **potpuna**
-> funkcionalna hardverska provjera ostaje **`RC1-123-g587cd7a1`** od
-> 2026-07-14. Trenutni softver dodaje ispravak release-gatea, rebrendiranje u Pajoniiir,
-> stabilizaciju povlačenja OTA, canonical `http://pajoniiir.local`, LVGL-upravljanje
-> kontrolama/bibliotekom, te host-testirani profile fixture.
-> Ove promjene i dalje zahtijevaju navedene hardverske testove prihvaćanja na benchu. Vidi
-> [Documentation Status](docs/DOCUMENTATION_STATUS.md) za točnu granicu.
+> deployed. The active development head is the `migration/esp-idf-6.0.2` branch,
+> which migrates both targets to **ESP-IDF v6.0.2** and integrates the full
+> `fix/release-blockers-and-concurrency` stabilisation set (bounded compressed
+> audio cache, paginated Library UI, immutable track sort, recorder safety
+> hardening, lossless control queue, ANLZ ownership fixes and more). All
+> software builds, host tests and UI simulator pass on that branch as of
+> 2026-07-28; hardware acceptance rows remain open. Repository source is
+> therefore newer than installed hardware, and the latest **complete**
+> functional hardware baseline remains **`RC1-123-g587cd7a1`** of
+> 2026-07-14. See [Documentation Status](docs/DOCUMENTATION_STATUS.md) for
+> the precise boundary.
 
 ## System at a Glance
 
@@ -44,7 +45,8 @@ layer. The detailed ownership and data flow are documented in
 ## Current Capabilities
 
 - Two independent decks with Rekordbox library browsing and MP3, WAV and FLAC
-  playback.
+  playback. Compressed audio uses a bounded LRU page cache (8 × 32 KiB per
+  deck) instead of whole-file PSRAM allocation.
 - FLX4 transport, jog/vinyl scratch, tempo and Master Tempo, mixer/EQ,
   headphone cue, hot cues, loops, beat jump/sync, Pad FX and Beat FX control.
   Beat FX Filter and Echo have recorded hardware acceptance; Flanger and the
@@ -52,8 +54,8 @@ layer. The detailed ownership and data flow are documented in
   audio/routing smoke still pending.
 - Simultaneous PCM5102A RCA MAIN output and FLX4 USB headphone cue.
 - P4-owned FLX4 LED feedback with reconnect and board-reboot resynchronization.
-- LVGL Overview, Library, Hot Cues and Settings tabs, plus the optional P4
-  Wi-Fi remote.
+- LVGL Overview, Library (paginated 8-row table with PREV/NEXT), Hot Cues and
+  Settings tabs, plus the optional P4 Wi-Fi remote.
 - Data-driven controller profiles loaded from SD or installed through the web
   UI; the built-in DDJ-FLX4 map remains the fallback. The web overwrite path is
   software-complete and still has pending hardware-acceptance rows.

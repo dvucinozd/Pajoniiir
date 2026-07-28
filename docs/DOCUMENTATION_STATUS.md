@@ -1,16 +1,23 @@
 # Documentation Status
 
 Last full status reconciliation: **2026-07-28**. The latest clean dual-target
-release build is `RC1-259-gdaf4639`; it contains the Pajoniiir rebrand,
-synchronized host-simulator support, repaired release gate and the
-software-only OTA/controller/startup hardening listed below. Na dan 2026-07-28
-uspješno je dovršena migracija na **ESP-IDF v6.0.2** na lokalnoj grani
-`migration/esp-idf-6.0.2` (svi softverski buildovi, host testovi i UI simulator u potpunosti prolaze).
+release build on ESP-IDF 5.5.4 is `RC1-259-gdaf4639`; it contains the Pajoniiir
+rebrand, synchronized host-simulator support, repaired release gate and the
+software-only OTA/controller/startup hardening listed below. The active
+development head is the `migration/esp-idf-6.0.2` branch, which migrates both
+targets to **ESP-IDF v6.0.2** and integrates bounded compressed audio cache,
+paginated Library UI, immutable track sort, recorder safety hardening and the
+full `fix/release-blockers-and-concurrency` stabilisation set. All software
+buildovi, host tests and UI simulator pass on that branch as of 2026-07-28;
+hardware acceptance rows remain open.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **latest clean release build:** `RC1-259-gdaf4639` (prevodeno s ESP-IDF 5.5.4) te najnoviji migracijski build na grani `migration/esp-idf-6.0.2` (prevodeno s ESP-IDF 6.0.2 na dan 2026-07-28);
+- **latest clean release build:** `RC1-259-gdaf4639` (built with ESP-IDF 5.5.4);
+- **latest migration build:** `migration/esp-idf-6.0.2` branch head (built with
+  ESP-IDF 6.0.2, includes bounded cache, paginated Library, immutable sort,
+  recorder hardening and full stability fixes; software-verified 2026-07-28);
 - **last known bench state:** P4 and S3 were rematched at
   `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
   P4; the boards match each other but are behind current source;
@@ -54,18 +61,24 @@ in the active documents.
 | Area | Current state |
 | --- | --- |
 | Controller | Pioneer DDJ-FLX4 enumerates on the S3 USB host; input mapping and P4-owned LED feedback are operational |
-| Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls |
+| Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls; compressed audio uses a bounded LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM allocation |
 | Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
 | Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26 with zero source drift, detected clicks or clipping |
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
-| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts |
-| UI | Overview, Library, Hot Cues and Settings tabs; stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800x480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
+| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order |
+| UI | Overview, Library, Hot Cues and Settings tabs; Library table is paginated (one 8-row page with PREV/NEXT, max 40 live LVGL cells); stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800×480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
 | Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
 | OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both boards last matched at `RC1-254-g21f21963` on 2026-07-24; pull OTA is hardware-proven and now software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation |
 | Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; the independent `generic_midi_ci` profile is compile/registry/runtime/LED host-tested; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits dedicated hardware acceptance |
 
 ## Remaining work
 
+- **ESP-IDF 6.0.2 hardware acceptance**: display/touch, USB MSC, FLX4
+  MIDI/UAC, PCM5102A, monitor link, ESP-Hosted AP/OTA and signed OTA must all
+  pass on the migrated firmware before the branch merges to `master`;
+- hardware-validate bounded compressed cache under dual-deck load with real
+  MP3/WAV/FLAC files;
+- hardware-validate paginated Library table on the P4 touch display;
 - define production key provisioning and rotation beyond the current backed-up
   `rel-001` development key, preferably with encrypted or hardware-backed
   signing;

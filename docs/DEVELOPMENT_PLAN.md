@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: current phase ledger, reconciled 2026-07-26.
+Status: current phase ledger, reconciled 2026-07-28.
 
 ## Executive status
 
@@ -20,21 +20,24 @@ Status: current phase ledger, reconciled 2026-07-26.
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
-| Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed |
+| Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed. Safety hardened: producer stop-gate, transactional finalise (`patch`→`sync`→`close`→`publish`) and durability-failure propagation |
+| Bounded compressed cache | Implemented on `migration/esp-idf-6.0.2`. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Software-tested; hardware acceptance pending |
+| Paginated Library UI | Implemented on `migration/esp-idf-6.0.2`. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Software-tested; hardware acceptance pending |
+| Immutable track sort | Implemented on `migration/esp-idf-6.0.2`. Library sorting uses double-buffered `uint16_t` row-order over immutable records. No large-struct copies or qsort. Software-tested |
 
 The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last known matching bench baseline is
 `RC1-254-g21f21963` on both boards as of 2026-07-24; it proved the complete P4
 pull-OTA path. A clean ESP-IDF 5.5.4 dual-target release build was recorded at
-`RC1-259-gdaf4639` on 2026-07-26. Na dan 2026-07-28 uspješno je dovršena migracija na
-**ESP-IDF v6.0.2** na lokalnoj grani `migration/esp-idf-6.0.2` (svi softverski buildovi,
-host testovi i UI simulator u potpunosti prolaze; fizički bench/hardware testovi su preostali).
-Next acceptance work is the remaining targeted Phase 20/E1A and
-remote controller-profile matrix, followed by production key
-provisioning/rotation, enclosure power/thermal/RF soak, longer dual-deck
-key-lock P4 CPU/listening testing, selected pending MIDI hardware rows and a
-first non-FLX4 profile acceptance. Historical phase text below is retained as
-the implementation record.
+`RC1-259-gdaf4639` on 2026-07-26. The active development head is the
+`migration/esp-idf-6.0.2` branch (all software builds, host tests and UI
+simulator pass as of 2026-07-28; hardware acceptance rows remain open).
+Next acceptance work is the ESP-IDF 6.0.2 hardware validation matrix, the
+remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
+by production key provisioning/rotation, enclosure power/thermal/RF soak,
+longer dual-deck key-lock P4 CPU/listening testing, selected pending MIDI
+hardware rows and a first non-FLX4 profile acceptance. Historical phase text
+below is retained as the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
 
