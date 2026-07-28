@@ -1,0 +1,20 @@
+--- a/tests/audio_recorder_finalize/test_audio_recorder_finalize.c
++++ b/tests/audio_recorder_finalize/test_audio_recorder_finalize.c
+@@ -36,11 +36,16 @@
+     CHECK(r.failed_stage == AUDIO_RECORDER_FINALIZE_STAGE_NONE);
+     CHECK(r.closed && r.published && strcmp(f.calls, "PSCR") == 0);
+ 
++    const audio_recorder_finalize_stage_t durability_failure_stages[] = {
++        AUDIO_RECORDER_FINALIZE_STAGE_PATCH,
++        AUDIO_RECORDER_FINALIZE_STAGE_SYNC,
++        AUDIO_RECORDER_FINALIZE_STAGE_CLOSE,
++    };
+     for (unsigned fail = 0u; fail < 3u; ++fail) {
+         f = good();
+         f.ok[fail] = false;
+         r = audio_recorder_finalize_run(&f, patch, sync_step, close_step, publish, true);
+-        CHECK(r.failed_stage == (audio_recorder_finalize_stage_t)(fail + 1u));
++        CHECK(r.failed_stage == durability_failure_stages[fail]);
+         CHECK(r.closed && !r.published);
+         CHECK(strcmp(f.calls, "PSC") == 0); /* never rename a failed `.part` */
+     }
