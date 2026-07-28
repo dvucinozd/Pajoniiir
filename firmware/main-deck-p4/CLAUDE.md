@@ -277,7 +277,7 @@ if (rc == ESP_OK) {
 }
 ```
 
-PC unit tests (`tests/anlz/`) are included in `.\tests\run_p4_host_tests_current.ps1`.
+PC unit tests (`tests/anlz/`) are included in `.\tests\run_p4_host_tests.ps1`.
 
 Format details: `docs/rekordbox-format-analysis.md`
 
@@ -381,7 +381,7 @@ not per sample.
 Relevant PC harnesses include `tests/audio_delay_fx/`, `tests/audio_engine/`,
 `tests/audio_output_mixer/`, `tests/deck_core_dual/`,
 `tests/ui_beat_fx_format/` and `tests/web_api_helpers/` (run all P4 host tests via
-`.\tests\run_p4_host_tests_current.ps1`; `make`/`mingw32-make` is not installed — the
+`.\tests\run_p4_host_tests.ps1`; `make`/`mingw32-make` is not installed — the
 runner compiles each suite with `gcc` from `C:\msys64\ucrt64\bin`).
 P4 host suites plus `idf.py build` are the FLANGER/DELAY software-acceptance
 path; physical FLANGER/DELAY audio/target/beat/depth smoke is still pending.

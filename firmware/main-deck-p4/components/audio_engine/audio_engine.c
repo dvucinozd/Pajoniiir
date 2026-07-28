@@ -822,22 +822,6 @@ static audio_pad_fx_kind_t pad_fx_kind_from_command(uint32_t packed)
 }
 
 #if AE_FW
-static void audio_output_apply_master_tempo_commands(void)
-{
-    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
-        const uint32_t epoch = __atomic_load_n(
-            &s_master_tempo_command_epoch[deck], __ATOMIC_ACQUIRE);
-        if (epoch == s_master_tempo_applied_epoch[deck]) {
-            continue;
-        }
-        /* Output task is the sole owner of keylock/resampler DSP mutation. The
-         * command takes effect exactly at an audio-block boundary. */
-        s_keylocks[deck].initialized = false;
-        audio_resampler_reset(&s_resamplers[deck]);
-        s_master_tempo_applied_epoch[deck] = epoch;
-    }
-}
-
 static void audio_output_apply_pending_fx_commands(void)
 {
     for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
@@ -1037,6 +1021,28 @@ static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_command_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_master_tempo_applied_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_keylock_generation[AUDIO_ENGINE_DECK_COUNT];
+
+/* Defined here, immediately after the DSP storage it mutates. It used to sit
+ * several hundred lines earlier, which is why the build routed audio_engine.c
+ * through a wrapper that re-declared these arrays as incomplete-type tentative
+ * definitions — a C11 6.9.2p3 constraint violation that only GCC accepts. The
+ * function has exactly one caller, in the output task, so moving it down here
+ * removes the need for the wrapper entirely. */
+static void audio_output_apply_master_tempo_commands(void)
+{
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        const uint32_t epoch = __atomic_load_n(
+            &s_master_tempo_command_epoch[deck], __ATOMIC_ACQUIRE);
+        if (epoch == s_master_tempo_applied_epoch[deck]) {
+            continue;
+        }
+        /* Output task is the sole owner of keylock/resampler DSP mutation. The
+         * command takes effect exactly at an audio-block boundary. */
+        s_keylocks[deck].initialized = false;
+        audio_resampler_reset(&s_resamplers[deck]);
+        s_master_tempo_applied_epoch[deck] = epoch;
+    }
+}
 
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 {
@@ -2967,9 +2973,12 @@ static void ae_output_task(void *arg)
                                     deck0.active,
                                     deck1.active,
                                     &s_limiter_stats);
-        uint32_t block_delay_ms = audio_output_remaining_delay_ms(
-            s_output_sample_rate,
-            block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
+        /* No software pacing delay: the i2s_channel_write above blocks on DMA and
+         * is what actually paces this loop. The retired
+         * audio_output_remaining_delay_ms() helper always returned zero, and the
+         * build used to collapse it with a preprocessor macro in a wrapper
+         * translation unit. The loop keeps its explicit periodic one-tick yield
+         * below, which is the part that matters. */
         bool scratch_writer_needs_cpu = false;
         for (uint8_t d = 0u; d < AUDIO_ENGINE_DECK_COUNT; d++) {
             if (atomic_load_bool(&s_scratch_capture_freeze[d]) &&
@@ -2978,11 +2987,8 @@ static void ae_output_task(void *arg)
                 break;
             }
         }
-        if (block_delay_ms > 0u) {
-            vTaskDelay(pdMS_TO_TICKS(block_delay_ms));
-            consecutive_busy_blocks = 0u;
-        } else if (scratch_writer_needs_cpu ||
-                   audio_output_should_force_idle(++consecutive_busy_blocks)) {
+        if (scratch_writer_needs_cpu ||
+            audio_output_should_force_idle(++consecutive_busy_blocks)) {
             /* taskYIELD only offers CPU0 to equal/higher-priority tasks. Give
              * the lower-priority decoder one real tick immediately when a
              * scratch freeze is waiting for its writer flag. The same delay

@@ -44,6 +44,13 @@ uint32_t media_catalog_generation(void);
 bool media_catalog_load_in_progress(void);
 esp_err_t media_catalog_get(int index, media_catalog_track_t *out_track);
 esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row);
+/* Identity of one row without materialising its text/waveform columns. Prefer
+ * this over media_catalog_get_row() wherever only the key is needed — notably
+ * the LVGL draw path, which asks per cell. */
+esp_err_t media_catalog_row_key(int index, uint32_t *out_key);
+/* Row index currently holding `track_key`, or -1. One pass under the library
+ * lock instead of N full-record copies. */
+int media_catalog_find_index_by_key(uint32_t track_key);
 void media_catalog_sort(int field_type, bool descending);
 
 /* Legacy index entry point retained for local UI compatibility. It snapshots the

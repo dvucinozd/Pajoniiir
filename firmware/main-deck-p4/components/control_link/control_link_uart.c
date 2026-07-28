@@ -31,11 +31,20 @@ static const char *TAG = "ctrl_link";
 #define RX_BUF_SIZE  1024
 #define TX_BUF_SIZE  1024
 
+/* How long a button/state edge may apply backpressure to the UART RX task when
+ * the deck queue is full. Long enough to ride out any normal consumer hiccup
+ * (deck_core drains the queue every UI/control tick), short enough that a wedged
+ * consumer cannot hold the RX task off the serial FIFO — RX_BUF_SIZE at
+ * UART_BAUD is roughly 22 ms of traffic before the ring overruns, so a stall
+ * beyond this is already a fault that must be reported rather than waited out. */
+#define CTRL_EDGE_BACKPRESSURE_MS 250u
+
 static QueueHandle_t    s_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
 static uint32_t s_uart_write_fail_count;
 static uint32_t s_event_drop_count;
 static uint32_t s_event_coalesce_count;
+static uint32_t s_edge_backpressure_timeout_count;
 static TickType_t s_last_warn;
 static ctrl_bulk_parser_t s_bulk_parser;
 static control_link_descriptor_cb_t s_descriptor_cb;
@@ -295,9 +304,19 @@ static bool enqueue_control_event(const ctrl_event_t *ev)
         return true;
     }
 
-    /* Button/state edges are lossless. Backpressure is preferable to a missing
-     * release that leaves scratch, Censor, roll, Pad FX or SHIFT latched. */
-    return xQueueSend(s_event_queue, ev, portMAX_DELAY) == pdTRUE;
+    /* Button/state edges are lossless: bounded backpressure is preferable to a
+     * missing release that leaves scratch, Censor, roll, Pad FX or SHIFT
+     * latched. The wait is bounded rather than infinite because this runs on the
+     * UART RX task, which is also the only reader of the serial FIFO and the
+     * only parser of the 0xA6 bulk layer. Blocking here forever on a stalled
+     * consumer would overrun the FIFO and lose *every* frame — including the
+     * release edges this backpressure exists to protect — and would stall
+     * controller-profile transfers and the S3 heartbeat with it. */
+    if (xQueueSend(s_event_queue, ev, pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)) == pdTRUE) {
+        return true;
+    }
+    s_edge_backpressure_timeout_count++;
+    return false;
 }
 
 static void dispatch_frame(const uint8_t *f)
@@ -354,8 +373,10 @@ static void dispatch_frame(const uint8_t *f)
         if (now - s_last_warn >= pdMS_TO_TICKS(1000)) {
             s_last_warn = now;
             ESP_LOGW(TAG, "control event enqueue failed, drops=%" PRIu32
-                     " coalesced=%" PRIu32 " write_fail=%" PRIu32,
-                     s_event_drop_count, s_event_coalesce_count, s_uart_write_fail_count);
+                     " coalesced=%" PRIu32 " write_fail=%" PRIu32
+                     " edge_timeouts=%" PRIu32,
+                     s_event_drop_count, s_event_coalesce_count,
+                     s_uart_write_fail_count, s_edge_backpressure_timeout_count);
         }
     }
 }
@@ -503,6 +524,7 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
     memset(s_pending_values, 0, sizeof(s_pending_values));
     memset(s_pending_jog_valid, 0, sizeof(s_pending_jog_valid));
     memset(s_pending_jog_delta, 0, sizeof(s_pending_jog_delta));
+    s_edge_backpressure_timeout_count = 0u;
 
     uart_config_t ucfg = {
         .baud_rate  = UART_BAUD,

@@ -58,6 +58,13 @@ esp_err_t library_get(int index, library_track_t *out);
 esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,
                               uint32_t *out_duration_ms);
+/* Identity of one logical row without copying the ~2.9 KB track record. Use this
+ * (and library_find_row_by_key) for highlight/selection/lookup work; library_get()
+ * is for callers that genuinely need the whole record. */
+esp_err_t library_get_row_key(int index, uint32_t *out_key);
+/* Logical row currently holding `track_key`, or -1. Single pass under one lock
+ * instead of N locked full-record copies. */
+int       library_find_row_by_key(uint32_t track_key);
 #ifdef WIN32
 /* Simulator only: pointer into the immutable store for the current logical row.
  * Sorting keeps it valid; a later library_init() rebuild may replace the store. */

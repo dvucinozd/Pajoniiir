@@ -67,9 +67,11 @@ this branch:
 
 - Added CI jobs that build ESP32-S3 and ESP32-P4 with the ESP-IDF 6.0.2 Docker
   image and run both host regression suites.
-- Fixed PowerShell 5.1 compatibility in `run_p4_host_tests.ps1` and
-  `run_p4_host_tests_current.ps1` (replaced `.Split()` with
-  `[regex]::Matches`, normalised CRLF→LF).
+- Fixed PowerShell 5.1 compatibility in `run_p4_host_tests.ps1` (replaced
+  `.Split()` with `[regex]::Matches`, normalised CRLF→LF). The migration-era
+  `run_p4_host_tests_current.ps1` shim, which rewrote the base runner's source at
+  run time, has since been folded back into `run_p4_host_tests.ps1`; there is one
+  runner again and it is the file CI executes.
 - Added `esp_timer.h` stub for Win32 host test compilation.
 - Added new host tests: `audio_compressed_cache`, `audio_recorder_finalize`,
   `audio_recorder_stop_gate`, `ui_library` pagination.

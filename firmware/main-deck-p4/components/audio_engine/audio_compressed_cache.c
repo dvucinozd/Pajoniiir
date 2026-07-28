@@ -60,12 +60,27 @@ static audio_compressed_cache_page_t *load_page(audio_compressed_cache_t *cache,
     cache->misses++;
     cache->backend_bytes += got;
     audio_compressed_cache_page_t *page = &cache->pages[slot];
+    if (got != wanted) {
+        /* `wanted` is already clamped to the file tail, so a short read here is a
+         * backend fault (media gate closed, USB glitch, FATFS error), not EOF.
+         * Publishing it would make every later hit on this page return a
+         * truncated extent, which the decoder reads as a permanent premature EOF
+         * until LRU happens to evict the slot. Retire the slot — its storage is
+         * clobbered either way — so the next read retries the transfer. */
+        page->valid = false;
+        page->valid_bytes = 0u;
+        page->offset = 0u;
+        page->stamp = 0u;
+        cache->short_reads++;
+        if (out_slot) *out_slot = slot;
+        return NULL;
+    }
     page->offset = aligned_offset;
     page->valid_bytes = got;
     page->stamp = ++cache->stamp;
-    page->valid = got > 0u;
+    page->valid = true;
     if (out_slot) *out_slot = slot;
-    return page->valid ? page : NULL;
+    return page;
 }
 
 bool audio_compressed_cache_init(audio_compressed_cache_t *cache,

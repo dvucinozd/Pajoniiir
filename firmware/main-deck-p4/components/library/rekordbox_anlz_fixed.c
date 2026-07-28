@@ -10,7 +10,18 @@
 #include <stdio.h>
 #include <string.h>
 
-static bool s_anlz_short_read;
+/* Per-thread, not global. Two decks can resolve ANLZ concurrently (each track
+ * load runs on its own worker task), and with one shared flag a reset in one
+ * parse erases a short read the other has just detected — publishing a truncated
+ * DAT as valid and caching it. FreeRTOS/ESP-IDF places `_Thread_local` in the
+ * per-task TLS block, and the PC host tests are single-threaded either way. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define ANLZ_PARSE_LOCAL _Thread_local
+#else
+#define ANLZ_PARSE_LOCAL __thread
+#endif
+
+static ANLZ_PARSE_LOCAL bool s_anlz_short_read;
 
 static size_t anlz_checked_fread(void *ptr, size_t size, size_t count, FILE *stream)
 {

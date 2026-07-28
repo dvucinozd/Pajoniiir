@@ -14,7 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static const char *TAG = "library";
+/* Referenced only by the ESP_LOG* macros, which the PC host stubs compile away.
+ * Marking it used keeps -Wall clean there without an #ifdef around every log. */
+__attribute__((unused)) static const char *TAG = "library";
 
 /* USB drive mount point — set by USB host VFS when the drive is mounted */
 #ifndef WIN32
@@ -25,10 +27,16 @@ static const char *TAG = "library";
 #define USB_PDB_PATH     USB_MOUNT_POINT "/PIONEER/rekordbox/export.pdb"
 
 /* Track records are built transactionally into the inactive PSRAM buffer and
- * become immutable once published. Sorting never copies or moves these ~3 KiB
+ * become immutable once published. Sorting never copies or moves these ~2.9 KiB
  * records; it republishes only a double-buffered uint16_t row-order table.
  * The second record buffer remains necessary so a slow USB rebuild cannot
- * disturb readers of the currently published catalog. */
+ * disturb readers of the currently published catalog.
+ *
+ * Record buffers are sized to the catalog actually being published, not to
+ * LIBRARY_MAX_TRACKS: two maximum-size buffers are ~6 MiB of PSRAM held for the
+ * lifetime of the process even for a ten-track stick. Only the rebuild window
+ * pays for two buffers; the superseded one is released as soon as the swap has
+ * happened under the lock, so steady state holds exactly one. */
 #define LIBRARY_MAX_TRACKS  1024
 
 typedef uint16_t library_order_entry_t;
@@ -36,6 +44,7 @@ _Static_assert(LIBRARY_MAX_TRACKS <= UINT16_MAX,
                "library order entries must address every track slot");
 
 static library_track_t *s_track_buf[2] = { NULL, NULL };
+static int              s_track_cap[2] = { 0, 0 };
 static library_order_entry_t *s_order_buf[2] = { NULL, NULL };
 static int              s_active_buf = 0;
 static int              s_active_order_buf = 0;
@@ -78,23 +87,11 @@ static esp_err_t ensure_library_mutex(void)
     return s_library_mutex ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
+/* Order tables are 2 KiB each at the maximum track count, so they stay fixed-size
+ * and preallocated; only the multi-megabyte record buffers are demand-sized. */
 static esp_err_t ensure_index_buffers(void)
 {
     for (int i = 0; i < 2; i++) {
-        if (!s_track_buf[i]) {
-            s_track_buf[i] = heap_caps_malloc(
-                LIBRARY_MAX_TRACKS * sizeof(library_track_t),
-                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-            if (!s_track_buf[i]) {
-                ESP_LOGW(TAG, "SPIRAM unavailable for track buffer %d, using internal heap", i);
-                s_track_buf[i] = malloc(LIBRARY_MAX_TRACKS * sizeof(library_track_t));
-            }
-            if (!s_track_buf[i]) {
-                ESP_LOGE(TAG, "Out of memory for track buffer %d", i);
-                return ESP_ERR_NO_MEM;
-            }
-        }
-
         if (!s_order_buf[i]) {
             s_order_buf[i] = heap_caps_malloc(
                 LIBRARY_MAX_TRACKS * sizeof(library_order_entry_t),
@@ -110,6 +107,45 @@ static esp_err_t ensure_index_buffers(void)
         }
     }
     return ESP_OK;
+}
+
+/* Give buffer slot `buf` room for `count` records, reusing it when it is already
+ * large enough. A rebuild that shrinks the catalog keeps the larger allocation
+ * rather than churning multi-megabyte PSRAM blocks; the superseded slot is
+ * released after publish, which is what actually bounds steady-state usage. */
+static esp_err_t reserve_track_buffer(int buf, int count)
+{
+    if (count <= 0) count = 1;
+    if (s_track_buf[buf] && s_track_cap[buf] >= count) {
+        return ESP_OK;
+    }
+
+    const size_t bytes = (size_t)count * sizeof(library_track_t);
+    library_track_t *fresh = heap_caps_malloc(bytes,
+                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!fresh) {
+        ESP_LOGW(TAG, "SPIRAM unavailable for track buffer %d, using internal heap", buf);
+        fresh = malloc(bytes);
+    }
+    if (!fresh) {
+        ESP_LOGE(TAG, "Out of memory for %d track records in buffer %d", count, buf);
+        return ESP_ERR_NO_MEM;
+    }
+
+    free(s_track_buf[buf]);
+    s_track_buf[buf] = fresh;
+    s_track_cap[buf] = count;
+    return ESP_OK;
+}
+
+/* Caller holds s_library_mutex and has already published the other slot. Every
+ * reader copies under that same lock, so nothing can still be inside this buffer. */
+static void release_track_buffer_locked(int buf)
+{
+    if (!s_track_buf[buf]) return;
+    free(s_track_buf[buf]);
+    s_track_buf[buf] = NULL;
+    s_track_cap[buf] = 0;
 }
 
 static inline library_track_t *active_tracks(void)
@@ -182,7 +218,12 @@ static void library_apply_meta_to_track(library_track_t *track, const anlz_metad
     if (meta->bpm > 0) {
         track->bpm = meta->bpm;
     }
-    if (meta->beat_count > 0 && meta->beats) {
+    /* The PDB/audio duration covers the whole file including any outro after the
+     * final beat, so the beatgrid is only a fallback for a catalog row that has
+     * no duration at all. Overwriting unconditionally used to truncate playback
+     * length to the last beat, and was being undone again by two separate callers
+     * downstream; enforce it once, here, where the value is produced. */
+    if (track->duration_ms == 0u && meta->beat_count > 0 && meta->beats) {
         track->duration_ms = meta->beats[meta->beat_count - 1].time_ms;
     }
     if (meta->has_waveform_low) {
@@ -232,11 +273,9 @@ esp_err_t library_init(void)
     uint32_t build_generation = s_generation;
     xSemaphoreGiveRecursive(s_library_mutex);
 
-    library_track_t *build_index = s_track_buf[build_buf];
     int build_order_buf = s_active_order_buf ^ 1;
     library_order_entry_t *build_order = s_order_buf[build_order_buf];
     int build_count = 0;
-    memset(build_index, 0, LIBRARY_MAX_TRACKS * sizeof(library_track_t));
 
     pdb_t *pdb = NULL;
     media_io_gate_begin();
@@ -252,6 +291,20 @@ esp_err_t library_init(void)
 
     int n = pdb_track_count(pdb);
     if (n > LIBRARY_MAX_TRACKS) n = LIBRARY_MAX_TRACKS;
+
+    /* Size the record buffer now that the real track count is known, rather than
+     * reserving LIBRARY_MAX_TRACKS up front. */
+    rc = reserve_track_buffer(build_buf, n);
+    if (rc != ESP_OK) {
+        pdb_close(pdb);
+        media_io_gate_end();
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return rc;
+    }
+    library_track_t *build_index = s_track_buf[build_buf];
+    memset(build_index, 0, (size_t)s_track_cap[build_buf] * sizeof(library_track_t));
 
     for (int i = 0; i < n; i++) {
         pdb_track_t pt;
@@ -289,6 +342,7 @@ esp_err_t library_init(void)
         ESP_LOGW(TAG, "Discarding stale library index build");
         return ESP_ERR_INVALID_STATE;
     }
+    const int superseded_buf = s_active_buf;
     s_active_buf = build_buf;
     s_active_order_buf = build_order_buf;
     s_track_count = build_count;
@@ -297,9 +351,17 @@ esp_err_t library_init(void)
     }
     s_generation++;
     s_index_building = false;
+    /* The previously published records are now unreachable: every reader resolves
+     * through active_tracks() while holding this same lock. Releasing here is what
+     * keeps steady-state usage at one record buffer instead of two. */
+    if (superseded_buf != build_buf) {
+        release_track_buffer_locked(superseded_buf);
+    }
     xSemaphoreGiveRecursive(s_library_mutex);
 
-    ESP_LOGI(TAG, "Library ready: %d tracks from PDB", build_count);
+    ESP_LOGI(TAG, "Library ready: %d tracks from PDB (%u KiB of records)",
+             build_count,
+             (unsigned)(((size_t)build_count * sizeof(library_track_t)) / 1024u));
     return ESP_OK;
 }
 
@@ -392,6 +454,51 @@ esp_err_t library_get_summary(int index, uint16_t *out_bpm, uint32_t *out_durati
     if (out_duration_ms) *out_duration_ms = idx[slot].duration_ms;
     xSemaphoreGiveRecursive(s_library_mutex);
     return ESP_OK;
+}
+
+/* ── library_get_row_key / library_find_row_by_key ────────────────────────── *
+ *
+ * Identity-only accessors. library_get() copies a whole library_track_t (~2.9 KB,
+ * dominated by waveform_low[400] and pvbr[400]) under the library mutex, which is
+ * pure waste when the caller only wants to know which track a row holds — and it
+ * was being paid per LVGL draw task and per element of several linear scans.
+ * These read the two identity fields in place instead.
+ */
+esp_err_t library_get_row_key(int index, uint32_t *out_key)
+{
+    if (!out_key) return ESP_ERR_INVALID_ARG;
+    *out_key = 0u;
+    if (ensure_library_mutex() != ESP_OK) return ESP_ERR_NOT_FOUND;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    library_track_t *idx = active_tracks();
+    int slot = library_slot_for_row_unlocked(index);
+    esp_err_t rc = ESP_ERR_NOT_FOUND;
+    if (idx && slot >= 0) {
+        *out_key = library_track_key(&idx[slot]);
+        rc = ESP_OK;
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return rc;
+}
+
+int library_find_row_by_key(uint32_t track_key)
+{
+    if (track_key == 0u) return -1;
+    if (ensure_library_mutex() != ESP_OK) return -1;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    library_track_t *idx = active_tracks();
+    int found = -1;
+    if (idx) {
+        for (int row = 0; row < s_track_count; ++row) {
+            int slot = library_slot_for_row_unlocked(row);
+            if (slot >= 0 && library_track_key(&idx[slot]) == track_key) {
+                found = row;
+                break;
+            }
+        }
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return found;
 }
 
 /* ── ANLZ resolver ────────────────────────────────────────────────────────── *
@@ -530,6 +637,7 @@ esp_err_t library_load_anlz(library_track_t *track)
 
     int64_t elapsed_us = esp_timer_get_time() - t_start;
     const char *src_name = (source == LIBRARY_ANLZ_SRC_CACHE) ? "cache" : "usb";
+    (void)src_name; /* only read by ESP_LOGI, which is a no-op in the host build */
     __atomic_store_n(&s_last_load_elapsed_ms, (uint32_t)(elapsed_us / 1000), __ATOMIC_RELAXED);
     __atomic_store_n(&s_last_load_source, (uint32_t)source, __ATOMIC_RELAXED);
     __atomic_store_n(&s_last_load_cache_written, cache_written ? 1u : 0u, __ATOMIC_RELAXED);

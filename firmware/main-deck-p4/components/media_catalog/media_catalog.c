@@ -159,6 +159,19 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
     return ESP_OK;
 }
 
+esp_err_t media_catalog_row_key(int index, uint32_t *out_key)
+{
+    if (!out_key || index < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return library_get_row_key(index, out_key);
+}
+
+int media_catalog_find_index_by_key(uint32_t track_key)
+{
+    return library_find_row_by_key(track_key);
+}
+
 void media_catalog_sort(int field_type, bool descending)
 {
     SemaphoreHandle_t mutex = catalog_mutex();
@@ -208,14 +221,13 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
         goto done;
     }
 
-    bool found = false;
-    const int count = library_count();
-    for (int index = 0; index < count; ++index) {
-        if (library_get(index, track) == ESP_OK && library_track_key(track) == track_key) {
-            found = true;
-            break;
-        }
-    }
+    /* Resolve the row by identity first (one locked pass, no record copies), then
+     * materialise exactly one library_track_t. The previous loop copied a ~2.9 KB
+     * record per candidate row — up to ~3 MB of memcpy and 1024 lock cycles for a
+     * single load on a full catalog. */
+    const int row = library_find_row_by_key(track_key);
+    bool found = (row >= 0) && (library_get(row, track) == ESP_OK) &&
+                 (library_track_key(track) == track_key);
     if (!found) {
         result = library_generation() == expected_generation
                      ? ESP_ERR_NOT_FOUND
@@ -230,17 +242,11 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
     service_log_event(SERVICE_LOG_TRACK_LOAD_START, SERVICE_LOG_INFO,
                       1u, track_key, 0u, 0u, 0u, NULL);
 
-    /* The PDB/audio duration includes any outro after the final beat. Preserve
-     * it across ANLZ enrichment; beatgrid duration is only a fallback when the
-     * catalog itself has no duration. */
-    const uint32_t catalog_duration_ms = track->duration_ms;
-
-    /* Analysis data refines the PDB row but is not required for playback. */
+    /* Analysis data refines the PDB row but is not required for playback.
+     * library_load_anlz() keeps any nonzero PDB/audio duration itself — the
+     * beatgrid is only its fallback — so nothing needs restoring here. */
     bool anlz_ok = true;
     esp_err_t anlz_rc = library_load_anlz(track);
-    if (catalog_duration_ms != 0u) {
-        track->duration_ms = catalog_duration_ms;
-    }
     if (anlz_rc != ESP_OK) {
         anlz_ok = false;
         ESP_LOGW(TAG, "no analysis data for track 0x%08x (%s); loading without it",

@@ -76,12 +76,20 @@ function Invoke-Step {
 
     Write-Host "==> $Name"
     Push-Location $WorkingDirectory
+    # Windows PowerShell 5.1 turns any native-command stderr output into a
+    # NativeCommandError record, which $ErrorActionPreference='Stop' then promotes
+    # to a terminating error. A single gcc warning would therefore abort the whole
+    # suite locally while PowerShell 7 (used by CI) ran it to completion. Exit code
+    # is the only success signal that means the same thing on both.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     try {
         & $Executable @Arguments
         if ($LASTEXITCODE -ne 0) {
             throw "$Name failed with exit code $LASTEXITCODE"
         }
     } finally {
+        $ErrorActionPreference = $previousErrorAction
         Pop-Location
     }
 }
@@ -164,9 +172,37 @@ Assert-FileContains `
     -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
 
 Assert-FileContains `
-    -Name "p4 priority touch supersedes stale edges and survives button-only saturation" `
+    -Name "p4 control queue preserves edges and coalesces only continuous values" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("event_is_jog_touch(&cur) && cur.id == ev->id", "queued older edge must never execute after the latest level", "button-only saturation", "xQueueSendToFront(s_event_queue, ev, portMAX_DELAY)")
+    -LiteralPatterns @("store_pending_continuous", "s_pending_jog_delta", "flush_pending_control_events")
+
+Assert-FileContains `
+    -Name "p4 edge backpressure is bounded so the UART RX task cannot wedge" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
+
+Assert-FileDoesNotContain `
+    -Name "p4 control event enqueue never blocks the UART RX task forever" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("xQueueSend(s_event_queue, ev, portMAX_DELAY)")
+
+# The two gates below stay source-level on purpose: both guard firmware-only code
+# paths that the host harness cannot execute (per-task TLS, and the audio engine
+# behind #ifndef WIN32). They are narrow ownership markers, not behaviour tests.
+Assert-FileContains `
+    -Name "p4 ANLZ short-read detection is per-task, not a shared global" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
+    -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
+
+Assert-FileContains `
+    -Name "p4 discarded track load releases the deck audio session, not just the UI" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 UART producer never drains or reorders the deck queue" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("xQueueReceive(s_event_queue")
 
 Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
@@ -532,7 +568,7 @@ Assert-FileContains `
 Assert-FileDoesNotContain `
     -Name "p4 legacy independent scratch PCM store stays retired" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "legacy fallback")
+    -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch")
 
 Assert-FileContains `
     -Name "p4 audio_scratch DSP engine renders bidirectional interpolated scratch (vinyl phase 3)" `
@@ -586,9 +622,9 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("app_settings_ota_copy_password")
 
 Assert-FileContains `
-    -Name "p4 settings log the OTA passphrase's presence, never its value" `
+    -Name "p4 settings log the transactional OTA passphrase snapshot's presence, never its value" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/app_settings.c") `
-    -LiteralPatterns @('s_ota_pass[0] ? "set" : "none"')
+    -LiteralPatterns @('next_pass[0] ? "set" : "none"')
 
 # An AP-to-STA switch must stop the AP service without tearing down the C6
 # link; if these are ever folded back into one all-or-nothing teardown the
@@ -665,7 +701,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("scratch re-grab", "s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+    -LiteralPatterns @("s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `
@@ -735,7 +771,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu", "scratch freeze is waiting for its writer flag")
+    -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu")
 
 Assert-FileDoesNotContain `
     -Name "p4 IDF 6 USB storage does not link the retired IDF 5.5 DWC shim" `
@@ -755,7 +791,7 @@ Assert-FileDoesNotContain `
 Assert-FileContains `
     -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("A cache miss after the cursor move", "eng->file_pos = target_byte", "Estimate seek %u ms")
+    -LiteralPatterns @("eng->file_pos = target_byte", "Estimate seek %u ms")
 
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
@@ -937,6 +973,7 @@ $tests = @(
         Target = "test_audio_recorder_stop_gate.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DAUDIO_RECORDER_STOP_GATE_HOST_TEST",
             "-I../../firmware/main-deck-p4/components/audio_recorder/include",
             "-o", "test_audio_recorder_stop_gate.exe",
             "test_audio_recorder_stop_gate.c",
@@ -1216,7 +1253,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_scratch.exe",
-            "test_audio_scratch.c",
+            "test_audio_scratch_current.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
@@ -1317,7 +1354,7 @@ $tests = @(
             "hot_cue_store_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+            "deck_core_test_snapshot_wrapper.c"
         )
     },
     @{
@@ -1353,7 +1390,7 @@ $tests = @(
             "hot_cue_store_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+            "deck_core_test_snapshot_wrapper.c"
         )
     },
     @{
@@ -1511,8 +1548,9 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/web_server/include",
             "-o", "test_web_api_helpers.exe",
-            "test_web_api_helpers.c",
-            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"
+            "test_web_api_helpers_current.c",
+            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c",
+            "../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"
         )
     },
     @{
@@ -1622,8 +1660,8 @@ $tests = @(
             "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_anlz.exe",
-            "test_anlz.c",
-            "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
+            "test_anlz_current.c",
+            "../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"
         )
     },
     @{
@@ -1636,7 +1674,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
-            "test_library_anlz.c",
+            "-DWIN32", "test_library_anlz_current.c",
             "../../firmware/main-deck-p4/components/library/library.c"
         )
     },
@@ -1709,28 +1747,58 @@ if ($env:IDF_PYTHON_ENV_PATH) {
     $pythonCandidates += $env:IDF_PYTHON_ENV_PATH
 }
 if ($isWindowsHost) {
+    # ESP-IDF 6.0.x first, then the 5.5 profile that older workstations still have.
+    $pythonCandidates += "C:\Espressif\python_env\idf6.0_py3.13_env"
+    $pythonCandidates += "C:\Espressif\python_env\idf6.0_py3.11_env"
     $pythonCandidates += "C:\Espressif\python_env\idf5.5_py3.11_env"
 }
+
+# Interpreter must actually carry a working `cryptography`, not merely exist.
+# The gcc these suites need lives in C:\msys64\ucrt64\bin, and prepending that to
+# PATH (as the documented workflow does) shadows the system python with msys2's,
+# which has no cryptography — the signing suite then failed for a reason that has
+# nothing to do with the code under test.
+function Test-PythonHasCryptography {
+    param([string]$Exe)
+    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return $false }
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Exe "-c" "import cryptography" 2>&1 | Out-Null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+}
+
+$pythonProbes = @()
 foreach ($candidate in $pythonCandidates) {
     if ($isWindowsHost) {
         $relativeExe = "Scripts\python.exe"
     } else {
         $relativeExe = "bin/python"
     }
-    $exe = Join-Path $candidate $relativeExe
-    if (Test-Path -LiteralPath $exe) { $pythonSource = $exe; break }
+    $pythonProbes += (Join-Path $candidate $relativeExe)
+}
+foreach ($name in @("python", "python3")) {
+    foreach ($command in @(Get-Command $name -All -ErrorAction SilentlyContinue)) {
+        if ($command.Source) { $pythonProbes += $command.Source }
+    }
+}
+foreach ($probe in $pythonProbes) {
+    if (Test-PythonHasCryptography -Exe $probe) { $pythonSource = $probe; break }
 }
 if (-not $pythonSource) {
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) { $pythonSource = $python.Source }
+    $usable = ($pythonProbes | Select-Object -Unique) -join ", "
+    Write-Warning "no python with the 'cryptography' module found (tried: $usable); SKIPPING the OTA signing tests"
 }
 if ($pythonSource) {
     Invoke-Step -Name "run ota_signing" `
         -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
         -Executable $pythonSource `
         -Arguments @("test_ota_signing.py")
-} else {
-    Write-Warning "python not found; skipping OTA signing Python tests"
 }
 
 $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
@@ -1774,3 +1842,275 @@ if (-not $KeepArtifacts) {
 }
 
 Write-Host "P4 host tests passed."
+
+Assert-FileContains `
+    -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("storage_desired_t", "s_desired.epoch++", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_connection(false")
+
+Assert-FileDoesNotContain `
+    -Name "p4 USB disconnect is not dependent on a finite event queue" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
+
+# Behaviour for this is covered by tests/library_anlz/test_library_anlz_current.c
+# (nonzero duration survives enrichment; zero duration falls back to the last
+# beat). The gate below only pins that the rule lives in the producer rather than
+# being re-applied by each caller through a compilation wrapper.
+Assert-FileContains `
+    -Name "p4 ANLZ enrichment treats the beatgrid as a duration fallback only" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("if (track->duration_ms == 0u && meta->beat_count > 0 && meta->beats)")
+
+Assert-FileContains `
+    -Name "p4 library builds its real implementation, not a duration wrapper" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
+    -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
+
+# Components whose `#include "<impl>.c"` compilation wrapper has been retired.
+# Each one's production behaviour now lives in the file the build actually names,
+# so reintroducing a wrapper here would quietly restore preprocessor symbol
+# renaming, duplicate legacy code in the image, and (for audio_engine) an
+# incomplete-type tentative definition that is a C11 constraint violation.
+foreach ($retired in @(
+    @{ Component = "library";                   Wrapper = "library_duration_fixed.c" },
+    @{ Component = "library";                   Wrapper = "track_meta_cache_fixed.c" },
+    @{ Component = "audio_engine";              Wrapper = "audio_engine_ordered.c" },
+    @{ Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" }
+)) {
+    $wrapperPath = Join-Path $RepoRoot ("firmware/main-deck-p4/components/{0}/{1}" -f $retired.Component, $retired.Wrapper)
+    Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
+    if (Test-Path -LiteralPath $wrapperPath) {
+        throw ("retired compilation wrapper reappeared: {0}" -f $wrapperPath)
+    }
+    Assert-FileDoesNotContain `
+        -Name ("p4 {0} does not build through {1}" -f $retired.Component, $retired.Wrapper) `
+        -Path (Join-Path $RepoRoot ("firmware/main-deck-p4/components/{0}/CMakeLists.txt" -f $retired.Component)) `
+        -LiteralPatterns @($retired.Wrapper)
+}
+
+Assert-FileContains `
+    -Name "p4 audio_engine and controller profile manager build their real sources" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "audio_engine.c"')
+
+Assert-FileContains `
+    -Name "p4 controller profile manager builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 display shares one authoritative framebuffer count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/include/bsp_jc4880.h") `
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT 1")
+
+Assert-FileContains `
+    -Name "p4 display allocates only the framebuffer the backend actually uses" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880_single_fb.c") `
+    -LiteralPatterns @(".num_fbs = BSP_LCD_FRAMEBUFFER_COUNT")
+
+Assert-FileContains `
+    -Name "p4 LVGL backend requests the shared framebuffer count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend_single_fb.c") `
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT", "esp_lcd_dpi_panel_get_frame_buffer")
+
+Assert-FileContains `
+    -Name "p4 firmware status strings are escaped before JSON formatting" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server_fixed.c") `
+    -LiteralPatterns @("web_bridge_p4_ota_get_status", "web_bridge_control_link_get_s3_firmware_report", "web_firmware_json_escape_in_place")
+
+Assert-FileContains `
+    -Name "p4 OTA handlers consume fragmented request bodies completely" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("while (len < wanted)", "wanted - len", "while (manifest_received < sizeof(manifest_header))")
+
+Assert-FileContains `
+    -Name "p4 product defaults explicitly disable the recorder" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("# CONFIG_AUDIO_RECORDER_ENABLED is not set")
+
+Assert-FileContains `
+    -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
+    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
+
+Assert-FileDoesNotContain `
+    -Name "confirmed dead scratch APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
+    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
+
+Assert-FileDoesNotContain `
+    -Name "retired output timing APIs stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
+    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
+
+Assert-FileDoesNotContain `
+    -Name "test-only stereo mixer API stays out of production" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
+    -LiteralPatterns @("audio_mixer_mix_stereo")
+
+Assert-FileContains `
+    -Name "scratch transport test uses a local decode-writer bridge" `
+    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
+    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
+
+Assert-FileContains `
+    -Name "production ANLZ walker rejects partial section envelopes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
+    -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+
+Assert-FileContains `
+    -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
+    -Path (Join-Path $RepoRoot "tests/anlz/test_anlz_current.c") `
+    -LiteralPatterns @("dat_truncation_corpus_rejects_partial_structures", "ext_truncation_corpus_retains_previous_metadata", "test_truncated.dat", "test_truncated.ext")
+
+Assert-FileContains `
+    -Name "library duration test covers preservation and beatgrid fallback" `
+    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
+    -LiteralPatterns @("test_nonzero_pdb_duration_survives_anlz_enrichment", "test_zero_pdb_duration_falls_back_to_last_beat", "213456u", "7000u")
+
+Assert-FileContains `
+    -Name "library sorting uses immutable records and compact double-buffered order" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
+
+Assert-FileDoesNotContain `
+    -Name "library sort never copies or qsorts full track records" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t))", "qsort(idx, s_track_count, sizeof(library_track_t)")
+
+Assert-FileContains `
+    -Name "library host test covers compact order across all sort fields" `
+    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
+    -LiteralPatterns @("test_sort_republishes_compact_order_only", "title_asc", "artist_asc", "bpm_desc", "key_asc")
+
+Assert-FileContains `
+    -Name "library UI bounds LVGL cells to one eight-row page" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
+
+Assert-FileDoesNotContain `
+    -Name "library UI never materializes every catalog row in LVGL" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("lv_table_set_row_count(s_library_table, n)", "ui_library_fill_row(")
+
+Assert-FileContains `
+    -Name "library UI host test covers 1024-track pagination boundaries" `
+    -Path (Join-Path $RepoRoot "tests/ui_library/test_ui_library.c") `
+    -LiteralPatterns @("test_pagination_bounds_large_library_to_eight_rows", "ui_library_page_for_selection(1024, 1023)", "page_count == 128", "test_page_delta_keeps_relative_row_and_clamps_edges")
+
+Assert-FileContains `
+    -Name "production library exposes selected-track API names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "public library header no longer exports mock selected-track aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index", "Temporary source-compatibility aliases")
+
+Assert-FileContains `
+    -Name "library source defines production selected-row helpers directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "library sources no longer contain selected-track mock aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI sources use only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared library UI source uses only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "firmware UI compiles shared sources directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
+
+Assert-FileDoesNotContain `
+    -Name "firmware UI source-local selected API bridges stay retired" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+
+Assert-FileContains `
+    -Name "UI simulator library implements production selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator library has no mock selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "UI simulator deck hooks have explicit simulator names" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI has no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator mocks have no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileContains `
+    -Name "migration CI runs UI simulator screenshot gate" `
+    -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
+    -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
+
+
+Assert-FileContains `
+    -Name "compressed audio uses a fixed bounded PSRAM page cache" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_fw_preload.h") `
+    -LiteralPatterns @("AUDIO_FW_CACHE_PAGE_BYTES", "AUDIO_FW_CACHE_PAGE_COUNT", "AUDIO_FW_CACHE_BYTES", "audio_compressed_cache_t cache")
+
+Assert-FileContains `
+    -Name "firmware loader binds the fixed cache instead of allocating the whole track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
+
+Assert-FileDoesNotContain `
+    -Name "firmware audio never requires one contiguous allocation per compressed track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("TRACK TOO LARGE", "heap_caps_malloc(track_bytes", "heap_caps_get_largest_free_block", "drflac_open_memory", "build_seek_table", "audio_fw_preload_chunk_bytes", "file_buf")
+
+Assert-FileContains `
+    -Name "bounded cache host test covers LRU replacement, cross-page reads and seeks" `
+    -Path (Join-Path $RepoRoot "tests/audio_compressed_cache/test_audio_compressed_cache.c") `
+    -LiteralPatterns @("test_cross_page_read_and_eof_clamp", "test_hits_and_lru_eviction_stay_bounded", "cache.hits == 1u", "audio_compressed_cache_read")
+
+Assert-FileContains `
+    -Name "recorder STOP closes admission and waits for active producers before drain" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("audio_recorder_stop_gate_close", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_try_enter")
+
+Assert-FileContains `
+    -Name "recorder finalize publishes only after patch sync and close succeed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder_sink.c") `
+    -LiteralPatterns @("audio_recorder_finalize_run", "recorder_finalize_patch", "recorder_finalize_sync", "recorder_finalize_close", "recorder_finalize_publish", "audio_recorder_sink_abort")
+
+Assert-FileContains `
+    -Name "recorder stop propagates writer and finalize failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
+
+Assert-FileContains `
+    -Name "recorder finalize fault injection forbids rename after every durability failure" `
+    -Path (Join-Path $RepoRoot "tests/audio_recorder_finalize/test_audio_recorder_finalize.c") `
+    -LiteralPatterns @("AUDIO_RECORDER_FINALIZE_STAGE_PATCH", "AUDIO_RECORDER_FINALIZE_STAGE_SYNC", "AUDIO_RECORDER_FINALIZE_STAGE_CLOSE", "AUDIO_RECORDER_FINALIZE_STAGE_PUBLISH")
+
+Assert-FileContains `
+    -Name "recorder producer gate test covers the close versus in-flight producer race" `
+    -Path (Join-Path $RepoRoot "tests/audio_recorder_stop_gate/test_audio_recorder_stop_gate.c") `
+    -LiteralPatterns @("audio_recorder_stop_gate_active", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_leave")

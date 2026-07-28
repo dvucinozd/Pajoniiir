@@ -7,6 +7,7 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <errno.h>
@@ -20,6 +21,10 @@
 #define WRITER_STACK   4096
 #define WRITER_PRIO    2
 #define WRITER_WAIT_MS 2000
+/* Upper bound on records written per sd_io_gate transaction. Large enough to
+ * absorb an event burst in one card transaction, small enough that a sync
+ * barrier queued behind a flood is not starved for long. */
+#define WRITER_BATCH   32u
 #define SYNC_PERIOD_US     (5ll * 1000000ll)
 #define SYNC_PERIOD_REC_US (60ll * 1000000ll)
 #define SYNC_WAIT_MS       10000u
@@ -32,11 +37,19 @@ typedef enum {
 typedef struct {
     writer_item_kind_t kind;
     service_log_record_t record;
-    TaskHandle_t ack_task;
+    /* Acknowledged through a dedicated semaphore, never the caller's task
+     * notification: service_log_sync() is called from arbitrary tasks (the Wi-Fi
+     * worker, an httpd handler), and several of them use ulTaskNotifyTake for
+     * their own control flow. Signalling their default notification slot would
+     * silently steal or fabricate a wakeup — including after this barrier has
+     * already timed out. */
+    SemaphoreHandle_t ack_sem;
 } writer_item_t;
 
 static QueueHandle_t s_queue = NULL;
 static TaskHandle_t  s_writer = NULL;
+static SemaphoreHandle_t s_sync_ack = NULL;   /* writer -> one waiting syncer */
+static SemaphoreHandle_t s_sync_lock = NULL;  /* one barrier in flight */
 static uint32_t      s_seq = 0u;
 static uint32_t      s_boot_id = 0u;
 static char          s_fw_version[SERVICE_LOG_TEXT_MAX] = "n/a";
@@ -239,14 +252,33 @@ static void writer_task(void *arg)
             ensure_open();
             flush_if_dirty(true);
             publish_status();
-            if (item.ack_task) xTaskNotifyGive(item.ack_task);
+            if (item.ack_sem) xSemaphoreGive(item.ack_sem);
             continue;
         }
 
         ensure_open();
         if (s_fp) {
+            /* Batch consecutive records into a single sd_io_gate transaction.
+             * Every begin/end pair contends with the recorder's continuous WAV
+             * stream on the same card, and writing one record per transaction
+             * costs two of them (write + flush) for each event in a burst.
+             *
+             * The batch stops at a sync barrier rather than swallowing it, so
+             * WRITER_ITEM_SYNC still observes strict queue order: every record
+             * enqueued before it has been written by the time it is handled.
+             * xQueuePeek before xQueueReceive is safe because this task is the
+             * queue's only consumer — producers can add, never remove. */
             sd_io_gate_begin();
             write_record(&item.record);
+            uint32_t batched = 1u;
+            writer_item_t next;
+            while (batched < WRITER_BATCH &&
+                   xQueuePeek(s_queue, &next, 0) == pdTRUE &&
+                   next.kind == WRITER_ITEM_RECORD &&
+                   xQueueReceive(s_queue, &next, 0) == pdTRUE) {
+                write_record(&next.record);
+                batched++;
+            }
             sd_io_gate_end();
             flush_if_dirty(false);
         }
@@ -264,6 +296,16 @@ esp_err_t service_log_init(const char *fw_version, const char *partition,
 
     s_queue = xQueueCreate(SERVICE_LOG_QUEUE_LEN, sizeof(writer_item_t));
     if (!s_queue) return ESP_ERR_NO_MEM;
+
+    s_sync_ack = xSemaphoreCreateBinary();
+    s_sync_lock = xSemaphoreCreateMutex();
+    if (!s_sync_ack || !s_sync_lock) {
+        if (s_sync_ack) { vSemaphoreDelete(s_sync_ack); s_sync_ack = NULL; }
+        if (s_sync_lock) { vSemaphoreDelete(s_sync_lock); s_sync_lock = NULL; }
+        vQueueDelete(s_queue);
+        s_queue = NULL;
+        return ESP_ERR_NO_MEM;
+    }
 
     s_boot_id = load_boot_id();
     s_last_sync_us = esp_timer_get_time();
@@ -318,19 +360,29 @@ esp_err_t service_log_get_status(service_log_status_t *out)
 
 void service_log_sync(void)
 {
-    if (!s_queue || !s_writer) return;
+    if (!s_queue || !s_writer || !s_sync_ack || !s_sync_lock) return;
 
-    /* Clear a stale notification from an earlier timed-out barrier. */
-    (void)ulTaskNotifyTake(pdTRUE, 0);
+    /* One barrier in flight at a time, so the single ack semaphore always
+     * belongs to the caller currently holding this lock. */
+    if (xSemaphoreTake(s_sync_lock, pdMS_TO_TICKS(SYNC_WAIT_MS)) != pdTRUE) {
+        ESP_LOGW("service_log", "sync barrier contended; skipping");
+        return;
+    }
+
+    /* Drain a late ack left by a previous barrier that timed out. */
+    (void)xSemaphoreTake(s_sync_ack, 0);
+
     writer_item_t item = {
         .kind = WRITER_ITEM_SYNC,
-        .ack_task = xTaskGetCurrentTaskHandle(),
+        .ack_sem = s_sync_ack,
     };
     if (xQueueSend(s_queue, &item, pdMS_TO_TICKS(SYNC_WAIT_MS)) != pdTRUE) {
         ESP_LOGW("service_log", "sync barrier enqueue timed out");
+        xSemaphoreGive(s_sync_lock);
         return;
     }
-    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SYNC_WAIT_MS)) == 0u) {
+    if (xSemaphoreTake(s_sync_ack, pdMS_TO_TICKS(SYNC_WAIT_MS)) != pdTRUE) {
         ESP_LOGW("service_log", "sync barrier acknowledgement timed out");
     }
+    xSemaphoreGive(s_sync_lock);
 }

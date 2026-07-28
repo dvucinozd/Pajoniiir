@@ -363,6 +363,35 @@ static ui_library_page_t ui_library_current_page(void)
                                          s_selected_track_idx);
 }
 
+/* The visible page only changes when the selection moves or the catalog is
+ * republished, but the LVGL draw path needs it per cell. Keep the last computed
+ * page so the draw callback does not take the library lock (via media_catalog_count)
+ * once per draw task. Every mutation of s_selected_track_idx or of the row set
+ * goes through ui_library_populate_rows()/ui_library_select_visible_cell(), which
+ * refresh this. */
+static ui_library_page_t s_library_page_cache;
+static bool s_library_page_cache_valid;
+
+static ui_library_page_t ui_library_refresh_page_cache(void)
+{
+    s_library_page_cache = ui_library_current_page();
+    s_library_page_cache_valid = true;
+    return s_library_page_cache;
+}
+
+static ui_library_page_t ui_library_page_cached(void)
+{
+    if (!s_library_page_cache_valid) {
+        return ui_library_refresh_page_cache();
+    }
+    return s_library_page_cache;
+}
+
+static void ui_library_invalidate_page_cache(void)
+{
+    s_library_page_cache_valid = false;
+}
+
 static void ui_library_update_source_label(void)
 {
     int count = ui_library_media_count();
@@ -425,7 +454,7 @@ static void ui_library_fill_visible_row(int visible_row, int track_index)
 
 static void ui_library_select_visible_cell(void)
 {
-    ui_library_page_t page = ui_library_current_page();
+    ui_library_page_t page = ui_library_refresh_page_cache();
     if (s_library_table && page.row_count > 0) {
         lv_table_set_selected_cell(s_library_table,
                                    (uint32_t)page.selected_row, 0);
@@ -438,7 +467,7 @@ static void ui_library_populate_rows(void)
         return;
     }
 
-    ui_library_page_t page = ui_library_current_page();
+    ui_library_page_t page = ui_library_refresh_page_cache();
     lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
     for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
         int track_index = ui_library_page_absolute_index(&page, visible_row);
@@ -516,6 +545,19 @@ static void ui_library_apply_empty_track(uint8_t deck)
 }
 
 #ifndef WIN32
+/* Tear down the audio session for a deck whose load result is not going to be
+ * published. Safe on a deck whose load already failed: audio_engine_stop_for_deck
+ * does not key teardown on `loaded`, so it simply joins whatever tasks the
+ * failed session parked and returns the deck to the empty state the UI shows. */
+static void ui_library_release_deck_audio(uint8_t deck)
+{
+    esp_err_t rc = audio_engine_deck_stop(deck);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "deck %u audio release failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+}
+
 static void ui_track_load_worker(void *arg)
 {
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
@@ -662,6 +704,13 @@ static void ui_poll_track_load_result(void)
         bool stale = result.generation != media_catalog_generation();
         if (stale) {
             if (result.deck_reset) {
+                /* The worker may have completed audio_engine_deck_load() before
+                 * the catalog changed under it. Clearing only the UI would leave
+                 * the engine holding a track the operator can still start from a
+                 * deck the screen shows as empty — and, after a USB removal, one
+                 * whose media is gone. Retire the audio session first, then the
+                 * UI, so both sides agree the deck is empty. */
+                ui_library_release_deck_audio(result.deck);
                 ui_library_apply_empty_track(result.deck);
             }
             ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
@@ -675,6 +724,7 @@ static void ui_poll_track_load_result(void)
             ESP_LOGW(TAG, "track load worker failed key=0x%08x index=%d: %s",
                      (unsigned)result.track_key, result.index, esp_err_to_name(result.rc));
             if (result.deck_reset) {
+                ui_library_release_deck_audio(result.deck);
                 ui_library_apply_empty_track(result.deck);
             }
             ui_library_status_hold(display, ui_library_status_color_for_text(display), 3500);
@@ -689,7 +739,10 @@ static void ui_poll_track_load_result(void)
         s_loaded_media_valid[deck] = true;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
         s_deck_loaded_track_valid[deck] = true;
-        ESP_LOGI("UI_HIGHLIGHT", "POLL RESULT: deck=%u, key=0x%08X", (unsigned)deck, (unsigned)result.loaded.track_key);
+        if (ui_diagnostics_enabled()) {
+            ESP_LOGI(TAG, "load result: deck=%u key=0x%08X",
+                     (unsigned)deck, (unsigned)result.loaded.track_key);
+        }
         if (s_library_table) {
             lv_obj_invalidate(s_library_table);
         }
@@ -789,34 +842,26 @@ static void ui_library_preserve_selection_by_key(uint32_t target_key)
     if (target_key == 0) {
         return;
     }
+    /* Runs on the LVGL task after every sort. Resolving through the identity
+     * index keeps it a single locked pass instead of one full-record copy per
+     * row, and firmware and simulator now agree on what "same track" means
+     * (library_track_key, i.e. path hash when the PDB has no track_id). */
 #ifndef WIN32
-    int n = media_catalog_count();
-    for (int i = 0; i < n; i++) {
-        media_catalog_row_t t;
-        if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
-            s_selected_track_idx = i;
-            break;
-        }
-    }
+    int row = media_catalog_find_index_by_key(target_key);
 #else
-    int n = library_count();
-    for (int i = 0; i < n; i++) {
-        library_track_t *t = library_get_ptr(i);
-        if (t && t->track_id == target_key) {
-            s_selected_track_idx = i;
-            break;
-        }
-    }
+    int row = library_find_row_by_key(target_key);
 #endif
+    if (row >= 0) {
+        s_selected_track_idx = row;
+        ui_library_invalidate_page_cache();
+    }
 }
 
 static uint32_t ui_library_selected_key(void)
 {
 #ifndef WIN32
-    media_catalog_row_t sel_track;
-    return (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
-           ? sel_track.track_key
-           : 0;
+    uint32_t key = 0;
+    return (media_catalog_row_key(s_selected_track_idx, &key) == ESP_OK) ? key : 0;
 #else
     library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
     return sel_track ? sel_track->track_id : 0;
@@ -953,16 +998,20 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 
     if (base_dsc->part == LV_PART_ITEMS) {
         uint32_t row = base_dsc->id1;
-        ui_library_page_t page = ui_library_current_page();
+        /* This callback runs per draw task, so up to ~120 times per frame while
+         * the Library tab is visible (8 rows x 5 columns x fill/border/label).
+         * Recomputing the page and re-reading the catalog per call is why it must
+         * stay identity-only; ui_library_page_cached() reuses the page computed
+         * once per populate/selection change. */
+        ui_library_page_t page = ui_library_page_cached();
         int track_index = ui_library_page_absolute_index(&page, (int)row);
 
         uint32_t track_key = 0;
         bool has_track = false;
 
 #ifndef WIN32
-        media_catalog_row_t row_data;
-        if (track_index >= 0 && media_catalog_get_row(track_index, &row_data) == ESP_OK) {
-            track_key = row_data.track_key;
+        if (track_index >= 0 &&
+            media_catalog_row_key(track_index, &track_key) == ESP_OK) {
             has_track = true;
         }
 #else
@@ -1338,12 +1387,18 @@ void ui_library_load_initial_track(void)
 
 void ui_trigger_library_refresh(void)
 {
+    /* Called from the USB storage task. Dropping the cached page is a plain bool
+     * store; the worst outcome of racing the LVGL task is one extra recompute,
+     * and a stale page can only omit a highlight because the row lookup is
+     * bounds-checked on both sides. */
+    ui_library_invalidate_page_cache();
     s_library_needs_refresh = true;
 }
 
 void ui_notify_usb_removed(void)
 {
 #ifndef WIN32
+    ui_library_invalidate_page_cache();
     s_usb_removed_pending = true;
 #endif
 }
@@ -1623,15 +1678,7 @@ esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
         return ESP_ERR_INVALID_STATE;
     }
 
-    int resolved_index = -1;
-    const int count = media_catalog_count();
-    for (int index = 0; index < count; ++index) {
-        media_catalog_row_t row;
-        if (media_catalog_get_row(index, &row) == ESP_OK && row.track_key == track_key) {
-            resolved_index = index;
-            break;
-        }
-    }
+    int resolved_index = media_catalog_find_index_by_key(track_key);
     if (media_catalog_generation() != generation) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -1648,13 +1695,11 @@ esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
     return rc;
 #else
     (void)generation;
-    for (int index = 0; index < library_count(); ++index) {
-        library_track_t *track = library_get_ptr(index);
-        if (track && track->track_id == track_key) {
-            return ui_library_load_track_index_for_deck(index, deck);
-        }
+    int index = library_find_row_by_key(track_key);
+    if (index < 0) {
+        return ESP_ERR_NOT_FOUND;
     }
-    return ESP_ERR_NOT_FOUND;
+    return ui_library_load_track_index_for_deck(index, deck);
 #endif
 }
 

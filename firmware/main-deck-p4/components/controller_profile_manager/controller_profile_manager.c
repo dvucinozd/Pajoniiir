@@ -538,6 +538,11 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+/* Defined near the bottom of this firmware-only section but called by the
+ * descriptor worker above it. Declared here rather than through a compilation
+ * wrapper that #included this translation unit purely to inject this one line. */
+static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid);
+
 #ifndef CONFIG_CONTROLLER_PROFILE_SD_PATH
 #define CONFIG_CONTROLLER_PROFILE_SD_PATH "/sd/controllers"
 #endif

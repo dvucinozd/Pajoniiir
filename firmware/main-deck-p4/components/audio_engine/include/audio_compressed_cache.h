@@ -31,6 +31,7 @@ typedef struct {
     size_t backend_bytes;
     uint32_t hits;
     uint32_t misses;
+    uint32_t short_reads;  /* backend returned less than the clamped page extent */
 } audio_compressed_cache_t;
 
 bool audio_compressed_cache_init(audio_compressed_cache_t *cache,

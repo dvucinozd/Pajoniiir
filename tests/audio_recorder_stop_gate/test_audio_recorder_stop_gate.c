@@ -27,6 +27,20 @@ int main(void)
     audio_recorder_stop_gate_close(&gate);
     CHECK(audio_recorder_stop_gate_is_quiescent(&gate));
 
+    /* An unpaired leave must not wrap the producer count. If it did, the gate
+     * would report ~4 billion active producers and STOP would wait forever for a
+     * drain that can never happen. */
+    audio_recorder_stop_gate_leave(&gate);
+    CHECK(audio_recorder_stop_gate_active(&gate) == 0u);
+    CHECK(audio_recorder_stop_gate_is_quiescent(&gate));
+
+    /* And the gate is still usable afterwards. */
+    CHECK(audio_recorder_stop_gate_open(&gate));
+    CHECK(audio_recorder_stop_gate_try_enter(&gate));
+    CHECK(audio_recorder_stop_gate_active(&gate) == 1u);
+    audio_recorder_stop_gate_leave(&gate);
+    CHECK(audio_recorder_stop_gate_is_quiescent(&gate));
+
     if (failures == 0) puts("audio_recorder_stop_gate tests passed");
     return failures ? 1 : 0;
 }

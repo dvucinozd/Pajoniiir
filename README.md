@@ -129,11 +129,20 @@ idf.py set-target esp32p4
 idf.py build
 ```
 
-Run the host regression suites from the repository root:
+Run the host regression suites from the repository root. These are the same two
+entry points CI uses, and both run under Windows PowerShell 5.1 and PowerShell 7:
 
 ```powershell
 .\tests\run_s3_host_tests.ps1
 .\tests\run_p4_host_tests.ps1
+```
+
+If `gcc` is not already on `PATH`, append msys2 rather than prepending it —
+prepending shadows the system `python.exe` with msys2's, which cannot run the
+OTA signing suite:
+
+```powershell
+$env:Path = "$env:Path;C:\msys64\ucrt64\bin"
 ```
 
 Run the headless LVGL navigation and exact-framebuffer screenshot gate:

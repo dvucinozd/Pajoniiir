@@ -3,6 +3,10 @@ name: ESP-IDF 6.0.2 migration
 on:
   push:
     branches:
+      # master included deliberately: without it the gate stopped running the
+      # moment work merged, so the default branch was never verified by the same
+      # checks that guarded the branch it came from.
+      - master
       - migration/esp-idf-6.0.2
       - fix/release-blockers-and-concurrency
   pull_request:
@@ -15,6 +19,12 @@ on:
 permissions:
   contents: read
 
+# Superseded pushes to the same ref are cancelled; a run on master is never
+# cancelled, because that result is the record for the default branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 env:
   IDF_IMAGE: espressif/idf:v6.0.2
 
@@ -25,6 +35,16 @@ jobs:
     steps:
       - name: Check out tested revision
         uses: actions/checkout@v4
+
+      # The runner skips suites whose tooling is missing rather than failing the
+      # whole gate, so anything installed here is the difference between a check
+      # running and a warning nobody reads. ripgrep backs the dead-code
+      # call-graph audit; cryptography backs the OTA signing tests.
+      - name: Install host-suite tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ripgrep
+          python3 -m pip install --quiet --upgrade cryptography
 
       - name: Run host regression suites
         shell: pwsh
@@ -37,7 +57,7 @@ jobs:
           }
           Write-Host "S3 host tests passed."
 
-          & ./tests/run_p4_host_tests_current.ps1 *> p4-host-tests.log
+          & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
           $p4 = $LASTEXITCODE
           $p4Lines = @(Get-Content p4-host-tests.log)
           if ($p4 -ne 0) {
@@ -103,6 +123,16 @@ jobs:
           fi
           exit $code
 
+      # The lock file is committed so a clean build resolves the same component
+      # versions every time. idf.py rewrites it in place on drift, so without this
+      # check a dependency could move silently and CI would still be green.
+      - name: Verify committed dependency lock is unchanged
+        run: |
+          if ! git diff --exit-code -- firmware/control-board-s3/dependencies.lock; then
+            echo "::error::dependencies.lock changed during the build; commit the new resolution or pin the drifting component"
+            exit 1
+          fi
+
       - name: Upload S3 build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,6 +187,13 @@ jobs:
             tail -n 30 p4-idf-build.log
           fi
           exit $code
+
+      - name: Verify committed dependency lock is unchanged
+        run: |
+          if ! git diff --exit-code -- firmware/main-deck-p4/dependencies.lock; then
+            echo "::error::dependencies.lock changed during the build; commit the new resolution or pin the drifting component"
+            exit 1
+          fi
 
       - name: Upload P4 build log
         if: always()

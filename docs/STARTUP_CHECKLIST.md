@@ -82,7 +82,7 @@ clean release build is newer than the installed firmware.
 - [x] Confirm `idf.py --version`.
 - [x] Confirm MinGW/GCC is available for PC tests (msys64 ucrt64).
 - [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions (adapted for PowerShell 5.1 compatibility).
-- [x] Use `tests/run_p4_host_tests_current.ps1` for P4 host regressions (adapted for PowerShell 5.1 compatibility).
+- [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions (runs on both Windows PowerShell 5.1 and PowerShell 7).
 
 ## Baseline Builds
 
