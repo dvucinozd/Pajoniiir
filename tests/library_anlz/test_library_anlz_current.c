@@ -40,6 +40,96 @@ static void test_zero_pdb_duration_falls_back_to_last_beat(void)
     CHECK(s_alloc_balance == 0);
 }
 
+static void set_pdb_track(int slot, uint32_t id, const char *title,
+                          const char *artist, const char *key, uint16_t bpm)
+{
+    CHECK(slot >= 0 && slot < TEST_PDB_MAX_TRACKS);
+    if (slot < 0 || slot >= TEST_PDB_MAX_TRACKS) {
+        return;
+    }
+    pdb_track_t *track = &s_pdb_tracks[slot];
+    memset(track, 0, sizeof(*track));
+    track->track_id = id;
+    track->bpm = bpm;
+    track->duration_s = (uint16_t)(180 + slot);
+    snprintf(track->title, sizeof(track->title), "%s", title);
+    snprintf(track->artist, sizeof(track->artist), "%s", artist);
+    snprintf(track->key, sizeof(track->key), "%s", key);
+    snprintf(track->file_path, sizeof(track->file_path), "/Contents/%lu.wav",
+             (unsigned long)id);
+}
+
+static uint32_t row_track_id(int row)
+{
+    library_track_t track;
+    CHECK(library_get(row, &track) == ESP_OK);
+    return track.track_id;
+}
+
+static void check_row_ids(const uint32_t *expected, int count)
+{
+    CHECK(library_count() == count);
+    for (int row = 0; row < count; ++row) {
+        CHECK(row_track_id(row) == expected[row]);
+    }
+}
+
+static void test_sort_republishes_compact_order_only(void)
+{
+    printf("== immutable track store with compact sort order ==\n");
+    library_clear();
+    reset_pdb_fixture();
+    s_pdb_open_result = ESP_OK;
+    s_pdb_track_count = 5;
+    set_pdb_track(0, 1001u, "Zulu",  "Beta",  "10A", 128u);
+    set_pdb_track(1, 1002u, "Alpha", "Gamma", "2A",  122u);
+    set_pdb_track(2, 1003u, "Echo",  "Alpha", "8B",  130u);
+    set_pdb_track(3, 1004u, "Bravo", "Alpha", "8A",  118u);
+    set_pdb_track(4, 1005u, "Delta", "Delta", "",    124u);
+
+    CHECK(library_init() == ESP_OK);
+    const uint32_t initial[] = {1001u, 1002u, 1003u, 1004u, 1005u};
+    check_row_ids(initial, 5);
+    library_track_t *track_1001 = library_get_ptr(0);
+    CHECK(track_1001 != NULL && track_1001->track_id == 1001u);
+
+    uint32_t generation = library_generation();
+    library_sort(1, false); /* title ascending */
+    CHECK(library_generation() == generation + 1u);
+    const uint32_t title_asc[] = {1002u, 1004u, 1005u, 1003u, 1001u};
+    check_row_ids(title_asc, 5);
+    CHECK(library_get_ptr(4) == track_1001);
+
+    generation = library_generation();
+    library_sort(0, false); /* artist ascending, title tie-break */
+    CHECK(library_generation() == generation + 1u);
+    const uint32_t artist_asc[] = {1004u, 1003u, 1001u, 1005u, 1002u};
+    check_row_ids(artist_asc, 5);
+    CHECK(library_get_ptr(2) == track_1001);
+
+    generation = library_generation();
+    library_sort(2, true); /* BPM descending */
+    CHECK(library_generation() == generation + 1u);
+    const uint32_t bpm_desc[] = {1003u, 1001u, 1005u, 1002u, 1004u};
+    check_row_ids(bpm_desc, 5);
+    CHECK(library_get_ptr(1) == track_1001);
+
+    generation = library_generation();
+    library_sort(3, false); /* numeric Camelot ordering; empty last */
+    CHECK(library_generation() == generation + 1u);
+    const uint32_t key_asc[] = {1002u, 1004u, 1003u, 1001u, 1005u};
+    check_row_ids(key_asc, 5);
+    CHECK(library_get_ptr(3) == track_1001);
+
+    generation = library_generation();
+    library_sort(99, false);
+    CHECK(library_generation() == generation); /* unsupported sort is a no-op */
+    check_row_ids(key_asc, 5);
+
+    library_clear();
+    reset_pdb_fixture();
+}
+
 int main(void)
 {
     int rc = library_anlz_legacy_main();
@@ -47,11 +137,12 @@ int main(void)
 
     test_nonzero_pdb_duration_survives_anlz_enrichment();
     test_zero_pdb_duration_falls_back_to_last_beat();
+    test_sort_republishes_compact_order_only();
 
     if (s_failures == 0) {
-        puts("library duration policy tests passed");
+        puts("library duration and compact-order tests passed");
         return 0;
     }
-    printf("library duration policy tests FAILED (%d)\n", s_failures);
+    printf("library duration and compact-order tests FAILED (%d)\n", s_failures);
     return 1;
 }

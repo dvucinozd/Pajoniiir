@@ -127,6 +127,21 @@ Assert-FileContains `
     -LiteralPatterns @("test_nonzero_pdb_duration_survives_anlz_enrichment", "test_zero_pdb_duration_falls_back_to_last_beat", "213456u", "7000u")
 
 Assert-FileContains `
+    -Name "library sorting uses immutable records and compact double-buffered order" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
+
+Assert-FileDoesNotContain `
+    -Name "library sort never copies or qsorts full track records" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t))", "qsort(idx, s_track_count, sizeof(library_track_t)")
+
+Assert-FileContains `
+    -Name "library host test covers compact order across all sort fields" `
+    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
+    -LiteralPatterns @("test_sort_republishes_compact_order_only", "title_asc", "artist_asc", "bpm_desc", "key_asc")
+
+Assert-FileContains `
     -Name "production library exposes selected-track API names" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
     -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")
@@ -263,6 +278,12 @@ if (($text.Split($libraryImplSource).Count - 1) -ne 1) {
     throw "expected one library implementation source entry"
 }
 $text = $text.Replace($libraryImplSource, '"../../firmware/main-deck-p4/components/library/library_duration_fixed.c"')
+
+$libraryCurrentTestSource = '"test_library_anlz_current.c"'
+if (($text.Split($libraryCurrentTestSource).Count - 1) -ne 1) {
+    throw "expected one current library_anlz test source entry"
+}
+$text = $text.Replace($libraryCurrentTestSource, '"-DWIN32", "test_library_anlz_current.c"')
 
 $text += $extraAuditGates
 

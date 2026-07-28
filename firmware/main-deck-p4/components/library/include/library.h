@@ -47,6 +47,9 @@ typedef struct {
     uint8_t  has_pvbr;
 } library_track_t;
 
+/* library_init() transactionally publishes an immutable track store. Logical
+ * row order is held separately, so library_sort() copies only compact uint16_t
+ * handles and never moves the published library_track_t records. */
 esp_err_t library_init(void);
 void      library_clear(void);
 uint32_t  library_generation(void);
@@ -56,7 +59,8 @@ esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,
                               uint32_t *out_duration_ms);
 #ifdef WIN32
-/* Simulator only: direct pointer into the live index. Firmware uses copies. */
+/* Simulator only: pointer into the immutable store for the current logical row.
+ * Sorting keeps it valid; a later library_init() rebuild may replace the store. */
 library_track_t *library_get_ptr(int index);
 #endif
 uint32_t library_track_key(const library_track_t *track);

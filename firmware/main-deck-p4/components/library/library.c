@@ -24,13 +24,21 @@ static const char *TAG = "library";
 #endif
 #define USB_PDB_PATH     USB_MOUNT_POINT "/PIONEER/rekordbox/export.pdb"
 
-/* Track index — heap-allocated in library_init() to avoid large BSS.
- * Prefers SPIRAM (8 MB OPI PSRAM on JC4880) via heap_caps_malloc();
- * falls back to internal heap if SPIRAM is unavailable. */
+/* Track records are built transactionally into the inactive PSRAM buffer and
+ * become immutable once published. Sorting never copies or moves these ~3 KiB
+ * records; it republishes only a double-buffered uint16_t row-order table.
+ * The second record buffer remains necessary so a slow USB rebuild cannot
+ * disturb readers of the currently published catalog. */
 #define LIBRARY_MAX_TRACKS  1024
 
-static library_track_t *s_index_buf[2] = { NULL, NULL };
+typedef uint16_t library_order_entry_t;
+_Static_assert(LIBRARY_MAX_TRACKS <= UINT16_MAX,
+               "library order entries must address every track slot");
+
+static library_track_t *s_track_buf[2] = { NULL, NULL };
+static library_order_entry_t *s_order_buf[2] = { NULL, NULL };
 static int              s_active_buf = 0;
+static int              s_active_order_buf = 0;
 static int              s_track_count = 0;
 static uint32_t         s_generation = 0;
 static SemaphoreHandle_t s_library_mutex = NULL;
@@ -73,25 +81,57 @@ static esp_err_t ensure_library_mutex(void)
 static esp_err_t ensure_index_buffers(void)
 {
     for (int i = 0; i < 2; i++) {
-        if (s_index_buf[i]) continue;
-        s_index_buf[i] = heap_caps_malloc(
-            LIBRARY_MAX_TRACKS * sizeof(library_track_t),
-            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!s_index_buf[i]) {
-            ESP_LOGW(TAG, "SPIRAM unavailable for index buffer %d, using internal heap", i);
-            s_index_buf[i] = malloc(LIBRARY_MAX_TRACKS * sizeof(library_track_t));
+        if (!s_track_buf[i]) {
+            s_track_buf[i] = heap_caps_malloc(
+                LIBRARY_MAX_TRACKS * sizeof(library_track_t),
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!s_track_buf[i]) {
+                ESP_LOGW(TAG, "SPIRAM unavailable for track buffer %d, using internal heap", i);
+                s_track_buf[i] = malloc(LIBRARY_MAX_TRACKS * sizeof(library_track_t));
+            }
+            if (!s_track_buf[i]) {
+                ESP_LOGE(TAG, "Out of memory for track buffer %d", i);
+                return ESP_ERR_NO_MEM;
+            }
         }
-        if (!s_index_buf[i]) {
-            ESP_LOGE(TAG, "Out of memory for track index buffer %d", i);
-            return ESP_ERR_NO_MEM;
+
+        if (!s_order_buf[i]) {
+            s_order_buf[i] = heap_caps_malloc(
+                LIBRARY_MAX_TRACKS * sizeof(library_order_entry_t),
+                MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+            if (!s_order_buf[i]) {
+                s_order_buf[i] = malloc(
+                    LIBRARY_MAX_TRACKS * sizeof(library_order_entry_t));
+            }
+            if (!s_order_buf[i]) {
+                ESP_LOGE(TAG, "Out of memory for row-order buffer %d", i);
+                return ESP_ERR_NO_MEM;
+            }
         }
     }
     return ESP_OK;
 }
 
-static inline library_track_t *active_index(void)
+static inline library_track_t *active_tracks(void)
 {
-    return s_index_buf[s_active_buf];
+    return s_track_buf[s_active_buf];
+}
+
+static inline library_order_entry_t *active_order(void)
+{
+    return s_order_buf[s_active_order_buf];
+}
+
+/* Caller holds s_library_mutex. Logical rows always resolve through the current
+ * order table; the underlying published track slots never move during sort. */
+static int library_slot_for_row_unlocked(int row)
+{
+    library_order_entry_t *order = active_order();
+    if (!order || row < 0 || row >= s_track_count) {
+        return -1;
+    }
+    int slot = (int)order[row];
+    return slot < s_track_count ? slot : -1;
 }
 
 uint32_t library_track_key(const library_track_t *track)
@@ -192,7 +232,9 @@ esp_err_t library_init(void)
     uint32_t build_generation = s_generation;
     xSemaphoreGiveRecursive(s_library_mutex);
 
-    library_track_t *build_index = s_index_buf[build_buf];
+    library_track_t *build_index = s_track_buf[build_buf];
+    int build_order_buf = s_active_order_buf ^ 1;
+    library_order_entry_t *build_order = s_order_buf[build_order_buf];
     int build_count = 0;
     memset(build_index, 0, LIBRARY_MAX_TRACKS * sizeof(library_track_t));
 
@@ -234,6 +276,10 @@ esp_err_t library_init(void)
     pdb_close(pdb);
     media_io_gate_end();
 
+    for (int i = 0; i < build_count; ++i) {
+        build_order[i] = (library_order_entry_t)i;
+    }
+
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
     if (s_generation != build_generation) {
         /* library_clear() ran while the media was being parsed (for example,
@@ -244,7 +290,11 @@ esp_err_t library_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     s_active_buf = build_buf;
+    s_active_order_buf = build_order_buf;
     s_track_count = build_count;
+    if (s_ui_track_idx >= build_count) {
+        s_ui_track_idx = 0;
+    }
     s_generation++;
     s_index_building = false;
     xSemaphoreGiveRecursive(s_library_mutex);
@@ -294,30 +344,33 @@ esp_err_t library_get(int index, library_track_t *out)
 {
     if (!out || ensure_library_mutex() != ESP_OK) return ESP_ERR_NOT_FOUND;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    library_track_t *idx = active_index();
-    if (!idx || index < 0 || index >= s_track_count) {
+    library_track_t *idx = active_tracks();
+    int slot = library_slot_for_row_unlocked(index);
+    if (!idx || slot < 0) {
         xSemaphoreGiveRecursive(s_library_mutex);
         return ESP_ERR_NOT_FOUND;
     }
-    *out = idx[index];
+    *out = idx[slot];
     xSemaphoreGiveRecursive(s_library_mutex);
     return ESP_OK;
 }
 
 /* ── library_get_ptr (simulator only) ─────────────────────────────────────── *
  *
- * Returns a pointer into the live index, which library_init()/library_sort()
- * republish under the caller's feet. The single-threaded PC simulator can
- * live with that; firmware code must use library_get()/library_get_summary()
- * (or media_catalog) instead, so the symbol does not exist there.
+ * Returns a pointer into the immutable published track store for the requested
+ * logical row. Sorting cannot invalidate it because only the order table flips;
+ * a later library_init() rebuild may still publish the other track buffer. The
+ * single-threaded PC simulator can live with that lifetime, while firmware code
+ * must use library_get()/library_get_summary() (or media_catalog).
  */
 #ifdef WIN32
 library_track_t *library_get_ptr(int index)
 {
     if (ensure_library_mutex() != ESP_OK) return NULL;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    library_track_t *idx = active_index();
-    library_track_t *track = (!idx || index < 0 || index >= s_track_count) ? NULL : &idx[index];
+    library_track_t *idx = active_tracks();
+    int slot = library_slot_for_row_unlocked(index);
+    library_track_t *track = (!idx || slot < 0) ? NULL : &idx[slot];
     xSemaphoreGiveRecursive(s_library_mutex);
     return track;
 }
@@ -329,13 +382,14 @@ esp_err_t library_get_summary(int index, uint16_t *out_bpm, uint32_t *out_durati
 {
     if (ensure_library_mutex() != ESP_OK) return ESP_ERR_NOT_FOUND;
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
-    library_track_t *idx = active_index();
-    if (!idx || index < 0 || index >= s_track_count) {
+    library_track_t *idx = active_tracks();
+    int slot = library_slot_for_row_unlocked(index);
+    if (!idx || slot < 0) {
         xSemaphoreGiveRecursive(s_library_mutex);
         return ESP_ERR_NOT_FOUND;
     }
-    if (out_bpm) *out_bpm = idx[index].bpm;
-    if (out_duration_ms) *out_duration_ms = idx[index].duration_ms;
+    if (out_bpm) *out_bpm = idx[slot].bpm;
+    if (out_duration_ms) *out_duration_ms = idx[slot].duration_ms;
     xSemaphoreGiveRecursive(s_library_mutex);
     return ESP_OK;
 }
@@ -632,6 +686,26 @@ static int compare_key_desc(const void *a, const void *b)
     return compare_key_asc(b, a);
 }
 
+/* qsort() has no portable context parameter. library_sort() holds the library
+ * mutex for the complete synchronous sort, so this comparator context cannot
+ * race with another sort or a track-store publication. */
+static const library_track_t *s_sort_tracks;
+static int (*s_sort_track_compare)(const void *, const void *);
+
+static int compare_order_entries(const void *a, const void *b)
+{
+    library_order_entry_t slot_a = *(const library_order_entry_t *)a;
+    library_order_entry_t slot_b = *(const library_order_entry_t *)b;
+    int cmp = s_sort_track_compare(&s_sort_tracks[slot_a],
+                                   &s_sort_tracks[slot_b]);
+    if (cmp == 0) {
+        /* Deterministic tie-breaker: retain original PDB slot order even though
+         * the C library qsort itself is not stable. */
+        return (int)slot_a - (int)slot_b;
+    }
+    return cmp;
+}
+
 void library_sort(int field_type, bool descending)
 {
     if (ensure_library_mutex() != ESP_OK) return;
@@ -641,36 +715,49 @@ void library_sort(int field_type, bool descending)
         ESP_LOGW(TAG, "Ignoring sort while library index build is in progress");
         return;
     }
-    library_track_t *src = active_index();
-    if (!src || s_track_count <= 1) {
-        xSemaphoreGiveRecursive(s_library_mutex);
-        return;
-    }
 
-    /* Publish-on-write: sort a copy in the inactive buffer and flip, so any
-     * reader of the previous buffer sees a stable snapshot instead of rows
-     * being reshuffled mid-read by an in-place qsort. */
-    int build_buf = s_active_buf ^ 1;
-    library_track_t *idx = s_index_buf[build_buf];
-    if (!idx) {
+    library_track_t *tracks = active_tracks();
+    library_order_entry_t *source_order = active_order();
+    if (!tracks || !source_order || s_track_count <= 1) {
         xSemaphoreGiveRecursive(s_library_mutex);
         return;
     }
-    memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t));
 
     if (field_type == 0) { // Artist
-        qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_artist_desc : compare_artist_asc);
+        s_sort_track_compare = descending ? compare_artist_desc : compare_artist_asc;
     } else if (field_type == 1) { // Title / Name
-        qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_title_desc : compare_title_asc);
+        s_sort_track_compare = descending ? compare_title_desc : compare_title_asc;
     } else if (field_type == 2) { // BPM
-        qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_bpm_desc : compare_bpm_asc);
+        s_sort_track_compare = descending ? compare_bpm_desc : compare_bpm_asc;
     } else if (field_type == 3) { // Key
-        qsort(idx, s_track_count, sizeof(library_track_t), descending ? compare_key_desc : compare_key_asc);
+        s_sort_track_compare = descending ? compare_key_desc : compare_key_asc;
+    } else {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Ignoring unsupported library sort field %d", field_type);
+        return;
     }
-    s_active_buf = build_buf;
+
+    /* Publish-on-write now copies only the compact row order (2 KiB at the
+     * 1024-track maximum), not ~2.9 MiB of library_track_t records. */
+    int build_order_buf = s_active_order_buf ^ 1;
+    library_order_entry_t *order = s_order_buf[build_order_buf];
+    if (!order) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return;
+    }
+    memcpy(order, source_order,
+           (size_t)s_track_count * sizeof(library_order_entry_t));
+
+    s_sort_tracks = tracks;
+    qsort(order, (size_t)s_track_count, sizeof(library_order_entry_t),
+          compare_order_entries);
+    s_sort_tracks = NULL;
+    s_sort_track_compare = NULL;
+
+    s_active_order_buf = build_order_buf;
     s_generation++;
     xSemaphoreGiveRecursive(s_library_mutex);
-    ESP_LOGI(TAG, "Library sorted: field=%d, descending=%d", field_type, descending);
+    ESP_LOGI(TAG, "Library order sorted: field=%d, descending=%d", field_type, descending);
 }
 
 /* ── UI selected-row state ───────────────────────────────────────────────── *
