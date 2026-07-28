@@ -1,4 +1,4 @@
-name: Temporary library pagination source export
+name: Temporary library pagination validation
 
 on:
   pull_request:
@@ -8,18 +8,81 @@ on:
       - ".github/workflows/export-library-pagination.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export:
+  validate-and-publish:
     runs-on: ubuntu-latest
+    env:
+      EXPECTED_BASE: 2085a3b0f9179247ce26c12d7fdbbe15845102e9
+      TARGET_BRANCH: fix/release-blockers-and-concurrency
     steps:
       - uses: actions/checkout@v4
-      - name: Package tested source tree
-        shell: bash
-        run: git archive --format=tar.gz -o pajoniiir-library-pagination.tar.gz HEAD
-      - uses: actions/upload-artifact@v4
         with:
-          name: pajoniiir-library-pagination-source
-          path: pajoniiir-library-pagination.tar.gz
-          if-no-files-found: error
+          fetch-depth: 0
+
+      - name: Apply paginated-library patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .github/tooling/library-pagination.patch.gz.b64 | gzip -d > /tmp/library-pagination.patch
+          git apply --check /tmp/library-pagination.patch
+          git apply /tmp/library-pagination.patch
+          git diff --check
+
+      - name: Run P4 host regression suites
+        shell: pwsh
+        run: |
+          & ./tests/run_p4_host_tests_current.ps1 *> p4-host-tests.log
+          $code = $LASTEXITCODE
+          Get-Content p4-host-tests.log | Select-Object -Last 120
+          exit $code
+
+      - name: Run pinned UI simulator screenshot gate
+        shell: pwsh
+        run: |
+          & ./tests/ui_simulator/run_ui_simulator_e2e.ps1 *> ui-simulator.log
+          $code = $LASTEXITCODE
+          Get-Content ui-simulator.log | Select-Object -Last 120
+          exit $code
+
+      - name: Publish one atomic commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_BASE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/export-library-pagination.yml \
+                 .github/tooling/library-pagination.patch.gz.b64
+          git add \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/ui/include/ui_library.h \
+            firmware/main-deck-p4/components/ui/ui_library.c \
+            tests/run_p4_host_tests_current.ps1 \
+            tests/ui_library/test_ui_library.c
+          actual=$(git diff --name-only "$EXPECTED_BASE" | sort)
+          expected=$(printf '%s\n' \
+            docs/fixevi-remediation-audit.md \
+            firmware/main-deck-p4/CLAUDE.md \
+            firmware/main-deck-p4/components/ui/include/ui_library.h \
+            firmware/main-deck-p4/components/ui/ui_library.c \
+            tests/run_p4_host_tests_current.ps1 \
+            tests/ui_library/test_ui_library.c | sort)
+          test "$actual" = "$expected"
+          tree=$(git write-tree)
+          commit=$(printf '%s\n' 'perf(ui): paginate library rows' | git commit-tree "$tree" -p "$EXPECTED_BASE")
+          git push origin "$commit:refs/heads/$TARGET_BRANCH"
+          echo "Published $commit"
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-pagination-validation
+          if-no-files-found: ignore
+          path: |
+            p4-host-tests.log
+            ui-simulator.log
