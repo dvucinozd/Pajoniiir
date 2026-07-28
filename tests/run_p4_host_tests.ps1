@@ -1674,7 +1674,11 @@ if ($isWindowsHost) {
     $pythonCandidates += "C:\Espressif\python_env\idf5.5_py3.11_env"
 }
 foreach ($candidate in $pythonCandidates) {
-    $relativeExe = $isWindowsHost ? "Scripts\python.exe" : "bin/python"
+    if ($isWindowsHost) {
+        $relativeExe = "Scripts\python.exe"
+    } else {
+        $relativeExe = "bin/python"
+    }
     $exe = Join-Path $candidate $relativeExe
     if (Test-Path -LiteralPath $exe) { $pythonSource = $exe; break }
 }
