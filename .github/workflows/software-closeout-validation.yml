@@ -34,12 +34,15 @@ jobs:
           echo "736a364b132690de440ea714b82ed7a1a684edd40dac60ade7fdd2e63c99ed23  /tmp/software-closeout.patch.gz.b64" | sha256sum -c -
           base64 -d /tmp/software-closeout.patch.gz.b64 | gzip -d > /tmp/software-closeout.patch
           echo "7ecd9ad5c53779973a2b502686d3d2c237fe4f85d10f2bc91a16e4c91d5bdc7a  /tmp/software-closeout.patch" | sha256sum -c -
+          cp .github/tooling/software-closeout/fix-01.patch /tmp/software-closeout-fix-01.patch
+          echo "b738b0ec626aa459afeedf6e54d7356a02227e8c311f4da5c69560ecb93f2d9f  /tmp/software-closeout-fix-01.patch" | sha256sum -c -
 
           git fetch origin "$TARGET_BRANCH"
           actual_parent="$(git rev-parse "origin/$TARGET_BRANCH")"
           test "$actual_parent" = "$EXPECTED_PARENT"
           git checkout -B software-closeout-publish "origin/$TARGET_BRANCH"
           patch -p1 --forward < /tmp/software-closeout.patch
+          patch -p1 --forward < /tmp/software-closeout-fix-01.patch
           git diff --check
 
           test ! -e docs/software-closeout-plan.md
@@ -88,10 +91,14 @@ jobs:
       - name: Run P4 host regression suite
         shell: pwsh
         run: |
-          & ./tests/run_p4_host_tests_current.ps1 *> p4-host-tests.log
-          $code = $LASTEXITCODE
-          Get-Content p4-host-tests.log | Select-Object -Last 120
-          exit $code
+          try {
+              & ./tests/run_p4_host_tests_current.ps1 2>&1 | Tee-Object -FilePath p4-host-tests.log
+              $code = $LASTEXITCODE
+              exit $code
+          } catch {
+              $_ | Out-String | Tee-Object -FilePath p4-host-tests.log -Append
+              throw
+          }
 
       - name: Run UI simulator screenshot gate
         shell: pwsh
