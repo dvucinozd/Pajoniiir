@@ -351,6 +351,38 @@ function Assert-FatfsBoolDefaults {
     }
 }
 
+function Assert-CiDependenciesPinned {
+    $path = Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml"
+    Write-Host "==> static CI actions and ESP-IDF image use immutable references"
+    $lines = Get-Content -LiteralPath $path
+
+    $usesCount = 0
+    foreach ($line in $lines) {
+        if ($line -notmatch '^\s*uses:\s*(?<action>[^@\s]+)@(?<ref>[^\s#]+)(?<comment>\s+#.*)?$') {
+            continue
+        }
+        $usesCount++
+        $actionRef = $Matches["ref"]
+        $versionComment = $Matches["comment"]
+        if ($actionRef -notmatch '^[0-9a-f]{40}$') {
+            throw "mutable action reference in $path`: $line"
+        }
+        if ($versionComment -notmatch '#\s*v\d') {
+            throw "pinned action is missing its readable version comment in $path`: $line"
+        }
+    }
+    if ($usesCount -eq 0) {
+        throw "no external action references found in $path"
+    }
+
+    $image = $lines | Where-Object {
+        $_ -match '^\s*IDF_IMAGE:\s*espressif/idf:v6\.0\.2@sha256:[0-9a-f]{64}\s*$'
+    }
+    if (@($image).Count -ne 1) {
+        throw "IDF_IMAGE must pin the v6.0.2 OCI digest exactly once in $path"
+    }
+}
+
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -364,6 +396,7 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("static int64_t ae_now_us(", "static void ae_diag_log_memory(")
 
 Assert-FatfsBoolDefaults
+Assert-CiDependenciesPinned
 
 Assert-FileContains `
     -Name "s3 debug ap p4 sends state frames" `

@@ -83,6 +83,7 @@ Statusi:
 | Recorder nije spreman za ponovno uključivanje | **Software safety zatvoren; funkcija ostaje disabled do HW fault injectiona** | STOP prvo zatvara producer gate i čeka aktivnog producera, zatim writer drenira zatvoreni ring. Checkpoint/write/finalize greške propagiraju se; `.part` se objavljuje kao obični `.wav` samo nakon uspješnog patch+fsync+close niza. Host fault-injection pokriva svaku fazu. |
 | Zastarjeli komentari/dokumentacija | **Zatvoreno** | S3 translator default, P4 revizija, bounded audio cache, paginirana Library tablica i recorder release-gate dokumentacija usklađeni su sa sourceom. |
 | Dependency build nije reproducibilan | **Zatvoreno** | Oba `dependencies.lock` filea su commitana i clean CI ih koristi. |
+| CI action/image reference su mutable | **Immutable inputi zatvoreni; SBOM pending** | ESP-IDF image koristi v6.0.2 OCI digest, GitHub actioni pune commit SHA-ove, a S3/P4 artefakti nose Git/IDF/lock provenance i firmware SHA-256 manifest. Formalni SPDX/CycloneDX SBOM generator još nije odabran ni pinan. |
 
 ## Testovi koji i dalje nisu zamijenjeni CI-em
 

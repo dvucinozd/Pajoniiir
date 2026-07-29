@@ -60,6 +60,11 @@ clean release build is newer than the installed firmware.
   build pass).
 - [x] Remove project-local ESP-IDF v6.0.2 compiler/Kconfig warnings. The
   remaining NimBLE `default 0` note is in the pinned upstream ESP-IDF source.
+- [x] Pin CI GitHub Actions to full commit SHAs and the ESP-IDF v6.0.2 image to
+  its OCI digest; include Git/IDF/lock provenance and firmware SHA-256 manifests
+  in both target artifacts.
+- [ ] Select and pin an SPDX/CycloneDX generator, then publish a formal SBOM for
+  ESP-IDF, managed components and project sources.
 - [ ] Hardware-validate paginated Library table on the P4 touch display.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.

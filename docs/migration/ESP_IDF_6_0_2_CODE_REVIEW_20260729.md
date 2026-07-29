@@ -93,7 +93,7 @@ samo u `library.c`.
 | LRU wraparound | **Software zatvoreno** | `uint64_t` stamp i regresija preko povijesne `UINT32_MAX` granice |
 | Build warning cleanup | **Projektni warningi zatvoreni** | mrtvi audio helperi uklonjeni; FATFS bool defaulti koriste `n`; upstream NimBLE note ostaje |
 | CI branch coverage | **Zatvoreno** | workflow sada pokriva `fix/**`, `test/**`, `docs/**`, `ci/**`, `migration/**` |
-| CI supply-chain pinning | **Otvoreno** | Docker tag i `actions/*@v4` ostaju mutable |
+| CI supply-chain pinning | **Immutable inputi zatvoreni; formalni SBOM pending** | IDF OCI digest i action commit SHA-ovi pinani; build provenance se sprema uz artefakte |
 | Release dokumentacija | **Djelomično** | Risk Register je usklađen; README i Documentation Status nisu |
 
 Aktualni P4 host suite nakon mergeova prolazi. Novi library suite izvršava 253
@@ -1016,6 +1016,9 @@ razmotriti CI gate koji projektne warninge tretira kao greške.
 
 Status na `origin/master@65ecc563`: **DJELOMIČNO**
 
+Status nakon remediation implementacije 2026-07-29:
+**IMMUTABLE CI INPUTI I BUILD PROVENANCE ZATVORENI; FORMALNI SBOM PENDING**
+
 ### Nalaz
 
 CI koristi mutable Docker tag `espressif/idf:v6.0.2` i action reference poput
@@ -1037,8 +1040,27 @@ Obsolete pojedinačni branch filteri zamijenjeni su obrascima za `fix/**`,
 `test/**`, `docs/**`, `ci/**` i `migration/**`, uz `master`. Time je zatvoren
 problem da push CI tiho ne radi na novoj radnoj grani.
 
-Docker image i GitHub Actions još nisu pinani digestom/commit SHA-om, pa
-supply-chain dio nalaza ostaje otvoren.
+### Implementirani popravak
+
+- `espressif/idf:v6.0.2` zadržava čitljivi release tag, ali je vezan i za OCI
+  index digest
+  `sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67`.
+- Sva tri checkout koraka koriste puni `actions/checkout` commit
+  `11d5960a326750d5838078e36cf38b85af677262` uz komentar `v4.4.0`.
+- Svih pet upload koraka koristi puni `actions/upload-artifact` commit
+  `ea165f8d65b6e75b540449e92b4886f43607fa02` uz komentar `v4.6.2`.
+- S3 i P4 binary artifacti sada uključuju `BUILD_PROVENANCE.txt` s Git commitom,
+  repozitorijem, IDF verzijom, punim image digestom i SHA-256 hashom
+  `dependencies.lock`, te `SHA256SUMS.txt` za sve `.bin`, `.elf` i `.map`
+  datoteke.
+- P4 host runner odbija mutable action ref, action SHA bez čitljivog version
+  komentara ili IDF image bez 64-znamenkastog digest pin-a. Workflow prolazi
+  lokalni YAML parse.
+
+Formalni SPDX/CycloneDX SBOM ostaje otvoren. Ne treba improvizirati SBOM iz
+`dependencies.lock` niti u CI uvoditi novi mutable generator; prvo treba
+odabrati i pinati alat/verziju te definirati kako će obuhvatiti ESP-IDF,
+managed komponente i projektni source.
 
 ---
 
@@ -1128,7 +1150,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 12 | LRU wrap i build warning cleanup | **software zatvoreno; samo upstream ESP-IDF NimBLE note ostaje** |
 | 13 | Production AP/API authentication | traži proizvodnu credential odluku |
 | 14 | Partition table i security provisioning plan | prije Secure Boot/flash encryption testa |
-| 15 | CI digest/SHA pinning i build optimizacija | nakon stabilnih dependency verzija |
+| 15 | CI digest/SHA pinning i build optimizacija | **digest/SHA pinning i provenance implementirani; formalni SBOM i cold-build optimizacija ostaju** |
 | 16 | Dokumentacijsko usklađivanje | nakon funkcionalnih/security odluka |
 | 17 | Hardware acceptance izvještaj | nakon svih P1 i relevantnih P2 popravaka |
 

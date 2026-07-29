@@ -37,7 +37,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
-  IDF_IMAGE: espressif/idf:v6.0.2
+  IDF_IMAGE: espressif/idf:v6.0.2@sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67
 
 jobs:
   host-tests:
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out tested revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # The runner skips suites whose tooling is missing rather than failing the
       # whole gate, so anything installed here is the difference between a check
@@ -140,7 +140,7 @@ jobs:
 
       - name: Upload host-test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: host-test-logs
           if-no-files-found: ignore
@@ -154,7 +154,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out tested revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Build control board
         run: |
@@ -190,22 +190,40 @@ jobs:
             exit 1
           fi
 
+      - name: Generate S3 build provenance
+        run: |
+          build_dir=firmware/control-board-s3/build
+          lock=firmware/control-board-s3/dependencies.lock
+          find "$build_dir" -maxdepth 1 -type f \
+            \( -name '*.bin' -o -name '*.elf' -o -name '*.map' \) \
+            -print0 | sort -z | xargs -0 sha256sum > "$build_dir/SHA256SUMS.txt"
+          {
+            echo "git_commit=$GITHUB_SHA"
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "idf_version=ESP-IDF v6.0.2"
+            echo "idf_image=$IDF_IMAGE"
+            echo "dependencies_lock_sha256=$(sha256sum "$lock" | awk '{print $1}')"
+            echo "firmware_sha256_manifest=SHA256SUMS.txt"
+          } > "$build_dir/BUILD_PROVENANCE.txt"
+
       - name: Upload S3 build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: s3-build-log
           path: s3-idf-build.log
 
       - name: Upload S3 binaries
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: control-board-s3-idf-6.0.2
           path: |
             firmware/control-board-s3/build/*.bin
             firmware/control-board-s3/build/*.elf
             firmware/control-board-s3/build/*.map
+            firmware/control-board-s3/build/BUILD_PROVENANCE.txt
+            firmware/control-board-s3/build/SHA256SUMS.txt
             firmware/control-board-s3/dependencies.lock
 
   build-p4:
@@ -213,7 +231,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out tested revision
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Build main deck and verify silicon target
         run: |
@@ -274,20 +292,38 @@ jobs:
               echo "USB DWC decoder wrap verified in the linked image."
             '
 
+      - name: Generate P4 build provenance
+        run: |
+          build_dir=firmware/main-deck-p4/build
+          lock=firmware/main-deck-p4/dependencies.lock
+          find "$build_dir" -maxdepth 1 -type f \
+            \( -name '*.bin' -o -name '*.elf' -o -name '*.map' \) \
+            -print0 | sort -z | xargs -0 sha256sum > "$build_dir/SHA256SUMS.txt"
+          {
+            echo "git_commit=$GITHUB_SHA"
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "idf_version=ESP-IDF v6.0.2"
+            echo "idf_image=$IDF_IMAGE"
+            echo "dependencies_lock_sha256=$(sha256sum "$lock" | awk '{print $1}')"
+            echo "firmware_sha256_manifest=SHA256SUMS.txt"
+          } > "$build_dir/BUILD_PROVENANCE.txt"
+
       - name: Upload P4 build log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: p4-build-log
           path: p4-idf-build.log
 
       - name: Upload P4 binaries
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: main-deck-p4-idf-6.0.2
           path: |
             firmware/main-deck-p4/build/*.bin
             firmware/main-deck-p4/build/*.elf
             firmware/main-deck-p4/build/*.map
+            firmware/main-deck-p4/build/BUILD_PROVENANCE.txt
+            firmware/main-deck-p4/build/SHA256SUMS.txt
             firmware/main-deck-p4/dependencies.lock
