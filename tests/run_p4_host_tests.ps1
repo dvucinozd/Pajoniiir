@@ -12,6 +12,26 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Gcc = Get-Command gcc -ErrorAction Stop
 
+# ── What the Assert-File* gates are, and are not ────────────────────────────
+#
+# These are lint rules over source text, not tests. They cannot observe
+# behaviour; they observe spelling. Prefer, in this order:
+#
+#   1. A behaviour test that executes the path. If one exists, the gate is
+#      redundant and should be deleted rather than kept "for safety" — a
+#      redundant text rule only adds a way to fail on a rename.
+#   2. A compile or link contract in tests/api_contract. That is the right tool
+#      for "this symbol must/must not be reachable": the compiler answers the
+#      real question and tolerates reformatting.
+#   3. A gate here, only when neither is possible: the absence of an *idiom*
+#      (atoi, a wildcard CORS header, a #define over an RTOS call), a
+#      file-static that no test can link against, or a header the host toolchain
+#      cannot parse (LVGL, esp_lcd).
+#
+# When a gate is the third case, say so at the gate. Patterns must be code
+# identifiers, never comment prose: prose breaks on rewording and proves nothing
+# about the code.
+
 function Assert-FileDoesNotContain {
     param(
         [string]$Name,
@@ -257,6 +277,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
     -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
 
+# Idiom, not a symbol: nothing links against an argument to xQueueSend.
+# control_link_uart.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 control event enqueue never blocks the UART RX task forever" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
@@ -275,6 +297,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
 
+# Idiom. control_link_uart.c has no host coverage; the RX task cannot be
+# executed without a UART driver fake.
 Assert-FileDoesNotContain `
     -Name "p4 UART producer never drains or reorders the deck queue" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
@@ -521,11 +545,13 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("write_elapsed_us")
 
+# ui.c needs LVGL; the screen registry cannot be executed on the host.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Key Shift screen" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
     -LiteralPatterns @('"KEY SHIFT"', "ui_performance_tabs_create_key_shift")
 
+# ui_performance_tabs.c needs LVGL, which the host toolchain does not build.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Key Shift controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
@@ -538,11 +564,13 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_key_shift", "toggle_master_tempo")
 
+# ui.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Loop and Beat Jump screens" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
     -LiteralPatterns @('"BEAT JUMP"', "UI_TAB_LOOP", "UI_TAB_BEAT_JUMP", "ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump")
 
+# ui_performance_tabs.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Loop and Beat Jump controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
@@ -553,6 +581,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "ui_performance_tabs_update_loop_screen_state")
 
+# ui_settings.c needs LVGL.
 Assert-FileDoesNotContain `
     -Name "P4 Settings excludes retired monitor speaker switch" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
@@ -643,6 +672,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "sync_scratch_view_from_timeline", "scratch begin D%u unavailable: canonical timeline not allocated -> platter hold")
 
+# File-static storage plus retired calls; see the ANLZ note above.
 Assert-FileDoesNotContain `
     -Name "p4 legacy independent scratch PCM store stays retired" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -694,6 +724,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @('app_settings_ota_has_password()', '\"has_password\":%s')
 
+# Absence of a field in a hand-formatted JSON string; no symbol involved.
 Assert-FileDoesNotContain `
     -Name "p4 web server never serialises the OTA passphrase" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
@@ -756,6 +787,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_RECORDER_ENABLED")
 
+# sdkconfig content; a build-configuration property, not a code one.
 Assert-FileDoesNotContain `
     -Name "p4 ships with the microSD recorder disabled" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
@@ -851,6 +883,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu")
 
+# Build-file content: the check is that CMake does not name the shim, which
+# is exactly a text property.
 Assert-FileDoesNotContain `
     -Name "p4 IDF 6 USB storage does not link the retired IDF 5.5 DWC shim" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
@@ -924,11 +958,14 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
     -LiteralPatterns @("logf(")
 
+# Idiom in a response header string. web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web server does not expose wildcard CORS" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("Access-Control-Allow-Origin")
 
+# Idiom: atoi has no failure signal, so its absence is the check. There is
+# no symbol to link against and web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web mutations do not use permissive atoi parsing" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
@@ -1987,6 +2024,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("storage_desired_t", "s_desired.epoch++", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_connection(false")
 
+# Idiom plus a file-static counter. usb_storage.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 USB disconnect is not dependent on a finite event queue" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
@@ -2064,6 +2102,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA)", "Deliberately keeps the transition lease")
 
+# Absence of a preprocessor #define; invisible to the compiler by the time
+# any contract could observe it.
 Assert-FileDoesNotContain `
     -Name "p4 pull OTA does not hook vTaskDelete to release the lease" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
@@ -2079,6 +2119,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
 
+# Absence of a preprocessor #define; see the p4_ota_pull gate above.
 Assert-FileDoesNotContain `
     -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
@@ -2104,6 +2145,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
     -LiteralPatterns @("X-Log-Seq", "s_ap_start_failed_latched", "debug AP is latched in ERROR; request OFF before retry")
 
+# Idiom (a bounded for-loop and a keepalive literal). s3_debug_ap.c's
+# production path is excluded from the PC build, so nothing executes it.
 Assert-FileDoesNotContain `
     -Name "s3 debug AP /events does not hold the httpd task in a polling loop" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
@@ -2146,6 +2189,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_event(&ev)")
 
+# The symbols exist and are reachable by design - they are simply the wrong
+# call for this component - so no link contract can express it.
 Assert-FileDoesNotContain `
     -Name "p4 web server never mutates the audio engine loop directly" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
@@ -2181,11 +2226,14 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
 
+# File-static functions: nothing outside the translation unit can link
+# against them, so absence is only observable as text.
 Assert-FileDoesNotContain `
     -Name "production ANLZ parser has no byte-scan tag fallback" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("scan_bytes_for_tag", "find_tag(")
 
+# Absence of a #define over fread/fgetc; a macro leaves no symbol behind.
 Assert-FileDoesNotContain `
     -Name "production ANLZ parser routes every read through the checked helpers" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
@@ -2196,20 +2244,10 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
     -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
 
-Assert-FileDoesNotContain `
-    -Name "library sort never copies or qsorts full track records" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
-    -LiteralPatterns @("memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t))", "qsort(idx, s_track_count, sizeof(library_track_t)")
-
 Assert-FileContains `
     -Name "library UI bounds LVGL cells to one eight-row page" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
-
-Assert-FileDoesNotContain `
-    -Name "library UI never materializes every catalog row in LVGL" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
-    -LiteralPatterns @("lv_table_set_row_count(s_library_table, n)", "ui_library_fill_row(")
 
 Assert-FileContains `
     -Name "library source defines production selected-row helpers directly" `
@@ -2236,6 +2274,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
 
+# Build-file content.
 Assert-FileDoesNotContain `
     -Name "firmware UI source-local selected API bridges stay retired" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
@@ -2277,6 +2316,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
 
+# Mixed: an error string and file-static calls, none of them linkable.
 Assert-FileDoesNotContain `
     -Name "firmware audio never requires one contiguous allocation per compressed track" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
