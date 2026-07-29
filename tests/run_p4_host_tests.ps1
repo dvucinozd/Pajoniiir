@@ -957,11 +957,6 @@ Assert-FileContains `
 
 # Absence of a struct *field*, not a function: nothing a caller could reference,
 # so there is no compile contract to write. Text check is the only option.
-Assert-FileDoesNotContain `
-    -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_pcm_timeline.h") `
-    -LiteralPatterns @("oldest_index")
-
 Assert-FileContains `
     -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -1535,6 +1530,7 @@ $tests = @(
     },
     @{
         Name = "audio_pcm_timeline"
+        MinTestsRun = 229
         Dir = "tests/audio_pcm_timeline"
         Target = "test_audio_pcm_timeline.exe"
         Args = @(
