@@ -982,16 +982,6 @@ Assert-FileContains `
         "pack_pad_fx_command(config)"
     )
 
-Assert-FileContains `
-    -Name "p4 filter skips stable coefficient recomputation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
-    -LiteralPatterns @("!position_changed", "!filter->coefficients_dirty")
-
-Assert-FileDoesNotContain `
-    -Name "p4 filter does not recompute invariant logarithms" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
-    -LiteralPatterns @("logf(")
-
 # Idiom in a response header string. web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web server does not expose wildcard CORS" `
@@ -1263,6 +1253,7 @@ $tests = @(
     },
     @{
         Name = "audio_filter"
+        MinTestsRun = 36
         Dir = "tests/audio_filter"
         Target = "test_audio_filter.exe"
         Args = @(
