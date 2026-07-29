@@ -10,6 +10,7 @@
 #include "control_link.h"
 #include "control_link_p4_diagnostics.h"
 #include "p4_ota.h"
+#include "web_firmware_json.h"
 #include "p4_ota_policy.h"
 #include "service_log.h"
 #include "sd_io_gate.h"
@@ -192,13 +193,83 @@ static const char *peer_fw_state_name(uint8_t state)
     }
 }
 
+/* ── Web-originated deck mutations ───────────────────────────────────────── *
+ *
+ * The web UI must not reach into the audio engine directly. deck_core owns deck
+ * state: it recalculates position and BPM, updates the audio loop, remembers it
+ * for reloop, and publishes coherent UI and controller-LED state. Setting the
+ * loop straight on the engine leaves every one of those out of step, so a loop
+ * made from the phone would not light the pads and would not survive a reloop.
+ *
+ * Both actions are expressed as the same authoritative controller events the
+ * FLX4 produces, so there is exactly one code path for "set a four-beat loop".
+ */
+static esp_err_t web_queue_loop_set(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    /* Pad 8 in Beat Loop mode is the existing four-beat action. */
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_PAD_ACTION
+                                  : CTRL_ID_DECK1_PAD_ACTION,
+        .value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 7u, false, true),
+        .deck = deck,
+        .control = CTRL_DECK_CTL_PAD_ACTION,
+        .seq = 0u,
+    };
+    return deck_core_queue_event(&ev);
+}
+
+static esp_err_t web_queue_loop_clear(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_EXT_ACTION
+                                  : CTRL_ID_DECK1_EXT_ACTION,
+        .value = CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_RELOOP_STOP, true),
+        .deck = deck,
+        .control = CTRL_DECK_CTL_EXT_ACTION,
+        .seq = 0u,
+    };
+    return deck_core_queue_event(&ev);
+}
+
+/* These strings end up inside a hand-formatted JSON body below. They originate
+ * from partition labels, app descriptors and the S3's own report, so they are not
+ * attacker-controlled in normal operation — but an unescaped quote or backslash
+ * anywhere in that chain produces a response the client cannot parse, and the
+ * failure would look like a firmware bug rather than an encoding one. Escape at
+ * the point of collection so no formatting path can miss one. */
+static void web_collect_p4_ota_status(p4_ota_status_t *out)
+{
+    p4_ota_get_status(out);
+    if (!out) return;
+    web_firmware_json_escape_in_place(out->running_slot, sizeof(out->running_slot));
+    web_firmware_json_escape_in_place(out->running_version, sizeof(out->running_version));
+    web_firmware_json_escape_in_place(out->target_slot, sizeof(out->target_slot));
+    web_firmware_json_escape_in_place(out->target_version, sizeof(out->target_version));
+    web_firmware_json_escape_in_place(out->last_error, sizeof(out->last_error));
+}
+
+static bool web_collect_s3_firmware_report(ctrl_firmware_report_t *out)
+{
+    bool available = control_link_get_s3_firmware_report(out);
+    if (out) {
+        web_firmware_json_escape_in_place(out->version, sizeof(out->version));
+    }
+    return available;
+}
+
 static esp_err_t api_firmware_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     p4_ota_status_t status;
-    p4_ota_get_status(&status);
+    web_collect_p4_ota_status(&status);
     ctrl_firmware_report_t s3 = {0};
-    bool s3_available = control_link_get_s3_firmware_report(&s3);
+    bool s3_available = web_collect_s3_firmware_report(&s3);
     char json[640];
     int len = snprintf(json, sizeof(json),
                        "{\"target\":\"p4\",\"state\":\"%s\","
@@ -1396,22 +1467,14 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid deck");
             return ESP_FAIL;
         }
-        uint32_t pos = status.position_ms;
-        uint16_t bpm = ui_library_deck_bpm(deck, 120);
-        if (bpm == 0) {
-            bpm = 120;
-        }
-        uint32_t beat_len_ms = 60000u / bpm;
-        uint32_t loop_len_ms = 4u * beat_len_ms;
-        uint32_t loop_end = pos > UINT32_MAX - loop_len_ms
-            ? UINT32_MAX : pos + loop_len_ms;
-        rc = audio_engine_deck_set_loop(deck, pos, loop_end);
+        (void)status;
+        rc = web_queue_loop_set(deck);
         if (rc != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop failed");
             return ESP_FAIL;
         }
     } else if (strcmp(action, "loop_clear") == 0) {
-        esp_err_t rc = audio_engine_deck_clear_loop(deck);
+        esp_err_t rc = web_queue_loop_clear(deck);
         if (rc != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Loop clear failed");
             return ESP_FAIL;

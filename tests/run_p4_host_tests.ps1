@@ -1921,6 +1921,7 @@ Assert-FileContains `
 foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
+    @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -2013,8 +2014,23 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 firmware status strings are escaped before JSON formatting" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server_fixed.c") `
-    -LiteralPatterns @("web_bridge_p4_ota_get_status", "web_bridge_control_link_get_s3_firmware_report", "web_firmware_json_escape_in_place")
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("web_collect_p4_ota_status", "web_collect_s3_firmware_report", "web_firmware_json_escape_in_place")
+
+Assert-FileContains `
+    -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_event(&ev)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 web server never mutates the audio engine loop directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("audio_engine_deck_set_loop", "audio_engine_deck_clear_loop")
+
+Assert-FileContains `
+    -Name "p4 web server builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "web_server.c"')
 
 Assert-FileContains `
     -Name "p4 OTA handlers consume fragmented request bodies completely" `
