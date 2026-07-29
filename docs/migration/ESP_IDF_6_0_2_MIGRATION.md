@@ -84,8 +84,17 @@ this branch:
   compatibility fixes).
 - [x] UI simulator E2E screenshot gate passes with updated baselines.
 - [ ] P4 display/touch/PSRAM smoke passes.
-- [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass
-  without the old DWC HAL shim.
+- [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.
+- [ ] Sustained USB playback confirms BNA recovery. The DWC channel-decoder wrap
+  was briefly dropped on this branch as obsolete; it is not. ESP-IDF 6.0.2 still
+  asserts `CHHLTD` for every channel error while documenting `BNAINTR` as the one
+  that does not raise it, and `BNAINTR` is in the error mask, so at HAL assertion
+  level 2 a BNA panics. It was hit on this board under ESP-IDF 5.5, and the
+  mitigation that used to avoid it — preloading each track into PSRAM so playback
+  never touched USB — has been replaced by the bounded cache, which streams from
+  USB continuously. The wrap is restored and pinned to the IDF version it
+  mirrors; `usb_dwc_compat_bna_recovered_count()` makes a recovery observable so
+  this row can actually be checked rather than assumed.
 - [ ] FLX4 MIDI IN/OUT and UAC isochronous headphone output pass on S3.
 - [ ] P4 PCM5102A MAIN output and S3/P4 monitor link pass without underruns.
 - [ ] ESP-Hosted AP and AP-to-STA-to-AP OTA round trip pass.

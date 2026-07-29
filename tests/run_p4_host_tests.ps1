@@ -871,17 +871,35 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu")
 
-# Build-file content: the check is that CMake does not name the shim, which
-# is exactly a text property.
-Assert-FileDoesNotContain `
-    -Name "p4 IDF 6 USB storage does not link the retired IDF 5.5 DWC shim" `
+# The DWC channel-interrupt decoder must stay wrapped. The HAL asserts that every
+# channel error also raised CHHLTD, its own header documents BNAINTR as the
+# exception, and BNAINTR is in the error mask - so a BNA panics at HAL assertion
+# level 2. It is reached on this board, and the mitigation that used to avoid it
+# (preloading each track into PSRAM so playback never touched USB) was replaced by
+# the bounded cache, which streams from USB continuously. Dropping the wrap again
+# would reintroduce a reboot mid-set.
+Assert-FileContains `
+    -Name "p4 USB storage wraps the DWC channel interrupt decoder" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
     -LiteralPatterns @("usb_dwc_hal_compat.c", "--wrap=usb_dwc_hal_chan_decode_intr")
 
-$retiredShim = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
-if (Test-Path -LiteralPath $retiredShim) {
-    throw "retired ESP-IDF 5.5 USB DWC shim still exists: $retiredShim"
+$dwcShim = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
+if (-not (Test-Path -LiteralPath $dwcShim)) {
+    throw "USB DWC channel decoder wrapper is missing: $dwcShim"
 }
+
+# The wrapper mirrors an upstream function, so it has to fail the build on an
+# ESP-IDF it was not checked against rather than drift silently.
+Assert-FileContains `
+    -Name "p4 DWC decoder wrapper is pinned to the ESP-IDF it mirrors" `
+    -Path $dwcShim `
+    -LiteralPatterns @("ESP_IDF_VERSION_MAJOR != 6", "ESP_IDF_VERSION_MINOR != 0", "#error")
+
+# Only BNA is excused. Any other error without CHHLTD still aborts.
+Assert-FileContains `
+    -Name "p4 DWC decoder still aborts on a non-BNA missing halt" `
+    -Path $dwcShim `
+    -LiteralPatterns @("if (!halted && !bna) {", "abort();")
 
 # Absence of a struct *field*, not a function: nothing a caller could reference,
 # so there is no compile contract to write. Text check is the only option.

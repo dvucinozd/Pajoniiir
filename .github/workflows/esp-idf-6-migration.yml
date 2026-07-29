@@ -241,6 +241,28 @@ jobs:
             exit 1
           fi
 
+      # A --wrap that fails to bind is worse than no wrapper: the build succeeds,
+      # the CMake text still says the shim is there, and the panic comes back on
+      # hardware. Check the linked image rather than the build files - the
+      # wrapper must be present and the unwrapped original must be gone.
+      - name: Verify the USB DWC decoder wrap bound in the linked image
+        run: |
+          docker run --rm -e HOME=/tmp -v "$PWD:/project" -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              elf=build/main-deck-p4.elf
+              test -f "$elf"
+              if ! riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"; then
+                echo "::error::__wrap_usb_dwc_hal_chan_decode_intr is not in the image; the --wrap did not bind"
+                exit 1
+              fi
+              if riscv32-esp-elf-nm "$elf" | grep -q " T usb_dwc_hal_chan_decode_intr$"; then
+                echo "::error::the unwrapped DWC decoder is still linked; the BNA assert is reachable"
+                exit 1
+              fi
+              echo "USB DWC decoder wrap verified in the linked image."
+            '
+
       - name: Upload P4 build log
         if: always()
         uses: actions/upload-artifact@v4
