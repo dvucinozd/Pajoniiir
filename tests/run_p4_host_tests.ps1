@@ -191,7 +191,7 @@ Assert-FileDoesNotContain `
 # behind #ifndef WIN32). They are narrow ownership markers, not behaviour tests.
 Assert-FileContains `
     -Name "p4 ANLZ short-read detection is per-task, not a shared global" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
     -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
 
 Assert-FileContains `
@@ -1669,7 +1669,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_anlz.exe",
             "test_anlz_current.c",
-            "../../firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c"
+            "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
         )
     },
     @{
@@ -1988,8 +1988,18 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz_fixed.c") `
-    -LiteralPatterns @("walk_sections_for_tag_legacy", "advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+
+Assert-FileDoesNotContain `
+    -Name "production ANLZ parser has no byte-scan tag fallback" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("scan_bytes_for_tag", "find_tag(")
+
+Assert-FileDoesNotContain `
+    -Name "production ANLZ parser routes every read through the checked helpers" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("#define fread", "#define fgetc")
 
 Assert-FileContains `
     -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
