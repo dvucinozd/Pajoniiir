@@ -55,6 +55,9 @@ clean release build is newer than the installed firmware.
   and recorder hardening. Repeat for the final enclosure candidate.
 - [ ] Hardware-validate bounded compressed cache under dual-deck load with real
   MP3/WAV/FLAC files.
+- [x] Host-validate compressed-cache LRU ordering across the historical
+  `UINT32_MAX` timestamp boundary (68 checks; P4 host suite and ESP-IDF v6.0.2
+  build pass).
 - [ ] Hardware-validate paginated Library table on the P4 touch display.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.

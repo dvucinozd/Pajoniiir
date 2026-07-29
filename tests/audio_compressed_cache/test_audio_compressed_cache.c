@@ -93,6 +93,45 @@ static void test_hits_and_lru_eviction_stay_bounded(void)
     CHECK(audio_compressed_cache_capacity(&cache) == sizeof(storage));
 }
 
+/* The original uint32_t timestamps wrapped to zero after UINT32_MAX. The page
+ * touched immediately after that boundary then looked numerically oldest and
+ * was selected as the next victim. Keep this boundary regression explicit even
+ * though production timestamps are now uint64_t. */
+static void test_lru_order_survives_uint32_boundary(void)
+{
+    memory_source_t source;
+    fill_source(&source);
+    uint8_t storage[2 * 32];
+    audio_compressed_cache_t cache;
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+                                      source.size, memory_read_at, &source));
+
+    uint8_t out[8];
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(audio_compressed_cache_read(&cache, 32u, out, sizeof(out)) == sizeof(out));
+
+    cache.stamp = (uint64_t)UINT32_MAX - 1u;
+    cache.pages[0].stamp = (uint64_t)UINT32_MAX - 2u;
+    cache.pages[1].stamp = (uint64_t)UINT32_MAX - 1u;
+
+    /* Page 1 becomes old, then page 0 becomes most recent across the former
+     * uint32_t wrap boundary. Loading page 2 must therefore evict page 1. */
+    CHECK(audio_compressed_cache_read(&cache, 32u, out, sizeof(out)) == sizeof(out));
+    CHECK(cache.stamp == (uint64_t)UINT32_MAX);
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(cache.stamp == (uint64_t)UINT32_MAX + 1u);
+
+    uint32_t calls_before_eviction = source.calls;
+    CHECK(audio_compressed_cache_read(&cache, 64u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == calls_before_eviction + 1u);
+
+    uint32_t calls_after_eviction = source.calls;
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == calls_after_eviction);
+    CHECK(audio_compressed_cache_read(&cache, 32u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == calls_after_eviction + 1u);
+}
+
 static void test_prefetch_and_invalid_config(void)
 {
     memory_source_t source;
@@ -214,6 +253,7 @@ int main(void)
 {
     test_cross_page_read_and_eof_clamp();
     test_hits_and_lru_eviction_stay_bounded();
+    test_lru_order_survives_uint32_boundary();
     test_prefetch_and_invalid_config();
     test_mid_file_short_read_is_not_cached();
     test_eof_tail_page_is_cached();

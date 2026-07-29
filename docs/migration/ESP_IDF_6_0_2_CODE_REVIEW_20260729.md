@@ -90,7 +90,7 @@ samo u `library.c`.
 | AP/API credential hardening | **Prihvaćen rizik, nije mitigiran** | hardkodirani `Pajoniiir` PSK ostaje |
 | Secure Boot/flash encryption | **Procijenjeno, nije uključeno** | dokumentiran partition-table/bootloader blocker |
 | Partial-init cleanup | **Software popravljeno; IDF failure injection/HW pending** | profile manager i monitor I2S imaju staged init i potpuni rollback |
-| LRU wraparound | **Otvoreno** | compressed-cache LRU kod nije promijenjen |
+| LRU wraparound | **Software zatvoreno** | `uint64_t` stamp i regresija preko povijesne `UINT32_MAX` granice |
 | Build warning cleanup | **Otvoreno** | source i FATFS Kconfig nisu promijenjeni |
 | CI branch coverage | **Zatvoreno** | workflow sada pokriva `fix/**`, `test/**`, `docs/**`, `ci/**`, `migration/**` |
 | CI supply-chain pinning | **Otvoreno** | Docker tag i `actions/*@v4` ostaju mutable |
@@ -902,9 +902,14 @@ potvrditi da ponovni `init()` može uspjeti.
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO**
+
 Primarna lokacija:
 
 - `firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c:31-43`
+- `firmware/main-deck-p4/components/audio_engine/include/audio_compressed_cache.h`
+- `tests/audio_compressed_cache/test_audio_compressed_cache.c`
 
 ### Nalaz
 
@@ -915,6 +920,22 @@ mali i mogu biti pogrešno odabrani kao najstariji.
 
 Koristiti `uint64_t` stamp ili wrap-safe age/renormalization. Dodati unit test
 koji postavlja stamp neposredno ispod `UINT32_MAX` i prelazi wrap.
+
+### Implementirani popravak
+
+- Globalni cache stamp i stamp svake stranice prošireni su na `uint64_t`; victim
+  selection uspoređuje isti tip i više nema 32-bitni prijelaz na nulu.
+- Regresija puni cache od dvije stranice, postavlja LRU redoslijed neposredno
+  ispod `UINT32_MAX`, dodirima prelazi nekadašnju wrap granicu i učitava treću
+  stranicu. Test zatim potvrđuje da najnovija stranica ostaje cache hit, a
+  stvarno najstarija zahtijeva novo backend čitanje.
+- Ciljani `audio_compressed_cache` suite prolazi 68 provjera, kompletni P4 host
+  suite prolazi, a firmware se kompajlira i linka s ESP-IDF v6.0.2. Dobiveni
+  `main-deck-p4.bin` ima `0x250080` bajtova i 42% slobodne najmanje app
+  particije.
+- Hardware bounded-cache stress s realnim MP3/WAV/FLAC zapisima ostaje zaseban
+  acceptance gate za USB latenciju i audio deadline; nije potreban za zatvaranje
+  determinističkog LRU arithmetic buga.
 
 ---
 
@@ -1082,7 +1103,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 9 | Audio runtime instrumentacija | prije bilo kakvog lock refaktora |
 | 10 | Per-deck audio lockovi | prema dokumentiranom planu; traži bolji harness ili board |
 | 11 | Decoder/PCM-ring/output razdvajanje | nakon lock metrika i ANLZ refaktora |
-| 12 | LRU wrap i build warning cleanup | mali, neovisni PR-ovi |
+| 12 | LRU wrap i build warning cleanup | **LRU software zatvoren; build warning cleanup ostaje otvoren kao zaseban mali PR** |
 | 13 | Production AP/API authentication | traži proizvodnu credential odluku |
 | 14 | Partition table i security provisioning plan | prije Secure Boot/flash encryption testa |
 | 15 | CI digest/SHA pinning i build optimizacija | nakon stabilnih dependency verzija |

@@ -14,7 +14,7 @@ typedef size_t (*audio_compressed_cache_read_at_fn)(void *ctx,
 typedef struct {
     size_t offset;
     size_t valid_bytes;
-    uint32_t stamp;
+    uint64_t stamp;
     bool valid;
 } audio_compressed_cache_page_t;
 
@@ -27,7 +27,7 @@ typedef struct {
     audio_compressed_cache_read_at_fn read_at;
     void *read_ctx;
     audio_compressed_cache_page_t pages[AUDIO_COMPRESSED_CACHE_MAX_PAGES];
-    uint32_t stamp;
+    uint64_t stamp;
     size_t backend_bytes;
     uint32_t hits;
     uint32_t misses;

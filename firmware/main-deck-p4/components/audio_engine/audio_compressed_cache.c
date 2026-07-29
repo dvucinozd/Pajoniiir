@@ -31,7 +31,7 @@ static audio_compressed_cache_page_t *find_page(audio_compressed_cache_t *cache,
 static size_t choose_victim(const audio_compressed_cache_t *cache)
 {
     size_t victim = 0u;
-    uint32_t oldest = UINT32_MAX;
+    uint64_t oldest = UINT64_MAX;
     for (size_t i = 0; i < cache->page_count; ++i) {
         const audio_compressed_cache_page_t *page = &cache->pages[i];
         if (!page->valid) return i;

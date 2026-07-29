@@ -1453,7 +1453,7 @@ $tests = @(
     },
     @{
         Name = "audio_compressed_cache"
-        MinTestsRun = 55
+        MinTestsRun = 68
         Dir = "tests/audio_compressed_cache"
         Target = "test_audio_compressed_cache.exe"
         Args = @(
