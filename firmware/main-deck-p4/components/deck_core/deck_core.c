@@ -1217,6 +1217,32 @@ static button_id_t button_for_event(const ctrl_event_t *ev)
 
 // ─── LED sync ─────────────────────────────────────────────────────────────────
 
+static bool deck_has_loaded_track(uint8_t deck);
+
+/* Every deck LED leaves through here. Beat-Jump pad LEDs are a pure function of
+ * the deck's current pad mode, shift state and whether a track is loaded, so the
+ * value is recomputed at the point of send rather than trusted from whatever the
+ * caller happened to pass — several callers derive it from cached state that can
+ * lag a mode change or a track unload.
+ *
+ * This used to be a #define over control_link_send_led_deck applied to the whole
+ * translation unit from a wrapper file, which meant reading any call site here
+ * gave the wrong answer about what was actually sent. */
+static void deck_send_led(led_id_t led, uint8_t state, uint8_t deck)
+{
+    if (deck < DECK_CORE_DECK_COUNT) {
+        const bool beat_jump_mode = s_decks[deck].pad_mode == CTRL_PAD_MODE_BEAT_JUMP;
+        const bool loaded = deck_has_loaded_track(deck);
+        if (led >= LED_BEAT_JUMP_PAD_1 && led <= LED_BEAT_JUMP_PAD_8) {
+            state = beat_jump_mode && loaded ? 1u : 0u;
+        } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
+                   led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+        }
+    }
+    control_link_send_led_deck(led, state, deck);
+}
+
 static void sync_legacy_compat_leds(uint8_t deck)
 {
     if (deck != DECK_CORE_COMPAT_DECK) return;
@@ -1235,14 +1261,14 @@ static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, vo
     if (s_snapshot_suppress_inactive_pads && performance_pad && state == 0u) {
         return ESP_OK;
     }
-    control_link_send_led_deck(led, state, deck);
+    deck_send_led(led, state, deck);
     return ESP_OK;
 }
 
 static void send_momentary_led(led_id_t led, uint8_t deck)
 {
-    control_link_send_led_deck(led, 1u, deck);
-    control_link_send_led_deck(led, 0u, deck);
+    deck_send_led(led, 1u, deck);
+    deck_send_led(led, 0u, deck);
 }
 
 static led_id_t track_load_led_for_deck(uint8_t deck)
@@ -1274,7 +1300,7 @@ static void publish_track_load_leds(bool force)
         if (force ||
             !s_track_load_led_valid[deck] ||
             s_track_load_led_state[deck] != value) {
-            control_link_send_led_deck(track_load_led_for_deck(deck), value, deck);
+            deck_send_led(track_load_led_for_deck(deck), value, deck);
             s_track_load_led_state[deck] = value;
             s_track_load_led_valid[deck] = true;
         }
@@ -1296,7 +1322,7 @@ static void publish_beat_jump_pad_leds_for_deck(uint8_t deck, bool force)
                 s_beat_jump_pad_led_valid[deck][pad] = true;
                 continue;
             }
-            control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
+            deck_send_led(beat_jump_pad_led_for_pad(pad), value, deck);
             s_beat_jump_pad_led_state[deck][pad] = value;
             s_beat_jump_pad_led_valid[deck][pad] = true;
         }
@@ -1326,7 +1352,7 @@ static void publish_beat_jump_shift_helper_leds_for_deck(uint8_t deck, bool forc
                 s_beat_jump_shift_helper_led_valid[deck][pad] = true;
                 continue;
             }
-            control_link_send_led_deck(beat_jump_shift_helper_led_for_pad(pad), value, deck);
+            deck_send_led(beat_jump_shift_helper_led_for_pad(pad), value, deck);
             s_beat_jump_shift_helper_led_state[deck][pad] = value;
             s_beat_jump_shift_helper_led_valid[deck][pad] = true;
         }
@@ -1378,6 +1404,30 @@ static void publish_flx4_led_snapshot(bool force)
      * sequential OFF notes, which the FLX4 renders as a visible sweep. The
      * controller starts with inactive pads off; returning success here still
      * primes the publisher's diff cache without putting those bursts on USB. */
+    /* State-driven LED values come from actor-owned live data, not from the
+     * published seqlock snapshot the UI and web readers consume: this runs
+     * inside the deck actor, where s_decks and the audio engine are current and
+     * the snapshot may not be yet.
+     *
+     * Publish the snapshot before handing the input to the publisher, because
+     * publish_track_load_leds() and the Beat-Jump cache helpers below run after
+     * this returns and must compute from the same values that were actually
+     * sent — including across a track unload. */
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        deck_state_t state = s_decks[deck];
+        if (deck_uses_audio_engine(deck)) {
+            state.playing = audio_engine_deck_is_playing(deck);
+            state.position_ms = audio_engine_deck_position_ms(deck);
+        }
+        input.cue[deck] = state.position_ms == state.cue_point_ms ? 1u : 0u;
+        input.play[deck] = state.playing ? 1u : 0u;
+        input.sync[deck] = state.sync_enabled ? 1u : 0u;
+        input.pad_mode[deck] = state.pad_mode;
+        input.censor_active[deck] = state.censor_active ? 1u : 0u;
+        input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1u : 0u;
+    }
+    publish_state_snapshot();
+
     s_snapshot_suppress_inactive_pads = force;
     esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,
                                               &input,
@@ -1556,7 +1606,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_smart_cfx();
-        control_link_send_led_deck(LED_SMART_CFX,
+        deck_send_led(LED_SMART_CFX,
                                    audio_engine_get_smart_cfx_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1565,7 +1615,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_smart_fader();
-        control_link_send_led_deck(LED_SMART_FADER,
+        deck_send_led(LED_SMART_FADER,
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1577,7 +1627,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_master_cue();
-        control_link_send_led_deck(LED_MASTER_CUE,
+        deck_send_led(LED_MASTER_CUE,
                                    audio_engine_get_master_cue_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1650,7 +1700,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             s_beat_fx.enabled = !s_beat_fx.enabled;
             sync_beat_fx_audio_state();
-            control_link_send_led_deck(LED_BEAT_FX_ON,
+            deck_send_led(LED_BEAT_FX_ON,
                                        s_beat_fx.enabled ? 1u : 0u,
                                        CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx -> %s", s_beat_fx.enabled ? "ON" : "OFF");
@@ -1660,7 +1710,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             init_beat_fx_state();
             sync_beat_fx_audio_state();
-            control_link_send_led_deck(LED_BEAT_FX_ON, 0u, CTRL_DECK_1);
+            deck_send_led(LED_BEAT_FX_ON, 0u, CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx reset");
         }
         return true;
@@ -1895,7 +1945,7 @@ static void vu_task(void *arg)
                 level = 0u;                       /* snap to 0 when stopped */
                 s_vu_display_level[deck] = 0u;
             }
-            control_link_send_led_deck(LED_VU_METER, level, deck);
+            deck_send_led(LED_VU_METER, level, deck);
         }
     }
 }
@@ -2780,7 +2830,7 @@ static void publish_loaded_track_hot_cue_leds(uint8_t deck)
          * and still clear cues that belonged to the previous track. */
         if ((!s_loaded_hot_cue_mask_valid[deck] && value != 0u) ||
             (s_loaded_hot_cue_mask_valid[deck] && value != previous)) {
-            control_link_send_led_deck((led_id_t)(LED_HOT_CUE_PAD_1 + pad), value, deck);
+            deck_send_led((led_id_t)(LED_HOT_CUE_PAD_1 + pad), value, deck);
         }
     }
     s_loaded_hot_cue_mask[deck] =

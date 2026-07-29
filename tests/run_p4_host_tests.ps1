@@ -1922,6 +1922,7 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "deck_core";                  Wrapper = "deck_core_live_led.c" },
     @{ Board = "control-board-s3"; Component = "s3_debug_ap";               Wrapper = "s3_debug_ap_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
@@ -1992,6 +1993,16 @@ Assert-FileContains `
     -Name "p4 wifi_link builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "wifi_link.c"')
+
+Assert-FileContains `
+    -Name "p4 deck LEDs leave through the single beat-jump-aware send helper" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("static void deck_send_led(", "deck_send_led(led, state, deck)", "publish_state_snapshot();")
+
+Assert-FileContains `
+    -Name "p4 deck_core builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "deck_core.c"')
 
 Assert-FileContains `
     -Name "s3 debug AP serves one bounded /events response and latches start failure" `
