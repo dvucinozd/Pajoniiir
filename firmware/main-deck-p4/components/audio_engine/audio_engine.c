@@ -1370,6 +1370,56 @@ static void ae_clear_read_faults(uint8_t deck)
 {
     if (deck < AUDIO_ENGINE_DECK_COUNT) s_read_fault_streak[deck] = 0u;
 }
+
+/* Where the next decode read will start. Each backend tracks its own cursor:
+ * WAV reads at `wav_data_pos`, FLAC drives the cache through the stream cursor
+ * dr_flac maintains, and MP3 reads at `file_pos`. */
+static size_t ae_next_read_offset(const audio_engine_state_t *eng,
+                                  const audio_fw_preload_t *fw)
+{
+    if (eng->wav_ready)  return eng->wav_data_pos;
+    if (eng->flac_ready) return fw->stream_pos;
+    return eng->file_pos;
+}
+
+/* Largest single read any decoder issues: WAV asks for
+ * MINIMP3_MAX_SAMPLES_PER_FRAME * block_align (4608 B at 16-bit stereo) and
+ * minimp3 refills 4096 B. Rounded up so the span below covers both. */
+#define AE_MAX_DECODE_READ_BYTES 8192u
+
+/* AE_LOCK is a single global recursive mutex, and ae_output_task takes it for
+ * every audio block. A cache miss taken while holding it therefore blocks the
+ * priority-6 output task for the whole USB transfer, which is an audible
+ * dropout rather than merely a late decode. Fetch the pages the next decode
+ * will touch *before* the lock: the cache has exactly one client (this decode
+ * task), so warming it outside the lock races with nobody.
+ *
+ * Both ends of the read span are warmed. A read is up to 8 KiB against 32 KiB
+ * pages, so it usually sits inside one page, but a read that starts near a page
+ * boundary straddles two - warming only the first would leave the second to be
+ * fetched under the lock, which is the exact stall this avoids.
+ * tests/audio_compressed_cache covers that case. */
+static void ae_warm_cache_for_next_read(const audio_engine_state_t *eng,
+                                        audio_fw_preload_t *fw)
+{
+    if (!fw) return;
+    const size_t start = ae_next_read_offset(eng, fw);
+    (void)audio_compressed_cache_prefetch(&fw->cache, start);
+    (void)audio_compressed_cache_prefetch(&fw->cache,
+                                          start + AE_MAX_DECODE_READ_BYTES - 1u);
+}
+
+/* Warming is a prediction, so it can miss: a seek retargets the cursor, and the
+ * FLAC cursor moves inside decode_one_frame. Count the reads that still land
+ * under the lock instead of assuming there are none - a rising count is the
+ * signal that the prediction no longer matches how the decoder reads. */
+static uint32_t s_locked_backend_reads[AUDIO_ENGINE_DECK_COUNT];
+
+uint32_t audio_engine_locked_backend_read_count(uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return 0u;
+    return s_locked_backend_reads[deck];
+}
 #endif /* AE_FW */
 
 static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
@@ -2182,6 +2232,9 @@ static void ae_decode_task(void *arg)
         int attempts = 0;
         while (runtime->run && eng->sample_rate == 0 && attempts < 256 &&
                !atomic_load_bool(&eng->eof)) {
+            /* Same reason as the steady-state loop below: warm before taking
+             * the lock. A large ID3 tag walks several pages here. */
+            ae_warm_cache_for_next_read(eng, fw);
             AE_LOCK();
             int64_t decode_start_us = esp_timer_get_time();
             int n = decode_one_frame(eng, fw, ctx->deck, decode_pcm);
@@ -2333,10 +2386,20 @@ static void ae_decode_task(void *arg)
         }
         uint32_t scratch_newest_ms = 0u;
         bool scratch_newest_valid = false;
+
+        /* Warm the pages this decode will need before taking the lock, so the
+         * USB read happens with the output task free to run. */
+        ae_warm_cache_for_next_read(eng, fw);
+
         AE_LOCK();
+        const size_t backend_before = fw->cache.backend_bytes;
         int64_t decode_start_us = esp_timer_get_time();
         int  samples = decode_one_frame(eng, fw, ctx->deck, decode_pcm);
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+        if (fw->cache.backend_bytes != backend_before &&
+            ctx->deck < AUDIO_ENGINE_DECK_COUNT) {
+            s_locked_backend_reads[ctx->deck]++;
+        }
         /* How much of this batch may be published. Only a loop wrap lowers it,
          * and it is kept separate from `samples` on purpose: `samples <= 0` is
          * the decoder's own end-of-input signal further down, and borrowing it

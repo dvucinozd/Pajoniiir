@@ -58,6 +58,17 @@ this branch:
   (`patch` → `sync` → `close` → `publish`), producer stop-gate that waits for
   in-flight writers before drain, and propagation of every durability failure.
   The recorder remains compiled out by default.
+- **Decode reads no longer stall the output task**: `AE_LOCK` is one global
+  recursive mutex that `ae_output_task` takes for every audio block, so a cache
+  miss taken while holding it blocked the priority-6 output task for the whole
+  USB transfer — an audible dropout rather than a late decode. The decode loops
+  now warm both ends of the next read's page span before taking the lock (the
+  cache has a single client, so warming outside the lock races with nothing),
+  and `audio_engine_locked_backend_read_count()` counts the reads that still
+  land under it, since warming is a prediction that a seek can invalidate.
+  Two related items remain open: the lock is still global, so deck 1's decode
+  blocks deck 2's, and `library.c` still holds `media_io_gate` across an entire
+  PDB parse.
 - **Dead code cleanup**: removed legacy `file_buf`/full-track seek-table
   remnants, retired `audio_output_remaining_delay_ms()` and unused scratch
   buffer APIs, and extracted compressed cache, recorder producer gate and

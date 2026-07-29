@@ -172,6 +172,44 @@ static void test_eof_tail_page_is_cached(void)
     CHECK(cache.short_reads == 0u);
 }
 
+/* The decode path warms the cache before taking the engine lock so the USB read
+ * does not stall the audio output task. A read that straddles a page boundary
+ * needs *both* pages warmed - warming only the page the read starts in leaves
+ * the second one to be fetched under the lock, which is the stall this exists to
+ * remove. This is the property that makes the two prefetch calls in
+ * ae_warm_cache_for_next_read() necessary rather than redundant. */
+static void test_warming_both_span_ends_makes_a_straddling_read_hit(void)
+{
+    memory_source_t source;
+    fill_source(&source);
+    uint8_t storage[4 * 32];
+    audio_compressed_cache_t cache;
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+                                      source.size, memory_read_at, &source));
+
+    /* A 20-byte read from 24 spans pages 0 (0..31) and 1 (32..63). */
+    const size_t start = 24u;
+    const size_t span = 20u;
+
+    /* Warming only the first page still leaves one backend read for the read. */
+    CHECK(audio_compressed_cache_prefetch(&cache, start));
+    uint32_t calls_after_one_warm = source.calls;
+    uint8_t out[20];
+    CHECK(audio_compressed_cache_read(&cache, start, out, span) == span);
+    CHECK(source.calls == calls_after_one_warm + 1u);   /* the second page */
+
+    /* Warming both ends leaves nothing for the read to fetch. */
+    fill_source(&source);
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+                                      source.size, memory_read_at, &source));
+    CHECK(audio_compressed_cache_prefetch(&cache, start));
+    CHECK(audio_compressed_cache_prefetch(&cache, start + span - 1u));
+    uint32_t calls_after_both_warm = source.calls;
+    CHECK(audio_compressed_cache_read(&cache, start, out, span) == span);
+    CHECK(source.calls == calls_after_both_warm);       /* no backend read at all */
+    CHECK(memcmp(out, source.data + start, span) == 0);
+}
+
 int main(void)
 {
     test_cross_page_read_and_eof_clamp();
@@ -179,6 +217,7 @@ int main(void)
     test_prefetch_and_invalid_config();
     test_mid_file_short_read_is_not_cached();
     test_eof_tail_page_is_cached();
+    test_warming_both_span_ends_makes_a_straddling_read_hit();
     printf("TESTS_RUN=%u\n", s_checks);
     puts("audio_compressed_cache tests passed");
     return 0;

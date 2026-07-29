@@ -213,6 +213,33 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     }
 }
 
+# AE_LOCK is one global recursive mutex and ae_output_task takes it on every
+# audio block, so a USB page fetch taken while holding it stalls the priority-6
+# output task for the whole transfer - an audible dropout, not just a slow
+# decode. The decode loops therefore warm the pages first and take the lock
+# afterwards. The ordering is the entire point, so check the order rather than
+# the presence of the call: a later edit that moves the warm below AE_LOCK()
+# would keep every substring intact while restoring the stall.
+function Assert-DecodeWarmsCacheBeforeEngineLock {
+    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+    Write-Host "==> static decode warms the compressed cache before taking AE_LOCK"
+    $lines = Get-Content -LiteralPath $Path
+    $callSites = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'ae_warm_cache_for_next_read\(eng, fw\);') { continue }
+        $callSites++
+        # The next statement must be the lock; blank lines between are fine.
+        $j = $i + 1
+        while ($j -lt $lines.Count -and $lines[$j].Trim() -eq "") { $j++ }
+        if ($j -ge $lines.Count -or $lines[$j] -notmatch 'AE_LOCK\(\);') {
+            throw "audio_engine.c:$($i + 1): cache warming is not immediately followed by AE_LOCK(); the USB read can land back under the lock"
+        }
+    }
+    if ($callSites -ne 2) {
+        throw "expected 2 ae_warm_cache_for_next_read call sites in audio_engine.c (sample-rate latch and steady-state decode), found $callSites"
+    }
+}
+
 function Assert-OverviewMainRenderCommitGuard {
     $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
     Write-Host "==> static overview main waveform commits only after successful render"
@@ -337,6 +364,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
+Assert-DecodeWarmsCacheBeforeEngineLock
 Assert-OverviewInactiveGuardBeforeCacheUpdate
 Assert-OverviewMainRenderCommitGuard
 Assert-OverviewLoadDefersMainWaveRender
@@ -1296,7 +1324,7 @@ $tests = @(
     },
     @{
         Name = "audio_compressed_cache"
-        MinTestsRun = 45
+        MinTestsRun = 55
         Dir = "tests/audio_compressed_cache"
         Target = "test_audio_compressed_cache.exe"
         Args = @(
