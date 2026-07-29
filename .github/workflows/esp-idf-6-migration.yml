@@ -51,11 +51,12 @@ jobs:
         run: |
           & ./tests/run_s3_host_tests.ps1 *> s3-host-tests.log
           $s3 = $LASTEXITCODE
+          $s3Lines = @(Get-Content s3-host-tests.log)
           if ($s3 -ne 0) {
-              Get-Content s3-host-tests.log -Tail 40
+              $s3Lines | Select-Object -Last 40
               exit $s3
           }
-          Write-Host "S3 host tests passed."
+          Write-Host "S3 host tests passed ($(($s3Lines | Select-String -Pattern '^==> run ').Count) suites)."
 
           & ./tests/run_p4_host_tests.ps1 *> p4-host-tests.log
           $p4 = $LASTEXITCODE
@@ -69,7 +70,52 @@ jobs:
                   $p4Lines | Select-Object -Last 60
               }
           } else {
+              # A passing run used to print only the last 20 lines, which are
+              # whichever static gates happen to sit at the end of the file. The
+              # numbers worth reading -- how much actually executed, and that the
+              # API contracts ran -- were invisible, so a suite silently losing
+              # coverage looked identical to a healthy one.
+              Write-Host "::group::P4 host suite summary"
+              $suites = ($p4Lines | Select-String -Pattern '^==> run ').Count
+              $gates  = ($p4Lines | Select-String -Pattern '^==> static ').Count
+              $retired = ($p4Lines | Select-String -Pattern '^==> static retired API ').Count
+              $wrappers = ($p4Lines | Select-String -Pattern '^==> static retired compilation wrapper ').Count
+              Write-Host "compiled suites:            $suites"
+              Write-Host "static gates:               $gates"
+              Write-Host "retired APIs proven gone:   $retired"
+              Write-Host "retired wrappers still out: $wrappers"
+              Write-Host ""
+              Write-Host "executed assertions per suite (floor enforced):"
+              $p4Lines | Select-String -Pattern 'TESTS_RUN=\d+ \(floor \d+\)' |
+                  ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+              Write-Host "::endgroup::"
+
+              if ($retired -eq 0) {
+                  Write-Host "::error::the retired-API contract did not run; tests/api_contract/retired is not being compiled"
+                  exit 1
+              }
+              if ($wrappers -eq 0) {
+                  Write-Host "::error::the retired-wrapper check did not run"
+                  exit 1
+              }
               $p4Lines | Select-Object -Last 20
+          }
+
+          # The runner deliberately skips a suite whose tooling is missing rather
+          # than failing the whole gate, which is right for a workstation and
+          # wrong here: on CI the tooling is installed above, so a skip means the
+          # install broke and a check stopped running without anyone noticing.
+          # That is exactly how the dead-code audit and the OTA signing tests
+          # went unnoticed before they were installed.
+          # Case-sensitive and anchored on the runner's own wording. A plain
+          # case-insensitive 'skipping' also matches a suite's ordinary output,
+          # such as the ANLZ test noting it has no real PDB fixture to read.
+          $skipped = @($s3Lines) + @($p4Lines) |
+              Select-String -CaseSensitive -Pattern 'SKIPPING the'
+          if ($skipped) {
+              Write-Host "::error::a host-suite check was skipped on CI; its tooling is expected to be installed"
+              $skipped | ForEach-Object { Write-Host "  $($_.Line.Trim())" }
+              exit 1
           }
           exit $p4
 

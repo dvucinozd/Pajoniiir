@@ -2073,6 +2073,7 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "rekordbox_anlz_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
     @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" },

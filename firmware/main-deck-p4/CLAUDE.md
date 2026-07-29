@@ -523,14 +523,15 @@ UI is 800×480 landscape → rotated 90° in **hardware via PPA** (not LVGL sw-r
 - `flags.use_mipi_interface = 1` (otherwise the driver falls back to RGB path)
 - Backlight GPIO23 (simple GPIO high = on; vendor uses LEDC PWM), reset GPIO5
 
-**Rotation (PPA):** `ui_lvgl_backend_single_fb.c` creates the LVGL display as
+**Rotation (PPA):** `ui_lvgl_backend.c` creates the LVGL display as
 800×480 landscape without `lv_display_set_rotation`. LVGL renders partial rows
 into one cache-aligned PSRAM draw buffer; the flush callback uses
 `ppa_do_scale_rotate_mirror()` at `PPA_SRM_ROTATION_ANGLE_270` to write directly
 into the single 480×800 DPI framebuffer. There is no inactive-buffer swap in
-the current backend. BSP and UI share `BSP_LCD_FRAMEBUFFER_COUNT == 1`, enforced
-by compile-time assertions. `esp_cache_msync(C2M)` is still required before PPA
-reads the PSRAM render buffer.
+the current backend. `UI_DSI_FB_COUNT` is `BSP_LCD_FRAMEBUFFER_COUNT`, so BSP and
+UI cannot drift apart, and a `_Static_assert` in each fails the build if the
+count is raised without implementing that swap. `esp_cache_msync(C2M)` is still
+required before PPA reads the PSRAM render buffer.
 
 **Why NOT LVGL sw-rotation:** PARTIAL mode + rotation → corrupts memory, crashes the DSI GDMA ISR.
 FULL mode + `set_rotation` → does not rotate at all. Thus hardware PPA is used.
