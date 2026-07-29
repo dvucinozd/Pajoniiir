@@ -122,6 +122,54 @@ function Invoke-Step {
     }
 }
 
+function Invoke-ApiContract {
+    # The compiler is the oracle for the public API surface. The positive file
+    # must compile; every file under retired/ must not. Nothing is linked or
+    # run: the question is what a caller can still see, not what a binary
+    # contains. This replaces Assert-File(DoesNot)Contains on public headers,
+    # which matched names in comments, passed a reformatted declaration, and
+    # never checked a signature.
+    $dir = Join-Path $RepoRoot "tests/api_contract"
+    $inc = @(
+        "-I../support/stubs",
+        "-I../../firmware/main-deck-p4/components/library/include",
+        "-I../../firmware/main-deck-p4/components/audio_engine/include",
+        "-I../../firmware/main-deck-p4/components/wifi_link/include"
+    )
+
+    Invoke-Step -Name "static public API contract compiles" `
+        -WorkingDirectory $dir `
+        -Executable $Gcc.Source `
+        -Arguments (@("-fsyntax-only", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11") + $inc + @("test_api_contract.c"))
+
+    $retired = Get-ChildItem -LiteralPath (Join-Path $dir "retired") -Filter *.c | Sort-Object Name
+    if ($retired.Count -eq 0) {
+        throw "no retired-API contract files found; the negative half of the API contract is missing"
+    }
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        foreach ($file in $retired) {
+            $symbol = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+            Write-Host "==> static retired API $symbol stays unreachable"
+            Push-Location $dir
+            try {
+                & $Gcc.Source (@("-fsyntax-only", "-Werror=implicit-function-declaration", "-std=c11") + $inc + @($file.FullName)) 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    throw "retired API '$symbol' is reachable again: $($file.Name) still compiles"
+                }
+                # The failure above is the expected outcome. Clear it so it does
+                # not linger as the script's own exit status.
+                $global:LASTEXITCODE = 0
+            } finally {
+                Pop-Location
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+}
+
 function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c"
     Write-Host "==> static overview inactive tab does not validate waveform cache"
@@ -483,6 +531,8 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
     -LiteralPatterns @("KEY TRANSPOSE", "NO TRANSPOSITION", "ui_performance_tabs_create_key_shift")
 
+# ui_performance_tabs.h pulls in LVGL, which the host toolchain does not build,
+# so this stays a text check rather than a compile contract.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs API excludes removed Key Shift screen" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
@@ -811,6 +861,8 @@ if (Test-Path -LiteralPath $retiredShim) {
     throw "retired ESP-IDF 5.5 USB DWC shim still exists: $retiredShim"
 }
 
+# Absence of a struct *field*, not a function: nothing a caller could reference,
+# so there is no compile contract to write. Text check is the only option.
 Assert-FileDoesNotContain `
     -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_pcm_timeline.h") `
@@ -1954,6 +2006,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
     -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
 
+Invoke-ApiContract
+
 # Components whose `#include "<impl>.c"` compilation wrapper has been retired.
 # Each one's production behaviour now lives in the file the build actually names,
 # so reintroducing a wrapper here would quietly restore preprocessor symbol
@@ -2065,6 +2119,8 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "flx4_midi_host.c"')
 
+# bsp_jc4880.h pulls in esp_lcd/esp_codec_dev, which the host toolchain does not
+# build, so this stays a text check rather than a compile contract.
 Assert-FileContains `
     -Name "p4 display shares one authoritative framebuffer count" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/include/bsp_jc4880.h") `
@@ -2115,21 +2171,6 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
 
-Assert-FileDoesNotContain `
-    -Name "confirmed dead scratch APIs stay removed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_scratch_buffer.h") `
-    -LiteralPatterns @("audio_scratch_buffer_push", "audio_scratch_buffer_index_for_ms", "audio_scratch_buffer_read(")
-
-Assert-FileDoesNotContain `
-    -Name "retired output timing APIs stay removed" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_output_timing.h") `
-    -LiteralPatterns @("audio_output_block_period_ms", "audio_output_remaining_delay_ms")
-
-Assert-FileDoesNotContain `
-    -Name "test-only stereo mixer API stays out of production" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_mixer.h") `
-    -LiteralPatterns @("audio_mixer_mix_stereo")
-
 Assert-FileContains `
     -Name "scratch transport test uses a local decode-writer bridge" `
     -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
@@ -2169,16 +2210,6 @@ Assert-FileDoesNotContain `
     -Name "library UI never materializes every catalog row in LVGL" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("lv_table_set_row_count(s_library_table, n)", "ui_library_fill_row(")
-
-Assert-FileContains `
-    -Name "production library exposes selected-track API names" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
-    -LiteralPatterns @("library_set_selected_track_index", "library_selected_track_index")
-
-Assert-FileDoesNotContain `
-    -Name "public library header no longer exports mock selected-track aliases" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/include/library.h") `
-    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index", "Temporary source-compatibility aliases")
 
 Assert-FileContains `
     -Name "library source defines production selected-row helpers directly" `
@@ -2242,11 +2273,6 @@ Assert-FileContains `
 
 
 Assert-FileContains `
-    -Name "compressed audio uses a fixed bounded PSRAM page cache" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_fw_preload.h") `
-    -LiteralPatterns @("AUDIO_FW_CACHE_PAGE_BYTES", "AUDIO_FW_CACHE_PAGE_COUNT", "AUDIO_FW_CACHE_BYTES", "audio_compressed_cache_t cache")
-
-Assert-FileContains `
     -Name "firmware loader binds the fixed cache instead of allocating the whole track" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
@@ -2271,3 +2297,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
 
+# Windows PowerShell propagates $LASTEXITCODE as the script's exit status, so a
+# script that ends after any native command inherits that command's code even
+# when every check passed. Reaching here means nothing threw.
+exit 0
