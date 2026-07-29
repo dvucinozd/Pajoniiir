@@ -214,29 +214,42 @@ static esp_err_t events_send_sse(httpd_req_t *req, char *text)
 static esp_err_t events_get_handler(httpd_req_t *req)
 {
     if (!s3_api_request_allowed(req, false)) return ESP_FAIL;
-    httpd_resp_set_type(req, "text/event-stream");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
 
-    // Stream only lines newer than what this client has already received.
-    uint32_t last_seq = 0;
-    char chunk[512];
-    for (int i = 0; i < 600; i++) {
-        chunk[0] = '\0';
-        uint32_t seen_seq = last_seq;
-        if (s_lock && xSemaphoreTake(s_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
-            (void)s3_debug_log_ring_snapshot(&s_log_ring, chunk, sizeof(chunk), last_seq);
-            seen_seq = s_log_ring.next_seq;
-            xSemaphoreGive(s_lock);
+    uint32_t last_seq = 0u;
+    char query[48] = {0};
+    char after[16] = {0};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "after", after, sizeof(after)) == ESP_OK) {
+        char *end = NULL;
+        unsigned long parsed = strtoul(after, &end, 10);
+        if (end && *end == '\0' && parsed <= UINT32_MAX) {
+            last_seq = (uint32_t)parsed;
         }
-        if (chunk[0] != '\0') {
-            last_seq = seen_seq;
-            if (events_send_sse(req, chunk) != ESP_OK) {
-                break;
-            }
-        } else if (httpd_resp_sendstr_chunk(req, ": keepalive\n\n") != ESP_OK) {
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    char chunk[512] = {0};
+    uint32_t next_seq = last_seq;
+    if (s_lock && xSemaphoreTake(s_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+        (void)s3_debug_log_ring_snapshot(&s_log_ring, chunk, sizeof(chunk), last_seq);
+        next_seq = s_log_ring.next_seq;
+        xSemaphoreGive(s_lock);
+    }
+
+    char seq_header[16];
+    snprintf(seq_header, sizeof(seq_header), "%u", (unsigned)next_seq);
+    httpd_resp_set_type(req, "text/event-stream");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store");
+    httpd_resp_set_hdr(req, "X-Log-Seq", seq_header);
+    httpd_resp_set_hdr(req, "Connection", "close");
+
+    /* One bounded response per request, resumed by the client through ?after=.
+     * The previous handler looped for up to ten minutes inside the request,
+     * and ESP-IDF's httpd is synchronous: a single browser tab watching the log
+     * therefore occupied the server task and blocked /update, /api/firmware and
+     * the OTA upload for as long as it stayed open. EventSource reconnects on
+     * its own once this response closes. */
+    if (chunk[0] != '\0' && events_send_sse(req, chunk) != ESP_OK) {
+        return ESP_FAIL;
     }
     return httpd_resp_sendstr_chunk(req, NULL);
 }
@@ -608,6 +621,9 @@ esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
 
 /* Does the actual (blocking) WiFi/httpd bring-up or teardown. Only ever runs on
  * the worker task (or directly if init has not run yet). */
+/* ERROR is terminal for an ON edge until an explicit OFF clears it. */
+static bool s_ap_start_failed_latched;
+
 static esp_err_t s3_debug_ap_apply(bool enable)
 {
     if (!enable) {
@@ -623,6 +639,14 @@ static esp_err_t s3_debug_ap_apply(bool enable)
     atomic_store(&s_log_hook_active, true);
 
     esp_err_t rc = start_ap();
+    if (rc == ESP_OK && s_httpd) {
+        /* start_ap() brings up netif/Wi-Fi and starts the server. Restart it
+         * here so the bounded /events handler is registered before any client
+         * can open a request. */
+        httpd_stop(s_httpd);
+        s_httpd = NULL;
+        rc = start_httpd();
+    }
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "debug AP start failed: %s", esp_err_to_name(rc));
         stop_ap();
@@ -630,7 +654,8 @@ static esp_err_t s3_debug_ap_apply(bool enable)
         return rc;
     }
 
-    ESP_LOGI(TAG, "S3 debug AP active: SSID=%s URL=http://%s", S3_DEBUG_AP_SSID, S3_DEBUG_AP_IP);
+    ESP_LOGI(TAG, "S3 debug AP active: SSID=%s URL=http://%s",
+             S3_DEBUG_AP_SSID, S3_DEBUG_AP_IP);
     set_status(S3_DEBUG_AP_STATUS_ON);
     return ESP_OK;
 }
@@ -640,8 +665,8 @@ static void s3_debug_ap_worker(void *arg)
     (void)arg;
     for (;;) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        bool desired = s_ap_desired;
-        bool active = s_ap_active;
+        const bool desired = s_ap_desired;
+        const bool active = s_ap_active;
         if (desired == active) {
             s_ap_worker_running = false;
             xSemaphoreGive(s_lock);
@@ -649,10 +674,21 @@ static void s3_debug_ap_worker(void *arg)
         }
         xSemaphoreGive(s_lock);
 
-        esp_err_t rc = s3_debug_ap_apply(desired);
+        const esp_err_t rc = s3_debug_ap_apply(desired);
 
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        s_ap_active = desired ? (rc == ESP_OK) : false;
+        if (desired && rc != ESP_OK) {
+            /* Latch the failure instead of leaving desired != active, which
+             * sent this loop straight back into another Wi-Fi and httpd
+             * allocation attempt with no delay, forever. */
+            s_ap_active = false;
+            s_ap_desired = false;
+            s_ap_start_failed_latched = true;
+            s_ap_worker_running = false;
+            xSemaphoreGive(s_lock);
+            break;
+        }
+        s_ap_active = desired;
         xSemaphoreGive(s_lock);
     }
     vTaskDelete(NULL);
@@ -662,27 +698,41 @@ esp_err_t s3_debug_ap_request(bool enable)
 {
     if (!s_lock) {
         /* init not run — fall back to a direct (blocking) apply. */
-        esp_err_t rc = s3_debug_ap_apply(enable);
+        const esp_err_t rc = s3_debug_ap_apply(enable);
         s_ap_active = enable ? (rc == ESP_OK) : false;
         return rc;
     }
 
+    bool clear_error = false;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_ap_desired = enable;
-    bool spawn = !s_ap_worker_running;
-    if (spawn) {
-        s_ap_worker_running = true;
+    if (enable && s_ap_start_failed_latched) {
+        xSemaphoreGive(s_lock);
+        ESP_LOGW(TAG, "debug AP is latched in ERROR; request OFF before retry");
+        return ESP_ERR_INVALID_STATE;
     }
+    if (!enable && s_ap_start_failed_latched) {
+        s_ap_start_failed_latched = false;
+        s_ap_desired = false;
+        s_ap_active = false;
+        clear_error = true;
+    } else {
+        s_ap_desired = enable;
+    }
+    const bool spawn = !clear_error && !s_ap_worker_running &&
+                       s_ap_desired != s_ap_active;
+    if (spawn) s_ap_worker_running = true;
     xSemaphoreGive(s_lock);
 
-    if (spawn) {
-        if (xTaskCreate(s3_debug_ap_worker, "s3dbgap", 4096, NULL, 3, NULL) != pdPASS) {
-            ESP_LOGE(TAG, "failed to spawn s3 debug AP worker");
-            xSemaphoreTake(s_lock, portMAX_DELAY);
-            s_ap_worker_running = false;
-            xSemaphoreGive(s_lock);
-            return ESP_ERR_NO_MEM;
-        }
+    if (clear_error) {
+        set_status(S3_DEBUG_AP_STATUS_OFF);
+        return ESP_OK;
+    }
+    if (spawn && xTaskCreate(s3_debug_ap_worker, "s3dbgap", 4096, NULL, 3, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "failed to spawn s3 debug AP worker");
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        s_ap_worker_running = false;
+        xSemaphoreGive(s_lock);
+        return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
 }

@@ -1922,6 +1922,7 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
+    @{ Board = "control-board-s3"; Component = "s3_debug_ap";               Wrapper = "s3_debug_ap_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -1991,6 +1992,21 @@ Assert-FileContains `
     -Name "p4 wifi_link builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "wifi_link.c"')
+
+Assert-FileContains `
+    -Name "s3 debug AP serves one bounded /events response and latches start failure" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -LiteralPatterns @("X-Log-Seq", "s_ap_start_failed_latched", "debug AP is latched in ERROR; request OFF before retry")
+
+Assert-FileDoesNotContain `
+    -Name "s3 debug AP /events does not hold the httpd task in a polling loop" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -LiteralPatterns @(": keepalive", "for (int i = 0; i < 600; i++)")
+
+Assert-FileContains `
+    -Name "s3 debug AP builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "s3_debug_ap.c"')
 
 Assert-FileContains `
     -Name "s3 FLX4 MIDI host builds its real source" `
