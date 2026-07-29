@@ -609,11 +609,14 @@ vrijeme ima dokumentiranu deadline marginu.
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO; HARDWARE OTA FAILURE/RETRY SMOKE PENDING**
+
 Primarne lokacije:
 
-- `firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c:37-49`
-- `firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c:405-484`
-- `firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c:487-498`
+- `firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c`
+- `firmware/main-deck-p4/components/p4_ota_pull_core/include/p4_ota_pull_gate.h`
+- `tests/p4_ota_pull_gate/test_p4_ota_pull_gate.c`
 
 ### Nalaz
 
@@ -641,15 +644,34 @@ dok je status mutex zaključan.
 - retry nakon greške;
 - reader nikada ne vidi nemoguću kombinaciju statusnih polja.
 
+### Implementirani popravak
+
+- `p4_ota_pull_gate` koristi atomic compare-and-exchange tako da samo jedan
+  check/install start može rezervirati OTA operaciju. Task-create, lease i
+  network failure putovi otpuštaju gate pa je retry moguć.
+- Cijeli operator-facing status, install offer, TTL i progress objavljuju se pod
+  kratkim `portMUX` critical-sectionom. Getter vraća jednu koherentnu kopiju;
+  URL/SHA/size kopiraju se u workerov lokalni snapshot prije mrežnog I/O-a.
+- Ni Wi-Fi prijelaz, HTTP/TLS, flash write ni task creation ne izvršavaju se dok
+  je state critical-section zaključan.
+- Task-create failure objavljuje završni FAILED snapshot prije otpuštanja gatea,
+  tako da zakašnjeli failure writer ne može pregaziti status novog pokušaja.
+- Host test potvrđuje single-winner acquire i retry nakon releasea; kompletni P4
+  host suite i ESP-IDF 6.0.2 P4 build prolaze.
+
 ---
 
 ## P2-4 — Monitor PCM konfiguracija i statistika nisu koherentne
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO; HARDWARE MONITOR-LINK SOAK PENDING**
+
 Primarna lokacija:
 
-- `firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c:10-18`
+- `firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c`
+- `tests/monitor_pcm_link/test_monitor_pcm_link.c`
 
 ### Nalaz
 
@@ -663,6 +685,22 @@ ostaju obični shared globali između audio, transport i web/status konteksta.
 - atomici za nezavisne monotone brojače;
 - jasno definiran owner konfiguracije;
 - disable/teardown mora zatvoriti producer gate prije gašenja I2S resursa.
+
+### Implementirani popravak
+
+- Enable je acquire/release atomic producer gate; disabled output write ostaje
+  jeftin no-op i ne povećava drop statistiku.
+- Sample rate i channel/bit shape objavljuju se kao versioned 32-bit seqlock
+  snapshot. Reader prihvaća samo stabilnu parnu verziju, pa ne može spojiti
+  sample rate starog formata s kanalima ili bit-depthom novog.
+- Submitted/dropped block i submitted-frame brojači su nezavisni monotoni
+  atomici. SPSC queue indeksi zadržavaju postojeći acquire/release ownership.
+- `monitor_pcm_link_set_format()` je jedini configuration writer, audio output
+  je jedini queue producer, a transport task jedini consumer. Disable zatvara
+  producer admission prije bilo kakvog vanjskog transport teardowna.
+- Host regresija provjerava oba kompletna format snapshota, enable/disable,
+  serijalizaciju/CRC i puni queue; kompletni P4 host suite i ESP-IDF 6.0.2 P4
+  build prolaze.
 
 ---
 
@@ -986,7 +1024,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 3 | USB recovery lifecycle | **software implementirano i validirano na `codex/fix-usb-recovery-lifecycle`; hardware unavailable/deferred** |
 | 4 | Control-link durable state reconciliation | **software implementirano i validirano na S3/P4; HW reconnect/saturation smoke pending** |
 | 5 | Deck/library ownership refaktor | **software implementirano i validirano; P4 USB/audio/FLX4 hardware soak pending** |
-| 6 | OTA status i monitor PCM concurrency | P2; može biti zaseban mali PR |
+| 6 | OTA status i monitor PCM concurrency | **software implementirano i validirano; OTA failure/retry i monitor-link HW soak pending** |
 | 7 | Partial-init cleanup | P2; neovisan failure-injection PR |
 | 8 | Immutable/refcounted ANLZ snapshot | P2; nakon deck ownership API-ja |
 | 9 | Audio runtime instrumentacija | prije bilo kakvog lock refaktora |

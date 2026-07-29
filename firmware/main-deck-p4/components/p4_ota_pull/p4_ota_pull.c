@@ -1,5 +1,6 @@
 #include "p4_ota_pull.h"
 #include "p4_ota_pull_config.h"
+#include "p4_ota_pull_gate.h"
 
 #include "app_settings.h"
 #include "wifi_link.h"
@@ -39,13 +40,68 @@ static p4_ota_pull_status_t s_status;
 static char s_install_url[P4_OTA_PULL_URL_MAX + 1u];
 static uint8_t s_install_sha256[32];
 static TickType_t s_offer_tick;
-static volatile bool s_running;
+static p4_ota_pull_gate_t s_operation_gate;
+static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
-static void note(p4_ota_pull_state_t state, esp_err_t err, const char *detail)
+static void note_locked(p4_ota_pull_state_t state, esp_err_t err,
+                        const char *detail)
 {
     s_status.state = state;
     s_status.last_error = err;
     snprintf(s_status.detail, sizeof(s_status.detail), "%s", detail ? detail : "");
+}
+
+static void note(p4_ota_pull_state_t state, esp_err_t err, const char *detail)
+{
+    portENTER_CRITICAL(&s_state_mux);
+    note_locked(state, err, detail);
+    portEXIT_CRITICAL(&s_state_mux);
+}
+
+static void clear_offer_locked(void)
+{
+    s_status.available_release[0] = '\0';
+    s_status.available_size = 0u;
+    s_status.downloaded = 0u;
+    s_install_url[0] = '\0';
+    memset(s_install_sha256, 0, sizeof(s_install_sha256));
+    s_offer_tick = 0;
+}
+
+static void publish_manifest_result(const p4_ota_pull_manifest_t *manifest,
+                                    p4_ota_pull_state_t state,
+                                    esp_err_t err,
+                                    const char *detail,
+                                    bool installable)
+{
+    portENTER_CRITICAL(&s_state_mux);
+    snprintf(s_status.available_release,
+             sizeof(s_status.available_release), "%s", manifest->release);
+    s_status.available_size = manifest->size;
+    if (installable) {
+        snprintf(s_install_url, sizeof(s_install_url), "%s", manifest->url);
+        memcpy(s_install_sha256, manifest->sha256, sizeof(s_install_sha256));
+        s_offer_tick = xTaskGetTickCount();
+    }
+    note_locked(state, err, detail);
+    portEXIT_CRITICAL(&s_state_mux);
+}
+
+static void update_downloaded(uint32_t downloaded)
+{
+    portENTER_CRITICAL(&s_state_mux);
+    s_status.downloaded = downloaded;
+    portEXIT_CRITICAL(&s_state_mux);
+}
+
+static void copy_install_offer(char *url, size_t url_cap,
+                               uint8_t sha256[32], uint32_t *size)
+{
+    portENTER_CRITICAL(&s_state_mux);
+    snprintf(url, url_cap, "%s", s_install_url);
+    memcpy(sha256, s_install_sha256, 32u);
+    *size = s_status.available_size;
+    portEXIT_CRITICAL(&s_state_mux);
 }
 
 /* Fetch <base>/latest.json into `buf`. Returns the byte count, or a negative
@@ -157,24 +213,24 @@ static void check_task(void *arg)
                      p4_ota_pull_manifest_result_name(pr));
             } else {
                 const esp_app_desc_t *me = esp_app_get_description();
-                snprintf(s_status.available_release,
-                         sizeof(s_status.available_release), "%s", m.release);
-                s_status.available_size = m.size;
                 p4_ota_pull_release_order_t order =
                     p4_ota_pull_manifest_order(&m, me->version);
                 if (order == P4_OTA_PULL_RELEASE_NEWER) {
-                    snprintf(s_install_url, sizeof(s_install_url), "%s", m.url);
-                    memcpy(s_install_sha256, m.sha256, sizeof(s_install_sha256));
-                    s_offer_tick = xTaskGetTickCount();
-                    note(P4_OTA_PULL_AVAILABLE, ESP_OK, m.release);
+                    publish_manifest_result(&m, P4_OTA_PULL_AVAILABLE,
+                                            ESP_OK, m.release, true);
                 } else if (order == P4_OTA_PULL_RELEASE_SAME) {
-                    note(P4_OTA_PULL_UP_TO_DATE, ESP_OK, "already running this build");
+                    publish_manifest_result(
+                        &m, P4_OTA_PULL_UP_TO_DATE, ESP_OK,
+                        "already running this build", false);
                 } else if (order == P4_OTA_PULL_RELEASE_OLDER) {
-                    note(P4_OTA_PULL_UP_TO_DATE, ESP_OK,
-                         "older release ignored; use signed local upload to roll back");
+                    publish_manifest_result(
+                        &m, P4_OTA_PULL_UP_TO_DATE, ESP_OK,
+                        "older release ignored; use signed local upload to roll back",
+                        false);
                 } else {
-                    note(P4_OTA_PULL_FAILED, ESP_ERR_NOT_SUPPORTED,
-                         "release version is not comparable");
+                    publish_manifest_result(
+                        &m, P4_OTA_PULL_FAILED, ESP_ERR_NOT_SUPPORTED,
+                        "release version is not comparable", false);
                 }
             }
         }
@@ -187,10 +243,10 @@ static void check_task(void *arg)
         note(P4_OTA_PULL_FAILED, back, "AP DID NOT COME BACK");
     }
 
-    s_running = false;
     /* Released here, where the AP is back and this task is about to exit, rather
      * than from a vTaskDelete hook applied to the whole translation unit. */
     wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
+    p4_ota_pull_gate_release(&s_operation_gate);
     vTaskDelete(NULL);
 }
 
@@ -309,7 +365,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
             goto done;
         }
         written += (size_t)got;
-        s_status.downloaded = (uint32_t)written;
+        update_downloaded((uint32_t)written);
     }
 
     uint8_t actual_sha256[32];
@@ -353,9 +409,14 @@ static void install_task(void *arg)
     char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
     char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
     char url[APP_SETTINGS_OTA_URL_CAP] = {0};
+    char install_url[P4_OTA_PULL_URL_MAX + 1u] = {0};
+    uint8_t install_sha256[32] = {0};
+    uint32_t install_size = 0u;
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     app_settings_ota_get_url(url, sizeof(url));
     app_settings_ota_copy_password(pass, sizeof(pass));
+    copy_install_offer(install_url, sizeof(install_url),
+                       install_sha256, &install_size);
 
     note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "joining service network");
     esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, STA_TIMEOUT_MS);
@@ -365,8 +426,8 @@ static void install_task(void *arg)
         note(P4_OTA_PULL_FAILED, rc, "could not join network");
     } else {
         note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "downloading");
-        rc = download_and_install(url, s_install_url, s_status.available_size,
-                                  s_install_sha256);
+        rc = download_and_install(url, install_url, install_size,
+                                  install_sha256);
         if (rc == ESP_OK) {
             note(P4_OTA_PULL_READY_TO_REBOOT, ESP_OK, "verified, restarting");
         } else if (rc == ESP_ERR_INVALID_MAC) {
@@ -389,8 +450,8 @@ static void install_task(void *arg)
         ESP_LOGW(TAG, "AP did not restore, but the update is staged");
     }
 
-    s_running = false;
     if (rc == ESP_OK) {
+        p4_ota_pull_gate_release(&s_operation_gate);
         /* Deliberately keeps the transition lease: the deck is about to restart
          * into the new image, and nothing else should be allowed to take the
          * radio through another AP->STA->AP transition in the meantime.
@@ -399,31 +460,41 @@ static void install_task(void *arg)
         esp_restart();
     }
     wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
+    if (rc != ESP_OK) {
+        p4_ota_pull_gate_release(&s_operation_gate);
+    }
     vTaskDelete(NULL);
 }
 
 esp_err_t p4_ota_pull_install_start(const char *expected_release)
 {
-    if (s_running) return ESP_ERR_INVALID_STATE;
+    if (!p4_ota_pull_gate_try_acquire(&s_operation_gate)) {
+        return ESP_ERR_INVALID_STATE;
+    }
     /* Only what a check actually offered, and only if the caller names it back.
      * A stale page must not be able to install something never seen. */
-    if (s_status.state != P4_OTA_PULL_AVAILABLE) return ESP_ERR_INVALID_STATE;
-    if (!p4_ota_pull_offer_fresh((uint32_t)xTaskGetTickCount(),
-                                 (uint32_t)s_offer_tick,
-                                 (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
-        s_install_url[0] = '\0';
-        memset(s_install_sha256, 0, sizeof(s_install_sha256));
-        note(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
-             "update offer expired; check again");
-        return ESP_ERR_INVALID_STATE;
+    esp_err_t validation = ESP_OK;
+    portENTER_CRITICAL(&s_state_mux);
+    if (s_status.state != P4_OTA_PULL_AVAILABLE) {
+        validation = ESP_ERR_INVALID_STATE;
+    } else if (!p4_ota_pull_offer_fresh(
+                   (uint32_t)xTaskGetTickCount(), (uint32_t)s_offer_tick,
+                   (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
+        clear_offer_locked();
+        note_locked(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
+                    "update offer expired; check again");
+        validation = ESP_ERR_INVALID_STATE;
+    } else if (!expected_release ||
+               strncmp(expected_release, s_status.available_release,
+                       P4_OTA_PULL_RELEASE_MAX) != 0) {
+        validation = ESP_ERR_INVALID_ARG;
+    } else if (s_install_url[0] == '\0' || s_status.available_size == 0u) {
+        validation = ESP_ERR_INVALID_STATE;
     }
-    if (!expected_release ||
-        strncmp(expected_release, s_status.available_release,
-                P4_OTA_PULL_RELEASE_MAX) != 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (s_install_url[0] == '\0' || s_status.available_size == 0u) {
-        return ESP_ERR_INVALID_STATE;
+    portEXIT_CRITICAL(&s_state_mux);
+    if (validation != ESP_OK) {
+        p4_ota_pull_gate_release(&s_operation_gate);
+        return validation;
     }
 
     /* Reserve the radio before the worker exists: install takes the deck
@@ -433,17 +504,19 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     if (lease_rc != ESP_OK) {
         ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
                  (int)wifi_transition_lease_owner());
+        p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_running = true;
+    portENTER_CRITICAL(&s_state_mux);
     s_status.downloaded = 0u;
-    note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "starting");
+    note_locked(P4_OTA_PULL_DOWNLOADING, ESP_OK, "starting");
+    portEXIT_CRITICAL(&s_state_mux);
     /* 10 KiB: TLS records plus the flash write path run on this task. */
     if (xTaskCreate(install_task, "ota_install", 10240, NULL, 4, NULL) != pdPASS) {
-        s_running = false;
-        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
+        p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -451,34 +524,33 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
 
 esp_err_t p4_ota_pull_check_start(void)
 {
-    if (s_running) return ESP_ERR_INVALID_STATE;
-
     char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
     char url[APP_SETTINGS_OTA_URL_CAP] = {0};
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     app_settings_ota_get_url(url, sizeof(url));
     if (ssid[0] == '\0' || url[0] == '\0') return ESP_ERR_INVALID_ARG;
     if (p4_ota_cfg_check_url(url) != P4_OTA_CFG_OK) return ESP_ERR_INVALID_ARG;
+    if (!p4_ota_pull_gate_try_acquire(&s_operation_gate)) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     esp_err_t lease_rc = wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA);
     if (lease_rc != ESP_OK) {
         ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
                  (int)wifi_transition_lease_owner());
+        p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_running = true;
-    note(P4_OTA_PULL_CHECKING, ESP_OK, "starting");
-    s_status.available_release[0] = '\0';
-    s_status.available_size = 0u;
-    s_install_url[0] = '\0';
-    memset(s_install_sha256, 0, sizeof(s_install_sha256));
-    s_offer_tick = 0;
+    portENTER_CRITICAL(&s_state_mux);
+    clear_offer_locked();
+    note_locked(P4_OTA_PULL_CHECKING, ESP_OK, "starting");
+    portEXIT_CRITICAL(&s_state_mux);
     /* 8 KiB: TLS handshake and the mbedTLS record buffers run on this task. */
     if (xTaskCreate(check_task, "ota_check", 8192, NULL, 4, NULL) != pdPASS) {
-        s_running = false;
-        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
+        p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
@@ -486,14 +558,18 @@ esp_err_t p4_ota_pull_check_start(void)
 
 p4_ota_pull_status_t p4_ota_pull_get_status(void)
 {
-    if (!s_running && s_status.state == P4_OTA_PULL_AVAILABLE &&
-        !p4_ota_pull_offer_fresh((uint32_t)xTaskGetTickCount(),
-                                 (uint32_t)s_offer_tick,
-                                 (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
-        s_install_url[0] = '\0';
-        memset(s_install_sha256, 0, sizeof(s_install_sha256));
-        note(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
-             "update offer expired; check again");
+    p4_ota_pull_status_t snapshot;
+    const bool running = p4_ota_pull_gate_is_claimed(&s_operation_gate);
+    portENTER_CRITICAL(&s_state_mux);
+    if (!running && s_status.state == P4_OTA_PULL_AVAILABLE &&
+        !p4_ota_pull_offer_fresh(
+            (uint32_t)xTaskGetTickCount(), (uint32_t)s_offer_tick,
+            (uint32_t)pdMS_TO_TICKS(OFFER_TTL_MS))) {
+        clear_offer_locked();
+        note_locked(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
+                    "update offer expired; check again");
     }
-    return s_status;
+    snapshot = s_status;
+    portEXIT_CRITICAL(&s_state_mux);
+    return snapshot;
 }

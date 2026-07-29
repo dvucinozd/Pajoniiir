@@ -133,6 +133,26 @@ static int test_enabled_link_drops_when_queue_is_full(void)
     return 0;
 }
 
+static int test_format_snapshot_is_published_as_one_unit(void)
+{
+    monitor_pcm_link_stats_t stats = { 0 };
+    EXPECT_TRUE(monitor_pcm_link_init() == 0, "init ok");
+    EXPECT_TRUE(monitor_pcm_link_set_format(44100u, 1u, 24u) == 0,
+                "first format accepted");
+    monitor_pcm_link_get_stats(&stats);
+    EXPECT_EQ(stats.sample_rate, 44100u, "first format rate");
+    EXPECT_EQ(stats.channels, 1u, "first format channels");
+    EXPECT_EQ(stats.bits_per_sample, 24u, "first format bits");
+
+    EXPECT_TRUE(monitor_pcm_link_set_format(96000u, 2u, 16u) == 0,
+                "second format accepted");
+    monitor_pcm_link_get_stats(&stats);
+    EXPECT_EQ(stats.sample_rate, 96000u, "second format rate");
+    EXPECT_EQ(stats.channels, 2u, "second format channels");
+    EXPECT_EQ(stats.bits_per_sample, 16u, "second format bits");
+    return 0;
+}
+
 int main(void)
 {
     if (test_disabled_link_drops_without_failure() != 0) {
@@ -145,6 +165,9 @@ int main(void)
         return 1;
     }
     if (test_enabled_link_drops_when_queue_is_full() != 0) {
+        return 1;
+    }
+    if (test_format_snapshot_is_published_as_one_unit() != 0) {
         return 1;
     }
 

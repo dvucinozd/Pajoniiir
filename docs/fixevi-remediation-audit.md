@@ -53,6 +53,8 @@ Statusi:
 | `service_log_sync()` nije writer barijera | **Zatvoreno** | Queue-ordered sync item, ACK nakon `fsync`, sole `FILE*` owner i status snapshot. |
 | Brightness commit na svaki slider event | **Zatvoreno** | Live backlight + 500 ms debounce worker izvan LVGL taska. |
 | Settings ignorira NVS greške i dijeli OTA stringove | **Zatvoreno** | Provjera set/commit rezultata; RAM snapshot se objavljuje tek nakon uspjeha i pod lockom. |
+| Pull-OTA start/status ima cross-task race | **Zatvoreno; HW pending** | Atomic single-winner operation gate serijalizira check/install start; status, offer, TTL i progress objavljuju se kao jedan bounded `portMUX` snapshot, a mreža/flash ostaju izvan locka. Task-create failure i retry pokriva host gate test; stvarni AP→STA→AP failure/retry smoke ostaje. |
+| Monitor PCM format/enable/statistika nisu koherentni | **Zatvoreno; HW soak pending** | Atomic enable gate, versioned 32-bit format snapshot, monotoni atomski brojači i postojeći SPSC queue ownership uklanjaju torn readove. Host test pokriva format, CRC i saturation; stvarni P4→S3 I2S soak ostaje. |
 | OTA POST prihvaća parcijalni recv | **Zatvoreno; fragmentation fixture pending** | Receive petlja čita do `content_len`. Poseban 1–3 byte HTTP integration fixture nije dodan. |
 | OTA GET ne escapea JSON | **Zatvoreno** | SSID, URL, detail i address prolaze kroz `web_api_json_escape`. |
 | Web loop zaobilazi `deck_core` | **Zatvoreno** | Web loop/exit se pretvaraju u autoritativne deck evente. |
