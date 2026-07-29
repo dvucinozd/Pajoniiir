@@ -88,12 +88,23 @@ this branch:
   `audio_recorder_stop_gate`, `ui_library` pagination.
 - Updated LVGL UI simulator baselines for the paginated Library table.
 
-## Required validation before merge to master
+## Software gates — complete, and the basis for the merge to master
 
 - [x] Both IDF 6.0.2 firmware builds pass from clean configuration.
 - [x] Existing S3 and P4 host regression tests pass (including PowerShell 5.1
   compatibility fixes).
 - [x] UI simulator E2E screenshot gate passes with updated baselines.
+
+## Hardware acceptance — outstanding on master
+
+These rows were never verified on a board. The migration was merged with them
+open because there is no hardware available to flash, so the choice was to keep
+the work on a long-lived branch or to carry it on master with the gap stated.
+It is on master, and this list is the statement: **the migration is not release-
+qualified.** Nothing here is inferred from a green build — a successful CI run
+says the code compiles and the host models agree, not that the silicon behaves.
+Work the rows in order when a board is available.
+
 - [ ] P4 display/touch/PSRAM smoke passes.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.
 - [ ] Sustained USB playback confirms BNA recovery. The DWC channel-decoder wrap
@@ -115,5 +126,9 @@ this branch:
   without audible artefacts or cache-miss stalls.
 - [ ] Paginated Library table displays, scrolls and loads tracks correctly on
   the P4 touch display.
-
-The branch must remain a draft until the hardware acceptance rows are complete.
+- [ ] `audio_engine_locked_backend_read_count()` stays flat under sustained
+  dual-deck playback. The decode loops warm the compressed cache before taking
+  `AE_LOCK` so a USB read cannot stall the output task, but warming is a
+  prediction and a seek can invalidate it. A rising count means reads are
+  landing back under the lock, which is heard as a dropout rather than seen in
+  any log.
