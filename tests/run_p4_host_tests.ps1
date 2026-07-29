@@ -213,6 +213,57 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     }
 }
 
+# The P4's FPU is single-precision only, so any double that reaches the audio
+# hot path is emulated in libgcc - hundreds of cycles per operation on a task
+# that must finish every 5.8 ms block. The gate this replaces searched
+# audio_keylock.c for a "double <identifier>" declaration, which catches only
+# the most explicit way to introduce one. The likelier accidents are implicit:
+# a dropped f suffix on a literal, or sqrt() where sqrtf() was meant. Neither
+# writes the word "double" anywhere, and both were invisible to the regex.
+#
+# Let the compiler decide instead. Every one of these files is clean today, so
+# the contract costs nothing and covers the whole DSP hot path rather than the
+# single file the old gate happened to name.
+# The firmware wrappers are policed by name above, because that list is closed.
+# The test tree needs the opposite check: not "these four are gone" but "no test
+# compiles through another test again". Four had survived the firmware sweep, and
+# the damage was not a broken build - the runner compiled test_x_current.c while
+# the file named after the suite sat there looking authoritative, so edits to it
+# did nothing. A name list would not have caught a fifth under a new name.
+function Assert-NoTestSideCompilationWrappers {
+    Write-Host "==> static no test compiles through another test"
+    $testRoot = Join-Path $RepoRoot "tests"
+    foreach ($file in Get-ChildItem -LiteralPath $testRoot -Filter *.c -Recurse) {
+        $text = Get-Content -LiteralPath $file.FullName -Raw
+        if ($text -match '#\s*include\s+"[^"]*test_[^"]*\.c"') {
+            throw ("$($file.Name) includes another test source; fold it into the base test instead " +
+                   "(see the four retired *_current.c wrappers)")
+        }
+        if ($text -match '#\s*define\s+main\b') {
+            throw "$($file.Name) renames main, which is how the retired wrappers hid a second entry point"
+        }
+    }
+}
+
+function Invoke-SinglePrecisionContract {
+    $dir = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine"
+    $sources = @(
+        "audio_keylock.c", "audio_filter.c", "audio_eq.c", "audio_resampler.c",
+        "audio_smart_cfx.c", "audio_delay_fx.c", "audio_flanger_fx.c",
+        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c"
+    )
+    foreach ($source in $sources) {
+        if (-not (Test-Path -LiteralPath (Join-Path $dir $source))) {
+            throw "single-precision contract names $source, which no longer exists"
+        }
+    }
+    Invoke-Step -Name "static audio DSP hot path stays single-precision" `
+        -WorkingDirectory $dir `
+        -Executable $Gcc.Source `
+        -Arguments (@("-fsyntax-only", "-Wdouble-promotion", "-Werror=double-promotion",
+                      "-std=c99", "-Iinclude", "-I.") + $sources)
+}
+
 # AE_LOCK is one global recursive mutex and ae_output_task takes it on every
 # audio block, so a USB page fetch taken while holding it stalls the priority-6
 # output task for the whole transfer - an audible dropout, not just a slow
@@ -364,6 +415,8 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
+Assert-NoTestSideCompilationWrappers
+Invoke-SinglePrecisionContract
 Assert-DecodeWarmsCacheBeforeEngineLock
 Assert-OverviewInactiveGuardBeforeCacheUpdate
 Assert-OverviewMainRenderCommitGuard
@@ -884,11 +937,6 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
 
-Assert-FileDoesNotContain `
-    -Name "p4 key-lock hot path avoids software-emulated double arithmetic" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_keylock.c") `
-    -RegexPattern "\bdouble\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:[=,;()]|\[)"
-
 Assert-FileContains `
     -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -931,11 +979,6 @@ Assert-FileContains `
 
 # Absence of a struct *field*, not a function: nothing a caller could reference,
 # so there is no compile contract to write. Text check is the only option.
-Assert-FileDoesNotContain `
-    -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_pcm_timeline.h") `
-    -LiteralPatterns @("oldest_index")
-
 Assert-FileContains `
     -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -981,16 +1024,6 @@ Assert-FileContains `
         "publish_flanger_command(deck, &config)",
         "pack_pad_fx_command(config)"
     )
-
-Assert-FileContains `
-    -Name "p4 filter skips stable coefficient recomputation" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
-    -LiteralPatterns @("!position_changed", "!filter->coefficients_dirty")
-
-Assert-FileDoesNotContain `
-    -Name "p4 filter does not recompute invariant logarithms" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
-    -LiteralPatterns @("logf(")
 
 # Idiom in a response header string. web_server.c has no host coverage.
 Assert-FileDoesNotContain `
@@ -1263,6 +1296,7 @@ $tests = @(
     },
     @{
         Name = "audio_filter"
+        MinTestsRun = 36
         Dir = "tests/audio_filter"
         Target = "test_audio_filter.exe"
         Args = @(
@@ -1408,7 +1442,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_scratch.exe",
-            "test_audio_scratch_current.c",
+            "test_audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
@@ -1518,6 +1552,7 @@ $tests = @(
     },
     @{
         Name = "audio_pcm_timeline"
+        MinTestsRun = 229
         Dir = "tests/audio_pcm_timeline"
         Target = "test_audio_pcm_timeline.exe"
         Args = @(
@@ -1711,7 +1746,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/web_server/include",
             "-o", "test_web_api_helpers.exe",
-            "test_web_api_helpers_current.c",
+            "test_web_api_helpers.c",
             "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c",
             "../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"
         )
@@ -1824,7 +1859,7 @@ $tests = @(
             "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_anlz.exe",
-            "test_anlz_current.c",
+            "test_anlz.c",
             "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
         )
     },
@@ -1839,7 +1874,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
-            "-DWIN32", "test_library_anlz_current.c",
+            "-DWIN32", "test_library_anlz.c",
             "../../firmware/main-deck-p4/components/library/library.c"
         )
     },
@@ -2088,7 +2123,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
 
-# Behaviour for this is covered by tests/library_anlz/test_library_anlz_current.c
+# Behaviour for this is covered by tests/library_anlz/test_library_anlz.c
 # (nonzero duration survives enrichment; zero duration falls back to the last
 # beat). The gate below only pins that the rule lives in the producer rather than
 # being re-applied by each caller through a compilation wrapper.
@@ -2274,11 +2309,6 @@ Assert-FileContains `
     -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
-
-Assert-FileContains `
-    -Name "scratch transport test uses a local decode-writer bridge" `
-    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
-    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
 
 Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `

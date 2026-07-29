@@ -4,6 +4,23 @@
 #include <math.h>
 #include <stdio.h>
 
+/* Mirrors the sole production decode-writer's circular-buffer bookkeeping.
+ * The removed public push helper was test-only; scratch rendering should be
+ * exercised through the active frames-back reader API. */
+static void test_audio_scratch_writer_push(audio_scratch_buffer_t *buffer,
+                                           int16_t left,
+                                           int16_t right)
+{
+    assert(buffer && buffer->frames && buffer->capacity > 0u);
+    const uint32_t index = buffer->write_index;
+    buffer->frames[index * 2u] = left;
+    buffer->frames[index * 2u + 1u] = right;
+    buffer->write_index = index + 1u < buffer->capacity ? index + 1u : 0u;
+    if (buffer->filled < buffer->capacity) {
+        buffer->filled++;
+    }
+}
+
 /* Window of 10 frames. Values encode order: the i-th pushed frame is
  * (i*100, -i*100), so after all pushes frame `k` back from the newest holds
  * ((N-1-k)*100). Newest (back 0) = 900, oldest (back 9) = 0. */
@@ -25,7 +42,7 @@ static void fill_window(audio_scratch_buffer_t *b)
     audio_scratch_buffer_init(b, g_store, N);
     audio_scratch_buffer_set_sample_rate(b, 1000u);
     for (int i = 0; i < N; i++) {
-        audio_scratch_buffer_push(b, (int16_t)(i * 100), (int16_t)(-i * 100));
+        test_audio_scratch_writer_push(b, (int16_t)(i * 100), (int16_t)(-i * 100));
     }
     audio_scratch_buffer_mark_newest_ms(b, 1000u);
 }
