@@ -1420,7 +1420,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_scratch.exe",
-            "test_audio_scratch_current.c",
+            "test_audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
@@ -1724,7 +1724,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/web_server/include",
             "-o", "test_web_api_helpers.exe",
-            "test_web_api_helpers_current.c",
+            "test_web_api_helpers.c",
             "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c",
             "../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"
         )
@@ -1837,7 +1837,7 @@ $tests = @(
             "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_anlz.exe",
-            "test_anlz_current.c",
+            "test_anlz.c",
             "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
         )
     },
@@ -1852,7 +1852,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
-            "-DWIN32", "test_library_anlz_current.c",
+            "-DWIN32", "test_library_anlz.c",
             "../../firmware/main-deck-p4/components/library/library.c"
         )
     },
@@ -2101,7 +2101,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
 
-# Behaviour for this is covered by tests/library_anlz/test_library_anlz_current.c
+# Behaviour for this is covered by tests/library_anlz/test_library_anlz.c
 # (nonzero duration survives enrichment; zero duration falls back to the last
 # beat). The gate below only pins that the rule lives in the producer rather than
 # being re-applied by each caller through a compilation wrapper.
@@ -2287,11 +2287,6 @@ Assert-FileContains `
     -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
     -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
-
-Assert-FileContains `
-    -Name "scratch transport test uses a local decode-writer bridge" `
-    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
-    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
 
 Assert-FileContains `
     -Name "production ANLZ walker rejects partial section envelopes" `

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "web_firmware_json.h"
 #include "web_api_helpers.h"
 
 static void test_json_escape_handles_quotes_backslash_and_controls(void)
@@ -206,6 +207,24 @@ static void test_api_host_allow_list_tracks_ap_ip_and_mdns_name(void)
     assert(!web_api_host_allowed(NULL, "192.168.7.1"));
 }
 
+static void test_firmware_json_snapshot_escapes_in_place(void)
+{
+    char status[32] = "build \"test\" \\ line\n";
+    web_firmware_json_escape_in_place(status, sizeof(status));
+    assert(strcmp(status, "build \\\"test\\\" \\\\ line\\n") == 0);
+}
+
+static void test_firmware_json_snapshot_never_leaves_partial_escape(void)
+{
+    char status[5] = "\"x";
+    web_firmware_json_escape_in_place(status, sizeof(status));
+    assert(strcmp(status, "\\\"x") == 0);
+
+    char tiny[3] = "\"";
+    web_firmware_json_escape_in_place(tiny, sizeof(tiny));
+    assert(strcmp(tiny, "\\\"") == 0);
+}
+
 int main(void)
 {
     test_json_escape_handles_quotes_backslash_and_controls();
@@ -222,7 +241,9 @@ int main(void)
     test_service_log_json_formats_writer_health();
     test_profile_upload_policy_is_bounded_and_explicit();
     test_api_host_allow_list_tracks_ap_ip_and_mdns_name();
+    test_firmware_json_snapshot_escapes_in_place();
+    test_firmware_json_snapshot_never_leaves_partial_escape();
 
-    puts("web_api_helpers tests passed");
+    puts("web firmware JSON tests passed");
     return 0;
 }
