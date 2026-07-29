@@ -1899,6 +1899,7 @@ Assert-FileContains `
 # renaming, duplicate legacy code in the image, and (for audio_engine) an
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
+    @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
@@ -1925,6 +1926,21 @@ Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 Wi-Fi probe reserves and releases the transition lease itself" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("#define vTaskDelete")
+
+Assert-FileContains `
+    -Name "p4 wifi_link builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "wifi_link.c"')
 
 Assert-FileContains `
     -Name "s3 FLX4 MIDI host builds its real source" `
