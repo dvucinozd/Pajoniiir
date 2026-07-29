@@ -6,6 +6,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "control_link.h"
+#include "deck_loaded_track_types.h"
+
+struct anlz_metadata;
 
 // ─── Performance modes (MODE button cycles through these) ────────────────────
 
@@ -119,6 +122,27 @@ typedef bool (*deck_core_activity_cb_t)(void);
 void deck_core_set_activity_cb(deck_core_activity_cb_t cb);
 
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
+
+/*
+ * Coherent loaded-track ownership.
+ *
+ * Writers may run in the LVGL/library or USB task. The deck_core-owned store
+ * serializes replacement/clear and publishes key, BPM, duration and ANLZ as one
+ * generation. `media_generation` rejects a load completion that races a newer
+ * catalog clear. Metadata is cloned before publication; the caller retains
+ * ownership of `anlz`.
+ */
+esp_err_t deck_core_publish_loaded_track(uint8_t deck,
+                                         uint32_t media_generation,
+                                         uint32_t track_key,
+                                         uint16_t bpm,
+                                         uint32_t duration_ms,
+                                         const struct anlz_metadata *anlz);
+esp_err_t deck_core_clear_loaded_track(uint8_t deck,
+                                       uint32_t media_generation);
+esp_err_t deck_core_clear_loaded_tracks(uint32_t media_generation);
+bool deck_core_get_loaded_track(uint8_t deck,
+                                deck_loaded_track_summary_t *out);
 
 /*
  * Drain controller-originated UI commands. ui_update() is the sole firmware

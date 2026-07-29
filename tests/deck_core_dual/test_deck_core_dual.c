@@ -13,9 +13,6 @@ static int s_toggle_library_view_calls;
 static bool s_ui_library_active;
 static bool s_ui_overview_active;
 static int s_overview_zoom_delta;
-static uint32_t s_loaded_track_key[DECK_CORE_DECK_COUNT];
-static const anlz_metadata_t *s_loaded_anlz[DECK_CORE_DECK_COUNT];
-static uint16_t s_loaded_bpm[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_master_volume;
@@ -85,6 +82,24 @@ int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
 static anlz_metadata_t beat_jump_meta(void);
 
+static void publish_loaded_track(uint8_t deck,
+                                 uint32_t track_key,
+                                 uint16_t bpm,
+                                 const anlz_metadata_t *anlz)
+{
+    assert(deck_core_publish_loaded_track(deck,
+                                          1u,
+                                          track_key,
+                                          bpm,
+                                          300000u,
+                                          anlz) == ESP_OK);
+}
+
+static void publish_loaded_bpm(uint8_t deck, uint16_t bpm)
+{
+    publish_loaded_track(deck, 0xD0000000u + deck, bpm, NULL);
+}
+
 static void assert_last_led_flash(led_id_t led, uint8_t deck)
 {
     int match_count = 0;
@@ -152,24 +167,6 @@ esp_err_t ui_show_library(void)
     s_show_library_calls++;
     s_ui_library_active = true;
     return ESP_OK;
-}
-
-uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
-{
-    assert(deck < DECK_CORE_DECK_COUNT);
-    return s_loaded_track_key[deck];
-}
-
-const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck)
-{
-    assert(deck < DECK_CORE_DECK_COUNT);
-    return s_loaded_anlz[deck];
-}
-
-uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm)
-{
-    assert(deck < DECK_CORE_DECK_COUNT);
-    return s_loaded_bpm[deck] > 0 ? s_loaded_bpm[deck] : fallback_bpm;
 }
 
 esp_err_t ui_toggle_library_view(void)
@@ -289,9 +286,6 @@ static ctrl_event_t beat_fx_depth(int16_t value)
 static void reset_audio_engine_stub(void)
 {
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
-        s_loaded_track_key[deck] = 0;
-        s_loaded_anlz[deck] = NULL;
-        s_loaded_bpm[deck] = 0;
         audio_engine_stub_deck_play_result[deck] = ESP_OK;
         audio_engine_stub_deck_playing[deck] = false;
         audio_engine_stub_deck_loaded[deck] = false;
@@ -1149,8 +1143,8 @@ static void test_sync_button_toggles_requested_deck_sync_led_state(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 120);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     ctrl_event_t deck2_sync = deck_button(CTRL_ID_DECK2_SYNC);
@@ -1185,8 +1179,8 @@ static void test_sync_uses_selected_master_deck_as_reference(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 100;
-    s_loaded_bpm[CTRL_DECK_2] = 125;
+    publish_loaded_bpm(CTRL_DECK_1, 100);
+    publish_loaded_bpm(CTRL_DECK_2, 125);
     audio_engine_stub_pitch_percent[CTRL_DECK_1] = 0.0f;
 
     ctrl_event_t master = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_SYNC_MASTER, true);
@@ -1203,8 +1197,8 @@ static void test_sync_matches_requested_deck_to_other_deck_bpm(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 128);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     deck_core_test_apply_event(&deck1_sync);
@@ -1221,8 +1215,8 @@ static void test_sync_uses_other_deck_effective_bpm(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 100;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 100);
 
     ctrl_event_t deck2_pitch = deck_pitch(CTRL_ID_DECK2_TEMPO, 0);
     deck_core_test_apply_event(&deck2_pitch);
@@ -1242,8 +1236,8 @@ static void test_sync_can_exceed_selected_tempo_range_up_to_safe_limit(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 100;
-    s_loaded_bpm[CTRL_DECK_2] = 117;
+    publish_loaded_bpm(CTRL_DECK_1, 100);
+    publish_loaded_bpm(CTRL_DECK_2, 117);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     deck_core_test_apply_event(&deck1_sync);
@@ -1260,8 +1254,8 @@ static void test_sync_clamps_to_internal_safe_limit(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 100;
-    s_loaded_bpm[CTRL_DECK_2] = 130;
+    publish_loaded_bpm(CTRL_DECK_1, 100);
+    publish_loaded_bpm(CTRL_DECK_2, 130);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     deck_core_test_apply_event(&deck1_sync);
@@ -1277,8 +1271,8 @@ static void test_sync_toggle_off_does_not_reapply_pitch(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 128);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     deck_core_test_apply_event(&deck1_sync);
@@ -1294,8 +1288,8 @@ static void test_manual_pitch_disables_sync_state(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 128);
 
     ctrl_event_t deck1_sync = deck_button(CTRL_ID_DECK1_SYNC);
     ctrl_event_t deck1_pitch = deck_pitch(CTRL_ID_DECK1_TEMPO, 8192);
@@ -1340,10 +1334,8 @@ static void test_sync_phase_aligns_to_matching_reference_beat_phase(void)
         .beat_count = (uint16_t)(sizeof(s_sync_reference_beats) / sizeof(s_sync_reference_beats[0])),
         .bpm = 128,
     };
-    s_loaded_anlz[CTRL_DECK_1] = &target_meta;
-    s_loaded_anlz[CTRL_DECK_2] = &reference_meta;
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, &target_meta);
+    publish_loaded_track(CTRL_DECK_2, 2002u, 128u, &reference_meta);
     audio_engine_stub_deck_playing[CTRL_DECK_1] = false;
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 2600;
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 8900;
@@ -1375,10 +1367,8 @@ static void test_sync_phase_aligns_while_target_deck_is_playing(void)
         .beat_count = (uint16_t)(sizeof(s_sync_reference_beats) / sizeof(s_sync_reference_beats[0])),
         .bpm = 128,
     };
-    s_loaded_anlz[CTRL_DECK_1] = &target_meta;
-    s_loaded_anlz[CTRL_DECK_2] = &reference_meta;
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, &target_meta);
+    publish_loaded_track(CTRL_DECK_2, 2002u, 128u, &reference_meta);
     audio_engine_stub_deck_playing[CTRL_DECK_1] = true;
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 2600;
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 8900;
@@ -1398,8 +1388,8 @@ static void test_sync_without_beatgrid_keeps_phase_position_unchanged(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
-    s_loaded_bpm[CTRL_DECK_2] = 128;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 128);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 2600;
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 8900;
 
@@ -1502,7 +1492,7 @@ static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
     reset_audio_engine_stub();
     static anlz_metadata_t meta;
     meta = beat_jump_meta();
-    s_loaded_anlz[CTRL_DECK_1] = &meta;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, &meta);
 
     ctrl_event_t quantize = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_QUANTIZE, true);
     deck_core_test_apply_event(&quantize);
@@ -1913,7 +1903,7 @@ static void test_beat_fx_echo_delay_uses_target_deck_bpm(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 100;
+    publish_loaded_bpm(CTRL_DECK_1, 100);
 
     ctrl_event_t next = beat_fx_button(CTRL_ID_BEAT_FX_SELECT_NEXT, 1);
     ctrl_event_t target = beat_fx_button(CTRL_ID_BEAT_FX_TARGET, CTRL_BEAT_FX_TARGET_CH1);
@@ -2069,7 +2059,7 @@ static void test_beat_loop_pad_sets_loop_on_requested_deck(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_2] = 120;
+    publish_loaded_bpm(CTRL_DECK_2, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 10000;
 
     ctrl_event_t pad6 = deck_button(CTRL_ID_DECK2_PAD_ACTION);
@@ -2087,7 +2077,7 @@ static void test_beat_loop_pad_maps_pad_index_to_loop_length(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
 
     ctrl_event_t pad5 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2109,7 +2099,7 @@ static void test_beat_loop_pad_led_tracks_pad_at_non_120_bpm(void)
     deck_core_test_reset();
     reset_audio_engine_stub();
     control_link_stub_reset_leds();
-    s_loaded_bpm[CTRL_DECK_1] = 100;
+    publish_loaded_bpm(CTRL_DECK_1, 100);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
 
     ctrl_event_t mode = deck_button(CTRL_ID_DECK1_PAD_MODE_BEAT_LOOP);
@@ -2129,7 +2119,7 @@ static void test_beat_loop_release_event_does_not_set_loop(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
 
     ctrl_event_t release = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2144,7 +2134,7 @@ static void test_shifted_beat_loop_release_restores_previous_loop(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_2] = 120;
+    publish_loaded_bpm(CTRL_DECK_2, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 10000;
     audio_engine_stub_loop_active[CTRL_DECK_2] = true;
     audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 2000;
@@ -2171,7 +2161,7 @@ static void test_shifted_beat_loop_release_clears_when_no_previous_loop(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 30000;
 
     ctrl_event_t press = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2329,7 +2319,7 @@ static void test_hot_cue_pad_stores_empty_slot_at_requested_deck_position(void)
     deck_core_test_reset();
     reset_audio_engine_stub();
     clear_test_hot_cues();
-    s_loaded_track_key[CTRL_DECK_1] = 1001;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, NULL);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 12345;
 
     ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2346,13 +2336,32 @@ static void test_hot_cue_pad_stores_empty_slot_at_requested_deck_position(void)
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
 }
 
+static void test_hot_cue_during_track_replace_cannot_use_previous_key(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    clear_test_hot_cues();
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, NULL);
+    assert(deck_core_clear_loaded_track(CTRL_DECK_1, 1u) == ESP_OK);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 23456u;
+
+    ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    pad.value = CTRL_PAD_ACTION_VALUE(
+        CTRL_PAD_MODE_HOT_CUE, 3, false, true);
+    deck_core_test_apply_event(&pad);
+
+    hot_cue_store_blob_t blob = {0};
+    assert(hot_cue_store_load(1001u, &blob) == ESP_ERR_NOT_FOUND);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+}
+
 static void test_hot_cue_pad_set_and_clear_updates_pad_led(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
     clear_test_hot_cues();
     control_link_stub_reset_leds();
-    s_loaded_track_key[CTRL_DECK_1] = 1001;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, NULL);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 12345;
 
     ctrl_event_t set_pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2371,7 +2380,7 @@ static void test_hot_cue_pad_recalls_existing_slot_on_requested_deck(void)
     deck_core_test_reset();
     reset_audio_engine_stub();
     clear_test_hot_cues();
-    s_loaded_track_key[CTRL_DECK_2] = 2002;
+    publish_loaded_track(CTRL_DECK_2, 2002u, 120u, NULL);
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 30000;
 
     hot_cue_store_blob_t blob = {0};
@@ -2396,7 +2405,7 @@ static void test_shift_hot_cue_pad_clears_requested_slot(void)
     deck_core_test_reset();
     reset_audio_engine_stub();
     clear_test_hot_cues();
-    s_loaded_track_key[CTRL_DECK_1] = 3003;
+    publish_loaded_track(CTRL_DECK_1, 3003u, 120u, NULL);
 
     hot_cue_store_blob_t blob = {0};
     blob.valid_mask = (1u << 1) | (1u << 6);
@@ -2449,8 +2458,7 @@ static void test_beat_jump_buttons_seek_by_one_beat_on_requested_deck(void)
     reset_audio_engine_stub();
     static anlz_metadata_t meta;
     meta = beat_jump_meta();
-    s_loaded_anlz[CTRL_DECK_2] = &meta;
-    s_loaded_bpm[CTRL_DECK_2] = 120;
+    publish_loaded_track(CTRL_DECK_2, 2002u, 120u, &meta);
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 4200;
     audio_engine_stub_deck_playing[CTRL_DECK_2] = true;
 
@@ -2473,7 +2481,7 @@ static void test_beat_jump_pad_maps_pad_index_to_jump_size(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
 
     ctrl_event_t pad4 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2548,7 +2556,7 @@ static void test_beat_jump_release_event_does_not_seek(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_bpm(CTRL_DECK_1, 120);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 20000;
 
     ctrl_event_t release = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2565,8 +2573,7 @@ static void test_beat_jump_clamps_to_beatgrid_edges(void)
     reset_audio_engine_stub();
     static anlz_metadata_t meta;
     meta = beat_jump_meta();
-    s_loaded_anlz[CTRL_DECK_1] = &meta;
-    s_loaded_bpm[CTRL_DECK_1] = 120;
+    publish_loaded_track(CTRL_DECK_1, 1001u, 120u, &meta);
     audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 1200;
 
     ctrl_event_t pad1 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
@@ -2696,6 +2703,7 @@ int main(void)
     test_pad_fx2_pad_action_routes_to_audio_engine();
     test_pad_fx_pad_action_updates_momentary_pad_led();
     test_hot_cue_pad_stores_empty_slot_at_requested_deck_position();
+    test_hot_cue_during_track_replace_cannot_use_previous_key();
     test_hot_cue_pad_set_and_clear_updates_pad_led();
     test_hot_cue_pad_recalls_existing_slot_on_requested_deck();
     test_shift_hot_cue_pad_clears_requested_slot();

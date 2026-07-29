@@ -43,11 +43,20 @@ Revalidacija nakon naknadnih mergeova u `origin/master` pokazala je:
 - behavior testovi i test runner su znatno poboljšani;
 - CI branch triggeri su popravljeni, dok Docker/action pinning ostaje otvoren.
 
+Naknadni remediation status istoga dana:
+
+- P1-1 USB accepted-device/session ownership je software zatvoren;
+- USB recovery lifecycle je vezan uz session epoch i ponovno se armira nakon
+  disconnecta;
+- P1-3 deck/library ownership i lossy UI event zastavice su software zatvoreni;
+- P1-2 durable control-link state reconciliation ostaje sljedeći otvoreni P1.
+
 ## Odnos prema ranijem remediation auditu
 
-`docs/fixevi-remediation-audit.md` je povijesni audit ranije remediation grane.
-Ovaj dokument ne mijenja taj povijesni zapis, ali ga nadopunjuje novim
-nalazima na točno navedenom migration commitu.
+`docs/fixevi-remediation-audit.md` je započeo kao audit ranije remediation
+grane i sada služi kao zbirni status popravaka i preostalih gateova. Ovaj
+dokument zadržava nalaze na točno navedenom migration commitu te uz njih
+bilježi naknadni implementacijski status.
 
 Posebno, raniji dokument označava gubitak control queue release događaja kao
 zatvoren za primarni defekt. Aktualni pregled potvrđuje da implementacija i
@@ -330,17 +339,19 @@ kapaciteta.
 
 ## P1-3 — UI/library/deck shared-state raceovi
 
-Status na `origin/master@65ecc563`: **OTVORENO**
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO; HARDWARE/SOAK PENDING**
 
 Primarne lokacije:
 
-- `firmware/main-deck-p4/components/ui/ui_library.c:185`
-- `firmware/main-deck-p4/components/ui/ui_library.c:193-194`
-- `firmware/main-deck-p4/components/ui/ui_library.c:212-215`
-- `firmware/main-deck-p4/components/ui/ui_library.c:738-741`
-- `firmware/main-deck-p4/components/ui/ui_library.c:1388-1402`
-- `firmware/main-deck-p4/components/ui/ui_library.c:1534-1552`
-- `firmware/main-deck-p4/components/deck_core/deck_core.c:677-682`
+- `firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c`
+- `firmware/main-deck-p4/components/deck_core/deck_core.c`
+- `firmware/main-deck-p4/components/ui/ui_event_counter.c`
+- `firmware/main-deck-p4/components/ui/ui_library.c`
+- `firmware/main-deck-p4/main/app_main.c`
+- `tests/deck_loaded_track_store/test_deck_loaded_track_store.c`
+- `tests/ui_event_counter/test_ui_event_counter.c`
+- `tests/deck_core_dual/test_deck_core_dual.c`
 
 ### Nalaz
 
@@ -384,17 +395,46 @@ read-only status snapshot. USB remove također ide kao command decku.
 Library refresh i USB remove signalizirati task notification bitovima ili
 queueom. Library page cache smije mijenjati samo LVGL task.
 
+### Implementirani popravak
+
+- `deck_core` sada posjeduje jedan koherentan snapshot po decku: generation,
+  media generation, track key, duration, BPM i vlastiti deep-clone ANLZ objekt
+  objavljuju se ili brišu u jednoj writer transakciji. Deck snapshot namjerno
+  ne kopira high-resolution UI waveform do 128 KiB jer ga deck logika ne koristi.
+- Firmware read/write put koristi statički FreeRTOS mutex s priority
+  inheritanceom; host concurrency model koristi atomski reader/writer guard.
+  Stari ANLZ oslobađa se tek nakon završetka zaštićene zamjene.
+- USB remove nakon `library_clear()` podiže media-generation floor i atomarno
+  invalidira oba deck snapshota. Zakašnjeli rezultat starog loadanja zato se ne
+  može ponovno objaviti.
+- Load worker invalidira stari deck snapshot prije audio loadanja te nakon
+  loadanja ponovno provjerava catalog generation. Ako je USB/catalog promijenjen,
+  odmah gasi novostvorenu audio sesiju, bez čekanja sljedećeg LVGL ticka.
+- `deck_core` više ne poziva weak UI gettere za track key, BPM ili ANLZ.
+  Uklonjeni su i neupotrebljavani javni borrowed-pointer UI getteri.
+- `s_library_needs_refresh` i `s_usb_removed_pending` zamijenjeni su atomskim
+  monotonic event brojačima. LVGL task potvrđuje samo generaciju koju je stvarno
+  obradio, pa request pristigao tijekom obrade ostaje pending.
+- Library page cache invalidira isključivo LVGL task.
+- Isti ownership model koristi i headless UI simulator.
+
 ### Obvezni testovi
 
-- load A pa odmah B;
-- USB remove tijekom loadanja;
-- unload dok sync čita BPM;
-- hot cue tijekom zamjene tracka;
-- ANLZ A nikada ne smije biti u snapshotu tracka B;
-- novi refresh event tijekom obrade starog;
-- višestruki interleaved load/remove/status ciklusi;
-- generation je monoton;
-- reader ne vidi `valid=true` uz parcijalna polja.
+- [x] load A pa odmah B;
+- [x] USB remove/stale clear odbija zakašnjeli load stare generacije;
+- [x] paralelni reader i 20.000 zamjena ne miješaju BPM/ANLZ generacije;
+- [x] hot cue u invalidnom replace intervalu ne koristi prethodni track key;
+- [x] ANLZ A nikada nije u snapshotu tracka B;
+- [x] novi refresh event tijekom obrade starog ostaje pending;
+- [x] burst requesti se koalesciraju bez gubitka zadnje generacije;
+- [x] snapshot generation raste monotono kroz 20.000 publish transakcija;
+- [x] reader ne vidi `valid=true` uz parcijalna polja.
+
+Software validacija: kompletan `tests/run_p4_host_tests.ps1`, oba
+`deck_core_dual` moda, headless LVGL navigacija i svi screenshot baselineovi te
+P4 `idf.py build` na ESP-IDF v6.0.2 prolaze. Hardver nije bio dostupan, pa
+fizički USB remove tijekom stvarnog decode/load prozora, FLX4 hot-cue/Sync/Beat
+Jump interleaving i dugotrajni dual-deck soak ostaju acceptance gateovi.
 
 ### Acceptance kriterij
 
@@ -906,7 +946,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 2 | USB ownership state machine | **software implementirano i validirano na `codex/fix-usb-storage-ownership`; HW hub/reconnect pending** |
 | 3 | USB recovery lifecycle | **software implementirano i validirano na `codex/fix-usb-recovery-lifecycle`; hardware unavailable/deferred** |
 | 4 | Control-link durable state reconciliation | P1, nakon reprodukcijskog testa |
-| 5 | Deck/library ownership refaktor | P1; poželjno nakon stabilnog control-linka |
+| 5 | Deck/library ownership refaktor | **software implementirano i validirano; P4 USB/audio/FLX4 hardware soak pending** |
 | 6 | OTA status i monitor PCM concurrency | P2; može biti zaseban mali PR |
 | 7 | Partial-init cleanup | P2; neovisan failure-injection PR |
 | 8 | Immutable/refcounted ANLZ snapshot | P2; nakon deck ownership API-ja |

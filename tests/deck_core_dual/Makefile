@@ -3,6 +3,7 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -Wno-unused-variable -Wno-unused-parameter \
            -DDECK_CORE_PC_TEST \
            -Istubs \
+           -I../support/stubs \
            -I../../firmware/main-deck-p4/components/audio_engine/include \
            -I../../firmware/main-deck-p4/components/beat_jump/include \
            -I../../firmware/main-deck-p4/components/deck_core/include \
@@ -13,9 +14,11 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
 SRCS    = test_deck_core_dual.c \
           control_link_stub.c \
           hot_cue_store_stub.c \
+          ../deck_loaded_track_store/anlz_clone_stub.c \
           ../../firmware/main-deck-p4/components/beat_jump/beat_jump.c \
           ../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c \
-          ../../firmware/main-deck-p4/components/deck_core/deck_core.c
+          ../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c \
+          deck_core_test_snapshot_wrapper.c
 
 TARGET  = test_deck_core_dual
 

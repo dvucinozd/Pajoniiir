@@ -1,4 +1,5 @@
 #include "deck_core.h"
+#include "deck_loaded_track_store.h"
 #include "control_link.h"
 #include "flx4_led_snapshot.h"
 #include "freertos/FreeRTOS.h"
@@ -49,9 +50,6 @@ extern esp_err_t ui_library_select_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_overview_zoom_delta(int delta) __attribute__((weak));
 extern esp_err_t ui_library_load_selected(void) __attribute__((weak));
 extern esp_err_t ui_library_load_selected_for_deck(uint8_t deck) __attribute__((weak));
-extern uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck) __attribute__((weak));
-extern const anlz_metadata_t *ui_get_deck_anlz_metadata(uint8_t deck) __attribute__((weak));
-extern uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm) __attribute__((weak));
 
 static QueueHandle_t    s_queue;
 static QueueHandle_t    s_ui_command_queue;
@@ -62,6 +60,7 @@ static deck_core_beat_fx_state_t s_published_beat_fx;
 static uint32_t         s_published_heartbeat_tick;
 static uint32_t         s_snapshot_seq;
 static bool             s_snapshot_writer;
+static deck_loaded_track_store_t s_loaded_tracks;
 static SemaphoreHandle_t s_reset_done_sem;
 static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
@@ -274,7 +273,6 @@ static void apply_deck_pitch(uint8_t deck, deck_state_t *state);
 static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
 static uint8_t beat_sync_reference_deck(uint8_t deck);
 static void set_sync_master(uint8_t deck, deck_state_t *state);
-static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck);
 static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
 
 static void init_deck_state(deck_state_t *state)
@@ -522,22 +520,26 @@ static uint16_t next_tempo_range_percent(uint16_t current)
 
 static uint16_t deck_base_bpm(uint8_t deck)
 {
-    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
-    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
-        return (uint16_t)((meta->beats[0].bpm_x100 + 50u) / 100u);
+    deck_loaded_track_summary_t loaded = {0};
+    if (deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) &&
+        loaded.valid) {
+        if (loaded.bpm_x100 > 0u) {
+            return (uint16_t)((loaded.bpm_x100 + 50u) / 100u);
+        }
+        if (loaded.bpm > 0u) {
+            return loaded.bpm;
+        }
     }
-    if (ui_library_deck_bpm) {
-        uint16_t bpm = ui_library_deck_bpm(deck, 120);
-        return bpm > 0 ? bpm : 120;
-    }
-    return 120;
+    return 120u;
 }
 
 static uint32_t deck_base_bpm_x100(uint8_t deck)
 {
-    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
-    if (meta && meta->beats && meta->beat_count > 0 && meta->beats[0].bpm_x100 > 0) {
-        return meta->beats[0].bpm_x100;
+    deck_loaded_track_summary_t loaded = {0};
+    if (deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) &&
+        loaded.valid &&
+        loaded.bpm_x100 > 0u) {
+        return loaded.bpm_x100;
     }
     return (uint32_t)deck_base_bpm(deck) * 100u;
 }
@@ -676,10 +678,13 @@ static uint32_t current_deck_position_ms(uint8_t deck, const deck_state_t *state
 
 static uint32_t loaded_track_key_for_deck(uint8_t deck)
 {
-    if (deck >= DECK_CORE_DECK_COUNT || !ui_library_loaded_track_key_for_deck) {
+    deck_loaded_track_summary_t loaded = {0};
+    if (deck >= DECK_CORE_DECK_COUNT ||
+        !deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) ||
+        !loaded.valid) {
         return 0;
     }
-    return ui_library_loaded_track_key_for_deck(deck);
+    return loaded.track_key;
 }
 
 static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
@@ -797,20 +802,18 @@ static const int s_beat_jump_pad_shifts[8] = {
     -32, -16, -8, -4, 4, 8, 16, 32,
 };
 
-static const anlz_metadata_t *loaded_anlz_for_deck(uint8_t deck)
+static bool clone_loaded_track_for_deck(
+    uint8_t deck,
+    deck_loaded_track_summary_t *summary,
+    anlz_metadata_t *meta)
 {
-    if (deck >= DECK_CORE_DECK_COUNT || !ui_get_deck_anlz_metadata) {
-        return NULL;
-    }
-    return ui_get_deck_anlz_metadata(deck);
+    return deck_loaded_track_store_clone(
+        &s_loaded_tracks, deck, summary, meta);
 }
 
 static uint16_t loaded_bpm_for_deck(uint8_t deck)
 {
-    if (deck >= DECK_CORE_DECK_COUNT || !ui_library_deck_bpm) {
-        return 120u;
-    }
-    return ui_library_deck_bpm(deck, 120u);
+    return deck_base_bpm(deck);
 }
 
 static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
@@ -820,9 +823,18 @@ static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
     }
 
     uint32_t position_ms = current_deck_position_ms(deck, state);
-    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
-    uint16_t bpm = loaded_bpm_for_deck(deck);
-    uint32_t target_ms = beat_jump_calculate_target_ms(position_ms, bpm, beat_shift, meta);
+    deck_loaded_track_summary_t loaded = {0};
+    anlz_metadata_t meta = {0};
+    const bool has_loaded = clone_loaded_track_for_deck(
+        deck, &loaded, &meta);
+    uint16_t bpm = has_loaded && loaded.bpm > 0u
+                       ? loaded.bpm
+                       : loaded_bpm_for_deck(deck);
+    const anlz_metadata_t *meta_ptr =
+        has_loaded && loaded.has_anlz ? &meta : NULL;
+    uint32_t target_ms = beat_jump_calculate_target_ms(
+        position_ms, bpm, beat_shift, meta_ptr);
+    anlz_free(&meta);
 
     esp_err_t rc = audio_engine_deck_seek(deck, target_ms);
     if (rc == ESP_OK) {
@@ -907,8 +919,13 @@ static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
 
 static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
 {
-    const anlz_metadata_t *meta = loaded_anlz_for_deck(deck);
-    if (!meta || !meta->beats || meta->beat_count == 0) {
+    deck_loaded_track_summary_t loaded = {0};
+    anlz_metadata_t meta = {0};
+    if (!clone_loaded_track_for_deck(deck, &loaded, &meta) ||
+        !loaded.has_anlz ||
+        !meta.beats ||
+        meta.beat_count == 0u) {
+        anlz_free(&meta);
         return position_ms;
     }
 
@@ -916,10 +933,10 @@ static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
      * beat at/after position_ms and compare it with its predecessor — O(log n)
      * instead of scanning the whole grid on every quantized action. */
     uint16_t lo = 0;
-    uint16_t hi = meta->beat_count;   /* [lo, hi): candidates >= position_ms */
+    uint16_t hi = meta.beat_count;   /* [lo, hi): candidates >= position_ms */
     while (lo < hi) {
         uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);
-        if (meta->beats[mid].time_ms < position_ms) {
+        if (meta.beats[mid].time_ms < position_ms) {
             lo = (uint16_t)(mid + 1u);
         } else {
             hi = mid;
@@ -927,17 +944,23 @@ static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
     }
 
     if (lo == 0u) {
-        return meta->beats[0].time_ms;               /* before the first beat */
+        uint32_t result = meta.beats[0].time_ms;
+        anlz_free(&meta);
+        return result;                               /* before the first beat */
     }
-    if (lo >= meta->beat_count) {
-        return meta->beats[meta->beat_count - 1u].time_ms;  /* past the last beat */
+    if (lo >= meta.beat_count) {
+        uint32_t result = meta.beats[meta.beat_count - 1u].time_ms;
+        anlz_free(&meta);
+        return result;                               /* past the last beat */
     }
 
-    uint32_t after_ms = meta->beats[lo].time_ms;
-    uint32_t before_ms = meta->beats[lo - 1u].time_ms;
+    uint32_t after_ms = meta.beats[lo].time_ms;
+    uint32_t before_ms = meta.beats[lo - 1u].time_ms;
     uint32_t after_delta = after_ms - position_ms;
     uint32_t before_delta = position_ms - before_ms;
-    return before_delta <= after_delta ? before_ms : after_ms;
+    uint32_t result = before_delta <= after_delta ? before_ms : after_ms;
+    anlz_free(&meta);
+    return result;
 }
 
 static uint32_t quantized_deck_position_ms(uint8_t deck, const deck_state_t *state)
@@ -1053,11 +1076,18 @@ static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t 
     }
 
     uint32_t start_ms = current_deck_position_ms(deck, state);
+    deck_loaded_track_summary_t loaded = {0};
+    anlz_metadata_t meta = {0};
+    const bool has_loaded = clone_loaded_track_for_deck(
+        deck, &loaded, &meta);
     uint32_t duration_ms = beat_loop_calculate_duration_ms(start_ms,
                                                            loaded_bpm_for_deck(deck),
                                                            length.numerator,
                                                            length.denominator,
-                                                           loaded_anlz_for_deck(deck));
+                                                           has_loaded && loaded.has_anlz
+                                                               ? &meta
+                                                               : NULL);
+    anlz_free(&meta);
     if (duration_ms == 0 || start_ms > UINT32_MAX - duration_ms) {
         return;
     }
@@ -2450,15 +2480,29 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
 
     bool phase_aligned = false;
     uint32_t aligned_ms = current_deck_position_ms(deck, state);
-    const anlz_metadata_t *target_meta = loaded_anlz_for_deck(deck);
-    const anlz_metadata_t *reference_meta = loaded_anlz_for_deck(reference_deck);
+    deck_loaded_track_summary_t target_loaded = {0};
+    deck_loaded_track_summary_t reference_loaded = {0};
+    anlz_metadata_t target_meta = {0};
+    anlz_metadata_t reference_meta = {0};
+    bool target_valid = clone_loaded_track_for_deck(
+        deck, &target_loaded, &target_meta);
+    bool reference_valid = clone_loaded_track_for_deck(
+        reference_deck, &reference_loaded, &reference_meta);
     uint32_t reference_position_ms = current_deck_position_ms(reference_deck,
                                                              &s_decks[reference_deck]);
     bool phase_target_available = beat_phase_align_target_ms(aligned_ms,
-                                                            target_meta,
-                                                            reference_position_ms,
-                                                            reference_meta,
-                                                            &aligned_ms);
+                                                             target_valid &&
+                                                                     target_loaded.has_anlz
+                                                                 ? &target_meta
+                                                                 : NULL,
+                                                             reference_position_ms,
+                                                             reference_valid &&
+                                                                     reference_loaded.has_anlz
+                                                                 ? &reference_meta
+                                                                 : NULL,
+                                                             &aligned_ms);
+    anlz_free(&target_meta);
+    anlz_free(&reference_meta);
     if (phase_target_available) {
         esp_err_t seek_rc = audio_engine_deck_seek(deck, aligned_ms);
         if (seek_rc == ESP_OK) {
@@ -2695,6 +2739,7 @@ static void deck_task(void *arg)
 
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
 {
+    deck_loaded_track_store_reset(&s_loaded_tracks);
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }
@@ -2944,9 +2989,64 @@ void deck_core_reset_deck(uint8_t deck)
 #endif
 }
 
+static esp_err_t loaded_track_result_to_esp(
+    deck_loaded_track_result_t result)
+{
+    switch (result) {
+    case DECK_LOADED_TRACK_OK:
+        return ESP_OK;
+    case DECK_LOADED_TRACK_INVALID:
+        return ESP_ERR_INVALID_ARG;
+    case DECK_LOADED_TRACK_STALE:
+        return ESP_ERR_INVALID_STATE;
+    case DECK_LOADED_TRACK_NO_MEMORY:
+        return ESP_ERR_NO_MEM;
+    default:
+        return ESP_FAIL;
+    }
+}
+
+esp_err_t deck_core_publish_loaded_track(uint8_t deck,
+                                         uint32_t media_generation,
+                                         uint32_t track_key,
+                                         uint16_t bpm,
+                                         uint32_t duration_ms,
+                                         const anlz_metadata_t *anlz)
+{
+    const deck_loaded_track_payload_t payload = {
+        .media_generation = media_generation,
+        .track_key = track_key,
+        .duration_ms = duration_ms,
+        .bpm = bpm,
+        .anlz = anlz,
+    };
+    return loaded_track_result_to_esp(deck_loaded_track_store_publish(
+        &s_loaded_tracks, deck, &payload));
+}
+
+esp_err_t deck_core_clear_loaded_track(uint8_t deck,
+                                       uint32_t media_generation)
+{
+    return loaded_track_result_to_esp(deck_loaded_track_store_clear(
+        &s_loaded_tracks, deck, media_generation));
+}
+
+esp_err_t deck_core_clear_loaded_tracks(uint32_t media_generation)
+{
+    return loaded_track_result_to_esp(deck_loaded_track_store_clear_all(
+        &s_loaded_tracks, media_generation));
+}
+
+bool deck_core_get_loaded_track(uint8_t deck,
+                                deck_loaded_track_summary_t *out)
+{
+    return deck_loaded_track_store_get(&s_loaded_tracks, deck, out);
+}
+
 #if defined(DECK_CORE_PC_TEST)
 void deck_core_test_reset(void)
 {
+    deck_loaded_track_store_reset(&s_loaded_tracks);
     for (uint8_t i = 0; i < DECK_CORE_DECK_COUNT; i++) {
         init_deck_state(&s_decks[i]);
     }

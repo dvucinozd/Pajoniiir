@@ -9,6 +9,7 @@ idf_component_register(
          "ui_active_deck_leds.c"
          "ui_controls.c"
          "ui_deck_anlz_store.c"
+         "ui_event_counter.c"
          "ui_mixer_view.c"
          "ui_overview_motion.c"
          "ui_overview_window.c"

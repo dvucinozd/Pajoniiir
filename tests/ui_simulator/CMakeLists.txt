@@ -37,6 +37,7 @@ add_executable(ui_simulator_e2e
     "${UI_DIR}/ui_active_deck_leds.c"
     "${UI_DIR}/ui_controls.c"
     "${UI_DIR}/ui_deck_anlz_store.c"
+    "${UI_DIR}/ui_event_counter.c"
     "${UI_DIR}/ui_mixer_view.c"
     "${UI_DIR}/ui_overview_motion.c"
     "${UI_DIR}/ui_overlay_map.c"
@@ -59,6 +60,7 @@ add_executable(ui_simulator_e2e
     "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/beat_jump.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_core.c"
+    "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
     "${REPO_ROOT}/tests/deck_core_dual/control_link_stub.c"
     "${REPO_ROOT}/tests/deck_core_dual/hot_cue_store_stub.c"
 )

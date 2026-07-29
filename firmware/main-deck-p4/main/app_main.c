@@ -267,6 +267,12 @@ static void on_usb_storage_event(bool mounted)
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
         library_clear();
+        esp_err_t clear_rc =
+            deck_core_clear_loaded_tracks(library_generation());
+        if (clear_rc != ESP_OK) {
+            ESP_LOGW(TAG, "deck loaded-track clear on USB removal: %s",
+                     esp_err_to_name(clear_rc));
+        }
         ui_notify_usb_removed();
         ui_trigger_library_refresh();
     }

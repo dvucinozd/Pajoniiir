@@ -1,5 +1,6 @@
 #include "ui_library.h"
 #include "ui_diagnostics.h"
+#include "ui_event_counter.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -182,7 +183,8 @@ static lv_obj_t *s_label_indicator_deck = NULL;
 static lv_obj_t *s_label_indicator_status = NULL;
 static int s_active_tab = 0;
 static int s_selected_track_idx = 0;
-static volatile bool s_library_needs_refresh = false;
+static ui_event_counter_t s_library_refresh_events;
+static uint32_t s_library_refresh_applied;
 static bool s_sort_artist_desc = false;
 static bool s_sort_name_desc = false;
 static bool s_sort_bpm_desc = false;
@@ -212,7 +214,8 @@ static portMUX_TYPE s_track_load_lock = portMUX_INITIALIZER_UNLOCKED;
 static media_loaded_track_t s_loaded_media[DECK_CORE_DECK_COUNT];
 static bool s_loaded_media_valid[DECK_CORE_DECK_COUNT];
 static QueueHandle_t s_track_load_result_q = NULL;
-static volatile bool s_usb_removed_pending = false;
+static ui_event_counter_t s_usb_removed_events;
+static uint32_t s_usb_removed_applied;
 
 typedef struct {
     int index;
@@ -593,17 +596,39 @@ static void ui_track_load_worker(void *arg)
         }
         deck_core_reset_deck(req.deck);
         result->deck_reset = true;
-        result->rc = audio_engine_deck_load(req.deck,
-                                            result->loaded.audio_path,
-                                            result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                                            result->loaded.duration_ms);
-        if (result->rc != ESP_OK) {
-            audio_engine_deck_status_t deck_status = {0};
-            const char *audio_err = NULL;
-            if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
-                audio_err = deck_status.last_error_text;
+        esp_err_t clear_rc =
+            deck_core_clear_loaded_track(req.deck, req.generation);
+        result->rc = clear_rc;
+        if (clear_rc == ESP_OK) {
+            result->rc = audio_engine_deck_load(
+                req.deck,
+                result->loaded.audio_path,
+                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                result->loaded.duration_ms);
+            if (result->rc == ESP_OK &&
+                media_catalog_generation() != req.generation) {
+                /* USB removal/catalog replacement can race the actual audio
+                 * load after identity resolution. Retire that just-created
+                 * session in the worker instead of waiting for an LVGL tick;
+                 * the app-side stop_all covers the opposite ordering. */
+                ui_library_release_deck_audio(req.deck);
+                result->rc = ESP_ERR_INVALID_STATE;
             }
-            ui_track_load_set_status(result, audio_err, "AUDIO ERR");
+        }
+        if (result->rc != ESP_OK) {
+            if (result->rc == ESP_ERR_INVALID_STATE) {
+                ui_track_load_set_status(result,
+                                         "LIBRARY CHANGED",
+                                         "LIBRARY CHANGED");
+            } else {
+                audio_engine_deck_status_t deck_status = {0};
+                const char *audio_err = NULL;
+                if (audio_engine_deck_get_status(req.deck, &deck_status) ==
+                    ESP_OK) {
+                    audio_err = deck_status.last_error_text;
+                }
+                ui_track_load_set_status(result, audio_err, "AUDIO ERR");
+            }
         } else {
             ui_track_load_set_status(result, "TRACK LOADED", "TRACK LOADED");
         }
@@ -658,7 +683,7 @@ static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t ge
 
 static void ui_apply_usb_removed(void)
 {
-    s_usb_removed_pending = false;
+    ui_library_invalidate_page_cache();
     bool removed_loaded = false;
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         if (s_loaded_media_valid[deck]) {
@@ -735,20 +760,40 @@ static void ui_poll_track_load_result(void)
 
         library_set_selected_track_index(result.index);
         uint8_t deck = ui_library_deck_index(result.deck);
+        const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
+        esp_err_t publish_rc = deck_core_publish_loaded_track(
+            deck,
+            result.generation,
+            result.loaded.track_key,
+            bpm,
+            result.loaded.duration_ms,
+            meta);
+        if (publish_rc != ESP_OK) {
+            anlz_free(&meta_snapshot);
+            ui_library_release_deck_audio(deck);
+            ui_library_apply_empty_track(deck);
+            ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
+            ui_library_set_load_busy(false, "LIBRARY CHANGED");
+            ui_library_finish_track_load();
+            continue;
+        }
+
         s_loaded_media[deck] = result.loaded;
         s_loaded_media_valid[deck] = true;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
         s_deck_loaded_track_valid[deck] = true;
         if (ui_diagnostics_enabled()) {
-            ESP_LOGI(TAG, "load result: deck=%u key=0x%08X",
-                     (unsigned)deck, (unsigned)result.loaded.track_key);
+            ESP_LOGI(TAG,
+                     "load result: deck=%u key=0x%08X generation=%u",
+                     (unsigned)deck,
+                     (unsigned)result.loaded.track_key,
+                     (unsigned)result.generation);
         }
         if (s_library_table) {
             lv_obj_invalidate(s_library_table);
         }
-        const uint16_t bpm = result.loaded.bpm ? result.loaded.bpm : result.item.bpm;
-        anlz_metadata_t meta_snapshot;
-        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         ui_library_apply_loaded_track(deck,
                                       result.item.title,
                                       result.item.artist,
@@ -768,6 +813,30 @@ static void ui_poll_track_load_result(void)
     }
 }
 
+#endif
+
+#ifdef WIN32
+static esp_err_t ui_library_publish_simulated_track(
+    uint8_t deck,
+    const library_track_t *track,
+    const anlz_metadata_t *meta)
+{
+    if (!track) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint32_t generation = library_generation();
+    deck_core_reset_deck(deck);
+    esp_err_t rc = deck_core_clear_loaded_track(deck, generation);
+    if (rc != ESP_OK) {
+        return rc;
+    }
+    return deck_core_publish_loaded_track(deck,
+                                          generation,
+                                          track->track_id,
+                                          track->bpm,
+                                          track->duration_ms,
+                                          meta);
+}
 #endif
 
 static void ui_library_load_selected_deck(uint8_t deck)
@@ -790,6 +859,13 @@ static void ui_library_load_selected_deck(uint8_t deck)
     library_load_anlz(track);
     anlz_metadata_t meta_snapshot;
     const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
+    if (ui_library_publish_simulated_track(deck, track, meta) != ESP_OK) {
+        anlz_free(&meta_snapshot);
+        ui_library_apply_empty_track(deck);
+        ui_library_set_load_busy(false, "LOAD ERR");
+        ui_library_finish_track_load();
+        return;
+    }
     s_deck_loaded_track_key[deck] = track->track_id;
     s_deck_loaded_track_valid[deck] = true;
     if (s_library_table) {
@@ -1086,6 +1162,12 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 void ui_library_init(const ui_library_config_t *config)
 {
     memset(&s_library_config, 0, sizeof(s_library_config));
+    ui_event_counter_reset(&s_library_refresh_events);
+    s_library_refresh_applied = 0u;
+#ifndef WIN32
+    ui_event_counter_reset(&s_usb_removed_events);
+    s_usb_removed_applied = 0u;
+#endif
     if (config) {
         s_library_config = *config;
     }
@@ -1345,38 +1427,58 @@ void ui_library_load_initial_track(void)
         library_load_anlz(track);
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
-        s_deck_loaded_track_key[CTRL_DECK_1] = track->track_id;
-        s_deck_loaded_track_valid[CTRL_DECK_1] = true;
-        ui_library_apply_loaded_track(CTRL_DECK_1,
-                                      track->title,
-                                      track->artist,
-                                      track->bpm,
-                                      track->duration_ms,
-                                      track->waveform_low,
-                                      track->has_waveform != 0,
-                                      meta);
+        if (ui_library_publish_simulated_track(
+                CTRL_DECK_1, track, meta) == ESP_OK) {
+            s_deck_loaded_track_key[CTRL_DECK_1] = track->track_id;
+            s_deck_loaded_track_valid[CTRL_DECK_1] = true;
+            ui_library_apply_loaded_track(CTRL_DECK_1,
+                                          track->title,
+                                          track->artist,
+                                          track->bpm,
+                                          track->duration_ms,
+                                          track->waveform_low,
+                                          track->has_waveform != 0,
+                                          meta);
+        } else {
+            ui_library_apply_empty_track(CTRL_DECK_1);
+        }
         anlz_free(&meta_snapshot);
     }
 #else
     media_catalog_row_t row;
     media_loaded_track_t loaded;
+    const uint32_t generation = media_catalog_generation();
     if (media_catalog_get_row(0, &row) == ESP_OK &&
-        media_catalog_load(0, &loaded) == ESP_OK) {
-        s_loaded_media[CTRL_DECK_1] = loaded;
-        s_loaded_media_valid[CTRL_DECK_1] = true;
-        s_deck_loaded_track_key[CTRL_DECK_1] = loaded.track_key;
-        s_deck_loaded_track_valid[CTRL_DECK_1] = true;
+        media_catalog_generation() == generation &&
+        media_catalog_load_by_identity(row.track_key,
+                                       generation,
+                                       NULL,
+                                       &loaded) == ESP_OK) {
         const uint16_t bpm = loaded.bpm ? loaded.bpm : row.bpm;
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
-        ui_library_apply_loaded_track(CTRL_DECK_1,
-                                      row.title,
-                                      row.artist,
-                                      bpm,
-                                      loaded.duration_ms,
-                                      loaded.waveform_low,
-                                      loaded.has_waveform != 0,
-                                      meta);
+        if (deck_core_publish_loaded_track(CTRL_DECK_1,
+                                           generation,
+                                           loaded.track_key,
+                                           bpm,
+                                           loaded.duration_ms,
+                                           meta) == ESP_OK) {
+            s_loaded_media[CTRL_DECK_1] = loaded;
+            s_loaded_media_valid[CTRL_DECK_1] = true;
+            s_deck_loaded_track_key[CTRL_DECK_1] = loaded.track_key;
+            s_deck_loaded_track_valid[CTRL_DECK_1] = true;
+            ui_library_apply_loaded_track(CTRL_DECK_1,
+                                          row.title,
+                                          row.artist,
+                                          bpm,
+                                          loaded.duration_ms,
+                                          loaded.waveform_low,
+                                          loaded.has_waveform != 0,
+                                          meta);
+        } else {
+            ui_library_release_deck_audio(CTRL_DECK_1);
+            ui_library_apply_empty_track(CTRL_DECK_1);
+        }
         anlz_free(&meta_snapshot);
     }
 #endif
@@ -1387,19 +1489,13 @@ void ui_library_load_initial_track(void)
 
 void ui_trigger_library_refresh(void)
 {
-    /* Called from the USB storage task. Dropping the cached page is a plain bool
-     * store; the worst outcome of racing the LVGL task is one extra recompute,
-     * and a stale page can only omit a highlight because the row lookup is
-     * bounds-checked on both sides. */
-    ui_library_invalidate_page_cache();
-    s_library_needs_refresh = true;
+    (void)ui_event_counter_request(&s_library_refresh_events);
 }
 
 void ui_notify_usb_removed(void)
 {
 #ifndef WIN32
-    ui_library_invalidate_page_cache();
-    s_usb_removed_pending = true;
+    (void)ui_event_counter_request(&s_usb_removed_events);
 #endif
 }
 
@@ -1518,30 +1614,33 @@ esp_err_t ui_library_load_selected_for_deck(uint8_t deck)
     return ESP_OK;
 }
 
-uint32_t ui_library_loaded_track_key_for_deck(uint8_t deck)
-{
-    if (deck >= DECK_CORE_DECK_COUNT || !s_deck_loaded_track_valid[deck]) {
-        return 0;
-    }
-    return s_deck_loaded_track_key[deck];
-}
-
 void ui_library_update(const ui_frame_context_t *ctx)
 {
     int active_tab = ctx ? ctx->active_tab : 0;
     s_active_tab = active_tab;
-    ui_library_update_plan_t plan =
-        ui_library_plan_update(active_tab, s_library_needs_refresh,
+    const uint32_t refresh_requested =
+        ui_event_counter_sample(&s_library_refresh_events);
 #ifndef WIN32
-                               s_usb_removed_pending
+    const uint32_t usb_removed_requested =
+        ui_event_counter_sample(&s_usb_removed_events);
+#endif
+    ui_library_update_plan_t plan =
+        ui_library_plan_update(
+            active_tab,
+            ui_event_counter_pending(refresh_requested,
+                                     s_library_refresh_applied),
+#ifndef WIN32
+            ui_event_counter_pending(usb_removed_requested,
+                                     s_usb_removed_applied)
 #else
-                               false
+            false
 #endif
         );
 
 #ifndef WIN32
     if (plan.apply_usb_removed) {
         ui_apply_usb_removed();
+        s_usb_removed_applied = usb_removed_requested;
     }
     if (plan.poll_track_load_result) {
         ui_poll_track_load_result();
@@ -1549,8 +1648,8 @@ void ui_library_update(const ui_frame_context_t *ctx)
 #endif
 
     if (plan.refresh_library) {
-        s_library_needs_refresh = false;
         ui_refresh_library();
+        s_library_refresh_applied = refresh_requested;
     }
 
     if (plan.focus_library_table && s_library_table) {
@@ -1729,6 +1828,12 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
         library_load_anlz(track);
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
+        if (ui_library_publish_simulated_track(deck, track, meta) != ESP_OK) {
+            anlz_free(&meta_snapshot);
+            ui_library_apply_empty_track(deck);
+            ui_library_finish_track_load();
+            return ESP_FAIL;
+        }
         s_deck_loaded_track_key[deck] = track->track_id;
         s_deck_loaded_track_valid[deck] = true;
         if (s_library_table) {

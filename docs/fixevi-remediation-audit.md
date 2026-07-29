@@ -5,6 +5,10 @@ Auditirani dokument: `fixevi(1).md`, izvorni read-only pregled commita
 
 Auditirana grana: `fix/release-blockers-and-concurrency`.
 
+Naknadni redovi i dokazi u ovom dokumentu ažuriraju se kako se pojedini
+paketi iz ESP-IDF 6.0.2 migration plana implementiraju; povijesni audit commit
+iznad ostaje referenca za izvorni skup nalaza.
+
 Statusi:
 
 - **Zatvoreno** — primarni defekt je uklonjen i pokriven postojećim host/CI gateom.
@@ -28,7 +32,7 @@ Statusi:
 |---|---|---|---|
 | 2 | Sort/load može učitati pogrešnu pjesmu | **Zatvoreno** | `track_key + generation`, `load_by_identity()`, `409` na stale generaciju i sort/load mutex. |
 | 3 | Load-error može leakati PSRAM i ostaviti stare taskove | **Zatvoreno; HW/stress pending** | Svaki load bezuvjetno stop/join-a prethodnu sesiju; teardown više ne ovisi o `loaded`; PSRAM buffer ima jednog ownera. Test 100 realnih oštećenih MP3/WAV/FLAC retryja nije izveden. |
-| 4 | ANLZ borrowed pointer UAF | **Zatvoreno; stress pending** | Task-owned klonirani snapshoti i writer/reader guard. Load/Beat Jump/Sync/Loop stress na uređaju nije izveden. |
+| 4 | ANLZ borrowed pointer UAF i nekonzistentan loaded-track ownership | **Zatvoreno; HW/stress pending** | `deck_core` posjeduje koherentan key/generation/BPM/duration/ANLZ snapshot; writer/reader guard, stale media floor i 20.000 publish/40.000 reader host stress ne dopuštaju miješanje generacija. Deck kopija izostavlja neupotrebljavani high-resolution waveform. Load/Beat Jump/Sync/Loop stress na uređaju nije izveden. |
 | 5 | Pun control queue može izgubiti release | **Zatvoreno za primarni defekt** | Button/state edgeovi koriste lossless backpressure; samo kontinuirane vrijednosti se coalescaju; UART producer ne drenira shared queue. Dodatni level-state watchdog iz preporuke nije uveden. |
 | 6 | S3 disconnect/heartbeat race | **Zatvoreno** | Connection state je atomican; heartbeat samo traži refresh, a USB owner šalje stanje i descriptor. |
 | 7 | S3 `/events` blokira web server | **Zatvoreno** | Bounded SSE snapshot response zatvara zahtjev; EventSource se reconnecta. |
@@ -54,6 +58,7 @@ Statusi:
 | Web loop zaobilazi `deck_core` | **Zatvoreno** | Web loop/exit se pretvaraju u autoritativne deck evente. |
 | Probe i pull-OTA paralelno mijenjaju Wi-Fi stack | **Zatvoreno** | Centralni `wifi_transition_lease` rezervira probe ili OTA prijelaz prije stvaranja workera. |
 | USB mount nema retry / disconnect se može izgubiti | **Zatvoreno; HW pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. Replug i fault-injection test na stvarnom P4 ostaju. |
+| Library refresh/USB remove koriste lossy `volatile` zastavice | **Zatvoreno; HW pending** | Atomski event-generation brojači čuvaju request pristigao tijekom obrade; samo LVGL task invalidira page cache. USB remove podiže deck media floor, a load worker nakon audio loadanja ponovno provjerava generation i gasi stale sesiju. |
 | ANLZ short-read postaje valjani cache | **Zatvoreno; fuzz pending** | Exact-read marker, bounded section walk, privremeni objekt i publish tek nakon pune validacije. Fuzz/truncation corpus još nije kompletan. |
 | PDB duration se zamijeni zadnjim beatom | **Zatvoreno** | Javni `library_load_anlz()` čuva svaki nonzero PDB/audio duration; beatgrid duration ostaje fallback kada duration nedostaje. |
 | PVBR 32-bit overflow | **Zatvoreno** | `uint64_t` račun i clamp na `duration_ms`. |
@@ -79,7 +84,7 @@ Statusi:
 - realni MP3/FLAC/WAV decode fixture i realni `export.pdb`
 - širi TSan/fuzz corpus izvan novih bounded-cache i recorder fault-injection host testova
 - stvarno dual-deck P4 mjerenje keylock/PSRAM deadlinea i odluka treba li DSP optimizaciju
-- USB mount/disconnect fault injection
+- USB mount/disconnect fault injection, uključujući remove usred stvarnog audio load/decode prozora
 - prikaz bez tearinga nakon single-framebuffer korekcije
 - dugotrajni dual-deck audio/control/USB/SD soak, uključujući cache-miss i recorder power-loss fault injection
 

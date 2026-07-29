@@ -371,6 +371,26 @@ Assert-FileContains `
     -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
 
 Assert-FileContains `
+    -Name "deck core owns coherent loaded-track publication" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("deck_loaded_track_store_publish", "deck_loaded_track_store_clone", "deck_loaded_track_store_clear_all")
+
+Assert-FileDoesNotContain `
+    -Name "deck core no longer borrows loaded-track fields from UI" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("ui_library_loaded_track_key_for_deck", "ui_get_deck_anlz_metadata", "ui_library_deck_bpm")
+
+Assert-FileDoesNotContain `
+    -Name "library cross-task events no longer use lossy volatile flags" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("s_library_needs_refresh", "s_usb_removed_pending")
+
+Assert-FileContains `
+    -Name "library refresh and USB removal use durable event generations" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("ui_event_counter_request", "ui_event_counter_sample", "s_library_refresh_applied", "s_usb_removed_applied")
+
+Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP")
@@ -987,7 +1007,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
+    -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta.beats[mid].time_ms < position_ms")
 
 Assert-FileContains `
     -Name "p4 pdb row-slot iterator validates the whole group before subtraction" `
@@ -1550,6 +1570,35 @@ $tests = @(
         )
     },
     @{
+        Name = "deck_loaded_track_store"
+        MinTestsRun = 103
+        Dir = "tests/deck_loaded_track_store"
+        Target = "test_deck_loaded_track_store.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11", "-pthread",
+            "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../support/stubs",
+            "-o", "test_deck_loaded_track_store.exe",
+            "test_deck_loaded_track_store.c",
+            "anlz_clone_stub.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
+        )
+    },
+    @{
+        Name = "ui_event_counter"
+        MinTestsRun = 124
+        Dir = "tests/ui_event_counter"
+        Target = "test_ui_event_counter.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_event_counter.exe",
+            "test_ui_event_counter.c",
+            "../../firmware/main-deck-p4/components/ui/ui_event_counter.c"
+        )
+    },
+    @{
         Name = "deck_core_dual"
         Dir = "tests/deck_core_dual"
         Target = "test_deck_core_dual.exe"
@@ -1571,8 +1620,10 @@ $tests = @(
             "test_deck_core_dual.c",
             "control_link_stub.c",
             "hot_cue_store_stub.c",
+            "../deck_loaded_track_store/anlz_clone_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
             "deck_core_test_snapshot_wrapper.c"
         )
     },
@@ -1609,8 +1660,10 @@ $tests = @(
             "test_deck_core_dual.c",
             "control_link_stub.c",
             "hot_cue_store_stub.c",
+            "../deck_loaded_track_store/anlz_clone_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
+            "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
             "deck_core_test_snapshot_wrapper.c"
         )
     },

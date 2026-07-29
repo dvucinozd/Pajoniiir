@@ -101,7 +101,7 @@ typedef struct {
  *
  * All other fields are inline.  Call anlz_free() when done.
  */
-typedef struct {
+typedef struct anlz_metadata {
     /* Path to audio file (UTF-8, filtered from UTF-16-BE PPTH) */
     char audio_path[ANLZ_PATH_MAX];
 
