@@ -224,6 +224,27 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
 # Let the compiler decide instead. Every one of these files is clean today, so
 # the contract costs nothing and covers the whole DSP hot path rather than the
 # single file the old gate happened to name.
+# The firmware wrappers are policed by name above, because that list is closed.
+# The test tree needs the opposite check: not "these four are gone" but "no test
+# compiles through another test again". Four had survived the firmware sweep, and
+# the damage was not a broken build - the runner compiled test_x_current.c while
+# the file named after the suite sat there looking authoritative, so edits to it
+# did nothing. A name list would not have caught a fifth under a new name.
+function Assert-NoTestSideCompilationWrappers {
+    Write-Host "==> static no test compiles through another test"
+    $testRoot = Join-Path $RepoRoot "tests"
+    foreach ($file in Get-ChildItem -LiteralPath $testRoot -Filter *.c -Recurse) {
+        $text = Get-Content -LiteralPath $file.FullName -Raw
+        if ($text -match '#\s*include\s+"[^"]*test_[^"]*\.c"') {
+            throw ("$($file.Name) includes another test source; fold it into the base test instead " +
+                   "(see the four retired *_current.c wrappers)")
+        }
+        if ($text -match '#\s*define\s+main\b') {
+            throw "$($file.Name) renames main, which is how the retired wrappers hid a second entry point"
+        }
+    }
+}
+
 function Invoke-SinglePrecisionContract {
     $dir = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine"
     $sources = @(
@@ -394,6 +415,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
+Assert-NoTestSideCompilationWrappers
 Invoke-SinglePrecisionContract
 Assert-DecodeWarmsCacheBeforeEngineLock
 Assert-OverviewInactiveGuardBeforeCacheUpdate
