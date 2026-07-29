@@ -396,6 +396,12 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
 
 static const char *TAG = "flx4_host";
 
+/* Defined here rather than beside the rest of the host state further down,
+ * because flx4_midi_host_refresh_connection_state() below unblocks the client
+ * and so needs the handle first. It used to be reached through a compilation
+ * wrapper that predeclared it and #included this whole translation unit. */
+static usb_host_client_handle_t s_midi_client_handle;
+
 #define USB_LIB_TASK_STACK      4096
 #define USB_LIB_TASK_PRIO       4
 #define MIDI_CLIENT_TASK_STACK  (6 * 1024)
@@ -510,7 +516,6 @@ typedef struct {
 
 static flx4_host_state_t s_host;
 static QueueHandle_t s_midi_out_queue = NULL;
-static usb_host_client_handle_t s_midi_client_handle;
 static bool s_midi_out_accepting;
 static uint32_t s_midi_out_producers;
 static uint32_t s_midi_out_full_drop_count;

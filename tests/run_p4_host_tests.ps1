@@ -1899,24 +1899,25 @@ Assert-FileContains `
 # renaming, duplicate legacy code in the image, and (for audio_engine) an
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
-    @{ Component = "library";                   Wrapper = "library_duration_fixed.c" },
-    @{ Component = "library";                   Wrapper = "track_meta_cache_fixed.c" },
-    @{ Component = "audio_engine";              Wrapper = "audio_engine_ordered.c" },
-    @{ Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" }
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
+    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" },
+    @{ Board = "control-board-s3"; Component = "flx4_midi_host";             Wrapper = "flx4_midi_host_fixed.c" }
 )) {
-    $wrapperPath = Join-Path $RepoRoot ("firmware/main-deck-p4/components/{0}/{1}" -f $retired.Component, $retired.Wrapper)
+    $wrapperPath = Join-Path $RepoRoot ("firmware/{0}/components/{1}/{2}" -f $retired.Board, $retired.Component, $retired.Wrapper)
     Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
     if (Test-Path -LiteralPath $wrapperPath) {
         throw ("retired compilation wrapper reappeared: {0}" -f $wrapperPath)
     }
     Assert-FileDoesNotContain `
-        -Name ("p4 {0} does not build through {1}" -f $retired.Component, $retired.Wrapper) `
-        -Path (Join-Path $RepoRoot ("firmware/main-deck-p4/components/{0}/CMakeLists.txt" -f $retired.Component)) `
+        -Name ("{0} does not build through {1}" -f $retired.Component, $retired.Wrapper) `
+        -Path (Join-Path $RepoRoot ("firmware/{0}/components/{1}/CMakeLists.txt" -f $retired.Board, $retired.Component)) `
         -LiteralPatterns @($retired.Wrapper)
 }
 
 Assert-FileContains `
-    -Name "p4 audio_engine and controller profile manager build their real sources" `
+    -Name "p4 audio_engine builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "audio_engine.c"')
 
@@ -1924,6 +1925,11 @@ Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "s3 FLX4 MIDI host builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "flx4_midi_host.c"')
 
 Assert-FileContains `
     -Name "p4 display shares one authoritative framebuffer count" `
