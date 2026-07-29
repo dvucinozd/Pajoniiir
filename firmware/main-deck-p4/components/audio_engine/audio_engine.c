@@ -104,13 +104,6 @@ static const char *TAG = "audio";
 
 #define AE_DECK_0 0u
 
-#if AE_FW
-static int64_t ae_now_us(void)
-{
-    return esp_timer_get_time();
-}
-#endif
-
 /* ── PCM ring buffers (stereo int16 PCM frames) ───────────────────────────── *
  *
  * Producer: decode thread (PC) / decode task (firmware).
@@ -1915,17 +1908,6 @@ static void ae_diag_reset(void)
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
         audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
     }
-}
-
-static void ae_diag_log_memory(const char *phase, uint8_t deck)
-{
-    ESP_LOGI(TAG,
-             "diag %s D%u: heap=%u internal=%u psram=%u",
-             phase ? phase : "mem",
-             (unsigned)(deck + 1u),
-             (unsigned)esp_get_free_heap_size(),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 static void ae_diag_record_decode(uint8_t deck,

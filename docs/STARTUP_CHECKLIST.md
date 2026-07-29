@@ -58,6 +58,8 @@ clean release build is newer than the installed firmware.
 - [x] Host-validate compressed-cache LRU ordering across the historical
   `UINT32_MAX` timestamp boundary (68 checks; P4 host suite and ESP-IDF v6.0.2
   build pass).
+- [x] Remove project-local ESP-IDF v6.0.2 compiler/Kconfig warnings. The
+  remaining NimBLE `default 0` note is in the pinned upstream ESP-IDF source.
 - [ ] Hardware-validate paginated Library table on the P4 touch display.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.

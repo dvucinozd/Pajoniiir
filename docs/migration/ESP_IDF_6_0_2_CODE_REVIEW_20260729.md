@@ -91,7 +91,7 @@ samo u `library.c`.
 | Secure Boot/flash encryption | **Procijenjeno, nije uključeno** | dokumentiran partition-table/bootloader blocker |
 | Partial-init cleanup | **Software popravljeno; IDF failure injection/HW pending** | profile manager i monitor I2S imaju staged init i potpuni rollback |
 | LRU wraparound | **Software zatvoreno** | `uint64_t` stamp i regresija preko povijesne `UINT32_MAX` granice |
-| Build warning cleanup | **Otvoreno** | source i FATFS Kconfig nisu promijenjeni |
+| Build warning cleanup | **Projektni warningi zatvoreni** | mrtvi audio helperi uklonjeni; FATFS bool defaulti koriste `n`; upstream NimBLE note ostaje |
 | CI branch coverage | **Zatvoreno** | workflow sada pokriva `fix/**`, `test/**`, `docs/**`, `ci/**`, `migration/**` |
 | CI supply-chain pinning | **Otvoreno** | Docker tag i `actions/*@v4` ostaju mutable |
 | Release dokumentacija | **Djelomično** | Risk Register je usklađen; README i Documentation Status nisu |
@@ -972,6 +972,9 @@ Na korištenom Windows računalu izmjereno je:
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**PROJEKTNI WARNINGI ZATVORENI; UPSTREAM ESP-IDF NOTE OSTAJE**
+
 Projektni warningi:
 
 - `bsp_jc4880.c:96`: nekorišten `s_i2s_tx`;
@@ -987,6 +990,25 @@ warning.
 Nekorištene simbole staviti pod odgovarajuće `CONFIG_` uvjete ili ukloniti ako
 su legacy. FATFS bool default vrijednosti ispraviti na `y/n`. Nakon čišćenja
 razmotriti CI gate koji projektne warninge tretira kao greške.
+
+### Implementirani popravak
+
+- `ae_now_us()` i `ae_diag_log_memory()` nisu imali nijednog pozivatelja;
+  uklonjeni su bez promjene aktivne audio dijagnostike, koja i dalje koristi
+  izravna `esp_timer_get_time()` mjerenja i objavljene heap/statističke
+  snapshote.
+- Stariji nalaz za `bsp_jc4880.c:s_i2s_tx` više nije aktualan. Handle danas ima
+  stvarne speaker-codec korisnike i aktualni ESP-IDF 6.0.2 build za njega ne
+  prijavljuje warning, pa nije uklonjen.
+- `FATFS_PRINT_LLI` i `FATFS_PRINT_FLOAT` zadržavaju isto disabled ponašanje, ali
+  njihovi bool defaulti sada koriste ispravan Kconfig zapis `default n`.
+- P4 host runner ima ciljane source/Kconfig gateove protiv povratka ova dva
+  mrtva helpera ili pogrešnih bool defaulta. Kompletni P4 host suite prolazi.
+- ESP-IDF v6.0.2 ponovno je kompajlirao `audio_engine.c`, regenerirao Kconfig
+  izvještaj, linkao firmware i provjerio image bez ijednog projektnog warninga.
+  Jedina preostala poruka je `BT_NIMBLE_MESH_PROVISIONER: default 0` iz
+  `C:/esp/v6.0.2/esp-idf/components/bt/host/nimble/Kconfig.in`; to je pinani
+  upstream source, ne Pajoniiir komponenta.
 
 ---
 
@@ -1103,7 +1125,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 9 | Audio runtime instrumentacija | prije bilo kakvog lock refaktora |
 | 10 | Per-deck audio lockovi | prema dokumentiranom planu; traži bolji harness ili board |
 | 11 | Decoder/PCM-ring/output razdvajanje | nakon lock metrika i ANLZ refaktora |
-| 12 | LRU wrap i build warning cleanup | **LRU software zatvoren; build warning cleanup ostaje otvoren kao zaseban mali PR** |
+| 12 | LRU wrap i build warning cleanup | **software zatvoreno; samo upstream ESP-IDF NimBLE note ostaje** |
 | 13 | Production AP/API authentication | traži proizvodnu credential odluku |
 | 14 | Partition table i security provisioning plan | prije Secure Boot/flash encryption testa |
 | 15 | CI digest/SHA pinning i build optimizacija | nakon stabilnih dependency verzija |

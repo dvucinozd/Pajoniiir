@@ -335,10 +335,35 @@ function Assert-OverviewLoadDefersMainWaveRender {
     }
 }
 
+function Assert-FatfsBoolDefaults {
+    $path = Join-Path $RepoRoot "firmware/main-deck-p4/components/fatfs/Kconfig"
+    Write-Host "==> static FatFS bool defaults use Kconfig y/n syntax"
+    $text = Get-Content -LiteralPath $path -Raw
+    foreach ($symbol in @("FATFS_PRINT_LLI", "FATFS_PRINT_FLOAT")) {
+        $blockPattern = "(?ms)^\s*config\s+$symbol\b(?<body>.*?)(?=^\s*(?:config|choice|endmenu|menu)\b|\z)"
+        $block = [regex]::Match($text, $blockPattern)
+        if (-not $block.Success) {
+            throw "$symbol block not found in $path"
+        }
+        if ($block.Groups["body"].Value -notmatch "(?m)^\s*default\s+n\s*$") {
+            throw "$symbol must use 'default n' bool syntax in $path"
+        }
+    }
+}
+
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("s_active_eng", "#define s_eng", "select_engine", "restore_engine")
+
+# These file-static helpers had no callers, so a host link contract cannot
+# observe them. The firmware build remains the authoritative warning check.
+Assert-FileDoesNotContain `
+    -Name "project-local ESP-IDF 6 dead diagnostics stay removed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("static int64_t ae_now_us(", "static void ae_diag_log_memory(")
+
+Assert-FatfsBoolDefaults
 
 Assert-FileContains `
     -Name "s3 debug ap p4 sends state frames" `
