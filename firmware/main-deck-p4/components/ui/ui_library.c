@@ -90,6 +90,65 @@ ui_library_update_plan_t ui_library_plan_update(int active_tab,
     };
 }
 
+ui_library_page_t ui_library_page_for_selection(int total_tracks,
+                                                 int selected_index)
+{
+    ui_library_page_t page = {0};
+    if (total_tracks <= 0) {
+        return page;
+    }
+
+    if (selected_index < 0) {
+        selected_index = 0;
+    } else if (selected_index >= total_tracks) {
+        selected_index = total_tracks - 1;
+    }
+
+    page.page_count = (total_tracks + UI_LIBRARY_PAGE_ROWS - 1) /
+                      UI_LIBRARY_PAGE_ROWS;
+    page.page_index = selected_index / UI_LIBRARY_PAGE_ROWS;
+    page.first_index = page.page_index * UI_LIBRARY_PAGE_ROWS;
+    page.row_count = total_tracks - page.first_index;
+    if (page.row_count > UI_LIBRARY_PAGE_ROWS) {
+        page.row_count = UI_LIBRARY_PAGE_ROWS;
+    }
+    page.selected_row = selected_index - page.first_index;
+    return page;
+}
+
+int ui_library_page_absolute_index(const ui_library_page_t *page,
+                                   int visible_row)
+{
+    if (!page || visible_row < 0 || visible_row >= page->row_count) {
+        return -1;
+    }
+    return page->first_index + visible_row;
+}
+
+int ui_library_page_selection_after_delta(int total_tracks,
+                                          int selected_index,
+                                          int page_delta)
+{
+    ui_library_page_t page = ui_library_page_for_selection(total_tracks,
+                                                            selected_index);
+    if (page.page_count == 0 || page_delta == 0) {
+        return page.page_count == 0 ? 0 : page.first_index + page.selected_row;
+    }
+
+    int target_page = page.page_index + page_delta;
+    if (target_page < 0) {
+        target_page = 0;
+    } else if (target_page >= page.page_count) {
+        target_page = page.page_count - 1;
+    }
+
+    int target = target_page * UI_LIBRARY_PAGE_ROWS + page.selected_row;
+    if (target >= total_tracks) {
+        target = total_tracks - 1;
+    }
+    return target;
+}
+
 #ifndef UI_LIBRARY_HOST_TEST
 
 #include "library.h"
@@ -114,6 +173,8 @@ static ui_library_config_t s_library_config;
 static lv_obj_t *s_library_screen = NULL;
 static lv_obj_t *s_library_table = NULL;
 static lv_obj_t *s_label_library_source = NULL;
+static lv_obj_t *s_btn_library_page_prev = NULL;
+static lv_obj_t *s_btn_library_page_next = NULL;
 static lv_obj_t *s_btn_library_load = NULL;
 static lv_obj_t *s_btn_library_load_deck2 = NULL;
 static lv_obj_t *s_active_deck_indicator = NULL;
@@ -157,6 +218,8 @@ typedef struct {
     int index;
     uint8_t deck;
     uint32_t generation;
+    uint32_t track_key;
+    bool deck_reset;
     media_catalog_track_t item;
     media_loaded_track_t loaded;
     esp_err_t rc;
@@ -167,6 +230,7 @@ typedef struct {
     int index;
     uint8_t deck;
     uint32_t generation;
+    uint32_t track_key;
 } ui_track_load_request_t;
 
 #endif
@@ -281,19 +345,75 @@ static void ui_library_set_load_busy(bool busy, const char *hint)
     (void)hint;
 }
 
-static void ui_library_update_source_label(void)
+static void ui_library_set_page_button_enabled(lv_obj_t *button, bool enabled)
 {
-    if (!s_label_library_source) {
+    if (!button) {
         return;
     }
-#ifndef WIN32
-    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", media_catalog_count());
-#else
-    lv_label_set_text_fmt(s_label_library_source, "LOCAL USB  %d TRACKS", library_count());
-#endif
+    if (enabled) {
+        lv_obj_clear_state(button, LV_STATE_DISABLED);
+    } else {
+        lv_obj_add_state(button, LV_STATE_DISABLED);
+    }
 }
 
-static void ui_library_fill_row(int i)
+static ui_library_page_t ui_library_current_page(void)
+{
+    return ui_library_page_for_selection(ui_library_media_count(),
+                                         s_selected_track_idx);
+}
+
+/* The visible page only changes when the selection moves or the catalog is
+ * republished, but the LVGL draw path needs it per cell. Keep the last computed
+ * page so the draw callback does not take the library lock (via media_catalog_count)
+ * once per draw task. Every mutation of s_selected_track_idx or of the row set
+ * goes through ui_library_populate_rows()/ui_library_select_visible_cell(), which
+ * refresh this. */
+static ui_library_page_t s_library_page_cache;
+static bool s_library_page_cache_valid;
+
+static ui_library_page_t ui_library_refresh_page_cache(void)
+{
+    s_library_page_cache = ui_library_current_page();
+    s_library_page_cache_valid = true;
+    return s_library_page_cache;
+}
+
+static ui_library_page_t ui_library_page_cached(void)
+{
+    if (!s_library_page_cache_valid) {
+        return ui_library_refresh_page_cache();
+    }
+    return s_library_page_cache;
+}
+
+static void ui_library_invalidate_page_cache(void)
+{
+    s_library_page_cache_valid = false;
+}
+
+static void ui_library_update_source_label(void)
+{
+    int count = ui_library_media_count();
+    ui_library_page_t page = ui_library_page_for_selection(count,
+                                                            s_selected_track_idx);
+    if (s_label_library_source) {
+        if (page.page_count > 0) {
+            lv_label_set_text_fmt(s_label_library_source,
+                                  "LOCAL USB  %d TRACKS   PAGE %d/%d",
+                                  count, page.page_index + 1, page.page_count);
+        } else {
+            lv_label_set_text(s_label_library_source, "LOCAL USB  0 TRACKS");
+        }
+    }
+    ui_library_set_page_button_enabled(s_btn_library_page_prev,
+                                       page.page_index > 0);
+    ui_library_set_page_button_enabled(s_btn_library_page_next,
+                                       page.page_count > 0 &&
+                                       page.page_index + 1 < page.page_count);
+}
+
+static void ui_library_fill_visible_row(int visible_row, int track_index)
 {
     const char *title = NULL;
     const char *artist = NULL;
@@ -303,7 +423,7 @@ static void ui_library_fill_row(int i)
 
 #ifndef WIN32
     media_catalog_row_t row;
-    if (media_catalog_get_row(i, &row) != ESP_OK) {
+    if (media_catalog_get_row(track_index, &row) != ESP_OK) {
         return;
     }
     title = row.title;
@@ -312,7 +432,7 @@ static void ui_library_fill_row(int i)
     duration_ms = row.duration_ms;
     key = row.key;
 #else
-    const library_track_t *track = library_get_ptr(i);
+    const library_track_t *track = library_get_ptr(track_index);
     if (!track) {
         return;
     }
@@ -325,11 +445,20 @@ static void ui_library_fill_row(int i)
 
     ui_library_row_text_t text;
     ui_library_format_row_text(&text, title, artist, key, bpm, duration_ms);
-    lv_table_set_cell_value(s_library_table, i, 0, text.title);
-    lv_table_set_cell_value(s_library_table, i, 1, text.artist);
-    lv_table_set_cell_value(s_library_table, i, 2, text.key);
-    lv_table_set_cell_value(s_library_table, i, 3, text.bpm);
-    lv_table_set_cell_value(s_library_table, i, 4, text.duration);
+    lv_table_set_cell_value(s_library_table, visible_row, 0, text.title);
+    lv_table_set_cell_value(s_library_table, visible_row, 1, text.artist);
+    lv_table_set_cell_value(s_library_table, visible_row, 2, text.key);
+    lv_table_set_cell_value(s_library_table, visible_row, 3, text.bpm);
+    lv_table_set_cell_value(s_library_table, visible_row, 4, text.duration);
+}
+
+static void ui_library_select_visible_cell(void)
+{
+    ui_library_page_t page = ui_library_refresh_page_cache();
+    if (s_library_table && page.row_count > 0) {
+        lv_table_set_selected_cell(s_library_table,
+                                   (uint32_t)page.selected_row, 0);
+    }
 }
 
 static void ui_library_populate_rows(void)
@@ -337,12 +466,16 @@ static void ui_library_populate_rows(void)
     if (!s_library_table) {
         return;
     }
-    int n_tracks = ui_library_media_count();
-    lv_table_set_row_count(s_library_table, n_tracks);
-    for (int i = 0; i < n_tracks; i++) {
-        ui_library_fill_row(i);
+
+    ui_library_page_t page = ui_library_refresh_page_cache();
+    lv_table_set_row_count(s_library_table, (uint32_t)page.row_count);
+    for (int visible_row = 0; visible_row < page.row_count; ++visible_row) {
+        int track_index = ui_library_page_absolute_index(&page, visible_row);
+        ui_library_fill_visible_row(visible_row, track_index);
     }
+    ui_library_select_visible_cell();
     ui_library_update_source_label();
+    lv_obj_invalidate(s_library_table);
 }
 
 static void ui_library_apply_loaded_track(uint8_t deck,
@@ -378,7 +511,53 @@ static void ui_library_apply_loaded_track(uint8_t deck,
     }
 }
 
+static void ui_library_apply_empty_track(uint8_t deck)
+{
+    deck = ui_library_deck_index(deck);
 #ifndef WIN32
+    s_loaded_media_valid[deck] = false;
+    memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
+#endif
+    s_deck_loaded_track_valid[deck] = false;
+    s_deck_loaded_track_key[deck] = 0u;
+    if (s_library_config.actions.clear_deck_track_info) {
+        s_library_config.actions.clear_deck_track_info(deck);
+    }
+    if (s_library_config.actions.set_deck_anlz) {
+        s_library_config.actions.set_deck_anlz(deck, NULL);
+    }
+    if (s_library_config.actions.load_waveform_data) {
+        s_library_config.actions.load_waveform_data(deck, 0u, NULL, false, NULL);
+    }
+    if (s_library_config.actions.set_loop_shadow) {
+        s_library_config.actions.set_loop_shadow(deck, false, 0u, 0u, 0);
+    }
+    if (deck == CTRL_DECK_1) {
+        ui_library_cache_invalidate();
+        ui_library_set_header_track("No Track", "", 0u);
+    }
+    if (s_library_config.actions.update_hot_cues) {
+        s_library_config.actions.update_hot_cues();
+    }
+    if (s_library_table) {
+        lv_obj_invalidate(s_library_table);
+    }
+}
+
+#ifndef WIN32
+/* Tear down the audio session for a deck whose load result is not going to be
+ * published. Safe on a deck whose load already failed: audio_engine_stop_for_deck
+ * does not key teardown on `loaded`, so it simply joins whatever tasks the
+ * failed session parked and returns the deck to the empty state the UI shows. */
+static void ui_library_release_deck_audio(uint8_t deck)
+{
+    esp_err_t rc = audio_engine_deck_stop(deck);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "deck %u audio release failed: %s",
+                 (unsigned)deck + 1u, esp_err_to_name(rc));
+    }
+}
+
 static void ui_track_load_worker(void *arg)
 {
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
@@ -399,34 +578,34 @@ static void ui_track_load_worker(void *arg)
     result->index = req.index;
     result->deck = req.deck;
     result->generation = req.generation;
-    result->rc = ESP_OK;
-
-    if (media_catalog_get(req.index, &result->item) != ESP_OK) {
-        result->rc = ESP_ERR_NOT_FOUND;
-        ui_track_load_set_status(result, "NO TRACK", "NO TRACK");
+    result->track_key = req.track_key;
+    result->rc = media_catalog_load_by_identity(req.track_key,
+                                                 req.generation,
+                                                 &result->item,
+                                                 &result->loaded);
+    if (result->rc == ESP_ERR_INVALID_STATE) {
+        ui_track_load_set_status(result, "LIBRARY CHANGED", "LIBRARY CHANGED");
+    } else if (result->rc != ESP_OK) {
+        ui_track_load_set_status(result, "LOAD ERR", "LOAD ERR");
     } else {
-        result->rc = media_catalog_load(req.index, &result->loaded);
+        if (req.deck == CTRL_DECK_1) {
+            (void)audio_engine_deck_clear_loop(req.deck);
+        }
+        deck_core_reset_deck(req.deck);
+        result->deck_reset = true;
+        result->rc = audio_engine_deck_load(req.deck,
+                                            result->loaded.audio_path,
+                                            result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
+                                            result->loaded.duration_ms);
         if (result->rc != ESP_OK) {
-            ui_track_load_set_status(result, "LOAD ERR", "LOAD ERR");
+            audio_engine_deck_status_t deck_status = {0};
+            const char *audio_err = NULL;
+            if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
+                audio_err = deck_status.last_error_text;
+            }
+            ui_track_load_set_status(result, audio_err, "AUDIO ERR");
         } else {
-            if (req.deck == CTRL_DECK_1) {
-                (void)audio_engine_deck_clear_loop(req.deck);
-            }
-            deck_core_reset_deck(req.deck);
-            result->rc = audio_engine_deck_load(req.deck,
-                                                result->loaded.audio_path,
-                                                result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
-                                                result->loaded.duration_ms);
-            if (result->rc != ESP_OK) {
-                audio_engine_deck_status_t deck_status = {0};
-                const char *audio_err = NULL;
-                if (audio_engine_deck_get_status(req.deck, &deck_status) == ESP_OK) {
-                    audio_err = deck_status.last_error_text;
-                }
-                ui_track_load_set_status(result, audio_err, "AUDIO ERR");
-            } else {
-                ui_track_load_set_status(result, "TRACK LOADED", "TRACK LOADED");
-            }
+            ui_track_load_set_status(result, "TRACK LOADED", "TRACK LOADED");
         }
     }
 
@@ -441,7 +620,7 @@ static void ui_track_load_worker(void *arg)
     vTaskDelete(NULL);
 }
 
-static esp_err_t ui_submit_track_load(int index, uint8_t deck)
+static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t generation, uint8_t deck)
 {
     if (!s_track_load_result_q) {
         s_track_load_result_q = xQueueCreate(1, sizeof(ui_track_load_result_t));
@@ -464,7 +643,8 @@ static esp_err_t ui_submit_track_load(int index, uint8_t deck)
     }
     req->index = index;
     req->deck = deck;
-    req->generation = library_generation();
+    req->generation = generation;
+    req->track_key = track_key;
 
     if (xTaskCreate(ui_track_load_worker, "ui_load", UI_TRACK_LOAD_STACK, req, 3, NULL) != pdPASS) {
         free(req);
@@ -521,29 +701,48 @@ static void ui_poll_track_load_result(void)
 
     ui_track_load_result_t result;
     while (xQueueReceive(s_track_load_result_q, &result, 0) == pdTRUE) {
-        bool stale = result.generation != library_generation();
+        bool stale = result.generation != media_catalog_generation();
         if (stale) {
-            ui_library_set_load_busy(false, "USB REMOVED");
+            if (result.deck_reset) {
+                /* The worker may have completed audio_engine_deck_load() before
+                 * the catalog changed under it. Clearing only the UI would leave
+                 * the engine holding a track the operator can still start from a
+                 * deck the screen shows as empty — and, after a USB removal, one
+                 * whose media is gone. Retire the audio session first, then the
+                 * UI, so both sides agree the deck is empty. */
+                ui_library_release_deck_audio(result.deck);
+                ui_library_apply_empty_track(result.deck);
+            }
+            ui_library_status_hold("LIBRARY CHANGED", COL_AMBER, 2500);
+            ui_library_set_load_busy(false, "LIBRARY CHANGED");
             ui_library_finish_track_load();
             continue;
         }
 
         if (result.rc != ESP_OK) {
             const char *display = result.status[0] ? result.status : "LOAD ERR";
-            ESP_LOGW(TAG, "track load worker failed index=%d: %s", result.index, esp_err_to_name(result.rc));
+            ESP_LOGW(TAG, "track load worker failed key=0x%08x index=%d: %s",
+                     (unsigned)result.track_key, result.index, esp_err_to_name(result.rc));
+            if (result.deck_reset) {
+                ui_library_release_deck_audio(result.deck);
+                ui_library_apply_empty_track(result.deck);
+            }
             ui_library_status_hold(display, ui_library_status_color_for_text(display), 3500);
             ui_library_set_load_busy(false, display);
             ui_library_finish_track_load();
             continue;
         }
 
-        mock_library_load_track_to_deck(result.index);
+        library_set_selected_track_index(result.index);
         uint8_t deck = ui_library_deck_index(result.deck);
         s_loaded_media[deck] = result.loaded;
         s_loaded_media_valid[deck] = true;
         s_deck_loaded_track_key[deck] = result.loaded.track_key;
         s_deck_loaded_track_valid[deck] = true;
-        ESP_LOGI("UI_HIGHLIGHT", "POLL RESULT: deck=%u, key=0x%08X", (unsigned)deck, (unsigned)result.loaded.track_key);
+        if (ui_diagnostics_enabled()) {
+            ESP_LOGI(TAG, "load result: deck=%u key=0x%08X",
+                     (unsigned)deck, (unsigned)result.loaded.track_key);
+        }
         if (s_library_table) {
             lv_obj_invalidate(s_library_table);
         }
@@ -587,7 +786,7 @@ static void ui_library_load_selected_deck(uint8_t deck)
         return;
     }
 
-    mock_library_load_track_to_deck(s_selected_track_idx);
+    library_set_selected_track_index(s_selected_track_idx);
     library_load_anlz(track);
     anlz_metadata_t meta_snapshot;
     const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
@@ -609,16 +808,18 @@ static void ui_library_load_selected_deck(uint8_t deck)
     ESP_LOGI(TAG, "Loaded track to deck %u: %s by %s (waveform=%d)",
              (unsigned)deck + 1u, track->title, track->artist, track->has_waveform);
 #else
+    const uint32_t generation = media_catalog_generation();
     media_catalog_track_t item;
-    if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK) {
-        ESP_LOGW(TAG, "No catalog row at index %d", s_selected_track_idx);
-        ui_library_set_load_busy(false, NULL);
+    if (media_catalog_get(s_selected_track_idx, &item) != ESP_OK ||
+        media_catalog_generation() != generation) {
+        ESP_LOGW(TAG, "Catalog changed while resolving index %d", s_selected_track_idx);
+        ui_library_set_load_busy(false, "LIBRARY CHANGED");
         ui_library_finish_track_load();
         return;
     }
 
     ui_library_status_hold("LOADING", COL_ACCENT, 1500);
-    (void)ui_submit_track_load(s_selected_track_idx, deck);
+    (void)ui_submit_track_load(s_selected_track_idx, item.track_key, generation, deck);
     return;
 #endif
     ui_library_status_hold("TRACK LOADED", COL_GREEN, 2000);
@@ -641,34 +842,26 @@ static void ui_library_preserve_selection_by_key(uint32_t target_key)
     if (target_key == 0) {
         return;
     }
+    /* Runs on the LVGL task after every sort. Resolving through the identity
+     * index keeps it a single locked pass instead of one full-record copy per
+     * row, and firmware and simulator now agree on what "same track" means
+     * (library_track_key, i.e. path hash when the PDB has no track_id). */
 #ifndef WIN32
-    int n = media_catalog_count();
-    for (int i = 0; i < n; i++) {
-        media_catalog_row_t t;
-        if (media_catalog_get_row(i, &t) == ESP_OK && t.track_key == target_key) {
-            s_selected_track_idx = i;
-            break;
-        }
-    }
+    int row = media_catalog_find_index_by_key(target_key);
 #else
-    int n = library_count();
-    for (int i = 0; i < n; i++) {
-        library_track_t *t = library_get_ptr(i);
-        if (t && t->track_id == target_key) {
-            s_selected_track_idx = i;
-            break;
-        }
-    }
+    int row = library_find_row_by_key(target_key);
 #endif
+    if (row >= 0) {
+        s_selected_track_idx = row;
+        ui_library_invalidate_page_cache();
+    }
 }
 
 static uint32_t ui_library_selected_key(void)
 {
 #ifndef WIN32
-    media_catalog_row_t sel_track;
-    return (media_catalog_get_row(s_selected_track_idx, &sel_track) == ESP_OK)
-           ? sel_track.track_key
-           : 0;
+    uint32_t key = 0;
+    return (media_catalog_row_key(s_selected_track_idx, &key) == ESP_OK) ? key : 0;
 #else
     library_track_t *sel_track = library_get_ptr(s_selected_track_idx);
     return sel_track ? sel_track->track_id : 0;
@@ -679,6 +872,12 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 {
     (void)e;
     if (!s_library_table) return;
+#ifndef WIN32
+    if (s_track_load_busy || media_catalog_load_in_progress()) {
+        ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
+        return;
+    }
+#endif
     uint32_t target_key = ui_library_selected_key();
     s_sort_artist_desc = !s_sort_artist_desc;
 #ifndef WIN32
@@ -688,13 +887,19 @@ static void library_sort_artist_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_name_event_cb(lv_event_t *e)
 {
     (void)e;
     if (!s_library_table) return;
+#ifndef WIN32
+    if (s_track_load_busy || media_catalog_load_in_progress()) {
+        ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
+        return;
+    }
+#endif
     uint32_t target_key = ui_library_selected_key();
     s_sort_name_desc = !s_sort_name_desc;
 #ifndef WIN32
@@ -704,13 +909,19 @@ static void library_sort_name_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_bpm_event_cb(lv_event_t *e)
 {
     (void)e;
     if (!s_library_table) return;
+#ifndef WIN32
+    if (s_track_load_busy || media_catalog_load_in_progress()) {
+        ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
+        return;
+    }
+#endif
     uint32_t target_key = ui_library_selected_key();
     s_sort_bpm_desc = !s_sort_bpm_desc;
 #ifndef WIN32
@@ -720,13 +931,19 @@ static void library_sort_bpm_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
 }
 
 static void library_sort_key_event_cb(lv_event_t *e)
 {
     (void)e;
     if (!s_library_table) return;
+#ifndef WIN32
+    if (s_track_load_busy || media_catalog_load_in_progress()) {
+        ui_library_status_hold("LOAD BUSY", COL_AMBER, 1200);
+        return;
+    }
+#endif
     uint32_t target_key = ui_library_selected_key();
     s_sort_key_desc = !s_sort_key_desc;
 #ifndef WIN32
@@ -736,7 +953,21 @@ static void library_sort_key_event_cb(lv_event_t *e)
 #endif
     ui_refresh_library();
     ui_library_preserve_selection_by_key(target_key);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_populate_rows();
+}
+
+static void library_page_event_cb(lv_event_t *e)
+{
+    lv_obj_t *button = lv_event_get_target(e);
+    int page_delta = (int)(intptr_t)lv_obj_get_user_data(button);
+    int count = ui_library_media_count();
+    int new_idx = ui_library_page_selection_after_delta(count,
+                                                         s_selected_track_idx,
+                                                         page_delta);
+    if (count > 0 && new_idx != s_selected_track_idx) {
+        s_selected_track_idx = new_idx;
+        ui_library_populate_rows();
+    }
 }
 
 static void library_table_event_cb(lv_event_t *e)
@@ -746,16 +977,14 @@ static void library_table_event_cb(lv_event_t *e)
     uint32_t col;
     lv_table_get_selected_cell(table, &row, &col);
 
-    if ((int)row >= 0 && (int)row < ui_library_media_count()) {
-        int new_idx = (int)row;
-        if (new_idx != s_selected_track_idx) {
-            int old_idx = s_selected_track_idx;
-            s_selected_track_idx = new_idx;
-            ui_library_fill_row(old_idx);
-            ui_library_fill_row(new_idx);
-            lv_table_set_selected_cell(table, row, 0);
-            ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
-        }
+    ui_library_page_t page = ui_library_current_page();
+    int new_idx = ui_library_page_absolute_index(&page, (int)row);
+    if (new_idx >= 0 && new_idx < ui_library_media_count() &&
+        new_idx != s_selected_track_idx) {
+        s_selected_track_idx = new_idx;
+        ui_library_select_visible_cell();
+        lv_obj_invalidate(table);
+        ESP_LOGD(TAG, "Library selected track index: %d", s_selected_track_idx);
     }
 }
 
@@ -769,18 +998,26 @@ static void library_table_draw_part_begin_cb(lv_event_t *e)
 
     if (base_dsc->part == LV_PART_ITEMS) {
         uint32_t row = base_dsc->id1;
+        /* This callback runs per draw task, so up to ~120 times per frame while
+         * the Library tab is visible (8 rows x 5 columns x fill/border/label).
+         * Recomputing the page and re-reading the catalog per call is why it must
+         * stay identity-only; ui_library_page_cached() reuses the page computed
+         * once per populate/selection change. */
+        ui_library_page_t page = ui_library_page_cached();
+        int track_index = ui_library_page_absolute_index(&page, (int)row);
 
         uint32_t track_key = 0;
         bool has_track = false;
 
 #ifndef WIN32
-        media_catalog_row_t row_data;
-        if (media_catalog_get_row((int)row, &row_data) == ESP_OK) {
-            track_key = row_data.track_key;
+        if (track_index >= 0 &&
+            media_catalog_row_key(track_index, &track_key) == ESP_OK) {
             has_track = true;
         }
 #else
-        const library_track_t *track = library_get_ptr((int)row);
+        const library_track_t *track = track_index >= 0
+                                       ? library_get_ptr(track_index)
+                                       : NULL;
         if (track) {
             track_key = track->track_id;
             has_track = true;
@@ -899,8 +1136,11 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
 
     // Main scrollable tracks table (height stretched to the bottom of the screen)
     s_library_table = lv_table_create(s_library_screen);
-    lv_obj_set_size(s_library_table, 630, 378);
+    lv_obj_set_size(s_library_table, 630, 330);
     lv_obj_set_pos(s_library_table, 10, 46);
+    lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s_library_table, COL_TABLE_ROW, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_library_table, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_add_event_cb(s_library_table, library_table_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_library_table, library_table_draw_part_begin_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
     lv_obj_add_flag(s_library_table, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -929,6 +1169,50 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
     lv_table_set_column_width(s_library_table, 3, 55);
     lv_table_set_column_width(s_library_table, 4, 65);
     lv_table_set_column_count(s_library_table, 5);
+
+    s_btn_library_page_prev = lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(s_btn_library_page_prev);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(s_btn_library_page_prev, &s_style_btn_disabled,
+                     LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_size(s_btn_library_page_prev, 90, 36);
+    lv_obj_set_pos(s_btn_library_page_prev, 10, 384);
+    lv_obj_set_user_data(s_btn_library_page_prev, (void *)(intptr_t)-1);
+    lv_obj_add_event_cb(s_btn_library_page_prev, library_page_event_cb,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_page_prev, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_t *lbl_page_prev = lv_label_create(s_btn_library_page_prev);
+    lv_label_set_text(lbl_page_prev, "PREV");
+    lv_obj_set_style_text_font(lbl_page_prev, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_page_prev, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_page_prev, LV_ALIGN_CENTER, 0, 0);
+
+    s_label_library_source = lv_label_create(s_library_screen);
+    lv_obj_set_width(s_label_library_source, 430);
+    lv_obj_set_pos(s_label_library_source, 110, 394);
+    lv_obj_set_style_text_align(s_label_library_source, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_label_library_source, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_label_library_source, COL_TEXT_DIM, LV_PART_MAIN);
+
+    s_btn_library_page_next = lv_button_create(s_library_screen);
+    lv_obj_remove_style_all(s_btn_library_page_next);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_btn_secondary, LV_PART_MAIN);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(s_btn_library_page_next, &s_style_btn_disabled,
+                     LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_size(s_btn_library_page_next, 90, 36);
+    lv_obj_set_pos(s_btn_library_page_next, 550, 384);
+    lv_obj_set_user_data(s_btn_library_page_next, (void *)(intptr_t)1);
+    lv_obj_add_event_cb(s_btn_library_page_next, library_page_event_cb,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_remove_flag(s_btn_library_page_next, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_t *lbl_page_next = lv_label_create(s_btn_library_page_next);
+    lv_label_set_text(lbl_page_next, "NEXT");
+    lv_obj_set_style_text_font(lbl_page_next, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl_page_next, COL_TEXT_MUTED, LV_PART_MAIN);
+    lv_obj_align(lbl_page_next, LV_ALIGN_CENTER, 0, 0);
+
     ui_library_populate_rows();
 
     // Active Deck Indicator (130x90, reduced height and width)
@@ -1054,7 +1338,7 @@ lv_obj_t *ui_library_create(lv_obj_t *parent)
 
 void ui_library_load_initial_track(void)
 {
-    mock_library_load_track_to_deck(0);
+    library_set_selected_track_index(0);
 #ifdef WIN32
     library_track_t *track = library_get_ptr(0);
     if (track) {
@@ -1103,12 +1387,18 @@ void ui_library_load_initial_track(void)
 
 void ui_trigger_library_refresh(void)
 {
+    /* Called from the USB storage task. Dropping the cached page is a plain bool
+     * store; the worst outcome of racing the LVGL task is one extra recompute,
+     * and a stale page can only omit a highlight because the row lookup is
+     * bounds-checked on both sides. */
+    ui_library_invalidate_page_cache();
     s_library_needs_refresh = true;
 }
 
 void ui_notify_usb_removed(void)
 {
 #ifndef WIN32
+    ui_library_invalidate_page_cache();
     s_usb_removed_pending = true;
 #endif
 }
@@ -1130,13 +1420,9 @@ void ui_refresh_library(void)
 
     ui_lvgl_lock();
     ui_library_cache_invalidate();
-    lv_table_set_row_count(s_library_table, n);
-
-    for (int i = 0; i < n; i++) {
-        ui_library_fill_row(i);
-    }
-
     s_selected_track_idx = 0;
+    ui_library_populate_rows();
+
 #ifdef WIN32
     const library_track_t *track = library_get_ptr(0);
     if (track) {
@@ -1150,7 +1436,6 @@ void ui_refresh_library(void)
                                     row.bpm);
     }
 #endif
-    ui_library_update_source_label();
     ui_lvgl_unlock();
 
 #ifndef WIN32
@@ -1189,16 +1474,20 @@ esp_err_t ui_library_select_delta(int delta)
     if (new_idx < 0) new_idx = 0;
     if (new_idx >= n) new_idx = n - 1;
     if (new_idx == s_selected_track_idx) {
-        lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+        ui_library_select_visible_cell();
         ui_lvgl_unlock();
         return ESP_OK;
     }
 
-    int old_idx = s_selected_track_idx;
+    ui_library_page_t old_page = ui_library_current_page();
     s_selected_track_idx = new_idx;
-    ui_library_fill_row(old_idx);
-    ui_library_fill_row(new_idx);
-    lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+    ui_library_page_t new_page = ui_library_current_page();
+    if (new_page.page_index != old_page.page_index) {
+        ui_library_populate_rows();
+    } else {
+        ui_library_select_visible_cell();
+        lv_obj_invalidate(s_library_table);
+    }
     ui_lvgl_unlock();
     return ESP_OK;
 }
@@ -1274,7 +1563,7 @@ void ui_library_update(const ui_frame_context_t *ctx)
         uint32_t sel_col = LV_TABLE_CELL_NONE;
         lv_table_get_selected_cell(s_library_table, &sel_row, &sel_col);
         if (sel_row == LV_TABLE_CELL_NONE) {
-            lv_table_set_selected_cell(s_library_table, s_selected_track_idx, 0);
+            ui_library_select_visible_cell();
         }
     }
 
@@ -1377,26 +1666,56 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
 #endif
 }
 
+esp_err_t ui_library_load_track_identity_for_deck(uint32_t track_key,
+                                                   uint32_t generation,
+                                                   uint8_t deck)
+{
+#ifndef WIN32
+    if (track_key == 0u || deck >= DECK_CORE_DECK_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (media_catalog_generation() != generation) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    int resolved_index = media_catalog_find_index_by_key(track_key);
+    if (media_catalog_generation() != generation) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (resolved_index < 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (!ui_library_try_begin_track_load()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ui_lvgl_lock();
+    esp_err_t rc = ui_submit_track_load(resolved_index, track_key, generation, deck);
+    ui_lvgl_unlock();
+    return rc;
+#else
+    (void)generation;
+    int index = library_find_row_by_key(track_key);
+    if (index < 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    return ui_library_load_track_index_for_deck(index, deck);
+#endif
+}
+
 esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
 {
 #ifndef WIN32
     if (index < 0 || index >= media_catalog_count()) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!ui_library_try_begin_track_load()) {
+    const uint32_t generation = media_catalog_generation();
+    media_catalog_track_t item;
+    if (media_catalog_get(index, &item) != ESP_OK ||
+        media_catalog_generation() != generation) {
         return ESP_ERR_INVALID_STATE;
     }
-    /* This entry point is called from the web/httpd task, off the LVGL thread.
-     * ui_submit_track_load()'s error paths touch LVGL objects (status label,
-     * load buttons), so hold the LVGL lock across it — the on-screen load path
-     * already runs it under the same lock. */
-    ui_lvgl_lock();
-    esp_err_t rc = ui_submit_track_load(index, deck);
-    ui_lvgl_unlock();
-    if (rc != ESP_OK) {
-        return rc;
-    }
-    return ESP_OK;
+    return ui_library_load_track_identity_for_deck(item.track_key, generation, deck);
 #else
     if (index < 0 || index >= library_count()) {
         return ESP_ERR_INVALID_ARG;
@@ -1404,7 +1723,7 @@ esp_err_t ui_library_load_track_index_for_deck(int index, uint8_t deck)
     if (!ui_library_try_begin_track_load()) {
         return ESP_ERR_INVALID_STATE;
     }
-    mock_library_load_track_to_deck(index);
+    library_set_selected_track_index(index);
     library_track_t *track = library_get_ptr(index);
     if (track) {
         library_load_anlz(track);

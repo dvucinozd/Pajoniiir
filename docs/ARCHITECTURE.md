@@ -1,7 +1,10 @@
 # Architecture
 
-Status: current architecture, audited 2026-07-16. P4 remains authoritative;
-S3 remains a transport/translation and USB-audio bridge.
+Status: current architecture, audited 2026-07-28. P4 remains authoritative;
+S3 remains a transport/translation and USB-audio bridge. The active development
+head is the `migration/esp-idf-6.0.2` branch, which adds bounded compressed
+audio cache, paginated Library UI and recorder safety hardening without
+changing the P4/S3 ownership split.
 
 ## High-Level Flow
 
@@ -72,6 +75,10 @@ Current P4 audio ownership rule:
 
 - each deck owns its own engine state, preload buffer, decode runtime, PCM ring,
   resampler, lifecycle status, and last-error state;
+- compressed audio (MP3/WAV/FLAC) uses a bounded LRU page cache
+  (`audio_compressed_cache`, 8 × 32 KiB per deck) instead of loading the entire
+  file into contiguous PSRAM. A cache miss performs one gated `read_at` from
+  the source; FLAC uses `drflac_open` with seekable cache callbacks;
 - one shared firmware output service owns codec open/close and consumes both
   deck PCM rings through the output mixer;
 - the LVGL task is pinned to CPU1, while the P4 audio loader, decode, and shared
@@ -134,9 +141,10 @@ Current P4 audio ownership rule:
   hosted Wi-Fi/AP init succeeds and are fully torn down when the switch is off;
 - the shared output service relies on codec/I2S write pacing and does not add a
   second FreeRTOS delay after each output block;
-- MP3 preload uses smaller read chunks while audio output is active, and MP3
-  seek table construction publishes the finished table with a short lock so
-  loader/index work cannot hold the audio engine mutex for the full scan;
+- MP3 preload uses the bounded page cache for random-access reads while audio
+  output is active, and MP3 seek table construction publishes the finished
+  table with a short lock so loader/index work cannot hold the audio engine
+  mutex for the full scan;
 - Master Tempo is deck-local and P4-owned. The Overview `MT` buttons toggle a
   WSOLA-style overlap/correlation time-stretch reader over the canonical PCM
   timeline; scratch remains the higher-priority source, and ordinary resampling

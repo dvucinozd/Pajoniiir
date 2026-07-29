@@ -32,6 +32,8 @@ static const char *TAG = "deck";
 #define DECK_UI_COMMAND_QUEUE_LEN 16
 #define DECK_UI_COMMANDS_PER_FRAME 8u
 #define DECK_CORE_TEST_UI_COMMAND_QUEUE_LEN 32u
+#define DECK_CORE_INTERNAL_RESET_ID 0xFEu
+#define DECK_CORE_RESET_TIMEOUT_MS 2000u
 #define BEAT_FX_ECHO_FALLBACK_BPM 120.0f
 #define BEAT_FX_ECHO_MIN_BPM 40.0f
 #define BEAT_FX_ECHO_MAX_BPM 300.0f
@@ -55,6 +57,12 @@ static QueueHandle_t    s_queue;
 static QueueHandle_t    s_ui_command_queue;
 static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
+static deck_state_t     s_published_decks[DECK_CORE_DECK_COUNT];
+static deck_core_beat_fx_state_t s_published_beat_fx;
+static uint32_t         s_published_heartbeat_tick;
+static uint32_t         s_snapshot_seq;
+static bool             s_snapshot_writer;
+static SemaphoreHandle_t s_reset_done_sem;
 static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
@@ -148,6 +156,7 @@ typedef struct {
 } deck_loop_shadow_t;
 
 static deck_loop_shadow_t s_loop_shadow[DECK_CORE_DECK_COUNT];
+static deck_loop_shadow_t s_published_loop_shadow[DECK_CORE_DECK_COUNT];
 
 typedef struct {
     bool active;
@@ -157,6 +166,51 @@ typedef struct {
 } deck_shifted_loop_roll_t;
 
 static deck_shifted_loop_roll_t s_shifted_loop_roll[DECK_CORE_DECK_COUNT];
+
+static void publish_state_snapshot(void)
+{
+    while (__atomic_exchange_n(&s_snapshot_writer, true, __ATOMIC_ACQ_REL)) {
+        taskYIELD();
+    }
+    (void)__atomic_add_fetch(&s_snapshot_seq, 1u, __ATOMIC_RELEASE); /* odd */
+    memcpy(s_published_decks, s_decks, sizeof(s_published_decks));
+    memcpy(s_published_loop_shadow, s_loop_shadow, sizeof(s_published_loop_shadow));
+    s_published_beat_fx = s_beat_fx;
+    s_published_heartbeat_tick = (uint32_t)s_last_heartbeat_tick;
+    (void)__atomic_add_fetch(&s_snapshot_seq, 1u, __ATOMIC_RELEASE); /* even */
+    __atomic_store_n(&s_snapshot_writer, false, __ATOMIC_RELEASE);
+}
+
+static void copy_state_snapshot(uint8_t deck,
+                                deck_state_t *out_deck,
+                                deck_loop_shadow_t *out_loop,
+                                deck_core_beat_fx_state_t *out_fx,
+                                uint32_t *out_heartbeat)
+{
+    /* Retry until a copy is bracketed by the same even sequence number.
+     *
+     * Written as an unconditional loop with an explicit exit rather than a
+     * do-while: with `continue` in a do-while the odd-sequence path jumps
+     * straight to the condition, which then reads `after` before anything has
+     * assigned it. That is an indeterminate value, and if it happened to come
+     * out even and equal to `before` the function returned having copied
+     * nothing - handing the caller a zeroed deck state that reads as "no track,
+     * not playing" while the deck is mid-set. */
+    for (;;) {
+        const uint32_t before = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
+        if (before & 1u) {
+            continue;   /* writer mid-update; re-read the sequence */
+        }
+        if (out_deck) *out_deck = s_published_decks[deck];
+        if (out_loop) *out_loop = s_published_loop_shadow[deck];
+        if (out_fx) *out_fx = s_published_beat_fx;
+        if (out_heartbeat) *out_heartbeat = s_published_heartbeat_tick;
+        const uint32_t after = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
+        if (after == before) {
+            return;     /* no write began or ended while we copied */
+        }
+    }
+}
 
 typedef struct {
     bool active;
@@ -1175,6 +1229,32 @@ static button_id_t button_for_event(const ctrl_event_t *ev)
 
 // ─── LED sync ─────────────────────────────────────────────────────────────────
 
+static bool deck_has_loaded_track(uint8_t deck);
+
+/* Every deck LED leaves through here. Beat-Jump pad LEDs are a pure function of
+ * the deck's current pad mode, shift state and whether a track is loaded, so the
+ * value is recomputed at the point of send rather than trusted from whatever the
+ * caller happened to pass — several callers derive it from cached state that can
+ * lag a mode change or a track unload.
+ *
+ * This used to be a #define over control_link_send_led_deck applied to the whole
+ * translation unit from a wrapper file, which meant reading any call site here
+ * gave the wrong answer about what was actually sent. */
+static void deck_send_led(led_id_t led, uint8_t state, uint8_t deck)
+{
+    if (deck < DECK_CORE_DECK_COUNT) {
+        const bool beat_jump_mode = s_decks[deck].pad_mode == CTRL_PAD_MODE_BEAT_JUMP;
+        const bool loaded = deck_has_loaded_track(deck);
+        if (led >= LED_BEAT_JUMP_PAD_1 && led <= LED_BEAT_JUMP_PAD_8) {
+            state = beat_jump_mode && loaded ? 1u : 0u;
+        } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
+                   led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+        }
+    }
+    control_link_send_led_deck(led, state, deck);
+}
+
 static void sync_legacy_compat_leds(uint8_t deck)
 {
     if (deck != DECK_CORE_COMPAT_DECK) return;
@@ -1193,14 +1273,14 @@ static esp_err_t send_snapshot_led(led_id_t led, uint8_t state, uint8_t deck, vo
     if (s_snapshot_suppress_inactive_pads && performance_pad && state == 0u) {
         return ESP_OK;
     }
-    control_link_send_led_deck(led, state, deck);
+    deck_send_led(led, state, deck);
     return ESP_OK;
 }
 
 static void send_momentary_led(led_id_t led, uint8_t deck)
 {
-    control_link_send_led_deck(led, 1u, deck);
-    control_link_send_led_deck(led, 0u, deck);
+    deck_send_led(led, 1u, deck);
+    deck_send_led(led, 0u, deck);
 }
 
 static led_id_t track_load_led_for_deck(uint8_t deck)
@@ -1232,7 +1312,7 @@ static void publish_track_load_leds(bool force)
         if (force ||
             !s_track_load_led_valid[deck] ||
             s_track_load_led_state[deck] != value) {
-            control_link_send_led_deck(track_load_led_for_deck(deck), value, deck);
+            deck_send_led(track_load_led_for_deck(deck), value, deck);
             s_track_load_led_state[deck] = value;
             s_track_load_led_valid[deck] = true;
         }
@@ -1254,7 +1334,7 @@ static void publish_beat_jump_pad_leds_for_deck(uint8_t deck, bool force)
                 s_beat_jump_pad_led_valid[deck][pad] = true;
                 continue;
             }
-            control_link_send_led_deck(beat_jump_pad_led_for_pad(pad), value, deck);
+            deck_send_led(beat_jump_pad_led_for_pad(pad), value, deck);
             s_beat_jump_pad_led_state[deck][pad] = value;
             s_beat_jump_pad_led_valid[deck][pad] = true;
         }
@@ -1284,7 +1364,7 @@ static void publish_beat_jump_shift_helper_leds_for_deck(uint8_t deck, bool forc
                 s_beat_jump_shift_helper_led_valid[deck][pad] = true;
                 continue;
             }
-            control_link_send_led_deck(beat_jump_shift_helper_led_for_pad(pad), value, deck);
+            deck_send_led(beat_jump_shift_helper_led_for_pad(pad), value, deck);
             s_beat_jump_shift_helper_led_state[deck][pad] = value;
             s_beat_jump_shift_helper_led_valid[deck][pad] = true;
         }
@@ -1336,6 +1416,30 @@ static void publish_flx4_led_snapshot(bool force)
      * sequential OFF notes, which the FLX4 renders as a visible sweep. The
      * controller starts with inactive pads off; returning success here still
      * primes the publisher's diff cache without putting those bursts on USB. */
+    /* State-driven LED values come from actor-owned live data, not from the
+     * published seqlock snapshot the UI and web readers consume: this runs
+     * inside the deck actor, where s_decks and the audio engine are current and
+     * the snapshot may not be yet.
+     *
+     * Publish the snapshot before handing the input to the publisher, because
+     * publish_track_load_leds() and the Beat-Jump cache helpers below run after
+     * this returns and must compute from the same values that were actually
+     * sent — including across a track unload. */
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        deck_state_t state = s_decks[deck];
+        if (deck_uses_audio_engine(deck)) {
+            state.playing = audio_engine_deck_is_playing(deck);
+            state.position_ms = audio_engine_deck_position_ms(deck);
+        }
+        input.cue[deck] = state.position_ms == state.cue_point_ms ? 1u : 0u;
+        input.play[deck] = state.playing ? 1u : 0u;
+        input.sync[deck] = state.sync_enabled ? 1u : 0u;
+        input.pad_mode[deck] = state.pad_mode;
+        input.censor_active[deck] = state.censor_active ? 1u : 0u;
+        input.loop_in_marker[deck] = s_loop_shadow[deck].pending_in ? 1u : 0u;
+    }
+    publish_state_snapshot();
+
     s_snapshot_suppress_inactive_pads = force;
     esp_err_t rc = flx4_led_publisher_publish(&s_flx4_led_publisher,
                                               &input,
@@ -1514,7 +1618,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_smart_cfx();
-        control_link_send_led_deck(LED_SMART_CFX,
+        deck_send_led(LED_SMART_CFX,
                                    audio_engine_get_smart_cfx_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1523,7 +1627,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_smart_fader();
-        control_link_send_led_deck(LED_SMART_FADER,
+        deck_send_led(LED_SMART_FADER,
                                    audio_engine_get_smart_fader_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1535,7 +1639,7 @@ static bool on_system_button(const ctrl_event_t *ev)
             return true;
         }
         audio_engine_toggle_master_cue();
-        control_link_send_led_deck(LED_MASTER_CUE,
+        deck_send_led(LED_MASTER_CUE,
                                    audio_engine_get_master_cue_enabled() ? 1u : 0u,
                                    CTRL_DECK_1);
         return true;
@@ -1608,7 +1712,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             s_beat_fx.enabled = !s_beat_fx.enabled;
             sync_beat_fx_audio_state();
-            control_link_send_led_deck(LED_BEAT_FX_ON,
+            deck_send_led(LED_BEAT_FX_ON,
                                        s_beat_fx.enabled ? 1u : 0u,
                                        CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx -> %s", s_beat_fx.enabled ? "ON" : "OFF");
@@ -1618,7 +1722,7 @@ static bool on_system_button(const ctrl_event_t *ev)
         if (ev->value != 0) {
             init_beat_fx_state();
             sync_beat_fx_audio_state();
-            control_link_send_led_deck(LED_BEAT_FX_ON, 0u, CTRL_DECK_1);
+            deck_send_led(LED_BEAT_FX_ON, 0u, CTRL_DECK_1);
             ESP_LOGI(TAG, "beat fx reset");
         }
         return true;
@@ -1853,7 +1957,7 @@ static void vu_task(void *arg)
                 level = 0u;                       /* snap to 0 when stopped */
                 s_vu_display_level[deck] = 0u;
             }
-            control_link_send_led_deck(LED_VU_METER, level, deck);
+            deck_send_led(LED_VU_METER, level, deck);
         }
     }
 }
@@ -2499,7 +2603,26 @@ static void deck_task(void *arg)
 {
     ctrl_event_t ev;
     while (1) {
+        publish_state_snapshot();
         if (xQueueReceive(s_queue, &ev, portMAX_DELAY) != pdTRUE) continue;
+
+        if (ev.type == CTRL_EV_STATE && ev.id == DECK_CORE_INTERNAL_RESET_ID) {
+            const uint8_t idx = normalize_deck(ev.deck);
+            init_deck_state(&s_decks[idx]);
+            s_jog_touched[idx] = false;
+            s_jog_hold_active[idx] = false;
+            s_jog_scratch_active[idx] = false;
+            if (s_sync_master_deck == idx) s_sync_master_deck = CTRL_DECK_NONE;
+            memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
+            memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
+            memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
+            memset(&s_beat_loop_led[idx], 0, sizeof(s_beat_loop_led[idx]));
+            memset(&s_censor_shadow[idx], 0, sizeof(s_censor_shadow[idx]));
+            hot_cue_mask_cache_invalidate(idx);
+            publish_state_snapshot();
+            if (s_reset_done_sem) xSemaphoreGive(s_reset_done_sem);
+            continue;
+        }
 
         if (event_uses_ui_without_deck_state(&ev)) {
             if (ev.type == CTRL_EV_BROWSE) {
@@ -2579,7 +2702,9 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
     flx4_led_publisher_init(&s_flx4_led_publisher);
 
     s_mutex = xSemaphoreCreateMutex();
-    if (!s_mutex) return ESP_ERR_NO_MEM;
+    s_reset_done_sem = xSemaphoreCreateBinary();
+    if (!s_mutex || !s_reset_done_sem) return ESP_ERR_NO_MEM;
+    publish_state_snapshot();
 
     s_queue = xQueueCreate(CTRL_QUEUE_LEN, sizeof(ctrl_event_t));
     if (!s_queue) {
@@ -2717,7 +2842,7 @@ static void publish_loaded_track_hot_cue_leds(uint8_t deck)
          * and still clear cues that belonged to the previous track. */
         if ((!s_loaded_hot_cue_mask_valid[deck] && value != 0u) ||
             (s_loaded_hot_cue_mask_valid[deck] && value != previous)) {
-            control_link_send_led_deck((led_id_t)(LED_HOT_CUE_PAD_1 + pad), value, deck);
+            deck_send_led((led_id_t)(LED_HOT_CUE_PAD_1 + pad), value, deck);
         }
     }
     s_loaded_hot_cue_mask[deck] =
@@ -2727,45 +2852,31 @@ static void publish_loaded_track_hot_cue_leds(uint8_t deck)
 
 deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
-    uint8_t idx = normalize_deck(deck);
-    bool uses_audio = deck_uses_audio_engine(idx);
-    bool audio_playing = false;
-    uint32_t audio_position_ms = 0;
-    if (uses_audio) {
-        audio_playing = audio_engine_deck_is_playing(idx);
-        audio_position_ms = audio_engine_deck_position_ms(idx);
-    }
+    const uint8_t idx = normalize_deck(deck);
+    deck_state_t snap = {0};
+    uint32_t heartbeat_tick = 0u;
+    copy_state_snapshot(idx, &snap, NULL, NULL, &heartbeat_tick);
 
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    deck_state_t *state = &s_decks[idx];
-    if (uses_audio) {
-        state->playing = audio_playing;
-        state->position_ms = audio_position_ms;
+    if (deck_uses_audio_engine(idx)) {
+        snap.playing = audio_engine_deck_is_playing(idx);
+        snap.position_ms = audio_engine_deck_position_ms(idx);
     }
-    TickType_t now = xTaskGetTickCount();
-    if (s_last_heartbeat_tick != 0) {
-        uint32_t age_ms = (uint32_t)((now - s_last_heartbeat_tick) * portTICK_PERIOD_MS);
-        state->last_heartbeat_age_ms = age_ms;
-        state->control_link_connected = age_ms <= 10000u;
+    const TickType_t now = xTaskGetTickCount();
+    if (heartbeat_tick != 0u) {
+        const uint32_t age_ms = (uint32_t)((now - (TickType_t)heartbeat_tick) * portTICK_PERIOD_MS);
+        snap.last_heartbeat_age_ms = age_ms;
+        snap.control_link_connected = age_ms <= 10000u;
     } else {
-        state->last_heartbeat_age_ms = UINT32_MAX;
-        state->control_link_connected = false;
+        snap.last_heartbeat_age_ms = UINT32_MAX;
+        snap.control_link_connected = false;
     }
-
-    deck_state_t snap = *state;
-    xSemaphoreGive(s_mutex);
     return snap;
 }
 
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 {
-    if (s_mutex) {
-        xSemaphoreTake(s_mutex, portMAX_DELAY);
-    }
-    deck_core_beat_fx_state_t snap = s_beat_fx;
-    if (s_mutex) {
-        xSemaphoreGive(s_mutex);
-    }
+    deck_core_beat_fx_state_t snap = {0};
+    copy_state_snapshot(0u, NULL, NULL, &snap, NULL);
     return snap;
 }
 
@@ -2777,25 +2888,20 @@ void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
 {
     deck_core_loop_display_t out = {0};
-    if (deck >= DECK_CORE_DECK_COUNT) {
-        return out;
-    }
-    if (s_mutex) {
-        xSemaphoreTake(s_mutex, portMAX_DELAY);
-    }
+    if (deck >= DECK_CORE_DECK_COUNT) return out;
+
+    deck_loop_shadow_t shadow = {0};
+    copy_state_snapshot(deck, NULL, &shadow, NULL, NULL);
     bool active = false;
-    uint32_t start_ms = 0;
-    uint32_t end_ms = 0;
+    uint32_t start_ms = 0u;
+    uint32_t end_ms = 0u;
     if (read_active_loop(deck, &active, &start_ms, &end_ms) && active && end_ms > start_ms) {
         out.active = true;
         out.start_ms = start_ms;
         out.end_ms = end_ms;
-    } else if (s_loop_shadow[deck].pending_in) {
+    } else if (shadow.pending_in) {
         out.armed = true;
-        out.start_ms = s_loop_shadow[deck].pending_start_ms;
-    }
-    if (s_mutex) {
-        xSemaphoreGive(s_mutex);
+        out.start_ms = shadow.pending_start_ms;
     }
     return out;
 }
@@ -2807,23 +2913,35 @@ void deck_core_reset(void)
 
 void deck_core_reset_deck(uint8_t deck)
 {
-    xSemaphoreTake(s_mutex, portMAX_DELAY);
-    uint8_t idx = normalize_deck(deck);
+#if defined(DECK_CORE_PC_TEST)
+    const uint8_t idx = normalize_deck(deck);
     init_deck_state(&s_decks[idx]);
     s_jog_touched[idx] = false;
     s_jog_hold_active[idx] = false;
     s_jog_scratch_active[idx] = false;
-    if (s_sync_master_deck == idx) {
-        s_sync_master_deck = CTRL_DECK_NONE;
-    }
+    if (s_sync_master_deck == idx) s_sync_master_deck = CTRL_DECK_NONE;
     memset(&s_loop_shadow[idx], 0, sizeof(s_loop_shadow[idx]));
     memset(&s_shifted_loop_roll[idx], 0, sizeof(s_shifted_loop_roll[idx]));
     memset(&s_pad_fx_led[idx], 0, sizeof(s_pad_fx_led[idx]));
     memset(&s_beat_loop_led[idx], 0, sizeof(s_beat_loop_led[idx]));
     memset(&s_censor_shadow[idx], 0, sizeof(s_censor_shadow[idx]));
     hot_cue_mask_cache_invalidate(idx);
-    xSemaphoreGive(s_mutex);
-    ESP_LOGI(TAG, "deck %u core reset", (unsigned)idx + 1);
+    publish_state_snapshot();
+#else
+    if (!s_queue || !s_reset_done_sem) return;
+    while (xSemaphoreTake(s_reset_done_sem, 0) == pdTRUE) {}
+    ctrl_event_t ev = {
+        .type = CTRL_EV_STATE,
+        .id = DECK_CORE_INTERNAL_RESET_ID,
+        .deck = normalize_deck(deck),
+    };
+    if (xQueueSend(s_queue, &ev, portMAX_DELAY) != pdTRUE ||
+        xSemaphoreTake(s_reset_done_sem, pdMS_TO_TICKS(DECK_CORE_RESET_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "deck %u actor reset timed out", (unsigned)ev.deck + 1u);
+        return;
+    }
+    ESP_LOGI(TAG, "deck %u core reset", (unsigned)ev.deck + 1u);
+#endif
 }
 
 #if defined(DECK_CORE_PC_TEST)

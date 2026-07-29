@@ -1,3 +1,7 @@
+#if defined(CONTROLLER_PROFILE_MANAGER_PC_TEST) && !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "controller_profile_manager.h"
 
 #include <dirent.h>
@@ -526,12 +530,18 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 
 #include "control_link.h"
 #include "service_log.h"
+#include "sd_io_gate.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+
+/* Defined near the bottom of this firmware-only section but called by the
+ * descriptor worker above it. Declared here rather than through a compilation
+ * wrapper that #included this translation unit purely to inject this one line. */
+static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid);
 
 #ifndef CONFIG_CONTROLLER_PROFILE_SD_PATH
 #define CONFIG_CONTROLLER_PROFILE_SD_PATH "/sd/controllers"
@@ -554,7 +564,16 @@ static int s_log_idx = -2;
 /* Profile-transfer sender: runs off the control-link RX task so the multi-KB
  * stream to the S3 never blocks event/descriptor handling. */
 static QueueHandle_t s_send_q;
+static QueueHandle_t s_descriptor_q;
 static SemaphoreHandle_t s_reply_sem;
+static volatile bool s_storage_busy;
+
+typedef struct {
+    uint16_t vid;
+    uint16_t pid;
+    uint16_t caps;
+    char product[CPM_PRODUCT_MAX + 1];
+} cpm_descriptor_report_t;
 static volatile bool s_reply_ack;
 static volatile uint8_t s_reply_ref;
 static volatile uint8_t s_reply_reason;
@@ -603,36 +622,33 @@ static bool cpm_wait_reply(uint8_t expect_ref)
 
 static bool cpm_stream_profile(const controller_profile_meta_t *m)
 {
-    if (!cpm_lock()) {
+    if (!m || !m->valid || m->size == 0u || m->size > CPM_MAX_PROFILE_SIZE) {
         return false;
     }
-    FILE *f = fopen(m->path, "rb");
-    if (!f) {
-        ESP_LOGW(TAG, "cannot open %s", m->path);
-        cpm_unlock();
-        return false;
-    }
+
     uint8_t *buf = malloc(m->size);
-    if (!buf) {
+    if (!buf) return false;
+
+    /* Bounded SD read under the global SD owner. Never hold the manager mutex:
+     * the UART RX descriptor callback must remain able to enqueue heartbeats. */
+    sd_io_gate_begin();
+    FILE *f = fopen(m->path, "rb");
+    size_t got = 0u;
+    if (f) {
+        got = fread(buf, 1, m->size, f);
         fclose(f);
-        cpm_unlock();
-        return false;
     }
-    size_t got = fread(buf, 1, m->size, f);
-    fclose(f);
-    cpm_unlock();
+    sd_io_gate_end();
     if (got != m->size) {
+        ESP_LOGW(TAG, "cannot read complete profile %s", m->path);
         free(buf);
         return false;
     }
 
     uint32_t crc = cp_xfer_crc32(buf, m->size);
     bool ok = false;
-
     for (int attempt = 1; attempt <= CPM_SEND_ATTEMPTS && !ok; attempt++) {
-        while (xSemaphoreTake(s_reply_sem, 0) == pdTRUE) {
-            /* drain stale replies before starting a fresh transfer */
-        }
+        while (xSemaphoreTake(s_reply_sem, 0) == pdTRUE) {}
         if (control_link_send_profile_begin((uint32_t)m->size, crc,
                                             m->vid, m->pid) != ESP_OK ||
             !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_BEGIN)) {
@@ -641,29 +657,20 @@ static bool cpm_stream_profile(const controller_profile_meta_t *m)
         bool chunks_ok = true;
         for (uint32_t off = 0; off < m->size; off += CTRL_PROFILE_CHUNK_MAX) {
             size_t n = m->size - off;
-            if (n > CTRL_PROFILE_CHUNK_MAX) {
-                n = CTRL_PROFILE_CHUNK_MAX;
-            }
+            if (n > CTRL_PROFILE_CHUNK_MAX) n = CTRL_PROFILE_CHUNK_MAX;
             if (control_link_send_profile_chunk(off, buf + off, n) != ESP_OK) {
                 chunks_ok = false;
                 break;
             }
             vTaskDelay(pdMS_TO_TICKS(CPM_CHUNK_PACE_MS));
         }
-        if (!chunks_ok) {
-            continue;
-        }
+        if (!chunks_ok) continue;
         if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_END) != ESP_OK ||
-            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_END)) {
-            continue;
-        }
+            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_END)) continue;
         if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_ACTIVATE) != ESP_OK ||
-            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_ACTIVATE)) {
-            continue;
-        }
+            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_ACTIVATE)) continue;
         ok = true;
     }
-
     free(buf);
     return ok;
 }
@@ -721,6 +728,50 @@ static void cpm_sender_task(void *arg)
     }
 }
 
+static int cpm_process_descriptor_report(uint16_t vid, uint16_t pid,
+                                         uint16_t caps, const char *product)
+{
+    if (!cpm_lock()) return -1;
+    s_registry.connected_caps = caps;
+    memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
+    if (product) {
+        snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
+                 "%.*s", CPM_PRODUCT_MAX, product);
+    }
+    int idx = cpm_on_descriptor_locked(vid, pid);
+    char product_copy[CPM_PRODUCT_MAX + 1];
+    snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
+    cpm_unlock();
+
+    if (vid != s_log_vid || pid != s_log_pid || caps != s_log_caps || idx != s_log_idx) {
+        service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
+                          3u, vid, pid, caps, 0u, product_copy);
+        if (idx < 0) {
+            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
+                              2u, vid, pid, 0u, 0u, "unsupported");
+        }
+        s_log_vid = vid;
+        s_log_pid = pid;
+        s_log_caps = caps;
+        s_log_idx = idx;
+    }
+    return idx;
+}
+
+static void cpm_descriptor_task(void *arg)
+{
+    (void)arg;
+    cpm_descriptor_report_t report;
+    for (;;) {
+        if (xQueueReceive(s_descriptor_q, &report, portMAX_DELAY) != pdTRUE) continue;
+        while (__atomic_load_n(&s_storage_busy, __ATOMIC_ACQUIRE)) {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+        (void)cpm_process_descriptor_report(report.vid, report.pid,
+                                            report.caps, report.product);
+    }
+}
+
 esp_err_t controller_profile_manager_init(void)
 {
     if (!s_manager_mutex) {
@@ -746,10 +797,13 @@ esp_err_t controller_profile_manager_init(void)
     if (!s_reply_sem) {
         s_reply_sem = xSemaphoreCreateBinary();
         s_send_q = xQueueCreate(2, sizeof(int));
-        if (!s_reply_sem || !s_send_q) {
+        s_descriptor_q = xQueueCreate(8, sizeof(cpm_descriptor_report_t));
+        if (!s_reply_sem || !s_send_q || !s_descriptor_q) {
             return ESP_ERR_NO_MEM;
         }
         if (xTaskCreate(cpm_sender_task, "cpm_send", CPM_SENDER_STACK, NULL, 4,
+                        NULL) != pdPASS ||
+            xTaskCreate(cpm_descriptor_task, "cpm_desc", 3072, NULL, 5,
                         NULL) != pdPASS) {
             return ESP_ERR_NO_MEM;
         }
@@ -761,55 +815,36 @@ esp_err_t controller_profile_manager_init(void)
 esp_err_t controller_profile_manager_scan_storage(void)
 {
     controller_profile_registry_t *scanned = calloc(1, sizeof(*scanned));
-    if (!scanned) {
-        return ESP_ERR_NO_MEM;
-    }
-    if (!cpm_lock()) {
-        free(scanned);
-        return ESP_FAIL;
-    }
-    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
-        cpm_unlock();
-        free(scanned);
-        return ESP_ERR_INVALID_STATE;
-    }
-    esp_err_t rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH,
-                                               scanned);
-    if (rc == ESP_ERR_NOT_FOUND) {
-        cpm_unlock();
-        free(scanned);
-        ESP_LOGW(TAG, "no %s directory (SD missing or no profiles)",
-                 CONFIG_CONTROLLER_PROFILE_SD_PATH);
-        return rc;
-    }
-    if (rc != ESP_OK) {
-        cpm_unlock();
-        free(scanned);
-        return rc;
-    }
+    if (!scanned) return ESP_ERR_NO_MEM;
 
-    controller_profile_registry_apply_rescan(&s_registry, scanned);
-    *scanned = s_registry;
-    s_transferred_valid = false;
+    if (!cpm_lock()) { free(scanned); return ESP_FAIL; }
+    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING || s_storage_busy) {
+        cpm_unlock(); free(scanned); return ESP_ERR_INVALID_STATE;
+    }
+    __atomic_store_n(&s_storage_busy, true, __ATOMIC_RELEASE);
     cpm_unlock();
 
-    ESP_LOGI(TAG, "%u controller profile(s) in %s",
-             (unsigned)scanned->count, CONFIG_CONTROLLER_PROFILE_SD_PATH);
-    for (uint8_t i = 0; i < scanned->count; i++) {
-        const controller_profile_meta_t *m = &scanned->profiles[i];
-        if (m->valid) {
-            ESP_LOGI(TAG,
-                     "  [%u] %s VID=0x%04X PID=0x%04X inputs=%u outputs=%u (%u B)",
-                     (unsigned)i, m->id, m->vid, m->pid,
-                     (unsigned)m->input_count, (unsigned)m->output_count,
-                     (unsigned)m->size);
-        } else {
-            ESP_LOGW(TAG, "  [%u] %s INVALID (bad header/CRC) at %s",
-                     (unsigned)i, m->id, m->path);
-        }
+    sd_io_gate_begin();
+    esp_err_t rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH, scanned);
+    sd_io_gate_end();
+
+    if (rc == ESP_OK && cpm_lock()) {
+        controller_profile_registry_apply_rescan(&s_registry, scanned);
+        *scanned = s_registry;
+        s_transferred_valid = false;
+        cpm_unlock();
+    }
+    __atomic_store_n(&s_storage_busy, false, __ATOMIC_RELEASE);
+
+    if (rc == ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "no %s directory (SD missing or no profiles)",
+                 CONFIG_CONTROLLER_PROFILE_SD_PATH);
+    } else if (rc == ESP_OK) {
+        ESP_LOGI(TAG, "%u controller profile(s) in %s",
+                 (unsigned)scanned->count, CONFIG_CONTROLLER_PROFILE_SD_PATH);
     }
     free(scanned);
-    return ESP_OK;
+    return rc;
 }
 
 esp_err_t controller_profile_manager_install_profile(
@@ -817,58 +852,59 @@ esp_err_t controller_profile_manager_install_profile(
     controller_profile_meta_t *out_meta)
 {
     controller_profile_registry_t *scanned = calloc(1, sizeof(*scanned));
-    if (!scanned) {
-        return ESP_ERR_NO_MEM;
-    }
-    if (!cpm_lock()) {
-        free(scanned);
-        return ESP_FAIL;
-    }
+    if (!scanned) return ESP_ERR_NO_MEM;
+
+    if (!cpm_lock()) { free(scanned); return ESP_FAIL; }
     if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING ||
-        (s_send_q && uxQueueMessagesWaiting(s_send_q) > 0)) {
-        cpm_unlock();
-        free(scanned);
-        return ESP_ERR_INVALID_STATE;
+        (s_send_q && uxQueueMessagesWaiting(s_send_q) > 0) || s_storage_busy) {
+        cpm_unlock(); free(scanned); return ESP_ERR_INVALID_STATE;
     }
-
-    controller_profile_meta_t installed;
-    esp_err_t rc = controller_profile_storage_install(
-        CONFIG_CONTROLLER_PROFILE_SD_PATH, id, data, len, overwrite,
-        &installed);
-    if (rc != ESP_OK) {
-        cpm_unlock();
-        free(scanned);
-        return rc;
-    }
-
-    rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH,
-                                     scanned);
-    if (rc != ESP_OK) {
-        cpm_unlock();
-        free(scanned);
-        return rc;
-    }
-    controller_profile_registry_apply_rescan(&s_registry, scanned);
-    bool reactivate = s_registry.controller_present;
-    uint16_t vid = s_registry.connected_vid;
-    uint16_t pid = s_registry.connected_pid;
-    uint16_t caps = s_registry.connected_caps;
-    char product[CPM_PRODUCT_MAX + 1];
-    memcpy(product, s_registry.connected_product, sizeof(product));
-    s_transferred_valid = false;
-    if (out_meta) {
-        *out_meta = installed;
-    }
+    __atomic_store_n(&s_storage_busy, true, __ATOMIC_RELEASE);
     cpm_unlock();
+
+    controller_profile_meta_t installed = {0};
+    sd_io_gate_begin();
+    /* Admission can change while waiting for the gate. Never install beside an
+     * active recording session; retry after recording stops. */
+    esp_err_t rc = sd_io_gate_recorder_active()
+                       ? ESP_ERR_INVALID_STATE
+                       : controller_profile_storage_install(
+                             CONFIG_CONTROLLER_PROFILE_SD_PATH, id, data, len,
+                             overwrite, &installed);
+    if (rc == ESP_OK) {
+        rc = controller_profile_scan_dir(CONFIG_CONTROLLER_PROFILE_SD_PATH, scanned);
+    }
+    sd_io_gate_end();
+
+    bool reactivate = false;
+    uint16_t vid = 0, pid = 0, caps = 0;
+    char product[CPM_PRODUCT_MAX + 1] = {0};
+    if (rc == ESP_OK && cpm_lock()) {
+        controller_profile_registry_apply_rescan(&s_registry, scanned);
+        reactivate = s_registry.controller_present;
+        vid = s_registry.connected_vid;
+        pid = s_registry.connected_pid;
+        caps = s_registry.connected_caps;
+        memcpy(product, s_registry.connected_product, sizeof(product));
+        s_transferred_valid = false;
+        if (out_meta) *out_meta = installed;
+        cpm_unlock();
+    }
+    __atomic_store_n(&s_storage_busy, false, __ATOMIC_RELEASE);
     free(scanned);
 
-    ESP_LOGI(TAG, "profile '%s' installed (%u B), registry rescanned", id,
-             (unsigned)installed.size);
-    if (reactivate) {
-        (void)controller_profile_manager_on_descriptor_report(
-            vid, pid, caps, product);
+    if (rc == ESP_OK) {
+        ESP_LOGI(TAG, "profile '%s' installed (%u B), registry rescanned",
+                 id, (unsigned)installed.size);
+        if (reactivate) {
+            cpm_descriptor_report_t report = {
+                .vid = vid, .pid = pid, .caps = caps,
+            };
+            snprintf(report.product, sizeof(report.product), "%s", product);
+            (void)xQueueSend(s_descriptor_q, &report, 0);
+        }
     }
-    return ESP_OK;
+    return rc;
 }
 
 esp_err_t controller_profile_manager_get_registry_snapshot(
@@ -924,55 +960,29 @@ static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid)
 
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
 {
-    if (!cpm_lock()) {
-        return -1;
-    }
-    int idx = cpm_on_descriptor_locked(vid, pid);
-    cpm_unlock();
-    return idx;
+    return controller_profile_manager_on_descriptor_report(vid, pid, 0u, NULL);
 }
 
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
-                                                    uint16_t caps,
-                                                    const char *product)
+                                                     uint16_t caps,
+                                                     const char *product)
 {
-    if (!cpm_lock()) {
-        return -1;
-    }
-    s_registry.connected_caps = caps;
-    memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
+    if (!s_descriptor_q) return -1;
+    cpm_descriptor_report_t report = {
+        .vid = vid, .pid = pid, .caps = caps,
+    };
     if (product) {
-        snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
-                 "%.*s", CPM_PRODUCT_MAX, product);
+        snprintf(report.product, sizeof(report.product), "%.*s",
+                 CPM_PRODUCT_MAX, product);
     }
-    ESP_LOGI(TAG, "connected controller '%s' caps=0x%04X",
-             s_registry.connected_product, caps);
-    int idx = cpm_on_descriptor_locked(vid, pid);
-    char product_copy[CPM_PRODUCT_MAX + 1];
-    snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
-    cpm_unlock();
-
-    /* The S3 re-announces the descriptor on every heartbeat, so only log the
-     * edges — otherwise the journal fills with identical entries. */
-    if (vid != s_log_vid || pid != s_log_pid || caps != s_log_caps ||
-        idx != s_log_idx) {
-        service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
-                          3u, vid, pid, caps, 0u, product_copy);
-        /* A successful match is already implied by the CONTROLLER_CONNECTED
-         * record immediately above and named by the PROFILE_TRANSFER_DONE that
-         * follows, so recording it again only costs a microSD write on a card
-         * the recorder is also writing to. Log the failure, which nothing else
-         * reports. */
-        if (idx < 0) {
-            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
-                              2u, vid, pid, 0u, 0u, "unsupported");
-        }
-        s_log_vid = vid;
-        s_log_pid = pid;
-        s_log_caps = caps;
-        s_log_idx = idx;
+    /* UART RX never waits for SD or the manager mutex. If all slots are busy,
+     * replace the oldest heartbeat with the newest descriptor state. */
+    if (xQueueSend(s_descriptor_q, &report, 0) != pdTRUE) {
+        cpm_descriptor_report_t stale;
+        (void)xQueueReceive(s_descriptor_q, &stale, 0);
+        if (xQueueSend(s_descriptor_q, &report, 0) != pdTRUE) return -1;
     }
-    return idx;
+    return 0;
 }
 
 bool controller_profile_manager_on_disconnect(void)

@@ -3,6 +3,7 @@
 #include "web_server.h"
 #include "service_log.h"
 #include "app_settings.h"
+#include "wifi_transition_lease.h"
 #include "esp_heap_caps.h"
 
 #include "esp_check.h"
@@ -431,6 +432,11 @@ static void wifi_link_probe_task(void *arg)
     }
 
     s_probe_running = false;
+    /* Released here, at the one point where the AP has been restored and this
+     * task is about to exit — not from a vTaskDelete hook applied to the whole
+     * translation unit, which also caught every unrelated task exit in this
+     * file and had to guess from s_probe_running whether it meant this one. */
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE);
     vTaskDelete(NULL);
 }
 
@@ -443,6 +449,16 @@ esp_err_t wifi_link_probe_start(void)
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     if (ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
 
+    /* Reserve the cross-component Wi-Fi transition before anything touches the
+     * stack: the probe and pull OTA both take the radio AP->STA->AP, and running
+     * them concurrently would tear the netif out from under each other. */
+    esp_err_t lease_rc = wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE);
+    if (lease_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
+                 (int)wifi_transition_lease_owner());
+        return ESP_ERR_INVALID_STATE;
+    }
+
     s_probe_running = true;
     probe_note(WIFI_LINK_PROBE_RUNNING, ESP_OK, "starting");
     s_probe.address[0] = '\0';
@@ -450,6 +466,7 @@ esp_err_t wifi_link_probe_start(void)
      * netif and association work on it. */
     if (xTaskCreate(wifi_link_probe_task, "wifi_probe", 5120, NULL, 4, NULL) != pdPASS) {
         s_probe_running = false;
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE);
         probe_note(WIFI_LINK_PROBE_FAILED, ESP_ERR_NO_MEM, "could not start task");
         return ESP_ERR_NO_MEM;
     }

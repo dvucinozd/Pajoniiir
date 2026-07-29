@@ -1,6 +1,6 @@
 # Startup Checklist
 
-Status: reconciled 2026-07-26. Checked items below are historical bring-up
+Status: reconciled 2026-07-28. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. The latest
 clean release build is newer than the installed firmware.
 
@@ -12,6 +12,7 @@ clean release build is newer than the installed firmware.
   OTA/controller/startup hardening and has not yet been signed, packaged or
   installed. Exact raw-image sizes and SHA-256 values are recorded in
   `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
+- [x] ESP-IDF v6.0.2 Migration: Svi softverski buildovi i host testovi za P4 i S3 u potpunosti prolaze pod ESP-IDF v6.0.2 na dan 2026-07-28 (grana `migration/esp-idf-6.0.2`). Integrirani su bounded compressed audio cache (8 × 32 KiB LRU po decku), paginirana Library tablica (8 redaka s PREV/NEXT), immutable track sort, recorder safety hardening i stabilizacijski popravci iz `fix/release-blockers-and-concurrency`.
 - [x] Last known matching bench baseline: P4 and S3 both
   `RC1-254-g21f21963` as of 2026-07-24.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
@@ -49,7 +50,12 @@ clean release build is newer than the installed firmware.
 - [ ] Verify shared ground and that independent 5 V sources are not back-fed.
 - [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
 - [x] Run both host suites and both firmware builds from fresh build directories —
-  passed 2026-07-26 with ESP-IDF v5.5.4; repeat for the final enclosure candidate.
+  passed 2026-07-26 with ESP-IDF v5.5.4; `migration/esp-idf-6.0.2` passed
+  2026-07-28 with ESP-IDF v6.0.2 including bounded cache, paginated Library
+  and recorder hardening. Repeat for the final enclosure candidate.
+- [ ] Hardware-validate bounded compressed cache under dual-deck load with real
+  MP3/WAV/FLAC files.
+- [ ] Hardware-validate paginated Library table on the P4 touch display.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
@@ -71,14 +77,12 @@ clean release build is newer than the installed firmware.
 
 ## Local Tooling
 
-- [x] Confirm ESP-IDF v5.5 is installed.
-- [x] Confirm `Initialize-Idf.ps1` works in PowerShell.
+- [x] Confirm ESP-IDF v6.0.2 is installed (migrated from v5.5.4).
+- [x] Confirm v6.0.2 PowerShell profile init script works in PowerShell.
 - [x] Confirm `idf.py --version`.
-- [x] Confirm MinGW/GCC is available for PC tests.
-- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions when `make`
-  is not present in PATH.
-- [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions when `make`
-  is not present in PATH.
+- [x] Confirm MinGW/GCC is available for PC tests (msys64 ucrt64).
+- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions (adapted for PowerShell 5.1 compatibility).
+- [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions (runs on both Windows PowerShell 5.1 and PowerShell 7).
 
 ## Baseline Builds
 

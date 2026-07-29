@@ -1,11 +1,14 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, reconciled 2026-07-26. The latest clean
-dual-target release build is `RC1-259-gdaf4639`; the last known bench state has
-both boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end to
-end. The clean candidate has not been signed, packaged or deployed, so source
-remains newer than installed hardware. The latest fully functionally accepted
-complete-system baseline remains `RC1-123-g587cd7a1`. Targeted Phase 20/E1A,
+Status: current product overview, reconciled 2026-07-28. The latest clean
+ESP-IDF 5.5.4 release build is `RC1-259-gdaf4639`; the last known bench state
+has both boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end
+to end. The active development head is the `migration/esp-idf-6.0.2` branch,
+which migrates to ESP-IDF v6.0.2 and integrates bounded compressed audio cache,
+paginated Library UI, immutable track sort, recorder safety hardening and the
+full `fix/release-blockers-and-concurrency` stabilisation set. The latest fully
+functionally accepted complete-system baseline remains `RC1-123-g587cd7a1`.
+Targeted Phase 20/E1A, ESP-IDF 6.0.2 hardware acceptance,
 remote-profile-update, enclosure-endurance and production-hardening rows remain
 open. The inherited baseline below is historical context; `Current Port Status`
 describes the active system.
@@ -71,11 +74,14 @@ The fork is no longer only the imported single-deck baseline:
   UI operations through deck-aware APIs.
 - P4 audio has per-deck engine/ring/resampler/preload/runtime/task context
   storage, a shared output mixer, channel fader/crossfader gain handling,
-  deck-local three-band EQ, and Deck 2 producer support. Stereo Master and Split Mono cue/PFL routing are
-  implemented for the current output path.
-- P4 LVGL UI is dual-deck: Overview, Library load paths, performance target
-  selection, Settings, status/header, and waveform rendering are split into
-  smaller UI modules.
+  deck-local three-band EQ, and Deck 2 producer support. Compressed audio uses
+  a bounded LRU page cache (8 × 32 KiB per deck) instead of loading the entire
+  file into contiguous PSRAM; this eliminates `TRACK TOO LARGE` errors and
+  PSRAM fragmentation under large files. Stereo Master and Split Mono cue/PFL
+  routing are implemented for the current output path.
+- P4 LVGL UI is dual-deck: Overview, Library load paths (paginated 8-row
+  table with PREV/NEXT navigation), performance target selection, Settings,
+  status/header, and waveform rendering are split into smaller UI modules.
 - Both deck Overview waveforms use the direct PPA overlay path (the 2026-06-13
   Deck 2 jitter that once forced an LVGL path is resolved). The waveform renders
   with the "Punchy" colour scheme (bright cyan transients, white transient tips),
@@ -214,6 +220,14 @@ The fork is no longer only the imported single-deck baseline:
 - Master Tempo/key lock is implemented in the P4 audio callback and exposed by
   the Overview `MT` control. Basic pitch/key behavior passed hardware smoke;
   longer simultaneous-deck quality and CPU tuning remains an optimization item.
+- Library sorting operates on immutable track records with a compact
+  double-buffered `uint16_t` row-order array. Full-record copies and qsort
+  over large structs are eliminated.
+- The master-output recorder is shelved and compiled out by default, but its
+  safety was hardened: STOP closes the producer gate and waits for in-flight
+  producers before drain; finalise uses a transactional
+  `patch` → `sync` → `close` → `publish` pipeline that propagates every
+  durability failure and refuses to rename a partial `.part` file.
 - OTA is hardware-accepted for both processors. P4 and S3 use alternating OTA
   slots, validate target/chip/project, confirm health after mandatory startup,
   preserve the active image on interrupted upload and roll back an unconfirmed

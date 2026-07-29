@@ -253,8 +253,8 @@ typedef struct {
     audio_decoder_t decoder;
     bool decoder_open;
 
-    /* Direct memory-mapped buffer for firmware (bypasses fmemopen bugs) */
-    const uint8_t *file_buf;
+    /* Seekable compressed source size/cursor. Firmware reads through the
+     * bounded page cache; PC builds use FILE/audio_decoder backends. */
     size_t         file_size;
     size_t         file_pos;
 
@@ -323,10 +323,6 @@ typedef struct {
     volatile uint32_t loop_start_ms;
     volatile uint32_t loop_end_ms;
     volatile bool     loop_active;
-
-    /* Instant Frame-Index Seek */
-    uint32_t *seek_table;
-    uint32_t  seek_table_len;
 } audio_engine_state_t;
 
 static audio_engine_state_t  s_engines[AUDIO_ENGINE_DECK_COUNT];
@@ -1022,7 +1018,31 @@ static audio_fw_task_context_t s_fw_task_contexts[AUDIO_ENGINE_DECK_COUNT];
 static audio_resampler_state_t s_resamplers[AUDIO_ENGINE_DECK_COUNT];
 static audio_keylock_t s_keylocks[AUDIO_ENGINE_DECK_COUNT];
 static bool s_master_tempo_enabled[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_master_tempo_command_epoch[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t         s_master_tempo_applied_epoch[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_keylock_generation[AUDIO_ENGINE_DECK_COUNT];
+
+/* Defined here, immediately after the DSP storage it mutates. It used to sit
+ * several hundred lines earlier, which is why the build routed audio_engine.c
+ * through a wrapper that re-declared these arrays as incomplete-type tentative
+ * definitions — a C11 6.9.2p3 constraint violation that only GCC accepts. The
+ * function has exactly one caller, in the output task, so moving it down here
+ * removes the need for the wrapper entirely. */
+static void audio_output_apply_master_tempo_commands(void)
+{
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        const uint32_t epoch = __atomic_load_n(
+            &s_master_tempo_command_epoch[deck], __ATOMIC_ACQUIRE);
+        if (epoch == s_master_tempo_applied_epoch[deck]) {
+            continue;
+        }
+        /* Output task is the sole owner of keylock/resampler DSP mutation. The
+         * command takes effect exactly at an audio-block boundary. */
+        s_keylocks[deck].initialized = false;
+        audio_resampler_reset(&s_resamplers[deck]);
+        s_master_tempo_applied_epoch[deck] = epoch;
+    }
+}
 
 static audio_resampler_state_t *resampler_for_deck(uint8_t deck)
 {
@@ -1195,12 +1215,12 @@ static bool any_deck_loaded(void)
 
 #endif
 
+#if AE_FW
 static uint16_t ae_wav_rd_u16le(const uint8_t *p)
 {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-#if AE_FW
 static uint32_t ae_wav_rd_u32le(const uint8_t *p)
 {
     return (uint32_t)p[0] |
@@ -1209,12 +1229,23 @@ static uint32_t ae_wav_rd_u32le(const uint8_t *p)
            ((uint32_t)p[3] << 24);
 }
 
-static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
+static bool ae_fw_read_exact(audio_fw_preload_t *fw,
+                             size_t offset,
+                             void *dst,
+                             size_t bytes)
 {
-    if (!eng || !eng->file_buf || eng->file_size < 12u) {
+    return fw && audio_fw_preload_read_at(fw, offset, dst, bytes) == bytes;
+}
+
+static esp_err_t ae_wav_init_from_cache(audio_engine_state_t *eng,
+                                        audio_fw_preload_t *fw)
+{
+    uint8_t header[12];
+    if (!eng || !fw || eng->file_size < sizeof(header) ||
+        !ae_fw_read_exact(fw, 0u, header, sizeof(header))) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (audio_format_detect_header(eng->file_buf, eng->file_size) != AUDIO_FORMAT_WAV) {
+    if (audio_format_detect_header(header, sizeof(header)) != AUDIO_FORMAT_WAV) {
         return ESP_ERR_NOT_SUPPORTED;
     }
 
@@ -1230,7 +1261,8 @@ static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
     size_t pos = 12u;
 
     while (pos + 8u <= eng->file_size && !have_data) {
-        const uint8_t *chunk = eng->file_buf + pos;
+        uint8_t chunk[8];
+        if (!ae_fw_read_exact(fw, pos, chunk, sizeof(chunk))) return ESP_FAIL;
         uint32_t chunk_size = ae_wav_rd_u32le(chunk + 4);
         size_t payload = pos + 8u;
         size_t padded_size = (size_t)chunk_size + (size_t)(chunk_size & 1u);
@@ -1239,10 +1271,11 @@ static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
         }
 
         if (memcmp(chunk, "fmt ", 4) == 0) {
-            if (chunk_size < 16u) {
+            uint8_t fmt[16];
+            if (chunk_size < sizeof(fmt) ||
+                !ae_fw_read_exact(fw, payload, fmt, sizeof(fmt))) {
                 return ESP_FAIL;
             }
-            const uint8_t *fmt = eng->file_buf + payload;
             audio_format = ae_wav_rd_u16le(fmt + 0);
             channels = ae_wav_rd_u16le(fmt + 2);
             sample_rate = ae_wav_rd_u32le(fmt + 4);
@@ -1254,18 +1287,14 @@ static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
             data_size = chunk_size;
             have_data = true;
         }
-
         pos = payload + padded_size;
     }
 
-    if (!have_fmt || !have_data || audio_format != 1u) {
-        return ESP_ERR_NOT_SUPPORTED;
-    }
+    if (!have_fmt || !have_data || audio_format != 1u) return ESP_ERR_NOT_SUPPORTED;
     if ((channels != 1u && channels != 2u) || bits_per_sample != 16u) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    if (sample_rate == 0u ||
-        block_align == 0u ||
+    if (sample_rate == 0u || block_align == 0u ||
         block_align != (uint16_t)(channels * sizeof(int16_t))) {
         return ESP_FAIL;
     }
@@ -1286,9 +1315,8 @@ static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
         eng->duration_ms = (uint32_t)((eng->wav_total_frames * 1000ull) /
                                       (uint64_t)sample_rate);
     }
-    ESP_LOGI(TAG, "WAV: %u Hz, %u ch, %u frames",
-             (unsigned)sample_rate,
-             (unsigned)channels,
+    ESP_LOGI(TAG, "WAV cache: %u Hz, %u ch, %u frames",
+             (unsigned)sample_rate, (unsigned)channels,
              (unsigned)eng->wav_total_frames);
     return ESP_OK;
 }
@@ -1296,25 +1324,112 @@ static esp_err_t ae_wav_init_from_memory(audio_engine_state_t *eng)
 
 static void ae_wav_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    if (!eng || !eng->wav_ready || eng->sample_rate == 0u || eng->wav_block_align == 0u) {
-        return;
-    }
+    if (!eng || !eng->wav_ready || eng->sample_rate == 0u || eng->wav_block_align == 0u) return;
     uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
-    if (frame > eng->wav_total_frames) {
-        frame = eng->wav_total_frames;
-    }
+    if (frame > eng->wav_total_frames) frame = eng->wav_total_frames;
     eng->wav_current_frame = frame;
     eng->wav_data_pos = eng->wav_data_offset + (size_t)(frame * eng->wav_block_align);
     eng->file_pos = eng->wav_data_pos;
     atomic_store_bool(&eng->eof, frame >= eng->wav_total_frames);
 }
 
+#if AE_FW
+/* ── Read faults are not end of input ────────────────────────────────────── *
+ *
+ * A zero-byte read from the bounded cache while the position is still short of
+ * the end of the file is a media fault, not EOF: the backend returns 0 when
+ * media_io_gate has been closed (a USB unmount window) or the seek failed. The
+ * cache layer already retires the affected slot precisely so the next attempt
+ * repeats the transfer, but that only helps if a second attempt happens.
+ *
+ * Treating the first such read as EOF made the deck stop mid-track and never
+ * recover: `eof` is sticky, so every later call returns immediately. Retry a
+ * bounded number of times, then give up and record why, so the deck shows an
+ * error instead of silently behaving like a track that simply ended.
+ */
+#define AE_READ_FAULT_RETRIES 8u
+
+static uint32_t s_read_fault_streak[AUDIO_ENGINE_DECK_COUNT];
+
+/* Returns true when the caller should give up on this track. */
+static bool ae_note_read_fault(audio_engine_state_t *eng, uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return true;
+    if (++s_read_fault_streak[deck] < AE_READ_FAULT_RETRIES) {
+        return false;   /* transient: produce no samples and come back */
+    }
+    ESP_LOGE(TAG, "D%u media read failed %u times; stopping playback",
+             (unsigned)deck + 1u, (unsigned)s_read_fault_streak[deck]);
+    eng->last_error = ESP_ERR_INVALID_STATE;
+    snprintf(eng->last_error_text, sizeof(eng->last_error_text), "MEDIA READ ERR");
+    atomic_store_bool(&eng->eof, true);
+    return true;
+}
+
+static void ae_clear_read_faults(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) s_read_fault_streak[deck] = 0u;
+}
+
+/* Where the next decode read will start. Each backend tracks its own cursor:
+ * WAV reads at `wav_data_pos`, FLAC drives the cache through the stream cursor
+ * dr_flac maintains, and MP3 reads at `file_pos`. */
+static size_t ae_next_read_offset(const audio_engine_state_t *eng,
+                                  const audio_fw_preload_t *fw)
+{
+    if (eng->wav_ready)  return eng->wav_data_pos;
+    if (eng->flac_ready) return fw->stream_pos;
+    return eng->file_pos;
+}
+
+/* Largest single read any decoder issues: WAV asks for
+ * MINIMP3_MAX_SAMPLES_PER_FRAME * block_align (4608 B at 16-bit stereo) and
+ * minimp3 refills 4096 B. Rounded up so the span below covers both. */
+#define AE_MAX_DECODE_READ_BYTES 8192u
+
+/* AE_LOCK is a single global recursive mutex, and ae_output_task takes it for
+ * every audio block. A cache miss taken while holding it therefore blocks the
+ * priority-6 output task for the whole USB transfer, which is an audible
+ * dropout rather than merely a late decode. Fetch the pages the next decode
+ * will touch *before* the lock: the cache has exactly one client (this decode
+ * task), so warming it outside the lock races with nobody.
+ *
+ * Both ends of the read span are warmed. A read is up to 8 KiB against 32 KiB
+ * pages, so it usually sits inside one page, but a read that starts near a page
+ * boundary straddles two - warming only the first would leave the second to be
+ * fetched under the lock, which is the exact stall this avoids.
+ * tests/audio_compressed_cache covers that case. */
+static void ae_warm_cache_for_next_read(const audio_engine_state_t *eng,
+                                        audio_fw_preload_t *fw)
+{
+    if (!fw) return;
+    const size_t start = ae_next_read_offset(eng, fw);
+    (void)audio_compressed_cache_prefetch(&fw->cache, start);
+    (void)audio_compressed_cache_prefetch(&fw->cache,
+                                          start + AE_MAX_DECODE_READ_BYTES - 1u);
+}
+
+/* Warming is a prediction, so it can miss: a seek retargets the cursor, and the
+ * FLAC cursor moves inside decode_one_frame. Count the reads that still land
+ * under the lock instead of assuming there are none - a rising count is the
+ * signal that the prediction no longer matches how the decoder reads. */
+static uint32_t s_locked_backend_reads[AUDIO_ENGINE_DECK_COUNT];
+
+uint32_t audio_engine_locked_backend_read_count(uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return 0u;
+    return s_locked_backend_reads[deck];
+}
+#endif /* AE_FW */
+
 static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
+#if AE_FW
+                                   audio_fw_preload_t *fw,
+                                   uint8_t deck,
+#endif
                                    int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
-    if (!eng || !eng->wav_ready || atomic_load_bool(&eng->eof) || eng->wav_block_align == 0u) {
-        return 0;
-    }
+    if (!eng || !eng->wav_ready || atomic_load_bool(&eng->eof) || eng->wav_block_align == 0u) return 0;
     if (eng->wav_current_frame >= eng->wav_total_frames) {
         atomic_store_bool(&eng->eof, true);
         return 0;
@@ -1322,8 +1437,7 @@ static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
 
     uint64_t frames_left64 = eng->wav_total_frames - eng->wav_current_frame;
     size_t frames = frames_left64 > (uint64_t)MINIMP3_MAX_SAMPLES_PER_FRAME
-                        ? (size_t)MINIMP3_MAX_SAMPLES_PER_FRAME
-                        : (size_t)frames_left64;
+        ? (size_t)MINIMP3_MAX_SAMPLES_PER_FRAME : (size_t)frames_left64;
     size_t data_end = eng->wav_data_offset + eng->wav_data_size;
     if (eng->wav_data_pos >= data_end) {
         atomic_store_bool(&eng->eof, true);
@@ -1331,43 +1445,46 @@ static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
     }
     size_t bytes_left = data_end - eng->wav_data_pos;
     size_t frames_available = bytes_left / eng->wav_block_align;
-    if (frames > frames_available) {
-        frames = frames_available;
-    }
+    if (frames > frames_available) frames = frames_available;
     if (frames == 0u) {
         atomic_store_bool(&eng->eof, true);
         return 0;
     }
 
-    for (size_t i = 0; i < frames; i++) {
-        const uint8_t *p = eng->file_buf + eng->wav_data_pos + i * eng->wav_block_align;
+#if AE_FW
+    uint8_t raw[MINIMP3_MAX_SAMPLES_PER_FRAME * 4u];
+    size_t raw_bytes = frames * eng->wav_block_align;
+    if (!ae_fw_read_exact(fw, eng->wav_data_pos, raw, raw_bytes)) {
+        /* Still inside the data chunk (checked above), so this is a fault. */
+        (void)ae_note_read_fault(eng, deck);
+        return 0;
+    }
+    ae_clear_read_faults(deck);
+    for (size_t i = 0; i < frames; ++i) {
+        const uint8_t *sample = raw + i * eng->wav_block_align;
         if (eng->channels == 1) {
-            int16_t s = (int16_t)ae_wav_rd_u16le(p);
-            out_pcm[i * 2u + 0u] = s;
-            out_pcm[i * 2u + 1u] = s;
+            int16_t value = (int16_t)ae_wav_rd_u16le(sample);
+            out_pcm[i * 2u] = value;
+            out_pcm[i * 2u + 1u] = value;
         } else {
-            out_pcm[i * 2u + 0u] = (int16_t)ae_wav_rd_u16le(p + 0);
-            out_pcm[i * 2u + 1u] = (int16_t)ae_wav_rd_u16le(p + 2);
+            out_pcm[i * 2u] = (int16_t)ae_wav_rd_u16le(sample);
+            out_pcm[i * 2u + 1u] = (int16_t)ae_wav_rd_u16le(sample + 2u);
         }
     }
+#else
+    (void)out_pcm;
+    return 0;
+#endif
 
     eng->wav_current_frame += frames;
     eng->wav_data_pos += frames * eng->wav_block_align;
     eng->file_pos = eng->wav_data_pos;
-    if (eng->wav_current_frame >= eng->wav_total_frames) {
-        atomic_store_bool(&eng->eof, true);
-    }
+    if (eng->wav_current_frame >= eng->wav_total_frames) atomic_store_bool(&eng->eof, true);
     return (int)frames;
 }
 
 #if AE_FW
-/* ── Firmware FLAC decode over the PSRAM preload buffer (dr_flac) ──────────── *
- *
- * Unlike MP3/WAV the FLAC decoder needs the whole file resident (dr_flac reads
- * STREAMINFO and seeks within the stream), so ae_flac_init_from_memory is
- * called only after the loader signals load_done; it decodes directly from the
- * in-PSRAM buffer with drflac_open_memory (never touches USB during playback).
- */
+/* Firmware FLAC uses dr_flac callbacks over the same bounded cache as MP3/WAV. */
 static void *ae_flac_psram_malloc(size_t sz, void *ud)
 {
     (void)ud;
@@ -1386,29 +1503,61 @@ static void ae_flac_psram_free(void *p, void *ud)
     heap_caps_free(p);
 }
 
-static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
+static size_t ae_flac_cache_read(void *user, void *out, size_t bytes)
 {
-    if (!eng || !eng->file_buf || eng->file_size == 0u) {
-        return ESP_ERR_INVALID_ARG;
-    }
+    return audio_fw_preload_stream_read((audio_fw_preload_t *)user, out, bytes);
+}
 
+static drflac_bool32 ae_flac_cache_seek(void *user, int offset,
+                                        drflac_seek_origin origin)
+{
+    int std_origin;
+    if (origin == DRFLAC_SEEK_SET) {
+        std_origin = SEEK_SET;
+    } else if (origin == DRFLAC_SEEK_CUR) {
+        std_origin = SEEK_CUR;
+    } else if (origin == DRFLAC_SEEK_END) {
+        std_origin = SEEK_END;
+    } else {
+        return DRFLAC_FALSE;
+    }
+    return audio_fw_preload_stream_seek((audio_fw_preload_t *)user,
+                                        (int64_t)offset, std_origin)
+        ? DRFLAC_TRUE : DRFLAC_FALSE;
+}
+
+static drflac_bool32 ae_flac_cache_tell(void *user, drflac_int64 *cursor)
+{
+    if (!user || !cursor) return DRFLAC_FALSE;
+    *cursor = (drflac_int64)audio_fw_preload_stream_tell(
+        (const audio_fw_preload_t *)user);
+    return DRFLAC_TRUE;
+}
+
+static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
+                                         audio_fw_preload_t *fw)
+{
+    if (!eng || !fw || eng->file_size == 0u) return ESP_ERR_INVALID_ARG;
+    fw->stream_pos = 0u;
     drflac_allocation_callbacks cb = {
         .pUserData = NULL,
         .onMalloc = ae_flac_psram_malloc,
         .onRealloc = ae_flac_psram_realloc,
         .onFree = ae_flac_psram_free,
     };
-    drflac *flac = drflac_open_memory(eng->file_buf, eng->file_size, &cb);
+    drflac *flac = drflac_open(ae_flac_cache_read,
+                               ae_flac_cache_seek,
+                               ae_flac_cache_tell,
+                               fw,
+                               &cb);
     if (!flac) {
-        ESP_LOGE(TAG, "drflac_open_memory failed (size=%u)", (unsigned)eng->file_size);
+        ESP_LOGE(TAG, "drflac_open cache failed (size=%u)", (unsigned)eng->file_size);
         return ESP_ERR_NOT_SUPPORTED;
     }
     if (flac->channels != 1u && flac->channels != 2u) {
-        ESP_LOGE(TAG, "FLAC unsupported channel count: %u", (unsigned)flac->channels);
         drflac_close(flac);
         return ESP_ERR_NOT_SUPPORTED;
     }
-
     eng->flac = flac;
     eng->flac_ready = true;
     eng->format = AUDIO_FORMAT_FLAC;
@@ -1419,9 +1568,8 @@ static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
                                       (uint64_t)flac->sampleRate);
     }
     atomic_store_bool(&eng->eof, flac->totalPCMFrameCount == 0u);
-    ESP_LOGI(TAG, "FLAC: %u Hz, %u ch, %u bps, %llu frames",
-             (unsigned)flac->sampleRate,
-             (unsigned)flac->channels,
+    ESP_LOGI(TAG, "FLAC cache: %u Hz, %u ch, %u bps, %llu frames",
+             (unsigned)flac->sampleRate, (unsigned)flac->channels,
              (unsigned)flac->bitsPerSample,
              (unsigned long long)flac->totalPCMFrameCount);
     return ESP_OK;
@@ -1429,14 +1577,10 @@ static esp_err_t ae_flac_init_from_memory(audio_engine_state_t *eng)
 
 static void ae_flac_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    if (!eng || !eng->flac_ready || !eng->flac || eng->sample_rate == 0u) {
-        return;
-    }
+    if (!eng || !eng->flac_ready || !eng->flac || eng->sample_rate == 0u) return;
     drflac *flac = (drflac *)eng->flac;
     uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
-    if (frame > flac->totalPCMFrameCount) {
-        frame = flac->totalPCMFrameCount;
-    }
+    if (frame > flac->totalPCMFrameCount) frame = flac->totalPCMFrameCount;
     (void)drflac_seek_to_pcm_frame(flac, (drflac_uint64)frame);
     atomic_store_bool(&eng->eof, frame >= flac->totalPCMFrameCount);
 }
@@ -1444,30 +1588,22 @@ static void ae_flac_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
 static int ae_flac_decode_one_frame(audio_engine_state_t *eng,
                                     int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
-    if (!eng || !eng->flac_ready || !eng->flac || atomic_load_bool(&eng->eof)) {
-        return 0;
-    }
+    if (!eng || !eng->flac_ready || !eng->flac || atomic_load_bool(&eng->eof)) return 0;
     drflac *flac = (drflac *)eng->flac;
     const uint8_t channels = (uint8_t)eng->channels;
-
-    /* dr_flac interleaves native channels; decode into a scratch and pack to
-     * stereo. MINIMP3_MAX_SAMPLES_PER_FRAME frames per call keeps the ring fed
-     * at the same cadence as the MP3/WAV paths. */
     int16_t scratch[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
-    drflac_uint64 got = drflac_read_pcm_frames_s16(flac,
-                                                   MINIMP3_MAX_SAMPLES_PER_FRAME,
-                                                   scratch);
+    drflac_uint64 got = drflac_read_pcm_frames_s16(
+        flac, MINIMP3_MAX_SAMPLES_PER_FRAME, scratch);
     if (got == 0u) {
         atomic_store_bool(&eng->eof, true);
         return 0;
     }
     for (size_t i = 0; i < (size_t)got; ++i) {
         if (channels == 1u) {
-            int16_t s = scratch[i];
-            out_pcm[i * 2u + 0u] = s;
-            out_pcm[i * 2u + 1u] = s;
+            out_pcm[i * 2u] = scratch[i];
+            out_pcm[i * 2u + 1u] = scratch[i];
         } else {
-            out_pcm[i * 2u + 0u] = scratch[i * channels + 0u];
+            out_pcm[i * 2u] = scratch[i * channels];
             out_pcm[i * 2u + 1u] = scratch[i * channels + 1u];
         }
     }
@@ -1493,12 +1629,13 @@ static int decode_one_frame(
     audio_engine_state_t *eng,
 #if AE_FW
     audio_fw_preload_t *fw,
+    uint8_t deck,
 #endif
     int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
     if (eng->decoder_open) {
         if (atomic_load_bool(&eng->eof)) return 0;
-        size_t frames_read = 0;
+        size_t frames_read = 0u;
         esp_err_t rc = audio_decoder_read_pcm_s16(&eng->decoder,
                                                   out_pcm,
                                                   MINIMP3_MAX_SAMPLES_PER_FRAME,
@@ -1515,313 +1652,115 @@ static int decode_one_frame(
     }
 
     if (eng->format == AUDIO_FORMAT_WAV) {
-        return ae_wav_decode_one_frame(eng, out_pcm);
+        return ae_wav_decode_one_frame(eng,
+#if AE_FW
+                                       fw,
+                                       deck,
+#endif
+                                       out_pcm);
     }
 #if AE_FW
     if (eng->format == AUDIO_FORMAT_FLAC) {
         return ae_flac_decode_one_frame(eng, out_pcm);
     }
-#endif
 
-    if (eng->file_buf) {
-        size_t available = eng->file_size;
-#if AE_FW
-        if (!fw) return 0;
-        if (!fw->load_done && fw->loaded_bytes < available) {
-            available = fw->loaded_bytes;
-        }
-#endif
+    if (!fw || !fw->load_done || atomic_load_bool(&eng->eof) ||
+        eng->file_pos >= eng->file_size) {
+        if (eng->file_pos >= eng->file_size) atomic_store_bool(&eng->eof, true);
+        return 0;
+    }
 
-        if (atomic_load_bool(&eng->eof) || eng->file_pos >= eng->file_size) {
-            atomic_store_bool(&eng->eof, true);
-            return 0;
-        }
-        if (eng->file_pos >= available) {
-#if AE_FW
-            if (!fw->load_done) {
-                return 0;   /* loader has not reached this byte yet */
-            }
-#endif
-            atomic_store_bool(&eng->eof, true);
-            return 0;
-        }
+    uint8_t input[4096];
+    size_t bytes_left = eng->file_size - eng->file_pos;
+    size_t wanted = bytes_left < sizeof(input) ? bytes_left : sizeof(input);
+    size_t got = audio_fw_preload_read_at(fw, eng->file_pos, input, wanted);
+    if (got == 0u) {
+        /* file_pos < file_size was established above, so nothing was read from a
+         * position that still has bytes: a fault, not the end of the track. */
+        (void)ae_note_read_fault(eng, deck);
+        return 0;
+    }
+    ae_clear_read_faults(deck);
 
-        size_t bytes_left = available - eng->file_pos;
-        if (bytes_left == 0) {
-#if AE_FW
-            if (!fw->load_done) {
-                return 0;
-            }
-#endif
-            atomic_store_bool(&eng->eof, true);
-            return 0;
-        }
-#if AE_FW
-        if (!fw->load_done && bytes_left < 4096) {
-            return 0;   /* avoid skipping bytes from a partially loaded frame */
-        }
-#endif
-
-        mp3dec_frame_info_t info;
-        int samples = mp3dec_decode_frame(&eng->dec, eng->file_buf + eng->file_pos, (int)bytes_left, s_scratch_pcm, &info);
-
-        if (info.frame_bytes > 0) {
-            eng->file_pos += (size_t)info.frame_bytes;
-        } else {
-#if AE_FW
-            if (!fw->load_done) {
-                return 0;
-            }
-#endif
-            eng->file_pos += 1;
-            return 0;
-        }
-
-        if (samples == 0) return 0; /* header-only frame */
-
-        /* Latch sample rate and channels from first real audio frame */
-        if (eng->sample_rate == 0 && info.hz > 0) {
-            eng->sample_rate = (uint32_t)info.hz;
-            eng->channels    = info.channels;
-            ESP_LOGI(TAG, "MP3: %d Hz, %d ch, %d kbps", info.hz, info.channels, info.bitrate_kbps);
-        }
-
-        /* Copy to out_pcm, upmixing mono → stereo */
-        if (info.channels == 1) {
-            for (int i = samples - 1; i >= 0; i--) {
-                out_pcm[i * 2 + 1] = s_scratch_pcm[i];
-                out_pcm[i * 2    ] = s_scratch_pcm[i];
-            }
-        } else {
-            memcpy(out_pcm, s_scratch_pcm, (size_t)(samples * 2) * sizeof(int16_t));
-        }
-
-        return samples;
+    mp3dec_frame_info_t info;
+    int samples = mp3dec_decode_frame(&eng->dec, input, (int)got,
+                                      s_scratch_pcm, &info);
+    if (info.frame_bytes > 0) {
+        eng->file_pos += (size_t)info.frame_bytes;
     } else {
-        if (!eng->fp || atomic_load_bool(&eng->eof)) return 0;
-
-        /* Read a window large enough to contain at least one MP3 frame.
-         * Max CBR frame at 320 kbps ≈ 1441 bytes; 4096 is always sufficient. */
-        uint8_t buf[4096];
-        long    pos_before = ftell(eng->fp);
-        size_t  bytes_read = fread(buf, 1u, sizeof buf, eng->fp);
-        if (bytes_read == 0) { atomic_store_bool(&eng->eof, true); return 0; }
-
-        mp3dec_frame_info_t info;
-        int samples = mp3dec_decode_frame(&eng->dec, buf, (int)bytes_read, s_scratch_pcm, &info);
-
-        /* Reposition file to just after the consumed frame (or +1 if no sync) */
-        if (info.frame_bytes > 0) {
-            fseek(eng->fp, pos_before + (long)info.frame_bytes, SEEK_SET);
-        } else {
-            /* No MP3 sync found — advance 1 byte to search further */
-            fseek(eng->fp, pos_before + 1L, SEEK_SET);
-            return 0;
-        }
-
-        if (samples == 0) return 0; /* header-only frame (Xing/VBRi/LAME) */
-
-        /* Latch sample rate and channels from first real audio frame */
-        if (eng->sample_rate == 0 && info.hz > 0) {
-            eng->sample_rate = (uint32_t)info.hz;
-            eng->channels    = info.channels;
-            ESP_LOGI(TAG, "MP3: %d Hz, %d ch, %d kbps", info.hz, info.channels, info.bitrate_kbps);
-        }
-
-        /* Copy to out_pcm, upmixing mono → stereo */
-        if (info.channels == 1) {
-            /* Expand in-place from end to avoid overwriting unread source samples */
-            for (int i = samples - 1; i >= 0; i--) {
-                out_pcm[i * 2 + 1] = s_scratch_pcm[i];
-                out_pcm[i * 2    ] = s_scratch_pcm[i];
-            }
-        } else {
-            memcpy(out_pcm, s_scratch_pcm, (size_t)(samples * 2) * sizeof(int16_t));
-        }
-
-        return samples; /* samples per channel */
+        eng->file_pos += 1u;
+        return 0;
     }
+    if (samples == 0) return 0;
+
+    if (eng->sample_rate == 0u && info.hz > 0) {
+        eng->sample_rate = (uint32_t)info.hz;
+        eng->channels = info.channels;
+        ESP_LOGI(TAG, "MP3 cache D%u: %d Hz, %d ch, %d kbps",
+                 (unsigned)deck + 1u, info.hz, info.channels,
+                 info.bitrate_kbps);
+    }
+#else
+    if (!eng->fp || atomic_load_bool(&eng->eof)) return 0;
+    uint8_t input[4096];
+    long pos_before = ftell(eng->fp);
+    size_t got = fread(input, 1u, sizeof(input), eng->fp);
+    if (got == 0u) {
+        atomic_store_bool(&eng->eof, true);
+        return 0;
+    }
+    mp3dec_frame_info_t info;
+    int samples = mp3dec_decode_frame(&eng->dec, input, (int)got,
+                                      s_scratch_pcm, &info);
+    if (info.frame_bytes > 0) {
+        fseek(eng->fp, pos_before + (long)info.frame_bytes, SEEK_SET);
+    } else {
+        fseek(eng->fp, pos_before + 1L, SEEK_SET);
+        return 0;
+    }
+    if (samples == 0) return 0;
+    if (eng->sample_rate == 0u && info.hz > 0) {
+        eng->sample_rate = (uint32_t)info.hz;
+        eng->channels = info.channels;
+        ESP_LOGI(TAG, "MP3: %d Hz, %d ch, %d kbps",
+                 info.hz, info.channels, info.bitrate_kbps);
+    }
+#endif
+
+    if (info.channels == 1) {
+        for (int i = samples - 1; i >= 0; --i) {
+            out_pcm[i * 2 + 1] = s_scratch_pcm[i];
+            out_pcm[i * 2] = s_scratch_pcm[i];
+        }
+    } else {
+        memcpy(out_pcm, s_scratch_pcm,
+               (size_t)(samples * 2) * sizeof(int16_t));
+    }
+    return samples;
 }
 
-/*
- * build_seek_table — fast frame scanning by reading headers in PSRAM/file.
- * Does NOT decode PCM audio to ensure sub-millisecond execution.
- */
 #if AE_FW
-static void build_seek_table(audio_engine_state_t *eng)
-{
-    if (!eng->file_buf && !eng->fp) return;
-
-    uint32_t cap = 20000; /* initial capacity for ~8-10 mins track */
-#if AE_FW
-    uint32_t *seek_table = heap_caps_malloc(cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
-#else
-    uint32_t *seek_table = malloc(cap * sizeof(uint32_t));
-#endif
-    if (!seek_table) {
-        ESP_LOGE(TAG, "Failed to allocate seek table memory!");
-        return;
-    }
-    uint32_t seek_table_len = 0;
-
-    size_t pos = 0;
-    size_t size = eng->file_size;
-    uint8_t *scan_buf = NULL;
-
-    /* For PC, read the file into a temporary buffer for fast memory scanning */
-    if (!eng->file_buf && eng->fp) {
-        long prev_pos = ftell(eng->fp);
-        fseek(eng->fp, 0, SEEK_END);
-        long fsz = ftell(eng->fp);
-        fseek(eng->fp, 0, SEEK_SET);
-        if (fsz > 0) {
-            scan_buf = malloc(fsz);
-            if (scan_buf) {
-                size_t read_bytes = fread(scan_buf, 1, fsz, eng->fp);
-                size = read_bytes;
-            }
-        }
-        fseek(eng->fp, prev_pos, SEEK_SET);
-    }
-
-    const uint8_t *buf = eng->file_buf ? eng->file_buf : scan_buf;
-    if (!buf) {
-        if (scan_buf) free(scan_buf);
-#if AE_FW
-        heap_caps_free(seek_table);
-#else
-        free(seek_table);
-#endif
-        return;
-    }
-
-    int64_t t0 = ae_now_us();
-
-    while (pos + 4 <= size) {
-        if (hdr_valid(buf + pos)) {
-            const uint8_t *hdr = buf + pos;
-            int frame_bytes = hdr_frame_bytes(hdr, 0) + hdr_padding(hdr);
-            if (frame_bytes <= 0) {
-                pos++;
-                continue;
-            }
-
-            if (seek_table_len >= cap) {
-                cap *= 2;
-#if AE_FW
-                uint32_t *new_table = heap_caps_realloc(seek_table, cap * sizeof(uint32_t), MALLOC_CAP_SPIRAM);
-#else
-                uint32_t *new_table = realloc(seek_table, cap * sizeof(uint32_t));
-#endif
-                if (!new_table) {
-                    ESP_LOGE(TAG, "Failed to reallocate seek table!");
-                    break;
-                }
-                seek_table = new_table;
-            }
-
-            seek_table[seek_table_len++] = (uint32_t)pos;
-            pos += frame_bytes;
-        } else {
-            pos++;
-        }
-    }
-
-    if (scan_buf) {
-        free(scan_buf);
-    }
-
-    int64_t dt_us = ae_now_us() - t0;
-    AE_LOCK();
-    uint32_t *old_table = eng->seek_table;
-    eng->seek_table = seek_table;
-    eng->seek_table_len = seek_table_len;
-    AE_UNLOCK();
-    if (old_table) {
-#if AE_FW
-        heap_caps_free(old_table);
-#else
-        free(old_table);
-#endif
-    }
-    ESP_LOGI(TAG, "Indexed %u MP3 frames in %lld ms", 
-             (unsigned)seek_table_len, (long long)(dt_us / 1000));
-}
-
-/*
- * seek_index — ultra-fast O(1) seek using our custom frame index seek table.
- * Caller holds s_file_mutex.
- */
-static void seek_index(audio_engine_state_t *eng, uint32_t position_ms)
-{
-    if (!eng->seek_table || eng->seek_table_len == 0) return;
-
-    uint32_t sr = (eng->sample_rate > 0) ? eng->sample_rate : 44100u;
-    uint32_t samples_per_frame = 1152u;
-
-    /* Read first frame header to obtain exact properties */
-    const uint8_t *buf = eng->file_buf;
-    if (buf && eng->seek_table_len > 0) {
-        const uint8_t *hdr = buf + eng->seek_table[0];
-        samples_per_frame = hdr_frame_samples(hdr);
-        sr = hdr_sample_rate_hz(hdr);
-    } else if (eng->fp && eng->seek_table_len > 0) {
-        long prev = ftell(eng->fp);
-        fseek(eng->fp, (long)eng->seek_table[0], SEEK_SET);
-        uint8_t hdr[4];
-        if (fread(hdr, 1, 4, eng->fp) == 4) {
-            samples_per_frame = hdr_frame_samples(hdr);
-            sr = hdr_sample_rate_hz(hdr);
-        }
-        fseek(eng->fp, prev, SEEK_SET);
-    }
-
-    double frame_idx_double = (double)position_ms * (double)sr / ((double)samples_per_frame * 1000.0);
-    uint32_t target_frame = (uint32_t)(frame_idx_double + 0.5);
-
-    if (target_frame >= eng->seek_table_len) {
-        target_frame = eng->seek_table_len - 1;
-    }
-
-    uint32_t target_byte = eng->seek_table[target_frame];
-
-    if (eng->file_buf) {
-        eng->file_pos = target_byte;
-    } else if (eng->fp) {
-        fseek(eng->fp, (long)target_byte, SEEK_SET);
-    }
-
-    eng->seek_base_ms = (uint32_t)((double)target_frame * (double)samples_per_frame * 1000.0 / (double)sr);
-    eng->frames_since_seek = 0;
-
-    ESP_LOGI(TAG, "Index seek %u ms → frame %u/%u (byte %u), actual position: %u ms",
-             (unsigned)position_ms, (unsigned)target_frame, (unsigned)eng->seek_table_len,
-             (unsigned)target_byte, (unsigned)eng->seek_base_ms);
-}
-
 /*
  * seek_pvbr — fast O(1) seek using the 400-entry PVBR table.
  * Caller holds s_file_mutex.
  */
 static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
 {
-    uint32_t idx = (eng->duration_ms > 0)
-                   ? (position_ms * AUDIO_PVBR_LEN / eng->duration_ms)
+    if (eng->duration_ms > 0u && position_ms > eng->duration_ms) {
+        position_ms = eng->duration_ms;
+    }
+    uint32_t idx = (eng->duration_ms > 0u)
+                   ? (uint32_t)(((uint64_t)position_ms *
+                                 (uint64_t)AUDIO_PVBR_LEN) /
+                                (uint64_t)eng->duration_ms)
                    : 0u;
     if (idx >= AUDIO_PVBR_LEN) idx = AUDIO_PVBR_LEN - 1u;
     uint32_t target_byte = eng->pvbr[idx];
 
-    if (eng->file_buf) {
-        if (target_byte > eng->file_size) target_byte = eng->file_size;
-        eng->file_pos = target_byte;
-        ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u",
-                 (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte);
-    } else {
-        int rc = fseek(eng->fp, (long)target_byte, SEEK_SET);
-        long actual_pos = ftell(eng->fp);
-        ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u (fseek ret=%d, ftell=%ld)",
-                 (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte, rc, actual_pos);
-    }
+    if (target_byte > eng->file_size) target_byte = (uint32_t)eng->file_size;
+    eng->file_pos = target_byte;
+    ESP_LOGI(TAG, "PVBR seek %u ms → table[%u] = byte %u",
+             (unsigned)position_ms, (unsigned)idx, (unsigned)target_byte);
 }
 
 /*
@@ -1831,8 +1770,7 @@ static void seek_pvbr(audio_engine_state_t *eng, uint32_t position_ms)
  * header. This replaces the old linear decode-scan from the file start, which
  * ran a tight non-yielding loop (starving CPU 0 → task watchdog + UI freeze) and
  * could spin forever when the target was beyond the bytes streamed in so far.
- * Seeking past the loaded region is safe: the decode loop's load gate just waits
- * (with vTaskDelay) until the loader streams up to the new position.
+ * A cache miss after the cursor move reloads the aligned page on demand.
  * Caller holds s_file_mutex.
  */
 static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
@@ -1842,14 +1780,7 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
         : 0u;
     if (target_byte > eng->file_size) target_byte = eng->file_size;
 
-    if (eng->file_buf) {
-        eng->file_pos = target_byte;
-    } else if (eng->fp) {
-        fseek(eng->fp, (long)target_byte, SEEK_SET);
-    } else {
-        ESP_LOGE(TAG, "Estimate seek rejected: no file source");
-        return;
-    }
+    eng->file_pos = target_byte;
     mp3dec_init(&eng->dec);
     atomic_store_bool(&eng->eof, false);
     ESP_LOGI(TAG, "Estimate seek %u ms → byte %u/%u (no PVBR/index)",
@@ -1861,18 +1792,9 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 
 /* ── Firmware decode + I2S output tasks (ESP32-P4) ────────────────────────── */
 #if AE_FW
-/* The producer is split into a loader + a decoder (P5b progressive preload):
- * the loader streams the file from USB into PSRAM while the decoder plays from
- * the already-loaded region. Only the loader ever touches USB, so there is never
- * a concurrent USB transfer (the condition that crashed usb_dwc_hal). This also
- * cuts load-to-play latency: playback starts after the first chunk (~0.25 s)
- * instead of waiting for the whole file (USB read is only ~1 MB/s).
- * `s_decode_pcm` is per-deck and static (9 KB/deck) to keep it off the task
- * stack without sharing decoded samples between concurrent deck decoders. */
+/* Per-deck decode scratch stays static and independent of the bounded compressed cache. */
 static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
 
-#define AE_FIRST_CHUNK_BYTES (96u * 1024u)  /* min loaded before the decoder starts */
-#define AE_LOAD_GATE_MARGIN  (32u * 1024u)  /* keep the decoder this far behind the loader */
 #define AE_DIAG_OUTPUT_REPORT_BLOCKS 300u
 #define AE_DIAG_DECODE_REPORT_FRAMES 120u
 #define AE_DIAG_PRELOAD_REPORT_CHUNKS 64u
@@ -2166,9 +2088,29 @@ static SemaphoreHandle_t ctx_tasks_done(const audio_fw_task_context_t *ctx)
     return s_tasks_done[d];
 }
 
-/* Loader: read the MP3 from USB into PSRAM in chunks, publishing the watermark;
- * build the frame seek table once the whole file is in. Parks
- * until stop() so the teardown counting semaphore stays balanced. */
+static size_t ae_fw_cache_read_at(void *ctx, size_t offset,
+                                  void *dst, size_t bytes)
+{
+    audio_fw_preload_t *fw = (audio_fw_preload_t *)ctx;
+    FILE *src = fw ? (FILE *)fw->source : NULL;
+    if (!src || !dst || bytes == 0u || offset >= fw->file_size) return 0u;
+    media_io_gate_begin();
+    if (!media_io_gate_is_available() || fseek(src, (long)offset, SEEK_SET) != 0) {
+        media_io_gate_end();
+        return 0u;
+    }
+    int64_t started = esp_timer_get_time();
+    size_t got = fread(dst, 1u, bytes, src);
+    uint32_t elapsed = (uint32_t)(esp_timer_get_time() - started);
+    media_io_gate_end();
+    ae_diag_record_preload_chunk((uint8_t)(fw - s_fw_preloads), elapsed,
+                                 got, offset + got, fw->file_size);
+    return got;
+}
+
+/* Loader opens the source and publishes a fixed-size seekable compressed cache.
+ * After setup the decoder is the sole cache client; every backend miss is a
+ * bounded READ under media_io_gate, while the PCM timeline absorbs I/O latency. */
 static void ae_loader_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
@@ -2186,92 +2128,57 @@ static void ae_loader_task(void *arg)
     FILE *src = fopen(fw->path, "rb");
     if (!src) {
         media_io_gate_end();
-        ESP_LOGE(TAG, "Cannot open %s", fw->path);
         ae_fail_load(eng, fw, runtime, ESP_ERR_NOT_FOUND, "NOT FOUND");
         goto park;
     }
     fseek(src, 0, SEEK_END);
     long fsz = ftell(src);
     fseek(src, 0, SEEK_SET);
+    media_io_gate_end();
     if (fsz <= 0) {
-        ESP_LOGE(TAG, "bad size %ld: %s", fsz, fw->path);
+        media_io_gate_begin();
         fclose(src);
         media_io_gate_end();
         ae_fail_load(eng, fw, runtime, ESP_ERR_INVALID_SIZE, "BAD SIZE");
         goto park;
     }
 
-    fw->buf = heap_caps_malloc((size_t)fsz, MALLOC_CAP_SPIRAM);
-    if (!fw->buf) {
-        ESP_LOGE(TAG, "PSRAM alloc %ld B failed", fsz);
+    uint8_t *storage = heap_caps_malloc(AUDIO_FW_CACHE_BYTES,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!storage) {
+        media_io_gate_begin();
         fclose(src);
         media_io_gate_end();
-        ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "NO MEM");
+        ae_fail_load(eng, fw, runtime, ESP_ERR_NO_MEM, "CACHE OOM");
         goto park;
     }
-    ae_diag_log_memory("preload-alloc", ctx->deck);
+    if (!audio_fw_preload_bind_cache(fw, storage, AUDIO_FW_CACHE_BYTES,
+                                     (size_t)fsz, src, ae_fw_cache_read_at)) {
+        heap_caps_free(storage);
+        media_io_gate_begin();
+        fclose(src);
+        media_io_gate_end();
+        ae_fail_load(eng, fw, runtime, ESP_FAIL, "CACHE INIT ERR");
+        goto park;
+    }
 
     AE_LOCK();
-    eng->file_buf  = fw->buf;
     eng->file_size = (size_t)fsz;
-    eng->file_pos  = 0;
-    eng->fp        = NULL;
+    eng->file_pos = 0u;
+    eng->fp = NULL;
     AE_UNLOCK();
 
-    /* Release the media gate between chunks. Holding it across the whole
-     * multi-megabyte preload blocked every other /usb access for the duration —
-     * notably the track metadata cache's DAT/EXT signature stat, measured at
-     * 2.4 s while another deck preloaded, versus 47 ms idle. Every actual
-     * transfer below still runs under the gate, so a disconnect can never tear
-     * down an in-flight READ10. */
-    media_io_gate_end();
-
-    int64_t t0  = esp_timer_get_time();
-    size_t  off = 0;
-    while (off < (size_t)fsz && runtime->run && media_io_gate_is_available()) {
-        size_t want = audio_fw_preload_chunk_bytes((size_t)fsz - off,
-                                                   audio_fw_output_task_running());
-        media_io_gate_begin();
-        if (!media_io_gate_is_available()) {
-            media_io_gate_end();   /* media went away between chunks */
-            break;
-        }
-        int64_t chunk_start_us = esp_timer_get_time();
-        size_t got = fread(fw->buf + off, 1, want, src);
-        uint32_t chunk_us = (uint32_t)(esp_timer_get_time() - chunk_start_us);
-        media_io_gate_end();
-        if (got == 0) {
-            /* READ10 may fail just before the MSC callback publishes media
-             * loss.  Allow one scheduler window before classifying the short
-             * read as a genuine preload error. */
-            vTaskDelay(pdMS_TO_TICKS(10));
-            break;
-        }
-        off += got;
-        fw->loaded_bytes = off;                               /* publish watermark */
-        eng->load_progress = (uint8_t)(off * 100u / (size_t)fsz);
-        ae_diag_record_preload_chunk(ctx->deck, chunk_us, got, off, (size_t)fsz);
+    if (!audio_compressed_cache_prefetch(&fw->cache, 0u)) {
+        ae_fail_load(eng, fw, runtime, ESP_FAIL, "CACHE READ ERR");
+        goto park;
     }
-    media_io_gate_begin();
-    fclose(src);
-    media_io_gate_end();
-
-    if (runtime->run && media_io_gate_is_available() && off != (size_t)fsz) {
-        ESP_LOGE(TAG, "preload INCOMPLETE D%u: %u/%u bytes",
-                 (unsigned)ctx->deck, (unsigned)off, (unsigned)fsz);
-        ae_fail_load(eng, fw, runtime, ESP_ERR_INVALID_SIZE, "PRELOAD ERR");
-    }
-    if (runtime->run && media_io_gate_is_available() && off == (size_t)fsz) {
-        int64_t dt_ms = (esp_timer_get_time() - t0) / 1000;
-        ESP_LOGI(TAG, "preloaded %u KB in %lld ms (%.1f MB/s)", (unsigned)(off / 1024u),
-                 (long long)dt_ms, dt_ms > 0 ? (off / 1048576.0) / (dt_ms / 1000.0) : 0.0);
-        ae_diag_log_memory("preload-done", ctx->deck);
-        if (eng->format != AUDIO_FORMAT_WAV && eng->format != AUDIO_FORMAT_FLAC) {
-            build_seek_table(eng);    /* MP3 only: WAV/FLAC seek by frame index */
-        }
-        fw->load_done = true;
-        eng->load_progress = 100;
-    }
+    fw->loaded_bytes = fw->cache.backend_bytes;
+    fw->load_done = true;
+    eng->load_progress = 100u;
+    ESP_LOGI(TAG, "bounded compressed cache D%u: file=%u cache=%u page=%u x %u",
+             (unsigned)ctx->deck + 1u, (unsigned)fw->file_size,
+             (unsigned)fw->buf_size, (unsigned)AUDIO_FW_CACHE_PAGE_BYTES,
+             (unsigned)AUDIO_FW_CACHE_PAGE_COUNT);
 
 park:
     while (runtime->run) vTaskDelay(pdMS_TO_TICKS(20));   /* stay alive until stop() */
@@ -2280,7 +2187,8 @@ park:
     vTaskDelete(NULL);
 }
 
-/* Decoder: plays from the loaded PSRAM region; never touches USB. */
+/* Decoder reads compressed data through the bounded cache. Cache misses are
+ * serialized by media_io_gate; decoded PCM runway keeps the output task isolated. */
 static void ae_decode_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
@@ -2301,22 +2209,17 @@ static void ae_decode_task(void *arg)
     }
     int16_t *decode_pcm = s_decode_pcm[ctx->deck];
 
-    /* Wait for the loader to allocate the buffer and fetch the first chunk. */
-    while (runtime->run && fw->loaded_bytes < AE_FIRST_CHUNK_BYTES && !fw->load_done) {
+    /* Wait until the loader has opened the file and primed the bounded cache. */
+    while (runtime->run && !fw->load_done) {
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     if (!runtime->run) goto cleanup;
 
     if (eng->format == AUDIO_FORMAT_WAV || eng->format == AUDIO_FORMAT_FLAC) {
-        /* WAV and FLAC both decode from the fully-loaded PSRAM buffer. */
         const bool is_wav = (eng->format == AUDIO_FORMAT_WAV);
-        while (runtime->run && !fw->load_done) {
-            vTaskDelay(pdMS_TO_TICKS(2));
-        }
-        if (!runtime->run) goto cleanup;
         AE_LOCK();
-        esp_err_t init_rc = is_wav ? ae_wav_init_from_memory(eng)
-                                   : ae_flac_init_from_memory(eng);
+        esp_err_t init_rc = is_wav ? ae_wav_init_from_cache(eng, fw)
+                                   : ae_flac_init_from_cache(eng, fw);
         AE_UNLOCK();
         if (init_rc != ESP_OK) {
             ESP_LOGE(TAG, "%s parse failed: %d", is_wav ? "WAV" : "FLAC", (int)init_rc);
@@ -2324,18 +2227,17 @@ static void ae_decode_task(void *arg)
             goto cleanup;
         }
     } else {
-        /* Latch the sample rate from the first decodable frame, then open the codec.
-         * Gated: a large ID3 tag may push frame 1 past the first chunk - wait for it. */
+        /* Latch the sample rate from the first decodable frame. A large ID3 tag
+         * is handled by successive cache pages without allocating the full file. */
         int attempts = 0;
         while (runtime->run && eng->sample_rate == 0 && attempts < 256 &&
                !atomic_load_bool(&eng->eof)) {
-            if (!fw->load_done && eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
-                vTaskDelay(pdMS_TO_TICKS(2));
-                continue;
-            }
+            /* Same reason as the steady-state loop below: warm before taking
+             * the lock. A large ID3 tag walks several pages here. */
+            ae_warm_cache_for_next_read(eng, fw);
             AE_LOCK();
             int64_t decode_start_us = esp_timer_get_time();
-            int n = decode_one_frame(eng, fw, decode_pcm);
+            int n = decode_one_frame(eng, fw, ctx->deck, decode_pcm);
             uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
             size_t file_pos = eng->file_pos;
             if (n > 0) {
@@ -2382,7 +2284,7 @@ static void ae_decode_task(void *arg)
                  (unsigned)eng->sample_rate, (unsigned)ctx->deck, (unsigned)codec_rate);
     }
     ESP_LOGI(TAG,
-             "track format D%u: %u Hz %d ch file=%u bytes loaded=%u done=%u",
+             "track format D%u: %u Hz %d ch file=%u bytes cache_read=%u ready=%u",
              (unsigned)ctx->deck,
              (unsigned)eng->sample_rate,
              eng->channels,
@@ -2430,8 +2332,6 @@ static void ae_decode_task(void *arg)
                     ae_wav_seek_to_ms(eng, decode_target_ms);
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
                     ae_flac_seek_to_ms(eng, decode_target_ms);
-                } else if (eng->seek_table) {
-                    seek_index(eng, decode_target_ms);
                 } else if (eng->has_pvbr) {
                     seek_pvbr(eng, decode_target_ms);
                 } else {
@@ -2469,15 +2369,6 @@ static void ae_decode_task(void *arg)
             AE_UNLOCK();
         }
 
-        /* Gate: never decode past what the loader has fetched into PSRAM.
-         * WAV and FLAC only start after load_done, so the gate is MP3-only. */
-        if (eng->format != AUDIO_FORMAT_WAV &&
-            eng->format != AUDIO_FORMAT_FLAC &&
-            !fw->load_done &&
-            eng->file_pos + AE_LOAD_GATE_MARGIN > fw->loaded_bytes) {
-            vTaskDelay(pdMS_TO_TICKS(5));
-            continue;
-        }
 
         /* Canonical mode freezes the producer for the complete scratch gesture;
          * the already-decoded future remains readable and immutable. */
@@ -2495,10 +2386,20 @@ static void ae_decode_task(void *arg)
         }
         uint32_t scratch_newest_ms = 0u;
         bool scratch_newest_valid = false;
+
+        /* Warm the pages this decode will need before taking the lock, so the
+         * USB read happens with the output task free to run. */
+        ae_warm_cache_for_next_read(eng, fw);
+
         AE_LOCK();
+        const size_t backend_before = fw->cache.backend_bytes;
         int64_t decode_start_us = esp_timer_get_time();
-        int  samples = decode_one_frame(eng, fw, decode_pcm);
+        int  samples = decode_one_frame(eng, fw, ctx->deck, decode_pcm);
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
+        if (fw->cache.backend_bytes != backend_before &&
+            ctx->deck < AUDIO_ENGINE_DECK_COUNT) {
+            s_locked_backend_reads[ctx->deck]++;
+        }
         /* How much of this batch may be published. Only a loop wrap lowers it,
          * and it is kept separate from `samples` on purpose: `samples <= 0` is
          * the decoder's own end-of-input signal further down, and borrowing it
@@ -2931,6 +2832,7 @@ static void ae_output_task(void *arg)
             }
         }
 
+        audio_output_apply_master_tempo_commands();
         audio_output_apply_pending_fx_commands();
 
         float deck0_gain = 1.0f;
@@ -3180,9 +3082,12 @@ static void ae_output_task(void *arg)
                                     deck0.active,
                                     deck1.active,
                                     &s_limiter_stats);
-        uint32_t block_delay_ms = audio_output_remaining_delay_ms(
-            s_output_sample_rate,
-            block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
+        /* No software pacing delay: the i2s_channel_write above blocks on DMA and
+         * is what actually paces this loop. The retired
+         * audio_output_remaining_delay_ms() helper always returned zero, and the
+         * build used to collapse it with a preprocessor macro in a wrapper
+         * translation unit. The loop keeps its explicit periodic one-tick yield
+         * below, which is the part that matters. */
         bool scratch_writer_needs_cpu = false;
         for (uint8_t d = 0u; d < AUDIO_ENGINE_DECK_COUNT; d++) {
             if (atomic_load_bool(&s_scratch_capture_freeze[d]) &&
@@ -3191,11 +3096,8 @@ static void ae_output_task(void *arg)
                 break;
             }
         }
-        if (block_delay_ms > 0u) {
-            vTaskDelay(pdMS_TO_TICKS(block_delay_ms));
-            consecutive_busy_blocks = 0u;
-        } else if (scratch_writer_needs_cpu ||
-                   audio_output_should_force_idle(++consecutive_busy_blocks)) {
+        if (scratch_writer_needs_cpu ||
+            audio_output_should_force_idle(++consecutive_busy_blocks)) {
             /* taskYIELD only offers CPU0 to equal/higher-priority tasks. Give
              * the lower-priority decoder one real tick immediately when a
              * scratch freeze is waiting for its writer flag. The same delay
@@ -3413,13 +3315,14 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (eng->loaded) {
-        esp_err_t stop_rc = audio_engine_stop_for_deck(deck);
-        if (stop_rc != ESP_OK) {
-            eng->last_error = stop_rc;
-            snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
-            return stop_rc;
-        }
+    /* A failed asynchronous load can clear loaded while loader/decoder
+     * tasks and the PSRAM preload buffer still belong to the old session. Always
+     * stop and join the previous session before publishing run=true for a retry. */
+    esp_err_t stop_rc = audio_engine_stop_for_deck(deck);
+    if (stop_rc != ESP_OK) {
+        eng->last_error = stop_rc;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
+        return stop_rc;
     }
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
@@ -3427,7 +3330,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
 
 #if AE_FW
     audio_format_t detected_format = audio_format_detect_path(mp3_path);
-    /* MP3, WAV and FLAC all preload into PSRAM and decode from the buffer;
+    /* MP3, WAV and FLAC share a bounded seekable compressed-page cache;
      * unknown extensions fall back to MP3 (minimp3 resyncs on the first frame). */
     eng->format = (detected_format == AUDIO_FORMAT_UNKNOWN) ? AUDIO_FORMAT_MP3 : detected_format;
     audio_fw_preload_t *fw = &s_fw_preloads[deck];
@@ -3587,9 +3490,17 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         /* Only reclaim the PSRAM buffer once every task that could still be
          * reading it (the loader's fread target) has actually exited; freeing
          * it under a stuck loader would be a use-after-free. */
-        if (exited == runtime->tasks_started && fw->buf) {
-            heap_caps_free(fw->buf);
-            fw->buf = NULL;
+        if (exited == runtime->tasks_started) {
+            if (fw->source) {
+                media_io_gate_begin();
+                fclose((FILE *)fw->source);
+                media_io_gate_end();
+                fw->source = NULL;
+            }
+            if (fw->buf) {
+                heap_caps_free(fw->buf);
+                fw->buf = NULL;
+            }
         } else if (exited != runtime->tasks_started) {
             ESP_LOGE(TAG, "load abort: %d/%d tasks exited; leaking preload buffer",
                      exited, runtime->tasks_started);
@@ -3617,9 +3528,17 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         }
         /* Same rule as the OUTPUT TASK ERR path: never free the buffer while a
          * task that reads it might still be alive. */
-        if (exited == runtime->tasks_started && fw->buf) {
-            heap_caps_free(fw->buf);
-            fw->buf = NULL;
+        if (exited == runtime->tasks_started) {
+            if (fw->source) {
+                media_io_gate_begin();
+                fclose((FILE *)fw->source);
+                media_io_gate_end();
+                fw->source = NULL;
+            }
+            if (fw->buf) {
+                heap_caps_free(fw->buf);
+                fw->buf = NULL;
+            }
         } else if (exited != runtime->tasks_started) {
             ESP_LOGE(TAG, "load abort: %d/%d tasks exited; leaking preload buffer",
                      exited, runtime->tasks_started);
@@ -3690,7 +3609,9 @@ static esp_err_t audio_engine_pause_for_deck(uint8_t deck)
 static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 {
     audio_engine_state_t *eng = &s_engines[deck];
-    if (!eng->loaded) return ESP_OK;
+    /* Do not key teardown on eng->loaded: error paths deliberately clear that
+     * flag before the parked tasks have exited. Runtime task ownership and the
+     * preload pointer are the authoritative session-liveness indicators. */
 
     atomic_store_bool(&eng->playing, false);
     atomic_store_bool(&eng->paused, false);
@@ -3740,24 +3661,26 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
     }
     eng->flac_ready = false;
 #endif
-    eng->file_buf  = NULL;
     eng->file_size = 0;
     eng->file_pos  = 0;
-    if (eng->seek_table) {
-#if AE_FW
-        heap_caps_free(eng->seek_table);
-#else
-        free(eng->seek_table);
-#endif
-        eng->seek_table = NULL;
-    }
-    eng->seek_table_len = 0;
     AE_UNLOCK();
 
 #if AE_FW
     audio_fw_preload_t *fw = &s_fw_preloads[deck];
-    if (fw->buf) { heap_caps_free(fw->buf); fw->buf = NULL; }
+    if (fw->source) {
+        media_io_gate_begin();
+        fclose((FILE *)fw->source);
+        media_io_gate_end();
+        fw->source = NULL;
+    }
+    if (fw->buf) {
+        heap_caps_free(fw->buf);
+        fw->buf = NULL;
+    }
     audio_fw_preload_begin_load(fw);
+    /* A new session starts with a clean fault history: the streak exists to
+     * distinguish a passing glitch from a dead medium within one track. */
+    ae_clear_read_faults(deck);
 #endif
 
     audio_engine_reset_state(eng, ESP_OK, "OK");
@@ -3782,7 +3705,11 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
                                                    ae_seek_reason_t reason)
 {
     audio_engine_state_t *eng = &s_engines[deck];
-    if (!eng->loaded || (!eng->fp && !eng->file_buf && !eng->decoder_open)) return ESP_ERR_INVALID_STATE;
+    #if AE_FW
+    if (!eng->loaded || !s_fw_preloads[deck].source) return ESP_ERR_INVALID_STATE;
+#else
+    if (!eng->loaded || (!eng->fp && !eng->decoder_open)) return ESP_ERR_INVALID_STATE;
+#endif
 
     AE_LOCK();
     /* The decode task writes the same seek fields under the lock (loop-wrap
@@ -4088,8 +4015,8 @@ void audio_engine_deck_set_master_tempo(uint8_t deck, bool enabled)
     if (!deck_is_valid(deck)) return;
 #if AE_FW
     atomic_store_bool(&s_master_tempo_enabled[deck], enabled);
-    s_keylocks[deck].initialized = false;
-    audio_resampler_reset(&s_resamplers[deck]);
+    (void)__atomic_add_fetch(&s_master_tempo_command_epoch[deck],
+                             1u, __ATOMIC_RELEASE);
 #else
     (void)enabled;
 #endif
@@ -5192,7 +5119,11 @@ static void wav_write_header(FILE      *wav,
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms)
 {
     audio_engine_state_t *eng = &s_engines[AE_DECK_0];
-    if (!eng->loaded || (!eng->fp && !eng->decoder_open && !eng->file_buf)) {
+    #if AE_FW
+    if (!eng->loaded || !s_fw_preloads[deck].source) {
+#else
+    if (!eng->loaded || (!eng->fp && !eng->decoder_open)) {
+#endif
         return ESP_ERR_INVALID_STATE;
     }
     if (!wav_path)                 return ESP_ERR_INVALID_ARG;

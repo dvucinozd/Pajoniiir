@@ -6,8 +6,10 @@ config AUDIO_RECORDER_ENABLED
     help
         Records the post-limiter MAIN block to a WAV on the microSD card.
 
-        Off by default. The feature works, but its write latency is dominated by
-        the microSD card rather than by the firmware: a card that stalls for
+        Off by default. Producer/STOP ownership, finalize error propagation and
+        `.part` publication safety are host-tested, but release enablement still
+        requires physical SD write/fsync/rename and power-loss fault injection.
+        Its write latency is dominated by the microSD card: a card that stalls for
         hundreds of milliseconds at a time drains the ring no matter how the
         writer is arranged, and chasing that consumed a great deal of bench time
         for something that is not on the critical path. See the recorder entries

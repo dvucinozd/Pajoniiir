@@ -3,6 +3,7 @@
 
 #include "app_settings.h"
 #include "wifi_link.h"
+#include "wifi_transition_lease.h"
 
 #include "esp_app_desc.h"
 #include "ota_manifest.h"
@@ -12,7 +13,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -187,6 +188,9 @@ static void check_task(void *arg)
     }
 
     s_running = false;
+    /* Released here, where the AP is back and this task is about to exit, rather
+     * than from a vTaskDelete hook applied to the whole translation unit. */
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
     vTaskDelete(NULL);
 }
 
@@ -222,13 +226,12 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     uint8_t *buf = malloc(DL_CHUNK);
     if (!buf) { esp_http_client_cleanup(client); return ESP_ERR_NO_MEM; }
 
-    mbedtls_sha256_context bundle_sha;
-    mbedtls_sha256_init(&bundle_sha);
-    bool sha_started = mbedtls_sha256_starts(&bundle_sha, 0) == 0;
+    psa_hash_operation_t bundle_sha = PSA_HASH_OPERATION_INIT;
+    bool sha_started = psa_hash_setup(&bundle_sha, PSA_ALG_SHA_256) == PSA_SUCCESS;
     if (!sha_started) {
         free(buf);
         esp_http_client_cleanup(client);
-        mbedtls_sha256_free(&bundle_sha);
+        (void)psa_hash_abort(&bundle_sha);
         return ESP_FAIL;
     }
 
@@ -258,7 +261,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         if (got <= 0) { rc = ESP_ERR_INVALID_RESPONSE; goto done; }
         have += (size_t)got;
     }
-    if (mbedtls_sha256_update(&bundle_sha, header, sizeof(header)) != 0) {
+    if (psa_hash_update(&bundle_sha, header, sizeof(header)) != PSA_SUCCESS) {
         rc = ESP_FAIL;
         goto done;
     }
@@ -300,7 +303,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
             p4_ota_abort("flash write failed");
             goto done;
         }
-        if (mbedtls_sha256_update(&bundle_sha, buf, (size_t)got) != 0) {
+        if (psa_hash_update(&bundle_sha, buf, (size_t)got) != PSA_SUCCESS) {
             p4_ota_abort("bundle hash failed");
             rc = ESP_FAIL;
             goto done;
@@ -310,7 +313,12 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     }
 
     uint8_t actual_sha256[32];
-    if (mbedtls_sha256_finish(&bundle_sha, actual_sha256) != 0) {
+    size_t actual_sha256_size = 0u;
+    if (psa_hash_finish(&bundle_sha,
+                        actual_sha256,
+                        sizeof(actual_sha256),
+                        &actual_sha256_size) != PSA_SUCCESS ||
+        actual_sha256_size != sizeof(actual_sha256)) {
         p4_ota_abort("bundle hash failed");
         rc = ESP_FAIL;
         goto done;
@@ -329,10 +337,8 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
 
 done:
     if (sha_started) {
-        uint8_t discard[32];
-        (void)mbedtls_sha256_finish(&bundle_sha, discard);
+        (void)psa_hash_abort(&bundle_sha);
     }
-    mbedtls_sha256_free(&bundle_sha);
     free(buf);
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
@@ -385,10 +391,14 @@ static void install_task(void *arg)
 
     s_running = false;
     if (rc == ESP_OK) {
-        /* Long enough for the status to be read once before the deck goes. */
+        /* Deliberately keeps the transition lease: the deck is about to restart
+         * into the new image, and nothing else should be allowed to take the
+         * radio through another AP->STA->AP transition in the meantime.
+         * Long enough for the status to be read once before the deck goes. */
         vTaskDelay(pdMS_TO_TICKS(3000));
         esp_restart();
     }
+    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
     vTaskDelete(NULL);
 }
 
@@ -416,12 +426,23 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
         return ESP_ERR_INVALID_STATE;
     }
 
+    /* Reserve the radio before the worker exists: install takes the deck
+     * AP->STA->AP, and the connectivity probe does the same, so exactly one of
+     * them may be in flight. */
+    esp_err_t lease_rc = wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA);
+    if (lease_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
+                 (int)wifi_transition_lease_owner());
+        return ESP_ERR_INVALID_STATE;
+    }
+
     s_running = true;
     s_status.downloaded = 0u;
     note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "starting");
     /* 10 KiB: TLS records plus the flash write path run on this task. */
     if (xTaskCreate(install_task, "ota_install", 10240, NULL, 4, NULL) != pdPASS) {
         s_running = false;
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
         return ESP_ERR_NO_MEM;
     }
@@ -439,6 +460,13 @@ esp_err_t p4_ota_pull_check_start(void)
     if (ssid[0] == '\0' || url[0] == '\0') return ESP_ERR_INVALID_ARG;
     if (p4_ota_cfg_check_url(url) != P4_OTA_CFG_OK) return ESP_ERR_INVALID_ARG;
 
+    esp_err_t lease_rc = wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA);
+    if (lease_rc != ESP_OK) {
+        ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
+                 (int)wifi_transition_lease_owner());
+        return ESP_ERR_INVALID_STATE;
+    }
+
     s_running = true;
     note(P4_OTA_PULL_CHECKING, ESP_OK, "starting");
     s_status.available_release[0] = '\0';
@@ -449,6 +477,7 @@ esp_err_t p4_ota_pull_check_start(void)
     /* 8 KiB: TLS handshake and the mbedTLS record buffers run on this task. */
     if (xTaskCreate(check_task, "ota_check", 8192, NULL, 4, NULL) != pdPASS) {
         s_running = false;
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
         return ESP_ERR_NO_MEM;
     }

@@ -2,10 +2,35 @@ param(
     [switch]$KeepArtifacts
 )
 
+# Keep this file ASCII-only. It has no BOM, and Windows PowerShell 5.1 decodes a
+# BOM-less file as ANSI: a non-ASCII byte inside an executable string corrupts
+# the parse of everything after it, which surfaces as a cascade of unrelated
+# syntax errors hundreds of lines further down.
+
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Gcc = Get-Command gcc -ErrorAction Stop
+
+# ── What the Assert-File* gates are, and are not ────────────────────────────
+#
+# These are lint rules over source text, not tests. They cannot observe
+# behaviour; they observe spelling. Prefer, in this order:
+#
+#   1. A behaviour test that executes the path. If one exists, the gate is
+#      redundant and should be deleted rather than kept "for safety" — a
+#      redundant text rule only adds a way to fail on a rename.
+#   2. A compile or link contract in tests/api_contract. That is the right tool
+#      for "this symbol must/must not be reachable": the compiler answers the
+#      real question and tolerates reformatting.
+#   3. A gate here, only when neither is possible: the absence of an *idiom*
+#      (atoi, a wildcard CORS header, a #define over an RTOS call), a
+#      file-static that no test can link against, or a header the host toolchain
+#      cannot parse (LVGL, esp_lcd).
+#
+# When a gate is the third case, say so at the gate. Patterns must be code
+# identifiers, never comment prose: prose breaks on rewording and proves nothing
+# about the code.
 
 function Assert-FileDoesNotContain {
     param(
@@ -71,18 +96,97 @@ function Invoke-Step {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
         [Parameter(Mandatory = $true)][string]$Executable,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        # When set, the step must print "TESTS_RUN=<n>" with n at least this
+        # value. A passing exit code only proves nothing failed - it says nothing
+        # about how much ran, so a test function that is deleted or commented out
+        # leaves the suite green. Pinning the count is what makes silently lost
+        # coverage a failure. Raise the number when coverage is added.
+        [int]$MinTestsRun = 0
     )
 
     Write-Host "==> $Name"
     Push-Location $WorkingDirectory
+    # Windows PowerShell 5.1 turns any native-command stderr output into a
+    # NativeCommandError record, which $ErrorActionPreference='Stop' then promotes
+    # to a terminating error. A single gcc warning would therefore abort the whole
+    # suite locally while PowerShell 7 (used by CI) ran it to completion. Exit code
+    # is the only success signal that means the same thing on both.
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     try {
-        & $Executable @Arguments
+        if ($MinTestsRun -gt 0) {
+            $output = & $Executable @Arguments 2>&1
+            $output | ForEach-Object { Write-Host $_ }
+        } else {
+            & $Executable @Arguments
+            $output = @()
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "$Name failed with exit code $LASTEXITCODE"
         }
+        if ($MinTestsRun -gt 0) {
+            $match = $output | Select-String -Pattern 'TESTS_RUN=(\d+)' | Select-Object -Last 1
+            if (-not $match) {
+                throw "$Name did not report TESTS_RUN; expected at least $MinTestsRun assertions"
+            }
+            $ran = [int]$match.Matches[0].Groups[1].Value
+            if ($ran -lt $MinTestsRun) {
+                throw "$Name ran $ran assertions, expected at least $MinTestsRun - coverage was removed"
+            }
+            Write-Host "    TESTS_RUN=$ran (floor $MinTestsRun)"
+        }
     } finally {
+        $ErrorActionPreference = $previousErrorAction
         Pop-Location
+    }
+}
+
+function Invoke-ApiContract {
+    # The compiler is the oracle for the public API surface. The positive file
+    # must compile; every file under retired/ must not. Nothing is linked or
+    # run: the question is what a caller can still see, not what a binary
+    # contains. This replaces Assert-File(DoesNot)Contains on public headers,
+    # which matched names in comments, passed a reformatted declaration, and
+    # never checked a signature.
+    $dir = Join-Path $RepoRoot "tests/api_contract"
+    $inc = @(
+        "-I../support/stubs",
+        "-I../../firmware/main-deck-p4/components/library/include",
+        "-I../../firmware/main-deck-p4/components/audio_engine/include",
+        "-I../../firmware/main-deck-p4/components/wifi_link/include"
+    )
+
+    Invoke-Step -Name "static public API contract compiles" `
+        -WorkingDirectory $dir `
+        -Executable $Gcc.Source `
+        -Arguments (@("-fsyntax-only", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11") + $inc + @("test_api_contract.c"))
+
+    $retired = Get-ChildItem -LiteralPath (Join-Path $dir "retired") -Filter *.c | Sort-Object Name
+    if ($retired.Count -eq 0) {
+        throw "no retired-API contract files found; the negative half of the API contract is missing"
+    }
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        foreach ($file in $retired) {
+            $symbol = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+            Write-Host "==> static retired API $symbol stays unreachable"
+            Push-Location $dir
+            try {
+                & $Gcc.Source (@("-fsyntax-only", "-Werror=implicit-function-declaration", "-std=c11") + $inc + @($file.FullName)) 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    throw "retired API '$symbol' is reachable again: $($file.Name) still compiles"
+                }
+                # The failure above is the expected outcome. Clear it so it does
+                # not linger as the script's own exit status.
+                $global:LASTEXITCODE = 0
+            } finally {
+                Pop-Location
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
     }
 }
 
@@ -106,6 +210,33 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     }
     if ($guard -lt 0 -or $guard -gt $update) {
         throw "ui_render_overview_main_waveform can validate waveform cache while overview tab is inactive"
+    }
+}
+
+# AE_LOCK is one global recursive mutex and ae_output_task takes it on every
+# audio block, so a USB page fetch taken while holding it stalls the priority-6
+# output task for the whole transfer - an audible dropout, not just a slow
+# decode. The decode loops therefore warm the pages first and take the lock
+# afterwards. The ordering is the entire point, so check the order rather than
+# the presence of the call: a later edit that moves the warm below AE_LOCK()
+# would keep every substring intact while restoring the stall.
+function Assert-DecodeWarmsCacheBeforeEngineLock {
+    $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+    Write-Host "==> static decode warms the compressed cache before taking AE_LOCK"
+    $lines = Get-Content -LiteralPath $Path
+    $callSites = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'ae_warm_cache_for_next_read\(eng, fw\);') { continue }
+        $callSites++
+        # The next statement must be the lock; blank lines between are fine.
+        $j = $i + 1
+        while ($j -lt $lines.Count -and $lines[$j].Trim() -eq "") { $j++ }
+        if ($j -ge $lines.Count -or $lines[$j] -notmatch 'AE_LOCK\(\);') {
+            throw "audio_engine.c:$($i + 1): cache warming is not immediately followed by AE_LOCK(); the USB read can land back under the lock"
+        }
+    }
+    if ($callSites -ne 2) {
+        throw "expected 2 ae_warm_cache_for_next_read call sites in audio_engine.c (sample-rate latch and steady-state decode), found $callSites"
     }
 }
 
@@ -164,9 +295,29 @@ Assert-FileContains `
     -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
 
 Assert-FileContains `
-    -Name "p4 priority touch supersedes stale edges and survives button-only saturation" `
+    -Name "p4 edge backpressure is bounded so the UART RX task cannot wedge" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("event_is_jog_touch(&cur) && cur.id == ev->id", "queued older edge must never execute after the latest level", "button-only saturation", "xQueueSendToFront(s_event_queue, ev, portMAX_DELAY)")
+    -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
+
+# Idiom, not a symbol: nothing links against an argument to xQueueSend.
+# control_link_uart.c has no host coverage.
+Assert-FileDoesNotContain `
+    -Name "p4 control event enqueue never blocks the UART RX task forever" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
+    -LiteralPatterns @("xQueueSend(s_event_queue, ev, portMAX_DELAY)")
+
+# The two gates below stay source-level on purpose: both guard firmware-only code
+# paths that the host harness cannot execute (per-task TLS, and the audio engine
+# behind #ifndef WIN32). They are narrow ownership markers, not behaviour tests.
+Assert-FileContains `
+    -Name "p4 ANLZ short-read detection is per-task, not a shared global" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
+
+Assert-FileContains `
+    -Name "p4 discarded track load releases the deck audio session, not just the UI" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
 
 Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
@@ -213,6 +364,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
+Assert-DecodeWarmsCacheBeforeEngineLock
 Assert-OverviewInactiveGuardBeforeCacheUpdate
 Assert-OverviewMainRenderCommitGuard
 Assert-OverviewLoadDefersMainWaveRender
@@ -409,26 +561,32 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("write_elapsed_us")
 
+# ui.c needs LVGL; the screen registry cannot be executed on the host.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Key Shift screen" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
     -LiteralPatterns @('"KEY SHIFT"', "ui_performance_tabs_create_key_shift")
 
+# ui_performance_tabs.c needs LVGL, which the host toolchain does not build.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Key Shift controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
     -LiteralPatterns @("KEY TRANSPOSE", "NO TRANSPOSITION", "ui_performance_tabs_create_key_shift")
 
+# ui_performance_tabs.h pulls in LVGL, which the host toolchain does not build,
+# so this stays a text check rather than a compile contract.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs API excludes removed Key Shift screen" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_key_shift", "toggle_master_tempo")
 
+# ui.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 local UI excludes removed Loop and Beat Jump screens" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
     -LiteralPatterns @('"BEAT JUMP"', "UI_TAB_LOOP", "UI_TAB_BEAT_JUMP", "ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump")
 
+# ui_performance_tabs.c needs LVGL; see the note above.
 Assert-FileDoesNotContain `
     -Name "P4 performance tabs exclude removed Loop and Beat Jump controls" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_performance_tabs.c") `
@@ -439,6 +597,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/include/ui_performance_tabs.h") `
     -LiteralPatterns @("ui_performance_tabs_create_beat_loop", "ui_performance_tabs_create_beat_jump", "ui_performance_tabs_update_loop_screen_state")
 
+# ui_settings.c needs LVGL.
 Assert-FileDoesNotContain `
     -Name "P4 Settings excludes retired monitor speaker switch" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
@@ -529,10 +688,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("audio_scratch_buffer.h", "init_scratch_buffers", "sync_scratch_view_from_timeline", "scratch begin D%u unavailable: canonical timeline not allocated -> platter hold")
 
+# File-static storage plus retired calls; see the ANLZ note above.
 Assert-FileDoesNotContain `
     -Name "p4 legacy independent scratch PCM store stays retired" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch", "legacy fallback")
+    -LiteralPatterns @("s_scratch_storage", "audio_scratch_buffer_push(scratch", "audio_scratch_buffer_mark_newest_ms(scratch")
 
 Assert-FileContains `
     -Name "p4 audio_scratch DSP engine renders bidirectional interpolated scratch (vinyl phase 3)" `
@@ -566,7 +726,7 @@ Assert-FileContains `
 
 # The decoder runs ~2 s ahead of playback, so a loop wrap must withdraw whatever
 # it already published past the out point. Without the trim the loop's first
-# pass plays that lead — about four beats, off the grid at most tempos.
+# pass plays that lead - about four beats, off the grid at most tempos.
 Assert-FileContains `
     -Name "p4 loop wrap withdraws decoded frames published past the loop out point" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -580,15 +740,16 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @('app_settings_ota_has_password()', '\"has_password\":%s')
 
+# Absence of a field in a hand-formatted JSON string; no symbol involved.
 Assert-FileDoesNotContain `
     -Name "p4 web server never serialises the OTA passphrase" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("app_settings_ota_copy_password")
 
 Assert-FileContains `
-    -Name "p4 settings log the OTA passphrase's presence, never its value" `
+    -Name "p4 settings log the transactional OTA passphrase snapshot's presence, never its value" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/app_settings.c") `
-    -LiteralPatterns @('s_ota_pass[0] ? "set" : "none"')
+    -LiteralPatterns @('next_pass[0] ? "set" : "none"')
 
 # An AP-to-STA switch must stop the AP service without tearing down the C6
 # link; if these are ever folded back into one all-or-nothing teardown the
@@ -642,6 +803,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_RECORDER_ENABLED")
 
+# sdkconfig content; a build-configuration property, not a code one.
 Assert-FileDoesNotContain `
     -Name "p4 ships with the microSD recorder disabled" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
@@ -665,7 +827,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("scratch re-grab", "s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+    -LiteralPatterns @("s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `
@@ -735,27 +897,49 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu", "scratch freeze is waiting for its writer flag")
+    -LiteralPatterns @("capture_interrupted", "scratch_writer_needs_cpu")
 
+# The DWC channel-interrupt decoder must stay wrapped. The HAL asserts that every
+# channel error also raised CHHLTD, its own header documents BNAINTR as the
+# exception, and BNAINTR is in the error mask - so a BNA panics at HAL assertion
+# level 2. It is reached on this board, and the mitigation that used to avoid it
+# (preloading each track into PSRAM so playback never touched USB) was replaced by
+# the bounded cache, which streams from USB continuously. Dropping the wrap again
+# would reintroduce a reboot mid-set.
 Assert-FileContains `
-    -Name "p4 USB DWC BNA without CHHLTD uses the recoverable HCD pipe-error path" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c") `
-    -LiteralPatterns @("USB_DWC_LL_INTR_CHAN_BNAINTR", "USB_DWC_HAL_CHAN_ERROR_BNA", "USB_DWC_HAL_CHAN_EVENT_ERROR", "if (!halted && !bna_without_halt)", "abort()")
-
-Assert-FileContains `
-    -Name "p4 links the narrow USB DWC interrupt decoder compatibility wrapper" `
+    -Name "p4 USB storage wraps the DWC channel interrupt decoder" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/CMakeLists.txt") `
     -LiteralPatterns @("usb_dwc_hal_compat.c", "--wrap=usb_dwc_hal_chan_decode_intr")
 
+$dwcShim = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_dwc_hal_compat.c"
+if (-not (Test-Path -LiteralPath $dwcShim)) {
+    throw "USB DWC channel decoder wrapper is missing: $dwcShim"
+}
+
+# The wrapper mirrors an upstream function, so it has to fail the build on an
+# ESP-IDF it was not checked against rather than drift silently.
+Assert-FileContains `
+    -Name "p4 DWC decoder wrapper is pinned to the ESP-IDF it mirrors" `
+    -Path $dwcShim `
+    -LiteralPatterns @("ESP_IDF_VERSION_MAJOR != 6", "ESP_IDF_VERSION_MINOR != 0", "#error")
+
+# Only BNA is excused. Any other error without CHHLTD still aborts.
+Assert-FileContains `
+    -Name "p4 DWC decoder still aborts on a non-BNA missing halt" `
+    -Path $dwcShim `
+    -LiteralPatterns @("if (!halted && !bna) {", "abort();")
+
+# Absence of a struct *field*, not a function: nothing a caller could reference,
+# so there is no compile contract to write. Text check is the only option.
 Assert-FileDoesNotContain `
     -Name "p4 PCM timeline random reads do not depend on a racy oldest physical index" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/include/audio_pcm_timeline.h") `
     -LiteralPatterns @("oldest_index")
 
 Assert-FileContains `
-    -Name "p4 estimated seek rejects a missing file source" `
+    -Name "p4 estimated seek moves the bounded-cache cursor without linear scanning" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("else if (eng->fp)", "Estimate seek rejected: no file source")
+    -LiteralPatterns @("eng->file_pos = target_byte", "Estimate seek %u ms")
 
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
@@ -808,11 +992,14 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_filter.c") `
     -LiteralPatterns @("logf(")
 
+# Idiom in a response header string. web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web server does not expose wildcard CORS" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("Access-Control-Allow-Origin")
 
+# Idiom: atoi has no failure signal, so its absence is the check. There is
+# no symbol to link against and web_server.c has no host coverage.
 Assert-FileDoesNotContain `
     -Name "p4 web mutations do not use permissive atoi parsing" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
@@ -932,6 +1119,33 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_recorder_stop_gate"
+        MinTestsRun = 17
+        Dir = "tests/audio_recorder_stop_gate"
+        Target = "test_audio_recorder_stop_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-DAUDIO_RECORDER_STOP_GATE_HOST_TEST",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-o", "test_audio_recorder_stop_gate.exe",
+            "test_audio_recorder_stop_gate.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_stop_gate.c"
+        )
+    },
+    @{
+        Name = "audio_recorder_finalize"
+        MinTestsRun = 15
+        Dir = "tests/audio_recorder_finalize"
+        Target = "test_audio_recorder_finalize.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_recorder/include",
+            "-o", "test_audio_recorder_finalize.exe",
+            "test_audio_recorder_finalize.c",
+            "../../firmware/main-deck-p4/components/audio_recorder/audio_recorder_finalize.c"
+        )
+    },
+    @{
         Name = "sd_io_gate"
         Dir = "tests/sd_io_gate"
         Target = "test_sd_io_gate.exe"
@@ -1000,6 +1214,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
@@ -1023,6 +1238,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
@@ -1107,6 +1323,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_compressed_cache"
+        MinTestsRun = 55
+        Dir = "tests/audio_compressed_cache"
+        Target = "test_audio_compressed_cache.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_compressed_cache.exe",
+            "test_audio_compressed_cache.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c"
+        )
+    },
+    @{
         Name = "audio_fw_preload"
         Dir = "tests/audio_fw_preload"
         Target = "test_audio_fw_preload.exe"
@@ -1115,6 +1344,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_fw_preload.exe",
             "test_audio_fw_preload.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c"
         )
@@ -1178,7 +1408,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-o", "test_audio_scratch.exe",
-            "test_audio_scratch.c",
+            "test_audio_scratch_current.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_scratch_buffer.c",
             "-lm"
@@ -1238,6 +1468,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-o", "test_monitor_pcm_link.exe",
             "test_monitor_pcm_link.c",
@@ -1250,7 +1481,7 @@ $tests = @(
         Target = "test_beat_jump.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_beat_jump.exe",
@@ -1266,7 +1497,10 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST",
+            # Local stubs first: this suite deliberately keeps a wall-clock
+            # esp_timer.h and its own audio_engine.h component fake.
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
@@ -1279,7 +1513,7 @@ $tests = @(
             "hot_cue_store_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+            "deck_core_test_snapshot_wrapper.c"
         )
     },
     @{
@@ -1303,6 +1537,7 @@ $tests = @(
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST", "-DCONFIG_AUDIO_SCRATCH_ENABLED=1",
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
@@ -1315,7 +1550,7 @@ $tests = @(
             "hot_cue_store_stub.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
-            "../../firmware/main-deck-p4/components/deck_core/deck_core.c"
+            "deck_core_test_snapshot_wrapper.c"
         )
     },
     @{
@@ -1325,6 +1560,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_flx4_led_snapshot.exe",
             "test_flx4_led_snapshot.c",
@@ -1333,6 +1569,7 @@ $tests = @(
     },
     @{
         Name = "ui_library"
+        MinTestsRun = 48
         Dir = "tests/ui_library"
         Target = "test_ui_library.exe"
         Args = @(
@@ -1380,6 +1617,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_recorder/include",
             "-I../../firmware/main-deck-p4/components/service_log/include",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
             "../../firmware/main-deck-p4/components/ui/ui_settings.c"
@@ -1396,7 +1634,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_status.exe",
             "test_ui_status.c",
             "../../firmware/main-deck-p4/components/ui/ui_status.c"
@@ -1459,7 +1697,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/ui/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_beat_fx_format.exe",
             "test_ui_beat_fx_format.c",
             "../../firmware/main-deck-p4/components/ui/ui_beat_fx_format.c"
@@ -1473,8 +1711,9 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../../firmware/main-deck-p4/components/web_server/include",
             "-o", "test_web_api_helpers.exe",
-            "test_web_api_helpers.c",
-            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c"
+            "test_web_api_helpers_current.c",
+            "../../firmware/main-deck-p4/components/web_server/web_api_helpers.c",
+            "../../firmware/main-deck-p4/components/web_server/web_firmware_json.c"
         )
     },
     @{
@@ -1576,6 +1815,7 @@ $tests = @(
     },
     @{
         Name = "anlz"
+        MinTestsRun = 39
         Dir = "tests/anlz"
         Target = "test_anlz.exe"
         Cleanup = @("test_synth.dat", "test_synth.ext")
@@ -1584,21 +1824,22 @@ $tests = @(
             "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_anlz.exe",
-            "test_anlz.c",
+            "test_anlz_current.c",
             "../../firmware/main-deck-p4/components/library/rekordbox_anlz.c"
         )
     },
     @{
         Name = "library_anlz"
+        MinTestsRun = 179
         Dir = "tests/library_anlz"
         Target = "test_library_anlz.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
-            "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
-            "test_library_anlz.c",
+            "-DWIN32", "test_library_anlz_current.c",
             "../../firmware/main-deck-p4/components/library/library.c"
         )
     },
@@ -1616,12 +1857,75 @@ $tests = @(
         )
     },
     @{
+        # Shared test infrastructure gets tested like production code: every
+        # suite built on the fake RTOS inherits its behaviour, so a fake that
+        # lies would turn broken firmware green.
+        Name = "support_rtos"
+        MinTestsRun = 108
+        Dir = "tests/support_rtos"
+        Target = "test_fake_rtos.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-o", "test_fake_rtos.exe",
+            "test_fake_rtos.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
+        # Backlight is the one setting driven by a continuous control, so it is
+        # the one whose write pattern matters. Runs the real app_settings.c
+        # against the fake RTOS and a counting NVS fake.
+        Name = "app_settings"
+        MinTestsRun = 29
+        Dir = "tests/app_settings"
+        Target = "test_app_settings.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DAPP_SETTINGS_HOST_TEST",
+            "-Istubs",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/app_settings/include",
+            "-o", "test_app_settings.exe",
+            "test_app_settings.c",
+            "../../firmware/main-deck-p4/components/app_settings/app_settings.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
+        # First execution coverage for control_link_uart.c. This component
+        # decides what reaches deck_core - which events may be coalesced when
+        # the queue is full and which must never be lost - and until now every
+        # one of those rules was guarded only by grepping the source.
+        Name = "control_link_uart"
+        MinTestsRun = 62
+        Dir = "tests/control_link_uart"
+        Target = "test_control_link_uart.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DCONTROL_LINK_HOST_TEST",
+            "-Istubs",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-o", "test_control_link_uart.exe",
+            "test_control_link_uart.c",
+            "../../firmware/main-deck-p4/components/control_link/control_link_uart.c",
+            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c",
+            "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
         Name = "control_link_protocol"
         Dir = "tests/control_link_protocol"
         Target = "test_control_link_protocol.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_control_link_protocol.exe",
@@ -1638,6 +1942,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
             "-o", "test_controller_profile_manager.exe",
             "test_controller_profile_manager.c",
@@ -1657,7 +1962,12 @@ foreach ($test in $tests) {
     if ($test.ContainsKey("RunArgs")) {
         $runArgs = $test.RunArgs
     }
-    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments $runArgs
+    $minTestsRun = 0
+    if ($test.ContainsKey("MinTestsRun")) {
+        $minTestsRun = $test.MinTestsRun
+    }
+    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target `
+                -Arguments $runArgs -MinTestsRun $minTestsRun
 }
 
 # Prefer the ESP-IDF virtualenv interpreter: it is the one guaranteed to carry a
@@ -1665,23 +1975,64 @@ foreach ($test in $tests) {
 # whose cryptography bindings fail to load, which would fail this suite for
 # reasons that have nothing to do with the code under test.
 $pythonSource = $null
-foreach ($candidate in @($env:IDF_PYTHON_ENV_PATH, "C:\Espressif\python_env\idf5.5_py3.11_env")) {
-    if ($candidate) {
-        $exe = Join-Path $candidate "Scripts\python.exe"
-        if (Test-Path $exe) { $pythonSource = $exe; break }
+$isWindowsHost = $env:OS -eq "Windows_NT"
+$pythonCandidates = @()
+if ($env:IDF_PYTHON_ENV_PATH) {
+    $pythonCandidates += $env:IDF_PYTHON_ENV_PATH
+}
+if ($isWindowsHost) {
+    # ESP-IDF 6.0.x first, then the 5.5 profile that older workstations still have.
+    $pythonCandidates += "C:\Espressif\python_env\idf6.0_py3.13_env"
+    $pythonCandidates += "C:\Espressif\python_env\idf6.0_py3.11_env"
+    $pythonCandidates += "C:\Espressif\python_env\idf5.5_py3.11_env"
+}
+
+# Interpreter must actually carry a working `cryptography`, not merely exist.
+# The gcc these suites need lives in C:\msys64\ucrt64\bin, and prepending that to
+# PATH (as the documented workflow does) shadows the system python with msys2's,
+# which has no cryptography - the signing suite then failed for a reason that has
+# nothing to do with the code under test.
+function Test-PythonHasCryptography {
+    param([string]$Exe)
+    if (-not $Exe -or -not (Test-Path -LiteralPath $Exe)) { return $false }
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Exe "-c" "import cryptography" 2>&1 | Out-Null
+        return $LASTEXITCODE -eq 0
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
     }
 }
+
+$pythonProbes = @()
+foreach ($candidate in $pythonCandidates) {
+    if ($isWindowsHost) {
+        $relativeExe = "Scripts\python.exe"
+    } else {
+        $relativeExe = "bin/python"
+    }
+    $pythonProbes += (Join-Path $candidate $relativeExe)
+}
+foreach ($name in @("python", "python3")) {
+    foreach ($command in @(Get-Command $name -All -ErrorAction SilentlyContinue)) {
+        if ($command.Source) { $pythonProbes += $command.Source }
+    }
+}
+foreach ($probe in $pythonProbes) {
+    if (Test-PythonHasCryptography -Exe $probe) { $pythonSource = $probe; break }
+}
 if (-not $pythonSource) {
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) { $pythonSource = $python.Source }
+    $usable = ($pythonProbes | Select-Object -Unique) -join ", "
+    Write-Warning "no python with the 'cryptography' module found (tried: $usable); SKIPPING the OTA signing tests"
 }
 if ($pythonSource) {
     Invoke-Step -Name "run ota_signing" `
         -WorkingDirectory (Join-Path $RepoRoot "tests/ota_signing") `
         -Executable $pythonSource `
         -Arguments @("test_ota_signing.py")
-} else {
-    Write-Warning "python not found; skipping OTA signing Python tests"
 }
 
 $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
@@ -1725,3 +2076,327 @@ if (-not $KeepArtifacts) {
 }
 
 Write-Host "P4 host tests passed."
+
+Assert-FileContains `
+    -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("storage_desired_t", "s_desired.epoch++", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_connection(false")
+
+# Idiom plus a file-static counter. usb_storage.c has no host coverage.
+Assert-FileDoesNotContain `
+    -Name "p4 USB disconnect is not dependent on a finite event queue" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("xQueueSend(s_queue", "s_event_drop_count")
+
+# Behaviour for this is covered by tests/library_anlz/test_library_anlz_current.c
+# (nonzero duration survives enrichment; zero duration falls back to the last
+# beat). The gate below only pins that the rule lives in the producer rather than
+# being re-applied by each caller through a compilation wrapper.
+Assert-FileContains `
+    -Name "p4 ANLZ enrichment treats the beatgrid as a duration fallback only" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("if (track->duration_ms == 0u && meta->beat_count > 0 && meta->beats)")
+
+Assert-FileContains `
+    -Name "p4 library builds its real implementation, not a duration wrapper" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
+    -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
+
+Invoke-ApiContract
+
+# Components whose `#include "<impl>.c"` compilation wrapper has been retired.
+# Each one's production behaviour now lives in the file the build actually names,
+# so reintroducing a wrapper here would quietly restore preprocessor symbol
+# renaming, duplicate legacy code in the image, and (for audio_engine) an
+# incomplete-type tentative definition that is a C11 constraint violation.
+foreach ($retired in @(
+    @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
+    @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
+    @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "deck_core";                  Wrapper = "deck_core_live_led.c" },
+    @{ Board = "control-board-s3"; Component = "s3_debug_ap";               Wrapper = "s3_debug_ap_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
+    @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "rekordbox_anlz_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
+    @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
+    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" },
+    @{ Board = "control-board-s3"; Component = "flx4_midi_host";             Wrapper = "flx4_midi_host_fixed.c" }
+)) {
+    $wrapperPath = Join-Path $RepoRoot ("firmware/{0}/components/{1}/{2}" -f $retired.Board, $retired.Component, $retired.Wrapper)
+    Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
+    if (Test-Path -LiteralPath $wrapperPath) {
+        throw ("retired compilation wrapper reappeared: {0}" -f $wrapperPath)
+    }
+    Assert-FileDoesNotContain `
+        -Name ("{0} does not build through {1}" -f $retired.Component, $retired.Wrapper) `
+        -Path (Join-Path $RepoRoot ("firmware/{0}/components/{1}/CMakeLists.txt" -f $retired.Board, $retired.Component)) `
+        -LiteralPatterns @($retired.Wrapper)
+}
+
+Assert-FileContains `
+    -Name "p4 audio_engine builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "audio_engine.c"')
+
+Assert-FileContains `
+    -Name "p4 controller profile manager builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 BSP builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "bsp_jc4880.c"')
+
+Assert-FileContains `
+    -Name "p4 app_settings builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "app_settings.c"')
+
+Assert-FileContains `
+    -Name "p4 pull OTA reserves and releases the transition lease itself" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA)", "Deliberately keeps the transition lease")
+
+# Absence of a preprocessor #define; invisible to the compiler by the time
+# any contract could observe it.
+Assert-FileDoesNotContain `
+    -Name "p4 pull OTA does not hook vTaskDelete to release the lease" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("#define vTaskDelete")
+
+Assert-FileContains `
+    -Name "p4 pull OTA builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "p4_ota_pull.c"')
+
+Assert-FileContains `
+    -Name "p4 Wi-Fi probe reserves and releases the transition lease itself" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
+
+# Absence of a preprocessor #define; see the p4_ota_pull gate above.
+Assert-FileDoesNotContain `
+    -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("#define vTaskDelete")
+
+Assert-FileContains `
+    -Name "p4 wifi_link builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "wifi_link.c"')
+
+Assert-FileContains `
+    -Name "p4 deck LEDs leave through the single beat-jump-aware send helper" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
+    -LiteralPatterns @("static void deck_send_led(", "deck_send_led(led, state, deck)", "publish_state_snapshot();")
+
+Assert-FileContains `
+    -Name "p4 deck_core builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "deck_core.c"')
+
+Assert-FileContains `
+    -Name "s3 debug AP serves one bounded /events response and latches start failure" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -LiteralPatterns @("X-Log-Seq", "s_ap_start_failed_latched", "debug AP is latched in ERROR; request OFF before retry")
+
+# Idiom (a bounded for-loop and a keepalive literal). s3_debug_ap.c's
+# production path is excluded from the PC build, so nothing executes it.
+Assert-FileDoesNotContain `
+    -Name "s3 debug AP /events does not hold the httpd task in a polling loop" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -LiteralPatterns @(": keepalive", "for (int i = 0; i < 600; i++)")
+
+Assert-FileContains `
+    -Name "s3 debug AP builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "s3_debug_ap.c"')
+
+Assert-FileContains `
+    -Name "s3 FLX4 MIDI host builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "flx4_midi_host.c"')
+
+# bsp_jc4880.h pulls in esp_lcd/esp_codec_dev, which the host toolchain does not
+# build, so this stays a text check rather than a compile contract.
+Assert-FileContains `
+    -Name "p4 display shares one authoritative framebuffer count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/include/bsp_jc4880.h") `
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT 1")
+
+Assert-FileContains `
+    -Name "p4 display allocates only the framebuffer the backend actually uses" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -LiteralPatterns @(".num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT", "_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u")
+
+Assert-FileContains `
+    -Name "p4 LVGL backend requests the shared framebuffer count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend.c") `
+    -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT", "esp_lcd_dpi_panel_get_frame_buffer")
+
+Assert-FileContains `
+    -Name "p4 firmware status strings are escaped before JSON formatting" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("web_collect_p4_ota_status", "web_collect_s3_firmware_report", "web_firmware_json_escape_in_place")
+
+Assert-FileContains `
+    -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_event(&ev)")
+
+# The symbols exist and are reachable by design - they are simply the wrong
+# call for this component - so no link contract can express it.
+Assert-FileDoesNotContain `
+    -Name "p4 web server never mutates the audio engine loop directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("audio_engine_deck_set_loop", "audio_engine_deck_clear_loop")
+
+Assert-FileContains `
+    -Name "p4 web server builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "web_server.c"')
+
+Assert-FileContains `
+    -Name "p4 OTA handlers consume fragmented request bodies completely" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("while (len < wanted)", "wanted - len", "while (manifest_received < sizeof(manifest_header))")
+
+Assert-FileContains `
+    -Name "p4 product defaults explicitly disable the recorder" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("# CONFIG_AUDIO_RECORDER_ENABLED is not set")
+
+Assert-FileContains `
+    -Name "p4 recorder cannot be enabled without a dedicated safety remediation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/CMakeLists.txt") `
+    -LiteralPatterns @("if(CONFIG_AUDIO_RECORDER_ENABLED)", "Recorder is release-disabled pending physical SD fault-injection acceptance")
+
+Assert-FileContains `
+    -Name "scratch transport test uses a local decode-writer bridge" `
+    -Path (Join-Path $RepoRoot "tests/audio_scratch/test_audio_scratch_current.c") `
+    -LiteralPatterns @("test_audio_scratch_writer_push", "#define audio_scratch_buffer_push test_audio_scratch_writer_push")
+
+Assert-FileContains `
+    -Name "production ANLZ walker rejects partial section envelopes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("advance > file_len - pos", "pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED")
+
+# File-static functions: nothing outside the translation unit can link
+# against them, so absence is only observable as text.
+Assert-FileDoesNotContain `
+    -Name "production ANLZ parser has no byte-scan tag fallback" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("scan_bytes_for_tag", "find_tag(")
+
+# Absence of a #define over fread/fgetc; a macro leaves no symbol behind.
+Assert-FileDoesNotContain `
+    -Name "production ANLZ parser routes every read through the checked helpers" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_anlz.c") `
+    -LiteralPatterns @("#define fread", "#define fgetc")
+
+Assert-FileContains `
+    -Name "library sorting uses immutable records and compact double-buffered order" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
+
+Assert-FileContains `
+    -Name "library UI bounds LVGL cells to one eight-row page" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
+
+Assert-FileContains `
+    -Name "library source defines production selected-row helpers directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "library sources no longer contain selected-track mock aliases" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI sources use only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "shared library UI source uses only production selected-track names" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "firmware UI compiles shared sources directly" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "ui.c"', '"ui_library.c"')
+
+# Build-file content.
+Assert-FileDoesNotContain `
+    -Name "firmware UI source-local selected API bridges stay retired" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/CMakeLists.txt") `
+    -LiteralPatterns @("ui_selected_api.c", "ui_library_selected_api.c")
+
+Assert-FileContains `
+    -Name "UI simulator library implements production selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("void library_set_selected_track_index", "int library_selected_track_index")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator library has no mock selected-track API" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_library.c") `
+    -LiteralPatterns @("mock_library_load_track_to_deck", "mock_library_get_current_track_index")
+
+Assert-FileContains `
+    -Name "UI simulator deck hooks have explicit simulator names" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("ui_simulator_deck_set_position", "ui_simulator_deck_set_playing", "ui_simulator_deck_toggle_play", "ui_simulator_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "shared UI has no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileDoesNotContain `
+    -Name "UI simulator mocks have no mock deck hooks" `
+    -Path (Join-Path $RepoRoot "tests/ui_simulator/simulator_mocks.c") `
+    -LiteralPatterns @("mock_deck_set_position", "mock_deck_set_playing", "mock_deck_toggle_play", "mock_deck_toggle_master_tempo")
+
+Assert-FileContains `
+    -Name "migration CI runs UI simulator screenshot gate" `
+    -Path (Join-Path $RepoRoot ".github/workflows/esp-idf-6-migration.yml") `
+    -LiteralPatterns @("Run UI simulator screenshot gate", "run_ui_simulator_e2e.ps1", "ui-simulator.log")
+
+
+Assert-FileContains `
+    -Name "firmware loader binds the fixed cache instead of allocating the whole track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("heap_caps_malloc(AUDIO_FW_CACHE_BYTES", "audio_fw_preload_bind_cache", "audio_compressed_cache_prefetch", "ae_fw_cache_read_at", "drflac_open(ae_flac_cache_read")
+
+# Mixed: an error string and file-static calls, none of them linkable.
+Assert-FileDoesNotContain `
+    -Name "firmware audio never requires one contiguous allocation per compressed track" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("TRACK TOO LARGE", "heap_caps_malloc(track_bytes", "heap_caps_get_largest_free_block", "drflac_open_memory", "build_seek_table", "audio_fw_preload_chunk_bytes", "file_buf")
+
+Assert-FileContains `
+    -Name "recorder STOP closes admission and waits for active producers before drain" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("audio_recorder_stop_gate_close", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_try_enter")
+
+Assert-FileContains `
+    -Name "recorder finalize publishes only after patch sync and close succeed" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder_sink.c") `
+    -LiteralPatterns @("audio_recorder_finalize_run", "recorder_finalize_patch", "recorder_finalize_sync", "recorder_finalize_close", "recorder_finalize_publish", "audio_recorder_sink_abort")
+
+Assert-FileContains `
+    -Name "recorder stop propagates writer and finalize failures" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
+    -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
+
+# Windows PowerShell propagates $LASTEXITCODE as the script's exit status, so a
+# script that ends after any native command inherits that command's code even
+# when every check passed. Reaching here means nothing threw.
+exit 0

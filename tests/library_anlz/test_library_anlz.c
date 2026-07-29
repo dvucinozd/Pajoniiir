@@ -1,5 +1,5 @@
 /*
- * Host tests for the unified ANLZ metadata resolver in library.c.
+ * Host tests for the unified ANLZ resolver and compact library row-order in library.c.
  *
  * Compiles the real library.c against controllable stubs for the metadata
  * cache, the ANLZ parser, the USB gate and the PDB, plus a counting allocator
@@ -21,9 +21,13 @@
 #include <stdbool.h>
 
 static int s_failures = 0;
+/* Counted so tests/run_p4_host_tests.ps1 can pin how much this suite actually
+ * executes: a deleted or commented-out test lowers the number and fails the run. */
+static unsigned s_checks = 0;
 
 #define CHECK(cond)                                                            \
     do {                                                                       \
+        s_checks++;                                                            \
         if (!(cond)) {                                                         \
             printf("  FAIL: %s (line %d)\n", #cond, __LINE__);                 \
             s_failures++;                                                      \
@@ -194,17 +198,43 @@ void anlz_free(anlz_metadata_t *meta)
 void media_io_gate_begin(void) { }
 void media_io_gate_end(void) { }
 
+#define TEST_PDB_MAX_TRACKS 8
+static pdb_track_t s_pdb_tracks[TEST_PDB_MAX_TRACKS];
+static int s_pdb_track_count;
+static esp_err_t s_pdb_open_result = ESP_ERR_NOT_FOUND;
+
+static void reset_pdb_fixture(void)
+{
+    memset(s_pdb_tracks, 0, sizeof(s_pdb_tracks));
+    s_pdb_track_count = 0;
+    s_pdb_open_result = ESP_ERR_NOT_FOUND;
+}
+
 esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
 {
-    (void)pdb_path; (void)out;
-    return ESP_ERR_NOT_FOUND;
+    (void)pdb_path;
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_pdb_open_result != ESP_OK) {
+        *out = NULL;
+        return s_pdb_open_result;
+    }
+    *out = (pdb_t *)(uintptr_t)1u;
+    return ESP_OK;
 }
 void pdb_close(pdb_t *pdb) { (void)pdb; }
-int pdb_track_count(const pdb_t *pdb) { (void)pdb; return 0; }
+int pdb_track_count(const pdb_t *pdb)
+{
+    return pdb ? s_pdb_track_count : 0;
+}
 esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)
 {
-    (void)pdb; (void)index; (void)out;
-    return ESP_FAIL;
+    if (!pdb || !out || index < 0 || index >= s_pdb_track_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out = s_pdb_tracks[index];
+    return ESP_OK;
 }
 
 /* ── helpers ───────────────────────────────────────────────────────────────── */

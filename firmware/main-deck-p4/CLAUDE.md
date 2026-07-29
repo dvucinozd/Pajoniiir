@@ -1,22 +1,17 @@
 # Pajoniiir P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-21 (version line
-refreshed 2026-07-24). Both boards are matched at `RC1-254-g21f21963`. Since the
-last full audit the notable additions are: Beat FX Flanger re-tuned and all four
-effects given a headroom soft-clip; the loop-timing fix (the loop no longer takes
-effect ~2 s late); the idle screensaver; the microSD recorder compiled out by
-default (`CONFIG_AUDIO_RECORDER_ENABLED`, off); the SoftAP SSID corrected to
-`Pajoniiir` (three i's) and no longer advertising itself as a gateway; and **pull
-OTA** — the P4 leaving its AP for a temporary Wi-Fi STA visit to check and install
-signed updates from `pajoniiir.zadar.click/ota`, proven end to end on hardware.
-The RC1-168 baseline added the unified ANLZ metadata loader, the structured
-microSD service journal (`GET /api/diagnostic-log`) and the master-output
-recorder (Settings control plus guarded `/api/recording`); the recorder's
-functional `.wav` acceptance passed on hardware. RC1-170/171 add recorder push
-timing (`push_count` / `push_max_us` / `push_over_100us`) and recorder journal
-events (RECORDING_STARTED/STOPPED/FAILED/RECOVERED). RC1-173/175 replace the web
-controller UI with the "Modern Glass Mono" design (`components/web_server/web/`),
-add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
+Documentation status: current ESP-IDF 6.0.2 developer guide, refreshed after
+the `fixevi.md` remediation audit. The release branch now uses transactional
+media loading, strict ANLZ parsing, actor-owned deck snapshots, bounded S3 Debug
+AP/SSE handling, USB desired/current reconciliation, a shared Wi-Fi transition
+lease, a single real DPI framebuffer and a bounded compressed-audio page cache.
+The master-output recorder has software STOP/finalize safety coverage but remains
+release-disabled until physical microSD and power-loss fault injection passes.
+
+Software acceptance is enforced by `.github/workflows/esp-idf-6-migration.yml`:
+host regressions plus clean ESP32-S3 and ESP32-P4 builds using ESP-IDF 6.0.2.
+Physical release checks remain tracked in `docs/fixevi-remediation-audit.md` and
+PR #8 rather than being inferred from a successful build.
 
 > ⚠️ **Web assets must not reference the network.** The page is served from the
 > P4's own SoftAP with no internet route, and the captive DNS resolves every
@@ -46,7 +41,13 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > the wrong subsystem entirely. Before a risky operation, emit the breadcrumb
 > and call `service_log_sync()`, as the Wi-Fi enable path now does.
 
-> ⚠️ **The recorder stalls on microSD and drops audio; the cause is below
+> ⚠️ **The recorder remains release-disabled pending physical fault injection.**
+> Software ownership is now explicit: STOP closes producer admission, waits for
+> any in-flight master block, then lets the writer drain; failed sessions remain
+> `.part`, and rename occurs only after patch + fsync + close all succeed. Host
+> tests inject every finalize failure. The remaining risk is the actual card/bus:
+>
+> **The recorder stalls on microSD and drops audio; the cause is below
 > FATFS.** 25-minute soaks with two decks playing lose 3+ seconds of recording
 > and produce output blocks of 320-356 ms. Everything the firmware contributes
 > has been measured and removed: `sd_io_gate` contention is 7-8 us in steady
@@ -68,12 +69,12 @@ add a read-only S3 firmware card, and set `lru_purge_enable` on the httpd.
 > audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block. Gate or
 > remove it once the microSD question is closed.
 
-The latest full
-functional hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and
-Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
-`ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all
-merged branches were pruned local + remote, with unique retired work archived
-under `attic/*` tags.
+Historical hardware acceptance records remain useful as bench evidence, but
+they are not a substitute for the current release gates. Use
+`docs/fixevi-remediation-audit.md` and PR #8 for the authoritative pending
+hardware list. The repository is `dvucinozd/Pajoniiir`; active migration and
+remediation branches coexist with the default branch, while retired work may be
+archived under `attic/*` tags.
 
 ## Project Overview
 
@@ -83,7 +84,7 @@ decode/mixer/DSP, LED decisions, web service and P4 OTA. It communicates with
 the ESP32-S3 over UART1 using fixed `0xA5` events and `0xA6` bulk/status frames.
 
 **Status:** Display, touch, USB media library (FAT32/exFAT on MBR/GPT), audio
-(PCM5102A I2S MAIN, MP3/WAV/FLAC), SDMMC mount, display triple buffering, and the
+(PCM5102A I2S MAIN, MP3/WAV/FLAC), SDMMC mount, a single DPI framebuffer fed by the partial LVGL/PPA path, and the
 dual-deck P4 touchscreen path are operational on hardware. `deck_core` drives
 `audio_engine` through deck-aware APIs; the S3 control board populates the same
 event queue over the UART control link (FLX4 controls verified). The Overview
@@ -113,13 +114,13 @@ under repository-root `keys/` must never be copied into firmware or committed.
 | `control_link` | ✅ **IMPLEMENTED** | UART RX/TX, frame parser, LED send |
 | `deck_core` | ✅ **RUNNING ON HW** | state machine + drives `audio_engine` (play/pause/cue→seek/jog/pitch); `deck_core_queue_event()` for UI/S3 sources |
 | `library/rekordbox_pdb` | ✅ **RUNNING ON HW** | PDB parser — title/artist/album/anlz_path + musical key (Keys table 0x05) from export.pdb |
-| `library/rekordbox_anlz` | ✅ **RUNNING ON HW** | ANLZ parser — BPM/beatgrid/waveform/cues; section-header tag walk; 34 unit tests |
-| `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` loads the track index from `/usb`; publish-on-write sort; `library_get_summary()` copy accessor (`library_get_ptr()` is simulator-only) |
+| `library/rekordbox_anlz` | ✅ **RUNNING ON HW** | ANLZ parser — BPM/beatgrid/waveform/cues; strict bounded section walk; host regression coverage |
+| `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` transactionally publishes immutable track records from `/usb`; sort republishes only a compact double-buffered `uint16_t` row order; Library UI pages eight rows at a time instead of allocating up to 1024×5 LVGL cells; `library_get_summary()` is the copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
 | `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
-| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; PSRAM progressive preload; pitch resampling; PVBR/IFI seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY hardware smoke pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
+| `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; fixed 8 × 32 KiB compressed-page cache per deck instead of whole-track PSRAM preload; pitch resampling; PVBR/estimated seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY and cache-miss hardware stress pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `Pajoniiir`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
 | `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
@@ -128,25 +129,30 @@ under repository-root `keys/` must never be copied into firmware or committed.
 
 ## Build & Flash
 
-**ESP-IDF environments**: classic
-`C:\Espressif\frameworks\esp-idf-v5.5\` / `idf5.5_py3.11_env`, or v5.5.4
-`C:\esp\v5.5.4\esp-idf` /
-`C:\Espressif\tools\python\v5.5.4\venv`
+**ESP-IDF environment:** ESP-IDF **6.0.2**. CI uses
+`espressif/idf:v6.0.2`; a local shell must report the same release from
+`idf.py --version` before configuring or flashing this firmware.
 
-> ⚠️ **P4 is rev v1.3 (eco2) silicon.** Works with IDF 5.5 ONLY with
-> `CONFIG_ESP32P4_REV_MIN_FULL=0` in `sdkconfig.defaults` (otherwise the bootloader rejects
-> the early-revision chip). This setting is already configured. (The earlier assumption that
-> 5.4.1 was required is no longer valid — 5.5 works with this config.)
+> ⚠️ **The production board uses pre-v3 ESP32-P4 silicon (board-observed v1.3).**
+> `sdkconfig.defaults` must retain all three selectors below. Omitting the
+> pre-v3 selector allows a clean configuration to target revision 3.1, which
+> will not boot on the production board.
+>
+> ```text
+> CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+> CONFIG_ESP32P4_REV_MIN_100=y
+> CONFIG_ESP32P4_REV_MIN_FULL=100
+> ```
 
 ```powershell
-# Classic development machine:
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-# Alternative v5.5.4 profile machine:
-# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+# Activate an ESP-IDF 6.0.2 shell first.
+idf.py --version
 cd firmware/main-deck-p4
+Remove-Item -Recurse -Force build,sdkconfig,sdkconfig.old -ErrorAction SilentlyContinue
+idf.py set-target esp32p4
+idf.py reconfigure
 idf.py build
-idf.py -p COM15 flash               # device is on COM15
+idf.py -p COM15 flash
 ```
 
 > **Sound is in the default build (2026-07-10).** The FLX4 USB-headphones audio
@@ -271,7 +277,7 @@ if (rc == ESP_OK) {
 }
 ```
 
-PC unit tests (`tests/anlz/`): via `.\tests\run_p4_host_tests.ps1` → 34/34 PASS
+PC unit tests (`tests/anlz/`) are included in `.\tests\run_p4_host_tests.ps1`.
 
 Format details: `docs/rekordbox-format-analysis.md`
 
@@ -308,9 +314,11 @@ audio_engine_deck_stop(deck);
 - `bsp_audio_init()` sets up the PCM5102A I2S MAIN channel (I2S_NUM_1);
   `audio_engine_init()` retrieves it via `bsp_audio_get_main_i2s_tx()` and writes
   with `i2s_channel_write` (blocks on I2S DMA → real-time tempo).
-- `audio_engine_deck_load()` does not read USB on the caller stack — the **decode task preloads the entire MP3
-  into PSRAM**, opens it, and decodes from memory. (Streaming from /usb during
-  playback crashes the USB-DWC driver: `usb_dwc_hal.c:502`.)
+- `audio_engine_deck_load()` does not read USB on the caller stack. A loader opens
+  the source and binds a fixed **256 KiB compressed cache per deck** (8 × 32 KiB).
+  MP3/WAV use cache `read-at`; FLAC uses `drflac_open` read/seek/tell callbacks.
+  Every cache miss is serialized through `media_io_gate`, while the decoded PCM
+  timeline supplies playback runway. Whole-track PSRAM allocation is not used.
 - minimp3 needs **~26 KB stack** → decode task is 32 KB (NOT on the LVGL/caller stack).
 - The output task pitch-resamples/mixes the ring buffer and writes MAIN via `i2s_channel_write()` (blocks on I2S DMA → real-time tempo); headphone cue goes out over the FLX4 USB audio path.
 - The PCM5102A I2S clock opens at the sample rate of the first frame (44.1/48k both observed).
@@ -515,11 +523,15 @@ UI is 800×480 landscape → rotated 90° in **hardware via PPA** (not LVGL sw-r
 - `flags.use_mipi_interface = 1` (otherwise the driver falls back to RGB path)
 - Backlight GPIO23 (simple GPIO high = on; vendor uses LEDC PWM), reset GPIO5
 
-**Rotation (PPA):** `ui_lvgl_backend.c` creates the LVGL display as 800×480 landscape (WITHOUT `lv_display_set_rotation`),
-the flush callback performs `ppa_do_scale_rotate_mirror()` (angle `PPA_SRM_ROTATION_ANGLE_270`) from the LVGL
-render buffer into the inactive DPI frame buffer (480×800), then requests a swap on the refresh boundary.
-FULL render mode, 2 PSRAM render buffers (cache-aligned) + 3 DPI frame buffers.
-`esp_cache_msync(C2M)` on the render buffer before PPA because PPA DMA reads from PSRAM.
+**Rotation (PPA):** `ui_lvgl_backend.c` creates the LVGL display as
+800×480 landscape without `lv_display_set_rotation`. LVGL renders partial rows
+into one cache-aligned PSRAM draw buffer; the flush callback uses
+`ppa_do_scale_rotate_mirror()` at `PPA_SRM_ROTATION_ANGLE_270` to write directly
+into the single 480×800 DPI framebuffer. There is no inactive-buffer swap in
+the current backend. `UI_DSI_FB_COUNT` is `BSP_LCD_FRAMEBUFFER_COUNT`, so BSP and
+UI cannot drift apart, and a `_Static_assert` in each fails the build if the
+count is raised without implementing that swap. `esp_cache_msync(C2M)` is still
+required before PPA reads the PSRAM render buffer.
 
 **Why NOT LVGL sw-rotation:** PARTIAL mode + rotation → corrupts memory, crashes the DSI GDMA ISR.
 FULL mode + `set_rotation` → does not rotate at all. Thus hardware PPA is used.
@@ -533,7 +545,7 @@ non-PSRAM address fails ("invalid addr"), DSI hangs. (Now we write directly to F
 
 ### Touch (GT911) ✅ WORKS
 - GT911 on **shared I2C bus** (I2C_NUM_1, SDA=GPIO7, SCL=GPIO8), addr 0x5D, reset/INT = NC.
-  The same bus will be shared by the ES8311 codec (`bsp_get_i2c_bus()`).
+  The ES8311 path is disabled in product defaults; MAIN audio uses PCM5102A and cue audio uses the FLX4 USB path. `bsp_get_i2c_bus()` remains the shared board I2C accessor.
 - Coordinate transform for our 90° rotation: **swap_xy=1, mirror_x=1** (x_max=480, y_max=800 native).
   Taps map accurately (verified). Values from vendor demo ROTATION_90.
 - `ui_lvgl_backend.c` registers the LVGL pointer indev which polls `esp_lcd_touch_get_coordinates()`.

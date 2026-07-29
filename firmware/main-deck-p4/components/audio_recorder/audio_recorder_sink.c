@@ -1,5 +1,6 @@
 #include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"
+#include "audio_recorder_finalize.h"
 #include "sd_io_gate.h"
 #include "service_log.h"
 
@@ -32,13 +33,11 @@ static esp_err_t patch_header_locked(FILE *fp, uint32_t sample_rate, uint32_t da
 {
     uint8_t hdr[AUDIO_RECORDER_WAV_HEADER_BYTES];
     audio_recorder_wav_build_header(hdr, sample_rate, data_bytes);
-    fflush(fp);
-    if (fseek(fp, 0, SEEK_SET) != 0) {
+    if (fflush(fp) != 0 || fseek(fp, 0, SEEK_SET) != 0) {
         return ESP_FAIL;
     }
     size_t n = fwrite(hdr, 1, sizeof(hdr), fp);
-    fflush(fp);
-    if (fseek(fp, 0, SEEK_END) != 0 || n != sizeof(hdr)) {
+    if (n != sizeof(hdr) || fflush(fp) != 0 || fseek(fp, 0, SEEK_END) != 0) {
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -193,48 +192,94 @@ esp_err_t audio_recorder_sink_checkpoint(audio_recorder_sink_t *s)
      * the card were pulled and read elsewhere without this board ever booting
      * again, and finalize() still writes a correct header on the normal path. */
     sd_io_gate_begin();
-    fflush(s->fp);
-    int rc = fsync(fileno(s->fp));
+    int flush_rc = fflush(s->fp);
+    int sync_rc = flush_rc == 0 ? fsync(fileno(s->fp)) : -1;
     sd_io_gate_end();
-    return (rc == 0) ? ESP_OK : ESP_FAIL;
+    return (flush_rc == 0 && sync_rc == 0) ? ESP_OK : ESP_FAIL;
+}
+
+typedef struct {
+    audio_recorder_sink_t *sink;
+    char final_path[AUDIO_RECORDER_SINK_PATH_MAX];
+} recorder_finalize_ctx_t;
+
+static bool recorder_finalize_patch(void *opaque)
+{
+    recorder_finalize_ctx_t *ctx = (recorder_finalize_ctx_t *)opaque;
+    return patch_header_locked(ctx->sink->fp, ctx->sink->sample_rate,
+                               (uint32_t)ctx->sink->data_bytes) == ESP_OK;
+}
+
+static bool recorder_finalize_sync(void *opaque)
+{
+    recorder_finalize_ctx_t *ctx = (recorder_finalize_ctx_t *)opaque;
+    return fflush(ctx->sink->fp) == 0 && fsync(fileno(ctx->sink->fp)) == 0;
+}
+
+static bool recorder_finalize_close(void *opaque)
+{
+    recorder_finalize_ctx_t *ctx = (recorder_finalize_ctx_t *)opaque;
+    int rc = fclose(ctx->sink->fp);
+    ctx->sink->fp = NULL;
+    ctx->sink->is_open = false;
+    return rc == 0;
+}
+
+static bool recorder_finalize_publish(void *opaque)
+{
+    recorder_finalize_ctx_t *ctx = (recorder_finalize_ctx_t *)opaque;
+    return ctx->final_path[0] != '\0' &&
+           rename(ctx->sink->part_path, ctx->final_path) == 0;
+}
+
+static esp_err_t audio_recorder_sink_close(audio_recorder_sink_t *s,
+                                            bool allow_publish)
+{
+    if (!s || !s->is_open) return ESP_OK;
+
+    recorder_finalize_ctx_t ctx = { .sink = s, .final_path = { 0 } };
+    size_t plen = strlen(s->part_path);
+    static const char suffix[] = ".part";
+    size_t slen = sizeof(suffix) - 1u;
+    if (allow_publish && plen > slen &&
+        strcmp(s->part_path + plen - slen, suffix) == 0 &&
+        plen - slen < sizeof(ctx.final_path)) {
+        memcpy(ctx.final_path, s->part_path, plen - slen);
+        ctx.final_path[plen - slen] = '\0';
+    }
+
+    sd_io_gate_begin();
+    audio_recorder_finalize_result_t result = audio_recorder_finalize_run(
+        &ctx,
+        recorder_finalize_patch,
+        recorder_finalize_sync,
+        recorder_finalize_close,
+        recorder_finalize_publish,
+        allow_publish);
+    sd_io_gate_end();
+
+    if (result.failed_stage != AUDIO_RECORDER_FINALIZE_STAGE_NONE) {
+        ESP_LOGE(TAG, "segment finalize failed at stage %d; keeping %s",
+                 (int)result.failed_stage, s->part_path);
+        return ESP_FAIL;
+    }
+    if (result.published) {
+        ESP_LOGI(TAG, "segment finalized: %s (%llu B)", ctx.final_path,
+                 (unsigned long long)s->data_bytes);
+    } else {
+        ESP_LOGW(TAG, "segment closed as recoverable partial: %s", s->part_path);
+    }
+    return ESP_OK;
 }
 
 esp_err_t audio_recorder_sink_finalize(audio_recorder_sink_t *s)
 {
-    if (!s || !s->is_open) {
-        return ESP_OK;
-    }
+    return audio_recorder_sink_close(s, true);
+}
 
-    sd_io_gate_begin();
-    esp_err_t rc = patch_header_locked(s->fp, s->sample_rate, (uint32_t)s->data_bytes);
-    if (rc == ESP_OK) {
-        fsync(fileno(s->fp));
-    }
-    fclose(s->fp);
-    sd_io_gate_end();
-    s->fp = NULL;
-    s->is_open = false;
-
-    /* Atomically publish the finished file: strip the ".part" suffix. */
-    char final_path[AUDIO_RECORDER_SINK_PATH_MAX];
-    size_t plen = strlen(s->part_path);
-    const char *suffix = ".part";
-    size_t slen = strlen(suffix);
-    if (plen > slen && strcmp(s->part_path + plen - slen, suffix) == 0 &&
-        plen - slen < sizeof(final_path)) {
-        memcpy(final_path, s->part_path, plen - slen);
-        final_path[plen - slen] = '\0';
-        sd_io_gate_begin();
-        int rrc = rename(s->part_path, final_path);
-        sd_io_gate_end();
-        if (rrc != 0) {
-            ESP_LOGE(TAG, "rename %s failed", s->part_path);
-            return ESP_FAIL;
-        }
-        ESP_LOGI(TAG, "segment finalized: %s (%llu B)", final_path,
-                 (unsigned long long)s->data_bytes);
-    }
-    return rc;
+esp_err_t audio_recorder_sink_abort(audio_recorder_sink_t *s)
+{
+    return audio_recorder_sink_close(s, false);
 }
 
 esp_err_t audio_recorder_sink_free_bytes(uint64_t *out_free_bytes)

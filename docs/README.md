@@ -1,6 +1,6 @@
 # Pajoniiir Documentation
 
-Complete documentation index, audited 2026-07-17. Start with
+Complete documentation index, audited 2026-07-28. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
 scope, source-of-truth precedence, the installed baseline and the latest fully
 accepted hardware baseline.
@@ -25,6 +25,8 @@ accepted hardware baseline.
 - [`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md) — safe SD profile upload through the P4 web UI/API.
 - [`S3_WIFI_DEBUG_LOG.md`](S3_WIFI_DEBUG_LOG.md) — runtime S3 service AP/log viewer and OTA service.
 - [`bench-notes.md`](bench-notes.md) — dated hardware bench observations.
+- [`fixevi-remediation-audit.md`](fixevi-remediation-audit.md) — `fix/release-blockers-and-concurrency` remediation closeout.
+- [`migration/ESP_IDF_6_0_2_MIGRATION.md`](migration/ESP_IDF_6_0_2_MIGRATION.md) — ESP-IDF 6.0.2 migration status and validation matrix.
 
 ## Analysis and decision records
 

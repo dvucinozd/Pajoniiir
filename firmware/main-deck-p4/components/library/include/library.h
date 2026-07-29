@@ -8,6 +8,7 @@
 //   • anlz_path  — direct path to ANLZ0000.DAT (/PIONEER/USBANLZ/.../ANLZ0000.DAT)
 //   • title, artist, album
 //   • bpm (from PDB; overwritten with more precise value from ANLZ beat-grid)
+//   • total audio duration (retained when ANLZ metadata is applied)
 //
 // ANLZ metadata (precise BPM, beat-grid, cues, waveform) is loaded on-demand
 // via library_load_anlz(), which reads ANLZ0000.DAT using the stored anlz_path.
@@ -28,54 +29,62 @@
 
 typedef struct {
     /* Populated by library_init() from export.pdb */
-    char     path[LIBRARY_PATH_MAX];      // audio file path on USB: /Contents/...
-    char     anlz_path[LIBRARY_PATH_MAX]; // ANLZ file: /PIONEER/USBANLZ/.../ANLZ0000.DAT
-    char     title[LIBRARY_STR_MAX];      // track title (or filename if no ID3 title)
-    char     artist[LIBRARY_STR_MAX];     // artist name (empty string if unknown)
-    char     album[LIBRARY_STR_MAX];      // album name  (empty string if unknown)
-    char     key[16];                     // Camelot key (e.g. 8A, 9A)
-    uint32_t track_id;                    // Rekordbox internal ID
-    uint16_t bpm;                         // BPM from PDB (overwritten by ANLZ if loaded)
+    char     path[LIBRARY_PATH_MAX];
+    char     anlz_path[LIBRARY_PATH_MAX];
+    char     title[LIBRARY_STR_MAX];
+    char     artist[LIBRARY_STR_MAX];
+    char     album[LIBRARY_STR_MAX];
+    char     key[16];
+    uint32_t track_id;
+    uint16_t bpm;
+    uint32_t duration_ms;
 
     /* Populated by library_load_anlz() */
-    uint32_t duration_ms;                 // total duration (from last beat-grid entry)
-    uint8_t  waveform_low[400];           // PWAV 400-byte low-res waveform (0 if not loaded)
-    uint8_t  has_waveform;                // 1 if waveform_low is valid
-    uint8_t  has_anlz;                    // 1 if ANLZ metadata was loaded
-    uint32_t pvbr[400];                   // PVBR VBR seek table: 400 file-byte offsets
-    uint8_t  has_pvbr;                    // 1 if pvbr[] is valid
+    uint8_t  waveform_low[400];
+    uint8_t  has_waveform;
+    uint8_t  has_anlz;
+    uint32_t pvbr[400];
+    uint8_t  has_pvbr;
 } library_track_t;
 
-esp_err_t library_init(void);                                // mount USB, open PDB, build index
-void      library_clear(void);                               // clear active index after USB removal
-uint32_t  library_generation(void);                          // increments on init/clear/sort
-int       library_count(void);                               // number of tracks found
-esp_err_t library_get(int index, library_track_t *out);      // get track by index
-esp_err_t library_get_summary(int index,                     // copy bpm/duration under the lock
+/* library_init() transactionally publishes an immutable track store. Logical
+ * row order is held separately, so library_sort() copies only compact uint16_t
+ * handles and never moves the published library_track_t records. */
+esp_err_t library_init(void);
+void      library_clear(void);
+uint32_t  library_generation(void);
+int       library_count(void);
+esp_err_t library_get(int index, library_track_t *out);
+esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,
                               uint32_t *out_duration_ms);
+/* Identity of one logical row without copying the ~2.9 KB track record. Use this
+ * (and library_find_row_by_key) for highlight/selection/lookup work; library_get()
+ * is for callers that genuinely need the whole record. */
+esp_err_t library_get_row_key(int index, uint32_t *out_key);
+/* Logical row currently holding `track_key`, or -1. Single pass under one lock
+ * instead of N locked full-record copies. */
+int       library_find_row_by_key(uint32_t track_key);
 #ifdef WIN32
-// Simulator only: direct pointer into the live index. Reloads and sorts
-// republish the index, so firmware must use the copying accessors above.
+/* Simulator only: pointer into the immutable store for the current logical row.
+ * Sorting keeps it valid; a later library_init() rebuild may replace the store. */
 library_track_t *library_get_ptr(int index);
 #endif
-uint32_t  library_track_key(const library_track_t *track);   // stable ID for UI/cache use
-/* Resolve one authoritative full ANLZ object and, in a single pass, populate the
- * track summary fields (precise BPM/duration/low waveform/PVBR) and publish the
- * same full beat/cue/high-res-waveform object as the current metadata. The
- * publish is transactional: a failed load preserves the previous current. */
-esp_err_t library_load_anlz(library_track_t *track);
-void      library_sort(int field_type, bool descending);     // Sort track list (0=Artist, 1=Title, 2=BPM)
+uint32_t library_track_key(const library_track_t *track);
 
-/* Timing (ms), source (0=cache, 1=USB) and cache-write result of the most
- * recent library_load_anlz() resolve, for the service-log track-load event. */
+/* Resolve and publish one authoritative ANLZ object. Existing nonzero PDB/audio
+ * duration is retained; the final beat is only a fallback when duration is zero.
+ * A failed resolve retires stale current metadata. */
+esp_err_t library_load_anlz(library_track_t *track);
+void      library_sort(int field_type, bool descending);
+
 void library_last_anlz_load_stats(uint32_t *out_elapsed_ms, uint8_t *out_source,
                                   bool *out_cache_written);
-
-/* Return an owned deep copy of the current metadata. Caller calls anlz_free(). */
 esp_err_t library_clone_current_anlz(anlz_metadata_t *out);
 void library_free_current_anlz(void);
 
-/* UI track selection helpers — track which track index is loaded. */
-void mock_library_load_track_to_deck(int track_index);
-int  mock_library_get_current_track_index(void);
+/* Selected-row state used by the UI highlight/simulator bridge. This is not a
+ * deck-load API; real loads use media_catalog identity + generation. */
+void library_set_selected_track_index(int track_index);
+int  library_selected_track_index(void);
+

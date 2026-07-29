@@ -60,43 +60,46 @@ preostale kontrole mogu implementirati izravno iz XML reference.
 
 ## ESP-IDF okruzenje
 
-Projekt se razvija na dva Windows računala. Na računalu s klasičnom
-Espressif instalacijom inicijaliziraj ESP-IDF ovako:
+Obavezna verzija je **ESP-IDF v6.0.2** — ista koju koristi
+`.github/workflows/esp-idf-6-migration.yml` (`espressif/idf:v6.0.2`).
+Inicijaliziraj ESP-IDF ovako:
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
+$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
 . C:\Espressif\Initialize-Idf.ps1
 ```
 
-Na računalu s ESP-IDF v5.5.4 profilom koristi:
-
-```powershell
-. C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
-```
-
-Nakon bilo koje od te dvije inicijalizacije provjeri:
+Nakon inicijalizacije provjeri:
 
 ```powershell
 idf.py --version
 ```
 
-Podržana i provjerena okruženja:
+Mora javiti `ESP-IDF v6.0.2`. Pri prvom buildu nakon prelaska s 5.5.4 obriši
+generiranu konfiguraciju i managed komponente (`build`, `sdkconfig`,
+`sdkconfig.old`, `managed_components`) prije `idf.py set-target`.
 
-- ESP-IDF v5.5, Python:
-  `C:\Espressif\python_env\idf5.5_py3.11_env\Scripts`
-- ESP-IDF v5.5.4, IDF: `C:\esp\v5.5.4\esp-idf`, Python:
-  `C:\Espressif\tools\python\v5.5.4\venv`
+Ostali alati:
+
 - Git iz Espressif toolchaina: `C:\Espressif\tools\idf-git\2.44.0\cmd`
 - Host-test GCC: `C:\msys64\ucrt64\bin`
 
-Napomena: `idf.py` nije nužno dostupan prije pokretanja odgovarajuće
-inicijalizacijske skripte.
+Napomena: `idf.py` nije nužno dostupan prije pokretanja inicijalizacijske
+skripte.
 
-Za host testove koji traze `gcc`/`make`, ako nisu vec u `PATH`, koristi:
+Za host testove koji traze `gcc`, ako nije vec u `PATH`, **dodaj msys2 na kraj**
+putanje, ne na početak:
 
 ```powershell
-$env:Path = "C:\msys64\ucrt64\bin;$env:Path"
+$env:Path = "$env:Path;C:\msys64\ucrt64\bin"
 ```
+
+Prepending `C:\msys64\ucrt64\bin` zasjenjuje sistemski `python.exe` msys2
+verzijom koja nema modul `cryptography`, pa OTA signing suite pada iz razloga
+koji nema veze s kodom. Runner sada sam bira interpreter koji stvarno ima
+`cryptography`, ali appendanje ostaje preporučeni redoslijed.
+
+Host suite se pokreće i na Windows PowerShellu 5.1 i na PowerShellu 7.
 
 ## Build naredbe
 
@@ -118,12 +121,19 @@ Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
-Zadnja poznata clean release provjera:
+Zadnja poznata clean release provjera na ESP-IDF 5.5.4 je
+`RC1-259-gdaf4639`, 2026-07-26 (oba izolirana `build_signed` targeta prolaze;
+velicine i SHA-256 su u `docs\validation\CLEAN_RELEASE_RC1_259_BUILD.md`). Za
+aktualnu granu mjerodavni su ESP-IDF 6.0.2 buildovi iz CI-ja, a preostali
+fizicki gateovi vode se u `docs\fixevi-remediation-audit.md`.
 
-- `RC1-259-gdaf4639`, 2026-07-26, ESP-IDF 5.5.4;
-- oba izolirana `build_signed` targeta prolaze;
-- tocne velicine i SHA-256 zapisi su u
-  `docs\validation\CLEAN_RELEASE_RC1_259_BUILD.md`.
+P4 host regresije pokreni preko:
+
+```powershell
+.\tests\run_p4_host_tests.ps1
+```
+
+To je isti runner koji koristi CI. S3 strana je `.\tests\run_s3_host_tests.ps1`.
 
 Za dugi deterministicki dual-deck Master Tempo PC regression koristi:
 
@@ -153,9 +163,14 @@ Repo koristi `.gitignore` za ESP-IDF artefakte:
 
 - `build/`
 - `managed_components/`
-- `dependencies.lock`
 - `sdkconfig`
 - `sdkconfig.old`
+
+Iznimka: `firmware/control-board-s3/dependencies.lock` i
+`firmware/main-deck-p4/dependencies.lock` **jesu** commitani (`.gitignore` ima
+`!` iznimke za oba) da bi clean build bio reproducibilan. CI provjerava da se
+lock nije promijenio tijekom builda; ako se promijeni, ili commitaj novu
+rezoluciju ili pinaj komponentu koja je odlutala.
 
 Ne commitaj generirane build direktorije ili lokalni `sdkconfig` osim ako
 korisnik eksplicitno trazi drugacije.

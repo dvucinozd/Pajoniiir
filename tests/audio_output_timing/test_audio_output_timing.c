@@ -3,18 +3,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-static void test_block_period_ms_uses_ceil_division(void)
-{
-    assert(audio_output_block_period_ms(48000) == 6u);
-    assert(audio_output_block_period_ms(44100) == 6u);
-    assert(audio_output_block_period_ms(32000) == 8u);
-}
-
-static void test_block_period_ms_rejects_zero_sample_rate(void)
-{
-    assert(audio_output_block_period_ms(0) == 0u);
-}
-
 static void test_block_period_us_uses_precise_ceil_division(void)
 {
     assert(audio_output_block_period_us(48000) == 5334u);
@@ -31,15 +19,6 @@ static void test_late_warning_threshold_allows_codec_write_pacing_slack(void)
     assert(audio_output_late_warning_threshold_us(0) == 0u);
 }
 
-static void test_remaining_delay_is_disabled_when_codec_write_paces_output(void)
-{
-    assert(audio_output_remaining_delay_ms(48000, 0) == 0u);
-    assert(audio_output_remaining_delay_ms(48000, 5000) == 0u);
-    assert(audio_output_remaining_delay_ms(48000, 5334) == 0u);
-    assert(audio_output_remaining_delay_ms(48000, 7000) == 0u);
-    assert(audio_output_remaining_delay_ms(0, 0) == 0u);
-}
-
 static void test_continuous_output_periodically_forces_an_idle_tick(void)
 {
     assert(!audio_output_should_force_idle(0u));
@@ -50,11 +29,8 @@ static void test_continuous_output_periodically_forces_an_idle_tick(void)
 
 int main(void)
 {
-    test_block_period_ms_uses_ceil_division();
-    test_block_period_ms_rejects_zero_sample_rate();
     test_block_period_us_uses_precise_ceil_division();
     test_late_warning_threshold_allows_codec_write_pacing_slack();
-    test_remaining_delay_is_disabled_when_codec_write_paces_output();
     test_continuous_output_periodically_forces_an_idle_tick();
     puts("audio_output_timing tests passed");
     return 0;

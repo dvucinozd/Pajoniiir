@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include "mbedtls/pk.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 extern const uint8_t release_public_key_start[]
     asm("_binary_ddj_ota_release_public_der_start");
@@ -41,14 +41,36 @@ bool ddj_ota_manifest_verify_signature(const uint8_t *header, size_t header_size
     if (!header || header_size < DDJ_OTA_HEADER_SIZE) return false;
 
     uint8_t digest[DDJ_OTA_SHA256_SIZE];
-    if (mbedtls_sha256(header, DDJ_OTA_SIGNED_SIZE, digest, 0) != 0) return false;
+    size_t digest_size = 0u;
+    if (psa_hash_compute(PSA_ALG_SHA_256,
+                         header,
+                         DDJ_OTA_SIGNED_SIZE,
+                         digest,
+                         sizeof(digest),
+                         &digest_size) != PSA_SUCCESS ||
+        digest_size != sizeof(digest)) {
+        return false;
+    }
 
     mbedtls_pk_context key;
     mbedtls_pk_init(&key);
     int rc = mbedtls_pk_parse_public_key(
         &key, release_public_key_start,
         (size_t)(release_public_key_end - release_public_key_start));
-    if (rc != 0 || !mbedtls_pk_can_do(&key, MBEDTLS_PK_ECDSA)) {
+    /* Check the key type, not just that it parsed. The signature bytes are
+     * converted below into DER as a fixed-size ECDSA (r,s) pair, so a key that
+     * is not ECDSA would have that layout imposed on it. The committed key makes
+     * this unreachable today, which is exactly why it is worth keeping: it
+     * catches a key swapped for the wrong type instead of trusting the build.
+     *
+     * ESP-IDF 6.0.2 moved mbedTLS to the TF-PSA-Crypto layer, where
+     * mbedtls_pk_can_do(pk, MBEDTLS_PK_ECDSA) no longer exists. The equivalent
+     * is mbedtls_pk_can_do_psa() with the PSA algorithm and the usage the key is
+     * about to be put to - here, verifying a SHA-256 hash. */
+    if (rc != 0 ||
+        !mbedtls_pk_can_do_psa(&key,
+                               MBEDTLS_PK_ALG_ECDSA(PSA_ALG_SHA_256),
+                               PSA_KEY_USAGE_VERIFY_HASH)) {
         mbedtls_pk_free(&key);
         return false;
     }

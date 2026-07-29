@@ -2,6 +2,7 @@
 
 #include "esp_log.h"
 #include "media_io_gate.h"
+#include "sd_io_gate.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -124,6 +125,18 @@ static bool write_exact(FILE *fp, const void *src, size_t len)
     return len == 0 || fwrite(src, 1, len, fp) == len;
 }
 
+/* Both public entry points hold sd_io_gate for their whole transaction, so cache
+ * I/O is serialised against the recorder, service log and profile storage that
+ * share the card. This used to be bolted on by a wrapper translation unit that
+ * renamed these functions and re-exported gated versions; the gate belongs with
+ * the transaction it protects. media_io_gate (USB, a different medium) is taken
+ * separately around the source-file stats below. */
+static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
+                                             const char *dat_path,
+                                             const char *ext_path,
+                                             bool include_high_waveform,
+                                             anlz_metadata_t *out_meta);
+
 esp_err_t track_meta_cache_load(uint32_t track_key,
                                 const char *dat_path,
                                 const char *ext_path,
@@ -134,6 +147,20 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
         return ESP_ERR_INVALID_ARG;
     }
     memset(out_meta, 0, sizeof(*out_meta));
+
+    sd_io_gate_begin();
+    const esp_err_t load_rc = track_meta_cache_load_gated(track_key, dat_path, ext_path,
+                                                          include_high_waveform, out_meta);
+    sd_io_gate_end();
+    return load_rc;
+}
+
+static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
+                                             const char *dat_path,
+                                             const char *ext_path,
+                                             bool include_high_waveform,
+                                             anlz_metadata_t *out_meta)
+{
 
     /* dat_path/ext_path live on the USB drive. Serialise these stats against
        USB unmount/uninstall through the media I/O gate: without it, a drive
@@ -216,10 +243,27 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
     return ESP_OK;
 }
 
+static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
+                                             const char *dat_path,
+                                             const char *ext_path,
+                                             const anlz_metadata_t *meta);
+
 esp_err_t track_meta_cache_save(uint32_t track_key,
                                 const char *dat_path,
                                 const char *ext_path,
                                 const anlz_metadata_t *meta)
+{
+    sd_io_gate_begin();
+    const esp_err_t save_rc = track_meta_cache_save_gated(track_key, dat_path,
+                                                          ext_path, meta);
+    sd_io_gate_end();
+    return save_rc;
+}
+
+static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
+                                             const char *dat_path,
+                                             const char *ext_path,
+                                             const anlz_metadata_t *meta)
 {
     if (!meta || track_key == 0) {
         return ESP_ERR_INVALID_ARG;

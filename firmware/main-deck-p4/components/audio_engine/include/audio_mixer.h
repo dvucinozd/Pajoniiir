@@ -26,8 +26,3 @@ int16_t audio_mixer_mix_sample(int16_t deck1,
 int16_t audio_mixer_limit_master_sample(int32_t mixed,
                                         audio_mixer_limiter_stats_t *stats);
 audio_mixer_frame_t audio_mixer_apply_gain(audio_mixer_frame_t frame, float gain);
-audio_mixer_frame_t audio_mixer_mix_stereo(audio_mixer_frame_t deck1,
-                                           audio_mixer_frame_t deck2,
-                                           float deck1_channel_gain,
-                                           float deck2_channel_gain,
-                                           uint16_t crossfader);

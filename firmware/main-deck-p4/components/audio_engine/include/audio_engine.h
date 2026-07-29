@@ -275,6 +275,14 @@ uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot);
 
+/* Decode reads that still hit USB while the engine lock was held, per deck.
+ * The decode loop warms the compressed cache before taking the lock precisely so
+ * this stays flat; every increment is one audio block during which the output
+ * task could not run. Firmware only - the PC test build has no cache. */
+#if !defined(AUDIO_ENGINE_PC_TEST)
+uint32_t audio_engine_locked_backend_read_count(uint8_t deck);
+#endif
+
 /* Zero the per-phase output-block maxima so a measurement window starts clean.
  * Without this a single boot-time transient pins every maximum for the life of
  * the session and the numbers say nothing about the window under test. */

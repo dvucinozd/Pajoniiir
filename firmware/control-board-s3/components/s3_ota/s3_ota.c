@@ -11,7 +11,7 @@
 #include "firmware_health.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 #define S3_OTA_PROJECT_NAME "control-board-s3"
 
@@ -21,7 +21,7 @@ static s3_ota_status_t s_status;
 static const esp_partition_t *s_target;
 static esp_ota_handle_t s_handle;
 static bool s_handle_open;
-static mbedtls_sha256_context s_image_sha;
+static psa_hash_operation_t s_image_sha = PSA_HASH_OPERATION_INIT;
 static bool s_image_sha_active;
 static uint8_t s_expected_sha256[DDJ_OTA_SHA256_SIZE];
 static char s_expected_version[DDJ_OTA_VERSION_SIZE];
@@ -48,7 +48,8 @@ static void close_receive_resources_locked(void)
         s_handle_open = false;
     }
     if (s_image_sha_active) {
-        mbedtls_sha256_free(&s_image_sha);
+        (void)psa_hash_abort(&s_image_sha);
+        s_image_sha = psa_hash_operation_init();
         s_image_sha_active = false;
     }
 }
@@ -73,6 +74,8 @@ esp_err_t s3_ota_init(void)
     s_status.state = S3_OTA_IDLE;
     s_target = NULL;
     s_handle_open = false;
+    s_image_sha = psa_hash_operation_init();
+    s_image_sha_active = false;
     refresh_running_locked();
     xSemaphoreGive(s_lock);
     return ESP_OK;
@@ -106,8 +109,8 @@ esp_err_t s3_ota_begin(const ddj_ota_manifest_t *manifest)
         return rc;
     }
     s_handle_open = true;
-    mbedtls_sha256_init(&s_image_sha);
-    if (mbedtls_sha256_starts(&s_image_sha, 0) != 0) {
+    s_image_sha = psa_hash_operation_init();
+    if (psa_hash_setup(&s_image_sha, PSA_ALG_SHA_256) != PSA_SUCCESS) {
         (void)esp_ota_abort(s_handle);
         s_handle_open = false;
         copy_text(s_status.last_error, sizeof(s_status.last_error), "SHA-256 init failed");
@@ -141,7 +144,7 @@ esp_err_t s3_ota_write(const void *data, size_t size)
     }
     esp_err_t rc = esp_ota_write(s_handle, data, size);
     if (rc == ESP_OK) {
-        if (mbedtls_sha256_update(&s_image_sha, data, size) == 0) {
+        if (psa_hash_update(&s_image_sha, data, size) == PSA_SUCCESS) {
             s_status.received_size += size;
         } else {
             rc = ESP_FAIL;
@@ -180,8 +183,16 @@ esp_err_t s3_ota_finish(void)
     }
 
     uint8_t actual_sha256[DDJ_OTA_SHA256_SIZE];
-    esp_err_t rc = mbedtls_sha256_finish(&s_image_sha, actual_sha256) == 0 ? ESP_OK : ESP_FAIL;
-    mbedtls_sha256_free(&s_image_sha);
+    size_t actual_sha256_size = 0u;
+    psa_status_t hash_rc = psa_hash_finish(&s_image_sha,
+                                           actual_sha256,
+                                           sizeof(actual_sha256),
+                                           &actual_sha256_size);
+    esp_err_t rc = hash_rc == PSA_SUCCESS &&
+                   actual_sha256_size == sizeof(actual_sha256)
+                       ? ESP_OK
+                       : ESP_FAIL;
+    s_image_sha = psa_hash_operation_init();
     s_image_sha_active = false;
     if (rc == ESP_OK && memcmp(actual_sha256, s_expected_sha256,
                                sizeof(actual_sha256)) != 0) {

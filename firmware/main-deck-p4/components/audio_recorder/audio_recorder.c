@@ -2,6 +2,7 @@
 #include "audio_recorder_ring.h"
 #include "audio_recorder_sink.h"
 #include "audio_recorder_wav.h"   /* AUDIO_RECORDER_WAV_FRAME_BYTES */
+#include "audio_recorder_stop_gate.h"
 #include "sd_io_gate.h"
 #include "service_log.h"
 
@@ -50,6 +51,7 @@ static int64_t               s_last_checkpoint_us = 0;
 static TaskHandle_t       s_writer = NULL;   /* marker only; never dereferenced after exit */
 static EventGroupHandle_t s_writer_exited = NULL;
 static bool               s_overflow = false;
+static audio_recorder_stop_gate_t s_producer_gate;
 
 /* Consumer-owned accumulators (writer task only). */
 static uint32_t  s_push_count = 0u;
@@ -211,6 +213,7 @@ static void writer_task(void *arg)
             }
             if (rc != ESP_OK) {
                 s_last_error = rc;
+                audio_recorder_stop_gate_close(&s_producer_gate);
                 store_state(AUDIO_RECORDER_ERROR);
                 service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
                                   2u, (uint32_t)rc,
@@ -224,7 +227,17 @@ static void writer_task(void *arg)
 
             int64_t now = esp_timer_get_time();
             if (now - s_last_checkpoint_us >= AUDIO_RECORDER_CHECKPOINT_US) {
-                audio_recorder_sink_checkpoint(&s_sink);
+                esp_err_t checkpoint_rc = audio_recorder_sink_checkpoint(&s_sink);
+                if (checkpoint_rc != ESP_OK) {
+                    s_last_error = checkpoint_rc;
+                    audio_recorder_stop_gate_close(&s_producer_gate);
+                    store_state(AUDIO_RECORDER_ERROR);
+                    service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                                      2u, (uint32_t)checkpoint_rc,
+                                      (uint32_t)(s_frames_written / 1000u), 0u, 0u,
+                                      "checkpoint failed");
+                    break;
+                }
                 s_last_checkpoint_us = now;
                 uint64_t freeb = 0u;
                 if (audio_recorder_sink_free_bytes(&freeb) == ESP_OK &&
@@ -232,6 +245,7 @@ static void writer_task(void *arg)
                     ESP_LOGW(TAG, "microSD reserve reached (%llu B); stopping REC",
                              (unsigned long long)freeb);
                     s_last_error = ESP_ERR_NO_MEM;
+                    audio_recorder_stop_gate_close(&s_producer_gate);
                     store_state(AUDIO_RECORDER_ERROR);
                     service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
                                       2u, (uint32_t)ESP_ERR_NO_MEM,
@@ -266,6 +280,7 @@ esp_err_t audio_recorder_init(void)
         /* Recover any .part left by a crash/power loss before new recording. */
         audio_recorder_sink_recover_orphans();
     }
+    audio_recorder_stop_gate_init(&s_producer_gate);
     store_state(AUDIO_RECORDER_STOPPED);
     return ESP_OK;
 }
@@ -373,13 +388,20 @@ esp_err_t audio_recorder_start(uint32_t sample_rate)
     __atomic_store_n(&s_overflow, false, __ATOMIC_RELEASE);
 
     xEventGroupClearBits(s_writer_exited, WRITER_EXITED_BIT);
+    if (!audio_recorder_stop_gate_open(&s_producer_gate)) {
+        audio_recorder_sink_abort(&s_sink);
+        release_ring();
+        store_state(AUDIO_RECORDER_STOPPED);
+        return ESP_ERR_INVALID_STATE;
+    }
     store_state(AUDIO_RECORDER_RECORDING);
 
     if (xTaskCreate(writer_task, "rec_writer", AUDIO_RECORDER_WRITER_STACK,
                     NULL, AUDIO_RECORDER_WRITER_PRIO, &s_writer) != pdPASS) {
         ESP_LOGE(TAG, "writer task create failed");
+        audio_recorder_stop_gate_close(&s_producer_gate);
         store_state(AUDIO_RECORDER_STOPPED);
-        audio_recorder_sink_finalize(&s_sink);
+        (void)audio_recorder_sink_abort(&s_sink);
         release_ring();
         service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
                           1u, (uint32_t)ESP_ERR_NO_MEM, 0u, 0u, 0u,
@@ -401,51 +423,72 @@ esp_err_t audio_recorder_stop(void)
 {
     audio_recorder_state_t st = load_state();
     if (st == AUDIO_RECORDER_STOPPED && !s_slots) {
+        audio_recorder_stop_gate_close(&s_producer_gate);
         return ESP_OK;
     }
 
-    /* Ask the writer to finish draining; a faulted writer has already exited. */
+    /* STOP is a three-stage ownership barrier:
+     * 1. close producer admission;
+     * 2. wait for a producer that passed the old RECORDING check to leave;
+     * 3. publish STOPPING so the writer drains the now-closed ring to empty.
+     * This prevents the old empty-ring race where one final master block could
+     * arrive after the writer had already exited. */
+    audio_recorder_stop_gate_close(&s_producer_gate);
+    while (!audio_recorder_stop_gate_is_quiescent(&s_producer_gate)) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
     if (st == AUDIO_RECORDER_RECORDING || st == AUDIO_RECORDER_STARTING) {
         store_state(AUDIO_RECORDER_STOPPING);
     }
     if (s_writer) {
-        /* Join only via the event group; never touch the handle after exit. */
         xEventGroupWaitBits(s_writer_exited, WRITER_EXITED_BIT,
                             pdFALSE, pdTRUE, portMAX_DELAY);
         s_writer = NULL;
     }
 
-    /* Snapshot the session evidence before release_ring() clears the rate. */
     uint32_t rec_seconds = s_sample_rate
         ? (uint32_t)(s_frames_written / s_sample_rate) : 0u;
     uint32_t rec_drops = s_ring.dropped_blocks;
 
-    /* Finalize whatever was written (bounded salvage on an ERROR session). */
-    audio_recorder_sink_finalize(&s_sink);
+    /* A faulted session is never promoted to an ordinary .wav. It is durably
+     * closed as `.part`, and boot recovery may later expose it explicitly as a
+     * `.recovered.wav`. A clean session is renamed only when patch, fsync and
+     * close all succeed. */
+    bool session_ok = s_last_error == ESP_OK && load_state() != AUDIO_RECORDER_ERROR;
+    esp_err_t close_rc = session_ok
+        ? audio_recorder_sink_finalize(&s_sink)
+        : audio_recorder_sink_abort(&s_sink);
+    if (close_rc != ESP_OK && s_last_error == ESP_OK) {
+        s_last_error = close_rc;
+        service_log_event(SERVICE_LOG_RECORDING_FAILED, SERVICE_LOG_ERROR,
+                          2u, (uint32_t)close_rc,
+                          (uint32_t)(s_frames_written / 1000u), 0u, 0u,
+                          "finalize failed; .part retained");
+    }
+
     release_ring();
     store_state(AUDIO_RECORDER_STOPPED);
-    /* A burst that runs into the stop would otherwise never be reported. */
     flush_stall_burst();
     sd_io_gate_set_recorder_active(false);
-    /* Carry the real-time gate evidence into the journal: seconds captured,
-     * producer drops, and the push-latency tail (count >= 100 us, worst case). */
     service_log_event(SERVICE_LOG_RECORDING_STOPPED,
                       (s_last_error == ESP_OK) ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
                       4u, rec_seconds, rec_drops, s_push_over_100us,
                       s_push_max_us, NULL);
     ESP_LOGI(TAG, "recording stopped (bytes=%llu err=%d)",
              (unsigned long long)s_bytes_written, (int)s_last_error);
-    return ESP_OK;
+    return s_last_error;
 }
 
 bool audio_recorder_push_master(const int16_t *stereo, size_t frames,
                                 uint32_t sample_rate)
 {
-    if (load_state() != AUDIO_RECORDER_RECORDING) {
+    if (load_state() != AUDIO_RECORDER_RECORDING ||
+        !audio_recorder_stop_gate_try_enter(&s_producer_gate)) {
         return false;
     }
     int64_t t0 = esp_timer_get_time();
     bool ok = audio_recorder_ring_push(&s_ring, stereo, (uint32_t)frames, sample_rate);
+    audio_recorder_stop_gate_leave(&s_producer_gate);
     uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - t0);
 
     /* Producer-owned counters: only the audio output task updates them. */

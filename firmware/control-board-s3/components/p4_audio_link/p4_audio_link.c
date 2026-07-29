@@ -9,10 +9,9 @@ typedef struct {
 
 static p4_audio_link_frame_t s_ring[P4_AUDIO_LINK_RING_CAPACITY_FRAMES];
 /* SPSC ring with free-running counters: the I2S RX task is the sole writer
-   (bumps s_write_count) and the FLX4 USB Audio transfer callback is the sole
-   reader (bumps s_read_count). used = write_count - read_count. Overrun is
-   resolved reader-side by fast-forwarding, so the writer never touches the
-   reader's counter. Cross-context visibility uses acquire/release. */
+   and the FLX4 USB Audio transfer callback is the sole reader. The writer uses
+   drop-newest when full, so it never overwrites a slot the reader may currently
+   be copying. Cross-context visibility uses acquire/release. */
 static uint32_t s_write_count;
 static uint32_t s_read_count;
 static uint32_t s_last_sequence;
@@ -76,9 +75,10 @@ static void p4_audio_link_push_frame(int16_t left, int16_t right)
     const uint32_t w = s_write_count;
     const uint32_t r = __atomic_load_n(&s_read_count, __ATOMIC_ACQUIRE);
     if (w - r >= P4_AUDIO_LINK_RING_CAPACITY_FRAMES) {
-        /* Full: overwrite the oldest slot and let the reader fast-forward its
-           own counter past the lapped frames. Never move s_read_count here. */
+        /* Drop newest. Overwriting the oldest slot is unsafe because the reader
+         * may already have sampled its index but not copied both stereo words. */
         stats_add(&s_stats.overruns, 1u);
+        return;
     }
 
     s_ring[w % P4_AUDIO_LINK_RING_CAPACITY_FRAMES].left = left;
@@ -165,8 +165,8 @@ size_t p4_audio_link_read_frames(int16_t *dst_interleaved_stereo, size_t frames)
     const uint32_t w = __atomic_load_n(&s_write_count, __ATOMIC_ACQUIRE);
     uint32_t avail = w - r;
     if (avail > P4_AUDIO_LINK_RING_CAPACITY_FRAMES) {
-        /* Writer lapped us; drop the oldest lapped frames (overruns already
-           counted writer-side) and resync to the newest full window. */
+        /* Defensive recovery for counter corruption/wrap. Normal operation can
+         * never lap because the writer drops new frames while the ring is full. */
         r = w - P4_AUDIO_LINK_RING_CAPACITY_FRAMES;
         avail = P4_AUDIO_LINK_RING_CAPACITY_FRAMES;
     }

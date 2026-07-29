@@ -108,6 +108,36 @@ library_track_t *library_get_ptr(int index)
     return index >= 0 && index < library_count() ? &s_tracks[index] : NULL;
 }
 
+/* Identity-only accessors, mirroring the production contract: the shared UI code
+ * uses these instead of copying/holding whole track records for highlight and
+ * selection lookups. */
+esp_err_t library_get_row_key(int index, uint32_t *out_key)
+{
+    if (!out_key) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_key = 0u;
+    if (index < 0 || index >= library_count()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    *out_key = library_track_key(&s_tracks[index]);
+    return ESP_OK;
+}
+
+int library_find_row_by_key(uint32_t track_key)
+{
+    if (track_key == 0u) {
+        return -1;
+    }
+    const int count = library_count();
+    for (int index = 0; index < count; ++index) {
+        if (library_track_key(&s_tracks[index]) == track_key) {
+            return index;
+        }
+    }
+    return -1;
+}
+
 uint32_t library_track_key(const library_track_t *track)
 {
     return track ? track->track_id : 0;
@@ -205,14 +235,14 @@ void library_sort(int field_type, bool descending)
     s_generation++;
 }
 
-void mock_library_load_track_to_deck(int track_index)
+void library_set_selected_track_index(int track_index)
 {
     if (track_index >= 0 && track_index < library_count()) {
         s_loaded_index = track_index;
     }
 }
 
-int mock_library_get_current_track_index(void)
+int library_selected_track_index(void)
 {
     return s_loaded_index;
 }

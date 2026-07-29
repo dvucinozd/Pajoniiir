@@ -2,6 +2,15 @@
 
 #include <string.h>
 
+static size_t bounded_strlen(const char *s, size_t limit)
+{
+    size_t n = 0u;
+    while (n < limit && s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+
 static bool is_printable_ascii(char c)
 {
     return (unsigned char)c >= 0x20u && (unsigned char)c < 0x7Fu;
@@ -29,7 +38,7 @@ const char *p4_ota_cfg_result_name(p4_ota_cfg_result_t r)
 p4_ota_cfg_result_t p4_ota_cfg_check_ssid(const char *ssid)
 {
     if (!ssid || ssid[0] == '\0') return P4_OTA_CFG_EMPTY;
-    size_t n = strnlen(ssid, P4_OTA_CFG_SSID_MAX + 1u);
+    size_t n = bounded_strlen(ssid, P4_OTA_CFG_SSID_MAX + 1u);
     if (n > P4_OTA_CFG_SSID_MAX) return P4_OTA_CFG_TOO_LONG;
     for (size_t i = 0; i < n; i++) {
         /* Control characters only. An SSID may legitimately contain UTF-8, so
@@ -44,7 +53,7 @@ p4_ota_cfg_result_t p4_ota_cfg_check_ssid(const char *ssid)
 p4_ota_cfg_result_t p4_ota_cfg_check_password(const char *password)
 {
     if (!password || password[0] == '\0') return P4_OTA_CFG_EMPTY;
-    size_t n = strnlen(password, P4_OTA_CFG_PSK_HEX + 1u);
+    size_t n = bounded_strlen(password, P4_OTA_CFG_PSK_HEX + 1u);
     if (n > P4_OTA_CFG_PSK_HEX) return P4_OTA_CFG_TOO_LONG;
 
     if (n == P4_OTA_CFG_PSK_HEX) {
@@ -68,7 +77,7 @@ p4_ota_cfg_result_t p4_ota_cfg_check_url(const char *url)
     const size_t scheme_len = sizeof(scheme) - 1u;
 
     if (!url || url[0] == '\0') return P4_OTA_CFG_EMPTY;
-    size_t n = strnlen(url, P4_OTA_CFG_URL_MAX + 1u);
+    size_t n = bounded_strlen(url, P4_OTA_CFG_URL_MAX + 1u);
     if (n > P4_OTA_CFG_URL_MAX) return P4_OTA_CFG_TOO_LONG;
     for (size_t i = 0; i < n; i++) {
         if (!is_printable_ascii(url[i]) || url[i] == ' ') return P4_OTA_CFG_BAD_CHARS;

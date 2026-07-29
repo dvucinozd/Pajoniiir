@@ -14,21 +14,19 @@ remains locally and on `origin`.
 
 > [!IMPORTANT]
 > The last matching P4/S3 bench rollout is **`RC1-254-g21f21963`** from
-> 2026-07-24. The latest clean dual-target release build is
+> 2026-07-24. The latest clean ESP-IDF 5.5.4 dual-target release build is
 > **`RC1-259-gdaf4639`** from 2026-07-26; it has not been signed, packaged or
-> deployed. Repository source is therefore newer than the installed boards,
-> while the latest **complete**
-> functional hardware acceptance remains **`RC1-123-g587cd7a1`** from
-> 2026-07-14. Current software adds release-gate repair, the Pajoniiir rebrand,
-> hardened pull OTA, canonical `http://pajoniiir.local`, LVGL-owned
-> controller/library commands, startup-underrun gating and a host-tested
-> non-FLX4 profile fixture. A deterministic five-minute dual-deck Master Tempo
-> host soak also passes with zero source-position drift, detected clicks or
-> clipping. These changes still need their listed hardware acceptance rows, so
-> the system is not yet production-ready. See
-> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the exact boundary
-> and [the RC1-259 clean-build record](docs/validation/CLEAN_RELEASE_RC1_259_BUILD.md)
-> for binary sizes and SHA-256 values.
+> deployed. The active development head is the `migration/esp-idf-6.0.2` branch,
+> which migrates both targets to **ESP-IDF v6.0.2** and integrates the full
+> `fix/release-blockers-and-concurrency` stabilisation set (bounded compressed
+> audio cache, paginated Library UI, immutable track sort, recorder safety
+> hardening, lossless control queue, ANLZ ownership fixes and more). All
+> software builds, host tests and UI simulator pass on that branch as of
+> 2026-07-28; hardware acceptance rows remain open. Repository source is
+> therefore newer than installed hardware, and the latest **complete**
+> functional hardware baseline remains **`RC1-123-g587cd7a1`** of
+> 2026-07-14. See [Documentation Status](docs/DOCUMENTATION_STATUS.md) for
+> the precise boundary.
 
 ## System at a Glance
 
@@ -47,7 +45,8 @@ layer. The detailed ownership and data flow are documented in
 ## Current Capabilities
 
 - Two independent decks with Rekordbox library browsing and MP3, WAV and FLAC
-  playback.
+  playback. Compressed audio uses a bounded LRU page cache (8 × 32 KiB per
+  deck) instead of whole-file PSRAM allocation.
 - FLX4 transport, jog/vinyl scratch, tempo and Master Tempo, mixer/EQ,
   headphone cue, hot cues, loops, beat jump/sync, Pad FX and Beat FX control.
   Beat FX Filter and Echo have recorded hardware acceptance; Flanger and the
@@ -55,8 +54,8 @@ layer. The detailed ownership and data flow are documented in
   audio/routing smoke still pending.
 - Simultaneous PCM5102A RCA MAIN output and FLX4 USB headphone cue.
 - P4-owned FLX4 LED feedback with reconnect and board-reboot resynchronization.
-- LVGL Overview, Library, Hot Cues and Settings tabs, plus the optional P4
-  Wi-Fi remote.
+- LVGL Overview, Library (paginated 8-row table with PREV/NEXT), Hot Cues and
+  Settings tabs, plus the optional P4 Wi-Fi remote.
 - Data-driven controller profiles loaded from SD or installed through the web
   UI; the built-in DDJ-FLX4 map remains the fallback. The web overwrite path is
   software-complete and still has pending hardware-acceptance rows.
@@ -93,41 +92,57 @@ tools/                       Profile compiler, OTA packager and support tools
 
 ## Build and Test
 
-Required baseline: ESP-IDF v5.5 (including the verified v5.5.4 patch release)
-and the Espressif Python/toolchain environment; host tests additionally require
-native GCC/Make. On Windows, initialize either supported development-machine
-environment before building.
+Required baseline: **ESP-IDF v6.0.2** and its matching Espressif Python and
+toolchain environment. Host tests additionally require native GCC/Make and
+PowerShell 5.1 (ili noviji) na Windowsima, odnosno standardni shell na Linuxu.
 
-Classic Espressif installation:
-
-```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-```
-
-ESP-IDF v5.5.4 profile installation:
+A standard ESP-IDF installation can be initialized on Windows with:
 
 ```powershell
-. C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
+. "$env:IDF_PATH\export.ps1"
 ```
 
-Verify the selected environment with `idf.py --version`.
+Verify the selected environment before configuring either target:
+
+```powershell
+idf.py --version
+```
+
+It must report `ESP-IDF v6.0.2`. For the first build after switching from IDF
+5.5.4, remove the previous generated configuration and managed components:
+
+```powershell
+Remove-Item -Recurse -Force build, managed_components -ErrorAction SilentlyContinue
+Remove-Item sdkconfig, sdkconfig.old -ErrorAction SilentlyContinue
+```
 
 Build each target from the repository root:
 
 ```powershell
 cd firmware\control-board-s3
+idf.py set-target esp32s3
 idf.py build
 
 cd ..\main-deck-p4
+idf.py set-target esp32p4
 idf.py build
 ```
 
-Run the host regression suites from the repository root:
+Run the host regression suites from the repository root. These are the same two
+entry points CI uses, and both run under Windows PowerShell 5.1 and PowerShell 7:
 
 ```powershell
 .\tests\run_s3_host_tests.ps1
 .\tests\run_p4_host_tests.ps1
+```
+
+If `gcc` is not already on `PATH`, append msys2 rather than prepending it —
+prepending shadows the system `python.exe` with msys2's, which cannot run the
+OTA signing suite:
+
+```powershell
+$env:Path = "$env:Path;C:\msys64\ucrt64\bin"
 ```
 
 Run the headless LVGL navigation and exact-framebuffer screenshot gate:
@@ -157,7 +172,7 @@ operational documents are:
 | --- | --- |
 | Product status and source-of-truth policy | [Documentation Status](docs/DOCUMENTATION_STATUS.md) |
 | Product shape and implemented scope | [Project Overview](docs/PROJECT_OVERVIEW.md) |
-| S3/P4 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
+| P4/S3 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
 | FLX4 inputs, outputs and acceptance ledger | [DDJ-FLX4 MIDI Map](docs/DDJ_FLX4_MIDI_MAP.md) |
 | UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
 | Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |

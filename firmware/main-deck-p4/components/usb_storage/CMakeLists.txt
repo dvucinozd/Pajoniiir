@@ -6,9 +6,15 @@ idf_component_register(
     WHOLE_ARCHIVE
 )
 
-# ESP-IDF v5.5's DWC HAL asserts that every channel error includes CHHLTD,
-# although its own contract documents BNAINTR as the exception. Wrap only the
-# interrupt decoder so the project-local compatibility implementation can route
-# that expected condition into the HCD's existing recoverable pipe-error path.
+# The DWC HAL asserts that every channel error also raised CHHLTD, while its own
+# header documents BNAINTR as the one error that does not - and BNAINTR is in the
+# error mask. With HAL assertions at level 2 that combination panics.
+#
+# It is reached on this board: a 30-second P4 capture hit it, and bench-notes
+# records the trigger as streaming from USB during playback, which is exactly
+# what the bounded compressed cache now does on every deck. Wrap only the
+# interrupt decoder so that one documented condition takes the HCD's recoverable
+# pipe-error path; every other missing-halt case still aborts, and HAL assertions
+# stay enabled everywhere else in the system.
 target_link_options(${COMPONENT_LIB} INTERFACE
     "-Wl,--wrap=usb_dwc_hal_chan_decode_intr")

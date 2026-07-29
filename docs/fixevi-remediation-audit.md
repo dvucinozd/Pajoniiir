@@ -1,0 +1,92 @@
+# `fixevi.md` — završni remediation audit
+
+Auditirani dokument: `fixevi(1).md`, izvorni read-only pregled commita
+`RC1-262-g3f75afe`.
+
+Auditirana grana: `fix/release-blockers-and-concurrency`.
+
+Statusi:
+
+- **Zatvoreno** — primarni defekt je uklonjen i pokriven postojećim host/CI gateom.
+- **Zatvoreno; HW/stress pending** — izvorni kodni defekt je uklonjen, ali test koji
+  zahtijeva stvarni uređaj, realni fixture ili dugotrajno opterećenje još nije izveden.
+- **Djelomično** — implementiran je kratkoročni ili primarni fix, ali dokument traži i
+  dodatni dugoročni/refaktorski korak.
+- **Otvoreno** — nalaz nije riješen ovom granom.
+- **Provisioning odluka** — namjerno nije automatski uključeno jer je nepovratno ili
+  traži proizvodni proces i upravljanje ključevima.
+
+## P0
+
+| # | Nalaz | Status | Dokaz |
+|---|---|---|---|
+| 1 | Čisti P4 build cilja pogrešnu reviziju silicija | **Zatvoreno** | `sdkconfig.defaults` vraća pre-v3 selector; CI provjerava selector i `REV_MIN_FULL=100` prije builda. |
+
+## P1
+
+| # | Nalaz | Status | Dokaz / preostali gate |
+|---|---|---|---|
+| 2 | Sort/load može učitati pogrešnu pjesmu | **Zatvoreno** | `track_key + generation`, `load_by_identity()`, `409` na stale generaciju i sort/load mutex. |
+| 3 | Load-error može leakati PSRAM i ostaviti stare taskove | **Zatvoreno; HW/stress pending** | Svaki load bezuvjetno stop/join-a prethodnu sesiju; teardown više ne ovisi o `loaded`; PSRAM buffer ima jednog ownera. Test 100 realnih oštećenih MP3/WAV/FLAC retryja nije izveden. |
+| 4 | ANLZ borrowed pointer UAF | **Zatvoreno; stress pending** | Task-owned klonirani snapshoti i writer/reader guard. Load/Beat Jump/Sync/Loop stress na uređaju nije izveden. |
+| 5 | Pun control queue može izgubiti release | **Zatvoreno za primarni defekt** | Button/state edgeovi koriste lossless backpressure; samo kontinuirane vrijednosti se coalescaju; UART producer ne drenira shared queue. Dodatni level-state watchdog iz preporuke nije uveden. |
+| 6 | S3 disconnect/heartbeat race | **Zatvoreno** | Connection state je atomican; heartbeat samo traži refresh, a USB owner šalje stanje i descriptor. |
+| 7 | S3 `/events` blokira web server | **Zatvoreno** | Bounded SSE snapshot response zatvara zahtjev; EventSource se reconnecta. |
+| 8 | S3 AP start failure beskonačno retrya | **Zatvoreno** | Failure-latched `ERROR`; novi pokušaj traži eksplicitni OFF→ON edge. |
+
+## P2
+
+| Nalaz | Status | Dokaz / preostali gate |
+|---|---|---|
+| Destruktivni load-error ostavlja stari UI | **Zatvoreno** | Stale/error rezultat objavljuje empty deck state i čisti title/waveform/ANLZ/highlight. |
+| Torn `deck_core` snapshot i cross-task reset | **Zatvoreno** | Actor-owned mutacije, sinkroni reset command i koherentni published snapshot. |
+| Master Tempo cross-task DSP reset | **Zatvoreno** | Command epoch primjenjuje output task na granici audio bloka. |
+| S3 audio ring torn overwrite | **Zatvoreno** | SPSC drop-newest kada je ring pun. |
+| UAC bira nepodržani 24-bit format | **Zatvoreno** | Selector zahtijeva podržane kanale, 16-bit/2 B, stopu i packet size unutar MPS-a. |
+| MIDI IN/OUT iz različitih interface/alt kandidata | **Zatvoreno** | Candidate se resetira po interfaceu; par mora biti iz istog `(interface, alt)` i MPS mora biti nenula. |
+| Metadata cache/profile install zaobilaze `sd_io_gate` | **Zatvoreno** | Cache i profile storage operacije koriste gate; recorder state se ponovno provjerava nakon ulaska. |
+| Profile manager drži mutex preko SD I/O-a | **Zatvoreno** | Descriptor ide u queue; scan/install se izvršavaju bez manager mutexa, zatim kratki registry swap. |
+| `service_log_sync()` nije writer barijera | **Zatvoreno** | Queue-ordered sync item, ACK nakon `fsync`, sole `FILE*` owner i status snapshot. |
+| Brightness commit na svaki slider event | **Zatvoreno** | Live backlight + 500 ms debounce worker izvan LVGL taska. |
+| Settings ignorira NVS greške i dijeli OTA stringove | **Zatvoreno** | Provjera set/commit rezultata; RAM snapshot se objavljuje tek nakon uspjeha i pod lockom. |
+| OTA POST prihvaća parcijalni recv | **Zatvoreno; fragmentation fixture pending** | Receive petlja čita do `content_len`. Poseban 1–3 byte HTTP integration fixture nije dodan. |
+| OTA GET ne escapea JSON | **Zatvoreno** | SSID, URL, detail i address prolaze kroz `web_api_json_escape`. |
+| Web loop zaobilazi `deck_core` | **Zatvoreno** | Web loop/exit se pretvaraju u autoritativne deck evente. |
+| Probe i pull-OTA paralelno mijenjaju Wi-Fi stack | **Zatvoreno** | Centralni `wifi_transition_lease` rezervira probe ili OTA prijelaz prije stvaranja workera. |
+| USB mount nema retry / disconnect se može izgubiti | **Zatvoreno; HW pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. Replug i fault-injection test na stvarnom P4 ostaju. |
+| ANLZ short-read postaje valjani cache | **Zatvoreno; fuzz pending** | Exact-read marker, bounded section walk, privremeni objekt i publish tek nakon pune validacije. Fuzz/truncation corpus još nije kompletan. |
+| PDB duration se zamijeni zadnjim beatom | **Zatvoreno** | Javni `library_load_anlz()` čuva svaki nonzero PDB/audio duration; beatgrid duration ostaje fallback kada duration nedostaje. |
+| PVBR 32-bit overflow | **Zatvoreno** | `uint64_t` račun i clamp na `duration_ms`. |
+| Javni AP PSK i CSRF marker umjesto autentikacije | **Otvoreno** | Potrebna je proizvodna odluka: per-device PSK ili fizički prikazan jednokratni token, fizička OTA potvrda i PMF/WPA3 politika. |
+| Secure boot i flash encryption nisu uključeni | **Provisioning odluka** | Ne uključivati običnim source commitom. Potreban je dokumentiran key/provisioning/recovery proces i potvrda nepovratnih eFuse koraka. |
+
+## P3 / performanse i održavanje
+
+| Nalaz | Status | Sljedeći korak |
+|---|---|---|
+| Library sort kopira velike track objekte, UI puni 1024×5 ćelija | **Zatvoreno** | Track zapisi su nakon publish-a immutable, sort kopira samo double-buffered `uint16_t` row-order, a LVGL Library prikaz drži jednu stranicu od 8×5 — najviše 40 živih ćelija — s PREV/NEXT navigacijom umjesto do 5120 ćelija. |
+| Tri framebuffer buffera bez stvarnog swapa | **Zatvoreno konzervativnim putem; HW pending** | BSP i backend sada alociraju/traže samo jedan framebuffer, što odgovara stvarnom partial-LVGL/PPA ponašanju i vraća dvije nepotrebne full-screen PSRAM alokacije. Budući pravi swap bio bi zasebna, mjerena optimizacija. |
+| Master Tempo PSRAM hot path | **Software instrumentacija zatvorena; HW mjerenje pending** | Output task već vodi `mix_max_us`, per-phase i worst-group outlier podatke bez dodatne alokacije. Daljnja DSP optimizacija smije se raditi tek nakon stvarnog dual-deck P4 mjerenja; to je fizički acceptance gate, ne nedovršeni source fix. |
+| Cijeli komprimirani track mora stati u PSRAM | **Zatvoreno; HW stress pending** | MP3/WAV/FLAC koriste seekable bounded cache od 8 × 32 KiB po decku. Cache miss radi jedan gated `read-at`, FLAC koristi `drflac_open` callbackove, a whole-file PSRAM alokacija, `TRACK TOO LARGE` i full-file frame scan su uklonjeni. |
+| Legacy/dead ostaci i monoliti | **Zatvoreno** | Uklonjeni su mrtvi `file_buf`/full-track seek-table ostaci; compressed cache, recorder producer gate i finalize transakcija izdvojeni su u male ownership module s čistim host testovima. Uz to su povučena svih deset `#include "<impl>.c"` compilation wrappera: `grep -rn '#include ".*\.c"' firmware/` više ne vraća ništa izvan vendored koda, svaka komponenta buildá datoteku koju joj CMakeLists imenuje, a s njima su nestali `#define` nad `fread`/`fgetc` i nad `vTaskDelete`, C11 6.9.2p3 povreda u `audio_engine`, i legacy tijela koja su ostajala u imageu. Gate u `run_p4_host_tests.ps1` sprječava povratak. |
+| Recorder nije spreman za ponovno uključivanje | **Software safety zatvoren; funkcija ostaje disabled do HW fault injectiona** | STOP prvo zatvara producer gate i čeka aktivnog producera, zatim writer drenira zatvoreni ring. Checkpoint/write/finalize greške propagiraju se; `.part` se objavljuje kao obični `.wav` samo nakon uspješnog patch+fsync+close niza. Host fault-injection pokriva svaku fazu. |
+| Zastarjeli komentari/dokumentacija | **Zatvoreno** | S3 translator default, P4 revizija, bounded audio cache, paginirana Library tablica i recorder release-gate dokumentacija usklađeni su sa sourceom. |
+| Dependency build nije reproducibilan | **Zatvoreno** | Oba `dependencies.lock` filea su commitana i clean CI ih koristi. |
+
+## Testovi koji i dalje nisu zamijenjeni CI-em
+
+- flash/boot na fizičkom P4 i S3
+- realni MP3/FLAC/WAV decode fixture i realni `export.pdb`
+- širi TSan/fuzz corpus izvan novih bounded-cache i recorder fault-injection host testova
+- stvarno dual-deck P4 mjerenje keylock/PSRAM deadlinea i odluka treba li DSP optimizaciju
+- USB mount/disconnect fault injection
+- prikaz bez tearinga nakon single-framebuffer korekcije
+- dugotrajni dual-deck audio/control/USB/SD soak, uključujući cache-miss i recorder power-loss fault injection
+
+## Preporučeni nastavak
+
+1. Hardverski potvrditi USB reconciliation, single-framebuffer prikaz i bounded-cache reprodukciju s realnim MP3/FLAC/WAV fixtureima pod dual-deck opterećenjem.
+2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
+3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.
+4. Dovršiti FLX4 MIDI/audio, PCM5102A i monitor/headphone, S3↔P4 reconnect, Wi-Fi/OTA exclusion te dugotrajne soak fizičke gateove.
+5. AP autentikaciju, fizičku OTA potvrdu, PMF/WPA3 te Secure Boot/Flash Encryption voditi kao zasebne proizvodne i provisioning odluke.
