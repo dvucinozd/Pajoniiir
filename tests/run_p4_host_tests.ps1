@@ -1716,6 +1716,26 @@ $tests = @(
         )
     },
     @{
+        # Backlight is the one setting driven by a continuous control, so it is
+        # the one whose write pattern matters. Runs the real app_settings.c
+        # against the fake RTOS and a counting NVS fake.
+        Name = "app_settings"
+        Dir = "tests/app_settings"
+        Target = "test_app_settings.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DAPP_SETTINGS_HOST_TEST",
+            "-Istubs",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/app_settings/include",
+            "-o", "test_app_settings.exe",
+            "test_app_settings.c",
+            "../../firmware/main-deck-p4/components/app_settings/app_settings.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
         Name = "control_link_protocol"
         Dir = "tests/control_link_protocol"
         Target = "test_control_link_protocol.exe"
@@ -1899,6 +1919,7 @@ Assert-FileContains `
 # renaming, duplicate legacy code in the image, and (for audio_engine) an
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
+    @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
@@ -1927,6 +1948,11 @@ Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 app_settings builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "app_settings.c"')
 
 Assert-FileContains `
     -Name "p4 pull OTA reserves and releases the transition lease itself" `

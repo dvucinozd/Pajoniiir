@@ -20,14 +20,24 @@ typedef struct {
     uint8_t wifi_remote;    // 0 = Wi-Fi remote off (default), 1 = on (SoftAP + web UI)
 } app_settings_t;
 
-// Initialise NVS and load saved settings (or sensible defaults if none stored).
+// Initialise NVS, load saved settings (or sensible defaults if none stored) and
+// start the backlight persistence worker.
 esp_err_t      app_settings_init(void);
+
+// Start the backlight debounce worker on its own. app_settings_init() already
+// does this; it is separate so the worker can be started without NVS in a host
+// test, and so a worker-creation failure is reported distinctly from a load
+// failure. Idempotent.
+esp_err_t      app_settings_start_backlight_worker(void);
 
 // Snapshot of the current settings.
 app_settings_t app_settings_get(void);
 
 // Update one setting and persist it to NVS.
 void app_settings_set_audio_out(uint8_t out);
+// Backlight is driven by a continuous slider: the value is published at once for
+// the live backlight, and written to NVS only after the control has been quiet
+// for ~500 ms, on a worker rather than the caller's task.
 void app_settings_set_backlight(uint8_t pct);
 void app_settings_set_time_remain(uint8_t remain);
 void app_settings_set_cue_mode(uint8_t mode);

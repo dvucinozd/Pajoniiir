@@ -3,9 +3,12 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <stdbool.h>
 #include <string.h>
 
-static const char *TAG = "settings";
+/* Referenced only by ESP_LOG*, which the PC host stubs compile away. */
+__attribute__((unused)) static const char *TAG = "settings";
 #define NS  "cdjcfg"
 
 /* Readers run in UI/http/OTA tasks. Publish coherent RAM snapshots only after
@@ -13,6 +16,15 @@ static const char *TAG = "settings";
 static portMUX_TYPE s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* Defaults match the firmware's out-of-the-box behaviour. */
+#define APP_SETTINGS_DEFAULTS (app_settings_t){ \
+    .audio_out     = 0,                          \
+    .backlight_pct = 80,                         \
+    .time_remain   = 0,                          \
+    .cue_mode      = 0,                          \
+    .master_trim_preset = 0,                     \
+    .wifi_remote   = 0,                          \
+}
+
 static app_settings_t s_cfg = {
     .audio_out     = 0,
     .backlight_pct = 80,
@@ -76,6 +88,10 @@ static void load_ota_config(nvs_handle_t handle,
     if (nvs_get_str(handle, "ota_url", url, &len) != ESP_OK) url[0] = '\0';
 }
 
+/* Defined with the rest of the backlight debounce path, below the generated
+ * setters it has to sit after; called from app_settings_init() above it. */
+esp_err_t app_settings_start_backlight_worker(void);
+
 esp_err_t app_settings_init(void)
 {
     esp_err_t rc = nvs_flash_init();
@@ -118,7 +134,8 @@ esp_err_t app_settings_init(void)
              next.audio_out ? "off" : "on", next.backlight_pct, next.time_remain,
              next.cue_mode, next.master_trim_preset,
              next.wifi_remote ? "on" : "off");
-    return ESP_OK;
+
+    return app_settings_start_backlight_worker();
 }
 
 app_settings_t app_settings_get(void)
@@ -143,11 +160,124 @@ void function_name(uint8_t value)                                             \
 }
 
 DEFINE_U8_SETTER(app_settings_set_audio_out, audio_out, "audio_out", (void)0)
-DEFINE_U8_SETTER(app_settings_set_backlight, backlight_pct, "backlight", if (value > 100) value = 100)
 DEFINE_U8_SETTER(app_settings_set_time_remain, time_remain, "time_rem", (void)0)
 DEFINE_U8_SETTER(app_settings_set_cue_mode, cue_mode, "cue_mode", if (value > 1) value = 0)
 DEFINE_U8_SETTER(app_settings_set_master_trim_preset, master_trim_preset, "master_trim", if (value > 2) value = 0)
 DEFINE_U8_SETTER(app_settings_set_wifi_remote, wifi_remote, "wifi_rem", value = value ? 1 : 0)
+
+/* ── Backlight: live now, persisted once the slider settles ──────────────── *
+ *
+ * Backlight is the one setting driven by a continuous control. Committing every
+ * VALUE_CHANGED would put an NVS write per slider sample on the LVGL task, so
+ * the value is published immediately for the live backlight and only written
+ * after the control has been quiet for BACKLIGHT_DEBOUNCE_MS, on a worker.
+ *
+ * This used to live in a wrapper translation unit that renamed the generated
+ * setter to *_legacy_immediate and #included this file; the setter is simply
+ * written out by hand here instead, and the generated one is no longer produced.
+ */
+#define BACKLIGHT_DEBOUNCE_MS 500u
+#define SETTINGS_WORKER_STACK 3072u
+#define SETTINGS_WORKER_PRIO  2u
+
+static TaskHandle_t s_settings_worker;
+static uint8_t s_pending_backlight = 80u;
+
+/* Synchronous commit, used before the worker exists and as its final step.
+ * Returns true when the value actually reached NVS and was published. */
+static bool app_settings_commit_backlight(uint8_t value)
+{
+    if (value > 100u) value = 100u;
+    app_settings_t current = app_settings_get();
+    if (current.backlight_pct == value) return false;
+    if (save_u8("backlight", value) != ESP_OK) return false;
+    portENTER_CRITICAL(&s_cfg_mux);
+    s_cfg.backlight_pct = value;
+    portEXIT_CRITICAL(&s_cfg_mux);
+    return true;
+}
+
+/* One debounce cycle: block for a change, absorb the rest of the burst, commit
+ * whatever the control settled on. Kept as its own function so a host test can
+ * drive exactly one cycle; the worker loop below is an infinite loop and cannot
+ * be entered directly by a test without a scheduler to leave it. */
+static void settings_persist_debounce_cycle(void)
+{
+    (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+    /* Each new VALUE_CHANGED notification restarts the quiet interval. */
+    while (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(BACKLIGHT_DEBOUNCE_MS)) != 0u) {
+    }
+
+    const uint8_t value = __atomic_load_n(&s_pending_backlight, __ATOMIC_ACQUIRE);
+    if (app_settings_commit_backlight(value)) {
+        ESP_LOGI(TAG, "backlight persisted after debounce: %u%%", (unsigned)value);
+    }
+}
+
+#if defined(APP_SETTINGS_HOST_TEST)
+/* Test seam: run one cycle on the caller's stack instead of the worker task. */
+void app_settings_test_run_debounce_cycle(void)
+{
+    settings_persist_debounce_cycle();
+}
+
+/* Return this translation unit to its power-on state. The host harness can reset
+ * its fake RTOS between cases, but not the statics in here — without this a
+ * worker created by one case makes the next one think it already has one. */
+void app_settings_test_reset(void)
+{
+    s_settings_worker = NULL;
+    s_pending_backlight = 80u;
+    portENTER_CRITICAL(&s_cfg_mux);
+    s_cfg = APP_SETTINGS_DEFAULTS;
+    memset(s_ota_ssid, 0, sizeof(s_ota_ssid));
+    memset(s_ota_pass, 0, sizeof(s_ota_pass));
+    memset(s_ota_url, 0, sizeof(s_ota_url));
+    portEXIT_CRITICAL(&s_cfg_mux);
+}
+#endif
+
+static void settings_persist_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        settings_persist_debounce_cycle();
+    }
+}
+
+void app_settings_set_backlight(uint8_t value)
+{
+    if (value > 100u) value = 100u;
+    __atomic_store_n(&s_pending_backlight, value, __ATOMIC_RELEASE);
+
+    /* Calls before app_settings_init() — tests, or an unusually early caller —
+     * still have to persist, so fall back to the synchronous commit. */
+    TaskHandle_t worker = __atomic_load_n(&s_settings_worker, __ATOMIC_ACQUIRE);
+    if (!worker) {
+        app_settings_commit_backlight(value);
+        return;
+    }
+    xTaskNotifyGive(worker);
+}
+
+/* Start the debounce worker. Separate from the NVS load so the load stays
+ * testable on its own, and so a worker failure is reported distinctly. */
+esp_err_t app_settings_start_backlight_worker(void)
+{
+    app_settings_t snapshot = app_settings_get();
+    __atomic_store_n(&s_pending_backlight, snapshot.backlight_pct, __ATOMIC_RELEASE);
+    if (s_settings_worker) return ESP_OK;
+
+    TaskHandle_t worker = NULL;
+    if (xTaskCreate(settings_persist_worker, "settings_nvs", SETTINGS_WORKER_STACK,
+                    NULL, SETTINGS_WORKER_PRIO, &worker) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create settings persistence worker");
+        return ESP_ERR_NO_MEM;
+    }
+    __atomic_store_n(&s_settings_worker, worker, __ATOMIC_RELEASE);
+    return ESP_OK;
+}
 
 #undef DEFINE_U8_SETTER
 
