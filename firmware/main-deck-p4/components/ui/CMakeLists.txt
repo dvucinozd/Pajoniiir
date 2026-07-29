@@ -5,7 +5,7 @@ idf_component_register(
          "Musieer_48.c"
          "ui_library.c"
          "ui_overview.c"
-         "ui_lvgl_backend_single_fb.c"
+         "ui_lvgl_backend.c"
          "ui_active_deck_leds.c"
          "ui_controls.c"
          "ui_deck_anlz_store.c"

@@ -155,7 +155,14 @@ esp_err_t ui_lvgl_backend_draw_rect_rgb565(const ui_overlay_rect_t *logical, uin
 #define LVGL_TICK_PERIOD_MS        2
 #define LVGL_TASK_STACK            (24 * 1024)
 #define LVGL_TASK_PRIO             4
-#define UI_DSI_FB_COUNT            3
+/* Driven by the BSP so the two cannot disagree. There is no inactive-buffer
+ * swap in this backend: LVGL renders partial rows into one PSRAM draw buffer and
+ * the flush callback PPA-rotates them straight into the single DPI framebuffer.
+ * Asking the driver for more would reserve full-screen buffers that are never
+ * scanned. */
+#define UI_DSI_FB_COUNT            BSP_LCD_FRAMEBUFFER_COUNT
+_Static_assert(UI_DSI_FB_COUNT == 1u,
+               "this backend supports exactly one DPI framebuffer");
 #define UI_LVGL_PARTIAL_BUF_ROWS   80u
 #define UI_PERF_SPIKE_THRESHOLD_US 20000u
 #define UI_LVGL_NOTIFY_REFRESH     (1u << 0)
@@ -586,8 +593,9 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
         return ESP_ERR_INVALID_STATE;
     }
 
+    s_dsi_active_fb_idx = 0;
     ESP_ERROR_CHECK(esp_lcd_dpi_panel_get_frame_buffer(panel, UI_DSI_FB_COUNT,
-                                                       &s_dsi_fb[0], &s_dsi_fb[1], &s_dsi_fb[2]));
+                                                       &s_dsi_fb[0]));
     ESP_ERROR_CHECK(esp_cache_get_alignment(MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM, &s_cache_align));
 
     ppa_client_config_t ppa_cfg = { .oper_type = PPA_OPERATION_SRM };
@@ -644,10 +652,16 @@ esp_err_t ui_lvgl_backend_init(uint16_t hor_res, uint16_t ver_res)
         ESP_LOGE(TAG,
                  "failed to register DPI refresh callback: %s",
                  esp_err_to_name(panel_cb_rc));
+        /* Last failure path in this function, and the only one after the draw
+         * buffer exists. Hand it back rather than leaving a full partial-render
+         * buffer stranded in PSRAM on a boot that is about to be retried. */
+        lv_display_set_buffers(s_disp, NULL, NULL, 0, LV_DISPLAY_RENDER_MODE_PARTIAL);
+        heap_caps_free(buf1);
         return panel_cb_rc;
     }
 
-    ESP_LOGI(TAG, "LVGL backend ready (%ux%u canvas -> PPA-rotated to %dx%d, RGB565)",
+    ESP_LOGI(TAG,
+             "LVGL backend ready (%ux%u canvas -> PPA-rotated to %dx%d, RGB565, one DPI framebuffer)",
              (unsigned)s_hor_res,
              (unsigned)s_ver_res,
              BSP_LCD_H_RES,

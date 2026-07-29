@@ -1920,6 +1920,7 @@ Assert-FileContains `
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
+    @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -2007,7 +2008,7 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 LVGL backend requests the shared framebuffer count" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend_single_fb.c") `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_lvgl_backend.c") `
     -LiteralPatterns @("BSP_LCD_FRAMEBUFFER_COUNT", "esp_lcd_dpi_panel_get_frame_buffer")
 
 Assert-FileContains `
