@@ -1061,6 +1061,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_engine.c",
@@ -1313,6 +1314,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-o", "test_monitor_pcm_link.exe",
             "test_monitor_pcm_link.c",
@@ -1325,7 +1327,7 @@ $tests = @(
         Target = "test_beat_jump.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_beat_jump.exe",
@@ -1341,7 +1343,10 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST",
+            # Local stubs first: this suite deliberately keeps a wall-clock
+            # esp_timer.h and its own audio_engine.h component fake.
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
@@ -1378,6 +1383,7 @@ $tests = @(
             "-Wno-unused-variable", "-Wno-unused-parameter",
             "-DDECK_CORE_PC_TEST", "-DCONFIG_AUDIO_SCRATCH_ENABLED=1",
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/beat_jump/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
@@ -1400,6 +1406,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_flx4_led_snapshot.exe",
             "test_flx4_led_snapshot.c",
@@ -1455,6 +1462,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_recorder/include",
             "-I../../firmware/main-deck-p4/components/service_log/include",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
             "../../firmware/main-deck-p4/components/ui/ui_settings.c"
@@ -1471,7 +1479,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_status.exe",
             "test_ui_status.c",
             "../../firmware/main-deck-p4/components/ui/ui_status.c"
@@ -1534,7 +1542,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/ui/include",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../deck_core_dual/stubs",
+            "-I../support/stubs",
             "-o", "test_ui_beat_fx_format.exe",
             "test_ui_beat_fx_format.c",
             "../../firmware/main-deck-p4/components/ui/ui_beat_fx_format.c"
@@ -1670,7 +1678,7 @@ $tests = @(
         Target = "test_library_anlz.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
-            "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
@@ -1692,12 +1700,29 @@ $tests = @(
         )
     },
     @{
+        # Shared test infrastructure gets tested like production code: every
+        # suite built on the fake RTOS inherits its behaviour, so a fake that
+        # lies would turn broken firmware green.
+        Name = "support_rtos"
+        Dir = "tests/support_rtos"
+        Target = "test_fake_rtos.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-o", "test_fake_rtos.exe",
+            "test_fake_rtos.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
         Name = "control_link_protocol"
         Dir = "tests/control_link_protocol"
         Target = "test_control_link_protocol.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_control_link_protocol.exe",
@@ -1714,6 +1739,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
             "-o", "test_controller_profile_manager.exe",
             "test_controller_profile_manager.c",

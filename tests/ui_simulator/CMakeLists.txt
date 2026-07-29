@@ -73,7 +73,10 @@ target_compile_definitions(ui_simulator_e2e PRIVATE
 
 target_include_directories(ui_simulator_e2e PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    # deck_core_dual first for its wall-clock esp_timer.h and audio_engine.h
+    # component fake; shared platform stubs behind it.
     "${REPO_ROOT}/tests/deck_core_dual/stubs"
+    "${REPO_ROOT}/tests/support/stubs"
     "${UI_DIR}/include"
     "${LIBRARY_DIR}/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/include"

@@ -455,6 +455,7 @@ Push-Location $bulkDir
 try {
     $inc = @(
         "-I../control_link_protocol/stubs",
+        "-I../support/stubs",
         "-I../../firmware/main-deck-p4/components/control_link/include",
         "-I../../firmware/control-board-s3/components/controller_profile/include"
     )
@@ -484,6 +485,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DFLX4_MIDI_HOST_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-o", "test_flx4_midi_host.exe",
             "test_flx4_midi_host.c",
@@ -498,6 +500,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DFLX4_MIDI_HOST_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-o", "test_flx4_map.exe",
@@ -514,6 +517,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DFLX4_MIDI_HOST_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-o", "test_flx4_led_midi.exe",
@@ -527,7 +531,9 @@ $tests = @(
         Target = "test_control_link_protocol.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
+            # Local stubs first for the suite-specific usb/usb_host.h fake.
             "-Istubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_control_link_protocol.exe",
@@ -556,6 +562,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
             "-DFLX4_MIDI_HOST_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/controller_profile/include",
             "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
             "-I../../firmware/control-board-s3/components/control_link/include",
@@ -589,6 +596,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DS3_DEBUG_AP_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
             "-o", "test_s3_debug_log_ring.exe",
             "test_s3_debug_log_ring.c",
@@ -603,6 +611,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DS3_DEBUG_AP_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
             "-o", "test_s3_debug_ap_state.exe",
             "test_s3_debug_ap_state.c",
@@ -666,6 +675,7 @@ $tests = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DFLX4_USB_AUDIO_PC_TEST",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/flx4_usb_audio/include",
             "-o", "test_flx4_usb_audio.exe",
             "test_flx4_usb_audio.c",
@@ -681,6 +691,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/p4_audio_link/include",
             "-o", "test_p4_audio_link.exe",
             "test_p4_audio_link.c",
