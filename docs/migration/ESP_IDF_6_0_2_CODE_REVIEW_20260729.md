@@ -213,6 +213,49 @@ i ne smije ponovno aktivirati staru sesiju.
 App dobiva media-removed samo za trenutno aktivni session. Disconnect
 sekundarnog ili ignoriranog uređaja nikada ne mijenja primary mount.
 
+### Implementacijski status na `codex/fix-usb-storage-ownership`
+
+Status: **SOFTWARE POPRAVLJENO; HARDWARE ACCEPTANCE OSTAJE OTVOREN**
+
+Implementiran je zaseban, host-testabilan `usb_storage_session` state machine.
+Session sada koherentno posjeduje accepted adresu, opaque MSC handle, mount
+status i monoton epoch. Produkcijski `usb_storage.c`:
+
+- prihvaća samo jedan primary session;
+- veže handle tek nakon uspješnog `msc_host_install_device()`;
+- ignorira disconnect čiji handle nije accepted handle aktivnog sessiona;
+- prihvaća disconnect tijekom opening faze, prije nego što je handle moguće
+  objaviti storage tasku;
+- epochom odbija zakašnjeli bind ili mount-complete stare sesije;
+- nakon mount failurea otpušta handle i dopušta retry unutar istog epocha;
+- zadržava postojeći bounded exponential mount backoff.
+
+Novi `tests/usb_storage_session/test_usb_storage_session.c` izvršava 63 provjere
+i pokriva primary lifecycle, odbijeni secondary connect/disconnect, disconnect
+tijekom openinga, stale completion, duplicate događaje, mount retry i stale
+callback prethodne sesije. Test je uključen u puni P4 host runner.
+
+Validacija na ovoj grani:
+
+- `tests/run_p4_host_tests.ps1`: **PASS**, uključujući svih 63 novih provjera;
+- P4 `idf.py build` na ESP-IDF v6.0.2: **PASS**;
+- `main-deck-p4.bin`: `0x24ee80` bajtova, `0x1b1180` bajtova (42%) slobodno u
+  najmanjoj app particiji.
+
+MSC driver u normalnom toku ne objavljuje disconnect za sekundarni uređaj koji
+aplikacija nikada nije instalirala. Ownership provjera je ipak namjerno
+defenzivna: ako strani handle dođe do callbacka, ne smije promijeniti primary
+session. Dok session još nema bound handle, disconnect se tretira kao prekid
+primary openinga jer u toj fazi aplikacija nema drugi pouzdan identitet.
+
+Preostali gateovi prije hardware zatvaranja nalaza:
+
+- A i B preko stvarnog USB huba, uključujući disconnect B dok A reproducira;
+- disconnect A tijekom install/mount faze;
+- connect/disconnect bounce i 50–100 reconnect ciklusa;
+- stvarni mount i unmount failure te provjera da nema use-after-unmounta;
+- potvrda da se media-removed callback objavljuje samo za accepted session.
+
 ---
 
 ## P1-2 — Control-link state edge događaji mogu se izgubiti
@@ -820,7 +863,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | Redoslijed | Paket | Status / ovisnost |
 | ---: | --- | --- |
 | 1 | Ispraviti control-link full-queue test | prvi korak; mora reproducirati postojeći drop |
-| 2 | USB ownership state machine | P1, neovisan nakon test baselinea |
+| 2 | USB ownership state machine | **software implementirano i validirano na `codex/fix-usb-storage-ownership`; HW hub/reconnect pending** |
 | 3 | USB recovery lifecycle | graditi na ownership state machineu |
 | 4 | Control-link durable state reconciliation | P1, nakon reprodukcijskog testa |
 | 5 | Deck/library ownership refaktor | P1; poželjno nakon stabilnog control-linka |

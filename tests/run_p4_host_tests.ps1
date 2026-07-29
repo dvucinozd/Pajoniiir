@@ -1345,6 +1345,19 @@ $tests = @(
         )
     },
     @{
+        Name = "usb_storage_session"
+        MinTestsRun = 63
+        Dir = "tests/usb_storage_session"
+        Target = "test_usb_storage_session.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-o", "test_usb_storage_session.exe",
+            "test_usb_storage_session.c",
+            "../../firmware/main-deck-p4/components/usb_storage/usb_storage_session.c"
+        )
+    },
+    @{
         Name = "usb_media_partition"
         Dir = "tests/usb_media_partition"
         Target = "test_usb_media_partition.exe"
@@ -2115,9 +2128,10 @@ Write-Host "P4 host tests passed."
 Assert-FileContains `
     -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
-    -LiteralPatterns @("storage_desired_t", "s_desired.epoch++", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_connection(false")
+    -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
 
-# Idiom plus a file-static counter. usb_storage.c has no host coverage.
+# The session ownership transitions have host behaviour coverage; this guard
+# separately pins that callback delivery remains level-state/notification based.
 Assert-FileDoesNotContain `
     -Name "p4 USB disconnect is not dependent on a finite event queue" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `

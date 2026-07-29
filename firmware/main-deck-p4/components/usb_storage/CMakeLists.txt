@@ -1,5 +1,6 @@
 idf_component_register(
-    SRCS "usb_storage.c" "usb_media_partition.c" "usb_media_mount.c"
+    SRCS "usb_storage.c" "usb_storage_session.c"
+         "usb_media_partition.c" "usb_media_mount.c"
          "usb_dwc_hal_compat.c"
     INCLUDE_DIRS "include"
     REQUIRES log usb usb_host_msc fatfs media_io_gate hal

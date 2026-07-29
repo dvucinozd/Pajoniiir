@@ -1,4 +1,5 @@
 #include "usb_storage.h"
+#include "usb_storage_session.h"
 #include "media_io_gate.h"
 
 #include "freertos/FreeRTOS.h"
@@ -35,12 +36,6 @@ static const char *TAG = "usb_storage";
 #define ROOT_PORT_MAX_CYCLES     8u
 #define ROOT_PORT_SLOW_MS        30000u
 
-typedef struct {
-    bool connected;
-    uint8_t dev_addr;
-    uint32_t epoch;
-} storage_desired_t;
-
 static TaskHandle_t             s_storage_task;
 static TaskHandle_t             s_usb_lib_task;
 static usb_storage_event_cb_t   s_cb;
@@ -50,16 +45,15 @@ static usb_media_mount_t       *s_mount;
 /* Driver callback publishes only desired state. The storage task is the sole
  * owner of mount/unmount handles and callback publication. */
 static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
-static storage_desired_t s_desired;
-static bool s_mounted;
+static usb_storage_session_t s_session;
 static bool s_announced_mounted;
 static bool s_seen_device;
 
-static storage_desired_t desired_snapshot(void)
+static usb_storage_session_t desired_snapshot(void)
 {
-    storage_desired_t snapshot;
+    usb_storage_session_t snapshot;
     portENTER_CRITICAL(&s_state_mux);
-    snapshot = s_desired;
+    snapshot = s_session;
     portEXIT_CRITICAL(&s_state_mux);
     return snapshot;
 }
@@ -68,9 +62,7 @@ static bool desired_matches(uint32_t epoch, uint8_t dev_addr)
 {
     bool matches;
     portENTER_CRITICAL(&s_state_mux);
-    matches = s_desired.connected &&
-              s_desired.epoch == epoch &&
-              s_desired.dev_addr == dev_addr;
+    matches = usb_storage_session_matches(&s_session, epoch, dev_addr);
     portEXIT_CRITICAL(&s_state_mux);
     return matches;
 }
@@ -83,45 +75,45 @@ static void notify_storage_owner(void)
     }
 }
 
-static void publish_desired_connection(bool connected, uint8_t dev_addr)
+static void publish_desired_connect(uint8_t dev_addr)
 {
-    bool accepted = true;
-
+    usb_storage_connect_result_t result;
     portENTER_CRITICAL(&s_state_mux);
-    if (connected) {
-        /* This component intentionally owns one Rekordbox drive. Ignore a second
-         * address rather than evicting a working device underneath active reads. */
-        if (s_desired.connected &&
-            s_desired.dev_addr != 0u &&
-            s_desired.dev_addr != dev_addr) {
-            accepted = false;
-        } else {
-            s_desired.connected = true;
-            s_desired.dev_addr = dev_addr;
-            s_seen_device = true;
-            s_desired.epoch++;
-        }
-    } else {
-        /* Disconnect is level state, not a lossy edge. Even if notifications
-         * coalesce, the owner will observe connected=false on its next poll. */
-        s_desired.connected = false;
-        s_desired.dev_addr = 0u;
-        s_desired.epoch++;
-        s_mounted = false;
+    result = usb_storage_session_on_connect(&s_session, dev_addr);
+    if (result != USB_STORAGE_CONNECT_IGNORED_SECONDARY) {
+        s_seen_device = true;
     }
     portEXIT_CRITICAL(&s_state_mux);
 
-    if (!accepted) {
+    if (result == USB_STORAGE_CONNECT_IGNORED_SECONDARY) {
         ESP_LOGW(TAG, "second USB storage device ignored (addr=%u)",
                  (unsigned)dev_addr);
         return;
     }
-
-    if (!connected) {
-        /* Block new media reads immediately. The owner task performs the safe
-         * unmount after existing gate holders have drained. */
-        media_io_gate_set_available(false);
+    if (result == USB_STORAGE_CONNECT_ACCEPTED) {
+        notify_storage_owner();
     }
+}
+
+static void publish_desired_disconnect(msc_host_device_handle_t handle)
+{
+    usb_storage_disconnect_result_t result;
+    portENTER_CRITICAL(&s_state_mux);
+    result = usb_storage_session_on_disconnect(
+        &s_session, (uintptr_t)handle);
+    portEXIT_CRITICAL(&s_state_mux);
+
+    if (result == USB_STORAGE_DISCONNECT_IGNORED_FOREIGN) {
+        ESP_LOGW(TAG, "disconnect for non-owner USB storage handle ignored");
+        return;
+    }
+    if (result == USB_STORAGE_DISCONNECT_ALREADY_INACTIVE) {
+        return;
+    }
+
+    /* Disconnect is level state, not a lossy edge. Block new reads immediately;
+     * the owner task performs the safe unmount after gate holders drain. */
+    media_io_gate_set_available(false);
     notify_storage_owner();
 }
 
@@ -141,6 +133,7 @@ static void root_port_power_cycle(const char *why)
 
 static void release_device(void)
 {
+    msc_host_device_handle_t released_handle = s_msc_dev;
     media_io_gate_begin();
     if (s_mount) {
         usb_media_unmount(s_mount);
@@ -151,13 +144,20 @@ static void release_device(void)
         s_msc_dev = NULL;
     }
     media_io_gate_end();
+
+    if (released_handle) {
+        portENTER_CRITICAL(&s_state_mux);
+        usb_storage_session_release_handle(
+            &s_session, (uintptr_t)released_handle);
+        portEXIT_CRITICAL(&s_state_mux);
+    }
 }
 
 static void publish_unmounted(void)
 {
     bool notify = false;
     portENTER_CRITICAL(&s_state_mux);
-    s_mounted = false;
+    usb_storage_session_mark_unmounted(&s_session);
     if (s_announced_mounted) {
         s_announced_mounted = false;
         notify = true;
@@ -178,10 +178,8 @@ static bool commit_mounted(uint32_t epoch, uint8_t dev_addr)
 
     bool committed = false;
     portENTER_CRITICAL(&s_state_mux);
-    if (s_desired.connected &&
-        s_desired.epoch == epoch &&
-        s_desired.dev_addr == dev_addr) {
-        s_mounted = true;
+    if (usb_storage_session_commit_mounted(
+            &s_session, epoch, dev_addr)) {
         s_announced_mounted = true;
         committed = true;
     }
@@ -201,7 +199,7 @@ bool usb_storage_is_mounted(void)
 {
     bool mounted;
     portENTER_CRITICAL(&s_state_mux);
-    mounted = s_mounted;
+    mounted = s_session.mounted;
     portEXIT_CRITICAL(&s_state_mux);
     return mounted;
 }
@@ -216,9 +214,9 @@ static void msc_event_cb(const msc_host_event_t *event, void *arg)
     }
 
     if (event->event == MSC_DEVICE_CONNECTED) {
-        publish_desired_connection(true, event->device.address);
+        publish_desired_connect(event->device.address);
     } else if (event->event == MSC_DEVICE_DISCONNECTED) {
-        publish_desired_connection(false, 0u);
+        publish_desired_disconnect(event->device.handle);
     }
 }
 
@@ -357,6 +355,16 @@ static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
         return ESP_ERR_INVALID_STATE;
     }
 
+    bool handle_bound;
+    portENTER_CRITICAL(&s_state_mux);
+    handle_bound = usb_storage_session_bind_handle(
+        &s_session, epoch, dev_addr, (uintptr_t)s_msc_dev);
+    portEXIT_CRITICAL(&s_state_mux);
+    if (!handle_bound) {
+        release_device();
+        return ESP_ERR_INVALID_STATE;
+    }
+
     log_device_info("USB MSC device");
 
     const esp_vfs_fat_mount_config_t mount_cfg = {
@@ -407,7 +415,7 @@ static void storage_task(void *arg)
     TickType_t next_attempt = 0;
 
     for (;;) {
-        storage_desired_t desired = desired_snapshot();
+        usb_storage_session_t desired = desired_snapshot();
 
         if (!desired.connected) {
             bool had_device = s_announced_mounted || s_mount || s_msc_dev;
@@ -476,8 +484,7 @@ esp_err_t usb_storage_init(usb_storage_event_cb_t cb)
     media_io_gate_set_available(false);
     s_cb = cb;
     portENTER_CRITICAL(&s_state_mux);
-    memset(&s_desired, 0, sizeof(s_desired));
-    s_mounted = false;
+    usb_storage_session_reset(&s_session);
     s_announced_mounted = false;
     s_seen_device = false;
     portEXIT_CRITICAL(&s_state_mux);
