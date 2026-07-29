@@ -213,6 +213,36 @@ function Assert-OverviewInactiveGuardBeforeCacheUpdate {
     }
 }
 
+# The P4's FPU is single-precision only, so any double that reaches the audio
+# hot path is emulated in libgcc - hundreds of cycles per operation on a task
+# that must finish every 5.8 ms block. The gate this replaces searched
+# audio_keylock.c for a "double <identifier>" declaration, which catches only
+# the most explicit way to introduce one. The likelier accidents are implicit:
+# a dropped f suffix on a literal, or sqrt() where sqrtf() was meant. Neither
+# writes the word "double" anywhere, and both were invisible to the regex.
+#
+# Let the compiler decide instead. Every one of these files is clean today, so
+# the contract costs nothing and covers the whole DSP hot path rather than the
+# single file the old gate happened to name.
+function Invoke-SinglePrecisionContract {
+    $dir = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine"
+    $sources = @(
+        "audio_keylock.c", "audio_filter.c", "audio_eq.c", "audio_resampler.c",
+        "audio_smart_cfx.c", "audio_delay_fx.c", "audio_flanger_fx.c",
+        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c"
+    )
+    foreach ($source in $sources) {
+        if (-not (Test-Path -LiteralPath (Join-Path $dir $source))) {
+            throw "single-precision contract names $source, which no longer exists"
+        }
+    }
+    Invoke-Step -Name "static audio DSP hot path stays single-precision" `
+        -WorkingDirectory $dir `
+        -Executable $Gcc.Source `
+        -Arguments (@("-fsyntax-only", "-Wdouble-promotion", "-Werror=double-promotion",
+                      "-std=c99", "-Iinclude", "-I.") + $sources)
+}
+
 # AE_LOCK is one global recursive mutex and ae_output_task takes it on every
 # audio block, so a USB page fetch taken while holding it stalls the priority-6
 # output task for the whole transfer - an audible dropout, not just a slow
@@ -364,6 +394,7 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
     -LiteralPatterns @("ui_overview_renderer_draw_main_rgb565(overlay")
 
+Invoke-SinglePrecisionContract
 Assert-DecodeWarmsCacheBeforeEngineLock
 Assert-OverviewInactiveGuardBeforeCacheUpdate
 Assert-OverviewMainRenderCommitGuard
@@ -883,11 +914,6 @@ Assert-FileDoesNotContain `
     -Name "p4 transport flags use atomic access across decode output and control tasks" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
-
-Assert-FileDoesNotContain `
-    -Name "p4 key-lock hot path avoids software-emulated double arithmetic" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_keylock.c") `
-    -RegexPattern "\bdouble\s+[A-Za-z_][A-Za-z0-9_]*\s*(?:[=,;()]|\[)"
 
 Assert-FileContains `
     -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
