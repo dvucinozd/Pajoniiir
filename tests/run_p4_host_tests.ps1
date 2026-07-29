@@ -268,11 +268,6 @@ Assert-FileContains `
     -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
 
 Assert-FileContains `
-    -Name "p4 control queue preserves edges and coalesces only continuous values" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("store_pending_continuous", "s_pending_jog_delta", "flush_pending_control_events")
-
-Assert-FileContains `
     -Name "p4 edge backpressure is bounded so the UART RX task cannot wedge" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
     -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
@@ -296,13 +291,6 @@ Assert-FileContains `
     -Name "p4 discarded track load releases the deck audio session, not just the UI" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
-
-# Idiom. control_link_uart.c has no host coverage; the RX task cannot be
-# executed without a UART driver fake.
-Assert-FileDoesNotContain `
-    -Name "p4 UART producer never drains or reorders the deck queue" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("xQueueReceive(s_event_queue")
 
 Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
@@ -1857,6 +1845,30 @@ $tests = @(
             "-o", "test_app_settings.exe",
             "test_app_settings.c",
             "../../firmware/main-deck-p4/components/app_settings/app_settings.c",
+            "../support/rtos/fake_rtos.c"
+        )
+    },
+    @{
+        # First execution coverage for control_link_uart.c. This component
+        # decides what reaches deck_core - which events may be coalesced when
+        # the queue is full and which must never be lost - and until now every
+        # one of those rules was guarded only by grepping the source.
+        Name = "control_link_uart"
+        MinTestsRun = 53
+        Dir = "tests/control_link_uart"
+        Target = "test_control_link_uart.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DCONTROL_LINK_HOST_TEST",
+            "-Istubs",
+            "-I../support/rtos",
+            "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-o", "test_control_link_uart.exe",
+            "test_control_link_uart.c",
+            "../../firmware/main-deck-p4/components/control_link/control_link_uart.c",
+            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c",
+            "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
             "../support/rtos/fake_rtos.c"
         )
     },

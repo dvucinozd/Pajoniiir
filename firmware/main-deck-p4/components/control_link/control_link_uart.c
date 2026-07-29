@@ -10,7 +10,8 @@
 #include <stdatomic.h>
 #include <string.h>
 
-static const char *TAG = "ctrl_link";
+/* Referenced only by ESP_LOG*, which the PC host stubs compile away. */
+__attribute__((unused)) static const char *TAG = "ctrl_link";
 
 // ─── Pin assignment ───────────────────────────────────────────────────────────
 // JP1 header pins — verify on hardware before wiring.
@@ -60,6 +61,7 @@ static control_link_rx_stats_t s_rx_stats;
 
 static esp_err_t send_bulk_frame(const uint8_t *frame, size_t len, const char *what)
 {
+    (void)what;   /* names the frame in ESP_LOGW, which the host stubs elide */
     if (len == 0) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -495,19 +497,40 @@ static void parse_byte(rx_state_t *st, uint8_t b)
     dispatch_frame(st->buf);
 }
 
+/* One pass of the receive loop: read whatever the driver has, parse it, then
+ * release anything the queue-full path held back. Split out of the task loop so
+ * a host test can run exactly one pass — the loop itself never returns, and the
+ * behaviour worth testing is what one pass does to the queue, not the looping.
+ *
+ * `st` is static rather than local so partial frames survive across passes, the
+ * same way they do across iterations of the task loop. The RX task is its sole
+ * caller in firmware. */
+static void uart_rx_pump(void)
+{
+    static rx_state_t st;
+    uint8_t buf[64];
+
+    int n = uart_read_bytes(UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(20));
+    for (int i = 0; i < n; i++) {
+        parse_byte(&st, buf[i]);
+    }
+    /* A pending final fader/jog sample must be delivered even when UART goes
+     * quiet immediately after the queue-full interval. */
+    flush_pending_control_events();
+}
+
+#if defined(CONTROL_LINK_HOST_TEST)
+void control_link_test_pump_rx(void)
+{
+    uart_rx_pump();
+}
+#endif
+
 static void uart_rx_task(void *arg)
 {
-    rx_state_t st  = { 0 };
-    uint8_t    buf[64];
-
+    (void)arg;
     while (1) {
-        int n = uart_read_bytes(UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(20));
-        for (int i = 0; i < n; i++) {
-            parse_byte(&st, buf[i]);
-        }
-        /* A pending final fader/jog sample must be delivered even when UART goes
-         * quiet immediately after the queue-full interval. */
-        flush_pending_control_events();
+        uart_rx_pump();
     }
 }
 
