@@ -184,6 +184,15 @@ Current P4 Overview waveform ownership rule:
 8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
    republishes the current P4-owned LED snapshot.
 
+The control path distinguishes continuous values, physical held levels and
+discrete commands. Continuous absolute values keep the latest sample and
+relative motion accumulates deltas. Jog touch, Shift, Censor, Pad FX and shifted
+roll use a shared S3/P4 desired/scheduled/dirty reconciler, so queue saturation
+can delay but cannot erase their final level; disconnect forces releases and a
+P4 reboot reaccepts the S3 snapshot. Discrete commands remain FIFO and retain
+sequence-gap telemetry because collapsing repeated commands would change their
+meaning.
+
 The MIDI map is not an authority for behavior. `docs/reference/Pioneer-DDJ-FLX4.midi.xml`
 is the proven source for input status/midino values, and
 `docs/reference/DDJ-FLX4_MIDI_message_List.md` is the additional official

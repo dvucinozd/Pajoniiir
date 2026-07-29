@@ -400,8 +400,15 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
 - [ ] Hardware smoke S3-to-P4 input snapshot replay: move Master Level, channel
   faders, crossfader, Trim, EQ, Filter/CFX, Headphones Mix, and Beat FX Depth;
   reboot only P4 while S3/FLX4 remain powered; confirm P4 reapplies the known
-  values without moving the controls again. Tempo faders and buttons/toggles
-  are intentionally out of scope for this smoke.
+  values without moving the controls again. Tempo faders and discrete
+  buttons/toggles are intentionally out of scope for this absolute-value smoke.
+- [ ] Hardware smoke durable held-state reconciliation: under an injected
+  stalled/slow P4 consumer, press and release Deck 1/2 JOG TOUCH, SHIFT, Censor,
+  Pad FX 1/2 pads and shifted Beat Loop roll pads; confirm the final level always
+  wins after recovery. Repeat with FLX4 disconnect while held and with a P4-only
+  reboot while S3/FLX4 remain powered. Confirm no scratch/Shift/pad latch remains
+  and record `/api/status` field `control_link.sequence_gaps` before and after
+  each case.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
 - [ ] Hardware smoke Beat FX FLANGER/DELAY: select both in both directions and

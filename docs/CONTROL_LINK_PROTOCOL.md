@@ -128,16 +128,24 @@ test.
 | `0x85` | S3 Debug AP | bidirectional on `CTRL_TYPE_STATE`; P4->S3 request `0` OFF / `1` ON; S3->P4 status `0` OFF / `1` STARTING / `2` ON / `3` ERROR (see below) |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
-`docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. High-rate jog, tempo,
-channel fader, and crossfader events are locally coalesced before UART send;
-button edges and load/PFL events remain FIFO.
+`docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. Queue/backpressure behavior
+depends on event semantics:
 
-Jog-touch is the exception under saturation because it is a safety-critical
-level, not an ordinary button edge. At both the S3 translator queue and P4
-control-event queue, the newest touch level supersedes older queued levels for
-the same platter and is inserted at the front. High-rate motion is the preferred
-eviction victim; a button-only full queue sacrifices one oldest event rather
-than dropping the latest platter release.
+- continuous absolute controls retain the latest observed value, while relative
+  jog/browse deltas are accumulated before UART or deck-queue delivery;
+- physical held levels use a shared 54-slot desired/scheduled/dirty reconciler
+  on both S3 and P4. This covers Deck 1/2 jog touch, Shift, Censor, all Pad FX 1
+  and Pad FX 2 pads, and shifted Beat Loop roll pads. A full queue may delay a
+  level transition, but it cannot erase the latest desired press/release;
+- discrete commands such as Play, Cue, Load, PFL, browse actions and toggle
+  requests remain FIFO with bounded enqueue and sequence-gap telemetry.
+
+Producers never drain, reorder, or evict unrelated entries from a shared queue.
+Held-state dirty slots are flushed before pending continuous values whenever
+consumer capacity returns. Reliable delivery of arbitrary repeated discrete
+commands remains a separate future protocol-hardening concern; if field
+telemetry shows that sequence-gap detection is insufficient, the compatible
+next step is command ACK/retry rather than treating commands as levels.
 
 `CTRL_ID_HEADPHONE_LEVEL`, `CTRL_ID_SMART_CFX_SHIFT`,
 `CTRL_ID_SMART_FADER_SHIFT`, `CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT`, and
@@ -244,15 +252,24 @@ lets the freshly booted P4 force its LED snapshot without requiring a controller
 replug.
 
 After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
-the last known FLX4 absolute input snapshot to P4. The replay covers only
-controls whose current value S3 has actually observed as a complete value:
-channel faders, crossfader, trim/pregain, EQ high/mid/low, channel filter,
-Master Level, Headphones Mix, Headphone Level, and Beat FX Level/Depth. S3 does
-not fabricate defaults for unknown physical positions, and the USB MIDI class
-does not expose a generic "read all knobs now" request. Tempo faders, buttons,
-pad actions, PFL, browse, and jog inputs are deliberately excluded from this
-snapshot phase because replaying them could create false user actions or disable
-Beat Sync.
+the last known FLX4 input state to P4 in two semantic groups:
+
+- observed absolute controls: channel faders, crossfader, trim/pregain, EQ
+  high/mid/low, channel filter, Master Level, Headphones Mix, Headphone Level,
+  and Beat FX Level/Depth;
+- observed physical held levels tracked by the reconciler: Deck 1/2 jog touch,
+  Shift, Censor, Pad FX 1/2 pads and shifted Beat Loop roll pads.
+
+S3 does not fabricate defaults for unknown physical positions, and the USB MIDI
+class does not expose a generic "read all knobs now" request. Tempo faders,
+discrete/toggle/action buttons, PFL, browse actions and relative jog deltas are
+deliberately excluded because replaying them could create false user actions or
+disable Beat Sync. Repeated held snapshots are suppressed after the value is
+scheduled within one P4 lifetime; a newly booted P4 starts with an empty
+reconciler and therefore accepts the same still-held snapshot. An FLX4
+disconnect first converts every observed held level into a release and only
+then publishes the disconnected state, preventing stale scratch/Shift/pad
+latches.
 
 The current P4 Beat FX snapshot is exposed through `/api/status` under
 `beat_fx` for low-rate hardware smoke verification without raw MIDI logging.

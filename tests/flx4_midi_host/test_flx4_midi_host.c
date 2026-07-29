@@ -204,6 +204,38 @@ static void test_connected_state_can_be_refreshed_after_edge_publication(void)
     assert(!flx4_midi_host_test_publish_connection_refresh(&ev));
 }
 
+static unsigned s_connection_callback_count;
+static bool s_connection_callback_value;
+
+static void capture_connection_callback(bool connected, void *user_ctx)
+{
+    unsigned *tag = (unsigned *)user_ctx;
+    assert(tag && *tag == 0xA5u);
+    s_connection_callback_count++;
+    s_connection_callback_value = connected;
+}
+
+static void test_connection_owner_notifies_snapshot_reconciler_on_edges(void)
+{
+    flx4_midi_host_test_connection_event_t ev = { 0 };
+    unsigned tag = 0xA5u;
+    s_connection_callback_count = 0u;
+    s_connection_callback_value = false;
+    flx4_midi_host_test_reset_connection_state();
+    flx4_midi_host_set_connection_callback(capture_connection_callback, &tag);
+
+    assert(flx4_midi_host_test_publish_connection_state(true, &ev));
+    assert(s_connection_callback_count == 1u);
+    assert(s_connection_callback_value);
+    assert(!flx4_midi_host_test_publish_connection_state(true, &ev));
+    assert(s_connection_callback_count == 1u);
+
+    assert(flx4_midi_host_test_publish_connection_state(false, &ev));
+    assert(s_connection_callback_count == 2u);
+    assert(!s_connection_callback_value);
+    flx4_midi_host_set_connection_callback(NULL, NULL);
+}
+
 static void test_vu_meter_packets_are_low_priority(void)
 {
     const uint8_t d1_vu[4] = { 0x0B, 0xB0, 0x02, 0x40 };
@@ -278,6 +310,7 @@ int main(void)
     test_rejects_truncated_descriptor();
     test_connection_state_publications_are_edge_triggered();
     test_connected_state_can_be_refreshed_after_edge_publication();
+    test_connection_owner_notifies_snapshot_reconciler_on_edges();
     test_vu_meter_packets_are_low_priority();
     test_vu_meter_packets_drop_when_out_queue_has_backlog();
     test_midi_out_queue_capacity_covers_phase7_forced_snapshot();

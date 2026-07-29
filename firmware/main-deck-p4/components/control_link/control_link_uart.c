@@ -1,5 +1,6 @@
 #include "control_link.h"
 #include "control_link_p4_diagnostics.h"
+#include "control_state_reconciler.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -238,6 +239,7 @@ typedef struct {
 static pending_value_t s_pending_values[256];
 static bool s_pending_delta_valid[256];
 static int32_t s_pending_delta[256];
+static control_held_state_reconciler_t s_held_states;
 
 /* A liveness ping. It carries no state the deck needs, and the next one arrives
  * within a second, so under queue pressure it is simply dropped: coalescing it
@@ -259,6 +261,11 @@ static bool event_is_relative_delta(const ctrl_event_t *ev)
 static bool event_is_continuous_value(const ctrl_event_t *ev)
 {
     if (!ev) return false;
+    /* State reports are absolute snapshots. The latest connection/AP state must
+     * survive pressure, but replaying an older intermediate state is useless. */
+    if (ev->type == CTRL_EV_STATE) {
+        return true;
+    }
     /* BROWSE belongs here: a library-browse spin is a stream of deltas, and
      * without it each tick took the lossless path and applied backpressure to
      * the RX task while the operator was simply scrolling. */
@@ -301,6 +308,31 @@ static int16_t clamp_jog_delta(int32_t value)
  * still checks each slot's own valid flag. */
 static unsigned s_pending_first_key = 256u;
 
+static bool flush_pending_held_states(void)
+{
+    size_t cursor = 0u;
+    int key;
+    uint8_t id;
+    int16_t value;
+    uint8_t sequence;
+    while (control_held_state_next_dirty(&s_held_states, &cursor, &key,
+                                         &id, &value, &sequence)) {
+        ctrl_event_t ev = {
+            .type = CTRL_EV_BUTTON,
+            .id = id,
+            .value = value,
+            .seq = sequence,
+            .deck = control_link_id_deck(id),
+            .control = control_link_id_control(id),
+        };
+        if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) {
+            return false;
+        }
+        control_held_state_mark_scheduled(&s_held_states, key, value);
+    }
+    return true;
+}
+
 static void store_pending_continuous(const ctrl_event_t *ev)
 {
     if (!ev) return;
@@ -325,6 +357,11 @@ static void store_pending_continuous(const ctrl_event_t *ev)
 static void flush_pending_control_events(void)
 {
     if (!s_event_queue) return;
+    /* Physical levels outrank fader/jog backlog: a delayed release can mute
+     * scratch, Censor, roll or Pad FX indefinitely. */
+    if (!flush_pending_held_states()) {
+        return;
+    }
     unsigned first_remaining = 256u;
     for (unsigned key = s_pending_first_key; key < 256u; ++key) {
         if (s_pending_delta_valid[key]) {
@@ -368,18 +405,36 @@ static bool enqueue_control_event(const ctrl_event_t *ev)
         return true;
     }
 
-    /* Button/state edges are lossless: bounded backpressure is preferable to a
-     * missing release that leaves scratch, Censor, roll, Pad FX or SHIFT
-     * latched. The wait is bounded rather than infinite because this runs on the
-     * UART RX task, which is also the only reader of the serial FIFO and the
-     * only parser of the 0xA6 bulk layer. Blocking here forever on a stalled
-     * consumer would overrun the FIFO and lose *every* frame - including the
-     * release edges this backpressure exists to protect - and would stall
-     * controller-profile transfers and the S3 heartbeat with it. */
+    const int held_key =
+        ev->type == CTRL_EV_BUTTON
+            ? control_held_state_observe(&s_held_states, ev->id, ev->value, ev->seq)
+            : -1;
+    if (held_key >= 0 && !s_held_states.slots[held_key].dirty) {
+        /* Periodic S3 snapshots intentionally repeat physical levels so a
+         * P4-only reboot can recover. Suppress a level already scheduled in
+         * this P4 lifetime; repeated press handlers are not all commands. */
+        s_event_coalesce_count++;
+        return true;
+    }
+
+    /* Held levels get bounded backpressure plus a durable desired-state slot.
+     * When the wait expires the UART parser keeps draining and a later pump
+     * reconciles the newest physical level. */
     if (xQueueSend(s_event_queue, ev, pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)) == pdTRUE) {
+        if (held_key >= 0) {
+            control_held_state_mark_scheduled(&s_held_states, held_key, ev->value);
+        }
         return true;
     }
     s_edge_backpressure_timeout_count++;
+    if (held_key >= 0) {
+        s_event_coalesce_count++;
+        return true;
+    }
+    /* Discrete commands retain FIFO semantics: silently collapsing repeated
+     * presses would change their meaning. A future ACK/retry command channel
+     * can strengthen this bounded failure path without conflating it with held
+     * state reconciliation. */
     return false;
 }
 
@@ -428,6 +483,14 @@ static void dispatch_frame(const uint8_t *f)
          ev.value == CTRL_FLX4_DISCONNECTED) &&
         s_controller_state_cb) {
         s_controller_state_cb(ev.value == CTRL_FLX4_CONNECTED);
+    }
+
+    if (ev.type == CTRL_EV_STATE && ev.id == CTRL_ID_FLX4_CONNECTION &&
+        ev.value == CTRL_FLX4_DISCONNECTED) {
+        /* A disconnected controller cannot provide its final Note-Off frames.
+         * Convert every observed held input to release before the connection
+         * snapshot reaches deck_core. */
+        control_held_state_release_all(&s_held_states, ev.seq);
     }
 
     flush_pending_control_events();
@@ -609,6 +672,7 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
     memset(s_pending_values, 0, sizeof(s_pending_values));
     memset(s_pending_delta_valid, 0, sizeof(s_pending_delta_valid));
     memset(s_pending_delta, 0, sizeof(s_pending_delta));
+    control_held_state_reset(&s_held_states);
     s_pending_first_key = 256u;
     s_edge_backpressure_timeout_count = 0u;
 

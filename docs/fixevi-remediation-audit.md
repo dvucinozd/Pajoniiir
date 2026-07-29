@@ -33,7 +33,7 @@ Statusi:
 | 2 | Sort/load može učitati pogrešnu pjesmu | **Zatvoreno** | `track_key + generation`, `load_by_identity()`, `409` na stale generaciju i sort/load mutex. |
 | 3 | Load-error može leakati PSRAM i ostaviti stare taskove | **Zatvoreno; HW/stress pending** | Svaki load bezuvjetno stop/join-a prethodnu sesiju; teardown više ne ovisi o `loaded`; PSRAM buffer ima jednog ownera. Test 100 realnih oštećenih MP3/WAV/FLAC retryja nije izveden. |
 | 4 | ANLZ borrowed pointer UAF i nekonzistentan loaded-track ownership | **Zatvoreno; HW/stress pending** | `deck_core` posjeduje koherentan key/generation/BPM/duration/ANLZ snapshot; writer/reader guard, stale media floor i 20.000 publish/40.000 reader host stress ne dopuštaju miješanje generacija. Deck kopija izostavlja neupotrebljavani high-resolution waveform. Load/Beat Jump/Sync/Loop stress na uređaju nije izveden. |
-| 5 | Pun control queue može izgubiti release | **Zatvoreno za primarni defekt** | Button/state edgeovi koriste lossless backpressure; samo kontinuirane vrijednosti se coalescaju; UART producer ne drenira shared queue. Dodatni level-state watchdog iz preporuke nije uveden. |
+| 5 | Pun control queue može izgubiti release | **Zatvoreno; HW/stress pending** | Zajednički 54-slot held-state reconciler na S3 i P4 trajno čuva zadnji press/release za jog touch, Shift, Censor, Pad FX i roll bez producer draina/reordera shared queuea. Capacity+1, disconnect, heartbeat i P4 reboot host regresije prolaze (`control_link_uart` 110 i reconciler 32 provjere); fizički stalled-link/reconnect smoke nije izveden. |
 | 6 | S3 disconnect/heartbeat race | **Zatvoreno** | Connection state je atomican; heartbeat samo traži refresh, a USB owner šalje stanje i descriptor. |
 | 7 | S3 `/events` blokira web server | **Zatvoreno** | Bounded SSE snapshot response zatvara zahtjev; EventSource se reconnecta. |
 | 8 | S3 AP start failure beskonačno retrya | **Zatvoreno** | Failure-latched `ERROR`; novi pokušaj traži eksplicitni OFF→ON edge. |
@@ -85,6 +85,7 @@ Statusi:
 - širi TSan/fuzz corpus izvan novih bounded-cache i recorder fault-injection host testova
 - stvarno dual-deck P4 mjerenje keylock/PSRAM deadlinea i odluka treba li DSP optimizaciju
 - USB mount/disconnect fault injection, uključujući remove usred stvarnog audio load/decode prozora
+- S3/P4/FLX4 held-control saturation, disconnect/reconnect i P4-only reboot smoke
 - prikaz bez tearinga nakon single-framebuffer korekcije
 - dugotrajni dual-deck audio/control/USB/SD soak, uključujući cache-miss i recorder power-loss fault injection
 
@@ -93,5 +94,5 @@ Statusi:
 1. Hardverski potvrditi USB reconciliation, single-framebuffer prikaz i bounded-cache reprodukciju s realnim MP3/FLAC/WAV fixtureima pod dual-deck opterećenjem.
 2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
 3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.
-4. Dovršiti FLX4 MIDI/audio, PCM5102A i monitor/headphone, S3↔P4 reconnect, Wi-Fi/OTA exclusion te dugotrajne soak fizičke gateove.
+4. Dovršiti FLX4 MIDI/audio, PCM5102A i monitor/headphone, S3↔P4 reconnect te held-control saturation/reboot smoke, Wi-Fi/OTA exclusion i dugotrajne soak fizičke gateove.
 5. AP autentikaciju, fizičku OTA potvrdu, PMF/WPA3 te Secure Boot/Flash Encryption voditi kao zasebne proizvodne i provisioning odluke.

@@ -2024,6 +2024,7 @@ $tests = @(
             "-I../support/rtos",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/control_link/include",
+            "-I../../firmware/common/control_state_reconciler/include",
             "-o", "test_control_link_uart.exe",
             "test_control_link_uart.c",
             "../../firmware/main-deck-p4/components/control_link/control_link_uart.c",

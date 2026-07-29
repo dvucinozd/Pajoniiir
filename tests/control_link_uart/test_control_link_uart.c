@@ -117,21 +117,202 @@ static void test_resyncs_after_leading_garbage(void)
 
 static void test_button_edges_are_never_dropped_when_queue_is_full(void)
 {
-    printf("== a button release survives a full queue ==\n");
-    /* Depth 2, then three button edges: the third can only be delivered if the
-     * consumer drains, which is what bounded backpressure is for. Nothing may be
-     * silently coalesced away: a lost release latches scratch, Censor or SHIFT. */
+    printf("== the final held state survives a genuinely full queue ==\n");
+    /* Depth 2, then three button edges: the third really exercises the full
+     * queue path in the fake RTOS, where bounded waiting cannot run a consumer.
+     * A durable desired-state slot must retain the final press until the queue
+     * drains. */
     begin(2u);
 
     feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1, 1u);
     feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 0, 2u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1, 3u);
     control_link_test_pump_rx();
 
-    ctrl_event_t ev[4];
+    ctrl_event_t ev[8];
     unsigned n = drain(ev, 4);
     CHECK(n == 2u);
     CHECK(ev[0].value == 1);
-    CHECK(ev[1].value == 0);   /* the release is present, and in order */
+    CHECK(ev[1].value == 0);
+
+    control_link_test_pump_rx();
+    n = drain(ev, 8);
+    CHECK(n == 1u);
+    CHECK(ev[0].id == CTRL_ID_DECK1_JOG_TOUCH);
+    CHECK(ev[0].value == 1);   /* the final physical level is reconciled */
+}
+
+static void test_shift_release_is_reconciled_after_a_full_queue(void)
+{
+    printf("== a SHIFT release is reconciled after real queue saturation ==\n");
+    begin(1u);
+
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 1, 1u);
+    control_link_test_pump_rx();
+    ctrl_event_t ev[4];
+    CHECK(drain(ev, 4) == 1u);
+    CHECK(ev[0].id == CTRL_ID_DECK1_SHIFT && ev[0].value == 1);
+
+    ctrl_event_t blocker = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_DECK1_PLAY,
+        .value = 1,
+    };
+    CHECK(xQueueSend(s_queue, &blocker, 0) == pdTRUE);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_SHIFT, 0, 2u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 4) == 1u);
+    CHECK(ev[0].id == CTRL_ID_DECK1_PLAY);
+
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 4) == 1u);
+    CHECK(ev[0].id == CTRL_ID_DECK1_SHIFT);
+    CHECK(ev[0].value == 0);
+}
+
+static void test_periodic_held_snapshot_does_not_repeat_a_scheduled_press(void)
+{
+    printf("== an identical held snapshot is suppressed after first delivery ==\n");
+    begin(4u);
+
+    const int16_t roll_press =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 4, true, true);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION, roll_press, 1u);
+    control_link_test_pump_rx();
+    ctrl_event_t ev[4];
+    CHECK(drain(ev, 4) == 1u);
+
+    /* A heartbeat replay for P4 reboot recovery repeats the current level.
+     * This P4 already scheduled it, so deck_core must not see a second roll
+     * press and overwrite the loop state that release should restore. */
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION, roll_press, 2u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 4) == 0u);
+}
+
+static void test_p4_reboot_accepts_the_same_held_snapshot_again(void)
+{
+    printf("== a fresh P4 accepts the current held snapshot after reboot ==\n");
+    const int16_t pad_press =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX2, 1, false, true);
+
+    begin(4u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION, pad_press, 1u);
+    control_link_test_pump_rx();
+    ctrl_event_t ev[4];
+    CHECK(drain(ev, 4) == 1u);
+
+    /* control_link_init() represents the fresh receiver lifetime after a
+     * P4-only reboot. The same S3 snapshot is no longer a duplicate. */
+    begin(4u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION, pad_press, 2u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 4) == 1u);
+    CHECK(ev[0].id == CTRL_ID_DECK2_PAD_ACTION);
+    CHECK(ev[0].value == pad_press);
+}
+
+static void test_censor_pad_fx_and_roll_have_independent_dirty_slots(void)
+{
+    printf("== Censor Pad FX and roll releases have independent dirty slots ==\n");
+    begin(1u);
+    ctrl_event_t ev[8];
+
+    const int16_t censor_press =
+        CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, true);
+    const int16_t censor_release =
+        CTRL_DECK_EXT_VALUE(CTRL_DECK_EXT_ACTION_CENSOR, false);
+    const int16_t pad_press =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 2, false, true);
+    const int16_t pad_release =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_PAD_FX1, 2, false, false);
+    const int16_t roll_press =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 6, true, true);
+    const int16_t roll_release =
+        CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_LOOP, 6, true, false);
+
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION, censor_press, 1u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 8) == 1u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION, pad_press, 2u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 8) == 1u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION, roll_press, 3u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 8) == 1u);
+
+    ctrl_event_t blocker = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_DECK1_PLAY,
+        .value = 1,
+    };
+    CHECK(xQueueSend(s_queue, &blocker, 0) == pdTRUE);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_EXT_ACTION, censor_release, 4u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_PAD_ACTION, pad_release, 5u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK2_PAD_ACTION, roll_release, 6u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 8) == 1u);
+
+    bool saw_censor = false;
+    bool saw_pad = false;
+    bool saw_roll = false;
+    for (unsigned pass = 0; pass < 4u; ++pass) {
+        control_link_test_pump_rx();
+        const unsigned n = drain(ev, 8);
+        for (unsigned i = 0; i < n; ++i) {
+            if (ev[i].id == CTRL_ID_DECK1_EXT_ACTION &&
+                ev[i].value == censor_release) {
+                saw_censor = true;
+            } else if (ev[i].id == CTRL_ID_DECK1_PAD_ACTION &&
+                       ev[i].value == pad_release) {
+                saw_pad = true;
+            } else if (ev[i].id == CTRL_ID_DECK2_PAD_ACTION &&
+                       ev[i].value == roll_release) {
+                saw_roll = true;
+            }
+        }
+    }
+    CHECK(saw_censor);
+    CHECK(saw_pad);
+    CHECK(saw_roll);
+}
+
+static void test_disconnect_releases_held_states_before_state_snapshot(void)
+{
+    printf("== disconnect releases held inputs before its state snapshot ==\n");
+    begin(2u);
+
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1, 1u);
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK2_SHIFT, 1, 2u);
+    control_link_test_pump_rx();
+    ctrl_event_t ev[8];
+    CHECK(drain(ev, 8) == 2u);
+
+    ctrl_event_t blocker = {
+        .type = CTRL_EV_BUTTON,
+        .id = CTRL_ID_DECK1_PLAY,
+        .value = 1,
+    };
+    CHECK(xQueueSend(s_queue, &blocker, 0) == pdTRUE);
+    blocker.id = CTRL_ID_DECK2_PLAY;
+    CHECK(xQueueSend(s_queue, &blocker, 0) == pdTRUE);
+    feed_frame(CTRL_TYPE_STATE, CTRL_ID_FLX4_CONNECTION,
+               CTRL_FLX4_DISCONNECTED, 3u);
+    control_link_test_pump_rx();
+    CHECK(drain(ev, 8) == 2u);
+
+    control_link_test_pump_rx();
+    unsigned n = drain(ev, 8);
+    CHECK(n == 2u);
+    CHECK(ev[0].type == CTRL_EV_BUTTON && ev[0].value == 0);
+    CHECK(ev[1].type == CTRL_EV_BUTTON && ev[1].value == 0);
+
+    control_link_test_pump_rx();
+    n = drain(ev, 8);
+    CHECK(n == 1u);
+    CHECK(ev[0].type == CTRL_EV_STATE);
+    CHECK(ev[0].id == CTRL_ID_FLX4_CONNECTION);
+    CHECK(ev[0].value == CTRL_FLX4_DISCONNECTED);
 }
 
 static void test_continuous_values_coalesce_to_the_newest(void)
@@ -309,6 +490,11 @@ int main(void)
     test_bad_checksum_is_rejected();
     test_resyncs_after_leading_garbage();
     test_button_edges_are_never_dropped_when_queue_is_full();
+    test_shift_release_is_reconciled_after_a_full_queue();
+    test_periodic_held_snapshot_does_not_repeat_a_scheduled_press();
+    test_p4_reboot_accepts_the_same_held_snapshot_again();
+    test_censor_pad_fx_and_roll_have_independent_dirty_slots();
+    test_disconnect_releases_held_states_before_state_snapshot();
     test_continuous_values_coalesce_to_the_newest();
     test_pending_jog_deltas_accumulate_rather_than_being_lost();
     test_producer_never_removes_events_from_the_queue();

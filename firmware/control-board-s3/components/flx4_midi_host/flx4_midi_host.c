@@ -6,6 +6,8 @@
 
 static flx4_midi_message_cb_t s_message_cb;
 static void *s_message_cb_ctx;
+static flx4_midi_connection_cb_t s_connection_cb;
+static void *s_connection_cb_ctx;
 static bool s_connection_state_valid;
 static bool s_connection_state_connected;
 static bool s_connection_refresh_requested;
@@ -21,6 +23,13 @@ void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_c
 {
     s_message_cb = cb;
     s_message_cb_ctx = user_ctx;
+}
+
+void flx4_midi_host_set_connection_callback(flx4_midi_connection_cb_t cb,
+                                            void *user_ctx)
+{
+    s_connection_cb = cb;
+    s_connection_cb_ctx = user_ctx;
 }
 
 static bool should_publish_connection_state(bool connected)
@@ -351,6 +360,9 @@ bool flx4_midi_host_test_publish_connection_state(
     out->type = 0x82;
     out->id = 0x70;
     out->value = connected ? 1 : 0;
+    if (s_connection_cb) {
+        s_connection_cb(connected, s_connection_cb_ctx);
+    }
     return true;
 }
 
@@ -462,6 +474,9 @@ static void publish_connection_state(bool connected)
     }
     if (connected) {
         desc_report_send_if_valid();
+    }
+    if (s_connection_cb) {
+        s_connection_cb(connected, s_connection_cb_ctx);
     }
 }
 

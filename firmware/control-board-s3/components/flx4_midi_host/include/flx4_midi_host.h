@@ -39,6 +39,7 @@ typedef struct {
 } flx4_midi_message_t;
 
 typedef void (*flx4_midi_message_cb_t)(const flx4_midi_message_t *msg, void *user_ctx);
+typedef void (*flx4_midi_connection_cb_t)(bool connected, void *user_ctx);
 
 bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *out);
 
@@ -65,6 +66,8 @@ bool flx4_midi_format_descriptor_hex_row(const uint8_t *data,
                                          size_t out_len);
 
 void flx4_midi_host_set_message_callback(flx4_midi_message_cb_t cb, void *user_ctx);
+void flx4_midi_host_set_connection_callback(flx4_midi_connection_cb_t cb,
+                                            void *user_ctx);
 
 esp_err_t flx4_midi_host_init(void);
 

@@ -49,7 +49,11 @@ Naknadni remediation status istoga dana:
 - USB recovery lifecycle je vezan uz session epoch i ponovno se armira nakon
   disconnecta;
 - P1-3 deck/library ownership i lossy UI event zastavice su software zatvoreni;
-- P1-2 durable control-link state reconciliation ostaje sljedeći otvoreni P1.
+- P1-2 durable control-link state reconciliation je software zatvoren na S3 i
+  P4; fizički reconnect/saturation smoke ostaje otvoren jer hardware nije
+  dostupan;
+- sva tri P1 nalaza time su software zatvorena, ali Milestone A nije hardware
+  prihvaćen.
 
 ## Odnos prema ranijem remediation auditu
 
@@ -271,13 +275,18 @@ Preostali gateovi prije hardware zatvaranja nalaza:
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO; HARDWARE RECONNECT/SATURATION SMOKE PENDING**
+
 Primarne lokacije:
 
-- `firmware/main-deck-p4/components/control_link/control_link_uart.c:44-54`
-- `firmware/main-deck-p4/components/control_link/control_link_uart.c:356-383`
-- `firmware/main-deck-p4/components/control_link/control_link_uart.c:433-445`
-- `tests/control_link_uart/test_control_link_uart.c:118-135`
-- `tests/support/rtos/fake_rtos.c:85-104`
+- `firmware/common/control_state_reconciler/include/control_state_reconciler.h`
+- `firmware/control-board-s3/main/app_main.c`
+- `firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c`
+- `firmware/main-deck-p4/components/control_link/control_link_uart.c`
+- `tests/control_state_reconciler/test_control_state_reconciler.c`
+- `tests/control_link_uart/test_control_link_uart.c`
+- `tests/flx4_midi_host/test_flx4_midi_host.c`
 
 ### Nalaz
 
@@ -316,24 +325,54 @@ Za diskretne komande koristiti zaseban command ring i sequence-gap telemetry.
 Ako receiver-side zaštita nije dovoljna, proširiti postojeći `0xA5` protokol
 kompatibilnim ACK/retry ili resync mehanizmom.
 
+### Implementirani popravak
+
+- Zajednički header-only `control_state_reconciler` klasificira 54 nezavisna
+  fizička held levela: Deck 1/2 jog touch, Shift, Censor, Pad FX 1/2 padove i
+  shifted Beat Loop roll padove.
+- I S3 translator i P4 receiver za svaki slot čuvaju observed, desired,
+  scheduled i dirty stanje. Kad je queue pun, najnovije željeno stanje ostaje
+  dirty i šalje se čim consumer oslobodi kapacitet; producer više ne drenira,
+  ne premeće i ne izbacuje tuđe queue elemente.
+- Held flush ima prednost nad kontinuiranim vrijednostima. Apsolutne vrijednosti
+  i dalje koriste latest-value coalescing, relativni jog/browse akumulaciju, a
+  diskretne komande ostaju FIFO jer njihovo sažimanje mijenja semantiku.
+- Heartbeat/P4 reboot ponovno šalje poznate held levele. Identičan snapshot
+  unutar istog P4 lifetimea se ne duplicira, dok ga novi P4 s praznim
+  reconcilerom prihvaća.
+- FLX4 disconnect najprije pretvara sva opažena held stanja u release, a zatim
+  objavljuje disconnected state. Time scratch, Shift, Censor, Pad FX i roll ne
+  mogu ostati latchani samo zato što je kontroler nestao.
+- Sequence-gap telemetry ostaje zaštita za diskretne komande. ACK/retry za
+  proizvoljne ponovljene command događaje ostaje buduće protocol hardening, ne
+  dio ovog held-state popravka.
+
 ### Obvezni testovi
 
-- stvarno napuniti queue i poslati treći press;
-- stvarno napuniti queue i poslati treći release;
-- stalled consumer;
-- press-release-press dok je queue pun;
-- SHIFT kombinacije;
-- scratch touch i jog burst;
-- više promjena iste kontrole prije draina;
-- sequence gap;
-- S3 disconnect dok je held state aktivan;
-- reconnect full-state resync.
+- [x] stvarno napuniti queue i poslati događaj preko kapaciteta;
+- [x] press/release i zadnja vrijednost nakon zasićenja;
+- [x] stalled consumer i flush nakon draina;
+- [x] SHIFT kombinacije;
+- [x] scratch touch i jog burst;
+- [x] nezavisni Censor, Pad FX i roll dirty slotovi;
+- [x] više promjena iste kontrole prije draina;
+- [x] sequence gap;
+- [x] S3 disconnect dok je held state aktivan;
+- [x] heartbeat/reconnect resync, duplicate suppression i P4 reboot replay.
+
+Izvorni queue-depth-2 test prvo je korigiran da pošalje treći held događaj i na
+starom kodu je reproducirao kvar (`n == 1` assertion). Nakon popravka
+`control_link_uart` izvršava 110 provjera, čisti reconciler 32 provjere, a
+`flx4_midi_host` potvrđuje da USB owner objavljuje samo stvarne connection
+edgeove. Kompletni S3 i P4 host suiteovi te oba ESP-IDF 6.0.2 firmware builda
+prolaze.
 
 ### Acceptance kriterij
 
 Nijedna held kontrola ne može ostati latchana zbog punog queuea. Test koji
 tvrdi da provjerava puni queue mora stvarno poslati više događaja od
-kapaciteta.
+kapaciteta. Software kriterij je ispunjen; fizička provjera sa stvarnim FLX4,
+S3 i P4 ostaje otvorena.
 
 ---
 
@@ -942,10 +981,10 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 
 | Redoslijed | Paket | Status / ovisnost |
 | ---: | --- | --- |
-| 1 | Ispraviti control-link full-queue test | prvi korak; mora reproducirati postojeći drop |
+| 1 | Ispraviti control-link full-queue test | **implementirano; capacity+1 test reproducirao stari drop i prolazi na popravku** |
 | 2 | USB ownership state machine | **software implementirano i validirano na `codex/fix-usb-storage-ownership`; HW hub/reconnect pending** |
 | 3 | USB recovery lifecycle | **software implementirano i validirano na `codex/fix-usb-recovery-lifecycle`; hardware unavailable/deferred** |
-| 4 | Control-link durable state reconciliation | P1, nakon reprodukcijskog testa |
+| 4 | Control-link durable state reconciliation | **software implementirano i validirano na S3/P4; HW reconnect/saturation smoke pending** |
 | 5 | Deck/library ownership refaktor | **software implementirano i validirano; P4 USB/audio/FLX4 hardware soak pending** |
 | 6 | OTA status i monitor PCM concurrency | P2; može biti zaseban mali PR |
 | 7 | Partial-init cleanup | P2; neovisan failure-injection PR |
@@ -974,10 +1013,11 @@ Obuhvat:
 
 Gate za izlaz:
 
-- sva tri P1 nalaza zatvorena;
-- novi testovi padaju na starom kodu i prolaze na popravku;
-- oba host suitea i oba firmware builda prolaze;
-- nema latchanog held statea u reconnect/stall modelu.
+- [x] sva tri P1 nalaza software zatvorena;
+- [x] novi testovi padaju na starom kodu i prolaze na popravku;
+- [x] oba host suitea i oba firmware builda prolaze;
+- [x] nema latchanog held statea u host reconnect/stall modelu;
+- [ ] fizički S3/P4/FLX4 reconnect, reboot i saturation smoke.
 
 ### Milestone B — Concurrency hygiene
 

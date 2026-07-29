@@ -224,9 +224,14 @@ Assert-FileContains `
     -Patterns @("a failed re-push is a real lost event and must be counted", "s_flx4_dropped_count")
 
 Assert-FileContains `
-    -Name "flx4 priority touch supersedes stale edges and survives button-only saturation" `
+    -Name "flx4 held states survive queue saturation and reconnect" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("flx4_event_is_jog_touch(&cur) && cur.id == ev->id", "Latest level supersedes any undelivered edge", "Button-only saturation", "xQueueSendToFront(s_flx4_event_queue, ev, portMAX_DELAY)")
+    -Patterns @("control_held_state_observe", "flx4_flush_pending_held_states", "flx4_replay_known_held_snapshot", "control_held_state_release_all")
+
+Assert-FileNotContains `
+    -Name "flx4 held-state producer never drains or reorders the shared queue" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("flx4_enqueue_priority_touch", "xQueueSendToFront(s_flx4_event_queue")
 
 Assert-FileContains `
     -Name "flx4 usb audio drops to STOPPED so autostart can recover the stream" `
@@ -477,6 +482,20 @@ try {
 }
 
 $tests = @(
+    @{
+        Name = "control_state_reconciler"
+        Dir = "tests/control_state_reconciler"
+        Target = "test_control_state_reconciler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/common/control_state_reconciler/include",
+            "-o", "test_control_state_reconciler.exe",
+            "test_control_state_reconciler.c"
+        )
+    },
     @{
         Name = "flx4_midi_host"
         Dir = "tests/flx4_midi_host"
