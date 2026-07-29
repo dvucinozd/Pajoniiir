@@ -84,12 +84,12 @@ samo u `library.c`.
 | ANLZ deep-copy snapshot | **Otvoreno** | production snapshot/clone kod nije promijenjen |
 | Library `media_io_gate` scope | **Zatvoreno u sourceu; HW pending** | gate se otpušta između PDB redaka; dodani behavioral testovi |
 | Globalni audio lock | **Otvoreno; planirano** | dodan `AUDIO_ENGINE_PER_DECK_LOCK_PLAN.md`, bez source promjene |
-| OTA status concurrency | **Otvoreno** | `p4_ota_pull.c` nije promijenjen |
-| Monitor PCM concurrency | **Otvoreno** | monitor source nije promijenjen |
+| OTA status concurrency | **Software zatvoreno; HW pending** | atomic operation gate i koherentan bounded status/offer snapshot |
+| Monitor PCM concurrency | **Software zatvoreno; HW soak pending** | atomic enable/counters i versioned format snapshot |
 | USB recovery lifetime | **Otvoreno** | `usb_storage.c` nije promijenjen |
 | AP/API credential hardening | **Prihvaćen rizik, nije mitigiran** | hardkodirani `Pajoniiir` PSK ostaje |
 | Secure Boot/flash encryption | **Procijenjeno, nije uključeno** | dokumentiran partition-table/bootloader blocker |
-| Partial-init cleanup | **Otvoreno** | oba inicijalizacijska puta su nepromijenjena |
+| Partial-init cleanup | **Software popravljeno; IDF failure injection/HW pending** | profile manager i monitor I2S imaju staged init i potpuni rollback |
 | LRU wraparound | **Otvoreno** | compressed-cache LRU kod nije promijenjen |
 | Build warning cleanup | **Otvoreno** | source i FATFS Kconfig nisu promijenjeni |
 | CI branch coverage | **Zatvoreno** | workflow sada pokriva `fix/**`, `test/**`, `docs/**`, `ci/**`, `migration/**` |
@@ -828,6 +828,9 @@ API ostaju.
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE POPRAVLJENO; IDF FAILURE-INJECTION I HARDWARE RETRY PENDING**
+
 Primarne lokacije:
 
 - `firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c:797-810`
@@ -843,6 +846,27 @@ potpunog čišćenja već kreiranih taskova, queueova ili I2S kanala.
 Koristiti staged init i jedan cleanup put. Globalni singleton objaviti tek
 nakon što su svi koraci uspjeli. Za svaki init korak dodati failure injection i
 potvrditi da ponovni `init()` može uspjeti.
+
+### Implementirani popravak
+
+- Controller profile manager sada pamti oba task handlea i ima jedan
+  `cpm_runtime_cleanup()` put. Neuspjeh mutexa, semafora, bilo kojeg queuea ili
+  bilo kojeg taska briše prethodno stvorene taskove, queueove, semafore i mutex,
+  uklanja control-link callback i vraća sve handleove na `NULL`.
+- Runtime se označava inicijaliziranim i callback se objavljuje tek nakon što su
+  oba taska uspješno stvorena. Ponovljeni poziv nakon uspjeha je idempotentan, a
+  poziv nakon neuspjeha ponovno kreće od praznog stanja.
+- Monitor PCM transport koristi atomic start reservation. I2S channel ostaje
+  lokalni staged resurs dok transport i opcionalni bench task nisu stvoreni.
+  Transport task dobiva channel kao argument i zato ne ovisi o prerano
+  objavljenom singletonu.
+- Jedinstveni monitor cleanup prvo briše eventualne taskove, zatim disablea i
+  briše I2S channel te poništava globalni handle. Svaki init/enable/task-create
+  failure otpušta i start reservation.
+- P4 host suite sadrži source-regression gateove za sve obvezne cleanup
+  primitive, a kompletni ESP-IDF 6.0.2 P4 build prolazi. To još nije dinamička
+  simulacija svakog IDF allocator/driver failurea; taj failure-injection fixture
+  i fizički retry ostaju otvoreni prije punog zatvaranja acceptance kriterija.
 
 ---
 
@@ -1025,7 +1049,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 4 | Control-link durable state reconciliation | **software implementirano i validirano na S3/P4; HW reconnect/saturation smoke pending** |
 | 5 | Deck/library ownership refaktor | **software implementirano i validirano; P4 USB/audio/FLX4 hardware soak pending** |
 | 6 | OTA status i monitor PCM concurrency | **software implementirano i validirano; OTA failure/retry i monitor-link HW soak pending** |
-| 7 | Partial-init cleanup | P2; neovisan failure-injection PR |
+| 7 | Partial-init cleanup | **software implementirano; IDF failure-injection fixture i HW retry pending** |
 | 8 | Immutable/refcounted ANLZ snapshot | P2; nakon deck ownership API-ja |
 | 9 | Audio runtime instrumentacija | prije bilo kakvog lock refaktora |
 | 10 | Per-deck audio lockovi | prema dokumentiranom planu; traži bolji harness ili board |

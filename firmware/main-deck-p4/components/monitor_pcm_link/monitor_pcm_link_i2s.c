@@ -29,10 +29,15 @@ static const char *TAG = "monitor_pcm_i2s";
      (size_t)MONITOR_PCM_LINK_MAX_FRAMES_PER_BLOCK * 2u * sizeof(int16_t))
 
 static i2s_chan_handle_t s_tx_chan;
+static TaskHandle_t s_transport_task;
+#if CONFIG_MONITOR_PCM_LINK_BENCH_TONE
+static TaskHandle_t s_bench_task;
+#endif
+static uint32_t s_transport_starting;
 
 static void transport_task(void *arg)
 {
-    (void)arg;
+    i2s_chan_handle_t tx_chan = (i2s_chan_handle_t)arg;
     static uint8_t block[MONITOR_PCM_LINK_MAX_BLOCK_BYTES];
     static const uint8_t zero_filler[512] = { 0 };
     uint32_t sent_blocks = 0u;
@@ -42,7 +47,7 @@ static void transport_task(void *arg)
         size_t block_bytes = monitor_pcm_link_read_block_for_transport(block, sizeof(block));
         size_t written = 0u;
         if (block_bytes > 0u) {
-            esp_err_t rc = i2s_channel_write(s_tx_chan, block, block_bytes, &written, portMAX_DELAY);
+            esp_err_t rc = i2s_channel_write(tx_chan, block, block_bytes, &written, portMAX_DELAY);
             if (rc == ESP_OK && written == block_bytes) {
                 sent_blocks++;
             } else {
@@ -56,7 +61,7 @@ static void transport_task(void *arg)
                bench). Blocking filler writes keep the writer exactly at line
                rate, so the wire carries only whole blocks and explicit
                filler the deframer skips. */
-            (void)i2s_channel_write(s_tx_chan, zero_filler, sizeof(zero_filler), &written, portMAX_DELAY);
+            (void)i2s_channel_write(tx_chan, zero_filler, sizeof(zero_filler), &written, portMAX_DELAY);
         }
 
         const TickType_t now = xTaskGetTickCount();
@@ -128,9 +133,35 @@ static void bench_tone_task(void *arg)
 }
 #endif /* CONFIG_MONITOR_PCM_LINK_BENCH_TONE */
 
+static void monitor_pcm_link_transport_cleanup(i2s_chan_handle_t tx_chan)
+{
+#if CONFIG_MONITOR_PCM_LINK_BENCH_TONE
+    if (s_bench_task) {
+        vTaskDelete(s_bench_task);
+        s_bench_task = NULL;
+    }
+#endif
+    if (s_transport_task) {
+        vTaskDelete(s_transport_task);
+        s_transport_task = NULL;
+    }
+    if (tx_chan) {
+        (void)i2s_channel_disable(tx_chan);
+        (void)i2s_del_channel(tx_chan);
+    }
+    s_tx_chan = NULL;
+}
+
 esp_err_t monitor_pcm_link_start_transport(void)
 {
+    uint32_t expected = 0u;
+    if (!__atomic_compare_exchange_n(&s_transport_starting, &expected, 1u,
+                                     false, __ATOMIC_ACQ_REL,
+                                     __ATOMIC_ACQUIRE)) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (s_tx_chan) {
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -146,8 +177,10 @@ esp_err_t monitor_pcm_link_start_transport(void)
         I2S_CHANNEL_DEFAULT_CONFIG(CONFIG_MONITOR_PCM_LINK_I2S_UNIT, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true; /* DMA sends zero filler when the queue idles */
 
-    esp_err_t rc = i2s_new_channel(&chan_cfg, &s_tx_chan, NULL);
+    i2s_chan_handle_t tx_chan = NULL;
+    esp_err_t rc = i2s_new_channel(&chan_cfg, &tx_chan, NULL);
     if (rc != ESP_OK) {
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return rc;
     }
 
@@ -168,16 +201,16 @@ esp_err_t monitor_pcm_link_start_transport(void)
        "sample rate is too large". 128x keeps MCLK well under the XTAL and
        still divides evenly to the BCLK. */
     std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_128;
-    rc = i2s_channel_init_std_mode(s_tx_chan, &std_cfg);
+    rc = i2s_channel_init_std_mode(tx_chan, &std_cfg);
     if (rc != ESP_OK) {
-        (void)i2s_del_channel(s_tx_chan);
-        s_tx_chan = NULL;
+        monitor_pcm_link_transport_cleanup(tx_chan);
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return rc;
     }
-    rc = i2s_channel_enable(s_tx_chan);
+    rc = i2s_channel_enable(tx_chan);
     if (rc != ESP_OK) {
-        (void)i2s_del_channel(s_tx_chan);
-        s_tx_chan = NULL;
+        monitor_pcm_link_transport_cleanup(tx_chan);
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return rc;
     }
 
@@ -187,16 +220,24 @@ esp_err_t monitor_pcm_link_start_transport(void)
     (void)gpio_set_drive_capability(CONFIG_MONITOR_PCM_LINK_DOUT_GPIO, GPIO_DRIVE_CAP_3);
 
     if (xTaskCreate(transport_task, "mon_pcm_tx", MONITOR_PCM_LINK_TX_TASK_STACK,
-                    NULL, MONITOR_PCM_LINK_TX_TASK_PRIO, NULL) != pdPASS) {
+                    tx_chan, MONITOR_PCM_LINK_TX_TASK_PRIO,
+                    &s_transport_task) != pdPASS) {
+        monitor_pcm_link_transport_cleanup(tx_chan);
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return ESP_ERR_NO_MEM;
     }
 #if CONFIG_MONITOR_PCM_LINK_BENCH_TONE
     if (xTaskCreate(bench_tone_task, "mon_pcm_tone", MONITOR_PCM_LINK_TX_TASK_STACK,
-                    NULL, MONITOR_PCM_LINK_TX_TASK_PRIO - 1, NULL) != pdPASS) {
+                    NULL, MONITOR_PCM_LINK_TX_TASK_PRIO - 1,
+                    &s_bench_task) != pdPASS) {
+        monitor_pcm_link_transport_cleanup(tx_chan);
+        __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
         return ESP_ERR_NO_MEM;
     }
 #endif
 
+    s_tx_chan = tx_chan;
+    __atomic_store_n(&s_transport_starting, 0u, __ATOMIC_RELEASE);
     ESP_LOGI(TAG, "monitor PCM I2S transport started: BCLK=%d WS=%d DOUT=%d pipe=%u Hz",
              CONFIG_MONITOR_PCM_LINK_BCLK_GPIO,
              CONFIG_MONITOR_PCM_LINK_WS_GPIO,

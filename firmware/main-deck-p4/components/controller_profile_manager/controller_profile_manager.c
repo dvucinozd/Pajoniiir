@@ -566,6 +566,9 @@ static int s_log_idx = -2;
 static QueueHandle_t s_send_q;
 static QueueHandle_t s_descriptor_q;
 static SemaphoreHandle_t s_reply_sem;
+static TaskHandle_t s_sender_task;
+static TaskHandle_t s_descriptor_task_handle;
+static bool s_runtime_initialized;
 static volatile bool s_storage_busy;
 
 typedef struct {
@@ -772,15 +775,47 @@ static void cpm_descriptor_task(void *arg)
     }
 }
 
+static void cpm_runtime_cleanup(void)
+{
+    control_link_set_profile_reply_cb(NULL);
+    if (s_descriptor_task_handle) {
+        vTaskDelete(s_descriptor_task_handle);
+        s_descriptor_task_handle = NULL;
+    }
+    if (s_sender_task) {
+        vTaskDelete(s_sender_task);
+        s_sender_task = NULL;
+    }
+    if (s_descriptor_q) {
+        vQueueDelete(s_descriptor_q);
+        s_descriptor_q = NULL;
+    }
+    if (s_send_q) {
+        vQueueDelete(s_send_q);
+        s_send_q = NULL;
+    }
+    if (s_reply_sem) {
+        vSemaphoreDelete(s_reply_sem);
+        s_reply_sem = NULL;
+    }
+    if (s_manager_mutex) {
+        vSemaphoreDelete(s_manager_mutex);
+        s_manager_mutex = NULL;
+    }
+    s_runtime_initialized = false;
+}
+
 esp_err_t controller_profile_manager_init(void)
 {
+    if (s_runtime_initialized) {
+        return ESP_OK;
+    }
+    s_manager_mutex = xSemaphoreCreateMutex();
     if (!s_manager_mutex) {
-        s_manager_mutex = xSemaphoreCreateMutex();
-        if (!s_manager_mutex) {
-            return ESP_ERR_NO_MEM;
-        }
+        return ESP_ERR_NO_MEM;
     }
     if (!cpm_lock()) {
+        cpm_runtime_cleanup();
         return ESP_FAIL;
     }
     memset(&s_registry, 0, sizeof(s_registry));
@@ -794,21 +829,25 @@ esp_err_t controller_profile_manager_init(void)
     s_log_idx = -2;
     cpm_unlock();
 
-    if (!s_reply_sem) {
-        s_reply_sem = xSemaphoreCreateBinary();
-        s_send_q = xQueueCreate(2, sizeof(int));
-        s_descriptor_q = xQueueCreate(8, sizeof(cpm_descriptor_report_t));
-        if (!s_reply_sem || !s_send_q || !s_descriptor_q) {
-            return ESP_ERR_NO_MEM;
-        }
-        if (xTaskCreate(cpm_sender_task, "cpm_send", CPM_SENDER_STACK, NULL, 4,
-                        NULL) != pdPASS ||
-            xTaskCreate(cpm_descriptor_task, "cpm_desc", 3072, NULL, 5,
-                        NULL) != pdPASS) {
-            return ESP_ERR_NO_MEM;
-        }
-        control_link_set_profile_reply_cb(cpm_on_reply);
+    s_reply_sem = xSemaphoreCreateBinary();
+    s_send_q = xQueueCreate(2, sizeof(int));
+    s_descriptor_q = xQueueCreate(8, sizeof(cpm_descriptor_report_t));
+    if (!s_reply_sem || !s_send_q || !s_descriptor_q) {
+        cpm_runtime_cleanup();
+        return ESP_ERR_NO_MEM;
     }
+    if (xTaskCreate(cpm_sender_task, "cpm_send", CPM_SENDER_STACK, NULL, 4,
+                    &s_sender_task) != pdPASS) {
+        cpm_runtime_cleanup();
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(cpm_descriptor_task, "cpm_desc", 3072, NULL, 5,
+                    &s_descriptor_task_handle) != pdPASS) {
+        cpm_runtime_cleanup();
+        return ESP_ERR_NO_MEM;
+    }
+    control_link_set_profile_reply_cb(cpm_on_reply);
+    s_runtime_initialized = true;
     return ESP_OK;
 }
 

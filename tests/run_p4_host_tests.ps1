@@ -862,6 +862,30 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strncmp(expected_release, s_status.available_release")
 
+Assert-FileContains `
+    -Name "controller profile partial init rolls back every runtime resource" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
+    -LiteralPatterns @(
+        "static void cpm_runtime_cleanup(void)",
+        "vTaskDelete(s_descriptor_task_handle)",
+        "vTaskDelete(s_sender_task)",
+        "vQueueDelete(s_descriptor_q)",
+        "vQueueDelete(s_send_q)",
+        "vSemaphoreDelete(s_reply_sem)",
+        "vSemaphoreDelete(s_manager_mutex)"
+    )
+
+Assert-FileContains `
+    -Name "monitor PCM partial init rolls back tasks and I2S channel" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link_i2s.c") `
+    -LiteralPatterns @(
+        "static void monitor_pcm_link_transport_cleanup(i2s_chan_handle_t tx_chan)",
+        "vTaskDelete(s_transport_task)",
+        "i2s_channel_disable(tx_chan)",
+        "i2s_del_channel(tx_chan)",
+        "&s_transport_task"
+    )
+
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
 # time for something off the critical path. These guards keep it that way, and

@@ -409,6 +409,11 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   reboot while S3/FLX4 remain powered. Confirm no scratch/Shift/pad latch remains
   and record `/api/status` field `control_link.sequence_gaps` before and after
   each case.
+- [ ] Failure-injection/HW retry for staged services: force each controller
+  profile manager allocation/task-create step and each monitor I2S
+  new/init/enable/task-create step to fail once; confirm no task, queue,
+  semaphore or I2S channel remains and a second initialization succeeds without
+  rebooting the P4.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
 - [ ] Hardware smoke Beat FX FLANGER/DELAY: select both in both directions and
