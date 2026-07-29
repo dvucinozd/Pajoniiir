@@ -1854,7 +1854,7 @@ $tests = @(
         # the queue is full and which must never be lost - and until now every
         # one of those rules was guarded only by grepping the source.
         Name = "control_link_uart"
-        MinTestsRun = 53
+        MinTestsRun = 62
         Dir = "tests/control_link_uart"
         Target = "test_control_link_uart.exe"
         Args = @(

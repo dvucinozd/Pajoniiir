@@ -33,12 +33,25 @@ __attribute__((unused)) static const char *TAG = "ctrl_link";
 #define TX_BUF_SIZE  1024
 
 /* How long a button/state edge may apply backpressure to the UART RX task when
- * the deck queue is full. Long enough to ride out any normal consumer hiccup
- * (deck_core drains the queue every UI/control tick), short enough that a wedged
- * consumer cannot hold the RX task off the serial FIFO — RX_BUF_SIZE at
- * UART_BAUD is roughly 22 ms of traffic before the ring overruns, so a stall
- * beyond this is already a fault that must be reported rather than waited out. */
-#define CTRL_EDGE_BACKPRESSURE_MS 250u
+ * the deck queue is full.
+ *
+ * The RX task is the only thing draining the serial FIFO, so while it waits the
+ * FIFO fills. The bound therefore has to be a fraction of how long the ring
+ * takes to overflow, not a comfortable-sounding number: waiting longer than the
+ * ring holds guarantees losing the very release edges this backpressure exists
+ * to protect, plus the 0xA6 bulk stream and the heartbeat.
+ *
+ * At 8N1 a byte is 10 bits, so the ring holds RX_BUF_SIZE * 10 / UART_BAUD
+ * seconds of continuous traffic - about 22 ms for 1 KiB at 460800. A quarter of
+ * that leaves the FIFO three quarters empty in the worst case, which is enough
+ * to ride out a consumer hiccup without ever being the cause of an overrun. */
+#define CTRL_RX_RING_MS ((RX_BUF_SIZE * 10u * 1000u) / UART_BAUD)
+#define CTRL_EDGE_BACKPRESSURE_MS (CTRL_RX_RING_MS / 4u)
+
+_Static_assert(CTRL_EDGE_BACKPRESSURE_MS >= 1u,
+               "backpressure must be at least one millisecond to be useful");
+_Static_assert(CTRL_EDGE_BACKPRESSURE_MS * 4u <= CTRL_RX_RING_MS,
+               "a wait longer than a quarter of the RX ring can itself overrun the FIFO");
 
 static QueueHandle_t    s_event_queue;
 static atomic_uint_fast8_t s_seq = 0;
@@ -212,18 +225,45 @@ typedef struct {
     ctrl_event_t event;
 } pending_value_t;
 
-/* UART RX is the sole owner of these pending slots. Absolute values keep the
- * latest sample; jog deltas accumulate. No producer ever drains/reorders the
- * deck queue, so web/UI producers cannot race a remove-and-reinsert cycle. */
+/* UART RX is the sole owner of these pending slots. No producer ever drains or
+ * reorders the deck queue, so web/UI producers cannot race a remove-and-reinsert
+ * cycle.
+ *
+ * Slots are keyed by id. That is safe only because every control id is
+ * namespaced (CTRL_NS_DECK1/DECK2/MIXER/BROWSER); the one exception was the pair
+ * of unnamespaced id-0 events, CTRL_TYPE_PITCH and CTRL_TYPE_HEARTBEAT, which
+ * shared slot 0 and overwrote each other. A lost pitch sample leaves the deck at
+ * the wrong tempo until the operator touches the fader again, so the heartbeat
+ * is now handled as its own class below rather than competing for the slot. */
 static pending_value_t s_pending_values[256];
-static bool s_pending_jog_valid[256];
-static int32_t s_pending_jog_delta[256];
+static bool s_pending_delta_valid[256];
+static int32_t s_pending_delta[256];
+
+/* A liveness ping. It carries no state the deck needs, and the next one arrives
+ * within a second, so under queue pressure it is simply dropped: coalescing it
+ * would cost a slot it cannot use, and applying backpressure for it would hold
+ * the RX task for a message whose whole point is that it is cheap. */
+static bool event_is_droppable_ping(const ctrl_event_t *ev)
+{
+    return ev && ev->type == CTRL_EV_HEARTBEAT;
+}
+
+/* Relative controls: what is held back must be summed, because each event is a
+ * movement and dropping one loses distance. Everything else in the continuous
+ * class is absolute, where only the newest sample matters. */
+static bool event_is_relative_delta(const ctrl_event_t *ev)
+{
+    return ev && (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_BROWSE);
+}
 
 static bool event_is_continuous_value(const ctrl_event_t *ev)
 {
     if (!ev) return false;
-    if (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_PITCH ||
-        ev->type == CTRL_EV_HEARTBEAT) {
+    /* BROWSE belongs here: a library-browse spin is a stream of deltas, and
+     * without it each tick took the lossless path and applied backpressure to
+     * the RX task while the operator was simply scrolling. */
+    if (ev->type == CTRL_EV_JOG || ev->type == CTRL_EV_BROWSE ||
+        ev->type == CTRL_EV_PITCH) {
         return true;
     }
     if (ev->type != CTRL_EV_BUTTON) return false;
@@ -256,18 +296,28 @@ static int16_t clamp_jog_delta(int32_t value)
     return (int16_t)value;
 }
 
+/* Lowest occupied slot, so the flush does not scan all 256 on every pass. Only
+ * ever moves down on a store; the flush recomputes it. Purely a hint - the scan
+ * still checks each slot's own valid flag. */
+static unsigned s_pending_first_key = 256u;
+
 static void store_pending_continuous(const ctrl_event_t *ev)
 {
     if (!ev) return;
-    if (ev->type == CTRL_EV_JOG) {
-        int32_t sum = s_pending_jog_delta[ev->id] + (int32_t)ev->value;
+    const unsigned key = ev->id;
+    if (key < s_pending_first_key) s_pending_first_key = key;
+    if (event_is_relative_delta(ev)) {
+        int32_t sum = s_pending_delta[key] + (int32_t)ev->value;
         if (sum > INT16_MAX) sum = INT16_MAX;
         if (sum < INT16_MIN) sum = INT16_MIN;
-        s_pending_jog_delta[ev->id] = sum;
-        s_pending_jog_valid[ev->id] = true;
+        s_pending_delta[key] = sum;
+        /* Keep the rest of the event so the flush can rebuild it exactly, rather
+         * than re-deriving deck/control from the id. */
+        s_pending_values[key].event = *ev;
+        s_pending_delta_valid[key] = true;
     } else {
-        s_pending_values[ev->id].event = *ev;
-        s_pending_values[ev->id].valid = true;
+        s_pending_values[key].event = *ev;
+        s_pending_values[key].valid = true;
     }
     s_event_coalesce_count++;
 }
@@ -275,30 +325,42 @@ static void store_pending_continuous(const ctrl_event_t *ev)
 static void flush_pending_control_events(void)
 {
     if (!s_event_queue) return;
-    for (unsigned id = 0; id < 256u; ++id) {
-        if (s_pending_jog_valid[id]) {
-            ctrl_event_t ev = {
-                .type = CTRL_EV_JOG,
-                .id = (uint8_t)id,
-                .value = clamp_jog_delta(s_pending_jog_delta[id]),
-                .deck = control_link_id_deck((uint8_t)id),
-                .control = control_link_id_control((uint8_t)id),
-            };
-            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) return;
-            s_pending_jog_valid[id] = false;
-            s_pending_jog_delta[id] = 0;
+    unsigned first_remaining = 256u;
+    for (unsigned key = s_pending_first_key; key < 256u; ++key) {
+        if (s_pending_delta_valid[key]) {
+            ctrl_event_t ev = s_pending_values[key].event;
+            ev.value = clamp_jog_delta(s_pending_delta[key]);
+            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) {
+                s_pending_first_key = key;
+                return;
+            }
+            s_pending_delta_valid[key] = false;
+            s_pending_delta[key] = 0;
         }
-        if (s_pending_values[id].valid) {
-            ctrl_event_t ev = s_pending_values[id].event;
-            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) return;
-            s_pending_values[id].valid = false;
+        if (s_pending_values[key].valid) {
+            ctrl_event_t ev = s_pending_values[key].event;
+            if (xQueueSend(s_event_queue, &ev, 0) != pdTRUE) {
+                s_pending_first_key = key;
+                return;
+            }
+            s_pending_values[key].valid = false;
+        }
+        if (first_remaining == 256u &&
+            (s_pending_delta_valid[key] || s_pending_values[key].valid)) {
+            first_remaining = key;
         }
     }
+    s_pending_first_key = first_remaining;
 }
 
 static bool enqueue_control_event(const ctrl_event_t *ev)
 {
     if (!ev || !s_event_queue) return false;
+
+    /* A ping is worth neither a slot nor a wait: drop it and count it. */
+    if (event_is_droppable_ping(ev)) {
+        return xQueueSend(s_event_queue, ev, 0) == pdTRUE;
+    }
 
     if (event_is_continuous_value(ev)) {
         if (xQueueSend(s_event_queue, ev, 0) == pdTRUE) return true;
@@ -311,8 +373,8 @@ static bool enqueue_control_event(const ctrl_event_t *ev)
      * latched. The wait is bounded rather than infinite because this runs on the
      * UART RX task, which is also the only reader of the serial FIFO and the
      * only parser of the 0xA6 bulk layer. Blocking here forever on a stalled
-     * consumer would overrun the FIFO and lose *every* frame — including the
-     * release edges this backpressure exists to protect — and would stall
+     * consumer would overrun the FIFO and lose *every* frame - including the
+     * release edges this backpressure exists to protect - and would stall
      * controller-profile transfers and the S3 heartbeat with it. */
     if (xQueueSend(s_event_queue, ev, pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)) == pdTRUE) {
         return true;
@@ -545,8 +607,9 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
     portEXIT_CRITICAL(&s_rx_stats_mux);
     ctrl_bulk_parser_reset(&s_bulk_parser);
     memset(s_pending_values, 0, sizeof(s_pending_values));
-    memset(s_pending_jog_valid, 0, sizeof(s_pending_jog_valid));
-    memset(s_pending_jog_delta, 0, sizeof(s_pending_jog_delta));
+    memset(s_pending_delta_valid, 0, sizeof(s_pending_delta_valid));
+    memset(s_pending_delta, 0, sizeof(s_pending_delta));
+    s_pending_first_key = 256u;
     s_edge_backpressure_timeout_count = 0u;
 
     uart_config_t ucfg = {

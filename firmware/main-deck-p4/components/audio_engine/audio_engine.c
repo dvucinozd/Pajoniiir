@@ -1333,9 +1333,49 @@ static void ae_wav_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
     atomic_store_bool(&eng->eof, frame >= eng->wav_total_frames);
 }
 
+#if AE_FW
+/* ── Read faults are not end of input ────────────────────────────────────── *
+ *
+ * A zero-byte read from the bounded cache while the position is still short of
+ * the end of the file is a media fault, not EOF: the backend returns 0 when
+ * media_io_gate has been closed (a USB unmount window) or the seek failed. The
+ * cache layer already retires the affected slot precisely so the next attempt
+ * repeats the transfer, but that only helps if a second attempt happens.
+ *
+ * Treating the first such read as EOF made the deck stop mid-track and never
+ * recover: `eof` is sticky, so every later call returns immediately. Retry a
+ * bounded number of times, then give up and record why, so the deck shows an
+ * error instead of silently behaving like a track that simply ended.
+ */
+#define AE_READ_FAULT_RETRIES 8u
+
+static uint32_t s_read_fault_streak[AUDIO_ENGINE_DECK_COUNT];
+
+/* Returns true when the caller should give up on this track. */
+static bool ae_note_read_fault(audio_engine_state_t *eng, uint8_t deck)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT) return true;
+    if (++s_read_fault_streak[deck] < AE_READ_FAULT_RETRIES) {
+        return false;   /* transient: produce no samples and come back */
+    }
+    ESP_LOGE(TAG, "D%u media read failed %u times; stopping playback",
+             (unsigned)deck + 1u, (unsigned)s_read_fault_streak[deck]);
+    eng->last_error = ESP_ERR_INVALID_STATE;
+    snprintf(eng->last_error_text, sizeof(eng->last_error_text), "MEDIA READ ERR");
+    atomic_store_bool(&eng->eof, true);
+    return true;
+}
+
+static void ae_clear_read_faults(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) s_read_fault_streak[deck] = 0u;
+}
+#endif /* AE_FW */
+
 static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
 #if AE_FW
                                    audio_fw_preload_t *fw,
+                                   uint8_t deck,
 #endif
                                    int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
@@ -1365,9 +1405,11 @@ static int ae_wav_decode_one_frame(audio_engine_state_t *eng,
     uint8_t raw[MINIMP3_MAX_SAMPLES_PER_FRAME * 4u];
     size_t raw_bytes = frames * eng->wav_block_align;
     if (!ae_fw_read_exact(fw, eng->wav_data_pos, raw, raw_bytes)) {
-        atomic_store_bool(&eng->eof, true);
+        /* Still inside the data chunk (checked above), so this is a fault. */
+        (void)ae_note_read_fault(eng, deck);
         return 0;
     }
+    ae_clear_read_faults(deck);
     for (size_t i = 0; i < frames; ++i) {
         const uint8_t *sample = raw + i * eng->wav_block_align;
         if (eng->channels == 1) {
@@ -1563,6 +1605,7 @@ static int decode_one_frame(
         return ae_wav_decode_one_frame(eng,
 #if AE_FW
                                        fw,
+                                       deck,
 #endif
                                        out_pcm);
     }
@@ -1582,9 +1625,12 @@ static int decode_one_frame(
     size_t wanted = bytes_left < sizeof(input) ? bytes_left : sizeof(input);
     size_t got = audio_fw_preload_read_at(fw, eng->file_pos, input, wanted);
     if (got == 0u) {
-        atomic_store_bool(&eng->eof, true);
+        /* file_pos < file_size was established above, so nothing was read from a
+         * position that still has bytes: a fault, not the end of the track. */
+        (void)ae_note_read_fault(eng, deck);
         return 0;
     }
+    ae_clear_read_faults(deck);
 
     mp3dec_frame_info_t info;
     int samples = mp3dec_decode_frame(&eng->dec, input, (int)got,
@@ -3569,6 +3615,9 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
         fw->buf = NULL;
     }
     audio_fw_preload_begin_load(fw);
+    /* A new session starts with a clean fault history: the streak exists to
+     * distinguish a passing glitch from a dead medium within one track. */
+    ae_clear_read_faults(deck);
 #endif
 
     audio_engine_reset_state(eng, ESP_OK, "OK");

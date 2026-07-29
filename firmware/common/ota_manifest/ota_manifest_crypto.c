@@ -57,7 +57,20 @@ bool ddj_ota_manifest_verify_signature(const uint8_t *header, size_t header_size
     int rc = mbedtls_pk_parse_public_key(
         &key, release_public_key_start,
         (size_t)(release_public_key_end - release_public_key_start));
-    if (rc != 0) {
+    /* Check the key type, not just that it parsed. The signature bytes are
+     * converted below into DER as a fixed-size ECDSA (r,s) pair, so a key that
+     * is not ECDSA would have that layout imposed on it. The committed key makes
+     * this unreachable today, which is exactly why it is worth keeping: it
+     * catches a key swapped for the wrong type instead of trusting the build.
+     *
+     * ESP-IDF 6.0.2 moved mbedTLS to the TF-PSA-Crypto layer, where
+     * mbedtls_pk_can_do(pk, MBEDTLS_PK_ECDSA) no longer exists. The equivalent
+     * is mbedtls_pk_can_do_psa() with the PSA algorithm and the usage the key is
+     * about to be put to - here, verifying a SHA-256 hash. */
+    if (rc != 0 ||
+        !mbedtls_pk_can_do_psa(&key,
+                               MBEDTLS_PK_ALG_ECDSA(PSA_ALG_SHA_256),
+                               PSA_KEY_USAGE_VERIFY_HASH)) {
         mbedtls_pk_free(&key);
         return false;
     }

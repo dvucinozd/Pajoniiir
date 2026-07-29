@@ -187,17 +187,29 @@ static void copy_state_snapshot(uint8_t deck,
                                 deck_core_beat_fx_state_t *out_fx,
                                 uint32_t *out_heartbeat)
 {
-    uint32_t before;
-    uint32_t after;
-    do {
-        before = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
-        if (before & 1u) continue;
+    /* Retry until a copy is bracketed by the same even sequence number.
+     *
+     * Written as an unconditional loop with an explicit exit rather than a
+     * do-while: with `continue` in a do-while the odd-sequence path jumps
+     * straight to the condition, which then reads `after` before anything has
+     * assigned it. That is an indeterminate value, and if it happened to come
+     * out even and equal to `before` the function returned having copied
+     * nothing - handing the caller a zeroed deck state that reads as "no track,
+     * not playing" while the deck is mid-set. */
+    for (;;) {
+        const uint32_t before = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
+        if (before & 1u) {
+            continue;   /* writer mid-update; re-read the sequence */
+        }
         if (out_deck) *out_deck = s_published_decks[deck];
         if (out_loop) *out_loop = s_published_loop_shadow[deck];
         if (out_fx) *out_fx = s_published_beat_fx;
         if (out_heartbeat) *out_heartbeat = s_published_heartbeat_tick;
-        after = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
-    } while (before != after || (after & 1u));
+        const uint32_t after = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
+        if (after == before) {
+            return;     /* no write began or ended while we copied */
+        }
+    }
 }
 
 typedef struct {

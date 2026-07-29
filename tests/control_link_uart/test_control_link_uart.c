@@ -219,6 +219,60 @@ static void test_producer_never_removes_events_from_the_queue(void)
     CHECK(ev[1].value == 98);
 }
 
+static void test_pitch_and_heartbeat_do_not_share_a_pending_slot(void)
+{
+    printf("== a heartbeat cannot overwrite a pending pitch value ==\n");
+    /* Both are sent with id 0 on the wire. Keyed by id alone they shared one
+     * pending slot, so a heartbeat arriving behind a full queue discarded the
+     * pitch sample and left the deck at the wrong tempo until the operator
+     * touched the fader again. */
+    begin(1u);
+
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1, 1u);  /* fills the queue */
+    feed_frame(CTRL_TYPE_PITCH, 0u, 6000, 2u);                     /* held pending */
+    feed_frame(CTRL_TYPE_HEARTBEAT, 0u, 42, 3u);                   /* must not evict it */
+    control_link_test_pump_rx();
+
+    ctrl_event_t ev[8];
+    CHECK(drain(ev, 8) == 1u);
+
+    control_link_test_pump_rx();
+    unsigned n = drain(ev, 8);
+    bool saw_pitch = false;
+    for (unsigned i = 0; i < n; ++i) {
+        if (ev[i].type == CTRL_EV_PITCH) {
+            saw_pitch = true;
+            CHECK(ev[i].value == 6000);
+        }
+    }
+    CHECK(saw_pitch);
+}
+
+static void test_browse_spin_does_not_apply_backpressure(void)
+{
+    printf("== a browse spin coalesces instead of holding the RX task ==\n");
+    /* Browse is a stream of deltas from the library encoder. Treated as a
+     * lossless edge it took the backpressure path on every tick while the
+     * operator was merely scrolling. Deltas must also sum, not overwrite. */
+    begin(1u);
+
+    feed_frame(CTRL_TYPE_BUTTON, CTRL_ID_DECK1_JOG_TOUCH, 1, 1u);  /* fills the queue */
+    feed_frame(CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, 3, 2u);
+    feed_frame(CTRL_TYPE_ENCODER, CTRL_ID_BROWSE_DELTA, 4, 3u);
+    control_link_test_pump_rx();
+
+    ctrl_event_t ev[8];
+    CHECK(drain(ev, 8) == 1u);
+
+    control_link_test_pump_rx();
+    unsigned n = drain(ev, 8);
+    int32_t browsed = 0;
+    for (unsigned i = 0; i < n; ++i) {
+        if (ev[i].type == CTRL_EV_BROWSE) browsed += ev[i].value;
+    }
+    CHECK(browsed == 7);   /* 3 + 4 accumulated, not 4 */
+}
+
 /* -- Transmit path --------------------------------------------------------- */
 
 static void test_state_frames_are_transmitted_well_formed(void)
@@ -258,6 +312,8 @@ int main(void)
     test_continuous_values_coalesce_to_the_newest();
     test_pending_jog_deltas_accumulate_rather_than_being_lost();
     test_producer_never_removes_events_from_the_queue();
+    test_pitch_and_heartbeat_do_not_share_a_pending_slot();
+    test_browse_spin_does_not_apply_backpressure();
     test_state_frames_are_transmitted_well_formed();
     test_led_frames_carry_the_deck();
 
