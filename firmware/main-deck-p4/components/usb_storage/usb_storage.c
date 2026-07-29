@@ -1,4 +1,5 @@
 #include "usb_storage.h"
+#include "usb_storage_recovery.h"
 #include "usb_storage_session.h"
 #include "media_io_gate.h"
 
@@ -47,7 +48,6 @@ static usb_media_mount_t       *s_mount;
 static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static usb_storage_session_t s_session;
 static bool s_announced_mounted;
-static bool s_seen_device;
 
 static usb_storage_session_t desired_snapshot(void)
 {
@@ -80,9 +80,6 @@ static void publish_desired_connect(uint8_t dev_addr)
     usb_storage_connect_result_t result;
     portENTER_CRITICAL(&s_state_mux);
     result = usb_storage_session_on_connect(&s_session, dev_addr);
-    if (result != USB_STORAGE_CONNECT_IGNORED_SECONDARY) {
-        s_seen_device = true;
-    }
     portEXIT_CRITICAL(&s_state_mux);
 
     if (result == USB_STORAGE_CONNECT_IGNORED_SECONDARY) {
@@ -240,8 +237,13 @@ static void usb_lib_task(void *arg)
     root_port_power_cycle("initial bring-up");
     ESP_LOGI(TAG, "USB host + MSC installed; waiting for a drive on the HS USB port");
 
-    uint32_t cycles = 1u;
-    TickType_t last_cycle = xTaskGetTickCount();
+    usb_storage_session_t session = desired_snapshot();
+    usb_storage_recovery_t recovery;
+    usb_storage_recovery_init(&recovery,
+                              session.connected,
+                              session.epoch,
+                              (uint32_t)xTaskGetTickCount(),
+                              1u);
 
     for (;;) {
         uint32_t flags = 0u;
@@ -251,21 +253,34 @@ static void usb_lib_task(void *arg)
             usb_host_device_free_all();
         }
 
-        bool seen;
-        portENTER_CRITICAL(&s_state_mux);
-        seen = s_seen_device;
-        portEXIT_CRITICAL(&s_state_mux);
-        if (seen) {
+        session = desired_snapshot();
+        uint32_t now = (uint32_t)xTaskGetTickCount();
+        usb_storage_recovery_observe(&recovery,
+                                     session.connected,
+                                     session.epoch,
+                                     now);
+        if (!usb_storage_recovery_cycle_due(
+                &recovery,
+                now,
+                (uint32_t)pdMS_TO_TICKS(ROOT_PORT_RETRY_MS),
+                ROOT_PORT_MAX_CYCLES,
+                (uint32_t)pdMS_TO_TICKS(ROOT_PORT_SLOW_MS))) {
             continue;
         }
 
-        TickType_t wait = pdMS_TO_TICKS(
-            cycles < ROOT_PORT_MAX_CYCLES ? ROOT_PORT_RETRY_MS : ROOT_PORT_SLOW_MS);
-        if (xTaskGetTickCount() - last_cycle >= wait) {
-            cycles++;
-            last_cycle = xTaskGetTickCount();
-            root_port_power_cycle("no device seen yet");
+        bool was_slow = usb_storage_recovery_uses_slow_cadence(
+            &recovery, ROOT_PORT_MAX_CYCLES);
+        usb_storage_recovery_mark_cycle(&recovery, now);
+        bool now_slow = usb_storage_recovery_uses_slow_cadence(
+            &recovery, ROOT_PORT_MAX_CYCLES);
+        if (!was_slow && now_slow) {
+            ESP_LOGW(TAG,
+                     "USB enumeration recovery exhausted %u fast cycles; "
+                     "continuing every %u ms",
+                     (unsigned)ROOT_PORT_MAX_CYCLES,
+                     (unsigned)ROOT_PORT_SLOW_MS);
         }
+        root_port_power_cycle("no active storage session");
     }
 }
 
@@ -486,7 +501,6 @@ esp_err_t usb_storage_init(usb_storage_event_cb_t cb)
     portENTER_CRITICAL(&s_state_mux);
     usb_storage_session_reset(&s_session);
     s_announced_mounted = false;
-    s_seen_device = false;
     portEXIT_CRITICAL(&s_state_mux);
 
     if (xTaskCreate(storage_task, "usb_store", STORAGE_TASK_STACK,

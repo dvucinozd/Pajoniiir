@@ -1358,6 +1358,19 @@ $tests = @(
         )
     },
     @{
+        Name = "usb_storage_recovery"
+        MinTestsRun = 88
+        Dir = "tests/usb_storage_recovery"
+        Target = "test_usb_storage_recovery.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/usb_storage/include",
+            "-o", "test_usb_storage_recovery.exe",
+            "test_usb_storage_recovery.c",
+            "../../firmware/main-deck-p4/components/usb_storage/usb_storage_recovery.c"
+        )
+    },
+    @{
         Name = "usb_media_partition"
         Dir = "tests/usb_media_partition"
         Target = "test_usb_media_partition.exe"
@@ -2128,7 +2141,12 @@ Write-Host "P4 host tests passed."
 Assert-FileContains `
     -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
-    -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
+    -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "usb_storage_recovery_observe", "usb_storage_recovery_cycle_due", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
+
+Assert-FileDoesNotContain `
+    -Name "p4 USB root-port recovery is not disabled by a firmware-lifetime seen-device latch" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("s_seen_device")
 
 # The session ownership transitions have host behaviour coverage; this guard
 # separately pins that callback delivery remains level-state/notification based.

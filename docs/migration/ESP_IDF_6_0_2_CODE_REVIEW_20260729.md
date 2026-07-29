@@ -607,6 +607,46 @@ Recovery vezati uz session epoch, ne uz cijeli život firmwarea. Nakon
 vlasničkog disconnecta resetirati recovery brojač. Koristiti bounded retry i
 backoff, uz fault status nakon maksimalnog broja pokušaja.
 
+### Implementacijski status na `codex/fix-usb-recovery-lifecycle`
+
+Status: **SOFTWARE POPRAVLJENO; HARDWARE TESTOVI ODGOĐENI**
+
+Firmware-lifetime `s_seen_device` latch je uklonjen. Novi
+`usb_storage_recovery` state machine prati:
+
+- je li recovery armiran;
+- zadnji opaženi USB session epoch;
+- je li accepted session trenutno spojen;
+- broj izvršenih power-cycle pokušaja;
+- tick zadnjeg pokušaja.
+
+Accepted connect zaustavlja recovery. Vlasnički disconnect povećava session
+epoch i ponovno armira cijeli brzi recovery budžet. Ako se connect i disconnect
+dogode između dva pollanja USB library taska, promjena epocha i dalje ponovno
+armira recovery. Ponavljano čitanje istog disconnected epocha ne pomiče
+deadline, pa polling ne može beskonačno odgađati pokušaj.
+
+Nakon osam brzih pokušaja recovery prelazi na bounded sporu kadencu od 30
+sekundi i jednom bilježi degraded warning. Tick usporedba koristi unsigned
+elapsed-time aritmetiku i ostaje ispravna preko FreeRTOS tick wrapa.
+
+Novi `tests/usb_storage_recovery/test_usb_storage_recovery.c` izvršava 88
+provjera za cold boot bez sessiona, connect/disconnect, neopaženi kratki
+session, ponovljeni snapshot, puni fast-cycle budžet, prijelaz na slow cadence,
+reconnect i tick wrap. Test je uključen u puni P4 host runner.
+
+Validacija na ovoj stacked grani:
+
+- `tests/run_p4_host_tests.ps1`: **PASS**, uključujući 63 ownership i 88
+  recovery provjera;
+- P4 `idf.py build` na ESP-IDF v6.0.2: **PASS**;
+- `main-deck-p4.bin`: `0x24f060` bajtova, `0x1b0fa0` bajtova (42%) slobodno u
+  najmanjoj app particiji.
+
+Zbog trenutačne nedostupnosti hardvera ovaj status ne potvrđuje ponašanje
+stvarnog USB PHY-ja, VBUS power-cyclea, huba ili MSC drivera. Ti gateovi ostaju
+eksplicitno odgođeni, a ne označeni kao PASS.
+
 ### Hardware test
 
 - cold boot bez USB-a;
@@ -864,7 +904,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | ---: | --- | --- |
 | 1 | Ispraviti control-link full-queue test | prvi korak; mora reproducirati postojeći drop |
 | 2 | USB ownership state machine | **software implementirano i validirano na `codex/fix-usb-storage-ownership`; HW hub/reconnect pending** |
-| 3 | USB recovery lifecycle | graditi na ownership state machineu |
+| 3 | USB recovery lifecycle | **software implementirano i validirano na `codex/fix-usb-recovery-lifecycle`; hardware unavailable/deferred** |
 | 4 | Control-link durable state reconciliation | P1, nakon reprodukcijskog testa |
 | 5 | Deck/library ownership refaktor | P1; poželjno nakon stabilnog control-linka |
 | 6 | OTA status i monitor PCM concurrency | P2; može biti zaseban mali PR |
