@@ -179,6 +179,12 @@ static esp_err_t bsp_i2c_bus_init(void)
     return i2c_new_master_bus(&bus_cfg, &s_i2c_bus);
 }
 
+/* BSP and UI backend must agree on the framebuffer count; the backend has no
+ * inactive-buffer swap, so anything other than one would silently reserve PSRAM
+ * that is never scanned. */
+_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u,
+               "the current LVGL/PPA backend supports exactly one DPI framebuffer");
+
 esp_err_t bsp_display_init(void)
 {
     // ── 1. Power up the MIPI DSI PHY via the internal LDO ────────────────────
@@ -214,9 +220,13 @@ esp_err_t bsp_display_init(void)
         .dpi_clk_src        = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
         .dpi_clock_freq_mhz = BSP_DPI_CLK_MHZ,
         .pixel_format       = LCD_COLOR_PIXEL_FORMAT_RGB565,
-        // Triple buffering lets the UI rotate the next frame into a non-scanned
-        // framebuffer, then hand it to the DPI driver on the refresh boundary.
-        .num_fbs            = 3,
+        // One framebuffer, matching what the backend actually does. This asked
+        // for three, which reserved roughly 1.54 MiB of PSRAM for two buffers
+        // that were never scanned: the partial LVGL/PPA backend rotates into
+        // framebuffer zero and never issues a draw or swap for the other two.
+        // Do not raise this again until a real refresh-boundary inactive-buffer
+        // swap exists and has been validated on hardware.
+        .num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT,
         .video_timing = {
             .h_size            = BSP_LCD_H_RES,
             .v_size            = BSP_LCD_V_RES,
@@ -255,7 +265,8 @@ esp_err_t bsp_display_init(void)
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
-    ESP_LOGI(TAG, "ST7701S panel up (%dx%d, %d MHz DPI, RGB565)", BSP_LCD_H_RES, BSP_LCD_V_RES, BSP_DPI_CLK_MHZ);
+    ESP_LOGI(TAG, "ST7701S panel up (%dx%d, %d MHz DPI, RGB565, single framebuffer)",
+             BSP_LCD_H_RES, BSP_LCD_V_RES, BSP_DPI_CLK_MHZ);
 
     // ── 6. Backlight: LEDC PWM on GPIO23 (dimmable) ──────────────────────────
     ledc_timer_config_t bl_timer = {

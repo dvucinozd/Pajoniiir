@@ -1919,6 +1919,7 @@ Assert-FileContains `
 # renaming, duplicate legacy code in the image, and (for audio_engine) an
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
+    @{ Board = "main-deck-p4";     Component = "bsp_jc4880";                 Wrapper = "bsp_jc4880_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -1948,6 +1949,11 @@ Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 BSP builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "bsp_jc4880.c"')
 
 Assert-FileContains `
     -Name "p4 app_settings builds its real source" `
@@ -1996,8 +2002,8 @@ Assert-FileContains `
 
 Assert-FileContains `
     -Name "p4 display allocates only the framebuffer the backend actually uses" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880_single_fb.c") `
-    -LiteralPatterns @(".num_fbs = BSP_LCD_FRAMEBUFFER_COUNT")
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -LiteralPatterns @(".num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT", "_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u")
 
 Assert-FileContains `
     -Name "p4 LVGL backend requests the shared framebuffer count" `
