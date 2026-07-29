@@ -439,6 +439,7 @@ int main(int argc, char *argv[])
     run_unit_tests();
 
     printf("\n============================\n");
+    printf("TESTS_RUN=%d\n", g_tests_run);
     printf("Results: %d/%d passed", g_tests_passed, g_tests_run);
     if (g_tests_failed > 0) {
         printf("  (%d FAILED)\n", g_tests_failed);

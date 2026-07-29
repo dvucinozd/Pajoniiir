@@ -2,7 +2,21 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+/* Counted so tests/run_p4_host_tests.ps1 can pin the number of assertions this
+ * suite executes. A test function that is deleted or commented out lowers the
+ * count and fails the run; the previous guard grepped this file for the names of
+ * its own test functions, which proved only that the text was present. */
+static unsigned s_checks;
+#define CHECK(expr) do {                                                     \
+    s_checks++;                                                              \
+    if (!(expr)) {                                                           \
+        fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #expr);      \
+        abort();                                                             \
+    }                                                                        \
+} while (0)
+
 
 typedef struct {
     uint8_t data[257];
@@ -42,18 +56,18 @@ static void test_cross_page_read_and_eof_clamp(void)
     fill_source(&source);
     uint8_t storage[4 * 32];
     audio_compressed_cache_t cache;
-    assert(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
                                        source.size, memory_read_at, &source));
 
     uint8_t out[70];
-    assert(audio_compressed_cache_read(&cache, 17u, out, sizeof(out)) == sizeof(out));
-    assert(memcmp(out, source.data + 17u, sizeof(out)) == 0);
-    assert(cache.misses == 3u);
-    assert(source.calls == 3u);
+    CHECK(audio_compressed_cache_read(&cache, 17u, out, sizeof(out)) == sizeof(out));
+    CHECK(memcmp(out, source.data + 17u, sizeof(out)) == 0);
+    CHECK(cache.misses == 3u);
+    CHECK(source.calls == 3u);
 
     uint8_t tail[32];
-    assert(audio_compressed_cache_read(&cache, 250u, tail, sizeof(tail)) == 7u);
-    assert(memcmp(tail, source.data + 250u, 7u) == 0);
+    CHECK(audio_compressed_cache_read(&cache, 250u, tail, sizeof(tail)) == 7u);
+    CHECK(memcmp(tail, source.data + 250u, 7u) == 0);
 }
 
 static void test_hits_and_lru_eviction_stay_bounded(void)
@@ -62,21 +76,21 @@ static void test_hits_and_lru_eviction_stay_bounded(void)
     fill_source(&source);
     uint8_t storage[2 * 32];
     audio_compressed_cache_t cache;
-    assert(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
                                        source.size, memory_read_at, &source));
 
     uint8_t out[8];
-    assert(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
-    assert(audio_compressed_cache_read(&cache, 40u, out, sizeof(out)) == sizeof(out));
-    assert(audio_compressed_cache_read(&cache, 1u, out, sizeof(out)) == sizeof(out));
-    assert(cache.hits == 1u);
-    assert(source.calls == 2u);
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(audio_compressed_cache_read(&cache, 40u, out, sizeof(out)) == sizeof(out));
+    CHECK(audio_compressed_cache_read(&cache, 1u, out, sizeof(out)) == sizeof(out));
+    CHECK(cache.hits == 1u);
+    CHECK(source.calls == 2u);
 
-    assert(audio_compressed_cache_read(&cache, 80u, out, sizeof(out)) == sizeof(out));
-    assert(source.calls == 3u);
-    assert(audio_compressed_cache_read(&cache, 40u, out, sizeof(out)) == sizeof(out));
-    assert(source.calls == 4u);
-    assert(audio_compressed_cache_capacity(&cache) == sizeof(storage));
+    CHECK(audio_compressed_cache_read(&cache, 80u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == 3u);
+    CHECK(audio_compressed_cache_read(&cache, 40u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == 4u);
+    CHECK(audio_compressed_cache_capacity(&cache) == sizeof(storage));
 }
 
 static void test_prefetch_and_invalid_config(void)
@@ -85,15 +99,15 @@ static void test_prefetch_and_invalid_config(void)
     fill_source(&source);
     uint8_t storage[64];
     audio_compressed_cache_t cache;
-    assert(!audio_compressed_cache_init(&cache, storage, 8u, 16u,
+    CHECK(!audio_compressed_cache_init(&cache, storage, 8u, 16u,
                                         source.size, memory_read_at, &source));
-    assert(audio_compressed_cache_init(&cache, storage, sizeof(storage), 16u,
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 16u,
                                        source.size, memory_read_at, &source));
-    assert(audio_compressed_cache_prefetch(&cache, 33u));
-    assert(source.calls == 1u);
-    assert(audio_compressed_cache_prefetch(&cache, 47u));
-    assert(source.calls == 1u);
-    assert(!audio_compressed_cache_prefetch(&cache, source.size));
+    CHECK(audio_compressed_cache_prefetch(&cache, 33u));
+    CHECK(source.calls == 1u);
+    CHECK(audio_compressed_cache_prefetch(&cache, 47u));
+    CHECK(source.calls == 1u);
+    CHECK(!audio_compressed_cache_prefetch(&cache, source.size));
 }
 
 /* A backend fault that truncates one transfer must never become a cached page.
@@ -106,7 +120,7 @@ static void test_mid_file_short_read_is_not_cached(void)
     fill_source(&source);
     uint8_t storage[4 * 32];
     audio_compressed_cache_t cache;
-    assert(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
                                        source.size, memory_read_at, &source));
 
     /* First transfer of page 0 delivers 8 of the 32 requested bytes. */
@@ -115,22 +129,22 @@ static void test_mid_file_short_read_is_not_cached(void)
 
     uint8_t out[32];
     memset(out, 0xA5, sizeof(out));
-    assert(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == 0u);
-    assert(cache.short_reads == 1u);
-    assert(cache.hits == 0u);
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == 0u);
+    CHECK(cache.short_reads == 1u);
+    CHECK(cache.hits == 0u);
 
     /* The faulted slot must not answer the retry from cache. */
     memset(out, 0xA5, sizeof(out));
-    assert(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
-    assert(memcmp(out, source.data, sizeof(out)) == 0);
-    assert(cache.hits == 0u);
-    assert(cache.short_reads == 1u);
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(memcmp(out, source.data, sizeof(out)) == 0);
+    CHECK(cache.hits == 0u);
+    CHECK(cache.short_reads == 1u);
 
     /* And the recovered page then serves hits normally. */
     uint8_t again[16];
-    assert(audio_compressed_cache_read(&cache, 4u, again, sizeof(again)) == sizeof(again));
-    assert(memcmp(again, source.data + 4u, sizeof(again)) == 0);
-    assert(cache.hits == 1u);
+    CHECK(audio_compressed_cache_read(&cache, 4u, again, sizeof(again)) == sizeof(again));
+    CHECK(memcmp(again, source.data + 4u, sizeof(again)) == 0);
+    CHECK(cache.hits == 1u);
 }
 
 /* A short read on the final page is real EOF, not a fault: `wanted` is clamped
@@ -141,21 +155,21 @@ static void test_eof_tail_page_is_cached(void)
     fill_source(&source);
     uint8_t storage[4 * 32];
     audio_compressed_cache_t cache;
-    assert(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
                                        source.size, memory_read_at, &source));
 
     /* 257 bytes over 32-byte pages: the last page holds a single byte. */
     uint8_t tail[32];
-    assert(audio_compressed_cache_read(&cache, 256u, tail, sizeof(tail)) == 1u);
-    assert(tail[0] == source.data[256]);
-    assert(cache.short_reads == 0u);
-    assert(cache.misses == 1u);
+    CHECK(audio_compressed_cache_read(&cache, 256u, tail, sizeof(tail)) == 1u);
+    CHECK(tail[0] == source.data[256]);
+    CHECK(cache.short_reads == 0u);
+    CHECK(cache.misses == 1u);
 
     /* The one-byte tail page is cacheable and answers the repeat as a hit. */
-    assert(audio_compressed_cache_read(&cache, 256u, tail, sizeof(tail)) == 1u);
-    assert(cache.hits == 1u);
-    assert(cache.misses == 1u);
-    assert(cache.short_reads == 0u);
+    CHECK(audio_compressed_cache_read(&cache, 256u, tail, sizeof(tail)) == 1u);
+    CHECK(cache.hits == 1u);
+    CHECK(cache.misses == 1u);
+    CHECK(cache.short_reads == 0u);
 }
 
 int main(void)
@@ -165,6 +179,7 @@ int main(void)
     test_prefetch_and_invalid_config();
     test_mid_file_short_read_is_not_cached();
     test_eof_tail_page_is_cached();
+    printf("TESTS_RUN=%u\n", s_checks);
     puts("audio_compressed_cache tests passed");
     return 0;
 }

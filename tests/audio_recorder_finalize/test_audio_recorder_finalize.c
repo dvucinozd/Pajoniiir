@@ -20,7 +20,8 @@ static bool close_step(void *p) { return step(p, 2u, 'C'); }
 static bool publish(void *p) { return step(p, 3u, 'R'); }
 
 static int failures;
-#define CHECK(x) do { if (!(x)) { printf("FAIL line %d: %s\n", __LINE__, #x); failures++; } } while (0)
+static unsigned s_checks;
+#define CHECK(x) do { s_checks++; if (!(x)) { printf("FAIL line %d: %s\n", __LINE__, #x); failures++; } } while (0)
 
 static fixture_t good(void)
 {
@@ -61,6 +62,7 @@ int main(void)
     CHECK(r.failed_stage == AUDIO_RECORDER_FINALIZE_STAGE_NONE);
     CHECK(r.closed && !r.published && strcmp(f.calls, "PSC") == 0);
 
+    printf("TESTS_RUN=%u\n", s_checks);
     if (failures == 0) puts("audio_recorder_finalize tests passed");
     return failures ? 1 : 0;
 }

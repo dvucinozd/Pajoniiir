@@ -21,9 +21,13 @@
 #include <stdbool.h>
 
 static int s_failures = 0;
+/* Counted so tests/run_p4_host_tests.ps1 can pin how much this suite actually
+ * executes: a deleted or commented-out test lowers the number and fails the run. */
+static unsigned s_checks = 0;
 
 #define CHECK(cond)                                                            \
     do {                                                                       \
+        s_checks++;                                                            \
         if (!(cond)) {                                                         \
             printf("  FAIL: %s (line %d)\n", #cond, __LINE__);                 \
             s_failures++;                                                      \

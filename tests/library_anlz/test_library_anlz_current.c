@@ -196,6 +196,7 @@ int main(void)
     test_sort_republishes_compact_order_only();
     test_identity_accessors_track_row_order();
 
+    printf("TESTS_RUN=%u\n", s_checks);
     if (s_failures == 0) {
         puts("library duration and compact-order tests passed");
         return 0;

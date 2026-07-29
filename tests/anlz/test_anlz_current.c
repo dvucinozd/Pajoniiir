@@ -145,6 +145,7 @@ int main(int argc, char *argv[])
     CHECK(ext_truncation_corpus_retains_previous_metadata(), "EXT truncation corpus failed");
 
     remove(SYNTH_UNICODE_DAT);
+    printf("TESTS_RUN=%d\n", g_tests_run);
     printf("\nStrict corpus result: %d/%d total tests passed\n",
            g_tests_passed, g_tests_run);
     return g_tests_failed > 0 ? 1 : 0;

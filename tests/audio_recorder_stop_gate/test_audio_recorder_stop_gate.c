@@ -2,7 +2,8 @@
 #include <stdio.h>
 
 static int failures;
-#define CHECK(x) do { if (!(x)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
+static unsigned s_checks;
+#define CHECK(x) do { s_checks++; if (!(x)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #x); failures++; } } while (0)
 
 int main(void)
 {
@@ -41,6 +42,7 @@ int main(void)
     audio_recorder_stop_gate_leave(&gate);
     CHECK(audio_recorder_stop_gate_is_quiescent(&gate));
 
+    printf("TESTS_RUN=%u\n", s_checks);
     if (failures == 0) puts("audio_recorder_stop_gate tests passed");
     return failures ? 1 : 0;
 }

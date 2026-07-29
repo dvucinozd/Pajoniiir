@@ -2,6 +2,11 @@ param(
     [switch]$KeepArtifacts
 )
 
+# Keep this file ASCII-only. It has no BOM, and Windows PowerShell 5.1 decodes a
+# BOM-less file as ANSI: a non-ASCII byte inside an executable string corrupts
+# the parse of everything after it, which surfaces as a cascade of unrelated
+# syntax errors hundreds of lines further down.
+
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -71,7 +76,13 @@ function Invoke-Step {
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
         [Parameter(Mandatory = $true)][string]$Executable,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        # When set, the step must print "TESTS_RUN=<n>" with n at least this
+        # value. A passing exit code only proves nothing failed - it says nothing
+        # about how much ran, so a test function that is deleted or commented out
+        # leaves the suite green. Pinning the count is what makes silently lost
+        # coverage a failure. Raise the number when coverage is added.
+        [int]$MinTestsRun = 0
     )
 
     Write-Host "==> $Name"
@@ -84,9 +95,26 @@ function Invoke-Step {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        & $Executable @Arguments
+        if ($MinTestsRun -gt 0) {
+            $output = & $Executable @Arguments 2>&1
+            $output | ForEach-Object { Write-Host $_ }
+        } else {
+            & $Executable @Arguments
+            $output = @()
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "$Name failed with exit code $LASTEXITCODE"
+        }
+        if ($MinTestsRun -gt 0) {
+            $match = $output | Select-String -Pattern 'TESTS_RUN=(\d+)' | Select-Object -Last 1
+            if (-not $match) {
+                throw "$Name did not report TESTS_RUN; expected at least $MinTestsRun assertions"
+            }
+            $ran = [int]$match.Matches[0].Groups[1].Value
+            if ($ran -lt $MinTestsRun) {
+                throw "$Name ran $ran assertions, expected at least $MinTestsRun - coverage was removed"
+            }
+            Write-Host "    TESTS_RUN=$ran (floor $MinTestsRun)"
         }
     } finally {
         $ErrorActionPreference = $previousErrorAction
@@ -602,7 +630,7 @@ Assert-FileContains `
 
 # The decoder runs ~2 s ahead of playback, so a loop wrap must withdraw whatever
 # it already published past the out point. Without the trim the loop's first
-# pass plays that lead — about four beats, off the grid at most tempos.
+# pass plays that lead - about four beats, off the grid at most tempos.
 Assert-FileContains `
     -Name "p4 loop wrap withdraws decoded frames published past the loop out point" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
@@ -969,6 +997,7 @@ $tests = @(
     },
     @{
         Name = "audio_recorder_stop_gate"
+        MinTestsRun = 17
         Dir = "tests/audio_recorder_stop_gate"
         Target = "test_audio_recorder_stop_gate.exe"
         Args = @(
@@ -982,6 +1011,7 @@ $tests = @(
     },
     @{
         Name = "audio_recorder_finalize"
+        MinTestsRun = 15
         Dir = "tests/audio_recorder_finalize"
         Target = "test_audio_recorder_finalize.exe"
         Args = @(
@@ -1171,6 +1201,7 @@ $tests = @(
     },
     @{
         Name = "audio_compressed_cache"
+        MinTestsRun = 45
         Dir = "tests/audio_compressed_cache"
         Target = "test_audio_compressed_cache.exe"
         Args = @(
@@ -1415,6 +1446,7 @@ $tests = @(
     },
     @{
         Name = "ui_library"
+        MinTestsRun = 48
         Dir = "tests/ui_library"
         Target = "test_ui_library.exe"
         Args = @(
@@ -1660,6 +1692,7 @@ $tests = @(
     },
     @{
         Name = "anlz"
+        MinTestsRun = 39
         Dir = "tests/anlz"
         Target = "test_anlz.exe"
         Cleanup = @("test_synth.dat", "test_synth.ext")
@@ -1674,6 +1707,7 @@ $tests = @(
     },
     @{
         Name = "library_anlz"
+        MinTestsRun = 179
         Dir = "tests/library_anlz"
         Target = "test_library_anlz.exe"
         Args = @(
@@ -1704,6 +1738,7 @@ $tests = @(
         # suite built on the fake RTOS inherits its behaviour, so a fake that
         # lies would turn broken firmware green.
         Name = "support_rtos"
+        MinTestsRun = 108
         Dir = "tests/support_rtos"
         Target = "test_fake_rtos.exe"
         Args = @(
@@ -1720,6 +1755,7 @@ $tests = @(
         # the one whose write pattern matters. Runs the real app_settings.c
         # against the fake RTOS and a counting NVS fake.
         Name = "app_settings"
+        MinTestsRun = 29
         Dir = "tests/app_settings"
         Target = "test_app_settings.exe"
         Args = @(
@@ -1779,7 +1815,12 @@ foreach ($test in $tests) {
     if ($test.ContainsKey("RunArgs")) {
         $runArgs = $test.RunArgs
     }
-    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target -Arguments $runArgs
+    $minTestsRun = 0
+    if ($test.ContainsKey("MinTestsRun")) {
+        $minTestsRun = $test.MinTestsRun
+    }
+    Invoke-Step -Name "run $($test.Name)" -WorkingDirectory $dir -Executable $target `
+                -Arguments $runArgs -MinTestsRun $minTestsRun
 }
 
 # Prefer the ESP-IDF virtualenv interpreter: it is the one guaranteed to carry a
@@ -1802,7 +1843,7 @@ if ($isWindowsHost) {
 # Interpreter must actually carry a working `cryptography`, not merely exist.
 # The gcc these suites need lives in C:\msys64\ucrt64\bin, and prepending that to
 # PATH (as the documented workflow does) shadows the system python with msys2's,
-# which has no cryptography — the signing suite then failed for a reason that has
+# which has no cryptography - the signing suite then failed for a reason that has
 # nothing to do with the code under test.
 function Test-PythonHasCryptography {
     param([string]$Exe)
@@ -2110,16 +2151,6 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("#define fread", "#define fgetc")
 
 Assert-FileContains `
-    -Name "ANLZ host corpus covers DAT and EXT truncation boundaries" `
-    -Path (Join-Path $RepoRoot "tests/anlz/test_anlz_current.c") `
-    -LiteralPatterns @("dat_truncation_corpus_rejects_partial_structures", "ext_truncation_corpus_retains_previous_metadata", "test_truncated.dat", "test_truncated.ext")
-
-Assert-FileContains `
-    -Name "library duration test covers preservation and beatgrid fallback" `
-    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
-    -LiteralPatterns @("test_nonzero_pdb_duration_survives_anlz_enrichment", "test_zero_pdb_duration_falls_back_to_last_beat", "213456u", "7000u")
-
-Assert-FileContains `
     -Name "library sorting uses immutable records and compact double-buffered order" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/library.c") `
     -LiteralPatterns @("typedef uint16_t library_order_entry_t", "s_track_buf[2]", "s_order_buf[2]", "library_slot_for_row_unlocked", "sizeof(library_order_entry_t)", "qsort(order")
@@ -2130,11 +2161,6 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("memcpy(idx, src, (size_t)s_track_count * sizeof(library_track_t))", "qsort(idx, s_track_count, sizeof(library_track_t)")
 
 Assert-FileContains `
-    -Name "library host test covers compact order across all sort fields" `
-    -Path (Join-Path $RepoRoot "tests/library_anlz/test_library_anlz_current.c") `
-    -LiteralPatterns @("test_sort_republishes_compact_order_only", "title_asc", "artist_asc", "bpm_desc", "key_asc")
-
-Assert-FileContains `
     -Name "library UI bounds LVGL cells to one eight-row page" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("UI_LIBRARY_PAGE_ROWS", "ui_library_page_for_selection", "lv_table_set_row_count(s_library_table, (uint32_t)page.row_count)", "lv_obj_clear_flag(s_library_table, LV_OBJ_FLAG_SCROLLABLE)", "PREV", "NEXT", "PAGE %d/%d")
@@ -2143,11 +2169,6 @@ Assert-FileDoesNotContain `
     -Name "library UI never materializes every catalog row in LVGL" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("lv_table_set_row_count(s_library_table, n)", "ui_library_fill_row(")
-
-Assert-FileContains `
-    -Name "library UI host test covers 1024-track pagination boundaries" `
-    -Path (Join-Path $RepoRoot "tests/ui_library/test_ui_library.c") `
-    -LiteralPatterns @("test_pagination_bounds_large_library_to_eight_rows", "ui_library_page_for_selection(1024, 1023)", "page_count == 128", "test_page_delta_keeps_relative_row_and_clamps_edges")
 
 Assert-FileContains `
     -Name "production library exposes selected-track API names" `
@@ -2236,11 +2257,6 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("TRACK TOO LARGE", "heap_caps_malloc(track_bytes", "heap_caps_get_largest_free_block", "drflac_open_memory", "build_seek_table", "audio_fw_preload_chunk_bytes", "file_buf")
 
 Assert-FileContains `
-    -Name "bounded cache host test covers LRU replacement, cross-page reads and seeks" `
-    -Path (Join-Path $RepoRoot "tests/audio_compressed_cache/test_audio_compressed_cache.c") `
-    -LiteralPatterns @("test_cross_page_read_and_eof_clamp", "test_hits_and_lru_eviction_stay_bounded", "cache.hits == 1u", "audio_compressed_cache_read")
-
-Assert-FileContains `
     -Name "recorder STOP closes admission and waits for active producers before drain" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("audio_recorder_stop_gate_close", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_try_enter")
@@ -2255,12 +2271,3 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
 
-Assert-FileContains `
-    -Name "recorder finalize fault injection forbids rename after every durability failure" `
-    -Path (Join-Path $RepoRoot "tests/audio_recorder_finalize/test_audio_recorder_finalize.c") `
-    -LiteralPatterns @("AUDIO_RECORDER_FINALIZE_STAGE_PATCH", "AUDIO_RECORDER_FINALIZE_STAGE_SYNC", "AUDIO_RECORDER_FINALIZE_STAGE_CLOSE", "AUDIO_RECORDER_FINALIZE_STAGE_PUBLISH")
-
-Assert-FileContains `
-    -Name "recorder producer gate test covers the close versus in-flight producer race" `
-    -Path (Join-Path $RepoRoot "tests/audio_recorder_stop_gate/test_audio_recorder_stop_gate.c") `
-    -LiteralPatterns @("audio_recorder_stop_gate_active", "audio_recorder_stop_gate_is_quiescent", "audio_recorder_stop_gate_leave")
