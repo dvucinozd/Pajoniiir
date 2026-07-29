@@ -1900,6 +1900,7 @@ Assert-FileContains `
 # incomplete-type tentative definition that is a C11 constraint violation.
 foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
+    @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "library_duration_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
@@ -1926,6 +1927,21 @@ Assert-FileContains `
     -Name "p4 controller profile manager builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "controller_profile_manager.c"')
+
+Assert-FileContains `
+    -Name "p4 pull OTA reserves and releases the transition lease itself" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_OTA)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA)", "Deliberately keeps the transition lease")
+
+Assert-FileDoesNotContain `
+    -Name "p4 pull OTA does not hook vTaskDelete to release the lease" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("#define vTaskDelete")
+
+Assert-FileContains `
+    -Name "p4 pull OTA builds its real source" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "p4_ota_pull.c"')
 
 Assert-FileContains `
     -Name "p4 Wi-Fi probe reserves and releases the transition lease itself" `
