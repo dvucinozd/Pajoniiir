@@ -18,6 +18,7 @@ on:
       - "fix/**"
       - "test/**"
       - "docs/**"
+      - "ci/**"
       - "migration/**"
   pull_request:
     paths:
