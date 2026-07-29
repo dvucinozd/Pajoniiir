@@ -6,9 +6,19 @@ on:
       # master included deliberately: without it the gate stopped running the
       # moment work merged, so the default branch was never verified by the same
       # checks that guarded the branch it came from.
+      #
+      # migration/esp-idf-6.0.2 and fix/release-blockers-and-concurrency were
+      # listed here and have both been merged and deleted. Naming branches
+      # individually meant every new branch silently had no push CI - which is
+      # how two later branches were pushed to five times without a single run,
+      # and only got checked once a PR opened. Cover them by pattern instead, so
+      # the gate follows the work rather than a list someone has to remember to
+      # update.
       - master
-      - migration/esp-idf-6.0.2
-      - fix/release-blockers-and-concurrency
+      - "fix/**"
+      - "test/**"
+      - "docs/**"
+      - "migration/**"
   pull_request:
     paths:
       - "firmware/**"
