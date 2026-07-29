@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "anlz_snapshot.h"
 #include "deck_core.h"
 #include "rekordbox_anlz.h"
 #include "ui_beat_indicator.h"
@@ -46,6 +47,7 @@ typedef struct {
     uint16_t deck_bpm[DECK_CORE_DECK_COUNT];
     uint32_t deck_speed_permille[DECK_CORE_DECK_COUNT];
 
+    anlz_snapshot_t *deck_anlz[DECK_CORE_DECK_COUNT];
     const anlz_metadata_t *deck_meta[DECK_CORE_DECK_COUNT];
     const ui_deck_track_info_t *deck_info[DECK_CORE_DECK_COUNT];
     ui_overview_waveform_source_info_t overview_wave_source[DECK_CORE_DECK_COUNT];

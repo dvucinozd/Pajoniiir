@@ -802,13 +802,13 @@ static const int s_beat_jump_pad_shifts[8] = {
     -32, -16, -8, -4, 4, 8, 16, 32,
 };
 
-static bool clone_loaded_track_for_deck(
+static bool acquire_loaded_track_for_deck(
     uint8_t deck,
     deck_loaded_track_summary_t *summary,
-    anlz_metadata_t *meta)
+    anlz_snapshot_t **snapshot)
 {
-    return deck_loaded_track_store_clone(
-        &s_loaded_tracks, deck, summary, meta);
+    return deck_loaded_track_store_acquire(
+        &s_loaded_tracks, deck, summary, snapshot);
 }
 
 static uint16_t loaded_bpm_for_deck(uint8_t deck)
@@ -824,17 +824,18 @@ static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
 
     uint32_t position_ms = current_deck_position_ms(deck, state);
     deck_loaded_track_summary_t loaded = {0};
-    anlz_metadata_t meta = {0};
-    const bool has_loaded = clone_loaded_track_for_deck(
-        deck, &loaded, &meta);
+    anlz_snapshot_t *snapshot = NULL;
+    const bool has_loaded = acquire_loaded_track_for_deck(
+        deck, &loaded, &snapshot);
+    const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
     uint16_t bpm = has_loaded && loaded.bpm > 0u
                        ? loaded.bpm
                        : loaded_bpm_for_deck(deck);
     const anlz_metadata_t *meta_ptr =
-        has_loaded && loaded.has_anlz ? &meta : NULL;
+        has_loaded && loaded.has_anlz ? meta : NULL;
     uint32_t target_ms = beat_jump_calculate_target_ms(
         position_ms, bpm, beat_shift, meta_ptr);
-    anlz_free(&meta);
+    anlz_snapshot_release(snapshot);
 
     esp_err_t rc = audio_engine_deck_seek(deck, target_ms);
     if (rc == ESP_OK) {
@@ -920,12 +921,14 @@ static void set_deck_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms)
 static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
 {
     deck_loaded_track_summary_t loaded = {0};
-    anlz_metadata_t meta = {0};
-    if (!clone_loaded_track_for_deck(deck, &loaded, &meta) ||
-        !loaded.has_anlz ||
-        !meta.beats ||
-        meta.beat_count == 0u) {
-        anlz_free(&meta);
+    anlz_snapshot_t *snapshot = NULL;
+    if (!acquire_loaded_track_for_deck(deck, &loaded, &snapshot)) {
+        return position_ms;
+    }
+    const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
+    if (!loaded.has_anlz || !meta || !meta->beats ||
+        meta->beat_count == 0u) {
+        anlz_snapshot_release(snapshot);
         return position_ms;
     }
 
@@ -933,10 +936,10 @@ static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
      * beat at/after position_ms and compare it with its predecessor — O(log n)
      * instead of scanning the whole grid on every quantized action. */
     uint16_t lo = 0;
-    uint16_t hi = meta.beat_count;   /* [lo, hi): candidates >= position_ms */
+    uint16_t hi = meta->beat_count;   /* [lo, hi): candidates >= position_ms */
     while (lo < hi) {
         uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);
-        if (meta.beats[mid].time_ms < position_ms) {
+        if (meta->beats[mid].time_ms < position_ms) {
             lo = (uint16_t)(mid + 1u);
         } else {
             hi = mid;
@@ -944,22 +947,22 @@ static uint32_t nearest_beat_ms(uint8_t deck, uint32_t position_ms)
     }
 
     if (lo == 0u) {
-        uint32_t result = meta.beats[0].time_ms;
-        anlz_free(&meta);
+        uint32_t result = meta->beats[0].time_ms;
+        anlz_snapshot_release(snapshot);
         return result;                               /* before the first beat */
     }
-    if (lo >= meta.beat_count) {
-        uint32_t result = meta.beats[meta.beat_count - 1u].time_ms;
-        anlz_free(&meta);
+    if (lo >= meta->beat_count) {
+        uint32_t result = meta->beats[meta->beat_count - 1u].time_ms;
+        anlz_snapshot_release(snapshot);
         return result;                               /* past the last beat */
     }
 
-    uint32_t after_ms = meta.beats[lo].time_ms;
-    uint32_t before_ms = meta.beats[lo - 1u].time_ms;
+    uint32_t after_ms = meta->beats[lo].time_ms;
+    uint32_t before_ms = meta->beats[lo - 1u].time_ms;
     uint32_t after_delta = after_ms - position_ms;
     uint32_t before_delta = position_ms - before_ms;
     uint32_t result = before_delta <= after_delta ? before_ms : after_ms;
-    anlz_free(&meta);
+    anlz_snapshot_release(snapshot);
     return result;
 }
 
@@ -1077,17 +1080,18 @@ static void handle_beat_loop_pad_action(uint8_t deck, uint8_t pad, deck_state_t 
 
     uint32_t start_ms = current_deck_position_ms(deck, state);
     deck_loaded_track_summary_t loaded = {0};
-    anlz_metadata_t meta = {0};
-    const bool has_loaded = clone_loaded_track_for_deck(
-        deck, &loaded, &meta);
+    anlz_snapshot_t *snapshot = NULL;
+    const bool has_loaded = acquire_loaded_track_for_deck(
+        deck, &loaded, &snapshot);
+    const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
     uint32_t duration_ms = beat_loop_calculate_duration_ms(start_ms,
                                                            loaded_bpm_for_deck(deck),
                                                            length.numerator,
                                                            length.denominator,
                                                            has_loaded && loaded.has_anlz
-                                                               ? &meta
+                                                               ? meta
                                                                : NULL);
-    anlz_free(&meta);
+    anlz_snapshot_release(snapshot);
     if (duration_ms == 0 || start_ms > UINT32_MAX - duration_ms) {
         return;
     }
@@ -2482,27 +2486,31 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state)
     uint32_t aligned_ms = current_deck_position_ms(deck, state);
     deck_loaded_track_summary_t target_loaded = {0};
     deck_loaded_track_summary_t reference_loaded = {0};
-    anlz_metadata_t target_meta = {0};
-    anlz_metadata_t reference_meta = {0};
-    bool target_valid = clone_loaded_track_for_deck(
-        deck, &target_loaded, &target_meta);
-    bool reference_valid = clone_loaded_track_for_deck(
-        reference_deck, &reference_loaded, &reference_meta);
+    anlz_snapshot_t *target_snapshot = NULL;
+    anlz_snapshot_t *reference_snapshot = NULL;
+    bool target_valid = acquire_loaded_track_for_deck(
+        deck, &target_loaded, &target_snapshot);
+    bool reference_valid = acquire_loaded_track_for_deck(
+        reference_deck, &reference_loaded, &reference_snapshot);
+    const anlz_metadata_t *target_meta =
+        anlz_snapshot_metadata(target_snapshot);
+    const anlz_metadata_t *reference_meta =
+        anlz_snapshot_metadata(reference_snapshot);
     uint32_t reference_position_ms = current_deck_position_ms(reference_deck,
                                                              &s_decks[reference_deck]);
     bool phase_target_available = beat_phase_align_target_ms(aligned_ms,
                                                              target_valid &&
                                                                      target_loaded.has_anlz
-                                                                 ? &target_meta
+                                                                 ? target_meta
                                                                  : NULL,
                                                              reference_position_ms,
                                                              reference_valid &&
                                                                      reference_loaded.has_anlz
-                                                                 ? &reference_meta
+                                                                 ? reference_meta
                                                                  : NULL,
                                                              &aligned_ms);
-    anlz_free(&target_meta);
-    anlz_free(&reference_meta);
+    anlz_snapshot_release(target_snapshot);
+    anlz_snapshot_release(reference_snapshot);
     if (phase_target_available) {
         esp_err_t seek_rc = audio_engine_deck_seek(deck, aligned_ms);
         if (seek_rc == ESP_OK) {

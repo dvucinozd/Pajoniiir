@@ -43,7 +43,7 @@ void ui_overview_load_waveform_data(uint8_t deck,
                                     uint32_t duration_ms,
                                     const uint8_t waveform_low[400],
                                     bool has_waveform,
-                                    const anlz_metadata_t *meta);
+                                    anlz_snapshot_t *snapshot);
 
 void ui_overview_update_cue_markers(uint8_t deck,
                                     const anlz_metadata_t *meta,

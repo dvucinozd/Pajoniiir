@@ -8,6 +8,7 @@ CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 \
 
 SRCS    = test_ui_deck_anlz_store.c \
           ../../firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c \
+          ../../firmware/main-deck-p4/components/library/anlz_snapshot.c \
           anlz_free_stub.c
 
 TARGET  = test_ui_deck_anlz_store

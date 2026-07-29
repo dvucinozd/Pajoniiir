@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "anlz_snapshot.h"
 #include "deck_loaded_track_types.h"
 #include "rekordbox_anlz.h"
 
@@ -30,8 +31,7 @@ typedef enum {
 
 typedef struct {
     deck_loaded_track_summary_t summary[DECK_LOADED_TRACK_COUNT];
-    anlz_metadata_t meta[DECK_LOADED_TRACK_COUNT];
-    bool meta_valid[DECK_LOADED_TRACK_COUNT];
+    anlz_snapshot_t *anlz[DECK_LOADED_TRACK_COUNT];
     uint32_t next_generation;
     uint32_t media_floor;
 #ifdef ESP_PLATFORM
@@ -45,8 +45,8 @@ typedef struct {
 
 /*
  * Stores must have static storage duration or be zero-initialized before their
- * first reset. The store owns every published ANLZ clone; reset/clear releases
- * those allocations after all concurrent readers leave.
+ * first reset. The store owns one reference to every published immutable ANLZ
+ * snapshot; reset/clear releases that reference after the pointer swap.
  */
 void deck_loaded_track_store_reset(deck_loaded_track_store_t *store);
 
@@ -69,8 +69,8 @@ bool deck_loaded_track_store_get(
     uint8_t deck,
     deck_loaded_track_summary_t *out);
 
-bool deck_loaded_track_store_clone(
+bool deck_loaded_track_store_acquire(
     const deck_loaded_track_store_t *store,
     uint8_t deck,
     deck_loaded_track_summary_t *out_summary,
-    anlz_metadata_t *out_anlz);
+    anlz_snapshot_t **out_anlz);

@@ -414,6 +414,12 @@ deck-aware 7-byte `0xA5` frames while P4 heartbeat detection is supported.
   new/init/enable/task-create step to fail once; confirm no task, queue,
   semaphore or I2S channel remains and a second initialization succeeds without
   rebooting the P4.
+- [ ] P4 ANLZ snapshot hardware soak: tijekom playbacka oba decka ponavljati USB
+  remove/reinsert, track A/B reload te Beat Jump, Quantize, Beat Loop i Beat Sync
+  najmanje 10.000 akcija. Pratiti largest-free-block i ukupni PSRAM heap floor,
+  potvrditi da nema kontinuiranog pada, latency spikea, stale cue/waveform
+  prikaza, UAF-a ili restarta. Host test već pokriva maksimalni beatgrid,
+  128 KiB waveform, OOM i reader-over-writer-swap; ovaj red je fizički gate.
 - [x] SMART CFX (`0x96/0x00`) and SMART FADER (`0x96/0x01`) are raw-captured
   and mapped as semantic input-only button events.
 - [ ] Hardware smoke Beat FX FLANGER/DELAY: select both in both directions and

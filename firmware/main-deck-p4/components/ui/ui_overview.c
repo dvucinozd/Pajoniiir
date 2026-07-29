@@ -384,11 +384,23 @@ static uint32_t s_overview_cue_fingerprint[DECK_CORE_DECK_COUNT];
 static bool s_overview_cue_fingerprint_valid[DECK_CORE_DECK_COUNT];
 static uint32_t s_overview_deck_duration_ms[DECK_CORE_DECK_COUNT];
 static uint16_t s_overview_deck_bpm[DECK_CORE_DECK_COUNT];
+static anlz_snapshot_t *s_overview_deck_snapshot[DECK_CORE_DECK_COUNT];
 static const anlz_metadata_t *s_overview_deck_meta[DECK_CORE_DECK_COUNT];
 static const ui_deck_track_info_t *s_overview_deck_info[DECK_CORE_DECK_COUNT];
 static ui_overview_waveform_source_info_t s_overview_wave_source[DECK_CORE_DECK_COUNT];
 static int s_overview_active_tab = 0;
 static uint8_t s_overview_prev_tab = 0xFFu;
+
+static void ui_overview_replace_snapshot(uint8_t deck,
+                                         anlz_snapshot_t *snapshot)
+{
+    uint8_t idx = ui_overview_deck_index(deck);
+    anlz_snapshot_t *next = anlz_snapshot_retain(snapshot);
+    anlz_snapshot_t *old = s_overview_deck_snapshot[idx];
+    s_overview_deck_snapshot[idx] = next;
+    s_overview_deck_meta[idx] = anlz_snapshot_metadata(next);
+    anlz_snapshot_release(old);
+}
 
 /* Another LVGL screen covered ours and LVGL will repaint the whole tab when it
  * comes back, erasing the direct-PPA waveforms. Forcing the tab-return path to
@@ -1622,11 +1634,12 @@ void ui_overview_load_waveform_data(uint8_t deck,
                                   uint32_t duration_ms,
                                   const uint8_t waveform_low[400],
                                   bool has_waveform,
-                                  const anlz_metadata_t *meta)
+                                  anlz_snapshot_t *snapshot)
 {
     uint8_t idx = ui_overview_deck_index(deck);
+    ui_overview_replace_snapshot(idx, snapshot);
+    const anlz_metadata_t *meta = s_overview_deck_meta[idx];
     s_overview_deck_duration_ms[idx] = duration_ms;
-    s_overview_deck_meta[idx] = meta;
     s_overview_wave_source[idx] = (ui_overview_waveform_source_info_t){
         .kind = has_waveform ? UI_OVERVIEW_WAVEFORM_SOURCE_LOADED_MEDIA
                              : UI_OVERVIEW_WAVEFORM_SOURCE_METADATA,
@@ -2275,6 +2288,9 @@ void ui_overview_set_performance_target(uint8_t active_deck)
 
 void ui_overview_init(const ui_overview_config_t *config)
 {
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        ui_overview_replace_snapshot(deck, NULL);
+    }
     memset(&s_overview_config, 0, sizeof(s_overview_config));
     if (config) {
         s_overview_config = *config;
@@ -2292,7 +2308,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         s_overview_deck_duration_ms[deck] = ctx->deck_duration_ms[deck];
         s_overview_deck_bpm[deck] = ctx->deck_bpm[deck];
-        s_overview_deck_meta[deck] = ctx->deck_meta[deck];
+        ui_overview_replace_snapshot(deck, ctx->deck_anlz[deck]);
         s_overview_deck_info[deck] = ctx->deck_info[deck];
         s_overview_wave_source[deck] = ctx->overview_wave_source[deck];
     }

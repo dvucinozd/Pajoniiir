@@ -81,7 +81,7 @@ samo u `library.c`.
 | USB disconnect ownership | **Otvoreno** | `usb_storage.c` je identičan auditiranom migration commitu |
 | Control-link edge delivery | **Otvoreno** | implementacija i problematični test su identični |
 | UI/library/deck shared state | **Otvoreno** | `ui_library.c` i `deck_core.c` nisu promijenjeni |
-| ANLZ deep-copy snapshot | **Otvoreno** | production snapshot/clone kod nije promijenjen |
+| ANLZ deep-copy snapshot | **Software zatvoreno; HW soak pending** | immutable/versioned refcount snapshot; reader acquire više ne alocira |
 | Library `media_io_gate` scope | **Zatvoreno u sourceu; HW pending** | gate se otpušta između PDB redaka; dodani behavioral testovi |
 | Globalni audio lock | **Otvoreno; planirano** | dodan `AUDIO_ENGINE_PER_DECK_LOCK_PLAN.md`, bez source promjene |
 | OTA status concurrency | **Software zatvoreno; HW pending** | atomic operation gate i koherentan bounded status/offer snapshot |
@@ -487,6 +487,9 @@ snapshot primitiveom.
 
 Status na `origin/master@65ecc563`: **OTVORENO**
 
+Status nakon remediation implementacije 2026-07-29:
+**SOFTWARE ZATVORENO; HARDWARE LOAD/ACTION SOAK PENDING**
+
 Primarne lokacije:
 
 - `firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c:191-221`
@@ -531,6 +534,31 @@ lockom, a stari osloboditi tek kada zadnji reader otpusti referencu.
 - 10.000 acquire/release/swap iteracija;
 - heap floor ne pada kontinuirano;
 - nema use-after-free ili double-free.
+
+### Implementirani popravak
+
+- Novi `anlz_snapshot_t` je immutable objekt s jedinstvenom nenultom verzijom
+  i atomskim refcountom. Kreiranje radi jedan deep copy prije objave;
+  `retain`/`release` i svi store `acquire` pozivi ne alociraju.
+- `deck_loaded_track_store` objavljuje kompaktni snapshot s beatgridom, cues,
+  VBR podacima i low-resolution waveformom, ali bez do 128 KiB high-resolution
+  UI waveforma. Beat Jump, Quantize, Beat Loop i Beat Sync sada drže referencu
+  samo tijekom izračuna umjesto da za svaku akciju kloniraju beatgrid.
+- UI store objavljuje puni snapshot jednom po loadu. Frame context,
+  Performance/Hot Cue prikaz i Overview drže eksplicitne reference; Overview
+  zadržava vlastitu referencu za LVGL event callbackove između frameova.
+  Time je uklonjen i raniji implicitni task-local double-buffer lifetime.
+- Writer prvo izgradi novi snapshot, zatim pod kratkim gateom zamijeni pointer.
+  Stari objekt se oslobađa tek nakon zadnjeg readera. OOM pri kreiranju ostavlja
+  prethodno objavljeni store snapshot netaknut.
+- Host regresije potvrđuju dva istodobna readera preko writer swapa, različite
+  verzije, OOM bez parcijalne zamjene, maksimalnih `UINT16_MAX` beatova i
+  `ANLZ_WAVEFORM_HIGH_MAX` waveforma te 10.000 acquire/release iteracija bez
+  dodatnog `anlz_clone()` poziva. Postojeći concurrent deck test dodatno
+  izvršava 20.000 publish i 40.000 reader iteracija bez miješanja generacija.
+- Puni P4 host suite i ESP-IDF v6.0.2 P4 build prolaze. Bez dostupnog hardvera
+  nisu izvedeni USB reload, Beat Jump/Sync/Loop akcijski soak ni provjera
+  dugoročnog PSRAM heap floora na stvarnom P4.
 
 ---
 
@@ -1050,7 +1078,7 @@ triggeri dovršeni su na masteru i više nisu implementacijski koraci.
 | 5 | Deck/library ownership refaktor | **software implementirano i validirano; P4 USB/audio/FLX4 hardware soak pending** |
 | 6 | OTA status i monitor PCM concurrency | **software implementirano i validirano; OTA failure/retry i monitor-link HW soak pending** |
 | 7 | Partial-init cleanup | **software implementirano; IDF failure-injection fixture i HW retry pending** |
-| 8 | Immutable/refcounted ANLZ snapshot | P2; nakon deck ownership API-ja |
+| 8 | Immutable/refcounted ANLZ snapshot | **software implementirano i host/build validirano; P4 USB/action/heap soak pending** |
 | 9 | Audio runtime instrumentacija | prije bilo kakvog lock refaktora |
 | 10 | Per-deck audio lockovi | prema dokumentiranom planu; traži bolji harness ili board |
 | 11 | Decoder/PCM-ring/output razdvajanje | nakon lock metrika i ANLZ refaktora |

@@ -373,7 +373,32 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "deck core owns coherent loaded-track publication" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @("deck_loaded_track_store_publish", "deck_loaded_track_store_clone", "deck_loaded_track_store_clear_all")
+    -LiteralPatterns @("deck_loaded_track_store_publish", "deck_loaded_track_store_acquire", "deck_loaded_track_store_clear_all")
+
+Assert-FileContains `
+    -Name "ANLZ readers retain immutable snapshots without cloning" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/anlz_snapshot.c") `
+    -LiteralPatterns @("anlz_snapshot_create", "anlz_snapshot_retain", "anlz_snapshot_release", "__atomic_compare_exchange_n")
+
+Assert-FileDoesNotContain `
+    -Name "deck ANLZ acquire no longer deep-copies payloads" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c") `
+    -LiteralPatterns @("deck_loaded_track_store_clone", "anlz_clone(&store->")
+
+Assert-FileDoesNotContain `
+    -Name "UI ANLZ acquire no longer deep-copies payloads" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c") `
+    -LiteralPatterns @("ui_deck_anlz_store_get", "anlz_clone(&store->", "ANLZ_READER_BANKS")
+
+Assert-FileContains `
+    -Name "UI frame and Overview retain ANLZ for their complete pointer lifetime" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui.c") `
+    -LiteralPatterns @("ctx->deck_anlz[deck] = ui_deck_anlz_acquire(deck)", "ui_release_frame_context(&ctx)")
+
+Assert-FileContains `
+    -Name "Overview owns ANLZ across LVGL callbacks" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_overview.c") `
+    -LiteralPatterns @("s_overview_deck_snapshot[idx] = next", "anlz_snapshot_release(old)")
 
 Assert-FileDoesNotContain `
     -Name "deck core no longer borrows loaded-track fields from UI" `
@@ -1031,7 +1056,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 deck_core quantize binary-searches the beatgrid" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta.beats[mid].time_ms < position_ms")
+    -LiteralPatterns @("uint16_t mid = (uint16_t)(lo + (hi - lo) / 2u);", "meta->beats[mid].time_ms < position_ms")
 
 Assert-FileContains `
     -Name "p4 pdb row-slot iterator validates the whole group before subtraction" `
@@ -1606,7 +1631,24 @@ $tests = @(
             "-o", "test_deck_loaded_track_store.exe",
             "test_deck_loaded_track_store.c",
             "anlz_clone_stub.c",
+            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
+        )
+    },
+    @{
+        Name = "ui_deck_anlz_store"
+        Dir = "tests/ui_deck_anlz_store"
+        Target = "test_ui_deck_anlz_store.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DANLZ_STANDALONE_TEST",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_ui_deck_anlz_store.exe",
+            "test_ui_deck_anlz_store.c",
+            "anlz_free_stub.c",
+            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
+            "../../firmware/main-deck-p4/components/ui/ui_deck_anlz_store.c"
         )
     },
     @{
@@ -1645,6 +1687,7 @@ $tests = @(
             "control_link_stub.c",
             "hot_cue_store_stub.c",
             "../deck_loaded_track_store/anlz_clone_stub.c",
+            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
@@ -1685,6 +1728,7 @@ $tests = @(
             "control_link_stub.c",
             "hot_cue_store_stub.c",
             "../deck_loaded_track_store/anlz_clone_stub.c",
+            "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",

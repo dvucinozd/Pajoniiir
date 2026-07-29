@@ -102,26 +102,19 @@ void deck_loaded_track_store_reset(deck_loaded_track_store_t *store)
     }
 #endif
 
-    anlz_metadata_t old[DECK_LOADED_TRACK_COUNT] = {0};
-    bool old_valid[DECK_LOADED_TRACK_COUNT] = {0};
+    anlz_snapshot_t *old[DECK_LOADED_TRACK_COUNT] = {0};
     writer_enter(store);
     for (uint8_t deck = 0u; deck < DECK_LOADED_TRACK_COUNT; ++deck) {
-        if (store->meta_valid[deck]) {
-            old[deck] = store->meta[deck];
-            old_valid[deck] = true;
-        }
+        old[deck] = store->anlz[deck];
         memset(&store->summary[deck], 0, sizeof(store->summary[deck]));
-        memset(&store->meta[deck], 0, sizeof(store->meta[deck]));
-        store->meta_valid[deck] = false;
+        store->anlz[deck] = NULL;
     }
     store->next_generation = 0u;
     store->media_floor = 0u;
     writer_leave(store);
 
     for (uint8_t deck = 0u; deck < DECK_LOADED_TRACK_COUNT; ++deck) {
-        if (old_valid[deck]) {
-            anlz_free(&old[deck]);
-        }
+        anlz_snapshot_release(old[deck]);
     }
 }
 
@@ -135,24 +128,18 @@ deck_loaded_track_result_t deck_loaded_track_store_publish(
         return DECK_LOADED_TRACK_INVALID;
     }
 
-    anlz_metadata_t next_meta = {0};
-    bool next_meta_valid = false;
+    anlz_snapshot_t *next_anlz = NULL;
     if (payload->anlz) {
-        /* deck_core consumes the beat grid and BPM only. Never duplicate the
-         * potentially 128 KiB high-resolution UI waveform into this ownership
-         * store; keeping it NULL also prevents per-action reader clones from
-         * copying data they cannot use. */
-        anlz_metadata_t deck_meta = *payload->anlz;
-        deck_meta.waveform_high = NULL;
-        deck_meta.waveform_high_len = 0u;
-        if (anlz_clone(&deck_meta, &next_meta) != ESP_OK) {
+        /* deck_core consumes beatgrid/cues/BPM only. The immutable compact
+         * snapshot never duplicates the high-resolution UI waveform. */
+        next_anlz =
+            anlz_snapshot_create(payload->anlz, ANLZ_SNAPSHOT_COMPACT);
+        if (!next_anlz) {
             return DECK_LOADED_TRACK_NO_MEMORY;
         }
-        next_meta_valid = true;
     }
 
-    anlz_metadata_t old_meta = {0};
-    bool old_meta_valid = false;
+    anlz_snapshot_t *old_anlz = NULL;
     deck_loaded_track_result_t result = DECK_LOADED_TRACK_OK;
 
     writer_enter(store);
@@ -161,22 +148,17 @@ deck_loaded_track_result_t deck_loaded_track_store_publish(
             store->summary[deck].media_generation) {
         result = DECK_LOADED_TRACK_STALE;
     } else {
-        if (store->meta_valid[deck]) {
-            old_meta = store->meta[deck];
-            old_meta_valid = true;
-        }
-        memset(&store->meta[deck], 0, sizeof(store->meta[deck]));
-        if (next_meta_valid) {
-            store->meta[deck] = next_meta;
-        }
-        store->meta_valid[deck] = next_meta_valid;
+        old_anlz = store->anlz[deck];
+        store->anlz[deck] = next_anlz;
 
         uint32_t bpm_x100 = (uint32_t)payload->bpm * 100u;
-        if (next_meta_valid &&
-            next_meta.beats &&
-            next_meta.beat_count > 0u &&
-            next_meta.beats[0].bpm_x100 > 0u) {
-            bpm_x100 = next_meta.beats[0].bpm_x100;
+        const anlz_metadata_t *next_meta =
+            anlz_snapshot_metadata(next_anlz);
+        if (next_meta &&
+            next_meta->beats &&
+            next_meta->beat_count > 0u &&
+            next_meta->beats[0].bpm_x100 > 0u) {
+            bpm_x100 = next_meta->beats[0].bpm_x100;
         }
         store->summary[deck] = (deck_loaded_track_summary_t) {
             .generation = next_generation(store),
@@ -187,17 +169,15 @@ deck_loaded_track_result_t deck_loaded_track_store_publish(
             .bpm = payload->bpm,
             .deck = deck,
             .valid = true,
-            .has_anlz = next_meta_valid,
+            .has_anlz = next_anlz != NULL,
         };
     }
     writer_leave(store);
 
-    if (result != DECK_LOADED_TRACK_OK && next_meta_valid) {
-        anlz_free(&next_meta);
+    if (result != DECK_LOADED_TRACK_OK) {
+        anlz_snapshot_release(next_anlz);
     }
-    if (old_meta_valid) {
-        anlz_free(&old_meta);
-    }
+    anlz_snapshot_release(old_anlz);
     return result;
 }
 
@@ -210,20 +190,15 @@ deck_loaded_track_result_t deck_loaded_track_store_clear(
         return DECK_LOADED_TRACK_INVALID;
     }
 
-    anlz_metadata_t old_meta = {0};
-    bool old_meta_valid = false;
+    anlz_snapshot_t *old_anlz = NULL;
     deck_loaded_track_result_t result = DECK_LOADED_TRACK_OK;
     writer_enter(store);
     if (media_generation < store->media_floor ||
         media_generation < store->summary[deck].media_generation) {
         result = DECK_LOADED_TRACK_STALE;
     } else {
-        if (store->meta_valid[deck]) {
-            old_meta = store->meta[deck];
-            old_meta_valid = true;
-        }
-        memset(&store->meta[deck], 0, sizeof(store->meta[deck]));
-        store->meta_valid[deck] = false;
+        old_anlz = store->anlz[deck];
+        store->anlz[deck] = NULL;
         store->summary[deck] = (deck_loaded_track_summary_t) {
             .generation = next_generation(store),
             .media_generation = media_generation,
@@ -232,9 +207,7 @@ deck_loaded_track_result_t deck_loaded_track_store_clear(
     }
     writer_leave(store);
 
-    if (old_meta_valid) {
-        anlz_free(&old_meta);
-    }
+    anlz_snapshot_release(old_anlz);
     return result;
 }
 
@@ -246,8 +219,7 @@ deck_loaded_track_result_t deck_loaded_track_store_clear_all(
         return DECK_LOADED_TRACK_INVALID;
     }
 
-    anlz_metadata_t old[DECK_LOADED_TRACK_COUNT] = {0};
-    bool old_valid[DECK_LOADED_TRACK_COUNT] = {0};
+    anlz_snapshot_t *old[DECK_LOADED_TRACK_COUNT] = {0};
     deck_loaded_track_result_t result = DECK_LOADED_TRACK_OK;
     writer_enter(store);
     if (media_generation < store->media_floor ||
@@ -256,12 +228,8 @@ deck_loaded_track_result_t deck_loaded_track_store_clear_all(
     } else {
         store->media_floor = media_generation;
         for (uint8_t deck = 0u; deck < DECK_LOADED_TRACK_COUNT; ++deck) {
-            if (store->meta_valid[deck]) {
-                old[deck] = store->meta[deck];
-                old_valid[deck] = true;
-            }
-            memset(&store->meta[deck], 0, sizeof(store->meta[deck]));
-            store->meta_valid[deck] = false;
+            old[deck] = store->anlz[deck];
+            store->anlz[deck] = NULL;
             store->summary[deck] = (deck_loaded_track_summary_t) {
                 .generation = next_generation(store),
                 .media_generation = media_generation,
@@ -272,9 +240,7 @@ deck_loaded_track_result_t deck_loaded_track_store_clear_all(
     writer_leave(store);
 
     for (uint8_t deck = 0u; deck < DECK_LOADED_TRACK_COUNT; ++deck) {
-        if (old_valid[deck]) {
-            anlz_free(&old[deck]);
-        }
+        anlz_snapshot_release(old[deck]);
     }
     return result;
 }
@@ -294,29 +260,29 @@ bool deck_loaded_track_store_get(
     return true;
 }
 
-bool deck_loaded_track_store_clone(
+bool deck_loaded_track_store_acquire(
     const deck_loaded_track_store_t *store,
     uint8_t deck,
     deck_loaded_track_summary_t *out_summary,
-    anlz_metadata_t *out_anlz)
+    anlz_snapshot_t **out_anlz)
 {
     if (!store || !valid_deck(deck) || !out_summary || !out_anlz) {
         return false;
     }
 
-    memset(out_anlz, 0, sizeof(*out_anlz));
+    *out_anlz = NULL;
     reader_enter(store);
     *out_summary = store->summary[deck];
-    esp_err_t clone_rc = ESP_OK;
-    if (out_summary->valid && store->meta_valid[deck]) {
-        clone_rc = anlz_clone(&store->meta[deck], out_anlz);
+    if (out_summary->valid && store->anlz[deck]) {
+        *out_anlz = anlz_snapshot_retain(store->anlz[deck]);
     }
     reader_leave(store);
 
-    if (!out_summary->valid || clone_rc != ESP_OK) {
+    if (!out_summary->valid ||
+        (out_summary->has_anlz && !*out_anlz)) {
         memset(out_summary, 0, sizeof(*out_summary));
-        anlz_free(out_anlz);
-        memset(out_anlz, 0, sizeof(*out_anlz));
+        anlz_snapshot_release(*out_anlz);
+        *out_anlz = NULL;
         return false;
     }
     return true;

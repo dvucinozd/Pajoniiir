@@ -245,15 +245,15 @@ static uint16_t ui_performance_bpm(void)
     return ui_deck_bpm(ui_controls_active_deck(&s_controls));
 }
 
-static const anlz_metadata_t *ui_deck_anlz(uint8_t deck)
+static anlz_snapshot_t *ui_deck_anlz_acquire(uint8_t deck)
 {
     uint8_t idx = ui_deck_index(deck);
-    return ui_deck_anlz_store_get(&s_deck_anlz_store, idx);
+    return ui_deck_anlz_store_acquire(&s_deck_anlz_store, idx);
 }
 
-static const anlz_metadata_t *ui_performance_anlz(void)
+static anlz_snapshot_t *ui_performance_anlz_acquire(void)
 {
-    return ui_deck_anlz(ui_controls_active_deck(&s_controls));
+    return ui_deck_anlz_acquire(ui_controls_active_deck(&s_controls));
 }
 
 static deck_state_t ui_performance_deck_state(void)
@@ -705,8 +705,15 @@ static void ui_load_waveform_data(uint8_t deck,
                                   bool has_waveform,
                                   const anlz_metadata_t *meta)
 {
+    (void)meta;
     ui_cache_invalidate();
-    ui_overview_load_waveform_data(deck, duration_ms, waveform_low, has_waveform, meta);
+    anlz_snapshot_t *snapshot = ui_deck_anlz_acquire(deck);
+    ui_overview_load_waveform_data(deck,
+                                   duration_ms,
+                                   waveform_low,
+                                   has_waveform,
+                                   snapshot);
+    anlz_snapshot_release(snapshot);
 }
 
 static bool ui_library_is_performance_target_active(uint8_t deck)
@@ -716,7 +723,10 @@ static bool ui_library_is_performance_target_active(uint8_t deck)
 
 static void ui_update_overview_cue_markers(uint8_t deck)
 {
-    ui_overview_update_cue_markers(deck, ui_deck_anlz(deck), ui_deck_duration_ms(deck));
+    anlz_snapshot_t *snapshot = ui_deck_anlz_acquire(deck);
+    ui_overview_update_cue_markers(
+        deck, anlz_snapshot_metadata(snapshot), ui_deck_duration_ms(deck));
+    anlz_snapshot_release(snapshot);
 }
 
 // ─── Global Interface Functions ──────────────────────────────────────────────
@@ -811,7 +821,7 @@ esp_err_t ui_init(void) {
         },
         .actions = {
             .active_bpm = ui_performance_bpm,
-            .active_anlz = ui_performance_anlz,
+            .acquire_active_anlz = ui_performance_anlz_acquire,
             .active_state = ui_performance_deck_state,
             .deck_position_ms = ui_performance_deck_position_ms,
             .seek = ui_performance_seek,
@@ -854,7 +864,6 @@ esp_err_t ui_init(void) {
             .clear_deck_track_info = ui_deck_track_info_clear,
             .set_deck_track_info = ui_deck_track_info_set,
             .set_deck_anlz = ui_deck_anlz_set_from_current,
-            .get_deck_anlz = ui_deck_anlz,
             .load_waveform_data = ui_load_waveform_data,
             .set_loop_shadow = ui_set_loop_shadow,
             .is_performance_target_active = ui_library_is_performance_target_active,
@@ -981,7 +990,9 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
         ctx->deck_duration_ms[deck] = ui_deck_duration_ms(deck);
         ctx->deck_bpm[deck] = ui_deck_bpm(deck);
-        ctx->deck_meta[deck] = ui_deck_anlz(deck);
+        ctx->deck_anlz[deck] = ui_deck_anlz_acquire(deck);
+        ctx->deck_meta[deck] =
+            anlz_snapshot_metadata(ctx->deck_anlz[deck]);
         ctx->deck_info[deck] = &s_deck_track_info[deck];
         ctx->deck_speed_permille[deck] =
             ui_pitch_speed_permille(&ctx->deck_state[deck]);
@@ -1038,6 +1049,19 @@ static void ui_build_frame_context(ui_frame_context_t *ctx)
     ctx->ae_loading = false;
     ctx->ae_load_pct = 100;
 #endif
+}
+
+static void ui_release_frame_context(ui_frame_context_t *ctx)
+{
+    if (!ctx) {
+        return;
+    }
+    for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+        anlz_snapshot_release(ctx->deck_anlz[deck]);
+        ctx->deck_anlz[deck] = NULL;
+        ctx->deck_meta[deck] = NULL;
+    }
+    ctx->active_meta = NULL;
 }
 
 
@@ -1110,6 +1134,11 @@ void ui_update(void) {
     ui_idle_service(&ctx);
 #endif
     ui_library_update(&ctx);
+    /* A completed load/USB clear can publish a new immutable ANLZ snapshot
+     * during ui_library_update(). Refresh the frame so overview/status never
+     * re-publish the pre-update handle for one extra tick. */
+    ui_release_frame_context(&ctx);
+    ui_build_frame_context(&ctx);
 
 #ifdef WIN32
     deck_state_t state = ctx.deck_state[CTRL_DECK_1];
@@ -1128,6 +1157,7 @@ void ui_update(void) {
     ui_status_update(&ctx);
     ui_overview_update(&ctx);
     ui_settings_update(&ctx);
+    ui_release_frame_context(&ctx);
 
 #ifndef WIN32
     if (ui_diagnostics_enabled()) {

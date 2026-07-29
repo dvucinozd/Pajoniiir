@@ -60,9 +60,11 @@ static uint8_t ui_performance_tabs_active_deck(void)
     return ui_controls_active_deck(ui_performance_tabs_controls());
 }
 
-static const anlz_metadata_t *ui_performance_tabs_active_anlz(void)
+static anlz_snapshot_t *ui_performance_tabs_acquire_active_anlz(void)
 {
-    return s_config.actions.active_anlz ? s_config.actions.active_anlz() : NULL;
+    return s_config.actions.acquire_active_anlz
+               ? s_config.actions.acquire_active_anlz()
+               : NULL;
 }
 
 static void ui_performance_tabs_format_time(char *out, size_t out_sz, uint32_t ms)
@@ -305,7 +307,9 @@ lv_obj_t *ui_performance_tabs_create_hot_cues(lv_obj_t *parent)
 void ui_performance_tabs_update_hot_cues(void)
 {
     uint8_t deck = ui_performance_tabs_active_deck();
-    const anlz_metadata_t *meta = ui_performance_tabs_active_anlz();
+    anlz_snapshot_t *snapshot =
+        ui_performance_tabs_acquire_active_anlz();
+    const anlz_metadata_t *meta = anlz_snapshot_metadata(snapshot);
     bool has_anlz = meta != NULL;
 
     for (int i = 0; i < UI_PERFORMANCE_TAB_COUNT_HOT_CUES; i++) {
@@ -391,6 +395,7 @@ void ui_performance_tabs_update_hot_cues(void)
     if (s_config.actions.update_overview_cue_markers) {
         s_config.actions.update_overview_cue_markers(deck);
     }
+    anlz_snapshot_release(snapshot);
 }
 
 #endif

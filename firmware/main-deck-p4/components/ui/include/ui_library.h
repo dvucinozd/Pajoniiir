@@ -86,7 +86,6 @@ typedef struct {
                                 uint16_t bpm,
                                 uint32_t duration_ms);
     void (*set_deck_anlz)(uint8_t deck, const anlz_metadata_t *meta);
-    const anlz_metadata_t *(*get_deck_anlz)(uint8_t deck);
     void (*load_waveform_data)(uint8_t deck,
                                uint32_t duration_ms,
                                const uint8_t waveform_low[400],

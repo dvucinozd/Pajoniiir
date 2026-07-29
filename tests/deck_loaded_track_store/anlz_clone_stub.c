@@ -4,12 +4,15 @@
 #include <string.h>
 
 bool anlz_clone_stub_fail;
+uint32_t anlz_clone_stub_calls;
+uint32_t anlz_free_stub_calls;
 
 esp_err_t anlz_clone(const anlz_metadata_t *src, anlz_metadata_t *out)
 {
     if (!src || !out) {
         return ESP_ERR_INVALID_ARG;
     }
+    anlz_clone_stub_calls++;
     memset(out, 0, sizeof(*out));
     if (anlz_clone_stub_fail) {
         return ESP_ERR_NO_MEM;
@@ -48,4 +51,5 @@ void anlz_free(anlz_metadata_t *meta)
     free(meta->beats);
     free(meta->waveform_high);
     memset(meta, 0, sizeof(*meta));
+    anlz_free_stub_calls++;
 }

@@ -5,6 +5,7 @@
 #include <string.h>
 
 extern bool anlz_clone_stub_fail;
+extern uint32_t anlz_clone_stub_calls;
 
 static int s_failures;
 static unsigned s_checks;
@@ -77,9 +78,11 @@ static void test_publish_clones_one_complete_track_generation(void)
     CHECK(deck_loaded_track_store_publish(&store, 0u, &input) ==
           DECK_LOADED_TRACK_OK);
     deck_loaded_track_summary_t summary = {0};
-    anlz_metadata_t snapshot = {0};
-    CHECK(deck_loaded_track_store_clone(
+    anlz_snapshot_t *snapshot = NULL;
+    CHECK(deck_loaded_track_store_acquire(
         &store, 0u, &summary, &snapshot));
+    const anlz_metadata_t *snapshot_meta =
+        anlz_snapshot_metadata(snapshot);
     CHECK(summary.valid);
     CHECK(summary.deck == 0u);
     CHECK(summary.media_generation == 7u);
@@ -89,15 +92,16 @@ static void test_publish_clones_one_complete_track_generation(void)
     CHECK(summary.bpm_x100 == 12850u);
     CHECK(summary.has_anlz);
     CHECK(summary.generation == 1u);
-    CHECK(snapshot.beat_count == 2u);
-    CHECK(snapshot.beats != beats);
-    CHECK(snapshot.beats[0].time_ms == 100u);
-    CHECK(snapshot.waveform_high == NULL);
-    CHECK(snapshot.waveform_high_len == 0u);
+    CHECK(snapshot_meta != NULL);
+    CHECK(snapshot_meta->beat_count == 2u);
+    CHECK(snapshot_meta->beats != beats);
+    CHECK(snapshot_meta->beats[0].time_ms == 100u);
+    CHECK(snapshot_meta->waveform_high == NULL);
+    CHECK(snapshot_meta->waveform_high_len == 0u);
 
     beats[0].time_ms = 9999u;
-    CHECK(snapshot.beats[0].time_ms == 100u);
-    anlz_free(&snapshot);
+    CHECK(snapshot_meta->beats[0].time_ms == 100u);
+    anlz_snapshot_release(snapshot);
     deck_loaded_track_store_reset(&store);
 }
 
@@ -120,17 +124,68 @@ static void test_load_a_then_b_never_mixes_key_bpm_and_anlz(void)
           DECK_LOADED_TRACK_OK);
 
     deck_loaded_track_summary_t second = {0};
-    anlz_metadata_t snapshot = {0};
-    CHECK(deck_loaded_track_store_clone(
+    anlz_snapshot_t *snapshot = NULL;
+    CHECK(deck_loaded_track_store_acquire(
         &store, 0u, &second, &snapshot));
+    const anlz_metadata_t *snapshot_meta =
+        anlz_snapshot_metadata(snapshot);
     CHECK(second.generation > first.generation);
     CHECK(second.track_key == 0xBBu);
     CHECK(second.bpm == 135u);
     CHECK(second.bpm_x100 == 13500u);
-    CHECK(snapshot.bpm == 135u);
-    CHECK(snapshot.beats[0].time_ms == 222u);
-    CHECK(snapshot.beats[0].bpm_x100 == second.bpm_x100);
-    anlz_free(&snapshot);
+    CHECK(snapshot_meta->bpm == 135u);
+    CHECK(snapshot_meta->beats[0].time_ms == 222u);
+    CHECK(snapshot_meta->beats[0].bpm_x100 == second.bpm_x100);
+    anlz_snapshot_release(snapshot);
+    deck_loaded_track_store_reset(&store);
+}
+
+static void test_acquire_is_allocation_free_and_old_snapshot_survives_swap(void)
+{
+    puts("== acquire is allocation-free and old snapshot survives swap ==");
+    deck_loaded_track_store_t store = {0};
+    anlz_beat_t beat_a = {.time_ms = 111u, .bpm_x100 = 12000u};
+    anlz_beat_t beat_b = {.time_ms = 222u, .bpm_x100 = 13500u};
+    anlz_metadata_t meta_a = make_meta(&beat_a, 1u, 120u);
+    anlz_metadata_t meta_b = make_meta(&beat_b, 1u, 135u);
+    deck_loaded_track_payload_t a = payload(4u, 0xAAu, 120u, &meta_a);
+    deck_loaded_track_payload_t b = payload(4u, 0xBBu, 135u, &meta_b);
+
+    anlz_clone_stub_calls = 0u;
+    CHECK(deck_loaded_track_store_publish(&store, 0u, &a) ==
+          DECK_LOADED_TRACK_OK);
+    CHECK(anlz_clone_stub_calls == 1u);
+
+    deck_loaded_track_summary_t old_summary = {0};
+    deck_loaded_track_summary_t second_reader_summary = {0};
+    anlz_snapshot_t *old_snapshot = NULL;
+    anlz_snapshot_t *second_reader = NULL;
+    CHECK(deck_loaded_track_store_acquire(
+        &store, 0u, &old_summary, &old_snapshot));
+    CHECK(deck_loaded_track_store_acquire(
+        &store, 0u, &second_reader_summary, &second_reader));
+    CHECK(anlz_clone_stub_calls == 1u);
+    CHECK(old_snapshot == second_reader);
+    const uint32_t old_version = anlz_snapshot_version(old_snapshot);
+
+    CHECK(deck_loaded_track_store_publish(&store, 0u, &b) ==
+          DECK_LOADED_TRACK_OK);
+    CHECK(anlz_clone_stub_calls == 2u);
+    CHECK(anlz_snapshot_metadata(old_snapshot)->beats[0].time_ms == 111u);
+    CHECK(anlz_snapshot_metadata(second_reader)->beats[0].time_ms == 111u);
+
+    deck_loaded_track_summary_t new_summary = {0};
+    anlz_snapshot_t *new_snapshot = NULL;
+    CHECK(deck_loaded_track_store_acquire(
+        &store, 0u, &new_summary, &new_snapshot));
+    CHECK(anlz_clone_stub_calls == 2u);
+    CHECK(new_summary.track_key == 0xBBu);
+    CHECK(anlz_snapshot_metadata(new_snapshot)->beats[0].time_ms == 222u);
+    CHECK(anlz_snapshot_version(new_snapshot) != old_version);
+
+    anlz_snapshot_release(old_snapshot);
+    anlz_snapshot_release(second_reader);
+    anlz_snapshot_release(new_snapshot);
     deck_loaded_track_store_reset(&store);
 }
 
@@ -236,14 +291,14 @@ static void test_clone_failure_never_partially_replaces_current(void)
     anlz_clone_stub_fail = false;
 
     deck_loaded_track_summary_t after = {0};
-    anlz_metadata_t snapshot = {0};
-    CHECK(deck_loaded_track_store_clone(
+    anlz_snapshot_t *snapshot = NULL;
+    CHECK(deck_loaded_track_store_acquire(
         &store, 0u, &after, &snapshot));
     CHECK(after.generation == before.generation);
     CHECK(after.track_key == 51u);
     CHECK(after.bpm == 123u);
-    CHECK(snapshot.beats[0].time_ms == 321u);
-    anlz_free(&snapshot);
+    CHECK(anlz_snapshot_metadata(snapshot)->beats[0].time_ms == 321u);
+    anlz_snapshot_release(snapshot);
     deck_loaded_track_store_reset(&store);
 }
 
@@ -256,14 +311,14 @@ static void test_valid_track_without_anlz_uses_coherent_bpm_fallback(void)
           DECK_LOADED_TRACK_OK);
 
     deck_loaded_track_summary_t summary = {0};
-    anlz_metadata_t snapshot = {.beat_count = 99u};
-    CHECK(deck_loaded_track_store_clone(
+    anlz_snapshot_t *snapshot = (anlz_snapshot_t *)(uintptr_t)1u;
+    CHECK(deck_loaded_track_store_acquire(
         &store, 0u, &summary, &snapshot));
     CHECK(summary.valid);
     CHECK(!summary.has_anlz);
     CHECK(summary.bpm == 119u);
     CHECK(summary.bpm_x100 == 11900u);
-    CHECK(snapshot.beat_count == 0u);
+    CHECK(snapshot == NULL);
 }
 
 static void test_invalid_inputs_leave_store_unchanged(void)
@@ -323,31 +378,35 @@ static void *concurrent_reader(void *arg)
 
     for (uint32_t i = 0u; i < 20000u; ++i) {
         deck_loaded_track_summary_t summary = {0};
-        anlz_metadata_t meta = {0};
-        if (!deck_loaded_track_store_clone(
-                ctx->store, 0u, &summary, &meta)) {
+        anlz_snapshot_t *snapshot = NULL;
+        if (!deck_loaded_track_store_acquire(
+                ctx->store, 0u, &summary, &snapshot)) {
             continue;
         }
+        const anlz_metadata_t *meta =
+            anlz_snapshot_metadata(snapshot);
         (void)__atomic_add_fetch(&ctx->reads, 1u, __ATOMIC_RELAXED);
 
         bool coherent_a =
             summary.track_key == 0xAAu &&
             summary.bpm == 120u &&
             summary.bpm_x100 == 12000u &&
-            meta.beat_count == 1u &&
-            meta.beats &&
-            meta.beats[0].time_ms == 111u;
+            meta &&
+            meta->beat_count == 1u &&
+            meta->beats &&
+            meta->beats[0].time_ms == 111u;
         bool coherent_b =
             summary.track_key == 0xBBu &&
             summary.bpm == 135u &&
             summary.bpm_x100 == 13500u &&
-            meta.beat_count == 1u &&
-            meta.beats &&
-            meta.beats[0].time_ms == 222u;
+            meta &&
+            meta->beat_count == 1u &&
+            meta->beats &&
+            meta->beats[0].time_ms == 222u;
         if (!coherent_a && !coherent_b) {
             (void)__atomic_add_fetch(&ctx->failures, 1u, __ATOMIC_RELAXED);
         }
-        anlz_free(&meta);
+        anlz_snapshot_release(snapshot);
     }
     return NULL;
 }
@@ -381,6 +440,7 @@ int main(void)
     test_reset_publishes_empty_coherent_snapshots();
     test_publish_clones_one_complete_track_generation();
     test_load_a_then_b_never_mixes_key_bpm_and_anlz();
+    test_acquire_is_allocation_free_and_old_snapshot_survives_swap();
     test_usb_clear_rejects_late_old_load();
     test_stale_clear_cannot_remove_newer_track();
     test_per_deck_clear_rejects_late_old_load();
