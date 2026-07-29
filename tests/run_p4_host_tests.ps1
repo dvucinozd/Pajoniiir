@@ -1865,7 +1865,7 @@ $tests = @(
     },
     @{
         Name = "library_anlz"
-        MinTestsRun = 179
+        MinTestsRun = 253
         Dir = "tests/library_anlz"
         Target = "test_library_anlz.exe"
         Args = @(

@@ -202,8 +202,48 @@ void anlz_free(anlz_metadata_t *meta)
     meta->waveform_high_len = 0;
 }
 
-void media_io_gate_begin(void) { }
-void media_io_gate_end(void) { }
+/* The gate is what the audio decode path contends on, so the interesting thing
+ * about it is not that it is taken but how long it is held. Track the depth and
+ * the number of rows read while it was continuously held, which is what tells a
+ * per-row gate apart from one spanning the whole catalog walk. */
+static int s_gate_depth;
+static int s_gate_max_depth;
+static int s_gate_spans;              /* begin/end pairs */
+static int s_rows_read_in_one_span;   /* worst run of rows inside a single span */
+static int s_rows_this_span;
+static bool s_gate_available = true;
+/* When set, the mount "disappears" after this many rows have been read. */
+static int s_gate_available_after_rows = -1;
+static int s_rows_read_total;
+
+static void reset_gate_stats(void)
+{
+    s_gate_depth = s_gate_max_depth = s_gate_spans = 0;
+    s_rows_read_in_one_span = s_rows_this_span = s_rows_read_total = 0;
+    s_gate_available = true;
+    s_gate_available_after_rows = -1;
+}
+
+void media_io_gate_begin(void)
+{
+    if (s_gate_depth == 0) {
+        s_gate_spans++;
+        s_rows_this_span = 0;
+    }
+    s_gate_depth++;
+    if (s_gate_depth > s_gate_max_depth) s_gate_max_depth = s_gate_depth;
+}
+
+void media_io_gate_end(void)
+{
+    CHECK(s_gate_depth > 0);
+    s_gate_depth--;
+    if (s_gate_depth == 0 && s_rows_this_span > s_rows_read_in_one_span) {
+        s_rows_read_in_one_span = s_rows_this_span;
+    }
+}
+
+bool media_io_gate_is_available(void) { return s_gate_available; }
 
 #define TEST_PDB_MAX_TRACKS 8
 static pdb_track_t s_pdb_tracks[TEST_PDB_MAX_TRACKS];
@@ -239,6 +279,21 @@ esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)
 {
     if (!pdb || !out || index < 0 || index >= s_pdb_track_count) {
         return ESP_ERR_INVALID_ARG;
+    }
+    /* This read is USB I/O, so it must happen with the gate held. */
+    CHECK(s_gate_depth > 0);
+    s_rows_this_span++;
+    s_rows_read_total++;
+    if (s_gate_available_after_rows >= 0 &&
+        s_rows_read_total > s_gate_available_after_rows) {
+        s_gate_available = false;
+    }
+    /* A vanished mount does not politely keep serving rows - the reads fail too.
+     * Returning an error here is what makes the walk's ordering matter: if it
+     * acted on the failure before checking availability it would `continue` and
+     * grind through every remaining row against a dead mount. */
+    if (!s_gate_available) {
+        return ESP_FAIL;
     }
     *out = s_pdb_tracks[index];
     return ESP_OK;
@@ -601,6 +656,63 @@ static void test_identity_accessors_track_row_order(void)
     reset_pdb_fixture();
 }
 
+/* Every USB reader serialises on media_io_gate, including the audio decode
+ * path's compressed-cache misses. The catalog walk used to hold it from
+ * pdb_open through the last row, so building the library stalled playback for
+ * the whole parse. The fix is about the *span*, not about taking the gate at
+ * all, so that is what this measures: no single held span may cover more than
+ * one row read. */
+static void test_catalog_walk_releases_the_media_gate_between_rows(void)
+{
+    printf("== catalog walk yields the media gate between rows ==\n");
+    library_clear();
+    reset_pdb_fixture();
+    reset_gate_stats();
+    s_pdb_open_result = ESP_OK;
+    s_pdb_track_count = 5;
+    for (int i = 0; i < 5; ++i) {
+        set_pdb_track(i, (uint32_t)(2000 + i), "T", "A", "1A", 120u);
+    }
+
+    CHECK(library_init() == ESP_OK);
+    CHECK(library_count() == 5);
+
+    CHECK(s_rows_read_total == 5);
+    CHECK(s_rows_read_in_one_span == 1);   /* the whole point */
+    CHECK(s_gate_spans >= 5);              /* one per row, plus open and close */
+    CHECK(s_gate_depth == 0);              /* balanced */
+
+    library_clear();
+    reset_pdb_fixture();
+}
+
+/* Releasing the gate between rows means the drive can vanish mid-walk, which
+ * could not happen while the parse held it throughout. The walk must notice and
+ * stop, publishing what it has, rather than grinding through the rest against a
+ * dead mount. */
+static void test_catalog_walk_stops_when_the_mount_disappears(void)
+{
+    printf("== catalog walk stops on a mid-parse unmount ==\n");
+    library_clear();
+    reset_pdb_fixture();
+    reset_gate_stats();
+    s_pdb_open_result = ESP_OK;
+    s_pdb_track_count = 8;
+    for (int i = 0; i < 8; ++i) {
+        set_pdb_track(i, (uint32_t)(3000 + i), "T", "A", "1A", 120u);
+    }
+    s_gate_available_after_rows = 3;   /* mount dies after the third row */
+
+    CHECK(library_init() == ESP_OK);
+    CHECK(s_rows_read_total < 8);      /* stopped early */
+    CHECK(library_count() == 3);       /* the rows read before it went away */
+    CHECK(s_gate_depth == 0);
+
+    library_clear();
+    reset_pdb_fixture();
+    reset_gate_stats();
+}
+
 int main(void)
 {
     printf("=== library_anlz tests ===\n");
@@ -616,6 +728,8 @@ int main(void)
     test_zero_pdb_duration_falls_back_to_last_beat();
     test_sort_republishes_compact_order_only();
     test_identity_accessors_track_row_order();
+    test_catalog_walk_releases_the_media_gate_between_rows();
+    test_catalog_walk_stops_when_the_mount_disappears();
 
     printf("TESTS_RUN=%u\n", s_checks);
     if (s_failures == 0) {
