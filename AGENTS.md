@@ -65,15 +65,20 @@ Obavezna verzija je **ESP-IDF v6.0.2** — ista koju koristi
 Inicijaliziraj ESP-IDF ovako:
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
-. C:\Espressif\Initialize-Idf.ps1
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
 ```
 
-Nakon inicijalizacije provjeri:
+Nakon inicijalizacije provjeri (mora javiti `ESP-IDF v6.0.2`):
 
 ```powershell
 idf.py --version
 ```
+
+Napomena o putanjama: 6.0.2 je na `C:\Espressif\v6.0.2\esp-idf` — **nije** pod
+`.espressif\` ni pod `frameworks\` kao stariji instalati, pa listanje tih
+direktorija krivo sugerira da 6.0.2 nije instaliran. Provjeri popis
+`*.PowerShell_profile.ps1` u `C:\Espressif\tools`. Stari v5.5.4 profil je i dalje
+prisutan, ali vise ne builda ovo stablo.
 
 Mora javiti `ESP-IDF v6.0.2`. Pri prvom buildu nakon prelaska s 5.5.4 obriši
 generiranu konfiguraciju i managed komponente (`build`, `sdkconfig`,
@@ -115,17 +120,23 @@ idf.py build
 P4 firmware:
 
 ```powershell
-# Najprije inicijaliziraj jedno od podržanih ESP-IDF okruženja.
+# ESP-IDF 6.0.2 je obavezan - manifesti pinaju idf: "==6.0.2", pa stariji
+# environment pada na resolveu ovisnosti, ne na warningu.
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
 $repoRoot = git rev-parse --show-toplevel
 Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
-Zadnja poznata clean release provjera na ESP-IDF 5.5.4 je
-`RC1-259-gdaf4639`, 2026-07-26 (oba izolirana `build_signed` targeta prolaze;
-velicine i SHA-256 su u `docs\validation\CLEAN_RELEASE_RC1_259_BUILD.md`). Za
-aktualnu granu mjerodavni su ESP-IDF 6.0.2 buildovi iz CI-ja, a preostali
-fizicki gateovi vode se u `docs\fixevi-remediation-audit.md`.
+Zadnja clean release provjera je **`RC2`** (`56905c89`), 2026-07-30, na ESP-IDF
+6.0.2 - oba izolirana `build_signed` targeta prolaze; velicine i SHA-256 su u
+`docs\validation\CLEAN_RELEASE_RC2_BUILD.md`. Prethodna linija je zatvorena na
+`RC1-259-gdaf4639` (ESP-IDF 5.5.4, 2026-07-26).
+
+Verzija dolazi iz `git describe`, pa build tocno na tagiranom commitu prijavljuje
+goli `RC2`, a svaki kasniji commit `RC2-<n>-g<hash>`. Preostali fizicki gateovi
+vode se u `docs\fixevi-remediation-audit.md` i
+`docs\migration\ESP_IDF_6_0_2_MIGRATION.md`.
 
 P4 host regresije pokreni preko:
 

@@ -82,13 +82,15 @@ Use local signed upload when an intentional rollback is required.
 Initialize ESP-IDF and use an isolated release build so stale ignored
 `sdkconfig` files cannot silently select an old partition layout:
 
+ESP-IDF **6.0.2 is required**, not merely recommended:
+`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`, so an older
+environment fails during dependency resolution rather than producing a
+questionable image. The 5.5 environments below are no longer usable for this
+tree.
+
 ```powershell
-# Initialize one supported environment:
-#   Classic machine:
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-#   Or the v5.5.4 profile machine:
-# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
+idf.py --version   # must report ESP-IDF v6.0.2
 $repoRoot = git rev-parse --show-toplevel
 
 Set-Location "$repoRoot\firmware\main-deck-p4"
@@ -105,7 +107,16 @@ slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
 
 The latest clean-build evidence, including raw-image sizes and SHA-256 values,
 is recorded in
+[`validation/CLEAN_RELEASE_RC2_BUILD.md`](validation/CLEAN_RELEASE_RC2_BUILD.md).
+The superseded ESP-IDF 5.5.4 record is
 [`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
+
+### Version strings
+
+The application version comes from `git describe`, so it is `RC<tag>` at a
+tagged commit and `RC<tag>-<distance>-g<hash>` afterwards. The prefix moved from
+`RC1` to `RC2` on 2026-07-30 to mark the ESP-IDF 6.0.2 baseline. Pull OTA orders
+releases on the tag number first, so any `RC2*` is newer than every `RC1*`.
 
 ## Create and verify a signed release
 

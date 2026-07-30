@@ -1,23 +1,32 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-07-28**. The latest clean dual-target
-release build on ESP-IDF 5.5.4 is `RC1-259-gdaf4639`; it contains the Pajoniiir
-rebrand, synchronized host-simulator support, repaired release gate and the
-software-only OTA/controller/startup hardening listed below. The active
-development head is the `migration/esp-idf-6.0.2` branch, which migrates both
-targets to **ESP-IDF v6.0.2** and integrates bounded compressed audio cache,
-paginated Library UI, immutable track sort, recorder safety hardening and the
-full `fix/release-blockers-and-concurrency` stabilisation set. All software
-buildovi, host tests and UI simulator pass on that branch as of 2026-07-28;
-hardware acceptance rows remain open.
+Last full status reconciliation: **2026-07-30**. The `migration/esp-idf-6.0.2`
+branch has been **merged into `master`** and deleted; there is no separate
+migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
+(`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`) and carries the
+bounded compressed audio cache, paginated Library UI, immutable track sort,
+recorder safety hardening and the full `fix/release-blockers-and-concurrency`
+stabilisation set.
+
+Because that is a different build baseline, the release prefix moved from `RC1`
+to **`RC2`**: the annotated tag `RC2` sits on `56905c89` and the latest clean
+dual-target release build is `RC2`, recorded in
+`validation/CLEAN_RELEASE_RC2_BUILD.md`. Builds after the tagged commit report
+`RC2-<distance>-g<hash>`.
+
+Hardware acceptance rows remain open — see
+`migration/ESP_IDF_6_0_2_MIGRATION.md`. The RC2 images are **not**
+release-qualified.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Three states must not be conflated:
 
-- **latest clean release build:** `RC1-259-gdaf4639` (built with ESP-IDF 5.5.4);
-- **latest migration build:** `migration/esp-idf-6.0.2` branch head (built with
-  ESP-IDF 6.0.2, includes bounded cache, paginated Library, immutable sort,
-  recorder hardening and full stability fixes; software-verified 2026-07-28);
+- **latest clean release build:** `RC2` (`56905c89`, built with ESP-IDF 6.0.2 on
+  2026-07-30; see `validation/CLEAN_RELEASE_RC2_BUILD.md`). Compilation,
+  version match, slot fit and image hashes only — no signing, packaging,
+  deployment or hardware acceptance;
+- **previous release line:** `RC1-259-gdaf4639` (ESP-IDF 5.5.4, 2026-07-26).
+  Superseded; `RC1` is closed and no further `RC1-*` builds are expected;
 - **last known bench state:** P4 and S3 were rematched at
   `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
   P4; the boards match each other but are behind current source;

@@ -122,12 +122,8 @@ If Windows Firewall prompts for Python, allow private-network UDP traffic.
 ## Build And Flash
 
 ```powershell
-# Initialize one supported environment:
-#   Classic machine:
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-#   Or the v5.5.4 profile machine:
-# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+# ESP-IDF 6.0.2 is required; the manifest pins idf: "==6.0.2".
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
 $repoRoot = git rev-parse --show-toplevel
 Set-Location "$repoRoot\firmware\control-board-s3"
 idf.py -B build_wifi_debug `

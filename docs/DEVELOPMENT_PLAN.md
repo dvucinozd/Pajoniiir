@@ -21,17 +21,22 @@ Status: current phase ledger, reconciled 2026-07-28.
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed. Safety hardened: producer stop-gate, transactional finalise (`patch`→`sync`→`close`→`publish`) and durability-failure propagation |
-| Bounded compressed cache | Implemented on `migration/esp-idf-6.0.2`. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Software-tested; hardware acceptance pending |
-| Paginated Library UI | Implemented on `migration/esp-idf-6.0.2`. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Software-tested; hardware acceptance pending |
-| Immutable track sort | Implemented on `migration/esp-idf-6.0.2`. Library sorting uses double-buffered `uint16_t` row-order over immutable records. No large-struct copies or qsort. Software-tested |
+| Bounded compressed cache | On `master` since the ESP-IDF 6.0.2 merge. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Software-tested; hardware acceptance pending. Note this permanently exercises the USB path during playback, which the old whole-track preload avoided |
+| Paginated Library UI | On `master` since the ESP-IDF 6.0.2 merge. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Software-tested; hardware acceptance pending |
+| Immutable track sort | On `master` since the ESP-IDF 6.0.2 merge. Library sorting uses double-buffered `uint16_t` row-order over immutable records. No large-struct copies or qsort. Software-tested |
 
 The latest fully functionally accepted hardware baseline remains
 `RC1-123-g587cd7a1`. The last known matching bench baseline is
 `RC1-254-g21f21963` on both boards as of 2026-07-24; it proved the complete P4
-pull-OTA path. A clean ESP-IDF 5.5.4 dual-target release build was recorded at
-`RC1-259-gdaf4639` on 2026-07-26. The active development head is the
-`migration/esp-idf-6.0.2` branch (all software builds, host tests and UI
-simulator pass as of 2026-07-28; hardware acceptance rows remain open).
+pull-OTA path, and it is pre-migration firmware. A clean ESP-IDF 5.5.4
+dual-target release build was recorded at `RC1-259-gdaf4639` on 2026-07-26,
+closing the `RC1` line.
+
+The `migration/esp-idf-6.0.2` branch is **merged into `master`** and deleted;
+`master` builds only under ESP-IDF 6.0.2. The release prefix is now **`RC2`**
+(annotated tag on `56905c89`), and a clean dual-target `RC2` build was recorded
+on 2026-07-30 in `validation/CLEAN_RELEASE_RC2_BUILD.md`. That is compilation
+evidence only — hardware acceptance rows remain open.
 Next acceptance work is the ESP-IDF 6.0.2 hardware validation matrix, the
 remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
 by production key provisioning/rotation, enclosure power/thermal/RF soak,

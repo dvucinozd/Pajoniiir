@@ -1,14 +1,18 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, reconciled 2026-07-28. The latest clean
-ESP-IDF 5.5.4 release build is `RC1-259-gdaf4639`; the last known bench state
-has both boards matched at `RC1-254-g21f21963`, where P4 pull OTA was proven end
-to end. The active development head is the `migration/esp-idf-6.0.2` branch,
-which migrates to ESP-IDF v6.0.2 and integrates bounded compressed audio cache,
-paginated Library UI, immutable track sort, recorder safety hardening and the
-full `fix/release-blockers-and-concurrency` stabilisation set. The latest fully
-functionally accepted complete-system baseline remains `RC1-123-g587cd7a1`.
-Targeted Phase 20/E1A, ESP-IDF 6.0.2 hardware acceptance,
+Status: current product overview, reconciled 2026-07-30. The ESP-IDF 6.0.2
+migration is **merged into `master`**; the release prefix moved from `RC1` to
+**`RC2`** to mark the new build baseline, and the latest clean dual-target
+release build is `RC2` (`56905c89`, ESP-IDF 6.0.2). It carries the bounded
+compressed audio cache, paginated Library UI, immutable track sort, recorder
+safety hardening and the full `fix/release-blockers-and-concurrency`
+stabilisation set.
+
+The last known bench state still has both boards matched at
+`RC1-254-g21f21963` — pre-migration firmware, where P4 pull OTA was proven end
+to end. The latest fully functionally accepted complete-system baseline remains
+`RC1-123-g587cd7a1`. RC2 has compiled cleanly but has **no** hardware
+acceptance. Targeted Phase 20/E1A, the ESP-IDF 6.0.2 hardware acceptance matrix,
 remote-profile-update, enclosure-endurance and production-hardening rows remain
 open. The inherited baseline below is historical context; `Current Port Status`
 describes the active system.

@@ -10,9 +10,11 @@ should include date, firmware version, board, port and pass/fail evidence.
 | Date | 2026-05-21 |
 | ESP32-S3 board | ESP32-S3-DevKitC-1 N16R8 |
 | ESP32-P4 board | JC4880P443C_I_W — RECEIVED & VERIFIED ✅ |
-| ESP-IDF version | v5.5 (Custom framework path) |
-| IDF path | `C:\Espressif\frameworks\esp-idf-v5.5\` |
-| Python venv | `C:\Espressif\python_env\idf5.5_py3.11_env` |
+| ESP-IDF version | **v6.0.2** (required since 2026-07-30; manifests pin `idf: "=="6.0.2"`) |
+| IDF activation | `. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1` |
+| IDF path | `C:\Espressif\v6.0.2\esp-idf` — note this is **not** under `.espressif\` or `frameworks\` like the older installs, so listing those directories will wrongly suggest 6.0.2 is missing |
+| Python venv | `C:\Espressif\tools\python\v6.0.2\venv` |
+| Superseded env | v5.5.4 profile `Microsoft.v5.5.4.PowerShell_profile.ps1` (`C:\Espressif\.espressif\v5.5.4\esp-idf`) — still installed, no longer builds this tree |
 | S3 flash port | COM4 (CH343 UART bridge, GPIO43/44) |
 | P4 flash port | COM15 (CH343 UART bridge, GPIO43/44) ✅ |
 | S3 MIDI port | COM5 → USB-OTG (GPIO19/20), becomes VID_303A:PID_4008 after firmware |
@@ -20,8 +22,12 @@ should include date, firmware version, board, port and pass/fail evidence.
 
 Known toolchain warning: `esp_codec_dev` Kconfig may warn that `ESP_IDF_VERSION`
 environment variable is not set when building through the manual Windows IDF
-environment. The firmware build completes; keep using the documented IDF 5.5
-Python/toolchain paths until the local Espressif export environment is repaired.
+environment. The firmware build completes.
+
+Under ESP-IDF 6.0.2 the configure step also emits benign `NOTE:` lines from IDF's
+own Kconfig (`fatfs` `FATFS_PRINT_FLOAT: 'default 0' is not a valid bool value`,
+and duplicate `bt` rename mappings for the S3). These come from ESP-IDF, not from
+this project, and do not affect the image.
 
 ---
 

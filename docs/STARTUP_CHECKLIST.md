@@ -1,18 +1,32 @@
 # Startup Checklist
 
-Status: reconciled 2026-07-28. Checked items below are historical bring-up
+Status: reconciled 2026-07-30. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. The latest
-clean release build is newer than the installed firmware.
+clean release build is newer than the installed firmware, and is now on a
+different ESP-IDF major version than the firmware on the boards.
 
 ## Current installed and accepted baselines
 
-- [x] Latest clean dual-target release build: `RC1-259-gdaf4639`; both
-  `build_signed` targets were rebuilt with ESP-IDF 5.5.4 on 2026-07-26. The
-  candidate includes the Pajoniiir rebrand, synchronized simulator support,
-  OTA/controller/startup hardening and has not yet been signed, packaged or
-  installed. Exact raw-image sizes and SHA-256 values are recorded in
-  `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
-- [x] ESP-IDF v6.0.2 Migration: Svi softverski buildovi i host testovi za P4 i S3 u potpunosti prolaze pod ESP-IDF v6.0.2 na dan 2026-07-28 (grana `migration/esp-idf-6.0.2`). Integrirani su bounded compressed audio cache (8 × 32 KiB LRU po decku), paginirana Library tablica (8 redaka s PREV/NEXT), immutable track sort, recorder safety hardening i stabilizacijski popravci iz `fix/release-blockers-and-concurrency`.
+- [x] Latest clean dual-target release build: **`RC2`** (`56905c89`); both
+  `build_signed` targets were rebuilt with **ESP-IDF 6.0.2** on 2026-07-30 from
+  a clean working tree. **Signed and packaged** the same day (`rel-001`,
+  ECDSA-P256-SHA256) into `releases/pajoniiir-RC2/`, with both bundles and the
+  outer manifest verified. **Not installed, and not published to the pull-OTA
+  channel.** Exact raw-image and bundle sizes and SHA-256 values are recorded in
+  `validation/CLEAN_RELEASE_RC2_BUILD.md`.
+- [x] Previous release line closed at `RC1-259-gdaf4639` (ESP-IDF 5.5.4,
+  2026-07-26), recorded in `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
+- [x] ESP-IDF v6.0.2 migration je **mergean u `master`** (grana
+  `migration/esp-idf-6.0.2` je obrisana). Svi softverski buildovi i host testovi
+  za P4 i S3 prolaze pod ESP-IDF v6.0.2. Integrirani su bounded compressed audio
+  cache (8 × 32 KiB LRU po decku), paginirana Library tablica (8 redaka s
+  PREV/NEXT), immutable track sort, recorder safety hardening i stabilizacijski
+  popravci iz `fix/release-blockers-and-concurrency`. **Hardverska prihvatljivost
+  nije napravljena** — 10 otvorenih redova u
+  `migration/ESP_IDF_6_0_2_MIGRATION.md`.
+- [ ] **Boards are behind and on the other IDF line.** P4 and S3 are still on
+  `RC1-254-g21f21963`, built with ESP-IDF 5.5.4. Updating them to RC2 means
+  installing firmware that has never run on this hardware.
 - [x] Last known matching bench baseline: P4 and S3 both
   `RC1-254-g21f21963` as of 2026-07-24.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
@@ -50,9 +64,10 @@ clean release build is newer than the installed firmware.
 - [ ] Verify shared ground and that independent 5 V sources are not back-fed.
 - [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
 - [x] Run both host suites and both firmware builds from fresh build directories —
-  passed 2026-07-26 with ESP-IDF v5.5.4; `migration/esp-idf-6.0.2` passed
-  2026-07-28 with ESP-IDF v6.0.2 including bounded cache, paginated Library
-  and recorder hardening. Repeat for the final enclosure candidate.
+  passed 2026-07-26 with ESP-IDF v5.5.4; passed again 2026-07-30 on `master`
+  with ESP-IDF v6.0.2 as the `RC2` clean release build, including bounded cache,
+  paginated Library and recorder hardening. Repeat for the final enclosure
+  candidate.
 - [ ] Hardware-validate bounded compressed cache under dual-deck load with real
   MP3/WAV/FLAC files.
 - [x] Host-validate compressed-cache LRU ordering across the historical

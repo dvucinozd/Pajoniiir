@@ -13,20 +13,24 @@ remains locally and on `origin`.
 ![Pajoniiir](docs/images/122.jpg)
 
 > [!IMPORTANT]
-> The last matching P4/S3 bench rollout is **`RC1-254-g21f21963`** from
-> 2026-07-24. The latest clean ESP-IDF 5.5.4 dual-target release build is
-> **`RC1-259-gdaf4639`** from 2026-07-26; it has not been signed, packaged or
-> deployed. The active development head is the `migration/esp-idf-6.0.2` branch,
-> which migrates both targets to **ESP-IDF v6.0.2** and integrates the full
+> The ESP-IDF 6.0.2 migration is **merged into `master`**; both targets now
+> build only under **ESP-IDF v6.0.2** (the component manifests pin
+> `idf: "==6.0.2"`). The release prefix therefore moved from `RC1` to **`RC2`**,
+> and the latest clean dual-target release build is **`RC2`** (`56905c89`) from
+> 2026-07-30 — see
+> [CLEAN_RELEASE_RC2_BUILD.md](docs/validation/CLEAN_RELEASE_RC2_BUILD.md). It
+> has not been signed, packaged or deployed, and it carries the full
 > `fix/release-blockers-and-concurrency` stabilisation set (bounded compressed
 > audio cache, paginated Library UI, immutable track sort, recorder safety
-> hardening, lossless control queue, ANLZ ownership fixes and more). All
-> software builds, host tests and UI simulator pass on that branch as of
-> 2026-07-28; hardware acceptance rows remain open. Repository source is
-> therefore newer than installed hardware, and the latest **complete**
-> functional hardware baseline remains **`RC1-123-g587cd7a1`** of
-> 2026-07-14. See [Documentation Status](docs/DOCUMENTATION_STATUS.md) for
-> the precise boundary.
+> hardening, lossless control queue, ANLZ ownership fixes and more).
+>
+> **RC2 has no hardware acceptance.** Ten rows remain open in
+> [ESP_IDF_6_0_2_MIGRATION.md](docs/migration/ESP_IDF_6_0_2_MIGRATION.md); a
+> green build is not silicon evidence. The last matching P4/S3 bench rollout is
+> **`RC1-254-g21f21963`** from 2026-07-24 — pre-migration firmware — and the
+> latest **complete** functional hardware baseline remains
+> **`RC1-123-g587cd7a1`** of 2026-07-14. See
+> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the precise boundary.
 
 ## System at a Glance
 

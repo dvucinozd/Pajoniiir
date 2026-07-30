@@ -50,6 +50,17 @@ whether they remain active or are historical context.
 - [`validation/P4_USB_RECOVERY_SMOKE.md`](validation/P4_USB_RECOVERY_SMOKE.md)
 - [`validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md`](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md)
 - [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md)
+- [`validation/DUAL_DECK_KEYLOCK_HOST_SOAK_20260726.md`](validation/DUAL_DECK_KEYLOCK_HOST_SOAK_20260726.md)
+
+Clean release build records (compilation evidence only — not acceptance):
+
+- [`validation/CLEAN_RELEASE_RC2_BUILD.md`](validation/CLEAN_RELEASE_RC2_BUILD.md) — current, `RC2` on ESP-IDF 6.0.2.
+- [`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md) — superseded, `RC1-259` on ESP-IDF 5.5.4.
+
+## Migration
+
+- [`migration/ESP_IDF_6_0_2_MIGRATION.md`](migration/ESP_IDF_6_0_2_MIGRATION.md) — what the ESP-IDF 6.0.2 move changed, and the **ten open hardware-acceptance rows `master` currently carries**.
+- [`migration/ESP_IDF_6_0_2_CODE_REVIEW_20260729.md`](migration/ESP_IDF_6_0_2_CODE_REVIEW_20260729.md) — pre-merge review of that branch.
 
 Validation files are dated evidence. A `PENDING` row remains pending unless a
 newer active document explicitly records acceptance; do not infer a pass from

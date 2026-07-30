@@ -1,14 +1,18 @@
 # Pajoniiir S3 Control Board Firmware - Claude Guide
 
-Documentation status: current developer guide, audited 2026-07-21. The installed
-signed release is `RC1-168-gb69f1b19` on `ota_0 / valid`, confirmed through the
-P4 firmware report. It was uploaded over the S3 Debug AP (`POST /api/ota/s3`);
-the S3 itself is unchanged by the P4-side recorder/service-journal work in that
-release. The boards are currently **not matched** — the P4 has since moved to
-`RC1-171-gacc2aa5a` for P4-only recorder instrumentation. No S3 change is
-implied, but re-match both before any acceptance run. The latest full functional
-hardware acceptance remains `RC1-123-g587cd7a1`; targeted Phase 20 and Beat FX
-Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
+Documentation status: current developer guide, audited 2026-07-30. The installed
+signed release on both boards is `RC1-254-g21f21963` — they were **re-matched on
+2026-07-24** after P4 pull OTA was proven end to end. (An earlier revision of
+this file recorded an unmatched RC1-168/RC1-171 pair; that gap is closed.)
+
+Source is now well ahead of the boards and on a different ESP-IDF major version:
+`master` carries the ESP-IDF 6.0.2 migration and the release prefix is **`RC2`**
+(clean dual-target build recorded 2026-07-30 in
+`docs/validation/CLEAN_RELEASE_RC2_BUILD.md`). RC2 has **no** hardware
+acceptance — see `docs/migration/ESP_IDF_6_0_2_MIGRATION.md`.
+
+The latest full functional hardware acceptance remains `RC1-123-g587cd7a1`;
+targeted Phase 20 and Beat FX Flanger/Delay smoke is pending. Repo (2026-07-20): moved to `dvucinozd/Pajoniiir` (old
 `ESP32-DDJ-FLX4` URL redirects); a single `master` branch remains after all
 merged branches were pruned local + remote, with unique retired work archived
 under `attic/*` tags.
@@ -66,12 +70,11 @@ USB-OTG port as a serial console while testing FLX4 host mode; GPIO19/20 are
 owned by the USB host/device stack.
 
 ```powershell
-# Prepare one environment (once per shell) - same IDF as P4.
-# Classic development machine:
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v5.5\"
-. C:\Espressif\Initialize-Idf.ps1
-# Alternative v5.5.4 profile machine:
-# . C:\Espressif\tools\Microsoft.v5.5.4.PowerShell_profile.ps1
+# Prepare the environment (once per shell) - same IDF as P4.
+# ESP-IDF 6.0.2 is REQUIRED: main/idf_component.yml pins idf: "==6.0.2", so an
+# older environment fails at dependency resolution, not with a warning.
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
+idf.py --version   # must report ESP-IDF v6.0.2
 
 # Flash and monitor logs
 # NOTE: the CH343 COM number can move between replugs (seen as COM4, now COM3);
@@ -83,9 +86,11 @@ idf.py -p COM3 flash monitor
 idf.py build
 ```
 
-**ESP-IDF**: v5.5/v5.5.4 | **Target**: `esp32s3`
-**Classic IDF path**: `C:\Espressif\frameworks\esp-idf-v5.5\` |
-**v5.5.4 IDF path**: `C:\esp\v5.5.4\esp-idf`
+**ESP-IDF**: v6.0.2 (required) | **Target**: `esp32s3`
+**IDF path**: `C:\Espressif\v6.0.2\esp-idf` — note this is **not** under
+`.espressif\` or `frameworks\` like the older installs.
+**Superseded**: v5.5.4 (`C:\Espressif\.espressif\v5.5.4\esp-idf`) — still
+installed, no longer builds this tree.
 
 ---
 

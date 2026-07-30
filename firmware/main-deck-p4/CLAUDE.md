@@ -8,10 +8,20 @@ lease, a single real DPI framebuffer and a bounded compressed-audio page cache.
 The master-output recorder has software STOP/finalize safety coverage but remains
 release-disabled until physical microSD and power-loss fault injection passes.
 
+Release line: the prefix moved from `RC1` to **`RC2`** on 2026-07-30 to mark the
+ESP-IDF 6.0.2 baseline; the annotated tag sits on `56905c89` and the clean
+dual-target build is recorded in `docs/validation/CLEAN_RELEASE_RC2_BUILD.md`.
+Application version comes from `git describe`, so the tagged commit builds as the
+bare string `RC2` and later commits as `RC2-<n>-g<hash>`. **Both boards are still
+on `RC1-254-g21f21963`** — pre-migration firmware built with ESP-IDF 5.5.4.
+
 Software acceptance is enforced by `.github/workflows/esp-idf-6-migration.yml`:
 host regressions plus clean ESP32-S3 and ESP32-P4 builds using ESP-IDF 6.0.2.
-Physical release checks remain tracked in `docs/fixevi-remediation-audit.md` and
-PR #8 rather than being inferred from a successful build.
+Physical release checks remain tracked in `docs/fixevi-remediation-audit.md`,
+`docs/migration/ESP_IDF_6_0_2_MIGRATION.md` and PR #8 rather than being inferred
+from a successful build. That workflow does **not** trigger on tags and checks
+out at depth 1, so a CI build carries a bare commit hash as its version, not
+`RC2`; versioned release images must be built locally.
 
 > ⚠️ **Web assets must not reference the network.** The page is served from the
 > P4's own SoftAP with no internet route, and the captive DNS resolves every
@@ -613,7 +623,7 @@ Format details: `docs/rekordbox-format-analysis.md`
 - ✅ ~~WAV/FLAC decode~~ — decoder-abstraction layer (`audio_decoder`/`audio_format`); WAV inline + FLAC via dr_flac over the PSRAM preload; MP3 stays on minimp3
 - ✅ ~~`bsp_sd_init()` SDMMC (config/cache)~~ — `/sd` mount hardware-verified
 - ✅ ~~Reduce preload-to-play latency on large files (~1-3 s)~~ — P5 progressive preload
-- ✅ ~~Tearing optimization of display~~ — triple buffering path implemented and hardware-verified
+- ⚠️ **Tearing optimization of display — this row was wrong and is now retracted.** It claimed "triple buffering implemented and hardware-verified". The framebuffer count was set to 3, but the inactive-buffer swap was never wired, so the display was always effectively **single-buffered** and the claim was never true. The ESP-IDF 6.0.2 merge made the single framebuffer explicit and intentional: BSP and the LVGL backend allocate and request exactly one, `UI_DSI_FB_COUNT` is tied to `BSP_LCD_FRAMEBUFFER_COUNT`, and a `_Static_assert` in each fails the build if the count is raised without implementing the swap. This recovered two unused full-screen PSRAM allocations. Consequence to keep in mind: waveform tearing/erase is inherent to this backend, not a bug to hunt in the drawing code. A real multi-buffer fix needs the swap implemented **and** hardware verification.
 - ✅ ~~Deck 2 lower Overview waveform jitter~~ — resolved 2026-06-13; both decks now use the direct PPA overlay path
 - ✅ ~~ESP-Hosted Wi-Fi + web UI mobile controller~~ — re-enabled 2026-07-04 behind a Settings switch (default off); SoftAP `Pajoniiir` + `http://192.168.4.1`
 - ✅ ~~USB-disconnect crash~~ — fixed 2026-07-04 by gating the track-meta-cache USB `stat()` (a disconnect during it panicked the MSC driver + wedged USB)

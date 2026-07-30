@@ -1,10 +1,10 @@
 # Architecture
 
-Status: current architecture, audited 2026-07-28. P4 remains authoritative;
-S3 remains a transport/translation and USB-audio bridge. The active development
-head is the `migration/esp-idf-6.0.2` branch, which adds bounded compressed
-audio cache, paginated Library UI and recorder safety hardening without
-changing the P4/S3 ownership split.
+Status: current architecture, audited 2026-07-30. P4 remains authoritative;
+S3 remains a transport/translation and USB-audio bridge. The ESP-IDF 6.0.2
+migration is merged into `master` (release line `RC2`); it added the bounded
+compressed audio cache, paginated Library UI and recorder safety hardening
+without changing the P4/S3 ownership split.
 
 ## High-Level Flow
 

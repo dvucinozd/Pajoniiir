@@ -1,8 +1,9 @@
 # Post-R5 Plan
 
-Status: active and reconciled 2026-07-26. R5A-R5F remediation and E1 signed-OTA
-acceptance are complete. The latest clean dual-target release build is
-`RC1-259-gdaf4639`; the last known bench state has both boards matched at
+Status: active and reconciled 2026-07-30. R5A-R5F remediation and E1 signed-OTA
+acceptance are complete. The latest clean dual-target release build is `RC2`
+(`56905c89`, ESP-IDF 6.0.2, 2026-07-30); the previous line closed at
+`RC1-259-gdaf4639`. The last known bench state has both boards matched at
 `RC1-254-g21f21963` after the P4 pull-OTA path was proven end to end on
 2026-07-24. The clean candidate has not yet been signed, packaged or deployed.
 The latest **fully** functionally accepted release still remains
