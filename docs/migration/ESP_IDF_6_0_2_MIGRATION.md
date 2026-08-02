@@ -108,6 +108,11 @@ the silicon behaves. Work the remaining rows in order.
   controller, and the repaired 59,688 MB exFAT SDHC card mounts in 4-bit mode.
   See `../validation/P4_IDF6_SDMMC_SMOKE_20260802.md`. This focused pass does
   not close display, USB, audio, OTA or sustained-media rows below.
+- [x] S3 full wired flash writes and verifies the clean RC2 ESP-IDF v6.0.2
+  bootloader/application pair. The running application reports `RC2`, `ota_0`,
+  `VALID` over the P4 control link. See
+  `../validation/S3_IDF6_WIRED_FLASH_20260802.md`. This boot-chain pass does not
+  close the FLX4 MIDI/UAC row below.
 
 - [ ] P4 display/touch/PSRAM smoke passes.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.

@@ -16,7 +16,8 @@ dual-target release build is `RC2`, recorded in
 
 Hardware acceptance has started — see
 `migration/ESP_IDF_6_0_2_MIGRATION.md` and
-`validation/P4_IDF6_SDMMC_SMOKE_20260802.md`. The RC2 line is still **not**
+`validation/P4_IDF6_SDMMC_SMOKE_20260802.md` plus
+`validation/S3_IDF6_WIRED_FLASH_20260802.md`. The RC2 line is still **not**
 release-qualified.
 
 This page explains which documents describe the current product and which are
@@ -32,8 +33,9 @@ historical design or validation records. Four states must not be conflated:
 - **current bench state:** both boards successfully installed and reported the
   RC2 application through OTA on 2026-08-02. P4 was then fully wired-flashed
   with `RC2-3-g136aad7`; its boot log proves the ESP-IDF v6.0.2 bootloader and
-  microSD mount. S3 reports `RC2` over the control link, but its bootloader
-  version still needs a direct wired flash/capture;
+  microSD mount. S3 was then full-flashed with the exact clean RC2 bootloader
+  and application; image metadata confirms ESP-IDF v6.0.2 and the P4 control
+  link reports the running S3 as `RC2`, `ota_0`, `VALID`;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
   forced rollback and final UI/audio/controller smoke. Later releases have
@@ -86,8 +88,7 @@ in the active documents.
 
 ## Remaining work
 
-- **ESP-IDF 6.0.2 hardware acceptance**: finish the S3 full wired boot-chain
-  flash/capture, then validate display/touch, USB MSC, FLX4
+- **ESP-IDF 6.0.2 hardware acceptance**: validate display/touch, USB MSC, FLX4
   MIDI/UAC, PCM5102A, monitor link, ESP-Hosted AP/OTA and signed OTA must all
   pass on the migrated firmware before RC2 can be release-qualified;
 - hardware-validate bounded compressed cache under dual-deck load with real

@@ -16,7 +16,7 @@ Status: current phase ledger, reconciled 2026-08-02.
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
 | Controller profiles | Firmware path implemented and host-tested with both FLX4 and the independent `generic_midi_ci` fixture; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; non-FLX4 hardware and remote update acceptance pending |
-| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash; equivalent S3 wired flash remains pending |
+| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash, and S3 received the exact clean RC2 bootloader/application pair over COM10 |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
@@ -30,9 +30,11 @@ The latest fully functionally accepted hardware baseline remains
 application through OTA on 2026-08-02. That OTA did not update the boot chain:
 the first captured P4 RC2 boot still used an ESP-IDF 5.5 bootloader. P4 was then
 fully wired-flashed with `RC2-3-g136aad7`; its ESP-IDF v6.0.2 bootloader and
-microSD mount now pass. The equivalent S3 wired flash and the broader hardware
-matrix remain pending. See
-`validation/P4_IDF6_SDMMC_SMOKE_20260802.md`.
+microSD mount now pass. S3 was then full-flashed with the exact clean RC2
+bootloader/application pair; its image metadata confirms IDF v6.0.2 and its P4
+control-link report confirms `RC2`, `ota_0`, `VALID`. The broader hardware
+matrix remains pending. See `validation/P4_IDF6_SDMMC_SMOKE_20260802.md` and
+`validation/S3_IDF6_WIRED_FLASH_20260802.md`.
 
 The `migration/esp-idf-6.0.2` branch is **merged into `master`** and deleted;
 `master` builds only under ESP-IDF 6.0.2. The release prefix is now **`RC2`**
@@ -40,8 +42,7 @@ The `migration/esp-idf-6.0.2` branch is **merged into `master`** and deleted;
 on 2026-07-30 in `validation/CLEAN_RELEASE_RC2_BUILD.md`. The clean RC2 release
 record remains compilation/package evidence; focused P4 boot/microSD evidence
 is recorded separately and does not close the other hardware rows.
-Next acceptance work is the S3 wired boot-chain flash and ESP-IDF 6.0.2
-hardware validation matrix, the
+Next acceptance work is the ESP-IDF 6.0.2 hardware validation matrix, the
 remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
 by production key provisioning/rotation, enclosure power/thermal/RF soak,
 longer dual-deck key-lock P4 CPU/listening testing, selected pending MIDI

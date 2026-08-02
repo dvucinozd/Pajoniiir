@@ -110,8 +110,7 @@ after the board-support layer logs a successful `/sd` mount.
   `RC2`, slot 1, state 3.
 - **Pending:** visually confirm that the live Settings value has refreshed to
   the online capacity display.
-- **Pending:** connect the S3 service USB, perform a full wired ESP-IDF 6.0.2
-  flash, and capture its bootloader/application log. Only COM15 and Bluetooth
-  serial ports were present during this session, so the S3 bootloader version
-  was not directly observable.
+- **Completed later the same day:** the S3 service USB appeared on COM10 and
+  received the full clean RC2 ESP-IDF 6.0.2 boot chain. See
+  `S3_IDF6_WIRED_FLASH_20260802.md`.
 - **Pending:** every other row in the ESP-IDF 6.0.2 hardware acceptance matrix.

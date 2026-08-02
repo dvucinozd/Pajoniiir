@@ -2,9 +2,9 @@
 
 Status: reconciled 2026-08-02. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. RC2
-application OTA succeeded on both boards; the P4 has since received the first
-full wired ESP-IDF 6.0.2 boot-chain flash with a microSD fix, while the S3 still
-needs a wired boot-chain flash and capture.
+application OTA succeeded on both boards, and both have since received full
+wired ESP-IDF 6.0.2 boot-chain flashes. The P4 runs the microSD-fix candidate;
+the S3 runs the exact clean RC2 application.
 
 ## Current installed and accepted baselines
 
@@ -30,10 +30,11 @@ needs a wired boot-chain flash and capture.
   `RC2-3-g136aad7` na factory slotu. Boot log potvrđuje ESP-IDF v6.0.2
   bootloader i uspješan mount 59.688 MB SDHC kartice nakon SDMMC shared-host
   popravka. Dokaz: `validation/P4_IDF6_SDMMC_SMOKE_20260802.md`.
-- [ ] S3 aplikacija je `RC2` (`slot=1`, `state=3` prema P4 control-link logu),
-  ali S3 servisni USB nije bio vidljiv tijekom 2026-08-02 provjere. Spojiti ga,
-  napraviti puni žičani ESP-IDF 6.0.2 flash i snimiti boot log; OTA nije dokaz
-  bootloader verzije.
+- [x] S3 je 2026-08-02 preko COM10 puni žičani flashan sa sačuvanim clean RC2
+  artefaktima. Esptool je verificirao sva četiri flash područja; image metadata
+  potvrđuje ESP-IDF v6.0.2 za bootloader i aplikaciju, a P4 zatim prima
+  `RC2`, `ota_0`, `VALID`. Dokaz:
+  `validation/S3_IDF6_WIRED_FLASH_20260802.md`.
 - [x] P4 i S3 aplikacije zadnji su put bile potvrđene kao podudarni goli `RC2`
   neposredno nakon OTA instalacije 2026-08-02. P4 je zatim prešao na navedeni
   SDMMC-fix kandidat, pa trenutačno više nisu isti exact build.
