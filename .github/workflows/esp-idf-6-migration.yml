@@ -172,6 +172,11 @@ jobs:
               idf.py build
             ' > s3-idf-build.log 2>&1
           code=$?
+          # The IDF container runs as root and creates build/ through the bind
+          # mount. Return ownership before runner-native provenance generation.
+          if [ -d firmware/control-board-s3/build ]; then
+            sudo chown -R "$(id -u):$(id -g)" firmware/control-board-s3/build
+          fi
           if [ "$code" -ne 0 ]; then
             grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' s3-idf-build.log | tail -n 75 || true
             tail -n 20 s3-idf-build.log
@@ -255,6 +260,12 @@ jobs:
               idf.py build
             ' > p4-idf-build.log 2>&1
           code=$?
+          # The IDF container runs as root and creates build/ through the bind
+          # mount. Return ownership before runner-native verification and
+          # provenance generation.
+          if [ -d firmware/main-deck-p4/build ]; then
+            sudo chown -R "$(id -u):$(id -g)" firmware/main-deck-p4/build
+          fi
           if [ "$code" -ne 0 ]; then
             grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped|CONFIG_ESP32P4)' p4-idf-build.log | tail -n 90 || true
             tail -n 25 p4-idf-build.log

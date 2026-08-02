@@ -25,6 +25,7 @@ Statusi:
 | # | Nalaz | Status | Dokaz |
 |---|---|---|---|
 | 1 | Čisti P4 build cilja pogrešnu reviziju silicija | **Zatvoreno** | `sdkconfig.defaults` vraća pre-v3 selector; CI provjerava selector i `REV_MIN_FULL=100` prije builda. |
+| 1a | ESP-IDF 6 ESP-Hosted SDIO inicijalizira jedini P4 SDMMC controller prije `app_main()`, pa drugi globalni init za microSD ostavlja `/sd` offline | **Zatvoreno; HW potvrđeno** | BSP za Hosted/IDF6 ponovno koristi inicijalizirani controller za slot 0 i zadržava slot-aware deinit. P4 host gate i IDF6 build prolaze; puni COM15 flash `RC2-3-g136aad7` 2026-08-02 boota IDF v6.0.2 i montira 59.688 MB SDHC karticu u 4-bit modu. Vidi `validation/P4_IDF6_SDMMC_SMOKE_20260802.md`. |
 
 ## P1
 

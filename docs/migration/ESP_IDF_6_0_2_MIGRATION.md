@@ -95,15 +95,24 @@ this branch:
   compatibility fixes).
 - [x] UI simulator E2E screenshot gate passes with updated baselines.
 
-## Hardware acceptance — outstanding on master
+## Hardware acceptance — in progress on master
 
-These rows were never verified on a board. The migration was merged with them
-open because there is no hardware available to flash, so the choice was to keep
-the work on a long-lived branch or to carry it on master with the gap stated.
-It is on master, and this list is the statement: **the migration is not release-
-qualified.** Nothing here is inferred from a green build — a successful CI run
-says the code compiles and the host models agree, not that the silicon behaves.
-Work the rows in order when a board is available.
+The migration was merged with these rows open because hardware was not then
+available. Hardware work started on 2026-08-02, but the migration is still
+**not release-qualified**. Nothing below is inferred from a green build — a
+successful CI run says the code compiles and the host models agree, not that
+the silicon behaves. Work the remaining rows in order.
+
+- [x] P4 full wired flash boots an ESP-IDF v6.0.2 bootloader and
+  `RC2-3-g136aad7`; ESP-Hosted slot 1 and microSD slot 0 share the single SDMMC
+  controller, and the repaired 59,688 MB exFAT SDHC card mounts in 4-bit mode.
+  See `../validation/P4_IDF6_SDMMC_SMOKE_20260802.md`. This focused pass does
+  not close display, USB, audio, OTA or sustained-media rows below.
+- [x] S3 full wired flash writes and verifies the clean RC2 ESP-IDF v6.0.2
+  bootloader/application pair. The running application reports `RC2`, `ota_0`,
+  `VALID` over the P4 control link. See
+  `../validation/S3_IDF6_WIRED_FLASH_20260802.md`. This boot-chain pass does not
+  close the FLX4 MIDI/UAC row below.
 
 - [ ] P4 display/touch/PSRAM smoke passes.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.

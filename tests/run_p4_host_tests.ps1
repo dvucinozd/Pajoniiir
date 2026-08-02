@@ -2410,6 +2410,17 @@ Assert-FileContains `
     -LiteralPatterns @('SRCS "bsp_jc4880.c"')
 
 Assert-FileContains `
+    -Name "p4 microSD shares the IDF6 SDMMC controller already owned by ESP-Hosted" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -LiteralPatterns @(
+        "CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE",
+        "bsp_sdmmc_host_already_initialized",
+        "host.slot = SDMMC_HOST_SLOT_0",
+        "host.init = bsp_sdmmc_host_already_initialized",
+        "default slot-aware deinit_p callback"
+    )
+
+Assert-FileContains `
     -Name "p4 app_settings builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/app_settings/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "app_settings.c"')

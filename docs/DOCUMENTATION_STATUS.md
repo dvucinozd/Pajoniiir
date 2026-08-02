@@ -1,6 +1,6 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-07-30**. The `migration/esp-idf-6.0.2`
+Last full status reconciliation: **2026-08-02**. The `migration/esp-idf-6.0.2`
 branch has been **merged into `master`** and deleted; there is no separate
 migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
 (`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`) and carries the
@@ -14,22 +14,28 @@ dual-target release build is `RC2`, recorded in
 `validation/CLEAN_RELEASE_RC2_BUILD.md`. Builds after the tagged commit report
 `RC2-<distance>-g<hash>`.
 
-Hardware acceptance rows remain open — see
-`migration/ESP_IDF_6_0_2_MIGRATION.md`. The RC2 images are **not**
+Hardware acceptance has started — see
+`migration/ESP_IDF_6_0_2_MIGRATION.md` and
+`validation/P4_IDF6_SDMMC_SMOKE_20260802.md` plus
+`validation/S3_IDF6_WIRED_FLASH_20260802.md`. The RC2 line is still **not**
 release-qualified.
 
 This page explains which documents describe the current product and which are
-historical design or validation records. Three states must not be conflated:
+historical design or validation records. Four states must not be conflated:
 
-- **latest clean release build:** `RC2` (`56905c89`, built with ESP-IDF 6.0.2 on
-  2026-07-30; see `validation/CLEAN_RELEASE_RC2_BUILD.md`). Compilation,
-  version match, slot fit and image hashes only — no signing, packaging,
-  deployment or hardware acceptance;
+- **latest clean tagged release artifacts:** `RC2` (`56905c89`, built with
+  ESP-IDF 6.0.2 on 2026-07-30; see
+  `validation/CLEAN_RELEASE_RC2_BUILD.md`). The images were signed, packaged and
+  later installed through OTA on both boards. That deployment is not full
+  hardware acceptance;
 - **previous release line:** `RC1-259-gdaf4639` (ESP-IDF 5.5.4, 2026-07-26).
   Superseded; `RC1` is closed and no further `RC1-*` builds are expected;
-- **last known bench state:** P4 and S3 were rematched at
-  `RC1-254-g21f21963` on 2026-07-24 after pull OTA was proven end to end on the
-  P4; the boards match each other but are behind current source;
+- **current bench state:** both boards successfully installed and reported the
+  RC2 application through OTA on 2026-08-02. P4 was then fully wired-flashed
+  with `RC2-3-g136aad7`; its boot log proves the ESP-IDF v6.0.2 bootloader and
+  microSD mount. S3 was then full-flashed with the exact clean RC2 bootloader
+  and application; image metadata confirms ESP-IDF v6.0.2 and the P4 control
+  link reports the running S3 as `RC2`, `ota_0`, `VALID`;
 - **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
   2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
   forced rollback and final UI/audio/controller smoke. Later releases have
@@ -74,17 +80,17 @@ in the active documents.
 | Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
 | Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26 with zero source drift, detected clicks or clipping |
 | Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link |
-| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order |
+| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order. P4 ESP-IDF 6.0.2 now reuses ESP-Hosted's initialized SDMMC controller for microSD slot 0; a repaired 59,688 MB exFAT SDHC card mounted in 4-bit mode in the 2026-08-02 focused smoke |
 | UI | Overview, Library, Hot Cues and Settings tabs; Library table is paginated (one 8-row page with PREV/NEXT, max 40 live LVGL cells); stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800×480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter |
 | Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
-| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both boards last matched at `RC1-254-g21f21963` on 2026-07-24; pull OTA is hardware-proven and now software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation |
+| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both RC2 applications installed successfully through OTA on 2026-08-02; pull OTA is hardware-proven and now software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation. OTA does not replace the bootloader, so the IDF 6 boot chain requires a wired flash per target |
 | Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; the independent `generic_midi_ci` profile is compile/registry/runtime/LED host-tested; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits dedicated hardware acceptance |
 
 ## Remaining work
 
-- **ESP-IDF 6.0.2 hardware acceptance**: display/touch, USB MSC, FLX4
+- **ESP-IDF 6.0.2 hardware acceptance**: validate display/touch, USB MSC, FLX4
   MIDI/UAC, PCM5102A, monitor link, ESP-Hosted AP/OTA and signed OTA must all
-  pass on the migrated firmware before the branch merges to `master`;
+  pass on the migrated firmware before RC2 can be release-qualified;
 - hardware-validate bounded compressed cache under dual-deck load with real
   MP3/WAV/FLAC files;
 - hardware-validate paginated Library table on the P4 touch display;
