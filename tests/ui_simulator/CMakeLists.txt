@@ -56,6 +56,7 @@ add_executable(ui_simulator_e2e
     "${UI_DIR}/ui_beat_fx_format.c"
     "${UI_DIR}/ui_overview_window.c"
 
+    "${LIBRARY_DIR}/anlz_snapshot.c"
     "${LIBRARY_DIR}/rekordbox_anlz.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/beat_jump.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
