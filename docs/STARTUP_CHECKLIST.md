@@ -1,9 +1,10 @@
 # Startup Checklist
 
-Status: reconciled 2026-07-30. Checked items below are historical bring-up
-evidence, not instructions to repeat old commit-specific flashes. The latest
-clean release build is newer than the installed firmware, and is now on a
-different ESP-IDF major version than the firmware on the boards.
+Status: reconciled 2026-08-02. Checked items below are historical bring-up
+evidence, not instructions to repeat old commit-specific flashes. RC2
+application OTA succeeded on both boards; the P4 has since received the first
+full wired ESP-IDF 6.0.2 boot-chain flash with a microSD fix, while the S3 still
+needs a wired boot-chain flash and capture.
 
 ## Current installed and accepted baselines
 
@@ -11,9 +12,10 @@ different ESP-IDF major version than the firmware on the boards.
   `build_signed` targets were rebuilt with **ESP-IDF 6.0.2** on 2026-07-30 from
   a clean working tree. **Signed and packaged** the same day (`rel-001`,
   ECDSA-P256-SHA256) into `releases/pajoniiir-RC2/`, with both bundles and the
-  outer manifest verified. **Not installed, and not published to the pull-OTA
-  channel.** Exact raw-image and bundle sizes and SHA-256 values are recorded in
-  `validation/CLEAN_RELEASE_RC2_BUILD.md`.
+  outer manifest verified. The operator successfully installed both RC2
+  applications through OTA on 2026-08-02 and confirmed both versions reported
+  `RC2`. Exact raw-image and bundle sizes and SHA-256 values are
+  recorded in `validation/CLEAN_RELEASE_RC2_BUILD.md`.
 - [x] Previous release line closed at `RC1-259-gdaf4639` (ESP-IDF 5.5.4,
   2026-07-26), recorded in `validation/CLEAN_RELEASE_RC1_259_BUILD.md`.
 - [x] ESP-IDF v6.0.2 migration je **mergean u `master`** (grana
@@ -21,14 +23,20 @@ different ESP-IDF major version than the firmware on the boards.
   za P4 i S3 prolaze pod ESP-IDF v6.0.2. Integrirani su bounded compressed audio
   cache (8 × 32 KiB LRU po decku), paginirana Library tablica (8 redaka s
   PREV/NEXT), immutable track sort, recorder safety hardening i stabilizacijski
-  popravci iz `fix/release-blockers-and-concurrency`. **Hardverska prihvatljivost
-  nije napravljena** — 10 otvorenih redova u
+  popravci iz `fix/release-blockers-and-concurrency`. Hardverska prihvatljivost
+  je započela, ali 10 izvornih funkcionalnih redova ostaje otvoreno u
   `migration/ESP_IDF_6_0_2_MIGRATION.md`.
-- [ ] **Boards are behind and on the other IDF line.** P4 and S3 are still on
-  `RC1-254-g21f21963`, built with ESP-IDF 5.5.4. Updating them to RC2 means
-  installing firmware that has never run on this hardware.
-- [x] Last known matching bench baseline: P4 and S3 both
-  `RC1-254-g21f21963` as of 2026-07-24.
+- [x] P4 je 2026-08-02 puni žičani flashan kandidatom
+  `RC2-3-g136aad7` na factory slotu. Boot log potvrđuje ESP-IDF v6.0.2
+  bootloader i uspješan mount 59.688 MB SDHC kartice nakon SDMMC shared-host
+  popravka. Dokaz: `validation/P4_IDF6_SDMMC_SMOKE_20260802.md`.
+- [ ] S3 aplikacija je `RC2` (`slot=1`, `state=3` prema P4 control-link logu),
+  ali S3 servisni USB nije bio vidljiv tijekom 2026-08-02 provjere. Spojiti ga,
+  napraviti puni žičani ESP-IDF 6.0.2 flash i snimiti boot log; OTA nije dokaz
+  bootloader verzije.
+- [x] P4 i S3 aplikacije zadnji su put bile potvrđene kao podudarni goli `RC2`
+  neposredno nakon OTA instalacije 2026-08-02. P4 je zatim prešao na navedeni
+  SDMMC-fix kandidat, pa trenutačno više nisu isti exact build.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
