@@ -21,8 +21,8 @@ Status: current phase ledger, reconciled 2026-08-02.
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed. Safety hardened: producer stop-gate, transactional finalise (`patch`→`sync`→`close`→`publish`) and durability-failure propagation |
-| Bounded compressed cache | On `master` since the ESP-IDF 6.0.2 merge. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Software-tested; hardware acceptance pending. Note this permanently exercises the USB path during playback, which the old whole-track preload avoided |
-| Paginated Library UI | On `master` since the ESP-IDF 6.0.2 merge. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Software-tested; hardware acceptance pending |
+| Bounded compressed cache | On `master` since the ESP-IDF 6.0.2 merge. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Focused real-MP3 playback passed 2026-08-02. WAV/FLAC were not exercised because the audited USB contained 68 MP3 files but zero physical WAV/FLAC files despite stale PDB entries; sustained dual-deck acceptance remains pending |
+| Paginated Library UI | On `master` since the ESP-IDF 6.0.2 merge. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Host-tested and operator-confirmed on P4 hardware 2026-08-02 |
 | Immutable track sort | On `master` since the ESP-IDF 6.0.2 merge. Library sorting uses double-buffered `uint16_t` row-order over immutable records. No large-struct copies or qsort. Software-tested |
 
 The latest fully functionally accepted hardware baseline remains
@@ -32,9 +32,14 @@ the first captured P4 RC2 boot still used an ESP-IDF 5.5 bootloader. P4 was then
 fully wired-flashed with `RC2-3-g136aad7`; its ESP-IDF v6.0.2 bootloader and
 microSD mount now pass. S3 was then full-flashed with the exact clean RC2
 bootloader/application pair; its image metadata confirms IDF v6.0.2 and its P4
-control-link report confirms `RC2`, `ota_0`, `VALID`. The broader hardware
-matrix remains pending. See `validation/P4_IDF6_SDMMC_SMOKE_20260802.md` and
-`validation/S3_IDF6_WIRED_FLASH_20260802.md`.
+control-link report confirms `RC2`, `ota_0`, `VALID`. A later focused smoke
+passed P4 display/touch/Settings and paginated Library, FLX4 MIDI/LED,
+PCM5102A MAIN, FLX4 CUE/MONITOR and real MP3 playback. WAV and FLAC remain
+untested because no physical fixtures were present on the audited Rekordbox
+USB. The broader recovery, sustained-load and fault-injection matrix remains
+pending. See `validation/P4_IDF6_SDMMC_SMOKE_20260802.md`,
+`validation/S3_IDF6_WIRED_FLASH_20260802.md` and
+`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 
 The `migration/esp-idf-6.0.2` branch is **merged into `master`** and deleted;
 `master` builds only under ESP-IDF 6.0.2. The release prefix is now **`RC2`**
@@ -42,7 +47,9 @@ The `migration/esp-idf-6.0.2` branch is **merged into `master`** and deleted;
 on 2026-07-30 in `validation/CLEAN_RELEASE_RC2_BUILD.md`. The clean RC2 release
 record remains compilation/package evidence; focused P4 boot/microSD evidence
 is recorded separately and does not close the other hardware rows.
-Next acceptance work is the ESP-IDF 6.0.2 hardware validation matrix, the
+Next acceptance work is the remaining ESP-IDF 6.0.2 hardware validation matrix
+(starting with correctly exported WAV/FLAC fixtures and sustained USB/cache
+instrumentation), the
 remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
 by production key provisioning/rotation, enclosure power/thermal/RF soak,
 longer dual-deck key-lock P4 CPU/listening testing, selected pending MIDI
@@ -296,8 +303,8 @@ Validation note, 2026-06-08:
 - The firmware output task now renders through a host-tested
   `audio_output_mixer` path that accepts Deck 0 and Deck 1 sources, applies
   per-deck gains, and reports consumed frames per deck.
-- Firmware preload path/buffer/progress state is now a host-tested
-  `audio_fw_preload` slot, with one slot allocated per deck.
+- Firmware source/cache/progress state is a host-tested `audio_fw_preload`
+  slot (legacy type name), with one bounded cache slot allocated per deck.
 - Firmware task lifecycle state is now a host-tested `audio_fw_runtime` slot,
   with one slot allocated per deck.
 - Firmware task arguments are now bound through a host-tested
@@ -1029,9 +1036,11 @@ been implemented in firmware.
   state.
 - **WAV + FLAC playback** — implemented through format detection,
   `audio_decoder_t`, WAV parsing, and
-  `dr_flac` on top of the existing preload/ring/resampler/mixer path. MP3 keeps
+  `dr_flac` on top of the bounded-cache/ring/resampler/mixer path. MP3 keeps
   PVBR seek support; WAV/FLAC use decoder metadata while Rekordbox/ANLZ remains
-  the source for beatgrid/BPM/waveform data.
+  the source for beatgrid/BPM/waveform data. The current WAV subset is classic
+  RIFF/WAVE linear PCM16, mono or stereo; 24/32-bit, float and
+  `WAVE_FORMAT_EXTENSIBLE` are rejected.
 
 Both plans carry a "Sažetak ispravaka vs original" table documenting every
 correction made during the code review.

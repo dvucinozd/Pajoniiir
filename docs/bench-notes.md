@@ -1329,3 +1329,27 @@ older" label before install.
   that associates without completing DHCP sits on 169.254 and looks identical to
   a full AP. Re-associating usually fixes it; occasionally it does not, and that
   cost real time here.
+
+## 2026-08-02 — RC2/IDF6 focused functional smoke and missing WAV fixtures
+
+After successful RC2 application OTA on both targets, the P4 and S3 received
+their complete ESP-IDF v6.0.2 boot chains over COM15 and COM10. The P4 SDMMC
+ownership fix restored `/sd`; the operator then confirmed the complete proposed
+P4 display/UI set and FLX4/audio set: display, touch, PSRAM-backed UI, Settings
+SD-online state, paginated Library, FLX4 MIDI/LED, PCM5102A MAIN, FLX4
+CUE/MONITOR and real-MP3 playback all passed the focused smoke.
+
+The selected WAV entry did not load, but the follow-up proved this was not a
+decoder run. The Rekordbox USB was audited read-only as Windows `L:`: its
+`export.pdb` exists, but the volume contains 68 MP3 files and zero physical
+WAV/FLAC files. The PDB still references
+`file_example_WAV_10MG.wav` and `sample-15s.wav`; neither path exists. This is
+the same dead-PDB-row failure mode documented on 2026-07-24 and must remain an
+open fixture/export gate, not be recorded as a codec failure.
+
+The current WAV path accepts classic RIFF/WAVE PCM16 mono/stereo only. Before
+the next session, re-export a supported WAV and a real FLAC through Rekordbox,
+verify both files physically exist under `Contents`, then run sustained
+dual-deck playback with BNA, underrun and locked-backend-read counters. Full
+evidence is in
+`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.

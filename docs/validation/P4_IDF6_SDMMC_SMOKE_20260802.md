@@ -108,8 +108,10 @@ after the board-support layer logs a successful `/sd` mount.
 - **Pass:** repaired exFAT microSD mount and card identification.
 - **Observed:** P4 receives the S3 heartbeat and reports the S3 application as
   `RC2`, slot 1, state 3.
-- **Pending:** visually confirm that the live Settings value has refreshed to
-  the online capacity display.
+- **Completed later the same day:** the operator confirmed the live Settings
+  value no longer reports `Offline (/sd unavailable)` and the complete focused
+  display/touch/Settings set passes. See
+  `RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 - **Completed later the same day:** the S3 service USB appeared on COM10 and
   received the full clean RC2 ESP-IDF 6.0.2 boot chain. See
   `S3_IDF6_WIRED_FLASH_20260802.md`.

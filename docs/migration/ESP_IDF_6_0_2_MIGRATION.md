@@ -114,8 +114,11 @@ the silicon behaves. Work the remaining rows in order.
   `../validation/S3_IDF6_WIRED_FLASH_20260802.md`. This boot-chain pass does not
   close the FLX4 MIDI/UAC row below.
 
-- [ ] P4 display/touch/PSRAM smoke passes.
+- [x] P4 display/touch/PSRAM, Settings and paginated Library focused smoke
+  passes. Operator-confirmed 2026-08-02; see
+  `../validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.
+  Focused Library/MP3 access passed, but the complete recovery sequence did not.
 - [ ] Sustained USB playback confirms BNA recovery. The DWC channel-decoder wrap
   was briefly dropped on this branch as obsolete; it is not. ESP-IDF 6.0.2 still
   asserts `CHHLTD` for every channel error while documenting `BNAINTR` as the one
@@ -126,15 +129,23 @@ the silicon behaves. Work the remaining rows in order.
   USB continuously. The wrap is restored and pinned to the IDF version it
   mirrors; `usb_dwc_compat_bna_recovered_count()` makes a recovery observable so
   this row can actually be checked rather than assumed.
-- [ ] FLX4 MIDI IN/OUT and UAC isochronous headphone output pass on S3.
-- [ ] P4 PCM5102A MAIN output and S3/P4 monitor link pass without underruns.
-- [ ] ESP-Hosted AP and AP-to-STA-to-AP OTA round trip pass.
+- [x] FLX4 MIDI/LED and UAC isochronous headphone output pass in the focused
+  S3 smoke. Numeric sustained-link soak remains covered by the counter row.
+- [x] P4 PCM5102A MAIN output and the S3/P4 monitor path are audible and
+  functional in the focused smoke. Long-duration underrun/counter evidence
+  remains pending.
+- [ ] ESP-Hosted AP and AP-to-STA-to-AP OTA round trip pass. The core pull-OTA
+  path passed before migration; the hardened path still needs an IDF6 re-smoke.
 - [ ] Signed OTA verification, rollback and partition-size gates pass on both
-  boards.
+  boards. Positive signed RC2 OTA succeeded on both targets and clean-build
+  size evidence passes; migrated negative-path and rollback re-smoke remains.
 - [ ] Bounded compressed cache plays real MP3/WAV/FLAC under dual-deck load
-  without audible artefacts or cache-miss stalls.
-- [ ] Paginated Library table displays, scrolls and loads tracks correctly on
-  the P4 touch display.
+  without audible artefacts or cache-miss stalls. Focused real-MP3 playback
+  passed 2026-08-02, but the audited USB had 68 MP3 files and no physical
+  WAV/FLAC files; two selected WAV PDB rows referenced missing files, so those
+  formats and the sustained dual-deck load remain untested.
+- [x] Paginated Library table displays, navigates and participates in the
+  focused load check on the P4 touch display.
 - [ ] `audio_engine_locked_backend_read_count()` stays flat under sustained
   dual-deck playback. The decode loops warm the compressed cache before taking
   `AE_LOCK` so a USB read cannot stall the output task, but warming is a

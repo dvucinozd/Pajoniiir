@@ -69,6 +69,8 @@ was not retained because the port disconnects when USB host mode starts.
 - **Pass:** both flashed executable images identify themselves as ESP-IDF
   v6.0.2; the application identifies itself as `RC2`.
 - **Pass:** S3 boots `ota_0`, reports `VALID` and resumes the P4 control link.
-- **Pending:** FLX4 enumeration, MIDI IN/OUT and UAC headphone-output smoke on
-  the newly wired-flashed S3.
+- **Completed later the same day:** the operator confirmed the focused FLX4
+  MIDI/LED and UAC headphone-output path on the newly wired-flashed S3. See
+  `RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`. Numeric/link soak and recovery
+  fault injection remain separate pending rows.
 - **Pending:** the remaining ESP-IDF 6.0.2 hardware acceptance matrix.

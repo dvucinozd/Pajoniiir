@@ -19,16 +19,20 @@ remains locally and on `origin`.
 > and the latest clean dual-target release build is **`RC2`** (`56905c89`) from
 > 2026-07-30 — see
 > [CLEAN_RELEASE_RC2_BUILD.md](docs/validation/CLEAN_RELEASE_RC2_BUILD.md). It
-> has not been signed, packaged or deployed, and it carries the full
+> was signed, packaged and installed successfully through OTA on both boards
+> on 2026-08-02. It carries the full
 > `fix/release-blockers-and-concurrency` stabilisation set (bounded compressed
 > audio cache, paginated Library UI, immutable track sort, recorder safety
 > hardening, lossless control queue, ANLZ ownership fixes and more).
 >
-> **RC2 has no hardware acceptance.** Ten rows remain open in
-> [ESP_IDF_6_0_2_MIGRATION.md](docs/migration/ESP_IDF_6_0_2_MIGRATION.md); a
-> green build is not silicon evidence. The last matching P4/S3 bench rollout is
-> **`RC1-254-g21f21963`** from 2026-07-24 — pre-migration firmware — and the
-> latest **complete** functional hardware baseline remains
+> RC2 hardware acceptance is now **in progress**. Both targets have complete
+> ESP-IDF v6.0.2 boot chains; the P4 microSD regression is fixed, and a focused
+> 2026-08-02 smoke passed display/touch/Library, FLX4 MIDI/LED, MAIN/headphone
+> audio and real-MP3 playback. Real WAV/FLAC cache testing was not performed:
+> the Rekordbox database referenced files that were absent from the USB drive.
+> Long-duration, USB recovery and fault-injection rows remain open in
+> [ESP_IDF_6_0_2_MIGRATION.md](docs/migration/ESP_IDF_6_0_2_MIGRATION.md), so
+> the latest **complete** functional hardware baseline remains
 > **`RC1-123-g587cd7a1`** of 2026-07-14. See
 > [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the precise boundary.
 
@@ -50,7 +54,8 @@ layer. The detailed ownership and data flow are documented in
 
 - Two independent decks with Rekordbox library browsing and MP3, WAV and FLAC
   playback. Compressed audio uses a bounded LRU page cache (8 × 32 KiB per
-  deck) instead of whole-file PSRAM allocation.
+  deck) instead of whole-file PSRAM allocation. The current WAV subset is
+  classic RIFF/WAVE PCM16 mono/stereo.
 - FLX4 transport, jog/vinyl scratch, tempo and Master Tempo, mixer/EQ,
   headphone cue, hot cues, loops, beat jump/sync, Pad FX and Beat FX control.
   Beat FX Filter and Echo have recorded hardware acceptance; Flanger and the

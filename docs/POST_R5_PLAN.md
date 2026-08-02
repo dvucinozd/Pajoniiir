@@ -1,11 +1,13 @@
 # Post-R5 Plan
 
-Status: active and reconciled 2026-07-30. R5A-R5F remediation and E1 signed-OTA
+Status: active and reconciled 2026-08-02. R5A-R5F remediation and E1 signed-OTA
 acceptance are complete. The latest clean dual-target release build is `RC2`
 (`56905c89`, ESP-IDF 6.0.2, 2026-07-30); the previous line closed at
-`RC1-259-gdaf4639`. The last known bench state has both boards matched at
-`RC1-254-g21f21963` after the P4 pull-OTA path was proven end to end on
-2026-07-24. The clean candidate has not yet been signed, packaged or deployed.
+`RC1-259-gdaf4639`. Both signed RC2 applications were installed successfully
+through OTA on 2026-08-02. The current bench then received complete IDF6 wired
+boot chains: P4 runs `RC2-3-g136aad7` on factory and S3 runs exact `RC2` on
+valid `ota_0`. A focused UI/controller/audio/MP3 smoke passed; WAV/FLAC did not
+run because the audited USB contained no physical fixtures.
 The latest **fully** functionally accepted release still remains
 `RC1-123-g587cd7a1` (accepted on P4 `ota_0` and S3 `ota_1` on 2026-07-14).
 
@@ -69,9 +71,10 @@ Acceptance record:
 
 ## E1A — Current-Candidate Targeted Functional Acceptance
 
-Status: matching `RC1-254-g21f21963` bench state recorded 2026-07-24. The
-individual Beat FX sound/headroom, loop timing, screensaver and pull-OTA paths
-have focused hardware acceptance; the remaining full-system Phase 20/profile,
+Status: partially complete. The prior matching `RC1-254-g21f21963` bench state
+was recorded 2026-07-24. On 2026-08-02 the migrated RC2 pair additionally
+passed focused display/touch/Settings/Library, FLX4 MIDI/LED, MAIN/cue and
+real-MP3 playback. The remaining full-system Phase 20/profile, WAV/FLAC cache,
 USB recovery, UART integrity and endurance rows below are still pending.
 
 Goal: prove the installed review-remediation, controller-profile, new Beat FX
@@ -92,11 +95,17 @@ Deployment record:
   signed candidate `RC1-133-gbd5e43ce`; its exact verified P4 payload was
   wired-flashed to factory and passed the focused dual-waveform smoke. S3 was
   not flashed, and this wired deployment did not exercise a new OTA transition.
+- both signed RC2 applications installed successfully through OTA on
+  2026-08-02. P4 later received the IDF6 SDMMC-fix build
+  `RC2-3-g136aad7`; S3 received the exact clean RC2 IDF6 boot chain. The
+  focused migrated smoke is recorded in
+  `validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 
 Tasks:
 
-1. Smoke P4 UI/touch, media browsing/loading, dual-deck PLAY/CUE/scratch and
-   Master Tempo with MAIN and FLX4 USB headphone cue active.
+1. **Partially complete 2026-08-02:** UI/touch, paginated media browsing/load,
+   FLX4 input/LED, MAIN, headphone cue and real MP3 passed. Retain the long
+   dual-deck scratch/Master Tempo soak and real WAV/FLAC fixtures.
 2. Exercise FLANGER and DELAY on CH1, CH2 and `1&2`: selector directions,
    Level/Depth, beat sizes, ON/OFF/CLEAR, mode transitions and audible tails.
    Confirm Delay's one-shot/no-feedback behavior, 1000 ms cap/fallback and the
@@ -238,17 +247,20 @@ Acceptance:
 - the profile platform is demonstrated with at least one non-FLX4 device;
 - the deterministic dual-deck key-lock host soak remains green and the
   hardware run confirms acceptable P4 deadline margin and listening quality;
-- UI navigation and rendering changes pass the pinned screenshot gate, while
-  DSI/PPA motion, touch and panel timing remain hardware acceptance items;
+- UI navigation and rendering changes pass the pinned screenshot gate and the
+  migrated focused display/touch/PSRAM path is hardware-confirmed; repeat the
+  hardware gate after any DSI/PPA, framebuffer, panel-timing or major UI change;
 - remaining cosmetic work does not displace functional or safety gates.
 
 ## Resume Point
 
-Start the next hardware session by deploying one matching current candidate,
-then close the remaining **E1A — Current-Candidate Targeted Functional
-Acceptance** and E4 rows. E2 wiring/service readiness is already recorded
-complete; follow the targeted matrix with E3 closed-enclosure endurance only
-after every E1A deferral is explicit.
+Start the next hardware session by re-exporting supported WAV and FLAC fixtures
+through Rekordbox and verifying the physical `/Contents/...` files before the
+USB returns to P4. Then close sustained bounded-cache/BNA/counter checks and the
+remaining **E1A — Current-Candidate Targeted Functional Acceptance** and E4
+rows. E2 wiring/service readiness is already recorded complete; follow the
+targeted matrix with E3 closed-enclosure endurance only after every E1A
+deferral is explicit.
 
 Keep `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md`, `DOCUMENTATION_STATUS.md`
 and this plan synchronized as each acceptance gate closes.

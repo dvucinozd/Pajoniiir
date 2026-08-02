@@ -73,12 +73,14 @@ Responsibilities:
 
 Current P4 audio ownership rule:
 
-- each deck owns its own engine state, preload buffer, decode runtime, PCM ring,
+- each deck owns its own engine state, bounded-cache/source slot, decode runtime, PCM ring,
   resampler, lifecycle status, and last-error state;
 - compressed audio (MP3/WAV/FLAC) uses a bounded LRU page cache
   (`audio_compressed_cache`, 8 × 32 KiB per deck) instead of loading the entire
   file into contiguous PSRAM. A cache miss performs one gated `read_at` from
-  the source; FLAC uses `drflac_open` with seekable cache callbacks;
+  the source; FLAC uses `drflac_open` with seekable cache callbacks. The WAV
+  decoder currently accepts classic RIFF/WAVE linear PCM16, mono or stereo,
+  and rejects 24/32-bit PCM, IEEE float and `WAVE_FORMAT_EXTENSIBLE`;
 - one shared firmware output service owns codec open/close and consumes both
   deck PCM rings through the output mixer;
 - the LVGL task is pinned to CPU1, while the P4 audio loader, decode, and shared

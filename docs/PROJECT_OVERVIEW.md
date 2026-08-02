@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, reconciled 2026-07-30. The ESP-IDF 6.0.2
+Status: current product overview, reconciled 2026-08-02. The ESP-IDF 6.0.2
 migration is **merged into `master`**; the release prefix moved from `RC1` to
 **`RC2`** to mark the new build baseline, and the latest clean dual-target
 release build is `RC2` (`56905c89`, ESP-IDF 6.0.2). It carries the bounded
@@ -8,14 +8,17 @@ compressed audio cache, paginated Library UI, immutable track sort, recorder
 safety hardening and the full `fix/release-blockers-and-concurrency`
 stabilisation set.
 
-The last known bench state still has both boards matched at
-`RC1-254-g21f21963` — pre-migration firmware, where P4 pull OTA was proven end
-to end. The latest fully functionally accepted complete-system baseline remains
-`RC1-123-g587cd7a1`. RC2 has compiled cleanly but has **no** hardware
-acceptance. Targeted Phase 20/E1A, the ESP-IDF 6.0.2 hardware acceptance matrix,
-remote-profile-update, enclosure-endurance and production-hardening rows remain
-open. The inherited baseline below is historical context; `Current Port Status`
-describes the active system.
+The current bench runs the ESP-IDF v6.0.2 RC2 line: P4 is
+`RC2-3-g136aad7` on factory and S3 is exact `RC2` on valid `ota_0`. Both RC2
+applications were first installed successfully through OTA. Complete wired
+boot-chain flashes then passed, the P4 SDMMC ownership regression was fixed,
+and a focused smoke passed display/touch/Library, FLX4 MIDI/LED,
+PCM5102A MAIN, FLX4 CUE/MONITOR and real-MP3 playback. Real WAV/FLAC cache
+testing did not run because the audited Rekordbox USB contained stale catalog
+rows but no physical WAV/FLAC files. The latest fully functionally accepted
+complete-system baseline therefore remains `RC1-123-g587cd7a1`; targeted
+Phase 20/E1A, remaining IDF6 recovery/sustained-load rows, remote-profile
+update, enclosure endurance and production hardening remain open.
 
 ## Goal
 
@@ -263,8 +266,9 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
   component for FLX4 host modes. It uses the active-low XIAO onboard user LED
   for reduced USB/link/activity feedback; it does not encode playback state.
 - **WAV + FLAC playback** — implemented through the decoder-abstraction layer
-  and firmware preload path. MP3 keeps PVBR seek support; WAV/FLAC use decoder
-  metadata while Rekordbox/ANLZ still supplies beatgrid/BPM/waveform context.
+  and bounded firmware cache path. MP3 keeps PVBR seek support; WAV/FLAC use
+  decoder metadata while Rekordbox/ANLZ still supplies beatgrid/BPM/waveform
+  context. WAV is currently limited to classic RIFF/WAVE PCM16 mono/stereo.
 - **Wi-Fi web UI mobile controller** — implemented (ESP-Hosted SoftAP, Settings
   toggle, captive portal). Remaining web-UI scope (EQ/filter/hot-cue/beat-jump
   controls, waveform) is intentionally deferred — the web UI stays a simple

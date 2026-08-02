@@ -108,6 +108,11 @@ slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
 The latest clean-build evidence, including raw-image sizes and SHA-256 values,
 is recorded in
 [`validation/CLEAN_RELEASE_RC2_BUILD.md`](validation/CLEAN_RELEASE_RC2_BUILD.md).
+Both signed RC2 application packages were installed successfully through OTA
+on P4 and S3 on 2026-08-02 and both targets reported `RC2`. Complete ESP-IDF
+v6.0.2 boot chains were installed afterwards over the wired recovery ports,
+because application OTA does not replace bootloaders or partition tables. See
+[`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`](validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md).
 The superseded ESP-IDF 5.5.4 record is
 [`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
 

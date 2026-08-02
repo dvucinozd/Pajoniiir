@@ -24,7 +24,8 @@ the S3 runs the exact clean RC2 application.
   cache (8 × 32 KiB LRU po decku), paginirana Library tablica (8 redaka s
   PREV/NEXT), immutable track sort, recorder safety hardening i stabilizacijski
   popravci iz `fix/release-blockers-and-concurrency`. Hardverska prihvatljivost
-  je započela, ali 10 izvornih funkcionalnih redova ostaje otvoreno u
+  je u tijeku; nakon fokusiranog smokea šest recovery/sustained/OTA redova
+  ostaje otvoreno u
   `migration/ESP_IDF_6_0_2_MIGRATION.md`.
 - [x] P4 je 2026-08-02 puni žičani flashan kandidatom
   `RC2-3-g136aad7` na factory slotu. Boot log potvrđuje ESP-IDF v6.0.2
@@ -38,6 +39,11 @@ the S3 runs the exact clean RC2 application.
 - [x] P4 i S3 aplikacije zadnji su put bile potvrđene kao podudarni goli `RC2`
   neposredno nakon OTA instalacije 2026-08-02. P4 je zatim prešao na navedeni
   SDMMC-fix kandidat, pa trenutačno više nisu isti exact build.
+- [x] Fokusirani RC2/IDF6 funkcionalni smoke 2026-08-02: P4
+  display/touch/PSRAM-backed UI, Settings SD-online i paginirana Library;
+  FLX4 MIDI/LED; PCM5102A MAIN i FLX4 CUE/MONITOR; realni MP3 playback. WAV i
+  FLAC nisu pokrenuti jer fizički fixturei nedostaju na USB-u. Dokaz:
+  `validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -77,8 +83,11 @@ the S3 runs the exact clean RC2 application.
   with ESP-IDF v6.0.2 as the `RC2` clean release build, including bounded cache,
   paginated Library and recorder hardening. Repeat for the final enclosure
   candidate.
-- [ ] Hardware-validate bounded compressed cache under dual-deck load with real
-  MP3/WAV/FLAC files.
+- [ ] Hardware-validate bounded compressed cache under sustained dual-deck load
+  with real MP3/WAV/FLAC files. Focused real-MP3 playback passed 2026-08-02.
+  The attempted WAV entries were dead PDB rows: audit of USB `L:` found 68 MP3
+  files and zero physical WAV/FLAC files, so re-export and verify the fixtures
+  before repeating this gate.
 - [x] Host-validate compressed-cache LRU ordering across the historical
   `UINT32_MAX` timestamp boundary (68 checks; P4 host suite and ESP-IDF v6.0.2
   build pass).
@@ -89,7 +98,8 @@ the S3 runs the exact clean RC2 application.
   in both target artifacts.
 - [ ] Select and pin an SPDX/CycloneDX generator, then publish a formal SBOM for
   ESP-IDF, managed components and project sources.
-- [ ] Hardware-validate paginated Library table on the P4 touch display.
+- [x] Hardware-validate paginated Library table on the P4 touch display —
+  operator-confirmed in the 2026-08-02 focused RC2/IDF6 smoke.
 - [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
@@ -575,8 +585,9 @@ Runtime S3 Wi-Fi debug AP on `master`. Hardware smoke passed on 2026-07-08
   (`s3_debug_ap: S3 debug AP active` on the S3 console).
 - [x] Connect a phone to `Pajoniiir-S3-DEBUG`, open `http://192.168.4.1`; page
   loads and **live logs stream** over SSE without disconnecting.
-- [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while ON — not retested
-  this session (FLX4 was unplugged; re-verify when the controller is attached).
+- [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while this S3 debug AP is
+  ON. The base MIDI/headphone path passed the focused migrated RC2 smoke on
+  2026-08-02, but AP-ON coexistence was not separately re-tested.
 - [ ] Reboot P4 with the AP left ON; confirm P4 sends OFF at boot (boot-time OFF
   frame is wired but not separately observed this session).
 
