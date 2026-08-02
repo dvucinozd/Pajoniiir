@@ -72,4 +72,3 @@ was not retained because the port disconnects when USB host mode starts.
 - **Pending:** FLX4 enumeration, MIDI IN/OUT and UAC headphone-output smoke on
   the newly wired-flashed S3.
 - **Pending:** the remaining ESP-IDF 6.0.2 hardware acceptance matrix.
-
