@@ -1,6 +1,7 @@
 #include "bsp_jc4880.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_idf_version.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
@@ -65,6 +66,19 @@ static const char *TAG = "bsp";
 // with a short settle delay so /sd comes up reliably at boot.
 #define BSP_SD_MOUNT_ATTEMPTS       3
 #define BSP_SD_MOUNT_RETRY_DELAY_MS 150
+
+#if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+/* ESP-Hosted's IDF 6 constructor owns the one physical SDMMC controller and
+ * registers SDIO slot 1 before app_main(). The microSD card shares that
+ * controller on slot 0, so a second sdmmc_host_init() must be skipped. Keep the
+ * default slot-aware deinit_p callback: it removes only slot 0 after a failed
+ * mount or unmount while the Hosted slot keeps the controller alive. */
+static esp_err_t bsp_sdmmc_host_already_initialized(void)
+{
+    return ESP_OK;
+}
+#endif
 
 // ── MIPI DSI PHY power (ESP32-P4 internal LDO VO3 → VDD_MIPI_DPHY 2.5 V) ──────
 #define BSP_MIPI_LDO_CHAN       3
@@ -572,6 +586,10 @@ esp_err_t bsp_sd_init(void)
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     host.slot = SDMMC_HOST_SLOT_0;          // JC4880 SD pins GPIO39-44 are wired to P4 SDMMC slot 0
     host.max_freq_khz = SDMMC_FREQ_DEFAULT;   // conservative 20 MHz bring-up speed
+#if defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) && \
+    ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+    host.init = bsp_sdmmc_host_already_initialized;
+#endif
     if (!s_sd_pwr) {
         sd_pwr_ctrl_ldo_config_t ldo_config = {
             .ldo_chan_id = BSP_SD_LDO_CHAN,
