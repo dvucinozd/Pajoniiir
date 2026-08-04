@@ -22,7 +22,10 @@ typedef struct {
 typedef struct {
     uint32_t midi_messages;
     uint32_t semantic_events;
-    uint32_t unmapped_messages;
+    union {
+        uint32_t non_emitting_messages;
+        uint32_t unmapped_messages; /* Transitional source compatibility. */
+    };
     uint32_t reconnect_snapshots;
     bool connected;
 } controller_runtime_diagnostics_t;

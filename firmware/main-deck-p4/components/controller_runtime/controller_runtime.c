@@ -1,15 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "controller_runtime.h"
 
-#include <string.h>
-
 static controller_runtime_config_t s_config;
 static flx4_map_state_t s_map;
 static bool s_initialized;
 static bool s_connected;
 static uint32_t s_midi_messages;
 static uint32_t s_semantic_events;
-static uint32_t s_unmapped_messages;
+static uint32_t s_non_emitting_messages;
 static uint32_t s_reconnect_snapshots;
 
 static bool emit_snapshot_event(uint8_t type, uint8_t id, int16_t value,
@@ -39,7 +37,7 @@ esp_err_t controller_runtime_init(const controller_runtime_config_t *config)
     s_connected = false;
     s_midi_messages = 0u;
     s_semantic_events = 0u;
-    s_unmapped_messages = 0u;
+    s_non_emitting_messages = 0u;
     s_reconnect_snapshots = 0u;
     s_initialized = true;
     return ESP_OK;
@@ -54,7 +52,7 @@ bool controller_runtime_handle_midi(const usb_midi_message_t *message)
 
     flx4_control_event_t event;
     if (!flx4_map_message(&s_map, message, &event)) {
-        (void)__atomic_add_fetch(&s_unmapped_messages, 1u,
+        (void)__atomic_add_fetch(&s_non_emitting_messages, 1u,
                                  __ATOMIC_RELAXED);
         return false;
     }
@@ -100,8 +98,8 @@ void controller_runtime_get_diagnostics(
             __atomic_load_n(&s_midi_messages, __ATOMIC_ACQUIRE),
         .semantic_events =
             __atomic_load_n(&s_semantic_events, __ATOMIC_ACQUIRE),
-        .unmapped_messages =
-            __atomic_load_n(&s_unmapped_messages, __ATOMIC_ACQUIRE),
+        .non_emitting_messages =
+            __atomic_load_n(&s_non_emitting_messages, __ATOMIC_ACQUIRE),
         .reconnect_snapshots =
             __atomic_load_n(&s_reconnect_snapshots, __ATOMIC_ACQUIRE),
         .connected = __atomic_load_n(&s_connected, __ATOMIC_ACQUIRE),

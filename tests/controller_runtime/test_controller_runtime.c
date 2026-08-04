@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "controller_runtime.h"
 #include "control_link.h"
@@ -74,16 +73,25 @@ int main(void)
     CHECK(s_events[s_event_count - 1u].id == CTRL_ID_DECK1_TEMPO);
     CHECK(s_events[s_event_count - 1u].value == ((0x12 << 7) | 0x34));
 
+    message = midi(0xB0, 0x13, 0x22);
+    CHECK(!controller_runtime_handle_midi(&message));
+    message = midi(0xB0, 0x33, 0x11);
+    CHECK(controller_runtime_handle_midi(&message));
+    CHECK(s_events[s_event_count - 1u].id == CTRL_ID_CH1_VOLUME);
+    CHECK(s_events[s_event_count - 1u].value == ((0x22 << 7) | 0x11));
+
     const size_t before_snapshot = s_event_count;
     controller_runtime_set_connected(true);
-    CHECK(s_event_count > before_snapshot);
+    CHECK(s_event_count == before_snapshot + 1u);
+    CHECK(s_events[s_event_count - 1u].id == CTRL_ID_CH1_VOLUME);
+    CHECK(s_events[s_event_count - 1u].value == ((0x22 << 7) | 0x11));
 
     controller_runtime_diagnostics_t diagnostics;
     controller_runtime_get_diagnostics(&diagnostics);
     CHECK(diagnostics.connected);
-    CHECK(diagnostics.midi_messages == 5u);
+    CHECK(diagnostics.midi_messages == 7u);
     CHECK(diagnostics.semantic_events == s_event_count);
-    CHECK(diagnostics.unmapped_messages == 1u);
+    CHECK(diagnostics.non_emitting_messages == 2u);
     CHECK(diagnostics.reconnect_snapshots == 1u);
 
     controller_runtime_set_connected(false);
@@ -93,7 +101,7 @@ int main(void)
     message = midi(0xF0, 0x00, 0x00);
     CHECK(!controller_runtime_handle_midi(&message));
     controller_runtime_get_diagnostics(&diagnostics);
-    CHECK(diagnostics.unmapped_messages == 2u);
+    CHECK(diagnostics.non_emitting_messages == 3u);
 
     printf("PASS P4 local FLX4 controller runtime\n");
     printf("CHECKS=%u EVENTS=%zu\n", s_checks, s_event_count);
