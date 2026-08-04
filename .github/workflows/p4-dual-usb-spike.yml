@@ -8,6 +8,11 @@ on:
       - "firmware/p4-dual-usb-spike/**"
       - "tests/p4_dual_usb_spike/**"
       - ".github/workflows/p4-dual-usb-spike.yml"
+  pull_request:
+    paths:
+      - "firmware/p4-dual-usb-spike/**"
+      - "tests/p4_dual_usb_spike/**"
+      - ".github/workflows/p4-dual-usb-spike.yml"
   workflow_dispatch:
 
 permissions:
