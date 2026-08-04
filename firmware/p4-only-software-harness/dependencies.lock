@@ -1,37 +1,21 @@
 dependencies:
-  espressif/usb:
-    component_hash: 6c2cff118141dbbca181d0d27d71801fdddfc78f7ac03ae43f6e5a8cbd89cb99
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.5.3'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    targets:
-    - esp32s2
-    - esp32s3
-    - esp32s31
-    - esp32p4
-    - esp32h4
-    - linux
-    version: 1.5.0
   espressif/usb_host_msc:
-    component_hash: a7330d2bc4f81c21fd335df073405085bbad5cdf084a1be79fb52383d0d0d6fd
+    component_hash: 77da0bd49685353d8de7e0515acf0f4aa2b827d526f8ffae27b3644c3d0da4d0
     dependencies:
     - name: idf
-      require: private
       version: '>=5.0'
-    - name: espressif/usb
-      registry_url: https://components.espressif.com
-      require: public
+    - git: https://github.com/dvucinozd/esp-usb.git
+      name: usb
+      path: host/usb
+      public: true
       rules:
       - if: idf_version >=6.0
       - if: target not in ["linux"]
-      version: ^1.0.0
+      version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/class/msc/usb_host_msc
+      type: git
     targets:
     - esp32s2
     - esp32s3
@@ -39,15 +23,32 @@ dependencies:
     - esp32h4
     - esp32s31
     - linux
-    version: 1.2.0
+    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
   idf:
     source:
       type: idf
     version: 6.0.2
+  usb:
+    component_hash: b28e8746970cfd0f6a96b9fdfcbb1f98793b6fdd60e855294eb79a33cd1a2073
+    dependencies:
+    - name: idf
+      version: '>=5.5.3'
+    source:
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/usb
+      type: git
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
 direct_dependencies:
-- espressif/usb
 - espressif/usb_host_msc
 - idf
-manifest_hash: d4d03ca52379ae78f721abca6ba3040822ae9115f436552370bfb8238377a3a5
+- usb
+manifest_hash: a1c85523a321aa5df0568bdacad5b7960f41385b531f5b1cf903d72cad5649b8
 target: esp32p4
 version: 3.0.0
