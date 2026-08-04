@@ -69,14 +69,18 @@ jobs:
           fi
           exit $code
 
-      - name: Verify USB dependency resolution
+      - name: Verify committed dependency lock and versions
         run: |
           lock=firmware/p4-dual-usb-spike/dependencies.lock
           test -f "$lock"
+          if ! git diff --exit-code -- "$lock"; then
+            echo "::error::dependencies.lock changed during the clean build"
+            exit 1
+          fi
           grep -A20 '^  espressif/usb:$' "$lock" | grep -q '^    version: 1.5.0$'
           grep -A24 '^  espressif/usb_host_msc:$' "$lock" | grep -q '^    version: 1.2.0$'
           grep -A6 '^  idf:$' "$lock" | grep -q '^    version: 6.0.2$'
-          echo "Resolved ESP-IDF 6.0.2, espressif/usb 1.5.0 and usb_host_msc 1.2.0."
+          echo "Committed lock is stable: ESP-IDF 6.0.2, espressif/usb 1.5.0, usb_host_msc 1.2.0."
 
       - name: Verify DWC BNA recovery wrapper is linked
         run: |
