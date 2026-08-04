@@ -4,6 +4,7 @@
 #include "control_link.h"
 #include "control_state_reconciler.h"
 #include "controller_event_buffer.h"
+#include "controller_profile_runtime.h"
 
 static controller_runtime_config_t s_config;
 static flx4_map_state_t s_map;
@@ -92,7 +93,12 @@ static void prepare_snapshot_if_possible_locked(void)
     }
 
     size_t accepted = 0u;
-    (void)flx4_map_emit_snapshot(&s_map, queue_snapshot_event, &accepted);
+    if (controller_profile_runtime_active()) {
+        (void)controller_profile_runtime_emit_snapshot(queue_snapshot_event,
+                                                       &accepted);
+    } else {
+        (void)flx4_map_emit_snapshot(&s_map, queue_snapshot_event, &accepted);
+    }
     const size_t held = held_observed_count_locked();
     s_snapshot_pending = false;
     if (accepted > 0u || held > 0u) {
@@ -110,6 +116,7 @@ esp_err_t controller_runtime_init(const controller_runtime_config_t *config)
     runtime_lock();
     s_config = *config;
     flx4_map_init(&s_map);
+    controller_profile_runtime_init();
     controller_event_buffer_init(&s_buffer);
     control_held_state_reset(&s_held_states);
     s_connected = false;
@@ -121,7 +128,7 @@ esp_err_t controller_runtime_init(const controller_runtime_config_t *config)
     s_reconnect_snapshots = 0u;
     s_held_reconciliations = 0u;
     s_dispatch_calls = 0u;
-    s_initialized = true;
+    __atomic_store_n(&s_initialized, true, __ATOMIC_RELEASE);
     runtime_unlock();
     return ESP_OK;
 }
@@ -135,7 +142,18 @@ bool controller_runtime_handle_midi(const usb_midi_message_t *message)
 
     runtime_lock();
     flx4_control_event_t event;
-    if (!flx4_map_message(&s_map, message, &event)) {
+    bool mapped;
+    if (controller_profile_runtime_active()) {
+        mapped = controller_profile_runtime_map(message->status,
+                                                message->data1,
+                                                message->data2,
+                                                &event.type,
+                                                &event.id,
+                                                &event.value);
+    } else {
+        mapped = flx4_map_message(&s_map, message, &event);
+    }
+    if (!mapped) {
         runtime_unlock();
         (void)__atomic_add_fetch(&s_non_emitting_messages, 1u,
                                  __ATOMIC_RELAXED);
@@ -314,5 +332,6 @@ void controller_runtime_get_diagnostics(
         .queued_events = queued,
         .connected = connected,
         .snapshot_pending = snapshot_pending,
+        .dynamic_profile_active = controller_profile_runtime_active(),
     };
 }

@@ -12,12 +12,16 @@ It proves at build time that:
 - raw USB-MIDI messages feed the same mature FLX4 semantic mapping currently
   used by the S3;
 - a separate dispatch task drains a bounded 64-entry semantic-event buffer;
-- discrete commands remain FIFO while high-rate absolute controls coalesce to
-  their newest value only under pressure;
+- discrete commands remain FIFO while high-rate controls coalesce only under
+  pressure;
 - relative jog deltas accumulate with saturation;
 - durable held-state levels survive queue pressure and generate forced release
   events on controller disconnect;
-- reconnect snapshots are generated locally on the P4 side.
+- compiled S3CP v2 controller profiles can be parsed and activated locally;
+- an active profile owns input mapping and reconnect replay completely, while
+  the built-in FLX4 map remains the fallback only when no profile is active;
+- dynamic profile LED mappings produce the same four-byte USB-MIDI packets as
+  the existing S3 runtime.
 
 ```bash
 cd firmware/p4-only-software-harness
@@ -26,10 +30,10 @@ idf.py build
 ```
 
 The harness intentionally does not mount the Rekordbox filesystem, dispatch
-semantic events into `deck_core`, control LEDs or stream USB Audio. Those paths
-remain gated by physical regression tests.
+semantic events into `deck_core`, control physical LEDs or stream USB Audio.
+Those paths remain gated by physical regression tests.
 
 For direct-root devices, `usb_device_info_t.parent.port_num` identifies the root
-port index when `parent.dev_hdl == NULL`. The remaining library gap is selective
-per-port power/recovery: the current public power API affects all enabled root
-ports.
+port index when `parent.dev_hdl == NULL`. Selective per-port power/recovery is
+implemented separately in the `dvucinozd/esp-usb` migration branch and remains
+subject to its own CI and later hardware validation.

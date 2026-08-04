@@ -7,6 +7,8 @@ on:
       - "firmware/p4-only-software-harness/**"
       - "firmware/main-deck-p4/components/usb_host_manager/**"
       - "firmware/main-deck-p4/components/controller_usb_host/**"
+      - "firmware/main-deck-p4/components/controller_profile/**"
+      - "firmware/main-deck-p4/components/controller_profile_runtime/**"
       - "firmware/main-deck-p4/components/controller_runtime/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
@@ -55,16 +57,27 @@ jobs:
           count=$(grep -R --include='*.c' -n 'usb_host_install(' \
             firmware/main-deck-p4/components/usb_host_manager \
             firmware/main-deck-p4/components/controller_usb_host \
+            firmware/main-deck-p4/components/controller_profile \
+            firmware/main-deck-p4/components/controller_profile_runtime \
             firmware/main-deck-p4/components/controller_runtime \
             firmware/p4-only-software-harness | wc -l)
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."
 
-      - name: Verify P4 map source is byte-identical to S3 reference
+      - name: Verify P4 portable sources match S3 references
         run: |
           cmp \
             firmware/control-board-s3/components/flx4_midi_host/flx4_map.c \
             firmware/main-deck-p4/components/controller_runtime/flx4_map.c
+          cmp \
+            firmware/control-board-s3/components/controller_profile/controller_profile.c \
+            firmware/main-deck-p4/components/controller_profile/controller_profile.c
+          cmp \
+            firmware/control-board-s3/components/controller_profile/include/controller_profile.h \
+            firmware/main-deck-p4/components/controller_profile/include/controller_profile.h
+          cmp \
+            firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c \
+            firmware/main-deck-p4/components/controller_profile_runtime/controller_profile_runtime.c
 
       - name: Build isolated spike and reusable integration harness
         run: |

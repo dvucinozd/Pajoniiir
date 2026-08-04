@@ -36,6 +36,7 @@ typedef struct {
     size_t queued_events;
     bool connected;
     bool snapshot_pending;
+    bool dynamic_profile_active;
 } controller_runtime_diagnostics_t;
 
 esp_err_t controller_runtime_init(const controller_runtime_config_t *config);
