@@ -1,0 +1,8 @@
+## Isolated Phase 1 dual-host proof for ESP32-P4.
+dependencies:
+  espressif/usb:
+    version: "==1.5.0"
+  espressif/usb_host_msc:
+    version: "==1.2.0"
+  idf:
+    version: "==6.0.2"
