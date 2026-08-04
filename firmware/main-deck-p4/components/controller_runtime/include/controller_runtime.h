@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "flx4_map.h"
@@ -21,19 +22,28 @@ typedef struct {
 
 typedef struct {
     uint32_t midi_messages;
+    uint32_t mapped_messages;
     uint32_t semantic_events;
     union {
         uint32_t non_emitting_messages;
         uint32_t unmapped_messages; /* Transitional source compatibility. */
     };
     uint32_t reconnect_snapshots;
+    uint32_t held_reconciliations;
+    uint32_t dispatch_calls;
+    uint32_t queue_coalesced;
+    uint32_t queue_dropped;
+    size_t queued_events;
     bool connected;
+    bool snapshot_pending;
 } controller_runtime_diagnostics_t;
 
 esp_err_t controller_runtime_init(const controller_runtime_config_t *config);
 bool controller_runtime_handle_midi(const usb_midi_message_t *message);
 void controller_runtime_set_connected(bool connected);
+size_t controller_runtime_dispatch_pending(size_t max_events);
 size_t controller_runtime_emit_snapshot(void);
+size_t controller_runtime_pending_count(void);
 void controller_runtime_get_diagnostics(
     controller_runtime_diagnostics_t *diag_out);
 

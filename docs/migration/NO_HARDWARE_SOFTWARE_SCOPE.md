@@ -9,9 +9,12 @@ Completed without physical hardware:
 - reusable `controller_usb_host` with descriptor-safe MIDI IN and bounded
   MIDI OUT;
 - P4-local `controller_runtime` using the existing validated FLX4 semantic map;
-- ESP32-P4-only integration harness combining host manager, MSC, MIDI and local
-  semantic translation;
-- portable USB-MIDI codec and controller-runtime tests;
+- bounded semantic-event buffering with FIFO discrete commands, pressure-only
+  newest-value coalescing and saturating relative-jog accumulation;
+- durable held-state reconciliation and disconnect release behavior;
+- ESP32-P4-only integration harness combining host manager, MSC, MIDI, local
+  semantic translation and a separate dispatch task;
+- portable USB-MIDI codec, event-buffer and controller-runtime tests;
 - locked ESP-IDF and USB component versions;
 - serial-log acceptance validator with automated tests;
 - deterministic physical-test runbook.
@@ -38,5 +41,5 @@ root port index. External hubs remain out of scope.
 
 The remaining public API gap in `espressif/usb` 1.5.0 is selective per-port
 power/recovery. `usb_host_lib_set_root_port_power()` controls all enabled root
-ports. A narrowly scoped additive API in `dvucinozd/esp-usb` is required before
-independent USB0/USB1 recovery can be accepted.
+ports. A narrowly scoped additive API is being prepared in
+`dvucinozd/esp-usb` before independent USB0/USB1 recovery can be accepted.

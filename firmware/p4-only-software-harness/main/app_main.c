@@ -73,16 +73,37 @@ static void connection_callback(bool connected,
              identity->parent_port, identity->direct_root_child ? 1u : 0u);
 }
 
+static void controller_dispatch_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        const size_t dispatched = controller_runtime_dispatch_pending(32u);
+        if (dispatched == 0u) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+        } else {
+            taskYIELD();
+        }
+    }
+}
+
 void app_main(void)
 {
     ESP_LOGW(TAG,
-             "P4-only software harness: shared host + MSC + MIDI + local map");
+             "P4-only software harness: shared host + MSC + MIDI + bounded local map");
 
     const controller_runtime_config_t runtime_config = {
         .event_cb = semantic_event_callback,
         .callback_ctx = NULL,
     };
     ESP_ERROR_CHECK(controller_runtime_init(&runtime_config));
+    ESP_ERROR_CHECK(xTaskCreate(controller_dispatch_task,
+                                "ctrl_dispatch",
+                                4096u,
+                                NULL,
+                                4u,
+                                NULL) == pdPASS
+                        ? ESP_OK
+                        : ESP_ERR_NO_MEM);
 
     const usb_host_manager_config_t host_config = {
         .peripheral_map = USB_HOST_MANAGER_PERIPHERAL_MAP_DUAL,
@@ -139,7 +160,9 @@ void app_main(void)
                  " disc=%" PRIu32 " packets=%" PRIu32
                  " in_fail=%" PRIu32 " out_fail=%" PRIu32
                  " queue_drop=%" PRIu32 ") MAP(events=%" PRIu32
-                 " unmapped=%" PRIu32 " snapshots=%" PRIu32 ")",
+                 " non_emit=%" PRIu32 " snapshots=%" PRIu32
+                 " held=%" PRIu32 " queued=%u coalesced=%" PRIu32
+                 " dropped=%" PRIu32 ")",
                  host_diag.ready ? 1u : 0u,
                  host_diag.peripheral_map,
                  host_diag.daemon_errors,
@@ -155,8 +178,12 @@ void app_main(void)
                  controller_diag.midi_out_submit_failures,
                  controller_diag.midi_out_queue_drops,
                  runtime_diag.semantic_events,
-                 runtime_diag.unmapped_messages,
-                 runtime_diag.reconnect_snapshots);
+                 runtime_diag.non_emitting_messages,
+                 runtime_diag.reconnect_snapshots,
+                 runtime_diag.held_reconciliations,
+                 (unsigned)runtime_diag.queued_events,
+                 runtime_diag.queue_coalesced,
+                 runtime_diag.queue_dropped);
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
