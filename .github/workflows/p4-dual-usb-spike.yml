@@ -10,10 +10,12 @@ on:
       - "firmware/main-deck-p4/components/controller_profile/**"
       - "firmware/main-deck-p4/components/controller_profile_runtime/**"
       - "firmware/main-deck-p4/components/controller_runtime/**"
+      - "firmware/main-deck-p4/components/controller_led_runtime/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
       - "tests/controller_usb_host/**"
       - "tests/controller_runtime/**"
+      - "tests/controller_led_runtime/**"
       - "tools/validate_p4_dual_usb_log.py"
       - ".github/workflows/p4-dual-usb-spike.yml"
   workflow_dispatch:
@@ -48,6 +50,10 @@ jobs:
         shell: pwsh
         run: ./tests/controller_runtime/run_tests.ps1
 
+      - name: Run P4-local LED runtime tests
+        shell: pwsh
+        run: ./tests/controller_led_runtime/run_tests.ps1
+
       - name: Run hardware-log validator tests
         shell: pwsh
         run: ./tests/p4_dual_usb_log_validator/run_tests.ps1
@@ -60,6 +66,7 @@ jobs:
             firmware/main-deck-p4/components/controller_profile \
             firmware/main-deck-p4/components/controller_profile_runtime \
             firmware/main-deck-p4/components/controller_runtime \
+            firmware/main-deck-p4/components/controller_led_runtime \
             firmware/p4-only-software-harness | wc -l)
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."
@@ -78,6 +85,12 @@ jobs:
           cmp \
             firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c \
             firmware/main-deck-p4/components/controller_profile_runtime/controller_profile_runtime.c
+          cmp \
+            firmware/control-board-s3/components/control_link/flx4_led_midi.c \
+            firmware/main-deck-p4/components/controller_led_runtime/flx4_led_midi.c
+          cmp \
+            firmware/control-board-s3/components/control_link/include/flx4_led_midi.h \
+            firmware/main-deck-p4/components/controller_led_runtime/include/flx4_led_midi.h
 
       - name: Build isolated spike and reusable integration harness
         run: |

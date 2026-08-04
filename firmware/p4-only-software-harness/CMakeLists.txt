@@ -6,6 +6,7 @@ set(EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/controller_profile"
     "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/controller_profile_runtime"
     "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/controller_runtime"
+    "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/controller_led_runtime"
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"
 )
 
