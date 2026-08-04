@@ -1,13 +1,6 @@
 name: P4 dual USB host spike
 
 on:
-  push:
-    branches:
-      - feat/p4-dual-usb-host
-    paths:
-      - "firmware/p4-dual-usb-spike/**"
-      - "tests/p4_dual_usb_spike/**"
-      - ".github/workflows/p4-dual-usb-spike.yml"
   pull_request:
     paths:
       - "firmware/p4-dual-usb-spike/**"
