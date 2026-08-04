@@ -1,7 +1,7 @@
 dependencies:
   idf:
     version: "==6.0.2"
-  espressif/usb:
+  usb:
     git: https://github.com/dvucinozd/esp-usb.git
     path: host/usb
     version: "3b6ce7111cb71f4e7ecd11393eb4363b96dccf53"
