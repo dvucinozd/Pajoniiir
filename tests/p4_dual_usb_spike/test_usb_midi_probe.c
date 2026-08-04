@@ -84,7 +84,7 @@ static void test_descriptor_rejection(void)
 
     uint8_t no_out[sizeof(s_valid_bulk_config)];
     memcpy(no_out, s_valid_bulk_config, sizeof(no_out));
-    no_out[34] = 0x83u;
+    no_out[36] = 0x83u;
     CHECK(!usb_midi_find_streaming_endpoints(no_out,
                                              sizeof(no_out),
                                              &endpoints));
