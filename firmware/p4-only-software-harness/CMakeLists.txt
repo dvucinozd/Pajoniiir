@@ -1,0 +1,9 @@
+cmake_minimum_required(VERSION 3.16)
+
+set(EXTRA_COMPONENT_DIRS
+    "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/usb_host_manager"
+    "${CMAKE_CURRENT_LIST_DIR}/../main-deck-p4/components/controller_usb_host"
+)
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(p4-only-software-harness)
