@@ -121,7 +121,7 @@ jobs:
             firmware/p4-dual-usb-spike/build \
             firmware/p4-only-software-harness/build
 
-      - name: Verify committed dependency locks and versions
+      - name: Verify committed dependency locks and sources
         run: |
           for project in \
             firmware/p4-dual-usb-spike \
@@ -130,10 +130,64 @@ jobs:
             lock="$project/dependencies.lock"
             test -f "$lock"
             git diff --exit-code -- "$lock"
-            grep -A20 '^  espressif/usb:$' "$lock" | grep -q '^    version: 1.5.0$'
-            grep -A24 '^  espressif/usb_host_msc:$' "$lock" | grep -q '^    version: 1.2.0$'
-            grep -A6 '^  idf:$' "$lock" | grep -q '^    version: 6.0.2$'
           done
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          expected_sha = "3b6ce7111cb71f4e7ecd11393eb4363b96dccf53"
+          expected_git = "https://github.com/dvucinozd/esp-usb.git"
+          lock_paths = (
+              Path("firmware/p4-dual-usb-spike/dependencies.lock"),
+              Path("firmware/p4-only-software-harness/dependencies.lock"),
+          )
+
+          def dependency_section(text: str, key: str) -> str:
+              lines = text.splitlines()
+              marker = f"  {key}:"
+              try:
+                  start = lines.index(marker)
+              except ValueError as exc:
+                  raise SystemExit(f"missing dependency section {key!r}") from exc
+              end = len(lines)
+              for index in range(start + 1, len(lines)):
+                  line = lines[index]
+                  if line and not line.startswith("    "):
+                      end = index
+                      break
+              return "\n".join(lines[start:end])
+
+          def require_line(block: str, line: str, lock_path: Path) -> None:
+              if line not in block.splitlines():
+                  raise SystemExit(f"{lock_path}: missing {line!r}")
+
+          for lock_path in lock_paths:
+              text = lock_path.read_text(encoding="utf-8")
+              usb = dependency_section(text, "usb")
+              msc = dependency_section(text, "espressif/usb_host_msc")
+              idf = dependency_section(text, "idf")
+
+              require_line(usb, f"      git: {expected_git}", lock_path)
+              require_line(usb, "      path: host/usb", lock_path)
+              require_line(usb, "      type: git", lock_path)
+              require_line(usb, f"    version: {expected_sha}", lock_path)
+
+              require_line(msc, f"      git: {expected_git}", lock_path)
+              require_line(msc, "      path: host/class/msc/usb_host_msc", lock_path)
+              require_line(msc, "      type: git", lock_path)
+              require_line(msc, f"    version: {expected_sha}", lock_path)
+
+              require_line(idf, "    version: 6.0.2", lock_path)
+
+              direct = text.split("direct_dependencies:\n", 1)[1].split("manifest_hash:", 1)[0]
+              direct_lines = set(direct.splitlines())
+              if "- usb" not in direct_lines:
+                  raise SystemExit(f"{lock_path}: usb is not a direct dependency")
+              if "- espressif/usb_host_msc" not in direct_lines:
+                  raise SystemExit(f"{lock_path}: usb_host_msc is not a direct dependency")
+              if "- espressif/usb" in direct_lines:
+                  raise SystemExit(f"{lock_path}: stale registry usb dependency remains")
+          PY
 
       - name: Verify spike DWC BNA recovery wrapper is linked
         run: |
