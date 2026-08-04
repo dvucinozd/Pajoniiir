@@ -33,6 +33,7 @@ typedef struct {
     uint32_t daemon_errors;
     uint32_t no_clients_events;
     uint32_t all_free_events;
+    uint32_t root_power_requested_mask;
     unsigned peripheral_map;
     bool ready;
     bool root_power_requested;
@@ -41,6 +42,8 @@ typedef struct {
 esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config);
 bool usb_host_manager_is_ready(void);
 esp_err_t usb_host_manager_set_all_root_power(bool enable);
+esp_err_t usb_host_manager_set_root_power_by_index(uint8_t root_port_index,
+                                                   bool enable);
 esp_err_t usb_host_manager_get_library_info(usb_host_lib_info_t *info_out);
 void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out);
 

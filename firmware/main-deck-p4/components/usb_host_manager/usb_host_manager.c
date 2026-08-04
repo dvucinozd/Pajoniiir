@@ -22,7 +22,7 @@ static uint32_t s_daemon_iterations;
 static uint32_t s_daemon_errors;
 static uint32_t s_no_clients_events;
 static uint32_t s_all_free_events;
-static bool s_root_power_requested;
+static uint32_t s_root_power_requested_mask;
 static manager_state_t s_state = MANAGER_STOPPED;
 
 static inline manager_state_t state_get(void)
@@ -110,7 +110,10 @@ esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config)
 
     s_config = *config;
     s_install_result = ESP_ERR_INVALID_STATE;
-    s_root_power_requested = !config->root_port_unpowered;
+    __atomic_store_n(&s_root_power_requested_mask,
+                     config->root_port_unpowered ? 0u
+                                                 : config->peripheral_map,
+                     __ATOMIC_RELEASE);
     const TaskHandle_t starter = xTaskGetCurrentTaskHandle();
 
     BaseType_t created;
@@ -150,7 +153,38 @@ esp_err_t usb_host_manager_set_all_root_power(bool enable)
     }
     const esp_err_t rc = usb_host_lib_set_root_port_power(enable);
     if (rc == ESP_OK || rc == ESP_ERR_INVALID_STATE) {
-        __atomic_store_n(&s_root_power_requested, enable, __ATOMIC_RELEASE);
+        __atomic_store_n(&s_root_power_requested_mask,
+                         enable ? s_config.peripheral_map : 0u,
+                         __ATOMIC_RELEASE);
+    }
+    return rc;
+}
+
+esp_err_t usb_host_manager_set_root_power_by_index(uint8_t root_port_index,
+                                                   bool enable)
+{
+    if (!usb_host_manager_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (root_port_index >= 32u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint32_t bit = 1u << root_port_index;
+    if ((s_config.peripheral_map & bit) == 0u) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    const esp_err_t rc = usb_host_lib_set_root_port_power_by_index(
+        root_port_index, enable);
+    if (rc == ESP_OK) {
+        if (enable) {
+            (void)__atomic_fetch_or(&s_root_power_requested_mask, bit,
+                                    __ATOMIC_ACQ_REL);
+        } else {
+            (void)__atomic_fetch_and(&s_root_power_requested_mask, ~bit,
+                                     __ATOMIC_ACQ_REL);
+        }
     }
     return rc;
 }
@@ -172,6 +206,8 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
     if (!diag_out) {
         return;
     }
+    const uint32_t requested_mask =
+        __atomic_load_n(&s_root_power_requested_mask, __ATOMIC_ACQUIRE);
     *diag_out = (usb_host_manager_diagnostics_t) {
         .install_result = s_install_result,
         .daemon_iterations =
@@ -182,9 +218,12 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
             __atomic_load_n(&s_no_clients_events, __ATOMIC_ACQUIRE),
         .all_free_events =
             __atomic_load_n(&s_all_free_events, __ATOMIC_ACQUIRE),
+        .root_power_requested_mask = requested_mask,
         .peripheral_map = s_config.peripheral_map,
         .ready = usb_host_manager_is_ready(),
         .root_power_requested =
-            __atomic_load_n(&s_root_power_requested, __ATOMIC_ACQUIRE),
+            s_config.peripheral_map != 0u &&
+            (requested_mask & s_config.peripheral_map) ==
+                s_config.peripheral_map,
     };
 }
