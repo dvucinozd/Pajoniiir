@@ -7,9 +7,11 @@ on:
       - "firmware/p4-only-software-harness/**"
       - "firmware/main-deck-p4/components/usb_host_manager/**"
       - "firmware/main-deck-p4/components/controller_usb_host/**"
+      - "firmware/main-deck-p4/components/controller_runtime/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
       - "tests/controller_usb_host/**"
+      - "tests/controller_runtime/**"
       - "tools/validate_p4_dual_usb_log.py"
       - ".github/workflows/p4-dual-usb-spike.yml"
   workflow_dispatch:
@@ -40,6 +42,10 @@ jobs:
         shell: pwsh
         run: ./tests/controller_usb_host/run_tests.ps1
 
+      - name: Run P4-local controller runtime tests
+        shell: pwsh
+        run: ./tests/controller_runtime/run_tests.ps1
+
       - name: Run hardware-log validator tests
         shell: pwsh
         run: ./tests/p4_dual_usb_log_validator/run_tests.ps1
@@ -49,9 +55,16 @@ jobs:
           count=$(grep -R --include='*.c' -n 'usb_host_install(' \
             firmware/main-deck-p4/components/usb_host_manager \
             firmware/main-deck-p4/components/controller_usb_host \
+            firmware/main-deck-p4/components/controller_runtime \
             firmware/p4-only-software-harness | wc -l)
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."
+
+      - name: Verify P4 map source is byte-identical to S3 reference
+        run: |
+          cmp \
+            firmware/control-board-s3/components/flx4_midi_host/flx4_map.c \
+            firmware/main-deck-p4/components/controller_runtime/flx4_map.c
 
       - name: Build isolated spike and reusable integration harness
         run: |

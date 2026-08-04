@@ -8,8 +8,10 @@ Completed without physical hardware:
 - reusable `usb_host_manager` as the sole Host Library owner;
 - reusable `controller_usb_host` with descriptor-safe MIDI IN and bounded
   MIDI OUT;
-- ESP32-P4-only integration harness combining host manager, MSC and MIDI;
-- portable USB-MIDI codec tests;
+- P4-local `controller_runtime` using the existing validated FLX4 semantic map;
+- ESP32-P4-only integration harness combining host manager, MSC, MIDI and local
+  semantic translation;
+- portable USB-MIDI codec and controller-runtime tests;
 - locked ESP-IDF and USB component versions;
 - serial-log acceptance validator with automated tests;
 - deterministic physical-test runbook.
@@ -21,19 +23,20 @@ LED feedback and FLX4 USB Audio cue remain the known-good product path.
 Remaining physical gates:
 
 - dual enumeration on the intended connectors;
-- reliable connector/root-controller identity;
 - continuous MSC plus MIDI load;
 - both insertion orders and boot with both devices attached;
 - independent reconnect behavior;
 - 30-minute dual-active soak;
 - VBUS/current stability;
 - latency and throughput measurements;
+- direct local dispatch into `deck_core` under load;
 - later direct P4 USB Audio verification.
 
-Confirmed public API gaps in `espressif/usb` 1.5.0:
+For a device connected directly to a P4 root controller,
+`usb_device_info_t.parent.dev_hdl == NULL` and `parent.port_num` provides the
+root port index. External hubs remain out of scope.
 
-- root-port power control is global;
-- public device information does not expose a stable P4 USB-peripheral ID.
-
-Independent USB0/USB1 recovery therefore requires a narrowly scoped additive
-API in `dvucinozd/esp-usb` before production migration can be accepted.
+The remaining public API gap in `espressif/usb` 1.5.0 is selective per-port
+power/recovery. `usb_host_lib_set_root_port_power()` controls all enabled root
+ports. A narrowly scoped additive API in `dvucinozd/esp-usb` is required before
+independent USB0/USB1 recovery can be accepted.

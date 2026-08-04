@@ -1,12 +1,17 @@
 # ESP32-P4-only software integration harness
 
-This is a compile and integration harness for the reusable USB components added
-during the no-hardware portion of the migration. It is not Pajoniiir product
-firmware.
+This is a compile and integration harness for reusable USB and controller
+components added during the no-hardware portion of the migration. It is not
+Pajoniiir product firmware.
 
-It proves at build time that one `usb_host_manager` owns `usb_host_install()`,
-that the manager enables P4 USB0 and USB1 with `peripheral_map = 0x03`, and that
-MSC plus asynchronous USB-MIDI clients compile together against ESP-IDF 6.0.2.
+It proves at build time that:
+
+- one `usb_host_manager` owns `usb_host_install()`;
+- P4 USB0 and USB1 are enabled with `peripheral_map = 0x03`;
+- MSC and asynchronous USB-MIDI clients coexist in one ESP32-P4 image;
+- raw USB-MIDI messages feed the same mature FLX4 semantic mapping currently
+  used by the S3;
+- reconnect snapshots are generated locally on the P4 side.
 
 ```bash
 cd firmware/p4-only-software-harness
@@ -14,6 +19,11 @@ idf.py set-target esp32p4
 idf.py build
 ```
 
-The public API still lacks a stable P4 root-controller identifier and exposes
-root power globally. The harness records topology but does not claim independent
-USB0/USB1 recovery support.
+The harness intentionally does not mount the Rekordbox filesystem, dispatch
+semantic events into `deck_core`, control LEDs or stream USB Audio. Those paths
+remain gated by physical regression tests.
+
+For direct-root devices, `usb_device_info_t.parent.port_num` identifies the root
+port index when `parent.dev_hdl == NULL`. The remaining library gap is selective
+per-port power/recovery: the current public power API affects all enabled root
+ports.

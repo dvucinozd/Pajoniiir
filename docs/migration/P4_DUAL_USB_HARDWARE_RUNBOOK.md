@@ -31,6 +31,9 @@ Exit code `0` and `"accepted": true` are required. The log must show:
 - no panic, watchdog, assertion, brownout, queue drop, MSC read failure or
   MIDI submit failure.
 
-`parent.port_num` is recorded for diagnostics but is not accepted as proof of
-P4 USB0 versus USB1. `espressif/usb` 1.5.0 does not expose a stable public
-root-controller identifier.
+For devices connected directly to the P4 controllers, record
+`parent.dev_hdl == NULL` and the corresponding `parent.port_num`. That index is
+the root port identity. Hub-connected devices are not accepted in Phase 1.
+
+The current global root-power API must not be used as evidence of independent
+recovery because it affects both enabled root ports.
