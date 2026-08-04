@@ -33,7 +33,6 @@ static const char *TAG = "p4_dual_usb";
 #define EVENT_QUEUE_DEPTH         8u
 #define PHASE1_SOAK_SECONDS       (30u * 60u)
 
-#define USB_CLASS_MASS_STORAGE    0x08u
 #define USB_SUBCLASS_ANY          0xFFu
 #define CLASS_SEEN_MSC            (1u << 0)
 #define CLASS_SEEN_MIDI           (1u << 1)
@@ -67,27 +66,22 @@ static uint8_t s_midi_parent_port = UINT8_MAX;
 static bool s_msc_active;
 static bool s_midi_active;
 
-static inline uint32_t counter_get(const uint32_t *value)
+static uint32_t atomic_get_u32(const uint32_t *value)
 {
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
 }
 
-static inline void counter_inc(uint32_t *value)
+static void atomic_add_u32(uint32_t *value, uint32_t amount)
 {
-    (void)__atomic_add_fetch(value, 1u, __ATOMIC_RELAXED);
+    (void)__atomic_add_fetch(value, amount, __ATOMIC_RELAXED);
 }
 
-static inline void value_set_u32(uint32_t *value, uint32_t new_value)
+static void atomic_set_bool(bool *value, bool state)
 {
-    __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
+    __atomic_store_n(value, state, __ATOMIC_RELEASE);
 }
 
-static inline void value_set_bool(bool *value, bool new_value)
-{
-    __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
-}
-
-static inline bool value_get_bool(const bool *value)
+static bool atomic_get_bool(const bool *value)
 {
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
 }
@@ -95,14 +89,10 @@ static inline bool value_get_bool(const bool *value)
 static const char *speed_name(usb_speed_t speed)
 {
     switch (speed) {
-    case USB_SPEED_LOW:
-        return "low";
-    case USB_SPEED_FULL:
-        return "full";
-    case USB_SPEED_HIGH:
-        return "high";
-    default:
-        return "unknown";
+    case USB_SPEED_LOW:  return "low";
+    case USB_SPEED_FULL: return "full";
+    case USB_SPEED_HIGH: return "high";
+    default:             return "unknown";
     }
 }
 
@@ -124,7 +114,7 @@ static void usb_string_to_ascii(const usb_str_desc_t *desc,
     }
     for (size_t i = 0; i < chars; ++i) {
         const uint16_t code_unit = desc->wData[i];
-        out[i] = (code_unit >= 0x20u && code_unit <= 0x7Eu)
+        out[i] = code_unit >= 0x20u && code_unit <= 0x7Eu
                      ? (char)code_unit
                      : '?';
     }
@@ -157,8 +147,8 @@ static void record_topology(const usb_device_info_t *info,
 
 static void usb_host_daemon_task(void *arg)
 {
-    TaskHandle_t starter = (TaskHandle_t)arg;
-    const usb_host_config_t host_config = {
+    const TaskHandle_t starter = (TaskHandle_t)arg;
+    const usb_host_config_t config = {
         .skip_phy_setup = false,
         .root_port_unpowered = true,
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
@@ -166,10 +156,10 @@ static void usb_host_daemon_task(void *arg)
         .peripheral_map = P4_DUAL_PERIPHERAL_MAP,
     };
 
-    s_host_install_result = usb_host_install(&host_config);
+    s_host_install_result = usb_host_install(&config);
     xTaskNotifyGive(starter);
     if (s_host_install_result != ESP_OK) {
-        ESP_LOGE(TAG, "usb_host_install(peripheral_map=0x%02X): %s",
+        ESP_LOGE(TAG, "usb_host_install map=0x%02X: %s",
                  P4_DUAL_PERIPHERAL_MAP,
                  esp_err_to_name(s_host_install_result));
         vTaskDelete(NULL);
@@ -179,7 +169,6 @@ static void usb_host_daemon_task(void *arg)
     ESP_LOGW(TAG,
              "one USB Host Library installed for P4 USB0+USB1 (peripheral_map=0x%02X)",
              P4_DUAL_PERIPHERAL_MAP);
-
     for (;;) {
         uint32_t flags = 0u;
         const esp_err_t rc = usb_host_lib_handle_events(portMAX_DELAY, &flags);
@@ -209,7 +198,7 @@ static void msc_event_callback(const msc_host_event_t *event, void *arg)
     }
     const msc_queue_event_t queued = { .event = *event };
     if (xQueueSend(s_msc_event_queue, &queued, 0) != pdTRUE) {
-        counter_inc(&s_msc_event_drops);
+        atomic_add_u32(&s_msc_event_drops, 1u);
     }
 }
 
@@ -237,7 +226,7 @@ static void msc_release_device(msc_host_device_handle_t *device,
         }
         *device = NULL;
     }
-    value_set_bool(&s_msc_active, false);
+    atomic_set_bool(&s_msc_active, false);
 }
 
 static esp_err_t msc_read_one_sector(msc_host_device_handle_t device,
@@ -287,14 +276,14 @@ static void msc_owner_task(void *arg)
                 if (rc != ESP_OK) {
                     ESP_LOGE(TAG, "msc_host_install_device: %s", esp_err_to_name(rc));
                     device = NULL;
-                    counter_inc(&s_msc_reads_failed);
+                    atomic_add_u32(&s_msc_reads_failed, 1u);
                     continue;
                 }
                 rc = msc_host_get_device_info(device, &info);
                 if (rc != ESP_OK || info.sector_size == 0u || info.sector_count == 0u) {
                     ESP_LOGE(TAG, "msc_host_get_device_info: %s", esp_err_to_name(rc));
                     msc_release_device(&device, &sector_buffer);
-                    counter_inc(&s_msc_reads_failed);
+                    atomic_add_u32(&s_msc_reads_failed, 1u);
                     continue;
                 }
 
@@ -302,16 +291,15 @@ static void msc_owner_task(void *arg)
                                                   MALLOC_CAP_DMA |
                                                   MALLOC_CAP_INTERNAL);
                 if (!sector_buffer) {
-                    ESP_LOGE(TAG,
-                             "cannot allocate %u-byte DMA sector buffer",
+                    ESP_LOGE(TAG, "cannot allocate %u-byte DMA sector buffer",
                              (unsigned)info.sector_size);
                     msc_release_device(&device, &sector_buffer);
-                    counter_inc(&s_msc_reads_failed);
+                    atomic_add_u32(&s_msc_reads_failed, 1u);
                     continue;
                 }
 
-                counter_inc(&s_msc_connects);
-                value_set_bool(&s_msc_active, true);
+                atomic_add_u32(&s_msc_connects, 1u);
+                atomic_set_bool(&s_msc_active, true);
                 next_sector = 0u;
                 const uint64_t size_mib =
                     ((uint64_t)info.sector_count * info.sector_size) /
@@ -323,33 +311,32 @@ static void msc_owner_task(void *arg)
                          info.idProduct,
                          (unsigned long long)size_mib,
                          (unsigned)info.sector_size);
-            } else if (queued.event.event == MSC_DEVICE_DISCONNECTED) {
-                if (device && queued.event.device.handle == device) {
-                    ESP_LOGW(TAG, "MSC DISCONNECTED");
-                    counter_inc(&s_msc_disconnects);
-                    msc_release_device(&device, &sector_buffer);
-                    memset(&info, 0, sizeof(info));
-                    next_sector = 0u;
-                }
+            } else if (queued.event.event == MSC_DEVICE_DISCONNECTED &&
+                       device && queued.event.device.handle == device) {
+                ESP_LOGW(TAG, "MSC DISCONNECTED");
+                atomic_add_u32(&s_msc_disconnects, 1u);
+                msc_release_device(&device, &sector_buffer);
+                memset(&info, 0, sizeof(info));
+                next_sector = 0u;
             }
         }
 
-        if (!device || !sector_buffer || !value_get_bool(&s_msc_active)) {
+        if (!device || !sector_buffer || !atomic_get_bool(&s_msc_active)) {
+            continue;
+        }
+        const uint32_t span = info.sector_count < 2048u
+                                  ? info.sector_count
+                                  : 2048u;
+        if (span == 0u) {
             continue;
         }
 
-        const uint32_t probe_span = info.sector_count < 2048u
-                                        ? info.sector_count
-                                        : 2048u;
-        if (probe_span == 0u) {
-            continue;
-        }
-        const uint32_t sector = next_sector % probe_span;
+        const uint32_t sector = next_sector % span;
         const esp_err_t rc =
             msc_read_one_sector(device, &info, sector_buffer, sector);
         if (rc == ESP_OK) {
-            counter_inc(&s_msc_reads_ok);
-            const uint32_t count = counter_get(&s_msc_reads_ok);
+            atomic_add_u32(&s_msc_reads_ok, 1u);
+            const uint32_t count = atomic_get_u32(&s_msc_reads_ok);
             if (count <= 4u || (count % 128u) == 0u) {
                 const size_t hash_len = info.sector_size < 64u
                                             ? info.sector_size
@@ -363,11 +350,9 @@ static void msc_owner_task(void *arg)
             }
             next_sector++;
         } else {
-            counter_inc(&s_msc_reads_failed);
-            ESP_LOGW(TAG,
-                     "MSC read failed sector=%" PRIu32 ": %s",
-                     sector,
-                     esp_err_to_name(rc));
+            atomic_add_u32(&s_msc_reads_failed, 1u);
+            ESP_LOGW(TAG, "MSC read failed sector=%" PRIu32 ": %s",
+                     sector, esp_err_to_name(rc));
             vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
@@ -393,20 +378,16 @@ static void midi_transfer_callback(usb_transfer_t *transfer)
     state->transfer_active = false;
 
     if (transfer->status == USB_TRANSFER_STATUS_COMPLETED) {
-        counter_inc(&s_midi_bytes); /* incremented once below to preserve atomic helper use */
-        (void)__atomic_sub_fetch(&s_midi_bytes, 1u, __ATOMIC_RELAXED);
-        (void)__atomic_add_fetch(&s_midi_bytes,
-                                 (uint32_t)transfer->actual_num_bytes,
-                                 __ATOMIC_RELAXED);
+        atomic_add_u32(&s_midi_bytes, (uint32_t)transfer->actual_num_bytes);
         for (int offset = 0; offset + 3 < transfer->actual_num_bytes; offset += 4) {
             usb_midi_message_t message;
             const uint8_t *packet = &transfer->data_buffer[offset];
             if (!usb_midi_parse_event_packet(packet, &message)) {
-                counter_inc(&s_midi_parse_rejects);
+                atomic_add_u32(&s_midi_parse_rejects, 1u);
                 continue;
             }
-            counter_inc(&s_midi_packets);
-            const uint32_t count = counter_get(&s_midi_packets);
+            atomic_add_u32(&s_midi_packets, 1u);
+            const uint32_t count = atomic_get_u32(&s_midi_packets);
             if (count <= 24u || (count % 256u) == 0u) {
                 ESP_LOGI(TAG,
                          "MIDI count=%" PRIu32
@@ -422,23 +403,20 @@ static void midi_transfer_callback(usb_transfer_t *transfer)
         }
     } else if (transfer->status != USB_TRANSFER_STATUS_NO_DEVICE &&
                transfer->status != USB_TRANSFER_STATUS_CANCELED) {
-        ESP_LOGW(TAG,
-                 "MIDI IN transfer status=%d bytes=%d",
-                 (int)transfer->status,
-                 transfer->actual_num_bytes);
+        ESP_LOGW(TAG, "MIDI IN transfer status=%d bytes=%d",
+                 (int)transfer->status, transfer->actual_num_bytes);
     }
 
     if (state->closing || transfer->status == USB_TRANSFER_STATUS_NO_DEVICE) {
         return;
     }
-
     transfer->num_bytes =
         usb_round_up_to_mps(MIDI_TRANSFER_BYTES, state->endpoints.in_ep_mps);
     const esp_err_t rc = usb_host_transfer_submit(transfer);
     if (rc == ESP_OK) {
         state->transfer_active = true;
     } else {
-        counter_inc(&s_midi_submit_failures);
+        atomic_add_u32(&s_midi_submit_failures, 1u);
         ESP_LOGE(TAG, "MIDI IN resubmit: %s", esp_err_to_name(rc));
     }
 }
@@ -457,7 +435,7 @@ static esp_err_t midi_submit_if_idle(midi_host_state_t *state)
     if (rc == ESP_OK) {
         state->transfer_active = true;
     } else {
-        counter_inc(&s_midi_submit_failures);
+        atomic_add_u32(&s_midi_submit_failures, 1u);
     }
     return rc;
 }
@@ -499,8 +477,8 @@ static void midi_close_step(midi_host_state_t *state)
     memset(&state->endpoints, 0, sizeof(state->endpoints));
     state->address = 0u;
     state->closing = false;
-    value_set_bool(&s_midi_active, false);
-    counter_inc(&s_midi_disconnects);
+    atomic_set_bool(&s_midi_active, false);
+    atomic_add_u32(&s_midi_disconnects, 1u);
     ESP_LOGW(TAG, "MIDI DEVICE CLOSED");
 }
 
@@ -513,7 +491,7 @@ static void midi_client_event_callback(const usb_host_client_event_msg_t *event,
         if (xQueueSend(s_probe_address_queue,
                        &event->new_dev.address,
                        0) != pdTRUE) {
-            counter_inc(&s_probe_event_drops);
+            atomic_add_u32(&s_probe_event_drops, 1u);
         }
         break;
     case USB_HOST_CLIENT_EVENT_DEV_GONE:
@@ -522,8 +500,7 @@ static void midi_client_event_callback(const usb_host_client_event_msg_t *event,
         }
         break;
     case USB_HOST_CLIENT_EVENT_DEV_REMOVED:
-        ESP_LOGI(TAG,
-                 "Host Library removed address=%u",
+        ESP_LOGI(TAG, "Host Library removed address=%u",
                  (unsigned)event->dev_removed.address);
         break;
     case USB_HOST_CLIENT_EVENT_DEV_SUSPENDED:
@@ -539,11 +516,9 @@ static esp_err_t probe_and_optionally_claim_midi(midi_host_state_t *state,
     usb_device_handle_t device = NULL;
     esp_err_t rc = usb_host_device_open(state->client, address, &device);
     if (rc != ESP_OK) {
-        counter_inc(&s_probe_open_failures);
-        ESP_LOGW(TAG,
-                 "probe open addr=%u: %s",
-                 (unsigned)address,
-                 esp_err_to_name(rc));
+        atomic_add_u32(&s_probe_open_failures, 1u);
+        ESP_LOGW(TAG, "probe open addr=%u: %s",
+                 (unsigned)address, esp_err_to_name(rc));
         return rc;
     }
 
@@ -558,11 +533,9 @@ static esp_err_t probe_and_optionally_claim_midi(midi_host_state_t *state,
         rc = usb_host_get_active_config_descriptor(device, &config_desc);
     }
     if (rc != ESP_OK || !device_desc || !config_desc) {
-        counter_inc(&s_probe_descriptor_failures);
-        ESP_LOGW(TAG,
-                 "probe descriptors addr=%u: %s",
-                 (unsigned)address,
-                 esp_err_to_name(rc));
+        atomic_add_u32(&s_probe_descriptor_failures, 1u);
+        ESP_LOGW(TAG, "probe descriptors addr=%u: %s",
+                 (unsigned)address, esp_err_to_name(rc));
         (void)usb_host_device_close(state->client, device);
         return rc == ESP_OK ? ESP_FAIL : rc;
     }
@@ -610,8 +583,7 @@ static esp_err_t probe_and_optionally_claim_midi(midi_host_state_t *state,
         return ESP_ERR_NOT_FOUND;
     }
     if (state->opened || state->claimed || state->device) {
-        ESP_LOGW(TAG,
-                 "additional MIDI device ignored addr=%u",
+        ESP_LOGW(TAG, "additional MIDI device ignored addr=%u",
                  (unsigned)address);
         (void)usb_host_device_close(state->client, device);
         return ESP_ERR_INVALID_STATE;
@@ -658,8 +630,8 @@ static esp_err_t probe_and_optionally_claim_midi(midi_host_state_t *state,
         return rc;
     }
 
-    counter_inc(&s_midi_connects);
-    value_set_bool(&s_midi_active, true);
+    atomic_add_u32(&s_midi_connects, 1u);
+    atomic_set_bool(&s_midi_active, true);
     ESP_LOGW(TAG,
              "MIDI READY addr=%u interface=%u alt=%u IN=0x%02X/%u OUT=0x%02X/%u",
              (unsigned)address,
@@ -674,10 +646,9 @@ static esp_err_t probe_and_optionally_claim_midi(midi_host_state_t *state,
 
 static void midi_client_task(void *arg)
 {
-    TaskHandle_t starter = (TaskHandle_t)arg;
+    const TaskHandle_t starter = (TaskHandle_t)arg;
     memset(&s_midi, 0, sizeof(s_midi));
-
-    const usb_host_client_config_t client_config = {
+    const usb_host_client_config_t config = {
         .is_synchronous = false,
         .max_num_event_msg = EVENT_QUEUE_DEPTH,
         .flags = {
@@ -689,12 +660,10 @@ static void midi_client_task(void *arg)
         },
     };
 
-    s_midi_register_result =
-        usb_host_client_register(&client_config, &s_midi.client);
+    s_midi_register_result = usb_host_client_register(&config, &s_midi.client);
     xTaskNotifyGive(starter);
     if (s_midi_register_result != ESP_OK) {
-        ESP_LOGE(TAG,
-                 "usb_host_client_register: %s",
+        ESP_LOGE(TAG, "usb_host_client_register: %s",
                  esp_err_to_name(s_midi_register_result));
         vTaskDelete(NULL);
         return;
@@ -707,7 +676,6 @@ static void midi_client_task(void *arg)
         if (rc != ESP_OK && rc != ESP_ERR_TIMEOUT) {
             ESP_LOGW(TAG, "usb_host_client_handle_events: %s", esp_err_to_name(rc));
         }
-
         if (s_midi.closing) {
             midi_close_step(&s_midi);
             continue;
@@ -720,10 +688,8 @@ static void midi_client_task(void *arg)
                 probe_and_optionally_claim_midi(&s_midi, address);
             if (probe_rc != ESP_OK && probe_rc != ESP_ERR_NOT_FOUND &&
                 probe_rc != ESP_ERR_INVALID_STATE) {
-                ESP_LOGW(TAG,
-                         "device probe addr=%u ended with %s",
-                         (unsigned)address,
-                         esp_err_to_name(probe_rc));
+                ESP_LOGW(TAG, "device probe addr=%u ended with %s",
+                         (unsigned)address, esp_err_to_name(probe_rc));
             }
         }
 
@@ -746,12 +712,12 @@ static void phase1_status_loop(void)
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
-
         usb_host_lib_info_t host_info = {0};
         const esp_err_t info_rc = usb_host_lib_info(&host_info);
-        const bool msc_active = value_get_bool(&s_msc_active);
-        const bool midi_active = value_get_bool(&s_midi_active);
+        const bool msc_active = atomic_get_bool(&s_msc_active);
+        const bool midi_active = atomic_get_bool(&s_midi_active);
         const int64_t now_us = esp_timer_get_time();
+
         if (msc_active && midi_active) {
             if (dual_since_us == 0) {
                 dual_since_us = now_us;
@@ -765,11 +731,11 @@ static void phase1_status_loop(void)
                                           ? 0u
                                           : (uint32_t)((now_us - dual_since_us) /
                                                        1000000ll);
-
         const uint8_t msc_parent =
             __atomic_load_n(&s_msc_parent_port, __ATOMIC_ACQUIRE);
         const uint8_t midi_parent =
             __atomic_load_n(&s_midi_parent_port, __ATOMIC_ACQUIRE);
+
         ESP_LOGW(TAG,
                  "PHASE1 STATUS uptime=%" PRIu32 "s dual=%" PRIu32
                  "s host_rc=%s devices=%d clients=%d class_mask=0x%02" PRIX32
@@ -779,37 +745,40 @@ static void phase1_status_loop(void)
                  " packets=%" PRIu32 " bytes=%" PRIu32
                  " reject=%" PRIu32 " submit_fail=%" PRIu32 ")"
                  " topology(msc_parent=%u midi_parent=%u root_mask=0x%08" PRIX32 ")"
+                 " probe(open_fail=%" PRIu32 " desc_fail=%" PRIu32 ")"
                  " drops(msc=%" PRIu32 " probe=%" PRIu32 ") bna_recovered=%" PRIu32,
                  (uint32_t)((now_us - start_us) / 1000000ll),
                  dual_seconds,
                  info_rc == ESP_OK ? "OK" : esp_err_to_name(info_rc),
                  info_rc == ESP_OK ? host_info.num_devices : -1,
                  info_rc == ESP_OK ? host_info.num_clients : -1,
-                 counter_get(&s_class_seen_mask),
+                 atomic_get_u32(&s_class_seen_mask),
                  msc_active ? 1u : 0u,
-                 counter_get(&s_msc_connects),
-                 counter_get(&s_msc_disconnects),
-                 counter_get(&s_msc_reads_ok),
-                 counter_get(&s_msc_reads_failed),
+                 atomic_get_u32(&s_msc_connects),
+                 atomic_get_u32(&s_msc_disconnects),
+                 atomic_get_u32(&s_msc_reads_ok),
+                 atomic_get_u32(&s_msc_reads_failed),
                  midi_active ? 1u : 0u,
-                 counter_get(&s_midi_connects),
-                 counter_get(&s_midi_disconnects),
-                 counter_get(&s_midi_packets),
-                 counter_get(&s_midi_bytes),
-                 counter_get(&s_midi_parse_rejects),
-                 counter_get(&s_midi_submit_failures),
+                 atomic_get_u32(&s_midi_connects),
+                 atomic_get_u32(&s_midi_disconnects),
+                 atomic_get_u32(&s_midi_packets),
+                 atomic_get_u32(&s_midi_bytes),
+                 atomic_get_u32(&s_midi_parse_rejects),
+                 atomic_get_u32(&s_midi_submit_failures),
                  msc_parent,
                  midi_parent,
-                 counter_get(&s_direct_root_port_mask),
-                 counter_get(&s_msc_event_drops),
-                 counter_get(&s_probe_event_drops),
+                 atomic_get_u32(&s_direct_root_port_mask),
+                 atomic_get_u32(&s_probe_open_failures),
+                 atomic_get_u32(&s_probe_descriptor_failures),
+                 atomic_get_u32(&s_msc_event_drops),
+                 atomic_get_u32(&s_probe_event_drops),
                  usb_dwc_compat_bna_recovered_count());
 
         if (!soak_reported && dual_seconds >= PHASE1_SOAK_SECONDS &&
-            counter_get(&s_msc_reads_ok) > 0u &&
-            counter_get(&s_midi_packets) > 0u &&
-            counter_get(&s_msc_event_drops) == 0u &&
-            counter_get(&s_probe_event_drops) == 0u) {
+            atomic_get_u32(&s_msc_reads_ok) > 0u &&
+            atomic_get_u32(&s_midi_packets) > 0u &&
+            atomic_get_u32(&s_msc_event_drops) == 0u &&
+            atomic_get_u32(&s_probe_event_drops) == 0u) {
             soak_reported = true;
             ESP_LOGW(TAG,
                      "PHASE1 30-MINUTE DUAL-HOST SOAK REACHED: inspect disconnect/reconnect evidence before acceptance");
@@ -882,6 +851,5 @@ void app_main(void)
     }
     ESP_LOGW(TAG,
              "both root ports powered through the current global API; connect both fixtures");
-
     phase1_status_loop();
 }
