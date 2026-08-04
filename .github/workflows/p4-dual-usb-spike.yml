@@ -1,0 +1,101 @@
+name: P4 dual USB host spike
+
+on:
+  push:
+    branches:
+      - feat/p4-dual-usb-host
+    paths:
+      - "firmware/p4-dual-usb-spike/**"
+      - "tests/p4_dual_usb_spike/**"
+      - ".github/workflows/p4-dual-usb-spike.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2@sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67
+
+jobs:
+  build-and-test:
+    name: Parser tests and ESP32-P4 build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Run portable USB-MIDI parser tests
+        shell: pwsh
+        run: ./tests/p4_dual_usb_spike/run_tests.ps1
+
+      - name: Build isolated dual-host firmware
+        run: |
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          set +e
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/p4-dual-usb-spike \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              idf.py --version
+              rm -rf build sdkconfig sdkconfig.old managed_components
+              idf.py set-target esp32p4
+              idf.py reconfigure
+              grep -q "^#define CONFIG_IDF_TARGET_ESP32P4 1$" build/config/sdkconfig.h
+              grep -q "^#define CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE 512$" build/config/sdkconfig.h
+              idf.py build
+            ' > p4-dual-usb-spike-build.log 2>&1
+          code=$?
+          if [ -d firmware/p4-dual-usb-spike/build ]; then
+            sudo chown -R "$(id -u):$(id -g)" firmware/p4-dual-usb-spike/build
+          fi
+          if [ "$code" -ne 0 ]; then
+            grep -nE '(^|[[:space:]])(CMake Error|ERROR:|error:|fatal error:|undefined reference|ninja: build stopped)' \
+              p4-dual-usb-spike-build.log | tail -n 100 || true
+            tail -n 30 p4-dual-usb-spike-build.log
+          else
+            tail -n 35 p4-dual-usb-spike-build.log
+          fi
+          exit $code
+
+      - name: Verify USB dependency resolution
+        run: |
+          lock=firmware/p4-dual-usb-spike/dependencies.lock
+          test -f "$lock"
+          grep -A20 '^  espressif/usb:$' "$lock" | grep -q '^    version: 1.5.0$'
+          grep -A24 '^  espressif/usb_host_msc:$' "$lock" | grep -q '^    version: 1.2.0$'
+          grep -A6 '^  idf:$' "$lock" | grep -q '^    version: 6.0.2$'
+          echo "Resolved ESP-IDF 6.0.2, espressif/usb 1.5.0 and usb_host_msc 1.2.0."
+
+      - name: Verify DWC BNA recovery wrapper is linked
+        run: |
+          docker run --rm -e HOME=/tmp -v "$PWD:/project" \
+            -w /project/firmware/p4-dual-usb-spike "$IDF_IMAGE" bash -lc '
+              set -e
+              elf=build/p4-dual-usb-spike.elf
+              test -f "$elf"
+              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"
+              if riscv32-esp-elf-nm "$elf" | grep -q " T usb_dwc_hal_chan_decode_intr$"; then
+                echo "unwrapped USB DWC interrupt decoder remains reachable" >&2
+                exit 1
+              fi
+            '
+
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p4-dual-usb-spike-evidence
+          if-no-files-found: ignore
+          path: |
+            p4-dual-usb-spike-build.log
+            firmware/p4-dual-usb-spike/dependencies.lock
+            firmware/p4-dual-usb-spike/build/*.bin
+            firmware/p4-dual-usb-spike/build/*.elf
+            firmware/p4-dual-usb-spike/build/*.map
