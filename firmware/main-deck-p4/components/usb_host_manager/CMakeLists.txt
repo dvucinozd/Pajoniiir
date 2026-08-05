@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "usb_host_manager.c"
+    SRCS "usb_host_manager.c" "usb_host_recovery_arbiter.c"
     INCLUDE_DIRS "include"
     REQUIRES log usb
 )

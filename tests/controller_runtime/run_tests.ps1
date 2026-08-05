@@ -8,6 +8,7 @@ $Runtime = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_runt
 $Codec = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host"
 $Profile = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile"
 $ProfileRuntime = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_runtime"
+$HostManager = Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager"
 $Control = Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/include"
 $Reconciler = Join-Path $RepoRoot "firmware/common/control_state_reconciler/include"
 $Stubs = Join-Path $PSScriptRoot "stubs"
@@ -18,6 +19,7 @@ $CommonArgs = @(
     "-I$(Join-Path $Codec 'include')",
     "-I$(Join-Path $Profile 'include')",
     "-I$(Join-Path $ProfileRuntime 'include')",
+    "-I$(Join-Path $HostManager 'include')",
     "-I$Control",
     "-I$Reconciler",
     "-I$Stubs"
@@ -26,10 +28,14 @@ $CommonArgs = @(
 $BufferExe = Join-Path $BuildDir "test_controller_event_buffer"
 $RuntimeExe = Join-Path $BuildDir "test_controller_runtime"
 $ProfileExe = Join-Path $BuildDir "test_controller_runtime_profile"
+$RecoveryExe = Join-Path $BuildDir "test_usb_host_recovery_arbiter"
+$TraceExe = Join-Path $BuildDir "test_p4_s3_trace_equivalence"
 if ($IsWindows) {
     $BufferExe += ".exe"
     $RuntimeExe += ".exe"
     $ProfileExe += ".exe"
+    $RecoveryExe += ".exe"
+    $TraceExe += ".exe"
 }
 
 gcc @CommonArgs `
@@ -62,4 +68,26 @@ gcc @CommonArgs -DCONTROLLER_PROFILE_RUNTIME_PC_TEST `
     -o $ProfileExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $ProfileExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+gcc @CommonArgs `
+    (Join-Path $HostManager "usb_host_recovery_arbiter.c") `
+    (Join-Path $PSScriptRoot "test_usb_host_recovery_arbiter.c") `
+    -o $RecoveryExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $RecoveryExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$P4Map = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_runtime"
+$S3Map = Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host"
+gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror `
+    "-I$PSScriptRoot" "-I$(Join-Path $P4Map 'include')" `
+    "-I$(Join-Path $Codec 'include')" "-I$(Join-Path $S3Map 'include')" `
+    "-I$Control" `
+    (Join-Path $PSScriptRoot "p4_map_adapter.c") `
+    (Join-Path $PSScriptRoot "s3_map_adapter.c") `
+    (Join-Path $PSScriptRoot "test_trace_equivalence.c") `
+    -o $TraceExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $TraceExe
 exit $LASTEXITCODE
