@@ -28,4 +28,7 @@ gcc -std=c11 -Wall -Wextra -Wpedantic -Werror "-I$Include" `
     -o $GateExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $GateExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+& (Join-Path $RepoRoot "tests/controller_usb_audio/run_tests.ps1")
 exit $LASTEXITCODE
