@@ -1,0 +1,17 @@
+menu "Pajoniiir migration options"
+
+config PAJONIIIR_P4_LOCAL_CONTROLLER
+    bool "Build experimental P4-local FLX4 controller path"
+    default n
+    help
+        Compile the dual-controller USB Host owner, direct FLX4 USB-MIDI
+        transport, local semantic runtime, local profile activation and direct
+        MIDI LED feedback into the production ESP32-P4 firmware.
+
+        This option is deliberately disabled in sdkconfig.defaults. The normal
+        product image continues to use the proven ESP32-S3 control and cue-audio
+        path until the physical dual-USB acceptance matrix passes. The enabled
+        variant keeps the S3 UART transport alive as a fallback and for A/B
+        validation.
+
+endmenu

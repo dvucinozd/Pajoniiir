@@ -1,0 +1,2 @@
+# CI-only migration overlay. Product sdkconfig.defaults keeps this disabled.
+CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y

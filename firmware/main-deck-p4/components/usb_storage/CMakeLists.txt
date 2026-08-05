@@ -1,9 +1,18 @@
+set(USB_STORAGE_OWNER_SOURCE "usb_storage.c")
+if(CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER)
+    # Keep the mature storage/session/mount implementation intact while the
+    # migration build replaces only its Host Library ownership and recovery
+    # calls with the shared dual-controller manager.
+    set(USB_STORAGE_OWNER_SOURCE "usb_storage_shared.c")
+endif()
+
 idf_component_register(
-    SRCS "usb_storage.c" "usb_storage_session.c" "usb_storage_recovery.c"
+    SRCS ${USB_STORAGE_OWNER_SOURCE}
+         "usb_storage_session.c" "usb_storage_recovery.c"
          "usb_media_partition.c" "usb_media_mount.c"
          "usb_dwc_hal_compat.c"
     INCLUDE_DIRS "include"
-    REQUIRES log usb usb_host_msc fatfs media_io_gate hal
+    REQUIRES log usb usb_host_msc fatfs media_io_gate hal usb_host_manager
     WHOLE_ARCHIVE
 )
 

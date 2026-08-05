@@ -5,12 +5,16 @@ on:
     paths:
       - "firmware/p4-dual-usb-spike/**"
       - "firmware/p4-only-software-harness/**"
+      - "firmware/main-deck-p4/main/**"
+      - "firmware/main-deck-p4/sdkconfig.p4_local_controller"
+      - "firmware/main-deck-p4/components/usb_storage/**"
       - "firmware/main-deck-p4/components/usb_host_manager/**"
       - "firmware/main-deck-p4/components/controller_usb_host/**"
       - "firmware/main-deck-p4/components/controller_profile/**"
       - "firmware/main-deck-p4/components/controller_profile_runtime/**"
       - "firmware/main-deck-p4/components/controller_runtime/**"
       - "firmware/main-deck-p4/components/controller_led_runtime/**"
+      - "firmware/main-deck-p4/components/p4_local_controller/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
       - "tests/controller_usb_host/**"
@@ -42,7 +46,7 @@ jobs:
         shell: pwsh
         run: ./tests/p4_dual_usb_spike/run_tests.ps1
 
-      - name: Run reusable USB-MIDI codec tests
+      - name: Run reusable USB-MIDI codec and lifecycle tests
         shell: pwsh
         run: ./tests/controller_usb_host/run_tests.ps1
 
@@ -67,6 +71,7 @@ jobs:
             firmware/main-deck-p4/components/controller_profile_runtime \
             firmware/main-deck-p4/components/controller_runtime \
             firmware/main-deck-p4/components/controller_led_runtime \
+            firmware/main-deck-p4/components/p4_local_controller \
             firmware/p4-only-software-harness | wc -l)
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."
@@ -120,6 +125,37 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" \
             firmware/p4-dual-usb-spike/build \
             firmware/p4-only-software-harness/build
+
+      - name: Build production P4 with local-controller feature overlay
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              rm -rf build-p4-local sdkconfig.p4-local sdkconfig.p4-local.old managed_components
+              common=(-B build-p4-local
+                      -D SDKCONFIG=sdkconfig.p4-local
+                      -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.p4_local_controller")
+              idf.py "${common[@]}" set-target esp32p4
+              idf.py "${common[@]}" reconfigure
+              grep -q "^#define CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER 1$" \
+                build-p4-local/config/sdkconfig.h
+              idf.py "${common[@]}" build
+              test -f build-p4-local/esp-idf/usb_storage/CMakeFiles/__idf_usb_storage.dir/usb_storage_shared.c.obj
+              test -f build-p4-local/esp-idf/controller_usb_host/CMakeFiles/__idf_controller_usb_host.dir/controller_usb_host_routed.c.obj
+              elf=build-p4-local/main-deck-p4.elf
+              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_control_link_init$"
+              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_storage_init$"
+              riscv32-esp-elf-nm "$elf" | grep -q " T controller_usb_host_output_gate_set_connected$"
+            ' 2>&1 | tee p4-local-controller-build.log
+          sudo chown -R "$(id -u):$(id -g)" \
+            firmware/main-deck-p4/build-p4-local \
+            firmware/main-deck-p4/sdkconfig.p4-local*
+          git diff --exit-code -- firmware/main-deck-p4/dependencies.lock
 
       - name: Verify committed dependency locks and sources
         run: |
@@ -215,6 +251,7 @@ jobs:
           path: |
             p4-dual-usb-spike-build.log
             p4-only-software-harness-build.log
+            p4-local-controller-build.log
             firmware/p4-dual-usb-spike/dependencies.lock
             firmware/p4-only-software-harness/dependencies.lock
             firmware/p4-dual-usb-spike/build/*.bin
@@ -223,3 +260,6 @@ jobs:
             firmware/p4-only-software-harness/build/*.bin
             firmware/p4-only-software-harness/build/*.elf
             firmware/p4-only-software-harness/build/*.map
+            firmware/main-deck-p4/build-p4-local/*.bin
+            firmware/main-deck-p4/build-p4-local/*.elf
+            firmware/main-deck-p4/build-p4-local/*.map
