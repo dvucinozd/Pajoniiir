@@ -83,7 +83,7 @@ $S3Map = Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_hos
 gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror `
     "-I$PSScriptRoot" "-I$(Join-Path $P4Map 'include')" `
     "-I$(Join-Path $Codec 'include')" "-I$(Join-Path $S3Map 'include')" `
-    "-I$Control" `
+    "-I$Control" "-I$Stubs" `
     (Join-Path $PSScriptRoot "p4_map_adapter.c") `
     (Join-Path $PSScriptRoot "s3_map_adapter.c") `
     (Join-Path $PSScriptRoot "test_trace_equivalence.c") `
