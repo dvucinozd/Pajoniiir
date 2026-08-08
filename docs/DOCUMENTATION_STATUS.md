@@ -23,6 +23,13 @@ smoke now passes display/touch/Library, FLX4 MIDI/LED, MAIN/headphone audio and
 real-MP3 playback. The RC2 line is still **not** release-qualified because the
 real WAV/FLAC, sustained USB/cache, recovery and fault-injection rows remain.
 
+Feature-branch addendum (2026-08-09): the experimental
+`feat/p4-dual-usb-host` image at `fc03034` was wired-flashed to the P4, booted
+cleanly and loaded 191 Rekordbox tracks through the USB0 storage path. This is
+partial bring-up evidence only; direct USB1 FLX4 enumeration, P4-local
+MIDI/LED behavior, independent recovery and the dual-active soak remain open.
+See `validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`.
+
 This page explains which documents describe the current product and which are
 historical design or validation records. Four states must not be conflated:
 

@@ -3,6 +3,13 @@
 This record closes the work that can be proven without the physical ESP32-P4,
 Rekordbox drive and DDJ-FLX4.
 
+Hardware follow-up started on 2026-08-09. The initial wired smoke at `fc03034`
+proved a clean feature-image boot and a 191-track USB0 Rekordbox-library load,
+but did not exercise the USB1 FLX4 path. See
+[`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
+This remains the record of the earlier no-hardware closure, not a declaration
+of hardware acceptance.
+
 ## Build variants
 
 ### Default product
@@ -92,3 +99,7 @@ python tools/validate_p4_dual_usb_log.py <serial-log>
 The generated manifest intentionally records `hardware_accepted: false`.
 Hardware acceptance must be changed only by a later evidence record that
 references a completed physical matrix and archived logs.
+
+The 2026-08-09 initial wired smoke is deliberately insufficient to change that
+flag: USB1 controller enumeration, MIDI/LED traffic, reconnect recovery and the
+30-minute dual-active soak remain open.

@@ -7,6 +7,11 @@ Baseline commit: `c7a7cc59cf344ae4ed213ad0c0c3770f69077fca`
 Target SDK: ESP-IDF `6.0.2`
 USB component baseline: `espressif/usb 1.5.0`, `espressif/usb_host_msc 1.2.0`
 
+Hardware progress: an initial wired smoke at `fc03034` passed feature-image
+flash/boot and USB0 Rekordbox-library loading with 191 tracks on 2026-08-09.
+USB1 FLX4 and the combined acceptance matrix remain open; see
+[`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
+
 ## 1. Decision Summary
 
 Pajoniiir remains one project and one repository. The existing two-processor
@@ -837,7 +842,8 @@ Exit criteria:
 ### 9.1 Enumeration and routing
 
 - [ ] Boot with neither device connected.
-- [ ] Boot with only USB0 storage connected.
+- [x] Boot with only USB0 storage connected — initial 191-track library smoke
+  passed at `fc03034` on 2026-08-09; playback and reconnect are separate rows.
 - [ ] Boot with only USB1 controller connected.
 - [ ] Boot with both connected.
 - [ ] Connect storage first, then controller.

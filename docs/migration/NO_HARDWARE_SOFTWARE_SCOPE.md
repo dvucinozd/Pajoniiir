@@ -1,9 +1,17 @@
 # P4-only migration: software completion boundary without hardware
 
-Status: **software preparation complete; physical acceptance still open**
+Status: **software preparation complete; partial physical bring-up recorded;
+full acceptance still open**
 
 This record describes what has been implemented and verified without access to
 an ESP32-P4 board, Rekordbox storage device or DDJ-FLX4.
+
+Follow-up hardware became available on 2026-08-09. The experimental image at
+`fc03034` was wired-flashed, booted cleanly and loaded 191 Rekordbox tracks from
+USB0. That focused run is recorded in
+[`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
+It did not exercise a DDJ-FLX4 on USB1, playback, reconnect recovery or the
+required soak, so the completion boundary below remains in force.
 
 ## Completed software scope
 
@@ -57,7 +65,9 @@ an ESP32-P4 board, Rekordbox storage device or DDJ-FLX4.
 
 ## Physical gates still required
 
-1. Enumerate Rekordbox MSC on USB0 and DDJ-FLX4 on USB1 in one boot.
+1. Enumerate Rekordbox MSC on USB0 and DDJ-FLX4 on USB1 in one boot. USB0-only
+   boot and a 191-track library load passed on 2026-08-09; dual enumeration is
+   still open.
 2. Verify both insertion orders and boot with both devices attached.
 3. Run simultaneous storage reads, MIDI input and MIDI LED output.
 4. Remove/reconnect each device while the other remains active.
