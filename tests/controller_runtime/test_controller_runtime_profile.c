@@ -9,8 +9,10 @@
 #include "control_link.h"
 
 static unsigned s_checks;
-static flx4_control_event_t s_events[16];
+static flx4_control_event_t s_events[256];
 static size_t s_event_count;
+
+#define LARGE_REPLAY_COUNT 80u
 
 #define CHECK(expr) do { \
     s_checks++; \
@@ -75,6 +77,35 @@ static size_t build_profile(uint8_t blob[CP_HEADER_SIZE +
     wr_u16(blob + 24, 1u);
     wr_u16(blob + 26, 1u);
     blob[28] = 0u;
+    blob[29] = 2u;
+    wr_u32(blob + 12, cp_crc32(blob + 16, total - 16u));
+    return total;
+}
+
+static size_t build_large_replay_profile(uint8_t *blob)
+{
+    const size_t total = CP_HEADER_SIZE +
+                         LARGE_REPLAY_COUNT * CP_INPUT_ENTRY_SIZE;
+    memset(blob, 0, total);
+    for (size_t i = 0u; i < LARGE_REPLAY_COUNT; ++i) {
+        uint8_t *input = blob + CP_HEADER_SIZE + i * CP_INPUT_ENTRY_SIZE;
+        input[0] = 0xB0u;
+        input[1] = (uint8_t)i;
+        input[2] = CP_IN_CC7_ABS;
+        input[3] = CP_PAIR_SLOT_NONE;
+        input[4] = CTRL_TYPE_PITCH;
+        input[5] = CTRL_ID_CH1_VOLUME;
+        wr_u16(input + 6, CP_IN_FLAG_REPLAY);
+        memset(input + 12, 0xFF, 4u);
+    }
+
+    memcpy(blob, CP_MAGIC, 4u);
+    wr_u16(blob + 4, CP_VERSION);
+    wr_u16(blob + 6, CP_HEADER_SIZE);
+    wr_u32(blob + 8, (uint32_t)total);
+    wr_u16(blob + 16, 0x1234u);
+    wr_u16(blob + 18, 0x5678u);
+    wr_u16(blob + 24, LARGE_REPLAY_COUNT);
     blob[29] = 2u;
     wr_u32(blob + 12, cp_crc32(blob + 16, total - 16u));
     return total;
@@ -153,6 +184,33 @@ int main(void)
     CHECK(controller_runtime_handle_midi(&message));
     CHECK(controller_runtime_dispatch_pending(1u) == 1u);
     CHECK(s_events[2].id == CTRL_ID_DECK1_PLAY);
+
+    CHECK(controller_runtime_init(&config) == ESP_OK);
+    uint8_t large_blob[CP_HEADER_SIZE +
+                       LARGE_REPLAY_COUNT * CP_INPUT_ENTRY_SIZE];
+    const size_t large_len = build_large_replay_profile(large_blob);
+    CHECK(controller_profile_runtime_activate(large_blob, large_len,
+                                              0x1234u, 0x5678u));
+    s_event_count = 0u;
+    for (size_t i = 0u; i < LARGE_REPLAY_COUNT; ++i) {
+        message = midi(0xB0u, (uint8_t)i, (uint8_t)i);
+        CHECK(controller_runtime_handle_midi(&message));
+        CHECK(controller_runtime_dispatch_pending(1u) == 1u);
+    }
+    s_event_count = 0u;
+    controller_runtime_set_connected(true);
+    size_t snapshot_dispatched = 0u;
+    while (snapshot_dispatched < LARGE_REPLAY_COUNT) {
+        const size_t batch = controller_runtime_dispatch_pending(7u);
+        CHECK(batch > 0u && batch <= 7u);
+        snapshot_dispatched += batch;
+    }
+    CHECK(snapshot_dispatched == LARGE_REPLAY_COUNT);
+    CHECK(s_event_count == LARGE_REPLAY_COUNT);
+    for (size_t i = 0u; i < LARGE_REPLAY_COUNT; ++i) {
+        CHECK(s_events[i].value == (int16_t)i);
+    }
+    CHECK(controller_runtime_pending_count() == 0u);
 
     printf("PASS P4 local compiled controller profile runtime\n");
     printf("CHECKS=%u EVENTS=%zu\n", s_checks, s_event_count);

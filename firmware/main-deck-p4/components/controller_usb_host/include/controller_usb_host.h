@@ -52,6 +52,8 @@ typedef struct {
     uint32_t midi_in_submit_failures;
     uint32_t midi_out_submit_failures;
     uint32_t midi_out_queue_drops;
+    uint32_t probe_event_drops;
+    uint32_t recovery_requests;
     bool registered;
     bool connected;
     bool accepting_midi_out;

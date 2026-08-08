@@ -30,6 +30,8 @@ Exit code `0` and `"accepted": true` are required. The log must show:
 - at least 1800 seconds of continuous dual-active operation;
 - no panic, watchdog, assertion, brownout, queue drop, MSC read failure or
   MIDI submit failure.
+- every accepted soak status reports `msc_parent=0 msc_direct=1`,
+  `midi_parent=1 midi_direct=1` and `root_mask=0x00000003`.
 
 For devices connected directly to the P4 controllers, record
 `parent.dev_hdl == NULL` and the corresponding `parent.port_num`. That index is

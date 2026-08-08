@@ -1,10 +1,10 @@
 # Pajoniiir ESP32-P4-only Dual USB Host Migration Plan
 
-Status: approved implementation plan  
-Created: 2026-08-04  
-Working branch: `feat/p4-dual-usb-host`  
-Baseline commit: `c7a7cc59cf344ae4ed213ad0c0c3770f69077fca`  
-Target SDK: ESP-IDF `6.0.2`  
+Status: approved implementation plan
+Created: 2026-08-04
+Working branch: `feat/p4-dual-usb-host`
+Baseline commit: `c7a7cc59cf344ae4ed213ad0c0c3770f69077fca`
+Target SDK: ESP-IDF `6.0.2`
 USB component baseline: `espressif/usb 1.5.0`, `espressif/usb_host_msc 1.2.0`
 
 ## 1. Decision Summary

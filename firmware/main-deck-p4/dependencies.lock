@@ -125,7 +125,7 @@ dependencies:
       type: service
     version: 1.11.3
   espressif/usb_host_msc:
-    component_hash: 77da0bd49685353d8de7e0515acf0f4aa2b827d526f8ffae27b3644c3d0da4d0
+    component_hash: f5f178d5941a0ff4baa97ea8cfe0a7831731acc548773a2560ded1947a29a52e
     dependencies:
     - name: idf
       version: '>=5.0'
@@ -175,7 +175,7 @@ dependencies:
       type: service
     version: 9.5.0
   usb:
-    component_hash: b28e8746970cfd0f6a96b9fdfcbb1f98793b6fdd60e855294eb79a33cd1a2073
+    component_hash: bcca23e17d3b086ff9d19007007d90aed8b350888e7e4db1cbea5201c8a0c850
     dependencies:
     - name: idf
       version: '>=5.5.3'

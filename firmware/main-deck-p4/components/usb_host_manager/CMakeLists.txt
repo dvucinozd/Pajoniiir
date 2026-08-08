@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS "usb_host_manager.c" "usb_host_recovery_arbiter.c"
+         "usb_host_topology.c"
     INCLUDE_DIRS "include"
-    REQUIRES log usb
+    REQUIRES log usb freertos
 )

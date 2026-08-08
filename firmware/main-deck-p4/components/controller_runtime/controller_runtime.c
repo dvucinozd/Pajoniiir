@@ -4,11 +4,16 @@
 #include "control_link.h"
 #include "control_state_reconciler.h"
 #include "controller_event_buffer.h"
+#include "controller_profile.h"
 #include "controller_profile_runtime.h"
 
 static controller_runtime_config_t s_config;
 static flx4_map_state_t s_map;
 static controller_event_buffer_t s_buffer;
+static flx4_control_event_t
+    s_snapshot_events[CP_MAX_INPUTS];
+static size_t s_snapshot_count;
+static size_t s_snapshot_cursor;
 static control_held_state_reconciler_t s_held_states;
 static bool s_initialized;
 static bool s_connected;
@@ -35,19 +40,24 @@ static void runtime_unlock(void)
     __atomic_clear(&s_locked, __ATOMIC_RELEASE);
 }
 
-static bool queue_snapshot_event(uint8_t type, uint8_t id, int16_t value,
-                                 void *ctx)
+typedef struct {
+    flx4_control_event_t *events;
+    size_t capacity;
+    size_t count;
+} snapshot_collector_t;
+
+static bool collect_snapshot_event(uint8_t type, uint8_t id, int16_t value,
+                                   void *ctx)
 {
-    size_t *accepted = (size_t *)ctx;
-    const flx4_control_event_t event = {
+    snapshot_collector_t *collector = (snapshot_collector_t *)ctx;
+    if (!collector || collector->count >= collector->capacity) {
+        return false;
+    }
+    collector->events[collector->count++] = (flx4_control_event_t) {
         .type = type,
         .id = id,
         .value = value,
     };
-    if (!controller_event_buffer_push(&s_buffer, &event)) {
-        return false;
-    }
-    (*accepted)++;
     return true;
 }
 
@@ -88,20 +98,28 @@ static void invalidate_held_schedule_locked(void)
 
 static void prepare_snapshot_if_possible_locked(void)
 {
-    if (!s_snapshot_pending || s_buffer.count != 0u) {
+    if (!s_snapshot_pending || s_buffer.count != 0u ||
+        s_snapshot_cursor < s_snapshot_count) {
         return;
     }
 
-    size_t accepted = 0u;
+    snapshot_collector_t collector = {
+        .events = s_snapshot_events,
+        .capacity = CP_MAX_INPUTS,
+        .count = 0u,
+    };
     if (controller_profile_runtime_active()) {
-        (void)controller_profile_runtime_emit_snapshot(queue_snapshot_event,
-                                                       &accepted);
+        (void)controller_profile_runtime_emit_snapshot(collect_snapshot_event,
+                                                       &collector);
     } else {
-        (void)flx4_map_emit_snapshot(&s_map, queue_snapshot_event, &accepted);
+        (void)flx4_map_emit_snapshot(&s_map, collect_snapshot_event,
+                                     &collector);
     }
+    s_snapshot_count = collector.count;
+    s_snapshot_cursor = 0u;
     const size_t held = held_observed_count_locked();
     s_snapshot_pending = false;
-    if (accepted > 0u || held > 0u) {
+    if (s_snapshot_count > 0u || held > 0u) {
         (void)__atomic_add_fetch(&s_reconnect_snapshots, 1u,
                                  __ATOMIC_RELAXED);
     }
@@ -121,6 +139,8 @@ esp_err_t controller_runtime_init(const controller_runtime_config_t *config)
     control_held_state_reset(&s_held_states);
     s_connected = false;
     s_snapshot_pending = false;
+    s_snapshot_count = 0u;
+    s_snapshot_cursor = 0u;
     s_midi_messages = 0u;
     s_mapped_messages = 0u;
     s_semantic_events = 0u;
@@ -209,6 +229,7 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
         flx4_control_event_t event;
         int held_key = -1;
         bool have_held = false;
+        bool have_snapshot = false;
         bool have_buffered = false;
 
         runtime_lock();
@@ -232,6 +253,13 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
                 .id = held_id,
                 .value = held_value,
             };
+        } else if (s_snapshot_cursor < s_snapshot_count) {
+            event = s_snapshot_events[s_snapshot_cursor++];
+            have_snapshot = true;
+            if (s_snapshot_cursor == s_snapshot_count) {
+                s_snapshot_cursor = 0u;
+                s_snapshot_count = 0u;
+            }
         } else {
             have_buffered = controller_event_buffer_pop(&s_buffer, &event);
         }
@@ -246,6 +274,14 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
             runtime_unlock();
             (void)__atomic_add_fetch(&s_held_reconciliations, 1u,
                                      __ATOMIC_RELAXED);
+            (void)__atomic_add_fetch(&s_semantic_events, 1u,
+                                     __ATOMIC_RELAXED);
+            dispatched++;
+            continue;
+        }
+
+        if (have_snapshot) {
+            s_config.event_cb(&event, s_config.callback_ctx);
             (void)__atomic_add_fetch(&s_semantic_events, 1u,
                                      __ATOMIC_RELAXED);
             dispatched++;
@@ -292,6 +328,7 @@ size_t controller_runtime_pending_count(void)
     }
     runtime_lock();
     const size_t pending = s_buffer.count + held_dirty_count_locked() +
+                           (s_snapshot_count - s_snapshot_cursor) +
                            (s_snapshot_pending ? 1u : 0u);
     runtime_unlock();
     return pending;
@@ -310,6 +347,7 @@ void controller_runtime_get_diagnostics(
     const uint32_t dropped = s_buffer.dropped;
     const bool connected = s_connected;
     const bool snapshot_pending = s_snapshot_pending;
+    const size_t snapshot_queued = s_snapshot_count - s_snapshot_cursor;
     runtime_unlock();
 
     *diag_out = (controller_runtime_diagnostics_t) {
@@ -329,7 +367,7 @@ void controller_runtime_get_diagnostics(
             __atomic_load_n(&s_dispatch_calls, __ATOMIC_ACQUIRE),
         .queue_coalesced = coalesced,
         .queue_dropped = dropped,
-        .queued_events = queued,
+        .queued_events = queued + snapshot_queued,
         .connected = connected,
         .snapshot_pending = snapshot_pending,
         .dynamic_profile_active = controller_profile_runtime_active(),

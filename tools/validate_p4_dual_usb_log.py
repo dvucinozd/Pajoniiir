@@ -17,7 +17,12 @@ STATUS_RE = re.compile(
     r"MIDI\(active=(?P<midi_active>\d+) conn=(?P<midi_conn>\d+) "
     r"disc=(?P<midi_disc>\d+) packets=(?P<packets>\d+) "
     r"bytes=(?P<bytes>\d+) reject=(?P<reject>\d+) "
-    r"submit_fail=(?P<submit_fail>\d+)\).*?"
+    r"submit_fail=(?P<submit_fail>\d+)\) "
+    r"topology\(msc_parent=(?P<msc_parent>\d+) "
+    r"msc_direct=(?P<msc_direct>\d+) "
+    r"midi_parent=(?P<midi_parent>\d+) "
+    r"midi_direct=(?P<midi_direct>\d+) "
+    r"root_mask=0x(?P<root_mask>[0-9A-Fa-f]+)\).*?"
     r"drops\(msc=(?P<msc_drop>\d+) probe=(?P<probe_drop>\d+)\)"
 )
 
@@ -35,6 +40,7 @@ FATAL_PATTERNS = {
 class Summary:
     statuses: int = 0
     max_dual_seconds: int = 0
+    max_valid_topology_dual_seconds: int = 0
     max_class_mask: int = 0
     max_msc_connects: int = 0
     max_msc_disconnects: int = 0
@@ -51,6 +57,7 @@ class Summary:
     saw_msc_ready: bool = False
     saw_midi_ready: bool = False
     saw_dual_active_after_reconnect: bool = False
+    saw_expected_topology: bool = False
 
 
 def analyse(text: str):
@@ -69,7 +76,7 @@ def analyse(text: str):
 
     for match in STATUS_RE.finditer(text):
         values = {
-            key: int(value, 16 if key == "class_mask" else 10)
+            key: int(value, 16 if key in {"class_mask", "root_mask"} else 10)
             for key, value in match.groupdict().items()
         }
         summary.statuses += 1
@@ -98,12 +105,26 @@ def analyse(text: str):
         summary.max_msc_event_drops = max(summary.max_msc_event_drops,
                                           values["msc_drop"])
         summary.max_probe_event_drops = max(summary.max_probe_event_drops,
-                                            values["probe_drop"])
+                                             values["probe_drop"])
+        valid_topology = (
+            values["msc_parent"] == 0
+            and values["msc_direct"] == 1
+            and values["midi_parent"] == 1
+            and values["midi_direct"] == 1
+            and (values["root_mask"] & 0x03) == 0x03
+        )
+        if valid_topology:
+            summary.saw_expected_topology = True
+            summary.max_valid_topology_dual_seconds = max(
+                summary.max_valid_topology_dual_seconds,
+                values["dual"],
+            )
         if (
             values["msc_conn"] >= 2
             and values["midi_conn"] >= 2
             and values["msc_active"] == 1
             and values["midi_active"] == 1
+            and valid_topology
         ):
             summary.saw_dual_active_after_reconnect = True
 
@@ -124,13 +145,18 @@ def validate(summary, errors, *, required_soak_seconds,
         return failures
     if (summary.max_class_mask & 0x03) != 0x03:
         failures.append("class_mask never showed both MSC and MIDI")
+    if not summary.saw_expected_topology:
+        failures.append(
+            "expected direct topology USB0=MSC and USB1=MIDI was never observed"
+        )
     if summary.max_msc_reads_ok == 0:
         failures.append("MSC read counter never advanced")
     if summary.max_midi_packets == 0:
         failures.append("MIDI packet counter never advanced")
-    if summary.max_dual_seconds < required_soak_seconds:
+    if summary.max_valid_topology_dual_seconds < required_soak_seconds:
         failures.append(
-            f"dual-active soak {summary.max_dual_seconds}s is below "
+            "valid-topology dual-active soak "
+            f"{summary.max_valid_topology_dual_seconds}s is below "
             f"{required_soak_seconds}s"
         )
     if summary.max_msc_reads_failed:

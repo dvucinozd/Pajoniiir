@@ -17,7 +17,9 @@ SPEC.loader.exec_module(validator)
 def status(*, dual=1800, class_mask="03", msc_active=1, msc_conn=1,
            msc_disc=0, read_ok=7200, read_fail=0, midi_active=1,
            midi_conn=1, midi_disc=0, packets=500, bytes_=2000,
-           reject=0, submit_fail=0, msc_drop=0, probe_drop=0):
+           reject=0, submit_fail=0, msc_drop=0, probe_drop=0,
+           msc_parent=0, msc_direct=1, midi_parent=1, midi_direct=1,
+           root_mask="00000003"):
     return (
         "W PHASE1 STATUS uptime=1900s "
         f"dual={dual}s host_rc=OK devices=2 clients=2 "
@@ -27,7 +29,9 @@ def status(*, dual=1800, class_mask="03", msc_active=1, msc_conn=1,
         f"MIDI(active={midi_active} conn={midi_conn} disc={midi_disc} "
         f"packets={packets} bytes={bytes_} reject={reject} "
         f"submit_fail={submit_fail}) "
-        "topology(msc_parent=1 midi_parent=1 root_mask=0x00000002) "
+        f"topology(msc_parent={msc_parent} msc_direct={msc_direct} "
+        f"midi_parent={midi_parent} midi_direct={midi_direct} "
+        f"root_mask=0x{root_mask}) "
         f"drops(msc={msc_drop} probe={probe_drop}) bna_recovered=0"
     )
 
@@ -63,6 +67,18 @@ class ValidatorTests(unittest.TestCase):
         ))
         self.assertIn("guru_meditation", failures)
         self.assertIn("queue drops", failures)
+
+    def test_rejects_wrong_or_hub_topology(self):
+        same_port = "\n".join(self.run_validation(
+            self.prefix() + status(msc_parent=1, root_mask="00000002")
+        ))
+        self.assertIn("USB0=MSC", same_port)
+        self.assertIn("valid-topology dual-active soak", same_port)
+
+        hub = "\n".join(self.run_validation(
+            self.prefix() + status(msc_direct=0)
+        ))
+        self.assertIn("USB0=MSC", hub)
 
     def test_disconnect_matrix(self):
         self.assertEqual([], self.run_validation(

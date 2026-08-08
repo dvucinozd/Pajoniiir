@@ -4,9 +4,17 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
+#include "usb_host_topology.h"
 
 static const char *TAG = "usb_host_mgr";
+
+#define TOPOLOGY_EVENT_DEPTH       16
+#define RECOVERY_QUEUE_DEPTH       16
+#define RECOVERY_SETTLE_MS         150u
+#define RECOVERY_RETRY_BASE_MS     250u
+#define RECOVERY_RETRY_MAX_MS      30000u
 
 typedef enum {
     MANAGER_STOPPED = 0,
@@ -17,13 +25,32 @@ typedef enum {
 
 static usb_host_manager_config_t s_config;
 static TaskHandle_t s_daemon_task;
+static TaskHandle_t s_topology_task;
+static TaskHandle_t s_recovery_task;
+static usb_host_client_handle_t s_topology_client;
+static QueueHandle_t s_recovery_queue;
 static esp_err_t s_install_result = ESP_ERR_INVALID_STATE;
 static uint32_t s_daemon_iterations;
 static uint32_t s_daemon_errors;
 static uint32_t s_no_clients_events;
 static uint32_t s_all_free_events;
 static uint32_t s_root_power_requested_mask;
+static uint32_t s_topology_observations;
+static uint32_t s_topology_probe_failures;
+static uint32_t s_recovery_queue_drops;
+static uint32_t s_recovery_requests;
+static uint32_t s_recovery_coalesced_requests;
+static uint32_t s_recovery_successes;
+static uint32_t s_recovery_failures;
+static usb_host_topology_t s_topology;
+static usb_host_recovery_arbiter_t s_recovery_arbiter;
+static portMUX_TYPE s_topology_mux = portMUX_INITIALIZER_UNLOCKED;
 static manager_state_t s_state = MANAGER_STOPPED;
+
+typedef struct {
+    uint8_t port;
+    usb_host_recovery_reason_t reason;
+} recovery_request_t;
 
 static inline manager_state_t state_get(void)
 {
@@ -33,6 +60,156 @@ static inline manager_state_t state_get(void)
 static inline void state_set(manager_state_t state)
 {
     __atomic_store_n(&s_state, state, __ATOMIC_RELEASE);
+}
+
+static void topology_event_callback(
+    const usb_host_client_event_msg_t *event_msg,
+    void *arg)
+{
+    (void)arg;
+    if (event_msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV) {
+        usb_device_handle_t device = NULL;
+        usb_device_info_t info = {0};
+        const uint8_t address = event_msg->new_dev.address;
+        esp_err_t rc = usb_host_device_open(s_topology_client, address, &device);
+        if (rc == ESP_OK) {
+            rc = usb_host_device_info(device, &info);
+        }
+        if (device) {
+            (void)usb_host_device_close(s_topology_client, device);
+        }
+        if (rc != ESP_OK) {
+            (void)__atomic_add_fetch(&s_topology_probe_failures, 1u,
+                                     __ATOMIC_RELAXED);
+            ESP_LOGW(TAG, "topology probe addr=%u: %s",
+                     (unsigned)address, esp_err_to_name(rc));
+            return;
+        }
+
+        portENTER_CRITICAL(&s_topology_mux);
+        (void)usb_host_topology_observe(&s_topology, address,
+                                        info.parent.dev_hdl == NULL,
+                                        info.parent.port_num);
+        portEXIT_CRITICAL(&s_topology_mux);
+        (void)__atomic_add_fetch(&s_topology_observations, 1u,
+                                 __ATOMIC_RELAXED);
+        ESP_LOGI(TAG, "topology addr=%u root=%u direct=%u",
+                 (unsigned)address, (unsigned)info.parent.port_num,
+                 info.parent.dev_hdl == NULL ? 1u : 0u);
+        return;
+    }
+
+    if (event_msg->event == USB_HOST_CLIENT_EVENT_DEV_REMOVED) {
+        portENTER_CRITICAL(&s_topology_mux);
+        (void)usb_host_topology_remove(&s_topology,
+                                       event_msg->dev_removed.address);
+        portEXIT_CRITICAL(&s_topology_mux);
+    }
+}
+
+static void topology_client_task(void *arg)
+{
+    const TaskHandle_t starter = (TaskHandle_t)arg;
+    const usb_host_client_config_t config = {
+        .is_synchronous = false,
+        .max_num_event_msg = TOPOLOGY_EVENT_DEPTH,
+        .flags = {
+            .notify_dev_removed = 1u,
+        },
+        .async = {
+            .client_event_callback = topology_event_callback,
+            .callback_arg = NULL,
+        },
+    };
+    const esp_err_t rc = usb_host_client_register(&config, &s_topology_client);
+    s_install_result = rc;
+    xTaskNotifyGive(starter);
+    if (rc != ESP_OK) {
+        s_topology_task = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+    for (;;) {
+        const esp_err_t event_rc = usb_host_client_handle_events(
+            s_topology_client, pdMS_TO_TICKS(100));
+        if (event_rc != ESP_OK && event_rc != ESP_ERR_TIMEOUT) {
+            ESP_LOGW(TAG, "topology events: %s", esp_err_to_name(event_rc));
+        }
+    }
+}
+
+static bool recovery_power_cycle(uint8_t port,
+                                 usb_host_recovery_reason_t reason)
+{
+    ESP_LOGW(TAG, "recovering USB%u reason=%u", (unsigned)port,
+             (unsigned)reason);
+    esp_err_t rc = usb_host_manager_set_root_power_by_index(port, false);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "USB%u recovery power-off: %s", (unsigned)port,
+                 esp_err_to_name(rc));
+        return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(RECOVERY_SETTLE_MS));
+    rc = usb_host_manager_set_root_power_by_index(port, true);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "USB%u recovery power-on: %s", (unsigned)port,
+                 esp_err_to_name(rc));
+        return false;
+    }
+    return true;
+}
+
+static void recovery_task(void *arg)
+{
+    (void)arg;
+    recovery_request_t request;
+    for (;;) {
+        while (xQueueReceive(s_recovery_queue, &request, 0) == pdTRUE) {
+            const uint32_t coalesced_before =
+                s_recovery_arbiter.coalesced_requests;
+            (void)usb_host_recovery_arbiter_request(
+                &s_recovery_arbiter, request.port, request.reason);
+            (void)__atomic_add_fetch(&s_recovery_requests, 1u,
+                                     __ATOMIC_RELAXED);
+            if (s_recovery_arbiter.coalesced_requests != coalesced_before) {
+                (void)__atomic_add_fetch(&s_recovery_coalesced_requests, 1u,
+                                         __ATOMIC_RELAXED);
+            }
+        }
+
+        uint8_t port = USB_HOST_RECOVERY_PORT_NONE;
+        usb_host_recovery_reason_t reason = USB_HOST_RECOVERY_REASON_NONE;
+        const uint32_t now = (uint32_t)xTaskGetTickCount();
+        if (usb_host_recovery_arbiter_acquire(&s_recovery_arbiter, now,
+                                              &port, &reason)) {
+            const bool success = recovery_power_cycle(port, reason);
+            (void)usb_host_recovery_arbiter_complete(
+                &s_recovery_arbiter, port, success,
+                (uint32_t)xTaskGetTickCount());
+            (void)__atomic_add_fetch(success ? &s_recovery_successes
+                                             : &s_recovery_failures,
+                                     1u, __ATOMIC_RELAXED);
+            continue;
+        }
+
+        request = (recovery_request_t) {
+            .port = 0u,
+            .reason = USB_HOST_RECOVERY_REASON_NONE,
+        };
+        if (xQueueReceive(s_recovery_queue, &request,
+                          pdMS_TO_TICKS(10)) == pdTRUE) {
+            const uint32_t coalesced_before =
+                s_recovery_arbiter.coalesced_requests;
+            (void)usb_host_recovery_arbiter_request(
+                &s_recovery_arbiter, request.port, request.reason);
+            (void)__atomic_add_fetch(&s_recovery_requests, 1u,
+                                     __ATOMIC_RELAXED);
+            if (s_recovery_arbiter.coalesced_requests != coalesced_before) {
+                (void)__atomic_add_fetch(&s_recovery_coalesced_requests, 1u,
+                                         __ATOMIC_RELAXED);
+            }
+        }
+    }
 }
 
 static void usb_host_daemon_task(void *arg)
@@ -47,6 +224,18 @@ static void usb_host_daemon_task(void *arg)
     };
 
     s_install_result = usb_host_install(&host_config);
+    if (s_install_result == ESP_OK) {
+        const BaseType_t topology_created = xTaskCreate(
+            topology_client_task, "usb_topology", 4096u,
+            (void *)xTaskGetCurrentTaskHandle(),
+            s_config.daemon_priority + 2u, &s_topology_task);
+        if (topology_created != pdPASS ||
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000)) == 0u) {
+            s_install_result = topology_created == pdPASS
+                                   ? ESP_ERR_TIMEOUT
+                                   : ESP_ERR_NO_MEM;
+        }
+    }
     if (s_install_result == ESP_OK) {
         state_set(MANAGER_READY);
         ESP_LOGI(TAG,
@@ -110,6 +299,27 @@ esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config)
 
     s_config = *config;
     s_install_result = ESP_ERR_INVALID_STATE;
+    usb_host_topology_init(&s_topology);
+    usb_host_recovery_arbiter_init(
+        &s_recovery_arbiter,
+        (uint32_t)pdMS_TO_TICKS(RECOVERY_RETRY_BASE_MS),
+        (uint32_t)pdMS_TO_TICKS(RECOVERY_RETRY_MAX_MS));
+    s_recovery_queue = xQueueCreate(RECOVERY_QUEUE_DEPTH,
+                                    sizeof(recovery_request_t));
+    if (!s_recovery_queue) {
+        s_install_result = ESP_ERR_NO_MEM;
+        state_set(MANAGER_FAILED);
+        return ESP_ERR_NO_MEM;
+    }
+    if (xTaskCreate(recovery_task, "usb_recovery", 4096u, NULL,
+                    config->daemon_priority + 1u,
+                    &s_recovery_task) != pdPASS) {
+        vQueueDelete(s_recovery_queue);
+        s_recovery_queue = NULL;
+        s_install_result = ESP_ERR_NO_MEM;
+        state_set(MANAGER_FAILED);
+        return ESP_ERR_NO_MEM;
+    }
     __atomic_store_n(&s_root_power_requested_mask,
                      config->root_port_unpowered ? 0u
                                                  : config->peripheral_map,
@@ -129,6 +339,10 @@ esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config)
     }
 
     if (created != pdPASS) {
+        vTaskDelete(s_recovery_task);
+        s_recovery_task = NULL;
+        vQueueDelete(s_recovery_queue);
+        s_recovery_queue = NULL;
         s_daemon_task = NULL;
         s_install_result = ESP_ERR_NO_MEM;
         state_set(MANAGER_FAILED);
@@ -139,6 +353,54 @@ esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config)
         return ESP_ERR_TIMEOUT;
     }
     return s_install_result;
+}
+
+esp_err_t usb_host_manager_device_matches_root(uint8_t address,
+                                               uint8_t root_port_index,
+                                               bool require_direct_root,
+                                               bool *matches_out)
+{
+    if (!matches_out || address == 0u || root_port_index >= 32u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *matches_out = false;
+    if (!usb_host_manager_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    bool known = false;
+    portENTER_CRITICAL(&s_topology_mux);
+    const bool matches = usb_host_topology_matches_root(
+        &s_topology, address, root_port_index, require_direct_root, &known);
+    portEXIT_CRITICAL(&s_topology_mux);
+    if (!known) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    *matches_out = matches;
+    return ESP_OK;
+}
+
+esp_err_t usb_host_manager_request_recovery(
+    uint8_t root_port_index,
+    usb_host_recovery_reason_t reason)
+{
+    if (root_port_index >= USB_HOST_RECOVERY_PORT_COUNT ||
+        reason == USB_HOST_RECOVERY_REASON_NONE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!usb_host_manager_is_ready() || !s_recovery_queue) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const recovery_request_t request = {
+        .port = root_port_index,
+        .reason = reason,
+    };
+    if (xQueueSend(s_recovery_queue, &request, 0) != pdTRUE) {
+        (void)__atomic_add_fetch(&s_recovery_queue_drops, 1u,
+                                 __ATOMIC_RELAXED);
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
 }
 
 bool usb_host_manager_is_ready(void)
@@ -219,6 +481,21 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
         .all_free_events =
             __atomic_load_n(&s_all_free_events, __ATOMIC_ACQUIRE),
         .root_power_requested_mask = requested_mask,
+        .topology_observations =
+            __atomic_load_n(&s_topology_observations, __ATOMIC_ACQUIRE),
+        .topology_probe_failures =
+            __atomic_load_n(&s_topology_probe_failures, __ATOMIC_ACQUIRE),
+        .recovery_queue_drops =
+            __atomic_load_n(&s_recovery_queue_drops, __ATOMIC_ACQUIRE),
+        .recovery_requests =
+            __atomic_load_n(&s_recovery_requests, __ATOMIC_ACQUIRE),
+        .recovery_coalesced_requests =
+            __atomic_load_n(&s_recovery_coalesced_requests,
+                            __ATOMIC_ACQUIRE),
+        .recovery_successes =
+            __atomic_load_n(&s_recovery_successes, __ATOMIC_ACQUIRE),
+        .recovery_failures =
+            __atomic_load_n(&s_recovery_failures, __ATOMIC_ACQUIRE),
         .peripheral_map = s_config.peripheral_map,
         .ready = usb_host_manager_is_ready(),
         .root_power_requested =

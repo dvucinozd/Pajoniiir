@@ -6,6 +6,8 @@ on:
       - "firmware/p4-dual-usb-spike/**"
       - "firmware/p4-only-software-harness/**"
       - "firmware/main-deck-p4/main/**"
+      - "firmware/main-deck-p4/CMakeLists.txt"
+      - "firmware/main-deck-p4/dependencies.lock"
       - "firmware/main-deck-p4/sdkconfig.p4_local_controller"
       - "firmware/main-deck-p4/components/usb_storage/**"
       - "firmware/main-deck-p4/components/usb_host_manager/**"
@@ -14,13 +16,17 @@ on:
       - "firmware/main-deck-p4/components/controller_profile_runtime/**"
       - "firmware/main-deck-p4/components/controller_runtime/**"
       - "firmware/main-deck-p4/components/controller_led_runtime/**"
+      - "firmware/main-deck-p4/components/controller_usb_audio/**"
       - "firmware/main-deck-p4/components/p4_local_controller/**"
       - "tests/p4_dual_usb_spike/**"
       - "tests/p4_dual_usb_log_validator/**"
       - "tests/controller_usb_host/**"
       - "tests/controller_runtime/**"
       - "tests/controller_led_runtime/**"
+      - "tests/controller_usb_audio/**"
       - "tools/validate_p4_dual_usb_log.py"
+      - "tools/create_p4_acceptance_manifest.py"
+      - "tools/check_p4_binary_budget.py"
       - ".github/workflows/p4-dual-usb-spike.yml"
   workflow_dispatch:
 
@@ -57,6 +63,10 @@ jobs:
       - name: Run P4-local LED runtime tests
         shell: pwsh
         run: ./tests/controller_led_runtime/run_tests.ps1
+
+      - name: Run portable P4 USB Audio core tests
+        shell: pwsh
+        run: ./tests/controller_usb_audio/run_tests.ps1
 
       - name: Run hardware-log validator tests
         shell: pwsh

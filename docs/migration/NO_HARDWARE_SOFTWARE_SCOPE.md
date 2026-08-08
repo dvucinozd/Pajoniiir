@@ -35,7 +35,8 @@ an ESP32-P4 board, Rekordbox storage device or DDJ-FLX4.
 - A deterministic trace test feeds known vectors plus 100,000 generated MIDI
   messages through the S3 and P4 maps and compares every emitted event and
   reconnect snapshot.
-- A two-port recovery arbiter serializes simultaneous faults, coalesces duplicate
+- A production recovery task routes storage and controller faults through the
+  two-port recovery arbiter, serializes simultaneous faults, coalesces duplicate
   requests, applies bounded exponential retry cadence and alternates fairly
   between USB0 and USB1.
 - The pure USB Audio preparation layer contains the S3-equivalent UAC descriptor

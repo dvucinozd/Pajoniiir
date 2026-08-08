@@ -18,10 +18,9 @@ typedef struct {
     usb_transfer_t *in_transfer;
     usb_transfer_t *out_transfer;
     QueueHandle_t out_queue;
+    QueueHandle_t probe_queue;
     controller_usb_host_config_t config;
     controller_usb_identity_t identity;
-    uint8_t pending_address;
-    bool pending_device;
     bool opened;
     bool claimed;
     bool in_active;
@@ -44,10 +43,21 @@ static uint32_t s_midi_parse_rejects;
 static uint32_t s_midi_in_submit_failures;
 static uint32_t s_midi_out_submit_failures;
 static uint32_t s_midi_out_queue_drops;
+static uint32_t s_probe_event_drops;
+static uint32_t s_recovery_requests;
 
 static inline void count_inc(uint32_t *value)
 {
     (void)__atomic_add_fetch(value, 1u, __ATOMIC_RELAXED);
+}
+
+static void request_controller_recovery(void)
+{
+    const esp_err_t rc = usb_host_manager_request_recovery(
+        1u, USB_HOST_RECOVERY_REASON_TRANSFER);
+    if (rc == ESP_OK) {
+        count_inc(&s_recovery_requests);
+    }
 }
 
 static void usb_string_to_ascii(const usb_str_desc_t *desc, char *out,
@@ -98,6 +108,7 @@ static esp_err_t submit_in_if_idle(controller_state_t *state)
         state->in_active = true;
     } else {
         count_inc(&s_midi_in_submit_failures);
+        request_controller_recovery();
     }
     return rc;
 }
@@ -129,6 +140,7 @@ static esp_err_t submit_out_if_idle(controller_state_t *state)
         state->out_active = true;
     } else {
         count_inc(&s_midi_out_submit_failures);
+        request_controller_recovery();
     }
     return rc;
 }
@@ -159,6 +171,7 @@ static void midi_in_callback(usb_transfer_t *transfer)
     } else if (transfer->status != USB_TRANSFER_STATUS_NO_DEVICE &&
                transfer->status != USB_TRANSFER_STATUS_CANCELED) {
         ESP_LOGW(TAG, "MIDI IN transfer status=%d", (int)transfer->status);
+        request_controller_recovery();
     }
 
     if (!state->closing &&
@@ -179,6 +192,7 @@ static void midi_out_callback(usb_transfer_t *transfer)
         transfer->status != USB_TRANSFER_STATUS_NO_DEVICE &&
         transfer->status != USB_TRANSFER_STATUS_CANCELED) {
         ESP_LOGW(TAG, "MIDI OUT transfer status=%d", (int)transfer->status);
+        request_controller_recovery();
     }
     if (!state->closing &&
         transfer->status != USB_TRANSFER_STATUS_NO_DEVICE) {
@@ -232,8 +246,6 @@ static void close_step(controller_state_t *state)
     const bool was_connected =
         __atomic_exchange_n(&s_connected, false, __ATOMIC_ACQ_REL);
     memset(&state->identity, 0, sizeof(state->identity));
-    state->pending_device = false;
-    state->pending_address = 0u;
     state->closing = false;
     if (was_connected) {
         count_inc(&s_midi_disconnects);
@@ -358,9 +370,10 @@ static void client_event_callback(const usb_host_client_event_msg_t *event_msg,
     controller_state_t *state = (controller_state_t *)arg;
     switch (event_msg->event) {
     case USB_HOST_CLIENT_EVENT_NEW_DEV:
-        if (!state->pending_device) {
-            state->pending_address = event_msg->new_dev.address;
-            state->pending_device = true;
+        if (!state->probe_queue ||
+            xQueueSend(state->probe_queue, &event_msg->new_dev.address, 0) !=
+                pdTRUE) {
+            count_inc(&s_probe_event_drops);
         }
         break;
     case USB_HOST_CLIENT_EVENT_DEV_GONE:
@@ -409,9 +422,9 @@ static void controller_task(void *arg)
             close_step(&s_state);
             continue;
         }
-        if (s_state.pending_device) {
-            const uint8_t address = s_state.pending_address;
-            s_state.pending_device = false;
+        uint8_t address = 0u;
+        while (!s_state.closing && s_state.probe_queue &&
+               xQueueReceive(s_state.probe_queue, &address, 0) == pdTRUE) {
             const esp_err_t probe_rc = probe_device(&s_state, address);
             if (probe_rc != ESP_OK && probe_rc != ESP_ERR_NOT_FOUND &&
                 probe_rc != ESP_ERR_INVALID_STATE) {
@@ -441,7 +454,17 @@ esp_err_t controller_usb_host_init(const controller_usb_host_config_t *config)
     memset(&s_state, 0, sizeof(s_state));
     s_state.config = *config;
     s_state.out_queue = xQueueCreate(config->midi_out_queue_depth, 4u);
-    if (!s_state.out_queue) {
+    s_state.probe_queue = xQueueCreate((UBaseType_t)config->max_event_messages,
+                                       sizeof(uint8_t));
+    if (!s_state.out_queue || !s_state.probe_queue) {
+        if (s_state.out_queue) {
+            vQueueDelete(s_state.out_queue);
+            s_state.out_queue = NULL;
+        }
+        if (s_state.probe_queue) {
+            vQueueDelete(s_state.probe_queue);
+            s_state.probe_queue = NULL;
+        }
         return ESP_ERR_NO_MEM;
     }
 
@@ -460,6 +483,8 @@ esp_err_t controller_usb_host_init(const controller_usb_host_config_t *config)
     if (created != pdPASS) {
         vQueueDelete(s_state.out_queue);
         s_state.out_queue = NULL;
+        vQueueDelete(s_state.probe_queue);
+        s_state.probe_queue = NULL;
         return ESP_ERR_NO_MEM;
     }
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000)) == 0u) {
@@ -528,6 +553,10 @@ void controller_usb_host_get_diagnostics(
             __atomic_load_n(&s_midi_out_submit_failures, __ATOMIC_ACQUIRE),
         .midi_out_queue_drops =
             __atomic_load_n(&s_midi_out_queue_drops, __ATOMIC_ACQUIRE),
+        .probe_event_drops =
+            __atomic_load_n(&s_probe_event_drops, __ATOMIC_ACQUIRE),
+        .recovery_requests =
+            __atomic_load_n(&s_recovery_requests, __ATOMIC_ACQUIRE),
         .registered =
             __atomic_load_n(&s_registered, __ATOMIC_ACQUIRE),
         .connected = controller_usb_host_is_connected(),

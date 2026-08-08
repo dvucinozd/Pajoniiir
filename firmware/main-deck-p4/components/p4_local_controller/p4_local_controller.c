@@ -221,7 +221,7 @@ static bool activate_matching_profile(const controller_usb_identity_t *identity)
 
 static void drain_runtime_before_disconnect(void)
 {
-    for (unsigned pass = 0u; pass < 4u; ++pass) {
+    for (unsigned pass = 0u; pass < 8u; ++pass) {
         if (controller_runtime_dispatch_pending(LOCAL_DISPATCH_BUDGET) == 0u) {
             break;
         }

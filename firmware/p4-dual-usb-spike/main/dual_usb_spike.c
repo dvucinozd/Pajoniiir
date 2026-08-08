@@ -63,6 +63,8 @@ static uint32_t s_probe_event_drops;
 static uint32_t s_direct_root_port_mask;
 static uint8_t s_msc_parent_port = UINT8_MAX;
 static uint8_t s_midi_parent_port = UINT8_MAX;
+static bool s_msc_direct_root;
+static bool s_midi_direct_root;
 static bool s_msc_active;
 static bool s_midi_active;
 
@@ -137,10 +139,16 @@ static void record_topology(const usb_device_info_t *info,
         __atomic_store_n(&s_msc_parent_port,
                          info->parent.port_num,
                          __ATOMIC_RELEASE);
+        __atomic_store_n(&s_msc_direct_root,
+                         info->parent.dev_hdl == NULL,
+                         __ATOMIC_RELEASE);
     }
     if (is_midi) {
         __atomic_store_n(&s_midi_parent_port,
                          info->parent.port_num,
+                         __ATOMIC_RELEASE);
+        __atomic_store_n(&s_midi_direct_root,
+                         info->parent.dev_hdl == NULL,
                          __ATOMIC_RELEASE);
     }
 }
@@ -735,6 +743,10 @@ static void phase1_status_loop(void)
             __atomic_load_n(&s_msc_parent_port, __ATOMIC_ACQUIRE);
         const uint8_t midi_parent =
             __atomic_load_n(&s_midi_parent_port, __ATOMIC_ACQUIRE);
+        const bool msc_direct =
+            __atomic_load_n(&s_msc_direct_root, __ATOMIC_ACQUIRE);
+        const bool midi_direct =
+            __atomic_load_n(&s_midi_direct_root, __ATOMIC_ACQUIRE);
 
         ESP_LOGW(TAG,
                  "PHASE1 STATUS uptime=%" PRIu32 "s dual=%" PRIu32
@@ -744,7 +756,8 @@ static void phase1_status_loop(void)
                  " MIDI(active=%u conn=%" PRIu32 " disc=%" PRIu32
                  " packets=%" PRIu32 " bytes=%" PRIu32
                  " reject=%" PRIu32 " submit_fail=%" PRIu32 ")"
-                 " topology(msc_parent=%u midi_parent=%u root_mask=0x%08" PRIX32 ")"
+                 " topology(msc_parent=%u msc_direct=%u midi_parent=%u "
+                 "midi_direct=%u root_mask=0x%08" PRIX32 ")"
                  " probe(open_fail=%" PRIu32 " desc_fail=%" PRIu32 ")"
                  " drops(msc=%" PRIu32 " probe=%" PRIu32 ") bna_recovered=%" PRIu32,
                  (uint32_t)((now_us - start_us) / 1000000ll),
@@ -766,7 +779,9 @@ static void phase1_status_loop(void)
                  atomic_get_u32(&s_midi_parse_rejects),
                  atomic_get_u32(&s_midi_submit_failures),
                  msc_parent,
+                 msc_direct ? 1u : 0u,
                  midi_parent,
+                 midi_direct ? 1u : 0u,
                  atomic_get_u32(&s_direct_root_port_mask),
                  atomic_get_u32(&s_probe_open_failures),
                  atomic_get_u32(&s_probe_descriptor_failures),

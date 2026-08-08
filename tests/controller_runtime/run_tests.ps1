@@ -29,12 +29,14 @@ $BufferExe = Join-Path $BuildDir "test_controller_event_buffer"
 $RuntimeExe = Join-Path $BuildDir "test_controller_runtime"
 $ProfileExe = Join-Path $BuildDir "test_controller_runtime_profile"
 $RecoveryExe = Join-Path $BuildDir "test_usb_host_recovery_arbiter"
+$TopologyExe = Join-Path $BuildDir "test_usb_host_topology"
 $TraceExe = Join-Path $BuildDir "test_p4_s3_trace_equivalence"
 if ($IsWindows) {
     $BufferExe += ".exe"
     $RuntimeExe += ".exe"
     $ProfileExe += ".exe"
     $RecoveryExe += ".exe"
+    $TopologyExe += ".exe"
     $TraceExe += ".exe"
 }
 
@@ -76,6 +78,14 @@ gcc @CommonArgs `
     -o $RecoveryExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $RecoveryExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+gcc @CommonArgs `
+    (Join-Path $HostManager "usb_host_topology.c") `
+    (Join-Path $PSScriptRoot "test_usb_host_topology.c") `
+    -o $TopologyExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $TopologyExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $P4Map = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_runtime"
