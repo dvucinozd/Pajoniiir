@@ -154,6 +154,8 @@ jobs:
               idf.py "${common[@]}" reconfigure
               grep -q "^#define CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER 1$" \
                 build-p4-local/config/sdkconfig.h
+              grep -q "^#define CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE 512$" \
+                build-p4-local/config/sdkconfig.h
               idf.py "${common[@]}" build
               test -f build-p4-local/esp-idf/usb_storage/CMakeFiles/__idf_usb_storage.dir/usb_storage_shared.c.obj
               test -f build-p4-local/esp-idf/controller_usb_host/CMakeFiles/__idf_controller_usb_host.dir/controller_usb_host_routed.c.obj
