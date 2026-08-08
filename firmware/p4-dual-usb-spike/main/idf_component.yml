@@ -1,4 +1,4 @@
-## USB Host Mass Storage Class driver for the Rekordbox music drive.
+## Isolated Phase 1 dual-host proof for ESP32-P4.
 dependencies:
   usb:
     git: https://github.com/dvucinozd/esp-usb.git

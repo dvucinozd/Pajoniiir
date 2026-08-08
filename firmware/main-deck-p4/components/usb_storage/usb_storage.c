@@ -37,6 +37,14 @@ static const char *TAG = "usb_storage";
 #define ROOT_PORT_MAX_CYCLES     8u
 #define ROOT_PORT_SLOW_MS        30000u
 
+#ifndef USB_STORAGE_DEVICE_ROUTE_ALLOWED
+#define USB_STORAGE_DEVICE_ROUTE_ALLOWED(address) (true)
+#endif
+
+#ifndef USB_STORAGE_REQUEST_ROOT_RECOVERY
+#define USB_STORAGE_REQUEST_ROOT_RECOVERY(why) (false)
+#endif
+
 static TaskHandle_t             s_storage_task;
 static TaskHandle_t             s_usb_lib_task;
 static usb_storage_event_cb_t   s_cb;
@@ -117,6 +125,9 @@ static void publish_desired_disconnect(msc_host_device_handle_t handle)
 static void root_port_power_cycle(const char *why)
 {
     ESP_LOGI(TAG, "root port power cycle (%s)", why ? why : "");
+    if (USB_STORAGE_REQUEST_ROOT_RECOVERY(why)) {
+        return;
+    }
     esp_err_t rc = usb_host_lib_set_root_port_power(false);
     if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "root port power off: %s", esp_err_to_name(rc));
@@ -350,6 +361,11 @@ static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
 {
     if (!desired_matches(epoch, dev_addr)) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (!USB_STORAGE_DEVICE_ROUTE_ALLOWED(dev_addr)) {
+        ESP_LOGW(TAG, "rejecting MSC addr=%u outside the USB0 direct root",
+                 (unsigned)dev_addr);
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     /* A previous transient attempt may have left a partially opened handle. */

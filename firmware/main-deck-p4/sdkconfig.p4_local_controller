@@ -1,0 +1,3 @@
+# CI-only migration overlay. Product sdkconfig.defaults keeps this disabled.
+CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
