@@ -1,5 +1,12 @@
 # ESP32-P4 Dual USB Phase 1 Hardware Runbook
 
+This runbook is for the dedicated `firmware/p4-dual-usb-spike` diagnostic
+image and its machine-parsable `PHASE1 STATUS` log format. The experimental
+`main-deck-p4` product image was first wired-smoked on 2026-08-09 and remains
+flashed on the bench. Resume that product-image test from
+[`P4_DUAL_USB_NEXT_SESSION.md`](P4_DUAL_USB_NEXT_SESSION.md) before using this
+spike for the topology/reconnect soak.
+
 Flash `firmware/p4-dual-usb-spike` and save the complete serial monitor output.
 
 Run the following sequence:
