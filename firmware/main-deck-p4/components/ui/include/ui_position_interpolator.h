@@ -22,6 +22,8 @@ uint32_t ui_position_interpolator_update(ui_position_interpolator_t *interp,
                                          uint32_t snapshot_position_ms,
                                          uint32_t duration_ms,
                                          bool playing,
+                                         /* Zero disables prediction and makes
+                                          * each snapshot authoritative. */
                                          uint32_t speed_permille,
                                          uint64_t now_us);
 

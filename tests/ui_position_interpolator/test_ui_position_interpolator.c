@@ -47,6 +47,17 @@ static void test_paused_position_tracks_snapshot_without_advancing(void)
     assert(ui_position_interpolator_update(&interp, 3000, 10000, false, 1000, 1500000) == 3000);
 }
 
+static void test_playing_zero_speed_tracks_authoritative_snapshot(void)
+{
+    ui_position_interpolator_t interp;
+    ui_position_interpolator_init(&interp);
+
+    assert(ui_position_interpolator_update(&interp, 5000, 10000, true, 0, 1000000) == 5000);
+    assert(ui_position_interpolator_update(&interp, 5000, 10000, true, 0, 1033000) == 5000);
+    assert(ui_position_interpolator_update(&interp, 4920, 10000, true, 0, 1066000) == 4920);
+    assert(ui_position_interpolator_update(&interp, 4920, 10000, true, 1000, 1099000) == 4953);
+}
+
 static void test_seek_or_cue_rebases_to_snapshot(void)
 {
     ui_position_interpolator_t interp;
@@ -73,6 +84,7 @@ int main(void)
     test_playing_position_advances_between_identical_snapshots();
     test_pitch_speed_changes_interpolated_position();
     test_paused_position_tracks_snapshot_without_advancing();
+    test_playing_zero_speed_tracks_authoritative_snapshot();
     test_seek_or_cue_rebases_to_snapshot();
     test_interpolated_position_clamps_to_duration();
 
