@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-08-09**
+Saved: **2026-08-10**
 
 This is the operational checkpoint for the next physical bench session. It is
 deliberately narrower than the architecture plan and records only facts needed
@@ -23,6 +23,22 @@ The commits after `fc03034` are documentation-only. The firmware currently on
 the P4 therefore reports `RC2-54-gfc03034`; a later rebuild from the branch head
 will have a newer `git describe` string even if the executable logic is
 otherwise unchanged.
+
+## Pause status and confirmed blocker
+
+Work on this branch is intentionally paused and the repository is returning to
+`master`. Do not resume the dual-USB matrix merely by powering the P4 from JP1:
+the 2026-08-10 bench attempt proved that JP1 5 V powers the board but does not
+provide usable VBUS to either attached USB device in the tested arrangement.
+The USB drive LED remained off, Wi-Fi diagnostics showed neither mounted USB
+storage nor a present controller, and the P4 remained otherwise healthy.
+
+Testing may resume only after a protected external 5 V arrangement supplies
+each downstream USB VBUS without backfeeding the P4-side VBUS. The circuit and
+pre-connection checks are recorded in
+[`../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md)
+and in [`../HARDWARE_WIRING.md`](../HARDWARE_WIRING.md). Do not merge this
+branch before that blocker is removed and the remaining hardware gates pass.
 
 ## Current physical state
 
@@ -103,31 +119,35 @@ Get-CimInstance Win32_Process |
   Select-Object ProcessId, ParentProcessId, Name, CommandLine
 ```
 
-## First test next session
+## First test after protected VBUS is available
 
 Start with the product feature image that is already flashed:
 
-1. Power the system normally and begin a COM15 capture before connecting the
-   controller.
-2. Keep the Rekordbox drive directly on USB0.
-3. Connect the DDJ-FLX4 directly to USB1, without a hub.
-4. Confirm these production-image log facts:
+1. With both protected outputs disabled, verify the interposer continuity,
+   VBUS isolation, polarity and absence of shorts. Power the P4 from the common
+   regulated 5 V source, then enable and measure each downstream output.
+2. Use COM15 when it is physically available; when both root ports are occupied,
+   capture `/api/status` and `/api/diagnostic-log` over the `Pajoniiir` Wi-Fi
+   service interface instead.
+3. Keep the Rekordbox drive on the protected USB0 data interposer.
+4. Connect the DDJ-FLX4 to the protected USB1 data interposer, without a hub.
+5. Confirm these production-image log facts:
    - USB Host manager reports `peripheral_map=0x03`;
    - storage remains mounted and the 191-track library remains available;
    - `controller_usb` reports `USB-MIDI ready` for VID `0x2B73`, PID `0x0045`;
    - the controller identity reports `parent_port=1 direct_root=1`;
    - `p4_local_ctrl` reports `P4-local controller active ... port=1`.
-5. Exercise Browse/Load, PLAY/CUE on both decks, both jogs, pitch, channel
+6. Exercise Browse/Load, PLAY/CUE on both decks, both jogs, pitch, channel
    faders, crossfader, EQ/filter, PFL, pads and Beat FX. Confirm that each action
    changes the authoritative P4 UI/audio state once, with no duplicate S3 event.
-6. Confirm transport, PFL, loop, pad-mode, Hot Cue, Beat FX and Smart-control
+7. Confirm transport, PFL, loop, pad-mode, Hot Cue, Beat FX and Smart-control
    LEDs through the direct P4 path.
-7. While the storage/library remains usable, disconnect the FLX4. Expect
+8. While the storage/library remains usable, disconnect the FLX4. Expect
    `USB-MIDI controller disconnected` followed by
    `P4-local controller disconnected; S3 fallback resumed` and no P4 reset.
-8. Reconnect the FLX4 and confirm direct-root identity, control recovery and the
+9. Reconnect the FLX4 and confirm direct-root identity, control recovery and the
    authoritative LED snapshot.
-9. Save the complete log and record every operator-visible or audible result;
+10. Save the complete log and record every operator-visible or audible result;
    do not convert an unobserved row into a pass.
 
 If direct enumeration fails, preserve the full descriptor/USB log before

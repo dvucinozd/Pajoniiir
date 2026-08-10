@@ -1,11 +1,12 @@
 # Risk Register
 
-Status: current, reviewed 2026-08-02. Mitigated risks remain listed because a
+Status: current, reviewed 2026-08-10. Mitigated risks remain listed because a
 future USB/audio/UI change can reintroduce them.
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | S3 USB host power or enumeration regresses | Blocks controller input | Enumeration and a 30-minute stability run passed on 2026-06-14; preserve raw logger diagnostics and recheck OTG port, powered hub orientation, 5 V VBUS, and shared ground after USB host changes |
+| JP1-powered P4 does not provide downstream VBUS to the two USB-C host ports | The P4 boots, but the Rekordbox drive and FLX4 remain unpowered and cannot enumerate; firmware can be misdiagnosed while both device paths are electrically absent | Confirmed on 2026-08-10 by an unlit drive, healthy Wi-Fi service and no current-boot USB/controller events. Pause `feat/p4-dual-usb-host` until each device VBUS is fed by a separate protected high-side output from a common regulated supply, with P4-side VBUS isolated and no backfeed. Electrically verify polarity, voltage, current limit, continuity and shorts before reconnecting hardware; then repeat the complete dual-device matrix documented in `migration/P4_DUAL_USB_NEXT_SESSION.md` |
 | An extended Mixxx XML entry differs from actual hardware or from the official MIDI list | Wrong mapping for a non-MVP control or LED | MVP capture matched the XML exactly, so use XML addresses as implementation seeds; use the official Pioneer list as a secondary reference for LEDs/conflicts; hardware-smoke each delivered control group and record any exception in `DDJ_FLX4_MIDI_MAP.md` |
 | Mixxx `Script-Binding` names are mistaken for standalone behavior | Incorrect state ownership or controls that behave differently from Mixxx | Use script-bound XML entries only for MIDI addresses; define semantic events explicitly and keep runtime deck/mixer/pad/effect state on the P4 |
 | FLX4 controls or feedback generate noisy high-rate events | UART/USB MIDI queue pressure, jitter, or S3 task stack pressure | S3 translator coalesces high-rate jog/tempo/fader values; FLX4 VU feedback is treated as low-priority and dropped under MIDI OUT backlog; Phase 7 non-VU LED snapshot bursts are covered by a larger MIDI OUT queue, rate-limited full-queue warnings, and a 4096-byte `ctrl_rx` stack |

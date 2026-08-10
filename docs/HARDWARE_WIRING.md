@@ -1,7 +1,44 @@
 # Hardware Wiring
 
-Status: current bench wiring, audited 2026-07-16. Revalidate cable routing,
+Status: current bench wiring, updated 2026-08-10. Revalidate cable routing,
 power budget, cooling and RF behavior after final enclosure installation.
+
+## P4 Dual-USB VBUS Blocker
+
+The experimental `feat/p4-dual-usb-host` topology uses USB0 for the Rekordbox
+drive and USB1 (the former COM15 connector) for the DDJ-FLX4. A 2026-08-10
+bench attempt established that feeding 5 V to `VCC5V` on JP1 pin 2 powers the
+JC4880P443C_I_W itself but does **not** provide usable downstream VBUS to either
+USB-C host port in that arrangement. The drive LED stayed off and neither
+device enumerated, while the P4 remained healthy and reachable over Wi-Fi.
+
+Until a protected VBUS assembly exists, the P4-only dual-USB branch is paused.
+Do not inject raw 5 V into USB-C pins, join separate supplies with a passive
+Y-cable or assume that JP1 power is forwarded to USB VBUS.
+
+The intended bench interposer for each root port is:
+
+```text
+P4 root D+  ------------------------------  device D+
+P4 root D-  ------------------------------  device D-
+P4 root GND ------------------------------  device GND
+P4 root VBUS ---- isolated, no connection --X
+protected 5 V output ---------------------  device VBUS
+```
+
+Use one independently protected high-side output per port, from the same
+regulated 5 V supply that powers JP1 pin 2, with common ground. A TPS2561-class
+dual USB power switch is a candidate; configure it disabled by default, add
+local decoupling and verify the current-limit resistor against the exact part
+datasheet. The provisional target is approximately 0.8 A per port and a 5 V /
+3 A common supply, subject to real current and voltage-drop measurements.
+
+Keep D+/D- inside proper short shielded USB 2.0 cable and retain known-good
+USB-C host/OTG adapters for role detection. Before attaching either device,
+verify upstream/downstream VBUS isolation, D+/D-/ground continuity, no shorts,
+4.75–5.25 V downstream and zero backfeed into the P4-side VBUS. Full evidence
+and the resume gate are in
+[`validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md).
 
 ## Inter-Board UART
 
