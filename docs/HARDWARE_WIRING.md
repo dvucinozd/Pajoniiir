@@ -21,7 +21,7 @@ and underrun counters remained clean. The supply path is therefore still a
 merge blocker. Do not inject raw 5 V into USB-C pins, join separate supplies
 with a passive Y-cable or assume that JP1 power is forwarded to USB VBUS.
 
-The intended bench interposer for each root port is:
+The required electrical topology for each root port is:
 
 ```text
 P4 root D+  ------------------------------  device D+
@@ -31,21 +31,54 @@ P4 root VBUS ---- isolated, no connection --X
 protected 5 V output ---------------------  device VBUS
 ```
 
-Use one independently protected high-side output per port, from the same
-regulated 5 V supply that powers JP1 pin 2, with common ground. A TPS2561-class
+This topology may be implemented with one data interposer per port, but the
+preferred permanent implementation is a small internal power-distribution
+daughterboard. Feed the P4 and both protected USB outputs from one common
+regulated supply:
+
+```text
+regulated 5 V supply
+        |
+        +-- fuse/eFuse -------------------- JP1 pin 2 (P4 VCC5V)
+        |
+        +-- dual current-limited USB switch
+                +-- OUT1 ------------------ USB0 device-side VBUS (drive)
+                +-- OUT2 ------------------ USB1 device-side VBUS (FLX4)
+
+common GND -------------------------------- P4 + both USB devices
+```
+
+The native P4-side VBUS conductor must be physically isolated from each
+device-side VBUS before either protected output is connected. D+/D-, ground
+and shield remain continuous to the intended P4 root port. The same result may
+instead be obtained by cutting the two native VBUS traces and injecting the
+protected outputs at the connector pads, but that is an invasive board
+modification and must be continuity-checked before power-up.
+
+Use one independently protected high-side output per port. A TPS2561-class
 dual USB power switch is a candidate; configure it disabled by default, add
 local decoupling and verify the current-limit resistor against the exact part
-datasheet. The provisional target is approximately 0.8 A per port and a 5 V /
-3 A common supply, subject to real current and voltage-drop measurements.
+datasheet. The provisional target is approximately 0.8--1.0 A per port and a
+5 V / 3 A common supply; a quality 4 A source provides useful wiring and
+startup margin, but neither rating replaces real current and voltage-drop
+measurements. Keep the 5 V and ground runs short and appropriately sized.
 
 Keep D+/D- inside proper short shielded USB 2.0 cable and retain known-good
 USB-C host/OTG adapters for role detection. Before attaching either device,
 verify upstream/downstream VBUS isolation, D+/D-/ground continuity, no shorts,
-4.75–5.25 V downstream and zero backfeed into the P4-side VBUS. Full evidence
+4.75–5.25 V downstream and zero backfeed into the P4-side VBUS. Test P4-only,
+drive-only, FLX4-only and combined operation in that order. Use an oscilloscope
+or a meter with a reliable min/max capture for startup and playback transients;
+a normal multimeter may miss the short dip that causes a reset. Full evidence
 and the resume gate are in
 [`validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md).
 The subsequent runtime evidence is in
 [`validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md`](validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md).
+
+Externally powering the FLX4 can reduce the USB1 load, but it does not by
+itself prove VBUS isolation or prevent backfeed. A powered USB hub may be used
+only as a diagnostic aid because it changes the required direct-root topology.
+Do not use a passive Y-cable or tie two independent regulated outputs together.
 
 ## Inter-Board UART
 

@@ -10,7 +10,7 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Source checkpoint before the current uncommitted diagnostic work: `008cfa4`
+- Final firmware-changing checkpoint before the hardware pause: `850ab3f`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
@@ -44,6 +44,15 @@ backfeeding the P4-side VBUS. The circuit and pre-connection checks are in
 and [`../HARDWARE_WIRING.md`](../HARDWARE_WIRING.md); the runtime record is
 [`../validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md`](../validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md).
 Do not merge this branch before the power blocker and remaining matrix pass.
+
+The preferred permanent remediation is one internal 5 V distribution
+daughterboard: a fused/eFuse branch powers P4 `VCC5V` at JP1 pin 2, and a
+TPS2561-class dual current-limited high-side switch independently powers the
+device-side VBUS of USB0 and USB1. Native P4 VBUS must be isolated on both
+ports; data, ground and shield stay direct to their original roots. Two cable
+interposers or carefully cut native VBUS traces are valid implementations of
+the same electrical topology. See `HARDWARE_WIRING.md` for the wiring diagram,
+ratings, prohibited arrangements and staged qualification order.
 
 ## Current physical state
 
