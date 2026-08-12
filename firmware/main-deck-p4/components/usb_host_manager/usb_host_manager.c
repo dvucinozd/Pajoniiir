@@ -8,6 +8,11 @@
 #include "freertos/task.h"
 #include "usb_host_topology.h"
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+#include "hal/usb_wrap_ll.h"
+#include "soc/usb_wrap_struct.h"
+#endif
+
 static const char *TAG = "usb_host_mgr";
 
 #define TOPOLOGY_EVENT_DEPTH       16
@@ -37,6 +42,10 @@ static uint32_t s_all_free_events;
 static uint32_t s_root_power_requested_mask;
 static uint32_t s_topology_observations;
 static uint32_t s_topology_probe_failures;
+static int32_t s_last_topology_result = ESP_ERR_INVALID_STATE;
+static uint8_t s_last_topology_address;
+static uint8_t s_last_topology_parent_port;
+static bool s_last_topology_direct_root;
 static uint32_t s_recovery_queue_drops;
 static uint32_t s_recovery_requests;
 static uint32_t s_recovery_coalesced_requests;
@@ -71,6 +80,7 @@ static void topology_event_callback(
         usb_device_handle_t device = NULL;
         usb_device_info_t info = {0};
         const uint8_t address = event_msg->new_dev.address;
+        __atomic_store_n(&s_last_topology_address, address, __ATOMIC_RELEASE);
         esp_err_t rc = usb_host_device_open(s_topology_client, address, &device);
         if (rc == ESP_OK) {
             rc = usb_host_device_info(device, &info);
@@ -78,6 +88,8 @@ static void topology_event_callback(
         if (device) {
             (void)usb_host_device_close(s_topology_client, device);
         }
+        __atomic_store_n(&s_last_topology_result, (int32_t)rc,
+                         __ATOMIC_RELEASE);
         if (rc != ESP_OK) {
             (void)__atomic_add_fetch(&s_topology_probe_failures, 1u,
                                      __ATOMIC_RELAXED);
@@ -85,6 +97,11 @@ static void topology_event_callback(
                      (unsigned)address, esp_err_to_name(rc));
             return;
         }
+
+        __atomic_store_n(&s_last_topology_parent_port, info.parent.port_num,
+                         __ATOMIC_RELEASE);
+        __atomic_store_n(&s_last_topology_direct_root,
+                         info.parent.dev_hdl == NULL, __ATOMIC_RELEASE);
 
         portENTER_CRITICAL(&s_topology_mux);
         (void)usb_host_topology_observe(&s_topology, address,
@@ -223,6 +240,14 @@ static void usb_host_daemon_task(void *arg)
         .peripheral_map = s_config.peripheral_map,
     };
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+    if (s_config.override_fs_phy_index) {
+        usb_wrap_ll_phy_select(&USB_WRAP, s_config.fs_phy_index);
+        ESP_LOGI(TAG, "USB Full-Speed root routed to PHY%u",
+                 (unsigned)s_config.fs_phy_index);
+    }
+#endif
+
     s_install_result = usb_host_install(&host_config);
     if (s_install_result == ESP_OK) {
         const BaseType_t topology_created = xTaskCreate(
@@ -282,9 +307,15 @@ static void usb_host_daemon_task(void *arg)
 esp_err_t usb_host_manager_init(const usb_host_manager_config_t *config)
 {
     if (!config || config->peripheral_map == 0u ||
-        config->daemon_stack_size < 3072u || config->daemon_priority == 0u) {
+        config->daemon_stack_size < 3072u || config->daemon_priority == 0u ||
+        (config->override_fs_phy_index && config->fs_phy_index > 1u)) {
         return ESP_ERR_INVALID_ARG;
     }
+#if !defined(CONFIG_IDF_TARGET_ESP32P4)
+    if (config->override_fs_phy_index) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+#endif
 
     manager_state_t expected = MANAGER_STOPPED;
     if (!__atomic_compare_exchange_n(&s_state, &expected, MANAGER_STARTING,
@@ -485,6 +516,14 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
             __atomic_load_n(&s_topology_observations, __ATOMIC_ACQUIRE),
         .topology_probe_failures =
             __atomic_load_n(&s_topology_probe_failures, __ATOMIC_ACQUIRE),
+        .last_topology_result =
+            __atomic_load_n(&s_last_topology_result, __ATOMIC_ACQUIRE),
+        .last_topology_address =
+            __atomic_load_n(&s_last_topology_address, __ATOMIC_ACQUIRE),
+        .last_topology_parent_port =
+            __atomic_load_n(&s_last_topology_parent_port, __ATOMIC_ACQUIRE),
+        .last_topology_direct_root =
+            __atomic_load_n(&s_last_topology_direct_root, __ATOMIC_ACQUIRE),
         .recovery_queue_drops =
             __atomic_load_n(&s_recovery_queue_drops, __ATOMIC_ACQUIRE),
         .recovery_requests =
@@ -497,6 +536,8 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
         .recovery_failures =
             __atomic_load_n(&s_recovery_failures, __ATOMIC_ACQUIRE),
         .peripheral_map = s_config.peripheral_map,
+        .fs_phy_override_requested = s_config.override_fs_phy_index,
+        .fs_phy_index = s_config.fs_phy_index,
         .ready = usb_host_manager_is_ready(),
         .root_power_requested =
             s_config.peripheral_map != 0u &&

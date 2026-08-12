@@ -25,6 +25,7 @@
 #endif
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
@@ -325,7 +326,9 @@ void app_main(void)
         service_log_init(ver, part, reset_reason_str());
         service_log_note(SERVICE_LOG_SD_MOUNTED, SERVICE_LOG_INFO, "/sd ready");
         service_log_event(SERVICE_LOG_RESET_REASON, SERVICE_LOG_INFO,
-                          1u, (uint32_t)esp_reset_reason(), 0u, 0u, 0u,
+                          3u, (uint32_t)esp_reset_reason(),
+                          (uint32_t)esp_rom_get_reset_reason(0),
+                          (uint32_t)esp_rom_get_reset_reason(1), 0u,
                           reset_reason_str());
     }
 

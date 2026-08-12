@@ -51,6 +51,12 @@ static esp_err_t shared_storage_host_install(const usb_host_config_t *ignored)
     const usb_host_manager_config_t config = {
         .peripheral_map = USB_HOST_MANAGER_PERIPHERAL_MAP_DUAL,
         .root_port_unpowered = true,
+        /* JC4880P443 routes its Full-Speed Type-C connector to the P4 PHY0
+         * pair (GPIO24/GPIO25, USB1P1_N/P). The ESP32-P4 reset mapping sends
+         * USB-OTG FS to PHY1 (GPIO26/GPIO27), which is not connected to that
+         * receptacle. Select PHY0 in software; do not burn USB_PHY_SEL. */
+        .override_fs_phy_index = true,
+        .fs_phy_index = 0u,
         .intr_flags = ESP_INTR_FLAG_LEVEL1,
         .daemon_stack_size = 4096u,
         .daemon_priority = 4u,

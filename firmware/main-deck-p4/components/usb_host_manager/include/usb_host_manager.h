@@ -22,6 +22,8 @@ extern "C" {
 typedef struct {
     unsigned peripheral_map;
     bool root_port_unpowered;
+    bool override_fs_phy_index;
+    uint8_t fs_phy_index;
     int intr_flags;
     uint32_t daemon_stack_size;
     UBaseType_t daemon_priority;
@@ -37,12 +39,18 @@ typedef struct {
     uint32_t root_power_requested_mask;
     uint32_t topology_observations;
     uint32_t topology_probe_failures;
+    int32_t last_topology_result;
+    uint8_t last_topology_address;
+    uint8_t last_topology_parent_port;
+    bool last_topology_direct_root;
     uint32_t recovery_queue_drops;
     uint32_t recovery_requests;
     uint32_t recovery_coalesced_requests;
     uint32_t recovery_successes;
     uint32_t recovery_failures;
     unsigned peripheral_map;
+    bool fs_phy_override_requested;
+    uint8_t fs_phy_index;
     bool ready;
     bool root_power_requested;
 } usb_host_manager_diagnostics_t;

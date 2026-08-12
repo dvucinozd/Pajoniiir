@@ -136,7 +136,7 @@ dependencies:
       rules:
       - if: idf_version >=6.0
       - if: target not in ["linux"]
-      version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+      version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
     source:
       git: https://github.com/dvucinozd/esp-usb.git
       path: host/class/msc/usb_host_msc
@@ -148,7 +148,7 @@ dependencies:
     - esp32h4
     - esp32s31
     - linux
-    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+    version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
   espressif/wifi_remote_over_eppp:
     component_hash: 1fd6968af20f0b19e421f6b519b0a8caf81d689afc3783b564c28559e45f66ef
     dependencies:
@@ -175,7 +175,7 @@ dependencies:
       type: service
     version: 9.5.0
   usb:
-    component_hash: bcca23e17d3b086ff9d19007007d90aed8b350888e7e4db1cbea5201c8a0c850
+    component_hash: 46e3c0998d347f0ed9413ed9884b8be7393e3bb364bae3c87cdc21419aca9eab
     dependencies:
     - name: idf
       version: '>=5.5.3'
@@ -190,7 +190,7 @@ dependencies:
     - esp32p4
     - esp32h4
     - linux
-    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+    version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
 direct_dependencies:
 - espressif/esp_codec_dev
 - espressif/esp_hosted
@@ -202,6 +202,6 @@ direct_dependencies:
 - idf
 - lvgl/lvgl
 - usb
-manifest_hash: fe8407d8956a8e874d956224182c00e9a5a3fa79bf2c88b57e84a4b6217b4820
+manifest_hash: 2e6c50da461a7e6e3599ecfea26a033d70b3b59de53dd0af05fd011fb371dedf
 target: esp32p4
 version: 3.0.0

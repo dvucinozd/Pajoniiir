@@ -1,6 +1,6 @@
 # Hardware Wiring
 
-Status: current bench wiring, updated 2026-08-10. Revalidate cable routing,
+Status: current bench wiring, updated 2026-08-12. Revalidate cable routing,
 power budget, cooling and RF behavior after final enclosure installation.
 
 ## P4 Dual-USB VBUS Blocker
@@ -12,9 +12,14 @@ JC4880P443C_I_W itself but does **not** provide usable downstream VBUS to either
 USB-C host port in that arrangement. The drive LED stayed off and neither
 device enumerated, while the P4 remained healthy and reachable over Wi-Fi.
 
-Until a protected VBUS assembly exists, the P4-only dual-USB branch is paused.
-Do not inject raw 5 V into USB-C pins, join separate supplies with a passive
-Y-cable or assume that JP1 power is forwarded to USB VBUS.
+On 2026-08-12 a later, still electrically unqualified bench arrangement did
+power both devices: USB0 mounted the 191-track drive and USB1 enumerated the
+FLX4 directly. This proves the firmware topology, not the safety or capacity of
+the power path. Dual-deck playback then produced a hardware-reported brownout
+after about 6.5 seconds even with the FLX4 disconnected, while audio deadline
+and underrun counters remained clean. The supply path is therefore still a
+merge blocker. Do not inject raw 5 V into USB-C pins, join separate supplies
+with a passive Y-cable or assume that JP1 power is forwarded to USB VBUS.
 
 The intended bench interposer for each root port is:
 
@@ -39,6 +44,8 @@ verify upstream/downstream VBUS isolation, D+/D-/ground continuity, no shorts,
 4.75–5.25 V downstream and zero backfeed into the P4-side VBUS. Full evidence
 and the resume gate are in
 [`validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md).
+The subsequent runtime evidence is in
+[`validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md`](validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md).
 
 ## Inter-Board UART
 

@@ -21,6 +21,14 @@
 #include "app_settings.h"
 #include <stdio.h>
 #include "sdkconfig.h"
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+#include "esp_core_dump.h"
+#endif
+#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
+#include "controller_usb_host.h"
+#include "p4_local_controller.h"
+#include "usb_host_manager.h"
+#endif
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
 #endif
@@ -35,6 +43,71 @@
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
 static bool s_mdns_started;
+
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+typedef struct {
+    esp_core_dump_summary_t summary;
+    char reason[192];
+    char reason_esc[384];
+    char task_esc[40];
+} crash_dump_work_t;
+#endif
+
+static void format_crash_dump_json(char *out, size_t out_size)
+{
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+    size_t image_address = 0u;
+    size_t image_size = 0u;
+    const esp_err_t check_rc = esp_core_dump_image_check();
+    esp_err_t image_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t summary_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t reason_rc = ESP_ERR_NOT_FOUND;
+    crash_dump_work_t *work = NULL;
+    if (check_rc == ESP_OK) {
+        image_rc = esp_core_dump_image_get(&image_address, &image_size);
+        work = calloc(1, sizeof(*work));
+        if (work) {
+            summary_rc = esp_core_dump_get_summary(&work->summary);
+            reason_rc = esp_core_dump_get_panic_reason(work->reason,
+                                                       sizeof(work->reason));
+            web_api_json_escape(reason_rc == ESP_OK ? work->reason : "",
+                                work->reason_esc, sizeof(work->reason_esc));
+            web_api_json_escape(summary_rc == ESP_OK ? work->summary.exc_task : "",
+                                work->task_esc, sizeof(work->task_esc));
+        } else {
+            summary_rc = ESP_ERR_NO_MEM;
+            reason_rc = ESP_ERR_NO_MEM;
+        }
+    }
+    const esp_core_dump_summary_t *summary = work ? &work->summary : NULL;
+    snprintf(
+        out, out_size,
+        "\"crash_dump\":{"
+        "\"enabled\":true,\"present\":%s,"
+        "\"check_result\":%d,\"check_result_name\":\"%s\","
+        "\"image_result\":%d,\"image_result_name\":\"%s\","
+        "\"image_size\":%u,"
+        "\"summary_result\":%d,\"summary_result_name\":\"%s\","
+        "\"panic_reason_result\":%d,"
+        "\"panic_reason\":\"%s\",\"task\":\"%s\","
+        "\"pc\":\"0x%08X\",\"ra\":\"0x%08X\","
+        "\"sp\":\"0x%08X\",\"mcause\":\"0x%08X\","
+        "\"mtval\":\"0x%08X\"}",
+        check_rc == ESP_OK ? "true" : "false",
+        (int)check_rc, esp_err_to_name(check_rc),
+        (int)image_rc, esp_err_to_name(image_rc), (unsigned)image_size,
+        (int)summary_rc, esp_err_to_name(summary_rc), (int)reason_rc,
+        work ? work->reason_esc : "", work ? work->task_esc : "",
+        summary ? (unsigned)summary->exc_pc : 0u,
+        summary ? (unsigned)summary->ex_info.ra : 0u,
+        summary ? (unsigned)summary->ex_info.sp : 0u,
+        summary ? (unsigned)summary->ex_info.mcause : 0u,
+        summary ? (unsigned)summary->ex_info.mtval : 0u);
+    free(work);
+#else
+    snprintf(out, out_size, "\"crash_dump\":{\"enabled\":false}");
+#endif
+}
 
 static void current_ap_ipv4(char out[16])
 {
@@ -64,6 +137,26 @@ static const char *controller_profile_state_name(controller_profile_transfer_sta
         return "unsupported";
     default:
         return "unknown";
+    }
+}
+#endif
+
+#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
+static const char *controller_usb_probe_stage_name(uint8_t stage)
+{
+    switch ((controller_usb_probe_stage_t)stage) {
+    case CONTROLLER_USB_PROBE_NONE:              return "none";
+    case CONTROLLER_USB_PROBE_OPEN:              return "open";
+    case CONTROLLER_USB_PROBE_DEVICE_INFO:       return "device_info";
+    case CONTROLLER_USB_PROBE_DEVICE_DESCRIPTOR: return "device_descriptor";
+    case CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR: return "config_descriptor";
+    case CONTROLLER_USB_PROBE_MIDI_DESCRIPTOR:   return "midi_descriptor";
+    case CONTROLLER_USB_PROBE_ALREADY_OWNED:     return "already_owned";
+    case CONTROLLER_USB_PROBE_INTERFACE_CLAIM:   return "interface_claim";
+    case CONTROLLER_USB_PROBE_TRANSFER_ALLOC:    return "transfer_alloc";
+    case CONTROLLER_USB_PROBE_IN_SUBMIT:         return "in_submit";
+    case CONTROLLER_USB_PROBE_READY:             return "ready";
+    default:                                     return "unknown";
     }
 }
 #endif
@@ -1063,6 +1156,112 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_status.written, service_status.current_bytes,
         service_status.last_error);
 
+    char p4_local_usb_json[1536] = {0};
+#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
+    {
+        usb_host_manager_diagnostics_t host_diag = {0};
+        controller_usb_host_diagnostics_t controller_diag = {0};
+        p4_local_controller_diagnostics_t local_diag = {0};
+        usb_host_manager_get_diagnostics(&host_diag);
+        controller_usb_host_get_diagnostics(&controller_diag);
+        p4_local_controller_get_diagnostics(&local_diag);
+        snprintf(
+            p4_local_usb_json, sizeof(p4_local_usb_json),
+            "\"p4_local_usb\":{"
+            "\"enabled\":true,"
+            "\"host\":{"
+            "\"ready\":%s,\"install_result\":%d,"
+            "\"install_result_name\":\"%s\","
+            "\"peripheral_map\":%u,\"root_power_mask\":%u,"
+            "\"fs_phy_override\":%s,\"fs_phy_index\":%u,"
+            "\"daemon_iterations\":%u,\"daemon_errors\":%u},"
+            "\"topology\":{"
+            "\"observations\":%u,\"probe_failures\":%u,"
+            "\"last_result\":%d,\"last_result_name\":\"%s\","
+            "\"last_address\":%u,\"last_parent_port\":%u,"
+            "\"last_direct_root\":%s},"
+            "\"controller\":{"
+            "\"registered\":%s,\"connected\":%s,"
+            "\"accepting_midi_out\":%s,\"devices_probed\":%u,"
+            "\"descriptor_rejects\":%u,"
+            "\"midi_descriptor_rejects\":%u,"
+            "\"interface_claim_failures\":%u,"
+            "\"transfer_alloc_failures\":%u,"
+            "\"midi_connects\":%u,\"midi_disconnects\":%u,"
+            "\"midi_packets\":%u,\"midi_bytes\":%u,"
+            "\"probe_event_drops\":%u,\"recovery_requests\":%u,"
+            "\"last_probe_stage\":%u,"
+            "\"last_probe_stage_name\":\"%s\","
+            "\"last_probe_result\":%d,"
+            "\"last_probe_result_name\":\"%s\","
+            "\"last_probe_address\":%u,"
+            "\"last_vid\":\"0x%04X\",\"last_pid\":\"0x%04X\","
+            "\"last_config_total_length\":%u,"
+            "\"last_parent_port\":%u,\"last_direct_root\":%s},"
+            "\"runtime\":{"
+            "\"bootstrap_started\":%s,\"local_connected\":%s,"
+            "\"semantic_events\":%u,\"queue_failures\":%u,"
+            "\"profile_activations\":%u,\"profile_fallbacks\":%u}"
+            "}",
+            host_diag.ready ? "true" : "false",
+            (int)host_diag.install_result,
+            esp_err_to_name(host_diag.install_result),
+            host_diag.peripheral_map,
+            (unsigned)host_diag.root_power_requested_mask,
+            host_diag.fs_phy_override_requested ? "true" : "false",
+            (unsigned)host_diag.fs_phy_index,
+            (unsigned)host_diag.daemon_iterations,
+            (unsigned)host_diag.daemon_errors,
+            (unsigned)host_diag.topology_observations,
+            (unsigned)host_diag.topology_probe_failures,
+            (int)host_diag.last_topology_result,
+            esp_err_to_name((esp_err_t)host_diag.last_topology_result),
+            (unsigned)host_diag.last_topology_address,
+            (unsigned)host_diag.last_topology_parent_port,
+            host_diag.last_topology_direct_root ? "true" : "false",
+            controller_diag.registered ? "true" : "false",
+            controller_diag.connected ? "true" : "false",
+            controller_diag.accepting_midi_out ? "true" : "false",
+            (unsigned)controller_diag.devices_probed,
+            (unsigned)controller_diag.descriptor_rejects,
+            (unsigned)controller_diag.midi_descriptor_rejects,
+            (unsigned)controller_diag.interface_claim_failures,
+            (unsigned)controller_diag.transfer_alloc_failures,
+            (unsigned)controller_diag.midi_connects,
+            (unsigned)controller_diag.midi_disconnects,
+            (unsigned)controller_diag.midi_packets,
+            (unsigned)controller_diag.midi_bytes,
+            (unsigned)controller_diag.probe_event_drops,
+            (unsigned)controller_diag.recovery_requests,
+            (unsigned)controller_diag.last_probe_stage,
+            controller_usb_probe_stage_name(controller_diag.last_probe_stage),
+            (int)controller_diag.last_probe_result,
+            esp_err_to_name((esp_err_t)controller_diag.last_probe_result),
+            (unsigned)controller_diag.last_probe_address,
+            controller_diag.last_seen_vid, controller_diag.last_seen_pid,
+            (unsigned)controller_diag.last_config_total_length,
+            (unsigned)controller_diag.last_parent_port,
+            controller_diag.last_direct_root ? "true" : "false",
+            local_diag.bootstrap_started ? "true" : "false",
+            local_diag.local_connected ? "true" : "false",
+            (unsigned)local_diag.local_semantic_events,
+            (unsigned)local_diag.local_queue_failures,
+            (unsigned)local_diag.profile_activations,
+            (unsigned)local_diag.profile_fallbacks);
+    }
+#else
+    snprintf(p4_local_usb_json, sizeof(p4_local_usb_json),
+             "\"p4_local_usb\":{\"enabled\":false}");
+#endif
+
+    const size_t crash_dump_json_size = 1024u;
+    char *crash_dump_json = calloc(1, crash_dump_json_size);
+    if (!crash_dump_json) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for crash status");
+    }
+    format_crash_dump_json(crash_dump_json, crash_dump_json_size);
+
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
@@ -1112,6 +1311,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"pfl1\":%s,"
         "\"pfl2\":%s"
         "},"
+        "%s,"
+        "%s,"
         "%s,"
         "%s,"
         "%s,"
@@ -1181,6 +1382,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         controller_json,
         control_link_json,
         service_log_json,
+        p4_local_usb_json,
+        crash_dump_json,
         diagnostics.output_codec_open ? "true" : "false",
         (unsigned)diagnostics.output_sample_rate,
         (unsigned)diagnostics.output_late_count,
@@ -1228,6 +1431,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.heap_free,
         (unsigned)diagnostics.internal_free,
         (unsigned)diagnostics.psram_free);
+    free(crash_dump_json);
     if (!json || json_len < 0) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;

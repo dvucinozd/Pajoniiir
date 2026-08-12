@@ -99,6 +99,13 @@ Statusi:
 
 ## Preporučeni nastavak
 
+P4 dual-USB dodatak, 2026-08-12: izravna USB0 pohrana i USB1 FLX4 enumeracija
+rade zajedno, a pronađeni upstream disconnect/recycle race je zakrpan i pinan.
+Grana ipak ostaje blokirana: kontrolirani dual-deck test bez FLX4 završio je
+raw `BROWNOUT` resetom nakon približno 6,5 s, uz nula audio late/underrun
+brojača. Prije daljnjeg firmware rada treba izmjeriti i stabilizirati zajednički
+5 V/VBUS put te ponoviti cijelu fizičku matricu.
+
 1. Dovršiti USB reconciliation i bounded-cache stress: single-framebuffer fokusirani prikaz i realni MP3 prošli su, ali treba ispravno re-eksportati fizičke WAV/FLAC fixturee te ih pokrenuti pod sustained dual-deck opterećenjem s brojačima.
 2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
 3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.

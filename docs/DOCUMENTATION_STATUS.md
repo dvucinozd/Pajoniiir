@@ -30,13 +30,20 @@ partial bring-up evidence only; direct USB1 FLX4 enumeration, P4-local
 MIDI/LED behavior, independent recovery and the dual-active soak remain open.
 See `validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`.
 
-Feature-branch pause (2026-08-10): powering the JC4880 from JP1 kept the P4 and
-its Wi-Fi diagnostics alive but did not power either attached USB device. The
-drive LED remained off, and the current boot reported neither mounted storage
-nor a present controller. `feat/p4-dual-usb-host` is therefore paused and must
-not be merged until protected downstream VBUS is built and electrically
-verified. See `validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`; active work
-returns to `master` in the meantime.
+Feature-branch follow-up (2026-08-12): a later bench power arrangement allowed
+USB0 storage and the direct USB1 FLX4 path to enumerate together. The stick
+mounted a 191-track library and the controller reached USB-MIDI ready as
+VID:PID `2B73:0045`. A disconnect/recycle panic was captured, reduced to an
+upstream hub child-removal race and fixed in the pinned `esp-usb` fork. The
+complete P4 host suite and an ESP-IDF v6.0.2 feature build pass.
+
+That does **not** clear the electrical gate. In the controlled isolation run a
+single deck played for 33 seconds with zero reported late blocks or underruns,
+but two decks caused a raw `BROWNOUT` reset after about 6.5 seconds even with
+the FLX4 disconnected. The branch remains non-mergeable until the 5 V/VBUS
+delivery path is measured and stabilised, then the full dual-device matrix is
+repeated. See `validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md` and the updated
+`migration/P4_DUAL_USB_NEXT_SESSION.md`.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Four states must not be conflated:

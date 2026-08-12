@@ -21,10 +21,18 @@ static void test_late_warning_threshold_allows_codec_write_pacing_slack(void)
 
 static void test_continuous_output_periodically_forces_an_idle_tick(void)
 {
-    assert(!audio_output_should_force_idle(0u));
-    assert(!audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS - 1u));
-    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS));
-    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS + 1u));
+    assert(!audio_output_should_force_idle(0u, 0u));
+    assert(!audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS - 1u,
+                                           AUDIO_OUTPUT_MAX_BUSY_US - 1u));
+    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS, 0u));
+    assert(audio_output_should_force_idle(AUDIO_OUTPUT_MAX_BUSY_BLOCKS + 1u, 0u));
+}
+
+static void test_slow_blocks_force_an_idle_tick_by_elapsed_time(void)
+{
+    assert(!audio_output_should_force_idle(1u, AUDIO_OUTPUT_MAX_BUSY_US - 1u));
+    assert(audio_output_should_force_idle(1u, AUDIO_OUTPUT_MAX_BUSY_US));
+    assert(audio_output_should_force_idle(1u, AUDIO_OUTPUT_MAX_BUSY_US + 1u));
 }
 
 int main(void)
@@ -32,6 +40,7 @@ int main(void)
     test_block_period_us_uses_precise_ceil_division();
     test_late_warning_threshold_allows_codec_write_pacing_slack();
     test_continuous_output_periodically_forces_an_idle_tick();
+    test_slow_blocks_force_an_idle_tick_by_elapsed_time();
     puts("audio_output_timing tests passed");
     return 0;
 }

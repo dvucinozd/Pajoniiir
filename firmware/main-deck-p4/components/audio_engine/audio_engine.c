@@ -2755,6 +2755,7 @@ static void ae_output_task(void *arg)
     int16_t master_out[AE_OUT_FRAMES * 2];
     int16_t hp_out[AE_OUT_FRAMES * 2];
     uint32_t consecutive_busy_blocks = 0u;
+    int64_t last_idle_tick_us = esp_timer_get_time();
     while (s_output_run) {
         if (!s_output_codec_open) {
             vTaskDelay(pdMS_TO_TICKS(5));
@@ -3078,8 +3079,13 @@ static void ae_output_task(void *arg)
                 break;
             }
         }
+        int64_t now_us = esp_timer_get_time();
+        uint32_t elapsed_since_idle_us = now_us > last_idle_tick_us
+            ? (uint32_t)(now_us - last_idle_tick_us)
+            : 0u;
         if (scratch_writer_needs_cpu ||
-            audio_output_should_force_idle(++consecutive_busy_blocks)) {
+            audio_output_should_force_idle(++consecutive_busy_blocks,
+                                           elapsed_since_idle_us)) {
             /* taskYIELD only offers CPU0 to equal/higher-priority tasks. Give
              * the lower-priority decoder one real tick immediately when a
              * scratch freeze is waiting for its writer flag. The same delay
@@ -3087,6 +3093,7 @@ static void ae_output_task(void *arg)
              * during continuous DSP. */
             vTaskDelay(pdMS_TO_TICKS(1));
             consecutive_busy_blocks = 0u;
+            last_idle_tick_us = esp_timer_get_time();
         } else {
             taskYIELD();
         }

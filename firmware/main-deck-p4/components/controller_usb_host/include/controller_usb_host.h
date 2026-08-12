@@ -41,9 +41,26 @@ typedef struct {
     int max_event_messages;
 } controller_usb_host_config_t;
 
+typedef enum {
+    CONTROLLER_USB_PROBE_NONE = 0,
+    CONTROLLER_USB_PROBE_OPEN,
+    CONTROLLER_USB_PROBE_DEVICE_INFO,
+    CONTROLLER_USB_PROBE_DEVICE_DESCRIPTOR,
+    CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR,
+    CONTROLLER_USB_PROBE_MIDI_DESCRIPTOR,
+    CONTROLLER_USB_PROBE_ALREADY_OWNED,
+    CONTROLLER_USB_PROBE_INTERFACE_CLAIM,
+    CONTROLLER_USB_PROBE_TRANSFER_ALLOC,
+    CONTROLLER_USB_PROBE_IN_SUBMIT,
+    CONTROLLER_USB_PROBE_READY,
+} controller_usb_probe_stage_t;
+
 typedef struct {
     uint32_t devices_probed;
     uint32_t descriptor_rejects;
+    uint32_t midi_descriptor_rejects;
+    uint32_t interface_claim_failures;
+    uint32_t transfer_alloc_failures;
     uint32_t midi_connects;
     uint32_t midi_disconnects;
     uint32_t midi_packets;
@@ -54,6 +71,14 @@ typedef struct {
     uint32_t midi_out_queue_drops;
     uint32_t probe_event_drops;
     uint32_t recovery_requests;
+    int32_t last_probe_result;
+    uint16_t last_seen_vid;
+    uint16_t last_seen_pid;
+    uint16_t last_config_total_length;
+    uint8_t last_probe_stage;
+    uint8_t last_probe_address;
+    uint8_t last_parent_port;
+    bool last_direct_root;
     bool registered;
     bool connected;
     bool accepting_midi_out;

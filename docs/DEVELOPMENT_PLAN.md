@@ -2770,13 +2770,18 @@ real short EOF tail exists). `/api/status` now reports
 `startup_prebuffer_frames` alongside `pcm_underrun1/2`. Host policy coverage
 passes; hardware confirmation that the initial counter remains zero is pending.
 
-### Bench power BROWNOUT / POWERON — resolved externally
+### Bench power BROWNOUT / POWERON — recurred on experimental dual USB
 
 `boot=84 reset=BROWNOUT` then `boot=85 reset=POWERON` on 2026-07-24, and the
 FLX4 stopped enumerating until it was physically reconnected. The later bench
-session traced this to the power supply and replacement resolved it. This is no
-longer an open firmware item; future unexplained resets still invalidate the
-affected measurement and must be recorded as a new power/hardware observation.
+session traced this to the power supply and replacement resolved it for the
+master topology. The experimental P4 dual-USB bench reproduced a raw
+`BROWNOUT` on 2026-08-12: one deck ran 33 seconds cleanly, while two decks reset
+after about 6.5 seconds even with FLX4 disconnected and zero reported audio
+late blocks or underruns. This is an open power/hardware blocker for
+`feat/p4-dual-usb-host`, not evidence of an audio scheduling fix. Measure and
+stabilise the common 5 V/VBUS path, rebuild the restored monitor/cue source and
+repeat the complete hardware matrix before merge.
 
 ## Idle Screensaver
 

@@ -790,3 +790,16 @@ R5 cleanup status:
   recorded;
 - [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
 - [x] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
+
+Experimental P4 dual-USB checkpoint, 2026-08-12:
+
+- [x] USB0 storage and direct USB1 FLX4 enumerate together; storage exposes 191
+  tracks and FLX4 reaches USB-MIDI ready as `2B73:0045`.
+- [x] Captured USB disconnect/recycle panic is fixed in the exact pinned
+  `esp-usb` fork commit; P4 host regressions and ESP-IDF v6.0.2 build pass.
+- [ ] Qualify the 5 V/VBUS path. A two-deck isolation run reset as raw
+  `BROWNOUT` after about 6.5 seconds even without FLX4, despite clean audio
+  deadline and underrun counters.
+- [ ] Rebuild the restored monitor/cue source, install it, then repeat both
+  insertion orders, controls/LEDs, independent reconnect and 30-minute soak.
+- [ ] Do not merge `feat/p4-dual-usb-host` until all rows above pass.

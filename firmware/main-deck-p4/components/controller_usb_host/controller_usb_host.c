@@ -35,6 +35,9 @@ static bool s_connected;
 static bool s_accepting_out;
 static uint32_t s_devices_probed;
 static uint32_t s_descriptor_rejects;
+static uint32_t s_midi_descriptor_rejects;
+static uint32_t s_interface_claim_failures;
+static uint32_t s_transfer_alloc_failures;
 static uint32_t s_midi_connects;
 static uint32_t s_midi_disconnects;
 static uint32_t s_midi_packets;
@@ -45,10 +48,26 @@ static uint32_t s_midi_out_submit_failures;
 static uint32_t s_midi_out_queue_drops;
 static uint32_t s_probe_event_drops;
 static uint32_t s_recovery_requests;
+static int32_t s_last_probe_result = ESP_ERR_INVALID_STATE;
+static uint16_t s_last_seen_vid;
+static uint16_t s_last_seen_pid;
+static uint16_t s_last_config_total_length;
+static uint8_t s_last_probe_stage;
+static uint8_t s_last_probe_address;
+static uint8_t s_last_parent_port;
+static bool s_last_direct_root;
 
 static inline void count_inc(uint32_t *value)
 {
     (void)__atomic_add_fetch(value, 1u, __ATOMIC_RELAXED);
+}
+
+static void record_probe_result(controller_usb_probe_stage_t stage,
+                                esp_err_t result)
+{
+    __atomic_store_n(&s_last_probe_stage, (uint8_t)stage, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_last_probe_result, (int32_t)result,
+                     __ATOMIC_RELEASE);
 }
 
 static void request_controller_recovery(void)
@@ -260,9 +279,12 @@ static void close_step(controller_state_t *state)
 static esp_err_t probe_device(controller_state_t *state, uint8_t address)
 {
     count_inc(&s_devices_probed);
+    __atomic_store_n(&s_last_probe_address, address, __ATOMIC_RELEASE);
+    record_probe_result(CONTROLLER_USB_PROBE_OPEN, ESP_ERR_INVALID_STATE);
     usb_device_handle_t device = NULL;
     esp_err_t rc = usb_host_device_open(state->client, address, &device);
     if (rc != ESP_OK) {
+        record_probe_result(CONTROLLER_USB_PROBE_OPEN, rc);
         return rc;
     }
 
@@ -270,26 +292,53 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
     const usb_device_desc_t *device_desc = NULL;
     const usb_config_desc_t *config_desc = NULL;
     rc = usb_host_device_info(device, &info);
-    if (rc == ESP_OK) {
+    if (rc != ESP_OK) {
+        record_probe_result(CONTROLLER_USB_PROBE_DEVICE_INFO, rc);
+    } else {
+        __atomic_store_n(&s_last_parent_port, info.parent.port_num,
+                         __ATOMIC_RELEASE);
+        __atomic_store_n(&s_last_direct_root, info.parent.dev_hdl == NULL,
+                         __ATOMIC_RELEASE);
         rc = usb_host_get_device_descriptor(device, &device_desc);
+        if (rc != ESP_OK) {
+            record_probe_result(CONTROLLER_USB_PROBE_DEVICE_DESCRIPTOR, rc);
+        }
     }
     if (rc == ESP_OK) {
+        __atomic_store_n(&s_last_seen_vid, device_desc->idVendor,
+                         __ATOMIC_RELEASE);
+        __atomic_store_n(&s_last_seen_pid, device_desc->idProduct,
+                         __ATOMIC_RELEASE);
         rc = usb_host_get_active_config_descriptor(device, &config_desc);
+        if (rc != ESP_OK) {
+            record_probe_result(CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR, rc);
+        }
     }
     if (rc != ESP_OK || !device_desc || !config_desc) {
         count_inc(&s_descriptor_rejects);
+        if (rc == ESP_OK) {
+            record_probe_result(CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR,
+                                ESP_FAIL);
+        }
         (void)usb_host_device_close(state->client, device);
         return rc == ESP_OK ? ESP_FAIL : rc;
     }
+    __atomic_store_n(&s_last_config_total_length, config_desc->wTotalLength,
+                     __ATOMIC_RELEASE);
 
     usb_midi_endpoints_t endpoints;
     if (!usb_midi_find_streaming_endpoints((const uint8_t *)config_desc,
                                            config_desc->wTotalLength,
                                            &endpoints)) {
+        count_inc(&s_midi_descriptor_rejects);
+        record_probe_result(CONTROLLER_USB_PROBE_MIDI_DESCRIPTOR,
+                            ESP_ERR_NOT_FOUND);
         (void)usb_host_device_close(state->client, device);
         return ESP_ERR_NOT_FOUND;
     }
     if (state->opened || state->claimed) {
+        record_probe_result(CONTROLLER_USB_PROBE_ALREADY_OWNED,
+                            ESP_ERR_INVALID_STATE);
         (void)usb_host_device_close(state->client, device);
         return ESP_ERR_INVALID_STATE;
     }
@@ -313,6 +362,8 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
                                   endpoints.interface_num,
                                   endpoints.alternate_setting);
     if (rc != ESP_OK) {
+        count_inc(&s_interface_claim_failures);
+        record_probe_result(CONTROLLER_USB_PROBE_INTERFACE_CLAIM, rc);
         state->closing = true;
         close_step(state);
         return rc;
@@ -328,6 +379,8 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
         rc = usb_host_transfer_alloc(out_bytes, 0, &state->out_transfer);
     }
     if (rc != ESP_OK) {
+        count_inc(&s_transfer_alloc_failures);
+        record_probe_result(CONTROLLER_USB_PROBE_TRANSFER_ALLOC, rc);
         state->closing = true;
         close_step(state);
         return rc;
@@ -344,6 +397,7 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
 
     rc = submit_in_if_idle(state);
     if (rc != ESP_OK) {
+        record_probe_result(CONTROLLER_USB_PROBE_IN_SUBMIT, rc);
         state->closing = true;
         close_step(state);
         return rc;
@@ -352,6 +406,7 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
     count_inc(&s_midi_connects);
     __atomic_store_n(&s_accepting_out, true, __ATOMIC_RELEASE);
     publish_connection(true);
+    record_probe_result(CONTROLLER_USB_PROBE_READY, ESP_OK);
     ESP_LOGI(TAG,
              "USB-MIDI ready addr=%u VID=0x%04X PID=0x%04X intf=%u "
              "alt=%u IN=0x%02X/%u OUT=0x%02X/%u parent_port=%u direct_root=%u",
@@ -537,6 +592,12 @@ void controller_usb_host_get_diagnostics(
             __atomic_load_n(&s_devices_probed, __ATOMIC_ACQUIRE),
         .descriptor_rejects =
             __atomic_load_n(&s_descriptor_rejects, __ATOMIC_ACQUIRE),
+        .midi_descriptor_rejects =
+            __atomic_load_n(&s_midi_descriptor_rejects, __ATOMIC_ACQUIRE),
+        .interface_claim_failures =
+            __atomic_load_n(&s_interface_claim_failures, __ATOMIC_ACQUIRE),
+        .transfer_alloc_failures =
+            __atomic_load_n(&s_transfer_alloc_failures, __ATOMIC_ACQUIRE),
         .midi_connects =
             __atomic_load_n(&s_midi_connects, __ATOMIC_ACQUIRE),
         .midi_disconnects =
@@ -557,6 +618,22 @@ void controller_usb_host_get_diagnostics(
             __atomic_load_n(&s_probe_event_drops, __ATOMIC_ACQUIRE),
         .recovery_requests =
             __atomic_load_n(&s_recovery_requests, __ATOMIC_ACQUIRE),
+        .last_probe_result =
+            __atomic_load_n(&s_last_probe_result, __ATOMIC_ACQUIRE),
+        .last_seen_vid =
+            __atomic_load_n(&s_last_seen_vid, __ATOMIC_ACQUIRE),
+        .last_seen_pid =
+            __atomic_load_n(&s_last_seen_pid, __ATOMIC_ACQUIRE),
+        .last_config_total_length =
+            __atomic_load_n(&s_last_config_total_length, __ATOMIC_ACQUIRE),
+        .last_probe_stage =
+            __atomic_load_n(&s_last_probe_stage, __ATOMIC_ACQUIRE),
+        .last_probe_address =
+            __atomic_load_n(&s_last_probe_address, __ATOMIC_ACQUIRE),
+        .last_parent_port =
+            __atomic_load_n(&s_last_parent_port, __ATOMIC_ACQUIRE),
+        .last_direct_root =
+            __atomic_load_n(&s_last_direct_root, __ATOMIC_ACQUIRE),
         .registered =
             __atomic_load_n(&s_registered, __ATOMIC_ACQUIRE),
         .connected = controller_usb_host_is_connected(),

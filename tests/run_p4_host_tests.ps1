@@ -820,6 +820,64 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 experimental status exposes USB1 probe diagnostics" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"p4_local_usb\"',
+        "usb_host_manager_get_diagnostics",
+        "controller_usb_host_get_diagnostics",
+        '\"last_probe_stage_name\"',
+        '\"last_parent_port\"'
+    )
+
+Assert-FileContains `
+    -Name "p4 JC4880 Full-Speed connector selects PHY0 without burning eFuse" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage_shared.c") `
+    -LiteralPatterns @(
+        ".override_fs_phy_index = true",
+        ".fs_phy_index = 0u",
+        "do not burn USB_PHY_SEL"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB host manager applies the requested Full-Speed PHY route" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "usb_wrap_ll_phy_select(&USB_WRAP, s_config.fs_phy_index)",
+        '"USB Full-Speed root routed to PHY%u"'
+    )
+
+Assert-FileContains `
+    -Name "p4 pins the esp-usb disconnect/recycle race fix" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/idf_component.yml") `
+    -LiteralPatterns @(
+        'version: "cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb"'
+    )
+
+Assert-FileContains `
+    -Name "p4 local dual-USB profile keeps a bounded flash coredump" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.p4_local_controller") `
+    -LiteralPatterns @(
+        "CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y",
+        "CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8",
+        "CONFIG_ESP_COREDUMP_LOGS=n"
+    )
+
+Assert-FileContains `
+    -Name "p4 status exposes a safe crash summary without raw coredump bytes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "esp_core_dump_image_check",
+        "esp_core_dump_get_summary",
+        "esp_core_dump_get_panic_reason",
+        "crash_dump_work_t *work = NULL",
+        "char *crash_dump_json = calloc",
+        '\"crash_dump\"',
+        '\"panic_reason\"',
+        '\"mcause\"'
+    )
+
+Assert-FileContains `
     -Name "p4 manager streams the matched profile to the S3 off the RX task" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
     -LiteralPatterns @("cpm_sender_task", "control_link_send_profile_begin", "control_link_send_profile_chunk", "cp_xfer_crc32", "CTRL_BULK_TYPE_PROFILE_ACTIVATE")

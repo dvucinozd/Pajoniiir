@@ -1,3 +1,12 @@
 # CI-only migration overlay. Product sdkconfig.defaults keeps this disabled.
 CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y
 CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
+
+# Experimental crash capture for Wi-Fi-only dual-USB hardware bring-up.
+# The fixed partition table already reserves 64 KiB; keep the task set bounded
+# and do not capture whole DRAM so the dump fits that partition.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_CHECK_BOOT=y
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8
+CONFIG_ESP_COREDUMP_LOGS=n
+CONFIG_ESP_TASK_WDT_PANIC=y
