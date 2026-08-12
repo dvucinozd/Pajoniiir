@@ -1707,6 +1707,31 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_wdt_trace"
+        Dir = "tests/audio_wdt_trace"
+        Target = "test_audio_wdt_trace.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_wdt_trace.exe",
+            "test_audio_wdt_trace.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_wdt_trace.c"
+        )
+    },
+    @{
+        Name = "library_load_trace"
+        Dir = "tests/library_load_trace"
+        Target = "test_library_load_trace.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-DLIBRARY_LOAD_TRACE_HOST_TEST",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_library_load_trace.exe",
+            "test_library_load_trace.c",
+            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
+        )
+    },
+    @{
         Name = "monitor_pcm_link"
         Dir = "tests/monitor_pcm_link"
         Target = "test_monitor_pcm_link.exe"
@@ -2144,12 +2169,14 @@ $tests = @(
         Target = "test_library_anlz.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-DLIBRARY_LOAD_TRACE_HOST_TEST",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
             "-DWIN32", "test_library_anlz.c",
-            "../../firmware/main-deck-p4/components/library/library.c"
+            "../../firmware/main-deck-p4/components/library/library.c",
+            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
         )
     },
     @{
@@ -2417,6 +2444,11 @@ Assert-FileContains `
     -Name "p4 library builds its real implementation, not a duration wrapper" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
     -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
+
+Assert-FileContains `
+    -Name "p4 experimental profile suppresses brownout-prone ANLZ cache writes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.p4_local_controller") `
+    -LiteralPatterns @("# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set")
 
 Invoke-ApiContract
 

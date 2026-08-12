@@ -2,6 +2,7 @@
 #include "rekordbox_pdb.h"
 #include "rekordbox_anlz.h"
 #include "track_meta_cache.h"
+#include "library_load_trace.h"
 #include "media_io_gate.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -13,6 +14,12 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Host suites compile this source without sdkconfig.h and exercise the product
+ * default. Firmware receives the Kconfig value from ESP-IDF. */
+#if defined(WIN32) && !defined(CONFIG_LIBRARY_ANLZ_CACHE_WRITE)
+#define CONFIG_LIBRARY_ANLZ_CACHE_WRITE 1
+#endif
 
 /* Referenced only by the ESP_LOG* macros, which the PC host stubs compile away.
  * Marking it used keeps -Wall clean there without an #ifdef around every log. */
@@ -561,6 +568,7 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
     uint32_t track_key = library_track_key(track);
 
     /* Warm path: a single cache load carrying the high-resolution waveform. */
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_USB_STAT, track_key);
     esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, out);
     if (cache_rc == ESP_OK) {
         if (source) *source = LIBRARY_ANLZ_SRC_CACHE;
@@ -570,17 +578,28 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
     /* Cold path: parse DAT once and EXT once, then one best-effort cache write.
      * track_meta_cache_load already zeroed *out on its miss return. */
     media_io_gate_begin();
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_USB_DAT, track_key);
     esp_err_t rc = anlz_parse_dat(dat_path, out);
     if (rc != ESP_OK) {
         media_io_gate_end();
         ESP_LOGE(TAG, "anlz_parse_dat failed: %s", dat_path);
         return rc;
     }
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_USB_EXT, track_key);
     anlz_parse_ext(ext_path, out);           /* best-effort high-res waveform */
     media_io_gate_end();
 
+#if CONFIG_LIBRARY_ANLZ_CACHE_WRITE
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_USB_STAT, track_key);
     esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, out);
     if (cache_written) *cache_written = (save_rc == ESP_OK);
+#else
+    /* Optional acceleration only. On the experimental P4 power setup, the
+     * larger cache commit was hardware-proven to brown out during fclose()/
+     * atomic replacement. Parsing remains successful and the owned metadata
+     * continues through the normal publish path. */
+    if (cache_written) *cache_written = false;
+#endif
     return ESP_OK;
 }
 
@@ -608,11 +627,14 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
 esp_err_t library_load_anlz(library_track_t *track)
 {
     if (!track) return ESP_ERR_INVALID_ARG;
+    library_load_trace_boot_init();
     ESP_RETURN_ON_ERROR(ensure_library_mutex(), TAG, "library mutex");
 
     int64_t t_start = esp_timer_get_time();
 
     anlz_metadata_t meta;
+    uint32_t track_key = library_track_key(track);
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_RESOLVE, track_key);
     library_anlz_source_t source = LIBRARY_ANLZ_SRC_USB;
     bool cache_written = false;
     esp_err_t rc = library_resolve_anlz(track, &meta, &source, &cache_written);
@@ -635,8 +657,10 @@ esp_err_t library_load_anlz(library_track_t *track)
         s_current_meta_valid = false;
         xSemaphoreGiveRecursive(s_library_mutex);
         if (have_stale) {
+            library_load_trace_mark(LIBRARY_LOAD_PHASE_FREE_OLD, track_key);
             anlz_free(&stale_meta);
         }
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_FAILED, track_key);
         return rc;
     }
 
@@ -649,6 +673,7 @@ esp_err_t library_load_anlz(library_track_t *track)
      * on a free. Ownership of meta moves into s_current_meta. */
     anlz_metadata_t old_meta;
     bool have_old = false;
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_PUBLISH_LOCK, track_key);
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
     if (s_current_meta_valid) {
         old_meta = s_current_meta;
@@ -658,6 +683,7 @@ esp_err_t library_load_anlz(library_track_t *track)
     s_current_meta_valid = true;
     xSemaphoreGiveRecursive(s_library_mutex);
     if (have_old) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_FREE_OLD, track_key);
         anlz_free(&old_meta);
     }
 
@@ -672,6 +698,7 @@ esp_err_t library_load_anlz(library_track_t *track)
              track->bpm, (unsigned long)track->duration_ms,
              meta.cue_count, meta.beat_count, meta.waveform_high_len,
              (long long)elapsed_us);
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_DONE, track_key);
     return ESP_OK;
 }
 

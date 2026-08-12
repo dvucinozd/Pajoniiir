@@ -29,6 +29,7 @@
 #include "audio_filter.h"
 #include "audio_mixer.h"
 #include "audio_pad_fx.h"
+#include "audio_wdt_trace.h"
 
 #if defined(AUDIO_ENGINE_PC_TEST)
     /* Stand-alone PC test build: provide ESP-IDF types without IDF headers */
@@ -163,6 +164,10 @@ typedef struct {
     uint32_t phase_codec_max_us;    /* headphone codec write */
     uint32_t phase_book_max_us;     /* AE_LOCK acquire + per-block bookkeeping */
     uint32_t phase_head_max_us;     /* block start to mixer entry: snapshot prep */
+    bool wdt_trace_previous_valid;
+    audio_wdt_trace_record_t wdt_trace_previous;
+    bool wdt_trace_current_valid;
+    audio_wdt_trace_record_t wdt_trace_current;
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;

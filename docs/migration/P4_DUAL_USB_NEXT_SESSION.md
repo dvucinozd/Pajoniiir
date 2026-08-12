@@ -10,29 +10,32 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Source checkpoint before this documentation commit: `b5d404b`
+- Source checkpoint before the current uncommitted diagnostic work: `008cfa4`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
 - Required SDK: ESP-IDF v6.0.2
 - P4 serial/flash port: `COM15`
-- Last diagnostic build directory: `firmware/main-deck-p4/build_diag_usb_wdt1`
+- Last diagnostic build directory: `firmware/main-deck-p4/build_diag_audio_wdt_local`
 - Generated build directories and signed packages remain ignored.
 
-The P4 currently reports `RC2-57-gb5d404b-dirty` from `ota_0`. This is a
-temporary isolation image with monitor transport disabled. The repository
-source has restored the normal MAIN plus monitor/cue path, so rebuild the
-current source before the next acceptance run; do not treat the installed
-image as a merge candidate.
+The P4 currently reports `RC2-58-g008cfa4-dirty` from `ota_1`. It is the normal
+monitor-enabled image with retained audio/library tracing, built from the
+current dirty working tree. Its payload is 2,465,424 bytes, SHA-256
+`b1993a41b6a6ac78f4a26e57f9d63691a8fb2d3b205adfe96ee5e89ba8672e6d`.
+It is a diagnostic image, not a merge candidate.
 
 ## Current blocker and branch status
 
 JP1 alone did not provide downstream VBUS on 2026-08-10. A later unqualified
 bench arrangement did enumerate the 191-track stick on USB0 and the FLX4 on
 USB1 as `2B73:0045`, proving the dual-root data topology. It did not prove the
-power path. On 2026-08-12 a controlled two-deck run reset as raw `BROWNOUT`
-after about 6.5 seconds even with the FLX4 disconnected and with zero reported
-audio late blocks or underruns.
+power path. On 2026-08-12 controlled playback/load runs produced both a generic
+P4 core-MWDT reset and a direct raw `BROWNOUT`, including a brownout about
+100 ms after the library transaction had reached retained `done`. Audio
+breadcrumbs varied between normal I2S output and snapshot preparation; the
+Task-WDT ISR hook never fired. This rules out one deterministic audio-task
+deadlock and leaves the unqualified power/VBUS path as the blocker.
 
 Testing may resume only after the common 5 V path and each downstream VBUS are
 electrically qualified under startup and sustained dual-deck load, without
@@ -71,6 +74,13 @@ Confirmed in the 2026-08-12 continuation:
 - one deck ran 33 seconds with clean deadline/underrun counters;
 - two decks still produced a confirmed raw brownout after about 6.5 seconds,
   even in the monitor-disabled isolation image and without the FLX4 attached.
+- retained audio and library phase journals reproduce across reset and are
+  exposed in `/api/status`; an additional playing-deck/load sequence produced
+  a generic WDT after a completed load, while the fine repeat produced a direct
+  brownout after a completed load;
+- experimental ANLZ cache writes are disabled to remove a proven SD-commit
+  load spike; the attempted one-second load pacing was removed because it did
+  not prevent an isolated reset and only added operator latency.
 
 Full evidence and the non-fatal startup warnings are recorded in
 [`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
@@ -133,9 +143,9 @@ Get-CimInstance Win32_Process |
 
 ## First test after stable power is available
 
-Do not start acceptance with the image currently flashed because it is the
-temporary monitor-disabled isolation build. Build and install the restored
-source first, then:
+The installed image already has the normal MAIN plus monitor/cue path and the
+latest retained tracing. Rebuild and install only if the source changes before
+the next session, then:
 
 1. With both protected outputs disabled, verify the interposer continuity,
    VBUS isolation, polarity and absence of shorts. Power the P4 from the common

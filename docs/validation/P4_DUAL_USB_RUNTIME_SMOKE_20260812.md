@@ -9,6 +9,16 @@ recycle fix, but it is **not** merge or release acceptance.
 Verdict: **blocked by 5 V/VBUS stability**. The most controlled dual-deck run
 ended in a hardware-reported brownout even after the FLX4 was disconnected.
 
+An additional retained-trace run later the same day ruled out the initially
+suspected audio-task deadlock. The same playback/load workload produced both a
+raw P4 `WDT` reset and a direct `BROWNOUT`, with the library transaction already
+at `done` in the decisive reproduction. The last audio breadcrumb varied between
+normal `main_i2s` and lightweight `snapshot` work and the Task-WDT ISR hook was
+never entered. On ESP32-P4 all unhinted core/system MWDT sources collapse to the
+generic `ESP_RST_WDT`, so that code alone does not identify a Task WDT. The
+combined evidence is consistent with the unqualified 5 V/VBUS path disturbing
+the P4/USB subsystem, not with one deterministic audio function blocking.
+
 ## Confirmed behavior
 
 - USB0 mounted the Rekordbox drive and exposed a 191-track library.
@@ -30,6 +40,8 @@ The FLX4 was disconnected before the decisive audio run.
 | One MP3 deck | 33 seconds stable; zero reported late blocks and underruns; worst mix 4.07 ms, MAIN I2S 9.474 ms, monitor I2S 0.811 ms |
 | Two MP3 decks, normal monitor path | Reset after a few seconds; journal classified the first run as WDT but no new coredump was produced |
 | Two MP3 decks, monitor transport temporarily disabled | Both decks advanced about 6.5 seconds; zero reported late blocks and underruns; worst mix 3.253 ms and MAIN I2S 9.545 ms; reboot journal then reported `reset=BROWNOUT`, raw core reasons `3/3` |
+| One playing deck plus serialized metadata loads | Six loads completed in 92–219 ms; the seventh also reached retained `done`, then the board reset about 131 ms later with raw `WDT`; Task-WDT hook remained false |
+| Fine-trace repeat after OTA | First metadata load completed in 145 ms, then the board reset about 100 ms later with raw `BROWNOUT`; retained audio phase was normal blocking MAIN I2S output |
 
 The final isolation run makes an audio deadline or monitor-task explanation
 unlikely. It directly identifies supply collapse as the current blocker.
@@ -51,18 +63,29 @@ unlikely. It directly identifies supply collapse as the current blocker.
 - Audio output now yields after either 64 continuously busy blocks or 100 ms,
   preventing very slow blocks from postponing the cooperative idle point for
   seconds.
+- A two-slot `.noinit` audio journal records block/phase/subphase, active decks,
+  last idle time and whether the Task-WDT ISR hook ran. A second retained journal
+  covers the library/cache transaction down to SD/USB gate waits and individual
+  DAT/EXT signatures; both are exposed by `/api/status` and copied into the boot
+  service journal after an unexpected reset.
+- ANLZ cache writes are disabled only in the experimental P4-local-controller
+  profile. Existing cache reads and USB parsing remain available. A temporary
+  one-second catalog pacing experiment was removed because a single isolated
+  cold load could still reset the board and the delay did not address the rail.
 
 ## Important installed/source distinction
 
-At the end of the session the P4 was running the temporary isolation OTA image
-in `ota_0`, reporting `RC2-57-gb5d404b-dirty`. That image has monitor transport
-disabled solely for diagnosis. The repository source has already restored the
-normal MAIN plus monitor/cue path; the next source build will therefore not be
-bit-identical to the image currently installed.
+At the end of the session the P4 was running the normal monitor-enabled,
+fine-grained retained-trace image in `ota_1`, reporting
+`RC2-58-g008cfa4-dirty`. Its application payload is 2,465,424 bytes with SHA-256
+`b1993a41b6a6ac78f4a26e57f9d63691a8fb2d3b205adfe96ee5e89ba8672e6d`.
+The board was left idle after the final brownout reproduction. This is a
+diagnostic experimental image, not a release candidate.
 
 ## Required retest
 
-Before reconnecting both devices, electrically qualify the common 5 V path:
+Before any further reset stress or reconnecting both devices, electrically
+qualify the common 5 V path:
 measure idle/startup/single-deck/dual-deck voltage and current, confirm no
 backfeed, verify per-port protection and record the exact cabling. Then build
 the restored source, install it, and repeat cold boot, both insertion orders,

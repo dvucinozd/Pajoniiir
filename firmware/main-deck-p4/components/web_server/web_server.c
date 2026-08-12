@@ -13,6 +13,7 @@
 #include "web_firmware_json.h"
 #include "p4_ota_policy.h"
 #include "service_log.h"
+#include "library_load_trace.h"
 #include "sd_io_gate.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -107,6 +108,87 @@ static void format_crash_dump_json(char *out, size_t out_size)
 #else
     snprintf(out, out_size, "\"crash_dump\":{\"enabled\":false}");
 #endif
+}
+
+static void format_audio_wdt_trace_json(
+    char *out, size_t out_size,
+    const audio_engine_diagnostics_snapshot_t *diagnostics)
+{
+    const audio_wdt_trace_record_t *previous =
+        &diagnostics->wdt_trace_previous;
+    const audio_wdt_trace_record_t *current =
+        &diagnostics->wdt_trace_current;
+    uint32_t previous_no_idle_us = diagnostics->wdt_trace_previous_valid
+        ? (uint32_t)((uint32_t)previous->entered_us -
+                     (uint32_t)previous->last_idle_us)
+        : 0u;
+    uint32_t current_no_idle_us = diagnostics->wdt_trace_current_valid
+        ? (uint32_t)((uint32_t)current->entered_us -
+                     (uint32_t)current->last_idle_us)
+        : 0u;
+    snprintf(
+        out, out_size,
+        "\"audio_wdt_trace\":{"
+        "\"previous\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu},"
+        "\"current\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu}}",
+        diagnostics->wdt_trace_previous_valid ? "true" : "false",
+        (unsigned)previous->phase,
+        diagnostics->wdt_trace_previous_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)previous->phase) : "none",
+        (unsigned)previous->boot_id, (unsigned)previous->sequence,
+        (unsigned)previous->block, (unsigned)previous->mix_group,
+        (unsigned)previous->busy_blocks, (unsigned)previous->active_deck_mask,
+        previous->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)previous->entered_us,
+        (unsigned long long)previous->last_idle_us,
+        (unsigned long long)previous_no_idle_us,
+        diagnostics->wdt_trace_current_valid ? "true" : "false",
+        (unsigned)current->phase,
+        diagnostics->wdt_trace_current_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)current->phase) : "none",
+        (unsigned)current->boot_id, (unsigned)current->sequence,
+        (unsigned)current->block, (unsigned)current->mix_group,
+        (unsigned)current->busy_blocks, (unsigned)current->active_deck_mask,
+        current->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)current->entered_us,
+        (unsigned long long)current->last_idle_us,
+        (unsigned long long)current_no_idle_us);
+}
+
+static void format_library_load_trace_json(char *out, size_t out_size)
+{
+    library_load_trace_record_t previous = {0};
+    library_load_trace_record_t current = {0};
+    bool previous_valid = false;
+    bool current_valid = false;
+    library_load_trace_snapshot(&previous_valid, &previous,
+                                &current_valid, &current);
+    snprintf(out, out_size,
+             "\"library_load_trace\":{"
+             "\"previous\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u},"
+             "\"current\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u}}",
+             previous_valid ? "true" : "false", (unsigned)previous.phase,
+             previous_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)previous.phase) : "none",
+             (unsigned)previous.boot_id, (unsigned)previous.sequence,
+             (unsigned)previous.track_key, (unsigned)previous.entered_us,
+             current_valid ? "true" : "false", (unsigned)current.phase,
+             current_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)current.phase) : "none",
+             (unsigned)current.boot_id, (unsigned)current.sequence,
+             (unsigned)current.track_key, (unsigned)current.entered_us);
 }
 
 static void current_ap_ipv4(char out[16])
@@ -1261,6 +1343,20 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                    "No memory for crash status");
     }
     format_crash_dump_json(crash_dump_json, crash_dump_json_size);
+    const size_t trace_json_size = 1536u;
+    char *trace_json = calloc(1, trace_json_size);
+    if (!trace_json) {
+        free(crash_dump_json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for retained trace status");
+    }
+    char *audio_wdt_trace_json = trace_json;
+    char *library_load_trace_json = trace_json + 1024u;
+    format_audio_wdt_trace_json(audio_wdt_trace_json,
+                                1024u,
+                                &diagnostics);
+    format_library_load_trace_json(library_load_trace_json,
+                                   trace_json_size - 1024u);
 
     char *json = NULL;
     int json_len = web_api_alloc_printf(
@@ -1311,6 +1407,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"pfl1\":%s,"
         "\"pfl2\":%s"
         "},"
+        "%s,"
+        "%s,"
         "%s,"
         "%s,"
         "%s,"
@@ -1384,6 +1482,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_log_json,
         p4_local_usb_json,
         crash_dump_json,
+        audio_wdt_trace_json,
+        library_load_trace_json,
         diagnostics.output_codec_open ? "true" : "false",
         (unsigned)diagnostics.output_sample_rate,
         (unsigned)diagnostics.output_late_count,
@@ -1432,6 +1532,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.internal_free,
         (unsigned)diagnostics.psram_free);
     free(crash_dump_json);
+    free(trace_json);
     if (!json || json_len < 0) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;

@@ -36,6 +36,7 @@
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
 #include "audio_output_timing.h"
+#include "audio_wdt_trace.h"
 #include "audio_pad_fx.h"
 #include "audio_pcm_ring.h"
 #include "audio_pcm_timeline.h"
@@ -63,6 +64,7 @@
 #   define ESP_LOGD(tag, fmt, ...) ((void)0)
 #else
 #   include "esp_log.h"
+#   include "esp_attr.h"
 #endif
 
 #include <string.h>
@@ -1845,6 +1847,79 @@ static uint32_t s_phase_block[AE_PH_COUNT];
 static uint32_t s_mix_group_max_us;
 static uint32_t s_mix_group_worst;
 
+#if !defined(AUDIO_ENGINE_PC_TEST)
+/* Internal .noinit RAM is intentionally not zeroed by the P4 startup path.
+ * The paired/inverted journal rejects partial brownout writes, while alternating
+ * slots leaves the preceding valid breadcrumb recoverable. */
+static __NOINIT_ATTR volatile audio_wdt_trace_journal_t s_audio_wdt_journal;
+static audio_wdt_trace_record_t s_audio_wdt_previous;
+static bool s_audio_wdt_previous_valid;
+static uint32_t s_audio_wdt_sequence;
+static uint32_t s_audio_wdt_boot_id;
+static uint32_t s_audio_wdt_block;
+static uint32_t s_audio_wdt_active_decks;
+static uint32_t s_audio_wdt_busy_blocks;
+static uint64_t s_audio_wdt_last_idle_us;
+
+/* ESP-IDF invokes this weak hook from the Task WDT ISR before panic handling.
+ * Two retained stores distinguish a real TWDT timeout from the P4's generic
+ * MWDT reset reason, even if panic output or the coredump cannot complete. */
+void IRAM_ATTR esp_task_wdt_isr_user_handler(void)
+{
+    s_audio_wdt_journal.twdt_isr_seen_inv = ~AUDIO_WDT_TRACE_MAGIC;
+    s_audio_wdt_journal.twdt_isr_seen = AUDIO_WDT_TRACE_MAGIC;
+}
+
+static inline void ae_wdt_trace(audio_wdt_phase_t phase, uint32_t mix_group)
+{
+    audio_wdt_trace_mark(&s_audio_wdt_journal,
+                         ++s_audio_wdt_sequence,
+                         phase,
+                         mix_group,
+                         s_audio_wdt_busy_blocks,
+                         s_audio_wdt_active_decks);
+}
+
+static inline void ae_wdt_trace_begin_block(void)
+{
+    audio_wdt_trace_begin_block(&s_audio_wdt_journal,
+                                s_audio_wdt_boot_id,
+                                s_audio_wdt_block,
+                                (uint64_t)esp_timer_get_time(),
+                                s_audio_wdt_last_idle_us);
+}
+
+static void ae_wdt_trace_boot_init(void)
+{
+    s_audio_wdt_previous_valid =
+        audio_wdt_trace_read(&s_audio_wdt_journal, &s_audio_wdt_previous);
+    s_audio_wdt_sequence = s_audio_wdt_previous_valid
+        ? s_audio_wdt_previous.sequence
+        : 0u;
+    s_audio_wdt_boot_id = s_audio_wdt_previous_valid
+        ? s_audio_wdt_previous.boot_id + 1u
+        : 1u;
+    audio_wdt_trace_clear_watchdog_flags(&s_audio_wdt_journal);
+    s_audio_wdt_block = 0u;
+    s_audio_wdt_active_decks = 0u;
+    s_audio_wdt_busy_blocks = 0u;
+    s_audio_wdt_last_idle_us = (uint64_t)esp_timer_get_time();
+    ae_wdt_trace_begin_block();
+    ae_wdt_trace(AUDIO_WDT_PHASE_NONE, 0u);
+    if (s_audio_wdt_previous_valid) {
+        service_log_event(SERVICE_LOG_AUDIO_WDT_TRACE, SERVICE_LOG_WARN,
+                          4u, s_audio_wdt_previous.phase,
+                          s_audio_wdt_previous.block,
+                          s_audio_wdt_previous.mix_group,
+                          s_audio_wdt_previous.active_deck_mask,
+                          audio_wdt_trace_phase_name(
+                              (audio_wdt_phase_t)s_audio_wdt_previous.phase));
+    }
+}
+#else
+#define ae_wdt_trace(phase, mix_group) ((void)0)
+#endif
+
 static inline void ae_phase_note(ae_phase_id_t id, int64_t elapsed_us)
 {
     uint32_t v = elapsed_us > 0 ? (uint32_t)elapsed_us : 0u;
@@ -2756,11 +2831,21 @@ static void ae_output_task(void *arg)
     int16_t hp_out[AE_OUT_FRAMES * 2];
     uint32_t consecutive_busy_blocks = 0u;
     int64_t last_idle_tick_us = esp_timer_get_time();
+#if !defined(AUDIO_ENGINE_PC_TEST)
+    s_audio_wdt_last_idle_us = (uint64_t)last_idle_tick_us;
+#endif
     while (s_output_run) {
+        s_audio_wdt_block++;
+        ae_wdt_trace_begin_block();
         if (!s_output_codec_open) {
+            ae_wdt_trace(AUDIO_WDT_PHASE_WAIT_CODEC, 0u);
             vTaskDelay(pdMS_TO_TICKS(5));
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            s_audio_wdt_last_idle_us = (uint64_t)esp_timer_get_time();
+#endif
             continue;
         }
+        ae_wdt_trace(AUDIO_WDT_PHASE_EOF_DRAIN, 0u);
         for (uint8_t d = 0u; d < AUDIO_ENGINE_DECK_COUNT; d++) {
             complete_eof_drain_if_ready(d);
         }
@@ -2773,6 +2858,7 @@ static void ae_output_task(void *arg)
          * mid-handoff would otherwise be skipped by the mixer, so its render
          * callback never runs and s_scratch_playing sticks true (silent deck +
          * frozen capture); tear the scratch state down here in that case. */
+        ae_wdt_trace(AUDIO_WDT_PHASE_SCRATCH_CONTROL, 0u);
         for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
             if (__atomic_exchange_n(&s_scratch_abort_seek_requested[d], false,
                                     __ATOMIC_ACQ_REL)) {
@@ -2815,12 +2901,15 @@ static void ae_output_task(void *arg)
             }
         }
 
+        ae_wdt_trace(AUDIO_WDT_PHASE_COMMANDS, 0u);
         audio_output_apply_master_tempo_commands();
         audio_output_apply_pending_fx_commands();
 
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 0u);
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
         audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 1u);
         /* Pre-fader gain (pregain x master trim) for the VU meters, so they track
          * the TRIM knob independent of the channel fader/crossfader. */
         float deck0_prefader_gain =
@@ -2842,6 +2931,7 @@ static void ae_output_task(void *arg)
                                              headphone_level,
                                              master_cue_enabled);
 
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 2u);
         const uint8_t deck0_index = AE_DECK_0;
         const uint8_t deck1_index = 1u;
         const float deck0_pitch = engine_pitch_load(deck0_index) *
@@ -2881,6 +2971,7 @@ static void ae_output_task(void *arg)
             .scratch_render = ae_scratch_render_cb,
             .scratch_ctx = &s_scratch_ctx_deck[deck0_index],
         };
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 3u);
         audio_output_mixer_deck_t deck1 = {
             .active = deck_output_active(deck1_index),
             .pitch_factor = deck1_pitch,
@@ -2914,11 +3005,17 @@ static void ae_output_task(void *arg)
             .scratch_render = ae_scratch_render_cb,
             .scratch_ctx = &s_scratch_ctx_deck[deck1_index],
         };
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 4u);
+#if !defined(AUDIO_ENGINE_PC_TEST)
+        s_audio_wdt_active_decks = (deck0.active ? 1u : 0u) |
+                                   (deck1.active ? 2u : 0u);
+#endif
 
         /* Decay the jog nudge once per output block; snap tiny residuals to 0. */
         for (uint8_t d = 0; d < AUDIO_ENGINE_DECK_COUNT; d++) {
             jog_bend_decay(d);
         }
+        ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 5u);
 
         if (!deck0.active && !deck1.active) {
             /* No audio block will reach the normal peak-recording path below,
@@ -2932,7 +3029,11 @@ static void ae_output_task(void *arg)
                 audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
             }
 #endif
+            ae_wdt_trace(AUDIO_WDT_PHASE_IDLE_DELAY, 0u);
             vTaskDelay(pdMS_TO_TICKS(5));
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            s_audio_wdt_last_idle_us = (uint64_t)esp_timer_get_time();
+#endif
             continue;
         }
 
@@ -2958,6 +3059,10 @@ static void ae_output_task(void *arg)
         const int mix_group_len = AE_OUT_FRAMES / AE_MIX_GROUPS;
 
         for (int i = 0; i < AE_OUT_FRAMES; i++) {
+            if ((i % mix_group_len) == 0) {
+                ae_wdt_trace(AUDIO_WDT_PHASE_MIX_GROUP,
+                             (uint32_t)(i / mix_group_len));
+            }
             uint32_t frame_consumed0 = 0;
             uint32_t frame_consumed1 = 0;
 
@@ -3004,6 +3109,7 @@ static void ae_output_task(void *arg)
 #if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED
         /* Tap the exact post-limiter MAIN block for the optional recorder. This
          * is a no-op (single atomic load) unless recording is active. */
+        ae_wdt_trace(AUDIO_WDT_PHASE_RECORDER, 0u);
         audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
 #endif
         {
@@ -3011,12 +3117,14 @@ static void ae_output_task(void *arg)
             ae_phase_note(AE_PH_PUSH, now - phase_mark);
             phase_mark = now;
         }
+        ae_wdt_trace(AUDIO_WDT_PHASE_MONITOR, 0u);
         (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
         {
             int64_t now = esp_timer_get_time();
             ae_phase_note(AE_PH_MONITOR, now - phase_mark);
             phase_mark = now;
         }
+        ae_wdt_trace(AUDIO_WDT_PHASE_MAIN_I2S, 0u);
         esp_err_t main_rc = audio_output_write_main(master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
         {
             int64_t now = esp_timer_get_time();
@@ -3027,6 +3135,7 @@ static void ae_output_task(void *arg)
            write above; hp_out still reaches the FLX4 phones over the link. */
         esp_err_t hp_rc = ESP_ERR_NOT_SUPPORTED;
         if (s_codec) {
+            ae_wdt_trace(AUDIO_WDT_PHASE_CODEC, 0u);
             hp_rc = esp_codec_dev_write(s_codec, hp_out, (int)(AE_OUT_FRAMES * 2 * sizeof(int16_t)));
         }
 
@@ -3036,6 +3145,7 @@ static void ae_output_task(void *arg)
             phase_mark = now;
         }
         if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
+            ae_wdt_trace(AUDIO_WDT_PHASE_BOOK_LOCK, 0u);
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
             update_deck_output_position(deck1_index, consumed[deck1_index]);
@@ -3052,6 +3162,7 @@ static void ae_output_task(void *arg)
             AE_UNLOCK();
         }
         ae_phase_note(AE_PH_BOOK, esp_timer_get_time() - phase_mark);
+        ae_wdt_trace(AUDIO_WDT_PHASE_DIAGNOSTICS, 0u);
         int64_t block_elapsed_us = esp_timer_get_time() - block_start_us;
 #if !defined(AUDIO_ENGINE_PC_TEST)
         ae_report_block_outlier(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u);
@@ -3083,6 +3194,8 @@ static void ae_output_task(void *arg)
         uint32_t elapsed_since_idle_us = now_us > last_idle_tick_us
             ? (uint32_t)(now_us - last_idle_tick_us)
             : 0u;
+        s_audio_wdt_busy_blocks = consecutive_busy_blocks + 1u;
+        ae_wdt_trace(AUDIO_WDT_PHASE_YIELD, 0u);
         if (scratch_writer_needs_cpu ||
             audio_output_should_force_idle(++consecutive_busy_blocks,
                                            elapsed_since_idle_us)) {
@@ -3094,10 +3207,15 @@ static void ae_output_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(1));
             consecutive_busy_blocks = 0u;
             last_idle_tick_us = esp_timer_get_time();
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            s_audio_wdt_busy_blocks = 0u;
+            s_audio_wdt_last_idle_us = (uint64_t)last_idle_tick_us;
+#endif
         } else {
             taskYIELD();
         }
     }
+    ae_wdt_trace(AUDIO_WDT_PHASE_EXIT, 0u);
     if (s_output_codec_open) {
         if (s_codec) esp_codec_dev_close(s_codec);
         s_output_codec_open = false;
@@ -3199,6 +3317,9 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck);
 /* ── audio_engine_init ────────────────────────────────────────────────────── */
 esp_err_t audio_engine_init(void)
 {
+#if AE_FW
+    ae_wdt_trace_boot_init();
+#endif
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_engine_reset_state(&s_engines[i], ESP_OK, "OK");
     }
@@ -5025,6 +5146,13 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     out_snapshot->phase_codec_max_us = s_phase.codec_max_us;
     out_snapshot->phase_book_max_us = s_phase.book_max_us;
     out_snapshot->phase_head_max_us = s_phase.head_max_us;
+    out_snapshot->wdt_trace_previous_valid = s_audio_wdt_previous_valid;
+    if (s_audio_wdt_previous_valid) {
+        out_snapshot->wdt_trace_previous = s_audio_wdt_previous;
+    }
+    out_snapshot->wdt_trace_current_valid =
+        audio_wdt_trace_read(&s_audio_wdt_journal,
+                             &out_snapshot->wdt_trace_current);
     out_snapshot->heap_free = esp_get_free_heap_size();
     out_snapshot->internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     out_snapshot->psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);

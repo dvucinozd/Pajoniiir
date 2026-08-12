@@ -1,6 +1,6 @@
 set(WEB_SERVER_REQUIRES
     p4_ota_pull_core app_settings "audio_engine" "control_link" "ui"
-    "media_catalog" "esp_http_server" "esp_netif" "mdns" "deck_core"
+    "media_catalog" "library" "esp_http_server" "esp_netif" "mdns" "deck_core"
     "controller_profile_manager" "p4_ota" "ota_manifest" "service_log"
     "sd_io_gate" "audio_recorder" usb_host_manager controller_usb_host
     p4_local_controller espcoredump)

@@ -3,6 +3,7 @@
 #include "deck_core.h"
 #include "bsp_jc4880.h"
 #include "library.h"
+#include "library_load_trace.h"
 #include "audio_engine.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -358,6 +359,23 @@ void app_main(void)
         ESP_LOGW(TAG, "wifi_link_init: %s", esp_err_to_name(wifi_rc));
     }
     // ── Media and audio ──────────────────────────────────────────────────────
+    library_load_trace_boot_init();
+    {
+        library_load_trace_record_t previous = {0};
+        bool previous_valid = false;
+        library_load_trace_snapshot(&previous_valid, &previous, NULL, NULL);
+        if (previous_valid) {
+            esp_reset_reason_t reset = esp_reset_reason();
+            service_log_severity_t severity =
+                (reset == ESP_RST_WDT || reset == ESP_RST_TASK_WDT ||
+                 reset == ESP_RST_INT_WDT) ? SERVICE_LOG_WARN : SERVICE_LOG_INFO;
+            service_log_event(SERVICE_LOG_LIBRARY_LOAD_TRACE, severity,
+                              4u, previous.phase, previous.track_key,
+                              previous.boot_id, previous.sequence,
+                              library_load_trace_phase_name(
+                                  (library_load_phase_t)previous.phase));
+        }
+    }
     // library_init() returns NOT_FOUND when USB is not mounted — that is
     // normal at startup; the library will be re-initialised when USB connects.
     esp_err_t lib_rc = library_init();
