@@ -8,6 +8,13 @@ bounded compressed audio cache, paginated Library UI, immutable track sort,
 recorder safety hardening and the full `fix/release-blockers-and-concurrency`
 stabilisation set.
 
+Latest read-only source audit: **2026-08-16**, at
+`10c91c2aa536be3852cdd6a41e831088d85625d7`. It is tracked in
+[`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md)
+and adds six open P1 release blockers plus
+the ordered P2/P3 remediation plan. That audit is the current code-review gate
+list; it does not supersede dated build or hardware validation evidence.
+
 Because that is a different build baseline, the release prefix moved from `RC1`
 to **`RC2`**: the annotated tag `RC2` sits on `56905c89` and the latest clean
 dual-target release build is `RC2`, recorded in
@@ -94,6 +101,10 @@ in the active documents.
 
 ## Remaining work
 
+- close the P1 and applicable P2 gates from
+  [`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md)
+  before claiming a new release candidate
+  is hardware-accepted or production-ready;
 - **ESP-IDF 6.0.2 hardware acceptance**: display/touch, paginated Library,
   FLX4 MIDI/UAC, PCM5102A and the focused monitor path now pass. USB MSC
   recovery, sustained monitor/cache counters, ESP-Hosted AP/OTA and migrated

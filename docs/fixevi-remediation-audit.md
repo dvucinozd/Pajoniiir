@@ -9,6 +9,12 @@ Naknadni redovi i dokazi u ovom dokumentu ažuriraju se kako se pojedini
 paketi iz ESP-IDF 6.0.2 migration plana implementiraju; povijesni audit commit
 iznad ostaje referenca za izvorni skup nalaza.
 
+Nasljedni audit aktualnog `master` stabla i novi otvoreni remediation tracker
+nalazi se u
+[`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md).
+Ovaj dokument ostaje
+povijesni closeout prethodnog skupa nalaza.
+
 Statusi:
 
 - **Zatvoreno** — primarni defekt je uklonjen i pokriven postojećim host/CI gateom.
