@@ -1399,4 +1399,78 @@ esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])
     return ESP_OK;
 }
 
+#if defined(FLX4_MIDI_HOST_PRODUCTION_TEST)
+void flx4_midi_host_production_test_reset(void)
+{
+    memset(&s_host, 0, sizeof(s_host));
+    s_host.client_hdl = (usb_host_client_handle_t)(uintptr_t)1u;
+    midi_out_retry_state_init(&s_host.out_retry);
+    s_midi_out_queue = xQueueCreate((UBaseType_t)MIDI_OUT_QUEUE_DEPTH, 4u);
+    midi_out_set_accepting(false);
+    __atomic_store_n(&s_midi_out_producers, 0u, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_dirty, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_context_sequence, 0u, __ATOMIC_RELEASE);
+    memset(&s_connection_context, 0, sizeof(s_connection_context));
+}
+
+esp_err_t flx4_midi_host_production_test_open(uint8_t dev_addr)
+{
+    return open_device(&s_host, dev_addr);
+}
+
+void flx4_midi_host_production_test_device_gone(void)
+{
+    usb_host_client_event_msg_t event = {
+        .event = USB_HOST_CLIENT_EVENT_DEV_GONE,
+    };
+    client_event_cb(&event, &s_host);
+}
+
+void flx4_midi_host_production_test_pump(void)
+{
+    midi_in_pump(&s_host);
+    midi_out_pump();
+}
+
+void flx4_midi_host_production_test_complete_transfers(bool disconnected)
+{
+    const usb_transfer_status_t status = disconnected
+        ? USB_TRANSFER_STATUS_NO_DEVICE
+        : USB_TRANSFER_STATUS_COMPLETED;
+    usb_transfer_t *in = s_host.in_xfer;
+    usb_transfer_t *out = s_host.out_xfer;
+    if (in && s_host.transfer_active) {
+        in->status = status;
+        in->actual_num_bytes = 0;
+        in->callback(in);
+    }
+    if (out && s_host.out_transfer_active) {
+        out->status = status;
+        out->actual_num_bytes = 0;
+        out->callback(out);
+    }
+}
+
+bool flx4_midi_host_production_test_close_step(void)
+{
+    return close_device_step(&s_host);
+}
+
+void flx4_midi_host_production_test_snapshot(
+    flx4_midi_host_production_snapshot_t *out_snapshot)
+{
+    if (!out_snapshot) return;
+    *out_snapshot = (flx4_midi_host_production_snapshot_t) {
+        .opened = s_host.opened,
+        .claimed = s_host.claimed,
+        .closing = s_host.closing,
+        .in_transfer_allocated = s_host.in_xfer != NULL,
+        .out_transfer_allocated = s_host.out_xfer != NULL,
+        .in_transfer_active = s_host.transfer_active,
+        .out_transfer_active = s_host.out_transfer_active,
+    };
+}
+#endif
+
 #endif

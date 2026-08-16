@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "s3_debug_ap.c" "s3_debug_log_ring.c" "s3_ota_upload_guard.c"
+    SRCS "s3_debug_ap.c" "s3_debug_log_ring.c" "s3_ota_http.c" "s3_ota_upload_guard.c"
          "s3_debug_auth.c"
          "s3_debug_ap_netif_stage.c"
     INCLUDE_DIRS "include"

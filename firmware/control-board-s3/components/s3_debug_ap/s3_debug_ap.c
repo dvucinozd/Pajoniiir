@@ -104,8 +104,7 @@ s3_debug_ap_status_t s3_debug_ap_status(void)
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "s3_ota.h"
-#include "s3_ota_policy.h"
-#include "s3_ota_upload_guard.h"
+#include "s3_ota_http.h"
 #include "s3_debug_ap_netif_stage.h"
 #include "s3_debug_auth.h"
 
@@ -388,53 +387,45 @@ static esp_err_t firmware_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, (size_t)len);
 }
 
-static uint32_t ota_now_ms(void)
+static int ota_http_recv_adapter(void *ctx, uint8_t *buffer, size_t wanted)
 {
+    int received = httpd_req_recv((httpd_req_t *)ctx, (char *)buffer, wanted);
+    if (received == HTTPD_SOCK_ERR_TIMEOUT) return S3_OTA_HTTP_RECV_TIMEOUT;
+    return received > 0 ? received : S3_OTA_HTTP_RECV_ERROR;
+}
+
+static uint32_t ota_http_now_ms_adapter(void *ctx)
+{
+    (void)ctx;
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 
-static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted,
-                         s3_ota_upload_guard_t *guard,
-                         s3_ota_upload_guard_result_t *guard_result)
+static esp_err_t ota_http_send_result(httpd_req_t *req,
+                                      s3_ota_http_result_t result)
 {
-    const unsigned max_timeouts = 5;
-    if (guard_result) *guard_result = S3_OTA_UPLOAD_GUARD_OK;
-    for (unsigned timeout_count = 0; timeout_count < max_timeouts; ++timeout_count) {
-        s3_ota_upload_guard_result_t check =
-            s3_ota_upload_guard_check(guard, ota_now_ms());
-        if (check != S3_OTA_UPLOAD_GUARD_OK) {
-            if (guard_result) *guard_result = check;
-            return HTTPD_SOCK_ERR_TIMEOUT;
-        }
-        int received = httpd_req_recv(req, (char *)buffer, wanted);
-        if (received > 0) {
-            s3_ota_upload_guard_note_bytes(guard, (size_t)received);
-            check = s3_ota_upload_guard_check(guard, ota_now_ms());
-            if (check != S3_OTA_UPLOAD_GUARD_OK) {
-                if (guard_result) *guard_result = check;
-                return HTTPD_SOCK_ERR_TIMEOUT;
-            }
-            return received;
-        }
-        if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
-    }
-    return HTTPD_SOCK_ERR_TIMEOUT;
-}
-
-static esp_err_t ota_receive_error(httpd_req_t *req, int received, bool started,
-                                   s3_ota_upload_guard_result_t guard_result)
-{
-    if (started) s3_ota_abort("HTTP upload interrupted");
-    if (received == HTTPD_SOCK_ERR_TIMEOUT) {
-        ESP_LOGW(TAG, "OTA upload stopped: %s",
-                 s3_ota_upload_guard_result_name(guard_result));
+    switch (result.code) {
+    case S3_OTA_HTTP_BAD_REQUEST:
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, result.detail);
+    case S3_OTA_HTTP_FORBIDDEN:
+        httpd_resp_set_status(req, "403 Forbidden");
+        break;
+    case S3_OTA_HTTP_PAYLOAD_TOO_LARGE:
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        break;
+    case S3_OTA_HTTP_CONFLICT:
+        httpd_resp_set_status(req, "409 Conflict");
+        break;
+    case S3_OTA_HTTP_TIMEOUT:
         httpd_resp_set_status(req, "408 Request Timeout");
-        const char *detail = guard_result == S3_OTA_UPLOAD_GUARD_TOO_SLOW
-            ? "Firmware upload throughput too low"
-            : "Firmware upload timed out";
-        return httpd_resp_send(req, detail, HTTPD_RESP_USE_STRLEN);
+        break;
+    case S3_OTA_HTTP_INTERNAL_ERROR:
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   result.detail);
+    case S3_OTA_HTTP_OK:
+    default:
+        return ESP_ERR_INVALID_STATE;
     }
-    return ESP_FAIL;
+    return httpd_resp_send(req, result.detail, HTTPD_RESP_USE_STRLEN);
 }
 
 static void ota_restart_task(void *arg)
@@ -452,117 +443,16 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         strcmp(target, "s3") != 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: s3");
     }
-    if (req->content_len < DDJ_OTA_HEADER_SIZE + S3_OTA_IMAGE_HEADER_SIZE) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Signed OTA bundle is too small");
-    }
-    if ((size_t)req->content_len >
-        DDJ_OTA_HEADER_SIZE + (size_t)S3_OTA_MAX_IMAGE_SIZE) {
-        httpd_resp_set_status(req, "413 Payload Too Large");
-        return httpd_resp_send(req, "Signed OTA bundle is too large",
-                               HTTPD_RESP_USE_STRLEN);
-    }
-
-    s3_ota_upload_guard_t upload_guard;
-    s3_ota_upload_guard_init(&upload_guard, ota_now_ms());
-    s3_ota_upload_guard_result_t guard_result = S3_OTA_UPLOAD_GUARD_OK;
-
-    uint8_t *buffer = malloc(4096);
-    if (!buffer) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
-    }
-
-    uint8_t manifest_header[DDJ_OTA_HEADER_SIZE];
-    size_t manifest_received = 0;
-    while (manifest_received < sizeof(manifest_header)) {
-        int received = ota_http_recv(req, manifest_header + manifest_received,
-                                     sizeof(manifest_header) - manifest_received,
-                                     &upload_guard, &guard_result);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, false, guard_result);
-        }
-        manifest_received += (size_t)received;
-    }
-
-    ddj_ota_manifest_t manifest;
-    ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
-        manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_S3,
-        S3_OTA_ESP32S3_CHIP_ID, "control-board-s3", S3_OTA_MAX_IMAGE_SIZE,
-        &manifest);
-    if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   ddj_ota_manifest_result_name(manifest_rc));
-    }
-    if (!ddj_ota_manifest_verify_signature(manifest_header, sizeof(manifest_header))) {
-        free(buffer);
-        httpd_resp_set_status(req, "403 Forbidden");
-        return httpd_resp_send(req, "Invalid OTA manifest signature", HTTPD_RESP_USE_STRLEN);
-    }
-    if ((size_t)req->content_len != DDJ_OTA_HEADER_SIZE + manifest.image_size) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Bundle length does not match signed manifest");
-    }
-
-    size_t remaining = manifest.image_size;
-    size_t buffered = 0;
-    while (buffered < S3_OTA_IMAGE_HEADER_SIZE) {
-        size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
-        int received = ota_http_recv(req, buffer + buffered, wanted,
-                                     &upload_guard, &guard_result);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, false, guard_result);
-        }
-        buffered += (size_t)received;
-        remaining -= (size_t)received;
-    }
-    if (!s3_ota_policy_header_valid(buffer, buffered)) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Not an ESP32-S3 firmware image");
-    }
-
-    esp_err_t rc = s3_ota_begin(&manifest);
-    if (rc != ESP_OK) {
-        free(buffer);
-        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" :
-                                                                  "400 Bad Request");
-        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
-    }
-    rc = s3_ota_write(buffer, buffered);
-    if (rc != ESP_OK) {
-        free(buffer);
-        s3_ota_abort(esp_err_to_name(rc));
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "Flash write failed");
-    }
-
-    while (remaining > 0) {
-        size_t wanted = remaining < 4096u ? remaining : 4096u;
-        int received = ota_http_recv(req, buffer, wanted, &upload_guard,
-                                     &guard_result);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, true, guard_result);
-        }
-        rc = s3_ota_write(buffer, (size_t)received);
-        if (rc != ESP_OK) {
-            free(buffer);
-            s3_ota_abort(esp_err_to_name(rc));
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                       "Flash write failed");
-        }
-        remaining -= (size_t)received;
-    }
-    free(buffer);
-
-    rc = s3_ota_finish();
-    if (rc != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Firmware validation failed");
+    const s3_ota_http_request_t request = {
+        .content_len = (size_t)req->content_len,
+        .ctx = req,
+        .recv = ota_http_recv_adapter,
+        .now_ms = ota_http_now_ms_adapter,
+    };
+    s3_ota_http_result_t result = s3_ota_http_process(&request);
+    if (result.code != S3_OTA_HTTP_OK) {
+        ESP_LOGW(TAG, "OTA upload rejected: %s", result.detail);
+        return ota_http_send_result(req, result);
     }
 
     httpd_resp_set_type(req, "application/json");

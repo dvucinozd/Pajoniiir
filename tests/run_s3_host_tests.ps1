@@ -386,8 +386,7 @@ Assert-FileContains `
         "/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA",
         "s3_api_request_allowed(req, true)", "S3_DEBUG_AP_IP", "X-DDJ-Control",
         "X-Pajoniiir-Maintenance", "s3_debug_auth_check", "429 Too Many Requests",
-        "s3_ota_policy_header_valid", "ddj_ota_manifest_parse",
-        "ddj_ota_manifest_verify_signature", ".ddjota"
+        "s3_ota_http_process", ".ddjota"
     )
 
 Assert-FileContains `
@@ -396,9 +395,14 @@ Assert-FileContains `
     -Patterns @("S3_DEBUG_AUTH_TOKEN_MIN", "esp_random", "s3_debug_ap_set_token_callback", "S3_DEBUG_AP_IDLE_TIMEOUT_MS", "esp_timer_start_once")
 
 Assert-FileContains `
-    -Name "s3 OTA upload enforces total and progress deadlines before flash" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -Patterns @("S3_OTA_MAX_IMAGE_SIZE", "s3_ota_upload_guard_init", "s3_ota_upload_guard_check", "413 Payload Too Large", "ddj_ota_manifest_verify_signature")
+    -Name "s3 OTA production HTTP core validates and bounds every upload before flash" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_ota_http.c") `
+    -Patterns @(
+        "S3_OTA_MAX_IMAGE_SIZE", "s3_ota_upload_guard_init",
+        "s3_ota_upload_guard_check", "ddj_ota_manifest_parse",
+        "ddj_ota_manifest_verify_signature", "s3_ota_policy_header_valid",
+        "s3_ota_begin", "s3_ota_write", "s3_ota_finish", "s3_ota_abort"
+    )
 
 Assert-FileContains `
     -Name "s3 AP publishes netif only after DHCP and IP configuration succeed" `
@@ -645,6 +649,25 @@ $tests = @(
         )
     },
     @{
+        Name = "flx4_midi_host_production"
+        Dir = "tests/flx4_midi_host_production"
+        Target = "test_flx4_midi_host_production.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DFLX4_MIDI_HOST_PRODUCTION_TEST",
+            "-DCONFIG_DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR=0",
+            "-DCONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES=0",
+            "-DCONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART=0",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_flx4_midi_host_production.exe",
+            "test_flx4_midi_host_production.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/midi_out_retry_state.c"
+        )
+    },
+    @{
         Name = "flx4_map"
         Dir = "tests/flx4_midi_host"
         Target = "test_flx4_map.exe"
@@ -796,6 +819,23 @@ $tests = @(
         )
     },
     @{
+        Name = "s3_ota_http"
+        Dir = "tests/s3_ota_http"
+        Target = "test_s3_ota_http.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-I../../firmware/control-board-s3/components/s3_ota/include",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_s3_ota_http.exe",
+            "test_s3_ota_http.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_http.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_upload_guard.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
+        )
+    },
+    @{
         Name = "s3_debug_ap_netif_stage"
         Dir = "tests/s3_debug_ap"
         Target = "test_s3_debug_ap_netif_stage.exe"
@@ -821,6 +861,22 @@ $tests = @(
         )
     },
     @{
+        Name = "s3_ota_runtime"
+        Dir = "tests/s3_ota_runtime"
+        Target = "test_s3_ota_runtime.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_ota/include",
+            "-I../../firmware/common/ota_manifest/include",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_s3_ota_runtime.exe",
+            "test_s3_ota_runtime.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
+        )
+    },
+    @{
         Name = "ota_manifest"
         Dir = "tests/ota_manifest"
         Target = "test_ota_manifest.exe"
@@ -830,6 +886,19 @@ $tests = @(
             "-o", "test_ota_manifest.exe",
             "test_ota_manifest.c",
             "../../firmware/common/ota_manifest/ota_manifest.c"
+        )
+    },
+    @{
+        Name = "ota_manifest_crypto"
+        Dir = "tests/ota_manifest_crypto"
+        Target = "test_ota_manifest_crypto.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=gnu11",
+            "-Istubs",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_ota_manifest_crypto.exe",
+            "test_ota_manifest_crypto.c",
+            "../../firmware/common/ota_manifest/ota_manifest_crypto.c"
         )
     },
     @{

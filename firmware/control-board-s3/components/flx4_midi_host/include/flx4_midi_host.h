@@ -10,6 +10,27 @@
 #include "esp_err.h"
 #endif
 
+#if defined(FLX4_MIDI_HOST_PRODUCTION_TEST)
+typedef struct {
+    bool opened;
+    bool claimed;
+    bool closing;
+    bool in_transfer_allocated;
+    bool out_transfer_allocated;
+    bool in_transfer_active;
+    bool out_transfer_active;
+} flx4_midi_host_production_snapshot_t;
+
+void flx4_midi_host_production_test_reset(void);
+esp_err_t flx4_midi_host_production_test_open(uint8_t dev_addr);
+void flx4_midi_host_production_test_device_gone(void);
+void flx4_midi_host_production_test_pump(void);
+void flx4_midi_host_production_test_complete_transfers(bool disconnected);
+bool flx4_midi_host_production_test_close_step(void);
+void flx4_midi_host_production_test_snapshot(
+    flx4_midi_host_production_snapshot_t *out_snapshot);
+#endif
+
 typedef enum {
     FLX4_USB_MIDI_CIN_MISC             = 0x0,
     FLX4_USB_MIDI_CIN_CABLE_EVENT      = 0x1,

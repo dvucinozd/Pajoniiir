@@ -70,6 +70,10 @@ esp_err_t s3_ota_init(void)
     if (!s_lock) s_lock = xSemaphoreCreateMutex();
     if (!s_lock) return ESP_ERR_NO_MEM;
     xSemaphoreTake(s_lock, portMAX_DELAY);
+    /* Re-init is also the recovery path used by host fault injection and by a
+     * future in-process service restart. Never orphan a flash/hash operation
+     * that was active before the state snapshot is reset. */
+    close_receive_resources_locked();
     memset(&s_status, 0, sizeof(s_status));
     s_status.state = S3_OTA_IDLE;
     s_target = NULL;
@@ -91,6 +95,10 @@ esp_err_t s3_ota_begin(const ddj_ota_manifest_t *manifest)
         xSemaphoreGive(s_lock);
         return ESP_ERR_INVALID_STATE;
     }
+    /* A failed write must normally have closed these immediately, but keep
+     * begin self-healing so no stale handle can be overwritten after any
+     * partially failed transaction. */
+    close_receive_resources_locked();
 
     s_target = esp_ota_get_next_update_partition(NULL);
     if (!s_target || !s3_ota_policy_size_valid(image_size, s_target->size)) {
@@ -150,10 +158,12 @@ esp_err_t s3_ota_write(const void *data, size_t size)
             rc = ESP_FAIL;
             copy_text(s_status.last_error, sizeof(s_status.last_error), "SHA-256 update failed");
             s_status.state = S3_OTA_FAILED;
+            close_receive_resources_locked();
         }
     } else {
         copy_text(s_status.last_error, sizeof(s_status.last_error), esp_err_to_name(rc));
         s_status.state = S3_OTA_FAILED;
+        close_receive_resources_locked();
     }
     xSemaphoreGive(s_lock);
     return rc;
