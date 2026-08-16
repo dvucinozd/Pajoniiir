@@ -88,6 +88,9 @@ static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
 static deck_core_s3_debug_ap_status_cb_t s_s3_debug_ap_status_cb;
+static deck_core_s3_debug_ap_token_cb_t s_s3_debug_ap_token_cb;
+static uint16_t          s_s3_debug_token_hi;
+static bool              s_s3_debug_token_hi_valid;
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -1606,10 +1609,36 @@ static void on_state_event(const ctrl_event_t *ev)
         return;
     }
     if (ev->id == CTRL_ID_S3_DEBUG_AP) {
+        if (ev->value == CTRL_S3_DEBUG_AP_OFF ||
+            ev->value == CTRL_S3_DEBUG_AP_STARTING ||
+            ev->value == CTRL_S3_DEBUG_AP_ERROR) {
+            s_s3_debug_token_hi = 0u;
+            s_s3_debug_token_hi_valid = false;
+            if (s_s3_debug_ap_token_cb) s_s3_debug_ap_token_cb(0u);
+        }
         if (s_s3_debug_ap_status_cb) {
             s_s3_debug_ap_status_cb((uint8_t)ev->value);
         }
         ESP_LOGI(TAG, "S3 Debug AP status=%d", ev->value);
+        return;
+    }
+    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_HI) {
+        if (ev->value >= 0 && ev->value <= 999) {
+            s_s3_debug_token_hi = (uint16_t)ev->value;
+            s_s3_debug_token_hi_valid = true;
+        }
+        return;
+    }
+    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_LO) {
+        if (s_s3_debug_token_hi_valid && ev->value >= 0 && ev->value <= 999) {
+            uint32_t token = (uint32_t)s_s3_debug_token_hi * 1000u +
+                             (uint16_t)ev->value;
+            s_s3_debug_token_hi_valid = false;
+            if (s_s3_debug_ap_token_cb &&
+                (token == 0u || (token >= 100000u && token <= 999999u))) {
+                s_s3_debug_ap_token_cb(token);
+            }
+        }
         return;
     }
     if (ev->id != CTRL_ID_FLX4_CONNECTION) {
@@ -2936,6 +2965,11 @@ deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
 {
     s_s3_debug_ap_status_cb = cb;
+}
+
+void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb)
+{
+    s_s3_debug_ap_token_cb = cb;
 }
 
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)

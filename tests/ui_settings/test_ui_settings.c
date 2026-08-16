@@ -50,6 +50,14 @@ static void test_s3_debug_ap_status_labels_are_stable(void)
     assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ON), "ON") == 0);
     assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ERROR), "ERROR") == 0);
     assert(strcmp(ui_settings_s3_debug_ap_status_label(99), "UNKNOWN") == 0);
+
+    char text[48];
+    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_ON, 123456u);
+    assert(strcmp(text, "S3 DEBUG AP: ON  CODE 123456") == 0);
+    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_ON, 0u);
+    assert(strcmp(text, "S3 DEBUG AP: ON") == 0);
+    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_OFF, 123456u);
+    assert(strcmp(text, "S3 DEBUG AP: OFF") == 0);
 }
 
 static void test_settings_active_tab_uses_configured_index(void)

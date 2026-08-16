@@ -87,6 +87,19 @@ const char *ui_settings_s3_debug_ap_status_label(uint8_t status)
     }
 }
 
+void ui_settings_s3_debug_ap_format(char *out, size_t out_size,
+                                     uint8_t status, uint32_t token)
+{
+    if (!out || out_size == 0u) return;
+    if (status == CTRL_S3_DEBUG_AP_ON &&
+        token >= 100000u && token <= 999999u) {
+        snprintf(out, out_size, "S3 DEBUG AP: ON  CODE %06u", (unsigned)token);
+    } else {
+        snprintf(out, out_size, "S3 DEBUG AP: %s",
+                 ui_settings_s3_debug_ap_status_label(status));
+    }
+}
+
 const char *ui_settings_firmware_slot_label(uint8_t slot)
 {
     switch (slot) {
@@ -160,7 +173,9 @@ static lv_obj_t *s_label_rec_status = NULL;
 static lv_obj_t *s_label_svc_log = NULL;
 static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
 static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
+static volatile uint32_t s_s3_debug_ap_token;
 static uint8_t s_s3_debug_ap_displayed_status = UINT8_MAX;
+static uint32_t s_s3_debug_ap_displayed_token = UINT32_MAX;
 static ui_settings_color_cache_t s_cache_uart_color;
 static ui_settings_color_cache_t s_cache_sd_color;
 static int s_cache_uart_state = -1;
@@ -468,12 +483,16 @@ static lv_color_t s3_debug_ap_status_color(uint8_t status)
 static void ui_settings_apply_s3_debug_ap_status(void)
 {
     uint8_t status = s_s3_debug_ap_status;
-    if (!s_label_s3_debug_ap || s_s3_debug_ap_displayed_status == status) {
+    uint32_t token = s_s3_debug_ap_token;
+    if (!s_label_s3_debug_ap ||
+        (s_s3_debug_ap_displayed_status == status &&
+         s_s3_debug_ap_displayed_token == token)) {
         return;
     }
 
-    lv_label_set_text_fmt(s_label_s3_debug_ap, "S3 DEBUG AP: %s",
-                          ui_settings_s3_debug_ap_status_label(status));
+    char text[48];
+    ui_settings_s3_debug_ap_format(text, sizeof(text), status, token);
+    lv_label_set_text(s_label_s3_debug_ap, text);
     lv_obj_set_style_text_color(s_label_s3_debug_ap,
                                 s3_debug_ap_status_color(status),
                                 LV_PART_MAIN);
@@ -485,6 +504,7 @@ static void ui_settings_apply_s3_debug_ap_status(void)
         }
     }
     s_s3_debug_ap_displayed_status = status;
+    s_s3_debug_ap_displayed_token = token;
 }
 
 static void s3_debug_ap_event_cb(lv_event_t *event)
@@ -493,7 +513,9 @@ static void s3_debug_ap_event_cb(lv_event_t *event)
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
 
     s_s3_debug_ap_status = on ? CTRL_S3_DEBUG_AP_STARTING : CTRL_S3_DEBUG_AP_OFF;
+    if (!on) s_s3_debug_ap_token = 0u;
     s_s3_debug_ap_displayed_status = UINT8_MAX;
+    s_s3_debug_ap_displayed_token = UINT32_MAX;
     ui_settings_apply_s3_debug_ap_status();
 
     if (s_s3_debug_ap_toggle_cb) {
@@ -546,7 +568,17 @@ void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t c
 void ui_settings_set_s3_debug_ap_status(uint8_t status)
 {
     s_s3_debug_ap_status = status;
+    if (status == CTRL_S3_DEBUG_AP_OFF || status == CTRL_S3_DEBUG_AP_ERROR) {
+        s_s3_debug_ap_token = 0u;
+    }
     s_s3_debug_ap_displayed_status = UINT8_MAX;
+    s_s3_debug_ap_displayed_token = UINT32_MAX;
+}
+
+void ui_settings_set_s3_debug_ap_token(uint32_t token)
+{
+    s_s3_debug_ap_token = token <= 999999u ? token : 0u;
+    s_s3_debug_ap_displayed_token = UINT32_MAX;
 }
 
 void ui_settings_configure(const ui_settings_config_t *config)
@@ -766,6 +798,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                   &lv_font_montserrat_14,
                                                   96, 77);
     s_s3_debug_ap_displayed_status = UINT8_MAX;
+    s_s3_debug_ap_displayed_token = UINT32_MAX;
     ui_settings_apply_s3_debug_ap_status();
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS");

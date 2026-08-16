@@ -404,6 +404,7 @@ void app_main(void)
     // ── External control producers ───────────────────────────────────────────
     // From this point onward incoming S3 frames may update deck/UI state.
     deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
+    deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token);
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     control_link_set_descriptor_report_cb(on_controller_descriptor);
     control_link_set_controller_state_cb(on_controller_connection_state);

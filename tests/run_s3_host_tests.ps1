@@ -365,7 +365,7 @@ Assert-FileContains `
     -Patterns @("WIFI_MODE_AP", "S3_DEBUG_AP_PASSWORD", "WIFI_AUTH_WPA2_PSK", "esp_wifi_start")
 
 Assert-FileContains `
-    -Name "s3 debug ap uses the accepted default WPA2 credential" `
+    -Name "s3 debug ap keeps WPA2 transport protection" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/include/s3_debug_ap.h") `
     -Patterns @('S3_DEBUG_AP_PASSWORD "Pajoniiir"')
 
@@ -385,9 +385,15 @@ Assert-FileContains `
     -Patterns @(
         "/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA",
         "s3_api_request_allowed(req, true)", "S3_DEBUG_AP_IP", "X-DDJ-Control",
+        "X-Pajoniiir-Maintenance", "s3_debug_auth_check", "429 Too Many Requests",
         "s3_ota_policy_header_valid", "ddj_ota_manifest_parse",
         "ddj_ota_manifest_verify_signature", ".ddjota"
     )
+
+Assert-FileContains `
+    -Name "s3 debug ap publishes a bounded maintenance code and auto shuts down" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("S3_DEBUG_AUTH_TOKEN_MIN", "esp_random", "s3_debug_ap_set_token_callback", "S3_DEBUG_AP_IDLE_TIMEOUT_MS", "esp_timer_start_once")
 
 Assert-FileContains `
     -Name "s3 OTA upload enforces total and progress deadlines before flash" `
@@ -732,6 +738,18 @@ $tests = @(
             "test_controller_profile_runtime.c",
             "../../firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c",
             "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
+        )
+    },
+    @{
+        Name = "s3_debug_auth"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_auth.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_auth.exe",
+            "test_s3_debug_auth.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_auth.c"
         )
     },
     @{

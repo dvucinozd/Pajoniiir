@@ -235,7 +235,7 @@ typedef enum {
  * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
  * Once 0x7F is used the namespace is full; any further global IDs live as flat
  * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
- * reserved as headroom, so 0x83..0x87 are the current overflow allocations.
+ * reserved as headroom, so 0x83..0x89 are the current overflow allocations.
  * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
  * control_link_protocol host test asserts the two sides agree.
  */
@@ -248,6 +248,8 @@ typedef enum {
 #define CTRL_ID_S3_DEBUG_AP            0x85
 #define CTRL_ID_S3_BOOT_CHALLENGE      0x86
 #define CTRL_ID_S3_BOOT_ACK            0x87
+#define CTRL_ID_S3_DEBUG_TOKEN_HI      0x88
+#define CTRL_ID_S3_DEBUG_TOKEN_LO      0x89
 
 typedef enum {
     CTRL_S3_DEBUG_AP_OFF = 0,

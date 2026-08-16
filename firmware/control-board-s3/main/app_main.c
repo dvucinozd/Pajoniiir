@@ -391,6 +391,16 @@ static void flx4_translator_warn_rate_limited(void)
              unsupported);
 }
 
+static void s3_debug_ap_token_cb(uint32_t token)
+{
+    (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                     CTRL_ID_S3_DEBUG_TOKEN_HI,
+                                     (int16_t)(token / 1000u));
+    (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                     CTRL_ID_S3_DEBUG_TOKEN_LO,
+                                     (int16_t)(token % 1000u));
+}
+
 static void flx4_wake_translator(void)
 {
     if (s_flx4_translator_task) {
@@ -550,6 +560,7 @@ void app_main(void)
     control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
     ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
+    ESP_ERROR_CHECK(s3_debug_ap_set_token_callback(s3_debug_ap_token_cb));
     ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6,
                                 &s_flx4_translator_task) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);

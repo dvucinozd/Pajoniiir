@@ -510,12 +510,20 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @("deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP")
+    -LiteralPatterns @(
+        "deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP",
+        "deck_core_set_s3_debug_ap_token_cb", "CTRL_ID_S3_DEBUG_TOKEN_HI",
+        "CTRL_ID_S3_DEBUG_TOKEN_LO"
+    )
 
 Assert-FileContains `
     -Name "s3 debug ap settings ui toggle wiring" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("ui_settings_set_s3_debug_ap_toggle_cb", "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)")
+    -LiteralPatterns @(
+        "ui_settings_set_s3_debug_ap_toggle_cb",
+        "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)",
+        "deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token)"
+    )
 
 Assert-FileContains `
     -Name "P4 OTA requires signed bundle before flash begin" `
