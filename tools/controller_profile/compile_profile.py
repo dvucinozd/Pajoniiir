@@ -339,10 +339,15 @@ def compile_outputs(outputs):
                 entries.append(Output(led_id, deck, out_kind, num(status),
                                       num(item["data1"]), off, on, blink))
         else:
-            if item.get("deck") != "any":
-                raise ValueError("output needs deck_status or deck:'any'")
-            entries.append(Output(led_id, 0xFF, out_kind, num(item["status"]),
-                                  num(item["data1"]), off, on, blink))
+            deck_value = item.get("deck")
+            if deck_value == "any":
+                deck = 0xFF
+            elif isinstance(deck_value, int) and deck_value in (0, 1):
+                deck = deck_value
+            else:
+                raise ValueError("output needs deck_status, deck:0/1, or deck:'any'")
+            entries.append(Output(led_id, deck, out_kind, num(item["status"]),
+                                   num(item["data1"]), off, on, blink))
     return entries
 
 

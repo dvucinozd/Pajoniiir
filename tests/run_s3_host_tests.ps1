@@ -419,6 +419,11 @@ Assert-FileContains `
 # .s3bin (skipped with a warning when python is unavailable).
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
+    Invoke-Step `
+        -Name "controller profile web converter" `
+        -WorkingDirectory (Join-Path $RepoRoot "tests/controller_profile_converter") `
+        -Executable $python.Source `
+        -Arguments @("-m", "unittest", "-v", "test_convert_web_profile.py")
     foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci")) {
         Write-Host "==> controller profile fixture is up to date: $fixtureId"
         $fixtureJson = Join-Path $RepoRoot "controllers/$fixtureId/profile.json"
