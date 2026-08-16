@@ -131,12 +131,22 @@ controller-specific MIDI OUT.
 
 | `kind` | Fields | Behaviour |
 | --- | --- | --- |
-| `note` | `led`, `deck_status` (2-element array) or `status` + `"deck": "any"`, `data1`, optional `on`/`off`/`blink` (default `0x7F`/`0x00`/`0x7F`) | state 0 → off byte, 1 → on byte, 2 → blink byte. |
+| `note` | `led`, `deck_status` (2-element array) or `status` + `deck` (`0`, `1`, or `"any"`), `data1`, optional `on`/`off`/`blink` (default `0x7F`/`0x00`/`0x7F`) | state 0 → off byte, 1 → on byte, 2 → blink byte. |
 | `cc_value` | same addressing, no on/off | data byte = LED state value `& 0x7F` (value passthrough, e.g. VU meter level). |
 | `note_bank` | `led_bank`, `deck_status`, `first_data1`, `count` | Compiler expands to `count` sequential `note` entries for pad LED banks. |
 
 `deck_status: ["0x90", "0x91"]` expands to two entries (deck 0 and deck 1).
-`"deck": "any"` produces one entry matching any deck (global-status LEDs).
+`"deck": 0` or `1` represents one deck-specific address; `"deck": "any"`
+produces one entry matching any deck (global-status LEDs). The single-deck form
+is required when a controller exposes only one deck LED or uses different
+`data1` values between decks.
+
+The optional `tools/controller_profile/convert_web_profile.py` bridge is strict:
+decimal and `0x` numeric forms are range-checked, explicit zero values are
+preserved, unsupported semantic IDs/key-lock controls are rejected, and every
+returned profile is compiled in memory before JSON is written. It never derives
+LED addresses from input pad ranges. Deck-specific feedback addresses are kept
+as independent outputs rather than silently copying Deck 1 to Deck 2.
 
 LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `pad_mode_*`, `sync`, `loop_in`, `loop_out`, `smart_cfx`, `smart_fader`,
