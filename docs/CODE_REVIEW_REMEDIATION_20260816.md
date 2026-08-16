@@ -641,9 +641,22 @@ popravak i nema zaseban fizički gate.
 | ID | Status | Nalaz | Popravak i gate |
 | --- | --- | --- | --- |
 | CR-20260816-P3-01 | **SOFTWARE FIXED; HW PENDING** | `s3_debug_ap_netif_stage` drži candidate lokalno kroz create, DHCP stop, IP set i DHCP start; globalni `s_ap_netif` dobiva se tek nakon punog uspjeha, a svaki kvar poziva `esp_netif_destroy_default_wifi()`. | Host failure injection prolazi za create i sva tri init koraka, potvrđuje da ništa nije objavljeno/leakano te da isti runtime nakon uklanjanja kvara uspješno starta. ERROR latch dodatno zahtijeva i testira eksplicitni OFF→ON retry. |
-| CR-20260816-P3-02 | **OPEN** | Neuspjela alokacija profile runtime mutexa tiho prelazi u unlocked rad (`controller_profile_runtime.c:16-35`). | Koristiti `StaticSemaphore_t` ili vratiti `esp_err_t` i kontrolirano zaustaviti startup; allocation-failure test. |
+| CR-20260816-P3-02 | **CLOSED** | Profile runtime mutex sada koristi statičku FreeRTOS pohranu, a lock/unlock više nemaju tihi unlocked fallback. | Statički source guardovi i postojeća reentrant runtime regresija prolaze u punom S3 host suiteu; S3 ESP-IDF 6.0.2 build prolazi. |
 | CR-20260816-P3-03 | **OPEN** | `s_headphone_mode` i limiter snapshot imaju preostale cross-core plain-field raceove (`audio_engine.c:354-358`, `:4869-5051`). | Packed atomic za routing i sequence/seqlock snapshot za limiter telemetriju; threaded consistency test. |
 | CR-20260816-P3-04 | **OPEN** | Produkcijski USB lifecycle, OTA crypto/state machine i HTTP handler nisu ponašajno izvršeni u host suiteu (`run_s3_host_tests.ps1:500-663`). | Fake USB/FreeRTOS/`esp_ota_*`/partition/PSA sloj koji gradi pravi production source; svaki negativni put potvrđuje abort i da boot partition nije promijenjena. |
+
+### 7.1 Implementirano: allocation-free profile runtime lock
+
+Commit `e3dcca5` zatvara CR-20260816-P3-02. Runtime više ne ovisi o heap
+alokaciji mutexa: `StaticSemaphore_t` je dio statičkog stanja komponente, a
+mutex se stvara s `xSemaphoreCreateMutexStatic()`. Svako zaključavanje i
+otključavanje provjerava valjani handle pomoću `configASSERT`, pa ne postoji
+put koji bi nakon init greške nastavio pristupati shared profilu bez zaštite.
+
+S3 runner provjerava da se dinamički mutex i unlocked fallback ne mogu vratiti
+u source, dok postojeća runtime regresija i dalje dokazuje da se callback
+poziva tek nakon otključavanja snapshot stanja. Puni S3 host suite i stvarni
+ESP-IDF 6.0.2 build prolaze; promjena nema zaseban fizički acceptance gate.
 
 ## 8. Arhitektonska poboljšanja nakon obveznih nalaza
 
@@ -831,3 +844,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P2-13, CR-20260816-P3-01 | `d951105` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; slow-client/deadline/tick-wrap i netif step-failure/OFF→ON retry testovi PASS; OTA signing 6/6 PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xec650`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički fragmented/slow HTTP upload i novi request nakon 408; AP DHCP step-failure/retry smoke |
 | 2026-08-16 | CR-20260816-P2-14 | `6200e6f` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; boot-gate 8/8 i production P4 UART challenge/ACK test PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xecb40`, 51% free; P4 build PASS, image `0x253880`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički oba boot redoslijeda, izgubljeni/pogrešni ACK, prekinut reverse UART i rollback bez FLX4 uređaja |
 | 2026-08-16 | CR-20260816-P2-16 | `8ce687f` | CLOSED | Converter fixturei 6/6 PASS; puni S3 host suite PASS; stvarni `compile_profile()` gate za svaki rezultat PASS; FLX4/generic committed binary freshness PASS; `py_compile` i `git diff --check` PASS | Nema preostalog source/hardware gatea za converter; stvarni non-FLX4 controller acceptance i dalje je zaseban feature/hardware gate |
+| 2026-08-16 | CR-20260816-P3-02 | `e3dcca5` | CLOSED | Puni S3 host suite PASS; runtime snapshot/reentrant callback regresija PASS; static-allocation source guardovi PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xecff0`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Nema preostalog source ili hardware gatea za profile runtime lock |
