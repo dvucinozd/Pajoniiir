@@ -1697,6 +1697,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_resampler"
+        Dir = "tests/audio_resampler"
+        Target = "test_audio_resampler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_resampler.exe",
+            "test_audio_resampler.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_output_mixer"
         Dir = "tests/audio_output_mixer"
         Target = "test_audio_output_mixer.exe"

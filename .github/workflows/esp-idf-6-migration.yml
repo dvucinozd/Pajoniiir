@@ -281,6 +281,22 @@ jobs:
             exit 1
           fi
 
+      - name: Verify the P4 resampler object has no double helpers
+        run: |
+          docker run --rm -e HOME=/tmp -v "$PWD:/project" -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              object=build/esp-idf/audio_engine/CMakeFiles/__idf_audio_engine.dir/audio_resampler.c.obj
+              test -f "$object"
+              undefined="$(riscv32-esp-elf-nm -u "$object")"
+              if printf "%s\n" "$undefined" | grep -Eq "__[[:alnum:]_]*df[[:alnum:]_]*$"; then
+                echo "::error::audio_resampler.c.obj references double-precision runtime helpers"
+                printf "%s\n" "$undefined" | grep -E "__[[:alnum:]_]*df[[:alnum:]_]*$"
+                exit 1
+              fi
+              echo "P4 resampler object is free of double-precision runtime helpers."
+            '
+
       # A --wrap that fails to bind is worse than no wrapper: the build succeeds,
       # the CMake text still says the shim is there, and the panic comes back on
       # hardware. Check the linked image rather than the build files - the
