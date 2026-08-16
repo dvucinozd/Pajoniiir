@@ -90,6 +90,12 @@ Current P4 audio ownership rule:
   reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
   starting playback; the ES8311 monitor path and PCM5102A main path must stay
   sample-rate aligned;
+- PCM5102 writes are bounded to one block period per driver call and at most
+  three calls for a short write. The sink resumes only at the unwritten byte
+  suffix, publishes call/short/timeout/error counters, and playback position is
+  advanced only after every configured hardware sink accepts the block. A sink
+  fault stops the output service in an explicit error state; STOP disables the
+  PCM5102 channel to wake an in-flight write and the next LOAD re-enables it;
 - the channel signal chain is explicit and remains single-precision wide until
   an output sink: source/resampler → channel TRIM/pregain → three-band EQ →
   channel filter/Pad FX/Beat FX → channel fader/crossfader → two-deck sum →
@@ -157,10 +163,21 @@ Current P4 audio ownership rule:
   output is active, and MP3 seek table construction publishes the finished
   table with a short lock so loader/index work cannot hold the audio engine
   mutex for the full scan;
+- FLAC cache callbacks publish a monotonic fault epoch and byte offset whenever
+  a read ends early before the declared file end. FLAC open/read/seek therefore
+  distinguish media faults from true EOF and replace/reseek the decoder at the
+  last confirmed PCM frame without destroying the old decoder until recovery
+  succeeds;
 - Master Tempo is deck-local and P4-owned. The Overview `MT` buttons toggle a
   WSOLA-style overlap/correlation time-stretch reader over the canonical PCM
   timeline; scratch remains the higher-priority source, and ordinary resampling
   drains the final look-ahead tail near EOF;
+- canonical PCM timeline cursors expose monotonic 64-bit sequences while the
+  RV32 per-frame producer/consumer path retains 32-bit modular distances. Epoch
+  changes use versioned snapshots, retained capacity is constrained below
+  `2^31`, and scratch keeps a 64-bit origin across low-word wrap. Scratch
+  release/re-grab control publishes only a packed command epoch; the output task
+  alone mutates handoff gain and phase at block boundaries;
 - stopping or reloading one deck must not close the codec while another deck is
   still loaded or playing;
 - USB removal uses `audio_engine_suspend_loads_and_stop_all()` to close LOAD
