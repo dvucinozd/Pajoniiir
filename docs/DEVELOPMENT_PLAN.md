@@ -323,7 +323,8 @@ Validation note, 2026-06-08:
   for the current output path.
 - Deck 2-first playback no longer depends on whichever deck loaded first owning
   output. `deck_core` only marks a deck playing after the backend accepts play,
-  and USB removal now calls `audio_engine_stop_all()`.
+  and USB removal now holds the global audio LOAD barrier across stop and
+  library/deck-state cleanup.
 - Dual-deck playback scheduling was stabilized on hardware on 2026-06-20 after
   runtime instrumentation showed healthy PCM ring fill and memory margins but
   output timing disruption during active preload/index work. The fix keeps

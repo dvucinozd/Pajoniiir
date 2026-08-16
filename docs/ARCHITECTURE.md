@@ -153,8 +153,9 @@ Current P4 audio ownership rule:
   drains the final look-ahead tail near EOF;
 - stopping or reloading one deck must not close the codec while another deck is
   still loaded or playing;
-- USB removal uses `audio_engine_stop_all()` to tear down both decks and the
-  shared output service.
+- USB removal uses `audio_engine_suspend_loads_and_stop_all()` to close LOAD
+  admission, tear down both decks and the shared output service, clear
+  library/deck state, and only then calls `audio_engine_resume_loads()`.
 
 Current P4 Overview waveform ownership rule:
 

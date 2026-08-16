@@ -128,7 +128,7 @@ izvornog koda.
 
 ### CR-20260816-P1-01 — P4 audio/deck lifecycle nije serijaliziran
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -202,6 +202,24 @@ završiti noviji load.
 - Fizički: najmanje 50 USB remove/reconnect ciklusa tijekom load/playbacka,
   EJECT/LOAD burst i OTA stop s oba decka aktivna.
 - Nema živog decoder/output taska nakon potvrđenog STOP-a.
+
+#### Implementirano 2026-08-16
+
+Per-deck non-recursive lifecycle mutex sada obuhvaća cijeli LOAD/STOP i
+task create/join transakciju. Monotone runtime i javne session generacije
+sprječavaju da stari task ili UI completion objavi ili zaustavi noviju sesiju.
+USB removal, push OTA i pull OTA koriste globalni LOAD admission barrier koji
+ostaje zatvoren kroz teardown i prijelaz, uz kontrolirani resume na grešci.
+UI koristi zaseban monotoni `load_id`, cancellation-aware single-flight gate i
+nelossy completion queue; otkazani worker mora predati i očistiti vlastitu
+session generaciju prije novog LOAD-a.
+
+Behavioral host test zaustavlja LOAD između internog stopa i binda te potvrđuje
+da konkurentni STOP ne može prerano vratiti uspjeh. Dodatni testovi potvrđuju
+stale-session conditional STOP, globalni transition barrier, task-context
+generation invalidaciju i cancellation semantics UI gatea. P4 host suite,
+exact screenshot UI E2E i ESP-IDF v6.0.2 build prolaze. Preostaje fizička
+50-ciklusna USB/EJECT/OTA matrica i potvrda da nema živih taskova nakon STOP-a.
 
 ### CR-20260816-P1-02 — S3 producer drain/requeue mijenja FIFO redoslijed
 
@@ -683,3 +701,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | --- | --- | --- | --- | --- | --- |
 | 2026-08-16 | Svi CR-20260816 nalazi | `10c91c2aa536be3852cdd6a41e831088d85625d7` | Audit baseline; P1/P2/P3 OPEN | Oba host suitea, oba clean builda, UI E2E, signing, audio soak | Implementacija i navedeni hardware gateovi |
 | 2026-08-16 | CR-20260816-P1-02, CR-20260816-P1-05, CR-20260816-P1-06 | `38ecc6c` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; S3 host suite PASS; scheduler 141/141; app-settings 46/46; OTA manifest/signing/packaging PASS; P4 ESP-IDF 6.0.2 clean build PASS (42% free); S3 ESP-IDF 6.0.2 clean dual-OTA build PASS (51% free); `git diff --check` PASS | Fizički GPIO11-low cold/warm boot; signed pull-OTA happy/mismatch provjera bez promjene boot particije; FLX4 burst/stalled-link/reconnect FIFO i held-release smoke |
+| 2026-08-16 | CR-20260816-P1-01 | `c826f8f` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; audio lifecycle 383/383; UI load gate 16/16; UI exact screenshot E2E PASS; P4 ESP-IDF v6.0.2 build PASS, image `0x251120`, 42% free; `git diff --check` PASS | Fizičkih 50 USB remove/reconnect ciklusa tijekom LOAD/playbacka, EJECT/LOAD burst, OTA stop s oba decka i potvrda da nakon STOP-a nema živih taskova |
