@@ -746,9 +746,10 @@ negativni put potvrđuje da boot particija nije promijenjena. Crypto fixture
 kompajlira stvarni `ota_manifest_crypto.c`, prolazi hash/key/verify kvarove i
 provjerava canonical raw P-256 `r,s` u DER pretvorbu.
 
-Puni S3 host suite prolazi zajedno sa sva četiri production fixturea, OTA
-signing suite prolazi 6/6, a S3 ESP-IDF 6.0.2 build prolazi s imageom `0xed7e0`
-i 51% slobodne app particije. `git diff --check` prolazi, a oba
+Puni S3 i P4 host suiteovi prolaze zajedno sa sva četiri production fixturea;
+P4 runner pritom ponovno prolazi OTA signing 6/6. Oba ESP-IDF 6.0.2 builda
+prolaze: S3 image je `0xed7e0` s 51% slobodne app particije, a P4 image
+`0x253b20` s 42% slobodne app particije. `git diff --check` prolazi, a oba
 `dependencies.lock` ostala su nepromijenjena. Nalaz je bio nedostatak
 behavioral software pokrivenosti i nema zaseban fizički gate, pa je status
 **CLOSED**; fizički USB/OTA acceptance iz odjeljka 11 ostaje release gate za
@@ -944,4 +945,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P3-03 | `ff2b74a` | SOFTWARE FIXED; HW PENDING | Fokusirani audio engine 393/393 PASS; 50.000 threaded limiter/routing publikacija bez nekoherentnog snapshota ili izgubljenog updatea; puni P4 host suite PASS; P4 ESP-IDF 6.0.2 build PASS, image `0x253980`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički multicore routing-toggle stress tijekom dual-deck MAIN/PFL reprodukcije i potvrda stabilne limiter telemetrije |
 | 2026-08-16 | CR-20260816-P2-07 | `e0b3117` | SOFTWARE FIXED; HW PENDING | Q32 resampler petominutni 44,1→48 kHz i 1,1× consumption drift 0; puni P4 host suite PASS; stvarni RV32 `audio_resampler.c.obj` nema undefined ni `*df*` helper simbole; 300 s dual-deck soak PASS (drift 0, clicks 0, clipped 0, host CPU 1,992 s); P4 ESP-IDF 6.0.2 build PASS, image `0x253970`, 42% free; workflow YAML i `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizičko worst-case dual-deck P4 CPU/I2S deadline mjerenje i slušna provjera pitch/sample-rate kombinacija |
 | 2026-08-16 | CR-20260816-P2-15 | `2dad8c7` | SOFTWARE FIXED; HW PENDING | Pure maintenance auth PASS; S3 Debug AP state, P4 deck token ordering i Settings format PASS; oba puna host suitea PASS; exact UI screenshot E2E PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed6a0`, 51% free; P4 build PASS, image `0x253b20`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički 401/429/expiry/lockout i 15-min auto-shutdown; OFF→ON novi kod; supervised signed S3 rollback s aktualnim kodom |
-| 2026-08-17 | CR-20260816-P3-04 | `d0412e2` | CLOSED | Puni S3 host suite PASS; stvarni FLX4 USB lifecycle, S3 OTA HTTP core/state machine i manifest crypto production source fixturei PASS; OTA signing 6/6 PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed7e0`, 51% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Nema preostalog source gatea za production-path behavioral pokrivenost; fizički USB/OTA acceptance ostaje release/hardware matrica iz odjeljka 11 |
+| 2026-08-17 | CR-20260816-P3-04 | `d0412e2` | CLOSED | Puni S3 i P4 host suiteovi PASS; stvarni FLX4 USB lifecycle, S3 OTA HTTP core/state machine i manifest crypto production source fixturei PASS; OTA signing 6/6 PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed7e0`, 51% free; P4 build PASS, image `0x253b20`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Nema preostalog source gatea za production-path behavioral pokrivenost; fizički USB/OTA acceptance ostaje release/hardware matrica iz odjeljka 11 |
