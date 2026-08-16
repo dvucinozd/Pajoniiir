@@ -2,11 +2,13 @@
 
 #include "controller_profile.h"
 
+#include <assert.h>
 #include <string.h>
 
 #ifdef CONTROLLER_PROFILE_RUNTIME_PC_TEST
-#define RT_LOCK()   ((void)0)
-#define RT_UNLOCK() ((void)0)
+static bool s_test_lock_held;
+#define RT_LOCK() do { assert(!s_test_lock_held); s_test_lock_held = true; } while (0)
+#define RT_UNLOCK() do { assert(s_test_lock_held); s_test_lock_held = false; } while (0)
 #define RT_LOGW(...) ((void)0)
 #define RT_LOGI(...) ((void)0)
 #else
@@ -30,7 +32,9 @@ static uint32_t s_bound_epoch;
 
 void controller_profile_runtime_init(void)
 {
-#ifndef CONTROLLER_PROFILE_RUNTIME_PC_TEST
+#ifdef CONTROLLER_PROFILE_RUNTIME_PC_TEST
+    s_test_lock_held = false;
+#else
     if (!s_lock) {
         s_lock = xSemaphoreCreateMutex();
     }

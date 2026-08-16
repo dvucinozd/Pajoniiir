@@ -45,6 +45,9 @@ typedef struct {
 
 static bool snap_cb(uint8_t type, uint8_t id, int16_t value, void *ctx)
 {
+    /* Re-entering the wrapper proves emit_snapshot invoked us only after its
+     * runtime mutex was released. The PC lock model asserts on recursive use. */
+    assert(controller_profile_runtime_active());
     capture_t *c = (capture_t *)ctx;
     c->count++;
     c->last_type = type;
