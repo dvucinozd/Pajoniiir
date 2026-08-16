@@ -15,9 +15,12 @@ static bool s_test_lock_held;
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+static StaticSemaphore_t s_lock_storage;
 static SemaphoreHandle_t s_lock;
-#define RT_LOCK()   do { if (s_lock) xSemaphoreTake(s_lock, portMAX_DELAY); } while (0)
-#define RT_UNLOCK() do { if (s_lock) xSemaphoreGive(s_lock); } while (0)
+#define RT_LOCK() do { configASSERT(s_lock); \
+    configASSERT(xSemaphoreTake(s_lock, portMAX_DELAY) == pdTRUE); } while (0)
+#define RT_UNLOCK() do { configASSERT(s_lock); \
+    configASSERT(xSemaphoreGive(s_lock) == pdTRUE); } while (0)
 static const char *TAG = "ctrl_profile_rt";
 #define RT_LOGW(...) ESP_LOGW(TAG, __VA_ARGS__)
 #define RT_LOGI(...) ESP_LOGI(TAG, __VA_ARGS__)
@@ -35,9 +38,8 @@ void controller_profile_runtime_init(void)
 #ifdef CONTROLLER_PROFILE_RUNTIME_PC_TEST
     s_test_lock_held = false;
 #else
-    if (!s_lock) {
-        s_lock = xSemaphoreCreateMutex();
-    }
+    s_lock = xSemaphoreCreateMutexStatic(&s_lock_storage);
+    configASSERT(s_lock);
 #endif
     s_active = false;
     s_bound_vid = 0u;

@@ -465,6 +465,16 @@ Assert-FileContains `
     -Patterns @("controller_profile_runtime_bound_to", "connection.connection_epoch", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
 
 Assert-FileContains `
+    -Name "controller profile runtime lock is allocation-free and mandatory" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c") `
+    -Patterns @("StaticSemaphore_t s_lock_storage", "xSemaphoreCreateMutexStatic(&s_lock_storage)", "configASSERT(s_lock)")
+
+Assert-FileNotContains `
+    -Name "controller profile runtime has no dynamic mutex fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c") `
+    -Patterns @("xSemaphoreCreateMutex()", "if (s_lock) xSemaphoreTake", "if (s_lock) xSemaphoreGive")
+
+Assert-FileContains `
     -Name "s3 LED output drops missing dynamic mappings without FLX4 fallback" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
     -Patterns @("controller_profile_runtime_map_led", "flx4_midi_host_builtin_flx4_active", "controller_output_select_route")

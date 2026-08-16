@@ -17,7 +17,8 @@
 extern "C" {
 #endif
 
-/* Create the internal lock. Call once at startup before any activate/map. */
+/* Initialise the allocation-free static internal lock. Call once at startup
+ * before any activate/map. */
 void controller_profile_runtime_init(void);
 
 /* Parse and install `blob` as the active profile. Returns true on success
