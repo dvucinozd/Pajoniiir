@@ -589,7 +589,7 @@ timeline wrap ni slušni scratch re-grab pod stvarnim P4 deadline opterećenjem.
 | ID | Status | Nalaz i dokaz | Popravak | Obvezni gate |
 | --- | --- | --- | --- | --- |
 | CR-20260816-P2-13 | **SOFTWARE FIXED; HW PENDING** | S3 OTA prije alokacije odbija bundle veći od maksimalne signed image veličine, zatim prvo prima i verificira manifest/header. Wrap-safe guard nameće ukupni rok od 180 s te svakih 10 s traži barem 4096 B napretka; timeout/slow path prije i nakon `s3_ota_begin()` brzo zatvara zahtjev, a započeti OTA abortira. | Pure guard test pokriva 1 B/s slow client, dovoljan napredak, ukupni deadline i `UINT32_MAX` wrap; signing 6/6, S3 host suite i build prolaze. | Preostaje fizički HTTP slow/fragmented-client test koji nakon 408 potvrđuje da server odmah prima novi zahtjev i da boot particija nije promijenjena. |
-| CR-20260816-P2-14 | **OPEN** | S3 markira image VALID bez potvrđenog P4↔S3 prometa (`app_main.c:394-435`, `firmware_health.c:76-97`). | Uvesti eksplicitni P4→S3 health ACK/heartbeat ili boot challenge-response, jer postojeći heartbeat ide S3→P4. Dvostupanjski gate zahtijeva taj odgovor i critical-task liveness prije mark-valid; inače slijedi restart bez potvrde. | `init OK, no link traffic`, oba redoslijeda bootanja i izgubljeni/prerano poslani ACK moraju završiti rollbackom ili bounded ponavljanjem handshakea; odsutan FLX4 nije failure uvjet. |
+| CR-20260816-P2-14 | **SOFTWARE FIXED; HW PENDING** | Pending S3 image sada prvo čeka stvarni start UART RX, heartbeat, translator, USB host-library i MIDI-client taskova, zatim svakih 500 ms šalje svježi `0x86` challenge. P4 ga iz UART RX taska vraća kao `0x87`; prerani, pogrešan ili odsutan ACK ne može potvrditi image, a 30 s timeout restarta još-pending slot. | Pure gate odbija `init OK/no traffic`, prerani i pogrešni ACK; production P4 UART test dokazuje exact echo bez deck-queue eventa. Odsutan FLX4 nije failure uvjet. | Preostaje fizički test oba boot redoslijeda, prekinutog P4→S3 voda, izgubljenog ACK-a i potvrđenog rollbacka. |
 | CR-20260816-P2-15 | **OPEN** | Debug AP koristi javni statični PSK i nema operator autentikaciju (`s3_debug_ap.h:9-11`, `RISK_REGISTER.md`). | Per-device PSK ili kratkotrajni maintenance token na P4 UI-ju; fizička rollback potvrda; AP idle timeout, rate limiting i PMF/WPA3 gdje je podržano. | Neautenticirani klijent ne može mutirati stanje; servisni signed rollback ostaje moguć uz fizičku autorizaciju. |
 | CR-20260816-P2-16 | **OPEN** | `convert_web_profile.py` gubi nulu, ne parsira hex range, pogrešno spaja deck LED adrese i mapira key-lock u tempo range (`:263-264`, `:324-342`, `:547-594`). | `first_present()` umjesto `or` fallbacka, `int(value, 0)`, potpuna schema/range provjera, odbijanje nepredstavljive semantike, bez implicitnih FLX4 adresa; izlaz obavezno provući kroz `compile_profile`. | Zero/hex/deck2-only/mismatched-address/key-lock fixturei; converter test uključen u S3 host runner/CI. |
 
@@ -606,6 +606,21 @@ Puni S3 host suite, slow-client/tick-wrap guard, svi netif step-failure testovi,
 OFF→ON retry, OTA signing 6/6 i S3 ESP-IDF v6.0.2 build prolaze. Image je
 `0xec650`, 51% najmanjeg OTA slota ostaje slobodno, a dependency lock je
 nepromijenjen. Hardware HTTP/DHCP fault smoke ostaje acceptance gate.
+
+#### Implementirano 2026-08-16 — S3 bidirectional boot health
+
+Commit `6200e6f` zatvara software dio CR-20260816-P2-14. S3 pending image više
+ne može postati VALID samo na temelju lokalnih init povratnih vrijednosti.
+Dvostupanjski gate najprije traži da su kritični control/USB taskovi zaista
+ušli u run loop, a zatim exact P4 odgovor na svježi per-boot challenge. Pogrešan
+ili prerani odgovor se odbacuje; challenge se ponavlja 500 ms do ukupno 30 s, a
+timeout restarta image bez `mark-valid` poziva. FLX4 uređaj ne mora biti spojen.
+
+Oba puna host suitea prolaze, uključujući 8/8 pure gate provjera i izvršni P4
+UART challenge/ACK test. Oba ESP-IDF v6.0.2 builda prolaze: S3 image je
+`0xecb40` uz 51% slobodnog najmanjeg OTA slota, P4 `0x253880` uz 42% slobodno;
+dependency lockovi nisu promijenjeni. Fizički cross-board ACK-loss/rollback
+test ostaje hardware gate.
 
 ## 7. P3 tracker
 
@@ -800,3 +815,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P2-03, CR-20260816-P2-04, CR-20260816-P2-05 | `6e4459a` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; UART forced-interleaving, lost-disconnect, LED queue-full/latest-wins i USB retry tests PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xec370`, 51% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički multicore UART burst/stall, izgubljeni connection frame, FLX4 USB submit fault i reconnect LED resync smoke |
 | 2026-08-16 | CR-20260816-P2-12 | `c4bfdca` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; UI load gate 16/16; exact UI screenshot E2E PASS; P4 ESP-IDF v6.0.2 build PASS, image `0x253880`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički LOAD pod kontroliranim internal/PSRAM heap pritiskom i potvrda da UI uvijek vrati gumbe/status |
 | 2026-08-16 | CR-20260816-P2-13, CR-20260816-P3-01 | `d951105` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; slow-client/deadline/tick-wrap i netif step-failure/OFF→ON retry testovi PASS; OTA signing 6/6 PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xec650`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički fragmented/slow HTTP upload i novi request nakon 408; AP DHCP step-failure/retry smoke |
+| 2026-08-16 | CR-20260816-P2-14 | `6200e6f` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; boot-gate 8/8 i production P4 UART challenge/ACK test PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xecb40`, 51% free; P4 build PASS, image `0x253880`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički oba boot redoslijeda, izgubljeni/pogrešni ACK, prekinut reverse UART i rollback bez FLX4 uređaja |

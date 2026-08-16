@@ -229,6 +229,13 @@ static mutex, so concurrent heartbeat, semantic, descriptor and profile replies
 cannot appear on wire out of sequence. A failed write still consumes its
 sequence and is therefore visible to P4 gap telemetry.
 
+S3 OTA confirmation additionally requires a bidirectional boot-health exchange.
+After its critical control/USB tasks have actually started, a pending S3 image
+repeats a fresh `0x86` challenge until the P4 UART RX task returns the matching
+`0x87` ACK. A missing, wrong or premature ACK cannot mark the slot valid; the
+bounded 30-second failure path restarts without confirmation and leaves rollback
+to the ESP-IDF bootloader. This does not depend on an attached FLX4.
+
 The control path distinguishes continuous values, physical held levels and
 discrete commands. Continuous absolute values keep the latest sample and
 relative motion accumulates deltas. Jog touch, Shift, Censor, Pad FX and shifted

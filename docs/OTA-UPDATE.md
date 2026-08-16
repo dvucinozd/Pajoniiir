@@ -211,6 +211,14 @@ already begun, the OTA handle is aborted before the request closes.
    are needed, then turn it off and verify FLX4 controls, LEDs, UART and USB
    headphone cue.
 
+During a pending-image boot, S3 does not mark the slot valid merely because its
+init calls returned success. It first confirms that the critical UART/heartbeat,
+translator and USB host tasks have entered their run loops, then requires the P4
+UART RX task to echo a fresh boot challenge. S3 retries every 500 ms for at most
+30 s. If P4 is absent, the reverse UART path is broken, or only a stale/wrong ACK
+arrives, S3 restarts without confirmation and ESP-IDF rolls the image back. An
+absent FLX4 controller is valid and does not block confirmation.
+
 Raw API equivalent:
 
 ```powershell
@@ -236,7 +244,9 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   slot remains bootable.
 - A too-large or deliberately slow S3 upload is rejected before the absolute
   deadline; it must not keep the single HTTP server task occupied indefinitely.
-- A new image stays `PENDING_VERIFY` until mandatory startup succeeds.
+- A new S3 image stays `PENDING_VERIFY` until critical tasks are alive and the
+  P4 returns the exact current-boot challenge; local init success alone is not
+  enough.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
 The unsigned rollback baseline accepted on 2026-07-13 was

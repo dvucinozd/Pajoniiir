@@ -126,6 +126,8 @@ test.
 | `0x83` | Shift+Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down by two enum positions with min saturation |
 | `0x84` | Shift+Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up by two enum positions with max saturation |
 | `0x85` | S3 Debug AP | bidirectional on `CTRL_TYPE_STATE`; P4->S3 request `0` OFF / `1` ON; S3->P4 status `0` OFF / `1` STARTING / `2` ON / `3` ERROR (see below) |
+| `0x86` | S3 boot challenge | S3->P4 `CTRL_TYPE_STATE`; fresh non-zero 16-bit challenge used only while a new S3 OTA image is `PENDING_VERIFY` |
+| `0x87` | S3 boot ACK | P4->S3 `CTRL_TYPE_STATE`; exact echo of `0x86`, consumed by the S3 boot-health gate and never exposed as a controller event |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. Queue/backpressure behavior
@@ -524,6 +526,23 @@ ESP-IDF image state from this report and can be used to confirm `valid`. The
 top-level `state` returned by either target's own HTTP OTA service is instead
 the transfer state (`idle`, `receiving`, `ready_to_reboot` or `failed`) and must
 not be misread as partition validity.
+
+### S3 pending-image boot health (`0x86` / `0x87`)
+
+The normal heartbeat is S3->P4 and therefore cannot prove that the reverse
+direction or the P4 receiver is alive. While the running S3 image is
+`PENDING_VERIFY`, S3 first waits for its UART RX, heartbeat, translator, USB
+host-library and USB MIDI-client tasks to enter their run loops. It then sends a
+fresh random 16-bit `CTRL_ID_S3_BOOT_CHALLENGE` every 500 ms for at most 30 s.
+
+P4 consumes the challenge directly in its UART RX task and echoes the exact
+value as `CTRL_ID_S3_BOOT_ACK`. S3 rejects an ACK before local task liveness is
+established and rejects any value that does not match the current boot's
+challenge. Only the combination of local liveness and an exact ACK permits
+`esp_ota_mark_app_valid_cancel_rollback()`. Timeout restarts the still-pending
+image so the ESP-IDF rollback path remains authoritative. FLX4 presence is not
+part of this gate: the USB host tasks must run, but no controller has to be
+attached.
 
 ### Dynamic mapping and controller quarantine
 
