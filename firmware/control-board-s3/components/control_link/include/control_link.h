@@ -37,7 +37,8 @@
 #define CTRL_TYPE_PITCH    0x03  // id=0, val=0–16383
 #define CTRL_TYPE_HEARTBEAT 0x04 // id=0, val=uptime seconds
 
-// P4 → S3 command types
+// P4 → S3 command types; CTRL_TYPE_STATE also carries the S3 boot challenge
+// in the reverse direction so P4 can prove the bidirectional link is live.
 #define CTRL_TYPE_LED      0x81  // id=led_id, val=0 off / 1 on / 2 blink
 #define CTRL_TYPE_STATE    0x82  // id=state_id, val=state value (reserved)
 
@@ -220,7 +221,7 @@ typedef enum {
  * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
  * Once 0x7F is used the namespace is full; any further global IDs live as flat
  * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
- * reserved as headroom, so 0x83..0x85 are the current overflow allocations.
+ * reserved as headroom, so 0x83..0x87 are the current overflow allocations.
  * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
  * control_link_protocol host test asserts the two sides agree.
  */
@@ -231,6 +232,8 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 #define CTRL_ID_S3_DEBUG_AP            0x85
+#define CTRL_ID_S3_BOOT_CHALLENGE      0x86
+#define CTRL_ID_S3_BOOT_ACK            0x87
 
 typedef enum {
     CTRL_S3_DEBUG_AP_OFF = 0,
@@ -523,6 +526,12 @@ esp_err_t control_link_init(void);
 // Send a deck-aware DDJ-FLX4 semantic event to P4 over the existing frame.
 // Safe to call from any task.
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value);
+
+// Register a callback for P4 -> S3 CTRL_TYPE_STATE frames not consumed by the
+// control-link component itself. Invoked from the UART RX task.
+typedef void (*control_link_state_cb_t)(uint8_t id, int16_t value);
+void control_link_set_state_cb(control_link_state_cb_t cb);
+bool control_link_rx_task_started(void);
 
 // Send a CTRL_TYPE_HEARTBEAT frame with the current uptime in seconds.
 // Call periodically (e.g. every 5 s) so the P4 can detect S3 disconnects.

@@ -518,6 +518,18 @@ try {
 
 $tests = @(
     @{
+        Name = "firmware_boot_gate"
+        Dir = "tests/firmware_boot_gate"
+        Target = "test_firmware_boot_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_firmware_boot_gate.exe",
+            "test_firmware_boot_gate.c",
+            "../../firmware/common/firmware_health/firmware_boot_gate.c"
+        )
+    },
+    @{
         Name = "controller_output_policy"
         Dir = "tests/controller_output_policy"
         Target = "test_controller_output_policy.exe"

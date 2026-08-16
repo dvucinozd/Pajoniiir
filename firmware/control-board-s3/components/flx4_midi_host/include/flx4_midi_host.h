@@ -82,6 +82,7 @@ void flx4_midi_host_set_connection_callback(flx4_midi_connection_cb_t cb,
                                             void *user_ctx);
 
 esp_err_t flx4_midi_host_init(void);
+bool flx4_midi_host_critical_tasks_started(void);
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 

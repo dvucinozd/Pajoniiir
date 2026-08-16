@@ -4,6 +4,7 @@
 #include "s3_ota.h"
 #include "wifi_debug_log.h"
 #include "firmware_health.h"
+#include "firmware_boot_gate.h"
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
 #include "controller_profile_runtime.h"
@@ -15,8 +16,11 @@
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_system.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +28,9 @@
 static const char *TAG = "main";
 
 #define HEARTBEAT_TASK_STACK 3072
+#define BOOT_TASK_START_TIMEOUT_MS 3000u
+#define BOOT_P4_ACK_TIMEOUT_MS    30000u
+#define BOOT_P4_RETRY_MS            500u
 
 // ─── Router task ──────────────────────────────────────────────────────────────
 // Reads panel events and fans them out to both the MIDI compat layer and the
@@ -32,6 +39,88 @@ static const char *TAG = "main";
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 static void flx4_replay_known_input_snapshot(void);
 static void flx4_replay_known_held_snapshot(void);
+static firmware_boot_gate_t s_boot_gate;
+static portMUX_TYPE s_boot_gate_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_heartbeat_task_started;
+static bool s_translator_task_started;
+
+static void boot_health_state_cb(uint8_t id, int16_t value)
+{
+    if (id != CTRL_ID_S3_BOOT_ACK) return;
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    bool accepted = firmware_boot_gate_observe_p4_ack(
+        &s_boot_gate, (uint16_t)value);
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+    if (accepted) {
+        ESP_LOGI(TAG, "P4 boot health ACK accepted");
+    }
+}
+
+static bool boot_gate_ready(void)
+{
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    bool ready = firmware_boot_gate_ready(&s_boot_gate);
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+    return ready;
+}
+
+static bool wait_for_critical_tasks(void)
+{
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(BOOT_TASK_START_TIMEOUT_MS);
+    do {
+        if (__atomic_load_n(&s_heartbeat_task_started, __ATOMIC_ACQUIRE) &&
+            __atomic_load_n(&s_translator_task_started, __ATOMIC_ACQUIRE) &&
+            control_link_rx_task_started() &&
+            flx4_midi_host_critical_tasks_started()) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    } while (xTaskGetTickCount() - start < timeout);
+    return false;
+}
+
+static esp_err_t confirm_pending_image_with_p4(void)
+{
+    firmware_health_info_t info;
+    ESP_RETURN_ON_ERROR(firmware_health_get_info(&info), TAG,
+                        "cannot inspect boot image state");
+    if (!info.rollback_pending) {
+        return firmware_health_mark_ready();
+    }
+
+    if (!wait_for_critical_tasks()) {
+        ESP_LOGE(TAG, "critical S3 tasks did not reach running state; rolling back");
+        esp_restart();
+        return ESP_ERR_TIMEOUT;
+    }
+
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    firmware_boot_gate_set_critical_tasks_alive(&s_boot_gate, true);
+    const uint16_t challenge = s_boot_gate.challenge;
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(BOOT_P4_ACK_TIMEOUT_MS);
+    while (xTaskGetTickCount() - start < timeout) {
+        (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                         CTRL_ID_S3_BOOT_CHALLENGE,
+                                         (int16_t)challenge);
+        TickType_t retry_start = xTaskGetTickCount();
+        TickType_t retry = pdMS_TO_TICKS(BOOT_P4_RETRY_MS);
+        do {
+            if (boot_gate_ready()) {
+                return firmware_health_mark_ready();
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } while (xTaskGetTickCount() - retry_start < retry &&
+                 xTaskGetTickCount() - start < timeout);
+    }
+
+    ESP_LOGE(TAG, "P4 boot health ACK timed out; restarting without confirmation");
+    esp_restart();
+    return ESP_ERR_TIMEOUT;
+}
 #endif
 
 static void s3_debug_ap_status_cb(s3_debug_ap_status_t status)
@@ -74,6 +163,7 @@ static void send_firmware_report(void)
 
 static void heartbeat_task(void *arg)
 {
+    __atomic_store_n(&s_heartbeat_task_started, true, __ATOMIC_RELEASE);
     while (1) {
         control_link_send_heartbeat();
         send_firmware_report();
@@ -422,6 +512,7 @@ static void flx4_schedule_pending_events(void)
 static void flx4_translator_task(void *arg)
 {
     (void)arg;
+    __atomic_store_n(&s_translator_task_started, true, __ATOMIC_RELEASE);
     while (1) {
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
         flx4_schedule_pending_events();
@@ -433,6 +524,11 @@ static void flx4_translator_task(void *arg)
 void app_main(void)
 {
     ESP_ERROR_CHECK(firmware_health_init());
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+    __atomic_store_n(&s_heartbeat_task_started, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_translator_task_started, false, __ATOMIC_RELEASE);
+    firmware_boot_gate_init(&s_boot_gate, (uint16_t)esp_random());
+#endif
     ESP_ERROR_CHECK(s3_ota_init());
     ESP_LOGI(TAG, "Pajoniiir control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
@@ -449,6 +545,7 @@ void app_main(void)
     control_held_state_reset(&s_flx4_held_states);
     control_event_scheduler_reset(&s_flx4_scheduler);
     controller_profile_runtime_init();
+    control_link_set_state_cb(boot_health_state_cb);
     ESP_ERROR_CHECK(control_link_init());
     control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
@@ -475,5 +572,9 @@ void app_main(void)
 #endif
 
     ESP_LOGI(TAG, "all subsystems ready");
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+    ESP_ERROR_CHECK(confirm_pending_image_with_p4());
+#else
     ESP_ERROR_CHECK(firmware_health_mark_ready());
+#endif
 }

@@ -45,6 +45,8 @@ static control_link_tx_serializer_t s_tx_serializer;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
 static controller_led_reconciler_t s_led_reconciler;
+static control_link_state_cb_t s_state_cb;
+static bool s_rx_task_started;
 
 // ─── Profile transfer receiver (0xA6 bulk layer) ──────────────────────────────
 #define S3_PROFILE_BUF_CAP 16384
@@ -180,6 +182,7 @@ static void handle_p4_frame(const uint8_t *f)
     uint8_t id   = f[2];
     uint8_t state = f[3];
     uint8_t deck  = f[4];
+    int16_t value = (int16_t)((uint16_t)f[3] | ((uint16_t)f[4] << 8));
 
     if (type == CTRL_TYPE_LED) {
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
@@ -201,6 +204,8 @@ static void handle_p4_frame(const uint8_t *f)
     } else if (type == CTRL_TYPE_STATE) {
         if (id == CTRL_ID_S3_DEBUG_AP) {
             (void)s3_debug_ap_request(state != 0);
+        } else if (s_state_cb) {
+            s_state_cb(id, value);
         }
     }
 }
@@ -404,6 +409,7 @@ static void uart_rx_task(void *arg)
     rx_state_t  st  = { 0 };
     uint8_t     buf[64];
 
+    __atomic_store_n(&s_rx_task_started, true, __ATOMIC_RELEASE);
     while (1) {
         int n = uart_read_bytes(UART_PORT, buf, sizeof(buf), pdMS_TO_TICKS(20));
         for (int i = 0; i < n; i++) {
@@ -420,6 +426,7 @@ static void uart_rx_task(void *arg)
 
 esp_err_t control_link_init(void)
 {
+    __atomic_store_n(&s_rx_task_started, false, __ATOMIC_RELEASE);
     if (!s_tx_mutex) {
         s_tx_mutex = xSemaphoreCreateMutexStatic(&s_tx_mutex_storage);
     }
@@ -472,6 +479,16 @@ void control_link_send_heartbeat(void)
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
 {
     return send_fixed_frame(type, id, value, "semantic event");
+}
+
+void control_link_set_state_cb(control_link_state_cb_t cb)
+{
+    s_state_cb = cb;
+}
+
+bool control_link_rx_task_started(void)
+{
+    return __atomic_load_n(&s_rx_task_started, __ATOMIC_ACQUIRE);
 }
 
 void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb)

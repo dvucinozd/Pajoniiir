@@ -15,6 +15,8 @@ static bool s_connection_state_sent_valid;
 static bool s_connection_state_sent_connected;
 static bool s_connection_state_dirty;
 static bool s_connection_refresh_requested;
+__attribute__((unused)) static bool s_usb_lib_task_started;
+__attribute__((unused)) static bool s_midi_client_task_started;
 static uint32_t s_context_sequence;
 static flx4_midi_connection_context_t s_connection_context;
 
@@ -1216,6 +1218,7 @@ static void usb_lib_task(void *arg)
         return;
     }
 
+    __atomic_store_n(&s_usb_lib_task_started, true, __ATOMIC_RELEASE);
     xTaskNotifyGive((TaskHandle_t)arg);
     ESP_LOGI(TAG, "USB host library installed for DDJ-FLX4 MIDI capture");
 
@@ -1247,6 +1250,7 @@ static void midi_client_task(void *arg)
     };
 
     ESP_ERROR_CHECK(usb_host_client_register(&client_cfg, &s_host.client_hdl));
+    __atomic_store_n(&s_midi_client_task_started, true, __ATOMIC_RELEASE);
     __atomic_store_n(&s_midi_client_handle, s_host.client_hdl, __ATOMIC_RELEASE);
     ESP_LOGI(TAG, "USB host client registered; connect the DDJ-FLX4");
 
@@ -1302,6 +1306,8 @@ static void midi_client_task(void *arg)
 
 esp_err_t flx4_midi_host_init(void)
 {
+    __atomic_store_n(&s_usb_lib_task_started, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_midi_client_task_started, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_state_connected, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_state_sent_valid, false, __ATOMIC_RELEASE);
@@ -1339,6 +1345,12 @@ esp_err_t flx4_midi_host_init(void)
 
     ESP_LOGI(TAG, "DDJ-FLX4 USB MIDI host started");
     return ESP_OK;
+}
+
+bool flx4_midi_host_critical_tasks_started(void)
+{
+    return __atomic_load_n(&s_usb_lib_task_started, __ATOMIC_ACQUIRE) &&
+           __atomic_load_n(&s_midi_client_task_started, __ATOMIC_ACQUIRE);
 }
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4])

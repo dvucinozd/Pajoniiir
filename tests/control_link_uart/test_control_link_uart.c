@@ -484,6 +484,25 @@ static void test_led_frames_carry_the_deck(void)
     CHECK(g_test_uart.tx[1] == CTRL_TYPE_LED);
 }
 
+static void test_boot_challenge_is_echoed_without_queueing(void)
+{
+    printf("== an S3 boot challenge is ACKed directly by the P4 RX task ==\n");
+    begin(8u);
+
+    feed_frame(CTRL_TYPE_STATE, CTRL_ID_S3_BOOT_CHALLENGE,
+               (int16_t)0xA55Au, 29u);
+    control_link_test_pump_rx();
+
+    ctrl_event_t ev[2];
+    CHECK(drain(ev, 2) == 0u);
+    CHECK(g_test_uart.tx_len == CTRL_FRAME_LEN);
+    CHECK(g_test_uart.tx[0] == CTRL_FRAME_START);
+    CHECK(g_test_uart.tx[1] == CTRL_TYPE_STATE);
+    CHECK(g_test_uart.tx[2] == CTRL_ID_S3_BOOT_ACK);
+    CHECK(g_test_uart.tx[3] == 0x5Au);
+    CHECK(g_test_uart.tx[4] == 0xA5u);
+}
+
 int main(void)
 {
     test_valid_frame_becomes_an_event();
@@ -502,6 +521,7 @@ int main(void)
     test_browse_spin_does_not_apply_backpressure();
     test_state_frames_are_transmitted_well_formed();
     test_led_frames_carry_the_deck();
+    test_boot_challenge_is_echoed_without_queueing();
 
     printf("TESTS_RUN=%u\n", s_checks);
     if (s_failures == 0) {
