@@ -40,6 +40,66 @@ static int s_lifecycle_hook_entered;
 static int s_lifecycle_hook_release;
 static int s_lifecycle_stop_finished;
 
+#define TELEMETRY_THREAD_ITERATIONS 50000u
+static int s_telemetry_writer_done;
+static uint32_t s_telemetry_consistency_errors;
+
+static void *telemetry_writer_thread(void *arg)
+{
+    (void)arg;
+    const audio_mixer_limiter_stats_t increment = {
+        .limited_samples = 1u,
+        .positive_overloads = 1u,
+        .negative_overloads = 1u,
+        .peak_input_abs = 48000,
+    };
+    for (uint32_t i = 0u; i < TELEMETRY_THREAD_ITERATIONS; i++) {
+        audio_engine_test_record_limiter_stats(&increment);
+        switch (i % 3u) {
+        case 0u:
+            (void)audio_engine_set_headphone_mode(AUDIO_HEADPHONE_MODE_MASTER_MONO);
+            break;
+        case 1u:
+            (void)audio_engine_set_headphone_mode(AUDIO_HEADPHONE_MODE_CUE_MONO);
+            break;
+        default:
+            (void)audio_engine_set_cue_mode(1u);
+            break;
+        }
+    }
+    __atomic_store_n(&s_telemetry_writer_done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+static void *telemetry_reader_thread(void *arg)
+{
+    (void)arg;
+    do {
+        audio_engine_mixer_snapshot_t snapshot = { 0 };
+        audio_engine_get_mixer_snapshot(&snapshot);
+        if (snapshot.limiter.limited_samples != snapshot.limiter.positive_overloads ||
+            snapshot.limiter.limited_samples != snapshot.limiter.negative_overloads ||
+            (snapshot.limiter.peak_input_abs != 0 &&
+             snapshot.limiter.peak_input_abs != 48000)) {
+            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+                               __ATOMIC_RELAXED);
+        }
+
+        audio_headphone_mode_t mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
+        uint8_t cue_mode = 0u;
+        audio_engine_test_get_headphone_routing_snapshot(&mode, &cue_mode);
+        bool route_consistent =
+            (mode == AUDIO_HEADPHONE_MODE_MASTER_MONO && cue_mode == 0u) ||
+            (mode == AUDIO_HEADPHONE_MODE_CUE_MONO && cue_mode == 1u) ||
+            (mode == AUDIO_HEADPHONE_MODE_SPLIT_MONO && cue_mode == 1u);
+        if (!route_consistent) {
+            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+                               __ATOMIC_RELAXED);
+        }
+    } while (__atomic_load_n(&s_telemetry_writer_done, __ATOMIC_ACQUIRE) == 0);
+    return NULL;
+}
+
 static void lifecycle_after_stop_hook(uint8_t deck)
 {
     (void)deck;
@@ -57,6 +117,34 @@ static void *lifecycle_load_thread(void *arg)
     const char *path = (const char *)arg;
     (void)audio_engine_deck_load(0, path, NULL, 1000u);
     return NULL;
+}
+
+static void test_cross_core_routing_and_limiter_snapshots_are_consistent(void)
+{
+    puts("\n[Test 4b] Cross-core routing and limiter snapshots");
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets threaded telemetry fixture");
+    __atomic_store_n(&s_telemetry_writer_done, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_telemetry_consistency_errors, 0u, __ATOMIC_RELAXED);
+
+    pthread_t writer;
+    pthread_t reader;
+    int writer_rc = pthread_create(&writer, NULL, telemetry_writer_thread, NULL);
+    int reader_rc = pthread_create(&reader, NULL, telemetry_reader_thread, NULL);
+    EXPECT(writer_rc == 0 && reader_rc == 0,
+           "telemetry writer and reader threads start");
+    if (writer_rc == 0) pthread_join(writer, NULL);
+    if (reader_rc == 0) pthread_join(reader, NULL);
+
+    audio_engine_mixer_snapshot_t snapshot = { 0 };
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(__atomic_load_n(&s_telemetry_consistency_errors, __ATOMIC_RELAXED) == 0u,
+           "all concurrent routing and limiter snapshots are coherent");
+    EXPECT(snapshot.limiter.limited_samples == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.positive_overloads == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.negative_overloads == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.peak_input_abs == 48000,
+           "threaded limiter publisher loses no updates");
 }
 
 static void *lifecycle_stop_thread(void *arg)
@@ -1311,6 +1399,7 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
+    test_cross_core_routing_and_limiter_snapshots_are_consistent();
     test_beat_fx_delay_state_api();
     test_scratch_handoff_commands_apply_only_on_output_boundary();
     test_deck_peak_meter_api_returns_and_resets_peak();

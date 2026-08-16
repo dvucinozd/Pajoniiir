@@ -357,11 +357,30 @@ static uint16_t         s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
 static uint16_t         s_headphone_level = AUDIO_MIXER_CONTROL_MAX;
 static bool             s_master_cue_enabled = true;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
-static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
-static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
+/* Control/UI writers and the audio output reader run on different cores. Keep
+ * the legacy cue mode and the richer headphone route in one atomic word so an
+ * output block can never observe a torn routing transition. */
+#define AE_HEADPHONE_ROUTE_MODE_MASK 0xFFu
+#define AE_HEADPHONE_ROUTE_CUE_SHIFT 8u
+#define AE_HEADPHONE_ROUTE_PACK(mode, cue) \
+    (((uint32_t)(mode) & AE_HEADPHONE_ROUTE_MODE_MASK) | \
+     (((uint32_t)(cue) & 0x1u) << AE_HEADPHONE_ROUTE_CUE_SHIFT))
+static uint32_t         s_headphone_route =
+    AE_HEADPHONE_ROUTE_PACK(AUDIO_HEADPHONE_MODE_MASTER_MONO, 0u);
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_ui_peak[AUDIO_ENGINE_DECK_COUNT];
-static audio_mixer_limiter_stats_t s_limiter_stats;
+/* Versioned atomic telemetry. The sequence gives readers a coherent aggregate
+ * while atomic fields keep every C access race-free. Writers are serialized by
+ * the odd sequence value; this also makes test/reset paths safe independently
+ * of the engine lifecycle mutex. */
+typedef struct {
+    uint32_t sequence;
+    uint32_t limited_samples;
+    uint32_t positive_overloads;
+    uint32_t negative_overloads;
+    int32_t peak_input_abs;
+} ae_limiter_telemetry_t;
+static ae_limiter_telemetry_t s_limiter_telemetry;
 static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_filter_raw[AUDIO_ENGINE_DECK_COUNT];
@@ -437,6 +456,119 @@ static inline uint32_t atomic_load_u32(const uint32_t *value)
 static inline void atomic_store_u32(uint32_t *value, uint32_t new_value)
 {
     __atomic_store_n(value, new_value, __ATOMIC_RELAXED);
+}
+
+static uint32_t headphone_route_load(void)
+{
+    return __atomic_load_n(&s_headphone_route, __ATOMIC_ACQUIRE);
+}
+
+static void headphone_route_store(audio_headphone_mode_t mode, uint8_t cue_mode)
+{
+    __atomic_store_n(&s_headphone_route,
+                     AE_HEADPHONE_ROUTE_PACK(mode, cue_mode),
+                     __ATOMIC_RELEASE);
+}
+
+static audio_headphone_mode_t headphone_mode_from_route(uint32_t route)
+{
+    return (audio_headphone_mode_t)(route & AE_HEADPHONE_ROUTE_MODE_MASK);
+}
+
+static uint8_t cue_mode_from_route(uint32_t route)
+{
+    return (uint8_t)((route >> AE_HEADPHONE_ROUTE_CUE_SHIFT) & 0x1u);
+}
+
+static uint32_t limiter_write_begin(void)
+{
+    for (;;) {
+        uint32_t sequence = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                             __ATOMIC_ACQUIRE);
+        if ((sequence & 1u) != 0u) {
+            continue;
+        }
+        uint32_t expected = sequence;
+        if (__atomic_compare_exchange_n(&s_limiter_telemetry.sequence,
+                                        &expected,
+                                        sequence + 1u,
+                                        false,
+                                        __ATOMIC_ACQUIRE,
+                                        __ATOMIC_RELAXED)) {
+            return sequence;
+        }
+    }
+}
+
+static void limiter_write_end(uint32_t even_sequence)
+{
+    __atomic_store_n(&s_limiter_telemetry.sequence,
+                     even_sequence + 2u,
+                     __ATOMIC_RELEASE);
+}
+
+static void limiter_stats_reset(void)
+{
+    uint32_t sequence = limiter_write_begin();
+    __atomic_store_n(&s_limiter_telemetry.limited_samples, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.positive_overloads, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.negative_overloads, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.peak_input_abs, 0, __ATOMIC_RELAXED);
+    limiter_write_end(sequence);
+}
+
+static void limiter_stats_record(const audio_mixer_limiter_stats_t *stats)
+{
+    if (!stats) return;
+    uint32_t sequence = limiter_write_begin();
+    uint32_t limited = __atomic_load_n(&s_limiter_telemetry.limited_samples,
+                                        __ATOMIC_RELAXED);
+    uint32_t positive = __atomic_load_n(&s_limiter_telemetry.positive_overloads,
+                                         __ATOMIC_RELAXED);
+    uint32_t negative = __atomic_load_n(&s_limiter_telemetry.negative_overloads,
+                                         __ATOMIC_RELAXED);
+    int32_t peak = __atomic_load_n(&s_limiter_telemetry.peak_input_abs,
+                                   __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.limited_samples,
+                     limited + stats->limited_samples, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.positive_overloads,
+                     positive + stats->positive_overloads, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.negative_overloads,
+                     negative + stats->negative_overloads, __ATOMIC_RELAXED);
+    if (stats->peak_input_abs > peak) {
+        __atomic_store_n(&s_limiter_telemetry.peak_input_abs,
+                         stats->peak_input_abs, __ATOMIC_RELAXED);
+    }
+    limiter_write_end(sequence);
+}
+
+static void limiter_stats_snapshot(audio_mixer_limiter_stats_t *out_stats)
+{
+    if (!out_stats) return;
+    for (;;) {
+        uint32_t before = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                           __ATOMIC_ACQUIRE);
+        if ((before & 1u) != 0u) {
+            continue;
+        }
+        audio_mixer_limiter_stats_t candidate = {
+            .limited_samples = __atomic_load_n(
+                &s_limiter_telemetry.limited_samples, __ATOMIC_RELAXED),
+            .positive_overloads = __atomic_load_n(
+                &s_limiter_telemetry.positive_overloads, __ATOMIC_RELAXED),
+            .negative_overloads = __atomic_load_n(
+                &s_limiter_telemetry.negative_overloads, __ATOMIC_RELAXED),
+            .peak_input_abs = __atomic_load_n(
+                &s_limiter_telemetry.peak_input_abs, __ATOMIC_RELAXED),
+        };
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        uint32_t after = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                          __ATOMIC_ACQUIRE);
+        if (before == after) {
+            *out_stats = candidate;
+            return;
+        }
+    }
 }
 
 static inline bool atomic_load_bool(const bool *value)
@@ -2122,7 +2254,7 @@ static void ae_diag_reset(void)
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
     s_phase = (ae_output_phase_stats_t){ 0 };
-    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    limiter_stats_reset();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
         audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
@@ -2941,10 +3073,11 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 
 static audio_output_headphone_mode_t output_headphone_mode(void)
 {
-    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO) {
+    audio_headphone_mode_t mode = headphone_mode_from_route(headphone_route_load());
+    if (mode == AUDIO_HEADPHONE_MODE_MASTER_MONO) {
         return AUDIO_OUTPUT_HEADPHONE_MASTER_MONO;
     }
-    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_CUE_MONO) {
+    if (mode == AUDIO_HEADPHONE_MODE_CUE_MONO) {
         return AUDIO_OUTPUT_HEADPHONE_CUE_MONO;
     }
     return AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO;
@@ -3302,12 +3435,7 @@ static void ae_output_task(void *arg)
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
             record_deck_ui_peak(deck0_index, block_peak[deck0_index]);
             record_deck_ui_peak(deck1_index, block_peak[deck1_index]);
-            s_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
-            s_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
-            s_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
-            if (block_limiter_stats.peak_input_abs > s_limiter_stats.peak_input_abs) {
-                s_limiter_stats.peak_input_abs = block_limiter_stats.peak_input_abs;
-            }
+            limiter_stats_record(&block_limiter_stats);
             AE_UNLOCK();
         } else {
             /* Stateful resamplers/DSP have already rendered this block, so it
@@ -3322,13 +3450,15 @@ static void ae_output_task(void *arg)
 #endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
+        audio_mixer_limiter_stats_t cumulative_limiter_stats = { 0 };
+        limiter_stats_snapshot(&cumulative_limiter_stats);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
                                     late_warning_us > 0u ? late_warning_us : block_period_us,
                                     consumed[deck0_index],
                                     consumed[deck1_index],
                                     deck0.active,
                                     deck1.active,
-                                    &s_limiter_stats);
+                                    &cumulative_limiter_stats);
         /* No software pacing delay: the i2s_channel_write above blocks on DMA and
          * is what actually paces this loop. The retired
          * audio_output_remaining_delay_ms() helper always returned zero, and the
@@ -3517,9 +3647,8 @@ esp_err_t audio_engine_init(void)
     atomic_store_u16(&s_headphone_mix, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_u16(&s_headphone_level, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_bool(&s_master_cue_enabled, true);
-    s_cue_mode = 0;
-    s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
-    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    headphone_route_store(AUDIO_HEADPHONE_MODE_MASTER_MONO, 0u);
+    limiter_stats_reset();
     atomic_store_bool(&s_smart_cfx_enabled, false);
     atomic_store_bool(&s_smart_fader_enabled, false);
     esp_err_t monitor_rc = monitor_pcm_link_init();
@@ -4811,13 +4940,16 @@ void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *s
 {
     if (!stats) return;
     AE_LOCK();
-    s_limiter_stats.limited_samples += stats->limited_samples;
-    s_limiter_stats.positive_overloads += stats->positive_overloads;
-    s_limiter_stats.negative_overloads += stats->negative_overloads;
-    if (stats->peak_input_abs > s_limiter_stats.peak_input_abs) {
-        s_limiter_stats.peak_input_abs = stats->peak_input_abs;
-    }
+    limiter_stats_record(stats);
     AE_UNLOCK();
+}
+
+void audio_engine_test_get_headphone_routing_snapshot(audio_headphone_mode_t *out_mode,
+                                                       uint8_t *out_cue_mode)
+{
+    uint32_t route = headphone_route_load();
+    if (out_mode) *out_mode = headphone_mode_from_route(route);
+    if (out_cue_mode) *out_cue_mode = cue_mode_from_route(route);
 }
 
 void audio_engine_test_disable_pcm_timeline(uint8_t deck)
@@ -5364,7 +5496,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->pfl_enabled[1] = atomic_load_bool(&s_pfl_enabled[1]);
     out_snapshot->smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
     out_snapshot->smart_fader_enabled = atomic_load_bool(&s_smart_fader_enabled);
-    out_snapshot->limiter = s_limiter_stats;
+    limiter_stats_snapshot(&out_snapshot->limiter);
 }
 
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot)
@@ -5433,7 +5565,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
 #else
         0u;
 #endif
-    out_snapshot->limiter = s_limiter_stats;
+    limiter_stats_snapshot(&out_snapshot->limiter);
     monitor_pcm_link_stats_t monitor_stats = { 0 };
     monitor_pcm_link_get_stats(&monitor_stats);
     out_snapshot->usb_headphone_submitted_blocks = monitor_stats.submitted_blocks;
@@ -5473,27 +5605,28 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
 esp_err_t audio_engine_set_cue_mode(uint8_t mode)
 {
     if (mode > 1) return ESP_ERR_INVALID_ARG;
-    s_cue_mode = mode;
-    s_headphone_mode = mode ? AUDIO_HEADPHONE_MODE_SPLIT_MONO : AUDIO_HEADPHONE_MODE_MASTER_MONO;
+    headphone_route_store(mode ? AUDIO_HEADPHONE_MODE_SPLIT_MONO
+                               : AUDIO_HEADPHONE_MODE_MASTER_MONO,
+                          mode);
     return ESP_OK;
 }
 
 uint8_t audio_engine_get_cue_mode(void)
 {
-    return s_cue_mode;
+    return cue_mode_from_route(headphone_route_load());
 }
 
 esp_err_t audio_engine_set_headphone_mode(audio_headphone_mode_t mode)
 {
     if (mode > AUDIO_HEADPHONE_MODE_SPLIT_MONO) return ESP_ERR_INVALID_ARG;
-    s_headphone_mode = mode;
-    s_cue_mode = mode == AUDIO_HEADPHONE_MODE_MASTER_MONO ? 0 : 1;
+    headphone_route_store(mode,
+                          mode == AUDIO_HEADPHONE_MODE_MASTER_MONO ? 0u : 1u);
     return ESP_OK;
 }
 
 audio_headphone_mode_t audio_engine_get_headphone_mode(void)
 {
-    return s_headphone_mode;
+    return headphone_mode_from_route(headphone_route_load());
 }
 
 

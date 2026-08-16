@@ -356,6 +356,8 @@ bool audio_engine_test_snapshot_beat_fx_time_command(
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
+void audio_engine_test_get_headphone_routing_snapshot(audio_headphone_mode_t *out_mode,
+                                                       uint8_t *out_cue_mode);
 void audio_engine_test_disable_pcm_timeline(uint8_t deck);
 void audio_engine_test_seed_scratch_handoff(uint8_t deck,
                                             bool fade_out,
