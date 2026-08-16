@@ -642,7 +642,7 @@ popravak i nema zaseban fizički gate.
 | --- | --- | --- | --- |
 | CR-20260816-P3-01 | **SOFTWARE FIXED; HW PENDING** | `s3_debug_ap_netif_stage` drži candidate lokalno kroz create, DHCP stop, IP set i DHCP start; globalni `s_ap_netif` dobiva se tek nakon punog uspjeha, a svaki kvar poziva `esp_netif_destroy_default_wifi()`. | Host failure injection prolazi za create i sva tri init koraka, potvrđuje da ništa nije objavljeno/leakano te da isti runtime nakon uklanjanja kvara uspješno starta. ERROR latch dodatno zahtijeva i testira eksplicitni OFF→ON retry. |
 | CR-20260816-P3-02 | **CLOSED** | Profile runtime mutex sada koristi statičku FreeRTOS pohranu, a lock/unlock više nemaju tihi unlocked fallback. | Statički source guardovi i postojeća reentrant runtime regresija prolaze u punom S3 host suiteu; S3 ESP-IDF 6.0.2 build prolazi. |
-| CR-20260816-P3-03 | **OPEN** | `s_headphone_mode` i limiter snapshot imaju preostale cross-core plain-field raceove (`audio_engine.c:354-358`, `:4869-5051`). | Packed atomic za routing i sequence/seqlock snapshot za limiter telemetriju; threaded consistency test. |
+| CR-20260816-P3-03 | **SOFTWARE FIXED; HW PENDING** | Headphone route/cue kompatibilnost objavljuju se jednim packed atomic wordom, a limiter aggregate koristi versioned snapshot s atomskim poljima. | Paralelni writer/reader stress od 50.000 publikacija potvrđuje koherentne routing i limiter snapshotove; puni P4 host suite i ESP-IDF 6.0.2 build prolaze. |
 | CR-20260816-P3-04 | **OPEN** | Produkcijski USB lifecycle, OTA crypto/state machine i HTTP handler nisu ponašajno izvršeni u host suiteu (`run_s3_host_tests.ps1:500-663`). | Fake USB/FreeRTOS/`esp_ota_*`/partition/PSA sloj koji gradi pravi production source; svaki negativni put potvrđuje abort i da boot partition nije promijenjena. |
 
 ### 7.1 Implementirano: allocation-free profile runtime lock
@@ -657,6 +657,26 @@ S3 runner provjerava da se dinamički mutex i unlocked fallback ne mogu vratiti
 u source, dok postojeća runtime regresija i dalje dokazuje da se callback
 poziva tek nakon otključavanja snapshot stanja. Puni S3 host suite i stvarni
 ESP-IDF 6.0.2 build prolaze; promjena nema zaseban fizički acceptance gate.
+
+### 7.2 Implementirano: koherentni cross-core audio snapshotovi
+
+Commit `ff2b74a` zatvara source dio CR-20260816-P3-03. Legacy cue mode i puni
+headphone routing mode više nisu dva neovisna plain polja: oba su kodirana u
+jedan 32-bitni word koji control/UI task objavljuje release storeom, a audio
+task učitava acquire loadom jednom po odluci routinga.
+
+Limiter brojači i peak više se ne kopiraju iz strukture koju istodobno mijenja
+output task. Writer kratko preuzima neparnu sequence verziju, sva četiri polja
+čita i piše atomskim operacijama te release objavom vraća parnu verziju. Reader
+prihvaća aggregate samo kada su verzije prije i poslije jednake. Time je
+snapshot koherentan bez mutexa u audio render putu i bez C data-racea koji bi
+ostao kada bi seqlock štitio obična polja.
+
+PC regresija paralelno vrti writer i reader kroz 50.000 limiter/routing
+publikacija, provjerava relacije između sva tri brojača, peak i valjane packed
+routing parove. Fokusirani audio engine prolazi 393/393, puni P4 host suite
+prolazi, a P4 ESP-IDF 6.0.2 build daje image `0x253980` s 42% slobodne app
+particije. Preostaje fizičko multicore opterećenje uz MAIN/PFL monitoring.
 
 ## 8. Arhitektonska poboljšanja nakon obveznih nalaza
 
@@ -845,3 +865,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P2-14 | `6200e6f` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; boot-gate 8/8 i production P4 UART challenge/ACK test PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xecb40`, 51% free; P4 build PASS, image `0x253880`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički oba boot redoslijeda, izgubljeni/pogrešni ACK, prekinut reverse UART i rollback bez FLX4 uređaja |
 | 2026-08-16 | CR-20260816-P2-16 | `8ce687f` | CLOSED | Converter fixturei 6/6 PASS; puni S3 host suite PASS; stvarni `compile_profile()` gate za svaki rezultat PASS; FLX4/generic committed binary freshness PASS; `py_compile` i `git diff --check` PASS | Nema preostalog source/hardware gatea za converter; stvarni non-FLX4 controller acceptance i dalje je zaseban feature/hardware gate |
 | 2026-08-16 | CR-20260816-P3-02 | `e3dcca5` | CLOSED | Puni S3 host suite PASS; runtime snapshot/reentrant callback regresija PASS; static-allocation source guardovi PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xecff0`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Nema preostalog source ili hardware gatea za profile runtime lock |
+| 2026-08-16 | CR-20260816-P3-03 | `ff2b74a` | SOFTWARE FIXED; HW PENDING | Fokusirani audio engine 393/393 PASS; 50.000 threaded limiter/routing publikacija bez nekoherentnog snapshota ili izgubljenog updatea; puni P4 host suite PASS; P4 ESP-IDF 6.0.2 build PASS, image `0x253980`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički multicore routing-toggle stress tijekom dual-deck MAIN/PFL reprodukcije i potvrda stabilne limiter telemetrije |
