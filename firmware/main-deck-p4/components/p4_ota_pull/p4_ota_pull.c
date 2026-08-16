@@ -3,6 +3,7 @@
 #include "p4_ota_pull_gate.h"
 
 #include "app_settings.h"
+#include "audio_engine.h"
 #include "wifi_link.h"
 #include "wifi_transition_lease.h"
 
@@ -281,6 +282,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     if (!buf) { esp_http_client_cleanup(client); return ESP_ERR_NO_MEM; }
 
     psa_hash_operation_t bundle_sha = PSA_HASH_OPERATION_INIT;
+    bool audio_barrier_held = false;
     bool sha_started = psa_hash_setup(&bundle_sha, PSA_ALG_SHA_256) == PSA_SUCCESS;
     if (!sha_started) {
         free(buf);
@@ -354,6 +356,10 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         goto done;
     }
 
+    rc = audio_engine_suspend_loads_and_stop_all();
+    if (rc != ESP_OK) goto done;
+    audio_barrier_held = true;
+
     rc = p4_ota_begin(&manifest);
     if (rc != ESP_OK) goto done;
 
@@ -405,6 +411,9 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     rc = p4_ota_finish();
 
 done:
+    if (audio_barrier_held && rc != ESP_OK) {
+        audio_engine_resume_loads();
+    }
     if (sha_started) {
         (void)psa_hash_abort(&bundle_sha);
     }

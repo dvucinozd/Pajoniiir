@@ -15,6 +15,7 @@ typedef struct {
     void *pcm_ring;
     void *resampler;
     audio_fw_task_plan_t task_plan;
+    uint32_t session_generation;
 } audio_fw_task_context_t;
 
 void audio_fw_task_context_reset(audio_fw_task_context_t *ctx);
@@ -27,3 +28,4 @@ void audio_fw_task_context_bind(audio_fw_task_context_t *ctx,
                                 void *resampler,
                                 audio_fw_task_plan_t task_plan);
 bool audio_fw_task_context_is_bound(const audio_fw_task_context_t *ctx);
+bool audio_fw_task_context_is_current(const audio_fw_task_context_t *ctx);

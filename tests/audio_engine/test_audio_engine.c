@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 /*
  * test_audio_engine.c — offline unit tests for the audio engine (PC, no hardware).
  *
@@ -18,6 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <pthread.h>
+#include <time.h>
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -29,6 +33,42 @@ static int s_fail = 0;
         if (cond) { printf("  PASS: %s\n", msg); s_pass++; } \
         else       { printf("  FAIL: %s  (line %d)\n", msg, __LINE__); s_fail++; } \
     } while (0)
+
+static pthread_mutex_t s_lifecycle_test_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_lifecycle_test_cond = PTHREAD_COND_INITIALIZER;
+static int s_lifecycle_hook_entered;
+static int s_lifecycle_hook_release;
+static int s_lifecycle_stop_finished;
+
+static void lifecycle_after_stop_hook(uint8_t deck)
+{
+    (void)deck;
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    s_lifecycle_hook_entered = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    while (!s_lifecycle_hook_release) {
+        pthread_cond_wait(&s_lifecycle_test_cond, &s_lifecycle_test_mutex);
+    }
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+}
+
+static void *lifecycle_load_thread(void *arg)
+{
+    const char *path = (const char *)arg;
+    (void)audio_engine_deck_load(0, path, NULL, 1000u);
+    return NULL;
+}
+
+static void *lifecycle_stop_thread(void *arg)
+{
+    (void)arg;
+    (void)audio_engine_deck_stop(0);
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    s_lifecycle_stop_finished = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+    return NULL;
+}
 
 typedef struct {
     const audio_mixer_frame_t *frames;
@@ -136,6 +176,91 @@ static int write_test_wav(const char *path)
     fwrite(samples, sizeof(samples), 1, fp);
     fclose(fp);
     return 1;
+}
+
+static void test_stop_waits_for_inflight_load_transaction(void)
+{
+    const char *path = "test_lifecycle.wav";
+    EXPECT(write_test_wav(path), "lifecycle WAV fixture created");
+    s_lifecycle_hook_entered = 0;
+    s_lifecycle_hook_release = 0;
+    s_lifecycle_stop_finished = 0;
+    audio_engine_test_set_after_internal_stop_hook(lifecycle_after_stop_hook);
+
+    pthread_t load_thread;
+    pthread_t stop_thread;
+    EXPECT(pthread_create(&load_thread, NULL, lifecycle_load_thread, (void *)path) == 0,
+           "inflight LOAD thread starts");
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    while (!s_lifecycle_hook_entered) {
+        pthread_cond_wait(&s_lifecycle_test_cond, &s_lifecycle_test_mutex);
+    }
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+
+    EXPECT(pthread_create(&stop_thread, NULL, lifecycle_stop_thread, NULL) == 0,
+           "concurrent STOP thread starts");
+    struct timespec pause = { .tv_sec = 0, .tv_nsec = 20 * 1000 * 1000 };
+    nanosleep(&pause, NULL);
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    EXPECT(!s_lifecycle_stop_finished,
+           "STOP cannot return while admitted LOAD is between stop and bind");
+    s_lifecycle_hook_release = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+
+    pthread_join(load_thread, NULL);
+    pthread_join(stop_thread, NULL);
+    audio_engine_test_set_after_internal_stop_hook(NULL);
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK,
+           "deck status remains queryable after lifecycle race");
+    EXPECT(!status.loaded && status.state == AE_IDLE,
+           "STOP retires the session created by the admitted LOAD");
+    remove(path);
+}
+
+static void test_stale_session_cannot_stop_newer_load(void)
+{
+    const char *path = "test_session_generation.wav";
+    EXPECT(write_test_wav(path), "session-generation WAV fixture created");
+
+    uint32_t first = 0u;
+    uint32_t second = 0u;
+    EXPECT(audio_engine_deck_load_session(0, path, NULL, 1000u, &first) == ESP_OK,
+           "first LOAD returns a session generation");
+    EXPECT(first != 0u && audio_engine_deck_session_generation(0) == first,
+           "first session generation is authoritative");
+    EXPECT(audio_engine_deck_load_session(0, path, NULL, 1000u, &second) == ESP_OK,
+           "replacement LOAD returns a session generation");
+    EXPECT(second != 0u && second != first,
+           "replacement LOAD advances the generation");
+    EXPECT(audio_engine_deck_stop_session(0, first) == ESP_ERR_INVALID_STATE,
+           "stale completion cannot stop the replacement session");
+
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK && status.loaded,
+           "replacement session remains loaded after stale STOP");
+    EXPECT(audio_engine_deck_stop_session(0, second) == ESP_OK,
+           "matching generation retires its own session");
+    remove(path);
+}
+
+static void test_transition_barrier_blocks_load_until_resume(void)
+{
+    const char *path = "test_transition_barrier.wav";
+    EXPECT(write_test_wav(path), "transition-barrier WAV fixture created");
+    EXPECT(audio_engine_suspend_loads_and_stop_all() == ESP_OK,
+           "global transition acquires LOAD admission barrier");
+    EXPECT(audio_engine_deck_load(0, path, NULL, 1000u) == ESP_ERR_INVALID_STATE,
+           "LOAD is rejected while USB/OTA transition owns barrier");
+    EXPECT(audio_engine_suspend_loads_and_stop_all() == ESP_ERR_INVALID_STATE,
+           "transition barrier has a single owner");
+    audio_engine_resume_loads();
+    EXPECT(audio_engine_deck_load(0, path, NULL, 1000u) == ESP_OK,
+           "LOAD admission resumes after failed/completed transition");
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK,
+           "resumed session stops cleanly");
+    remove(path);
 }
 
 /* ── Test 1: init / uninitialised-state guards ───────────────────────────── */
@@ -1165,6 +1290,9 @@ int main(int argc, char *argv[])
     test_deck_status_is_independent();
     test_deck_states_are_independent();
     test_deck_loops_are_independent();
+    test_stop_waits_for_inflight_load_transaction();
+    test_stale_session_cannot_stop_newer_load();
+    test_transition_barrier_blocks_load_until_resume();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;

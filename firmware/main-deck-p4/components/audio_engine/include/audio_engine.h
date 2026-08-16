@@ -75,9 +75,20 @@ esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const char *mp3_path,
                                  const uint32_t *pvbr_400,
                                  uint32_t duration_ms);
+/* LOAD variant that returns the lifecycle generation owned by the new
+ * session. A delayed caller may later retire only that exact session with
+ * audio_engine_deck_stop_session(); a newer LOAD is never stopped by mistake. */
+esp_err_t audio_engine_deck_load_session(uint8_t deck,
+                                         const char *mp3_path,
+                                         const uint32_t *pvbr_400,
+                                         uint32_t duration_ms,
+                                         uint32_t *out_session_generation);
 esp_err_t audio_engine_deck_play(uint8_t deck);
 esp_err_t audio_engine_deck_pause(uint8_t deck);
 esp_err_t audio_engine_deck_stop(uint8_t deck);
+esp_err_t audio_engine_deck_stop_session(uint8_t deck,
+                                         uint32_t expected_session_generation);
+uint32_t audio_engine_deck_session_generation(uint8_t deck);
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms);
 void audio_engine_deck_set_pitch(uint8_t deck, int16_t raw_pitch);
 void audio_engine_deck_set_pitch_percent(uint8_t deck, float percent);
@@ -310,6 +321,13 @@ typedef struct {
 
 esp_err_t audio_engine_deck_get_status(uint8_t deck, audio_engine_deck_status_t *out);
 esp_err_t audio_engine_stop_all(void);
+esp_err_t audio_engine_suspend_loads_and_stop_all(void);
+void audio_engine_resume_loads(void);
+#if defined(AUDIO_ENGINE_PC_TEST)
+typedef void (*audio_engine_lifecycle_test_hook_t)(uint8_t deck);
+void audio_engine_test_set_after_internal_stop_hook(
+    audio_engine_lifecycle_test_hook_t hook);
+#endif
 
 esp_err_t audio_engine_deck_set_loop(uint8_t deck, uint32_t start_ms, uint32_t end_ms);
 esp_err_t audio_engine_deck_clear_loop(uint8_t deck);

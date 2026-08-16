@@ -262,7 +262,8 @@ static void on_usb_storage_event(bool mounted)
     } else {
         ESP_LOGW(TAG, "USB drive removed");
         service_log_note(SERVICE_LOG_USB_UNMOUNTED, SERVICE_LOG_INFO, "drive removed");
-        esp_err_t stop_rc = audio_engine_stop_all();
+        esp_err_t stop_rc = audio_engine_suspend_loads_and_stop_all();
+        bool owns_load_barrier = stop_rc == ESP_OK;
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
@@ -275,6 +276,9 @@ static void on_usb_storage_event(bool mounted)
         }
         ui_notify_usb_removed();
         ui_trigger_library_refresh();
+        if (owns_load_barrier) {
+            audio_engine_resume_loads();
+        }
     }
 }
 

@@ -443,9 +443,14 @@ Assert-FileContains `
     -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
 
 Assert-FileContains `
-    -Name "p4 discarded track load releases the deck audio session, not just the UI" `
+    -Name "p4 discarded track load retires only its own generated audio session" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
-    -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
+    -LiteralPatterns @("audio_session_generation", "ui_library_release_deck_audio_session", "audio_engine_deck_stop_session")
+
+Assert-FileContains `
+    -Name "p4 deck LOAD lifecycle is serialized and generation-owned" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("lifecycle_begin_load", "lifecycle_advance_generation", "audio_engine_deck_stop_session")
 
 Assert-FileContains `
     -Name "deck core owns coherent loaded-track publication" `
@@ -1196,6 +1201,19 @@ Assert-FileDoesNotContain `
 
 $tests = @(
     @{
+        Name = "ui_load_gate"
+        MinTestsRun = 12
+        Dir = "tests/ui_load_gate"
+        Target = "test_ui_load_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_load_gate.exe",
+            "test_ui_load_gate.c",
+            "../../firmware/main-deck-p4/components/ui/ui_load_gate.c"
+        )
+    },
+    @{
         Name = "audio_eof_policy"
         Dir = "tests/audio_eof_policy"
         Target = "test_audio_eof_policy.exe"
@@ -1396,6 +1414,7 @@ $tests = @(
         Target = "test_audio_engine.exe"
         Args = @(
             "-Wall", "-Wextra", "-std=c99",
+            "-pthread",
             "-DAUDIO_ENGINE_PC_TEST", "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST", "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
@@ -1575,6 +1594,7 @@ $tests = @(
             "-o", "test_audio_fw_task_context.exe",
             "test_audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c"
         )
     },

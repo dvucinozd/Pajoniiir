@@ -887,14 +887,92 @@ static void apply_all_deck_filter_raw(void)
 static pthread_mutex_t    s_file_mutex  = PTHREAD_MUTEX_INITIALIZER;
 #   define AE_LOCK()   pthread_mutex_lock(&s_file_mutex)
 #   define AE_UNLOCK() pthread_mutex_unlock(&s_file_mutex)
+static pthread_mutex_t s_lifecycle_admission_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT] = {
+    PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER
+};
 #elif AE_FW
 static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_init */
 #   define AE_LOCK()   do { if (s_file_mutex) xSemaphoreTakeRecursive(s_file_mutex, portMAX_DELAY); } while (0)
 #   define AE_UNLOCK() do { if (s_file_mutex) xSemaphoreGiveRecursive(s_file_mutex); } while (0)
+static SemaphoreHandle_t s_lifecycle_admission_mutex;
+static SemaphoreHandle_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT];
 #else
 #   define AE_LOCK()   do {} while (0)
 #   define AE_UNLOCK() do {} while (0)
 #endif
+
+static bool s_lifecycle_loads_blocked;
+static uint32_t s_lifecycle_session_generation[AUDIO_ENGINE_DECK_COUNT];
+#if AE_PC
+static audio_engine_lifecycle_test_hook_t s_after_internal_stop_hook;
+
+void audio_engine_test_set_after_internal_stop_hook(
+    audio_engine_lifecycle_test_hook_t hook)
+{
+    s_after_internal_stop_hook = hook;
+}
+#endif
+
+static void lifecycle_admission_lock(void)
+{
+#if AE_PC
+    pthread_mutex_lock(&s_lifecycle_admission_mutex);
+#elif AE_FW
+    xSemaphoreTake(s_lifecycle_admission_mutex, portMAX_DELAY);
+#endif
+}
+
+static void lifecycle_admission_unlock(void)
+{
+#if AE_PC
+    pthread_mutex_unlock(&s_lifecycle_admission_mutex);
+#elif AE_FW
+    xSemaphoreGive(s_lifecycle_admission_mutex);
+#endif
+}
+
+static void lifecycle_deck_lock(uint8_t deck)
+{
+#if AE_PC
+    pthread_mutex_lock(&s_lifecycle_mutex[deck]);
+#elif AE_FW
+    xSemaphoreTake(s_lifecycle_mutex[deck], portMAX_DELAY);
+#else
+    (void)deck;
+#endif
+}
+
+static void lifecycle_deck_unlock(uint8_t deck)
+{
+#if AE_PC
+    pthread_mutex_unlock(&s_lifecycle_mutex[deck]);
+#elif AE_FW
+    xSemaphoreGive(s_lifecycle_mutex[deck]);
+#else
+    (void)deck;
+#endif
+}
+
+static bool lifecycle_begin_load(uint8_t deck)
+{
+    lifecycle_admission_lock();
+    if (s_lifecycle_loads_blocked) {
+        lifecycle_admission_unlock();
+        return false;
+    }
+    lifecycle_deck_lock(deck);
+    lifecycle_admission_unlock();
+    return true;
+}
+
+static uint32_t lifecycle_advance_generation(uint8_t deck)
+{
+    uint32_t next = s_lifecycle_session_generation[deck] + 1u;
+    if (next == 0u) next = 1u;
+    s_lifecycle_session_generation[deck] = next;
+    return next;
+}
 
 
 static uint16_t sample_abs_u16(int16_t sample)
@@ -2096,7 +2174,7 @@ static size_t ae_fw_cache_read_at(void *ctx, size_t offset,
 static void ae_loader_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
-    if (!audio_fw_task_context_is_bound(ctx)) {
+    if (!audio_fw_task_context_is_current(ctx)) {
         xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDelete(NULL);
         return;
@@ -2174,7 +2252,7 @@ park:
 static void ae_decode_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
-    if (!audio_fw_task_context_is_bound(ctx)) {
+    if (!audio_fw_task_context_is_current(ctx)) {
         xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDeleteWithCaps(NULL);
         return;
@@ -3260,6 +3338,14 @@ esp_err_t audio_engine_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
+    if (!s_lifecycle_admission_mutex) {
+        s_lifecycle_admission_mutex = xSemaphoreCreateMutex();
+    }
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (!s_lifecycle_mutex[i]) {
+            s_lifecycle_mutex[i] = xSemaphoreCreateMutex();
+        }
+    }
     bool tasks_done_ok = true;
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         if (!s_tasks_done[i]) {
@@ -3271,10 +3357,14 @@ esp_err_t audio_engine_init(void)
     if (!s_output_done) {
         s_output_done = xSemaphoreCreateCounting(1, 0);
     }
-    if (!s_file_mutex || !tasks_done_ok || !s_output_done) return ESP_ERR_NO_MEM;
+    if (!s_file_mutex || !s_lifecycle_admission_mutex ||
+        !s_lifecycle_mutex[0] || !s_lifecycle_mutex[1] ||
+        !tasks_done_ok || !s_output_done) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "audio_engine_init: output ready (ES8311=%s, PCM5102A=%s)",
              s_codec ? "on" : "off", s_main_i2s_tx ? "on" : "off");
 #endif
+
+    s_lifecycle_loads_blocked = false;
 
     return ESP_OK;
 }
@@ -3306,6 +3396,11 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
         return stop_rc;
     }
+#if AE_PC
+    if (s_after_internal_stop_hook) {
+        s_after_internal_stop_hook(deck);
+    }
+#endif
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
     eng->load_progress = 0;
@@ -3462,7 +3557,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "OUTPUT TASK ERR");
         eng->loading = false;
         eng->load_progress = 100;
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
             if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
@@ -3497,7 +3592,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "TASK CREATE ERR");
         eng->loading = false;
         eng->load_progress = 100;
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
             if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
@@ -3607,7 +3702,7 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 #if AE_FW
     audio_fw_runtime_t *runtime = &s_fw_runtimes[deck];
     if (runtime->run || runtime->tasks_started > 0) {
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         atomic_store_bool(&eng->eof, false); /* wake decode task if parked at EOF */
         if (s_tasks_done[deck]) {
             int exited = 0;
@@ -3919,8 +4014,24 @@ esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const uint32_t *pvbr_400,
                                  uint32_t duration_ms)
 {
+    return audio_engine_deck_load_session(deck, mp3_path, pvbr_400,
+                                          duration_ms, NULL);
+}
+
+esp_err_t audio_engine_deck_load_session(uint8_t deck,
+                                         const char *mp3_path,
+                                         const uint32_t *pvbr_400,
+                                         uint32_t duration_ms,
+                                         uint32_t *out_session_generation)
+{
+    if (out_session_generation) *out_session_generation = 0u;
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    return audio_engine_load_for_deck(deck, mp3_path, pvbr_400, duration_ms);
+    if (!lifecycle_begin_load(deck)) return ESP_ERR_INVALID_STATE;
+    uint32_t generation = lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_load_for_deck(deck, mp3_path, pvbr_400, duration_ms);
+    if (out_session_generation) *out_session_generation = generation;
+    lifecycle_deck_unlock(deck);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_play(uint8_t deck)
@@ -3944,14 +4055,61 @@ esp_err_t audio_engine_deck_pause(uint8_t deck)
 esp_err_t audio_engine_deck_stop(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    return audio_engine_stop_for_deck(deck);
+    lifecycle_deck_lock(deck);
+    (void)lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_stop_for_deck(deck);
+    lifecycle_deck_unlock(deck);
+    return rc;
 }
 
-esp_err_t audio_engine_stop_all(void)
+esp_err_t audio_engine_deck_stop_session(uint8_t deck,
+                                         uint32_t expected_session_generation)
 {
+    if (!deck_is_valid(deck) || expected_session_generation == 0u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    lifecycle_deck_lock(deck);
+    if (s_lifecycle_session_generation[deck] != expected_session_generation) {
+        lifecycle_deck_unlock(deck);
+        return ESP_ERR_INVALID_STATE;
+    }
+    (void)lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_stop_for_deck(deck);
+    lifecycle_deck_unlock(deck);
+    return rc;
+}
+
+uint32_t audio_engine_deck_session_generation(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return 0u;
+    lifecycle_deck_lock(deck);
+    uint32_t generation = s_lifecycle_session_generation[deck];
+    lifecycle_deck_unlock(deck);
+    return generation;
+}
+
+static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
+{
+    if (out_acquired) *out_acquired = false;
+    /* Close admission first. A LOAD that already passed admission owns its
+     * deck mutex, so taking both mutexes below waits for its complete bind/task
+     * creation transaction before teardown starts. */
+    lifecycle_admission_lock();
+    if (s_lifecycle_loads_blocked) {
+        lifecycle_admission_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_lifecycle_loads_blocked = true;
+    if (out_acquired) *out_acquired = true;
+    lifecycle_admission_unlock();
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        lifecycle_deck_lock(deck);
+    }
+
     esp_err_t first_err = ESP_OK;
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
-        esp_err_t rc = audio_engine_deck_stop(deck);
+        (void)lifecycle_advance_generation(deck);
+        esp_err_t rc = audio_engine_stop_for_deck(deck);
         if (first_err == ESP_OK && rc != ESP_OK) {
             first_err = rc;
         }
@@ -3962,7 +4120,33 @@ esp_err_t audio_engine_stop_all(void)
         first_err = output_rc;
     }
 #endif
+    for (uint8_t deck = AUDIO_ENGINE_DECK_COUNT; deck > 0u; deck--) {
+        lifecycle_deck_unlock((uint8_t)(deck - 1u));
+    }
     return first_err;
+}
+
+esp_err_t audio_engine_suspend_loads_and_stop_all(void)
+{
+    bool acquired = false;
+    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    if (rc != ESP_OK && acquired) audio_engine_resume_loads();
+    return rc;
+}
+
+void audio_engine_resume_loads(void)
+{
+    lifecycle_admission_lock();
+    s_lifecycle_loads_blocked = false;
+    lifecycle_admission_unlock();
+}
+
+esp_err_t audio_engine_stop_all(void)
+{
+    bool acquired = false;
+    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    if (acquired) audio_engine_resume_loads();
+    return rc;
 }
 
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
