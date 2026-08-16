@@ -564,7 +564,7 @@ do fizičkog UART/USB/FLX4 fault i reconnect smokea.
 
 | ID | Status | Nalaz i dokaz | Popravak | Obvezni gate |
 | --- | --- | --- | --- | --- |
-| CR-20260816-P2-07 | **OPEN** | Pitch resampler koristi softverski `double` po sampleu (`audio_resampler.c:16-56`); P4 disassembly sadrži `*df2` helpere. | Float ili Q-format phase accumulator; step računati po bloku/promjeni pitcha. CI object/assembly gate zabranjuje `*df2` u RT DSP objektima. | Drift/quality suite, 300 s soak, P4 hardware deadline mjerenje. |
+| CR-20260816-P2-07 | **SOFTWARE FIXED; HW PENDING** | Pitch resampler koristi Q0.32 fazu i cacheirani Q32 step koji se mijenja samo kada se promijene binary32 pitch bitovi; per-sample put nema `double`. | Petominutni 44,1→48 kHz i 1,1× drift test ima točno očekivani consumption; CI pregled stvarnog RV32 objekta zabranjuje `*df*` helpere i objekt ih nema. | Puni P4 suite, 300 s soak i ESP-IDF 6.0.2 build prolaze; preostaje fizičko worst-case deadline mjerenje. |
 | CR-20260816-P2-08 | **SOFTWARE FIXED; HW PENDING** | I2S write je koristio `portMAX_DELAY`, a pozicija se mogla objaviti i kada konfigurirani sink nije prihvatio blok. | `audio_output_sink` ograničava svaki driver poziv na jedan period i najviše tri short-write pokušaja, vodi zasebne call/short/timeout/error/failure brojače i nastavlja samo od neupisanog sufiksa. Pozicija se objavljuje tek kada svaki konfigurirani sink potvrdi blok; kvar zaustavlja output u eksplicitnom error stanju. STOP disablea PCM5102 kanal radi wakeupa, a sljedeći LOAD ga reconfigurira i ponovno enablea. | Host fault injection za puni/kratki/zero-progress/timeout/error write prolazi; P4 host suite i v6.0.2 build prolaze. Preostaje fizički blokirani-I2S/STOP/reload test i potvrda da nema taska nakon STOP-a. |
 | CR-20260816-P2-09 | **SOFTWARE FIXED; HW PENDING** | FLAC backend fault pretvarao se u običan EOF. | Cache stream objavljuje monotoni fault epoch i točan byte offset za zero/partial read prije deklariranog kraja. FLAC init/read/seek razlikuju pravi EOF od backend kvara, zadržavaju stari decoder do uspješnog replacement-open/seek retryja i koriste postojeći bounded media-read fault budget. | Page-boundary partial-read regresija potvrđuje fault epoch, uspješan retry i zaseban pravi EOF. Preostaje realni FLAC USB read-fault fixture na P4. |
 | CR-20260816-P2-10 | **SOFTWARE FIXED; HW PENDING** | 32-bit timeline nije bio wrap-safe. | Per-frame RV32 hot path ostaje 32-bit, a rijetki wrap koristi epoch + versioned koherentni 64-bit snapshot. Retained span je strogo manji od `2^31`, dostupnost koristi modularnu udaljenost, random read fizički anchor i scratch origin ostaju 64-bitni. | Timeline suite ima 289 provjera i seedove uz `UINT32_MAX` za push/pop/read/seek/drop-newest; 300 s dual-deck soak prolazi bez drifta, clicka ili clippinga. Preostaje višednevni/on-device umjetno seedani wrap acceptance. |
@@ -583,6 +583,28 @@ clippinga (`host_cpu_time=1.974 s`). `dependencies.lock` ostao je nepromijenjen.
 Status ostaje **SOFTWARE FIXED; HW PENDING** jer host callback ne može dokazati
 ponašanje stvarnog I2S drivera pri disableu, fizički FLAC USB kvar, višednevni
 timeline wrap ni slušni scratch re-grab pod stvarnim P4 deadline opterećenjem.
+
+#### Implementirano 2026-08-16 — Q32 resampler hot path
+
+Commit `e0b3117` zatvara source dio CR-20260816-P2-07. `double fraction` je
+zamijenjen Q0.32 fazom i cacheiranim Q32 stepom. Step se iz IEEE-754 binary32
+mantise i eksponenta gradi samo kada se pitch bitovi promijene; tako nema ni
+`double` operacije ni float-to-64-bit helpera po sampleu. Interpolacijski
+binary32 faktor konstruira se iz gornja 23 bita faze, što odgovara stvarnoj
+preciznosti interpolatora.
+
+Samostalni resampler test sada je dio punog P4 runnera. Uz postojeće unity,
+fractional, underrun i non-finite provjere, simulira pet minuta na 48 kHz za
+44,1→48 kHz omjer i 1,1× pitch te dobiva točno očekivani broj source frameova;
+provjerava i promjenu cacheiranog stepa usred streama. Stvarni ESP32-P4
+`audio_resampler.c.obj` nema undefined simbole ni ranije prisutne
+`__adddf3`, `__subdf3`, `__extendsfdf2`, `__gedf2` i `__truncdfsf2`; CI to
+provjerava nakon firmware builda.
+
+Puni P4 host suite prolazi, 300 s dual-deck key-lock soak ima drift 0, bez
+clickova i clippinga, a ESP-IDF 6.0.2 image je `0x253970` s 42% slobodne app
+particije. Fizičko P4 worst-case CPU/I2S deadline mjerenje ostaje acceptance
+gate, pa status nije hardware-closed.
 
 ### 6.4 OTA, sigurnost i tooling
 
@@ -866,3 +888,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P2-16 | `8ce687f` | CLOSED | Converter fixturei 6/6 PASS; puni S3 host suite PASS; stvarni `compile_profile()` gate za svaki rezultat PASS; FLX4/generic committed binary freshness PASS; `py_compile` i `git diff --check` PASS | Nema preostalog source/hardware gatea za converter; stvarni non-FLX4 controller acceptance i dalje je zaseban feature/hardware gate |
 | 2026-08-16 | CR-20260816-P3-02 | `e3dcca5` | CLOSED | Puni S3 host suite PASS; runtime snapshot/reentrant callback regresija PASS; static-allocation source guardovi PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xecff0`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Nema preostalog source ili hardware gatea za profile runtime lock |
 | 2026-08-16 | CR-20260816-P3-03 | `ff2b74a` | SOFTWARE FIXED; HW PENDING | Fokusirani audio engine 393/393 PASS; 50.000 threaded limiter/routing publikacija bez nekoherentnog snapshota ili izgubljenog updatea; puni P4 host suite PASS; P4 ESP-IDF 6.0.2 build PASS, image `0x253980`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički multicore routing-toggle stress tijekom dual-deck MAIN/PFL reprodukcije i potvrda stabilne limiter telemetrije |
+| 2026-08-16 | CR-20260816-P2-07 | `e0b3117` | SOFTWARE FIXED; HW PENDING | Q32 resampler petominutni 44,1→48 kHz i 1,1× consumption drift 0; puni P4 host suite PASS; stvarni RV32 `audio_resampler.c.obj` nema undefined ni `*df*` helper simbole; 300 s dual-deck soak PASS (drift 0, clicks 0, clipped 0, host CPU 1,992 s); P4 ESP-IDF 6.0.2 build PASS, image `0x253970`, 42% free; workflow YAML i `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizičko worst-case dual-deck P4 CPU/I2S deadline mjerenje i slušna provjera pitch/sample-rate kombinacija |
