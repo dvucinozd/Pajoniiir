@@ -205,7 +205,7 @@ završiti noviji load.
 
 ### CR-20260816-P1-02 — S3 producer drain/requeue mijenja FIFO redoslijed
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -352,7 +352,7 @@ limiter i njegova telemetrija ne vide stvarni pre-clamp overload.
 
 ### CR-20260816-P1-05 — P4 signed bundle nije vezan uz channel release
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -399,7 +399,7 @@ namjeri.
 
 ### CR-20260816-P1-06 — Retired speaker PA aktivira se pri bootu
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -682,3 +682,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | Datum | Nalaz(i) | Commit/PR | Novi status | Pokrenuti gateovi | Preostalo |
 | --- | --- | --- | --- | --- | --- |
 | 2026-08-16 | Svi CR-20260816 nalazi | `10c91c2aa536be3852cdd6a41e831088d85625d7` | Audit baseline; P1/P2/P3 OPEN | Oba host suitea, oba clean builda, UI E2E, signing, audio soak | Implementacija i navedeni hardware gateovi |
+| 2026-08-16 | CR-20260816-P1-02, CR-20260816-P1-05, CR-20260816-P1-06 | `38ecc6c` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; S3 host suite PASS; scheduler 141/141; app-settings 46/46; OTA manifest/signing/packaging PASS; P4 ESP-IDF 6.0.2 clean build PASS (42% free); S3 ESP-IDF 6.0.2 clean dual-OTA build PASS (51% free); `git diff --check` PASS | Fizički GPIO11-low cold/warm boot; signed pull-OTA happy/mismatch provjera bez promjene boot particije; FLX4 burst/stalled-link/reconnect FIFO i held-release smoke |
