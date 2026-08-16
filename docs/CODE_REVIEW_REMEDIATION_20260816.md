@@ -273,7 +273,7 @@ wireu postati `Cue, Play`.
 
 ### CR-20260816-P1-03 — Profil nije vezan uz USB identitet i connection epoch
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -321,6 +321,29 @@ prethodnog uređaja, a reconnect može replayati stare fader/knob vrijednosti.
 - Fizička zamjena FLX4 ↔ drugi MIDI uređaj ne smije proizvesti semantički
   control event prije ispravnog profile bindinga.
 - `generic_midi_ci` ostaje host fixture, ne hardware dokaz generičke podrške.
+
+#### Implementirano 2026-08-16
+
+Commiti `7f10aa1` i `aac07bc` uvode descriptor-prošireni nonzero 32-bitni
+`connection_epoch`, koherentan S3 USB connection context i epoch-bound dynamic
+runtime. Disconnect briše dynamic runtime, built-in snapshot, scheduler i held
+state, a P4 šalje `PROFILE_CLEAR`, invalidira queued stare descriptor reportove
+i deduplicira transfer samo unutar istog epocha. Built-in input/output map
+dopušten je samo za descriptor-potvrđeni FLX4; drugi uređaji ostaju u karanteni
+do aktivacije profila za aktualni VID/PID/epoch.
+
+Behavioral regresije pokrivaju epoch increment i disconnect kontekst, descriptor
+wire round-trip, stale/same-epoch identity rejection i `UINT32_MAX` wrap,
+generički output drop, legalni `0x8n` Note Off te reentrant snapshot callback
+koji bi pao da se callback još izvršava pod runtime mutexom. Puni S3 i P4 host
+suiteovi prolaze. S3 i P4 ESP-IDF v6.0.2 buildovi prolaze; imagei su `0xf3c20`
+(5% app particije slobodno) i `0x251220` (42% slobodno). `dependencies.lock`
+nije promijenjen i `git diff --check` prolazi.
+
+Preostaje fizički FLX4 ↔ drugi MIDI uređaj swap/reconnect/late-transfer smoke.
+Descriptor payload je istodobno promijenjen na oba targeta; mješovita stara/nova
+verzija sigurno degradira generički profile put do nadogradnje oba targeta i ne
+smije se koristiti kao dokaz generičke hardware podrške.
 
 ### CR-20260816-P1-04 — TRIM dolazi nakon int16 EQ clippinga
 
@@ -488,12 +511,12 @@ Pojam “primjenjivi P2 release gate” u ovom dokumentu znači:
 
 | ID | Status | Nalaz i dokaz | Popravak | Obvezni gate |
 | --- | --- | --- | --- | --- |
-| CR-20260816-P2-01 | **OPEN** | Non-FLX4 profil dobiva FLX4 fallback LED poruke za nemapirane LED-ove (`control_link_uart.c:103-120`, `flx4_led_midi.c:121-163`). | Aktivni non-FLX4 profil mora biti autoritativan; missing output mapping znači drop. Fallback dopustiti samo uz potvrđen FLX4 VID/PID ili eksplicitni compatibility flag. | Generic fixture s unmapped LED-ovima ne šalje nijedan paket; FLX4 parity ostaje PASS. |
-| CR-20260816-P2-02 | **OPEN** | Legalni `0x8n` Note Off s nenultom release velocity ne može se ispravno mapirati (`controller_profile.c:174-187`). | Normalizirati `0x8n` u odgovarajući `0x9n` s velocity 0 prije mappinga ili proširiti schema edge semantikom. | Press `0x90/0x7f` + release `0x80/0x40` mora završiti released stateom za Cue, jog touch i pad. |
+| CR-20260816-P2-01 | **SOFTWARE FIXED; HW PENDING** | Non-FLX4 profil dobiva FLX4 fallback LED poruke za nemapirane LED-ove (`control_link_uart.c:103-120`, `flx4_led_midi.c:121-163`). | Aktivni non-FLX4 profil mora biti autoritativan; missing output mapping znači drop. Fallback dopustiti samo uz potvrđen FLX4 VID/PID ili eksplicitni compatibility flag. | Generic fixture s unmapped LED-ovima ne šalje nijedan paket; FLX4 parity ostaje PASS. |
+| CR-20260816-P2-02 | **SOFTWARE FIXED; HW PENDING** | Legalni `0x8n` Note Off s nenultom release velocity ne može se ispravno mapirati (`controller_profile.c:174-187`). | Normalizirati `0x8n` u odgovarajući `0x9n` s velocity 0 prije mappinga ili proširiti schema edge semantikom. | Press `0x90/0x7f` + release `0x80/0x40` mora završiti released stateom za Cue, jog touch i pad. |
 | CR-20260816-P2-03 | **OPEN** | UART sequence rezervira se prije stvarne TX serializacije (`control_link_uart.c:57-75`). | Jedan TX-owner task ili globalni lock preko sequence allocationa, frame builda i cijelog UART writea za sve A5/A6 API-je. | Two-producer forced-interleaving test; wire sequence uvijek monotona modulo 256. |
 | CR-20260816-P2-04 | **OPEN** | Disconnect false šalje se samo kao jednokratni edge (`flx4_midi_host.c:460-509`, `:917-918`). | Desired/sent/dirty model i periodični replay connected i disconnected stanja; send failure ostavlja dirty. | Izgubljeni disconnect frame mora se sam ispraviti bez novog replug ciklusa. |
 | CR-20260816-P2-05 | **OPEN** | Non-VU LED state nestaje na queue-full/USB-submit grešci (`flx4_midi_host.c:559-591`, `:1188-1201`). | Durable desired LED state po `(id, deck)`; USB-owner retry. VU ostaje latest-only. Dodati retry/drop brojače. | Submit fail i queue-full test završavaju točnim Play/Cue/Sync LED stanjem. |
-| CR-20260816-P2-06 | **OPEN** | Built-in snapshot ima data race, dynamic snapshot drži mutex kroz UART write (`app_main.c:75-86`, `:120-127`, `:352-367`, `controller_profile_runtime.c:124-133`). | Pod kratkim lockom kopirati bounded event snapshot, otključati, zatim slati. Jedan owner za built-in map/snapshot je preferiran. | Svaki replay odgovara jednoj koherentnoj zaključanoj ili versioned kopiji statea; UART callback se izvršava nakon otključavanja, a USB callback latency ostaje bounded. |
+| CR-20260816-P2-06 | **SOFTWARE FIXED; HW PENDING** | Built-in snapshot ima data race, dynamic snapshot drži mutex kroz UART write (`app_main.c:75-86`, `:120-127`, `:352-367`, `controller_profile_runtime.c:124-133`). | Pod kratkim lockom kopirati bounded event snapshot, otključati, zatim slati. Jedan owner za built-in map/snapshot je preferiran. | Svaki replay odgovara jednoj koherentnoj zaključanoj ili versioned kopiji statea; UART callback se izvršava nakon otključavanja, a USB callback latency ostaje bounded. |
 
 ### 6.3 P4 audio/UI
 
@@ -702,3 +725,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | Svi CR-20260816 nalazi | `10c91c2aa536be3852cdd6a41e831088d85625d7` | Audit baseline; P1/P2/P3 OPEN | Oba host suitea, oba clean builda, UI E2E, signing, audio soak | Implementacija i navedeni hardware gateovi |
 | 2026-08-16 | CR-20260816-P1-02, CR-20260816-P1-05, CR-20260816-P1-06 | `38ecc6c` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; S3 host suite PASS; scheduler 141/141; app-settings 46/46; OTA manifest/signing/packaging PASS; P4 ESP-IDF 6.0.2 clean build PASS (42% free); S3 ESP-IDF 6.0.2 clean dual-OTA build PASS (51% free); `git diff --check` PASS | Fizički GPIO11-low cold/warm boot; signed pull-OTA happy/mismatch provjera bez promjene boot particije; FLX4 burst/stalled-link/reconnect FIFO i held-release smoke |
 | 2026-08-16 | CR-20260816-P1-01 | `c826f8f` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; audio lifecycle 383/383; UI load gate 16/16; UI exact screenshot E2E PASS; P4 ESP-IDF v6.0.2 build PASS, image `0x251120`, 42% free; `git diff --check` PASS | Fizičkih 50 USB remove/reconnect ciklusa tijekom LOAD/playbacka, EJECT/LOAD burst, OTA stop s oba decka i potvrda da nakon STOP-a nema živih taskova |
+| 2026-08-16 | CR-20260816-P1-03, CR-20260816-P2-01, CR-20260816-P2-02, CR-20260816-P2-06 | `7f10aa1`, `aac07bc` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; descriptor/profile/runtime/parity/output-policy regresije PASS; reentrant snapshot-lock regresija PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xf3c20`, 5% free; P4 ESP-IDF v6.0.2 build PASS, image `0x251220`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički FLX4 ↔ drugi MIDI device-swap, reconnect i late-transfer smoke; oba targeta nadograditi kao koordinirani protocol par |
