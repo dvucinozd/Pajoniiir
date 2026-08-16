@@ -38,10 +38,13 @@ Responsibilities:
 - combine MSB/LSB pairs for 14-bit controls before forwarding when practical;
 - coalesce high-rate jog and analog values locally so stale motion does not
   flood the UART queue;
-- publish DDJ-FLX4 USB connection/disconnection state to the P4;
+- publish durable DDJ-FLX4 USB connection/disconnection desired state to the
+  P4, including periodic replay of both levels after a lost UART frame;
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
-- emit FLX4 MIDI LED feedback using XML/official-list output addresses.
+- emit FLX4 MIDI LED feedback using XML/official-list output addresses; non-VU
+  LED state is retained until enqueue/USB completion can converge, while VU is
+  intentionally best-effort;
 - host the runtime-only S3 service AP and S3 OTA endpoint when requested by P4;
 - stream P4 monitor PCM to the FLX4 USB Audio headphone endpoint.
 
@@ -214,6 +217,12 @@ Current P4 Overview waveform ownership rule:
 8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
    republishes the current P4-owned LED snapshot.
 
+All S3 `0xA5` and `0xA6` transmitters share one serializer. Sequence
+allocation, complete frame construction and the UART write occur under the same
+static mutex, so concurrent heartbeat, semantic, descriptor and profile replies
+cannot appear on wire out of sequence. A failed write still consumes its
+sequence and is therefore visible to P4 gap telemetry.
+
 The control path distinguishes continuous values, physical held levels and
 discrete commands. Continuous absolute values keep the latest sample and
 relative motion accumulates deltas. Jog touch, Shift, Censor, Pad FX and shifted
@@ -222,6 +231,13 @@ can delay but cannot erase their final level; disconnect forces releases and a
 P4 reboot reaccepts the S3 snapshot. Discrete commands remain FIFO and retain
 sequence-gap telemetry because collapsing repeated commands would change their
 meaning.
+
+Connection level and non-VU controller LEDs follow the same convergence rule:
+desired state remains dirty until the next layer accepts it. The S3 USB owner
+replays both connected and disconnected levels periodically and retains an
+already dequeued USB-MIDI OUT buffer across submit or retryable completion
+failure. Controller-profile changes mark all known LED desired states dirty so
+the new mapping receives a coherent refresh.
 
 The MIDI map is not an authority for behavior. `docs/reference/Pioneer-DDJ-FLX4.midi.xml`
 is the proven source for input status/midino values, and

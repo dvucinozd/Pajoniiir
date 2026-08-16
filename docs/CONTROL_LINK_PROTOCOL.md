@@ -244,12 +244,13 @@ Sampler, Keyboard/Stems, and Key Shift mode/pad behavior is out of product scope
 as of 2026-07-07; their numeric IDs remain reserved for compatibility and
 reconnect OFF output only.
 
-In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
-after each heartbeat while the USB MIDI device remains open. This is
-level-triggered recovery in addition to edge-triggered USB connect/disconnect:
-if P4 reboots while S3 and the FLX4 stay powered, the next heartbeat refresh
-lets the freshly booted P4 force its LED snapshot without requiring a controller
-replug.
+In DDJ-FLX4 translator mode, S3 retains connection desired/sent/dirty state and
+periodically refreshes both the connected and disconnected levels. UART send
+failure leaves the level dirty. This is level-triggered recovery in addition to
+edge-triggered USB connect/disconnect: a lost disconnect self-corrects without
+a second replug, and if P4 reboots while S3 and the FLX4 stay powered, the next
+refresh lets the freshly booted P4 force its LED snapshot. Descriptor replay is
+tracked separately and occurs only for an active connection.
 
 After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
 the last known FLX4 input state to P4 in two semantic groups:
@@ -408,6 +409,13 @@ Frame layout:
 receiver (`cp_xfer.c`) are kept **byte-for-byte identical** on the S3 and P4
 sides; the S3 host runner asserts the two file copies match, and
 `control_link_protocol` asserts the shared constants agree.
+
+On S3, every fixed `0xA5` and bulk `0xA6` sender uses one TX serializer. The
+serializer holds a static mutex across rolling-sequence allocation, full frame
+construction and the complete UART write. Failed writes consume their sequence
+so a later valid frame exposes the loss through P4 `sequence_gaps` telemetry;
+two producers cannot reserve sequence values in one order and reach the wire in
+the opposite order.
 
 ### P4 receive-health telemetry
 
