@@ -111,6 +111,10 @@ void flx4_midi_host_test_publish_connection_context(
 bool flx4_midi_host_test_publish_connection_state(
     bool connected,
     flx4_midi_host_test_connection_event_t *out);
+bool flx4_midi_host_test_publish_connection_state_with_result(
+    bool connected,
+    bool send_success,
+    flx4_midi_host_test_connection_event_t *out);
 bool flx4_midi_host_test_publish_connection_refresh(
     flx4_midi_host_test_connection_event_t *out);
 #endif

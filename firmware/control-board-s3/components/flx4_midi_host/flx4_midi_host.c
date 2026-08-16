@@ -1,4 +1,5 @@
 #include "flx4_midi_host.h"
+#include "midi_out_retry_state.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -10,6 +11,9 @@ static flx4_midi_connection_cb_t s_connection_cb;
 static void *s_connection_cb_ctx;
 static bool s_connection_state_valid;
 static bool s_connection_state_connected;
+static bool s_connection_state_sent_valid;
+static bool s_connection_state_sent_connected;
+static bool s_connection_state_dirty;
 static bool s_connection_refresh_requested;
 static uint32_t s_context_sequence;
 static flx4_midi_connection_context_t s_connection_context;
@@ -95,26 +99,49 @@ void flx4_midi_host_set_connection_callback(flx4_midi_connection_cb_t cb,
     s_connection_cb_ctx = user_ctx;
 }
 
-static bool should_publish_connection_state(bool connected)
+static bool observe_connection_state(bool connected)
 {
     const bool valid = __atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE);
     const bool current = __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE);
-    if (!valid) {
-        __atomic_store_n(&s_connection_state_connected, connected, __ATOMIC_RELEASE);
-        __atomic_store_n(&s_connection_state_valid, true, __ATOMIC_RELEASE);
-        return connected;
-    }
-    if (current == connected) {
-        return false;
-    }
+    if (valid && current == connected) return false;
     __atomic_store_n(&s_connection_state_connected, connected, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_valid, true, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_dirty, true, __ATOMIC_RELEASE);
     return true;
 }
 
 static bool should_refresh_connection_state(void)
 {
-    return __atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE) &&
-           __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE);
+    return __atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE);
+}
+
+static void request_connection_state_replay(void)
+{
+    if (should_refresh_connection_state()) {
+        __atomic_store_n(&s_connection_state_dirty, true, __ATOMIC_RELEASE);
+    }
+}
+
+static bool take_pending_connection_state(bool *connected)
+{
+    if (!connected || !should_refresh_connection_state() ||
+        !__atomic_load_n(&s_connection_state_dirty, __ATOMIC_ACQUIRE)) {
+        return false;
+    }
+    *connected = __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE);
+    return true;
+}
+
+static void complete_connection_state_send(bool connected, bool success)
+{
+    if (!success) return;
+    __atomic_store_n(&s_connection_state_sent_connected, connected,
+                     __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_sent_valid, true, __ATOMIC_RELEASE);
+    if (__atomic_load_n(&s_connection_state_valid, __ATOMIC_ACQUIRE) &&
+        __atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE) == connected) {
+        __atomic_store_n(&s_connection_state_dirty, false, __ATOMIC_RELEASE);
+    }
 }
 
 static uint8_t cin_payload_len(uint8_t cin)
@@ -410,6 +437,9 @@ void flx4_midi_host_test_reset_connection_state(void)
 {
     __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_state_connected, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_sent_valid, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_sent_connected, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_dirty, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_refresh_requested, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_context_sequence, 0u, __ATOMIC_RELEASE);
     memset(&s_connection_context, 0, sizeof(s_connection_context));
@@ -427,27 +457,48 @@ bool flx4_midi_host_test_publish_connection_state(
     bool connected,
     flx4_midi_host_test_connection_event_t *out)
 {
-    if (!out || !should_publish_connection_state(connected)) {
-        return false;
-    }
+    if (!out) return false;
+    bool changed = observe_connection_state(connected);
+    bool desired;
+    if (!take_pending_connection_state(&desired)) return false;
     out->type = 0x82;
     out->id = 0x70;
-    out->value = connected ? 1 : 0;
-    if (s_connection_cb) {
+    out->value = desired ? 1 : 0;
+    complete_connection_state_send(desired, true);
+    if (changed && s_connection_cb) {
         s_connection_cb(connected, s_connection_cb_ctx);
     }
+    return true;
+}
+
+bool flx4_midi_host_test_publish_connection_state_with_result(
+    bool connected,
+    bool send_success,
+    flx4_midi_host_test_connection_event_t *out)
+{
+    if (!out) return false;
+    bool changed = observe_connection_state(connected);
+    bool desired;
+    if (!take_pending_connection_state(&desired)) return false;
+    out->type = 0x82;
+    out->id = 0x70;
+    out->value = desired ? 1 : 0;
+    complete_connection_state_send(desired, send_success);
+    if (changed && s_connection_cb) s_connection_cb(connected, s_connection_cb_ctx);
     return true;
 }
 
 bool flx4_midi_host_test_publish_connection_refresh(
     flx4_midi_host_test_connection_event_t *out)
 {
-    if (!out || !should_refresh_connection_state()) {
-        return false;
-    }
+    if (!out || !should_refresh_connection_state()) return false;
+    request_connection_state_replay();
+    bool desired;
+    if (!take_pending_connection_state(&desired)) return false;
     out->type = 0x82;
     out->id = 0x70;
-    out->value = 1;
+    out->value = desired ? 1 : 0;
+    complete_connection_state_send(desired, true);
     return true;
 }
 
@@ -501,16 +552,18 @@ static usb_host_client_handle_t s_midi_client_handle;
  * the heartbeat refresh path). */
 static ctrl_descriptor_report_t s_desc_report;
 static bool s_desc_report_valid;
+static bool s_descriptor_refresh_requested;
 
-static void desc_report_send_if_valid(void)
+static bool desc_report_send_if_valid(void)
 {
     if (!s_desc_report_valid) {
-        return;
+        return false;
     }
     esp_err_t rc = control_link_send_descriptor_report(&s_desc_report);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "descriptor report send failed: %s", esp_err_to_name(rc));
     }
+    return rc == ESP_OK;
 }
 
 static void desc_report_set_product(const usb_str_desc_t *str_desc)
@@ -530,48 +583,51 @@ static void desc_report_set_product(const usb_str_desc_t *str_desc)
     }
 }
 
+static void publish_connection_refresh_from_usb_owner(void);
+
 static void publish_connection_state(bool connected)
 {
-    if (!should_publish_connection_state(connected)) {
-        return;
+    bool changed = observe_connection_state(connected);
+    if (changed) status_led_set_connected(connected);
+    if (changed && connected) {
+        __atomic_store_n(&s_descriptor_refresh_requested, true, __ATOMIC_RELEASE);
     }
-
-    status_led_set_connected(connected);
-    const int16_t value = connected ? CTRL_FLX4_CONNECTED : CTRL_FLX4_DISCONNECTED;
-    esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE, CTRL_ID_FLX4_CONNECTION, value);
-    if (rc != ESP_OK) {
-        ESP_LOGW(TAG, "publish FLX4 connection state failed: %s", esp_err_to_name(rc));
-    } else {
-        ESP_LOGI(TAG, "published FLX4 connection state: %s",
-                 connected ? "connected" : "disconnected");
-    }
-    if (connected) {
-        desc_report_send_if_valid();
-    }
-    if (s_connection_cb) {
+    if (changed && s_connection_cb) {
         s_connection_cb(connected, s_connection_cb_ctx);
     }
+    publish_connection_refresh_from_usb_owner();
 }
 
 static void publish_connection_refresh_from_usb_owner(void)
 {
-    if (!should_refresh_connection_state()) {
-        return;
-    }
+    bool connected;
+    if (!take_pending_connection_state(&connected)) return;
     esp_err_t rc = control_link_send_semantic(CTRL_TYPE_STATE,
                                               CTRL_ID_FLX4_CONNECTION,
-                                              CTRL_FLX4_CONNECTED);
+                                              connected ? CTRL_FLX4_CONNECTED
+                                                        : CTRL_FLX4_DISCONNECTED);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "refresh FLX4 connection state failed: %s", esp_err_to_name(rc));
         return;
     }
-    desc_report_send_if_valid();
+    complete_connection_state_send(connected, true);
+    ESP_LOGI(TAG, "published FLX4 connection state: %s",
+             connected ? "connected" : "disconnected");
+    if (connected &&
+        __atomic_load_n(&s_descriptor_refresh_requested, __ATOMIC_ACQUIRE) &&
+        desc_report_send_if_valid()) {
+        __atomic_store_n(&s_descriptor_refresh_requested, false, __ATOMIC_RELEASE);
+    }
 }
 
 bool flx4_midi_host_refresh_connection_state(void)
 {
     if (!should_refresh_connection_state()) {
         return false;
+    }
+    request_connection_state_replay();
+    if (__atomic_load_n(&s_connection_state_connected, __ATOMIC_ACQUIRE)) {
+        __atomic_store_n(&s_descriptor_refresh_requested, true, __ATOMIC_RELEASE);
     }
     __atomic_store_n(&s_connection_refresh_requested, true, __ATOMIC_RELEASE);
     usb_host_client_handle_t client =
@@ -599,6 +655,7 @@ typedef struct {
     bool claimed;
     bool transfer_active;
     bool out_transfer_active;
+    midi_out_retry_state_t out_retry;
     bool closing;
 } flx4_host_state_t;
 
@@ -608,6 +665,7 @@ static bool s_midi_out_accepting;
 static uint32_t s_midi_out_producers;
 static uint32_t s_midi_out_full_drop_count;
 static TickType_t s_last_midi_out_full_warn;
+static TickType_t s_last_connection_replay;
 
 static void midi_out_set_accepting(bool accepting)
 {
@@ -630,9 +688,9 @@ static void midi_out_producer_leave(void)
 }
 
 /* Runs only in the USB client task (directly or from a transfer callback
- * dispatched by that task). Batches as many queued 4-byte USB-MIDI event
- * packets as fit in one bulk transfer. Packets popped for a failed submit are
- * dropped because a later LED refresh supersedes them. */
+ * dispatched by that task). Once packets leave the queue,
+ * out_retry retains that exact payload until a COMPLETED callback;
+ * submit/completion failures retry it in place. */
 static esp_err_t midi_out_submit_next(flx4_host_state_t *host)
 {
     if (host->out_transfer_active || !host->out_xfer || !s_midi_out_queue ||
@@ -640,26 +698,29 @@ static esp_err_t midi_out_submit_next(flx4_host_state_t *host)
         return ESP_OK;
     }
 
-    const size_t max_packets = (size_t)host->out_xfer->data_buffer_size / 4u;
-    size_t packets = 0;
-    uint8_t packet[4];
-    while (packets < max_packets &&
-           xQueueReceive(s_midi_out_queue, packet, 0) == pdTRUE) {
-        memcpy(&host->out_xfer->data_buffer[packets * 4u], packet, 4);
-        packets++;
-    }
-    if (packets == 0) {
-        return ESP_OK;
+    if (midi_out_retry_needs_payload(&host->out_retry)) {
+        const size_t max_packets = (size_t)host->out_xfer->data_buffer_size / 4u;
+        size_t packets = 0;
+        uint8_t packet[4];
+        while (packets < max_packets &&
+               xQueueReceive(s_midi_out_queue, packet, 0) == pdTRUE) {
+            memcpy(&host->out_xfer->data_buffer[packets * 4u], packet, 4);
+            packets++;
+        }
+        if (packets == 0) return ESP_OK;
+        host->out_xfer->num_bytes = (int)(packets * 4u);
+        midi_out_retry_payload_ready(&host->out_retry);
     }
 
-    host->out_xfer->num_bytes = (int)(packets * 4u);
     host->out_xfer->device_handle = host->dev_hdl;
     host->out_xfer->bEndpointAddress = host->out_ep_addr;
     esp_err_t rc = usb_host_transfer_submit(host->out_xfer);
+    midi_out_retry_submit_result(&host->out_retry, rc == ESP_OK);
     if (rc == ESP_OK) {
         host->out_transfer_active = true;
     } else {
-        ESP_LOGE(TAG, "submit MIDI OUT transfer failed: %s", esp_err_to_name(rc));
+        ESP_LOGE(TAG, "submit MIDI OUT transfer failed: %s (retries=%" PRIu32 ")",
+                 esp_err_to_name(rc), host->out_retry.submit_retries);
     }
     return rc;
 }
@@ -772,10 +833,19 @@ static void midi_out_transfer_cb(usb_transfer_t *transfer)
 {
     flx4_host_state_t *host = (flx4_host_state_t *)transfer->context;
     host->out_transfer_active = false;
+    if (transfer->status == USB_TRANSFER_STATUS_COMPLETED) {
+        midi_out_retry_complete(&host->out_retry, MIDI_OUT_COMPLETION_OK);
+    } else if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE || host->closing) {
+        midi_out_retry_complete(&host->out_retry,
+                                MIDI_OUT_COMPLETION_DISCONNECTED);
+    } else {
+        midi_out_retry_complete(&host->out_retry, MIDI_OUT_COMPLETION_RETRY);
+    }
 
     if (transfer->status != USB_TRANSFER_STATUS_COMPLETED &&
         transfer->status != USB_TRANSFER_STATUS_NO_DEVICE) {
-        ESP_LOGW(TAG, "MIDI OUT transfer status=%d", transfer->status);
+        ESP_LOGW(TAG, "MIDI OUT transfer status=%d (retries=%" PRIu32 ")",
+                 transfer->status, host->out_retry.completion_retries);
     }
 
     if (transfer->status == USB_TRANSFER_STATUS_NO_DEVICE || host->closing) {
@@ -952,6 +1022,8 @@ static bool close_device_step(flx4_host_state_t *host)
             ESP_LOGW(TAG, "free MIDI OUT transfer: %s", esp_err_to_name(rc));
         } else {
             host->out_xfer = NULL;
+            midi_out_retry_complete(&host->out_retry,
+                                    MIDI_OUT_COMPLETION_DISCONNECTED);
         }
     }
     if (host->in_xfer || host->out_xfer ||
@@ -986,6 +1058,8 @@ static bool close_device_step(flx4_host_state_t *host)
     host->out_ep_mps = 0;
     host->transfer_active = false;
     host->out_transfer_active = false;
+    midi_out_retry_complete(&host->out_retry,
+                            MIDI_OUT_COMPLETION_DISCONNECTED);
     host->closing = false;
     publish_connection_context(false, 0u, 0u, 0u, 0u);
     publish_connection_state(false);
@@ -1089,6 +1163,7 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
     host->out_xfer->callback = midi_out_transfer_cb;
     host->out_xfer->context = host;
     host->out_transfer_active = false;
+    midi_out_retry_state_init(&host->out_retry);
 
     ESP_LOGI(TAG, "MIDI OUT endpoint 0x%02X registered", host->out_ep_addr);
 
@@ -1182,9 +1257,19 @@ static void midi_client_task(void *arg)
             (void)close_device_step(&s_host);
             continue;
         }
-        if (__atomic_exchange_n(&s_connection_refresh_requested, false, __ATOMIC_ACQ_REL)) {
-            publish_connection_refresh_from_usb_owner();
+        if (__atomic_exchange_n(&s_connection_refresh_requested, false,
+                                __ATOMIC_ACQ_REL)) {
+            request_connection_state_replay();
         }
+        TickType_t now = xTaskGetTickCount();
+        if (should_refresh_connection_state() &&
+            now - s_last_connection_replay >= pdMS_TO_TICKS(1000)) {
+            s_last_connection_replay = now;
+            request_connection_state_replay();
+        }
+        /* Dirty survives a failed UART send. This retries both CONNECTED and
+         * DISCONNECTED without waiting for another physical USB edge. */
+        publish_connection_refresh_from_usb_owner();
         if (s_host.has_pending_dev) {
             const uint8_t addr = s_host.pending_dev_addr;
             s_host.has_pending_dev = false;
@@ -1217,6 +1302,13 @@ static void midi_client_task(void *arg)
 
 esp_err_t flx4_midi_host_init(void)
 {
+    __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_connected, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_sent_valid, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_sent_connected, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_state_dirty, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_connection_refresh_requested, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_descriptor_refresh_requested, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_context_sequence, 0u, __ATOMIC_RELEASE);
     memset(&s_connection_context, 0, sizeof(s_connection_context));
     s_midi_out_queue = xQueueCreate((UBaseType_t)MIDI_OUT_QUEUE_DEPTH, 4);
@@ -1225,6 +1317,7 @@ esp_err_t flx4_midi_host_init(void)
     }
     midi_out_set_accepting(false);
     __atomic_store_n(&s_midi_out_producers, 0u, __ATOMIC_RELEASE);
+    s_last_connection_replay = 0u;
 
     TaskHandle_t usb_task_hdl = NULL;
     if (xTaskCreate(usb_lib_task, "usb_host", USB_LIB_TASK_STACK,

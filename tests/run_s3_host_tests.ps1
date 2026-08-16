@@ -209,9 +209,24 @@ Assert-FileContains `
     -Patterns @("CTRL_RX_TASK_STACK", "4096", 'xTaskCreate(uart_rx_task, "ctrl_rx", CTRL_RX_TASK_STACK')
 
 Assert-FileContains `
-    -Name "control link semantic send propagates UART errors" `
+    -Name "control link sequence allocation and UART writes share one serializer" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
-    -Patterns @("static esp_err_t send_frame_checked", "return send_frame_checked(frame, `"semantic event`")")
+    -Patterns @("xSemaphoreCreateMutexStatic", "control_link_tx_serializer_send", "return send_fixed_frame(type, id, value, `"semantic event`")")
+
+Assert-FileContains `
+    -Name "flx4 connection desired state retries connected and disconnected reports" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("s_connection_state_dirty", "request_connection_state_replay", "take_pending_connection_state", "complete_connection_state_send")
+
+Assert-FileContains `
+    -Name "flx4 non-VU LEDs converge through desired state and retained USB payloads" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("controller_led_reconciler_observe", "flush_pending_controller_leds", "controller_led_reconciler_complete")
+
+Assert-FileContains `
+    -Name "flx4 USB owner retries the exact dequeued MIDI OUT payload" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("out_retry", "midi_out_retry_submit_result", "submit/completion failures retry it in place")
 
 Assert-FileContains `
     -Name "flx4 continuous controls are coalesced" `
@@ -532,6 +547,43 @@ $tests = @(
             "-I../../firmware/common/control_state_reconciler/include",
             "-o", "test_control_state_reconciler.exe",
             "test_control_state_reconciler.c"
+        )
+    },
+    @{
+        Name = "control_link_tx_serializer"
+        Dir = "tests/control_link_tx_serializer"
+        Target = "test_control_link_tx_serializer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_control_link_tx_serializer.exe",
+            "test_control_link_tx_serializer.c",
+            "../../firmware/control-board-s3/components/control_link/control_link_tx_serializer.c",
+            "-pthread"
+        )
+    },
+    @{
+        Name = "controller_led_reconciler"
+        Dir = "tests/controller_led_reconciler"
+        Target = "test_controller_led_reconciler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_controller_led_reconciler.exe",
+            "test_controller_led_reconciler.c",
+            "../../firmware/control-board-s3/components/control_link/controller_led_reconciler.c"
+        )
+    },
+    @{
+        Name = "midi_out_retry_state"
+        Dir = "tests/midi_out_retry_state"
+        Target = "test_midi_out_retry_state.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-o", "test_midi_out_retry_state.exe",
+            "test_midi_out_retry_state.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/midi_out_retry_state.c"
         )
     },
     @{

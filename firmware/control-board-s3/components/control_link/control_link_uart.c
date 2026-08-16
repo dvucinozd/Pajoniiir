@@ -1,4 +1,6 @@
 #include "control_link.h"
+#include "control_link_tx_serializer.h"
+#include "controller_led_reconciler.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
 #include "controller_output_policy.h"
@@ -12,11 +14,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdatomic.h>
 
 static const char *TAG = "ctrl_link";
 
@@ -37,9 +39,12 @@ static const char *TAG = "ctrl_link";
 #define TX_BUF_SIZE  1024
 #define CTRL_RX_TASK_STACK 4096
 
-static atomic_uint_fast8_t s_seq = 0;
+static StaticSemaphore_t s_tx_mutex_storage;
+static SemaphoreHandle_t s_tx_mutex;
+static control_link_tx_serializer_t s_tx_serializer;
 static uint32_t s_uart_write_fail_count;
 static TickType_t s_last_uart_write_warn;
+static controller_led_reconciler_t s_led_reconciler;
 
 // ─── Profile transfer receiver (0xA6 bulk layer) ──────────────────────────────
 #define S3_PROFILE_BUF_CAP 16384
@@ -56,36 +61,74 @@ static control_link_profile_activate_cb_t s_profile_activate_cb;
 
 // ─── Frame helpers ────────────────────────────────────────────────────────────
 
-static void build_frame(uint8_t frame[CTRL_FRAME_LEN],
-                        uint8_t type, uint8_t id, int16_t value)
+typedef struct {
+    uint8_t type;
+    uint8_t id;
+    int16_t value;
+} fixed_frame_build_t;
+
+static size_t build_fixed_frame(uint8_t *frame, size_t capacity,
+                                uint8_t seq, const void *ctx)
 {
-    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
-    uint16_t v  = (uint16_t)value;
+    const fixed_frame_build_t *fixed = (const fixed_frame_build_t *)ctx;
+    if (!frame || capacity < CTRL_FRAME_LEN || !fixed) return 0u;
+    uint16_t v = (uint16_t)fixed->value;
 
     frame[0] = CTRL_FRAME_START;
-    frame[1] = type;
-    frame[2] = id;
+    frame[1] = fixed->type;
+    frame[2] = fixed->id;
     frame[3] = (uint8_t)(v & 0xFF);
     frame[4] = (uint8_t)((v >> 8) & 0xFF);
     frame[5] = seq;
     frame[6] = frame[1] ^ frame[2] ^ frame[3] ^ frame[4] ^ frame[5];
+    return CTRL_FRAME_LEN;
 }
 
-static esp_err_t send_frame_checked(const uint8_t frame[CTRL_FRAME_LEN], const char *what)
+static bool tx_lock(void *ctx)
 {
-    int written = uart_write_bytes(UART_PORT, frame, CTRL_FRAME_LEN);
-    if (written == CTRL_FRAME_LEN) {
-        return ESP_OK;
-    }
+    (void)ctx;
+    return s_tx_mutex && xSemaphoreTake(s_tx_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+static void tx_unlock(void *ctx)
+{
+    (void)ctx;
+    if (s_tx_mutex) xSemaphoreGive(s_tx_mutex);
+}
+
+static int tx_write(void *ctx, const uint8_t *data, size_t bytes)
+{
+    (void)ctx;
+    return uart_write_bytes(UART_PORT, data, bytes);
+}
+
+static esp_err_t tx_send(uint8_t *frame, size_t capacity,
+                         control_link_tx_build_fn build, const void *build_ctx,
+                         const char *what)
+{
+    control_link_tx_result_t result;
+    bool ok = control_link_tx_serializer_send(&s_tx_serializer,
+                                               frame, capacity,
+                                               build, build_ctx, &result);
+    if (ok) return ESP_OK;
 
     s_uart_write_fail_count++;
     TickType_t now = xTaskGetTickCount();
     if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
         s_last_uart_write_warn = now;
-        ESP_LOGW(TAG, "%s UART short write (%d/%d), failures=%" PRIu32,
-                 what, written, CTRL_FRAME_LEN, s_uart_write_fail_count);
+        ESP_LOGW(TAG, "%s UART write failed (%d/%u), failures=%" PRIu32,
+                 what, result.written_bytes,
+                 (unsigned)result.expected_bytes, s_uart_write_fail_count);
     }
     return ESP_FAIL;
+}
+
+static esp_err_t send_fixed_frame(uint8_t type, uint8_t id, int16_t value,
+                                  const char *what)
+{
+    uint8_t frame[CTRL_FRAME_LEN];
+    fixed_frame_build_t build = { .type = type, .id = id, .value = value };
+    return tx_send(frame, sizeof(frame), build_fixed_frame, &build, what);
 }
 
 // ─── RX parser ───────────────────────────────────────────────────────────────
@@ -95,6 +138,42 @@ typedef struct {
     int     pos;
 } rx_state_t;
 
+static bool build_controller_led_packet(uint8_t id, uint8_t deck,
+                                        uint8_t state, uint8_t packet[4],
+                                        bool *intentional_drop)
+{
+    bool dynamic_active = controller_profile_runtime_active();
+    bool dynamic_mapped = dynamic_active &&
+        controller_profile_runtime_map_led(id, deck, state, packet);
+    bool confirmed_flx4 = flx4_midi_host_builtin_flx4_active();
+    bool builtin_mapped = !dynamic_active && confirmed_flx4 &&
+        flx4_led_midi_build_packet(id, state, deck, packet);
+    controller_output_route_t route = controller_output_select_route(
+        dynamic_active, dynamic_mapped, confirmed_flx4, builtin_mapped);
+    if (intentional_drop) {
+        *intentional_drop = route == CONTROLLER_OUTPUT_DROP &&
+            (dynamic_active || confirmed_flx4);
+    }
+    return route != CONTROLLER_OUTPUT_DROP;
+}
+
+static void flush_pending_controller_leds(uint32_t budget)
+{
+    controller_led_desired_t item;
+    while (budget-- > 0u &&
+           controller_led_reconciler_next(&s_led_reconciler, &item)) {
+        uint8_t packet[4];
+        bool intentional_drop = false;
+        bool built = build_controller_led_packet(item.id, item.deck, item.state,
+                                                 packet, &intentional_drop);
+        bool complete = intentional_drop;
+        if (built) {
+            complete = flx4_midi_host_send_packet(packet) == ESP_OK;
+        }
+        controller_led_reconciler_complete(&s_led_reconciler, &item, complete);
+    }
+}
+
 static void handle_p4_frame(const uint8_t *f)
 {
     uint8_t type = f[1];
@@ -103,27 +182,19 @@ static void handle_p4_frame(const uint8_t *f)
     uint8_t deck  = f[4];
 
     if (type == CTRL_TYPE_LED) {
-        // The active profile is authoritative. Missing output mappings are
-        // intentional drops; built-in fallback is legal only for a descriptor-
-        // confirmed physical FLX4 without a dynamic profile.
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
-            uint8_t packet[4];
-            bool dynamic_active = controller_profile_runtime_active();
-            bool dynamic_mapped = dynamic_active &&
-                controller_profile_runtime_map_led(id, deck, state, packet);
-            bool confirmed_flx4 = flx4_midi_host_builtin_flx4_active();
-            bool builtin_mapped = !dynamic_active && confirmed_flx4 &&
-                flx4_led_midi_build_packet(id, state, deck, packet);
-            controller_output_route_t route = controller_output_select_route(
-                dynamic_active, dynamic_mapped, confirmed_flx4, builtin_mapped);
-            bool built = route != CONTROLLER_OUTPUT_DROP;
-            if (built) {
-                #if !defined(FLX4_MIDI_HOST_PC_TEST)
-                flx4_midi_host_send_packet(packet);
-                #endif
-                if (id == LED_VU_METER) {
-                    return;
+            if (id == LED_VU_METER) {
+                uint8_t packet[4];
+                bool intentional_drop = false;
+                if (build_controller_led_packet(id, deck, state, packet,
+                                                &intentional_drop)) {
+                    (void)flx4_midi_host_send_packet(packet);
                 }
+                return;
+            }
+            if (controller_led_reconciler_observe(&s_led_reconciler, id, deck,
+                                                  state)) {
+                flush_pending_controller_leds(1u);
             }
         }
 
@@ -134,39 +205,41 @@ static void handle_p4_frame(const uint8_t *f)
     }
 }
 
-static esp_err_t s3_send_bulk(const uint8_t *frame, size_t len)
+typedef struct {
+    uint8_t type;
+    uint8_t reason;
+} profile_reply_build_t;
+
+static size_t build_profile_ack(uint8_t *frame, size_t capacity,
+                                uint8_t sequence, const void *ctx)
 {
-    if (len == 0) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    int written = uart_write_bytes(UART_PORT, frame, len);
-    if (written == (int)len) {
-        return ESP_OK;
-    }
-    s_uart_write_fail_count++;
-    TickType_t now = xTaskGetTickCount();
-    if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
-        s_last_uart_write_warn = now;
-        ESP_LOGW(TAG, "bulk reply UART short write (%d/%u)", written,
-                 (unsigned)len);
-    }
-    return ESP_FAIL;
+    const profile_reply_build_t *reply = (const profile_reply_build_t *)ctx;
+    return reply ? ctrl_bulk_build_profile_ack(frame, capacity, sequence,
+                                                reply->type) : 0u;
+}
+
+static size_t build_profile_nack(uint8_t *frame, size_t capacity,
+                                 uint8_t sequence, const void *ctx)
+{
+    const profile_reply_build_t *reply = (const profile_reply_build_t *)ctx;
+    return reply ? ctrl_bulk_build_profile_nack(frame, capacity, sequence,
+                                                 reply->type, reply->reason) : 0u;
 }
 
 static void send_profile_reply_ack(uint8_t acked_type)
 {
     uint8_t frame[CTRL_BULK_MAX_FRAME];
-    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
-    s3_send_bulk(frame, ctrl_bulk_build_profile_ack(frame, sizeof(frame), seq,
-                                                    acked_type));
+    profile_reply_build_t build = { .type = acked_type };
+    (void)tx_send(frame, sizeof(frame), build_profile_ack, &build,
+                  "profile ACK");
 }
 
 static void send_profile_reply_nack(uint8_t nacked_type, uint8_t reason)
 {
     uint8_t frame[CTRL_BULK_MAX_FRAME];
-    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
-    s3_send_bulk(frame, ctrl_bulk_build_profile_nack(frame, sizeof(frame), seq,
-                                                     nacked_type, reason));
+    profile_reply_build_t build = { .type = nacked_type, .reason = reason };
+    (void)tx_send(frame, sizeof(frame), build_profile_nack, &build,
+                  "profile NACK");
     ESP_LOGW(TAG, "profile NACK type=0x%02X reason=%u", nacked_type, reason);
 }
 
@@ -253,6 +326,7 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
                                        s_profile_connection_epoch);
         }
         if (ok) {
+            controller_led_reconciler_mark_all_dirty(&s_led_reconciler);
             send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_ACTIVATE);
             ESP_LOGI(TAG, "profile activated VID=0x%04X PID=0x%04X",
                      s_profile_vid, s_profile_pid);
@@ -270,6 +344,7 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
         if (s_profile_activate_cb) {
             (void)s_profile_activate_cb(NULL, 0, 0, 0, 0u);
         }
+        controller_led_reconciler_mark_all_dirty(&s_led_reconciler);
         send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_CLEAR);
         break;
     default:
@@ -334,6 +409,10 @@ static void uart_rx_task(void *arg)
         for (int i = 0; i < n; i++) {
             parse_rx_byte(&st, buf[i]);
         }
+        /* Queue-full leaves the desired non-VU LED dirty. Retry from this
+         * bounded producer budget while the USB client task remains the sole
+         * owner of transfer submission and completion. */
+        flush_pending_controller_leds(4u);
     }
 }
 
@@ -341,6 +420,14 @@ static void uart_rx_task(void *arg)
 
 esp_err_t control_link_init(void)
 {
+    if (!s_tx_mutex) {
+        s_tx_mutex = xSemaphoreCreateMutexStatic(&s_tx_mutex_storage);
+    }
+    if (!s_tx_mutex) return ESP_ERR_NO_MEM;
+    control_link_tx_serializer_init(&s_tx_serializer, tx_lock, tx_unlock,
+                                    tx_write, NULL);
+    controller_led_reconciler_reset(&s_led_reconciler);
+
     uart_config_t ucfg = {
         .baud_rate           = UART_BAUD,
         .data_bits           = UART_DATA_8_BITS,
@@ -377,17 +464,14 @@ esp_err_t control_link_init(void)
 
 void control_link_send_heartbeat(void)
 {
-    uint8_t frame[CTRL_FRAME_LEN];
     uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-    build_frame(frame, CTRL_TYPE_HEARTBEAT, 0, (int16_t)(uptime_s & 0xFFFF));
-    (void)send_frame_checked(frame, "heartbeat");
+    (void)send_fixed_frame(CTRL_TYPE_HEARTBEAT, 0,
+                           (int16_t)(uptime_s & 0xFFFF), "heartbeat");
 }
 
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value)
 {
-    uint8_t frame[CTRL_FRAME_LEN];
-    build_frame(frame, type, id, value);
-    return send_frame_checked(frame, "semantic event");
+    return send_fixed_frame(type, id, value, "semantic event");
 }
 
 void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb)
@@ -407,6 +491,20 @@ const uint8_t *control_link_get_stored_profile(size_t *len, uint16_t *vid,
     return s_profile_buf;
 }
 
+static size_t build_descriptor_report(uint8_t *frame, size_t capacity,
+                                      uint8_t sequence, const void *ctx)
+{
+    return ctrl_bulk_build_descriptor_frame(
+        frame, capacity, sequence, (const ctrl_descriptor_report_t *)ctx);
+}
+
+static size_t build_firmware_report(uint8_t *frame, size_t capacity,
+                                    uint8_t sequence, const void *ctx)
+{
+    return ctrl_bulk_build_firmware_report(
+        frame, capacity, sequence, (const ctrl_firmware_report_t *)ctx);
+}
+
 esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *rep)
 {
     if (!rep) {
@@ -414,32 +512,14 @@ esp_err_t control_link_send_descriptor_report(const ctrl_descriptor_report_t *re
     }
 
     uint8_t frame[CTRL_BULK_MAX_FRAME];
-    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
-    size_t len = ctrl_bulk_build_descriptor_frame(frame, sizeof(frame), seq, rep);
-    if (len == 0) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-
-    int written = uart_write_bytes(UART_PORT, frame, len);
-    if (written == (int)len) {
-        return ESP_OK;
-    }
-
-    s_uart_write_fail_count++;
-    TickType_t now = xTaskGetTickCount();
-    if (now - s_last_uart_write_warn >= pdMS_TO_TICKS(1000)) {
-        s_last_uart_write_warn = now;
-        ESP_LOGW(TAG, "descriptor report UART short write (%d/%u), failures=%" PRIu32,
-                 written, (unsigned)len, s_uart_write_fail_count);
-    }
-    return ESP_FAIL;
+    return tx_send(frame, sizeof(frame), build_descriptor_report, rep,
+                   "descriptor report");
 }
 
 esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep)
 {
     if (!rep) return ESP_ERR_INVALID_ARG;
     uint8_t frame[CTRL_BULK_MAX_FRAME];
-    uint8_t seq = atomic_fetch_add_explicit(&s_seq, 1, memory_order_relaxed);
-    size_t len = ctrl_bulk_build_firmware_report(frame, sizeof(frame), seq, rep);
-    return s3_send_bulk(frame, len);
+    return tx_send(frame, sizeof(frame), build_firmware_report, rep,
+                   "firmware report");
 }
