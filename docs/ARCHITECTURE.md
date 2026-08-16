@@ -46,6 +46,8 @@ Responsibilities:
   LED state is retained until enqueue/USB completion can converge, while VU is
   intentionally best-effort;
 - host the runtime-only S3 service AP and S3 OTA endpoint when requested by P4;
+- stage the service-AP netif locally through DHCP/IP configuration before
+  publication, and bound each OTA request by absolute and progress deadlines;
 - stream P4 monitor PCM to the FLX4 USB Audio headphone endpoint.
 
 The S3 must not:

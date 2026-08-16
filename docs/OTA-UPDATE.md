@@ -191,6 +191,13 @@ curl.exe -X POST `
 The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Signature
 validation remains the firmware-authenticity boundary.
 
+The S3 upload endpoint rejects an oversized Content-Length before allocating a
+receive buffer, receives/verifies the signed manifest and ESP image header
+before `esp_ota_begin`, and enforces two availability budgets: at most 180 s for
+the complete request and at least 4096 received bytes in each 10 s progress
+window. A timeout or slow-client rejection returns HTTP 408; if flashing has
+already begun, the OTA handle is aborted before the request closes.
+
 1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
 2. Connect to `Pajoniiir-S3-DEBUG` using the default WPA2 password
    `Pajoniiir`, then open
@@ -227,6 +234,8 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   rejected without selecting the inactive slot.
 - A disconnected or interrupted transfer aborts the OTA handle; the current
   slot remains bootable.
+- A too-large or deliberately slow S3 upload is rejected before the absolute
+  deadline; it must not keep the single HTTP server task occupied indefinitely.
 - A new image stays `PENDING_VERIFY` until mandatory startup succeeds.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
