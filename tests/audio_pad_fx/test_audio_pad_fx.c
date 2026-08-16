@@ -54,8 +54,8 @@ static void test_pad_fx_release_clears_active_pad(void)
 
 static void test_pad_fx_echo_release_keeps_tail(void)
 {
-    int16_t left_buffer[256] = {0};
-    int16_t right_buffer[256] = {0};
+    float left_buffer[256] = {0};
+    float right_buffer[256] = {0};
     audio_pad_fx_state_t fx;
     audio_pad_fx_init_with_echo_buffer(&fx, 1000u, left_buffer, right_buffer, 256u);
 

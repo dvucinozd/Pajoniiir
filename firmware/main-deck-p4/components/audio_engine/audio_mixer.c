@@ -1,5 +1,7 @@
 #include "audio_mixer.h"
 
+#include <limits.h>
+
 static float clamp_gain(float gain)
 {
     /* The negated comparison also rejects NaN. Letting NaN reach a float to
@@ -48,14 +50,6 @@ int16_t audio_mixer_mix_sample(int16_t deck1,
     return (int16_t)(mixed >= 0.0f ? mixed + 0.5f : mixed - 0.5f);
 }
 
-static int32_t sample_abs_i32_saturated(int32_t sample)
-{
-    if (sample == INT32_MIN) {
-        return INT32_MAX;
-    }
-    return sample < 0 ? -sample : sample;
-}
-
 static int32_t soft_limit_abs_sample(int64_t abs_sample, int32_t knee, int32_t ceiling)
 {
     if (abs_sample <= knee) {
@@ -83,26 +77,39 @@ static int16_t limit_negative_sample(int32_t sample)
 int16_t audio_mixer_limit_master_sample(int32_t mixed,
                                         audio_mixer_limiter_stats_t *stats)
 {
-    int32_t abs_mixed = sample_abs_i32_saturated(mixed);
+    return audio_mixer_limit_master_float((float)mixed, stats);
+}
+
+int16_t audio_mixer_limit_master_float(float mixed,
+                                       audio_mixer_limiter_stats_t *stats)
+{
+    if (!(mixed == mixed)) mixed = 0.0f;
+    float abs_float = mixed < 0.0f ? -mixed : mixed;
+    int32_t abs_mixed = abs_float >= (float)INT32_MAX
+        ? INT32_MAX : (int32_t)(abs_float + 0.5f);
     if (stats && abs_mixed > stats->peak_input_abs) {
         stats->peak_input_abs = abs_mixed;
     }
 
-    if (mixed > 30000) {
+    if (mixed > 30000.0f) {
         if (stats) {
             stats->limited_samples++;
             stats->positive_overloads++;
         }
-        return limit_positive_sample(mixed);
+        int32_t wide = mixed >= (float)INT32_MAX
+            ? INT32_MAX : (int32_t)(mixed + 0.5f);
+        return limit_positive_sample(wide);
     }
-    if (mixed < -30000) {
+    if (mixed < -30000.0f) {
         if (stats) {
             stats->limited_samples++;
             stats->negative_overloads++;
         }
-        return limit_negative_sample(mixed);
+        int32_t wide = mixed <= (float)INT32_MIN
+            ? INT32_MIN : (int32_t)(mixed - 0.5f);
+        return limit_negative_sample(wide);
     }
-    return (int16_t)mixed;
+    return (int16_t)(mixed >= 0.0f ? mixed + 0.5f : mixed - 0.5f);
 }
 
 audio_mixer_frame_t audio_mixer_apply_gain(audio_mixer_frame_t frame, float gain)

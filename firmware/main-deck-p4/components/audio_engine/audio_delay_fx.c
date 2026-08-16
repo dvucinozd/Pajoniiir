@@ -11,39 +11,9 @@
 /* Gain ramps move 1/64th of the remaining distance per frame (~1.5 ms
  * time constant at 44.1 kHz). */
 #define AUDIO_DELAY_FX_SMOOTH_SHIFT 6
-/* Soft-clip knee, matching audio_flanger_fx. Dry is unity and wet is added on
- * top, so a sustained signal builds to 1 + wet/(1-feedback): 3.18x measured
- * for ECHO at full depth, 1.70x for DELAY, which has no feedback. A hard clamp
- * there squares the signal off *inside* the effect, ahead of the master
- * limiter, where nothing downstream can catch it - measured at 47% of samples
- * pinned for ECHO on a signal at 49% of full scale. Below the knee this is the
- * identity, so the tuning that was accepted by ear is unchanged. */
-#define AUDIO_DELAY_FX_KNEE 24576   /* 0.75 FS */
-
-/* Quadratic soft knee: unity gain and unity slope up to the knee, then the
- * gain rolls off smoothly to zero exactly at full scale, so there is no slope
- * discontinuity to buzz. Above 2*FS-knee it saturates flat. */
-static int16_t soft_clip(int32_t value)
+static float q15_mul_float(float sample, uint16_t gain_q15)
 {
-    const int32_t knee = AUDIO_DELAY_FX_KNEE;
-    const int32_t span = 32767 - knee;
-    int32_t sign = value < 0 ? -1 : 1;
-    int32_t mag = value < 0 ? -value : value;
-    if (mag <= knee) {
-        return (int16_t)value;
-    }
-    int32_t over = mag - knee;
-    if (over >= 2 * span) {
-        mag = 32767;
-    } else {
-        mag = knee + over - (over * over) / (4 * span);
-    }
-    return (int16_t)(sign * mag);
-}
-
-static int32_t q15_mul_i32(int32_t sample, uint16_t gain_q15)
-{
-    return (sample * (int32_t)gain_q15) >> 15;
+    return sample * ((float)gain_q15 / 32768.0f);
 }
 
 static uint16_t smooth_q15(uint16_t current, uint16_t target)
@@ -57,8 +27,8 @@ static uint16_t smooth_q15(uint16_t current, uint16_t target)
 }
 
 void audio_delay_fx_init(audio_delay_fx_t *fx,
-                         int16_t *left,
-                         int16_t *right,
+                         float *left,
+                         float *right,
                          uint32_t capacity_frames,
                          uint32_t sample_rate)
 {
@@ -149,14 +119,16 @@ void audio_delay_fx_configure(audio_delay_fx_t *fx, const audio_delay_fx_config_
                                     (AUDIO_DELAY_FX_DAMP_OMEGA + fs));
 }
 
-static int32_t damp_feedback_sample(audio_delay_fx_t *fx, int16_t delayed, uint8_t channel)
+static float damp_feedback_sample(audio_delay_fx_t *fx, float delayed,
+                                  uint8_t channel)
 {
-    fx->fb_lp[channel] += (((int32_t)delayed - fx->fb_lp[channel]) *
-                           (int32_t)fx->damp_alpha_q15) >> 15;
+    fx->fb_lp[channel] += (delayed - fx->fb_lp[channel]) *
+                          ((float)fx->damp_alpha_q15 / 32768.0f);
     return fx->fb_lp[channel];
 }
 
-audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mixer_frame_t in)
+audio_dsp_frame_t audio_delay_fx_process_dsp_frame(audio_delay_fx_t *fx,
+                                                   audio_dsp_frame_t in)
 {
     if (!fx || !fx->allocated || fx->delay_frames == 0u) {
         return in;
@@ -173,20 +145,22 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
     uint32_t read_index = fx->write_index >= fx->delay_frames
         ? fx->write_index - fx->delay_frames
         : fx->write_index + fx->capacity_frames - fx->delay_frames;
-    int16_t delayed_l = fx->left[read_index];
-    int16_t delayed_r = fx->right[read_index];
+    float delayed_l = fx->left[read_index];
+    float delayed_r = fx->right[read_index];
 
-    int32_t out_l = (int32_t)in.left + q15_mul_i32(delayed_l, fx->wet_cur_q15);
-    int32_t out_r = (int32_t)in.right + q15_mul_i32(delayed_r, fx->wet_cur_q15);
+    float out_l = in.left + q15_mul_float(delayed_l, fx->wet_cur_q15);
+    float out_r = in.right + q15_mul_float(delayed_r, fx->wet_cur_q15);
 
-    int32_t fb_l = q15_mul_i32(damp_feedback_sample(fx, delayed_l, 0), fx->feedback_cur_q15);
-    int32_t fb_r = q15_mul_i32(damp_feedback_sample(fx, delayed_r, 1), fx->feedback_cur_q15);
+    float fb_l = q15_mul_float(damp_feedback_sample(fx, delayed_l, 0),
+                               fx->feedback_cur_q15);
+    float fb_r = q15_mul_float(damp_feedback_sample(fx, delayed_r, 1),
+                               fx->feedback_cur_q15);
     /* While ringing out, the input no longer feeds the line — only the
      * damped feedback keeps circulating until the tail window closes. */
-    int32_t write_l = active ? (int32_t)in.left + fb_l : fb_l;
-    int32_t write_r = active ? (int32_t)in.right + fb_r : fb_r;
-    fx->left[fx->write_index] = soft_clip(write_l);
-    fx->right[fx->write_index] = soft_clip(write_r);
+    float write_l = active ? in.left + fb_l : fb_l;
+    float write_r = active ? in.right + fb_r : fb_r;
+    fx->left[fx->write_index] = write_l;
+    fx->right[fx->write_index] = write_r;
     fx->write_index++;
     if (fx->write_index >= fx->capacity_frames) {
         fx->write_index = 0u;
@@ -196,10 +170,17 @@ audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx, audio_mix
         fx->tail_frames_remaining--;
     }
 
-    return (audio_mixer_frame_t) {
-        .left = soft_clip(out_l),
-        .right = soft_clip(out_r),
+    return (audio_dsp_frame_t) {
+        .left = out_l,
+        .right = out_r,
     };
+}
+
+audio_mixer_frame_t audio_delay_fx_process_frame(audio_delay_fx_t *fx,
+                                                 audio_mixer_frame_t in)
+{
+    return audio_mixer_pcm_from_dsp(audio_delay_fx_process_dsp_frame(
+        fx, audio_mixer_dsp_from_pcm(in, 1.0f)));
 }
 
 bool audio_delay_fx_is_allocated(const audio_delay_fx_t *fx)

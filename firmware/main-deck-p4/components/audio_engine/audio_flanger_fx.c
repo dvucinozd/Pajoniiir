@@ -26,35 +26,7 @@
  * to go higher: at 0.86 the resonance was reported as worse, not stronger. */
 #define AUDIO_FLANGER_FB_MAX_Q15 24576u
 
-/* Soft-clip knee. The resonant peak of this tuning is 3.34x (measured, see
- * soft_clip below), so loud material would otherwise hit the int16 ceiling and
- * hard-clip *inside* the effect, ahead of the master limiter, where nothing
- * downstream can catch it. Below the knee the signal is untouched, so the
- * tuning that was approved by ear is bit-identical at normal levels. */
-#define AUDIO_FLANGER_KNEE 24576   /* 0.75 FS */
-
 #define AUDIO_FLANGER_SMOOTH_SHIFT 6
-
-/* Quadratic soft knee: unity gain and unity slope up to the knee, then the
- * gain rolls off smoothly to zero exactly at full scale, so there is no slope
- * discontinuity to buzz. Above 2*FS-knee it saturates flat. */
-static int16_t soft_clip(int32_t value)
-{
-    const int32_t knee = AUDIO_FLANGER_KNEE;
-    const int32_t span = 32767 - knee;
-    int32_t sign = value < 0 ? -1 : 1;
-    int32_t mag = value < 0 ? -value : value;
-    if (mag <= knee) {
-        return (int16_t)value;
-    }
-    int32_t over = mag - knee;
-    if (over >= 2 * span) {
-        mag = 32767;
-    } else {
-        mag = knee + over - (over * over) / (4 * span);
-    }
-    return (int16_t)(sign * mag);
-}
 
 static uint16_t smooth_q15(uint16_t current, uint16_t target)
 {
@@ -74,8 +46,8 @@ uint32_t audio_flanger_fx_required_frames(uint32_t sample_rate)
 }
 
 void audio_flanger_fx_init(audio_flanger_fx_t *fx,
-                           int16_t *left,
-                           int16_t *right,
+                           float *left,
+                           float *right,
                            uint32_t capacity_frames,
                            uint32_t sample_rate)
 {
@@ -142,21 +114,17 @@ void audio_flanger_fx_configure(audio_flanger_fx_t *fx,
     fx->span_delay_q16 = (uint32_t)(max_q16 - min_q16);
 }
 
-static int32_t read_delayed(const int16_t *buffer,
-                            uint32_t idx0,
-                            uint32_t idx1,
-                            uint32_t frac_q16)
+static float read_delayed(const float *buffer,
+                          uint32_t idx0,
+                          uint32_t idx1,
+                          uint32_t frac_q16)
 {
-    int32_t s0 = buffer[idx0];
-    int32_t s1 = buffer[idx1];
-    /* A full-scale -32768 -> +32767 step multiplied by 0xffff exceeds
-     * signed int32.  Widen before the multiply so hostile or clipped input
-     * cannot invoke undefined behaviour in the audio task. */
-    return s0 + (int32_t)(((int64_t)(s1 - s0) * (int64_t)frac_q16) >> 16);
+    float fraction = (float)frac_q16 / 65536.0f;
+    return buffer[idx0] + ((buffer[idx1] - buffer[idx0]) * fraction);
 }
 
-audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
-                                                   audio_mixer_frame_t in)
+audio_dsp_frame_t audio_flanger_fx_process_dsp_frame(audio_flanger_fx_t *fx,
+                                                     audio_dsp_frame_t in)
 {
     if (!fx || !fx->allocated || !fx->config.enabled) {
         return in;
@@ -183,33 +151,37 @@ audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
         ? fx->write_index - delay_int
         : fx->write_index + fx->capacity_frames - delay_int;
     uint32_t idx1 = idx0 == 0u ? fx->capacity_frames - 1u : idx0 - 1u;
-    int32_t delayed_l = read_delayed(fx->left, idx0, idx1, frac_q16);
-    int32_t delayed_r = read_delayed(fx->right, idx0, idx1, frac_q16);
+    float delayed_l = read_delayed(fx->left, idx0, idx1, frac_q16);
+    float delayed_r = read_delayed(fx->right, idx0, idx1, frac_q16);
 
     /* Dry stays at unity and the wet is added on top, as a hardware flanger
      * does. Normalising by 1/(1+wet) was tried and rejected by ear: it drops
      * the whole output by 5.6 dB at high wet, so turning the knob up made
-     * everything quieter and duller instead of more intense. The resonant peak
-     * is 3.34x, so the soft knee below carries the headroom instead. */
-    int32_t out_l = (int32_t)in.left + ((delayed_l * (int32_t)fx->wet_cur_q15) >> 15);
-    int32_t out_r = (int32_t)in.right + ((delayed_r * (int32_t)fx->wet_cur_q15) >> 15);
+     * everything quieter and duller instead of more intense. The wide DSP
+     * frame carries the resonant headroom to the final MAIN limiter. */
+    float wet_gain = (float)fx->wet_cur_q15 / 32768.0f;
+    float feedback_gain = (float)fx->feedback_cur_q15 / 32768.0f;
+    float out_l = in.left + (delayed_l * wet_gain);
+    float out_r = in.right + (delayed_r * wet_gain);
 
-    /* Soft-clipped too: a hard clamp here squares off the recirculating signal
-     * and the distortion feeds back on itself, which is what made higher
-     * feedback settings sound worse rather than more resonant. */
-    fx->left[fx->write_index] = soft_clip(
-        (int32_t)in.left + ((delayed_l * (int32_t)fx->feedback_cur_q15) >> 15));
-    fx->right[fx->write_index] = soft_clip(
-        (int32_t)in.right + ((delayed_r * (int32_t)fx->feedback_cur_q15) >> 15));
+    fx->left[fx->write_index] = in.left + (delayed_l * feedback_gain);
+    fx->right[fx->write_index] = in.right + (delayed_r * feedback_gain);
     fx->write_index++;
     if (fx->write_index >= fx->capacity_frames) {
         fx->write_index = 0u;
     }
 
-    return (audio_mixer_frame_t) {
-        .left = soft_clip(out_l),
-        .right = soft_clip(out_r),
+    return (audio_dsp_frame_t) {
+        .left = out_l,
+        .right = out_r,
     };
+}
+
+audio_mixer_frame_t audio_flanger_fx_process_frame(audio_flanger_fx_t *fx,
+                                                   audio_mixer_frame_t in)
+{
+    return audio_mixer_pcm_from_dsp(audio_flanger_fx_process_dsp_frame(
+        fx, audio_mixer_dsp_from_pcm(in, 1.0f)));
 }
 
 bool audio_flanger_fx_is_allocated(const audio_flanger_fx_t *fx)

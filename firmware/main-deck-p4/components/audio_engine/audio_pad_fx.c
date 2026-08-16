@@ -10,21 +10,6 @@ typedef struct {
     uint16_t echo_feedback_q15;
 } audio_pad_fx_preset_t;
 
-static int16_t clamp_i16(int32_t value)
-{
-    if (value > 32767) return 32767;
-    if (value < -32768) return -32768;
-    return (int16_t)value;
-}
-
-static audio_mixer_frame_t mix_clamped(audio_mixer_frame_t a, audio_mixer_frame_t b)
-{
-    return (audio_mixer_frame_t) {
-        .left = clamp_i16((int32_t)a.left + (int32_t)b.left),
-        .right = clamp_i16((int32_t)a.right + (int32_t)b.right),
-    };
-}
-
 static audio_pad_fx_preset_t preset_for(audio_pad_fx_mode_t mode, uint8_t pad)
 {
     if (mode == AUDIO_PAD_FX_MODE_PAD_FX2) {
@@ -95,8 +80,8 @@ void audio_pad_fx_init(audio_pad_fx_state_t *fx, uint32_t sample_rate_hz)
 
 void audio_pad_fx_init_with_echo_buffer(audio_pad_fx_state_t *fx,
                                         uint32_t sample_rate_hz,
-                                        int16_t *echo_left,
-                                        int16_t *echo_right,
+                                        float *echo_left,
+                                        float *echo_right,
                                         uint32_t echo_capacity_frames)
 {
     if (!fx) return;
@@ -171,30 +156,41 @@ void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config)
     }
 }
 
-audio_mixer_frame_t audio_pad_fx_process_frame(audio_pad_fx_state_t *fx,
-                                               audio_mixer_frame_t in)
+audio_dsp_frame_t audio_pad_fx_process_dsp_frame(audio_pad_fx_state_t *fx,
+                                                 audio_dsp_frame_t in)
 {
     if (!fx) {
         return in;
     }
 
     if (fx->active && fx->kind == AUDIO_PAD_FX_KIND_FILTER) {
-        return audio_filter_process_frame(&fx->filter, true, in);
+        return audio_filter_process_dsp_frame(&fx->filter, true, in);
     }
     if (fx->active && fx->kind == AUDIO_PAD_FX_KIND_ECHO) {
-        return audio_delay_fx_process_frame(&fx->echo, in);
+        return audio_delay_fx_process_dsp_frame(&fx->echo, in);
     }
     if (fx->echo_tail_active) {
-        audio_mixer_frame_t tail = audio_delay_fx_process_frame(&fx->echo, (audio_mixer_frame_t) { 0 });
+        audio_dsp_frame_t tail = audio_delay_fx_process_dsp_frame(
+            &fx->echo, (audio_dsp_frame_t) { 0 });
         if (fx->echo_tail_frames_remaining > 0u) {
             fx->echo_tail_frames_remaining--;
         }
         if (fx->echo_tail_frames_remaining == 0u) {
             audio_pad_fx_reset(fx);
         }
-        return mix_clamped(in, tail);
+        return (audio_dsp_frame_t) {
+            .left = in.left + tail.left,
+            .right = in.right + tail.right,
+        };
     }
     return in;
+}
+
+audio_mixer_frame_t audio_pad_fx_process_frame(audio_pad_fx_state_t *fx,
+                                               audio_mixer_frame_t in)
+{
+    return audio_mixer_pcm_from_dsp(audio_pad_fx_process_dsp_frame(
+        fx, audio_mixer_dsp_from_pcm(in, 1.0f)));
 }
 
 bool audio_pad_fx_is_active(const audio_pad_fx_state_t *fx)

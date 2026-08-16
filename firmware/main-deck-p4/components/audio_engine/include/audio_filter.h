@@ -32,6 +32,9 @@ void audio_filter_set_sample_rate(audio_filter_state_t *filter, uint32_t sample_
 void audio_filter_reset(audio_filter_state_t *filter);
 void audio_filter_set_raw(audio_filter_state_t *filter, uint16_t raw);
 uint16_t audio_filter_get_raw(const audio_filter_state_t *filter);
+audio_dsp_frame_t audio_filter_process_dsp_frame(audio_filter_state_t *filter,
+                                                 bool enabled,
+                                                 audio_dsp_frame_t in);
 audio_mixer_frame_t audio_filter_process_frame(audio_filter_state_t *filter,
                                                bool enabled,
                                                audio_mixer_frame_t in);

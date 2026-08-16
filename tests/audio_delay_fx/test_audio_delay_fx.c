@@ -2,12 +2,13 @@
 #include "audio_mixer.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 
 static void test_disabled_bypasses_input(void)
 {
-    int16_t left[16] = { 0 };
-    int16_t right[16] = { 0 };
+    float left[16] = { 0 };
+    float right[16] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 16u, 1000u);
 
@@ -28,8 +29,8 @@ static void test_disabled_bypasses_input(void)
 
 static void test_impulse_reappears_after_delay(void)
 {
-    int16_t left[16] = { 0 };
-    int16_t right[16] = { 0 };
+    float left[16] = { 0 };
+    float right[16] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 16u, 1000u);
 
@@ -72,8 +73,8 @@ static void test_impulse_reappears_after_delay(void)
 
 static void test_feedback_decays_and_reset_clears_tail(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -107,8 +108,8 @@ static void test_feedback_decays_and_reset_clears_tail(void)
 
 static void test_switch_off_rings_tail_then_goes_silent(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -149,8 +150,8 @@ static void test_switch_off_rings_tail_then_goes_silent(void)
 
 static void test_reenable_clears_stale_tail(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -182,8 +183,8 @@ static void test_reenable_clears_stale_tail(void)
 
 static void test_delay_switch_off_rings_exactly_one_delay_period(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -227,8 +228,8 @@ static void test_delay_switch_off_rings_exactly_one_delay_period(void)
 
 static void test_disabled_commands_do_not_retime_a_ringing_delay(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -303,8 +304,8 @@ static void assert_silent_frames(audio_delay_fx_t *fx, int count)
 
 static void test_live_echo_delay_mode_changes_clear_shared_line(void)
 {
-    int16_t left[32] = { 0 };
-    int16_t right[32] = { 0 };
+    float left[32] = { 0 };
+    float right[32] = { 0 };
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, 32u, 1000u);
 
@@ -370,16 +371,13 @@ static void test_null_or_zero_buffer_bypasses(void)
     assert(out.right == in.right);
 }
 
-/* Dry is unity and wet is added on top, so ECHO at full depth builds to
- * 1 + wet/(1-feedback) = 3.18x on a sustained signal. A hard clamp squared that
- * off inside the effect, ahead of the master limiter - 47% of samples pinned on
- * a signal at half full scale. The soft knee has to absorb it without touching
- * the quiet case, which is the tuning that was accepted by ear. */
-static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
+/* ECHO can exceed PCM full scale by design. Preserve that headroom until the
+ * final MAIN limiter instead of clipping independently inside the effect. */
+static void test_wide_path_preserves_headroom_without_internal_clamp(void)
 {
     enum { CAP = 4410u, SR = 44100u };
-    static int16_t left[CAP];
-    static int16_t right[CAP];
+    static float left[CAP];
+    static float right[CAP];
     audio_delay_fx_t fx;
     audio_delay_fx_init(&fx, left, right, CAP, SR);
     audio_delay_fx_configure(&fx, &(audio_delay_fx_config_t) {
@@ -390,28 +388,35 @@ static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
         .feedback_q15 = 22282, /* 0.68, full depth */
     });
 
-    /* First frame: the line was cleared on engage, so the output is the dry
-     * sample alone. Below the 24576 knee it must pass through bit-exact. */
-    audio_mixer_frame_t quiet = audio_delay_fx_process_frame(
-        &fx, (audio_mixer_frame_t) { .left = 20000, .right = -20000 });
-    assert(quiet.left == 20000);
-    assert(quiet.right == -20000);
+    /* First frame: the line was cleared on engage, so dry passes unchanged. */
+    audio_dsp_frame_t quiet = audio_delay_fx_process_dsp_frame(
+        &fx, (audio_dsp_frame_t) { .left = 20000.0f, .right = -20000.0f });
+    assert(quiet.left == 20000.0f);
+    assert(quiet.right == -20000.0f);
 
-    /* Now hold it at a level that used to pin, long enough for the feedback to
-     * build through many repeats, and confirm nothing wraps sign. */
+    /* Hold it at a level that used to pin for many repeats. Wide output must
+     * cross the PCM ceiling, remain finite and stay inside the stable feedback
+     * envelope. */
+    bool saw_above_pcm_ceiling = false;
     for (int i = 0; i < (int)SR * 3; ++i) {
-        int16_t sample = (i % 200) < 100 ? 16000 : -16000;
-        audio_mixer_frame_t out = audio_delay_fx_process_frame(
-            &fx, (audio_mixer_frame_t) { .left = sample, .right = sample });
-        assert(!(sample > 0 && out.left < -20000));
-        assert(!(sample < 0 && out.left > 20000));
+        float sample = (i % 200) < 100 ? 16000.0f : -16000.0f;
+        audio_dsp_frame_t out = audio_delay_fx_process_dsp_frame(
+            &fx, (audio_dsp_frame_t) { .left = sample, .right = sample });
+        assert(isfinite(out.left));
+        assert(isfinite(out.right));
+        assert(fabsf(out.left) < 80000.0f);
+        assert(fabsf(out.right) < 80000.0f);
+        if (fabsf(out.left) > 32768.0f || fabsf(out.right) > 32768.0f) {
+            saw_above_pcm_ceiling = true;
+        }
     }
+    assert(saw_above_pcm_ceiling);
 }
 
 int main(void)
 {
     test_disabled_bypasses_input();
-    test_soft_knee_is_transparent_below_it_and_bounds_above();
+    test_wide_path_preserves_headroom_without_internal_clamp();
     test_impulse_reappears_after_delay();
     test_feedback_decays_and_reset_clears_tail();
     test_switch_off_rings_tail_then_goes_silent();

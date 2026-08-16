@@ -30,6 +30,10 @@ typedef struct {
     float keylock_rate_ratio;
     uint32_t source_sample_rate;
     uint32_t output_sample_rate;
+    /* Channel TRIM, applied once to the wide source before EQ/FX. A zero value
+     * retains unity for compatibility with zero-initialized callers. */
+    float pre_gain;
+    /* Post-DSP channel fader/crossfader/master-volume gain. */
     float gain;
     audio_eq_state_t *eq;
     audio_filter_state_t *filter;
@@ -62,6 +66,7 @@ typedef struct {
     audio_mixer_frame_t master;
     audio_mixer_frame_t headphone;
     audio_mixer_frame_t deck_frame[2];
+    audio_dsp_frame_t deck_dsp[2];
 } audio_output_mix_result_t;
 
 typedef struct {
@@ -71,6 +76,7 @@ typedef struct {
     float headphone_master_gain;
     float headphone_cue_gain;
     float headphone_level_gain;
+    float master_trim_gain;
     bool master_cue_enabled;
 } audio_output_mixer_controls_t;
 
@@ -85,6 +91,7 @@ void audio_output_mixer_prepare_controls(audio_output_mixer_controls_t *out,
                                          audio_output_headphone_mode_t headphone_mode,
                                          uint16_t headphone_mix,
                                          uint16_t headphone_level,
+                                         float master_trim_gain,
                                          bool master_cue_enabled);
 
 audio_output_mix_result_t audio_output_mixer_next_prepared(

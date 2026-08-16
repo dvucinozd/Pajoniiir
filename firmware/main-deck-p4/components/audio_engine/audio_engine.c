@@ -216,6 +216,8 @@ static void reset_all_pcm_rings(void)
 }
 
 static bool deck_is_valid(uint8_t deck);
+static void audio_engine_get_stage_gains(float *deck0_pre, float *deck1_pre,
+                                         float *deck0_post, float *deck1_post);
 static void init_beat_fx_echo_buffers(void);
 static void init_beat_fx_flanger_buffers(void);
 static void init_pad_fx_buffers(void);
@@ -365,8 +367,8 @@ static bool             s_beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_filter_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_filter_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_delay_fx_t s_beat_fx_echo[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
@@ -378,14 +380,14 @@ typedef struct {
 static ae_fx_command_t  s_beat_fx_echo_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_flanger_fx_t s_beat_fx_flanger[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_flanger_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_flanger_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_flanger_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_flanger_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_flanger_enabled[AUDIO_ENGINE_DECK_COUNT];
 static ae_fx_command_t  s_beat_fx_flanger_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_flanger_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_pad_fx_state_t s_pad_fx[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_applied[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
@@ -975,6 +977,7 @@ static uint32_t lifecycle_advance_generation(uint8_t deck)
 }
 
 
+#if defined(AUDIO_ENGINE_PC_TEST)
 static uint16_t sample_abs_u16(int16_t sample)
 {
     return sample == INT16_MIN ? 32768u : (uint16_t)(sample < 0 ? -sample : sample);
@@ -986,21 +989,22 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
     uint16_t right = sample_abs_u16(frame.right);
     return left > right ? left : right;
 }
+#endif
 
 /* VU meter reference sensitivity: a peak this far below digital full scale reads
  * as a full meter, so normal (non-brickwalled) material lights more than a
  * sliver. ~-6 dBFS. Tune here if the controller/on-screen VU reads hot or cold. */
 #define AE_VU_SENSITIVITY 2.0f
 
-/* Pre-fader channel-meter peak: the deck frame is measured BEFORE the channel
- * gain (pregain/trim/volume/crossfader) is mixed into the master, so scale it by
- * the pre-fader gain (pregain x master trim) here. This makes the VU track the
- * TRIM knob (which sets pregain) like a real DJ channel meter, independent of
- * the fader/crossfader. */
+/* Post-TRIM/post-EQ/FX, pre-fader channel-meter peak. The wide DSP frame already
+ * includes channel TRIM, so no gain is applied here and no intermediate int16
+ * saturation can hide an overload from the meter. */
 #if AE_FW
-static uint16_t frame_peak_prefader(audio_mixer_frame_t frame, float prefader_gain)
+static uint16_t frame_peak_prefader(audio_dsp_frame_t frame)
 {
-    float peak = (float)frame_peak(frame) * prefader_gain * AE_VU_SENSITIVITY;
+    float left = frame.left < 0.0f ? -frame.left : frame.left;
+    float right = frame.right < 0.0f ? -frame.right : frame.right;
+    float peak = (left > right ? left : right) * AE_VU_SENSITIVITY;
     if (peak < 0.0f) {
         peak = 0.0f;
     }
@@ -2895,15 +2899,12 @@ static void ae_output_task(void *arg)
         audio_output_apply_master_tempo_commands();
         audio_output_apply_pending_fx_commands();
 
+        float deck0_pre = 1.0f;
+        float deck1_pre = 1.0f;
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
-        audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
-        /* Pre-fader gain (pregain x master trim) for the VU meters, so they track
-         * the TRIM knob independent of the channel fader/crossfader. */
-        float deck0_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[0])) * master_trim_load();
-        float deck1_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * master_trim_load();
+        audio_engine_get_stage_gains(&deck0_pre, &deck1_pre,
+                                     &deck0_gain, &deck1_gain);
         bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
         bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AE_DECK_0]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
@@ -2917,6 +2918,9 @@ static void ae_output_task(void *arg)
                                              output_headphone_mode(),
                                              headphone_mix,
                                              headphone_level,
+                                             master_trim_load() *
+                                                 audio_mixer_fader_gain(
+                                                     atomic_load_u16(&s_master_volume)),
                                              master_cue_enabled);
 
         const uint8_t deck0_index = AE_DECK_0;
@@ -2935,6 +2939,7 @@ static void ae_output_task(void *arg)
                 s_engines[deck0_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck0_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
+            .pre_gain = deck0_pre,
             .gain = deck0_gain,
             .eq = &s_deck_eq[deck0_index],
             .filter = &s_deck_filter[deck0_index],
@@ -2968,6 +2973,7 @@ static void ae_output_task(void *arg)
                 s_engines[deck1_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck1_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
+            .pre_gain = deck1_pre,
             .gain = deck1_gain,
             .eq = &s_deck_eq[deck1_index],
             .filter = &s_deck_filter[deck1_index],
@@ -3046,8 +3052,8 @@ static void ae_output_task(void *arg)
                 &frame_consumed1,
                 &block_limiter_stats);
 
-            uint16_t peak0 = frame_peak_prefader(mix.deck_frame[0], deck0_prefader_gain);
-            uint16_t peak1 = frame_peak_prefader(mix.deck_frame[1], deck1_prefader_gain);
+            uint16_t peak0 = frame_peak_prefader(mix.deck_dsp[0]);
+            uint16_t peak1 = frame_peak_prefader(mix.deck_dsp[1]);
             if (peak0 > block_peak[deck0_index]) block_peak[deck0_index] = peak0;
             if (peak1 > block_peak[deck1_index]) block_peak[deck1_index] = peak1;
 
@@ -4438,12 +4444,23 @@ static uint32_t beat_fx_echo_capacity_frames(void)
             AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS) / 1000u;
 }
 
-static int16_t *beat_fx_echo_alloc_buffer(uint32_t frames)
+static float *audio_wide_alloc_buffer(uint32_t frames)
 {
 #if AE_FW
-    return (int16_t *)heap_caps_calloc(frames, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return (float *)heap_caps_calloc(frames, sizeof(float),
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
-    return (int16_t *)calloc(frames, sizeof(int16_t));
+    return (float *)calloc(frames, sizeof(float));
+#endif
+}
+
+static int16_t *audio_pcm_alloc_buffer(uint32_t samples)
+{
+#if AE_FW
+    return (int16_t *)heap_caps_calloc(samples, sizeof(int16_t),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    return (int16_t *)calloc(samples, sizeof(int16_t));
 #endif
 }
 
@@ -4452,10 +4469,10 @@ static void init_beat_fx_echo_buffers(void)
     uint32_t frames = beat_fx_echo_capacity_frames();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_beat_fx_echo_left[deck]) {
-            s_beat_fx_echo_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_echo_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_beat_fx_echo_right[deck]) {
-            s_beat_fx_echo_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_echo_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_delay_fx_init(&s_beat_fx_echo[deck],
                             s_beat_fx_echo_left[deck],
@@ -4479,10 +4496,10 @@ static void init_beat_fx_flanger_buffers(void)
         AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_beat_fx_flanger_left[deck]) {
-            s_beat_fx_flanger_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_flanger_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_beat_fx_flanger_right[deck]) {
-            s_beat_fx_flanger_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_flanger_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_flanger_fx_init(&s_beat_fx_flanger[deck],
                               s_beat_fx_flanger_left[deck],
@@ -4507,10 +4524,10 @@ static void init_pad_fx_buffers(void)
     uint32_t frames = pad_fx_echo_capacity_frames();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_pad_fx_echo_left[deck]) {
-            s_pad_fx_echo_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_pad_fx_echo_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_pad_fx_echo_right[deck]) {
-            s_pad_fx_echo_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_pad_fx_echo_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_pad_fx_init_with_echo_buffer(&s_pad_fx[deck],
                                            AUDIO_ENGINE_PAD_FX_ECHO_FALLBACK_SAMPLE_RATE,
@@ -4536,7 +4553,7 @@ static void init_scratch_buffers(void)
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_pcm_timeline_storage[deck]) {
             s_pcm_timeline_storage[deck] =
-                beat_fx_echo_alloc_buffer(AE_TIMELINE_CAPACITY_FRAMES * 2u);
+                audio_pcm_alloc_buffer(AE_TIMELINE_CAPACITY_FRAMES * 2u);
         }
         audio_pcm_timeline_init(&s_pcm_timelines[deck],
                                 s_pcm_timeline_storage[deck],
@@ -4968,7 +4985,8 @@ float audio_engine_get_master_trim(void)
     return master_trim_load();
 }
 
-void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
+static void audio_engine_get_stage_gains(float *deck0_pre, float *deck1_pre,
+                                         float *deck0_post, float *deck1_post)
 {
     float xf0 = 1.0f;
     float xf1 = 1.0f;
@@ -4977,7 +4995,6 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     uint16_t channel_volume1 = atomic_load_u16(&s_channel_volume[1]);
     uint16_t pregain0 = atomic_load_u16(&s_pregain[0]);
     uint16_t pregain1 = atomic_load_u16(&s_pregain[1]);
-    uint16_t master_volume = atomic_load_u16(&s_master_volume);
     audio_mixer_crossfader_gains(crossfader, &xf0, &xf1);
     if (atomic_load_bool(&s_smart_fader_enabled)) {
         if (crossfader < AUDIO_MIXER_CONTROL_CENTER) {
@@ -4987,20 +5004,27 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
         }
     }
 
-    if (deck0_gain) {
-        *deck0_gain = audio_mixer_fader_gain(channel_volume0) *
-                      pregain_gain_from_raw(pregain0) *
-                      xf0 *
-                      audio_mixer_fader_gain(master_volume) *
-                      master_trim_load();
+    if (deck0_pre) *deck0_pre = pregain_gain_from_raw(pregain0);
+    if (deck1_pre) *deck1_pre = pregain_gain_from_raw(pregain1);
+    if (deck0_post) {
+        *deck0_post = audio_mixer_fader_gain(channel_volume0) * xf0;
     }
-    if (deck1_gain) {
-        *deck1_gain = audio_mixer_fader_gain(channel_volume1) *
-                      pregain_gain_from_raw(pregain1) *
-                      xf1 *
-                      audio_mixer_fader_gain(master_volume) *
-                      master_trim_load();
+    if (deck1_post) {
+        *deck1_post = audio_mixer_fader_gain(channel_volume1) * xf1;
     }
+}
+
+void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
+{
+    float pre0 = 1.0f;
+    float pre1 = 1.0f;
+    float post0 = 1.0f;
+    float post1 = 1.0f;
+    audio_engine_get_stage_gains(&pre0, &pre1, &post0, &post1);
+    float master = audio_mixer_fader_gain(atomic_load_u16(&s_master_volume)) *
+                   master_trim_load();
+    if (deck0_gain) *deck0_gain = pre0 * post0 * master;
+    if (deck1_gain) *deck1_gain = pre1 * post1 * master;
 }
 
 esp_err_t audio_engine_toggle_pfl(uint8_t deck)

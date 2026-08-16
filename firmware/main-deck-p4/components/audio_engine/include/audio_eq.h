@@ -39,4 +39,6 @@ void audio_eq_set_raw(audio_eq_state_t *eq,
 void audio_eq_set_band_raw(audio_eq_state_t *eq, audio_eq_band_t band, uint16_t raw);
 uint16_t audio_eq_get_band_raw(const audio_eq_state_t *eq, audio_eq_band_t band);
 float audio_eq_raw_to_gain(uint16_t raw);
+audio_dsp_frame_t audio_eq_process_dsp_frame(audio_eq_state_t *eq,
+                                             audio_dsp_frame_t in);
 audio_mixer_frame_t audio_eq_process_frame(audio_eq_state_t *eq, audio_mixer_frame_t in);
