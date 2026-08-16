@@ -90,8 +90,18 @@ Current P4 audio ownership rule:
   reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
   starting playback; the ES8311 monitor path and PCM5102A main path must stay
   sample-rate aligned;
+- the channel signal chain is explicit and remains single-precision wide until
+  an output sink: source/resampler → channel TRIM/pregain → three-band EQ →
+  channel filter/Pad FX/Beat FX → channel fader/crossfader → two-deck sum →
+  controller master volume/software master trim → MAIN limiter → PCM sink.
+  Effects do not clamp to `int16_t` internally. PFL branches from the same
+  post-TRIM/post-DSP frame before channel fader/crossfader, so TRIM and EQ/FX
+  affect cue level while channel fader and crossfader do not. The headphone
+  path performs only its final PCM sink conversion; the master limiter remains
+  MAIN-only;
 - the audio engine exposes a non-boosting software master trim scalar
-  (`0.0–1.0`, default `1.0`) before the output mixer/limiter path. The P4
+  (`0.0–1.0`, default `1.0`) after the two-deck sum and before the MAIN limiter.
+  The P4
   Settings screen exposes it as a conservative preset cycle (`0 dB`, `-3 dB`,
   `-6 dB`) so limiter activity can be reduced without changing deck fader or
   crossfader semantics. The selected preset is persisted through
@@ -104,10 +114,10 @@ Current P4 audio ownership rule:
   The P4 status indicator reports `CLIP n` only when the limited-sample counter
   increases, so normal transport status remains stable when no new limiting
   occurs;
-- deck-local three-band EQ is applied in the P4 `audio_output_mixer` path
-  before channel fader/crossfader summing. Raw FLX4 EQ values are kept in the
-  mixer snapshot and exposed through `/api/status`; center is unity, minimum is
-  band kill, and maximum is a conservative boost;
+- deck-local three-band EQ is applied in the wide P4 `audio_output_mixer` path
+  after channel TRIM and before channel fader/crossfader summing. Raw FLX4 EQ
+  values are kept in the mixer snapshot and exposed through `/api/status`;
+  center is unity, minimum is band kill, and maximum is a conservative boost;
 - Smart CFX and Smart Fader are P4-owned global states. Smart CFX enables the
   deck-local channel-filter DSP (a resonant ZDF state-variable filter with an
   exponential sweep, shaped by a smoothstep response curve) driven by the

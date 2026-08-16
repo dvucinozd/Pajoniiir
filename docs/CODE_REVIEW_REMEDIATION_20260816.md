@@ -347,7 +347,7 @@ smije se koristiti kao dokaz generičke hardware podrške.
 
 ### CR-20260816-P1-04 — TRIM dolazi nakon int16 EQ clippinga
 
-Status: **OPEN**
+Status: **SOFTWARE FIXED; HW PENDING**
 
 Primarne lokacije:
 
@@ -390,6 +390,31 @@ limiter i njegova telemetrija ne vide stvarni pre-clamp overload.
 - P4 clean build prolazi.
 - Fizički slušni test i limiter/peak telemetrija s glasnim materijalom ne
   pokazuju flat-top clipping prije master limitera.
+
+#### Implementirano 2026-08-16
+
+Commit `762cbe3` uvodi eksplicitni `audio_dsp_frame_t` i drži oba kanala kao
+single-precision float od source/resamplera do izlaznog sinka. Channel TRIM se
+primjenjuje prije EQ-a; EQ, channel filter, Pad FX, Beat FX filter, flanger i
+echo/delay više ne vraćaju `int16_t` međurezultat. Channel fader/crossfader
+primjenjuju se nakon DSP-a, oba decka se zbrajaju u wide formatu, a master
+volume/trim i jedini MAIN soft limiter dolaze neposredno prije sink konverzije.
+PFL koristi isti post-TRIM/post-DSP frame prije channel fadera; headphone sink
+ima samo završnu PCM saturaciju i ne mijenja MAIN limiter telemetriju. VU meter
+čita wide post-TRIM/post-DSP peak pa interni overload više nije skriven ranom
+saturacijom.
+
+Regresije pokrivaju full-scale-ish sine za low/mid/high boost, sva tri EQ banda
+na maksimumu, dva glasna multitone decka, TRIM uklanjanje pre-DSP overlouda,
+PFL neovisnost o zatvorenom channel faderu, master trim nakon zbroja te wide
+delay/flanger headroom bez internog clampanja. Puni P4 host suite prolazi
+(audio engine 383/383), 300 s dual-deck soak prolazi s driftom 0, bez clippinga
+i clickova, a P4 ESP-IDF v6.0.2 build daje image `0x252d80` uz 42% slobodne
+najmanje app particije. `dependencies.lock` nije promijenjen i
+`git diff --check` prolazi.
+
+Preostaje fizički slušni/telemetry test s glasnim realnim materijalom i
+istodobnim MAIN/PFL izlazom; zato nalaz nije hardware zatvoren.
 
 ### CR-20260816-P1-05 — P4 signed bundle nije vezan uz channel release
 
@@ -726,3 +751,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P1-02, CR-20260816-P1-05, CR-20260816-P1-06 | `38ecc6c` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; S3 host suite PASS; scheduler 141/141; app-settings 46/46; OTA manifest/signing/packaging PASS; P4 ESP-IDF 6.0.2 clean build PASS (42% free); S3 ESP-IDF 6.0.2 clean dual-OTA build PASS (51% free); `git diff --check` PASS | Fizički GPIO11-low cold/warm boot; signed pull-OTA happy/mismatch provjera bez promjene boot particije; FLX4 burst/stalled-link/reconnect FIFO i held-release smoke |
 | 2026-08-16 | CR-20260816-P1-01 | `c826f8f` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; audio lifecycle 383/383; UI load gate 16/16; UI exact screenshot E2E PASS; P4 ESP-IDF v6.0.2 build PASS, image `0x251120`, 42% free; `git diff --check` PASS | Fizičkih 50 USB remove/reconnect ciklusa tijekom LOAD/playbacka, EJECT/LOAD burst, OTA stop s oba decka i potvrda da nakon STOP-a nema živih taskova |
 | 2026-08-16 | CR-20260816-P1-03, CR-20260816-P2-01, CR-20260816-P2-02, CR-20260816-P2-06 | `7f10aa1`, `aac07bc` | SOFTWARE FIXED; HW PENDING | S3 host suite PASS; P4 host suite PASS; descriptor/profile/runtime/parity/output-policy regresije PASS; reentrant snapshot-lock regresija PASS; S3 ESP-IDF v6.0.2 build PASS, image `0xf3c20`, 5% free; P4 ESP-IDF v6.0.2 build PASS, image `0x251220`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički FLX4 ↔ drugi MIDI device-swap, reconnect i late-transfer smoke; oba targeta nadograditi kao koordinirani protocol par |
+| 2026-08-16 | CR-20260816-P1-04 | `762cbe3` | SOFTWARE FIXED; HW PENDING | P4 host suite PASS; audio engine 383/383; EQ/delay/flanger/output-mixer wide-headroom regresije PASS; 300 s dual-deck soak PASS (drift 0, clipped 0, clicks 0); P4 ESP-IDF v6.0.2 build PASS, image `0x252d80`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički slušni MAIN/PFL test i limiter/peak telemetrija s glasnim realnim materijalom; P4 CPU/I2S deadline mjerenje |
