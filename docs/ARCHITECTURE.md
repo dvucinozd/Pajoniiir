@@ -186,6 +186,10 @@ Current P4 audio ownership rule:
 - USB removal uses `audio_engine_suspend_loads_and_stop_all()` to close LOAD
   admission, tear down both decks and the shared output service, clear
   library/deck state, and only then calls `audio_engine_resume_loads()`.
+- Library LOAD completion is allocation-free after task creation: its bounded
+  result lives on the worker's fixed stack and is copied into the completion
+  queue. Heap/PSRAM exhaustion therefore cannot bypass the LVGL completion that
+  restores LOAD-button and status state.
 
 Current P4 Overview waveform ownership rule:
 
