@@ -91,3 +91,6 @@ bool bsp_audio_get_speaker_pa_enabled(void);
 // CONFIG_BSP_PCM5102A_MAIN_OUT is enabled and bsp_audio_init() succeeded.
 i2s_chan_handle_t bsp_audio_get_main_i2s_tx(void);
 esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate);
+/* Disable the PCM5102 TX channel so a blocked bounded write wakes during STOP.
+ * The next set_sample_rate call re-enables the channel. */
+esp_err_t bsp_audio_main_i2s_abort_write(void);

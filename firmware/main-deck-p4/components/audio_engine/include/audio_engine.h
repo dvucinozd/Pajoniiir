@@ -160,6 +160,13 @@ typedef struct {
     uint32_t output_late_count;
     uint32_t output_late_max_us;
     uint32_t output_late_threshold_us;
+    uint32_t main_sink_write_calls;
+    uint32_t main_sink_short_writes;
+    uint32_t main_sink_timeouts;
+    uint32_t main_sink_errors;
+    uint32_t main_sink_failed_blocks;
+    uint32_t headphone_sink_errors;
+    uint32_t output_sink_faults;
     /* Worst observed duration of each phase of one output block, so a late
      * block can be attributed instead of guessed at. The phases are measured
      * with the same wall clock as output_late_max_us and therefore include any
@@ -350,4 +357,12 @@ void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t righ
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
 void audio_engine_test_disable_pcm_timeline(uint8_t deck);
+void audio_engine_test_seed_scratch_handoff(uint8_t deck,
+                                            bool fade_out,
+                                            float gain);
+void audio_engine_test_publish_scratch_handoff(uint8_t deck, bool release);
+void audio_engine_test_apply_scratch_handoff(uint8_t deck);
+void audio_engine_test_get_scratch_handoff(uint8_t deck,
+                                           bool *fade_out,
+                                           float *gain);
 #endif

@@ -683,6 +683,43 @@ static void test_beat_fx_delay_state_api(void)
            "Beat FX DELAY rejects invalid target");
 }
 
+static void test_scratch_handoff_commands_apply_only_on_output_boundary(void)
+{
+    puts("\n[Test 4b] Scratch handoff command ownership");
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets scratch handoff command state");
+
+    bool fade_out = false;
+    float gain = 0.0f;
+    audio_engine_test_seed_scratch_handoff(0, true, 0.37f);
+    audio_engine_test_publish_scratch_handoff(0, false);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(fade_out && nearf(gain, 0.37f),
+           "re-grab publisher does not mutate output-owned phase or gain");
+
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 1.0f),
+           "output boundary applies re-grab at unity without amplitude jump");
+
+    audio_engine_test_seed_scratch_handoff(0, false, 0.62f);
+    audio_engine_test_publish_scratch_handoff(0, true);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 0.62f),
+           "release publisher leaves output-owned state untouched");
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(fade_out && nearf(gain, 1.0f),
+           "output boundary seeds release fade from unity");
+
+    audio_engine_test_publish_scratch_handoff(0, true);
+    audio_engine_test_publish_scratch_handoff(0, false);
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 1.0f),
+           "latest re-grab command supersedes an unapplied release");
+}
+
 static void test_deck_peak_meter_api_returns_and_resets_peak(void)
 {
     puts("\n[Test 4b] Deck peak meter API");
@@ -1275,6 +1312,7 @@ int main(int argc, char *argv[])
     test_pitch();
     test_mixer_state_api();
     test_beat_fx_delay_state_api();
+    test_scratch_handoff_commands_apply_only_on_output_boundary();
     test_deck_peak_meter_api_returns_and_resets_peak();
     test_mixer_snapshot_reports_deck_peak_without_reset();
     test_diagnostics_snapshot_reports_audio_health_state();

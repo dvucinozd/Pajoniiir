@@ -270,12 +270,100 @@ static void test_drop_newest_rewinds_across_the_physical_wrap(void)
     CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 21);
 }
 
+static void test_capacity_rejects_ambiguous_modular_span(void)
+{
+    audio_pcm_timeline_t t;
+    audio_pcm_timeline_init(&t, s_storage, 0x80000000u);
+    CHECK(t.capacity == 0u);
+    CHECK(!audio_pcm_timeline_push(&t, 1, -1));
+}
+
+static void seed_empty_at(audio_pcm_timeline_t *t, uint64_t sequence)
+{
+    audio_pcm_timeline_init(t, s_storage, CAP);
+    t->oldest_seq = (uint32_t)sequence;
+    t->play_seq = (uint32_t)sequence;
+    t->write_seq = (uint32_t)sequence;
+    t->oldest_epoch = (uint32_t)(sequence >> 32);
+    t->play_epoch = (uint32_t)(sequence >> 32);
+    t->write_epoch = (uint32_t)(sequence >> 32);
+}
+
+static void test_all_cursors_and_random_reads_cross_uint32_wrap(void)
+{
+    const uint64_t base = (uint64_t)UINT32_MAX - 2u;
+    audio_pcm_timeline_t t;
+    seed_empty_at(&t, base);
+
+    push_value(&t, 10);
+    push_value(&t, 20);
+    push_value(&t, 30);
+    push_value(&t, 40);
+    CHECK(audio_pcm_timeline_write_seq(&t) == base + 4u);
+    CHECK(audio_pcm_timeline_future_frames(&t) == 4u);
+    expect_seq(&t, base, 10);
+    expect_seq(&t, base + 1u, 20);
+    expect_seq(&t, base + 2u, 30);
+    expect_seq(&t, base + 3u, 40);
+
+    audio_mixer_frame_t out;
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 10);
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 20);
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 30);
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 40);
+    CHECK(audio_pcm_timeline_play_seq(&t) == base + 4u);
+    CHECK(audio_pcm_timeline_history_frames(&t) == 4u);
+
+    /* Fill beyond capacity after consumption so oldest_seq also crosses its
+     * low-word wrap while retained random reads stay coherent. */
+    push_value(&t, 50);
+    push_value(&t, 60);
+    push_value(&t, 70);
+    push_value(&t, 80);
+    push_value(&t, 90);
+    CHECK(audio_pcm_timeline_oldest_seq(&t) == (1ull << 32));
+    CHECK(audio_pcm_timeline_used_frames(&t) == CAP);
+    expect_seq(&t, 1ull << 32, 40);
+    expect_seq(&t, (1ull << 32) + 1u, 50);
+    expect_seq(&t, (1ull << 32) + 5u, 90);
+    CHECK(!audio_pcm_timeline_read(&t, (1ull << 32) - 1u, &out));
+
+    CHECK(audio_pcm_timeline_set_playhead(&t, (1ull << 32) + 3u));
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 70);
+    CHECK(audio_pcm_timeline_set_playhead_frames_back(&t, 1u));
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 80);
+}
+
+static void test_drop_newest_crosses_uint32_wrap_backwards(void)
+{
+    const uint64_t base = (uint64_t)UINT32_MAX - 1u;
+    audio_pcm_timeline_t t;
+    seed_empty_at(&t, base);
+    push_value(&t, 1);
+    push_value(&t, 2);
+    push_value(&t, 3);
+    push_value(&t, 4);
+
+    audio_mixer_frame_t out;
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 1);
+    CHECK(audio_pcm_timeline_write_seq(&t) == (1ull << 32) + 2u);
+    CHECK(audio_pcm_timeline_drop_newest(&t, 3u) == 3u);
+    CHECK(audio_pcm_timeline_write_seq(&t) == (uint64_t)UINT32_MAX);
+    CHECK(audio_pcm_timeline_play_seq(&t) == (uint64_t)UINT32_MAX);
+    CHECK(audio_pcm_timeline_future_frames(&t) == 0u);
+
+    push_value(&t, 42);
+    CHECK(audio_pcm_timeline_write_seq(&t) == (1ull << 32));
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 42);
+}
+
 int main(void)
 {
     test_drop_newest_withdraws_only_the_unplayed_runway();
     test_drop_newest_partial_keeps_the_frames_still_inside_the_loop();
     test_drop_newest_rewinds_across_the_physical_wrap();
     test_initial_future_and_normal_pop();
+    test_capacity_rejects_ambiguous_modular_span();
     test_full_cache_protects_unplayed_audio();
     test_consumed_history_is_evicted_on_wrap();
     test_reposition_playhead_inside_history_and_future();
@@ -283,6 +371,8 @@ int main(void)
     test_pop_cursor_crosses_physical_wrap();
     test_random_read_derives_slot_from_sequence_after_many_evictions();
     test_random_read_rejects_sequences_outside_the_retained_window();
+    test_all_cursors_and_random_reads_cross_uint32_wrap();
+    test_drop_newest_crosses_uint32_wrap_backwards();
     printf("TESTS_RUN=%u\n", s_checks);
     puts("audio_pcm_timeline tests passed");
     return 0;

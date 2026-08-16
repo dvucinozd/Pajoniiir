@@ -12,6 +12,8 @@ void audio_fw_preload_begin_load(audio_fw_preload_t *slot)
     slot->source = NULL;
     audio_compressed_cache_reset(&slot->cache);
     slot->stream_pos = 0u;
+    slot->stream_fault_epoch = 0u;
+    slot->stream_fault_offset = 0u;
     slot->loaded_bytes = 0u;
     slot->load_done = false;
 }
@@ -57,6 +59,8 @@ bool audio_fw_preload_bind_cache(audio_fw_preload_t *slot,
     slot->file_size = file_size;
     slot->source = source;
     slot->stream_pos = 0u;
+    slot->stream_fault_epoch = 0u;
+    slot->stream_fault_offset = 0u;
     slot->loaded_bytes = 0u;
     slot->load_done = false;
     return true;
@@ -78,8 +82,20 @@ size_t audio_fw_preload_stream_read(audio_fw_preload_t *slot,
                                     size_t bytes)
 {
     if (!slot) return 0u;
+    size_t start = slot->stream_pos;
+    size_t expected = bytes;
+    if (start >= slot->file_size) {
+        expected = 0u;
+    } else if (expected > slot->file_size - start) {
+        expected = slot->file_size - start;
+    }
     size_t got = audio_fw_preload_read_at(slot, slot->stream_pos, dst, bytes);
     slot->stream_pos += got;
+    if (got != expected) {
+        slot->stream_fault_offset = start + got;
+        slot->stream_fault_epoch++;
+        if (slot->stream_fault_epoch == 0u) slot->stream_fault_epoch = 1u;
+    }
     return got;
 }
 
@@ -105,4 +121,9 @@ bool audio_fw_preload_stream_seek(audio_fw_preload_t *slot,
 size_t audio_fw_preload_stream_tell(const audio_fw_preload_t *slot)
 {
     return slot ? slot->stream_pos : 0u;
+}
+
+uint32_t audio_fw_preload_stream_fault_epoch(const audio_fw_preload_t *slot)
+{
+    return slot ? slot->stream_fault_epoch : 0u;
 }

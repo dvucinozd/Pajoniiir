@@ -20,6 +20,11 @@ typedef struct {
     void *source;
     audio_compressed_cache_t cache;
     size_t stream_pos;
+    /* Monotonic callback fault marker. A short stream read before the declared
+     * file end increments this so decoders can distinguish media I/O failure
+     * from a legitimate EOF even when their API returns only a byte count. */
+    uint32_t stream_fault_epoch;
+    size_t stream_fault_offset;
     volatile size_t loaded_bytes;
     volatile bool load_done;
 } audio_fw_preload_t;
@@ -45,3 +50,4 @@ bool audio_fw_preload_stream_seek(audio_fw_preload_t *slot,
                                   int64_t offset,
                                   int origin);
 size_t audio_fw_preload_stream_tell(const audio_fw_preload_t *slot);
+uint32_t audio_fw_preload_stream_fault_epoch(const audio_fw_preload_t *slot);

@@ -890,6 +890,26 @@ Assert-FileContains `
     -LiteralPatterns @("AE_SCRATCH_HANDOFF_FADE_OUT", "AE_SCRATCH_HANDOFF_FADE_IN", "AE_SCRATCH_HANDOFF_RING", "AE_SCRATCH_XFADE_STEP")
 
 Assert-FileContains `
+    -Name "p4 scratch handoff is output-owned and preserves the 64-bit timeline epoch" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("static uint64_t          s_scratch_origin_play_seq", "scratch_handoff_publish_command", "scratch_handoff_apply_pending_command")
+
+Assert-FileContains `
+    -Name "p4 MAIN I2S writes are bounded and STOP wakes the channel" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_output_sink_write_all", "audio_output_mark_sink_fault", "bsp_audio_main_i2s_abort_write")
+
+Assert-FileDoesNotContain `
+    -Name "p4 MAIN I2S output never uses an unbounded driver wait" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY)")
+
+Assert-FileContains `
+    -Name "p4 FLAC cache faults trigger decoder replacement instead of EOF" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_fw_preload_stream_fault_epoch", "flac_recovery_pending", "ae_flac_recover_decoder")
+
+Assert-FileContains `
     -Name "p4 deck_core gates jog touch to scratch behind CONFIG_AUDIO_SCRATCH_ENABLED (vinyl phase 4)" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_SCRATCH_ENABLED", "audio_engine_deck_scratch_begin(deck)", "audio_engine_deck_scratch_move(deck, delta)", "audio_engine_deck_scratch_end(deck)")
@@ -1041,7 +1061,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+    -LiteralPatterns @("scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB)", "scratch_handoff_apply_pending_command(d)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `
@@ -1446,6 +1466,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
@@ -1683,6 +1704,18 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "-lm"
+        )
+    },
+    @{
+        Name = "audio_output_sink"
+        Dir = "tests/audio_output_sink"
+        Target = "test_audio_output_sink.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_output_sink.exe",
+            "test_audio_output_sink.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c"
         )
     },
     @{

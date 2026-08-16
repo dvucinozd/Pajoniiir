@@ -115,6 +115,7 @@ static i2c_master_bus_handle_t  s_i2c_bus  = NULL;
 static esp_lcd_touch_handle_t   s_touch    = NULL;
 static i2s_chan_handle_t        s_i2s_tx   = NULL;
 static i2s_chan_handle_t        s_i2s_tx_pcm5102 = NULL;
+static bool                     s_i2s_tx_pcm5102_enabled = false;
 static esp_codec_dev_handle_t   s_codec    = NULL;
 static bsp_audio_out_t          s_audio_out = BSP_AUDIO_OUT_RCA;
 static bool                     s_audio_pa_gpio_ready = false;
@@ -428,6 +429,7 @@ static esp_err_t bsp_audio_init_i2s_pcm5102(void)
     };
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(s_i2s_tx_pcm5102, &std_cfg), TAG, "pcm5102 i2s std init failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 i2s enable failed");
+    s_i2s_tx_pcm5102_enabled = true;
     ESP_LOGI(TAG, "PCM5102A main out ready: BCLK=%d WS=%d DOUT=%d",
              BSP_PCM5102_BCLK_GPIO, BSP_PCM5102_WS_GPIO, BSP_PCM5102_DOUT_GPIO);
 #endif
@@ -620,13 +622,31 @@ esp_err_t bsp_audio_main_i2s_set_sample_rate(uint32_t sample_rate)
     if (!s_i2s_tx_pcm5102 || sample_rate == 0u) {
         return ESP_ERR_INVALID_STATE;
     }
-    ESP_RETURN_ON_ERROR(i2s_channel_disable(s_i2s_tx_pcm5102), TAG, "pcm5102 disable failed");
+    if (s_i2s_tx_pcm5102_enabled) {
+        ESP_RETURN_ON_ERROR(i2s_channel_disable(s_i2s_tx_pcm5102), TAG,
+                            "pcm5102 disable failed");
+        s_i2s_tx_pcm5102_enabled = false;
+    }
     i2s_std_clk_config_t clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(sample_rate);
     ESP_RETURN_ON_ERROR(i2s_channel_reconfig_std_clock(s_i2s_tx_pcm5102, &clk_cfg), TAG, "pcm5102 clock reconfig failed");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(s_i2s_tx_pcm5102), TAG, "pcm5102 enable failed");
+    s_i2s_tx_pcm5102_enabled = true;
     return ESP_OK;
 #else
     (void)sample_rate;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+esp_err_t bsp_audio_main_i2s_abort_write(void)
+{
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    if (!s_i2s_tx_pcm5102) return ESP_ERR_INVALID_STATE;
+    if (!s_i2s_tx_pcm5102_enabled) return ESP_OK;
+    esp_err_t rc = i2s_channel_disable(s_i2s_tx_pcm5102);
+    if (rc == ESP_OK) s_i2s_tx_pcm5102_enabled = false;
+    return rc;
+#else
     return ESP_ERR_NOT_SUPPORTED;
 #endif
 }
