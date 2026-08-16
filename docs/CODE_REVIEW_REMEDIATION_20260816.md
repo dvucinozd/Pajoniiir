@@ -682,7 +682,7 @@ popravak i nema zaseban fizički gate.
 | CR-20260816-P3-01 | **SOFTWARE FIXED; HW PENDING** | `s3_debug_ap_netif_stage` drži candidate lokalno kroz create, DHCP stop, IP set i DHCP start; globalni `s_ap_netif` dobiva se tek nakon punog uspjeha, a svaki kvar poziva `esp_netif_destroy_default_wifi()`. | Host failure injection prolazi za create i sva tri init koraka, potvrđuje da ništa nije objavljeno/leakano te da isti runtime nakon uklanjanja kvara uspješno starta. ERROR latch dodatno zahtijeva i testira eksplicitni OFF→ON retry. |
 | CR-20260816-P3-02 | **CLOSED** | Profile runtime mutex sada koristi statičku FreeRTOS pohranu, a lock/unlock više nemaju tihi unlocked fallback. | Statički source guardovi i postojeća reentrant runtime regresija prolaze u punom S3 host suiteu; S3 ESP-IDF 6.0.2 build prolazi. |
 | CR-20260816-P3-03 | **SOFTWARE FIXED; HW PENDING** | Headphone route/cue kompatibilnost objavljuju se jednim packed atomic wordom, a limiter aggregate koristi versioned snapshot s atomskim poljima. | Paralelni writer/reader stress od 50.000 publikacija potvrđuje koherentne routing i limiter snapshotove; puni P4 host suite i ESP-IDF 6.0.2 build prolaze. |
-| CR-20260816-P3-04 | **OPEN** | Produkcijski USB lifecycle, OTA crypto/state machine i HTTP handler nisu ponašajno izvršeni u host suiteu (`run_s3_host_tests.ps1:500-663`). | Fake USB/FreeRTOS/`esp_ota_*`/partition/PSA sloj koji gradi pravi production source; svaki negativni put potvrđuje abort i da boot partition nije promijenjena. |
+| CR-20260816-P3-04 | **CLOSED** | Produkcijski USB lifecycle, OTA crypto/state machine i izdvojena produkcijska jezgra HTTP handlera sada se kompajliraju i ponašajno izvršavaju u punom S3 host suiteu. | Fake USB/FreeRTOS/`esp_ota_*`/partition/PSA slojevi grade stvarne production sourceove; failure injection provjerava cleanup/retry, potpis, fragmentaciju/deadline, abort i da negativni OTA put nikada ne mijenja boot particiju. |
 
 ### 7.1 Implementirano: allocation-free profile runtime lock
 
@@ -716,6 +716,43 @@ publikacija, provjerava relacije između sva tri brojača, peak i valjane packed
 routing parove. Fokusirani audio engine prolazi 393/393, puni P4 host suite
 prolazi, a P4 ESP-IDF 6.0.2 build daje image `0x253980` s 42% slobodne app
 particije. Preostaje fizičko multicore opterećenje uz MAIN/PFL monitoring.
+
+### 7.3 Implementirano: behavioral gateovi za S3 production putove
+
+Commit `d0412e2` zatvara CR-20260816-P3-04. Novi host fixture ne modelira
+paralelnu kopiju USB lifecyclea, nego uz test-only ulazne točke kompajlira i
+izvršava stvarni `flx4_midi_host.c`. Pokriveni su kvarovi dohvaćanja
+deskriptora, claimanja sučelja, obje alokacije transfera i prvog submita,
+uspješan MIDI OUT pump, `DEV_GONE` dok su IN i OUT callbackovi aktivni te
+ponovljivi interface-release i device-close kvarovi. Svaki staging kvar mora
+završiti bez otvorenog uređaja, claimanog sučelja ili alociranog transfera.
+
+OTA HTTP body obrada izdvojena je u `s3_ota_http.c`, produkcijsku jezgru koju
+stvarni `s3_debug_ap` handler poziva nakon postojećih auth i target-header
+provjera. Jezgra ponašajno pokriva envelope granice, fragmentirani manifest,
+production signature poziv, točnu signed duljinu, ESP32-S3 image header,
+timeout/progress guard, prekid transporta prije i poslije `s3_ota_begin()`,
+write/finish kvarove i uspješan završetak. HTTP sloj abortira samo prekinuti
+transport nakon početka flashanja; `s3_ota_write()` ostaje vlasnik trenutnog
+flash/hash cleanup-a za vlastiti write ili SHA kvar.
+
+Zaseban runtime fixture kompajlira stvarne `s3_ota.c` i `s3_ota_policy.c` s
+fake `esp_ota_*`, partition i PSA implementacijama. Red/green failure injection
+otkrio je da write/hash kvar ranije ostavlja resurse otvorenima do naknadnog
+aborta. State machine ih sada zatvara odmah, a `init` i novi `begin` dodatno
+čiste eventualni stale transaction. Testovi pokrivaju begin/hash/write/finish,
+SHA, image project/version, `esp_ota_end` i boot-selection kvarove; svaki
+negativni put potvrđuje da boot particija nije promijenjena. Crypto fixture
+kompajlira stvarni `ota_manifest_crypto.c`, prolazi hash/key/verify kvarove i
+provjerava canonical raw P-256 `r,s` u DER pretvorbu.
+
+Puni S3 host suite prolazi zajedno sa sva četiri production fixturea, OTA
+signing suite prolazi 6/6, a S3 ESP-IDF 6.0.2 build prolazi s imageom `0xed7e0`
+i 51% slobodne app particije. `git diff --check` prolazi, a oba
+`dependencies.lock` ostala su nepromijenjena. Nalaz je bio nedostatak
+behavioral software pokrivenosti i nema zaseban fizički gate, pa je status
+**CLOSED**; fizički USB/OTA acceptance iz odjeljka 11 ostaje release gate za
+uređaj, ne otvoreni source nalaz.
 
 ## 8. Arhitektonska poboljšanja nakon obveznih nalaza
 
@@ -907,3 +944,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P3-03 | `ff2b74a` | SOFTWARE FIXED; HW PENDING | Fokusirani audio engine 393/393 PASS; 50.000 threaded limiter/routing publikacija bez nekoherentnog snapshota ili izgubljenog updatea; puni P4 host suite PASS; P4 ESP-IDF 6.0.2 build PASS, image `0x253980`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički multicore routing-toggle stress tijekom dual-deck MAIN/PFL reprodukcije i potvrda stabilne limiter telemetrije |
 | 2026-08-16 | CR-20260816-P2-07 | `e0b3117` | SOFTWARE FIXED; HW PENDING | Q32 resampler petominutni 44,1→48 kHz i 1,1× consumption drift 0; puni P4 host suite PASS; stvarni RV32 `audio_resampler.c.obj` nema undefined ni `*df*` helper simbole; 300 s dual-deck soak PASS (drift 0, clicks 0, clipped 0, host CPU 1,992 s); P4 ESP-IDF 6.0.2 build PASS, image `0x253970`, 42% free; workflow YAML i `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizičko worst-case dual-deck P4 CPU/I2S deadline mjerenje i slušna provjera pitch/sample-rate kombinacija |
 | 2026-08-16 | CR-20260816-P2-15 | `2dad8c7` | SOFTWARE FIXED; HW PENDING | Pure maintenance auth PASS; S3 Debug AP state, P4 deck token ordering i Settings format PASS; oba puna host suitea PASS; exact UI screenshot E2E PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed6a0`, 51% free; P4 build PASS, image `0x253b20`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički 401/429/expiry/lockout i 15-min auto-shutdown; OFF→ON novi kod; supervised signed S3 rollback s aktualnim kodom |
+| 2026-08-17 | CR-20260816-P3-04 | `d0412e2` | CLOSED | Puni S3 host suite PASS; stvarni FLX4 USB lifecycle, S3 OTA HTTP core/state machine i manifest crypto production source fixturei PASS; OTA signing 6/6 PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed7e0`, 51% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Nema preostalog source gatea za production-path behavioral pokrivenost; fizički USB/OTA acceptance ostaje release/hardware matrica iz odjeljka 11 |
