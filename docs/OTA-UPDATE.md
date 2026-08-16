@@ -188,8 +188,11 @@ curl.exe -X POST `
 
 ## Update S3
 
-The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Signature
-validation remains the firmware-authenticity boundary.
+The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Association
+with the published WPA2 credential does not authorize an update: every ON edge
+creates a short-lived six-digit maintenance code shown in P4 Settings, and the
+S3 OTA POST requires that code. Signature validation remains the firmware-
+authenticity boundary.
 
 The S3 upload endpoint rejects an oversized Content-Length before allocating a
 receive buffer, receives/verifies the signed manifest and ESP image header
@@ -198,12 +201,16 @@ the complete request and at least 4096 received bytes in each 10 s progress
 window. A timeout or slow-client rejection returns HTTP 408; if flashing has
 already begun, the OTA handle is aborted before the request closes.
 
-1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
+1. Enable **S3 DEBUG AP** in P4 Settings, wait for `ON`, and note the six-digit
+   `CODE` displayed on the same row.
 2. Connect to `Pajoniiir-S3-DEBUG` using the default WPA2 password
    `Pajoniiir`, then open
    `http://192.168.4.1/update`.
 3. Record the S3 running version, slot and state.
-4. Select **`control-board-s3.ddjota`**, confirm and upload.
+4. Enter the displayed maintenance code, select
+   **`control-board-s3.ddjota`**, confirm and upload. The code expires after ten
+   minutes and locks after five invalid attempts; toggle the AP OFF and ON to
+   generate a replacement. The AP also shuts itself down after fifteen minutes.
 5. After restart, the S3 Debug AP turns OFF by design. Reconnect to the P4
    `Pajoniiir` Wi-Fi Remote and inspect its `/api/firmware` response.
 6. Confirm nested `s3.available=true` plus the expected `s3.version`, opposite

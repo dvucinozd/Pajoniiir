@@ -128,6 +128,8 @@ test.
 | `0x85` | S3 Debug AP | bidirectional on `CTRL_TYPE_STATE`; P4->S3 request `0` OFF / `1` ON; S3->P4 status `0` OFF / `1` STARTING / `2` ON / `3` ERROR (see below) |
 | `0x86` | S3 boot challenge | S3->P4 `CTRL_TYPE_STATE`; fresh non-zero 16-bit challenge used only while a new S3 OTA image is `PENDING_VERIFY` |
 | `0x87` | S3 boot ACK | P4->S3 `CTRL_TYPE_STATE`; exact echo of `0x86`, consumed by the S3 boot-health gate and never exposed as a controller event |
+| `0x88` | S3 maintenance token high | S3->P4 `CTRL_TYPE_STATE`; upper three decimal digits (`100..999`) of the current six-digit Debug AP maintenance code |
+| `0x89` | S3 maintenance token low | S3->P4 `CTRL_TYPE_STATE`; lower three decimal digits (`000..999`); P4 publishes the code only after an ordered `0x88`/`0x89` pair |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. Queue/backpressure behavior
@@ -379,6 +381,14 @@ Handshake and ownership:
 - S3 dispatches the request to `s3_debug_ap_request()` and reports every state
   transition back through its status callback, which P4 `deck_core` forwards to
   the Settings label (`OFF` / `STARTING` / `ON` / `ERROR`).
+- Each ON edge generates a new six-digit maintenance code. S3 sends its high and
+  low three-digit halves as ordered `0x88`/`0x89` state frames. P4 discards an
+  out-of-order low half and clears the displayed code on `STARTING`, `OFF` or
+  `ERROR`; the complete code is shown only while the AP reports `ON`.
+- The published WPA2 password permits association but does not authorize a
+  mutation. `POST /api/ota/s3` additionally requires the current maintenance
+  code. It expires after ten minutes, locks after five failures and is cleared
+  when the AP stops. The AP automatically shuts down after fifteen minutes.
 - FLX4 MIDI, control-link UART, and P4-to-S3 headphone audio must keep running
   regardless of debug AP state; a start failure only yields `ERROR`.
 

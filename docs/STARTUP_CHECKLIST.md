@@ -583,6 +583,10 @@ Runtime S3 Wi-Fi debug AP on `master`. Hardware smoke passed on 2026-07-08
   AP visible.
 - [x] Enable the switch; S3 brings up SoftAP + DHCP on `192.168.4.1`
   (`s3_debug_ap: S3 debug AP active` on the S3 console).
+- [ ] Confirm the Settings row shows a fresh six-digit code only after `ON`, an
+  OTA POST without/wrong code is rejected, the fifth wrong attempt locks the
+  code, and OFF→ON publishes a different usable code.
+- [ ] Leave the AP enabled and confirm its fifteen-minute automatic shutdown.
 - [x] Connect a phone to `Pajoniiir-S3-DEBUG`, open `http://192.168.4.1`; page
   loads and **live logs stream** over SSE without disconnecting.
 - [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while this S3 debug AP is

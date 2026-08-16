@@ -612,7 +612,7 @@ gate, pa status nije hardware-closed.
 | --- | --- | --- | --- | --- |
 | CR-20260816-P2-13 | **SOFTWARE FIXED; HW PENDING** | S3 OTA prije alokacije odbija bundle veći od maksimalne signed image veličine, zatim prvo prima i verificira manifest/header. Wrap-safe guard nameće ukupni rok od 180 s te svakih 10 s traži barem 4096 B napretka; timeout/slow path prije i nakon `s3_ota_begin()` brzo zatvara zahtjev, a započeti OTA abortira. | Pure guard test pokriva 1 B/s slow client, dovoljan napredak, ukupni deadline i `UINT32_MAX` wrap; signing 6/6, S3 host suite i build prolaze. | Preostaje fizički HTTP slow/fragmented-client test koji nakon 408 potvrđuje da server odmah prima novi zahtjev i da boot particija nije promijenjena. |
 | CR-20260816-P2-14 | **SOFTWARE FIXED; HW PENDING** | Pending S3 image sada prvo čeka stvarni start UART RX, heartbeat, translator, USB host-library i MIDI-client taskova, zatim svakih 500 ms šalje svježi `0x86` challenge. P4 ga iz UART RX taska vraća kao `0x87`; prerani, pogrešan ili odsutan ACK ne može potvrditi image, a 30 s timeout restarta još-pending slot. | Pure gate odbija `init OK/no traffic`, prerani i pogrešni ACK; production P4 UART test dokazuje exact echo bez deck-queue eventa. Odsutan FLX4 nije failure uvjet. | Preostaje fizički test oba boot redoslijeda, prekinutog P4→S3 voda, izgubljenog ACK-a i potvrđenog rollbacka. |
-| CR-20260816-P2-15 | **OPEN** | Debug AP koristi javni statični PSK i nema operator autentikaciju (`s3_debug_ap.h:9-11`, `RISK_REGISTER.md`). | Per-device PSK ili kratkotrajni maintenance token na P4 UI-ju; fizička rollback potvrda; AP idle timeout, rate limiting i PMF/WPA3 gdje je podržano. | Neautenticirani klijent ne može mutirati stanje; servisni signed rollback ostaje moguć uz fizičku autorizaciju. |
+| CR-20260816-P2-15 | **SOFTWARE FIXED; HW PENDING** | Javni statični PSK sada dopušta samo pridruživanje S3 AP-u. Svaki ON edge generira novi šesteroznamenkasti maintenance token koji se prikazuje na P4 Settingsu i obavezan je za OTA POST; token vrijedi deset minuta, zaključava se nakon pet grešaka i briše na OFF. AP se automatski gasi nakon petnaest minuta. | Pure auth test pokriva format, uspjeh, expiry, lockout i tick wrap; control-link test odbija nepotpun/out-of-order token, a UI prikazuje kod samo uz status ON. | Fizički potvrditi 401/429 bez početka flasha, expiry/lockout, različit kod nakon OFF→ON, 15-min shutdown i uspješan signed servisni rollback s aktualnim kodom. |
 | CR-20260816-P2-16 | **CLOSED** | Converter koristi `first_present()` pa nula ostaje valjana, sve numeričke forme prolaze kroz base-0/range validaciju, key-lock i nepoznati eksplicitni semantic ID odbijaju se, a pad input više ne izmišlja vendor LED adrese. Deck-only i različite Deck 1/2 LED adrese emitiraju se kao zasebni točni outputi. | Svaki rezultat obavezno prolazi stvarni `compile_profile()` prije povrata; compiler sada prihvaća eksplicitni output `deck: 0/1`. | Šest fixturea pokriva zero, hex range, deck2-only, različite adrese, key-lock te deck/MIDI range; test je u punom S3 runneru i svi committed profile fixturei ostaju byte-identični. |
 
 #### Implementirano 2026-08-16 — S3 OTA upload i AP init availability
@@ -643,6 +643,23 @@ UART challenge/ACK test. Oba ESP-IDF v6.0.2 builda prolaze: S3 image je
 `0xecb40` uz 51% slobodnog najmanjeg OTA slota, P4 `0x253880` uz 42% slobodno;
 dependency lockovi nisu promijenjeni. Fizički cross-board ACK-loss/rollback
 test ostaje hardware gate.
+
+#### Implementirano 2026-08-16 — S3 maintenance autentikacija
+
+Commit `2dad8c7` zatvara software dio CR-20260816-P2-15. S3 Debug AP više ne
+koristi objavljeni WPA2 PSK kao autorizaciju mutacije. Svaki ON edge generira
+svježi šesteroznamenkasti kod, šalje ga preko dva uređena `CTRL_TYPE_STATE`
+framea i P4 ga prikazuje na Settings ekranu tek uz status `ON`. OTA handler
+prije obrade bodyja zahtijeva taj kod; valjanost je deset minuta, pet pogrešnih
+pokušaja zaključava autorizaciju, OFF briše kod, a AP se sam gasi nakon petnaest
+minuta.
+
+Pure auth, S3 Debug AP state, P4 deck/UI i oba puna host suitea prolaze. Exact
+UI screenshot gate ostao je byte-identičan. Oba ESP-IDF v6.0.2 builda prolaze:
+S3 image je `0xed6a0` uz 51% slobodnog najmanjeg OTA slota, a P4 `0x253b20` uz
+42% slobodno; dependency lockovi nisu promijenjeni. Fizička radio/HTTP provjera
+401/429/expiry/auto-shutdown i supervised signed rollback ostaje acceptance
+gate.
 
 #### Implementirano 2026-08-16 — web-profile converter correctness
 
@@ -889,3 +906,4 @@ Ovaj odjeljak ažurirati nakon svakog paketa, bez brisanja povijesti.
 | 2026-08-16 | CR-20260816-P3-02 | `e3dcca5` | CLOSED | Puni S3 host suite PASS; runtime snapshot/reentrant callback regresija PASS; static-allocation source guardovi PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xecff0`, 51% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Nema preostalog source ili hardware gatea za profile runtime lock |
 | 2026-08-16 | CR-20260816-P3-03 | `ff2b74a` | SOFTWARE FIXED; HW PENDING | Fokusirani audio engine 393/393 PASS; 50.000 threaded limiter/routing publikacija bez nekoherentnog snapshota ili izgubljenog updatea; puni P4 host suite PASS; P4 ESP-IDF 6.0.2 build PASS, image `0x253980`, 42% free; `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizički multicore routing-toggle stress tijekom dual-deck MAIN/PFL reprodukcije i potvrda stabilne limiter telemetrije |
 | 2026-08-16 | CR-20260816-P2-07 | `e0b3117` | SOFTWARE FIXED; HW PENDING | Q32 resampler petominutni 44,1→48 kHz i 1,1× consumption drift 0; puni P4 host suite PASS; stvarni RV32 `audio_resampler.c.obj` nema undefined ni `*df*` helper simbole; 300 s dual-deck soak PASS (drift 0, clicks 0, clipped 0, host CPU 1,992 s); P4 ESP-IDF 6.0.2 build PASS, image `0x253970`, 42% free; workflow YAML i `git diff --check` PASS; `dependencies.lock` nepromijenjen | Fizičko worst-case dual-deck P4 CPU/I2S deadline mjerenje i slušna provjera pitch/sample-rate kombinacija |
+| 2026-08-16 | CR-20260816-P2-15 | `2dad8c7` | SOFTWARE FIXED; HW PENDING | Pure maintenance auth PASS; S3 Debug AP state, P4 deck token ordering i Settings format PASS; oba puna host suitea PASS; exact UI screenshot E2E PASS; S3 ESP-IDF 6.0.2 build PASS, image `0xed6a0`, 51% free; P4 build PASS, image `0x253b20`, 42% free; `git diff --check` PASS; oba `dependencies.lock` nepromijenjena | Fizički 401/429/expiry/lockout i 15-min auto-shutdown; OFF→ON novi kod; supervised signed S3 rollback s aktualnim kodom |
