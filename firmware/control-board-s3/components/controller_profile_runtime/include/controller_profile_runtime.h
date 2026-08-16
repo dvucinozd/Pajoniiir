@@ -24,13 +24,16 @@ void controller_profile_runtime_init(void);
  * (ACK), false when the blob is not a valid S3CP profile (NACK PARSE).
  * `blob == NULL` clears the active profile (used by PROFILE_CLEAR). */
 bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
-                                         uint16_t vid, uint16_t pid);
+                                         uint16_t vid, uint16_t pid,
+                                         uint32_t connection_epoch);
 
 /* Drop the active profile (fall back to the built-in map). */
 void controller_profile_runtime_clear(void);
 
 /* True when a dynamic profile is installed and should be used for mapping. */
 bool controller_profile_runtime_active(void);
+bool controller_profile_runtime_bound_to(uint16_t vid, uint16_t pid,
+                                         uint32_t connection_epoch);
 
 /* Map one 3-byte MIDI message through the active profile. Returns true and
  * fills the type/id/value out-params (control_link semantic event) when the

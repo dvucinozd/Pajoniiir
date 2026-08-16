@@ -67,14 +67,19 @@ int main(void)
     assert(!controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
 
     /* Activate the FLX4 fixture. */
-    assert(controller_profile_runtime_activate(g_blob, g_blob_len, 0x2B73, 0x0045));
+    assert(controller_profile_runtime_activate(g_blob, g_blob_len,
+                                               0x2B73, 0x0045, 7u));
     assert(controller_profile_runtime_active());
+    assert(controller_profile_runtime_bound_to(0x2B73, 0x0045, 7u));
+    assert(!controller_profile_runtime_bound_to(0x2B73, 0x0045, 6u));
 
     /* Deck 1 Play -> BUTTON deck1.play=0x10 value 1/0. */
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(type == SEM_BUTTON && id == 0x10 && value == 1);
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x00, &type, &id, &value));
     assert(value == 0);
+    assert(controller_profile_runtime_map(0x80, 0x0B, 0x40, &type, &id, &value));
+    assert(type == SEM_BUTTON && id == 0x10 && value == 0);
 
     /* Deck 1 tempo 14-bit: no emit on MSB alone, emit on LSB. */
     assert(!controller_profile_runtime_map(0xB0, 0x00, 0x40, &type, &id, &value));
@@ -111,7 +116,8 @@ int main(void)
     /* A failed parse must NOT disturb the active profile. */
     static uint8_t garbage[64];
     memset(garbage, 0xAB, sizeof(garbage));
-    assert(!controller_profile_runtime_activate(garbage, sizeof(garbage), 1, 2));
+    assert(!controller_profile_runtime_activate(garbage, sizeof(garbage),
+                                                1, 2, 7u));
     assert(controller_profile_runtime_active());
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(id == 0x10);
@@ -119,7 +125,8 @@ int main(void)
 
     /* Transfer metadata must match the profile header, and a rejected
      * activation must leave the currently active profile untouched. */
-    assert(!controller_profile_runtime_activate(g_blob, g_blob_len, 0x2B73, 0x9999));
+    assert(!controller_profile_runtime_activate(g_blob, g_blob_len,
+                                                0x2B73, 0x9999, 7u));
     assert(controller_profile_runtime_active());
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(id == 0x10);
@@ -129,7 +136,7 @@ int main(void)
     controller_profile_runtime_clear();
     assert(!controller_profile_runtime_active());
     assert(!controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
-    assert(controller_profile_runtime_activate(NULL, 0, 0, 0)); /* NULL == clear, true */
+    assert(controller_profile_runtime_activate(NULL, 0, 0, 0, 0u)); /* NULL == clear, true */
     assert(!controller_profile_runtime_active());
     printf("  clear + NULL-blob clear                           PASS\n");
 
@@ -137,7 +144,7 @@ int main(void)
      * table-driven rather than accidentally coupled to the built-in mapper. */
     load_fixture(GENERIC_FIXTURE);
     assert(controller_profile_runtime_activate(g_blob, g_blob_len,
-                                               0x1209, 0xC0DE));
+                                               0x1209, 0xC0DE, 8u));
     assert(controller_profile_runtime_map(0x90, 0x10, 0x7F,
                                           &type, &id, &value));
     assert(type == SEM_BUTTON && id == 0x10 && value == 1);

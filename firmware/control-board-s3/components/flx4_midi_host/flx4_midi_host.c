@@ -11,6 +11,69 @@ static void *s_connection_cb_ctx;
 static bool s_connection_state_valid;
 static bool s_connection_state_connected;
 static bool s_connection_refresh_requested;
+static uint32_t s_context_sequence;
+static flx4_midi_connection_context_t s_connection_context;
+
+static uint32_t next_connection_epoch(uint32_t epoch)
+{
+    epoch++;
+    return epoch == 0u ? 1u : epoch;
+}
+
+static void publish_connection_context(bool connected, uint16_t vid,
+                                       uint16_t pid, uint8_t interface_num,
+                                       uint8_t alternate_setting)
+{
+    (void)__atomic_add_fetch(&s_context_sequence, 1u, __ATOMIC_ACQ_REL);
+    uint32_t epoch = __atomic_load_n(&s_connection_context.connection_epoch,
+                                     __ATOMIC_RELAXED);
+    if (connected) epoch = next_connection_epoch(epoch);
+    __atomic_store_n(&s_connection_context.vid, vid, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_connection_context.pid, pid, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_connection_context.interface_num, interface_num,
+                     __ATOMIC_RELAXED);
+    __atomic_store_n(&s_connection_context.alternate_setting, alternate_setting,
+                     __ATOMIC_RELAXED);
+    __atomic_store_n(&s_connection_context.connection_epoch, epoch,
+                     __ATOMIC_RELAXED);
+    __atomic_store_n(&s_connection_context.connected, connected,
+                     __ATOMIC_RELAXED);
+    (void)__atomic_add_fetch(&s_context_sequence, 1u, __ATOMIC_RELEASE);
+}
+
+bool flx4_midi_host_get_connection_context(
+    flx4_midi_connection_context_t *out_context)
+{
+    if (!out_context) return false;
+    for (;;) {
+        uint32_t before;
+        uint32_t after;
+        before = __atomic_load_n(&s_context_sequence, __ATOMIC_ACQUIRE);
+        if ((before & 1u) != 0u) continue;
+        out_context->connected = __atomic_load_n(
+            &s_connection_context.connected, __ATOMIC_RELAXED);
+        out_context->vid = __atomic_load_n(&s_connection_context.vid,
+                                           __ATOMIC_RELAXED);
+        out_context->pid = __atomic_load_n(&s_connection_context.pid,
+                                           __ATOMIC_RELAXED);
+        out_context->interface_num = __atomic_load_n(
+            &s_connection_context.interface_num, __ATOMIC_RELAXED);
+        out_context->alternate_setting = __atomic_load_n(
+            &s_connection_context.alternate_setting, __ATOMIC_RELAXED);
+        out_context->connection_epoch = __atomic_load_n(
+            &s_connection_context.connection_epoch, __ATOMIC_RELAXED);
+        after = __atomic_load_n(&s_context_sequence, __ATOMIC_ACQUIRE);
+        if (before == after && (after & 1u) == 0u) break;
+    }
+    return out_context->connected;
+}
+
+bool flx4_midi_host_builtin_flx4_active(void)
+{
+    flx4_midi_connection_context_t context;
+    return flx4_midi_host_get_connection_context(&context) &&
+           context.vid == FLX4_USB_VID && context.pid == FLX4_USB_PID;
+}
 
 #define FLX4_MIDI_OUT_QUEUE_DEPTH 64u
 
@@ -348,6 +411,16 @@ void flx4_midi_host_test_reset_connection_state(void)
     __atomic_store_n(&s_connection_state_valid, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_state_connected, false, __ATOMIC_RELEASE);
     __atomic_store_n(&s_connection_refresh_requested, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_context_sequence, 0u, __ATOMIC_RELEASE);
+    memset(&s_connection_context, 0, sizeof(s_connection_context));
+}
+
+void flx4_midi_host_test_publish_connection_context(
+    bool connected, uint16_t vid, uint16_t pid,
+    uint8_t interface_num, uint8_t alternate_setting)
+{
+    publish_connection_context(connected, vid, pid,
+                               interface_num, alternate_setting);
 }
 
 bool flx4_midi_host_test_publish_connection_state(
@@ -914,6 +987,7 @@ static bool close_device_step(flx4_host_state_t *host)
     host->transfer_active = false;
     host->out_transfer_active = false;
     host->closing = false;
+    publish_connection_context(false, 0u, 0u, 0u, 0u);
     publish_connection_state(false);
     ESP_LOGW(TAG, "DDJ-FLX4 device closed/disconnected");
     return true;
@@ -1020,6 +1094,12 @@ static esp_err_t open_device(flx4_host_state_t *host, uint8_t dev_addr)
 
     esp_err_t rc = start_midi_in_transfer(host);
     if (rc == ESP_OK) {
+        publish_connection_context(true, s_desc_report.vid, s_desc_report.pid,
+                                   host->interface_num,
+                                   host->alternate_setting);
+        flx4_midi_connection_context_t connection;
+        (void)flx4_midi_host_get_connection_context(&connection);
+        s_desc_report.connection_epoch = connection.connection_epoch;
         midi_out_set_accepting(true);
         publish_connection_state(true);
     }
@@ -1137,6 +1217,8 @@ static void midi_client_task(void *arg)
 
 esp_err_t flx4_midi_host_init(void)
 {
+    __atomic_store_n(&s_context_sequence, 0u, __ATOMIC_RELEASE);
+    memset(&s_connection_context, 0, sizeof(s_connection_context));
     s_midi_out_queue = xQueueCreate((UBaseType_t)MIDI_OUT_QUEUE_DEPTH, 4);
     if (!s_midi_out_queue) {
         return ESP_ERR_NO_MEM;

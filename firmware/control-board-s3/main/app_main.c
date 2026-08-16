@@ -96,6 +96,7 @@ static control_event_scheduler_t s_flx4_scheduler;
 static portMUX_TYPE s_flx4_scheduler_mux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t s_flx4_translator_task;
 static flx4_map_state_t s_flx4_map;
+static portMUX_TYPE s_flx4_map_mux = portMUX_INITIALIZER_UNLOCKED;
 static control_held_state_reconciler_t s_flx4_held_states;
 static portMUX_TYPE s_flx4_held_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_flx4_unsupported_count;
@@ -124,11 +125,21 @@ static bool flx4_send_snapshot_event(uint8_t type, uint8_t id, int16_t value, vo
 static void flx4_replay_known_input_snapshot(void)
 {
     flx4_snapshot_replay_ctx_t replay = { 0 };
-    /* A dynamic profile, once activated, owns the input map (and its own
-     * replay set); otherwise fall back to the built-in FLX4 map. */
-    size_t known = controller_profile_runtime_active()
-        ? controller_profile_runtime_emit_snapshot(flx4_send_snapshot_event, &replay)
-        : flx4_map_emit_snapshot(&s_flx4_map, flx4_send_snapshot_event, &replay);
+    flx4_midi_connection_context_t connection;
+    size_t known = 0u;
+    if (flx4_midi_host_get_connection_context(&connection) &&
+        controller_profile_runtime_bound_to(
+            connection.vid, connection.pid, connection.connection_epoch)) {
+        known = controller_profile_runtime_emit_snapshot(
+            flx4_send_snapshot_event, &replay);
+    } else if (flx4_midi_host_builtin_flx4_active()) {
+        flx4_map_state_t snapshot;
+        portENTER_CRITICAL(&s_flx4_map_mux);
+        snapshot = s_flx4_map;
+        portEXIT_CRITICAL(&s_flx4_map_mux);
+        known = flx4_map_emit_snapshot(
+            &snapshot, flx4_send_snapshot_event, &replay);
+    }
     if (known > 0 || replay.failed > 0) {
         ESP_LOGD(TAG, "FLX4 input snapshot replay known=%u sent=%u failed=%u",
                  (unsigned)known, (unsigned)replay.sent, (unsigned)replay.failed);
@@ -192,6 +203,13 @@ static void flx4_controller_connection_cb(bool connected, void *user_ctx)
         flx4_replay_known_held_snapshot();
         return;
     }
+    controller_profile_runtime_clear();
+    portENTER_CRITICAL(&s_flx4_map_mux);
+    flx4_map_init(&s_flx4_map);
+    portEXIT_CRITICAL(&s_flx4_map_mux);
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    control_event_scheduler_reset(&s_flx4_scheduler);
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
     portENTER_CRITICAL(&s_flx4_held_mux);
     control_held_state_release_all(&s_flx4_held_states, 0u);
     portEXIT_CRITICAL(&s_flx4_held_mux);
@@ -325,9 +343,21 @@ static void flx4_enqueue_event(const flx4_control_event_t *ev)
 }
 
 static bool flx4_profile_activate_cb(const uint8_t *blob, size_t len,
-                                     uint16_t vid, uint16_t pid)
+                                     uint16_t vid, uint16_t pid,
+                                     uint32_t connection_epoch)
 {
-    return controller_profile_runtime_activate(blob, len, vid, pid);
+    if (!blob || len == 0u) {
+        controller_profile_runtime_clear();
+        return true;
+    }
+    flx4_midi_connection_context_t connection;
+    if (!flx4_midi_host_get_connection_context(&connection) ||
+        connection.vid != vid || connection.pid != pid ||
+        connection.connection_epoch != connection_epoch) {
+        return false;
+    }
+    return controller_profile_runtime_activate(
+        blob, len, vid, pid, connection_epoch);
 }
 
 static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
@@ -338,13 +368,20 @@ static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
     }
     flx4_control_event_t ev;
     bool mapped;
-    /* Prefer the active dynamic profile; fall back to the built-in FLX4 map
-     * when none has been transferred/activated. */
-    if (controller_profile_runtime_active()) {
+    flx4_midi_connection_context_t connection;
+    bool connected = flx4_midi_host_get_connection_context(&connection);
+    if (connected && controller_profile_runtime_bound_to(
+                         connection.vid, connection.pid,
+                         connection.connection_epoch)) {
         mapped = controller_profile_runtime_map(msg->status, msg->data1, msg->data2,
                                                 &ev.type, &ev.id, &ev.value);
-    } else {
+    } else if (connected && connection.vid == FLX4_USB_VID &&
+               connection.pid == FLX4_USB_PID) {
+        portENTER_CRITICAL(&s_flx4_map_mux);
         mapped = flx4_map_message(&s_flx4_map, msg, &ev);
+        portEXIT_CRITICAL(&s_flx4_map_mux);
+    } else {
+        mapped = false;
     }
     if (mapped) {
         flx4_enqueue_event(&ev);
@@ -406,7 +443,9 @@ void app_main(void)
     if (status_led_init() != ESP_OK) {
         ESP_LOGW(TAG, "status LED unavailable; continuing without it");
     }
+    portENTER_CRITICAL(&s_flx4_map_mux);
     flx4_map_init(&s_flx4_map);
+    portEXIT_CRITICAL(&s_flx4_map_mux);
     control_held_state_reset(&s_flx4_held_states);
     control_event_scheduler_reset(&s_flx4_scheduler);
     controller_profile_runtime_init();

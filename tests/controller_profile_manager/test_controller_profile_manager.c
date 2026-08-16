@@ -341,6 +341,28 @@ static void test_disconnect_clears_live_state_and_preserves_profiles(void)
     printf("  disconnect clears live state, preserves profiles      PASS\n");
 }
 
+static void test_descriptor_epoch_policy(void)
+{
+    controller_profile_registry_t reg = {0};
+    reg.controller_present = true;
+    reg.connected_vid = 0x2B73;
+    reg.connected_pid = 0x0045;
+    reg.connected_epoch = 10u;
+
+    assert(controller_profile_descriptor_is_fresh(&reg, 0x2B73, 0x0045, 10u));
+    assert(!controller_profile_descriptor_is_fresh(&reg, 0x1209, 0xC0DE, 10u));
+    assert(!controller_profile_descriptor_is_fresh(&reg, 0x2B73, 0x0045, 9u));
+    assert(controller_profile_descriptor_is_fresh(&reg, 0x1209, 0xC0DE, 11u));
+    assert(!controller_profile_descriptor_is_fresh(&reg, 0x2B73, 0x0045, 0u));
+    assert(!controller_profile_descriptor_is_fresh(NULL, 0, 0, 1u));
+
+    reg.connected_epoch = UINT32_MAX;
+    assert(controller_profile_descriptor_is_fresh(&reg, 0x1209, 0xC0DE, 1u));
+    reg.controller_present = false;
+    assert(controller_profile_descriptor_is_fresh(&reg, 0x1209, 0xC0DE, 1u));
+    printf("  descriptor identity/epoch ordering policy          PASS\n");
+}
+
 static void test_profile_id_validation(void)
 {
     assert(controller_profile_id_valid("pioneer_ddj_flx4"));
@@ -466,6 +488,7 @@ int main(void)
     test_descriptor_match_waits_for_activate_ack();
     test_rescan_preserves_descriptor_and_requires_reactivation();
     test_disconnect_clears_live_state_and_preserves_profiles();
+    test_descriptor_epoch_policy();
     test_profile_id_validation();
     test_atomic_install_and_recovery();
     cleanup_tree();

@@ -553,7 +553,7 @@ static void test_s3_and_p4_bulk_frame_constants_match(void)
     assert(s3_ctrl_bulk_type_controller_descriptor() == 0x01);
     assert(s3_ctrl_desc_payload_len() == p4_ctrl_desc_payload_len());
     assert(s3_ctrl_desc_payload_len() ==
-           6 + s3_ctrl_desc_product_max());
+           10 + s3_ctrl_desc_product_max());
     assert(s3_ctrl_desc_product_max() == p4_ctrl_desc_product_max());
     assert(s3_ctrl_desc_cap_midi_in() == p4_ctrl_desc_cap_midi_in());
     assert(s3_ctrl_desc_cap_midi_out() == p4_ctrl_desc_cap_midi_out());

@@ -430,14 +430,19 @@ Assert-FileContains `
     -Patterns @("handle_profile_frame", "cp_xfer_rx_begin", "cp_xfer_rx_chunk", "cp_xfer_rx_end", "send_profile_reply_ack", "control_link_get_stored_profile")
 
 Assert-FileContains `
-    -Name "s3 routes MIDI through the dynamic profile with FLX4 fallback" `
+    -Name "s3 binds MIDI mapping to the current controller connection" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("controller_profile_runtime_active", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
+    -Patterns @("controller_profile_runtime_bound_to", "connection.connection_epoch", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
 
 Assert-FileContains `
-    -Name "s3 LED output prefers the dynamic profile with FLX4 fallback" `
+    -Name "s3 LED output drops missing dynamic mappings without FLX4 fallback" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
-    -Patterns @("controller_profile_runtime_map_led", "flx4_led_midi_build_packet")
+    -Patterns @("controller_profile_runtime_map_led", "flx4_midi_host_builtin_flx4_active", "controller_output_select_route")
+
+Assert-FileContains `
+    -Name "s3 disconnect clears profile, map, scheduler, and held state" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("controller_profile_runtime_clear", "flx4_map_init", "control_event_scheduler_reset", "control_held_state_release_all")
 
 # The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
 # identical on the S3 and P4 sides so the link cannot disagree on the wire.
@@ -487,6 +492,18 @@ try {
 }
 
 $tests = @(
+    @{
+        Name = "controller_output_policy"
+        Dir = "tests/controller_output_policy"
+        Target = "test_controller_output_policy.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_controller_output_policy.exe",
+            "test_controller_output_policy.c",
+            "../../firmware/control-board-s3/components/control_link/controller_output_policy.c"
+        )
+    },
     @{
         Name = "control_event_scheduler"
         Dir = "tests/control_event_scheduler"

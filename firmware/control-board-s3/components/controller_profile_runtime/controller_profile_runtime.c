@@ -24,6 +24,9 @@ static const char *TAG = "ctrl_profile_rt";
 static cp_profile_t s_profile;
 static cp_runtime_t s_runtime;
 static bool s_active;
+static uint16_t s_bound_vid;
+static uint16_t s_bound_pid;
+static uint32_t s_bound_epoch;
 
 void controller_profile_runtime_init(void)
 {
@@ -33,10 +36,14 @@ void controller_profile_runtime_init(void)
     }
 #endif
     s_active = false;
+    s_bound_vid = 0u;
+    s_bound_pid = 0u;
+    s_bound_epoch = 0u;
 }
 
 bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
-                                         uint16_t vid, uint16_t pid)
+                                         uint16_t vid, uint16_t pid,
+                                         uint32_t connection_epoch)
 {
     if (!blob || len == 0) {
         controller_profile_runtime_clear();
@@ -51,7 +58,7 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
         RT_LOGW("profile parse failed rc=%d (VID=0x%04X PID=0x%04X)", rc, vid, pid);
         return false;
     }
-    if (parsed.vid != vid || parsed.pid != pid) {
+    if (connection_epoch == 0u || parsed.vid != vid || parsed.pid != pid) {
         RT_LOGW("profile VID/PID mismatch blob=0x%04X:0x%04X transfer=0x%04X:0x%04X",
                 parsed.vid, parsed.pid, vid, pid);
         return false;
@@ -60,6 +67,9 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
     RT_LOCK();
     s_profile = parsed;
     cp_runtime_init(&s_runtime);
+    s_bound_vid = vid;
+    s_bound_pid = pid;
+    s_bound_epoch = connection_epoch;
     s_active = true;
     RT_UNLOCK();
     RT_LOGI("dynamic profile active: VID=0x%04X PID=0x%04X inputs=%u",
@@ -71,7 +81,22 @@ void controller_profile_runtime_clear(void)
 {
     RT_LOCK();
     s_active = false;
+    memset(&s_runtime, 0, sizeof(s_runtime));
+    s_bound_vid = 0u;
+    s_bound_pid = 0u;
+    s_bound_epoch = 0u;
     RT_UNLOCK();
+}
+
+bool controller_profile_runtime_bound_to(uint16_t vid, uint16_t pid,
+                                         uint32_t connection_epoch)
+{
+    RT_LOCK();
+    bool bound = s_active && connection_epoch != 0u &&
+                 s_bound_vid == vid && s_bound_pid == pid &&
+                 s_bound_epoch == connection_epoch;
+    RT_UNLOCK();
+    return bound;
 }
 
 bool controller_profile_runtime_active(void)
@@ -124,11 +149,19 @@ bool controller_profile_runtime_map_led(uint8_t led, uint8_t deck, uint8_t state
 size_t controller_profile_runtime_emit_snapshot(controller_profile_runtime_emit_cb_t cb,
                                                 void *ctx)
 {
-    size_t n = 0;
+    cp_event_t events[CP_MAX_INPUTS];
+    size_t n = 0u;
     RT_LOCK();
     if (s_active) {
-        n = cp_runtime_emit_snapshot(&s_profile, &s_runtime, cb, ctx);
+        n = cp_runtime_collect_snapshot(&s_profile, &s_runtime,
+                                        events, CP_MAX_INPUTS);
     }
     RT_UNLOCK();
-    return n;
+    size_t emitted = 0u;
+    while (emitted < n && cb &&
+           cb(events[emitted].type, events[emitted].id,
+              events[emitted].value, ctx)) {
+        emitted++;
+    }
+    return emitted;
 }

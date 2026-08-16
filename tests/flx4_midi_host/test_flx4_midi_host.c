@@ -204,6 +204,33 @@ static void test_connected_state_can_be_refreshed_after_edge_publication(void)
     assert(!flx4_midi_host_test_publish_connection_refresh(&ev));
 }
 
+static void test_connection_context_is_identity_and_epoch_bound(void)
+{
+    flx4_midi_connection_context_t context = { 0 };
+    flx4_midi_host_test_reset_connection_state();
+    assert(!flx4_midi_host_get_connection_context(&context));
+    assert(context.connection_epoch == 0u);
+
+    flx4_midi_host_test_publish_connection_context(
+        true, FLX4_USB_VID, FLX4_USB_PID, 3u, 1u);
+    assert(flx4_midi_host_get_connection_context(&context));
+    assert(context.connected && context.vid == FLX4_USB_VID &&
+           context.pid == FLX4_USB_PID && context.interface_num == 3u &&
+           context.alternate_setting == 1u && context.connection_epoch == 1u);
+    assert(flx4_midi_host_builtin_flx4_active());
+
+    flx4_midi_host_test_publish_connection_context(false, 0u, 0u, 0u, 0u);
+    assert(!flx4_midi_host_get_connection_context(&context));
+    assert(context.connection_epoch == 1u);
+    assert(!flx4_midi_host_builtin_flx4_active());
+
+    flx4_midi_host_test_publish_connection_context(
+        true, 0x1209u, 0xC0DEu, 2u, 0u);
+    assert(flx4_midi_host_get_connection_context(&context));
+    assert(context.connection_epoch == 2u);
+    assert(!flx4_midi_host_builtin_flx4_active());
+}
+
 static unsigned s_connection_callback_count;
 static bool s_connection_callback_value;
 
@@ -310,6 +337,7 @@ int main(void)
     test_rejects_truncated_descriptor();
     test_connection_state_publications_are_edge_triggered();
     test_connected_state_can_be_refreshed_after_edge_publication();
+    test_connection_context_is_identity_and_epoch_bound();
     test_connection_owner_notifies_snapshot_reconciler_on_edges();
     test_vu_meter_packets_are_low_priority();
     test_vu_meter_packets_drop_when_out_queue_has_backlog();

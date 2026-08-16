@@ -171,6 +171,14 @@ bool cp_runtime_process(const cp_profile_t *profile, cp_runtime_t *rt,
         return false;
     }
 
+    /* USB-MIDI permits releases as either Note On velocity zero or a true
+     * Note Off with arbitrary release velocity. Profiles use the Note On
+     * address; normalize both wire forms to one released edge. */
+    if ((status & 0xF0u) == 0x80u) {
+        status = (uint8_t)(0x90u | (status & 0x0Fu));
+        data2 = 0u;
+    }
+
     for (uint16_t i = 0; i < profile->input_count; i++) {
         const cp_input_entry_t *e = &profile->inputs[i];
         if (e->match_status != status || e->match_data1 != data1) {
@@ -278,6 +286,34 @@ size_t cp_runtime_emit_snapshot(const cp_profile_t *profile,
                 return count;
             }
             count++;
+        }
+    }
+    return count;
+}
+
+size_t cp_runtime_collect_snapshot(const cp_profile_t *profile,
+                                   const cp_runtime_t *rt,
+                                   cp_event_t *events, size_t capacity)
+{
+    if (!profile || !rt || (!events && capacity != 0u)) return 0u;
+    size_t count = 0u;
+    for (uint16_t i = 0; i < profile->input_count && count < capacity; i++) {
+        const cp_input_entry_t *e = &profile->inputs[i];
+        if (!(e->flags & CP_IN_FLAG_REPLAY)) continue;
+        int16_t value = 0;
+        bool valid = false;
+        if (e->raw_type == CP_IN_CC14_MSB) {
+            valid = pair_value(&rt->slots[e->pair_slot], &value);
+        } else if (e->raw_type == CP_IN_CC7_ABS && rt->cc7_valid[i]) {
+            value = rt->cc7_value[i];
+            valid = true;
+        }
+        if (valid) {
+            events[count++] = (cp_event_t) {
+                .type = e->semantic_type,
+                .id = e->semantic_id,
+                .value = value,
+            };
         }
     }
     return count;

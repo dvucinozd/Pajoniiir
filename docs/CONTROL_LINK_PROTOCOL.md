@@ -431,7 +431,7 @@ The same status response exposes service-journal health under `service_log`:
 
 | Type | Dir | Meaning |
 | ---: | --- | --- |
-| `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + product string |
+| `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + connection epoch + product string |
 | `0x02` PROFILE_BEGIN | P4 -> S3 | total_size + transfer crc32 + vid/pid |
 | `0x03` PROFILE_CHUNK | P4 -> S3 | offset + profile bytes |
 | `0x04` PROFILE_END | P4 -> S3 | end of stream (triggers crc32 verify) |
@@ -439,23 +439,37 @@ The same status response exposes service-journal health under `service_log`:
 | `0x06` PROFILE_NACK | S3 -> P4 | nacked frame type + reason |
 | `0x07` PROFILE_ACTIVATE | P4 -> S3 | activate the received profile |
 | `0x08` PROFILE_STATUS | S3 -> P4 | transfer state + vid/pid |
-| `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile (fall back to built-in) |
+| `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile and its connection binding |
 | `0x0A` FIRMWARE_REPORT | S3 -> P4 | running slot + image state + 32-byte version |
 
 ### Controller descriptor report (S3 -> P4)
 
 When the S3 opens a controller it sends `CONTROLLER_DESCRIPTOR` with VID, PID,
-capability bits (`CTRL_DESC_CAP_MIDI_IN/MIDI_OUT/USB_AUDIO`), and a 32-byte
-product string. It is re-sent with every connection-state publish and heartbeat
-refresh, so a P4-only reboot re-learns the controller. The P4
+capability bits (`CTRL_DESC_CAP_MIDI_IN/MIDI_OUT/USB_AUDIO`), a nonzero 32-bit
+connection epoch, and a 32-byte product string. The S3 increments the epoch for
+each accepted USB connection. The report is re-sent with every connection-state
+publish and heartbeat refresh, so a P4-only reboot re-learns the controller. The P4
 `controller_profile_manager` matches the VID/PID against profiles on the SD/TF
-card and selects the active profile.
+card and selects the active profile. Repeated reports are accepted only for the
+same VID/PID and epoch; an older epoch or a different identity reusing the same
+epoch is rejected.
+
+Payload (`42` bytes):
+
+```text
+[0..2)    vid               u16 little-endian
+[2..4)    pid               u16 little-endian
+[4..6)    capability bits   u16 little-endian
+[6..10)   connection_epoch  u32 little-endian, nonzero
+[10..42)  product           32-byte NUL-padded string
+```
 
 The S3 also sends the semantic
 `CTRL_ID_FLX4_CONNECTION=CTRL_FLX4_DISCONNECTED` state when the USB controller
 closes. P4 treats that state as the authoritative removal edge, clears only the
 live controller/profile selection (the scanned profile inventory remains
-loaded), cancels activation of an in-flight stale transfer, and emits one
+loaded), sends `PROFILE_CLEAR`, cancels activation of an in-flight stale
+transfer, and emits one
 `CONTROLLER_DISCONNECTED` service-journal record. A later descriptor can match
 and activate the controller again.
 
@@ -470,6 +484,12 @@ parses the stored blob and installs it as the active profile. The P4 sender
 waits for each stage's ACK with retry + timeout; a `NACK` restarts the transfer.
 Because the S3CP file carries its own internal crc32 in addition to the
 transfer crc32, a profile is double-checked before use.
+
+At `PROFILE_BEGIN`, S3 additionally requires the advertised VID/PID to match
+its current USB connection and captures that connection's epoch. Activation is
+accepted only while the same VID/PID/epoch is still current. A disconnect
+clears the stored runtime binding, built-in snapshot, scheduler state, and held
+inputs; late frames from the retired transfer cannot activate the old session.
 
 ### S3 firmware report (S3 -> P4)
 
@@ -497,15 +517,18 @@ top-level `state` returned by either target's own HTTP OTA service is instead
 the transfer state (`idle`, `receiving`, `ready_to_reboot` or `failed`) and must
 not be misread as partition validity.
 
-### Dynamic mapping and fallback
+### Dynamic mapping and controller quarantine
 
 Once a profile is active, the S3 maps controller MIDI IN through the profile's
 input table (`controller_profile_runtime`) instead of the built-in `flx4_map`,
 and maps P4 LED frames through the profile's output table instead of
-`flx4_led_midi`. When no profile is active it falls back to the built-in FLX4
-map on both paths. The FLX4 `profile.s3bin` is proven byte-equivalent to the
-built-in map by a golden-parity host test, so the dynamic path reproduces the
-built-in behaviour exactly.
+`flx4_led_midi`. An active dynamic profile is authoritative: an unmapped LED is
+dropped and never falls through to vendor-specific FLX4 output. The built-in
+map is enabled only when the current USB descriptor confirms the FLX4 VID/PID
+and no dynamic profile is active. Every other controller remains quarantined
+until a profile for its current connection epoch is activated. The FLX4
+`profile.s3bin` is proven byte-equivalent to the built-in map by a golden-parity
+host test, so the dynamic path reproduces the built-in behaviour exactly.
 
 ## Future Protocol Versioning
 

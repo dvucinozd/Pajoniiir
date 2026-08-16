@@ -41,6 +41,18 @@ typedef struct {
 typedef void (*flx4_midi_message_cb_t)(const flx4_midi_message_t *msg, void *user_ctx);
 typedef void (*flx4_midi_connection_cb_t)(bool connected, void *user_ctx);
 
+typedef struct {
+    bool connected;
+    uint16_t vid;
+    uint16_t pid;
+    uint8_t interface_num;
+    uint8_t alternate_setting;
+    uint32_t connection_epoch;
+} flx4_midi_connection_context_t;
+
+#define FLX4_USB_VID 0x2B73u
+#define FLX4_USB_PID 0x0045u
+
 bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *out);
 
 bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
@@ -74,6 +86,9 @@ esp_err_t flx4_midi_host_init(void);
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 
 bool flx4_midi_host_refresh_connection_state(void);
+bool flx4_midi_host_get_connection_context(
+    flx4_midi_connection_context_t *out_context);
+bool flx4_midi_host_builtin_flx4_active(void);
 
 size_t flx4_midi_host_midi_out_queue_capacity(void);
 
@@ -90,6 +105,9 @@ typedef struct {
 } flx4_midi_host_test_connection_event_t;
 
 void flx4_midi_host_test_reset_connection_state(void);
+void flx4_midi_host_test_publish_connection_context(
+    bool connected, uint16_t vid, uint16_t pid,
+    uint8_t interface_num, uint8_t alternate_setting);
 bool flx4_midi_host_test_publish_connection_state(
     bool connected,
     flx4_midi_host_test_connection_event_t *out);

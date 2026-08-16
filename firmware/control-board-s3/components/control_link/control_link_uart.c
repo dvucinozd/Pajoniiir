@@ -1,6 +1,7 @@
 #include "control_link.h"
 #include "flx4_midi_host.h"
 #include "flx4_led_midi.h"
+#include "controller_output_policy.h"
 #include "controller_profile_runtime.h"
 #include "s3_debug_ap.h"
 #include "status_led.h"
@@ -50,6 +51,7 @@ static bool s_profile_stored;
 static size_t s_profile_len;
 static uint16_t s_profile_vid;
 static uint16_t s_profile_pid;
+static uint32_t s_profile_connection_epoch;
 static control_link_profile_activate_cb_t s_profile_activate_cb;
 
 // ─── Frame helpers ────────────────────────────────────────────────────────────
@@ -101,19 +103,20 @@ static void handle_p4_frame(const uint8_t *f)
     uint8_t deck  = f[4];
 
     if (type == CTRL_TYPE_LED) {
-        // 1. Forward to the connected controller via USB MIDI. Prefer the
-        //    active dynamic profile's LED table; fall back to the built-in
-        //    FLX4 LED map when no profile is active (or it has no mapping).
+        // The active profile is authoritative. Missing output mappings are
+        // intentional drops; built-in fallback is legal only for a descriptor-
+        // confirmed physical FLX4 without a dynamic profile.
         if (deck == CTRL_DECK_1 || deck == CTRL_DECK_2) {
             uint8_t packet[4];
-            bool built = false;
-            if (controller_profile_runtime_active() &&
-                !flx4_led_midi_builtin_authoritative(id)) {
-                built = controller_profile_runtime_map_led(id, deck, state, packet);
-            }
-            if (!built) {
-                built = flx4_led_midi_build_packet(id, state, deck, packet);
-            }
+            bool dynamic_active = controller_profile_runtime_active();
+            bool dynamic_mapped = dynamic_active &&
+                controller_profile_runtime_map_led(id, deck, state, packet);
+            bool confirmed_flx4 = flx4_midi_host_builtin_flx4_active();
+            bool builtin_mapped = !dynamic_active && confirmed_flx4 &&
+                flx4_led_midi_build_packet(id, state, deck, packet);
+            controller_output_route_t route = controller_output_select_route(
+                dynamic_active, dynamic_mapped, confirmed_flx4, builtin_mapped);
+            bool built = route != CONTROLLER_OUTPUT_DROP;
             if (built) {
                 #if !defined(FLX4_MIDI_HOST_PC_TEST)
                 flx4_midi_host_send_packet(packet);
@@ -179,6 +182,13 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
                                     CTRL_PROFILE_NACK_STATE);
             return;
         }
+        flx4_midi_connection_context_t connection;
+        if (!flx4_midi_host_get_connection_context(&connection) ||
+            connection.vid != vid || connection.pid != pid) {
+            send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_BEGIN,
+                                    CTRL_PROFILE_NACK_STATE);
+            return;
+        }
         if (!s_profile_buf) {
             s_profile_buf = malloc(S3_PROFILE_BUF_CAP);
             if (!s_profile_buf) {
@@ -191,6 +201,7 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
         cp_xfer_rx_init(&s_xfer, s_profile_buf, S3_PROFILE_BUF_CAP);
         uint8_t reason = cp_xfer_rx_begin(&s_xfer, total, crc, vid, pid);
         if (reason == CTRL_PROFILE_NACK_NONE) {
+            s_profile_connection_epoch = connection.connection_epoch;
             send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_BEGIN);
         } else {
             send_profile_reply_nack(CTRL_BULK_TYPE_PROFILE_BEGIN, reason);
@@ -238,7 +249,8 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
         bool ok = true;
         if (s_profile_activate_cb) {
             ok = s_profile_activate_cb(s_profile_buf, s_profile_len,
-                                       s_profile_vid, s_profile_pid);
+                                       s_profile_vid, s_profile_pid,
+                                       s_profile_connection_epoch);
         }
         if (ok) {
             send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_ACTIVATE);
@@ -253,9 +265,10 @@ static void handle_profile_frame(const uint8_t *frame, size_t frame_len)
     case CTRL_BULK_TYPE_PROFILE_CLEAR:
         s_profile_stored = false;
         s_profile_len = 0;
+        s_profile_connection_epoch = 0u;
         cp_xfer_rx_init(&s_xfer, s_profile_buf, S3_PROFILE_BUF_CAP);
         if (s_profile_activate_cb) {
-            (void)s_profile_activate_cb(NULL, 0, 0, 0);
+            (void)s_profile_activate_cb(NULL, 0, 0, 0, 0u);
         }
         send_profile_reply_ack(CTRL_BULK_TYPE_PROFILE_CLEAR);
         break;

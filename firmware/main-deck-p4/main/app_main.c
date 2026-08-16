@@ -232,12 +232,16 @@ static bool on_recording_toggle(bool enable)
 static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
 {
     (void)controller_profile_manager_on_descriptor_report(rep->vid, rep->pid,
-                                                          rep->caps, rep->product);
+                                                          rep->caps, rep->product,
+                                                          rep->connection_epoch);
 }
 
 static void on_controller_connection_state(bool connected)
 {
     if (!connected) {
+        /* Retire the S3 runtime immediately; registry disconnect alone only
+         * clears P4 bookkeeping and would leave the old mapper eligible. */
+        (void)control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_CLEAR);
         (void)controller_profile_manager_on_disconnect();
     }
 }

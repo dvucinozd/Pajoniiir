@@ -458,11 +458,24 @@ bool controller_profile_registry_on_disconnect(controller_profile_registry_t *re
     reg->connected_vid = 0u;
     reg->connected_pid = 0u;
     reg->connected_caps = 0u;
+    reg->connected_epoch = 0u;
     memset(reg->connected_product, 0, sizeof(reg->connected_product));
     reg->matched_index = -1;
     reg->active_index = -1;
     reg->transfer_state = CPM_TRANSFER_IDLE;
     return was_present;
+}
+
+bool controller_profile_descriptor_is_fresh(
+    const controller_profile_registry_t *reg, uint16_t vid, uint16_t pid,
+    uint32_t connection_epoch)
+{
+    if (!reg || connection_epoch == 0u) return false;
+    if (!reg->controller_present) return true;
+    if (reg->connected_epoch == connection_epoch) {
+        return reg->connected_vid == vid && reg->connected_pid == pid;
+    }
+    return (int32_t)(connection_epoch - reg->connected_epoch) > 0;
 }
 
 void controller_profile_registry_apply_rescan(
@@ -476,6 +489,7 @@ void controller_profile_registry_apply_rescan(
     uint16_t vid = registry->connected_vid;
     uint16_t pid = registry->connected_pid;
     uint16_t caps = registry->connected_caps;
+    uint32_t epoch = registry->connected_epoch;
     char product[CPM_PRODUCT_MAX + 1];
     memcpy(product, registry->connected_product, sizeof(product));
 
@@ -484,6 +498,7 @@ void controller_profile_registry_apply_rescan(
     registry->connected_vid = vid;
     registry->connected_pid = pid;
     registry->connected_caps = caps;
+    registry->connected_epoch = epoch;
     memcpy(registry->connected_product, product,
            sizeof(registry->connected_product));
     if (present) {
@@ -541,7 +556,8 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 /* Defined near the bottom of this firmware-only section but called by the
  * descriptor worker above it. Declared here rather than through a compilation
  * wrapper that #included this translation unit purely to inject this one line. */
-static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid);
+static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid,
+                                    uint32_t connection_epoch);
 
 #ifndef CONFIG_CONTROLLER_PROFILE_SD_PATH
 #define CONFIG_CONTROLLER_PROFILE_SD_PATH "/sd/controllers"
@@ -575,6 +591,8 @@ typedef struct {
     uint16_t vid;
     uint16_t pid;
     uint16_t caps;
+    uint32_t connection_epoch;
+    uint32_t manager_generation;
     char product[CPM_PRODUCT_MAX + 1];
 } cpm_descriptor_report_t;
 static volatile bool s_reply_ack;
@@ -592,6 +610,8 @@ static volatile uint8_t s_reply_reason;
 static volatile bool s_transferred_valid;
 static volatile uint16_t s_transferred_vid;
 static volatile uint16_t s_transferred_pid;
+static volatile uint32_t s_transferred_epoch;
+static uint32_t s_connection_generation;
 
 static bool cpm_lock(void)
 {
@@ -697,6 +717,7 @@ static void cpm_sender_task(void *arg)
             continue;
         }
         controller_profile_meta_t m = s_registry.profiles[idx];
+        uint32_t transfer_epoch = s_registry.connected_epoch;
         cpm_unlock();
         if (!m.valid) {
             continue;
@@ -708,10 +729,12 @@ static void cpm_sender_task(void *arg)
         bool still_connected = s_registry.controller_present &&
                                s_registry.connected_vid == m.vid &&
                                s_registry.connected_pid == m.pid &&
+                               s_registry.connected_epoch == transfer_epoch &&
                                s_registry.matched_index == idx;
         if (ok && still_connected) {
             s_transferred_vid = m.vid;
             s_transferred_pid = m.pid;
+            s_transferred_epoch = transfer_epoch;
             s_transferred_valid = true;
             controller_profile_registry_mark_transfer_active(&s_registry, idx);
         } else if (still_connected) {
@@ -732,16 +755,22 @@ static void cpm_sender_task(void *arg)
 }
 
 static int cpm_process_descriptor_report(uint16_t vid, uint16_t pid,
-                                         uint16_t caps, const char *product)
+                                         uint16_t caps, const char *product,
+                                         uint32_t connection_epoch)
 {
     if (!cpm_lock()) return -1;
+    if (!controller_profile_descriptor_is_fresh(
+            &s_registry, vid, pid, connection_epoch)) {
+        cpm_unlock();
+        return -1;
+    }
     s_registry.connected_caps = caps;
     memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
     if (product) {
         snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
                  "%.*s", CPM_PRODUCT_MAX, product);
     }
-    int idx = cpm_on_descriptor_locked(vid, pid);
+    int idx = cpm_on_descriptor_locked(vid, pid, connection_epoch);
     char product_copy[CPM_PRODUCT_MAX + 1];
     snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
     cpm_unlock();
@@ -767,11 +796,16 @@ static void cpm_descriptor_task(void *arg)
     cpm_descriptor_report_t report;
     for (;;) {
         if (xQueueReceive(s_descriptor_q, &report, portMAX_DELAY) != pdTRUE) continue;
+        if (report.manager_generation !=
+            __atomic_load_n(&s_connection_generation, __ATOMIC_ACQUIRE)) {
+            continue;
+        }
         while (__atomic_load_n(&s_storage_busy, __ATOMIC_ACQUIRE)) {
             vTaskDelay(pdMS_TO_TICKS(5));
         }
         (void)cpm_process_descriptor_report(report.vid, report.pid,
-                                            report.caps, report.product);
+                                            report.caps, report.product,
+                                            report.connection_epoch);
     }
 }
 
@@ -823,6 +857,7 @@ esp_err_t controller_profile_manager_init(void)
     s_registry.active_index = -1;
     s_registry.transfer_state = CPM_TRANSFER_IDLE;
     s_transferred_valid = false;
+    __atomic_store_n(&s_connection_generation, 0u, __ATOMIC_RELEASE);
     s_log_vid = 0xFFFFu;
     s_log_pid = 0xFFFFu;
     s_log_caps = 0xFFFFu;
@@ -917,6 +952,7 @@ esp_err_t controller_profile_manager_install_profile(
 
     bool reactivate = false;
     uint16_t vid = 0, pid = 0, caps = 0;
+    uint32_t connection_epoch = 0u;
     char product[CPM_PRODUCT_MAX + 1] = {0};
     if (rc == ESP_OK && cpm_lock()) {
         controller_profile_registry_apply_rescan(&s_registry, scanned);
@@ -924,6 +960,7 @@ esp_err_t controller_profile_manager_install_profile(
         vid = s_registry.connected_vid;
         pid = s_registry.connected_pid;
         caps = s_registry.connected_caps;
+        connection_epoch = s_registry.connected_epoch;
         memcpy(product, s_registry.connected_product, sizeof(product));
         s_transferred_valid = false;
         if (out_meta) *out_meta = installed;
@@ -938,6 +975,9 @@ esp_err_t controller_profile_manager_install_profile(
         if (reactivate) {
             cpm_descriptor_report_t report = {
                 .vid = vid, .pid = pid, .caps = caps,
+                .connection_epoch = connection_epoch,
+                .manager_generation = __atomic_load_n(
+                    &s_connection_generation, __ATOMIC_ACQUIRE),
             };
             snprintf(report.product, sizeof(report.product), "%s", product);
             (void)xQueueSend(s_descriptor_q, &report, 0);
@@ -960,18 +1000,24 @@ esp_err_t controller_profile_manager_get_registry_snapshot(
     return ESP_OK;
 }
 
-static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid)
+static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid,
+                                    uint32_t connection_epoch)
 {
+    if (connection_epoch == 0u) return -1;
     if (s_registry.controller_present &&
         s_registry.connected_vid == vid && s_registry.connected_pid == pid &&
+        s_registry.connected_epoch == connection_epoch &&
         s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
         /* The S3 repeats its descriptor heartbeat. Do not reset MATCHED state
          * or enqueue a second copy while the sender owns this profile. */
         return controller_profile_registry_match(&s_registry, vid, pid);
     }
     int idx = controller_profile_registry_on_descriptor(&s_registry, vid, pid);
+    s_registry.connected_epoch = connection_epoch;
     if (idx >= 0) {
-        if (s_transferred_valid && s_transferred_vid == vid && s_transferred_pid == pid) {
+        if (s_transferred_valid && s_transferred_vid == vid &&
+            s_transferred_pid == pid &&
+            s_transferred_epoch == connection_epoch) {
             /* Already streamed + activated for this controller; the S3 still
              * holds it. Skip the redundant re-transfer (see dedup note above). */
             controller_profile_registry_mark_transfer_active(&s_registry, idx);
@@ -999,16 +1045,20 @@ static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid)
 
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
 {
-    return controller_profile_manager_on_descriptor_report(vid, pid, 0u, NULL);
+    return controller_profile_manager_on_descriptor_report(vid, pid, 0u, NULL, 1u);
 }
 
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                      uint16_t caps,
-                                                     const char *product)
+                                                     const char *product,
+                                                     uint32_t connection_epoch)
 {
     if (!s_descriptor_q) return -1;
     cpm_descriptor_report_t report = {
         .vid = vid, .pid = pid, .caps = caps,
+        .connection_epoch = connection_epoch,
+        .manager_generation = __atomic_load_n(
+            &s_connection_generation, __ATOMIC_ACQUIRE),
     };
     if (product) {
         snprintf(report.product, sizeof(report.product), "%.*s",
@@ -1026,6 +1076,7 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
 
 bool controller_profile_manager_on_disconnect(void)
 {
+    (void)__atomic_add_fetch(&s_connection_generation, 1u, __ATOMIC_ACQ_REL);
     if (!cpm_lock()) {
         return false;
     }

@@ -149,6 +149,9 @@ bool cp_runtime_process(const cp_profile_t *profile, cp_runtime_t *rt,
 size_t cp_runtime_emit_snapshot(const cp_profile_t *profile,
                                 const cp_runtime_t *rt,
                                 cp_event_emit_cb_t cb, void *ctx);
+size_t cp_runtime_collect_snapshot(const cp_profile_t *profile,
+                                   const cp_runtime_t *rt,
+                                   cp_event_t *events, size_t capacity);
 
 /* Map a semantic LED frame to a 3-byte MIDI OUT message (status, data1,
  * data2). Returns false when the profile has no mapping for (led, deck). */

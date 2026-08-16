@@ -296,9 +296,10 @@ typedef struct {
 } ctrl_firmware_report_t;
 
 /* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
- * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
+ * connection epoch u32 LE, then product string (CTRL_DESC_PRODUCT_MAX bytes,
+ * NUL-padded). */
 #define CTRL_DESC_PRODUCT_MAX 32
-#define CTRL_DESC_PAYLOAD_LEN (6 + CTRL_DESC_PRODUCT_MAX)
+#define CTRL_DESC_PAYLOAD_LEN (10 + CTRL_DESC_PRODUCT_MAX)
 #define CTRL_DESC_CAP_MIDI_IN   0x0001
 #define CTRL_DESC_CAP_MIDI_OUT  0x0002
 #define CTRL_DESC_CAP_USB_AUDIO 0x0004
@@ -307,6 +308,7 @@ typedef struct {
     uint16_t vid;
     uint16_t pid;
     uint16_t caps;
+    uint32_t connection_epoch;
     char product[CTRL_DESC_PRODUCT_MAX + 1];
 } ctrl_descriptor_report_t;
 
@@ -546,7 +548,8 @@ esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep);
 // and the stored blob is left available via control_link_get_stored_profile().
 typedef bool (*control_link_profile_activate_cb_t)(const uint8_t *blob,
                                                    size_t len,
-                                                   uint16_t vid, uint16_t pid);
+                                                   uint16_t vid, uint16_t pid,
+                                                   uint32_t connection_epoch);
 void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb);
 
 // Access the last fully received + CRC-validated profile blob (valid after an
