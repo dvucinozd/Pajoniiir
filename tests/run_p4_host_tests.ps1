@@ -448,6 +448,16 @@ Assert-FileContains `
     -LiteralPatterns @("audio_session_generation", "ui_library_release_deck_audio_session", "audio_engine_deck_stop_session")
 
 Assert-FileContains `
+    -Name "p4 UI load worker always has a fixed completion token" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("ui_track_load_result_t result_storage = {0}", "sizeof(ui_track_load_result_t) <= UI_TRACK_LOAD_STACK / 2u", "xQueueSend(s_track_load_result_q, result, portMAX_DELAY)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 UI load completion no longer depends on heap allocation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("heap_caps_calloc(1, sizeof(*result)", "calloc(1, sizeof(*result)", "track load result allocation failed")
+
+Assert-FileContains `
     -Name "p4 deck LOAD lifecycle is serialized and generation-owned" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("lifecycle_begin_load", "lifecycle_advance_generation", "audio_engine_deck_stop_session")

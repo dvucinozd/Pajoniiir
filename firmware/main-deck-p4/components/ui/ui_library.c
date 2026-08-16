@@ -232,6 +232,9 @@ typedef struct {
     char status[40];
 } ui_track_load_result_t;
 
+_Static_assert(sizeof(ui_track_load_result_t) <= UI_TRACK_LOAD_STACK / 2u,
+               "track-load result must leave at least half the worker stack free");
+
 typedef struct {
     int index;
     uint8_t deck;
@@ -630,17 +633,11 @@ static void ui_track_load_worker(void *arg)
     ui_track_load_request_t req = *(ui_track_load_request_t *)arg;
     free(arg);
 
-    ui_track_load_result_t *result = heap_caps_calloc(1, sizeof(*result),
-                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!result) {
-        result = calloc(1, sizeof(*result));
-    }
-    if (!result) {
-        ESP_LOGE(TAG, "track load result allocation failed");
-        ui_library_finish_track_load_id(req.load_id);
-        vTaskDelete(NULL);
-        return;
-    }
+    /* The single-flight load gate guarantees one worker. Keep completion data
+     * on its fixed 16 KiB task stack so every exit can enqueue a result even
+     * when both internal RAM and PSRAM allocators are exhausted. */
+    ui_track_load_result_t result_storage = {0};
+    ui_track_load_result_t *result = &result_storage;
 
     result->index = req.index;
     result->deck = req.deck;
@@ -714,7 +711,6 @@ static void ui_track_load_worker(void *arg)
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
                  (unsigned)uxTaskGetStackHighWaterMark(NULL));
     }
-    free(result);
     vTaskDelete(NULL);
 }
 
