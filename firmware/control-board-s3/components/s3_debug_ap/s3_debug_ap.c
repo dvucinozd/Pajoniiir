@@ -11,6 +11,7 @@
 static s3_debug_ap_status_t s_status;
 static s3_debug_ap_status_cb_t s_status_cb;
 static esp_err_t s_test_start_result = ESP_OK;
+static bool s_test_start_failed_latched;
 
 static void set_status(s3_debug_ap_status_t status)
 {
@@ -30,6 +31,7 @@ void s3_debug_ap_test_reset(void)
     s_status = S3_DEBUG_AP_STATUS_OFF;
     s_status_cb = NULL;
     s_test_start_result = ESP_OK;
+    s_test_start_failed_latched = false;
 }
 
 esp_err_t s3_debug_ap_init(void)
@@ -47,12 +49,16 @@ esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
 esp_err_t s3_debug_ap_request(bool enable)
 {
     if (!enable) {
+        s_test_start_failed_latched = false;
         set_status(S3_DEBUG_AP_STATUS_OFF);
         return ESP_OK;
     }
 
+    if (s_test_start_failed_latched) return ESP_ERR_INVALID_STATE;
+
     set_status(S3_DEBUG_AP_STATUS_STARTING);
     if (s_test_start_result != ESP_OK) {
+        s_test_start_failed_latched = true;
         set_status(S3_DEBUG_AP_STATUS_ERROR);
         return s_test_start_result;
     }
@@ -80,12 +86,15 @@ s3_debug_ap_status_t s3_debug_ap_status(void)
 #include "esp_netif.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "s3_ota.h"
 #include "s3_ota_policy.h"
+#include "s3_ota_upload_guard.h"
+#include "s3_debug_ap_netif_stage.h"
 
 static const char *TAG = "s3_debug_ap";
 
@@ -326,22 +335,51 @@ static esp_err_t firmware_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, (size_t)len);
 }
 
-static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
+static uint32_t ota_now_ms(void)
+{
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
+static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted,
+                         s3_ota_upload_guard_t *guard,
+                         s3_ota_upload_guard_result_t *guard_result)
 {
     const unsigned max_timeouts = 5;
+    if (guard_result) *guard_result = S3_OTA_UPLOAD_GUARD_OK;
     for (unsigned timeout_count = 0; timeout_count < max_timeouts; ++timeout_count) {
+        s3_ota_upload_guard_result_t check =
+            s3_ota_upload_guard_check(guard, ota_now_ms());
+        if (check != S3_OTA_UPLOAD_GUARD_OK) {
+            if (guard_result) *guard_result = check;
+            return HTTPD_SOCK_ERR_TIMEOUT;
+        }
         int received = httpd_req_recv(req, (char *)buffer, wanted);
+        if (received > 0) {
+            s3_ota_upload_guard_note_bytes(guard, (size_t)received);
+            check = s3_ota_upload_guard_check(guard, ota_now_ms());
+            if (check != S3_OTA_UPLOAD_GUARD_OK) {
+                if (guard_result) *guard_result = check;
+                return HTTPD_SOCK_ERR_TIMEOUT;
+            }
+            return received;
+        }
         if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
     }
     return HTTPD_SOCK_ERR_TIMEOUT;
 }
 
-static esp_err_t ota_receive_error(httpd_req_t *req, int received, bool started)
+static esp_err_t ota_receive_error(httpd_req_t *req, int received, bool started,
+                                   s3_ota_upload_guard_result_t guard_result)
 {
     if (started) s3_ota_abort("HTTP upload interrupted");
     if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "OTA upload stopped: %s",
+                 s3_ota_upload_guard_result_name(guard_result));
         httpd_resp_set_status(req, "408 Request Timeout");
-        return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+        const char *detail = guard_result == S3_OTA_UPLOAD_GUARD_TOO_SLOW
+            ? "Firmware upload throughput too low"
+            : "Firmware upload timed out";
+        return httpd_resp_send(req, detail, HTTPD_RESP_USE_STRLEN);
     }
     return ESP_FAIL;
 }
@@ -365,6 +403,16 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                                    "Signed OTA bundle is too small");
     }
+    if ((size_t)req->content_len >
+        DDJ_OTA_HEADER_SIZE + (size_t)S3_OTA_MAX_IMAGE_SIZE) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        return httpd_resp_send(req, "Signed OTA bundle is too large",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    s3_ota_upload_guard_t upload_guard;
+    s3_ota_upload_guard_init(&upload_guard, ota_now_ms());
+    s3_ota_upload_guard_result_t guard_result = S3_OTA_UPLOAD_GUARD_OK;
 
     uint8_t *buffer = malloc(4096);
     if (!buffer) {
@@ -375,10 +423,11 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     size_t manifest_received = 0;
     while (manifest_received < sizeof(manifest_header)) {
         int received = ota_http_recv(req, manifest_header + manifest_received,
-                                     sizeof(manifest_header) - manifest_received);
+                                     sizeof(manifest_header) - manifest_received,
+                                     &upload_guard, &guard_result);
         if (received <= 0) {
             free(buffer);
-            return ota_receive_error(req, received, false);
+            return ota_receive_error(req, received, false, guard_result);
         }
         manifest_received += (size_t)received;
     }
@@ -408,10 +457,11 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
     size_t buffered = 0;
     while (buffered < S3_OTA_IMAGE_HEADER_SIZE) {
         size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
-        int received = ota_http_recv(req, buffer + buffered, wanted);
+        int received = ota_http_recv(req, buffer + buffered, wanted,
+                                     &upload_guard, &guard_result);
         if (received <= 0) {
             free(buffer);
-            return ota_receive_error(req, received, false);
+            return ota_receive_error(req, received, false, guard_result);
         }
         buffered += (size_t)received;
         remaining -= (size_t)received;
@@ -439,10 +489,11 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
 
     while (remaining > 0) {
         size_t wanted = remaining < 4096u ? remaining : 4096u;
-        int received = ota_http_recv(req, buffer, wanted);
+        int received = ota_http_recv(req, buffer, wanted, &upload_guard,
+                                     &guard_result);
         if (received <= 0) {
             free(buffer);
-            return ota_receive_error(req, received, true);
+            return ota_receive_error(req, received, true, guard_result);
         }
         rc = s3_ota_write(buffer, (size_t)received);
         if (rc != ESP_OK) {
@@ -535,18 +586,63 @@ static esp_err_t init_nvs(void)
     return rc;
 }
 
-static esp_err_t configure_ap_ip(void)
-{
+typedef struct {
     esp_netif_ip_info_t ip_info;
-    ESP_RETURN_ON_ERROR(esp_netif_dhcps_stop(s_ap_netif), TAG, "stop AP DHCP");
-    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4(S3_DEBUG_AP_IP, &ip_info.ip) == ESP_OK,
+} ap_netif_stage_ctx_t;
+
+static void *ap_netif_create(void *ctx)
+{
+    (void)ctx;
+    return esp_netif_create_default_wifi_ap();
+}
+
+static esp_err_t ap_netif_stop_dhcp(void *resource, void *ctx)
+{
+    (void)ctx;
+    return esp_netif_dhcps_stop((esp_netif_t *)resource);
+}
+
+static esp_err_t ap_netif_set_ip(void *resource, void *ctx)
+{
+    const ap_netif_stage_ctx_t *stage = (const ap_netif_stage_ctx_t *)ctx;
+    return esp_netif_set_ip_info((esp_netif_t *)resource, &stage->ip_info);
+}
+
+static esp_err_t ap_netif_start_dhcp(void *resource, void *ctx)
+{
+    (void)ctx;
+    return esp_netif_dhcps_start((esp_netif_t *)resource);
+}
+
+static void ap_netif_destroy(void *resource, void *ctx)
+{
+    (void)ctx;
+    esp_netif_destroy_default_wifi(resource);
+}
+
+static esp_err_t ensure_ap_netif(void)
+{
+    ap_netif_stage_ctx_t stage = {0};
+    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4(S3_DEBUG_AP_IP,
+                                             &stage.ip_info.ip) == ESP_OK,
                         ESP_ERR_INVALID_ARG, TAG, "parse AP IP");
-    ip_info.gw = ip_info.ip;
-    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4("255.255.255.0", &ip_info.netmask) == ESP_OK,
+    stage.ip_info.gw = stage.ip_info.ip;
+    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4("255.255.255.0",
+                                             &stage.ip_info.netmask) == ESP_OK,
                         ESP_ERR_INVALID_ARG, TAG, "parse AP netmask");
-    ESP_RETURN_ON_ERROR(esp_netif_set_ip_info(s_ap_netif, &ip_info), TAG, "set AP IP");
-    ESP_RETURN_ON_ERROR(esp_netif_dhcps_start(s_ap_netif), TAG, "start AP DHCP");
-    return ESP_OK;
+
+    s3_debug_ap_netif_ops_t ops = {
+        .create = ap_netif_create,
+        .stop_dhcp = ap_netif_stop_dhcp,
+        .set_ip = ap_netif_set_ip,
+        .start_dhcp = ap_netif_start_dhcp,
+        .destroy = ap_netif_destroy,
+        .ctx = &stage,
+    };
+    void *published = s_ap_netif;
+    esp_err_t rc = s3_debug_ap_netif_ensure(&published, &ops);
+    if (rc == ESP_OK) s_ap_netif = (esp_netif_t *)published;
+    return rc;
 }
 
 static esp_err_t start_ap(void)
@@ -559,11 +655,7 @@ static esp_err_t start_ap(void)
         ESP_RETURN_ON_ERROR(loop_rc, TAG, "event loop");
     }
 
-    if (!s_ap_netif) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-        ESP_RETURN_ON_FALSE(s_ap_netif, ESP_FAIL, TAG, "create AP netif");
-        ESP_RETURN_ON_ERROR(configure_ap_ip(), TAG, "configure AP IP");
-    }
+    ESP_RETURN_ON_ERROR(ensure_ap_netif(), TAG, "configure AP netif");
 
     if (!s_wifi_initialized) {
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();

@@ -390,6 +390,16 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "s3 OTA upload enforces total and progress deadlines before flash" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("S3_OTA_MAX_IMAGE_SIZE", "s3_ota_upload_guard_init", "s3_ota_upload_guard_check", "413 Payload Too Large", "ddj_ota_manifest_verify_signature")
+
+Assert-FileContains `
+    -Name "s3 AP publishes netif only after DHCP and IP configuration succeed" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("s3_debug_ap_netif_ensure", "esp_netif_destroy_default_wifi", "if (rc == ESP_OK) s_ap_netif =")
+
+Assert-FileContains `
     -Name "s3 OTA initializes before mandatory subsystem startup" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
     -Patterns @('#include "s3_ota.h"', "ESP_ERROR_CHECK(s3_ota_init());")
@@ -726,6 +736,31 @@ $tests = @(
             "test_s3_debug_ap_state.c",
             "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c",
             "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_log_ring.c"
+        )
+    },
+    @{
+        Name = "s3_ota_upload_guard"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_ota_upload_guard.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_ota_upload_guard.exe",
+            "test_s3_ota_upload_guard.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_upload_guard.c"
+        )
+    },
+    @{
+        Name = "s3_debug_ap_netif_stage"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_ap_netif_stage.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_ap_netif_stage.exe",
+            "test_s3_debug_ap_netif_stage.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap_netif_stage.c"
         )
     },
     @{

@@ -56,6 +56,20 @@ static void test_start_failure_reports_error(void)
     assert(s_seen[1] == S3_DEBUG_AP_STATUS_ERROR);
 }
 
+static void test_start_failure_requires_off_before_retry(void)
+{
+    s3_debug_ap_test_reset();
+    s3_debug_ap_test_set_start_result(ESP_FAIL);
+    assert(s3_debug_ap_request(true) == ESP_FAIL);
+
+    s3_debug_ap_test_set_start_result(ESP_OK);
+    assert(s3_debug_ap_request(true) == ESP_ERR_INVALID_STATE);
+    assert(s3_debug_ap_status() == S3_DEBUG_AP_STATUS_ERROR);
+    assert(s3_debug_ap_request(false) == ESP_OK);
+    assert(s3_debug_ap_request(true) == ESP_OK);
+    assert(s3_debug_ap_status() == S3_DEBUG_AP_STATUS_ON);
+}
+
 static void test_stop_reports_off(void)
 {
     s3_debug_ap_test_reset();
@@ -77,6 +91,7 @@ int main(void)
     test_default_off();
     test_start_success_reports_starting_then_on();
     test_start_failure_reports_error();
+    test_start_failure_requires_off_before_retry();
     test_stop_reports_off();
     puts("s3_debug_ap_state tests passed");
     return 0;
