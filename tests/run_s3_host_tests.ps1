@@ -189,9 +189,9 @@ Assert-FileContains `
     -Patterns @("flx4_midi_message_cb_t", "flx4_midi_host_set_message_callback")
 
 Assert-FileContains `
-    -Name "flx4 translator queue" `
+    -Name "flx4 translator scheduler" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("s_flx4_event_queue", "flx4_translator_task", "s_flx4_coalesced_count")
+    -Patterns @("s_flx4_scheduler", "flx4_translator_task", "FLX4_DISCRETE_BUDGET", "FLX4_CONTINUOUS_BUDGET")
 
 Assert-FileNotContains `
     -Name "S3 app excludes retired legacy mode" `
@@ -219,9 +219,14 @@ Assert-FileContains `
     -Patterns @("CTRL_ID_CH1_TRIM", "CTRL_ID_CH2_TRIM", "CTRL_ID_CH1_EQ_HIGH", "CTRL_ID_CH2_EQ_HIGH", "CTRL_ID_CH1_EQ_MID", "CTRL_ID_CH2_EQ_MID", "CTRL_ID_CH1_EQ_LOW", "CTRL_ID_CH2_EQ_LOW", "CTRL_ID_CH1_FILTER", "CTRL_ID_CH2_FILTER", "CTRL_ID_MASTER_VOLUME", "CTRL_ID_HEADPHONE_MIX", "CTRL_ID_HEADPHONE_LEVEL", "CTRL_ID_BEAT_FX_DEPTH")
 
 Assert-FileContains `
-    -Name "flx4 coalescer counts re-push drops" `
+    -Name "flx4 scheduler exposes saturation and depth telemetry" `
+    -Path (Join-Path $RepoRoot "firmware/common/control_event_scheduler/control_event_scheduler.c") `
+    -Patterns @("stats.fifo_full", "stats.continuous_coalesced", "stats.jog_saturated", "stats.max_fifo_depth")
+
+Assert-FileNotContains `
+    -Name "flx4 producer never receives drains or rewrites the scheduler FIFO" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("a failed re-push is a real lost event and must be counted", "s_flx4_dropped_count")
+    -Patterns @("xQueueReceive", "xQueueSendToFront", "flx4_try_coalesce_latest", "stash[FLX4_EVENT_QUEUE_LEN]")
 
 Assert-FileContains `
     -Name "flx4 held states survive queue saturation and reconnect" `
@@ -482,6 +487,22 @@ try {
 }
 
 $tests = @(
+    @{
+        Name = "control_event_scheduler"
+        Dir = "tests/control_event_scheduler"
+        Target = "test_control_event_scheduler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/common/control_state_reconciler/include",
+            "-I../../firmware/common/control_event_scheduler/include",
+            "-o", "test_control_event_scheduler.exe",
+            "test_control_event_scheduler.c",
+            "../../firmware/common/control_event_scheduler/control_event_scheduler.c"
+        )
+    },
     @{
         Name = "control_state_reconciler"
         Dir = "tests/control_state_reconciler"

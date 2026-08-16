@@ -8,13 +8,13 @@
 #include "flx4_map.h"
 #include "controller_profile_runtime.h"
 #include "control_state_reconciler.h"
+#include "control_event_scheduler.h"
 #include "status_led.h"
 #if CONFIG_P4_AUDIO_LINK_ENABLED
 #include "p4_audio_link.h"
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include <inttypes.h>
@@ -89,16 +89,20 @@ static void heartbeat_task(void *arg)
 #endif
 
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
-#define FLX4_EVENT_QUEUE_LEN 32
+#define FLX4_DISCRETE_BUDGET   8u
+#define FLX4_CONTINUOUS_BUDGET 4u
 
-static QueueHandle_t s_flx4_event_queue;
+static control_event_scheduler_t s_flx4_scheduler;
+static portMUX_TYPE s_flx4_scheduler_mux = portMUX_INITIALIZER_UNLOCKED;
+static TaskHandle_t s_flx4_translator_task;
 static flx4_map_state_t s_flx4_map;
 static control_held_state_reconciler_t s_flx4_held_states;
 static portMUX_TYPE s_flx4_held_mux = portMUX_INITIALIZER_UNLOCKED;
-static uint32_t s_flx4_dropped_count;
-static uint32_t s_flx4_coalesced_count;
 static uint32_t s_flx4_unsupported_count;
 static TickType_t s_flx4_last_warn;
+static control_event_scheduler_stats_t s_flx4_last_warn_stats;
+
+static void flx4_wake_translator(void);
 
 typedef struct {
     size_t sent;
@@ -191,6 +195,7 @@ static void flx4_controller_connection_cb(bool connected, void *user_ctx)
     portENTER_CRITICAL(&s_flx4_held_mux);
     control_held_state_release_all(&s_flx4_held_states, 0u);
     portEXIT_CRITICAL(&s_flx4_held_mux);
+    flx4_wake_translator();
 }
 
 static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
@@ -249,98 +254,74 @@ static bool flx4_event_is_relative_jog(const flx4_control_event_t *ev)
     }
 }
 
-static int16_t flx4_accumulate_delta(int16_t a, int16_t b)
-{
-    int32_t sum = (int32_t)a + (int32_t)b;
-    if (sum > INT16_MAX) return INT16_MAX;
-    if (sum < INT16_MIN) return INT16_MIN;
-    return (int16_t)sum;
-}
-
 static void flx4_translator_warn_rate_limited(void)
 {
+    control_event_scheduler_stats_t stats;
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    stats = control_event_scheduler_get_stats(&s_flx4_scheduler);
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+    const uint32_t unsupported =
+        __atomic_load_n(&s_flx4_unsupported_count, __ATOMIC_RELAXED);
+    /* Coalescing and high-water movement are expected under normal control
+     * bursts. Emit a warning only when capacity or numeric limits are hit. */
+    if (stats.fifo_full == s_flx4_last_warn_stats.fifo_full &&
+        stats.continuous_slot_full == s_flx4_last_warn_stats.continuous_slot_full &&
+        stats.jog_saturated == s_flx4_last_warn_stats.jog_saturated) {
+        return;
+    }
     TickType_t now = xTaskGetTickCount();
     if (now - s_flx4_last_warn < pdMS_TO_TICKS(1000)) {
         return;
     }
     s_flx4_last_warn = now;
-    ESP_LOGW(TAG, "FLX4 translator queue dropped=%" PRIu32 " coalesced=%" PRIu32
-             " unsupported=%" PRIu32,
-             s_flx4_dropped_count, s_flx4_coalesced_count, s_flx4_unsupported_count);
+    s_flx4_last_warn_stats = stats;
+    ESP_LOGW(TAG, "FLX4 scheduler fifo_full=%" PRIu32 " coalesced=%" PRIu32
+             " jog_saturated=%" PRIu32 " slot_full=%" PRIu32
+             " max_depth=%" PRIu32 " unsupported=%" PRIu32,
+             stats.fifo_full, stats.continuous_coalesced, stats.jog_saturated,
+             stats.continuous_slot_full, stats.max_fifo_depth,
+             unsupported);
 }
 
-static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
+static void flx4_wake_translator(void)
 {
-    if (!flx4_event_is_high_rate(ev) || !s_flx4_event_queue) {
-        return false;
+    if (s_flx4_translator_task) {
+        xTaskNotifyGive(s_flx4_translator_task);
     }
-
-    flx4_control_event_t stash[FLX4_EVENT_QUEUE_LEN];
-    int stash_len = 0;
-    bool replaced = false;
-    flx4_control_event_t cur;
-
-    while (stash_len < FLX4_EVENT_QUEUE_LEN &&
-           xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
-        if (!replaced && cur.type == ev->type && cur.id == ev->id) {
-            if (flx4_event_is_relative_jog(ev)) {
-                cur.value = flx4_accumulate_delta(cur.value, ev->value);
-            } else {
-                cur = *ev;  /* absolute control: newest value wins */
-            }
-            stash[stash_len++] = cur;
-            replaced = true;
-            continue;
-        }
-        stash[stash_len++] = cur;
-    }
-
-    for (int i = 0; i < stash_len; i++) {
-        if (xQueueSend(s_flx4_event_queue, &stash[i], 0) != pdTRUE) {
-            /* The FLX4 MIDI callback can refill the queue while it is drained
-             * here; a failed re-push is a real lost event and must be counted
-             * (matches the P4-side control_link coalescer). */
-            s_flx4_dropped_count++;
-        }
-    }
-
-    if (!replaced) {
-        return false;
-    }
-    s_flx4_coalesced_count++;
-    return true;
 }
 
 static void flx4_enqueue_event(const flx4_control_event_t *ev)
 {
+    if (!ev) {
+        return;
+    }
     if (ev && ev->type == CTRL_TYPE_BUTTON &&
         control_held_state_key(ev->id, ev->value) >= 0) {
-        bool dirty;
         portENTER_CRITICAL(&s_flx4_held_mux);
-        const int held_key = control_held_state_observe(
-            &s_flx4_held_states, ev->id, ev->value, 0u);
-        dirty = held_key >= 0 && s_flx4_held_states.slots[held_key].dirty;
+        (void)control_held_state_observe(&s_flx4_held_states, ev->id, ev->value, 0u);
         portEXIT_CRITICAL(&s_flx4_held_mux);
-        if (!dirty) {
-            s_flx4_coalesced_count++;
-            return;
-        }
-        /* The queue entry is only a wake/order token. If it cannot be queued,
-         * the dirty slot remains durable and the translator reconciles it as
-         * soon as any existing queue item drains. */
-        if (xQueueSend(s_flx4_event_queue, ev, 0) != pdTRUE) {
-            s_flx4_coalesced_count++;
-            flx4_translator_warn_rate_limited();
-        }
+        /* Held states are durable desired values, never lossy FIFO tokens. */
+        flx4_wake_translator();
         return;
     }
-    if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
-        return;
+
+    const control_scheduled_event_t scheduled = {
+        .type = ev->type,
+        .id = ev->id,
+        .value = ev->value,
+    };
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    if (flx4_event_is_high_rate(ev)) {
+        (void)control_event_scheduler_publish_continuous(
+            &s_flx4_scheduler, &scheduled,
+            flx4_event_is_relative_jog(ev)
+                ? CONTROL_EVENT_ACCUMULATE_DELTA
+                : CONTROL_EVENT_LATEST_VALUE);
+    } else {
+        (void)control_event_scheduler_enqueue_discrete(&s_flx4_scheduler, &scheduled);
     }
-    if (!flx4_try_coalesce_latest(ev)) {
-        s_flx4_dropped_count++;
-    }
-    flx4_translator_warn_rate_limited();
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+    flx4_wake_translator();
 }
 
 static bool flx4_profile_activate_cb(const uint8_t *blob, size_t len,
@@ -368,23 +349,46 @@ static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
     if (mapped) {
         flx4_enqueue_event(&ev);
     } else {
-        s_flx4_unsupported_count++;
+        __atomic_fetch_add(&s_flx4_unsupported_count, 1u, __ATOMIC_RELAXED);
+    }
+}
+
+static void flx4_schedule_pending_events(void)
+{
+    flx4_flush_pending_held_states();
+
+    for (size_t i = 0; i < FLX4_DISCRETE_BUDGET; ++i) {
+        control_scheduled_event_t event;
+        portENTER_CRITICAL(&s_flx4_scheduler_mux);
+        const bool found = control_event_scheduler_dequeue_discrete(
+            &s_flx4_scheduler, &event);
+        portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+        if (!found) {
+            break;
+        }
+        (void)control_link_send_semantic(event.type, event.id, event.value);
+    }
+
+    for (size_t i = 0; i < FLX4_CONTINUOUS_BUDGET; ++i) {
+        control_scheduled_event_t event;
+        portENTER_CRITICAL(&s_flx4_scheduler_mux);
+        const bool found = control_event_scheduler_take_continuous(
+            &s_flx4_scheduler, &event);
+        portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+        if (!found) {
+            break;
+        }
+        (void)control_link_send_semantic(event.type, event.id, event.value);
     }
 }
 
 static void flx4_translator_task(void *arg)
 {
     (void)arg;
-    flx4_control_event_t ev;
     while (1) {
-        if (xQueueReceive(s_flx4_event_queue, &ev, pdMS_TO_TICKS(20)) == pdTRUE) {
-            flx4_flush_pending_held_states();
-            if (!(ev.type == CTRL_TYPE_BUTTON &&
-                  control_held_state_key(ev.id, ev.value) >= 0)) {
-                (void)control_link_send_semantic(ev.type, ev.id, ev.value);
-            }
-        }
-        flx4_flush_pending_held_states();
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
+        flx4_schedule_pending_events();
+        flx4_translator_warn_rate_limited();
     }
 }
 #endif
@@ -404,18 +408,18 @@ void app_main(void)
     }
     flx4_map_init(&s_flx4_map);
     control_held_state_reset(&s_flx4_held_states);
+    control_event_scheduler_reset(&s_flx4_scheduler);
     controller_profile_runtime_init();
-    s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
-    ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(control_link_init());
     control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
     ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
+    ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6,
+                                &s_flx4_translator_task) == pdPASS
+                    ? ESP_OK : ESP_ERR_NO_MEM);
     flx4_midi_host_set_message_callback(flx4_midi_message_cb, NULL);
     flx4_midi_host_set_connection_callback(flx4_controller_connection_cb, NULL);
     ESP_ERROR_CHECK(flx4_midi_host_init());
-    ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6, NULL) == pdPASS
-                    ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #else

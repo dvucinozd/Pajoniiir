@@ -9,23 +9,51 @@
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
     [string]$BaseUrl = "https://pajoniiir.zadar.click/ota",
+    [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
     [switch]$WriteToReleaseDir
 )
 
 $ErrorActionPreference = "Stop"
+$ReleaseHelpers = Join-Path $PSScriptRoot "OtaReleaseHelpers.psm1"
+Import-Module $ReleaseHelpers -Force
 
 if (-not (Test-Path -LiteralPath $ReleaseDir)) {
     throw "No such release directory: $ReleaseDir"
 }
-$release = Split-Path -Leaf $ReleaseDir
-# Release directories are named pajoniiir-<version>; the device compares the
-# version it is running against the "release" field, so they must match exactly.
-$version = $release -replace '^pajoniiir-', ''
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 
 $bundle = Join-Path $ReleaseDir "main-deck-p4.ddjota"
 if (-not (Test-Path -LiteralPath $bundle)) {
     throw "Missing P4 bundle: $bundle"
 }
+
+$PublicKeyPath = if ([System.IO.Path]::IsPathRooted($PublicKey)) {
+    $PublicKey
+} else {
+    Join-Path $RepoRoot $PublicKey
+}
+if (-not (Test-Path -LiteralPath $PublicKeyPath)) {
+    throw "Missing firmware public verification key: $PublicKeyPath"
+}
+$Python = Resolve-OtaSigningPython
+$SigningTool = Join-Path $PSScriptRoot "ota_signing.py"
+$metadataLines = & $Python $SigningTool verify-bundle `
+    --public-key $PublicKeyPath --input $bundle
+if ($LASTEXITCODE -ne 0) {
+    throw "P4 bundle signature/manifest verification failed"
+}
+$metadata = @{}
+foreach ($line in $metadataLines) {
+    if ($line -match '^([^=]+)=(.*)$') {
+        $metadata[$Matches[1]] = $Matches[2]
+    }
+}
+if ($metadata["target"] -cne "p4" -or
+    $metadata["project"] -cne "main-deck-p4" -or
+    [string]::IsNullOrEmpty($metadata["version"])) {
+    throw "Verified bundle metadata is not a versioned main-deck-p4 image"
+}
+$version = [string]$metadata["version"]
 
 $bytes = [System.IO.File]::ReadAllBytes($bundle)
 $sha = [System.BitConverter]::ToString(

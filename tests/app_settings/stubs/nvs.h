@@ -29,6 +29,10 @@ typedef struct {
     /* Values the fake reports back from nvs_get_u8, keyed by name. */
     uint8_t  stored_backlight;
     int      has_stored_backlight;
+    uint8_t  stored_audio_out;
+    int      has_stored_audio_out;
+    uint8_t  stored_schema_version;
+    int      has_stored_schema_version;
     /* Injection: non-zero makes the next set_u8 fail. */
     int      fail_next_set;
 } test_nvs_state_t;
@@ -68,6 +72,14 @@ static inline esp_err_t nvs_set_u8(nvs_handle_t handle, const char *key, uint8_t
         g_test_nvs.stored_backlight = value;
         g_test_nvs.has_stored_backlight = 1;
     }
+    if (key && strcmp(key, "audio_out") == 0) {
+        g_test_nvs.stored_audio_out = value;
+        g_test_nvs.has_stored_audio_out = 1;
+    }
+    if (key && strcmp(key, "schema_ver") == 0) {
+        g_test_nvs.stored_schema_version = value;
+        g_test_nvs.has_stored_schema_version = 1;
+    }
     return ESP_OK;
 }
 
@@ -76,6 +88,14 @@ static inline esp_err_t nvs_get_u8(nvs_handle_t handle, const char *key, uint8_t
     (void)handle;
     if (key && out && strcmp(key, "backlight") == 0 && g_test_nvs.has_stored_backlight) {
         *out = g_test_nvs.stored_backlight;
+        return ESP_OK;
+    }
+    if (key && out && strcmp(key, "audio_out") == 0 && g_test_nvs.has_stored_audio_out) {
+        *out = g_test_nvs.stored_audio_out;
+        return ESP_OK;
+    }
+    if (key && out && strcmp(key, "schema_ver") == 0 && g_test_nvs.has_stored_schema_version) {
+        *out = g_test_nvs.stored_schema_version;
         return ESP_OK;
     }
     return ESP_ERR_NVS_NOT_FOUND;

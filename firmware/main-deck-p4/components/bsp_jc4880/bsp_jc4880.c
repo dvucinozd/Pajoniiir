@@ -52,6 +52,12 @@ static const char *TAG = "bsp";
 #define BSP_I2S_DIN_GPIO        GPIO_NUM_48   // codec ADC → ESP (mic, unused for playback)
 #define BSP_AUDIO_PA_GPIO       GPIO_NUM_11   // power-amp enable
 
+#if CONFIG_BSP_PCM5102A_MAIN_OUT && !CONFIG_BSP_ES8311_MONITOR
+#define BSP_SPEAKER_ROUTE_RETIRED 1
+#else
+#define BSP_SPEAKER_ROUTE_RETIRED 0
+#endif
+
 // ── Main Out: PCM5102A on JP1 candidate pins ────────────────────────────────
 #define BSP_PCM5102_I2S_NUM        I2S_NUM_1
 #define BSP_PCM5102_BCLK_GPIO      GPIO_NUM_50
@@ -110,10 +116,10 @@ static esp_lcd_touch_handle_t   s_touch    = NULL;
 static i2s_chan_handle_t        s_i2s_tx   = NULL;
 static i2s_chan_handle_t        s_i2s_tx_pcm5102 = NULL;
 static esp_codec_dev_handle_t   s_codec    = NULL;
-static bsp_audio_out_t          s_audio_out = BSP_AUDIO_OUT_SPEAKER;  // default: onboard speaker
+static bsp_audio_out_t          s_audio_out = BSP_AUDIO_OUT_RCA;
 static bool                     s_audio_pa_gpio_ready = false;
 static bool                     s_speaker_pa_enabled = false;
-static bsp_monitor_route_t      s_monitor_route = BSP_MONITOR_ROUTE_SPEAKER;
+static bsp_monitor_route_t      s_monitor_route = BSP_MONITOR_ROUTE_HEADPHONES;
 static sdmmc_card_t            *s_sd_card  = NULL;
 static sd_pwr_ctrl_handle_t     s_sd_pwr   = NULL;
 
@@ -368,12 +374,32 @@ static esp_err_t bsp_audio_pa_gpio_init_once(void)
         return ESP_OK;
     }
 
+    /* Program the output latch low before switching the pad to output mode, then
+     * assert it again afterwards. This prevents a product boot from briefly
+     * enabling the retired onboard speaker amplifier. */
+    ESP_RETURN_ON_ERROR(gpio_set_level(BSP_AUDIO_PA_GPIO, 0), TAG,
+                        "speaker PA safe latch failed");
     gpio_config_t pa_cfg = {
         .mode         = GPIO_MODE_OUTPUT,
         .pin_bit_mask = 1ULL << BSP_AUDIO_PA_GPIO,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&pa_cfg), TAG, "speaker PA gpio config failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(BSP_AUDIO_PA_GPIO, 0), TAG,
+                        "speaker PA safe level failed");
     s_audio_pa_gpio_ready = true;
+    s_speaker_pa_enabled = false;
+    return ESP_OK;
+}
+
+esp_err_t bsp_audio_force_safe_boot_state(void)
+{
+    ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG,
+                        "speaker PA safe boot init failed");
+    ESP_RETURN_ON_ERROR(gpio_set_level(BSP_AUDIO_PA_GPIO, 0), TAG,
+                        "speaker PA safe boot level failed");
+    s_speaker_pa_enabled = false;
+    s_audio_out = BSP_AUDIO_OUT_RCA;
+    s_monitor_route = BSP_MONITOR_ROUTE_HEADPHONES;
     return ESP_OK;
 }
 
@@ -410,6 +436,8 @@ static esp_err_t bsp_audio_init_i2s_pcm5102(void)
 
 esp_err_t bsp_audio_init(void)
 {
+    ESP_RETURN_ON_ERROR(bsp_audio_force_safe_boot_state(), TAG,
+                        "speaker PA safe boot state failed");
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
 
 #if !CONFIG_BSP_ES8311_MONITOR
@@ -513,7 +541,16 @@ esp_err_t bsp_audio_init(void)
 esp_err_t bsp_audio_set_speaker_pa_enabled(bool enabled)
 {
     ESP_RETURN_ON_ERROR(bsp_audio_pa_gpio_init_once(), TAG, "speaker PA gpio init failed");
-    gpio_set_level(BSP_AUDIO_PA_GPIO, enabled ? 1 : 0);
+#if BSP_SPEAKER_ROUTE_RETIRED
+    if (enabled) {
+        ESP_LOGE(TAG, "speaker PA route is unavailable in the PCM5102A product configuration");
+        (void)gpio_set_level(BSP_AUDIO_PA_GPIO, 0);
+        s_speaker_pa_enabled = false;
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+#endif
+    ESP_RETURN_ON_ERROR(gpio_set_level(BSP_AUDIO_PA_GPIO, enabled ? 1 : 0), TAG,
+                        "speaker PA level failed");
     s_speaker_pa_enabled = enabled;
     ESP_LOGI(TAG, "monitor speaker PA %s", enabled ? "on" : "off");
     return ESP_OK;
@@ -533,10 +570,15 @@ esp_err_t bsp_audio_set_monitor_route(bsp_monitor_route_t route)
         ESP_LOGI(TAG, "monitor route → headphones");
         return ESP_OK;
     case BSP_MONITOR_ROUTE_SPEAKER:
+#if BSP_SPEAKER_ROUTE_RETIRED
+        (void)bsp_audio_set_speaker_pa_enabled(false);
+        return ESP_ERR_NOT_SUPPORTED;
+#else
         ESP_RETURN_ON_ERROR(bsp_audio_set_speaker_pa_enabled(true), TAG, "speaker PA on failed");
         s_monitor_route = route;
         ESP_LOGI(TAG, "monitor route → built-in speaker");
         return ESP_OK;
+#endif
     default:
         return ESP_ERR_INVALID_ARG;
     }
@@ -547,12 +589,24 @@ bsp_monitor_route_t bsp_audio_get_monitor_route(void)
     return s_monitor_route;
 }
 
-void bsp_audio_set_output(bsp_audio_out_t out)
+esp_err_t bsp_audio_set_output(bsp_audio_out_t out)
 {
-    s_audio_out = out;
-    (void)bsp_audio_set_monitor_route(out == BSP_AUDIO_OUT_SPEAKER
-                                      ? BSP_MONITOR_ROUTE_SPEAKER
-                                      : BSP_MONITOR_ROUTE_HEADPHONES);
+    if (out != BSP_AUDIO_OUT_SPEAKER && out != BSP_AUDIO_OUT_RCA) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if BSP_SPEAKER_ROUTE_RETIRED
+    if (out == BSP_AUDIO_OUT_SPEAKER) {
+        (void)bsp_audio_set_speaker_pa_enabled(false);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+#endif
+    esp_err_t rc = bsp_audio_set_monitor_route(out == BSP_AUDIO_OUT_SPEAKER
+                                                ? BSP_MONITOR_ROUTE_SPEAKER
+                                                : BSP_MONITOR_ROUTE_HEADPHONES);
+    if (rc == ESP_OK) {
+        s_audio_out = out;
+    }
+    return rc;
 }
 
 bsp_audio_out_t bsp_audio_get_output(void)

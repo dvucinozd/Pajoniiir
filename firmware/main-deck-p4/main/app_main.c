@@ -281,6 +281,7 @@ static void on_usb_storage_event(bool mounted)
 void app_main(void)
 {
     p4_tcm_heap_guard_keep();
+    ESP_ERROR_CHECK(bsp_audio_force_safe_boot_state());
     ESP_ERROR_CHECK(firmware_health_init());
     ESP_ERROR_CHECK(p4_ota_init());
 
@@ -339,9 +340,9 @@ void app_main(void)
     }
 #endif
 
-    // Apply the saved monitor speaker route + backlight brightness.
-    bsp_audio_set_output(app_settings_get().audio_out ? BSP_AUDIO_OUT_RCA
-                                                      : BSP_AUDIO_OUT_SPEAKER);
+    // Restore only the product-safe RCA route. app_settings_init() migrates
+    // legacy speaker selections before this point.
+    ESP_ERROR_CHECK(bsp_audio_set_output(BSP_AUDIO_OUT_RCA));
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
     // ── Web UI / status API transport ───────────────────────────────────────

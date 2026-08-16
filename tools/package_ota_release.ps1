@@ -11,13 +11,10 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 if ($KeyId -ne "rel-001") {
     throw "Firmware currently trusts only OTA signing key ID 'rel-001'"
 }
-$Python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $Python) {
-    throw "python is required; initialize the ESP-IDF environment first"
-}
 $SigningTool = Join-Path $PSScriptRoot "ota_signing.py"
 $ReleaseHelpers = Join-Path $PSScriptRoot "OtaReleaseHelpers.psm1"
 Import-Module $ReleaseHelpers -Force
+$Python = Resolve-OtaSigningPython
 $SigningKeyPath = Join-Path $RepoRoot $SigningKey
 $PublicKeyPath = Join-Path $RepoRoot $PublicKey
 if (-not (Test-Path -LiteralPath $SigningKeyPath)) {
@@ -29,7 +26,7 @@ if (-not (Test-Path -LiteralPath $PublicKeyPath)) {
 
 function Invoke-SigningTool {
     param([string[]]$Arguments)
-    & $Python.Source $SigningTool @Arguments
+    & $Python $SigningTool @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "OTA signing tool failed with exit code $LASTEXITCODE"
     }

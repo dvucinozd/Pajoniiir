@@ -91,6 +91,25 @@ function Assert-FileContains {
     }
 }
 
+function Assert-FilePatternsOrdered {
+    param(
+        [string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$LiteralPatterns
+    )
+
+    Write-Host "==> static $Name"
+    $content = Get-Content -LiteralPath $Path -Raw
+    $searchFrom = 0
+    foreach ($pattern in $LiteralPatterns) {
+        $index = $content.IndexOf($pattern, $searchFrom, [System.StringComparison]::Ordinal)
+        if ($index -lt 0) {
+            throw "$Name missing ordered pattern '$pattern' after offset $searchFrom in $Path"
+        }
+        $searchFrom = $index + $pattern.Length
+    }
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -940,10 +959,20 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("ddj_ota_manifest_verify_signature(header, sizeof(header))", "rc = p4_ota_begin(&manifest);")
 
+Assert-FilePatternsOrdered `
+    -Name "p4 pull OTA binds the signed version before opening the OTA partition" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("p4_ota_pull_validate_bundle_release", "p4_ota_begin(&manifest)")
+
+Assert-FileContains `
+    -Name "pull OTA publisher derives channel version from a verified signed bundle" `
+    -Path (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
+    -LiteralPatterns @("verify-bundle", '$metadata["version"]')
+
 Assert-FileContains `
     -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
-    -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strncmp(expected_release, s_status.available_release")
+    -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strcmp(expected_release, s_status.available_release)")
 
 Assert-FileContains `
     -Name "controller profile partial init rolls back every runtime resource" `
@@ -2129,12 +2158,14 @@ $tests = @(
         # the one whose write pattern matters. Runs the real app_settings.c
         # against the fake RTOS and a counting NVS fake.
         Name = "app_settings"
-        MinTestsRun = 29
+        MinTestsRun = 46
         Dir = "tests/app_settings"
         Target = "test_app_settings.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
             "-DAPP_SETTINGS_HOST_TEST",
+            "-DCONFIG_BSP_PCM5102A_MAIN_OUT=1",
+            "-DCONFIG_BSP_ES8311_MONITOR=0",
             "-Istubs",
             "-I../support/rtos",
             "-I../support/stubs",
@@ -2501,6 +2532,16 @@ Assert-FileContains `
     -Name "p4 display allocates only the framebuffer the backend actually uses" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
     -LiteralPatterns @(".num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT", "_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u")
+
+Assert-FilePatternsOrdered `
+    -Name "p4 product boot forces the retired speaker PA low before settings load" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("bsp_audio_force_safe_boot_state()", "app_settings_init()")
+
+Assert-FileContains `
+    -Name "p4 retired speaker route is compile-time rejected and keeps PA low" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -LiteralPatterns @("BSP_SPEAKER_ROUTE_RETIRED", "gpio_set_level(BSP_AUDIO_PA_GPIO, 0)", "ESP_ERR_NOT_SUPPORTED")
 
 Assert-FileContains `
     -Name "p4 LVGL backend requests the shared framebuffer count" `

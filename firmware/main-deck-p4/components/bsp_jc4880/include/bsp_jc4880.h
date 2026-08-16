@@ -35,6 +35,9 @@ esp_err_t bsp_display_init(void);   // ST7701S MIPI DSI, 480x800, landscape rota
 void      bsp_display_set_backlight(uint8_t pct);
 esp_err_t bsp_touch_init(void);     // GT911 on I2C GPIO7/8
 esp_err_t bsp_audio_init(void);     // PCM5102A MAIN plus optional legacy monitor path
+// Drive the retired speaker PA control low before NVS or audio-route restore.
+// Safe and idempotent; call at the start of app_main().
+esp_err_t bsp_audio_force_safe_boot_state(void);
 esp_err_t bsp_sd_init(void);        // SDMMC on GPIO39-44 (internal storage/config)
 
 typedef struct {
@@ -71,7 +74,7 @@ typedef enum {
     BSP_AUDIO_OUT_RCA,
 } bsp_audio_out_t;
 
-void            bsp_audio_set_output(bsp_audio_out_t out);
+esp_err_t       bsp_audio_set_output(bsp_audio_out_t out);
 bsp_audio_out_t bsp_audio_get_output(void);
 
 typedef enum {

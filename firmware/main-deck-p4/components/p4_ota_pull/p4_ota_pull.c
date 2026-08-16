@@ -43,6 +43,13 @@ static TickType_t s_offer_tick;
 static p4_ota_pull_gate_t s_operation_gate;
 static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
+typedef struct {
+    char release[P4_OTA_PULL_RELEASE_MAX + 1u];
+    char url[P4_OTA_PULL_URL_MAX + 1u];
+    uint8_t sha256[32];
+    uint32_t size;
+} install_offer_t;
+
 static void note_locked(p4_ota_pull_state_t state, esp_err_t err,
                         const char *detail)
 {
@@ -91,16 +98,6 @@ static void update_downloaded(uint32_t downloaded)
 {
     portENTER_CRITICAL(&s_state_mux);
     s_status.downloaded = downloaded;
-    portEXIT_CRITICAL(&s_state_mux);
-}
-
-static void copy_install_offer(char *url, size_t url_cap,
-                               uint8_t sha256[32], uint32_t *size)
-{
-    portENTER_CRITICAL(&s_state_mux);
-    snprintf(url, url_cap, "%s", s_install_url);
-    memcpy(sha256, s_install_sha256, 32u);
-    *size = s_status.available_size;
     portEXIT_CRITICAL(&s_state_mux);
 }
 
@@ -262,6 +259,7 @@ static void check_task(void *arg)
  * order the push path uses, and the reason arriving over TLS grants the bundle
  * no additional trust. */
 static esp_err_t download_and_install(const char *base_url, const char *rel_url,
+                                      const char *expected_release,
                                       uint32_t expect_size,
                                       const uint8_t expect_sha256[32])
 {
@@ -341,6 +339,21 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         goto done;
     }
 
+    const esp_app_desc_t *running = esp_app_get_description();
+    p4_ota_pull_bundle_release_result_t release_rc =
+        p4_ota_pull_validate_bundle_release(expected_release,
+                                            manifest.version,
+                                            running ? running->version : NULL);
+    if (release_rc != P4_OTA_PULL_BUNDLE_RELEASE_OK) {
+        ESP_LOGE(TAG, "signed bundle version rejected: offer='%s' signed='%s' running='%s' reason=%d",
+                 expected_release ? expected_release : "",
+                 manifest.version,
+                 running ? running->version : "",
+                 (int)release_rc);
+        rc = ESP_ERR_INVALID_VERSION;
+        goto done;
+    }
+
     rc = p4_ota_begin(&manifest);
     if (rc != ESP_OK) goto done;
 
@@ -403,20 +416,17 @@ done:
 
 static void install_task(void *arg)
 {
-    (void)arg;
+    install_offer_t offer = *(const install_offer_t *)arg;
+    memset(arg, 0, sizeof(install_offer_t));
+    free(arg);
     vTaskDelay(pdMS_TO_TICKS(500));   /* let the 202 out; see check_task */
 
     char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
     char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
     char url[APP_SETTINGS_OTA_URL_CAP] = {0};
-    char install_url[P4_OTA_PULL_URL_MAX + 1u] = {0};
-    uint8_t install_sha256[32] = {0};
-    uint32_t install_size = 0u;
     app_settings_ota_get_ssid(ssid, sizeof(ssid));
     app_settings_ota_get_url(url, sizeof(url));
     app_settings_ota_copy_password(pass, sizeof(pass));
-    copy_install_offer(install_url, sizeof(install_url),
-                       install_sha256, &install_size);
 
     note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "joining service network");
     esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, STA_TIMEOUT_MS);
@@ -426,8 +436,8 @@ static void install_task(void *arg)
         note(P4_OTA_PULL_FAILED, rc, "could not join network");
     } else {
         note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "downloading");
-        rc = download_and_install(url, install_url, install_size,
-                                  install_sha256);
+        rc = download_and_install(url, offer.url, offer.release, offer.size,
+                                  offer.sha256);
         if (rc == ESP_OK) {
             note(P4_OTA_PULL_READY_TO_REBOOT, ESP_OK, "verified, restarting");
         } else if (rc == ESP_ERR_INVALID_MAC) {
@@ -436,6 +446,9 @@ static void install_task(void *arg)
             note(P4_OTA_PULL_FAILED, rc, "size does not match the manifest");
         } else if (rc == ESP_ERR_INVALID_CRC) {
             note(P4_OTA_PULL_FAILED, rc, "bundle hash does not match the channel");
+        } else if (rc == ESP_ERR_INVALID_VERSION) {
+            note(P4_OTA_PULL_FAILED, rc,
+                 "signed bundle version does not match a newer offered release");
         } else if (rc == ESP_ERR_NOT_FOUND) {
             note(P4_OTA_PULL_FAILED, rc, "bundle not on the server");
         } else {
@@ -473,6 +486,12 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     }
     /* Only what a check actually offered, and only if the caller names it back.
      * A stale page must not be able to install something never seen. */
+    install_offer_t *offer = calloc(1u, sizeof(*offer));
+    if (!offer) {
+        p4_ota_pull_gate_release(&s_operation_gate);
+        return ESP_ERR_NO_MEM;
+    }
+
     esp_err_t validation = ESP_OK;
     portENTER_CRITICAL(&s_state_mux);
     if (s_status.state != P4_OTA_PULL_AVAILABLE) {
@@ -484,15 +503,21 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
         note_locked(P4_OTA_PULL_FAILED, ESP_ERR_TIMEOUT,
                     "update offer expired; check again");
         validation = ESP_ERR_INVALID_STATE;
-    } else if (!expected_release ||
-               strncmp(expected_release, s_status.available_release,
-                       P4_OTA_PULL_RELEASE_MAX) != 0) {
+    } else if (!expected_release || expected_release[0] == '\0' ||
+               strcmp(expected_release, s_status.available_release) != 0) {
         validation = ESP_ERR_INVALID_ARG;
     } else if (s_install_url[0] == '\0' || s_status.available_size == 0u) {
         validation = ESP_ERR_INVALID_STATE;
+    } else {
+        snprintf(offer->release, sizeof(offer->release), "%s",
+                 s_status.available_release);
+        snprintf(offer->url, sizeof(offer->url), "%s", s_install_url);
+        memcpy(offer->sha256, s_install_sha256, sizeof(offer->sha256));
+        offer->size = s_status.available_size;
     }
     portEXIT_CRITICAL(&s_state_mux);
     if (validation != ESP_OK) {
+        free(offer);
         p4_ota_pull_gate_release(&s_operation_gate);
         return validation;
     }
@@ -504,6 +529,7 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     if (lease_rc != ESP_OK) {
         ESP_LOGW(TAG, "Wi-Fi transition busy (owner=%d)",
                  (int)wifi_transition_lease_owner());
+        free(offer);
         p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_INVALID_STATE;
     }
@@ -513,8 +539,10 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     note_locked(P4_OTA_PULL_DOWNLOADING, ESP_OK, "starting");
     portEXIT_CRITICAL(&s_state_mux);
     /* 10 KiB: TLS records plus the flash write path run on this task. */
-    if (xTaskCreate(install_task, "ota_install", 10240, NULL, 4, NULL) != pdPASS) {
+    if (xTaskCreate(install_task, "ota_install", 10240, offer, 4, NULL) != pdPASS) {
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
+        memset(offer, 0, sizeof(*offer));
+        free(offer);
         wifi_transition_lease_release(WIFI_TRANSITION_OWNER_OTA);
         p4_ota_pull_gate_release(&s_operation_gate);
         return ESP_ERR_NO_MEM;

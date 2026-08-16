@@ -10,6 +10,15 @@
 /* Referenced only by ESP_LOG*, which the PC host stubs compile away. */
 __attribute__((unused)) static const char *TAG = "settings";
 #define NS  "cdjcfg"
+#define APP_SETTINGS_SCHEMA_KEY       "schema_ver"
+#define APP_SETTINGS_SCHEMA_VERSION   1u
+
+#if defined(CONFIG_BSP_PCM5102A_MAIN_OUT) && CONFIG_BSP_PCM5102A_MAIN_OUT && \
+    (!defined(CONFIG_BSP_ES8311_MONITOR) || !CONFIG_BSP_ES8311_MONITOR)
+#define APP_SETTINGS_SPEAKER_ROUTE_RETIRED 1
+#else
+#define APP_SETTINGS_SPEAKER_ROUTE_RETIRED 0
+#endif
 
 /* Readers run in UI/http/OTA tasks. Publish coherent RAM snapshots only after
  * durable NVS writes have succeeded. */
@@ -17,7 +26,7 @@ static portMUX_TYPE s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /* Defaults match the firmware's out-of-the-box behaviour. */
 #define APP_SETTINGS_DEFAULTS (app_settings_t){ \
-    .audio_out     = 0,                          \
+    .audio_out     = APP_SETTINGS_AUDIO_OUT_RCA, \
     .backlight_pct = 80,                         \
     .time_remain   = 0,                          \
     .cue_mode      = 0,                          \
@@ -26,7 +35,7 @@ static portMUX_TYPE s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 }
 
 static app_settings_t s_cfg = {
-    .audio_out     = 0,
+    .audio_out     = APP_SETTINGS_AUDIO_OUT_RCA,
     .backlight_pct = 80,
     .time_remain   = 0,
     .cue_mode      = 0,
@@ -75,6 +84,45 @@ static esp_err_t save_u8(const char *key, uint8_t value)
     return rc;
 }
 
+static esp_err_t migrate_settings(nvs_handle_t handle,
+                                  app_settings_t *settings,
+                                  uint8_t stored_schema,
+                                  bool schema_found)
+{
+    bool changed = false;
+
+    if (settings->audio_out > APP_SETTINGS_AUDIO_OUT_RCA) {
+        settings->audio_out = APP_SETTINGS_AUDIO_OUT_RCA;
+        changed = true;
+    }
+
+#if APP_SETTINGS_SPEAKER_ROUTE_RETIRED
+    if (settings->audio_out == APP_SETTINGS_AUDIO_OUT_SPEAKER) {
+        settings->audio_out = APP_SETTINGS_AUDIO_OUT_RCA;
+        changed = true;
+    }
+#endif
+
+    if (schema_found && stored_schema >= APP_SETTINGS_SCHEMA_VERSION && !changed) {
+        return ESP_OK;
+    }
+
+    esp_err_t rc = nvs_set_u8(handle, "audio_out", settings->audio_out);
+    if (rc == ESP_OK) {
+        rc = nvs_set_u8(handle, APP_SETTINGS_SCHEMA_KEY, APP_SETTINGS_SCHEMA_VERSION);
+    }
+    if (rc == ESP_OK) {
+        rc = nvs_commit(handle);
+    }
+    if (rc == ESP_OK) {
+        ESP_LOGW(TAG, "settings schema migrated to v%u; audio output forced to safe route",
+                 (unsigned)APP_SETTINGS_SCHEMA_VERSION);
+    } else {
+        ESP_LOGE(TAG, "settings migration failed: %s", esp_err_to_name(rc));
+    }
+    return rc;
+}
+
 static void load_ota_config(nvs_handle_t handle,
                             char ssid[APP_SETTINGS_OTA_SSID_CAP],
                             char pass[APP_SETTINGS_OTA_PASS_CAP],
@@ -111,7 +159,7 @@ esp_err_t app_settings_init(void)
     char ota_url[APP_SETTINGS_OTA_URL_CAP] = {0};
 
     nvs_handle_t handle;
-    if (nvs_open(NS, NVS_READONLY, &handle) == ESP_OK) {
+    if (nvs_open(NS, NVS_READWRITE, &handle) == ESP_OK) {
         uint8_t value;
         if (nvs_get_u8(handle, "audio_out", &value) == ESP_OK) next.audio_out = value;
         if (nvs_get_u8(handle, "backlight", &value) == ESP_OK) next.backlight_pct = value > 100 ? 100 : value;
@@ -120,6 +168,10 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(handle, "master_trim", &value) == ESP_OK && value <= 2) next.master_trim_preset = value;
         if (nvs_get_u8(handle, "wifi_rem", &value) == ESP_OK && value <= 1) next.wifi_remote = value;
         load_ota_config(handle, ota_ssid, ota_pass, ota_url);
+
+        uint8_t stored_schema = 0u;
+        bool schema_found = nvs_get_u8(handle, APP_SETTINGS_SCHEMA_KEY, &stored_schema) == ESP_OK;
+        (void)migrate_settings(handle, &next, stored_schema, schema_found);
         nvs_close(handle);
     }
 
@@ -130,8 +182,9 @@ esp_err_t app_settings_init(void)
     memcpy(s_ota_url, ota_url, sizeof(s_ota_url));
     portEXIT_CRITICAL(&s_cfg_mux);
 
-    ESP_LOGI(TAG, "loaded: monitor_speaker=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u wifi_remote=%s",
-             next.audio_out ? "off" : "on", next.backlight_pct, next.time_remain,
+    ESP_LOGI(TAG, "loaded: audio_out=%s backlight=%u time_remain=%u cue_mode=%u master_trim=%u wifi_remote=%s",
+             next.audio_out == APP_SETTINGS_AUDIO_OUT_RCA ? "rca" : "speaker",
+             next.backlight_pct, next.time_remain,
              next.cue_mode, next.master_trim_preset,
              next.wifi_remote ? "on" : "off");
 
@@ -159,7 +212,11 @@ void function_name(uint8_t value)                                             \
     portEXIT_CRITICAL(&s_cfg_mux);                                             \
 }
 
-DEFINE_U8_SETTER(app_settings_set_audio_out, audio_out, "audio_out", (void)0)
+#if APP_SETTINGS_SPEAKER_ROUTE_RETIRED
+DEFINE_U8_SETTER(app_settings_set_audio_out, audio_out, "audio_out", value = APP_SETTINGS_AUDIO_OUT_RCA)
+#else
+DEFINE_U8_SETTER(app_settings_set_audio_out, audio_out, "audio_out", if (value > APP_SETTINGS_AUDIO_OUT_RCA) value = APP_SETTINGS_AUDIO_OUT_RCA)
+#endif
 DEFINE_U8_SETTER(app_settings_set_time_remain, time_remain, "time_rem", (void)0)
 DEFINE_U8_SETTER(app_settings_set_cue_mode, cue_mode, "cue_mode", if (value > 1) value = 0)
 DEFINE_U8_SETTER(app_settings_set_master_trim_preset, master_trim_preset, "master_trim", if (value > 2) value = 0)
