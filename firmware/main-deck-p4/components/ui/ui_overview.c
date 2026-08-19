@@ -1428,6 +1428,109 @@ static void playhead_burn_restore(ui_overview_wave_cache_t *cache,
     }
 }
 
+/* ---------- armed loop burn-in helpers ---------- */
+
+#ifndef Q16_ONE
+#define Q16_ONE 65536LL
+#endif
+
+typedef struct {
+    int      start_logical;
+    int      end_logical;
+    uint16_t in_marker_saved[OVERVIEW_CV_H];
+    int      in_marker_physical;
+    bool     in_marker_active;
+    bool     active;
+} armed_loop_burn_ctx_t;
+
+static void armed_loop_burn_save_and_fill(ui_overview_wave_cache_t *cache,
+                                          armed_loop_burn_ctx_t *ctx,
+                                          uint8_t deck)
+{
+    ctx->active = false;
+    ctx->in_marker_active = false;
+    if (!cache || !cache->pixels || cache->strip_width_px <= 0 ||
+        cache->view_width_px <= 0 || cache->height_px <= 0 ||
+        cache->ms_per_px_q16 <= 0) {
+        return;
+    }
+
+    deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+    if (!loop.armed) {
+        return;
+    }
+
+    int center_logical = cache->view_origin_px + cache->view_width_px / 2;
+    int in_logical_x = (int)((((int64_t)loop.start_ms * Q16_ONE) - cache->strip_start_ms_q16) /
+                             cache->ms_per_px_q16);
+
+    int start_logical = in_logical_x < cache->view_origin_px ? cache->view_origin_px : in_logical_x;
+    int end_logical = center_logical;
+
+    if (start_logical > end_logical || start_logical >= cache->view_origin_px + cache->view_width_px) {
+        return;
+    }
+
+    const uint16_t loop_bg = UI_RGB565(0x6B, 0x3F, 0x00);
+    const uint16_t mark_color = UI_RGB565(0xFF, 0xFF, 0xFF);
+
+    ctx->start_logical = start_logical;
+    ctx->end_logical = end_logical;
+    ctx->active = true;
+
+    /* 1. Tint background between start_logical and end_logical */
+    for (int logical_x = start_logical; logical_x <= end_logical; logical_x++) {
+        int px = (cache->ring_head_px + logical_x) % cache->strip_width_px;
+        if (px < 0) px += cache->strip_width_px;
+        for (int y = 0; y < cache->height_px; y++) {
+            if (cache->pixels[y * cache->stride_px + px] == 0x0000) {
+                cache->pixels[y * cache->stride_px + px] = loop_bg;
+            }
+        }
+    }
+
+    /* 2. Draw white Loop In vertical marker at in_logical_x if visible */
+    if (in_logical_x >= cache->view_origin_px &&
+        in_logical_x < cache->view_origin_px + cache->view_width_px) {
+        int in_px = (cache->ring_head_px + in_logical_x) % cache->strip_width_px;
+        if (in_px < 0) in_px += cache->strip_width_px;
+        ctx->in_marker_physical = in_px;
+        for (int y = 0; y < cache->height_px; y++) {
+            ctx->in_marker_saved[y] = cache->pixels[y * cache->stride_px + in_px];
+            cache->pixels[y * cache->stride_px + in_px] = mark_color;
+        }
+        ctx->in_marker_active = true;
+    }
+}
+
+static void armed_loop_burn_restore(ui_overview_wave_cache_t *cache,
+                                    const armed_loop_burn_ctx_t *ctx)
+{
+    if (!cache || !cache->pixels || !ctx || !ctx->active) {
+        return;
+    }
+
+    const uint16_t loop_bg = UI_RGB565(0x6B, 0x3F, 0x00);
+
+    /* 1. Restore the white in-marker column if it was drawn */
+    if (ctx->in_marker_active) {
+        for (int y = 0; y < cache->height_px; y++) {
+            cache->pixels[y * cache->stride_px + ctx->in_marker_physical] = ctx->in_marker_saved[y];
+        }
+    }
+
+    /* 2. Restore tinted background pixels */
+    for (int logical_x = ctx->start_logical; logical_x <= ctx->end_logical; logical_x++) {
+        int px = (cache->ring_head_px + logical_x) % cache->strip_width_px;
+        if (px < 0) px += cache->strip_width_px;
+        for (int y = 0; y < cache->height_px; y++) {
+            if (cache->pixels[y * cache->stride_px + px] == loop_bg) {
+                cache->pixels[y * cache->stride_px + px] = 0x0000;
+            }
+        }
+    }
+}
+
 /* ---------- overlay blit ---------- */
 
 static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel,
@@ -1446,6 +1549,10 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
     if (!ui_overview_wave_overlay_rect(panel, &logical)) {
         return false;
     }
+
+    /* Burn the armed loop trail into the strip if armed */
+    armed_loop_burn_ctx_t armed_burn_ctx;
+    armed_loop_burn_save_and_fill(&s_overview_wave_cache[idx], &armed_burn_ctx, deck);
 
     /* Burn the playhead into the strip so the PPA blit transfers it
      * atomically with the waveform – no separate framebuffer write. */
@@ -1488,12 +1595,14 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
                      seg_logical.x, seg_logical.y, seg_logical.w, seg_logical.h,
                      (unsigned)seg->src_x_px);
             playhead_burn_restore(&s_overview_wave_cache[idx], &burn_ctx);
+            armed_loop_burn_restore(&s_overview_wave_cache[idx], &armed_burn_ctx);
             return false;
         }
     }
 
     /* Restore the strip so the cache stays clean for future scrolling. */
     playhead_burn_restore(&s_overview_wave_cache[idx], &burn_ctx);
+    armed_loop_burn_restore(&s_overview_wave_cache[idx], &armed_burn_ctx);
 
     if (out_perf) {
         *out_perf = total_perf;
@@ -1902,30 +2011,27 @@ static void ui_update_overview_waveform_progress(uint8_t deck,
     }
 #endif
 
-    /* Resolve the loop region to highlight: a full active loop [start,end], or an
-     * armed loop-in growing from its marker to the live playhead. Firmware only;
-     * the WIN32/PC main-waveform path does not draw the highlight. A change forces
-     * a redraw even when the playhead is parked (compared against the cache's
-     * applied loop so a scheduler veto just retries next frame). */
+    /* Resolve the loop region to highlight: a full active loop [start,end].
+     * An armed loop-in trail is dynamically burned into the overlay during blit
+     * without invalidating the scrolling cache. */
     bool loop_active = false;
     uint32_t loop_start_ms = 0;
     uint32_t loop_end_ms = 0;
 #ifndef WIN32
     {
         deck_core_loop_display_t loop = deck_core_get_loop_display(deck);
+        static bool s_last_loop_armed[DECK_CORE_DECK_COUNT] = {false};
         if (loop.active) {
             loop_active = true;
             loop_start_ms = loop.start_ms;
             loop_end_ms = loop.end_ms;
-        } else if (loop.armed && position_ms > loop.start_ms) {
-            loop_active = true;
-            loop_start_ms = loop.start_ms;
-            loop_end_ms = position_ms;
         }
         if (idx < DECK_CORE_DECK_COUNT &&
             (s_overview_wave_cache[idx].loop_active != loop_active ||
              s_overview_wave_cache[idx].loop_start_ms != loop_start_ms ||
-             s_overview_wave_cache[idx].loop_end_ms != loop_end_ms)) {
+             s_overview_wave_cache[idx].loop_end_ms != loop_end_ms ||
+             loop.armed != s_last_loop_armed[idx])) {
+            s_last_loop_armed[idx] = loop.armed;
             redraw_main = true;
         }
     }

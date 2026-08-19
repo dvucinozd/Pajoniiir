@@ -349,11 +349,11 @@ def convert_profile(web_data):
             continue
 
         # Ignoriraj deck 3 i 4 jer firmware podržava samo 2 decka
-        if any(event.startswith(prefix) for prefix in ("deck3.", "deck4.")):
+        if event.startswith(("deck3.", "deck4.")):
             continue
         if event in ("browser.load_deck3", "browser.load_deck4", "browser.shift_load_deck3", "browser.shift_load_deck4"):
             continue
-        if any(event.startswith(prefix) for prefix in ("mixer.ch3", "mixer.ch4")):
+        if event.startswith(("mixer.ch3", "mixer.ch4")):
             continue
 
         midi = c.get("midi", {})

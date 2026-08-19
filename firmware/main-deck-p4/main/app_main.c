@@ -252,7 +252,16 @@ static void on_usb_storage_event(bool mounted)
 {
     if (mounted) {
         service_log_note(SERVICE_LOG_USB_MOUNTED, SERVICE_LOG_INFO, "rekordbox drive");
-        esp_err_t rc = library_init();   // open export.pdb, build the track index
+        esp_err_t rc = ESP_FAIL;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            rc = library_init();   // open export.pdb, build the track index
+            if (rc == ESP_OK) {
+                break;
+            }
+            ESP_LOGW(TAG, "library_init attempt %d failed (%s), retrying in 250ms...",
+                     attempt, esp_err_to_name(rc));
+            vTaskDelay(pdMS_TO_TICKS(250));
+        }
         if (rc == ESP_OK) {
             ESP_LOGW(TAG, "USB media library loaded: %d tracks", library_count());
             service_log_event(SERVICE_LOG_LIBRARY_LOADED, SERVICE_LOG_INFO,

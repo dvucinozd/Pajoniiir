@@ -478,10 +478,12 @@ Overview waveform overlays (all baked into the scrolling RGB565 strip so they
 PPA-blit atomically with the waveform — no LVGL-over-PPA flicker):
 - **Loop region highlight** — amber background over `[loop_start, loop_end)` with
   white edge markers. Active loop is `[in, out]`; an *armed* loop-in (before the
-  out is pressed) grows from the marker to the live playhead.
-  `deck_core_get_loop_display()` exposes `{active, armed, start, end}`; the region
-  is fed to the cache via `ui_overview_wave_cache_set_loop()` (a change forces a
-  full strip redraw).
+  out is pressed) is dynamically burned into the strip during PPA blit
+  (`armed_loop_burn_save_and_fill()` / `armed_loop_burn_restore()`), showing both the
+  white `Loop In` marker and the live amber trail to the playhead at full 60 FPS
+  without invalidating the scrolling cache. `deck_core_get_loop_display()` exposes
+  `{active, armed, start, end}`; full active loops are fed to the cache via
+  `ui_overview_wave_cache_set_loop()`.
 - **Hot-cue markers** — coloured vertical lines + flag heads drawn from
   `meta->cues` (`WAVE_CUE_*`), scrolling with the waveform. The old LVGL cue
   objects are hidden.

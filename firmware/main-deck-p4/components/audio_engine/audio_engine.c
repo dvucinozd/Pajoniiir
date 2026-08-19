@@ -3102,9 +3102,8 @@ static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
     if (!s_main_i2s_tx) {
         return ESP_ERR_INVALID_STATE;
     }
-    uint32_t period_us = audio_output_block_period_us(s_output_sample_rate);
-    uint32_t timeout_ms = (period_us + 999u) / 1000u;
-    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms > 0u ? timeout_ms : 1u);
+    uint32_t timeout_ms = 100u;
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
     if (timeout_ticks == 0u) timeout_ticks = 1u;
     audio_output_sink_result_t result = audio_output_sink_write_all(
         audio_output_main_i2s_write, s_main_i2s_tx, frames, bytes,

@@ -176,6 +176,11 @@ static uint8_t ui_deck_index(uint8_t deck)
     return deck < DECK_CORE_DECK_COUNT ? deck : DECK_CORE_COMPAT_DECK;
 }
 
+static uint8_t ui_deck_control_id(uint8_t deck, uint8_t deck1_id, uint8_t deck2_id)
+{
+    return ui_deck_index(deck) == CTRL_DECK_2 ? deck2_id : deck1_id;
+}
+
 static void ui_copy_str(char *dst, size_t dst_len, const char *src)
 {
     if (!dst || dst_len == 0) {
@@ -286,7 +291,14 @@ static void ui_performance_seek(uint8_t deck, uint32_t position_ms)
 static void ui_performance_play(uint8_t deck)
 {
 #ifndef WIN32
-    audio_engine_deck_play(deck);
+    ctrl_event_t ev = {
+        .type  = CTRL_EV_BUTTON,
+        .id    = ui_deck_control_id(deck, CTRL_ID_DECK1_PLAY, CTRL_ID_DECK2_PLAY),
+        .deck  = deck,
+        .value = 1,
+        .seq   = 0
+    };
+    deck_core_queue_event(&ev);
 #else
     (void)deck;
     ui_simulator_deck_set_playing(true);
@@ -385,10 +397,6 @@ static void footer_btn_event_cb(lv_event_t *e) {
     ui_switch_tab(target_idx);
 }
 
-static uint8_t ui_deck_control_id(uint8_t deck, uint8_t deck1_id, uint8_t deck2_id)
-{
-    return ui_deck_index(deck) == CTRL_DECK_2 ? deck2_id : deck1_id;
-}
 
 static void ui_overview_action_play_pause(uint8_t deck)
 {

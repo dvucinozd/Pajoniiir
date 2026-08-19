@@ -1533,42 +1533,8 @@ void ui_library_load_initial_track(void)
         anlz_free(&meta_snapshot);
     }
 #else
-    media_catalog_row_t row;
-    media_loaded_track_t loaded;
-    const uint32_t generation = media_catalog_generation();
-    if (media_catalog_get_row(0, &row) == ESP_OK &&
-        media_catalog_generation() == generation &&
-        media_catalog_load_by_identity(row.track_key,
-                                       generation,
-                                       NULL,
-                                       &loaded) == ESP_OK) {
-        const uint16_t bpm = loaded.bpm ? loaded.bpm : row.bpm;
-        anlz_metadata_t meta_snapshot;
-        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
-        if (deck_core_publish_loaded_track(CTRL_DECK_1,
-                                           generation,
-                                           loaded.track_key,
-                                           bpm,
-                                           loaded.duration_ms,
-                                           meta) == ESP_OK) {
-            s_loaded_media[CTRL_DECK_1] = loaded;
-            s_loaded_media_valid[CTRL_DECK_1] = true;
-            s_deck_loaded_track_key[CTRL_DECK_1] = loaded.track_key;
-            s_deck_loaded_track_valid[CTRL_DECK_1] = true;
-            ui_library_apply_loaded_track(CTRL_DECK_1,
-                                          row.title,
-                                          row.artist,
-                                          bpm,
-                                          loaded.duration_ms,
-                                          loaded.waveform_low,
-                                          loaded.has_waveform != 0,
-                                          meta);
-        } else {
-            ui_library_release_deck_audio(CTRL_DECK_1);
-            ui_library_apply_empty_track(CTRL_DECK_1);
-        }
-        anlz_free(&meta_snapshot);
-    }
+    ui_library_apply_empty_track(CTRL_DECK_1);
+    ui_library_apply_empty_track(CTRL_DECK_2);
 #endif
     if (s_library_table) {
         lv_obj_invalidate(s_library_table);
