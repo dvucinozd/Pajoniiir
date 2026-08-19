@@ -195,6 +195,12 @@ static uint8_t s_library_load_request_deck = CTRL_DECK_1;
 
 static uint32_t s_deck_loaded_track_key[DECK_CORE_DECK_COUNT] = {0, 0};
 static bool s_deck_loaded_track_valid[DECK_CORE_DECK_COUNT] = {false, false};
+#ifdef WIN32
+static uint8_t s_deck_loaded_waveform_low[DECK_CORE_DECK_COUNT][400];
+static bool s_deck_loaded_has_waveform[DECK_CORE_DECK_COUNT] = {false, false};
+static uint32_t s_deck_loaded_duration_ms[DECK_CORE_DECK_COUNT] = {0, 0};
+static uint16_t s_deck_loaded_bpm[DECK_CORE_DECK_COUNT] = {0, 0};
+#endif
 
 static const anlz_metadata_t *ui_library_clone_loaded_anlz(anlz_metadata_t *snapshot)
 {
@@ -546,6 +552,14 @@ static void ui_library_apply_loaded_track(uint8_t deck,
                                           const anlz_metadata_t *meta)
 {
     deck = ui_library_deck_index(deck);
+#ifdef WIN32
+    s_deck_loaded_has_waveform[deck] = has_waveform;
+    s_deck_loaded_duration_ms[deck] = duration_ms;
+    s_deck_loaded_bpm[deck] = bpm;
+    if (waveform_low) {
+        memcpy(s_deck_loaded_waveform_low[deck], waveform_low, 400);
+    }
+#endif
     if (s_library_config.actions.set_deck_track_info) {
         s_library_config.actions.set_deck_track_info(deck, title, artist, bpm, duration_ms);
     }
@@ -572,6 +586,9 @@ static void ui_library_apply_loaded_track(uint8_t deck,
 static void ui_library_apply_empty_track(uint8_t deck)
 {
     deck = ui_library_deck_index(deck);
+#ifdef WIN32
+    s_deck_loaded_has_waveform[deck] = false;
+#endif
 #ifndef WIN32
     s_loaded_media_valid[deck] = false;
     memset(&s_loaded_media[deck], 0, sizeof(s_loaded_media[deck]));
@@ -1793,22 +1810,22 @@ void ui_library_update(const ui_frame_context_t *ctx)
 
 uint32_t ui_library_deck_duration_ms(uint8_t deck, uint32_t fallback_duration_ms)
 {
-#ifndef WIN32
     uint8_t idx = ui_library_deck_index(deck);
+#ifndef WIN32
     if (s_loaded_media_valid[idx]) return s_loaded_media[idx].duration_ms;
 #else
-    (void)deck;
+    if (s_deck_loaded_track_valid[idx] && s_deck_loaded_duration_ms[idx] > 0) return s_deck_loaded_duration_ms[idx];
 #endif
     return fallback_duration_ms;
 }
 
 uint16_t ui_library_deck_bpm(uint8_t deck, uint16_t fallback_bpm)
 {
-#ifndef WIN32
     uint8_t idx = ui_library_deck_index(deck);
+#ifndef WIN32
     if (s_loaded_media_valid[idx] && s_loaded_media[idx].bpm > 0) return s_loaded_media[idx].bpm;
 #else
-    (void)deck;
+    if (s_deck_loaded_track_valid[idx] && s_deck_loaded_bpm[idx] > 0) return s_deck_loaded_bpm[idx];
 #endif
     return fallback_bpm;
 }
@@ -1817,6 +1834,7 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
                                     const uint8_t **waveform_low,
                                     bool *has_waveform)
 {
+    uint8_t idx = ui_library_deck_index(deck);
     if (waveform_low) {
         *waveform_low = NULL;
     }
@@ -1824,7 +1842,6 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
         *has_waveform = false;
     }
 #ifndef WIN32
-    uint8_t idx = ui_library_deck_index(deck);
     if (!s_loaded_media_valid[idx]) {
         return false;
     }
@@ -1836,8 +1853,16 @@ bool ui_library_get_loaded_waveform(uint8_t deck,
     }
     return true;
 #else
-    (void)deck;
-    return false;
+    if (idx >= DECK_CORE_DECK_COUNT || !s_deck_loaded_track_valid[idx] || !s_deck_loaded_has_waveform[idx]) {
+        return false;
+    }
+    if (waveform_low) {
+        *waveform_low = s_deck_loaded_waveform_low[idx];
+    }
+    if (has_waveform) {
+        *has_waveform = s_deck_loaded_has_waveform[idx];
+    }
+    return true;
 #endif
 }
 
