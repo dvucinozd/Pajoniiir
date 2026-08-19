@@ -1510,25 +1510,47 @@ void ui_library_load_initial_track(void)
 {
     library_set_selected_track_index(0);
 #ifdef WIN32
-    library_track_t *track = library_get_ptr(0);
-    if (track) {
-        library_load_anlz(track);
+    library_track_t *track0 = library_get_ptr(0);
+    if (track0) {
+        library_load_anlz(track0);
         anlz_metadata_t meta_snapshot;
         const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
         if (ui_library_publish_simulated_track(
-                CTRL_DECK_1, track, meta) == ESP_OK) {
-            s_deck_loaded_track_key[CTRL_DECK_1] = track->track_id;
+                CTRL_DECK_1, track0, meta) == ESP_OK) {
+            s_deck_loaded_track_key[CTRL_DECK_1] = track0->track_id;
             s_deck_loaded_track_valid[CTRL_DECK_1] = true;
             ui_library_apply_loaded_track(CTRL_DECK_1,
-                                          track->title,
-                                          track->artist,
-                                          track->bpm,
-                                          track->duration_ms,
-                                          track->waveform_low,
-                                          track->has_waveform != 0,
+                                          track0->title,
+                                          track0->artist,
+                                          track0->bpm,
+                                          track0->duration_ms,
+                                          track0->waveform_low,
+                                          track0->has_waveform != 0,
                                           meta);
         } else {
             ui_library_apply_empty_track(CTRL_DECK_1);
+        }
+        anlz_free(&meta_snapshot);
+    }
+    library_track_t *track1 = library_get_ptr(1);
+    if (track1) {
+        library_load_anlz(track1);
+        anlz_metadata_t meta_snapshot;
+        const anlz_metadata_t *meta = ui_library_clone_loaded_anlz(&meta_snapshot);
+        if (ui_library_publish_simulated_track(
+                CTRL_DECK_2, track1, meta) == ESP_OK) {
+            s_deck_loaded_track_key[CTRL_DECK_2] = track1->track_id;
+            s_deck_loaded_track_valid[CTRL_DECK_2] = true;
+            ui_library_apply_loaded_track(CTRL_DECK_2,
+                                          track1->title,
+                                          track1->artist,
+                                          track1->bpm,
+                                          track1->duration_ms,
+                                          track1->waveform_low,
+                                          track1->has_waveform != 0,
+                                          meta);
+        } else {
+            ui_library_apply_empty_track(CTRL_DECK_2);
         }
         anlz_free(&meta_snapshot);
     }
