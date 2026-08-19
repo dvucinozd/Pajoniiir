@@ -18,6 +18,7 @@
 #include "ui_overview_window.h"
 #include "ui_position_interpolator.h"
 #include "ui_waveform_model.h"
+#include "splash_screen.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1541,6 +1542,7 @@ static bool ui_overview_blit_wave_overlay_rgb565(ui_overview_deck_panel_t *panel
 {
     uint8_t idx = ui_overview_deck_index(deck);
     if (idx >= DECK_CORE_DECK_COUNT || s_overview_active_tab != 0 ||
+        splash_screen_screensaver_active() ||
         !src || !cache_report || cache_report->blit_count == 0) {
         return false;
     }
@@ -1643,7 +1645,7 @@ static void ui_render_overview_main_waveform(ui_overview_deck_panel_t *panel,
 
 #ifndef WIN32
     uint8_t idx = ui_overview_deck_index(deck);
-    if (s_overview_active_tab != 0) {
+    if (s_overview_active_tab != 0 || splash_screen_screensaver_active()) {
         return;
     }
     if (idx < DECK_CORE_DECK_COUNT &&
@@ -2435,7 +2437,7 @@ void ui_overview_update(const ui_frame_context_t *ctx)
 #endif
     s_overview_prev_tab = (uint8_t)ctx->active_tab;
 
-    if (ctx->active_tab != 0) {
+    if (ctx->active_tab != 0 || splash_screen_screensaver_active()) {
         return;
     }
 
