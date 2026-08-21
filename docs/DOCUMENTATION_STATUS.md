@@ -84,6 +84,11 @@ Dated design records are intentionally retained. They explain why a feature
 was built, but their original pending tasks do not override the current status
 in the active documents.
 
+[`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) is an active
+future implementation plan, not a description of current firmware. Until its
+entry and acceptance gates pass, the verified product snapshot below and the
+existing Rekordbox/PDB/ANLZ path remain authoritative.
+
 ## Verified product snapshot
 
 | Area | Current state |

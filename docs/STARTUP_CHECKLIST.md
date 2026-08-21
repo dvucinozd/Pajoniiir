@@ -794,3 +794,23 @@ R5 cleanup status:
   recorded;
 - [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
 - [x] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
+
+## Deferred libapta P4 integration entry gate
+
+This is a future-phase gate, not part of current RC2 bring-up. The complete plan
+is [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md).
+
+Do not enable `CONFIG_PAJONIIIR_APTA_LIBRARY` or replace the production
+Rekordbox path until all entry rows are closed:
+
+- [ ] libapta-audio publishes a qualified `v1.1.0` release;
+- [ ] the release includes calibrated tempo/grid quality, meter/downbeat, key,
+  progressive quick/full publication and the bounded P4 DJ profile;
+- [ ] Pajoniiir pins the exact 40-character release commit in
+  `idf_component.yml` and commits an unchanged-on-clean-build
+  `dependencies.lock`;
+- [ ] the legacy configuration remains buildable as rollback;
+- [ ] the neutral-model, catalog, USB-sidecar and Sync quality-gate host suites
+  pass before the first hardware flash;
+- [ ] final FAT32/exFAT dual-deck analysis/write soak passes before the new path
+  becomes default.

@@ -186,6 +186,7 @@ operational documents are:
 | UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
 | Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |
 | Current phases and remaining engineering work | [Development Plan](docs/DEVELOPMENT_PLAN.md) |
+| Deferred native folder/APTA library integration | [libapta P4 Integration Plan](docs/LIBAPTA_P4_INTEGRATION_PLAN.md) |
 | Open and accepted risks | [Risk Register](docs/RISK_REGISTER.md) |
 
 Controller-profile schema/update guides, OTA records, validation evidence,

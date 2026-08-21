@@ -1,6 +1,6 @@
 # Pajoniiir Documentation
 
-Complete documentation index, updated 2026-08-16. Start with
+Complete documentation index, updated 2026-08-22. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
 scope, source-of-truth precedence, the installed baseline and the latest fully
 accepted hardware baseline.
@@ -15,6 +15,10 @@ accepted hardware baseline.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — MIDI addresses, semantics and hardware-acceptance ledger.
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — UART, I2S, USB and audio wiring.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — completed phases and remaining work.
+- [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) — deferred
+  implementation plan for a neutral P4 analysis model, ordinary-folder catalog,
+  APTA sidecars, Rekordbox import and bounded background analysis after
+  libapta-audio 1.1 is released.
 - [`POST_R5_PLAN.md`](POST_R5_PLAN.md) — ordered current-candidate acceptance and enclosure-hardening plan.
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — bring-up history and recurring pre-enclosure checks.
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) — open, monitored and accepted risks.

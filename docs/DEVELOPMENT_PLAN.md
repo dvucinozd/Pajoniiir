@@ -2898,3 +2898,21 @@ otherwise the waveform comes back blank.
   deck paused mid-track and the recorder idle, then again immediately after
   dismissal;
 - setting survives a reboot.
+
+## Deferred Phase: Native Folder Library And libapta-audio 1.1
+
+Status: **planned for after the upstream libapta-audio `v1.1.0` release; not
+implemented on current `master`.**
+
+The future P4 library path will accept ordinary MP3/WAV/FLAC folders, maintain a
+compact 10,000-track catalog, store versioned `/PAJONIIIR` sidecars and use
+libapta for bounded progressive waveform/tempo/grid/meter/key analysis.
+Rekordbox PDB/ANLZ remains supported as an importer, while application consumers
+migrate from `anlz_metadata_t` to a P4-owned immutable `track_analysis_t` model.
+
+The canonical ordered plan, memory limits, USB transaction rules, rollout flag,
+test matrix and completion gate are in
+[`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md). Do not start
+the production integration from the upstream development branch: first require
+the tagged 1.1 release, exact commit pin, reproducible `dependencies.lock`,
+algorithm corpus gates and ESP32-P4 memory evidence.
