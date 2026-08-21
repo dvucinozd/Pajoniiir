@@ -174,6 +174,7 @@ typedef enum {
     CTRL_DECK_CTL_JOG_SEARCH,
     CTRL_DECK_CTL_JOG_SEARCH_TOUCH,
     CTRL_DECK_CTL_EXT_ACTION,
+    CTRL_DECK_CTL_LOOP_SIZE,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -210,6 +211,7 @@ typedef enum {
     CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN,
     CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT,
     CTRL_DECK_EXT_ACTION_QUANTIZE,
+    CTRL_DECK_EXT_ACTION_SYNC_OFF,
 } ctrl_deck_ext_action_t;
 
 #define CTRL_DECK_EXT_VALUE(action, pressed) \
@@ -479,6 +481,7 @@ typedef enum {
 #define CTRL_ID_DECK1_JOG_SEARCH            (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK1_JOG_SEARCH_TOUCH      (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 #define CTRL_ID_DECK1_EXT_ACTION            (CTRL_NS_DECK1 + CTRL_DECK_CTL_EXT_ACTION)
+#define CTRL_ID_DECK1_LOOP_SIZE             (CTRL_NS_DECK1 + CTRL_DECK_CTL_LOOP_SIZE)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -509,6 +512,7 @@ typedef enum {
 #define CTRL_ID_DECK2_JOG_SEARCH            (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK2_JOG_SEARCH_TOUCH      (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 #define CTRL_ID_DECK2_EXT_ACTION            (CTRL_NS_DECK2 + CTRL_DECK_CTL_EXT_ACTION)
+#define CTRL_ID_DECK2_LOOP_SIZE             (CTRL_NS_DECK2 + CTRL_DECK_CTL_LOOP_SIZE)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
@@ -562,7 +566,8 @@ static inline bool control_link_id_is_deck_jog(uint8_t id)
     uint8_t ctl = control_link_id_control(id);
     return ctl == CTRL_DECK_CTL_JOG_SCRATCH ||
            ctl == CTRL_DECK_CTL_JOG_BEND ||
-           ctl == CTRL_DECK_CTL_JOG_SEARCH;
+           ctl == CTRL_DECK_CTL_JOG_SEARCH ||
+           ctl == CTRL_DECK_CTL_LOOP_SIZE;
 }
 
 // ─── Parsed event (what deck_core receives) ───────────────────────────────────

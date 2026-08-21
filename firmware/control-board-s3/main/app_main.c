@@ -312,7 +312,9 @@ static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
         return false;
     }
     if (ev->type == CTRL_TYPE_ENCODER &&
-        ev->id != CTRL_ID_BROWSE_DELTA) {
+        ev->id != CTRL_ID_BROWSE_DELTA &&
+        ev->id != CTRL_ID_DECK1_LOOP_SIZE &&
+        ev->id != CTRL_ID_DECK2_LOOP_SIZE) {
         return true;
     }
     if (ev->type == CTRL_TYPE_PITCH) {

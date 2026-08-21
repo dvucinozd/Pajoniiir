@@ -24,6 +24,7 @@
 
 #define FLX4_FIXTURE "../../controllers/pioneer_ddj_flx4/profile.s3bin"
 #define GENERIC_FIXTURE "../../controllers/generic_midi_ci/profile.s3bin"
+#define HERCULES_FIXTURE "../../controllers/hercules_djcontrol_inpulse_500/profile.s3bin"
 #define ROOT "cpm_root"
 #define INSTALL_ROOT "cpm_install_root"
 
@@ -31,6 +32,8 @@ static uint8_t g_blob[CPM_MAX_PROFILE_SIZE];
 static size_t g_blob_len;
 static uint8_t g_generic_blob[CPM_MAX_PROFILE_SIZE];
 static size_t g_generic_blob_len;
+static uint8_t g_hercules_blob[CPM_MAX_PROFILE_SIZE];
+static size_t g_hercules_blob_len;
 
 static void load_fixture(void)
 {
@@ -51,6 +54,15 @@ static void load_fixture(void)
     g_generic_blob_len = fread(g_generic_blob, 1, sizeof(g_generic_blob), f);
     fclose(f);
     assert(g_generic_blob_len > CPM_HEADER_SIZE);
+
+    f = fopen(HERCULES_FIXTURE, "rb");
+    if (!f) {
+        fprintf(stderr, "cannot open fixture %s\n", HERCULES_FIXTURE);
+        exit(1);
+    }
+    g_hercules_blob_len = fread(g_hercules_blob, 1, sizeof(g_hercules_blob), f);
+    fclose(f);
+    assert(g_hercules_blob_len > CPM_HEADER_SIZE);
 }
 
 static void write_file(const char *path, const uint8_t *data, size_t len)
@@ -169,12 +181,15 @@ static void build_tree(void)
     (void)make_dir(ROOT);
     (void)make_dir(ROOT "/pioneer_ddj_flx4");
     (void)make_dir(ROOT "/generic_midi_ci");
+    (void)make_dir(ROOT "/hercules_djcontrol_inpulse_500");
     (void)make_dir(ROOT "/corrupt_ctrl");
     (void)make_dir(ROOT "/not_a_profile");
 
     write_file(ROOT "/pioneer_ddj_flx4/profile.s3bin", g_blob, g_blob_len);
     write_file(ROOT "/generic_midi_ci/profile.s3bin",
                g_generic_blob, g_generic_blob_len);
+    write_file(ROOT "/hercules_djcontrol_inpulse_500/profile.s3bin",
+               g_hercules_blob, g_hercules_blob_len);
 
     static uint8_t bad[CPM_MAX_PROFILE_SIZE];
     memcpy(bad, g_blob, g_blob_len);
@@ -189,13 +204,14 @@ static void test_scan_and_match(void)
 
     build_tree();
     assert(controller_profile_scan_dir(ROOT, &reg) == ESP_OK);
-    assert(reg.count == 3);
+    assert(reg.count == 4);
     assert(reg.active_index == -1);
     assert(!reg.controller_present);
 
     int flx4 = -1;
     int corrupt = -1;
     int generic = -1;
+    int hercules = -1;
     for (int i = 0; i < reg.count; i++) {
         if (strcmp(reg.profiles[i].id, "pioneer_ddj_flx4") == 0) {
             flx4 = i;
@@ -203,9 +219,12 @@ static void test_scan_and_match(void)
             corrupt = i;
         } else if (strcmp(reg.profiles[i].id, "generic_midi_ci") == 0) {
             generic = i;
+        } else if (strcmp(reg.profiles[i].id,
+                          "hercules_djcontrol_inpulse_500") == 0) {
+            hercules = i;
         }
     }
-    assert(flx4 >= 0 && corrupt >= 0 && generic >= 0);
+    assert(flx4 >= 0 && corrupt >= 0 && generic >= 0 && hercules >= 0);
     assert(reg.profiles[flx4].valid);
     assert(reg.profiles[flx4].vid == 0x2B73);
     assert(strstr(reg.profiles[flx4].path, "profile.s3bin") != NULL);
@@ -213,11 +232,16 @@ static void test_scan_and_match(void)
     assert(reg.profiles[generic].valid);
     assert(reg.profiles[generic].vid == 0x1209);
     assert(reg.profiles[generic].pid == 0xC0DE);
+    assert(reg.profiles[hercules].valid);
+    assert(reg.profiles[hercules].vid == 0x06F8);
+    assert(reg.profiles[hercules].pid == 0xB12B);
 
     /* Exact match ignores invalid entries. */
     assert(controller_profile_registry_match(&reg, 0x2B73, 0x0045) == flx4);
     assert(controller_profile_registry_match(&reg, 0x2B73, 0x9999) == -1);
     assert(controller_profile_registry_match(&reg, 0x1209, 0xC0DE) == generic);
+    assert(controller_profile_registry_match(&reg, 0x06F8, 0xB12B) == hercules);
+    assert(controller_profile_registry_match(&reg, 0x06F8, 0xB105) == -1);
 
     /* Descriptor selects the active profile... */
     assert(controller_profile_registry_on_descriptor(&reg, 0x2B73, 0x0045) == flx4);
@@ -463,16 +487,19 @@ static void cleanup_tree(void)
 {
     remove(ROOT "/pioneer_ddj_flx4/profile.s3bin");
     remove(ROOT "/generic_midi_ci/profile.s3bin");
+    remove(ROOT "/hercules_djcontrol_inpulse_500/profile.s3bin");
     remove(ROOT "/corrupt_ctrl/profile.s3bin");
 #ifdef _WIN32
     (void)_rmdir(ROOT "/pioneer_ddj_flx4");
     (void)_rmdir(ROOT "/generic_midi_ci");
+    (void)_rmdir(ROOT "/hercules_djcontrol_inpulse_500");
     (void)_rmdir(ROOT "/corrupt_ctrl");
     (void)_rmdir(ROOT "/not_a_profile");
     (void)_rmdir(ROOT);
 #else
     (void)rmdir(ROOT "/pioneer_ddj_flx4");
     (void)rmdir(ROOT "/generic_midi_ci");
+    (void)rmdir(ROOT "/hercules_djcontrol_inpulse_500");
     (void)rmdir(ROOT "/corrupt_ctrl");
     (void)rmdir(ROOT "/not_a_profile");
     (void)rmdir(ROOT);

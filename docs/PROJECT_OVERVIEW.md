@@ -281,8 +281,9 @@ display re-smoke are complete. Remaining hardware-facing work continues with
 Phase 20 USB recovery/queue pressure, guarded web/profile/OTA mutations, UART integrity,
 controller-profile replacement/recovery and focused Flanger/Delay
 audio/target/timing/depth behavior. Remaining product work also includes
-selected shifted-control rows still marked in the MIDI map, one non-FLX4
-profile acceptance, production signing-key provisioning, enclosure
+selected shifted-control rows still marked in the MIDI map, physical acceptance
+of the host-qualified Hercules Inpulse 500 non-FLX4 profile, production
+signing-key provisioning, enclosure
 power/thermal/RF soak, and a full end-to-end S3/P4/FLX4 regression pass.
 (Beat feedback from the PQTZ
 beatgrid is already shown on the Overview beat strip with a red downbeat marker;
@@ -304,5 +305,9 @@ see [ARCHITECTURE.md](ARCHITECTURE.md) and
 [CONTROLLER_PROFILE_SCHEMA.md](CONTROLLER_PROFILE_SCHEMA.md). The web overwrite
 path is software-complete and its hardware procedure is in
 [CONTROLLER_PROFILE_UPDATE.md](CONTROLLER_PROFILE_UPDATE.md). Out of firmware
-scope: the Windows Profile Builder tool and validating a first non-FLX4
-controller end-to-end.
+scope: the Windows Profile Builder tool. The committed Hercules DJControl
+Inpulse 500 profile is now compiler/registry/runtime/LED/P4-behavior
+host-qualified using the official MIDI specification, including exact
+`06F8:B12B` matching, RGB pads, Shift+Sync Off and autoloop rotary semantics.
+Physical controller and USB-audio acceptance remain open; see
+[HERCULES_INPULSE_500_MIDI_MAP.md](HERCULES_INPULSE_500_MIDI_MAP.md).

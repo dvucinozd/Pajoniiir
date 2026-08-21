@@ -85,7 +85,8 @@ test.
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; unsupported Keyboard/Stems and Key Shift values are reserved/ignored |
-| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize |
+| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize, idempotent Sync Off |
+| `0x2D` | Deck 1 Loop Size | signed relative encoder delta; negative halves and positive doubles an active loop |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
 | `0x32` | Deck 2 Jog scratch delta | signed delta |
@@ -94,6 +95,7 @@ test.
 | `0x35` | Deck 2 Tempo | `0..16383` |
 | `0x36`-`0x49` | Deck 2 extension controls | same control order as Deck 1 |
 | `0x4C` | Deck 2 extended action | same packed format as Deck 1 |
+| `0x4D` | Deck 2 Loop Size | same signed relative format as Deck 1 |
 | `0x50` | Channel 1 volume | `0..16383` |
 | `0x51` | Channel 2 volume | `0..16383` |
 | `0x52` | Crossfader | `0..16383` |

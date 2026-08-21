@@ -3,8 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "control_link.h"
+
 #define CONTROLLER_LED_RECONCILER_DECKS 2u
-#define CONTROLLER_LED_RECONCILER_IDS   59u
+#define CONTROLLER_LED_RECONCILER_IDS   LED_REMOTE_COUNT
 
 typedef struct {
     uint8_t state[CONTROLLER_LED_RECONCILER_DECKS]

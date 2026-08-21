@@ -45,12 +45,15 @@ int s3_ctrl_id_browse_shift_delta(void) { return CTRL_ID_BROWSE_SHIFT_DELTA; }
 int s3_ctrl_id_browse_shift_press(void) { return CTRL_ID_BROWSE_SHIFT_PRESS; }
 int s3_ctrl_id_deck1_ext_action(void) { return CTRL_ID_DECK1_EXT_ACTION; }
 int s3_ctrl_id_deck2_ext_action(void) { return CTRL_ID_DECK2_EXT_ACTION; }
+int s3_ctrl_id_deck1_loop_size(void) { return CTRL_ID_DECK1_LOOP_SIZE; }
+int s3_ctrl_id_deck2_loop_size(void) { return CTRL_ID_DECK2_LOOP_SIZE; }
 int s3_ctrl_deck_ext_action_censor(void) { return CTRL_DECK_EXT_ACTION_CENSOR; }
 int s3_ctrl_deck_ext_action_sync_master(void) { return CTRL_DECK_EXT_ACTION_SYNC_MASTER; }
 int s3_ctrl_deck_ext_action_reloop_stop(void) { return CTRL_DECK_EXT_ACTION_RELOOP_STOP; }
 int s3_ctrl_deck_ext_action_loop_adjust_in(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN; }
 int s3_ctrl_deck_ext_action_loop_adjust_out(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT; }
 int s3_ctrl_deck_ext_action_quantize(void) { return CTRL_DECK_EXT_ACTION_QUANTIZE; }
+int s3_ctrl_deck_ext_action_sync_off(void) { return CTRL_DECK_EXT_ACTION_SYNC_OFF; }
 int s3_led_cue(void) { return LED_CUE; }
 int s3_led_play(void) { return LED_PLAY; }
 int s3_led_pfl(void) { return LED_PFL; }

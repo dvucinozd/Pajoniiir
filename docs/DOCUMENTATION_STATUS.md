@@ -1,6 +1,6 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-08-02**. The `migration/esp-idf-6.0.2`
+Last full status reconciliation: **2026-08-22**. The `migration/esp-idf-6.0.2`
 branch has been **merged into `master`** and deleted; there is no separate
 migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
 (`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`) and carries the
@@ -102,7 +102,7 @@ existing Rekordbox/PDB/ANLZ path remain authoritative.
 | UI | Overview, Library, Hot Cues and Settings tabs; Library table is paginated (one 8-row page with PREV/NEXT, max 40 live LVGL cells); stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800×480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter. Display, touch, PSRAM-backed UI, Settings SD-online state and paginated Library were operator-confirmed again on RC2/IDF6 on 2026-08-02 |
 | Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
 | OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both RC2 applications installed successfully through OTA on 2026-08-02; pull OTA is hardware-proven and now software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation. OTA does not replace the bootloader, so the IDF 6 boot chain requires a wired flash per target |
-| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; the independent `generic_midi_ci` profile is compile/registry/runtime/LED host-tested; atomic web overwrite/rescan/reactivation is deployed in `RC1-131-gc391e306` and still awaits dedicated hardware acceptance |
+| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; `generic_midi_ci` and the official-specification-derived Hercules Inpulse 500 profile are compile/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; atomic web overwrite/rescan/reactivation and all non-FLX4 physical/audio paths still await hardware acceptance |
 
 ## Remaining work
 
@@ -128,8 +128,9 @@ existing Rekordbox/PDB/ANLZ path remain authoritative.
   the recorded per-effect sound and headroom acceptance;
 - run the Phase 20 USB queue-pressure/recovery, guarded web-mutation and UART
   integrity acceptance set;
-- hardware-validate the host-proven `generic_midi_ci` path with a real
-  non-FLX4 controller before advertising generic compatibility;
+- hardware-validate the host-qualified Hercules Inpulse 500 profile, including
+  descriptor identity, two-deck MIDI/LED/reconnect behavior, RGB pads and
+  four-channel USB audio, before advertising non-FLX4 compatibility;
 - hardware-accept web profile overwrite, corrupt/interrupted rejection,
   automatic S3 reactivation and reboot persistence;
 - complete only the still-pending hardware rows identified in the MIDI and

@@ -15,7 +15,7 @@ Status: current phase ledger, reconciled 2026-08-02.
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted; armed Loop In dynamic overlay burning implemented in `ui_overview.c` for smooth 60 FPS scrolling highlight without strip invalidation. Verified on P4 hardware 2026-08-19 |
-| Controller profiles | Firmware path implemented and host-tested with both FLX4 and the independent `generic_midi_ci` fixture; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; non-FLX4 hardware and remote update acceptance pending |
+| Controller profiles | Firmware path implemented; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; `generic_midi_ci` and a specification-derived Hercules Inpulse 500 profile are compiler/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; non-FLX4 hardware and remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash, and S3 received the exact clean RC2 bootloader/application pair over COM10 |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -53,7 +53,7 @@ instrumentation), the
 remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
 by production key provisioning/rotation, enclosure power/thermal/RF soak,
 longer dual-deck key-lock P4 CPU/listening testing, selected pending MIDI
-hardware rows and a first non-FLX4 profile acceptance. Historical phase text
+hardware rows and physical Hercules Inpulse 500 profile acceptance. Historical phase text
 below is retained as the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
@@ -1108,8 +1108,10 @@ Status: implemented, committed to `master`, pushed, and flashed through
 
 Status: firmware side implemented, host-tested, committed to `master`, pushed,
 and flashed; profile-loading path hardware-verified (P4 `/api/status` reports
-`profiles:1`). Windows Profile Builder and a first non-FLX4 controller remain
-out of firmware scope. Design source: `Plan 2` (multi-controller with S3 kept as
+`profiles:1`). The Hercules Inpulse 500 profile is host-qualified against the
+official MIDI specification, but physical controller/audio acceptance remains
+open. Windows Profile Builder remains out of firmware scope. Design source:
+`Plan 2` (multi-controller with S3 kept as
 generic controller host). Format spec: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
 
 Goal: support DJ controllers beyond the DDJ-FLX4 without a firmware rebuild, by

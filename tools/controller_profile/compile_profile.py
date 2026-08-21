@@ -85,11 +85,13 @@ DECK_CTL = {
     "pad_mode_key_shift": 20, "pad_action": 21, "pad_mode_keyboard": 22,
     "pad_mode_pad_fx1": 23, "pad_mode_pad_fx2": 24, "pad_mode_sampler": 25,
     "jog_search": 26, "jog_search_touch": 27, "ext_action": 28,
+    "loop_size": 29,
 }
 
 DECK_EVENT_TYPES = {
     "jog_scratch": TYPE_ENCODER, "jog_bend": TYPE_ENCODER,
-    "jog_search": TYPE_ENCODER, "tempo": TYPE_PITCH,
+    "jog_search": TYPE_ENCODER, "loop_size": TYPE_ENCODER,
+    "tempo": TYPE_PITCH,
 }
 
 MIXER_IDS = {
@@ -129,7 +131,7 @@ PAD_MODES = {
 # ctrl_deck_ext_action_t
 EXT_ACTIONS = {
     "censor": 0, "sync_master": 1, "reloop_stop": 2, "loop_adjust_in": 3,
-    "loop_adjust_out": 4, "quantize": 5,
+    "loop_adjust_out": 4, "quantize": 5, "sync_off": 6,
 }
 
 # control_link.h LED ids
@@ -323,10 +325,14 @@ def compile_outputs(outputs):
                 raise ValueError("%s expects count %d" % (item["led_bank"], count))
             statuses = [num(s) for s in item["deck_status"]]
             first_data1 = num(item["first_data1"])
+            off = num(item.get("off", 0x00))
+            on = num(item.get("on", 0x7F))
+            blink = num(item.get("blink", 0x7F))
             for i in range(count):
                 for deck, status in enumerate(statuses):
                     entries.append(Output(first_led + i, deck, OUT_NOTE_ONOFF,
-                                          status, first_data1 + i))
+                                          status, first_data1 + i,
+                                          off, on, blink))
             continue
 
         led_id = LED_IDS[item["led"]]

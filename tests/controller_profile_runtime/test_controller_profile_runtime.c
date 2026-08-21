@@ -6,6 +6,7 @@
  * activate/clear/parse-failure without disturbing an active profile. */
 
 #include "controller_profile_runtime.h"
+#include "control_link.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -20,6 +21,7 @@
 
 #define FLX4_FIXTURE "../../controllers/pioneer_ddj_flx4/profile.s3bin"
 #define GENERIC_FIXTURE "../../controllers/generic_midi_ci/profile.s3bin"
+#define HERCULES_FIXTURE "../../controllers/hercules_djcontrol_inpulse_500/profile.s3bin"
 
 static uint8_t g_blob[16384];
 static size_t g_blob_len;
@@ -160,6 +162,55 @@ int main(void)
     assert(packet[1] == 0x91 && packet[2] == 0x10 && packet[3] == 0x7F);
     controller_profile_runtime_clear();
     printf("  activate + map + LED (generic non-FLX4 fixture)   PASS\n");
+
+    /* The Hercules fixture is a production-shaped non-FLX4 profile. Verify
+     * identity, shifted transport semantics, the loop-size encoder, Mode 6
+     * pad addresses, and controller-specific RGB values end to end. */
+    load_fixture(HERCULES_FIXTURE);
+    assert(!controller_profile_runtime_activate(g_blob, g_blob_len,
+                                                0x06F8, 0xB105, 9u));
+    assert(controller_profile_runtime_activate(g_blob, g_blob_len,
+                                               0x06F8, 0xB12B, 9u));
+    assert(controller_profile_runtime_bound_to(0x06F8, 0xB12B, 9u));
+
+    assert(controller_profile_runtime_map(0x91, 0x07, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_PLAY && value == 1);
+    assert(!controller_profile_runtime_map(0x94, 0x07, 0x7F,
+                                           &type, &id, &value));
+
+    assert(controller_profile_runtime_map(0x94, 0x05, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_EXT_ACTION);
+    assert(CTRL_DECK_EXT_ACTION(value) == CTRL_DECK_EXT_ACTION_SYNC_OFF);
+    assert(CTRL_DECK_EXT_PRESSED(value));
+    assert(controller_profile_runtime_map(0x94, 0x02, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_TEMPO_RANGE && value == 1);
+
+    assert(controller_profile_runtime_map(0xB1, 0x0E, 0x01,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_ENCODER && id == CTRL_ID_DECK1_LOOP_SIZE && value == 1);
+    assert(controller_profile_runtime_map(0xB1, 0x0E, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_ENCODER && id == CTRL_ID_DECK1_LOOP_SIZE && value == -1);
+
+    assert(!controller_profile_runtime_map(0x96, 0x40, 0x7F,
+                                           &type, &id, &value));
+    assert(controller_profile_runtime_map(0x96, 0x50, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_PAD_ACTION);
+    assert(CTRL_PAD_ACTION_MODE(value) == CTRL_PAD_MODE_PAD_FX2);
+    assert(CTRL_PAD_ACTION_PAD(value) == 0 && CTRL_PAD_ACTION_PRESSED(value));
+
+    assert(controller_profile_runtime_map_led(LED_HOT_CUE_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x00 && packet[3] == 0x60);
+    assert(controller_profile_runtime_map_led(LED_BEAT_JUMP_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x30 && packet[3] == 0x74);
+    assert(controller_profile_runtime_map_led(LED_PAD_FX2_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x50 && packet[3] == 0x63);
+    controller_profile_runtime_clear();
+    printf("  activate + semantics + RGB (Hercules fixture)     PASS\n");
 
     printf("controller_profile_runtime tests passed\n");
     return 0;

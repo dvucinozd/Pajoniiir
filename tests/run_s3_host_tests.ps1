@@ -234,6 +234,11 @@ Assert-FileContains `
     -Patterns @("CTRL_ID_CH1_TRIM", "CTRL_ID_CH2_TRIM", "CTRL_ID_CH1_EQ_HIGH", "CTRL_ID_CH2_EQ_HIGH", "CTRL_ID_CH1_EQ_MID", "CTRL_ID_CH2_EQ_MID", "CTRL_ID_CH1_EQ_LOW", "CTRL_ID_CH2_EQ_LOW", "CTRL_ID_CH1_FILTER", "CTRL_ID_CH2_FILTER", "CTRL_ID_MASTER_VOLUME", "CTRL_ID_HEADPHONE_MIX", "CTRL_ID_HEADPHONE_LEVEL", "CTRL_ID_BEAT_FX_DEPTH")
 
 Assert-FileContains `
+    -Name "s3 preserves each Hercules loop-size encoder detent" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("ev->id != CTRL_ID_DECK1_LOOP_SIZE", "ev->id != CTRL_ID_DECK2_LOOP_SIZE", "control_event_scheduler_enqueue_discrete")
+
+Assert-FileContains `
     -Name "flx4 scheduler exposes saturation and depth telemetry" `
     -Path (Join-Path $RepoRoot "firmware/common/control_event_scheduler/control_event_scheduler.c") `
     -Patterns @("stats.fifo_full", "stats.continuous_coalesced", "stats.jog_saturated", "stats.max_fifo_depth")
@@ -434,7 +439,7 @@ if ($python) {
         -WorkingDirectory (Join-Path $RepoRoot "tests/controller_profile_converter") `
         -Executable $python.Source `
         -Arguments @("-m", "unittest", "-v", "test_convert_web_profile.py")
-    foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci")) {
+    foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci", "hercules_djcontrol_inpulse_500")) {
         Write-Host "==> controller profile fixture is up to date: $fixtureId"
         $fixtureJson = Join-Path $RepoRoot "controllers/$fixtureId/profile.json"
         $fixtureBin = Join-Path $RepoRoot "controllers/$fixtureId/profile.s3bin"
@@ -615,6 +620,7 @@ $tests = @(
         Target = "test_controller_led_reconciler.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../support/stubs",
             "-I../../firmware/control-board-s3/components/control_link/include",
             "-o", "test_controller_led_reconciler.exe",
             "test_controller_led_reconciler.c",
@@ -755,6 +761,8 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DCONTROLLER_PROFILE_RUNTIME_PC_TEST",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/control-board-s3/components/controller_profile_runtime/include",
             "-I../../firmware/control-board-s3/components/controller_profile/include",
             "-o", "test_controller_profile_runtime.exe",

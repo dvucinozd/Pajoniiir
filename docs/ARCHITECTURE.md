@@ -353,6 +353,13 @@ Roles:
   profile and run a table-driven MIDI-in mapper and LED-out mapper that emit the
   same `control_link` semantic vocabulary the built-in map uses.
 
+The repository also carries a host-qualified
+`hercules_djcontrol_inpulse_500` profile. It exercises a real non-FLX4 layout,
+controller-specific RGB pad values, the relative `deckN.loop_size` semantic and
+the idempotent `sync_off` extended action. This is software evidence only: the
+physical Inpulse 500 descriptor, MIDI/LED reconnect path and four-channel USB
+audio routing remain hardware gates.
+
 Flow (adds to the base data flow above):
 
 ```text
@@ -391,6 +398,10 @@ Design guarantees:
   `flx4_map`/`flx4_led_midi` by a golden-parity host test (12k-message input
   sweep + snapshot + 690-combo LED parity), so routing FLX4 through the dynamic
   profile reproduces the built-in behaviour exactly.
+- Every committed fixture, including Hercules, is deterministically regenerated
+  by the S3 host runner. Hercules also has explicit runtime, registry, RGB,
+  protocol and P4 behavior assertions; it is not advertised as hardware-
+  supported until the checklist in its mapping document passes.
 
 Protocol details: `docs/CONTROL_LINK_PROTOCOL.md` (0xA6 Bulk Frame Layer).
 Verified on hardware 2026-07-09: the SD profile loads into the P4 registry and

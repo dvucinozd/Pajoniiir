@@ -1243,6 +1243,22 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
     }
 }
 
+static void on_loop_size_delta(uint8_t deck, int16_t delta, deck_state_t *state)
+{
+    uint32_t steps = delta < 0 ? (uint32_t)(-(int32_t)delta) : (uint32_t)delta;
+    /* A uint32_t millisecond loop reaches its minimum or overflow guard in at
+     * most 32 binary steps. Bound a coalesced encoder burst so the deck task
+     * cannot spend unbounded time replaying a saturated relative delta. */
+    if (steps > 32u) {
+        steps = 32u;
+    }
+    const ctrl_deck_control_t control = delta < 0 ? CTRL_DECK_CTL_LOOP_HALVE
+                                                  : CTRL_DECK_CTL_LOOP_DOUBLE;
+    for (uint32_t i = 0u; i < steps; ++i) {
+        on_loop_control(deck, control, state);
+    }
+}
+
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
     if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
@@ -2221,6 +2237,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
                      (unsigned)deck + 1,
                      state->quantize_enabled ? "ON" : "OFF");
             return true;
+        case CTRL_DECK_EXT_ACTION_SYNC_OFF:
+            if (state->sync_enabled) {
+                state->sync_enabled = false;
+                publish_flx4_led_snapshot(false);
+            }
+            ESP_LOGI(TAG, "deck %u sync -> OFF", (unsigned)deck + 1);
+            return true;
         default:
             return true;
         }
@@ -2747,7 +2770,9 @@ static void deck_task(void *arg)
             on_button(deck, button_for_event(&ev), ev.value != 0);
             break;
         case CTRL_EV_JOG:
-            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
+            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_LOOP_SIZE) {
+                on_loop_size_delta(deck, ev.value, &s_decks[deck]);
+            } else if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
                 on_jog_search(deck, ev.value);
             } else {
                 on_jog(deck, control_link_id_control(ev.id), ev.value);
@@ -3177,7 +3202,9 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         on_button(deck, button_for_event(ev), ev->value != 0);
         break;
     case CTRL_EV_JOG:
-        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
+        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_LOOP_SIZE) {
+            on_loop_size_delta(deck, ev->value, &s_decks[deck]);
+        } else if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
             on_jog_search(deck, ev->value);
         } else {
             on_jog(deck, control_link_id_control(ev->id), ev->value);

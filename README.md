@@ -67,7 +67,9 @@ layer. The detailed ownership and data flow are documented in
   Settings tabs, plus the optional P4 Wi-Fi remote.
 - Data-driven controller profiles loaded from SD or installed through the web
   UI; the built-in DDJ-FLX4 map remains the fallback. The web overwrite path is
-  software-complete and still has pending hardware-acceptance rows.
+  software-complete and still has pending hardware-acceptance rows. A
+  host-qualified Hercules DJControl Inpulse 500 profile is included; physical
+  MIDI/LED/reconnect and USB-audio qualification remains pending.
 - Signed dual-slot OTA, validation and rollback on both processors.
 
 Detailed implementation and acceptance status belongs in

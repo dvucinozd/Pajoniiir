@@ -684,6 +684,32 @@ Notes:
 - A stale `/sd/controllers` (SD missing or no profiles) is a boot warning, never
   a boot blocker.
 
+### Hercules DJControl Inpulse 500 hardware gate
+
+The committed `controllers/hercules_djcontrol_inpulse_500/profile.s3bin` is
+host-qualified but not yet hardware-qualified. Copy it to
+`SD:/controllers/hercules_djcontrol_inpulse_500/profile.s3bin`, then complete
+and archive all rows below before calling the controller supported:
+
+- [ ] Confirm the S3 descriptor reports VID:PID `06F8:B12B` and the exact
+  product string; confirm `06F8:B105` does not match.
+- [ ] Confirm `/api/status.controller` reaches `profile_state:"active"` and
+  `active_profile:"hercules_djcontrol_inpulse_500"` only after S3 activation
+  ACK.
+- [ ] Sweep both decks: Play/Cue, Sync and Shift+Sync Off, Quantize and
+  Shift+Quantize tempo range, loop controls, autoloop push/rotate, tempo,
+  jog/touch/search, PFL, mixer, browser/load and adapted Beat FX controls.
+- [ ] Confirm Shift+Play is intentionally inert, Key/Pitch Play pads are inert,
+  and Vinyl/Slip/Assistant/guide controls do not produce unrelated actions.
+- [ ] Sweep all mapped pad modes and releases; confirm Mode 6 uses notes
+  `0x50..0x5F` and pad colours are red/green/cyan/orange/fuchsia as documented
+  in `HERCULES_INPULSE_500_MIDI_MAP.md`.
+- [ ] Confirm transport/mode/loop/PFL LEDs, both VU meters and all Beat Jump
+  LED IDs survive controller reconnect plus isolated P4 and S3 reboot resync.
+- [ ] Qualify the controller's four-channel USB audio independently: MAIN 1/2,
+  headphones 3/4, 48 kHz selection, simultaneous PCM5102A MAIN, underrun/drop
+  counters and disconnect recovery under dual-deck playback.
+
 ## One-time OTA partition migration
 
 Before installing the boards in an enclosure, perform one full wired flash of
