@@ -1,10 +1,11 @@
 # Startup Checklist
 
-Status: reconciled 2026-08-02. Checked items below are historical bring-up
+Status: reconciled 2026-08-22. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. RC2
 application OTA succeeded on both boards, and both have since received full
-wired ESP-IDF 6.0.2 boot-chain flashes. The P4 runs the microSD-fix candidate;
-the S3 runs the exact clean RC2 application.
+wired ESP-IDF 6.0.2 boot-chain flashes. The P4 now runs the later signed
+`RC2-51-g050ab43` application; the S3 remained on `RC2-44-g1923a3b` during the
+latest observed P4-only deployment.
 
 ## Current installed and accepted baselines
 
@@ -44,6 +45,15 @@ the S3 runs the exact clean RC2 application.
   FLX4 MIDI/LED; PCM5102A MAIN i FLX4 CUE/MONITOR; realni MP3 playback. WAV i
   FLAC nisu pokrenuti jer fizički fixturei nedostaju na USB-u. Dokaz:
   `validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
+- [x] P4-only signed OTA 2026-08-22: `RC2-46-g2ed6c5b-dirty / ota_1` to
+  `RC2-51-g050ab43 / ota_0 / valid`. COM15 confirmed ESP-IDF v6.0.2, mounted
+  29,520 MB SDHC and live S3 report `RC2-44-g1923a3b / ota_1 / valid`.
+  The already-inserted USB medium exhausted eight fast recovery cycles; a
+  physical reinsert then mounted exFAT and loaded 324 tracks. This closes the
+  positive P4 upload/boot/valid and live disconnect/reconnect observations,
+  but not hands-free software-reboot recovery or the complete functional
+  smoke. Dokaz:
+  `validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -794,6 +804,14 @@ was healthy after reboot and its nested report confirmed S3. This was an OTA
 deployment/boot check, not a full functional smoke; the latest fully accepted
 functional baseline remains E1 `RC1-123-g587cd7a1`. See
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+
+P4-only signed deployment record, 2026-08-22: clean dual-target
+`RC2-51-g050ab43` build and package verification passed, but only the P4 bundle
+was installed. P4 moved from `ota_1` to `ota_0 / valid`; S3 remained
+`RC2-44-g1923a3b / ota_1 / valid`. The 29,520 MB SDHC mounted on the recorded
+COM15 boot. USB MSC required one physical reinsert after eight fast recovery
+cycles, then loaded the exFAT library with 324 tracks. See
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
 
 Bench display record, 2026-07-17: development build
 `RC1-132-g2b0cfd59-dirty` first passed the focused 132-second smoke. The fix was

@@ -119,6 +119,12 @@ the silicon behaves. Work the remaining rows in order.
   `../validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.
   Focused Library/MP3 access passed, but the complete recovery sequence did not.
+  On 2026-08-22 `RC2-51-g050ab43` reached `ota_0 / valid` and mounted microSD,
+  while the already-inserted USB medium exhausted eight fast enumeration
+  recovery cycles. Physical removal/reinsertion then mounted the exFAT volume
+  and loaded 324 tracks without another reboot. This is a positive live
+  reconnect result but a failed hands-free software-reboot result; see
+  `../validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`.
 - [ ] Sustained USB playback confirms BNA recovery. The DWC channel-decoder wrap
   was briefly dropped on this branch as obsolete; it is not. ESP-IDF 6.0.2 still
   asserts `CHHLTD` for every channel error while documenting `BNAINTR` as the one
@@ -138,7 +144,9 @@ the silicon behaves. Work the remaining rows in order.
   path passed before migration; the hardened path still needs an IDF6 re-smoke.
 - [ ] Signed OTA verification, rollback and partition-size gates pass on both
   boards. Positive signed RC2 OTA succeeded on both targets and clean-build
-  size evidence passes; migrated negative-path and rollback re-smoke remains.
+  size evidence passes. A later P4-only `RC2-51-g050ab43` push also reached the
+  opposite slot and `valid`; migrated negative-path, S3 matching deployment and
+  rollback re-smoke remain.
 - [ ] Bounded compressed cache plays real MP3/WAV/FLAC under dual-deck load
   without audible artefacts or cache-miss stalls. Focused real-MP3 playback
   passed 2026-08-02, but the audited USB had 68 MP3 files and no physical

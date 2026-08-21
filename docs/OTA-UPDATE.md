@@ -10,6 +10,16 @@ verified and installed on 2026-07-16: P4 finished on `ota_1`, S3 on
 `ota_0 / valid`. This rollout proved package/install/boot health but intentionally
 did not repeat the complete functional hardware smoke.
 
+The latest P4-only deployment was `RC2-51-g050ab43` on 2026-08-22. The local
+push endpoint accepted the signed bundle, and COM15 later confirmed P4
+`ota_0 / valid`, a mounted 29,520 MB SDHC card and the still-running S3 at
+`RC2-44-g1923a3b / ota_1 / valid`. The USB medium exhausted eight automatic
+enumeration-recovery cycles after the restart and required one physical
+reinsert before its exFAT volume and 324-track library loaded. This is positive
+P4 OTA and reconnect evidence, not a matching dual-target rollout or complete
+reboot-recovery pass. See
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+
 ## Safety rules
 
 - Update one processor at a time and wait for a clean reboot.
@@ -113,6 +123,9 @@ on P4 and S3 on 2026-08-02 and both targets reported `RC2`. Complete ESP-IDF
 v6.0.2 boot chains were installed afterwards over the wired recovery ports,
 because application OTA does not replace bootloaders or partition tables. See
 [`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`](validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md).
+The later `RC2-51-g050ab43` clean dual-target development build and P4-only OTA
+deployment are recorded in
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
 The superseded ESP-IDF 5.5.4 record is
 [`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
 
