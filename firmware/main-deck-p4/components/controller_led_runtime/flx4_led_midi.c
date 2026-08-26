@@ -162,3 +162,22 @@ bool flx4_led_midi_build_packet(uint8_t led,
     packet[3] = (state != 0) ? 0x7F : 0x00;
     return true;
 }
+
+bool flx4_led_midi_build_shifted_mirror_packet(uint8_t led,
+                                               uint8_t state,
+                                               uint8_t deck,
+                                               uint8_t packet[4])
+{
+    const bool mirrored =
+        (led >= LED_BEAT_LOOP_PAD_1 && led <= LED_BEAT_LOOP_PAD_8) ||
+        (led >= LED_BEAT_JUMP_PAD_1 && led <= LED_BEAT_JUMP_PAD_6) ||
+        (led >= LED_HOT_CUE_PAD_1 && led <= LED_HOT_CUE_PAD_8) ||
+        (led >= LED_PAD_FX1_PAD_1 && led <= LED_PAD_FX1_PAD_8) ||
+        (led >= LED_PAD_FX2_PAD_1 && led <= LED_PAD_FX2_PAD_8);
+    if (!mirrored ||
+        !flx4_led_midi_build_packet(led, state, deck, packet)) {
+        return false;
+    }
+    packet[1] = deck == CTRL_DECK_2 ? 0x9Au : 0x98u;
+    return true;
+}

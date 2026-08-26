@@ -123,7 +123,8 @@ Implemented hardware plan:
 | Output | Hardware | Notes |
 | --- | --- | --- |
 | Master | external PCM5102A I2S DAC | verified on GPIO50/GPIO52/GPIO51 through RCA and onboard 3.5 mm output |
-| Cue/PFL | FLX4 USB headphones | P4 sends monitor PCM to S3 over the inter-board I2S link; S3 streams it to the FLX4 USB Audio endpoint |
+| Cue/PFL (`master`) | FLX4 USB headphones | P4 sends monitor PCM to S3 over the inter-board I2S link; S3 streams it to the FLX4 USB Audio endpoint |
+| Cue/PFL (`feat/p4-dual-usb-host`) | FLX4 USB headphones on P4 USB1 | P4 sends MAIN on UAC channels 1/2 and cue on 3/4; the established S3 monitor link remains the not-ready/fault fallback |
 
 Headphones Mix DSP is implemented in the P4 monitor path: FLX4 Headphones Mix
 raw `0` is cue/PFL, raw `16383` is master, and intermediate values blend cue

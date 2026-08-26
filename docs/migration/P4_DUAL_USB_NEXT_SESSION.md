@@ -2,6 +2,8 @@
 
 Saved: **2026-08-12**
 
+Software checkpoint updated: **2026-08-27**
+
 This is the operational checkpoint for the next physical bench session. It is
 deliberately narrower than the architecture plan and records only facts needed
 to resume without reconstructing today's terminal history.
@@ -18,6 +20,14 @@ to resume without reconstructing today's terminal history.
 - P4 serial/flash port: `COM15`
 - Last diagnostic build directory: `firmware/main-deck-p4/build_diag_audio_wdt_local`
 - Generated build directories and signed packages remain ignored.
+
+The 2026-08-27 source checkpoint adds the complete direct FLX4 UAC path and
+the selected reusable M3 behavior slices. `build_p4_local_uac` passes under
+ESP-IDF 6.0.2; `main-deck-p4.bin` is 2,490,368 bytes, leaves 1,179,648 bytes
+in the application partition budget, and has SHA-256
+`4111cc92cb6ec1bb659b17e22f1ae88e9e2c9767ba206fdfd4fa18615bd93d9c`.
+The complete P4 host suite also passes. This artifact has not been installed or
+hardware-accepted yet.
 
 The P4 currently reports `RC2-58-g008cfa4-dirty` from `ota_1`. It is the normal
 monitor-enabled image with retained audio/library tracing, built from the
@@ -125,15 +135,14 @@ git status -sb
 git log -3 --oneline --decorate
 ```
 
-The existing `build_flash` directory is configured with
-`sdkconfig.defaults;sdkconfig.p4_local_controller` and
-`CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y`. Rebuild or flash it with:
+Build the current feature source with the P4-local overlay and flash the exact
+verified build directory with:
 
 ```powershell
 Set-Location "$repoRoot\firmware\main-deck-p4"
-idf.py -B build_flash build
-idf.py -B build_flash -p COM15 flash
-idf.py -B build_flash -p COM15 monitor
+idf.py -B build_p4_local_uac -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.p4_local_controller" build
+idf.py -B build_p4_local_uac -p COM15 flash
+idf.py -B build_p4_local_uac -p COM15 monitor
 ```
 
 A new flash is not required merely to continue testing the image that is
@@ -174,13 +183,16 @@ the next session, then:
    faders, crossfader, EQ/filter, PFL, pads and Beat FX. Confirm that each action
    changes the authoritative P4 UI/audio state once, with no duplicate S3 event.
 7. Confirm transport, PFL, loop, pad-mode, Hot Cue, Beat FX and Smart-control
-   LEDs through the direct P4 path.
-8. While the storage/library remains usable, disconnect the FLX4. Expect
+   LEDs through the direct P4 path, including shifted pad mirrors.
+8. Confirm direct UAC MAIN channels 1/2 and headphone channels 3/4, headphone
+   gain ramp, 44.1/48 kHz source transitions, Beat Jump pages, jog loop-adjust
+   and gapless Censor. Record ring pressure and data-loss counters.
+9. While the storage/library remains usable, disconnect the FLX4. Expect
    `USB-MIDI controller disconnected` followed by
    `P4-local controller disconnected; S3 fallback resumed` and no P4 reset.
-9. Reconnect the FLX4 and confirm direct-root identity, control recovery and the
+10. Reconnect the FLX4 and confirm direct-root identity, control recovery and the
    authoritative LED snapshot.
-10. Save the complete log and record every operator-visible or audible result;
+11. Save the complete log and record every operator-visible or audible result;
    do not convert an unobserved row into a pass.
 
 If direct enumeration fails, preserve the full descriptor/USB log before
@@ -210,7 +222,8 @@ end-to-end product behavior.
 - playback/cache-miss stress while operating the controller;
 - heap, DMA heap, stack, latency, VBUS and current measurements;
 - 30-minute dual-active diagnostic soak and later multi-hour product soak;
-- direct P4-to-FLX4 USB Audio at 44.1 and 48 kHz.
+- physical direct P4-to-FLX4 USB Audio acceptance with 44.1 and 48 kHz engine
+  sources, clean reconnect and sustained zero unexpected data-loss alarms.
 
 Direct USB1 enumeration itself is now confirmed, but it remains part of every
 repeat matrix because the power delivery is not accepted.

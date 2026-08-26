@@ -8,6 +8,11 @@ set(EXTRA_COMPONENT_DIRS
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(main-deck-p4)
 
+# The dual-root image needs bulk-oriented HS FIFOs for storage and
+# periodic-OUT-oriented FS FIFOs for controller UAC. Apply the pinned,
+# fail-closed patch after Component Manager has materialized esp-usb.
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/apply_espressif_usb_fifo_patch.cmake")
+
 # Enlarge LVGL's per-display invalidate-area buffer (default 32). When many
 # small widgets invalidate in one refresh (e.g. the deck VU meters plus
 # transport/beat widgets) the 32-slot buffer overflows and LVGL falls back to a

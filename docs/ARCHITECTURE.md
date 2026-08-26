@@ -293,6 +293,22 @@ validated 2026-07-06; S3 overrun regression fixed and re-smoked 2026-07-09**,
   outputs run simultaneously. S3 stays the FLX4 USB host and keeps MIDI
   responsive while streaming audio.
 
+Experimental `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
+
+- P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
+  four-channel UAC interfaces; only a direct root child with VID:PID
+  `2B73:0045` enables the FLX4-specific audio and shifted LED behavior.
+- The engine writes stereo MAIN to channels 1/2 and ramped cue/headphone audio
+  to channels 3/4. A stateful exact-rational resampler converts 48 kHz engine
+  blocks to the 44.1 kHz endpoint. A 2048-frame ring uses bounded one-frame
+  trim/duplicate correction around its middle band.
+- Three primed isochronous transfers raise the host task to its active priority;
+  disconnect/fault lowers it before halt/flush/recycle. MIDI queue entries carry
+  a connection generation, so stale packets cannot cross a reconnect.
+- Until direct UAC is streaming, audio continues through the existing P4→S3
+  monitor link. Direct-UAC ring pressure and data loss are sampled outside the
+  audio path and rate-limited into the service log.
+
 ## Main Code Surfaces
 
 Inherited files that will be touched early:

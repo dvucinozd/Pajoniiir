@@ -9,5 +9,5 @@ idf_component_register(
     SRCS ${CONTROLLER_USB_HOST_OWNER}
          "usb_midi_codec.c" "controller_midi_out_gate.c"
     INCLUDE_DIRS "include"
-    REQUIRES log usb usb_host_manager
+    REQUIRES log usb usb_host_manager controller_usb_audio
 )

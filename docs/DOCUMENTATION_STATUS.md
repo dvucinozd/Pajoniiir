@@ -56,6 +56,16 @@ delivery path is measured and stabilised, then the full dual-device matrix is
 repeated. See `validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md` and the updated
 `migration/P4_DUAL_USB_NEXT_SESSION.md`.
 
+Feature-branch software follow-up (2026-08-27): the direct USB1 FLX4 path now
+includes four-channel 44.1 kHz UAC output, exact 48→44.1 kHz resampling,
+bounded ring clock correction, MIDI session generations, transition/active
+task priorities, FLX4-gated shifted LED mirrors and S3 monitor-link fallback.
+The same work adds headphone gain ramps, three Beat Jump pages, jog loop
+boundary adjustment, gapless slip-reverse Censor and rate-limited UAC health
+alarms. The complete P4 host suite and the ESP-IDF 6.0.2 P4-local feature build
+pass. No new physical acceptance is claimed; the electrical blocker and all
+installation/reconnect/audio-quality soak rows remain open.
+
 This page explains which documents describe the current product and which are
 historical design or validation records. Four states must not be conflated:
 

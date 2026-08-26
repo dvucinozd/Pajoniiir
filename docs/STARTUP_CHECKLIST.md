@@ -848,8 +848,14 @@ R5 cleanup status:
 - [ ] Qualify the 5 V/VBUS path. A two-deck isolation run reset as raw
   `BROWNOUT` after about 6.5 seconds even without FLX4, despite clean audio
   deadline and underrun counters.
-- [ ] Rebuild the restored monitor/cue source, install it, then repeat both
-  insertion orders, controls/LEDs, independent reconnect and 30-minute soak.
+- [x] Rebuild the direct P4 monitor/cue source in software: four-channel FLX4
+  UAC, 48→44.1 kHz resampler, bounded clocked ring, headphone gain ramp and S3
+  fallback all pass the P4 host suite and ESP-IDF 6.0.2 feature build on
+  2026-08-27.
+- [ ] Install that build, then repeat both insertion orders, controls/LEDs,
+  independent reconnect, ring/data-loss counter inspection and 30-minute soak.
+- [ ] Hardware-smoke shifted LED mirrors, all three Beat Jump pages, jog
+  loop-adjust IN/OUT and gapless Censor on both decks.
 - [ ] Do not merge `feat/p4-dual-usb-host` until all rows above pass.
 
 ## Deferred libapta P4 integration entry gate

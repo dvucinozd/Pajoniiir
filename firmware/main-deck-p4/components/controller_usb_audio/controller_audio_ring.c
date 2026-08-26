@@ -32,6 +32,11 @@ void controller_audio_ring_reset(controller_audio_ring_t *ring,
     ring->queued_frames = 0u;
     ring->sample_rate = sample_rate;
     ring->generation++;
+    ring->overrun_frames = 0u;
+    ring->underrun_frames = 0u;
+    ring->high_water_frames = 0u;
+    ring->clock_trimmed_frames = 0u;
+    ring->clock_duplicated_frames = 0u;
 }
 
 uint32_t controller_audio_ring_write(controller_audio_ring_t *ring,
@@ -51,9 +56,46 @@ uint32_t controller_audio_ring_write(controller_audio_ring_t *ring,
     }
     ring->write_frame = (ring->write_frame + accepted) % ring->frame_capacity;
     ring->queued_frames += accepted;
+    if (ring->queued_frames > ring->high_water_frames) {
+        ring->high_water_frames = ring->queued_frames;
+    }
     ring->written_frames += accepted;
     ring->overrun_frames += (uint64_t)(frames - accepted);
     return accepted;
+}
+
+uint32_t controller_audio_ring_write_clocked(controller_audio_ring_t *ring,
+                                             const int16_t *interleaved,
+                                             uint32_t frames)
+{
+    if (!ring || !ring->samples || !interleaved || frames == 0u) {
+        return 0u;
+    }
+
+    /* The I2S producer and USB SOF consumer use independent clocks. Keep a
+     * wide dead band around half-full and slip no more than one frame per
+     * producer block outside it. */
+    const uint32_t low_water = (ring->frame_capacity * 3u) / 8u;
+    const uint32_t high_water = (ring->frame_capacity * 5u) / 8u;
+    const uint32_t free_frames = controller_audio_ring_free(ring);
+
+    if (ring->queued_frames >= high_water && frames > 1u) {
+        ring->clock_trimmed_frames++;
+        return controller_audio_ring_write(ring, interleaved, frames - 1u);
+    }
+
+    const bool duplicate =
+        ring->queued_frames <= low_water && free_frames > frames;
+    uint32_t written = controller_audio_ring_write(ring, interleaved, frames);
+    if (duplicate && written == frames) {
+        const int16_t *last =
+            &interleaved[(size_t)(frames - 1u) * ring->channels];
+        if (controller_audio_ring_write(ring, last, 1u) == 1u) {
+            ring->clock_duplicated_frames++;
+            written++;
+        }
+    }
+    return written;
 }
 
 uint32_t controller_audio_ring_read(controller_audio_ring_t *ring,

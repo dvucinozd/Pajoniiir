@@ -21,6 +21,7 @@ gcc -std=c11 -Wall -Wextra -Wpedantic -Werror `
     (Join-Path $P4 "flx4_uac_descriptors.c") `
     (Join-Path $P4 "flx4_uac_packetizer.c") `
     (Join-Path $P4 "controller_audio_ring.c") `
+    (Join-Path $P4 "controller_audio_resampler.c") `
     (Join-Path $PSScriptRoot "test_controller_usb_audio.c") `
     -o $Exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

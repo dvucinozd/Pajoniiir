@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "controller_led_runtime.h"
+#include "controller_usb_host.h"
 #include "controller_profile.h"
 #include "controller_profile_runtime.h"
 #include "control_link.h"
@@ -12,6 +13,7 @@ static unsigned s_checks;
 static esp_err_t s_send_result = ESP_OK;
 static uint8_t s_last_sent[4];
 static uint32_t s_send_calls;
+static bool s_identity_available;
 
 #define CHECK(expr) do { \
     s_checks++; \
@@ -26,6 +28,15 @@ esp_err_t controller_usb_host_send_packet(const uint8_t packet[4])
     s_send_calls++;
     memcpy(s_last_sent, packet, sizeof(s_last_sent));
     return s_send_result;
+}
+
+bool controller_usb_host_get_identity(controller_usb_identity_t *identity)
+{
+    if (!identity || !s_identity_available) return false;
+    memset(identity, 0, sizeof(*identity));
+    identity->vid = 0x2B73u;
+    identity->pid = 0x0045u;
+    return true;
 }
 
 static void wr_u16(uint8_t *p, uint16_t value)
@@ -142,11 +153,20 @@ int main(void)
         LED_PLAY, 1u, CTRL_DECK_1) == ESP_ERR_TIMEOUT);
     CHECK(s_send_calls == 2u);
 
+    s_identity_available = true;
+    s_send_result = ESP_OK;
+    CHECK(controller_led_runtime_send(
+        LED_HOT_CUE_PAD_1, 1u, CTRL_DECK_2) == ESP_OK);
+    CHECK(s_send_calls == 4u);
+    CHECK(s_last_sent[1] == 0x9Au);
+    CHECK(s_last_sent[2] == 0x00u);
+    CHECK(s_last_sent[3] == 0x7Fu);
+
     controller_led_runtime_diagnostics_t diagnostics;
     controller_led_runtime_get_diagnostics(&diagnostics);
     CHECK(diagnostics.dynamic_packets == 2u);
-    CHECK(diagnostics.builtin_packets == 5u);
-    CHECK(diagnostics.builtin_fallbacks == 3u);
+    CHECK(diagnostics.builtin_packets == 6u);
+    CHECK(diagnostics.builtin_fallbacks == 4u);
     CHECK(diagnostics.unsupported == 2u);
     CHECK(diagnostics.send_failures == 1u);
 

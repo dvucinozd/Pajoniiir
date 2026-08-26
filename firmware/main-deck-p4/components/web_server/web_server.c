@@ -2,6 +2,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#include "audio_uac_health.h"
 #include "media_catalog.h"
 #include "ui.h"
 #include "ui_library.h"
@@ -1363,6 +1364,21 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     format_library_load_trace_json(library_load_trace_json,
                                    trace_json_size - 1024u);
 
+    const bool uac_playback_active = diagnostics.deck_active[0] ||
+                                     diagnostics.deck_active[1];
+    const audio_uac_ring_state_t uac_ring_state = audio_uac_ring_state(
+        uac_playback_active,
+        diagnostics.usb_headphone_submitted_blocks,
+        diagnostics.usb_headphone_ring_queued_frames,
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_low_alarm = audio_uac_ring_low_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_high_alarm = audio_uac_ring_high_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const bool uac_data_loss = diagnostics.usb_headphone_dropped_blocks > 0u ||
+                               diagnostics.usb_headphone_overflow_frames > 0u ||
+                               diagnostics.usb_headphone_underflow_frames > 0u;
+
     char *json = NULL;
     int json_len = web_api_alloc_printf(
         &json,
@@ -1461,7 +1477,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"limiter_positive\":%u,"
         "\"limiter_negative\":%u,"
         "\"limiter_peak\":%d,"
-        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u},"
+        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u,"
+        "\"ring_queued_frames\":%u,\"ring_capacity_frames\":%u,\"ring_high_water_frames\":%u,"
+        "\"ring_low_alarm_frames\":%u,\"ring_high_alarm_frames\":%u,\"ring_state\":\"%s\","
+        "\"overflow_frames\":%u,\"underflow_frames\":%u,\"data_loss\":%s},"
         "%s,"
         "\"heap_free\":%u,"
         "\"internal_free\":%u,"
@@ -1532,6 +1551,15 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.usb_headphone_submitted_blocks,
         (unsigned)diagnostics.usb_headphone_dropped_blocks,
         (unsigned)diagnostics.usb_headphone_submitted_frames,
+        (unsigned)diagnostics.usb_headphone_ring_queued_frames,
+        (unsigned)diagnostics.usb_headphone_ring_capacity_frames,
+        (unsigned)diagnostics.usb_headphone_ring_high_water_frames,
+        (unsigned)uac_ring_low_alarm,
+        (unsigned)uac_ring_high_alarm,
+        audio_uac_ring_state_name(uac_ring_state),
+        (unsigned)diagnostics.usb_headphone_overflow_frames,
+        (unsigned)diagnostics.usb_headphone_underflow_frames,
+        uac_data_loss ? "true" : "false",
         beat_fx_echo_diag_json,
         (unsigned)diagnostics.heap_free,
         (unsigned)diagnostics.internal_free,

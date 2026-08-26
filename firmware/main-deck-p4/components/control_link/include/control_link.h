@@ -112,10 +112,9 @@ typedef enum {
     /* State-driven: published via the periodic FLX4 LED snapshot from
      * deck_state_t.censor_active (flx4_led_snapshot.c). */
     LED_CENSOR,
-    /* Output-only capability below: MIDI note mapping exists in flx4_led_midi.c
-     * and is packet-tested, but no deck handler drives these yet. Reserved for
-     * the momentary press/release feedback in the gap-closure plan; intentionally
-     * NOT part of the state snapshot. */
+    /* Direct deck feedback outside the fixed periodic snapshot. CUE_SHIFT is a
+     * momentary acknowledgement; LOOP_ADJUST_IN/OUT show the active jog-edit
+     * mode and are restored explicitly on controller reconnect. */
     LED_CUE_SHIFT,
     LED_LOOP_ADJUST_IN,
     LED_LOOP_ADJUST_OUT,

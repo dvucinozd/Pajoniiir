@@ -5,6 +5,7 @@
 #include "library.h"
 #include "library_load_trace.h"
 #include "audio_engine.h"
+#include "audio_uac_health.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
 #endif
@@ -49,12 +50,24 @@ static void on_s3_debug_ap_toggle(bool enable)
 #define LOW_INTERNAL_HEAP_BYTES   (24u * 1024u)
 #define LOW_PSRAM_BYTES           (256u * 1024u)
 
+static uint32_t add_u32_saturating(uint32_t a, uint32_t b)
+{
+    return UINT32_MAX - a < b ? UINT32_MAX : a + b;
+}
+
 static void health_monitor_cb(void *arg)
 {
     (void)arg;
     static uint32_t last_late = 0u, last_underrun = 0u, last_rate = 0u;
     static uint32_t last_link_crc = 0u, last_link_gap = 0u;
     static bool low_heap = false, low_psram = false;
+    static audio_uac_health_monitor_t uac_monitor = {0};
+    static audio_uac_ring_state_t last_uac_ring_state = AUDIO_UAC_RING_UNAVAILABLE;
+    static uint32_t pending_uac_dropped = 0u;
+    static uint32_t pending_uac_overflow = 0u;
+    static uint32_t pending_uac_underflow = 0u;
+    static int64_t uac_data_report_us = 0;
+    static int64_t uac_pressure_report_us = 0;
 
     audio_engine_diagnostics_snapshot_t d;
     memset(&d, 0, sizeof(d));
@@ -70,6 +83,56 @@ static void health_monitor_cb(void *arg)
     static int64_t  late_report_us = 0, underrun_report_us = 0;
     const int64_t now_us = esp_timer_get_time();
     const int64_t QUIET_US = 60ll * 1000000ll;
+
+    const bool playback_active = d.deck_active[0] || d.deck_active[1];
+    audio_uac_health_result_t uac = audio_uac_health_sample(
+        &uac_monitor, playback_active,
+        d.usb_headphone_submitted_blocks,
+        d.usb_headphone_ring_queued_frames,
+        d.usb_headphone_ring_capacity_frames,
+        d.usb_headphone_dropped_blocks,
+        d.usb_headphone_overflow_frames,
+        d.usb_headphone_underflow_frames);
+    pending_uac_dropped = add_u32_saturating(
+        pending_uac_dropped, uac.delta_dropped_blocks);
+    pending_uac_overflow = add_u32_saturating(
+        pending_uac_overflow, uac.delta_overflow_frames);
+    pending_uac_underflow = add_u32_saturating(
+        pending_uac_underflow, uac.delta_underflow_frames);
+    if ((pending_uac_dropped > 0u || pending_uac_overflow > 0u ||
+         pending_uac_underflow > 0u) &&
+        (uac_data_report_us == 0 || (now_us - uac_data_report_us) >= QUIET_US)) {
+        service_log_event(SERVICE_LOG_UAC_DATA_LOSS, SERVICE_LOG_WARN,
+                          4u, pending_uac_dropped, pending_uac_overflow,
+                          pending_uac_underflow,
+                          d.usb_headphone_ring_queued_frames, NULL);
+        pending_uac_dropped = 0u;
+        pending_uac_overflow = 0u;
+        pending_uac_underflow = 0u;
+        uac_data_report_us = now_us;
+    }
+
+    audio_uac_ring_state_t uac_ring_state = audio_uac_ring_state(
+        playback_active, d.usb_headphone_submitted_blocks,
+        d.usb_headphone_ring_queued_frames,
+        d.usb_headphone_ring_capacity_frames);
+    const bool pressure = uac_ring_state == AUDIO_UAC_RING_LOW ||
+                          uac_ring_state == AUDIO_UAC_RING_HIGH;
+    const bool pressure_transition = pressure &&
+                                     uac_ring_state != last_uac_ring_state;
+    if (pressure &&
+        (pressure_transition || uac_pressure_report_us == 0 ||
+         (now_us - uac_pressure_report_us) >= QUIET_US)) {
+        service_log_event(SERVICE_LOG_UAC_RING_PRESSURE, SERVICE_LOG_WARN,
+                          4u, d.usb_headphone_ring_queued_frames,
+                          d.usb_headphone_ring_capacity_frames,
+                          uac.low_alarm_frames, uac.high_alarm_frames,
+                          audio_uac_ring_state_name(uac_ring_state));
+        uac_pressure_report_us = now_us;
+    } else if (!pressure) {
+        uac_pressure_report_us = 0;
+    }
+    last_uac_ring_state = uac_ring_state;
 
     uint32_t underrun = d.pcm_underrun_count[0] + d.pcm_underrun_count[1];
     if (d.output_late_count > last_late) {

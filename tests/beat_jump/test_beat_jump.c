@@ -48,6 +48,50 @@ static void test_falls_back_to_bpm_and_clamps_zero(void)
     assert(beat_jump_calculate_target_ms(1000, 0, 1, NULL) == 1500);
 }
 
+static void test_fractional_jump_uses_local_beatgrid_spacing(void)
+{
+    anlz_beat_t beats[] = {
+        {.time_ms = 1000, .beat_phase = 0, .bpm_x100 = 12000},
+        {.time_ms = 1501, .beat_phase = 1, .bpm_x100 = 12000},
+        {.time_ms = 2000, .beat_phase = 2, .bpm_x100 = 12000},
+    };
+    anlz_metadata_t meta = {
+        .beats = beats,
+        .beat_count = 3,
+        .bpm = 120,
+    };
+
+    assert(beat_jump_calculate_fractional_target_ms(1010, 120, 1, 16, &meta) == 1032);
+    assert(beat_jump_calculate_fractional_target_ms(1490, 120, -1, 16, &meta) == 1469);
+    assert(beat_jump_calculate_fractional_target_ms(1490, 120, 1, 2, &meta) == 1751);
+}
+
+static void test_fractional_jump_falls_back_to_bpm_and_clamps(void)
+{
+    assert(beat_jump_calculate_fractional_target_ms(1000, 120, 1, 16, NULL) == 1032);
+    assert(beat_jump_calculate_fractional_target_ms(1000, 120, -1, 16, NULL) == 968);
+    assert(beat_jump_calculate_fractional_target_ms(10, 120, -1, 16, NULL) == 0);
+    assert(beat_jump_calculate_fractional_target_ms(UINT32_MAX - 10u,
+                                                    120,
+                                                    1,
+                                                    16,
+                                                    NULL) == UINT32_MAX);
+}
+
+static void test_fractional_jump_clamps_beatgrid_edges(void)
+{
+    anlz_beat_t beats[] = {
+        {.time_ms = 1000, .beat_phase = 0, .bpm_x100 = 12000},
+        {.time_ms = 1500, .beat_phase = 1, .bpm_x100 = 12000},
+        {.time_ms = 2000, .beat_phase = 2, .bpm_x100 = 12000},
+    };
+    anlz_metadata_t meta = {.beats = beats, .beat_count = 3, .bpm = 120};
+
+    assert(beat_jump_calculate_fractional_target_ms(900, 120, -1, 16, &meta) == 1000);
+    assert(beat_jump_calculate_fractional_target_ms(2100, 120, 1, 16, &meta) == 2000);
+    assert(beat_jump_calculate_fractional_target_ms(1234, 120, 0, 16, &meta) == 1234);
+}
+
 static void test_loop_duration_uses_local_beatgrid_spacing(void)
 {
     anlz_beat_t beats[] = {
@@ -120,6 +164,9 @@ int main(void)
     test_uses_nearest_beatgrid_entry();
     test_clamps_beatgrid_edges();
     test_falls_back_to_bpm_and_clamps_zero();
+    test_fractional_jump_uses_local_beatgrid_spacing();
+    test_fractional_jump_falls_back_to_bpm_and_clamps();
+    test_fractional_jump_clamps_beatgrid_edges();
     test_loop_duration_uses_local_beatgrid_spacing();
     test_loop_duration_supports_fractional_lengths();
     test_loop_duration_falls_back_to_default_bpm();

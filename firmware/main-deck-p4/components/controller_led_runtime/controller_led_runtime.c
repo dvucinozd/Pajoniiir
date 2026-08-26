@@ -55,8 +55,22 @@ esp_err_t controller_led_runtime_send(uint8_t led,
     if (rc != ESP_OK) {
         (void)__atomic_add_fetch(&s_send_failures, 1u,
                                  __ATOMIC_RELAXED);
+        return rc;
     }
-    return rc;
+
+    controller_usb_identity_t identity;
+    if (controller_usb_host_get_identity(&identity) &&
+        identity.vid == 0x2B73u && identity.pid == 0x0045u &&
+        flx4_led_midi_build_shifted_mirror_packet(
+            led, state, deck, packet)) {
+        const esp_err_t mirror_rc = controller_usb_host_send_packet(packet);
+        if (mirror_rc != ESP_OK) {
+            (void)__atomic_add_fetch(&s_send_failures, 1u,
+                                     __ATOMIC_RELAXED);
+            return mirror_rc;
+        }
+    }
+    return ESP_OK;
 }
 
 void controller_led_runtime_get_diagnostics(

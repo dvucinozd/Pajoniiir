@@ -7,8 +7,9 @@ performance.
 
 Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`. The former
 `dvucinozd/ESP32-DDJ-FLX4` URL is deprecated and retained only as a GitHub
-redirect. The branch inventory was audited on 2026-07-26; only `master`
-remains locally and on `origin`.
+redirect. The branch inventory audit on 2026-07-26 reduced the repository to
+`master`; the later experimental `feat/p4-dual-usb-host` branch is intentionally
+retained while its electrical and hardware acceptance gates remain open.
 
 ![Pajoniiir](docs/images/122.jpg)
 
@@ -44,6 +45,16 @@ remains locally and on `origin`.
 > row remains open. The S3 was not updated in that session and continued to
 > report `RC2-44-g1923a3b`. See
 > [RC2-51 P4 OTA deployment](docs/validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+
+> [!NOTE]
+> On `feat/p4-dual-usb-host`, the P4 now hosts the direct-root FLX4 MIDI and
+> four-channel UAC interfaces together with USB0 storage. Software coverage
+> includes the fail-closed USB FIFO split, 48→44.1 kHz resampling with bounded
+> ring clock correction, reconnect generations, FLX4-only shifted LED mirrors,
+> headphone gain ramps, Beat Jump size pages, jog loop-boundary adjustment,
+> gapless slip-reverse Censor and rate-limited UAC health alarms. The complete
+> P4 host suite and ESP-IDF 6.0.2 feature build pass; this does not clear the
+> open 5 V/VBUS brownout blocker or replace the required hardware soak.
 
 ## System at a Glance
 

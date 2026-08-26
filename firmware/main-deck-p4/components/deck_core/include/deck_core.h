@@ -27,6 +27,12 @@ typedef enum {
 #define DECK_CORE_DECK_COUNT 2
 #define DECK_CORE_COMPAT_DECK CTRL_DECK_1
 
+typedef enum {
+    DECK_CORE_LOOP_ADJUST_NONE = 0,
+    DECK_CORE_LOOP_ADJUST_IN,
+    DECK_CORE_LOOP_ADJUST_OUT,
+} deck_core_loop_adjust_mode_t;
+
 typedef struct {
     bool          playing;
     uint32_t      position_ms;
@@ -39,6 +45,7 @@ typedef struct {
     bool          sync_enabled;
     bool          sync_master;
     bool          quantize_enabled;
+    deck_core_loop_adjust_mode_t loop_adjust_mode;
     bool          censor_active;
     bool          master_tempo;
     bool          control_link_connected;
@@ -62,6 +69,13 @@ typedef enum {
     DECK_CORE_BEAT_FX_BEAT_4,
     DECK_CORE_BEAT_FX_BEAT_COUNT,
 } deck_core_beat_fx_beat_t;
+
+typedef enum {
+    DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL = 0,
+    DECK_CORE_BEAT_JUMP_PAGE_DEFAULT,
+    DECK_CORE_BEAT_JUMP_PAGE_LARGE,
+    DECK_CORE_BEAT_JUMP_PAGE_COUNT,
+} deck_core_beat_jump_page_t;
 
 typedef struct {
     deck_core_beat_fx_effect_t effect;
@@ -93,6 +107,9 @@ void deck_core_toggle_master_tempo(uint8_t deck);
 // Snapshot of the global Beat FX state. Beat FX DSP is not applied yet; this is
 // exposed for low-rate diagnostics and controller smoke verification.
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void);
+
+// FLX4 Beat Jump sizes are global, matching the controller's Mixxx mapping.
+deck_core_beat_jump_page_t deck_core_get_beat_jump_page(void);
 
 // Called from the deck task when S3 acknowledges the runtime Debug AP status.
 typedef void (*deck_core_s3_debug_ap_status_cb_t)(uint8_t status);

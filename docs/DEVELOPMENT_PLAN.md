@@ -2786,6 +2786,20 @@ late blocks or underruns. This is an open power/hardware blocker for
 stabilise the common 5 V/VBUS path, rebuild the restored monitor/cue source and
 repeat the complete hardware matrix before merge.
 
+### Experimental dual-USB software closure, 2026-08-27
+
+The reusable M3 slices selected for this branch are implemented and
+software-verified: fail-closed USB FIFO sizing; direct FLX4 MIDI plus
+four-channel UAC; stateful 48→44.1 kHz resampling and bounded ring correction;
+hotplug generations and task-priority transitions; FLX4-only shifted LED
+mirrors; headphone level ramps; fractional/default/large Beat Jump pages; jog
+loop-boundary editing; gapless slip-reverse Censor; and bounded UAC health
+alarms with a playback-start baseline. The direct audio path falls back to the
+existing S3 monitor link until UAC is ready. The P4 host suite and ESP-IDF 6.0.2
+P4-local build pass. Hardware installation, electrical qualification,
+independent reconnect and the sustained dual-device/audio soak remain the
+release gate.
+
 ## Idle Screensaver
 
 Status: **implemented and hardware-accepted 2026-07-24** in

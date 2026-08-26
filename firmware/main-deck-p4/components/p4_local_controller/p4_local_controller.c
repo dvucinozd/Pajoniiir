@@ -336,7 +336,9 @@ static void local_bootstrap_task(void *arg)
             .task_stack_size = 8192u,
             .task_priority = 5u,
             .task_core_id = tskNO_AFFINITY,
-            .midi_out_queue_depth = 64u,
+            /* A reconnect snapshot plus shifted pad mirrors can exceed 160
+             * packets before the interrupt OUT endpoint drains them. */
+            .midi_out_queue_depth = 256u,
             .max_event_messages = 8,
         };
         rc = controller_usb_host_init(&usb_config);

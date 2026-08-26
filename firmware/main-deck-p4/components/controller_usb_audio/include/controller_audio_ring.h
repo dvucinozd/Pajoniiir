@@ -21,6 +21,9 @@ typedef struct {
     uint64_t read_frames;
     uint64_t overrun_frames;
     uint64_t underrun_frames;
+    uint32_t high_water_frames;
+    uint64_t clock_trimmed_frames;
+    uint64_t clock_duplicated_frames;
 } controller_audio_ring_t;
 
 bool controller_audio_ring_init(controller_audio_ring_t *ring,
@@ -33,6 +36,9 @@ void controller_audio_ring_reset(controller_audio_ring_t *ring,
 uint32_t controller_audio_ring_write(controller_audio_ring_t *ring,
                                      const int16_t *interleaved,
                                      uint32_t frames);
+uint32_t controller_audio_ring_write_clocked(controller_audio_ring_t *ring,
+                                             const int16_t *interleaved,
+                                             uint32_t frames);
 uint32_t controller_audio_ring_read(controller_audio_ring_t *ring,
                                     int16_t *interleaved,
                                     uint32_t frames,

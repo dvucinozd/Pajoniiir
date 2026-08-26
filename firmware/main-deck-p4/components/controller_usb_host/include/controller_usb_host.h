@@ -84,12 +84,37 @@ typedef struct {
     bool accepting_midi_out;
 } controller_usb_host_diagnostics_t;
 
+typedef struct {
+    uint64_t submitted_blocks;
+    uint64_t dropped_blocks;
+    uint64_t submitted_frames;
+    uint32_t ring_queued_frames;
+    uint32_t ring_capacity_frames;
+    uint32_t ring_high_water_frames;
+    uint64_t overrun_frames;
+    uint64_t underrun_frames;
+    uint64_t clock_trimmed_frames;
+    uint64_t clock_duplicated_frames;
+    uint32_t config_failures;
+    uint32_t transfer_failures;
+    bool claimed;
+    bool configuring;
+    bool streaming;
+    bool faulted;
+} controller_usb_host_audio_stats_t;
+
 esp_err_t controller_usb_host_init(const controller_usb_host_config_t *config);
 esp_err_t controller_usb_host_send_packet(const uint8_t packet[4]);
 bool controller_usb_host_is_connected(void);
 bool controller_usb_host_get_identity(controller_usb_identity_t *identity_out);
 void controller_usb_host_get_diagnostics(
     controller_usb_host_diagnostics_t *diag_out);
+esp_err_t controller_usb_host_write_audio(const int16_t *master_samples,
+                                          const int16_t *headphone_samples,
+                                          size_t frame_count,
+                                          uint32_t source_sample_rate);
+void controller_usb_host_get_audio_stats(
+    controller_usb_host_audio_stats_t *stats_out);
 
 #ifdef __cplusplus
 }

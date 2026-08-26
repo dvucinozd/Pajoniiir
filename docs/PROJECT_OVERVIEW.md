@@ -199,12 +199,21 @@ The fork is no longer only the imported single-deck baseline:
   MIDI message list: Censor, Sync (set-master), Quantize, Loop Adjust In/Out,
   Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls.
   The S3 maps the new physical MIDI notes to semantic control-link events and the
-  P4 owns the resulting state/audio/LED behavior. Censor is an approximation
-  (forward seek-back, sync-correct on release) rather than a true reverse.
+  P4 owns the resulting state/audio/LED behavior. `master` retains the earlier
+  seek-back Censor approximation; `feat/p4-dual-usb-host` replaces it with a
+  gapless slip-reverse reader over retained canonical PCM and a 10 ms release
+  crossfade, without moving the normal playhead.
   Merged to `master` on 2026-07-02; host suites pass. The XIAO RC2 smoke on
   2026-07-07 confirmed the connected FLX4 headphone/mixer control path with
   audible USB headphone output; remaining per-control exceptions stay tracked in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
+- The experimental direct-P4 FLX4 path now owns USB-MIDI and four-channel UAC
+  on USB1 while USB0 remains the Rekordbox storage root. It applies a
+  fail-closed HS/FS FIFO source patch, supports 44.1/48 kHz engine input,
+  resamples to the FLX4 44.1 kHz endpoint, sends MAIN on channels 1/2 and cue on
+  3/4, and falls back to the established S3 monitor link until direct streaming
+  is ready. Host-side health tracking reports bounded ring pressure and data
+  loss; physical audio quality, reconnect and long-soak acceptance remain open.
 - The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
   merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
   remaining stale Codex branches were reviewed and removed (local + remote),

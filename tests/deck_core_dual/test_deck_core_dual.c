@@ -79,6 +79,9 @@ int audio_engine_stub_scratch_move_count[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_scratch_move_last_delta[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_scratch_end_count[DECK_CORE_DECK_COUNT];
 bool audio_engine_stub_scratch_available[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_censor_begin_count[DECK_CORE_DECK_COUNT];
+int audio_engine_stub_censor_end_count[DECK_CORE_DECK_COUNT];
+bool audio_engine_stub_censor_available[DECK_CORE_DECK_COUNT];
 extern int control_link_stub_led_count;
 extern led_id_t control_link_stub_led[128];
 extern uint8_t control_link_stub_state[128];
@@ -349,6 +352,9 @@ static void reset_audio_engine_stub(void)
         audio_engine_stub_scratch_move_last_delta[deck] = 0;
         audio_engine_stub_scratch_end_count[deck] = 0;
         audio_engine_stub_scratch_available[deck] = true;
+        audio_engine_stub_censor_begin_count[deck] = 0;
+        audio_engine_stub_censor_end_count[deck] = 0;
+        audio_engine_stub_censor_available[deck] = true;
         audio_engine_stub_pregain[deck] = -1;
         audio_engine_stub_filter_raw[deck] = -1;
         audio_engine_stub_filter_set_count[deck] = 0;
@@ -1523,7 +1529,7 @@ static void test_reloop_shift_stop_clears_active_and_remembered_loop(void)
     assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
 }
 
-static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
+static void test_loop_adjust_modes_edit_boundaries_with_jog(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
@@ -1535,17 +1541,99 @@ static void test_loop_adjust_in_and_out_update_active_loop_boundaries(void)
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 2000;
     ctrl_event_t adjust_in = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true);
     deck_core_test_apply_event(&adjust_in);
-    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).loop_adjust_mode ==
+           DECK_CORE_LOOP_ADJUST_IN);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1000);
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
-    assert_last_led_flash(LED_LOOP_ADJUST_IN, CTRL_DECK_2);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_IN, CTRL_DECK_2) == 1);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_OUT, CTRL_DECK_2) == 0);
 
-    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 7000;
+    ctrl_event_t jog_scratch = deck_encoder(CTRL_ID_DECK2_JOG_SCRATCH, 4);
+    deck_core_test_apply_event(&jog_scratch);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1004);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 5000);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_2] == 0);
+
     control_link_stub_reset_leds();
     ctrl_event_t adjust_out = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT, true);
     deck_core_test_apply_event(&adjust_out);
-    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 2000);
-    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 7000);
-    assert_last_led_flash(LED_LOOP_ADJUST_OUT, CTRL_DECK_2);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).loop_adjust_mode ==
+           DECK_CORE_LOOP_ADJUST_OUT);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_IN, CTRL_DECK_2) == 0);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_OUT, CTRL_DECK_2) == 1);
+
+    ctrl_event_t jog_bend = deck_encoder(CTRL_ID_DECK2_JOG_BEND, -3);
+    deck_core_test_apply_event(&jog_bend);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1004);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 4997);
+
+    deck_core_test_apply_event(&adjust_out);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_2).loop_adjust_mode ==
+           DECK_CORE_LOOP_ADJUST_NONE);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_IN, CTRL_DECK_2) == 0);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_OUT, CTRL_DECK_2) == 0);
+
+    deck_core_test_apply_event(&jog_scratch);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_2] == 1004);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_2] == 4997);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+}
+
+static void test_loop_adjust_requires_active_loop_and_ignores_touch(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+
+    ctrl_event_t adjust_in = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true);
+    deck_core_test_apply_event(&adjust_in);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).loop_adjust_mode ==
+           DECK_CORE_LOOP_ADJUST_NONE);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_IN, CTRL_DECK_1) == 0);
+
+    audio_engine_stub_loop_active[CTRL_DECK_1] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_1] = 1000;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_1] = 5000;
+    deck_core_test_apply_event(&adjust_in);
+
+    ctrl_event_t play = deck_button(CTRL_ID_DECK1_PLAY);
+    ctrl_event_t touch = deck_button(CTRL_ID_DECK1_JOG_TOUCH);
+    deck_core_test_apply_event(&play);
+    deck_core_test_apply_event(&touch);
+    assert(audio_engine_stub_scratch_begin_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_hold_set_count[CTRL_DECK_1] == 0);
+
+    ctrl_event_t jog = deck_encoder(CTRL_ID_DECK1_JOG_SCRATCH, 2);
+    deck_core_test_apply_event(&jog);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 1002);
+    assert(audio_engine_stub_scratch_move_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_jog_nudge_count[CTRL_DECK_1] == 0);
+}
+
+static void test_loop_adjust_clamps_boundaries_and_loop_clear_exits_mode(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    control_link_stub_reset_leds();
+    audio_engine_stub_loop_active[CTRL_DECK_1] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_1] = 1000;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_1] = 1005;
+
+    ctrl_event_t adjust_in = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN, true);
+    deck_core_test_apply_event(&adjust_in);
+    ctrl_event_t forward = deck_encoder(CTRL_ID_DECK1_JOG_SCRATCH, 20);
+    deck_core_test_apply_event(&forward);
+    assert(audio_engine_stub_loop_start_ms[CTRL_DECK_1] == 1004);
+    assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 1005);
+
+    ctrl_event_t stop = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_RELOOP_STOP, true);
+    deck_core_test_apply_event(&stop);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_1]);
+    assert(deck_core_test_get_deck_state(CTRL_DECK_1).loop_adjust_mode ==
+           DECK_CORE_LOOP_ADJUST_NONE);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_IN, CTRL_DECK_1) == 0);
+    assert(control_link_stub_last_led_state(LED_LOOP_ADJUST_OUT, CTRL_DECK_1) == 0);
 }
 
 static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
@@ -1571,7 +1659,7 @@ static void test_quantized_loop_in_out_snaps_to_nearest_beat(void)
     assert(audio_engine_stub_loop_end_ms[CTRL_DECK_1] == 4000);
 }
 
-static void test_censor_press_repeats_previous_audio_window(void)
+static void test_censor_press_and_release_use_gapless_audio_path(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
@@ -1583,12 +1671,20 @@ static void test_censor_press_repeats_previous_audio_window(void)
     deck_core_test_apply_event(&press);
 
     assert(deck_core_test_get_deck_state(CTRL_DECK_1).censor_active);
-    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 4000);
+    assert(audio_engine_stub_censor_begin_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 5000);
     assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_1) == 1);
+
+    ctrl_event_t release = deck_ext_action(CTRL_DECK_1, CTRL_DECK_EXT_ACTION_CENSOR, false);
+    deck_core_test_apply_event(&release);
+    assert(!deck_core_test_get_deck_state(CTRL_DECK_1).censor_active);
+    assert(audio_engine_stub_censor_end_count[CTRL_DECK_1] == 1);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_1) == 0);
 }
 
-static void test_censor_release_returns_to_stored_position_when_paused(void)
+static void test_censor_is_rejected_for_paused_deck(void)
 {
     deck_core_test_reset();
     reset_audio_engine_stub();
@@ -1597,13 +1693,14 @@ static void test_censor_release_returns_to_stored_position_when_paused(void)
     audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 3000;
 
     ctrl_event_t press = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, true);
-    ctrl_event_t release = deck_ext_action(CTRL_DECK_2, CTRL_DECK_EXT_ACTION_CENSOR, false);
     deck_core_test_apply_event(&press);
-    deck_core_test_apply_event(&release);
 
     assert(!deck_core_test_get_deck_state(CTRL_DECK_2).censor_active);
+    assert(audio_engine_stub_censor_begin_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_censor_end_count[CTRL_DECK_2] == 0);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 0);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 3000);
-    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_2) == 0);
+    assert(control_link_stub_last_led_state(LED_CENSOR, CTRL_DECK_2) != 1);
 }
 
 static void test_smart_buttons_toggle_audio_state_and_leds(void)
@@ -2572,13 +2669,54 @@ static void test_beat_jump_pad_maps_pad_index_to_jump_size(void)
     pad4.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 3, false, true);
     deck_core_test_apply_event(&pad4);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 18000);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 21000);
 
     ctrl_event_t pad5 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
     pad5.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 4, false, true);
     deck_core_test_apply_event(&pad5);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 2);
-    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 20000);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 19000);
+}
+
+static void test_shifted_beat_jump_changes_global_size_page(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    publish_loaded_bpm(CTRL_DECK_1, 120);
+    publish_loaded_bpm(CTRL_DECK_2, 120);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_1] = 10000;
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 20000;
+
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_DEFAULT);
+
+    ctrl_event_t normal_pad2 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    normal_pad2.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 1, false, true);
+    deck_core_test_apply_event(&normal_pad2);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 10500);
+
+    ctrl_event_t increase_page = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    increase_page.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 7, true, true);
+    deck_core_test_apply_event(&increase_page);
+    deck_core_test_apply_event(&increase_page);
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_LARGE);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 1);
+
+    normal_pad2 = deck_button(CTRL_ID_DECK2_PAD_ACTION);
+    normal_pad2.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 1, false, true);
+    deck_core_test_apply_event(&normal_pad2);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 28000);
+
+    ctrl_event_t decrease_page = deck_button(CTRL_ID_DECK2_PAD_ACTION);
+    decrease_page.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 6, true, true);
+    deck_core_test_apply_event(&decrease_page);
+    deck_core_test_apply_event(&decrease_page);
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+
+    normal_pad2 = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    normal_pad2.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 1, false, true);
+    deck_core_test_apply_event(&normal_pad2);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 10532);
 }
 
 static void test_beat_jump_mode_lights_pad_leds_when_track_loaded(void)
@@ -2626,7 +2764,25 @@ static void test_beat_jump_shift_lights_helper_leds_when_track_loaded(void)
     assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(7),
                                             CTRL_DECK_1) == 1);
 
-    control_link_stub_reset_leds();
+    ctrl_event_t increase_page = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    increase_page.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 7, true, true);
+    deck_core_test_apply_event(&increase_page);
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_LARGE);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(6),
+                                            CTRL_DECK_1) == 1);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(7),
+                                            CTRL_DECK_1) == 0);
+
+    ctrl_event_t decrease_page = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    decrease_page.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 6, true, true);
+    deck_core_test_apply_event(&decrease_page);
+    deck_core_test_apply_event(&decrease_page);
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(6),
+                                            CTRL_DECK_1) == 0);
+    assert(control_link_stub_last_led_state(test_beat_jump_shift_helper_led(7),
+                                            CTRL_DECK_1) == 1);
+
     shift.value = 0;
     deck_core_test_apply_event(&shift);
 
@@ -2647,8 +2803,13 @@ static void test_beat_jump_release_event_does_not_seek(void)
     release.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 4, false, false);
     deck_core_test_apply_event(&release);
 
+    ctrl_event_t shifted_release = deck_button(CTRL_ID_DECK1_PAD_ACTION);
+    shifted_release.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_BEAT_JUMP, 7, true, false);
+    deck_core_test_apply_event(&shifted_release);
+
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_1] == 20000);
+    assert(deck_core_get_beat_jump_page() == DECK_CORE_BEAT_JUMP_PAGE_DEFAULT);
 }
 
 static void test_beat_jump_clamps_to_beatgrid_edges(void)
@@ -2769,10 +2930,12 @@ int main(void)
     test_loop_in_out_sets_requested_deck_loop_from_audio_position();
     test_quantize_toggle_updates_requested_deck_only();
     test_reloop_shift_stop_clears_active_and_remembered_loop();
-    test_loop_adjust_in_and_out_update_active_loop_boundaries();
+    test_loop_adjust_modes_edit_boundaries_with_jog();
+    test_loop_adjust_requires_active_loop_and_ignores_touch();
+    test_loop_adjust_clamps_boundaries_and_loop_clear_exits_mode();
     test_quantized_loop_in_out_snaps_to_nearest_beat();
-    test_censor_press_repeats_previous_audio_window();
-    test_censor_release_returns_to_stored_position_when_paused();
+    test_censor_press_and_release_use_gapless_audio_path();
+    test_censor_is_rejected_for_paused_deck();
     test_loop_in_marker_publishes_loop_in_led_before_loop_out();
     test_reloop_exit_clears_and_restores_last_requested_deck_loop();
     test_loop_halve_and_double_resize_active_loop();
@@ -2796,6 +2959,7 @@ int main(void)
     test_shift_hot_cue_pad_clears_requested_slot();
     test_beat_jump_buttons_seek_by_one_beat_on_requested_deck();
     test_beat_jump_pad_maps_pad_index_to_jump_size();
+    test_shifted_beat_jump_changes_global_size_page();
     test_beat_jump_mode_lights_pad_leds_when_track_loaded();
     test_beat_jump_shift_lights_helper_leds_when_track_loaded();
     test_beat_jump_release_event_does_not_seek();

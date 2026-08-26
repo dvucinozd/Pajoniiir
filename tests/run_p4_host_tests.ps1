@@ -269,7 +269,7 @@ function Invoke-SinglePrecisionContract {
     $sources = @(
         "audio_keylock.c", "audio_filter.c", "audio_eq.c", "audio_resampler.c",
         "audio_smart_cfx.c", "audio_delay_fx.c", "audio_flanger_fx.c",
-        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c"
+        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c", "audio_censor.c"
     )
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir $source))) {
@@ -889,6 +889,26 @@ Assert-FileContains `
         '"USB Full-Speed root routed to PHY%u"'
     )
 
+# CMake source replacement cannot execute in the host harness, so pin both the
+# fail-closed integration hook and the accepted HS/FS FIFO values textually.
+Assert-FileContains `
+    -Name "p4 dual USB build applies a fail-closed per-controller FIFO layout" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -LiteralPatterns @("apply_espressif_usb_fifo_patch.cmake")
+
+Assert-FileContains `
+    -Name "p4 dual USB FIFO patch preserves bulk HS and periodic OUT FS capacity" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_fifo_patch.cmake") `
+    -LiteralPatterns @(
+        "idf_component_get_property(_pajoniiir_usb_dir usb COMPONENT_DIR)",
+        "port->fifo_config.nptx_fifo_lines = 256;",
+        "port->fifo_config.ptx_fifo_lines = 128;",
+        "port->fifo_config.nptx_fifo_lines = 20;",
+        "port->fifo_config.ptx_fifo_lines = 100;",
+        "_pajoniiir_upstream_at EQUAL -1",
+        "Could not replace esp-usb hcd_dwc.c"
+    )
+
 Assert-FileContains `
     -Name "p4 pins the esp-usb disconnect/recycle race fix" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/idf_component.yml") `
@@ -928,6 +948,19 @@ Assert-FileContains `
     -Name "p4 dispatches profile ACK/NACK replies to a callback" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
     -LiteralPatterns @("ctrl_bulk_decode_profile_ack", "ctrl_bulk_decode_profile_nack", "s_profile_reply_cb")
+
+Assert-FileContains `
+    -Name "p4 status API exposes bounded UAC ring health" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "audio_uac_ring_low_alarm_frames",
+        "audio_uac_ring_high_alarm_frames",
+        "audio_uac_ring_state_name",
+        '\"ring_low_alarm_frames\":%u',
+        '\"ring_high_alarm_frames\":%u',
+        '\"ring_state\":\"%s\"',
+        '\"data_loss\":%s'
+    )
 
 Assert-FileContains `
     -Name "p4 audio_engine exposes a per-deck platter-hold mute (vinyl phase 1)" `
@@ -1529,6 +1562,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
@@ -1748,6 +1782,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_censor"
+        Dir = "tests/audio_censor"
+        Target = "test_audio_censor.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_censor.exe",
+            "test_audio_censor.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_pad_fx"
         Dir = "tests/audio_pad_fx"
         Target = "test_audio_pad_fx.exe"
@@ -1856,6 +1903,18 @@ $tests = @(
             "-o", "test_monitor_pcm_link.exe",
             "test_monitor_pcm_link.c",
             "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c"
+        )
+    },
+    @{
+        Name = "audio_uac_health"
+        Dir = "tests/audio_uac_health"
+        Target = "test_audio_uac_health.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_uac_health.exe",
+            "test_audio_uac_health.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_uac_health.c"
         )
     },
     @{
