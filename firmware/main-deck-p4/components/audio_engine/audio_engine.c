@@ -35,6 +35,7 @@
 #include "audio_keylock.h"
 #include "audio_mixer.h"
 #include "audio_output_mixer.h"
+#include "audio_output_sink.h"
 #include "audio_output_timing.h"
 #include "audio_wdt_trace.h"
 #include "audio_pad_fx.h"
@@ -174,19 +175,18 @@ static uint32_t          s_scratch_handoff_consumed[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_abort_seek_requested[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_abort_seek_waiting[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t          s_scratch_abort_seek_target_ms[AUDIO_ENGINE_DECK_COUNT];
-static bool              s_scratch_regrab_requested[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_started_paused[AUDIO_ENGINE_DECK_COUNT];
 static bool              s_scratch_return_paused[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t          s_scratch_origin_pos_ms[AUDIO_ENGINE_DECK_COUNT];
-static uint32_t          s_scratch_origin_play_seq[AUDIO_ENGINE_DECK_COUNT];
+static uint64_t          s_scratch_origin_play_seq[AUDIO_ENGINE_DECK_COUNT];
 
 /* Click-free handoff (vinyl mode Phase 4b). On release the output does not snap
  * from the scratch source to forward playback; it cross-fades per sample:
  * FADE_OUT ramps the scratch tail to silence, FADE_IN ramps the resumed forward
  * audio (popped from the just-seeked ring) up from silence — waiting at silence
  * if the ring has not refilled yet — then RING hands back to the resampler at the
- * next block. All owned by the output task except the FADE_OUT arm set by the
- * control task in scratch_end. */
+ * next block. Gain and phase are output-task-owned. The control task publishes
+ * only a packed RELEASE/REGRAB command, applied at an output block boundary. */
 typedef enum {
     AE_SCRATCH_HANDOFF_NONE = 0,
     AE_SCRATCH_HANDOFF_FADE_OUT,
@@ -204,6 +204,8 @@ typedef enum {
  * release/acquire helpers above; values are the ae_scratch_handoff_t constants. */
 static uint8_t              s_scratch_handoff[AUDIO_ENGINE_DECK_COUNT];
 static float                s_scratch_handoff_gain[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t             s_scratch_handoff_command[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t             s_scratch_handoff_applied[AUDIO_ENGINE_DECK_COUNT];
 #define AE_SCRATCH_XFADE_FRAMES 480u   /* ~10 ms per side @ 48 kHz */
 #define AE_SCRATCH_XFADE_STEP   (1.0f / (float)AE_SCRATCH_XFADE_FRAMES)
 
@@ -218,6 +220,8 @@ static void reset_all_pcm_rings(void)
 }
 
 static bool deck_is_valid(uint8_t deck);
+static void audio_engine_get_stage_gains(float *deck0_pre, float *deck1_pre,
+                                         float *deck0_post, float *deck1_post);
 static void init_beat_fx_echo_buffers(void);
 static void init_beat_fx_flanger_buffers(void);
 static void init_pad_fx_buffers(void);
@@ -266,6 +270,8 @@ typedef struct {
      * void* to keep dr_flac.h out of the struct definition; cast in ae_flac_*. */
     void          *flac;
     bool           flac_ready;
+    bool           flac_recovery_pending;
+    uint64_t       flac_resume_frame;
 
     /* PVBR seek table — 400 file-byte offsets (from ANLZ0000.DAT) */
     uint32_t pvbr[AUDIO_PVBR_LEN];
@@ -353,11 +359,30 @@ static uint16_t         s_headphone_mix = AUDIO_MIXER_CONTROL_MAX;
 static uint16_t         s_headphone_level = AUDIO_MIXER_CONTROL_MAX;
 static bool             s_master_cue_enabled = true;
 static bool             s_pfl_enabled[AUDIO_ENGINE_DECK_COUNT];
-static uint8_t          s_cue_mode = 0; /* 0 = stereo master, 1 = split mono */
-static audio_headphone_mode_t s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
+/* Control/UI writers and the audio output reader run on different cores. Keep
+ * the legacy cue mode and the richer headphone route in one atomic word so an
+ * output block can never observe a torn routing transition. */
+#define AE_HEADPHONE_ROUTE_MODE_MASK 0xFFu
+#define AE_HEADPHONE_ROUTE_CUE_SHIFT 8u
+#define AE_HEADPHONE_ROUTE_PACK(mode, cue) \
+    (((uint32_t)(mode) & AE_HEADPHONE_ROUTE_MODE_MASK) | \
+     (((uint32_t)(cue) & 0x1u) << AE_HEADPHONE_ROUTE_CUE_SHIFT))
+static uint32_t         s_headphone_route =
+    AE_HEADPHONE_ROUTE_PACK(AUDIO_HEADPHONE_MODE_MASTER_MONO, 0u);
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_ui_peak[AUDIO_ENGINE_DECK_COUNT];
-static audio_mixer_limiter_stats_t s_limiter_stats;
+/* Versioned atomic telemetry. The sequence gives readers a coherent aggregate
+ * while atomic fields keep every C access race-free. Writers are serialized by
+ * the odd sequence value; this also makes test/reset paths safe independently
+ * of the engine lifecycle mutex. */
+typedef struct {
+    uint32_t sequence;
+    uint32_t limited_samples;
+    uint32_t positive_overloads;
+    uint32_t negative_overloads;
+    int32_t peak_input_abs;
+} ae_limiter_telemetry_t;
+static ae_limiter_telemetry_t s_limiter_telemetry;
 static audio_eq_state_t s_deck_eq[AUDIO_ENGINE_DECK_COUNT];
 static audio_filter_state_t s_deck_filter[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_filter_raw[AUDIO_ENGINE_DECK_COUNT];
@@ -367,8 +392,8 @@ static bool             s_beat_fx_filter_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_filter_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_filter_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_delay_fx_t s_beat_fx_echo[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_echo_enabled[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_delay_ms[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
@@ -380,14 +405,14 @@ typedef struct {
 static ae_fx_command_t  s_beat_fx_echo_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_echo_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_flanger_fx_t s_beat_fx_flanger[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_flanger_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_beat_fx_flanger_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_flanger_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_beat_fx_flanger_right[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_beat_fx_flanger_enabled[AUDIO_ENGINE_DECK_COUNT];
 static ae_fx_command_t  s_beat_fx_flanger_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_beat_fx_flanger_applied[AUDIO_ENGINE_DECK_COUNT];
 static audio_pad_fx_state_t s_pad_fx[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
-static int16_t         *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_pad_fx_echo_left[AUDIO_ENGINE_DECK_COUNT];
+static float           *s_pad_fx_echo_right[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_command[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t         s_pad_fx_applied[AUDIO_ENGINE_DECK_COUNT];
 static bool             s_smart_cfx_enabled;
@@ -433,6 +458,119 @@ static inline uint32_t atomic_load_u32(const uint32_t *value)
 static inline void atomic_store_u32(uint32_t *value, uint32_t new_value)
 {
     __atomic_store_n(value, new_value, __ATOMIC_RELAXED);
+}
+
+static uint32_t headphone_route_load(void)
+{
+    return __atomic_load_n(&s_headphone_route, __ATOMIC_ACQUIRE);
+}
+
+static void headphone_route_store(audio_headphone_mode_t mode, uint8_t cue_mode)
+{
+    __atomic_store_n(&s_headphone_route,
+                     AE_HEADPHONE_ROUTE_PACK(mode, cue_mode),
+                     __ATOMIC_RELEASE);
+}
+
+static audio_headphone_mode_t headphone_mode_from_route(uint32_t route)
+{
+    return (audio_headphone_mode_t)(route & AE_HEADPHONE_ROUTE_MODE_MASK);
+}
+
+static uint8_t cue_mode_from_route(uint32_t route)
+{
+    return (uint8_t)((route >> AE_HEADPHONE_ROUTE_CUE_SHIFT) & 0x1u);
+}
+
+static uint32_t limiter_write_begin(void)
+{
+    for (;;) {
+        uint32_t sequence = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                             __ATOMIC_ACQUIRE);
+        if ((sequence & 1u) != 0u) {
+            continue;
+        }
+        uint32_t expected = sequence;
+        if (__atomic_compare_exchange_n(&s_limiter_telemetry.sequence,
+                                        &expected,
+                                        sequence + 1u,
+                                        false,
+                                        __ATOMIC_ACQUIRE,
+                                        __ATOMIC_RELAXED)) {
+            return sequence;
+        }
+    }
+}
+
+static void limiter_write_end(uint32_t even_sequence)
+{
+    __atomic_store_n(&s_limiter_telemetry.sequence,
+                     even_sequence + 2u,
+                     __ATOMIC_RELEASE);
+}
+
+static void limiter_stats_reset(void)
+{
+    uint32_t sequence = limiter_write_begin();
+    __atomic_store_n(&s_limiter_telemetry.limited_samples, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.positive_overloads, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.negative_overloads, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.peak_input_abs, 0, __ATOMIC_RELAXED);
+    limiter_write_end(sequence);
+}
+
+static void limiter_stats_record(const audio_mixer_limiter_stats_t *stats)
+{
+    if (!stats) return;
+    uint32_t sequence = limiter_write_begin();
+    uint32_t limited = __atomic_load_n(&s_limiter_telemetry.limited_samples,
+                                        __ATOMIC_RELAXED);
+    uint32_t positive = __atomic_load_n(&s_limiter_telemetry.positive_overloads,
+                                         __ATOMIC_RELAXED);
+    uint32_t negative = __atomic_load_n(&s_limiter_telemetry.negative_overloads,
+                                         __ATOMIC_RELAXED);
+    int32_t peak = __atomic_load_n(&s_limiter_telemetry.peak_input_abs,
+                                   __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.limited_samples,
+                     limited + stats->limited_samples, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.positive_overloads,
+                     positive + stats->positive_overloads, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_limiter_telemetry.negative_overloads,
+                     negative + stats->negative_overloads, __ATOMIC_RELAXED);
+    if (stats->peak_input_abs > peak) {
+        __atomic_store_n(&s_limiter_telemetry.peak_input_abs,
+                         stats->peak_input_abs, __ATOMIC_RELAXED);
+    }
+    limiter_write_end(sequence);
+}
+
+static void limiter_stats_snapshot(audio_mixer_limiter_stats_t *out_stats)
+{
+    if (!out_stats) return;
+    for (;;) {
+        uint32_t before = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                           __ATOMIC_ACQUIRE);
+        if ((before & 1u) != 0u) {
+            continue;
+        }
+        audio_mixer_limiter_stats_t candidate = {
+            .limited_samples = __atomic_load_n(
+                &s_limiter_telemetry.limited_samples, __ATOMIC_RELAXED),
+            .positive_overloads = __atomic_load_n(
+                &s_limiter_telemetry.positive_overloads, __ATOMIC_RELAXED),
+            .negative_overloads = __atomic_load_n(
+                &s_limiter_telemetry.negative_overloads, __ATOMIC_RELAXED),
+            .peak_input_abs = __atomic_load_n(
+                &s_limiter_telemetry.peak_input_abs, __ATOMIC_RELAXED),
+        };
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        uint32_t after = __atomic_load_n(&s_limiter_telemetry.sequence,
+                                          __ATOMIC_ACQUIRE);
+        if (before == after) {
+            *out_stats = candidate;
+            return;
+        }
+    }
 }
 
 static inline bool atomic_load_bool(const bool *value)
@@ -647,11 +785,8 @@ static float scratch_head_snapshot(uint8_t deck)
                                         __ATOMIC_ACQUIRE));
 }
 
-/* Scratch release-handoff state (4b) is written by the control task (arming the
- * fade in scratch_end) and read+advanced by the output task per sample. Publish
- * the handoff phase with release/acquire so a reader that observes a new phase
- * also observes the matching s_scratch_handoff_gain seed written just before it
- * (avoids a one-block wrong-source/wrong-gain glitch on the phase change). */
+/* Scratch phase is output-task-owned. Atomic access keeps diagnostics/control
+ * snapshots race-free without letting them mutate the state machine. */
 static inline uint8_t scratch_handoff_load(const uint8_t *value)
 {
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
@@ -660,6 +795,49 @@ static inline uint8_t scratch_handoff_load(const uint8_t *value)
 static inline void scratch_handoff_store(uint8_t *value, uint8_t new_value)
 {
     __atomic_store_n(value, new_value, __ATOMIC_RELEASE);
+}
+
+typedef enum {
+    AE_SCRATCH_COMMAND_NONE = 0,
+    AE_SCRATCH_COMMAND_RELEASE = 1,
+    AE_SCRATCH_COMMAND_REGRAB = 2,
+} ae_scratch_command_t;
+
+static void scratch_handoff_publish_command(uint8_t deck,
+                                            ae_scratch_command_t command)
+{
+    if (deck >= AUDIO_ENGINE_DECK_COUNT || command == AE_SCRATCH_COMMAND_NONE) {
+        return;
+    }
+    uint32_t current = __atomic_load_n(&s_scratch_handoff_command[deck],
+                                       __ATOMIC_RELAXED);
+    for (;;) {
+        uint32_t next = (current & ~3u) + 4u;
+        if (next == 0u) next = 4u;
+        uint32_t desired = next | (uint32_t)command;
+        if (__atomic_compare_exchange_n(&s_scratch_handoff_command[deck],
+                                        &current, desired, false,
+                                        __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+            return;
+        }
+    }
+}
+
+static void scratch_handoff_apply_pending_command(uint8_t deck)
+{
+    uint32_t command = __atomic_load_n(&s_scratch_handoff_command[deck],
+                                       __ATOMIC_ACQUIRE);
+    if (command == s_scratch_handoff_applied[deck]) return;
+
+    s_scratch_handoff_gain[deck] = 1.0f;
+    if ((command & 3u) == AE_SCRATCH_COMMAND_RELEASE) {
+        scratch_handoff_store(&s_scratch_handoff[deck],
+                              AE_SCRATCH_HANDOFF_FADE_OUT);
+    } else if ((command & 3u) == AE_SCRATCH_COMMAND_REGRAB) {
+        scratch_handoff_store(&s_scratch_handoff[deck],
+                              AE_SCRATCH_HANDOFF_NONE);
+    }
+    s_scratch_handoff_applied[deck] = command;
 }
 
 /* Effect configuration is produced by the deck/control task and consumed by
@@ -889,16 +1067,95 @@ static void apply_all_deck_filter_raw(void)
 static pthread_mutex_t    s_file_mutex  = PTHREAD_MUTEX_INITIALIZER;
 #   define AE_LOCK()   pthread_mutex_lock(&s_file_mutex)
 #   define AE_UNLOCK() pthread_mutex_unlock(&s_file_mutex)
+static pthread_mutex_t s_lifecycle_admission_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT] = {
+    PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER
+};
 #elif AE_FW
 static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_init */
 #   define AE_LOCK()   do { if (s_file_mutex) xSemaphoreTakeRecursive(s_file_mutex, portMAX_DELAY); } while (0)
 #   define AE_UNLOCK() do { if (s_file_mutex) xSemaphoreGiveRecursive(s_file_mutex); } while (0)
+static SemaphoreHandle_t s_lifecycle_admission_mutex;
+static SemaphoreHandle_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT];
 #else
 #   define AE_LOCK()   do {} while (0)
 #   define AE_UNLOCK() do {} while (0)
 #endif
 
+static bool s_lifecycle_loads_blocked;
+static uint32_t s_lifecycle_session_generation[AUDIO_ENGINE_DECK_COUNT];
+#if AE_PC
+static audio_engine_lifecycle_test_hook_t s_after_internal_stop_hook;
 
+void audio_engine_test_set_after_internal_stop_hook(
+    audio_engine_lifecycle_test_hook_t hook)
+{
+    s_after_internal_stop_hook = hook;
+}
+#endif
+
+static void lifecycle_admission_lock(void)
+{
+#if AE_PC
+    pthread_mutex_lock(&s_lifecycle_admission_mutex);
+#elif AE_FW
+    xSemaphoreTake(s_lifecycle_admission_mutex, portMAX_DELAY);
+#endif
+}
+
+static void lifecycle_admission_unlock(void)
+{
+#if AE_PC
+    pthread_mutex_unlock(&s_lifecycle_admission_mutex);
+#elif AE_FW
+    xSemaphoreGive(s_lifecycle_admission_mutex);
+#endif
+}
+
+static void lifecycle_deck_lock(uint8_t deck)
+{
+#if AE_PC
+    pthread_mutex_lock(&s_lifecycle_mutex[deck]);
+#elif AE_FW
+    xSemaphoreTake(s_lifecycle_mutex[deck], portMAX_DELAY);
+#else
+    (void)deck;
+#endif
+}
+
+static void lifecycle_deck_unlock(uint8_t deck)
+{
+#if AE_PC
+    pthread_mutex_unlock(&s_lifecycle_mutex[deck]);
+#elif AE_FW
+    xSemaphoreGive(s_lifecycle_mutex[deck]);
+#else
+    (void)deck;
+#endif
+}
+
+static bool lifecycle_begin_load(uint8_t deck)
+{
+    lifecycle_admission_lock();
+    if (s_lifecycle_loads_blocked) {
+        lifecycle_admission_unlock();
+        return false;
+    }
+    lifecycle_deck_lock(deck);
+    lifecycle_admission_unlock();
+    return true;
+}
+
+static uint32_t lifecycle_advance_generation(uint8_t deck)
+{
+    uint32_t next = s_lifecycle_session_generation[deck] + 1u;
+    if (next == 0u) next = 1u;
+    s_lifecycle_session_generation[deck] = next;
+    return next;
+}
+
+
+#if defined(AUDIO_ENGINE_PC_TEST)
 static uint16_t sample_abs_u16(int16_t sample)
 {
     return sample == INT16_MIN ? 32768u : (uint16_t)(sample < 0 ? -sample : sample);
@@ -910,21 +1167,22 @@ static uint16_t frame_peak(audio_mixer_frame_t frame)
     uint16_t right = sample_abs_u16(frame.right);
     return left > right ? left : right;
 }
+#endif
 
 /* VU meter reference sensitivity: a peak this far below digital full scale reads
  * as a full meter, so normal (non-brickwalled) material lights more than a
  * sliver. ~-6 dBFS. Tune here if the controller/on-screen VU reads hot or cold. */
 #define AE_VU_SENSITIVITY 2.0f
 
-/* Pre-fader channel-meter peak: the deck frame is measured BEFORE the channel
- * gain (pregain/trim/volume/crossfader) is mixed into the master, so scale it by
- * the pre-fader gain (pregain x master trim) here. This makes the VU track the
- * TRIM knob (which sets pregain) like a real DJ channel meter, independent of
- * the fader/crossfader. */
+/* Post-TRIM/post-EQ/FX, pre-fader channel-meter peak. The wide DSP frame already
+ * includes channel TRIM, so no gain is applied here and no intermediate int16
+ * saturation can hide an overload from the meter. */
 #if AE_FW
-static uint16_t frame_peak_prefader(audio_mixer_frame_t frame, float prefader_gain)
+static uint16_t frame_peak_prefader(audio_dsp_frame_t frame)
 {
-    float peak = (float)frame_peak(frame) * prefader_gain * AE_VU_SENSITIVITY;
+    float left = frame.left < 0.0f ? -frame.left : frame.left;
+    float right = frame.right < 0.0f ? -frame.right : frame.right;
+    float peak = (left > right ? left : right) * AE_VU_SENSITIVITY;
     if (peak < 0.0f) {
         peak = 0.0f;
     }
@@ -999,6 +1257,9 @@ static volatile bool          s_output_run = false;
 static portMUX_TYPE           s_ring_flush_mux = portMUX_INITIALIZER_UNLOCKED;
 static volatile bool          s_output_codec_open = false;
 static uint32_t               s_output_sample_rate = 0;
+static audio_output_sink_stats_t s_main_sink_stats;
+static uint32_t               s_headphone_sink_errors;
+static uint32_t               s_output_sink_faults;
 /* The MP3 is preloaded into PSRAM once and decoded directly from the
  * memory buffer. This keeps USB off the playback/teardown path entirely — streaming
  * reads from /usb during playback collide with the load sequence and trip a
@@ -1529,22 +1790,34 @@ static drflac_bool32 ae_flac_cache_tell(void *user, drflac_int64 *cursor)
     return DRFLAC_TRUE;
 }
 
-static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
-                                         audio_fw_preload_t *fw)
+static drflac *ae_flac_open_from_cache(audio_fw_preload_t *fw)
 {
-    if (!eng || !fw || eng->file_size == 0u) return ESP_ERR_INVALID_ARG;
-    fw->stream_pos = 0u;
     drflac_allocation_callbacks cb = {
         .pUserData = NULL,
         .onMalloc = ae_flac_psram_malloc,
         .onRealloc = ae_flac_psram_realloc,
         .onFree = ae_flac_psram_free,
     };
-    drflac *flac = drflac_open(ae_flac_cache_read,
-                               ae_flac_cache_seek,
-                               ae_flac_cache_tell,
-                               fw,
-                               &cb);
+    fw->stream_pos = 0u;
+    return drflac_open(ae_flac_cache_read,
+                       ae_flac_cache_seek,
+                       ae_flac_cache_tell,
+                       fw,
+                       &cb);
+}
+
+static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
+                                         audio_fw_preload_t *fw)
+{
+    if (!eng || !fw || eng->file_size == 0u) return ESP_ERR_INVALID_ARG;
+    uint32_t fault_before = audio_fw_preload_stream_fault_epoch(fw);
+    drflac *flac = ae_flac_open_from_cache(fw);
+    if (audio_fw_preload_stream_fault_epoch(fw) != fault_before) {
+        if (flac) drflac_close(flac);
+        ESP_LOGE(TAG, "FLAC header read failed at byte %u",
+                 (unsigned)fw->stream_fault_offset);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!flac) {
         ESP_LOGE(TAG, "drflac_open cache failed (size=%u)", (unsigned)eng->file_size);
         return ESP_ERR_NOT_SUPPORTED;
@@ -1555,6 +1828,8 @@ static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
     }
     eng->flac = flac;
     eng->flac_ready = true;
+    eng->flac_recovery_pending = false;
+    eng->flac_resume_frame = 0u;
     eng->format = AUDIO_FORMAT_FLAC;
     eng->sample_rate = flac->sampleRate;
     eng->channels = (int)flac->channels;
@@ -1570,27 +1845,103 @@ static esp_err_t ae_flac_init_from_cache(audio_engine_state_t *eng,
     return ESP_OK;
 }
 
-static void ae_flac_seek_to_ms(audio_engine_state_t *eng, uint32_t position_ms)
+static bool ae_flac_recover_decoder(audio_engine_state_t *eng,
+                                    audio_fw_preload_t *fw);
+
+static bool ae_flac_seek_to_ms(audio_engine_state_t *eng,
+                               audio_fw_preload_t *fw,
+                               uint8_t deck,
+                               uint32_t position_ms)
 {
-    if (!eng || !eng->flac_ready || !eng->flac || eng->sample_rate == 0u) return;
+    if (!eng || !fw || !eng->flac_ready || !eng->flac ||
+        eng->sample_rate == 0u) return false;
+    if (eng->flac_recovery_pending && !ae_flac_recover_decoder(eng, fw)) {
+        (void)ae_note_read_fault(eng, deck);
+        return false;
+    }
     drflac *flac = (drflac *)eng->flac;
     uint64_t frame = ((uint64_t)position_ms * (uint64_t)eng->sample_rate) / 1000ull;
     if (frame > flac->totalPCMFrameCount) frame = flac->totalPCMFrameCount;
-    (void)drflac_seek_to_pcm_frame(flac, (drflac_uint64)frame);
+    uint32_t fault_before = audio_fw_preload_stream_fault_epoch(fw);
+    if (!drflac_seek_to_pcm_frame(flac, (drflac_uint64)frame) ||
+        audio_fw_preload_stream_fault_epoch(fw) != fault_before) {
+        eng->flac_resume_frame = frame;
+        eng->flac_recovery_pending = true;
+        atomic_store_bool(&eng->eof, false);
+        (void)ae_note_read_fault(eng, deck);
+        return false;
+    }
+    eng->flac_resume_frame = frame;
+    eng->flac_recovery_pending = false;
+    ae_clear_read_faults(deck);
     atomic_store_bool(&eng->eof, frame >= flac->totalPCMFrameCount);
+    return true;
+}
+
+static bool ae_flac_recover_decoder(audio_engine_state_t *eng,
+                                    audio_fw_preload_t *fw)
+{
+    uint32_t fault_before = audio_fw_preload_stream_fault_epoch(fw);
+    drflac *replacement = ae_flac_open_from_cache(fw);
+    if (!replacement ||
+        audio_fw_preload_stream_fault_epoch(fw) != fault_before) {
+        if (replacement) drflac_close(replacement);
+        return false;
+    }
+    if (eng->flac_resume_frame > 0u &&
+        !drflac_seek_to_pcm_frame(replacement, eng->flac_resume_frame)) {
+        drflac_close(replacement);
+        return false;
+    }
+    if (audio_fw_preload_stream_fault_epoch(fw) != fault_before) {
+        drflac_close(replacement);
+        return false;
+    }
+
+    drflac *old = (drflac *)eng->flac;
+    eng->flac = replacement;
+    eng->flac_ready = true;
+    eng->flac_recovery_pending = false;
+    if (old) drflac_close(old);
+    return true;
 }
 
 static int ae_flac_decode_one_frame(audio_engine_state_t *eng,
+                                    audio_fw_preload_t *fw,
+                                    uint8_t deck,
                                     int16_t out_pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2])
 {
-    if (!eng || !eng->flac_ready || !eng->flac || atomic_load_bool(&eng->eof)) return 0;
+    if (!eng || !fw || !eng->flac_ready || !eng->flac ||
+        atomic_load_bool(&eng->eof)) return 0;
+    if (eng->flac_recovery_pending && !ae_flac_recover_decoder(eng, fw)) {
+        (void)ae_note_read_fault(eng, deck);
+        return 0;
+    }
     drflac *flac = (drflac *)eng->flac;
     const uint8_t channels = (uint8_t)eng->channels;
     int16_t scratch[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+    uint32_t fault_before = audio_fw_preload_stream_fault_epoch(fw);
     drflac_uint64 got = drflac_read_pcm_frames_s16(
         flac, MINIMP3_MAX_SAMPLES_PER_FRAME, scratch);
+    if (audio_fw_preload_stream_fault_epoch(fw) != fault_before) {
+        eng->flac_resume_frame = flac->currentPCMFrame;
+        eng->flac_recovery_pending = true;
+        (void)ae_note_read_fault(eng, deck);
+    } else if (got > 0u) {
+        ae_clear_read_faults(deck);
+    }
     if (got == 0u) {
-        atomic_store_bool(&eng->eof, true);
+        if (!eng->flac_recovery_pending &&
+            flac->currentPCMFrame >= flac->totalPCMFrameCount) {
+            atomic_store_bool(&eng->eof, true);
+        } else if (!eng->flac_recovery_pending) {
+            /* Decoder stopped before the declared PCM end. Re-open at the
+             * current frame on the next decode turn instead of converting a
+             * malformed/short backend response into ordinary EOF. */
+            eng->flac_resume_frame = flac->currentPCMFrame;
+            eng->flac_recovery_pending = true;
+            (void)ae_note_read_fault(eng, deck);
+        }
         return 0;
     }
     for (size_t i = 0; i < (size_t)got; ++i) {
@@ -1656,7 +2007,7 @@ static int decode_one_frame(
     }
 #if AE_FW
     if (eng->format == AUDIO_FORMAT_FLAC) {
-        return ae_flac_decode_one_frame(eng, out_pcm);
+        return ae_flac_decode_one_frame(eng, fw, deck, out_pcm);
     }
 
     if (!fw || !fw->load_done || atomic_load_bool(&eng->eof) ||
@@ -1978,7 +2329,7 @@ static void ae_diag_reset(void)
     audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
     s_phase = (ae_output_phase_stats_t){ 0 };
-    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    limiter_stats_reset();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         audio_diag_counter_init(&s_diag_decode_frames[deck], AE_DIAG_DECODE_REPORT_FRAMES);
         audio_diag_counter_init(&s_diag_preload_chunks[deck], AE_DIAG_PRELOAD_REPORT_CHUNKS);
@@ -2171,7 +2522,7 @@ static size_t ae_fw_cache_read_at(void *ctx, size_t offset,
 static void ae_loader_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
-    if (!audio_fw_task_context_is_bound(ctx)) {
+    if (!audio_fw_task_context_is_current(ctx)) {
         xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDelete(NULL);
         return;
@@ -2249,7 +2600,7 @@ park:
 static void ae_decode_task(void *arg)
 {
     audio_fw_task_context_t *ctx = (audio_fw_task_context_t *)arg;
-    if (!audio_fw_task_context_is_bound(ctx)) {
+    if (!audio_fw_task_context_is_current(ctx)) {
         xSemaphoreGive(ctx_tasks_done(ctx));
         vTaskDeleteWithCaps(NULL);
         return;
@@ -2388,7 +2739,8 @@ static void ae_decode_task(void *arg)
                 if (eng->format == AUDIO_FORMAT_WAV) {
                     ae_wav_seek_to_ms(eng, decode_target_ms);
                 } else if (eng->format == AUDIO_FORMAT_FLAC) {
-                    ae_flac_seek_to_ms(eng, decode_target_ms);
+                    (void)ae_flac_seek_to_ms(eng, fw, ctx->deck,
+                                             decode_target_ms);
                 } else if (eng->has_pvbr) {
                     seek_pvbr(eng, decode_target_ms);
                 } else {
@@ -2796,13 +3148,27 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
 
 static audio_output_headphone_mode_t output_headphone_mode(void)
 {
-    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_MASTER_MONO) {
+    audio_headphone_mode_t mode = headphone_mode_from_route(headphone_route_load());
+    if (mode == AUDIO_HEADPHONE_MODE_MASTER_MONO) {
         return AUDIO_OUTPUT_HEADPHONE_MASTER_MONO;
     }
-    if (s_headphone_mode == AUDIO_HEADPHONE_MODE_CUE_MONO) {
+    if (mode == AUDIO_HEADPHONE_MODE_CUE_MONO) {
         return AUDIO_OUTPUT_HEADPHONE_CUE_MONO;
     }
     return AUDIO_OUTPUT_HEADPHONE_SPLIT_MONO;
+}
+
+static audio_output_sink_result_t audio_output_main_i2s_write(
+    void *ctx,
+    const uint8_t *data,
+    size_t bytes,
+    size_t *written,
+    uint32_t timeout_ticks)
+{
+    esp_err_t rc = i2s_channel_write((i2s_chan_handle_t)ctx, data, bytes,
+                                     written, (TickType_t)timeout_ticks);
+    if (rc == ESP_ERR_TIMEOUT) return AUDIO_OUTPUT_SINK_TIMEOUT;
+    return rc == ESP_OK ? AUDIO_OUTPUT_SINK_OK : AUDIO_OUTPUT_SINK_ERROR;
 }
 
 static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
@@ -2811,17 +3177,43 @@ static esp_err_t audio_output_write_main(const int16_t *frames, size_t bytes)
     if (!s_main_i2s_tx) {
         return ESP_ERR_INVALID_STATE;
     }
-    size_t written = 0;
-    esp_err_t rc = i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY);
-    if (rc != ESP_OK) {
-        return rc;
-    }
-    return written == bytes ? ESP_OK : ESP_FAIL;
+    uint32_t timeout_ms = 100u;
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    if (timeout_ticks == 0u) timeout_ticks = 1u;
+    audio_output_sink_result_t result = audio_output_sink_write_all(
+        audio_output_main_i2s_write, s_main_i2s_tx, frames, bytes,
+        (uint32_t)timeout_ticks, 3u, &s_main_sink_stats);
+    if (result == AUDIO_OUTPUT_SINK_TIMEOUT) return ESP_ERR_TIMEOUT;
+    return result == AUDIO_OUTPUT_SINK_OK ? ESP_OK : ESP_FAIL;
 #else
     (void)frames;
     (void)bytes;
     return ESP_ERR_NOT_SUPPORTED;
 #endif
+}
+
+static void audio_output_mark_sink_fault(esp_err_t main_rc, esp_err_t hp_rc)
+{
+    __atomic_add_fetch(&s_output_sink_faults, 1u, __ATOMIC_RELAXED);
+    if (s_codec && hp_rc != ESP_OK) {
+        __atomic_add_fetch(&s_headphone_sink_errors, 1u, __ATOMIC_RELAXED);
+    }
+    AE_LOCK();
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; ++deck) {
+        audio_engine_state_t *eng = &s_engines[deck];
+        if (!eng->loaded) continue;
+        eng->last_error = (main_rc == ESP_ERR_TIMEOUT) ? ESP_ERR_TIMEOUT : ESP_FAIL;
+        snprintf(eng->last_error_text, sizeof(eng->last_error_text),
+                 "AUDIO OUTPUT ERR");
+        atomic_store_bool(&eng->playing, false);
+        atomic_store_bool(&eng->paused, false);
+        atomic_store_bool(&eng->eof, true);
+        atomic_store_bool(&eng->playback_finished, false);
+    }
+    AE_UNLOCK();
+    ESP_LOGE(TAG, "output sink fault: main=%s hp=%s",
+             esp_err_to_name(main_rc), esp_err_to_name(hp_rc));
+    s_output_run = false;
 }
 
 static void ae_output_task(void *arg)
@@ -2878,15 +3270,11 @@ static void ae_output_task(void *arg)
                                                       AE_SEEK_REASON_SCRATCH_ABORT) != ESP_OK) {
                     atomic_store_bool(&s_scratch_abort_seek_waiting[d], false);
                 }
-                atomic_store_bool(&s_scratch_regrab_requested[d], false);
+                s_scratch_handoff_applied[d] = __atomic_load_n(
+                    &s_scratch_handoff_command[d], __ATOMIC_ACQUIRE);
                 continue; /* external transport has priority over a re-grab */
             }
-            if (__atomic_exchange_n(&s_scratch_regrab_requested[d], false,
-                                    __ATOMIC_ACQ_REL)) {
-                s_scratch_handoff_gain[d] = 1.0f;
-                scratch_handoff_store(&s_scratch_handoff[d], AE_SCRATCH_HANDOFF_NONE);
-                continue;
-            }
+            scratch_handoff_apply_pending_command(d);
             if (scratch_handoff_load(&s_scratch_handoff[d]) == AE_SCRATCH_HANDOFF_RING) {
                 s_scratch_handoff_gain[d] = 1.0f;
                 scratch_handoff_store(&s_scratch_handoff[d], AE_SCRATCH_HANDOFF_NONE);
@@ -2906,16 +3294,13 @@ static void ae_output_task(void *arg)
         audio_output_apply_pending_fx_commands();
 
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 0u);
+        float deck0_pre = 1.0f;
+        float deck1_pre = 1.0f;
         float deck0_gain = 1.0f;
         float deck1_gain = 1.0f;
-        audio_engine_get_output_gains(&deck0_gain, &deck1_gain);
+        audio_engine_get_stage_gains(&deck0_pre, &deck1_pre,
+                                     &deck0_gain, &deck1_gain);
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 1u);
-        /* Pre-fader gain (pregain x master trim) for the VU meters, so they track
-         * the TRIM knob independent of the channel fader/crossfader. */
-        float deck0_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[0])) * master_trim_load();
-        float deck1_prefader_gain =
-            pregain_gain_from_raw(atomic_load_u16(&s_pregain[1])) * master_trim_load();
         bool smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
         bool pfl0_enabled = atomic_load_bool(&s_pfl_enabled[AE_DECK_0]);
         bool pfl1_enabled = atomic_load_bool(&s_pfl_enabled[1u]);
@@ -2929,6 +3314,9 @@ static void ae_output_task(void *arg)
                                              output_headphone_mode(),
                                              headphone_mix,
                                              headphone_level,
+                                             master_trim_load() *
+                                                 audio_mixer_fader_gain(
+                                                     atomic_load_u16(&s_master_volume)),
                                              master_cue_enabled);
 
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 2u);
@@ -2948,6 +3336,7 @@ static void ae_output_task(void *arg)
                 s_engines[deck0_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck0_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
+            .pre_gain = deck0_pre,
             .gain = deck0_gain,
             .eq = &s_deck_eq[deck0_index],
             .filter = &s_deck_filter[deck0_index],
@@ -2982,6 +3371,7 @@ static void ae_output_task(void *arg)
                 s_engines[deck1_index].sample_rate, s_output_sample_rate),
             .source_sample_rate = s_engines[deck1_index].sample_rate,
             .output_sample_rate = s_output_sample_rate,
+            .pre_gain = deck1_pre,
             .gain = deck1_gain,
             .eq = &s_deck_eq[deck1_index],
             .filter = &s_deck_filter[deck1_index],
@@ -3074,8 +3464,8 @@ static void ae_output_task(void *arg)
                 &frame_consumed1,
                 &block_limiter_stats);
 
-            uint16_t peak0 = frame_peak_prefader(mix.deck_frame[0], deck0_prefader_gain);
-            uint16_t peak1 = frame_peak_prefader(mix.deck_frame[1], deck1_prefader_gain);
+            uint16_t peak0 = frame_peak_prefader(mix.deck_dsp[0]);
+            uint16_t peak1 = frame_peak_prefader(mix.deck_dsp[1]);
             if (peak0 > block_peak[deck0_index]) block_peak[deck0_index] = peak0;
             if (peak1 > block_peak[deck1_index]) block_peak[deck1_index] = peak1;
 
@@ -3144,7 +3534,9 @@ static void ae_output_task(void *arg)
             ae_phase_note(AE_PH_CODEC, now - phase_mark);
             phase_mark = now;
         }
-        if (hp_rc == ESP_OK || main_rc == ESP_OK || main_rc == ESP_ERR_NOT_SUPPORTED) {
+        bool main_ok = !s_main_i2s_tx || main_rc == ESP_OK;
+        bool headphone_ok = !s_codec || hp_rc == ESP_OK;
+        if (main_ok && headphone_ok) {
             ae_wdt_trace(AUDIO_WDT_PHASE_BOOK_LOCK, 0u);
             AE_LOCK();
             update_deck_output_position(deck0_index, consumed[deck0_index]);
@@ -3153,13 +3545,13 @@ static void ae_output_task(void *arg)
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
             record_deck_ui_peak(deck0_index, block_peak[deck0_index]);
             record_deck_ui_peak(deck1_index, block_peak[deck1_index]);
-            s_limiter_stats.limited_samples += block_limiter_stats.limited_samples;
-            s_limiter_stats.positive_overloads += block_limiter_stats.positive_overloads;
-            s_limiter_stats.negative_overloads += block_limiter_stats.negative_overloads;
-            if (block_limiter_stats.peak_input_abs > s_limiter_stats.peak_input_abs) {
-                s_limiter_stats.peak_input_abs = block_limiter_stats.peak_input_abs;
-            }
+            limiter_stats_record(&block_limiter_stats);
             AE_UNLOCK();
+        } else {
+            /* Stateful resamplers/DSP have already rendered this block, so it
+             * cannot be replayed safely. Do not publish an inaudible position;
+             * fail closed and let the next LOAD reopen/reinit both sinks. */
+            audio_output_mark_sink_fault(main_rc, hp_rc);
         }
         ae_phase_note(AE_PH_BOOK, esp_timer_get_time() - phase_mark);
         ae_wdt_trace(AUDIO_WDT_PHASE_DIAGNOSTICS, 0u);
@@ -3169,13 +3561,15 @@ static void ae_output_task(void *arg)
 #endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
+        audio_mixer_limiter_stats_t cumulative_limiter_stats = { 0 };
+        limiter_stats_snapshot(&cumulative_limiter_stats);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
                                     late_warning_us > 0u ? late_warning_us : block_period_us,
                                     consumed[deck0_index],
                                     consumed[deck1_index],
                                     deck0.active,
                                     deck1.active,
-                                    &s_limiter_stats);
+                                    &cumulative_limiter_stats);
         /* No software pacing delay: the i2s_channel_write above blocks on DMA and
          * is what actually paces this loop. The retired
          * audio_output_remaining_delay_ms() helper always returned zero, and the
@@ -3257,6 +3651,15 @@ static esp_err_t audio_output_service_stop(void)
     }
 
     s_output_run = false;
+#if CONFIG_BSP_PCM5102A_MAIN_OUT
+    /* Disable wakes an in-flight driver write. A later output open calls
+     * set_sample_rate(), which reconfigures and re-enables the channel. */
+    esp_err_t abort_rc = bsp_audio_main_i2s_abort_write();
+    if (abort_rc != ESP_OK && abort_rc != ESP_ERR_INVALID_STATE &&
+        abort_rc != ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "PCM5102 stop wake failed: %s", esp_err_to_name(abort_rc));
+    }
+#endif
     if (s_output_done &&
         xSemaphoreTake(s_output_done, pdMS_TO_TICKS(1500)) != pdTRUE) {
         ESP_LOGE(TAG, "shared output stop timed out");
@@ -3279,14 +3682,15 @@ static void clear_scratch_playback_state(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return;
     audio_scratch_end(&s_scratch_engine[deck]);
-    s_scratch_handoff_gain[deck] = 1.0f;
-    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
+    /* The control/lifecycle task never writes the handoff gain or phase.
+     * Publish a reset command; the output owner applies it on its next block
+     * boundary (including after a later service restart). */
+    scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB);
     atomic_store_bool(&s_scratch_playing[deck], false);
     atomic_store_bool(&s_scratch_capture_freeze[deck], false);
     atomic_store_bool(&s_scratch_capture_writing[deck], false);
     atomic_store_bool(&s_scratch_abort_seek_requested[deck], false);
     atomic_store_bool(&s_scratch_abort_seek_waiting[deck], false);
-    atomic_store_bool(&s_scratch_regrab_requested[deck], false);
     atomic_store_bool(&s_scratch_started_paused[deck], false);
     atomic_store_bool(&s_scratch_return_paused[deck], false);
     atomic_store_bool(&s_pending_pitch_valid[deck], false);
@@ -3330,6 +3734,9 @@ esp_err_t audio_engine_init(void)
     reset_all_fw_runtimes();
     reset_all_fw_task_contexts();
     ae_diag_reset();
+    s_main_sink_stats = (audio_output_sink_stats_t) { 0 };
+    s_headphone_sink_errors = 0u;
+    s_output_sink_faults = 0u;
 #endif
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         atomic_store_u16(&s_channel_volume[i], AUDIO_MIXER_CONTROL_MAX);
@@ -3367,9 +3774,8 @@ esp_err_t audio_engine_init(void)
     atomic_store_u16(&s_headphone_mix, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_u16(&s_headphone_level, AUDIO_MIXER_CONTROL_MAX);
     atomic_store_bool(&s_master_cue_enabled, true);
-    s_cue_mode = 0;
-    s_headphone_mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
-    s_limiter_stats = (audio_mixer_limiter_stats_t){ 0 };
+    headphone_route_store(AUDIO_HEADPHONE_MODE_MASTER_MONO, 0u);
+    limiter_stats_reset();
     atomic_store_bool(&s_smart_cfx_enabled, false);
     atomic_store_bool(&s_smart_fader_enabled, false);
     esp_err_t monitor_rc = monitor_pcm_link_init();
@@ -3388,6 +3794,14 @@ esp_err_t audio_engine_init(void)
         return ESP_ERR_INVALID_STATE;
     }
     if (!s_file_mutex) s_file_mutex = xSemaphoreCreateRecursiveMutex();
+    if (!s_lifecycle_admission_mutex) {
+        s_lifecycle_admission_mutex = xSemaphoreCreateMutex();
+    }
+    for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
+        if (!s_lifecycle_mutex[i]) {
+            s_lifecycle_mutex[i] = xSemaphoreCreateMutex();
+        }
+    }
     bool tasks_done_ok = true;
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         if (!s_tasks_done[i]) {
@@ -3399,10 +3813,14 @@ esp_err_t audio_engine_init(void)
     if (!s_output_done) {
         s_output_done = xSemaphoreCreateCounting(1, 0);
     }
-    if (!s_file_mutex || !tasks_done_ok || !s_output_done) return ESP_ERR_NO_MEM;
+    if (!s_file_mutex || !s_lifecycle_admission_mutex ||
+        !s_lifecycle_mutex[0] || !s_lifecycle_mutex[1] ||
+        !tasks_done_ok || !s_output_done) return ESP_ERR_NO_MEM;
     ESP_LOGI(TAG, "audio_engine_init: output ready (ES8311=%s, PCM5102A=%s)",
              s_codec ? "on" : "off", s_main_i2s_tx ? "on" : "off");
 #endif
+
+    s_lifecycle_loads_blocked = false;
 
     return ESP_OK;
 }
@@ -3434,6 +3852,11 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "STOP ERR");
         return stop_rc;
     }
+#if AE_PC
+    if (s_after_internal_stop_hook) {
+        s_after_internal_stop_hook(deck);
+    }
+#endif
 
     eng->loading = true;   /* cleared when the codec opens (FW) / at end (PC) */
     eng->load_progress = 0;
@@ -3590,7 +4013,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "OUTPUT TASK ERR");
         eng->loading = false;
         eng->load_progress = 100;
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
             if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
@@ -3625,7 +4048,7 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         snprintf(eng->last_error_text, sizeof(eng->last_error_text), "TASK CREATE ERR");
         eng->loading = false;
         eng->load_progress = 100;
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         int exited = 0;
         for (int i = 0; i < runtime->tasks_started; i++) {
             if (xSemaphoreTake(s_tasks_done[deck], pdMS_TO_TICKS(1500)) == pdTRUE) {
@@ -3735,7 +4158,7 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 #if AE_FW
     audio_fw_runtime_t *runtime = &s_fw_runtimes[deck];
     if (runtime->run || runtime->tasks_started > 0) {
-        runtime->run = false;
+        audio_fw_runtime_invalidate_session(runtime);
         atomic_store_bool(&eng->eof, false); /* wake decode task if parked at EOF */
         if (s_tasks_done[deck]) {
             int exited = 0;
@@ -3770,6 +4193,8 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
         eng->flac = NULL;
     }
     eng->flac_ready = false;
+    eng->flac_recovery_pending = false;
+    eng->flac_resume_frame = 0u;
 #endif
     eng->file_size = 0;
     eng->file_pos  = 0;
@@ -4047,8 +4472,24 @@ esp_err_t audio_engine_deck_load(uint8_t deck,
                                  const uint32_t *pvbr_400,
                                  uint32_t duration_ms)
 {
+    return audio_engine_deck_load_session(deck, mp3_path, pvbr_400,
+                                          duration_ms, NULL);
+}
+
+esp_err_t audio_engine_deck_load_session(uint8_t deck,
+                                         const char *mp3_path,
+                                         const uint32_t *pvbr_400,
+                                         uint32_t duration_ms,
+                                         uint32_t *out_session_generation)
+{
+    if (out_session_generation) *out_session_generation = 0u;
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    return audio_engine_load_for_deck(deck, mp3_path, pvbr_400, duration_ms);
+    if (!lifecycle_begin_load(deck)) return ESP_ERR_INVALID_STATE;
+    uint32_t generation = lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_load_for_deck(deck, mp3_path, pvbr_400, duration_ms);
+    if (out_session_generation) *out_session_generation = generation;
+    lifecycle_deck_unlock(deck);
+    return rc;
 }
 
 esp_err_t audio_engine_deck_play(uint8_t deck)
@@ -4072,14 +4513,61 @@ esp_err_t audio_engine_deck_pause(uint8_t deck)
 esp_err_t audio_engine_deck_stop(uint8_t deck)
 {
     if (!deck_is_valid(deck)) return ESP_ERR_INVALID_ARG;
-    return audio_engine_stop_for_deck(deck);
+    lifecycle_deck_lock(deck);
+    (void)lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_stop_for_deck(deck);
+    lifecycle_deck_unlock(deck);
+    return rc;
 }
 
-esp_err_t audio_engine_stop_all(void)
+esp_err_t audio_engine_deck_stop_session(uint8_t deck,
+                                         uint32_t expected_session_generation)
 {
+    if (!deck_is_valid(deck) || expected_session_generation == 0u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    lifecycle_deck_lock(deck);
+    if (s_lifecycle_session_generation[deck] != expected_session_generation) {
+        lifecycle_deck_unlock(deck);
+        return ESP_ERR_INVALID_STATE;
+    }
+    (void)lifecycle_advance_generation(deck);
+    esp_err_t rc = audio_engine_stop_for_deck(deck);
+    lifecycle_deck_unlock(deck);
+    return rc;
+}
+
+uint32_t audio_engine_deck_session_generation(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return 0u;
+    lifecycle_deck_lock(deck);
+    uint32_t generation = s_lifecycle_session_generation[deck];
+    lifecycle_deck_unlock(deck);
+    return generation;
+}
+
+static esp_err_t suspend_loads_and_stop_all(bool *out_acquired)
+{
+    if (out_acquired) *out_acquired = false;
+    /* Close admission first. A LOAD that already passed admission owns its
+     * deck mutex, so taking both mutexes below waits for its complete bind/task
+     * creation transaction before teardown starts. */
+    lifecycle_admission_lock();
+    if (s_lifecycle_loads_blocked) {
+        lifecycle_admission_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_lifecycle_loads_blocked = true;
+    if (out_acquired) *out_acquired = true;
+    lifecycle_admission_unlock();
+    for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        lifecycle_deck_lock(deck);
+    }
+
     esp_err_t first_err = ESP_OK;
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
-        esp_err_t rc = audio_engine_deck_stop(deck);
+        (void)lifecycle_advance_generation(deck);
+        esp_err_t rc = audio_engine_stop_for_deck(deck);
         if (first_err == ESP_OK && rc != ESP_OK) {
             first_err = rc;
         }
@@ -4090,7 +4578,33 @@ esp_err_t audio_engine_stop_all(void)
         first_err = output_rc;
     }
 #endif
+    for (uint8_t deck = AUDIO_ENGINE_DECK_COUNT; deck > 0u; deck--) {
+        lifecycle_deck_unlock((uint8_t)(deck - 1u));
+    }
     return first_err;
+}
+
+esp_err_t audio_engine_suspend_loads_and_stop_all(void)
+{
+    bool acquired = false;
+    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    if (rc != ESP_OK && acquired) audio_engine_resume_loads();
+    return rc;
+}
+
+void audio_engine_resume_loads(void)
+{
+    lifecycle_admission_lock();
+    s_lifecycle_loads_blocked = false;
+    lifecycle_admission_unlock();
+}
+
+esp_err_t audio_engine_stop_all(void)
+{
+    bool acquired = false;
+    esp_err_t rc = suspend_loads_and_stop_all(&acquired);
+    if (acquired) audio_engine_resume_loads();
+    return rc;
 }
 
 esp_err_t audio_engine_deck_seek(uint8_t deck, uint32_t position_ms)
@@ -4174,9 +4688,7 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
          * valid: cancel the handoff and route the next block back to scratch. */
         ae_scratch_handoff_t phase =
             (ae_scratch_handoff_t)scratch_handoff_load(&s_scratch_handoff[deck]);
-        s_scratch_handoff_gain[deck] = 1.0f;
-        atomic_store_bool(&s_scratch_regrab_requested[deck], true);
-        scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
+        scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB);
         ESP_LOGI(TAG, "scratch re-grab D%u phase=%u", (unsigned)deck,
                  (unsigned)phase);
         return true;
@@ -4266,7 +4778,7 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
     atomic_store_bool(&s_scratch_return_paused[deck], false);
     s_scratch_origin_pos_ms[deck] = audio_engine_position_ms_for_deck(deck);
     s_scratch_origin_play_seq[deck] =
-        (uint32_t)audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
+        audio_pcm_timeline_play_seq(&s_pcm_timelines[deck]);
     float head_back = (float)back;
     float frames_per_tick = AUDIO_SCRATCH_DEFAULT_FRAMES_PER_TICK *
         ((float)b->sample_rate / (float)AE_TIMELINE_MAX_RATE);
@@ -4278,11 +4790,9 @@ bool audio_engine_deck_scratch_begin(uint8_t deck)
                          AUDIO_SCRATCH_DEFAULT_HOLD_WINDOWS);
     audio_scratch_seed(&s_scratch_engine[deck], head_back);
     scratch_head_publish(deck);
-    /* Cancel any in-flight release handoff and enter steady scratch at full gain.
-     * Seed the gain before publishing the phase (release) so the output task never
-     * observes NONE with a stale mid-fade gain. */
-    s_scratch_handoff_gain[deck] = 1.0f;
-    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
+    /* The output task cancels any old handoff and restores unity at the next
+     * block boundary before this scratch source is rendered. */
+    scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB);
     atomic_store_bool(&s_scratch_playing[deck], true);
     return true;
 }
@@ -4341,10 +4851,9 @@ void audio_engine_deck_scratch_end(uint8_t deck)
         }
     }
 
-    /* Seed the fade gain before publishing the FADE_OUT phase (release) so the
-     * output task, on observing FADE_OUT, always sees gain == 1.0. */
-    s_scratch_handoff_gain[deck] = 1.0f;
-    scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_FADE_OUT);
+    /* Publish only a command. The output owner seeds gain and enters FADE_OUT
+     * atomically with respect to its own per-sample rendering. */
+    scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_RELEASE);
     /* s_scratch_playing stays true through the handoff; the output task clears it
      * once the fade-in reaches full gain (AE_SCRATCH_HANDOFF_RING). */
 }
@@ -4382,12 +4891,23 @@ static uint32_t beat_fx_echo_capacity_frames(void)
             AUDIO_ENGINE_BEAT_FX_ECHO_MAX_DELAY_MS) / 1000u;
 }
 
-static int16_t *beat_fx_echo_alloc_buffer(uint32_t frames)
+static float *audio_wide_alloc_buffer(uint32_t frames)
 {
 #if AE_FW
-    return (int16_t *)heap_caps_calloc(frames, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return (float *)heap_caps_calloc(frames, sizeof(float),
+                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
-    return (int16_t *)calloc(frames, sizeof(int16_t));
+    return (float *)calloc(frames, sizeof(float));
+#endif
+}
+
+static int16_t *audio_pcm_alloc_buffer(uint32_t samples)
+{
+#if AE_FW
+    return (int16_t *)heap_caps_calloc(samples, sizeof(int16_t),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+    return (int16_t *)calloc(samples, sizeof(int16_t));
 #endif
 }
 
@@ -4396,10 +4916,10 @@ static void init_beat_fx_echo_buffers(void)
     uint32_t frames = beat_fx_echo_capacity_frames();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_beat_fx_echo_left[deck]) {
-            s_beat_fx_echo_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_echo_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_beat_fx_echo_right[deck]) {
-            s_beat_fx_echo_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_echo_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_delay_fx_init(&s_beat_fx_echo[deck],
                             s_beat_fx_echo_left[deck],
@@ -4423,10 +4943,10 @@ static void init_beat_fx_flanger_buffers(void)
         AUDIO_ENGINE_BEAT_FX_ECHO_FALLBACK_SAMPLE_RATE);
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_beat_fx_flanger_left[deck]) {
-            s_beat_fx_flanger_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_flanger_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_beat_fx_flanger_right[deck]) {
-            s_beat_fx_flanger_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_beat_fx_flanger_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_flanger_fx_init(&s_beat_fx_flanger[deck],
                               s_beat_fx_flanger_left[deck],
@@ -4451,10 +4971,10 @@ static void init_pad_fx_buffers(void)
     uint32_t frames = pad_fx_echo_capacity_frames();
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_pad_fx_echo_left[deck]) {
-            s_pad_fx_echo_left[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_pad_fx_echo_left[deck] = audio_wide_alloc_buffer(frames);
         }
         if (!s_pad_fx_echo_right[deck]) {
-            s_pad_fx_echo_right[deck] = beat_fx_echo_alloc_buffer(frames);
+            s_pad_fx_echo_right[deck] = audio_wide_alloc_buffer(frames);
         }
         audio_pad_fx_init_with_echo_buffer(&s_pad_fx[deck],
                                            AUDIO_ENGINE_PAD_FX_ECHO_FALLBACK_SAMPLE_RATE,
@@ -4480,7 +5000,7 @@ static void init_scratch_buffers(void)
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         if (!s_pcm_timeline_storage[deck]) {
             s_pcm_timeline_storage[deck] =
-                beat_fx_echo_alloc_buffer(AE_TIMELINE_CAPACITY_FRAMES * 2u);
+                audio_pcm_alloc_buffer(AE_TIMELINE_CAPACITY_FRAMES * 2u);
         }
         audio_pcm_timeline_init(&s_pcm_timelines[deck],
                                 s_pcm_timeline_storage[deck],
@@ -4501,7 +5021,6 @@ static void init_scratch_buffers(void)
         atomic_store_bool(&s_scratch_capture_writing[deck], false);
         atomic_store_bool(&s_scratch_abort_seek_requested[deck], false);
         atomic_store_bool(&s_scratch_abort_seek_waiting[deck], false);
-        atomic_store_bool(&s_scratch_regrab_requested[deck], false);
         atomic_store_bool(&s_scratch_started_paused[deck], false);
         atomic_store_bool(&s_scratch_return_paused[deck], false);
         atomic_store_bool(&s_pending_pitch_valid[deck], false);
@@ -4514,6 +5033,8 @@ static void init_scratch_buffers(void)
                          __ATOMIC_RELAXED);
         s_scratch_handoff_gain[deck] = 1.0f;
         scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE);
+        s_scratch_handoff_command[deck] = 0u;
+        s_scratch_handoff_applied[deck] = 0u;
         s_scratch_ctx_deck[deck] = deck;
     }
 }
@@ -4546,13 +5067,16 @@ void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *s
 {
     if (!stats) return;
     AE_LOCK();
-    s_limiter_stats.limited_samples += stats->limited_samples;
-    s_limiter_stats.positive_overloads += stats->positive_overloads;
-    s_limiter_stats.negative_overloads += stats->negative_overloads;
-    if (stats->peak_input_abs > s_limiter_stats.peak_input_abs) {
-        s_limiter_stats.peak_input_abs = stats->peak_input_abs;
-    }
+    limiter_stats_record(stats);
     AE_UNLOCK();
+}
+
+void audio_engine_test_get_headphone_routing_snapshot(audio_headphone_mode_t *out_mode,
+                                                       uint8_t *out_cue_mode)
+{
+    uint32_t route = headphone_route_load();
+    if (out_mode) *out_mode = headphone_mode_from_route(route);
+    if (out_cue_mode) *out_cue_mode = cue_mode_from_route(route);
 }
 
 void audio_engine_test_disable_pcm_timeline(uint8_t deck)
@@ -4563,6 +5087,40 @@ void audio_engine_test_disable_pcm_timeline(uint8_t deck)
     audio_pcm_timeline_init(&s_pcm_timelines[deck], NULL, 0u);
     audio_scratch_buffer_init(&s_scratch_buf[deck], NULL, 0u);
     audio_pcm_ring_reset(&s_pcm_rings[deck]);
+}
+
+void audio_engine_test_seed_scratch_handoff(uint8_t deck,
+                                            bool fade_out,
+                                            float gain)
+{
+    if (!deck_is_valid(deck)) return;
+    s_scratch_handoff_gain[deck] = gain;
+    scratch_handoff_store(&s_scratch_handoff[deck], fade_out
+        ? AE_SCRATCH_HANDOFF_FADE_OUT : AE_SCRATCH_HANDOFF_NONE);
+}
+
+void audio_engine_test_publish_scratch_handoff(uint8_t deck, bool release)
+{
+    scratch_handoff_publish_command(deck, release
+        ? AE_SCRATCH_COMMAND_RELEASE : AE_SCRATCH_COMMAND_REGRAB);
+}
+
+void audio_engine_test_apply_scratch_handoff(uint8_t deck)
+{
+    if (!deck_is_valid(deck)) return;
+    scratch_handoff_apply_pending_command(deck);
+}
+
+void audio_engine_test_get_scratch_handoff(uint8_t deck,
+                                           bool *fade_out,
+                                           float *gain)
+{
+    if (!deck_is_valid(deck)) return;
+    if (fade_out) {
+        *fade_out = scratch_handoff_load(&s_scratch_handoff[deck]) ==
+                    AE_SCRATCH_HANDOFF_FADE_OUT;
+    }
+    if (gain) *gain = s_scratch_handoff_gain[deck];
 }
 #endif
 
@@ -4912,7 +5470,8 @@ float audio_engine_get_master_trim(void)
     return master_trim_load();
 }
 
-void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
+static void audio_engine_get_stage_gains(float *deck0_pre, float *deck1_pre,
+                                         float *deck0_post, float *deck1_post)
 {
     float xf0 = 1.0f;
     float xf1 = 1.0f;
@@ -4921,7 +5480,6 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
     uint16_t channel_volume1 = atomic_load_u16(&s_channel_volume[1]);
     uint16_t pregain0 = atomic_load_u16(&s_pregain[0]);
     uint16_t pregain1 = atomic_load_u16(&s_pregain[1]);
-    uint16_t master_volume = atomic_load_u16(&s_master_volume);
     audio_mixer_crossfader_gains(crossfader, &xf0, &xf1);
     if (atomic_load_bool(&s_smart_fader_enabled)) {
         if (crossfader < AUDIO_MIXER_CONTROL_CENTER) {
@@ -4931,20 +5489,27 @@ void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
         }
     }
 
-    if (deck0_gain) {
-        *deck0_gain = audio_mixer_fader_gain(channel_volume0) *
-                      pregain_gain_from_raw(pregain0) *
-                      xf0 *
-                      audio_mixer_fader_gain(master_volume) *
-                      master_trim_load();
+    if (deck0_pre) *deck0_pre = pregain_gain_from_raw(pregain0);
+    if (deck1_pre) *deck1_pre = pregain_gain_from_raw(pregain1);
+    if (deck0_post) {
+        *deck0_post = audio_mixer_fader_gain(channel_volume0) * xf0;
     }
-    if (deck1_gain) {
-        *deck1_gain = audio_mixer_fader_gain(channel_volume1) *
-                      pregain_gain_from_raw(pregain1) *
-                      xf1 *
-                      audio_mixer_fader_gain(master_volume) *
-                      master_trim_load();
+    if (deck1_post) {
+        *deck1_post = audio_mixer_fader_gain(channel_volume1) * xf1;
     }
+}
+
+void audio_engine_get_output_gains(float *deck0_gain, float *deck1_gain)
+{
+    float pre0 = 1.0f;
+    float pre1 = 1.0f;
+    float post0 = 1.0f;
+    float post1 = 1.0f;
+    audio_engine_get_stage_gains(&pre0, &pre1, &post0, &post1);
+    float master = audio_mixer_fader_gain(atomic_load_u16(&s_master_volume)) *
+                   master_trim_load();
+    if (deck0_gain) *deck0_gain = pre0 * post0 * master;
+    if (deck1_gain) *deck1_gain = pre1 * post1 * master;
 }
 
 esp_err_t audio_engine_toggle_pfl(uint8_t deck)
@@ -5058,7 +5623,7 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     out_snapshot->pfl_enabled[1] = atomic_load_bool(&s_pfl_enabled[1]);
     out_snapshot->smart_cfx_enabled = atomic_load_bool(&s_smart_cfx_enabled);
     out_snapshot->smart_fader_enabled = atomic_load_bool(&s_smart_fader_enabled);
-    out_snapshot->limiter = s_limiter_stats;
+    limiter_stats_snapshot(&out_snapshot->limiter);
 }
 
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot)
@@ -5127,7 +5692,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
 #else
         0u;
 #endif
-    out_snapshot->limiter = s_limiter_stats;
+    limiter_stats_snapshot(&out_snapshot->limiter);
     monitor_pcm_link_stats_t monitor_stats = { 0 };
     monitor_pcm_link_get_stats(&monitor_stats);
     out_snapshot->usb_headphone_submitted_blocks = monitor_stats.submitted_blocks;
@@ -5139,6 +5704,17 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     out_snapshot->output_late_count = s_diag_output_late.count;
     out_snapshot->output_late_max_us = s_diag_output_late.max_us;
     out_snapshot->output_late_threshold_us = s_diag_output_late.threshold_us;
+    audio_output_sink_stats_t main_stats = { 0 };
+    audio_output_sink_stats_snapshot(&s_main_sink_stats, &main_stats);
+    out_snapshot->main_sink_write_calls = main_stats.calls;
+    out_snapshot->main_sink_short_writes = main_stats.short_writes;
+    out_snapshot->main_sink_timeouts = main_stats.timeouts;
+    out_snapshot->main_sink_errors = main_stats.errors;
+    out_snapshot->main_sink_failed_blocks = main_stats.failed_blocks;
+    out_snapshot->headphone_sink_errors = __atomic_load_n(
+        &s_headphone_sink_errors, __ATOMIC_RELAXED);
+    out_snapshot->output_sink_faults = __atomic_load_n(
+        &s_output_sink_faults, __ATOMIC_RELAXED);
     out_snapshot->phase_mix_max_us = s_phase.mix_max_us;
     out_snapshot->phase_push_max_us = s_phase.push_max_us;
     out_snapshot->phase_monitor_max_us = s_phase.monitor_max_us;
@@ -5163,27 +5739,28 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
 esp_err_t audio_engine_set_cue_mode(uint8_t mode)
 {
     if (mode > 1) return ESP_ERR_INVALID_ARG;
-    s_cue_mode = mode;
-    s_headphone_mode = mode ? AUDIO_HEADPHONE_MODE_SPLIT_MONO : AUDIO_HEADPHONE_MODE_MASTER_MONO;
+    headphone_route_store(mode ? AUDIO_HEADPHONE_MODE_SPLIT_MONO
+                               : AUDIO_HEADPHONE_MODE_MASTER_MONO,
+                          mode);
     return ESP_OK;
 }
 
 uint8_t audio_engine_get_cue_mode(void)
 {
-    return s_cue_mode;
+    return cue_mode_from_route(headphone_route_load());
 }
 
 esp_err_t audio_engine_set_headphone_mode(audio_headphone_mode_t mode)
 {
     if (mode > AUDIO_HEADPHONE_MODE_SPLIT_MONO) return ESP_ERR_INVALID_ARG;
-    s_headphone_mode = mode;
-    s_cue_mode = mode == AUDIO_HEADPHONE_MODE_MASTER_MONO ? 0 : 1;
+    headphone_route_store(mode,
+                          mode == AUDIO_HEADPHONE_MODE_MASTER_MONO ? 0u : 1u);
     return ESP_OK;
 }
 
 audio_headphone_mode_t audio_engine_get_headphone_mode(void)
 {
-    return s_headphone_mode;
+    return headphone_mode_from_route(headphone_route_load());
 }
 
 

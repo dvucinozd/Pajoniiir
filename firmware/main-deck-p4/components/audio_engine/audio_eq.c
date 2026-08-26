@@ -21,13 +21,6 @@ static float one_pole_alpha(float cutoff_hz, uint32_t sample_rate_hz)
     return omega / (omega + (float)sample_rate_hz);
 }
 
-static int16_t clamp_i16_from_float(float sample)
-{
-    if (sample > 32767.0f) return 32767;
-    if (sample < -32768.0f) return -32768;
-    return (int16_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
-}
-
 float audio_eq_raw_to_gain(uint16_t raw)
 {
     raw = clamp_raw(raw);
@@ -124,7 +117,8 @@ static float process_sample(audio_eq_state_t *eq, float sample, uint8_t channel)
            (high * eq->gain[AUDIO_EQ_BAND_HIGH]);
 }
 
-audio_mixer_frame_t audio_eq_process_frame(audio_eq_state_t *eq, audio_mixer_frame_t in)
+audio_dsp_frame_t audio_eq_process_dsp_frame(audio_eq_state_t *eq,
+                                             audio_dsp_frame_t in)
 {
     if (!eq) return in;
     if (eq->gain_frames_left == 0u) {
@@ -132,8 +126,15 @@ audio_mixer_frame_t audio_eq_process_frame(audio_eq_state_t *eq, audio_mixer_fra
         eq->gain_frames_left = AUDIO_EQ_GAIN_BLOCK;
     }
     eq->gain_frames_left--;
-    return (audio_mixer_frame_t) {
-        .left = clamp_i16_from_float(process_sample(eq, (float)in.left, 0)),
-        .right = clamp_i16_from_float(process_sample(eq, (float)in.right, 1)),
+    return (audio_dsp_frame_t) {
+        .left = process_sample(eq, in.left, 0),
+        .right = process_sample(eq, in.right, 1),
     };
+}
+
+audio_mixer_frame_t audio_eq_process_frame(audio_eq_state_t *eq,
+                                           audio_mixer_frame_t in)
+{
+    return audio_mixer_pcm_from_dsp(audio_eq_process_dsp_frame(
+        eq, audio_mixer_dsp_from_pcm(in, 1.0f)));
 }

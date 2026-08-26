@@ -64,6 +64,13 @@ typedef enum {
     P4_OTA_PULL_RELEASE_UNORDERED,
 } p4_ota_pull_release_order_t;
 
+typedef enum {
+    P4_OTA_PULL_BUNDLE_RELEASE_OK = 0,
+    P4_OTA_PULL_BUNDLE_RELEASE_INVALID_ARG,
+    P4_OTA_PULL_BUNDLE_RELEASE_MISMATCH,
+    P4_OTA_PULL_BUNDLE_RELEASE_NOT_NEWER,
+} p4_ota_pull_bundle_release_result_t;
+
 /* `json` need not be NUL-terminated; `len` bounds it. */
 p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
     const char *json, size_t len, p4_ota_pull_manifest_t *out);
@@ -85,6 +92,13 @@ p4_ota_pull_release_order_t p4_ota_pull_release_compare(
 /* Convenience wrapper used by the pull worker. */
 p4_ota_pull_release_order_t p4_ota_pull_manifest_order(
     const p4_ota_pull_manifest_t *m, const char *running_version);
+
+/* Bind the authenticated bundle to the unauthenticated discovery offer and
+ * repeat the newer-only decision over the signed version. */
+p4_ota_pull_bundle_release_result_t p4_ota_pull_validate_bundle_release(
+    const char *offered_version,
+    const char *signed_version,
+    const char *running_version);
 
 /* Wrap-safe freshness predicate for an offer timestamp expressed in ticks. */
 bool p4_ota_pull_offer_fresh(uint32_t now_ticks,

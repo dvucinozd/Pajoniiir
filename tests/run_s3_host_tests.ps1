@@ -189,9 +189,9 @@ Assert-FileContains `
     -Patterns @("flx4_midi_message_cb_t", "flx4_midi_host_set_message_callback")
 
 Assert-FileContains `
-    -Name "flx4 translator queue" `
+    -Name "flx4 translator scheduler" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("s_flx4_event_queue", "flx4_translator_task", "s_flx4_coalesced_count")
+    -Patterns @("s_flx4_scheduler", "flx4_translator_task", "FLX4_DISCRETE_BUDGET", "FLX4_CONTINUOUS_BUDGET")
 
 Assert-FileNotContains `
     -Name "S3 app excludes retired legacy mode" `
@@ -209,9 +209,24 @@ Assert-FileContains `
     -Patterns @("CTRL_RX_TASK_STACK", "4096", 'xTaskCreate(uart_rx_task, "ctrl_rx", CTRL_RX_TASK_STACK')
 
 Assert-FileContains `
-    -Name "control link semantic send propagates UART errors" `
+    -Name "control link sequence allocation and UART writes share one serializer" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
-    -Patterns @("static esp_err_t send_frame_checked", "return send_frame_checked(frame, `"semantic event`")")
+    -Patterns @("xSemaphoreCreateMutexStatic", "control_link_tx_serializer_send", "return send_fixed_frame(type, id, value, `"semantic event`")")
+
+Assert-FileContains `
+    -Name "flx4 connection desired state retries connected and disconnected reports" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("s_connection_state_dirty", "request_connection_state_replay", "take_pending_connection_state", "complete_connection_state_send")
+
+Assert-FileContains `
+    -Name "flx4 non-VU LEDs converge through desired state and retained USB payloads" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
+    -Patterns @("controller_led_reconciler_observe", "flush_pending_controller_leds", "controller_led_reconciler_complete")
+
+Assert-FileContains `
+    -Name "flx4 USB owner retries the exact dequeued MIDI OUT payload" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c") `
+    -Patterns @("out_retry", "midi_out_retry_submit_result", "submit/completion failures retry it in place")
 
 Assert-FileContains `
     -Name "flx4 continuous controls are coalesced" `
@@ -219,9 +234,19 @@ Assert-FileContains `
     -Patterns @("CTRL_ID_CH1_TRIM", "CTRL_ID_CH2_TRIM", "CTRL_ID_CH1_EQ_HIGH", "CTRL_ID_CH2_EQ_HIGH", "CTRL_ID_CH1_EQ_MID", "CTRL_ID_CH2_EQ_MID", "CTRL_ID_CH1_EQ_LOW", "CTRL_ID_CH2_EQ_LOW", "CTRL_ID_CH1_FILTER", "CTRL_ID_CH2_FILTER", "CTRL_ID_MASTER_VOLUME", "CTRL_ID_HEADPHONE_MIX", "CTRL_ID_HEADPHONE_LEVEL", "CTRL_ID_BEAT_FX_DEPTH")
 
 Assert-FileContains `
-    -Name "flx4 coalescer counts re-push drops" `
+    -Name "s3 preserves each Hercules loop-size encoder detent" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("a failed re-push is a real lost event and must be counted", "s_flx4_dropped_count")
+    -Patterns @("ev->id != CTRL_ID_DECK1_LOOP_SIZE", "ev->id != CTRL_ID_DECK2_LOOP_SIZE", "control_event_scheduler_enqueue_discrete")
+
+Assert-FileContains `
+    -Name "flx4 scheduler exposes saturation and depth telemetry" `
+    -Path (Join-Path $RepoRoot "firmware/common/control_event_scheduler/control_event_scheduler.c") `
+    -Patterns @("stats.fifo_full", "stats.continuous_coalesced", "stats.jog_saturated", "stats.max_fifo_depth")
+
+Assert-FileNotContains `
+    -Name "flx4 producer never receives drains or rewrites the scheduler FIFO" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("xQueueReceive", "xQueueSendToFront", "flx4_try_coalesce_latest", "stash[FLX4_EVENT_QUEUE_LEN]")
 
 Assert-FileContains `
     -Name "flx4 held states survive queue saturation and reconnect" `
@@ -345,7 +370,7 @@ Assert-FileContains `
     -Patterns @("WIFI_MODE_AP", "S3_DEBUG_AP_PASSWORD", "WIFI_AUTH_WPA2_PSK", "esp_wifi_start")
 
 Assert-FileContains `
-    -Name "s3 debug ap uses the accepted default WPA2 credential" `
+    -Name "s3 debug ap keeps WPA2 transport protection" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/include/s3_debug_ap.h") `
     -Patterns @('S3_DEBUG_AP_PASSWORD "Pajoniiir"')
 
@@ -365,9 +390,29 @@ Assert-FileContains `
     -Patterns @(
         "/update", "/api/firmware", "/api/ota/s3", "X-DDJ-OTA",
         "s3_api_request_allowed(req, true)", "S3_DEBUG_AP_IP", "X-DDJ-Control",
-        "s3_ota_policy_header_valid", "ddj_ota_manifest_parse",
-        "ddj_ota_manifest_verify_signature", ".ddjota"
+        "X-Pajoniiir-Maintenance", "s3_debug_auth_check", "429 Too Many Requests",
+        "s3_ota_http_process", ".ddjota"
     )
+
+Assert-FileContains `
+    -Name "s3 debug ap publishes a bounded maintenance code and auto shuts down" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("S3_DEBUG_AUTH_TOKEN_MIN", "esp_random", "s3_debug_ap_set_token_callback", "S3_DEBUG_AP_IDLE_TIMEOUT_MS", "esp_timer_start_once")
+
+Assert-FileContains `
+    -Name "s3 OTA production HTTP core validates and bounds every upload before flash" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_ota_http.c") `
+    -Patterns @(
+        "S3_OTA_MAX_IMAGE_SIZE", "s3_ota_upload_guard_init",
+        "s3_ota_upload_guard_check", "ddj_ota_manifest_parse",
+        "ddj_ota_manifest_verify_signature", "s3_ota_policy_header_valid",
+        "s3_ota_begin", "s3_ota_write", "s3_ota_finish", "s3_ota_abort"
+    )
+
+Assert-FileContains `
+    -Name "s3 AP publishes netif only after DHCP and IP configuration succeed" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
+    -Patterns @("s3_debug_ap_netif_ensure", "esp_netif_destroy_default_wifi", "if (rc == ESP_OK) s_ap_netif =")
 
 Assert-FileContains `
     -Name "s3 OTA initializes before mandatory subsystem startup" `
@@ -389,7 +434,12 @@ Assert-FileContains `
 # .s3bin (skipped with a warning when python is unavailable).
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
-    foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci")) {
+    Invoke-Step `
+        -Name "controller profile web converter" `
+        -WorkingDirectory (Join-Path $RepoRoot "tests/controller_profile_converter") `
+        -Executable $python.Source `
+        -Arguments @("-m", "unittest", "-v", "test_convert_web_profile.py")
+    foreach ($fixtureId in @("pioneer_ddj_flx4", "generic_midi_ci", "hercules_djcontrol_inpulse_500")) {
         Write-Host "==> controller profile fixture is up to date: $fixtureId"
         $fixtureJson = Join-Path $RepoRoot "controllers/$fixtureId/profile.json"
         $fixtureBin = Join-Path $RepoRoot "controllers/$fixtureId/profile.s3bin"
@@ -425,14 +475,29 @@ Assert-FileContains `
     -Patterns @("handle_profile_frame", "cp_xfer_rx_begin", "cp_xfer_rx_chunk", "cp_xfer_rx_end", "send_profile_reply_ack", "control_link_get_stored_profile")
 
 Assert-FileContains `
-    -Name "s3 routes MIDI through the dynamic profile with FLX4 fallback" `
+    -Name "s3 binds MIDI mapping to the current controller connection" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
-    -Patterns @("controller_profile_runtime_active", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
+    -Patterns @("controller_profile_runtime_bound_to", "connection.connection_epoch", "controller_profile_runtime_map", "flx4_map_message", "control_link_set_profile_activate_cb")
 
 Assert-FileContains `
-    -Name "s3 LED output prefers the dynamic profile with FLX4 fallback" `
+    -Name "controller profile runtime lock is allocation-free and mandatory" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c") `
+    -Patterns @("StaticSemaphore_t s_lock_storage", "xSemaphoreCreateMutexStatic(&s_lock_storage)", "configASSERT(s_lock)")
+
+Assert-FileNotContains `
+    -Name "controller profile runtime has no dynamic mutex fallback" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c") `
+    -Patterns @("xSemaphoreCreateMutex()", "if (s_lock) xSemaphoreTake", "if (s_lock) xSemaphoreGive")
+
+Assert-FileContains `
+    -Name "s3 LED output drops missing dynamic mappings without FLX4 fallback" `
     -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/control_link/control_link_uart.c") `
-    -Patterns @("controller_profile_runtime_map_led", "flx4_led_midi_build_packet")
+    -Patterns @("controller_profile_runtime_map_led", "flx4_midi_host_builtin_flx4_active", "controller_output_select_route")
+
+Assert-FileContains `
+    -Name "s3 disconnect clears profile, map, scheduler, and held state" `
+    -Path (Join-Path $RepoRoot "firmware/control-board-s3/main/app_main.c") `
+    -Patterns @("controller_profile_runtime_clear", "flx4_map_init", "control_event_scheduler_reset", "control_held_state_release_all")
 
 # The 0xA6 bulk codec and the profile-transfer receiver are kept byte-for-byte
 # identical on the S3 and P4 sides so the link cannot disagree on the wire.
@@ -483,6 +548,46 @@ try {
 
 $tests = @(
     @{
+        Name = "firmware_boot_gate"
+        Dir = "tests/firmware_boot_gate"
+        Target = "test_firmware_boot_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_firmware_boot_gate.exe",
+            "test_firmware_boot_gate.c",
+            "../../firmware/common/firmware_health/firmware_boot_gate.c"
+        )
+    },
+    @{
+        Name = "controller_output_policy"
+        Dir = "tests/controller_output_policy"
+        Target = "test_controller_output_policy.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_controller_output_policy.exe",
+            "test_controller_output_policy.c",
+            "../../firmware/control-board-s3/components/control_link/controller_output_policy.c"
+        )
+    },
+    @{
+        Name = "control_event_scheduler"
+        Dir = "tests/control_event_scheduler"
+        Target = "test_control_event_scheduler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../control_link_protocol/stubs",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-I../../firmware/common/control_state_reconciler/include",
+            "-I../../firmware/common/control_event_scheduler/include",
+            "-o", "test_control_event_scheduler.exe",
+            "test_control_event_scheduler.c",
+            "../../firmware/common/control_event_scheduler/control_event_scheduler.c"
+        )
+    },
+    @{
         Name = "control_state_reconciler"
         Dir = "tests/control_state_reconciler"
         Target = "test_control_state_reconciler.exe"
@@ -494,6 +599,44 @@ $tests = @(
             "-I../../firmware/common/control_state_reconciler/include",
             "-o", "test_control_state_reconciler.exe",
             "test_control_state_reconciler.c"
+        )
+    },
+    @{
+        Name = "control_link_tx_serializer"
+        Dir = "tests/control_link_tx_serializer"
+        Target = "test_control_link_tx_serializer.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_control_link_tx_serializer.exe",
+            "test_control_link_tx_serializer.c",
+            "../../firmware/control-board-s3/components/control_link/control_link_tx_serializer.c",
+            "-pthread"
+        )
+    },
+    @{
+        Name = "controller_led_reconciler"
+        Dir = "tests/controller_led_reconciler"
+        Target = "test_controller_led_reconciler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_controller_led_reconciler.exe",
+            "test_controller_led_reconciler.c",
+            "../../firmware/control-board-s3/components/control_link/controller_led_reconciler.c"
+        )
+    },
+    @{
+        Name = "midi_out_retry_state"
+        Dir = "tests/midi_out_retry_state"
+        Target = "test_midi_out_retry_state.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-o", "test_midi_out_retry_state.exe",
+            "test_midi_out_retry_state.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/midi_out_retry_state.c"
         )
     },
     @{
@@ -509,6 +652,25 @@ $tests = @(
             "-o", "test_flx4_midi_host.exe",
             "test_flx4_midi_host.c",
             "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c"
+        )
+    },
+    @{
+        Name = "flx4_midi_host_production"
+        Dir = "tests/flx4_midi_host_production"
+        Target = "test_flx4_midi_host_production.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DFLX4_MIDI_HOST_PRODUCTION_TEST",
+            "-DCONFIG_DDJ_FLX4_DUMP_USB_CONFIG_DESCRIPTOR=0",
+            "-DCONFIG_DDJ_FLX4_USB_AUDIO_HEADPHONES=0",
+            "-DCONFIG_DDJ_FLX4_USB_AUDIO_RING_AUTOSTART=0",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/flx4_midi_host/include",
+            "-I../../firmware/control-board-s3/components/control_link/include",
+            "-o", "test_flx4_midi_host_production.exe",
+            "test_flx4_midi_host_production.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/flx4_midi_host.c",
+            "../../firmware/control-board-s3/components/flx4_midi_host/midi_out_retry_state.c"
         )
     },
     @{
@@ -599,12 +761,26 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
             "-DCONTROLLER_PROFILE_RUNTIME_PC_TEST",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/control_link/include",
             "-I../../firmware/control-board-s3/components/controller_profile_runtime/include",
             "-I../../firmware/control-board-s3/components/controller_profile/include",
             "-o", "test_controller_profile_runtime.exe",
             "test_controller_profile_runtime.c",
             "../../firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c",
             "../../firmware/control-board-s3/components/controller_profile/controller_profile.c"
+        )
+    },
+    @{
+        Name = "s3_debug_auth"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_auth.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_auth.exe",
+            "test_s3_debug_auth.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_auth.c"
         )
     },
     @{
@@ -639,6 +815,48 @@ $tests = @(
         )
     },
     @{
+        Name = "s3_ota_upload_guard"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_ota_upload_guard.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_ota_upload_guard.exe",
+            "test_s3_ota_upload_guard.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_upload_guard.c"
+        )
+    },
+    @{
+        Name = "s3_ota_http"
+        Dir = "tests/s3_ota_http"
+        Target = "test_s3_ota_http.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-I../../firmware/control-board-s3/components/s3_ota/include",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_s3_ota_http.exe",
+            "test_s3_ota_http.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_http.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_ota_upload_guard.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
+        )
+    },
+    @{
+        Name = "s3_debug_ap_netif_stage"
+        Dir = "tests/s3_debug_ap"
+        Target = "test_s3_debug_ap_netif_stage.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_debug_ap/include",
+            "-o", "test_s3_debug_ap_netif_stage.exe",
+            "test_s3_debug_ap_netif_stage.c",
+            "../../firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap_netif_stage.c"
+        )
+    },
+    @{
         Name = "s3_ota_policy"
         Dir = "tests/s3_ota"
         Target = "test_s3_ota_policy.exe"
@@ -647,6 +865,22 @@ $tests = @(
             "-I../../firmware/control-board-s3/components/s3_ota/include",
             "-o", "test_s3_ota_policy.exe",
             "test_s3_ota_policy.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
+        )
+    },
+    @{
+        Name = "s3_ota_runtime"
+        Dir = "tests/s3_ota_runtime"
+        Target = "test_s3_ota_runtime.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-Istubs", "-I../support/stubs",
+            "-I../../firmware/control-board-s3/components/s3_ota/include",
+            "-I../../firmware/common/ota_manifest/include",
+            "-I../../firmware/common/firmware_health/include",
+            "-o", "test_s3_ota_runtime.exe",
+            "test_s3_ota_runtime.c",
+            "../../firmware/control-board-s3/components/s3_ota/s3_ota.c",
             "../../firmware/control-board-s3/components/s3_ota/s3_ota_policy.c"
         )
     },
@@ -660,6 +894,19 @@ $tests = @(
             "-o", "test_ota_manifest.exe",
             "test_ota_manifest.c",
             "../../firmware/common/ota_manifest/ota_manifest.c"
+        )
+    },
+    @{
+        Name = "ota_manifest_crypto"
+        Dir = "tests/ota_manifest_crypto"
+        Target = "test_ota_manifest_crypto.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Werror", "-std=gnu11",
+            "-Istubs",
+            "-I../../firmware/common/ota_manifest/include",
+            "-o", "test_ota_manifest_crypto.exe",
+            "test_ota_manifest_crypto.c",
+            "../../firmware/common/ota_manifest/ota_manifest_crypto.c"
         )
     },
     @{

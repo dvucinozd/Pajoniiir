@@ -112,8 +112,8 @@ asserted by the `control_link_protocol` host test.
 | `deckN.play` `deckN.cue` `deckN.shift` `deckN.to_start` `deckN.sync` `deckN.tempo_range` `deckN.loop_in` `deckN.loop_out` `deckN.reloop_exit` `deckN.loop_halve` `deckN.loop_double` `deckN.beat_jump_back` `deckN.beat_jump_forward` `deckN.jog_touch` `deckN.jog_search_touch` `deckN.pfl` | BUTTON | 0/1 |
 | `deckN.pad_mode_hot_cue` `deckN.pad_mode_beat_loop` `deckN.pad_mode_beat_jump` `deckN.pad_mode_pad_fx1` `deckN.pad_mode_pad_fx2` | BUTTON | pad mode select |
 | `deckN.pad_action` | BUTTON | packed value; use `pad_bank` |
-| `deckN.ext_action` | BUTTON | packed value; use `ext_action` with action names `censor`, `sync_master`, `reloop_stop`, `loop_adjust_in`, `loop_adjust_out`, `quantize` |
-| `deckN.jog_scratch` `deckN.jog_bend` `deckN.jog_search` | ENCODER | signed delta |
+| `deckN.ext_action` | BUTTON | packed value; use `ext_action` with action names `censor`, `sync_master`, `reloop_stop`, `loop_adjust_in`, `loop_adjust_out`, `quantize`, `sync_off` |
+| `deckN.jog_scratch` `deckN.jog_bend` `deckN.jog_search` `deckN.loop_size` | ENCODER | signed delta; `loop_size` halves on a negative step and doubles on a positive step when a loop is active |
 | `deckN.tempo` | PITCH | 14-bit |
 | `mixer.ch1_volume` `mixer.ch2_volume` `mixer.crossfader` `mixer.ch1_trim` `mixer.ch2_trim` `mixer.ch1_eq_high` `mixer.ch2_eq_high` `mixer.ch1_eq_mid` `mixer.ch2_eq_mid` `mixer.ch1_eq_low` `mixer.ch2_eq_low` `mixer.ch1_filter` `mixer.ch2_filter` `mixer.headphone_mix` | PITCH | 14-bit |
 | `browser.delta` `browser.shift_delta` | ENCODER | relative |
@@ -131,12 +131,22 @@ controller-specific MIDI OUT.
 
 | `kind` | Fields | Behaviour |
 | --- | --- | --- |
-| `note` | `led`, `deck_status` (2-element array) or `status` + `"deck": "any"`, `data1`, optional `on`/`off`/`blink` (default `0x7F`/`0x00`/`0x7F`) | state 0 → off byte, 1 → on byte, 2 → blink byte. |
+| `note` | `led`, `deck_status` (2-element array) or `status` + `deck` (`0`, `1`, or `"any"`), `data1`, optional `on`/`off`/`blink` (default `0x7F`/`0x00`/`0x7F`) | state 0 → off byte, 1 → on byte, 2 → blink byte. |
 | `cc_value` | same addressing, no on/off | data byte = LED state value `& 0x7F` (value passthrough, e.g. VU meter level). |
-| `note_bank` | `led_bank`, `deck_status`, `first_data1`, `count` | Compiler expands to `count` sequential `note` entries for pad LED banks. |
+| `note_bank` | `led_bank`, `deck_status`, `first_data1`, `count`, optional `on`/`off`/`blink` | Compiler expands to `count` sequential `note` entries for pad LED banks and applies the same state bytes to each entry. Defaults match `note`; controller-specific RGB Data2 values can override them. |
 
 `deck_status: ["0x90", "0x91"]` expands to two entries (deck 0 and deck 1).
-`"deck": "any"` produces one entry matching any deck (global-status LEDs).
+`"deck": 0` or `1` represents one deck-specific address; `"deck": "any"`
+produces one entry matching any deck (global-status LEDs). The single-deck form
+is required when a controller exposes only one deck LED or uses different
+`data1` values between decks.
+
+The optional `tools/controller_profile/convert_web_profile.py` bridge is strict:
+decimal and `0x` numeric forms are range-checked, explicit zero values are
+preserved, unsupported semantic IDs/key-lock controls are rejected, and every
+returned profile is compiled in memory before JSON is written. It never derives
+LED addresses from input pad ranges. Deck-specific feedback addresses are kept
+as independent outputs rather than silently copying Deck 1 to Deck 2.
 
 LED names mirror `control_link.h`: `cue`, `play`, `pfl`, `vu_meter`,
 `pad_mode_*`, `sync`, `loop_in`, `loop_out`, `smart_cfx`, `smart_fader`,

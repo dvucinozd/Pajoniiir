@@ -88,6 +88,9 @@ static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
 static deck_core_s3_debug_ap_status_cb_t s_s3_debug_ap_status_cb;
+static deck_core_s3_debug_ap_token_cb_t s_s3_debug_ap_token_cb;
+static uint16_t          s_s3_debug_token_hi;
+static bool              s_s3_debug_token_hi_valid;
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -1240,6 +1243,22 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
     }
 }
 
+static void on_loop_size_delta(uint8_t deck, int16_t delta, deck_state_t *state)
+{
+    uint32_t steps = delta < 0 ? (uint32_t)(-(int32_t)delta) : (uint32_t)delta;
+    /* A uint32_t millisecond loop reaches its minimum or overflow guard in at
+     * most 32 binary steps. Bound a coalesced encoder burst so the deck task
+     * cannot spend unbounded time replaying a saturated relative delta. */
+    if (steps > 32u) {
+        steps = 32u;
+    }
+    const ctrl_deck_control_t control = delta < 0 ? CTRL_DECK_CTL_LOOP_HALVE
+                                                  : CTRL_DECK_CTL_LOOP_DOUBLE;
+    for (uint32_t i = 0u; i < steps; ++i) {
+        on_loop_control(deck, control, state);
+    }
+}
+
 static button_id_t button_for_event(const ctrl_event_t *ev)
 {
     if (ev && (ev->id == CTRL_ID_LOAD_DECK1 ||
@@ -1606,10 +1625,36 @@ static void on_state_event(const ctrl_event_t *ev)
         return;
     }
     if (ev->id == CTRL_ID_S3_DEBUG_AP) {
+        if (ev->value == CTRL_S3_DEBUG_AP_OFF ||
+            ev->value == CTRL_S3_DEBUG_AP_STARTING ||
+            ev->value == CTRL_S3_DEBUG_AP_ERROR) {
+            s_s3_debug_token_hi = 0u;
+            s_s3_debug_token_hi_valid = false;
+            if (s_s3_debug_ap_token_cb) s_s3_debug_ap_token_cb(0u);
+        }
         if (s_s3_debug_ap_status_cb) {
             s_s3_debug_ap_status_cb((uint8_t)ev->value);
         }
         ESP_LOGI(TAG, "S3 Debug AP status=%d", ev->value);
+        return;
+    }
+    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_HI) {
+        if (ev->value >= 0 && ev->value <= 999) {
+            s_s3_debug_token_hi = (uint16_t)ev->value;
+            s_s3_debug_token_hi_valid = true;
+        }
+        return;
+    }
+    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_LO) {
+        if (s_s3_debug_token_hi_valid && ev->value >= 0 && ev->value <= 999) {
+            uint32_t token = (uint32_t)s_s3_debug_token_hi * 1000u +
+                             (uint16_t)ev->value;
+            s_s3_debug_token_hi_valid = false;
+            if (s_s3_debug_ap_token_cb &&
+                (token == 0u || (token >= 100000u && token <= 999999u))) {
+                s_s3_debug_ap_token_cb(token);
+            }
+        }
         return;
     }
     if (ev->id != CTRL_ID_FLX4_CONNECTION) {
@@ -2192,6 +2237,13 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
                      (unsigned)deck + 1,
                      state->quantize_enabled ? "ON" : "OFF");
             return true;
+        case CTRL_DECK_EXT_ACTION_SYNC_OFF:
+            if (state->sync_enabled) {
+                state->sync_enabled = false;
+                publish_flx4_led_snapshot(false);
+            }
+            ESP_LOGI(TAG, "deck %u sync -> OFF", (unsigned)deck + 1);
+            return true;
         default:
             return true;
         }
@@ -2718,7 +2770,9 @@ static void deck_task(void *arg)
             on_button(deck, button_for_event(&ev), ev.value != 0);
             break;
         case CTRL_EV_JOG:
-            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
+            if (control_link_id_control(ev.id) == CTRL_DECK_CTL_LOOP_SIZE) {
+                on_loop_size_delta(deck, ev.value, &s_decks[deck]);
+            } else if (control_link_id_control(ev.id) == CTRL_DECK_CTL_JOG_SEARCH) {
                 on_jog_search(deck, ev.value);
             } else {
                 on_jog(deck, control_link_id_control(ev.id), ev.value);
@@ -2938,6 +2992,11 @@ void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
     s_s3_debug_ap_status_cb = cb;
 }
 
+void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb)
+{
+    s_s3_debug_ap_token_cb = cb;
+}
+
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
 {
     deck_core_loop_display_t out = {0};
@@ -3143,7 +3202,9 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         on_button(deck, button_for_event(ev), ev->value != 0);
         break;
     case CTRL_EV_JOG:
-        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
+        if (control_link_id_control(ev->id) == CTRL_DECK_CTL_LOOP_SIZE) {
+            on_loop_size_delta(deck, ev->value, &s_decks[deck]);
+        } else if (control_link_id_control(ev->id) == CTRL_DECK_CTL_JOG_SEARCH) {
             on_jog_search(deck, ev->value);
         } else {
             on_jog(deck, control_link_id_control(ev->id), ev->value);

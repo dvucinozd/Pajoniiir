@@ -2,6 +2,7 @@
 JC4880P443C_I_W/
 upstream/
 vendor/
+tmp/
 
 
 # ESP-IDF / embedded build outputs

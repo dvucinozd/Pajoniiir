@@ -37,7 +37,8 @@
 #define CTRL_TYPE_PITCH    0x03  // id=0, val=0–16383
 #define CTRL_TYPE_HEARTBEAT 0x04 // id=0, val=uptime seconds
 
-// P4 → S3 command types
+// P4 → S3 command types; CTRL_TYPE_STATE also carries the S3 boot challenge
+// in the reverse direction so P4 can prove the bidirectional link is live.
 #define CTRL_TYPE_LED      0x81  // id=led_id, val=0 off / 1 on / 2 blink
 #define CTRL_TYPE_STATE    0x82  // id=state_id, val=state value (reserved)
 
@@ -79,6 +80,7 @@ typedef enum {
     CTRL_DECK_CTL_JOG_SEARCH,
     CTRL_DECK_CTL_JOG_SEARCH_TOUCH,
     CTRL_DECK_CTL_EXT_ACTION,
+    CTRL_DECK_CTL_LOOP_SIZE,
 } ctrl_deck_control_t;
 
 #define CTRL_NS_DECK1   0x10
@@ -195,6 +197,7 @@ typedef enum {
     CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN,
     CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT,
     CTRL_DECK_EXT_ACTION_QUANTIZE,
+    CTRL_DECK_EXT_ACTION_SYNC_OFF,
 } ctrl_deck_ext_action_t;
 
 #define CTRL_DECK_EXT_VALUE(action, pressed) \
@@ -220,7 +223,7 @@ typedef enum {
  * spans 0x70..0x7F, so offsets 0x0D..0x0F below are its final three slots.
  * Once 0x7F is used the namespace is full; any further global IDs live as flat
  * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
- * reserved as headroom, so 0x83..0x85 are the current overflow allocations.
+ * reserved as headroom, so 0x83..0x89 are the current overflow allocations.
  * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
  * control_link_protocol host test asserts the two sides agree.
  */
@@ -231,6 +234,10 @@ typedef enum {
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
 #define CTRL_ID_S3_DEBUG_AP            0x85
+#define CTRL_ID_S3_BOOT_CHALLENGE      0x86
+#define CTRL_ID_S3_BOOT_ACK            0x87
+#define CTRL_ID_S3_DEBUG_TOKEN_HI      0x88
+#define CTRL_ID_S3_DEBUG_TOKEN_LO      0x89
 
 typedef enum {
     CTRL_S3_DEBUG_AP_OFF = 0,
@@ -296,9 +303,10 @@ typedef struct {
 } ctrl_firmware_report_t;
 
 /* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
- * product string (CTRL_DESC_PRODUCT_MAX bytes, NUL-padded). */
+ * connection epoch u32 LE, then product string (CTRL_DESC_PRODUCT_MAX bytes,
+ * NUL-padded). */
 #define CTRL_DESC_PRODUCT_MAX 32
-#define CTRL_DESC_PAYLOAD_LEN (6 + CTRL_DESC_PRODUCT_MAX)
+#define CTRL_DESC_PAYLOAD_LEN (10 + CTRL_DESC_PRODUCT_MAX)
 #define CTRL_DESC_CAP_MIDI_IN   0x0001
 #define CTRL_DESC_CAP_MIDI_OUT  0x0002
 #define CTRL_DESC_CAP_USB_AUDIO 0x0004
@@ -307,6 +315,7 @@ typedef struct {
     uint16_t vid;
     uint16_t pid;
     uint16_t caps;
+    uint32_t connection_epoch;
     char product[CTRL_DESC_PRODUCT_MAX + 1];
 } ctrl_descriptor_report_t;
 
@@ -458,6 +467,7 @@ typedef enum {
 #define CTRL_ID_DECK1_JOG_SEARCH            (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK1_JOG_SEARCH_TOUCH      (CTRL_NS_DECK1 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 #define CTRL_ID_DECK1_EXT_ACTION            (CTRL_NS_DECK1 + CTRL_DECK_CTL_EXT_ACTION)
+#define CTRL_ID_DECK1_LOOP_SIZE             (CTRL_NS_DECK1 + CTRL_DECK_CTL_LOOP_SIZE)
 
 #define CTRL_ID_DECK2_PLAY                  (CTRL_NS_DECK2 + CTRL_DECK_CTL_PLAY)
 #define CTRL_ID_DECK2_CUE                   (CTRL_NS_DECK2 + CTRL_DECK_CTL_CUE)
@@ -488,6 +498,7 @@ typedef enum {
 #define CTRL_ID_DECK2_JOG_SEARCH            (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH)
 #define CTRL_ID_DECK2_JOG_SEARCH_TOUCH      (CTRL_NS_DECK2 + CTRL_DECK_CTL_JOG_SEARCH_TOUCH)
 #define CTRL_ID_DECK2_EXT_ACTION            (CTRL_NS_DECK2 + CTRL_DECK_CTL_EXT_ACTION)
+#define CTRL_ID_DECK2_LOOP_SIZE             (CTRL_NS_DECK2 + CTRL_DECK_CTL_LOOP_SIZE)
 
 #define CTRL_ID_CH1_VOLUME        (CTRL_NS_MIXER | 0x00)
 #define CTRL_ID_CH2_VOLUME        (CTRL_NS_MIXER | 0x01)
@@ -522,6 +533,12 @@ esp_err_t control_link_init(void);
 // Safe to call from any task.
 esp_err_t control_link_send_semantic(uint8_t type, uint8_t id, int16_t value);
 
+// Register a callback for P4 -> S3 CTRL_TYPE_STATE frames not consumed by the
+// control-link component itself. Invoked from the UART RX task.
+typedef void (*control_link_state_cb_t)(uint8_t id, int16_t value);
+void control_link_set_state_cb(control_link_state_cb_t cb);
+bool control_link_rx_task_started(void);
+
 // Send a CTRL_TYPE_HEARTBEAT frame with the current uptime in seconds.
 // Call periodically (e.g. every 5 s) so the P4 can detect S3 disconnects.
 // Safe to call from any task.
@@ -546,7 +563,8 @@ esp_err_t control_link_send_firmware_report(const ctrl_firmware_report_t *rep);
 // and the stored blob is left available via control_link_get_stored_profile().
 typedef bool (*control_link_profile_activate_cb_t)(const uint8_t *blob,
                                                    size_t len,
-                                                   uint16_t vid, uint16_t pid);
+                                                   uint16_t vid, uint16_t pid,
+                                                   uint32_t connection_epoch);
 void control_link_set_profile_activate_cb(control_link_profile_activate_cb_t cb);
 
 // Access the last fully received + CRC-validated profile blob (valid after an

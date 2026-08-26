@@ -20,13 +20,20 @@
 typedef struct {
     int16_t *frames;
     uint32_t capacity;
-    /* 32-bit published cursors are deliberate: ESP32-P4 is RV32, so 64-bit
-     * atomics in the per-frame SPSC path require expensive helper/critical
-     * sequences. They reset on every track discontinuity and cover >24 h at
-     * 48 kHz. Physical indices remove division/modulo from push/pop. */
+    /* Low 32 bits stay in the per-frame SPSC path: ESP32-P4 is RV32, so 64-bit
+     * atomics there would require expensive helpers. Epochs advance only when
+     * a low cursor wraps; a per-cursor version makes the rare epoch/low update
+     * coherent for public 64-bit snapshots. Retained spans are bounded by
+     * capacity (< 2^31), so hot-path availability uses unsigned distance. */
     uint32_t oldest_seq;
     uint32_t play_seq;
     uint32_t write_seq;
+    uint32_t oldest_epoch;
+    uint32_t play_epoch;
+    uint32_t write_epoch;
+    uint32_t oldest_version;
+    uint32_t play_version;
+    uint32_t write_version;
     uint32_t play_index;
     uint32_t write_index;
     uint32_t generation;
@@ -49,7 +56,7 @@ bool audio_pcm_timeline_pop(audio_pcm_timeline_t *t, audio_mixer_frame_t *out);
  * and the consumer must be excluded while it runs. */
 uint32_t audio_pcm_timeline_drop_newest(audio_pcm_timeline_t *t, uint32_t frames);
 
-/* Random-access read by monotonic absolute frame sequence. */
+/* Random-access read by monotonic 64-bit frame sequence. */
 bool audio_pcm_timeline_read(const audio_pcm_timeline_t *t, uint64_t seq,
                              audio_mixer_frame_t *out);
 

@@ -40,6 +40,7 @@ static void test_descriptor_roundtrip(void)
     in.vid = 0x2B73;
     in.pid = 0x0045;
     in.caps = CTRL_DESC_CAP_MIDI_IN | CTRL_DESC_CAP_MIDI_OUT | CTRL_DESC_CAP_USB_AUDIO;
+    in.connection_epoch = 0x78563412u;
     snprintf(in.product, sizeof(in.product), "Pioneer DDJ-FLX4");
 
     uint8_t frame[CTRL_BULK_MAX_FRAME];
@@ -56,6 +57,7 @@ static void test_descriptor_roundtrip(void)
     ctrl_descriptor_report_t out;
     assert(ctrl_bulk_decode_descriptor(p.buf, (size_t)r, &out));
     assert(out.vid == in.vid && out.pid == in.pid && out.caps == in.caps);
+    assert(out.connection_epoch == in.connection_epoch);
     assert(strcmp(out.product, "Pioneer DDJ-FLX4") == 0);
     printf("  descriptor roundtrip                              PASS\n");
 }

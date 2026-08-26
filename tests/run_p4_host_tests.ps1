@@ -91,6 +91,25 @@ function Assert-FileContains {
     }
 }
 
+function Assert-FilePatternsOrdered {
+    param(
+        [string]$Name,
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$LiteralPatterns
+    )
+
+    Write-Host "==> static $Name"
+    $content = Get-Content -LiteralPath $Path -Raw
+    $searchFrom = 0
+    foreach ($pattern in $LiteralPatterns) {
+        $index = $content.IndexOf($pattern, $searchFrom, [System.StringComparison]::Ordinal)
+        if ($index -lt 0) {
+            throw "$Name missing ordered pattern '$pattern' after offset $searchFrom in $Path"
+        }
+        $searchFrom = $index + $pattern.Length
+    }
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -424,9 +443,24 @@ Assert-FileContains `
     -LiteralPatterns @("ANLZ_PARSE_LOCAL", "static ANLZ_PARSE_LOCAL bool s_anlz_short_read")
 
 Assert-FileContains `
-    -Name "p4 discarded track load releases the deck audio session, not just the UI" `
+    -Name "p4 discarded track load retires only its own generated audio session" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
-    -LiteralPatterns @("ui_library_release_deck_audio", "audio_engine_deck_stop(deck)")
+    -LiteralPatterns @("audio_session_generation", "ui_library_release_deck_audio_session", "audio_engine_deck_stop_session")
+
+Assert-FileContains `
+    -Name "p4 UI load worker always has a fixed completion token" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("ui_track_load_result_t result_storage = {0}", "sizeof(ui_track_load_result_t) <= UI_TRACK_LOAD_STACK / 2u", "xQueueSend(s_track_load_result_q, result, portMAX_DELAY)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 UI load completion no longer depends on heap allocation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @("heap_caps_calloc(1, sizeof(*result)", "calloc(1, sizeof(*result)", "track load result allocation failed")
+
+Assert-FileContains `
+    -Name "p4 deck LOAD lifecycle is serialized and generation-owned" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("lifecycle_begin_load", "lifecycle_advance_generation", "audio_engine_deck_stop_session")
 
 Assert-FileContains `
     -Name "deck core owns coherent loaded-track publication" `
@@ -476,12 +510,20 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "s3 debug ap status reaches settings ui" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @("deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP")
+    -LiteralPatterns @(
+        "deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP",
+        "deck_core_set_s3_debug_ap_token_cb", "CTRL_ID_S3_DEBUG_TOKEN_HI",
+        "CTRL_ID_S3_DEBUG_TOKEN_LO"
+    )
 
 Assert-FileContains `
     -Name "s3 debug ap settings ui toggle wiring" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("ui_settings_set_s3_debug_ap_toggle_cb", "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)")
+    -LiteralPatterns @(
+        "ui_settings_set_s3_debug_ap_toggle_cb",
+        "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)",
+        "deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token)"
+    )
 
 Assert-FileContains `
     -Name "P4 OTA requires signed bundle before flash begin" `
@@ -924,6 +966,26 @@ Assert-FileContains `
     -LiteralPatterns @("AE_SCRATCH_HANDOFF_FADE_OUT", "AE_SCRATCH_HANDOFF_FADE_IN", "AE_SCRATCH_HANDOFF_RING", "AE_SCRATCH_XFADE_STEP")
 
 Assert-FileContains `
+    -Name "p4 scratch handoff is output-owned and preserves the 64-bit timeline epoch" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("static uint64_t          s_scratch_origin_play_seq", "scratch_handoff_publish_command", "scratch_handoff_apply_pending_command")
+
+Assert-FileContains `
+    -Name "p4 MAIN I2S writes are bounded and STOP wakes the channel" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_output_sink_write_all", "audio_output_mark_sink_fault", "bsp_audio_main_i2s_abort_write")
+
+Assert-FileDoesNotContain `
+    -Name "p4 MAIN I2S output never uses an unbounded driver wait" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("i2s_channel_write(s_main_i2s_tx, frames, bytes, &written, portMAX_DELAY)")
+
+Assert-FileContains `
+    -Name "p4 FLAC cache faults trigger decoder replacement instead of EOF" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @("audio_fw_preload_stream_fault_epoch", "flac_recovery_pending", "ae_flac_recover_decoder")
+
+Assert-FileContains `
     -Name "p4 deck_core gates jog touch to scratch behind CONFIG_AUDIO_SCRATCH_ENABLED (vinyl phase 4)" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
     -LiteralPatterns @("#if CONFIG_AUDIO_SCRATCH_ENABLED", "audio_engine_deck_scratch_begin(deck)", "audio_engine_deck_scratch_move(deck, delta)", "audio_engine_deck_scratch_end(deck)")
@@ -998,10 +1060,20 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("ddj_ota_manifest_verify_signature(header, sizeof(header))", "rc = p4_ota_begin(&manifest);")
 
+Assert-FilePatternsOrdered `
+    -Name "p4 pull OTA binds the signed version before opening the OTA partition" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @("p4_ota_pull_validate_bundle_release", "p4_ota_begin(&manifest)")
+
+Assert-FileContains `
+    -Name "pull OTA publisher derives channel version from a verified signed bundle" `
+    -Path (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
+    -LiteralPatterns @("verify-bundle", '$metadata["version"]')
+
 Assert-FileContains `
     -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
-    -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strncmp(expected_release, s_status.available_release")
+    -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strcmp(expected_release, s_status.available_release)")
 
 Assert-FileContains `
     -Name "controller profile partial init rolls back every runtime resource" `
@@ -1065,7 +1137,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 scratch begin supports a fast re-grab during release handoff" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("s_scratch_regrab_requested[deck], true", "scratch_handoff_store(&s_scratch_handoff[deck], AE_SCRATCH_HANDOFF_NONE)")
+    -LiteralPatterns @("scratch_handoff_publish_command(deck, AE_SCRATCH_COMMAND_REGRAB)", "scratch_handoff_apply_pending_command(d)")
 
 Assert-FileContains `
     -Name "p4 UI position follows the audible scratch head" `
@@ -1224,6 +1296,19 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("atoi(")
 
 $tests = @(
+    @{
+        Name = "ui_load_gate"
+        MinTestsRun = 12
+        Dir = "tests/ui_load_gate"
+        Target = "test_ui_load_gate.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/ui/include",
+            "-o", "test_ui_load_gate.exe",
+            "test_ui_load_gate.c",
+            "../../firmware/main-deck-p4/components/ui/ui_load_gate.c"
+        )
+    },
     @{
         Name = "audio_eof_policy"
         Dir = "tests/audio_eof_policy"
@@ -1425,6 +1510,7 @@ $tests = @(
         Target = "test_audio_engine.exe"
         Args = @(
             "-Wall", "-Wextra", "-std=c99",
+            "-pthread",
             "-DAUDIO_ENGINE_PC_TEST", "-DAUDIO_DECODER_PC_TEST", "-DMEDIA_IO_GATE_STANDALONE_TEST", "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
@@ -1456,6 +1542,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flanger_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_pad_fx.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_output_mixer.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_compressed_cache.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_preload.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
@@ -1604,6 +1691,7 @@ $tests = @(
             "-o", "test_audio_fw_task_context.exe",
             "test_audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c"
         )
     },
@@ -1675,6 +1763,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_resampler"
+        Dir = "tests/audio_resampler"
+        Target = "test_audio_resampler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_resampler.exe",
+            "test_audio_resampler.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_output_mixer"
         Dir = "tests/audio_output_mixer"
         Target = "test_audio_output_mixer.exe"
@@ -1692,6 +1793,18 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_mixer.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_resampler.c",
             "-lm"
+        )
+    },
+    @{
+        Name = "audio_output_sink"
+        Dir = "tests/audio_output_sink"
+        Target = "test_audio_output_sink.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_output_sink.exe",
+            "test_audio_output_sink.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_sink.c"
         )
     },
     @{
@@ -2214,12 +2327,14 @@ $tests = @(
         # the one whose write pattern matters. Runs the real app_settings.c
         # against the fake RTOS and a counting NVS fake.
         Name = "app_settings"
-        MinTestsRun = 29
+        MinTestsRun = 46
         Dir = "tests/app_settings"
         Target = "test_app_settings.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
             "-DAPP_SETTINGS_HOST_TEST",
+            "-DCONFIG_BSP_PCM5102A_MAIN_OUT=1",
+            "-DCONFIG_BSP_ES8311_MONITOR=0",
             "-Istubs",
             "-I../support/rtos",
             "-I../support/stubs",
@@ -2236,7 +2351,7 @@ $tests = @(
         # the queue is full and which must never be lost - and until now every
         # one of those rules was guarded only by grepping the source.
         Name = "control_link_uart"
-        MinTestsRun = 62
+        MinTestsRun = 69
         Dir = "tests/control_link_uart"
         Target = "test_control_link_uart.exe"
         Args = @(
@@ -2591,6 +2706,16 @@ Assert-FileContains `
     -Name "p4 display allocates only the framebuffer the backend actually uses" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
     -LiteralPatterns @(".num_fbs            = BSP_LCD_FRAMEBUFFER_COUNT", "_Static_assert(BSP_LCD_FRAMEBUFFER_COUNT == 1u")
+
+Assert-FilePatternsOrdered `
+    -Name "p4 product boot forces the retired speaker PA low before settings load" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("bsp_audio_force_safe_boot_state()", "app_settings_init()")
+
+Assert-FileContains `
+    -Name "p4 retired speaker route is compile-time rejected and keeps PA low" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/bsp_jc4880/bsp_jc4880.c") `
+    -LiteralPatterns @("BSP_SPEAKER_ROUTE_RETIRED", "gpio_set_level(BSP_AUDIO_PA_GPIO, 0)", "ESP_ERR_NOT_SUPPORTED")
 
 Assert-FileContains `
     -Name "p4 LVGL backend requests the shared framebuffer count" `

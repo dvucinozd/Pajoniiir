@@ -35,6 +35,15 @@ remains locally and on `origin`.
 > the latest **complete** functional hardware baseline remains
 > **`RC1-123-g587cd7a1`** of 2026-07-14. See
 > [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the precise boundary.
+>
+> A later P4-only signed development update installed
+> `RC2-51-g050ab43` into `ota_0` on 2026-08-22 and reached `valid`. COM15
+> confirmed the 29,520 MB SDHC mount and, after one physical USB reinsert, an
+> exFAT library load of 324 tracks. The already-inserted USB medium had first
+> exhausted eight automatic enumeration-recovery cycles, so the reboot recovery
+> row remains open. The S3 was not updated in that session and continued to
+> report `RC2-44-g1923a3b`. See
+> [RC2-51 P4 OTA deployment](docs/validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
 
 ## System at a Glance
 
@@ -67,7 +76,9 @@ layer. The detailed ownership and data flow are documented in
   Settings tabs, plus the optional P4 Wi-Fi remote.
 - Data-driven controller profiles loaded from SD or installed through the web
   UI; the built-in DDJ-FLX4 map remains the fallback. The web overwrite path is
-  software-complete and still has pending hardware-acceptance rows.
+  software-complete and still has pending hardware-acceptance rows. A
+  host-qualified Hercules DJControl Inpulse 500 profile is included; physical
+  MIDI/LED/reconnect and USB-audio qualification remains pending.
 - Signed dual-slot OTA, validation and rollback on both processors.
 
 Detailed implementation and acceptance status belongs in
@@ -186,6 +197,7 @@ operational documents are:
 | UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
 | Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |
 | Current phases and remaining engineering work | [Development Plan](docs/DEVELOPMENT_PLAN.md) |
+| Deferred native folder/APTA library integration | [libapta P4 Integration Plan](docs/LIBAPTA_P4_INTEGRATION_PLAN.md) |
 | Open and accepted risks | [Risk Register](docs/RISK_REGISTER.md) |
 
 Controller-profile schema/update guides, OTA records, validation evidence,

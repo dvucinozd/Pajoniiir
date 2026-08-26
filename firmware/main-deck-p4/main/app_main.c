@@ -234,12 +234,16 @@ static bool on_recording_toggle(bool enable)
 static void on_controller_descriptor(const ctrl_descriptor_report_t *rep)
 {
     (void)controller_profile_manager_on_descriptor_report(rep->vid, rep->pid,
-                                                          rep->caps, rep->product);
+                                                          rep->caps, rep->product,
+                                                          rep->connection_epoch);
 }
 
 static void on_controller_connection_state(bool connected)
 {
     if (!connected) {
+        /* Retire the S3 runtime immediately; registry disconnect alone only
+         * clears P4 bookkeeping and would leave the old mapper eligible. */
+        (void)control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_CLEAR);
         (void)controller_profile_manager_on_disconnect();
     }
 }
@@ -250,7 +254,16 @@ static void on_usb_storage_event(bool mounted)
 {
     if (mounted) {
         service_log_note(SERVICE_LOG_USB_MOUNTED, SERVICE_LOG_INFO, "rekordbox drive");
-        esp_err_t rc = library_init();   // open export.pdb, build the track index
+        esp_err_t rc = ESP_FAIL;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            rc = library_init();   // open export.pdb, build the track index
+            if (rc == ESP_OK) {
+                break;
+            }
+            ESP_LOGW(TAG, "library_init attempt %d failed (%s), retrying in 250ms...",
+                     attempt, esp_err_to_name(rc));
+            vTaskDelay(pdMS_TO_TICKS(250));
+        }
         if (rc == ESP_OK) {
             ESP_LOGW(TAG, "USB media library loaded: %d tracks", library_count());
             service_log_event(SERVICE_LOG_LIBRARY_LOADED, SERVICE_LOG_INFO,
@@ -264,7 +277,8 @@ static void on_usb_storage_event(bool mounted)
     } else {
         ESP_LOGW(TAG, "USB drive removed");
         service_log_note(SERVICE_LOG_USB_UNMOUNTED, SERVICE_LOG_INFO, "drive removed");
-        esp_err_t stop_rc = audio_engine_stop_all();
+        esp_err_t stop_rc = audio_engine_suspend_loads_and_stop_all();
+        bool owns_load_barrier = stop_rc == ESP_OK;
         if (stop_rc != ESP_OK) {
             ESP_LOGE(TAG, "audio_engine_stop on USB removal: %s", esp_err_to_name(stop_rc));
         }
@@ -277,12 +291,16 @@ static void on_usb_storage_event(bool mounted)
         }
         ui_notify_usb_removed();
         ui_trigger_library_refresh();
+        if (owns_load_barrier) {
+            audio_engine_resume_loads();
+        }
     }
 }
 
 void app_main(void)
 {
     p4_tcm_heap_guard_keep();
+    ESP_ERROR_CHECK(bsp_audio_force_safe_boot_state());
     ESP_ERROR_CHECK(firmware_health_init());
     ESP_ERROR_CHECK(p4_ota_init());
 
@@ -343,9 +361,9 @@ void app_main(void)
     }
 #endif
 
-    // Apply the saved monitor speaker route + backlight brightness.
-    bsp_audio_set_output(app_settings_get().audio_out ? BSP_AUDIO_OUT_RCA
-                                                      : BSP_AUDIO_OUT_SPEAKER);
+    // Restore only the product-safe RCA route. app_settings_init() migrates
+    // legacy speaker selections before this point.
+    ESP_ERROR_CHECK(bsp_audio_set_output(BSP_AUDIO_OUT_RCA));
     bsp_display_set_backlight(app_settings_get().backlight_pct);
 
     // ── Web UI / status API transport ───────────────────────────────────────
@@ -416,6 +434,7 @@ void app_main(void)
     // ── External control producers ───────────────────────────────────────────
     // From this point onward incoming S3 frames may update deck/UI state.
     deck_core_set_s3_debug_ap_status_cb(ui_settings_set_s3_debug_ap_status);
+    deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token);
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     control_link_set_descriptor_report_cb(on_controller_descriptor);
     control_link_set_controller_state_cb(on_controller_connection_state);

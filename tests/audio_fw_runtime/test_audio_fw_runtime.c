@@ -42,6 +42,7 @@ static void test_begin_load_starts_fresh_run(void)
     assert(runtime.run);
     assert(runtime.tasks_started == 0);
     assert(!runtime.codec_open);
+    assert(runtime.session_generation == 1u);
 }
 
 static void test_mark_task_started_counts_started_tasks(void)
@@ -76,12 +77,24 @@ static void test_mark_stopped_clears_run_and_owned_handles(void)
     assert(!runtime.codec_open);
 }
 
+static void test_invalidate_changes_generation_and_closes_run_gate(void)
+{
+    audio_fw_runtime_t runtime;
+    audio_fw_runtime_reset(&runtime);
+    audio_fw_runtime_begin_load(&runtime);
+    uint32_t active = runtime.session_generation;
+    audio_fw_runtime_invalidate_session(&runtime);
+    assert(runtime.session_generation != active);
+    assert(!runtime.run);
+}
+
 int main(void)
 {
     test_reset_clears_task_lifecycle_state();
     test_begin_load_starts_fresh_run();
     test_mark_task_started_counts_started_tasks();
     test_mark_stopped_clears_run_and_owned_handles();
+    test_invalidate_changes_generation_and_closes_run_gate();
     puts("audio_fw_runtime tests passed");
     return 0;
 }

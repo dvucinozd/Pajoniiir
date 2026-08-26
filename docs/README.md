@@ -1,6 +1,6 @@
 # Pajoniiir Documentation
 
-Complete documentation index, audited 2026-07-28. Start with
+Complete documentation index, updated 2026-08-22. Start with
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) to understand current
 scope, source-of-truth precedence, the installed baseline and the latest fully
 accepted hardware baseline.
@@ -15,6 +15,10 @@ accepted hardware baseline.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — MIDI addresses, semantics and hardware-acceptance ledger.
 - [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — UART, I2S, USB and audio wiring.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — completed phases and remaining work.
+- [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) — deferred
+  implementation plan for a neutral P4 analysis model, ordinary-folder catalog,
+  APTA sidecars, Rekordbox import and bounded background analysis after
+  libapta-audio 1.1 is released.
 - [`POST_R5_PLAN.md`](POST_R5_PLAN.md) — ordered current-candidate acceptance and enclosure-hardening plan.
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — bring-up history and recurring pre-enclosure checks.
 - [`RISK_REGISTER.md`](RISK_REGISTER.md) — open, monitored and accepted risks.
@@ -26,6 +30,7 @@ accepted hardware baseline.
 - [`S3_WIFI_DEBUG_LOG.md`](S3_WIFI_DEBUG_LOG.md) — runtime S3 service AP/log viewer and OTA service.
 - [`bench-notes.md`](bench-notes.md) — dated hardware bench observations.
 - [`fixevi-remediation-audit.md`](fixevi-remediation-audit.md) — `fix/release-blockers-and-concurrency` remediation closeout.
+- [`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md) — current master code-review findings, ordered remediation path and release gates.
 - [`migration/ESP_IDF_6_0_2_MIGRATION.md`](migration/ESP_IDF_6_0_2_MIGRATION.md) — ESP-IDF 6.0.2 migration status and validation matrix.
 
 ## Analysis and decision records

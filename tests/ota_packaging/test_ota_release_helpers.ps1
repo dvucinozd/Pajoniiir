@@ -30,4 +30,37 @@ if (-not $emptyRejected) {
     throw "empty version was accepted"
 }
 
+$Python = Resolve-OtaSigningPython
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) `
+    ("pajoniiir-ota-publish-test-" + [guid]::NewGuid().ToString("N"))
+try {
+    $releaseDir = Join-Path $tempRoot "directory-name-must-not-be-the-release"
+    New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+    $privateKey = Join-Path $tempRoot "private.pem"
+    $publicKey = Join-Path $tempRoot "public.der"
+    $image = Join-Path $tempRoot "image.bin"
+    $bundle = Join-Path $releaseDir "main-deck-p4.ddjota"
+    [System.IO.File]::WriteAllBytes($image, [byte[]](1..24))
+
+    & $Python (Join-Path $RepoRoot "tools/ota_signing.py") generate-key `
+        --private $privateKey --public $publicKey
+    if ($LASTEXITCODE -ne 0) { throw "test key generation failed" }
+    & $Python (Join-Path $RepoRoot "tools/ota_signing.py") bundle `
+        --private-key $privateKey --target p4 --chip-id 0x0012 `
+        --project main-deck-p4 --version RC9-7-gabcdef0 `
+        --input $image --output $bundle
+    if ($LASTEXITCODE -ne 0) { throw "test bundle creation failed" }
+
+    & (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
+        -ReleaseDir $releaseDir -PublicKey $publicKey -WriteToReleaseDir | Out-Null
+    $latest = Get-Content -LiteralPath (Join-Path $releaseDir "latest.json") `
+        -Raw | ConvertFrom-Json
+    Assert-Equal "RC9-7-gabcdef0" ([string]$latest.release) `
+        "publisher derives release from signed bundle"
+} finally {
+    if (Test-Path -LiteralPath $tempRoot) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force
+    }
+}
+
 Write-Host "OTA release helper tests passed."

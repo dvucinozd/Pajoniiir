@@ -97,6 +97,8 @@ deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void);
 // Called from the deck task when S3 acknowledges the runtime Debug AP status.
 typedef void (*deck_core_s3_debug_ap_status_cb_t)(uint8_t status);
 void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb);
+typedef void (*deck_core_s3_debug_ap_token_cb_t)(uint32_t token);
+void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb);
 
 // Loop region for waveform display. `active` = a full loop (in+out) is set;
 // `armed` = loop-in pressed and waiting for loop-out (highlight from start_ms to

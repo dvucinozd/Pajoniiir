@@ -78,6 +78,7 @@ typedef struct {
     uint16_t connected_vid;
     uint16_t connected_pid;
     uint16_t connected_caps;   /* CTRL_DESC_CAP_* bits from the S3 report */
+    uint32_t connected_epoch;  /* S3 USB connection epoch */
     char connected_product[CPM_PRODUCT_MAX + 1];
 } controller_profile_registry_t;
 
@@ -108,7 +109,8 @@ int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid);
  * NULL. Returns the matched index or -1. */
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                     uint16_t caps,
-                                                    const char *product);
+                                                    const char *product,
+                                                    uint32_t connection_epoch);
 
 /* Clear the connected descriptor/profile state and emit one disconnect journal
  * edge. Returns true only when a present controller was actually cleared. */
@@ -161,6 +163,12 @@ int controller_profile_registry_on_descriptor(controller_profile_registry_t *reg
 /* Clear only live controller/profile selection state, preserving the scanned
  * profile inventory. Returns true when the registry changed from present. */
 bool controller_profile_registry_on_disconnect(controller_profile_registry_t *reg);
+
+/* True when a descriptor can update the current physical-connection binding.
+ * Epoch ordering uses serial-number arithmetic so UINT32 wrap is supported. */
+bool controller_profile_descriptor_is_fresh(
+    const controller_profile_registry_t *reg, uint16_t vid, uint16_t pid,
+    uint32_t connection_epoch);
 
 /* Replace only the scanned profile inventory while preserving the connected
  * controller descriptor. A present controller is re-matched and intentionally

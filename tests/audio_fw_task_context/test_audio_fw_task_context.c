@@ -42,6 +42,8 @@ static void test_bind_keeps_explicit_deck_and_runtime_slots(void)
     int resampler;
     audio_fw_task_plan_t plan = audio_fw_task_plan_for_deck(1, 0, true);
     audio_fw_task_context_t ctx;
+    audio_fw_runtime_reset(&runtime);
+    audio_fw_runtime_begin_load(&runtime);
     audio_fw_task_context_reset(&ctx);
 
     audio_fw_task_context_bind(&ctx,
@@ -62,6 +64,9 @@ static void test_bind_keeps_explicit_deck_and_runtime_slots(void)
     assert(ctx.task_plan.expected_tasks == 2);
     assert(!ctx.task_plan.start_output);
     assert(audio_fw_task_context_is_bound(&ctx));
+    assert(audio_fw_task_context_is_current(&ctx));
+    audio_fw_runtime_invalidate_session(&runtime);
+    assert(!audio_fw_task_context_is_current(&ctx));
 }
 
 static void test_bind_requires_all_state_slots(void)

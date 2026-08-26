@@ -471,6 +471,12 @@ static void dispatch_frame(const uint8_t *f)
         ev.type = CTRL_EV_HEARTBEAT;
         break;
     case CTRL_TYPE_STATE:
+        if (ev.id == CTRL_ID_S3_BOOT_CHALLENGE) {
+            /* Echo every challenge. Repetition makes either board boot order
+             * and an isolated UART write failure converge without state on P4. */
+            control_link_send_state(CTRL_ID_S3_BOOT_ACK, ev.value);
+            return;
+        }
         ev.type = CTRL_EV_STATE;
         break;
     default:

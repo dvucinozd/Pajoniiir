@@ -736,7 +736,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
                                    "Not an ESP32-P4 firmware image");
     }
 
-    esp_err_t rc = audio_engine_stop_all();
+    esp_err_t rc = audio_engine_suspend_loads_and_stop_all();
     if (rc != ESP_OK) {
         free(buffer);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
@@ -744,6 +744,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     }
     rc = p4_ota_begin(&manifest);
     if (rc != ESP_OK) {
+        audio_engine_resume_loads();
         free(buffer);
         httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" : "400 Bad Request");
         return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
@@ -754,6 +755,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     if (rc != ESP_OK) {
         free(buffer);
         p4_ota_abort(esp_err_to_name(rc));
+        audio_engine_resume_loads();
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "Flash write failed");
     }
@@ -763,6 +765,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         if (received <= 0) {
             free(buffer);
             p4_ota_abort("HTTP upload interrupted");
+            audio_engine_resume_loads();
             if (received == HTTPD_SOCK_ERR_TIMEOUT) {
                 httpd_resp_set_status(req, "408 Request Timeout");
                 return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
@@ -773,6 +776,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
         if (rc != ESP_OK) {
             free(buffer);
             p4_ota_abort(esp_err_to_name(rc));
+            audio_engine_resume_loads();
             return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                        "Flash write failed");
         }
@@ -782,6 +786,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
 
     rc = p4_ota_finish();
     if (rc != ESP_OK) {
+        audio_engine_resume_loads();
         service_log_event(SERVICE_LOG_P4_OTA_FAILED, SERVICE_LOG_ERROR,
                           1u, (uint32_t)rc, 0u, 0u, 0u, "validation");
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,

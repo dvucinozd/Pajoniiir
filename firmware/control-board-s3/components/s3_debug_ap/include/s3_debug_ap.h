@@ -11,6 +11,7 @@
 #define S3_DEBUG_AP_IP "192.168.4.1"
 #define S3_DEBUG_LOG_RING_LINES 16
 #define S3_DEBUG_LOG_LINE_MAX 256
+#define S3_DEBUG_AP_IDLE_TIMEOUT_MS (15u * 60u * 1000u)
 
 typedef enum {
     S3_DEBUG_AP_STATUS_OFF = 0,
@@ -20,6 +21,7 @@ typedef enum {
 } s3_debug_ap_status_t;
 
 typedef void (*s3_debug_ap_status_cb_t)(s3_debug_ap_status_t status);
+typedef void (*s3_debug_ap_token_cb_t)(uint32_t token);
 
 typedef struct {
     char lines[S3_DEBUG_LOG_RING_LINES][S3_DEBUG_LOG_LINE_MAX];
@@ -37,5 +39,6 @@ size_t s3_debug_log_ring_snapshot(const s3_debug_log_ring_t *ring,
 
 esp_err_t s3_debug_ap_init(void);
 esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb);
+esp_err_t s3_debug_ap_set_token_callback(s3_debug_ap_token_cb_t cb);
 esp_err_t s3_debug_ap_request(bool enable);
 s3_debug_ap_status_t s3_debug_ap_status(void);

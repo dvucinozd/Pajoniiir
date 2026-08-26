@@ -24,13 +24,6 @@
 #define AUDIO_FILTER_LP_LOG_RATIO   (-5.7037824747f) /* log(60 / 18000) */
 #define AUDIO_FILTER_HP_LOG_RATIO   5.9914645471f    /* log(8000 / 20) */
 
-static int16_t clamp_i16_from_float(float sample)
-{
-    if (sample > 32767.0f) return 32767;
-    if (sample < -32768.0f) return -32768;
-    return (int16_t)(sample >= 0.0f ? sample + 0.5f : sample - 0.5f);
-}
-
 void audio_filter_reset(audio_filter_state_t *filter)
 {
     if (!filter) return;
@@ -164,9 +157,9 @@ static float svf_process(audio_filter_state_t *filter, float sample, uint8_t cha
     return v2;
 }
 
-audio_mixer_frame_t audio_filter_process_frame(audio_filter_state_t *filter,
-                                               bool enabled,
-                                               audio_mixer_frame_t in)
+audio_dsp_frame_t audio_filter_process_dsp_frame(audio_filter_state_t *filter,
+                                                 bool enabled,
+                                                 audio_dsp_frame_t in)
 {
     if (!filter || !enabled) {
         return in;
@@ -182,8 +175,16 @@ audio_mixer_frame_t audio_filter_process_frame(audio_filter_state_t *filter,
         return in;
     }
 
-    return (audio_mixer_frame_t) {
-        .left = clamp_i16_from_float(svf_process(filter, (float)in.left, 0)),
-        .right = clamp_i16_from_float(svf_process(filter, (float)in.right, 1)),
+    return (audio_dsp_frame_t) {
+        .left = svf_process(filter, in.left, 0),
+        .right = svf_process(filter, in.right, 1),
     };
+}
+
+audio_mixer_frame_t audio_filter_process_frame(audio_filter_state_t *filter,
+                                               bool enabled,
+                                               audio_mixer_frame_t in)
+{
+    return audio_mixer_pcm_from_dsp(audio_filter_process_dsp_frame(
+        filter, enabled, audio_mixer_dsp_from_pcm(in, 1.0f)));
 }

@@ -289,6 +289,26 @@ p4_ota_pull_release_order_t p4_ota_pull_manifest_order(
     return p4_ota_pull_release_compare(m->release, running_version);
 }
 
+p4_ota_pull_bundle_release_result_t p4_ota_pull_validate_bundle_release(
+    const char *offered_version,
+    const char *signed_version,
+    const char *running_version)
+{
+    if (!offered_version || !signed_version || !running_version ||
+        offered_version[0] == '\0' || signed_version[0] == '\0' ||
+        running_version[0] == '\0') {
+        return P4_OTA_PULL_BUNDLE_RELEASE_INVALID_ARG;
+    }
+    if (strcmp(offered_version, signed_version) != 0) {
+        return P4_OTA_PULL_BUNDLE_RELEASE_MISMATCH;
+    }
+    if (p4_ota_pull_release_compare(signed_version, running_version) !=
+        P4_OTA_PULL_RELEASE_NEWER) {
+        return P4_OTA_PULL_BUNDLE_RELEASE_NOT_NEWER;
+    }
+    return P4_OTA_PULL_BUNDLE_RELEASE_OK;
+}
+
 bool p4_ota_pull_offer_fresh(uint32_t now_ticks,
                              uint32_t offered_at_ticks,
                              uint32_t ttl_ticks)

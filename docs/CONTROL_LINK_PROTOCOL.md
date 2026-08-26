@@ -85,7 +85,8 @@ test.
 | `0x21`-`0x24` | Deck 1 legacy pad mode select | `0` release, `1` press |
 | `0x25` | Deck 1 pad action | packed pad mode/index/shift/press |
 | `0x26`-`0x29` | Deck 1 extended pad mode select | `0` release, `1` press; unsupported Keyboard/Stems and Key Shift values are reserved/ignored |
-| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize |
+| `0x2C` | Deck 1 extended action | packed `CTRL_DECK_EXT_ACTION_*` plus press bit; Censor, Sync Master, Reloop Stop, Loop Adjust In/Out, Quantize, idempotent Sync Off |
+| `0x2D` | Deck 1 Loop Size | signed relative encoder delta; negative halves and positive doubles an active loop |
 | `0x30` | Deck 2 Play | `0` release, `1` press |
 | `0x31` | Deck 2 Cue | `0` release, `1` press |
 | `0x32` | Deck 2 Jog scratch delta | signed delta |
@@ -94,6 +95,7 @@ test.
 | `0x35` | Deck 2 Tempo | `0..16383` |
 | `0x36`-`0x49` | Deck 2 extension controls | same control order as Deck 1 |
 | `0x4C` | Deck 2 extended action | same packed format as Deck 1 |
+| `0x4D` | Deck 2 Loop Size | same signed relative format as Deck 1 |
 | `0x50` | Channel 1 volume | `0..16383` |
 | `0x51` | Channel 2 volume | `0..16383` |
 | `0x52` | Crossfader | `0..16383` |
@@ -126,6 +128,10 @@ test.
 | `0x83` | Shift+Beat FX beat decrement | `0` release, `1` press; press moves P4 Beat FX beat size down by two enum positions with min saturation |
 | `0x84` | Shift+Beat FX beat increment | `0` release, `1` press; press moves P4 Beat FX beat size up by two enum positions with max saturation |
 | `0x85` | S3 Debug AP | bidirectional on `CTRL_TYPE_STATE`; P4->S3 request `0` OFF / `1` ON; S3->P4 status `0` OFF / `1` STARTING / `2` ON / `3` ERROR (see below) |
+| `0x86` | S3 boot challenge | S3->P4 `CTRL_TYPE_STATE`; fresh non-zero 16-bit challenge used only while a new S3 OTA image is `PENDING_VERIFY` |
+| `0x87` | S3 boot ACK | P4->S3 `CTRL_TYPE_STATE`; exact echo of `0x86`, consumed by the S3 boot-health gate and never exposed as a controller event |
+| `0x88` | S3 maintenance token high | S3->P4 `CTRL_TYPE_STATE`; upper three decimal digits (`100..999`) of the current six-digit Debug AP maintenance code |
+| `0x89` | S3 maintenance token low | S3->P4 `CTRL_TYPE_STATE`; lower three decimal digits (`000..999`); P4 publishes the code only after an ordered `0x88`/`0x89` pair |
 
 In S3 translator mode, `flx4_map` converts the DDJ-FLX4 MIDI controls from
 `docs/DDJ_FLX4_MIDI_MAP.md` into these semantic IDs. Queue/backpressure behavior
@@ -244,12 +250,13 @@ Sampler, Keyboard/Stems, and Key Shift mode/pad behavior is out of product scope
 as of 2026-07-07; their numeric IDs remain reserved for compatibility and
 reconnect OFF output only.
 
-In DDJ-FLX4 translator mode, S3 also refreshes the already-connected FLX4 state
-after each heartbeat while the USB MIDI device remains open. This is
-level-triggered recovery in addition to edge-triggered USB connect/disconnect:
-if P4 reboots while S3 and the FLX4 stay powered, the next heartbeat refresh
-lets the freshly booted P4 force its LED snapshot without requiring a controller
-replug.
+In DDJ-FLX4 translator mode, S3 retains connection desired/sent/dirty state and
+periodically refreshes both the connected and disconnected levels. UART send
+failure leaves the level dirty. This is level-triggered recovery in addition to
+edge-triggered USB connect/disconnect: a lost disconnect self-corrects without
+a second replug, and if P4 reboots while S3 and the FLX4 stay powered, the next
+refresh lets the freshly booted P4 force its LED snapshot. Descriptor replay is
+tracked separately and occurs only for an active connection.
 
 After a successful heartbeat-driven FLX4 connection refresh, S3 also replays
 the last known FLX4 input state to P4 in two semantic groups:
@@ -376,6 +383,14 @@ Handshake and ownership:
 - S3 dispatches the request to `s3_debug_ap_request()` and reports every state
   transition back through its status callback, which P4 `deck_core` forwards to
   the Settings label (`OFF` / `STARTING` / `ON` / `ERROR`).
+- Each ON edge generates a new six-digit maintenance code. S3 sends its high and
+  low three-digit halves as ordered `0x88`/`0x89` state frames. P4 discards an
+  out-of-order low half and clears the displayed code on `STARTING`, `OFF` or
+  `ERROR`; the complete code is shown only while the AP reports `ON`.
+- The published WPA2 password permits association but does not authorize a
+  mutation. `POST /api/ota/s3` additionally requires the current maintenance
+  code. It expires after ten minutes, locks after five failures and is cleared
+  when the AP stops. The AP automatically shuts down after fifteen minutes.
 - FLX4 MIDI, control-link UART, and P4-to-S3 headphone audio must keep running
   regardless of debug AP state; a start failure only yields `ERROR`.
 
@@ -409,6 +424,13 @@ receiver (`cp_xfer.c`) are kept **byte-for-byte identical** on the S3 and P4
 sides; the S3 host runner asserts the two file copies match, and
 `control_link_protocol` asserts the shared constants agree.
 
+On S3, every fixed `0xA5` and bulk `0xA6` sender uses one TX serializer. The
+serializer holds a static mutex across rolling-sequence allocation, full frame
+construction and the complete UART write. Failed writes consume their sequence
+so a later valid frame exposes the loss through P4 `sequence_gaps` telemetry;
+two producers cannot reserve sequence values in one order and reach the wire in
+the opposite order.
+
 ### P4 receive-health telemetry
 
 The P4 counts every valid S3-to-P4 `0xA5` and `0xA6` frame against the S3's
@@ -431,7 +453,7 @@ The same status response exposes service-journal health under `service_log`:
 
 | Type | Dir | Meaning |
 | ---: | --- | --- |
-| `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + product string |
+| `0x01` CONTROLLER_DESCRIPTOR | S3 -> P4 | connected controller VID/PID + capability bits + connection epoch + product string |
 | `0x02` PROFILE_BEGIN | P4 -> S3 | total_size + transfer crc32 + vid/pid |
 | `0x03` PROFILE_CHUNK | P4 -> S3 | offset + profile bytes |
 | `0x04` PROFILE_END | P4 -> S3 | end of stream (triggers crc32 verify) |
@@ -439,23 +461,37 @@ The same status response exposes service-journal health under `service_log`:
 | `0x06` PROFILE_NACK | S3 -> P4 | nacked frame type + reason |
 | `0x07` PROFILE_ACTIVATE | P4 -> S3 | activate the received profile |
 | `0x08` PROFILE_STATUS | S3 -> P4 | transfer state + vid/pid |
-| `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile (fall back to built-in) |
+| `0x09` PROFILE_CLEAR | P4 -> S3 | drop the active profile and its connection binding |
 | `0x0A` FIRMWARE_REPORT | S3 -> P4 | running slot + image state + 32-byte version |
 
 ### Controller descriptor report (S3 -> P4)
 
 When the S3 opens a controller it sends `CONTROLLER_DESCRIPTOR` with VID, PID,
-capability bits (`CTRL_DESC_CAP_MIDI_IN/MIDI_OUT/USB_AUDIO`), and a 32-byte
-product string. It is re-sent with every connection-state publish and heartbeat
-refresh, so a P4-only reboot re-learns the controller. The P4
+capability bits (`CTRL_DESC_CAP_MIDI_IN/MIDI_OUT/USB_AUDIO`), a nonzero 32-bit
+connection epoch, and a 32-byte product string. The S3 increments the epoch for
+each accepted USB connection. The report is re-sent with every connection-state
+publish and heartbeat refresh, so a P4-only reboot re-learns the controller. The P4
 `controller_profile_manager` matches the VID/PID against profiles on the SD/TF
-card and selects the active profile.
+card and selects the active profile. Repeated reports are accepted only for the
+same VID/PID and epoch; an older epoch or a different identity reusing the same
+epoch is rejected.
+
+Payload (`42` bytes):
+
+```text
+[0..2)    vid               u16 little-endian
+[2..4)    pid               u16 little-endian
+[4..6)    capability bits   u16 little-endian
+[6..10)   connection_epoch  u32 little-endian, nonzero
+[10..42)  product           32-byte NUL-padded string
+```
 
 The S3 also sends the semantic
 `CTRL_ID_FLX4_CONNECTION=CTRL_FLX4_DISCONNECTED` state when the USB controller
 closes. P4 treats that state as the authoritative removal edge, clears only the
 live controller/profile selection (the scanned profile inventory remains
-loaded), cancels activation of an in-flight stale transfer, and emits one
+loaded), sends `PROFILE_CLEAR`, cancels activation of an in-flight stale
+transfer, and emits one
 `CONTROLLER_DISCONNECTED` service-journal record. A later descriptor can match
 and activate the controller again.
 
@@ -470,6 +506,12 @@ parses the stored blob and installs it as the active profile. The P4 sender
 waits for each stage's ACK with retry + timeout; a `NACK` restarts the transfer.
 Because the S3CP file carries its own internal crc32 in addition to the
 transfer crc32, a profile is double-checked before use.
+
+At `PROFILE_BEGIN`, S3 additionally requires the advertised VID/PID to match
+its current USB connection and captures that connection's epoch. Activation is
+accepted only while the same VID/PID/epoch is still current. A disconnect
+clears the stored runtime binding, built-in snapshot, scheduler state, and held
+inputs; late frames from the retired transfer cannot activate the old session.
 
 ### S3 firmware report (S3 -> P4)
 
@@ -497,15 +539,35 @@ top-level `state` returned by either target's own HTTP OTA service is instead
 the transfer state (`idle`, `receiving`, `ready_to_reboot` or `failed`) and must
 not be misread as partition validity.
 
-### Dynamic mapping and fallback
+### S3 pending-image boot health (`0x86` / `0x87`)
+
+The normal heartbeat is S3->P4 and therefore cannot prove that the reverse
+direction or the P4 receiver is alive. While the running S3 image is
+`PENDING_VERIFY`, S3 first waits for its UART RX, heartbeat, translator, USB
+host-library and USB MIDI-client tasks to enter their run loops. It then sends a
+fresh random 16-bit `CTRL_ID_S3_BOOT_CHALLENGE` every 500 ms for at most 30 s.
+
+P4 consumes the challenge directly in its UART RX task and echoes the exact
+value as `CTRL_ID_S3_BOOT_ACK`. S3 rejects an ACK before local task liveness is
+established and rejects any value that does not match the current boot's
+challenge. Only the combination of local liveness and an exact ACK permits
+`esp_ota_mark_app_valid_cancel_rollback()`. Timeout restarts the still-pending
+image so the ESP-IDF rollback path remains authoritative. FLX4 presence is not
+part of this gate: the USB host tasks must run, but no controller has to be
+attached.
+
+### Dynamic mapping and controller quarantine
 
 Once a profile is active, the S3 maps controller MIDI IN through the profile's
 input table (`controller_profile_runtime`) instead of the built-in `flx4_map`,
 and maps P4 LED frames through the profile's output table instead of
-`flx4_led_midi`. When no profile is active it falls back to the built-in FLX4
-map on both paths. The FLX4 `profile.s3bin` is proven byte-equivalent to the
-built-in map by a golden-parity host test, so the dynamic path reproduces the
-built-in behaviour exactly.
+`flx4_led_midi`. An active dynamic profile is authoritative: an unmapped LED is
+dropped and never falls through to vendor-specific FLX4 output. The built-in
+map is enabled only when the current USB descriptor confirms the FLX4 VID/PID
+and no dynamic profile is active. Every other controller remains quarantined
+until a profile for its current connection epoch is activated. The FLX4
+`profile.s3bin` is proven byte-equivalent to the built-in map by a golden-parity
+host test, so the dynamic path reproduces the built-in behaviour exactly.
 
 ## Future Protocol Versioning
 

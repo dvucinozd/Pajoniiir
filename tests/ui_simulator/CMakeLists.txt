@@ -33,6 +33,7 @@ add_executable(ui_simulator_e2e
     "${UI_DIR}/Musieer_80.c"
     "${UI_DIR}/Musieer_48.c"
     "${UI_DIR}/ui_library.c"
+    "${UI_DIR}/ui_load_gate.c"
     "${UI_DIR}/ui_overview.c"
     "${UI_DIR}/ui_active_deck_leds.c"
     "${UI_DIR}/ui_controls.c"

@@ -14,8 +14,8 @@ Status: current phase ledger, reconciled 2026-08-02.
 | End-of-track drain/replay | R1 implemented and basic hardware acceptance passed 2026-07-13 |
 | Beat FX | Filter/Echo/Flanger/Delay all hardware-accepted 2026-07-24; headroom soft-clip added in `RC1-223-gdfa619a9` |
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
-| Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted 2026-07-24 in `RC1-232-g8f6656cb`. The loop used to take effect ~1.96 s late (decoder lead was published and played before the first pass); the wrap now withdraws it, leaving a 2048-frame refill floor. Verified by ear and by counter (`pcm_underrun1` 512 -> 0) |
-| Controller profiles | Firmware path implemented and host-tested with both FLX4 and the independent `generic_midi_ci` fixture; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; non-FLX4 hardware and remote update acceptance pending |
+| Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted; armed Loop In dynamic overlay burning implemented in `ui_overview.c` for smooth 60 FPS scrolling highlight without strip invalidation. Verified on P4 hardware 2026-08-19 |
+| Controller profiles | Firmware path implemented; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; `generic_midi_ci` and a specification-derived Hercules Inpulse 500 profile are compiler/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; non-FLX4 hardware and remote update acceptance pending |
 | P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash, and S3 received the exact clean RC2 bootloader/application pair over COM10 |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -53,7 +53,7 @@ instrumentation), the
 remaining targeted Phase 20/E1A and remote controller-profile matrix, followed
 by production key provisioning/rotation, enclosure power/thermal/RF soak,
 longer dual-deck key-lock P4 CPU/listening testing, selected pending MIDI
-hardware rows and a first non-FLX4 profile acceptance. Historical phase text
+hardware rows and physical Hercules Inpulse 500 profile acceptance. Historical phase text
 below is retained as the implementation record.
 
 ## Phase 0: Baseline Import And Documentation
@@ -323,7 +323,8 @@ Validation note, 2026-06-08:
   for the current output path.
 - Deck 2-first playback no longer depends on whichever deck loaded first owning
   output. `deck_core` only marks a deck playing after the backend accepts play,
-  and USB removal now calls `audio_engine_stop_all()`.
+  and USB removal now holds the global audio LOAD barrier across stop and
+  library/deck-state cleanup.
 - Dual-deck playback scheduling was stabilized on hardware on 2026-06-20 after
   runtime instrumentation showed healthy PCM ring fill and memory margins but
   output timing disruption during active preload/index work. The fix keeps
@@ -1107,8 +1108,10 @@ Status: implemented, committed to `master`, pushed, and flashed through
 
 Status: firmware side implemented, host-tested, committed to `master`, pushed,
 and flashed; profile-loading path hardware-verified (P4 `/api/status` reports
-`profiles:1`). Windows Profile Builder and a first non-FLX4 controller remain
-out of firmware scope. Design source: `Plan 2` (multi-controller with S3 kept as
+`profiles:1`). The Hercules Inpulse 500 profile is host-qualified against the
+official MIDI specification, but physical controller/audio acceptance remains
+open. Windows Profile Builder remains out of firmware scope. Design source:
+`Plan 2` (multi-controller with S3 kept as
 generic controller host). Format spec: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
 
 Goal: support DJ controllers beyond the DDJ-FLX4 without a firmware rebuild, by
@@ -2902,3 +2905,21 @@ otherwise the waveform comes back blank.
   deck paused mid-track and the recorder idle, then again immediately after
   dismissal;
 - setting survives a reboot.
+
+## Deferred Phase: Native Folder Library And libapta-audio 1.1
+
+Status: **planned for after the upstream libapta-audio `v1.1.0` release; not
+implemented on current `master`.**
+
+The future P4 library path will accept ordinary MP3/WAV/FLAC folders, maintain a
+compact 10,000-track catalog, store versioned `/PAJONIIIR` sidecars and use
+libapta for bounded progressive waveform/tempo/grid/meter/key analysis.
+Rekordbox PDB/ANLZ remains supported as an importer, while application consumers
+migrate from `anlz_metadata_t` to a P4-owned immutable `track_analysis_t` model.
+
+The canonical ordered plan, memory limits, USB transaction rules, rollout flag,
+test matrix and completion gate are in
+[`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md). Do not start
+the production integration from the upstream development branch: first require
+the tagged 1.1 release, exact commit pin, reproducible `dependencies.lock`,
+algorithm corpus gates and ESP32-P4 memory evidence.

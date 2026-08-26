@@ -4,19 +4,23 @@
 #include "s3_ota.h"
 #include "wifi_debug_log.h"
 #include "firmware_health.h"
+#include "firmware_boot_gate.h"
 #include "flx4_midi_host.h"
 #include "flx4_map.h"
 #include "controller_profile_runtime.h"
 #include "control_state_reconciler.h"
+#include "control_event_scheduler.h"
 #include "status_led.h"
 #if CONFIG_P4_AUDIO_LINK_ENABLED
 #include "p4_audio_link.h"
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/queue.h"
+#include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_system.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +28,9 @@
 static const char *TAG = "main";
 
 #define HEARTBEAT_TASK_STACK 3072
+#define BOOT_TASK_START_TIMEOUT_MS 3000u
+#define BOOT_P4_ACK_TIMEOUT_MS    30000u
+#define BOOT_P4_RETRY_MS            500u
 
 // ─── Router task ──────────────────────────────────────────────────────────────
 // Reads panel events and fans them out to both the MIDI compat layer and the
@@ -32,6 +39,88 @@ static const char *TAG = "main";
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
 static void flx4_replay_known_input_snapshot(void);
 static void flx4_replay_known_held_snapshot(void);
+static firmware_boot_gate_t s_boot_gate;
+static portMUX_TYPE s_boot_gate_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_heartbeat_task_started;
+static bool s_translator_task_started;
+
+static void boot_health_state_cb(uint8_t id, int16_t value)
+{
+    if (id != CTRL_ID_S3_BOOT_ACK) return;
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    bool accepted = firmware_boot_gate_observe_p4_ack(
+        &s_boot_gate, (uint16_t)value);
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+    if (accepted) {
+        ESP_LOGI(TAG, "P4 boot health ACK accepted");
+    }
+}
+
+static bool boot_gate_ready(void)
+{
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    bool ready = firmware_boot_gate_ready(&s_boot_gate);
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+    return ready;
+}
+
+static bool wait_for_critical_tasks(void)
+{
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(BOOT_TASK_START_TIMEOUT_MS);
+    do {
+        if (__atomic_load_n(&s_heartbeat_task_started, __ATOMIC_ACQUIRE) &&
+            __atomic_load_n(&s_translator_task_started, __ATOMIC_ACQUIRE) &&
+            control_link_rx_task_started() &&
+            flx4_midi_host_critical_tasks_started()) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    } while (xTaskGetTickCount() - start < timeout);
+    return false;
+}
+
+static esp_err_t confirm_pending_image_with_p4(void)
+{
+    firmware_health_info_t info;
+    ESP_RETURN_ON_ERROR(firmware_health_get_info(&info), TAG,
+                        "cannot inspect boot image state");
+    if (!info.rollback_pending) {
+        return firmware_health_mark_ready();
+    }
+
+    if (!wait_for_critical_tasks()) {
+        ESP_LOGE(TAG, "critical S3 tasks did not reach running state; rolling back");
+        esp_restart();
+        return ESP_ERR_TIMEOUT;
+    }
+
+    portENTER_CRITICAL(&s_boot_gate_mux);
+    firmware_boot_gate_set_critical_tasks_alive(&s_boot_gate, true);
+    const uint16_t challenge = s_boot_gate.challenge;
+    portEXIT_CRITICAL(&s_boot_gate_mux);
+
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(BOOT_P4_ACK_TIMEOUT_MS);
+    while (xTaskGetTickCount() - start < timeout) {
+        (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                         CTRL_ID_S3_BOOT_CHALLENGE,
+                                         (int16_t)challenge);
+        TickType_t retry_start = xTaskGetTickCount();
+        TickType_t retry = pdMS_TO_TICKS(BOOT_P4_RETRY_MS);
+        do {
+            if (boot_gate_ready()) {
+                return firmware_health_mark_ready();
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } while (xTaskGetTickCount() - retry_start < retry &&
+                 xTaskGetTickCount() - start < timeout);
+    }
+
+    ESP_LOGE(TAG, "P4 boot health ACK timed out; restarting without confirmation");
+    esp_restart();
+    return ESP_ERR_TIMEOUT;
+}
 #endif
 
 static void s3_debug_ap_status_cb(s3_debug_ap_status_t status)
@@ -74,6 +163,7 @@ static void send_firmware_report(void)
 
 static void heartbeat_task(void *arg)
 {
+    __atomic_store_n(&s_heartbeat_task_started, true, __ATOMIC_RELEASE);
     while (1) {
         control_link_send_heartbeat();
         send_firmware_report();
@@ -89,16 +179,21 @@ static void heartbeat_task(void *arg)
 #endif
 
 #if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
-#define FLX4_EVENT_QUEUE_LEN 32
+#define FLX4_DISCRETE_BUDGET   8u
+#define FLX4_CONTINUOUS_BUDGET 4u
 
-static QueueHandle_t s_flx4_event_queue;
+static control_event_scheduler_t s_flx4_scheduler;
+static portMUX_TYPE s_flx4_scheduler_mux = portMUX_INITIALIZER_UNLOCKED;
+static TaskHandle_t s_flx4_translator_task;
 static flx4_map_state_t s_flx4_map;
+static portMUX_TYPE s_flx4_map_mux = portMUX_INITIALIZER_UNLOCKED;
 static control_held_state_reconciler_t s_flx4_held_states;
 static portMUX_TYPE s_flx4_held_mux = portMUX_INITIALIZER_UNLOCKED;
-static uint32_t s_flx4_dropped_count;
-static uint32_t s_flx4_coalesced_count;
 static uint32_t s_flx4_unsupported_count;
 static TickType_t s_flx4_last_warn;
+static control_event_scheduler_stats_t s_flx4_last_warn_stats;
+
+static void flx4_wake_translator(void);
 
 typedef struct {
     size_t sent;
@@ -120,11 +215,21 @@ static bool flx4_send_snapshot_event(uint8_t type, uint8_t id, int16_t value, vo
 static void flx4_replay_known_input_snapshot(void)
 {
     flx4_snapshot_replay_ctx_t replay = { 0 };
-    /* A dynamic profile, once activated, owns the input map (and its own
-     * replay set); otherwise fall back to the built-in FLX4 map. */
-    size_t known = controller_profile_runtime_active()
-        ? controller_profile_runtime_emit_snapshot(flx4_send_snapshot_event, &replay)
-        : flx4_map_emit_snapshot(&s_flx4_map, flx4_send_snapshot_event, &replay);
+    flx4_midi_connection_context_t connection;
+    size_t known = 0u;
+    if (flx4_midi_host_get_connection_context(&connection) &&
+        controller_profile_runtime_bound_to(
+            connection.vid, connection.pid, connection.connection_epoch)) {
+        known = controller_profile_runtime_emit_snapshot(
+            flx4_send_snapshot_event, &replay);
+    } else if (flx4_midi_host_builtin_flx4_active()) {
+        flx4_map_state_t snapshot;
+        portENTER_CRITICAL(&s_flx4_map_mux);
+        snapshot = s_flx4_map;
+        portEXIT_CRITICAL(&s_flx4_map_mux);
+        known = flx4_map_emit_snapshot(
+            &snapshot, flx4_send_snapshot_event, &replay);
+    }
     if (known > 0 || replay.failed > 0) {
         ESP_LOGD(TAG, "FLX4 input snapshot replay known=%u sent=%u failed=%u",
                  (unsigned)known, (unsigned)replay.sent, (unsigned)replay.failed);
@@ -188,9 +293,17 @@ static void flx4_controller_connection_cb(bool connected, void *user_ctx)
         flx4_replay_known_held_snapshot();
         return;
     }
+    controller_profile_runtime_clear();
+    portENTER_CRITICAL(&s_flx4_map_mux);
+    flx4_map_init(&s_flx4_map);
+    portEXIT_CRITICAL(&s_flx4_map_mux);
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    control_event_scheduler_reset(&s_flx4_scheduler);
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
     portENTER_CRITICAL(&s_flx4_held_mux);
     control_held_state_release_all(&s_flx4_held_states, 0u);
     portEXIT_CRITICAL(&s_flx4_held_mux);
+    flx4_wake_translator();
 }
 
 static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
@@ -199,7 +312,9 @@ static bool flx4_event_is_high_rate(const flx4_control_event_t *ev)
         return false;
     }
     if (ev->type == CTRL_TYPE_ENCODER &&
-        ev->id != CTRL_ID_BROWSE_DELTA) {
+        ev->id != CTRL_ID_BROWSE_DELTA &&
+        ev->id != CTRL_ID_DECK1_LOOP_SIZE &&
+        ev->id != CTRL_ID_DECK2_LOOP_SIZE) {
         return true;
     }
     if (ev->type == CTRL_TYPE_PITCH) {
@@ -249,104 +364,102 @@ static bool flx4_event_is_relative_jog(const flx4_control_event_t *ev)
     }
 }
 
-static int16_t flx4_accumulate_delta(int16_t a, int16_t b)
-{
-    int32_t sum = (int32_t)a + (int32_t)b;
-    if (sum > INT16_MAX) return INT16_MAX;
-    if (sum < INT16_MIN) return INT16_MIN;
-    return (int16_t)sum;
-}
-
 static void flx4_translator_warn_rate_limited(void)
 {
+    control_event_scheduler_stats_t stats;
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    stats = control_event_scheduler_get_stats(&s_flx4_scheduler);
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+    const uint32_t unsupported =
+        __atomic_load_n(&s_flx4_unsupported_count, __ATOMIC_RELAXED);
+    /* Coalescing and high-water movement are expected under normal control
+     * bursts. Emit a warning only when capacity or numeric limits are hit. */
+    if (stats.fifo_full == s_flx4_last_warn_stats.fifo_full &&
+        stats.continuous_slot_full == s_flx4_last_warn_stats.continuous_slot_full &&
+        stats.jog_saturated == s_flx4_last_warn_stats.jog_saturated) {
+        return;
+    }
     TickType_t now = xTaskGetTickCount();
     if (now - s_flx4_last_warn < pdMS_TO_TICKS(1000)) {
         return;
     }
     s_flx4_last_warn = now;
-    ESP_LOGW(TAG, "FLX4 translator queue dropped=%" PRIu32 " coalesced=%" PRIu32
-             " unsupported=%" PRIu32,
-             s_flx4_dropped_count, s_flx4_coalesced_count, s_flx4_unsupported_count);
+    s_flx4_last_warn_stats = stats;
+    ESP_LOGW(TAG, "FLX4 scheduler fifo_full=%" PRIu32 " coalesced=%" PRIu32
+             " jog_saturated=%" PRIu32 " slot_full=%" PRIu32
+             " max_depth=%" PRIu32 " unsupported=%" PRIu32,
+             stats.fifo_full, stats.continuous_coalesced, stats.jog_saturated,
+             stats.continuous_slot_full, stats.max_fifo_depth,
+             unsupported);
 }
 
-static bool flx4_try_coalesce_latest(const flx4_control_event_t *ev)
+static void s3_debug_ap_token_cb(uint32_t token)
 {
-    if (!flx4_event_is_high_rate(ev) || !s_flx4_event_queue) {
-        return false;
-    }
+    (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                     CTRL_ID_S3_DEBUG_TOKEN_HI,
+                                     (int16_t)(token / 1000u));
+    (void)control_link_send_semantic(CTRL_TYPE_STATE,
+                                     CTRL_ID_S3_DEBUG_TOKEN_LO,
+                                     (int16_t)(token % 1000u));
+}
 
-    flx4_control_event_t stash[FLX4_EVENT_QUEUE_LEN];
-    int stash_len = 0;
-    bool replaced = false;
-    flx4_control_event_t cur;
-
-    while (stash_len < FLX4_EVENT_QUEUE_LEN &&
-           xQueueReceive(s_flx4_event_queue, &cur, 0) == pdTRUE) {
-        if (!replaced && cur.type == ev->type && cur.id == ev->id) {
-            if (flx4_event_is_relative_jog(ev)) {
-                cur.value = flx4_accumulate_delta(cur.value, ev->value);
-            } else {
-                cur = *ev;  /* absolute control: newest value wins */
-            }
-            stash[stash_len++] = cur;
-            replaced = true;
-            continue;
-        }
-        stash[stash_len++] = cur;
+static void flx4_wake_translator(void)
+{
+    if (s_flx4_translator_task) {
+        xTaskNotifyGive(s_flx4_translator_task);
     }
-
-    for (int i = 0; i < stash_len; i++) {
-        if (xQueueSend(s_flx4_event_queue, &stash[i], 0) != pdTRUE) {
-            /* The FLX4 MIDI callback can refill the queue while it is drained
-             * here; a failed re-push is a real lost event and must be counted
-             * (matches the P4-side control_link coalescer). */
-            s_flx4_dropped_count++;
-        }
-    }
-
-    if (!replaced) {
-        return false;
-    }
-    s_flx4_coalesced_count++;
-    return true;
 }
 
 static void flx4_enqueue_event(const flx4_control_event_t *ev)
 {
+    if (!ev) {
+        return;
+    }
     if (ev && ev->type == CTRL_TYPE_BUTTON &&
         control_held_state_key(ev->id, ev->value) >= 0) {
-        bool dirty;
         portENTER_CRITICAL(&s_flx4_held_mux);
-        const int held_key = control_held_state_observe(
-            &s_flx4_held_states, ev->id, ev->value, 0u);
-        dirty = held_key >= 0 && s_flx4_held_states.slots[held_key].dirty;
+        (void)control_held_state_observe(&s_flx4_held_states, ev->id, ev->value, 0u);
         portEXIT_CRITICAL(&s_flx4_held_mux);
-        if (!dirty) {
-            s_flx4_coalesced_count++;
-            return;
-        }
-        /* The queue entry is only a wake/order token. If it cannot be queued,
-         * the dirty slot remains durable and the translator reconciles it as
-         * soon as any existing queue item drains. */
-        if (xQueueSend(s_flx4_event_queue, ev, 0) != pdTRUE) {
-            s_flx4_coalesced_count++;
-            flx4_translator_warn_rate_limited();
-        }
+        /* Held states are durable desired values, never lossy FIFO tokens. */
+        flx4_wake_translator();
         return;
     }
-    if (xQueueSend(s_flx4_event_queue, ev, 0) == pdTRUE) {
-        return;
+
+    const control_scheduled_event_t scheduled = {
+        .type = ev->type,
+        .id = ev->id,
+        .value = ev->value,
+    };
+    portENTER_CRITICAL(&s_flx4_scheduler_mux);
+    if (flx4_event_is_high_rate(ev)) {
+        (void)control_event_scheduler_publish_continuous(
+            &s_flx4_scheduler, &scheduled,
+            flx4_event_is_relative_jog(ev)
+                ? CONTROL_EVENT_ACCUMULATE_DELTA
+                : CONTROL_EVENT_LATEST_VALUE);
+    } else {
+        (void)control_event_scheduler_enqueue_discrete(&s_flx4_scheduler, &scheduled);
     }
-    if (!flx4_try_coalesce_latest(ev)) {
-        s_flx4_dropped_count++;
-    }
-    flx4_translator_warn_rate_limited();
+    portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+    flx4_wake_translator();
 }
 
 static bool flx4_profile_activate_cb(const uint8_t *blob, size_t len,
-                                     uint16_t vid, uint16_t pid)
+                                     uint16_t vid, uint16_t pid,
+                                     uint32_t connection_epoch)
 {
-    return controller_profile_runtime_activate(blob, len, vid, pid);
+    if (!blob || len == 0u) {
+        controller_profile_runtime_clear();
+        return true;
+    }
+    flx4_midi_connection_context_t connection;
+    if (!flx4_midi_host_get_connection_context(&connection) ||
+        connection.vid != vid || connection.pid != pid ||
+        connection.connection_epoch != connection_epoch) {
+        return false;
+    }
+    return controller_profile_runtime_activate(
+        blob, len, vid, pid, connection_epoch);
 }
 
 static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
@@ -357,34 +470,65 @@ static void flx4_midi_message_cb(const flx4_midi_message_t *msg, void *user_ctx)
     }
     flx4_control_event_t ev;
     bool mapped;
-    /* Prefer the active dynamic profile; fall back to the built-in FLX4 map
-     * when none has been transferred/activated. */
-    if (controller_profile_runtime_active()) {
+    flx4_midi_connection_context_t connection;
+    bool connected = flx4_midi_host_get_connection_context(&connection);
+    if (connected && controller_profile_runtime_bound_to(
+                         connection.vid, connection.pid,
+                         connection.connection_epoch)) {
         mapped = controller_profile_runtime_map(msg->status, msg->data1, msg->data2,
                                                 &ev.type, &ev.id, &ev.value);
-    } else {
+    } else if (connected && connection.vid == FLX4_USB_VID &&
+               connection.pid == FLX4_USB_PID) {
+        portENTER_CRITICAL(&s_flx4_map_mux);
         mapped = flx4_map_message(&s_flx4_map, msg, &ev);
+        portEXIT_CRITICAL(&s_flx4_map_mux);
+    } else {
+        mapped = false;
     }
     if (mapped) {
         flx4_enqueue_event(&ev);
     } else {
-        s_flx4_unsupported_count++;
+        __atomic_fetch_add(&s_flx4_unsupported_count, 1u, __ATOMIC_RELAXED);
+    }
+}
+
+static void flx4_schedule_pending_events(void)
+{
+    flx4_flush_pending_held_states();
+
+    for (size_t i = 0; i < FLX4_DISCRETE_BUDGET; ++i) {
+        control_scheduled_event_t event;
+        portENTER_CRITICAL(&s_flx4_scheduler_mux);
+        const bool found = control_event_scheduler_dequeue_discrete(
+            &s_flx4_scheduler, &event);
+        portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+        if (!found) {
+            break;
+        }
+        (void)control_link_send_semantic(event.type, event.id, event.value);
+    }
+
+    for (size_t i = 0; i < FLX4_CONTINUOUS_BUDGET; ++i) {
+        control_scheduled_event_t event;
+        portENTER_CRITICAL(&s_flx4_scheduler_mux);
+        const bool found = control_event_scheduler_take_continuous(
+            &s_flx4_scheduler, &event);
+        portEXIT_CRITICAL(&s_flx4_scheduler_mux);
+        if (!found) {
+            break;
+        }
+        (void)control_link_send_semantic(event.type, event.id, event.value);
     }
 }
 
 static void flx4_translator_task(void *arg)
 {
     (void)arg;
-    flx4_control_event_t ev;
+    __atomic_store_n(&s_translator_task_started, true, __ATOMIC_RELEASE);
     while (1) {
-        if (xQueueReceive(s_flx4_event_queue, &ev, pdMS_TO_TICKS(20)) == pdTRUE) {
-            flx4_flush_pending_held_states();
-            if (!(ev.type == CTRL_TYPE_BUTTON &&
-                  control_held_state_key(ev.id, ev.value) >= 0)) {
-                (void)control_link_send_semantic(ev.type, ev.id, ev.value);
-            }
-        }
-        flx4_flush_pending_held_states();
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
+        flx4_schedule_pending_events();
+        flx4_translator_warn_rate_limited();
     }
 }
 #endif
@@ -392,6 +536,11 @@ static void flx4_translator_task(void *arg)
 void app_main(void)
 {
     ESP_ERROR_CHECK(firmware_health_init());
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+    __atomic_store_n(&s_heartbeat_task_started, false, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_translator_task_started, false, __ATOMIC_RELEASE);
+    firmware_boot_gate_init(&s_boot_gate, (uint16_t)esp_random());
+#endif
     ESP_ERROR_CHECK(s3_ota_init());
     ESP_LOGI(TAG, "Pajoniiir control board firmware starting");
     ESP_LOGI(TAG, "Board: ESP32-S3-DevKitC-1 N16R8");
@@ -402,20 +551,24 @@ void app_main(void)
     if (status_led_init() != ESP_OK) {
         ESP_LOGW(TAG, "status LED unavailable; continuing without it");
     }
+    portENTER_CRITICAL(&s_flx4_map_mux);
     flx4_map_init(&s_flx4_map);
+    portEXIT_CRITICAL(&s_flx4_map_mux);
     control_held_state_reset(&s_flx4_held_states);
+    control_event_scheduler_reset(&s_flx4_scheduler);
     controller_profile_runtime_init();
-    s_flx4_event_queue = xQueueCreate(FLX4_EVENT_QUEUE_LEN, sizeof(flx4_control_event_t));
-    ESP_ERROR_CHECK(s_flx4_event_queue ? ESP_OK : ESP_ERR_NO_MEM);
+    control_link_set_state_cb(boot_health_state_cb);
     ESP_ERROR_CHECK(control_link_init());
     control_link_set_profile_activate_cb(flx4_profile_activate_cb);
     ESP_ERROR_CHECK(s3_debug_ap_init());
     ESP_ERROR_CHECK(s3_debug_ap_set_status_callback(s3_debug_ap_status_cb));
+    ESP_ERROR_CHECK(s3_debug_ap_set_token_callback(s3_debug_ap_token_cb));
+    ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6,
+                                &s_flx4_translator_task) == pdPASS
+                    ? ESP_OK : ESP_ERR_NO_MEM);
     flx4_midi_host_set_message_callback(flx4_midi_message_cb, NULL);
     flx4_midi_host_set_connection_callback(flx4_controller_connection_cb, NULL);
     ESP_ERROR_CHECK(flx4_midi_host_init());
-    ESP_ERROR_CHECK(xTaskCreate(flx4_translator_task, "flx4_tx", 3072, NULL, 6, NULL) == pdPASS
-                    ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(xTaskCreate(heartbeat_task, "heartbeat", HEARTBEAT_TASK_STACK, NULL, 3, NULL) == pdPASS
                     ? ESP_OK : ESP_ERR_NO_MEM);
 #else
@@ -432,5 +585,9 @@ void app_main(void)
 #endif
 
     ESP_LOGI(TAG, "all subsystems ready");
+#if CONFIG_DDJ_FLX4_TRANSLATE_TO_P4
+    ESP_ERROR_CHECK(confirm_pending_image_with_p4());
+#else
     ESP_ERROR_CHECK(firmware_health_mark_ready());
+#endif
 }

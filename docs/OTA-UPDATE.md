@@ -10,6 +10,16 @@ verified and installed on 2026-07-16: P4 finished on `ota_1`, S3 on
 `ota_0 / valid`. This rollout proved package/install/boot health but intentionally
 did not repeat the complete functional hardware smoke.
 
+The latest P4-only deployment was `RC2-51-g050ab43` on 2026-08-22. The local
+push endpoint accepted the signed bundle, and COM15 later confirmed P4
+`ota_0 / valid`, a mounted 29,520 MB SDHC card and the still-running S3 at
+`RC2-44-g1923a3b / ota_1 / valid`. The USB medium exhausted eight automatic
+enumeration-recovery cycles after the restart and required one physical
+reinsert before its exFAT volume and 324-track library loaded. This is positive
+P4 OTA and reconnect evidence, not a matching dual-target rollout or complete
+reboot-recovery pass. See
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+
 ## Safety rules
 
 - Update one processor at a time and wait for a clean reboot.
@@ -113,6 +123,9 @@ on P4 and S3 on 2026-08-02 and both targets reported `RC2`. Complete ESP-IDF
 v6.0.2 boot chains were installed afterwards over the wired recovery ports,
 because application OTA does not replace bootloaders or partition tables. See
 [`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`](validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md).
+The later `RC2-51-g050ab43` clean dual-target development build and P4-only OTA
+deployment are recorded in
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
 The superseded ESP-IDF 5.5.4 record is
 [`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
 
@@ -188,21 +201,43 @@ curl.exe -X POST `
 
 ## Update S3
 
-The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Signature
-validation remains the firmware-authenticity boundary.
+The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Association
+with the published WPA2 credential does not authorize an update: every ON edge
+creates a short-lived six-digit maintenance code shown in P4 Settings, and the
+S3 OTA POST requires that code. Signature validation remains the firmware-
+authenticity boundary.
 
-1. Enable **S3 DEBUG AP** in P4 Settings and wait for `ON`.
+The S3 upload endpoint rejects an oversized Content-Length before allocating a
+receive buffer, receives/verifies the signed manifest and ESP image header
+before `esp_ota_begin`, and enforces two availability budgets: at most 180 s for
+the complete request and at least 4096 received bytes in each 10 s progress
+window. A timeout or slow-client rejection returns HTTP 408; if flashing has
+already begun, the OTA handle is aborted before the request closes.
+
+1. Enable **S3 DEBUG AP** in P4 Settings, wait for `ON`, and note the six-digit
+   `CODE` displayed on the same row.
 2. Connect to `Pajoniiir-S3-DEBUG` using the default WPA2 password
    `Pajoniiir`, then open
    `http://192.168.4.1/update`.
 3. Record the S3 running version, slot and state.
-4. Select **`control-board-s3.ddjota`**, confirm and upload.
+4. Enter the displayed maintenance code, select
+   **`control-board-s3.ddjota`**, confirm and upload. The code expires after ten
+   minutes and locks after five invalid attempts; toggle the AP OFF and ON to
+   generate a replacement. The AP also shuts itself down after fifteen minutes.
 5. After restart, the S3 Debug AP turns OFF by design. Reconnect to the P4
    `Pajoniiir` Wi-Fi Remote and inspect its `/api/firmware` response.
 6. Confirm nested `s3.available=true` plus the expected `s3.version`, opposite
    `s3.slot` and `s3.state=valid`. Re-enable the S3 Debug AP only if local logs
    are needed, then turn it off and verify FLX4 controls, LEDs, UART and USB
    headphone cue.
+
+During a pending-image boot, S3 does not mark the slot valid merely because its
+init calls returned success. It first confirms that the critical UART/heartbeat,
+translator and USB host tasks have entered their run loops, then requires the P4
+UART RX task to echo a fresh boot challenge. S3 retries every 500 ms for at most
+30 s. If P4 is absent, the reverse UART path is broken, or only a stale/wrong ACK
+arrives, S3 restarts without confirmation and ESP-IDF rolls the image back. An
+absent FLX4 controller is valid and does not block confirmation.
 
 Raw API equivalent:
 
@@ -227,7 +262,11 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   rejected without selecting the inactive slot.
 - A disconnected or interrupted transfer aborts the OTA handle; the current
   slot remains bootable.
-- A new image stays `PENDING_VERIFY` until mandatory startup succeeds.
+- A too-large or deliberately slow S3 upload is rejected before the absolute
+  deadline; it must not keep the single HTTP server task occupied indefinitely.
+- A new S3 image stays `PENDING_VERIFY` until critical tasks are alive and the
+  P4 returns the exact current-boot challenge; local init success alone is not
+  enough.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
 The unsigned rollback baseline accepted on 2026-07-13 was

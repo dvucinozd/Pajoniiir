@@ -86,7 +86,7 @@ void splash_screen_screensaver_show(void)
 {
     if (saver_scr) return;
     saver_prev_scr = lv_screen_active();
-    saver_scr = splash_build("press any button or don't...");
+    saver_scr = splash_build("touch me.....or don't ;)");
     if (!saver_scr) return;
     lv_screen_load(saver_scr);
     ESP_LOGI(TAG, "screensaver on");

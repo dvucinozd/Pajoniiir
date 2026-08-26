@@ -23,6 +23,8 @@ int s3_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
 int s3_ctrl_id_beat_fx_beat_dec_shift(void) { return CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT; }
 int s3_ctrl_id_beat_fx_beat_inc_shift(void) { return CTRL_ID_BEAT_FX_BEAT_INC_SHIFT; }
 int s3_ctrl_id_s3_debug_ap(void) { return CTRL_ID_S3_DEBUG_AP; }
+int s3_ctrl_id_s3_boot_challenge(void) { return CTRL_ID_S3_BOOT_CHALLENGE; }
+int s3_ctrl_id_s3_boot_ack(void) { return CTRL_ID_S3_BOOT_ACK; }
 int s3_ctrl_s3_debug_ap_off(void) { return CTRL_S3_DEBUG_AP_OFF; }
 int s3_ctrl_s3_debug_ap_starting(void) { return CTRL_S3_DEBUG_AP_STARTING; }
 int s3_ctrl_s3_debug_ap_on(void) { return CTRL_S3_DEBUG_AP_ON; }
@@ -43,12 +45,15 @@ int s3_ctrl_id_browse_shift_delta(void) { return CTRL_ID_BROWSE_SHIFT_DELTA; }
 int s3_ctrl_id_browse_shift_press(void) { return CTRL_ID_BROWSE_SHIFT_PRESS; }
 int s3_ctrl_id_deck1_ext_action(void) { return CTRL_ID_DECK1_EXT_ACTION; }
 int s3_ctrl_id_deck2_ext_action(void) { return CTRL_ID_DECK2_EXT_ACTION; }
+int s3_ctrl_id_deck1_loop_size(void) { return CTRL_ID_DECK1_LOOP_SIZE; }
+int s3_ctrl_id_deck2_loop_size(void) { return CTRL_ID_DECK2_LOOP_SIZE; }
 int s3_ctrl_deck_ext_action_censor(void) { return CTRL_DECK_EXT_ACTION_CENSOR; }
 int s3_ctrl_deck_ext_action_sync_master(void) { return CTRL_DECK_EXT_ACTION_SYNC_MASTER; }
 int s3_ctrl_deck_ext_action_reloop_stop(void) { return CTRL_DECK_EXT_ACTION_RELOOP_STOP; }
 int s3_ctrl_deck_ext_action_loop_adjust_in(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN; }
 int s3_ctrl_deck_ext_action_loop_adjust_out(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT; }
 int s3_ctrl_deck_ext_action_quantize(void) { return CTRL_DECK_EXT_ACTION_QUANTIZE; }
+int s3_ctrl_deck_ext_action_sync_off(void) { return CTRL_DECK_EXT_ACTION_SYNC_OFF; }
 int s3_led_cue(void) { return LED_CUE; }
 int s3_led_play(void) { return LED_PLAY; }
 int s3_led_pfl(void) { return LED_PFL; }

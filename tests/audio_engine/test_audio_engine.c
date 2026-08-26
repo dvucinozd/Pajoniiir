@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 /*
  * test_audio_engine.c — offline unit tests for the audio engine (PC, no hardware).
  *
@@ -18,6 +20,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <pthread.h>
+#include <time.h>
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -29,6 +33,130 @@ static int s_fail = 0;
         if (cond) { printf("  PASS: %s\n", msg); s_pass++; } \
         else       { printf("  FAIL: %s  (line %d)\n", msg, __LINE__); s_fail++; } \
     } while (0)
+
+static pthread_mutex_t s_lifecycle_test_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_lifecycle_test_cond = PTHREAD_COND_INITIALIZER;
+static int s_lifecycle_hook_entered;
+static int s_lifecycle_hook_release;
+static int s_lifecycle_stop_finished;
+
+#define TELEMETRY_THREAD_ITERATIONS 50000u
+static int s_telemetry_writer_done;
+static uint32_t s_telemetry_consistency_errors;
+
+static void *telemetry_writer_thread(void *arg)
+{
+    (void)arg;
+    const audio_mixer_limiter_stats_t increment = {
+        .limited_samples = 1u,
+        .positive_overloads = 1u,
+        .negative_overloads = 1u,
+        .peak_input_abs = 48000,
+    };
+    for (uint32_t i = 0u; i < TELEMETRY_THREAD_ITERATIONS; i++) {
+        audio_engine_test_record_limiter_stats(&increment);
+        switch (i % 3u) {
+        case 0u:
+            (void)audio_engine_set_headphone_mode(AUDIO_HEADPHONE_MODE_MASTER_MONO);
+            break;
+        case 1u:
+            (void)audio_engine_set_headphone_mode(AUDIO_HEADPHONE_MODE_CUE_MONO);
+            break;
+        default:
+            (void)audio_engine_set_cue_mode(1u);
+            break;
+        }
+    }
+    __atomic_store_n(&s_telemetry_writer_done, 1, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+static void *telemetry_reader_thread(void *arg)
+{
+    (void)arg;
+    do {
+        audio_engine_mixer_snapshot_t snapshot = { 0 };
+        audio_engine_get_mixer_snapshot(&snapshot);
+        if (snapshot.limiter.limited_samples != snapshot.limiter.positive_overloads ||
+            snapshot.limiter.limited_samples != snapshot.limiter.negative_overloads ||
+            (snapshot.limiter.peak_input_abs != 0 &&
+             snapshot.limiter.peak_input_abs != 48000)) {
+            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+                               __ATOMIC_RELAXED);
+        }
+
+        audio_headphone_mode_t mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
+        uint8_t cue_mode = 0u;
+        audio_engine_test_get_headphone_routing_snapshot(&mode, &cue_mode);
+        bool route_consistent =
+            (mode == AUDIO_HEADPHONE_MODE_MASTER_MONO && cue_mode == 0u) ||
+            (mode == AUDIO_HEADPHONE_MODE_CUE_MONO && cue_mode == 1u) ||
+            (mode == AUDIO_HEADPHONE_MODE_SPLIT_MONO && cue_mode == 1u);
+        if (!route_consistent) {
+            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+                               __ATOMIC_RELAXED);
+        }
+    } while (__atomic_load_n(&s_telemetry_writer_done, __ATOMIC_ACQUIRE) == 0);
+    return NULL;
+}
+
+static void lifecycle_after_stop_hook(uint8_t deck)
+{
+    (void)deck;
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    s_lifecycle_hook_entered = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    while (!s_lifecycle_hook_release) {
+        pthread_cond_wait(&s_lifecycle_test_cond, &s_lifecycle_test_mutex);
+    }
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+}
+
+static void *lifecycle_load_thread(void *arg)
+{
+    const char *path = (const char *)arg;
+    (void)audio_engine_deck_load(0, path, NULL, 1000u);
+    return NULL;
+}
+
+static void test_cross_core_routing_and_limiter_snapshots_are_consistent(void)
+{
+    puts("\n[Test 4b] Cross-core routing and limiter snapshots");
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets threaded telemetry fixture");
+    __atomic_store_n(&s_telemetry_writer_done, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_telemetry_consistency_errors, 0u, __ATOMIC_RELAXED);
+
+    pthread_t writer;
+    pthread_t reader;
+    int writer_rc = pthread_create(&writer, NULL, telemetry_writer_thread, NULL);
+    int reader_rc = pthread_create(&reader, NULL, telemetry_reader_thread, NULL);
+    EXPECT(writer_rc == 0 && reader_rc == 0,
+           "telemetry writer and reader threads start");
+    if (writer_rc == 0) pthread_join(writer, NULL);
+    if (reader_rc == 0) pthread_join(reader, NULL);
+
+    audio_engine_mixer_snapshot_t snapshot = { 0 };
+    audio_engine_get_mixer_snapshot(&snapshot);
+    EXPECT(__atomic_load_n(&s_telemetry_consistency_errors, __ATOMIC_RELAXED) == 0u,
+           "all concurrent routing and limiter snapshots are coherent");
+    EXPECT(snapshot.limiter.limited_samples == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.positive_overloads == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.negative_overloads == TELEMETRY_THREAD_ITERATIONS &&
+           snapshot.limiter.peak_input_abs == 48000,
+           "threaded limiter publisher loses no updates");
+}
+
+static void *lifecycle_stop_thread(void *arg)
+{
+    (void)arg;
+    (void)audio_engine_deck_stop(0);
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    s_lifecycle_stop_finished = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+    return NULL;
+}
 
 typedef struct {
     const audio_mixer_frame_t *frames;
@@ -136,6 +264,91 @@ static int write_test_wav(const char *path)
     fwrite(samples, sizeof(samples), 1, fp);
     fclose(fp);
     return 1;
+}
+
+static void test_stop_waits_for_inflight_load_transaction(void)
+{
+    const char *path = "test_lifecycle.wav";
+    EXPECT(write_test_wav(path), "lifecycle WAV fixture created");
+    s_lifecycle_hook_entered = 0;
+    s_lifecycle_hook_release = 0;
+    s_lifecycle_stop_finished = 0;
+    audio_engine_test_set_after_internal_stop_hook(lifecycle_after_stop_hook);
+
+    pthread_t load_thread;
+    pthread_t stop_thread;
+    EXPECT(pthread_create(&load_thread, NULL, lifecycle_load_thread, (void *)path) == 0,
+           "inflight LOAD thread starts");
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    while (!s_lifecycle_hook_entered) {
+        pthread_cond_wait(&s_lifecycle_test_cond, &s_lifecycle_test_mutex);
+    }
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+
+    EXPECT(pthread_create(&stop_thread, NULL, lifecycle_stop_thread, NULL) == 0,
+           "concurrent STOP thread starts");
+    struct timespec pause = { .tv_sec = 0, .tv_nsec = 20 * 1000 * 1000 };
+    nanosleep(&pause, NULL);
+    pthread_mutex_lock(&s_lifecycle_test_mutex);
+    EXPECT(!s_lifecycle_stop_finished,
+           "STOP cannot return while admitted LOAD is between stop and bind");
+    s_lifecycle_hook_release = 1;
+    pthread_cond_broadcast(&s_lifecycle_test_cond);
+    pthread_mutex_unlock(&s_lifecycle_test_mutex);
+
+    pthread_join(load_thread, NULL);
+    pthread_join(stop_thread, NULL);
+    audio_engine_test_set_after_internal_stop_hook(NULL);
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK,
+           "deck status remains queryable after lifecycle race");
+    EXPECT(!status.loaded && status.state == AE_IDLE,
+           "STOP retires the session created by the admitted LOAD");
+    remove(path);
+}
+
+static void test_stale_session_cannot_stop_newer_load(void)
+{
+    const char *path = "test_session_generation.wav";
+    EXPECT(write_test_wav(path), "session-generation WAV fixture created");
+
+    uint32_t first = 0u;
+    uint32_t second = 0u;
+    EXPECT(audio_engine_deck_load_session(0, path, NULL, 1000u, &first) == ESP_OK,
+           "first LOAD returns a session generation");
+    EXPECT(first != 0u && audio_engine_deck_session_generation(0) == first,
+           "first session generation is authoritative");
+    EXPECT(audio_engine_deck_load_session(0, path, NULL, 1000u, &second) == ESP_OK,
+           "replacement LOAD returns a session generation");
+    EXPECT(second != 0u && second != first,
+           "replacement LOAD advances the generation");
+    EXPECT(audio_engine_deck_stop_session(0, first) == ESP_ERR_INVALID_STATE,
+           "stale completion cannot stop the replacement session");
+
+    audio_engine_deck_status_t status = {0};
+    EXPECT(audio_engine_deck_get_status(0, &status) == ESP_OK && status.loaded,
+           "replacement session remains loaded after stale STOP");
+    EXPECT(audio_engine_deck_stop_session(0, second) == ESP_OK,
+           "matching generation retires its own session");
+    remove(path);
+}
+
+static void test_transition_barrier_blocks_load_until_resume(void)
+{
+    const char *path = "test_transition_barrier.wav";
+    EXPECT(write_test_wav(path), "transition-barrier WAV fixture created");
+    EXPECT(audio_engine_suspend_loads_and_stop_all() == ESP_OK,
+           "global transition acquires LOAD admission barrier");
+    EXPECT(audio_engine_deck_load(0, path, NULL, 1000u) == ESP_ERR_INVALID_STATE,
+           "LOAD is rejected while USB/OTA transition owns barrier");
+    EXPECT(audio_engine_suspend_loads_and_stop_all() == ESP_ERR_INVALID_STATE,
+           "transition barrier has a single owner");
+    audio_engine_resume_loads();
+    EXPECT(audio_engine_deck_load(0, path, NULL, 1000u) == ESP_OK,
+           "LOAD admission resumes after failed/completed transition");
+    EXPECT(audio_engine_deck_stop(0) == ESP_OK,
+           "resumed session stops cleanly");
+    remove(path);
 }
 
 /* ── Test 1: init / uninitialised-state guards ───────────────────────────── */
@@ -556,6 +769,43 @@ static void test_beat_fx_delay_state_api(void)
                                           250,
                                           true) == ESP_ERR_INVALID_ARG,
            "Beat FX DELAY rejects invalid target");
+}
+
+static void test_scratch_handoff_commands_apply_only_on_output_boundary(void)
+{
+    puts("\n[Test 4b] Scratch handoff command ownership");
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets scratch handoff command state");
+
+    bool fade_out = false;
+    float gain = 0.0f;
+    audio_engine_test_seed_scratch_handoff(0, true, 0.37f);
+    audio_engine_test_publish_scratch_handoff(0, false);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(fade_out && nearf(gain, 0.37f),
+           "re-grab publisher does not mutate output-owned phase or gain");
+
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 1.0f),
+           "output boundary applies re-grab at unity without amplitude jump");
+
+    audio_engine_test_seed_scratch_handoff(0, false, 0.62f);
+    audio_engine_test_publish_scratch_handoff(0, true);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 0.62f),
+           "release publisher leaves output-owned state untouched");
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(fade_out && nearf(gain, 1.0f),
+           "output boundary seeds release fade from unity");
+
+    audio_engine_test_publish_scratch_handoff(0, true);
+    audio_engine_test_publish_scratch_handoff(0, false);
+    audio_engine_test_apply_scratch_handoff(0);
+    audio_engine_test_get_scratch_handoff(0, &fade_out, &gain);
+    EXPECT(!fade_out && nearf(gain, 1.0f),
+           "latest re-grab command supersedes an unapplied release");
 }
 
 static void test_deck_peak_meter_api_returns_and_resets_peak(void)
@@ -1149,7 +1399,9 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
+    test_cross_core_routing_and_limiter_snapshots_are_consistent();
     test_beat_fx_delay_state_api();
+    test_scratch_handoff_commands_apply_only_on_output_boundary();
     test_deck_peak_meter_api_returns_and_resets_peak();
     test_mixer_snapshot_reports_deck_peak_without_reset();
     test_diagnostics_snapshot_reports_audio_health_state();
@@ -1165,6 +1417,9 @@ int main(int argc, char *argv[])
     test_deck_status_is_independent();
     test_deck_states_are_independent();
     test_deck_loops_are_independent();
+    test_stop_waits_for_inflight_load_transaction();
+    test_stale_session_cannot_stop_newer_load();
+    test_transition_barrier_blocks_load_until_resume();
 
     if (argc >= 2) {
         uint32_t max_ms = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 0u;

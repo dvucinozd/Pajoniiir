@@ -37,8 +37,17 @@ uint32_t ui_position_interpolator_update(ui_position_interpolator_t *interp,
     }
 
     snapshot_position_ms = clamp_to_duration(snapshot_position_ms, duration_ms);
+    /* Zero is an explicit stationary/authoritative mode used while the audible
+     * scratch head owns deck position. Return every snapshot exactly so a held
+     * platter stays parked and jog motion is not filtered by the normal 120 ms
+     * forward-prediction rebase threshold. Re-anchor here so normal playback
+     * resumes from the last scratch position when the platter is released. */
     if (speed_permille == 0) {
-        speed_permille = 1000;
+        interp->initialized = true;
+        interp->last_playing = playing;
+        interp->anchor_position_ms = snapshot_position_ms;
+        interp->anchor_time_us = now_us;
+        return snapshot_position_ms;
     }
 
     if (!interp->initialized || !playing || !interp->last_playing) {

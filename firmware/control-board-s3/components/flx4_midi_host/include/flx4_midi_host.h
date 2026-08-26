@@ -10,6 +10,27 @@
 #include "esp_err.h"
 #endif
 
+#if defined(FLX4_MIDI_HOST_PRODUCTION_TEST)
+typedef struct {
+    bool opened;
+    bool claimed;
+    bool closing;
+    bool in_transfer_allocated;
+    bool out_transfer_allocated;
+    bool in_transfer_active;
+    bool out_transfer_active;
+} flx4_midi_host_production_snapshot_t;
+
+void flx4_midi_host_production_test_reset(void);
+esp_err_t flx4_midi_host_production_test_open(uint8_t dev_addr);
+void flx4_midi_host_production_test_device_gone(void);
+void flx4_midi_host_production_test_pump(void);
+void flx4_midi_host_production_test_complete_transfers(bool disconnected);
+bool flx4_midi_host_production_test_close_step(void);
+void flx4_midi_host_production_test_snapshot(
+    flx4_midi_host_production_snapshot_t *out_snapshot);
+#endif
+
 typedef enum {
     FLX4_USB_MIDI_CIN_MISC             = 0x0,
     FLX4_USB_MIDI_CIN_CABLE_EVENT      = 0x1,
@@ -41,6 +62,18 @@ typedef struct {
 typedef void (*flx4_midi_message_cb_t)(const flx4_midi_message_t *msg, void *user_ctx);
 typedef void (*flx4_midi_connection_cb_t)(bool connected, void *user_ctx);
 
+typedef struct {
+    bool connected;
+    uint16_t vid;
+    uint16_t pid;
+    uint8_t interface_num;
+    uint8_t alternate_setting;
+    uint32_t connection_epoch;
+} flx4_midi_connection_context_t;
+
+#define FLX4_USB_VID 0x2B73u
+#define FLX4_USB_PID 0x0045u
+
 bool flx4_midi_parse_usb_packet(const uint8_t packet[4], flx4_midi_message_t *out);
 
 bool flx4_midi_find_streaming_in_endpoint(const uint8_t *config_desc,
@@ -70,10 +103,14 @@ void flx4_midi_host_set_connection_callback(flx4_midi_connection_cb_t cb,
                                             void *user_ctx);
 
 esp_err_t flx4_midi_host_init(void);
+bool flx4_midi_host_critical_tasks_started(void);
 
 esp_err_t flx4_midi_host_send_packet(const uint8_t packet[4]);
 
 bool flx4_midi_host_refresh_connection_state(void);
+bool flx4_midi_host_get_connection_context(
+    flx4_midi_connection_context_t *out_context);
+bool flx4_midi_host_builtin_flx4_active(void);
 
 size_t flx4_midi_host_midi_out_queue_capacity(void);
 
@@ -90,8 +127,15 @@ typedef struct {
 } flx4_midi_host_test_connection_event_t;
 
 void flx4_midi_host_test_reset_connection_state(void);
+void flx4_midi_host_test_publish_connection_context(
+    bool connected, uint16_t vid, uint16_t pid,
+    uint8_t interface_num, uint8_t alternate_setting);
 bool flx4_midi_host_test_publish_connection_state(
     bool connected,
+    flx4_midi_host_test_connection_event_t *out);
+bool flx4_midi_host_test_publish_connection_state_with_result(
+    bool connected,
+    bool send_success,
     flx4_midi_host_test_connection_event_t *out);
 bool flx4_midi_host_test_publish_connection_refresh(
     flx4_midi_host_test_connection_event_t *out);

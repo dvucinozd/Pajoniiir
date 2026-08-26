@@ -535,10 +535,12 @@ bool ui_overview_wave_cache_update(ui_overview_wave_cache_t *cache,
         return false;
     }
 
-    if (abs(dx) >= cache->strip_width_px) {
+    if (abs(dx) >= cache->strip_width_px ||
+        (dx < 0 && abs(dx) > 4)) {
         rebuild_full(cache, source, duration_ms, meta,
                      center_ms, window_ms, &report);
-    } else if (origin_inside_safe_margin(cache, desired_origin)) {
+    } else if (dx >= 0 && origin_inside_safe_margin(cache, desired_origin) &&
+               dx <= UI_OVERVIEW_WAVE_CACHE_EDGE_BATCH_PX) {
         cache->view_origin_px = desired_origin;
         report.kind = UI_OVERVIEW_WAVE_CACHE_OFFSET;
         report.scroll_dx_px = dx;

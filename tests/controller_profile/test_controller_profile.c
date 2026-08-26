@@ -203,6 +203,8 @@ static void test_runtime_mapping(void)
     expect_event(&ev, 0x01, 0x10, 1);
     assert(cp_runtime_process(&profile, &rt, 0x90, 0x0B, 0x00, &ev));
     expect_event(&ev, 0x01, 0x10, 0);
+    assert(cp_runtime_process(&profile, &rt, 0x80, 0x0B, 0x40, &ev));
+    expect_event(&ev, 0x01, 0x10, 0);
 
     /* packed value: press sets mask, release keeps base */
     assert(cp_runtime_process(&profile, &rt, 0x97, 0x03, 0x7F, &ev));

@@ -4,6 +4,8 @@ import sys
 import os
 import argparse
 
+from compile_profile import compile_profile
+
 # Mapiranje semanticId (iz web profila) u firmware event nazive
 SEMANTIC_ID_TO_EVENT = {
     # Deck 1
@@ -167,29 +169,84 @@ FEEDBACK_SOURCE_TO_LED = {
     "track_load_deck2": ("track_load_deck2", "any")
 }
 
-def to_hex_str(val):
+def first_present(mapping, *keys):
+    """Return the first explicitly present non-None field, preserving zero."""
+    if not isinstance(mapping, dict):
+        raise ValueError("expected an object while selecting " + "/".join(keys))
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return None
+
+
+def parse_int(val, field, minimum=0, maximum=0xFFFF):
+    if val is None or isinstance(val, bool):
+        raise ValueError(f"{field} must be an integer")
+    try:
+        parsed = val if isinstance(val, int) else int(str(val), 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be decimal or 0x-prefixed hex") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ValueError(f"{field}={parsed} outside {minimum}..{maximum}")
+    return parsed
+
+
+def to_hex_str(val, field="numeric field", maximum=0xFFFF):
     if val is None:
         return None
-    if isinstance(val, str):
-        if val.startswith("0x") or val.startswith("0X"):
-            return val.lower()
-        return hex(int(val, 0)).lower()
-    return hex(int(val)).lower()
+    return hex(parse_int(val, field, 0, maximum)).lower()
+
+
+def midi_status(midi, field):
+    value = first_present(midi, "status")
+    if value is None:
+        raise ValueError(f"{field} is required")
+    return to_hex_str(value, field, 0xFF)
+
+
+def midi_data1(midi, field):
+    value = first_present(midi, "number", "hexNumber")
+    if value is None:
+        raise ValueError(f"{field} is required")
+    return to_hex_str(value, field, 0x7F)
+
+
+def control_deck(control):
+    raw = first_present(control, "deck")
+    return 1 if raw is None else parse_int(raw, "control.deck", 1, 2)
+
+
+def bool_field(mapping, key, default):
+    value = mapping.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be boolean")
+    return value
 
 def convert_profile(web_data):
+    if not isinstance(web_data, dict):
+        raise ValueError("web profile root must be an object")
+    usb = web_data.get("usb", {})
+    abi = web_data.get("firmwareAbi", {})
+    caps = abi.get("capabilities", {})
+    if not isinstance(usb, dict) or not isinstance(abi, dict) or not isinstance(caps, dict):
+        raise ValueError("usb, firmwareAbi and capabilities must be objects")
+    decks = parse_int(abi.get("decks", 2), "firmwareAbi.decks", 1, 2)
+    if decks != 2:
+        raise ValueError("firmware supports exactly two decks")
+
     # Temeljni izlazni JSON
     firmware_profile = {
         "schema": "p4-controller-profile-v1",
         "name": web_data.get("displayName", "Generic Controller"),
         "vendor": web_data.get("vendor", "Generic"),
-        "vid": to_hex_str(web_data.get("usb", {}).get("vendorId", "0x0000")),
-        "pid": to_hex_str(web_data.get("usb", {}).get("productId", "0x0000")),
-        "decks": web_data.get("firmwareAbi", {}).get("decks", 2),
+        "vid": to_hex_str(usb.get("vendorId", "0x0000"), "usb.vendorId"),
+        "pid": to_hex_str(usb.get("productId", "0x0000"), "usb.productId"),
+        "decks": decks,
         "capabilities": {
-            "led_feedback": web_data.get("firmwareAbi", {}).get("capabilities", {}).get("ledFeedback", True),
-            "usb_audio": web_data.get("firmwareAbi", {}).get("capabilities", {}).get("usbAudio", False),
-            "jog_touch": web_data.get("firmwareAbi", {}).get("capabilities", {}).get("jogTouch", False),
-            "pitch_14bit": web_data.get("firmwareAbi", {}).get("capabilities", {}).get("pitch14bit", False)
+            "led_feedback": bool_field(caps, "ledFeedback", True),
+            "usb_audio": bool_field(caps, "usbAudio", False),
+            "jog_touch": bool_field(caps, "jogTouch", False),
+            "pitch_14bit": bool_field(caps, "pitch14bit", False)
         },
         "inputs": [],
         "outputs": [],
@@ -202,6 +259,8 @@ def convert_profile(web_data):
 
     # Mapiranje kontrola u inpute
     controls = web_data.get("controls", [])
+    if not isinstance(controls, list) or not all(isinstance(c, dict) for c in controls):
+        raise ValueError("controls must be an array of objects")
     
     # Poseban flag za Pioneer beat_fx_target state_pair
     has_fx_target_ch1 = False
@@ -214,12 +273,14 @@ def convert_profile(web_data):
         event = None
         if sem_id and sem_id.startswith("CTRL_ID_"):
             event = SEMANTIC_ID_TO_EVENT.get(sem_id)
+            if event is None:
+                raise ValueError(f"unsupported semanticId: {sem_id}")
             
         # Fallback ako nemamo semanticId
         if not event:
             action = c.get("action")
             c_id = c.get("id", "")
-            deck = c.get("deck") or 1
+            deck = control_deck(c)
             
             # Mapiranje preko action / id
             if action == "motor.start_stop" or c_id.endswith("motor_start_stop") or action == "transport.play_toggle" or c_id.endswith(".play"):
@@ -261,7 +322,8 @@ def convert_profile(web_data):
             elif action == "tempo.fader" or c_id.endswith(".tempo"):
                 event = f"deck{deck}.tempo"
             elif action == "tempo.key_lock" or c_id.endswith(".key_lock"):
-                event = f"deck{deck}.tempo_range"
+                raise ValueError(
+                    "tempo.key_lock is not representable by the current firmware vocabulary")
             elif action == "loop.half" or c_id.endswith("loop_half"):
                 event = f"deck{deck}.loop_halve"
             elif action == "loop.double" or c_id.endswith("loop_double"):
@@ -287,16 +349,18 @@ def convert_profile(web_data):
             continue
 
         # Ignoriraj deck 3 i 4 jer firmware podržava samo 2 decka
-        if any(event.startswith(prefix) for prefix in ("deck3.", "deck4.")):
+        if event.startswith(("deck3.", "deck4.")):
             continue
         if event in ("browser.load_deck3", "browser.load_deck4", "browser.shift_load_deck3", "browser.shift_load_deck4"):
             continue
-        if any(event.startswith(prefix) for prefix in ("mixer.ch3", "mixer.ch4")):
+        if event.startswith(("mixer.ch3", "mixer.ch4")):
             continue
 
         midi = c.get("midi", {})
         mode = midi.get("mode")
-        status = to_hex_str(midi.get("status"))
+        if not isinstance(midi, dict):
+            raise ValueError("control.midi must be an object")
+        status = midi_status(midi, "control.midi.status")
         
         # Ako je event deckX.ext_action, pretvaramo ga u ext_action tip
         if event.endswith(".ext_action"):
@@ -318,16 +382,16 @@ def convert_profile(web_data):
                 
             firmware_profile["inputs"].append({
                 "type": "ext_action",
-                "deck": c.get("deck") or 1,
+                "deck": control_deck(c),
                 "action": ext_act,
                 "status": status,
-                "data1": to_hex_str(midi.get("number") or midi.get("hexNumber"))
+                "data1": midi_data1(midi, "control.midi.number")
             })
             continue
 
         # 1. Gumb (button)
         if mode == "button":
-            data1 = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+            data1 = midi_data1(midi, "control.midi.number")
             firmware_profile["inputs"].append({
                 "type": "button",
                 "event": event,
@@ -338,8 +402,18 @@ def convert_profile(web_data):
         # 2. Pad banka (button_range)
         elif mode == "button_range":
             num_range = midi.get("numberRange", {})
-            first_data1 = to_hex_str(num_range.get("start") or num_range.get("hexStart"))
-            count = int(num_range.get("end") or num_range.get("hexEnd")) - int(num_range.get("start") or num_range.get("hexStart")) + 1
+            if not isinstance(num_range, dict):
+                raise ValueError("control.midi.numberRange must be an object")
+            start = parse_int(first_present(num_range, "start", "hexStart"),
+                              "control.midi.numberRange.start", 0, 0x7F)
+            end = parse_int(first_present(num_range, "end", "hexEnd"),
+                            "control.midi.numberRange.end", 0, 0x7F)
+            if end < start:
+                raise ValueError("control.midi.numberRange.end precedes start")
+            count = end - start + 1
+            if count > 8:
+                raise ValueError("pad bank range cannot contain more than 8 controls")
+            first_data1 = to_hex_str(start, "control.midi.numberRange.start", 0x7F)
             
             # Određivanje mode parametra
             pad_mode = "hot_cue"
@@ -358,7 +432,7 @@ def convert_profile(web_data):
                 
             firmware_profile["inputs"].append({
                 "type": "pad_bank",
-                "deck": c.get("deck") or 1,
+                "deck": control_deck(c),
                 "shifted": c.get("layer") == "shift",
                 "status": status,
                 "first_data1": first_data1,
@@ -368,7 +442,7 @@ def convert_profile(web_data):
             
         # 3. Relativni enkoderi (relative)
         elif mode == "relative":
-            data1 = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+            data1 = midi_data1(midi, "control.midi.number")
             enc_type = "encoder_2c" if event in {"browser.delta", "browser.shift_delta"} else "encoder_rel64"
             firmware_profile["inputs"].append({
                 "type": enc_type,
@@ -383,8 +457,10 @@ def convert_profile(web_data):
             replay = event in REPLAY_EVENTS
             
             if res == "14bit":
-                msb = to_hex_str(midi.get("msb"))
-                lsb = to_hex_str(midi.get("lsb") or midi.get("lsbHex"))
+                msb = to_hex_str(first_present(midi, "msb"),
+                                 "control.midi.msb", 0x7F)
+                lsb = to_hex_str(first_present(midi, "lsb", "lsbHex"),
+                                 "control.midi.lsb", 0x7F)
                 firmware_profile["inputs"].append({
                     "type": "cc14",
                     "event": event,
@@ -394,7 +470,7 @@ def convert_profile(web_data):
                     "replay": replay
                 })
             else: # 7bit
-                data1 = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+                data1 = midi_data1(midi, "control.midi.number")
                 firmware_profile["inputs"].append({
                     "type": "cc7_abs",
                     "event": event,
@@ -402,14 +478,18 @@ def convert_profile(web_data):
                     "data1": data1,
                     "replay": replay
                 })
+        else:
+            raise ValueError(f"unsupported MIDI mode for {event}: {mode!r}")
                 
     # Generiranje state_pair za Pioneer target sklopke
     for c in controls:
         c_id = c.get("id", "").lower()
         if "fx.beat.target" in c_id or "beat_fx_target" in c.get("semanticId", "") or ("beat" in c_id and "target" in c_id):
             midi = c.get("midi", {})
-            status = to_hex_str(midi.get("status"))
-            num_val = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+            if not isinstance(midi, dict):
+                raise ValueError("Beat FX target midi must be an object")
+            status = midi_status(midi, "beat FX target status")
+            num_val = midi_data1(midi, "beat FX target number")
             if "ch1" in c_id or "deck1" in c_id:
                 has_fx_target_ch1 = True
                 fx_target_ch1_addr = {"status": status, "data1": num_val}
@@ -430,6 +510,18 @@ def convert_profile(web_data):
 
     # LED izlazi (outputs)
     led_groups = {}
+
+    def record_led(led_name, deck, kind, status, data1):
+        if status is None or data1 is None:
+            raise ValueError(f"LED {led_name} needs explicit status and number")
+        group = led_groups.setdefault(led_name, {"kind": kind, "entries": {}})
+        if group["kind"] != kind:
+            raise ValueError(f"LED {led_name} mixes note and CC output kinds")
+        previous = group["entries"].get(deck)
+        address = (status, data1)
+        if previous is not None and previous != address:
+            raise ValueError(f"LED {led_name} deck {deck} has conflicting MIDI addresses")
+        group["entries"][deck] = address
     
     # 1. Skeniranje feedback sekcije unutar controls
     for c in controls:
@@ -442,8 +534,10 @@ def convert_profile(web_data):
             continue
             
         midi = feedback.get("midi", {})
-        status = to_hex_str(midi.get("status"))
-        data1 = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+        if not isinstance(midi, dict):
+            raise ValueError("feedback.midi must be an object")
+        status = midi_status(midi, f"feedback {source} status")
+        data1 = midi_data1(midi, f"feedback {source} number")
         
         mapping = FEEDBACK_SOURCE_TO_LED.get(source)
         if not mapping:
@@ -452,7 +546,7 @@ def convert_profile(web_data):
             if deck_idx is None:
                 deck_idx = "any"
             else:
-                deck_idx = int(deck_idx) - 1
+                deck_idx = control_deck(c) - 1
                 
             s_lower = source.lower()
             if "playing" in s_lower or "play.active" in s_lower or "motor_start_stop.active" in s_lower:
@@ -481,17 +575,7 @@ def convert_profile(web_data):
         if midi.get("message") == "cc" or "vu_meter" in led_name:
             kind = "cc_value"
             
-        if led_name not in led_groups:
-            led_groups[led_name] = {
-                "kind": kind,
-                "deck": deck,
-                "entries": {}
-            }
-            
-        if deck == "any":
-            led_groups[led_name]["entries"]["any"] = (status, data1)
-        else:
-            led_groups[led_name]["entries"][deck] = (status, data1)
+        record_led(led_name, deck, kind, status, data1)
 
     # 2. Skeniranje feedbackOutputs sekcije na vrhu (npr. Numark)
     feedback_outputs = web_data.get("feedbackOutputs", [])
@@ -501,8 +585,10 @@ def convert_profile(web_data):
             continue
             
         midi = out.get("midi", {})
-        status = to_hex_str(midi.get("status"))
-        data1 = to_hex_str(midi.get("number") or midi.get("hexNumber"))
+        if not isinstance(midi, dict):
+            raise ValueError("feedbackOutputs[].midi must be an object")
+        status = midi_status(midi, f"feedback output {source} status")
+        data1 = midi_data1(midi, f"feedback output {source} number")
         
         mapping = FEEDBACK_SOURCE_TO_LED.get(source)
         if not mapping:
@@ -516,25 +602,16 @@ def convert_profile(web_data):
         if out.get("type") == "cc" or midi.get("message") == "cc" or "vu_meter" in led_name:
             kind = "cc_value"
             
-        if led_name not in led_groups:
-            led_groups[led_name] = {
-                "kind": kind,
-                "deck": deck,
-                "entries": {}
-            }
-            
-        if deck == "any":
-            led_groups[led_name]["entries"]["any"] = (status, data1)
-        else:
-            led_groups[led_name]["entries"][deck] = (status, data1)
+        record_led(led_name, deck, kind, status, data1)
 
     # Formiranje konačnih outputa za firmware
     for led_name, group in led_groups.items():
         kind = group["kind"]
-        deck = group["deck"]
         entries = group["entries"]
         
-        if deck == "any" and "any" in entries:
+        if "any" in entries:
+            if len(entries) != 1:
+                raise ValueError(f"LED {led_name} mixes deck-specific and any-deck addresses")
             status, data1 = entries["any"]
             firmware_profile["outputs"].append({
                 "kind": kind,
@@ -544,55 +621,22 @@ def convert_profile(web_data):
                 "data1": data1
             })
         else:
-            status_0 = entries.get(0, (None, None))[0]
-            status_1 = entries.get(1, (None, None))[0]
-            data1_0 = entries.get(0, (None, None))[1]
-            
-            if status_0 and status_1:
+            # Preserve each controller-specific address independently. The
+            # source schema permits Deck 1/2 to use different status *and*
+            # data1 bytes, and either side may be absent.
+            for deck in sorted(entries):
+                status, data1 = entries[deck]
                 firmware_profile["outputs"].append({
                     "kind": kind,
                     "led": led_name,
-                    "deck_status": [status_0, status_1],
-                    "data1": data1_0
-                })
-            elif status_0:
-                firmware_profile["outputs"].append({
-                    "kind": kind,
-                    "led": led_name,
-                    "deck_status": [status_0, status_0],
-                    "data1": data1_0
+                    "deck": deck,
+                    "status": status,
+                    "data1": data1
                 })
 
-    # Automatski dodaj note_bank za padove ako detektiramo ulazne pad_banke
-    for inp in firmware_profile["inputs"]:
-        if inp["type"] == "pad_bank" and inp["shifted"] is False:
-            mode = inp["mode"]
-            led_bank = None
-            if mode == "hot_cue":
-                led_bank = "hot_cue_pads"
-            elif mode == "pad_fx1":
-                led_bank = "pad_fx1_pads"
-            elif mode == "pad_fx2":
-                led_bank = "pad_fx2_pads"
-            elif mode == "beat_jump":
-                led_bank = "beat_jump_pads"
-            elif mode == "beat_loop":
-                led_bank = "beat_loop_pads"
-                
-            if led_bank:
-                status_0 = inp["status"]
-                status_1 = to_hex_str(int(status_0, 16) + 2)
-                
-                exists = any(o.get("led_bank") == led_bank for o in firmware_profile["outputs"])
-                if not exists:
-                    firmware_profile["outputs"].append({
-                        "kind": "note_bank",
-                        "led_bank": led_bank,
-                        "deck_status": [status_0, status_1],
-                        "first_data1": inp["first_data1"],
-                        "count": inp["count"]
-                    })
-
+    # Never invent vendor-specific LED addresses from input pad ranges. Every
+    # output address must be explicit in feedback/feedbackOutputs.
+    compile_profile(firmware_profile)
     return firmware_profile
 
 def main():

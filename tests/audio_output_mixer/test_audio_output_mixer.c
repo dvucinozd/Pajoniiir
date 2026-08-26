@@ -1,6 +1,7 @@
 #include "audio_delay_fx.h"
 #include "audio_output_mixer.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 
 typedef struct {
@@ -272,6 +273,143 @@ static void test_master_limiter_shapes_overloads_and_reports_telemetry(void)
     assert(stats.peak_input_abs == 60000);
 }
 
+static void test_channel_trim_precedes_wide_eq_and_final_main_limiter(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 24000, .right = -24000 },
+        { .left = 24000, .right = -24000 },
+        { .left = 24000, .right = -24000 },
+    };
+    source_t source = { .frames = frames, .count = 3, .index = 0 };
+    audio_resampler_state_t resampler;
+    audio_eq_state_t eq;
+    audio_eq_init(&eq, 44100u);
+    audio_eq_set_raw(&eq, AUDIO_EQ_RAW_MAX, AUDIO_EQ_RAW_MAX, AUDIO_EQ_RAW_MAX);
+    audio_output_mixer_deck_t deck = make_deck(&source, &resampler, 1.0f);
+    deck.pre_gain = 1.0f;
+    deck.eq = &eq;
+
+    prime_output_mixer(&deck, NULL);
+    audio_mixer_limiter_stats_t hot_stats = { 0 };
+    audio_output_mix_result_t hot = mix_full(&deck, NULL,
+        false, false, AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+        AUDIO_MIXER_CONTROL_MAX, true, NULL, NULL, &hot_stats);
+
+    assert(fabsf(hot.deck_dsp[0].left - 48000.0f) < 1.0f);
+    assert(fabsf(hot.deck_dsp[0].right + 48000.0f) < 1.0f);
+    assert(hot.deck_frame[0].left == 32767);
+    assert(hot_stats.peak_input_abs == 48000);
+    assert(hot_stats.limited_samples == 2);
+
+    /* Lowering channel TRIM must reduce the sample before EQ. The same +6 dB
+     * EQ setting then stays below full scale and does not touch the limiter. */
+    deck.pre_gain = 0.25f;
+    audio_mixer_limiter_stats_t trimmed_stats = { 0 };
+    audio_output_mix_result_t trimmed = mix_full(&deck, NULL,
+        false, false, AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+        AUDIO_MIXER_CONTROL_MAX, true, NULL, NULL, &trimmed_stats);
+    assert(fabsf(trimmed.deck_dsp[0].left - 12000.0f) < 1.0f);
+    assert(trimmed.master.left == 12000);
+    assert(trimmed_stats.limited_samples == 0);
+}
+
+static void test_pfl_is_post_trim_and_pre_channel_fader(void)
+{
+    audio_mixer_frame_t frames[] = {
+        { .left = 10000, .right = 10000 },
+        { .left = 10000, .right = 10000 },
+        { .left = 10000, .right = 10000 },
+    };
+    source_t source = { .frames = frames, .count = 3, .index = 0 };
+    audio_resampler_state_t resampler;
+    audio_output_mixer_deck_t deck = make_deck(&source, &resampler, 0.0f);
+    deck.pre_gain = 0.5f;
+
+    prime_output_mixer(&deck, NULL);
+    audio_output_mix_result_t half_trim = mix_full(&deck, NULL,
+        true, false, AUDIO_OUTPUT_HEADPHONE_CUE_MONO,
+        0u, true, NULL, NULL, NULL);
+    assert(half_trim.master.left == 0);
+    assert(half_trim.headphone.left == 5000);
+    assert(half_trim.headphone.right == 5000);
+
+    /* The channel fader remains closed; changing only TRIM changes PFL. */
+    deck.pre_gain = 1.0f;
+    audio_output_mix_result_t unity_trim = mix_full(&deck, NULL,
+        true, false, AUDIO_OUTPUT_HEADPHONE_CUE_MONO,
+        0u, true, NULL, NULL, NULL);
+    assert(unity_trim.master.left == 0);
+    assert(unity_trim.headphone.left == 10000);
+    assert(unity_trim.headphone.right == 10000);
+}
+
+static void test_master_trim_applies_after_two_deck_sum(void)
+{
+    audio_mixer_frame_t frames0[] = {
+        { .left = 20000, .right = -20000 },
+        { .left = 20000, .right = -20000 },
+    };
+    audio_mixer_frame_t frames1[] = {
+        { .left = 20000, .right = -20000 },
+        { .left = 20000, .right = -20000 },
+    };
+    source_t source0 = { .frames = frames0, .count = 2, .index = 0 };
+    source_t source1 = { .frames = frames1, .count = 2, .index = 0 };
+    audio_resampler_state_t resampler0;
+    audio_resampler_state_t resampler1;
+    audio_output_mixer_deck_t deck0 = make_deck(&source0, &resampler0, 1.0f);
+    audio_output_mixer_deck_t deck1 = make_deck(&source1, &resampler1, 1.0f);
+    prime_output_mixer(&deck0, &deck1);
+
+    audio_output_mixer_controls_t controls;
+    audio_output_mixer_prepare_controls(&controls, false, false,
+        AUDIO_OUTPUT_HEADPHONE_MASTER_MONO, AUDIO_MIXER_CONTROL_MAX,
+        AUDIO_MIXER_CONTROL_MAX, 0.5f, true);
+    audio_mixer_limiter_stats_t stats = { 0 };
+    audio_output_mix_result_t out = audio_output_mixer_next_prepared(
+        &deck0, &deck1, &controls, NULL, NULL, &stats);
+
+    assert(out.master.left == 20000);
+    assert(out.master.right == -20000);
+    assert(stats.peak_input_abs == 20000);
+    assert(stats.limited_samples == 0);
+}
+
+static void test_two_deck_multitone_sum_reaches_only_final_limiter(void)
+{
+    enum { FRAMES = 512 };
+    audio_mixer_frame_t frames0[FRAMES];
+    audio_mixer_frame_t frames1[FRAMES];
+    for (int i = 0; i < FRAMES; ++i) {
+        float phase0 = 2.0f * 3.14159265358979323846f * 431.0f *
+                       (float)i / 44100.0f;
+        float phase1 = 2.0f * 3.14159265358979323846f * 997.0f *
+                       (float)i / 44100.0f;
+        int16_t sample0 = (int16_t)(sinf(phase0) * 24000.0f);
+        int16_t sample1 = (int16_t)(sinf(phase1) * 22000.0f);
+        frames0[i] = (audio_mixer_frame_t) { sample0, sample0 };
+        frames1[i] = (audio_mixer_frame_t) { sample1, sample1 };
+    }
+    source_t source0 = { .frames = frames0, .count = FRAMES, .index = 0 };
+    source_t source1 = { .frames = frames1, .count = FRAMES, .index = 0 };
+    audio_resampler_state_t resampler0;
+    audio_resampler_state_t resampler1;
+    audio_output_mixer_deck_t deck0 = make_deck(&source0, &resampler0, 1.0f);
+    audio_output_mixer_deck_t deck1 = make_deck(&source1, &resampler1, 1.0f);
+    audio_mixer_limiter_stats_t stats = { 0 };
+
+    prime_output_mixer(&deck0, &deck1);
+    for (int i = 1; i < FRAMES; ++i) {
+        audio_output_mix_result_t out = mix_full(&deck0, &deck1,
+            false, false, AUDIO_OUTPUT_HEADPHONE_MASTER_MONO,
+            AUDIO_MIXER_CONTROL_MAX, true, NULL, NULL, &stats);
+        assert(fabsf(out.deck_dsp[0].left) <= 24000.0f);
+        assert(fabsf(out.deck_dsp[1].left) <= 22000.0f);
+    }
+    assert(stats.peak_input_abs > 32768);
+    assert(stats.limited_samples > 0);
+}
+
 static void test_full_mix_keeps_master_stereo_when_cue_is_enabled(void)
 {
     audio_mixer_frame_t deck0_frames[] = {
@@ -457,8 +595,8 @@ static void assert_beat_fx_time_effect_applies_only_to_target_deck(
     audio_output_mixer_deck_t deck0 = make_deck(&deck0_source, &deck0_resampler, 1.0f);
     audio_output_mixer_deck_t deck1 = make_deck(&deck1_source, &deck1_resampler, 1.0f);
 
-    int16_t effect_l[16] = { 0 };
-    int16_t effect_r[16] = { 0 };
+    float effect_l[16] = { 0 };
+    float effect_r[16] = { 0 };
     audio_delay_fx_t effect;
     audio_delay_fx_init(&effect, effect_l, effect_r, 16u, 1000u);
     audio_delay_fx_configure(&effect, &(audio_delay_fx_config_t) {
@@ -630,6 +768,10 @@ int main(void)
     test_master_limiter_leaves_normal_two_deck_sum_unchanged();
     test_deck_gain_allows_pregain_boost_before_limiter();
     test_master_limiter_shapes_overloads_and_reports_telemetry();
+    test_channel_trim_precedes_wide_eq_and_final_main_limiter();
+    test_pfl_is_post_trim_and_pre_channel_fader();
+    test_master_trim_applies_after_two_deck_sum();
+    test_two_deck_multitone_sum_reaches_only_final_limiter();
     test_full_mix_keeps_master_stereo_when_cue_is_enabled();
     test_full_mix_split_monitor_uses_master_left_and_pfl_right();
     test_full_mix_headphone_mix_blends_cue_to_stereo_master();

@@ -22,13 +22,15 @@ The debug AP is OFF after every boot and is controlled entirely from the P4:
 
 1. Flash the default S3 and P4 firmware (no special build flags needed).
 2. On the P4, open **Settings** and enable the **S3 DEBUG AP** switch. The label
-   tracks the S3 handshake: `OFF` -> `STARTING` -> `ON` (or `ERROR`).
+   tracks the S3 handshake: `OFF` -> `STARTING` -> `ON` (or `ERROR`). While ON,
+   it also shows the current six-digit maintenance code.
 3. Connect a phone/laptop to **`Pajoniiir-S3-DEBUG`** using the default WPA2
    password **`Pajoniiir`**.
 4. Open **`http://192.168.4.1`** for a live log viewer (Server-Sent Events
    auto-reconnect). It shows the same aggregate `P4_AUDIO_LINK` and
    `FLX4_USB_AUDIO` counters described below. The log remains read-only.
-5. Disable the switch when done; the AP and HTTP server stop.
+5. Disable the switch when done; the AP and HTTP server stop. As a safety net,
+   S3 automatically stops the AP after fifteen minutes.
 
 The switch is not persisted in P4 NVS; P4 also sends OFF at boot so the AP never
 lingers after a reboot. See `docs/CONTROL_LINK_PROTOCOL.md`
@@ -41,8 +43,12 @@ The Debug AP also hosts a dedicated OTA page at
 long-lived SSE connection before the firmware upload starts.
 
 - Select only the signed `control-board-s3.ddjota` release bundle.
+- Enter the six-digit maintenance code currently shown in P4 Settings. It is
+  valid for ten minutes, locks after five invalid attempts and is replaced by
+  toggling the Debug AP OFF and ON.
 - The browser sends the bundle to `POST /api/ota/s3` with
-  `X-DDJ-Control: 1` and `X-DDJ-OTA: s3`.
+  `X-DDJ-Control: 1`, `X-DDJ-OTA: s3` and the maintenance header. Requests
+  without the current code are rejected before OTA processing begins.
 - Firmware verifies the ECDSA P-256 manifest before flash erase, then validates
   the signed image SHA-256, ESP32-S3 chip ID, slot size, complete ESP image,
   project name and version before selecting the new boot slot.
@@ -55,9 +61,10 @@ long-lived SSE connection before the firmware upload starts.
   release and `valid`. Direct S3 `state: idle` only means its OTA transfer
   service is idle.
 
-The AP uses WPA2-PSK. Signed bundles remain the firmware-authenticity boundary;
-the shared default AP password is only an access-control baseline, so keep the
-service AP disabled except during a supervised update.
+The AP uses WPA2-PSK. Its shared default password permits network association,
+not mutation authorization. The short-lived operator code protects the OTA
+operation, while signed bundles remain the firmware-authenticity boundary; keep
+the service AP disabled except during a supervised update.
 
 > The AP consumes RAM/CPU/power while ON, so keep it a bench/debug-only tool.
 > FLX4 MIDI, the control link, and P4-to-S3

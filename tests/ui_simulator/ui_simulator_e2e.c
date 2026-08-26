@@ -164,6 +164,7 @@ int main(int argc, char **argv)
     if (!click_label("D2")) {
         fail("could not select Deck 2");
     }
+    pump(64);
     save_ppm(argv[1], "overview_deck2");
     if (framebuffer_hash() == deck1_hash) {
         fail("Deck 2 selection produced no visible change");

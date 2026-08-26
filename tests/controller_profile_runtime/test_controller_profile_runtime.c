@@ -6,6 +6,7 @@
  * activate/clear/parse-failure without disturbing an active profile. */
 
 #include "controller_profile_runtime.h"
+#include "control_link.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -20,6 +21,7 @@
 
 #define FLX4_FIXTURE "../../controllers/pioneer_ddj_flx4/profile.s3bin"
 #define GENERIC_FIXTURE "../../controllers/generic_midi_ci/profile.s3bin"
+#define HERCULES_FIXTURE "../../controllers/hercules_djcontrol_inpulse_500/profile.s3bin"
 
 static uint8_t g_blob[16384];
 static size_t g_blob_len;
@@ -45,6 +47,9 @@ typedef struct {
 
 static bool snap_cb(uint8_t type, uint8_t id, int16_t value, void *ctx)
 {
+    /* Re-entering the wrapper proves emit_snapshot invoked us only after its
+     * runtime mutex was released. The PC lock model asserts on recursive use. */
+    assert(controller_profile_runtime_active());
     capture_t *c = (capture_t *)ctx;
     c->count++;
     c->last_type = type;
@@ -67,14 +72,19 @@ int main(void)
     assert(!controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
 
     /* Activate the FLX4 fixture. */
-    assert(controller_profile_runtime_activate(g_blob, g_blob_len, 0x2B73, 0x0045));
+    assert(controller_profile_runtime_activate(g_blob, g_blob_len,
+                                               0x2B73, 0x0045, 7u));
     assert(controller_profile_runtime_active());
+    assert(controller_profile_runtime_bound_to(0x2B73, 0x0045, 7u));
+    assert(!controller_profile_runtime_bound_to(0x2B73, 0x0045, 6u));
 
     /* Deck 1 Play -> BUTTON deck1.play=0x10 value 1/0. */
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(type == SEM_BUTTON && id == 0x10 && value == 1);
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x00, &type, &id, &value));
     assert(value == 0);
+    assert(controller_profile_runtime_map(0x80, 0x0B, 0x40, &type, &id, &value));
+    assert(type == SEM_BUTTON && id == 0x10 && value == 0);
 
     /* Deck 1 tempo 14-bit: no emit on MSB alone, emit on LSB. */
     assert(!controller_profile_runtime_map(0xB0, 0x00, 0x40, &type, &id, &value));
@@ -111,7 +121,8 @@ int main(void)
     /* A failed parse must NOT disturb the active profile. */
     static uint8_t garbage[64];
     memset(garbage, 0xAB, sizeof(garbage));
-    assert(!controller_profile_runtime_activate(garbage, sizeof(garbage), 1, 2));
+    assert(!controller_profile_runtime_activate(garbage, sizeof(garbage),
+                                                1, 2, 7u));
     assert(controller_profile_runtime_active());
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(id == 0x10);
@@ -119,7 +130,8 @@ int main(void)
 
     /* Transfer metadata must match the profile header, and a rejected
      * activation must leave the currently active profile untouched. */
-    assert(!controller_profile_runtime_activate(g_blob, g_blob_len, 0x2B73, 0x9999));
+    assert(!controller_profile_runtime_activate(g_blob, g_blob_len,
+                                                0x2B73, 0x9999, 7u));
     assert(controller_profile_runtime_active());
     assert(controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
     assert(id == 0x10);
@@ -129,7 +141,7 @@ int main(void)
     controller_profile_runtime_clear();
     assert(!controller_profile_runtime_active());
     assert(!controller_profile_runtime_map(0x90, 0x0B, 0x7F, &type, &id, &value));
-    assert(controller_profile_runtime_activate(NULL, 0, 0, 0)); /* NULL == clear, true */
+    assert(controller_profile_runtime_activate(NULL, 0, 0, 0, 0u)); /* NULL == clear, true */
     assert(!controller_profile_runtime_active());
     printf("  clear + NULL-blob clear                           PASS\n");
 
@@ -137,7 +149,7 @@ int main(void)
      * table-driven rather than accidentally coupled to the built-in mapper. */
     load_fixture(GENERIC_FIXTURE);
     assert(controller_profile_runtime_activate(g_blob, g_blob_len,
-                                               0x1209, 0xC0DE));
+                                               0x1209, 0xC0DE, 8u));
     assert(controller_profile_runtime_map(0x90, 0x10, 0x7F,
                                           &type, &id, &value));
     assert(type == SEM_BUTTON && id == 0x10 && value == 1);
@@ -150,6 +162,55 @@ int main(void)
     assert(packet[1] == 0x91 && packet[2] == 0x10 && packet[3] == 0x7F);
     controller_profile_runtime_clear();
     printf("  activate + map + LED (generic non-FLX4 fixture)   PASS\n");
+
+    /* The Hercules fixture is a production-shaped non-FLX4 profile. Verify
+     * identity, shifted transport semantics, the loop-size encoder, Mode 6
+     * pad addresses, and controller-specific RGB values end to end. */
+    load_fixture(HERCULES_FIXTURE);
+    assert(!controller_profile_runtime_activate(g_blob, g_blob_len,
+                                                0x06F8, 0xB105, 9u));
+    assert(controller_profile_runtime_activate(g_blob, g_blob_len,
+                                               0x06F8, 0xB12B, 9u));
+    assert(controller_profile_runtime_bound_to(0x06F8, 0xB12B, 9u));
+
+    assert(controller_profile_runtime_map(0x91, 0x07, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_PLAY && value == 1);
+    assert(!controller_profile_runtime_map(0x94, 0x07, 0x7F,
+                                           &type, &id, &value));
+
+    assert(controller_profile_runtime_map(0x94, 0x05, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_EXT_ACTION);
+    assert(CTRL_DECK_EXT_ACTION(value) == CTRL_DECK_EXT_ACTION_SYNC_OFF);
+    assert(CTRL_DECK_EXT_PRESSED(value));
+    assert(controller_profile_runtime_map(0x94, 0x02, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_TEMPO_RANGE && value == 1);
+
+    assert(controller_profile_runtime_map(0xB1, 0x0E, 0x01,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_ENCODER && id == CTRL_ID_DECK1_LOOP_SIZE && value == 1);
+    assert(controller_profile_runtime_map(0xB1, 0x0E, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_ENCODER && id == CTRL_ID_DECK1_LOOP_SIZE && value == -1);
+
+    assert(!controller_profile_runtime_map(0x96, 0x40, 0x7F,
+                                           &type, &id, &value));
+    assert(controller_profile_runtime_map(0x96, 0x50, 0x7F,
+                                          &type, &id, &value));
+    assert(type == CTRL_TYPE_BUTTON && id == CTRL_ID_DECK1_PAD_ACTION);
+    assert(CTRL_PAD_ACTION_MODE(value) == CTRL_PAD_MODE_PAD_FX2);
+    assert(CTRL_PAD_ACTION_PAD(value) == 0 && CTRL_PAD_ACTION_PRESSED(value));
+
+    assert(controller_profile_runtime_map_led(LED_HOT_CUE_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x00 && packet[3] == 0x60);
+    assert(controller_profile_runtime_map_led(LED_BEAT_JUMP_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x30 && packet[3] == 0x74);
+    assert(controller_profile_runtime_map_led(LED_PAD_FX2_PAD_1, 0, 1, packet));
+    assert(packet[1] == 0x96 && packet[2] == 0x50 && packet[3] == 0x63);
+    controller_profile_runtime_clear();
+    printf("  activate + semantics + RGB (Hercules fixture)     PASS\n");
 
     printf("controller_profile_runtime tests passed\n");
     return 0;

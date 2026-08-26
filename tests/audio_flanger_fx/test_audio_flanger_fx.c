@@ -8,8 +8,8 @@
 #define TEST_SAMPLE_RATE 48000u
 #define TEST_CAPACITY 512u
 
-static int16_t buffer_left[TEST_CAPACITY];
-static int16_t buffer_right[TEST_CAPACITY];
+static float buffer_left[TEST_CAPACITY];
+static float buffer_right[TEST_CAPACITY];
 
 static void make_fx(audio_flanger_fx_t *fx)
 {
@@ -85,7 +85,7 @@ static void test_impulse_reappears_within_delay_bounds(void)
 
     /* Dry is unity, as on a hardware flanger. The delay line was just cleared
      * by the engage reset, so the first frame carries no wet component and
-     * passes through untouched - it is also well below the soft-clip knee. */
+     * passes through untouched. */
     audio_mixer_frame_t first = audio_flanger_fx_process_frame(
         &fx, (audio_mixer_frame_t) { .left = 16000, .right = 16000 });
     assert(first.left == 16000);
@@ -144,9 +144,8 @@ static void test_sweep_produces_a_deep_notch(void)
 
     /* 400 Hz: its first null needs a 1.25 ms delay, comfortably inside the
      * 250 us - 6 ms sweep, so a working flanger must pass through
-     * cancellation. Amplitude is kept low on purpose: the resonant peak of
-     * this tuning is 3.34x, so a louder test tone would run into the soft-clip
-     * knee and the measurement would be of the knee, not of the comb. */
+     * cancellation. Amplitude is kept low so the assertion has comfortable
+     * numeric headroom across the resonant peak. */
     const double amp = 3000.0;
     const double w = 2.0 * 3.14159265358979 * 400.0 / (double)TEST_SAMPLE_RATE;
     const int window = 128;
@@ -187,11 +186,9 @@ static void test_sweep_produces_a_deep_notch(void)
     assert(strongest <= amp * 3.6);
 }
 
-/* The 3.34x resonant gain means loud material would otherwise hard-clip inside
- * the effect, ahead of the master limiter, where nothing downstream can catch
- * it. The soft knee has to absorb that without touching the quiet case, since
- * the quiet case is the tuning that was accepted by ear. */
-static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
+/* The channel DSP path must preserve the resonant headroom so the one final
+ * MAIN limiter, rather than this effect, makes the clipping decision. */
+static void test_wide_path_preserves_headroom_without_internal_clamp(void)
 {
     audio_flanger_fx_t fx;
     make_fx(&fx);
@@ -201,26 +198,31 @@ static void test_soft_knee_is_transparent_below_it_and_bounds_above(void)
         .depth_q15 = 32767,
     });
 
-    /* First frame: delay line is empty, so the output is the dry sample alone.
-     * Below the 24576 knee it must pass through bit-exact. */
-    audio_mixer_frame_t quiet = audio_flanger_fx_process_frame(
-        &fx, (audio_mixer_frame_t) { .left = 20000, .right = -20000 });
-    assert(quiet.left == 20000);
-    assert(quiet.right == -20000);
+    /* First frame: delay line is empty, so the dry sample passes unchanged. */
+    audio_dsp_frame_t quiet = audio_flanger_fx_process_dsp_frame(
+        &fx, (audio_dsp_frame_t) { .left = 20000.0f, .right = -20000.0f });
+    assert(quiet.left == 20000.0f);
+    assert(quiet.right == -20000.0f);
 
-    /* Drive it hard for long enough for the feedback to build, and confirm the
-     * knee holds the output inside full scale rather than wrapping. */
+    /* Drive it long enough for feedback to build. At least one output must
+     * cross the PCM ceiling, remain finite and stay within the documented
+     * resonant envelope instead of being clipped or running away. */
     const double w = 2.0 * 3.14159265358979 * 400.0 / (double)TEST_SAMPLE_RATE;
     const int total = (TEST_SAMPLE_RATE * 700) / 1000;
+    bool saw_above_pcm_ceiling = false;
     for (int i = 0; i < total; ++i) {
-        int16_t sample = (int16_t)(sin((double)i * w) * 26000.0);
-        audio_mixer_frame_t out = audio_flanger_fx_process_frame(
-            &fx, (audio_mixer_frame_t) { .left = sample, .right = sample });
-        /* int16 cannot exceed full scale, but it can wrap sign if the maths
-         * overflows on the way here - that is the failure this catches. */
-        assert(!(sample > 20000 && out.left < -20000));
-        assert(!(sample < -20000 && out.left > 20000));
+        float sample = (float)(sin((double)i * w) * 26000.0);
+        audio_dsp_frame_t out = audio_flanger_fx_process_dsp_frame(
+            &fx, (audio_dsp_frame_t) { .left = sample, .right = sample });
+        assert(isfinite(out.left));
+        assert(isfinite(out.right));
+        assert(fabsf(out.left) < 100000.0f);
+        assert(fabsf(out.right) < 100000.0f);
+        if (fabsf(out.left) > 32768.0f || fabsf(out.right) > 32768.0f) {
+            saw_above_pcm_ceiling = true;
+        }
     }
+    assert(saw_above_pcm_ceiling);
 }
 
 static void test_reenable_clears_stale_buffer(void)
@@ -276,21 +278,16 @@ static void test_full_scale_fractional_interpolation_does_not_overflow(void)
         ? fx.write_index - delay_int
         : fx.write_index + fx.capacity_frames - delay_int;
     uint32_t idx1 = idx0 == 0u ? fx.capacity_frames - 1u : idx0 - 1u;
-    int32_t s0 = buffer_left[idx0];
-    int32_t s1 = buffer_left[idx1];
-    int32_t delayed = s0 +
-        (int32_t)(((int64_t)(s1 - s0) * frac_q16) >> 16);
-    /* Dry is zero here, so the output is the wet path alone. At wet <= 0.70 a
-     * full-scale delayed sample stays under the soft-clip knee, so the knee is
-     * the identity and the expected value is the raw wet mix. */
-    int32_t expected = (delayed * (int32_t)fx.wet_cur_q15) >> 15;
-    if (expected > INT16_MAX) expected = INT16_MAX;
-    if (expected < INT16_MIN) expected = INT16_MIN;
+    float fraction = (float)frac_q16 / 65536.0f;
+    float delayed = buffer_left[idx0] +
+                    ((buffer_left[idx1] - buffer_left[idx0]) * fraction);
+    /* Dry is zero here, so the output is the raw fractional wet path. */
+    float expected = delayed * ((float)fx.wet_cur_q15 / 32768.0f);
 
-    audio_mixer_frame_t out = audio_flanger_fx_process_frame(
-        &fx, (audio_mixer_frame_t) { 0 });
-    assert(out.left == (int16_t)expected);
-    assert(out.right == (int16_t)expected);
+    audio_dsp_frame_t out = audio_flanger_fx_process_dsp_frame(
+        &fx, (audio_dsp_frame_t) { 0 });
+    assert(fabsf(out.left - expected) < 1.0f);
+    assert(fabsf(out.right - expected) < 1.0f);
 }
 
 int main(void)
@@ -302,7 +299,7 @@ int main(void)
     test_impulse_reappears_within_delay_bounds();
     test_enabled_flanger_colours_a_tone();
     test_sweep_produces_a_deep_notch();
-    test_soft_knee_is_transparent_below_it_and_bounds_above();
+    test_wide_path_preserves_headroom_without_internal_clamp();
     test_reenable_clears_stale_buffer();
     test_full_scale_fractional_interpolation_does_not_overflow();
     puts("audio_flanger_fx tests passed");

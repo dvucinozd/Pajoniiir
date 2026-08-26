@@ -10,7 +10,9 @@
 
 static s3_debug_ap_status_t s_status;
 static s3_debug_ap_status_cb_t s_status_cb;
+static s3_debug_ap_token_cb_t s_token_cb;
 static esp_err_t s_test_start_result = ESP_OK;
+static bool s_test_start_failed_latched;
 
 static void set_status(s3_debug_ap_status_t status)
 {
@@ -29,7 +31,9 @@ void s3_debug_ap_test_reset(void)
 {
     s_status = S3_DEBUG_AP_STATUS_OFF;
     s_status_cb = NULL;
+    s_token_cb = NULL;
     s_test_start_result = ESP_OK;
+    s_test_start_failed_latched = false;
 }
 
 esp_err_t s3_debug_ap_init(void)
@@ -44,18 +48,30 @@ esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
     return ESP_OK;
 }
 
+esp_err_t s3_debug_ap_set_token_callback(s3_debug_ap_token_cb_t cb)
+{
+    s_token_cb = cb;
+    return ESP_OK;
+}
+
 esp_err_t s3_debug_ap_request(bool enable)
 {
     if (!enable) {
+        s_test_start_failed_latched = false;
         set_status(S3_DEBUG_AP_STATUS_OFF);
+        if (s_token_cb) s_token_cb(0u);
         return ESP_OK;
     }
 
+    if (s_test_start_failed_latched) return ESP_ERR_INVALID_STATE;
+
     set_status(S3_DEBUG_AP_STATUS_STARTING);
     if (s_test_start_result != ESP_OK) {
+        s_test_start_failed_latched = true;
         set_status(S3_DEBUG_AP_STATUS_ERROR);
         return s_test_start_result;
     }
+    if (s_token_cb) s_token_cb(123456u);
     set_status(S3_DEBUG_AP_STATUS_ON);
     return ESP_OK;
 }
@@ -78,19 +94,25 @@ s3_debug_ap_status_t s3_debug_ap_status(void)
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_random.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
+#include "esp_wifi_default.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "s3_ota.h"
-#include "s3_ota_policy.h"
+#include "s3_ota_http.h"
+#include "s3_debug_ap_netif_stage.h"
+#include "s3_debug_auth.h"
 
 static const char *TAG = "s3_debug_ap";
 
 static s3_debug_ap_status_t s_status = S3_DEBUG_AP_STATUS_OFF;
 static s3_debug_ap_status_cb_t s_status_cb;
+static s3_debug_ap_token_cb_t s_token_cb;
 static s3_debug_log_ring_t s_log_ring;
 static SemaphoreHandle_t s_lock;
 static httpd_handle_t s_httpd;
@@ -99,6 +121,13 @@ static vprintf_like_t s_prev_vprintf;
 static atomic_bool s_log_hook_active;
 static bool s_wifi_initialized;
 static bool s_wifi_started;
+static esp_timer_handle_t s_idle_timer;
+static s3_debug_auth_t s_maintenance_auth;
+
+static uint32_t maintenance_now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
 
 static bool s3_api_request_allowed(httpd_req_t *req, bool mutation)
 {
@@ -118,6 +147,32 @@ static bool s3_api_request_allowed(httpd_req_t *req, bool mutation)
             httpd_resp_set_status(req, "403 Forbidden");
             (void)httpd_resp_send(req, "Missing X-DDJ-Control",
                                   HTTPD_RESP_USE_STRLEN);
+            return false;
+        }
+        char token[S3_DEBUG_AUTH_TOKEN_DIGITS + 1u] = {0};
+        if (httpd_req_get_hdr_value_str(req, "X-Pajoniiir-Maintenance",
+                                        token, sizeof(token)) != ESP_OK) {
+            httpd_resp_set_status(req, "401 Unauthorized");
+            (void)httpd_resp_send(req, "Maintenance code required",
+                                  HTTPD_RESP_USE_STRLEN);
+            return false;
+        }
+        s3_debug_auth_result_t auth = s3_debug_auth_check(
+            &s_maintenance_auth, token, maintenance_now_ms());
+        if (auth != S3_DEBUG_AUTH_OK) {
+            if (auth == S3_DEBUG_AUTH_RATE_LIMITED) {
+                httpd_resp_set_status(req, "429 Too Many Requests");
+                (void)httpd_resp_send(req,
+                                      "Maintenance code locked; toggle Debug AP off and on",
+                                      HTTPD_RESP_USE_STRLEN);
+            } else {
+                httpd_resp_set_status(req, "401 Unauthorized");
+                (void)httpd_resp_send(req,
+                                      auth == S3_DEBUG_AUTH_EXPIRED
+                                          ? "Maintenance code expired; toggle Debug AP off and on"
+                                          : "Invalid maintenance code",
+                                      HTTPD_RESP_USE_STRLEN);
+            }
             return false;
         }
     }
@@ -269,6 +324,9 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "<h1>S3 Firmware Update</h1><p id=\"status\">Loading status...</p>"
         "<p class=\"warn\">Upload only the signed control-board-s3 .ddjota bundle. "
         "The controller reboots and the Debug AP turns off after success.</p>"
+        "<label>Maintenance code shown on P4 Settings<br>"
+        "<input id=\"token\" inputmode=\"numeric\" pattern=\"[0-9]{6}\" maxlength=\"6\" "
+        "autocomplete=\"one-time-code\"></label><br>"
         "<input id=\"file\" type=\"file\" accept=\".ddjota,application/octet-stream\"><br>"
         "<button id=\"upload\">Upload and reboot</button>"
         "<progress id=\"progress\" value=\"0\" max=\"100\"></progress>"
@@ -279,7 +337,9 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "const s=await r.json();statusEl.textContent='Running: '+s.running_slot+' / '+"
         "s.running_version+' | State: '+s.state+(s.last_error?' | '+s.last_error:'');}"
         "catch(e){statusEl.textContent='Status unavailable: '+e.message;}}refresh();"
-        "button.onclick=()=>{const file=document.getElementById('file').files[0];"
+        "button.onclick=()=>{const file=document.getElementById('file').files[0],"
+        "token=document.getElementById('token').value;"
+        "if(!/^[0-9]{6}$/.test(token)){msg.textContent='Enter the 6-digit code from P4 Settings.';return;}"
         "if(!file){msg.textContent='Select a signed .ddjota bundle first.';return;}"
         "if(!file.name.toLowerCase().endsWith('.ddjota')){msg.textContent="
         "'Unsigned .bin images are rejected. Select the S3 .ddjota bundle.';return;}"
@@ -287,6 +347,7 @@ static esp_err_t update_get_handler(httpd_req_t *req)
         "button.disabled=true;msg.textContent='Uploading...';const x=new XMLHttpRequest();"
         "x.open('POST','/api/ota/s3');x.setRequestHeader('Content-Type','application/octet-stream');"
         "x.setRequestHeader('X-DDJ-Control','1');"
+        "x.setRequestHeader('X-Pajoniiir-Maintenance',token);"
         "x.setRequestHeader('X-DDJ-OTA','s3');x.upload.onprogress=e=>{if(e.lengthComputable)"
         "progress.value=Math.round(e.loaded*100/e.total);};"
         "x.onload=()=>{msg.textContent=x.status>=200&&x.status<300?"
@@ -326,24 +387,45 @@ static esp_err_t firmware_get_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, (size_t)len);
 }
 
-static int ota_http_recv(httpd_req_t *req, uint8_t *buffer, size_t wanted)
+static int ota_http_recv_adapter(void *ctx, uint8_t *buffer, size_t wanted)
 {
-    const unsigned max_timeouts = 5;
-    for (unsigned timeout_count = 0; timeout_count < max_timeouts; ++timeout_count) {
-        int received = httpd_req_recv(req, (char *)buffer, wanted);
-        if (received != HTTPD_SOCK_ERR_TIMEOUT) return received;
-    }
-    return HTTPD_SOCK_ERR_TIMEOUT;
+    int received = httpd_req_recv((httpd_req_t *)ctx, (char *)buffer, wanted);
+    if (received == HTTPD_SOCK_ERR_TIMEOUT) return S3_OTA_HTTP_RECV_TIMEOUT;
+    return received > 0 ? received : S3_OTA_HTTP_RECV_ERROR;
 }
 
-static esp_err_t ota_receive_error(httpd_req_t *req, int received, bool started)
+static uint32_t ota_http_now_ms_adapter(void *ctx)
 {
-    if (started) s3_ota_abort("HTTP upload interrupted");
-    if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+    (void)ctx;
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
+static esp_err_t ota_http_send_result(httpd_req_t *req,
+                                      s3_ota_http_result_t result)
+{
+    switch (result.code) {
+    case S3_OTA_HTTP_BAD_REQUEST:
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, result.detail);
+    case S3_OTA_HTTP_FORBIDDEN:
+        httpd_resp_set_status(req, "403 Forbidden");
+        break;
+    case S3_OTA_HTTP_PAYLOAD_TOO_LARGE:
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        break;
+    case S3_OTA_HTTP_CONFLICT:
+        httpd_resp_set_status(req, "409 Conflict");
+        break;
+    case S3_OTA_HTTP_TIMEOUT:
         httpd_resp_set_status(req, "408 Request Timeout");
-        return httpd_resp_send(req, "Firmware upload timed out", HTTPD_RESP_USE_STRLEN);
+        break;
+    case S3_OTA_HTTP_INTERNAL_ERROR:
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   result.detail);
+    case S3_OTA_HTTP_OK:
+    default:
+        return ESP_ERR_INVALID_STATE;
     }
-    return ESP_FAIL;
+    return httpd_resp_send(req, result.detail, HTTPD_RESP_USE_STRLEN);
 }
 
 static void ota_restart_task(void *arg)
@@ -361,104 +443,16 @@ static esp_err_t ota_post_handler(httpd_req_t *req)
         strcmp(target, "s3") != 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing X-DDJ-OTA: s3");
     }
-    if (req->content_len < DDJ_OTA_HEADER_SIZE + S3_OTA_IMAGE_HEADER_SIZE) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Signed OTA bundle is too small");
-    }
-
-    uint8_t *buffer = malloc(4096);
-    if (!buffer) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
-    }
-
-    uint8_t manifest_header[DDJ_OTA_HEADER_SIZE];
-    size_t manifest_received = 0;
-    while (manifest_received < sizeof(manifest_header)) {
-        int received = ota_http_recv(req, manifest_header + manifest_received,
-                                     sizeof(manifest_header) - manifest_received);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, false);
-        }
-        manifest_received += (size_t)received;
-    }
-
-    ddj_ota_manifest_t manifest;
-    ddj_ota_manifest_result_t manifest_rc = ddj_ota_manifest_parse(
-        manifest_header, sizeof(manifest_header), DDJ_OTA_TARGET_S3,
-        S3_OTA_ESP32S3_CHIP_ID, "control-board-s3", S3_OTA_MAX_IMAGE_SIZE,
-        &manifest);
-    if (manifest_rc != DDJ_OTA_MANIFEST_OK) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   ddj_ota_manifest_result_name(manifest_rc));
-    }
-    if (!ddj_ota_manifest_verify_signature(manifest_header, sizeof(manifest_header))) {
-        free(buffer);
-        httpd_resp_set_status(req, "403 Forbidden");
-        return httpd_resp_send(req, "Invalid OTA manifest signature", HTTPD_RESP_USE_STRLEN);
-    }
-    if ((size_t)req->content_len != DDJ_OTA_HEADER_SIZE + manifest.image_size) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Bundle length does not match signed manifest");
-    }
-
-    size_t remaining = manifest.image_size;
-    size_t buffered = 0;
-    while (buffered < S3_OTA_IMAGE_HEADER_SIZE) {
-        size_t wanted = remaining < 4096u - buffered ? remaining : 4096u - buffered;
-        int received = ota_http_recv(req, buffer + buffered, wanted);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, false);
-        }
-        buffered += (size_t)received;
-        remaining -= (size_t)received;
-    }
-    if (!s3_ota_policy_header_valid(buffer, buffered)) {
-        free(buffer);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Not an ESP32-S3 firmware image");
-    }
-
-    esp_err_t rc = s3_ota_begin(&manifest);
-    if (rc != ESP_OK) {
-        free(buffer);
-        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE ? "409 Conflict" :
-                                                                  "400 Bad Request");
-        return httpd_resp_send(req, esp_err_to_name(rc), HTTPD_RESP_USE_STRLEN);
-    }
-    rc = s3_ota_write(buffer, buffered);
-    if (rc != ESP_OK) {
-        free(buffer);
-        s3_ota_abort(esp_err_to_name(rc));
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                   "Flash write failed");
-    }
-
-    while (remaining > 0) {
-        size_t wanted = remaining < 4096u ? remaining : 4096u;
-        int received = ota_http_recv(req, buffer, wanted);
-        if (received <= 0) {
-            free(buffer);
-            return ota_receive_error(req, received, true);
-        }
-        rc = s3_ota_write(buffer, (size_t)received);
-        if (rc != ESP_OK) {
-            free(buffer);
-            s3_ota_abort(esp_err_to_name(rc));
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
-                                       "Flash write failed");
-        }
-        remaining -= (size_t)received;
-    }
-    free(buffer);
-
-    rc = s3_ota_finish();
-    if (rc != ESP_OK) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Firmware validation failed");
+    const s3_ota_http_request_t request = {
+        .content_len = (size_t)req->content_len,
+        .ctx = req,
+        .recv = ota_http_recv_adapter,
+        .now_ms = ota_http_now_ms_adapter,
+    };
+    s3_ota_http_result_t result = s3_ota_http_process(&request);
+    if (result.code != S3_OTA_HTTP_OK) {
+        ESP_LOGW(TAG, "OTA upload rejected: %s", result.detail);
+        return ota_http_send_result(req, result);
     }
 
     httpd_resp_set_type(req, "application/json");
@@ -535,18 +529,63 @@ static esp_err_t init_nvs(void)
     return rc;
 }
 
-static esp_err_t configure_ap_ip(void)
-{
+typedef struct {
     esp_netif_ip_info_t ip_info;
-    ESP_RETURN_ON_ERROR(esp_netif_dhcps_stop(s_ap_netif), TAG, "stop AP DHCP");
-    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4(S3_DEBUG_AP_IP, &ip_info.ip) == ESP_OK,
+} ap_netif_stage_ctx_t;
+
+static void *ap_netif_create(void *ctx)
+{
+    (void)ctx;
+    return esp_netif_create_default_wifi_ap();
+}
+
+static esp_err_t ap_netif_stop_dhcp(void *resource, void *ctx)
+{
+    (void)ctx;
+    return esp_netif_dhcps_stop((esp_netif_t *)resource);
+}
+
+static esp_err_t ap_netif_set_ip(void *resource, void *ctx)
+{
+    const ap_netif_stage_ctx_t *stage = (const ap_netif_stage_ctx_t *)ctx;
+    return esp_netif_set_ip_info((esp_netif_t *)resource, &stage->ip_info);
+}
+
+static esp_err_t ap_netif_start_dhcp(void *resource, void *ctx)
+{
+    (void)ctx;
+    return esp_netif_dhcps_start((esp_netif_t *)resource);
+}
+
+static void ap_netif_destroy(void *resource, void *ctx)
+{
+    (void)ctx;
+    esp_netif_destroy_default_wifi(resource);
+}
+
+static esp_err_t ensure_ap_netif(void)
+{
+    ap_netif_stage_ctx_t stage = {0};
+    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4(S3_DEBUG_AP_IP,
+                                             &stage.ip_info.ip) == ESP_OK,
                         ESP_ERR_INVALID_ARG, TAG, "parse AP IP");
-    ip_info.gw = ip_info.ip;
-    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4("255.255.255.0", &ip_info.netmask) == ESP_OK,
+    stage.ip_info.gw = stage.ip_info.ip;
+    ESP_RETURN_ON_FALSE(esp_netif_str_to_ip4("255.255.255.0",
+                                             &stage.ip_info.netmask) == ESP_OK,
                         ESP_ERR_INVALID_ARG, TAG, "parse AP netmask");
-    ESP_RETURN_ON_ERROR(esp_netif_set_ip_info(s_ap_netif, &ip_info), TAG, "set AP IP");
-    ESP_RETURN_ON_ERROR(esp_netif_dhcps_start(s_ap_netif), TAG, "start AP DHCP");
-    return ESP_OK;
+
+    s3_debug_ap_netif_ops_t ops = {
+        .create = ap_netif_create,
+        .stop_dhcp = ap_netif_stop_dhcp,
+        .set_ip = ap_netif_set_ip,
+        .start_dhcp = ap_netif_start_dhcp,
+        .destroy = ap_netif_destroy,
+        .ctx = &stage,
+    };
+    void *published = s_ap_netif;
+    esp_err_t rc = s3_debug_ap_netif_ensure(&published, &ops);
+    if (rc == ESP_OK) s_ap_netif = (esp_netif_t *)published;
+    return rc;
 }
 
 static esp_err_t start_ap(void)
@@ -559,11 +598,7 @@ static esp_err_t start_ap(void)
         ESP_RETURN_ON_ERROR(loop_rc, TAG, "event loop");
     }
 
-    if (!s_ap_netif) {
-        s_ap_netif = esp_netif_create_default_wifi_ap();
-        ESP_RETURN_ON_FALSE(s_ap_netif, ESP_FAIL, TAG, "create AP netif");
-        ESP_RETURN_ON_ERROR(configure_ap_ip(), TAG, "configure AP IP");
-    }
+    ESP_RETURN_ON_ERROR(ensure_ap_netif(), TAG, "configure AP netif");
 
     if (!s_wifi_initialized) {
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -589,8 +624,16 @@ static esp_err_t start_ap(void)
     return start_httpd();
 }
 
+static void debug_ap_idle_timer_cb(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "S3 debug AP idle lifetime expired; requesting shutdown");
+    (void)s3_debug_ap_request(false);
+}
+
 static void stop_ap(void)
 {
+    if (s_idle_timer) (void)esp_timer_stop(s_idle_timer);
     atomic_store(&s_log_hook_active, false);
     if (s_httpd) {
         httpd_stop(s_httpd);
@@ -600,6 +643,8 @@ static void stop_ap(void)
         (void)esp_wifi_stop();
         s_wifi_started = false;
     }
+    s3_debug_auth_init(&s_maintenance_auth, 0u, maintenance_now_ms());
+    if (s_token_cb) s_token_cb(0u);
 }
 
 esp_err_t s3_debug_ap_init(void)
@@ -607,6 +652,14 @@ esp_err_t s3_debug_ap_init(void)
     if (!s_lock) {
         s_lock = xSemaphoreCreateMutex();
         ESP_RETURN_ON_FALSE(s_lock, ESP_ERR_NO_MEM, TAG, "create lock");
+    }
+    if (!s_idle_timer) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = debug_ap_idle_timer_cb,
+            .name = "s3dbgap_idle",
+        };
+        ESP_RETURN_ON_ERROR(esp_timer_create(&timer_args, &s_idle_timer),
+                            TAG, "create idle timer");
     }
     s3_debug_log_ring_init(&s_log_ring);
     s_status = S3_DEBUG_AP_STATUS_OFF;
@@ -616,6 +669,12 @@ esp_err_t s3_debug_ap_init(void)
 esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
 {
     s_status_cb = cb;
+    return ESP_OK;
+}
+
+esp_err_t s3_debug_ap_set_token_callback(s3_debug_ap_token_cb_t cb)
+{
+    s_token_cb = cb;
     return ESP_OK;
 }
 
@@ -633,6 +692,10 @@ static esp_err_t s3_debug_ap_apply(bool enable)
     }
 
     set_status(S3_DEBUG_AP_STATUS_STARTING);
+    uint32_t token = S3_DEBUG_AUTH_TOKEN_MIN +
+                     (esp_random() % S3_DEBUG_AUTH_TOKEN_RANGE);
+    s3_debug_auth_init(&s_maintenance_auth, token, maintenance_now_ms());
+    if (s_token_cb) s_token_cb(token);
     if (!s_prev_vprintf) {
         s_prev_vprintf = esp_log_set_vprintf(s3_debug_ap_vprintf);
     }
@@ -654,6 +717,17 @@ static esp_err_t s3_debug_ap_apply(bool enable)
         return rc;
     }
 
+    if (s_idle_timer) {
+        rc = esp_timer_start_once(
+            s_idle_timer, (uint64_t)S3_DEBUG_AP_IDLE_TIMEOUT_MS * 1000u);
+        if (rc != ESP_OK) {
+            ESP_LOGE(TAG, "debug AP idle timer start failed: %s",
+                     esp_err_to_name(rc));
+            stop_ap();
+            set_status(S3_DEBUG_AP_STATUS_ERROR);
+            return rc;
+        }
+    }
     ESP_LOGI(TAG, "S3 debug AP active: SSID=%s URL=http://%s",
              S3_DEBUG_AP_SSID, S3_DEBUG_AP_IP);
     set_status(S3_DEBUG_AP_STATUS_ON);
@@ -750,6 +824,12 @@ esp_err_t s3_debug_ap_init(void)
 }
 
 esp_err_t s3_debug_ap_set_status_callback(s3_debug_ap_status_cb_t cb)
+{
+    (void)cb;
+    return ESP_OK;
+}
+
+esp_err_t s3_debug_ap_set_token_callback(s3_debug_ap_token_cb_t cb)
 {
     (void)cb;
     return ESP_OK;

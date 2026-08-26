@@ -114,12 +114,45 @@ static void test_max_boost_increases_band_without_wrapping(void)
     assert(out.right >= -32768);
 }
 
+static void assert_band_boost_preserves_wide_headroom(float freq_hz,
+                                                       audio_eq_band_t band)
+{
+    audio_eq_state_t eq;
+    audio_eq_init(&eq, TEST_SAMPLE_RATE);
+    audio_eq_set_band_raw(&eq, band, AUDIO_EQ_RAW_MAX);
+
+    float peak = 0.0f;
+    for (uint32_t i = 0; i < TEST_FRAMES; ++i) {
+        float phase = 2.0f * 3.14159265358979323846f * freq_hz *
+                      (float)i / (float)TEST_SAMPLE_RATE;
+        float sample = sinf(phase) * 25000.0f;
+        audio_dsp_frame_t out = audio_eq_process_dsp_frame(&eq,
+            (audio_dsp_frame_t) { .left = sample, .right = sample });
+        assert(isfinite(out.left));
+        float magnitude = fabsf(out.left);
+        if (magnitude > peak) peak = magnitude;
+    }
+
+    /* Each boosted band can legitimately exceed PCM full scale. The wide
+     * path must carry that headroom to the final output limiter. */
+    assert(peak > 32768.0f);
+    assert(peak < 60000.0f);
+}
+
+static void test_each_band_boost_preserves_wide_headroom(void)
+{
+    assert_band_boost_preserves_wide_headroom(100.0f, AUDIO_EQ_BAND_LOW);
+    assert_band_boost_preserves_wide_headroom(1000.0f, AUDIO_EQ_BAND_MID);
+    assert_band_boost_preserves_wide_headroom(8000.0f, AUDIO_EQ_BAND_HIGH);
+}
+
 int main(void)
 {
     test_center_eq_keeps_signal_level_near_unity();
     test_low_kill_reduces_bass_more_than_treble();
     test_high_kill_reduces_treble_more_than_bass();
     test_max_boost_increases_band_without_wrapping();
+    test_each_band_boost_preserves_wide_headroom();
     puts("audio_eq tests passed");
     return 0;
 }

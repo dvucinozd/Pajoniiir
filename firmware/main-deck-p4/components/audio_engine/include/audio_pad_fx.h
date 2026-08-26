@@ -37,12 +37,14 @@ typedef struct {
 void audio_pad_fx_init(audio_pad_fx_state_t *fx, uint32_t sample_rate_hz);
 void audio_pad_fx_init_with_echo_buffer(audio_pad_fx_state_t *fx,
                                         uint32_t sample_rate_hz,
-                                        int16_t *echo_left,
-                                        int16_t *echo_right,
+                                        float *echo_left,
+                                        float *echo_right,
                                         uint32_t echo_capacity_frames);
 void audio_pad_fx_reset(audio_pad_fx_state_t *fx);
 void audio_pad_fx_set(audio_pad_fx_state_t *fx, audio_pad_fx_config_t config);
 audio_mixer_frame_t audio_pad_fx_process_frame(audio_pad_fx_state_t *fx,
                                                audio_mixer_frame_t in);
+audio_dsp_frame_t audio_pad_fx_process_dsp_frame(audio_pad_fx_state_t *fx,
+                                                 audio_dsp_frame_t in);
 bool audio_pad_fx_is_active(const audio_pad_fx_state_t *fx);
 audio_pad_fx_kind_t audio_pad_fx_kind(const audio_pad_fx_state_t *fx);

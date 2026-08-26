@@ -24,6 +24,8 @@ int p4_ctrl_id_beat_fx_clear(void) { return CTRL_ID_BEAT_FX_CLEAR; }
 int p4_ctrl_id_beat_fx_beat_dec_shift(void) { return CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT; }
 int p4_ctrl_id_beat_fx_beat_inc_shift(void) { return CTRL_ID_BEAT_FX_BEAT_INC_SHIFT; }
 int p4_ctrl_id_s3_debug_ap(void) { return CTRL_ID_S3_DEBUG_AP; }
+int p4_ctrl_id_s3_boot_challenge(void) { return CTRL_ID_S3_BOOT_CHALLENGE; }
+int p4_ctrl_id_s3_boot_ack(void) { return CTRL_ID_S3_BOOT_ACK; }
 int p4_ctrl_s3_debug_ap_off(void) { return CTRL_S3_DEBUG_AP_OFF; }
 int p4_ctrl_s3_debug_ap_starting(void) { return CTRL_S3_DEBUG_AP_STARTING; }
 int p4_ctrl_s3_debug_ap_on(void) { return CTRL_S3_DEBUG_AP_ON; }
@@ -46,12 +48,15 @@ int p4_ctrl_id_shift_load_deck1(void) { return CTRL_ID_SHIFT_LOAD_DECK1; }
 int p4_ctrl_id_shift_load_deck2(void) { return CTRL_ID_SHIFT_LOAD_DECK2; }
 int p4_ctrl_id_deck1_ext_action(void) { return CTRL_ID_DECK1_EXT_ACTION; }
 int p4_ctrl_id_deck2_ext_action(void) { return CTRL_ID_DECK2_EXT_ACTION; }
+int p4_ctrl_id_deck1_loop_size(void) { return CTRL_ID_DECK1_LOOP_SIZE; }
+int p4_ctrl_id_deck2_loop_size(void) { return CTRL_ID_DECK2_LOOP_SIZE; }
 int p4_ctrl_deck_ext_action_censor(void) { return CTRL_DECK_EXT_ACTION_CENSOR; }
 int p4_ctrl_deck_ext_action_sync_master(void) { return CTRL_DECK_EXT_ACTION_SYNC_MASTER; }
 int p4_ctrl_deck_ext_action_reloop_stop(void) { return CTRL_DECK_EXT_ACTION_RELOOP_STOP; }
 int p4_ctrl_deck_ext_action_loop_adjust_in(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN; }
 int p4_ctrl_deck_ext_action_loop_adjust_out(void) { return CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT; }
 int p4_ctrl_deck_ext_action_quantize(void) { return CTRL_DECK_EXT_ACTION_QUANTIZE; }
+int p4_ctrl_deck_ext_action_sync_off(void) { return CTRL_DECK_EXT_ACTION_SYNC_OFF; }
 int p4_led_cue(void) { return LED_CUE; }
 int p4_led_play(void) { return LED_PLAY; }
 int p4_led_pfl(void) { return LED_PFL; }

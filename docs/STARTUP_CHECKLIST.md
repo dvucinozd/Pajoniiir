@@ -1,10 +1,11 @@
 # Startup Checklist
 
-Status: reconciled 2026-08-02. Checked items below are historical bring-up
+Status: reconciled 2026-08-22. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. RC2
 application OTA succeeded on both boards, and both have since received full
-wired ESP-IDF 6.0.2 boot-chain flashes. The P4 runs the microSD-fix candidate;
-the S3 runs the exact clean RC2 application.
+wired ESP-IDF 6.0.2 boot-chain flashes. The P4 now runs the later signed
+`RC2-51-g050ab43` application; the S3 remained on `RC2-44-g1923a3b` during the
+latest observed P4-only deployment.
 
 ## Current installed and accepted baselines
 
@@ -44,6 +45,15 @@ the S3 runs the exact clean RC2 application.
   FLX4 MIDI/LED; PCM5102A MAIN i FLX4 CUE/MONITOR; realni MP3 playback. WAV i
   FLAC nisu pokrenuti jer fizički fixturei nedostaju na USB-u. Dokaz:
   `validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
+- [x] P4-only signed OTA 2026-08-22: `RC2-46-g2ed6c5b-dirty / ota_1` to
+  `RC2-51-g050ab43 / ota_0 / valid`. COM15 confirmed ESP-IDF v6.0.2, mounted
+  29,520 MB SDHC and live S3 report `RC2-44-g1923a3b / ota_1 / valid`.
+  The already-inserted USB medium exhausted eight fast recovery cycles; a
+  physical reinsert then mounted exFAT and loaded 324 tracks. This closes the
+  positive P4 upload/boot/valid and live disconnect/reconnect observations,
+  but not hands-free software-reboot recovery or the complete functional
+  smoke. Dokaz:
+  `validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -583,6 +593,10 @@ Runtime S3 Wi-Fi debug AP on `master`. Hardware smoke passed on 2026-07-08
   AP visible.
 - [x] Enable the switch; S3 brings up SoftAP + DHCP on `192.168.4.1`
   (`s3_debug_ap: S3 debug AP active` on the S3 console).
+- [ ] Confirm the Settings row shows a fresh six-digit code only after `ON`, an
+  OTA POST without/wrong code is rejected, the fifth wrong attempt locks the
+  code, and OFF→ON publishes a different usable code.
+- [ ] Leave the AP enabled and confirm its fifteen-minute automatic shutdown.
 - [x] Connect a phone to `Pajoniiir-S3-DEBUG`, open `http://192.168.4.1`; page
   loads and **live logs stream** over SSE without disconnecting.
 - [ ] FLX4 MIDI / P4-to-S3 headphone audio responsive while this S3 debug AP is
@@ -680,6 +694,32 @@ Notes:
 - A stale `/sd/controllers` (SD missing or no profiles) is a boot warning, never
   a boot blocker.
 
+### Hercules DJControl Inpulse 500 hardware gate
+
+The committed `controllers/hercules_djcontrol_inpulse_500/profile.s3bin` is
+host-qualified but not yet hardware-qualified. Copy it to
+`SD:/controllers/hercules_djcontrol_inpulse_500/profile.s3bin`, then complete
+and archive all rows below before calling the controller supported:
+
+- [ ] Confirm the S3 descriptor reports VID:PID `06F8:B12B` and the exact
+  product string; confirm `06F8:B105` does not match.
+- [ ] Confirm `/api/status.controller` reaches `profile_state:"active"` and
+  `active_profile:"hercules_djcontrol_inpulse_500"` only after S3 activation
+  ACK.
+- [ ] Sweep both decks: Play/Cue, Sync and Shift+Sync Off, Quantize and
+  Shift+Quantize tempo range, loop controls, autoloop push/rotate, tempo,
+  jog/touch/search, PFL, mixer, browser/load and adapted Beat FX controls.
+- [ ] Confirm Shift+Play is intentionally inert, Key/Pitch Play pads are inert,
+  and Vinyl/Slip/Assistant/guide controls do not produce unrelated actions.
+- [ ] Sweep all mapped pad modes and releases; confirm Mode 6 uses notes
+  `0x50..0x5F` and pad colours are red/green/cyan/orange/fuchsia as documented
+  in `HERCULES_INPULSE_500_MIDI_MAP.md`.
+- [ ] Confirm transport/mode/loop/PFL LEDs, both VU meters and all Beat Jump
+  LED IDs survive controller reconnect plus isolated P4 and S3 reboot resync.
+- [ ] Qualify the controller's four-channel USB audio independently: MAIN 1/2,
+  headphones 3/4, 48 kHz selection, simultaneous PCM5102A MAIN, underrun/drop
+  counters and disconnect recovery under dual-deck playback.
+
 ## One-time OTA partition migration
 
 Before installing the boards in an enclosure, perform one full wired flash of
@@ -765,6 +805,14 @@ deployment/boot check, not a full functional smoke; the latest fully accepted
 functional baseline remains E1 `RC1-123-g587cd7a1`. See
 [`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
 
+P4-only signed deployment record, 2026-08-22: clean dual-target
+`RC2-51-g050ab43` build and package verification passed, but only the P4 bundle
+was installed. P4 moved from `ota_1` to `ota_0 / valid`; S3 remained
+`RC2-44-g1923a3b / ota_1 / valid`. The 29,520 MB SDHC mounted on the recorded
+COM15 boot. USB MSC required one physical reinsert after eight fast recovery
+cycles, then loaded the exFAT library with 324 tracks. See
+[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+
 Bench display record, 2026-07-17: development build
 `RC1-132-g2b0cfd59-dirty` first passed the focused 132-second smoke. The fix was
 then committed at `bd5e43ce`, built and packaged for both targets as signed
@@ -791,7 +839,7 @@ R5 cleanup status:
 - [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
 - [x] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
 
-Experimental P4 dual-USB checkpoint, 2026-08-12:
+## Experimental P4 dual-USB checkpoint, 2026-08-12
 
 - [x] USB0 storage and direct USB1 FLX4 enumerate together; storage exposes 191
   tracks and FLX4 reaches USB-MIDI ready as `2B73:0045`.
@@ -803,3 +851,23 @@ Experimental P4 dual-USB checkpoint, 2026-08-12:
 - [ ] Rebuild the restored monitor/cue source, install it, then repeat both
   insertion orders, controls/LEDs, independent reconnect and 30-minute soak.
 - [ ] Do not merge `feat/p4-dual-usb-host` until all rows above pass.
+
+## Deferred libapta P4 integration entry gate
+
+This is a future-phase gate, not part of current RC2 bring-up. The complete plan
+is [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md).
+
+Do not enable `CONFIG_PAJONIIIR_APTA_LIBRARY` or replace the production
+Rekordbox path until all entry rows are closed:
+
+- [ ] libapta-audio publishes a qualified `v1.1.0` release;
+- [ ] the release includes calibrated tempo/grid quality, meter/downbeat, key,
+  progressive quick/full publication and the bounded P4 DJ profile;
+- [ ] Pajoniiir pins the exact 40-character release commit in
+  `idf_component.yml` and commits an unchanged-on-clean-build
+  `dependencies.lock`;
+- [ ] the legacy configuration remains buildable as rollback;
+- [ ] the neutral-model, catalog, USB-sidecar and Sync quality-gate host suites
+  pass before the first hardware flash;
+- [ ] final FAT32/exFAT dual-deck analysis/write soak passes before the new path
+  becomes default.

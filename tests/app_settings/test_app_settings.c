@@ -157,6 +157,58 @@ static void test_other_settings_still_write_immediately(void)
     CHECK(g_test_nvs.set_u8_calls == writes_before + 2u);
 }
 
+static void test_empty_nvs_defaults_to_safe_rca_and_records_schema(void)
+{
+    printf("== empty NVS starts on RCA and records the current schema ==\n");
+    reset_all();
+
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.has_stored_audio_out);
+    CHECK(g_test_nvs.stored_audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.has_stored_schema_version);
+    CHECK(g_test_nvs.stored_schema_version == 1u);
+}
+
+static void test_legacy_speaker_value_is_migrated_to_safe_rca(void)
+{
+    printf("== legacy speaker setting is durably migrated to RCA ==\n");
+    reset_all();
+    g_test_nvs.has_stored_audio_out = 1;
+    g_test_nvs.stored_audio_out = APP_SETTINGS_AUDIO_OUT_SPEAKER;
+
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.stored_audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.stored_schema_version == 1u);
+    CHECK(g_test_nvs.commit_calls == 1u);
+}
+
+static void test_invalid_audio_value_is_migrated_to_safe_rca(void)
+{
+    printf("== invalid audio route is durably migrated to RCA ==\n");
+    reset_all();
+    g_test_nvs.has_stored_audio_out = 1;
+    g_test_nvs.stored_audio_out = 99u;
+    g_test_nvs.has_stored_schema_version = 1;
+    g_test_nvs.stored_schema_version = 1u;
+
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(app_settings_get().audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.stored_audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.commit_calls == 1u);
+}
+
+static void test_product_setter_cannot_restore_retired_speaker(void)
+{
+    printf("== product setter cannot restore the retired speaker route ==\n");
+    reset_all();
+
+    app_settings_set_audio_out(APP_SETTINGS_AUDIO_OUT_SPEAKER);
+    CHECK(app_settings_get().audio_out == APP_SETTINGS_AUDIO_OUT_RCA);
+    CHECK(g_test_nvs.set_u8_calls == 0u);
+}
+
 int main(void)
 {
     test_setter_before_worker_persists_synchronously();
@@ -166,6 +218,10 @@ int main(void)
     test_worker_start_is_idempotent();
     test_init_loads_then_starts_the_worker();
     test_other_settings_still_write_immediately();
+    test_empty_nvs_defaults_to_safe_rca_and_records_schema();
+    test_legacy_speaker_value_is_migrated_to_safe_rca();
+    test_invalid_audio_value_is_migrated_to_safe_rca();
+    test_product_setter_cannot_restore_retired_speaker();
 
     printf("TESTS_RUN=%d\n", s_checks);
     if (s_failures == 0) {

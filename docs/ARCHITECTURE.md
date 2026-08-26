@@ -38,11 +38,16 @@ Responsibilities:
 - combine MSB/LSB pairs for 14-bit controls before forwarding when practical;
 - coalesce high-rate jog and analog values locally so stale motion does not
   flood the UART queue;
-- publish DDJ-FLX4 USB connection/disconnection state to the P4;
+- publish durable DDJ-FLX4 USB connection/disconnection desired state to the
+  P4, including periodic replay of both levels after a lost UART frame;
 - send heartbeat frames to the P4;
 - receive P4 LED/state frames;
-- emit FLX4 MIDI LED feedback using XML/official-list output addresses.
+- emit FLX4 MIDI LED feedback using XML/official-list output addresses; non-VU
+  LED state is retained until enqueue/USB completion can converge, while VU is
+  intentionally best-effort;
 - host the runtime-only S3 service AP and S3 OTA endpoint when requested by P4;
+- stage the service-AP netif locally through DHCP/IP configuration before
+  publication, and bound each OTA request by absolute and progress deadlines;
 - stream P4 monitor PCM to the FLX4 USB Audio headphone endpoint.
 
 The S3 must not:
@@ -90,8 +95,24 @@ Current P4 audio ownership rule:
   reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
   starting playback; the ES8311 monitor path and PCM5102A main path must stay
   sample-rate aligned;
+- PCM5102 writes are bounded to one block period per driver call and at most
+  three calls for a short write. The sink resumes only at the unwritten byte
+  suffix, publishes call/short/timeout/error counters, and playback position is
+  advanced only after every configured hardware sink accepts the block. A sink
+  fault stops the output service in an explicit error state; STOP disables the
+  PCM5102 channel to wake an in-flight write and the next LOAD re-enables it;
+- the channel signal chain is explicit and remains single-precision wide until
+  an output sink: source/resampler → channel TRIM/pregain → three-band EQ →
+  channel filter/Pad FX/Beat FX → channel fader/crossfader → two-deck sum →
+  controller master volume/software master trim → MAIN limiter → PCM sink.
+  Effects do not clamp to `int16_t` internally. PFL branches from the same
+  post-TRIM/post-DSP frame before channel fader/crossfader, so TRIM and EQ/FX
+  affect cue level while channel fader and crossfader do not. The headphone
+  path performs only its final PCM sink conversion; the master limiter remains
+  MAIN-only;
 - the audio engine exposes a non-boosting software master trim scalar
-  (`0.0–1.0`, default `1.0`) before the output mixer/limiter path. The P4
+  (`0.0–1.0`, default `1.0`) after the two-deck sum and before the MAIN limiter.
+  The P4
   Settings screen exposes it as a conservative preset cycle (`0 dB`, `-3 dB`,
   `-6 dB`) so limiter activity can be reduced without changing deck fader or
   crossfader semantics. The selected preset is persisted through
@@ -104,10 +125,10 @@ Current P4 audio ownership rule:
   The P4 status indicator reports `CLIP n` only when the limited-sample counter
   increases, so normal transport status remains stable when no new limiting
   occurs;
-- deck-local three-band EQ is applied in the P4 `audio_output_mixer` path
-  before channel fader/crossfader summing. Raw FLX4 EQ values are kept in the
-  mixer snapshot and exposed through `/api/status`; center is unity, minimum is
-  band kill, and maximum is a conservative boost;
+- deck-local three-band EQ is applied in the wide P4 `audio_output_mixer` path
+  after channel TRIM and before channel fader/crossfader summing. Raw FLX4 EQ
+  values are kept in the mixer snapshot and exposed through `/api/status`;
+  center is unity, minimum is band kill, and maximum is a conservative boost;
 - Smart CFX and Smart Fader are P4-owned global states. Smart CFX enables the
   deck-local channel-filter DSP (a resonant ZDF state-variable filter with an
   exponential sweep, shaped by a smoothstep response curve) driven by the
@@ -147,14 +168,30 @@ Current P4 audio ownership rule:
   output is active, and MP3 seek table construction publishes the finished
   table with a short lock so loader/index work cannot hold the audio engine
   mutex for the full scan;
+- FLAC cache callbacks publish a monotonic fault epoch and byte offset whenever
+  a read ends early before the declared file end. FLAC open/read/seek therefore
+  distinguish media faults from true EOF and replace/reseek the decoder at the
+  last confirmed PCM frame without destroying the old decoder until recovery
+  succeeds;
 - Master Tempo is deck-local and P4-owned. The Overview `MT` buttons toggle a
   WSOLA-style overlap/correlation time-stretch reader over the canonical PCM
   timeline; scratch remains the higher-priority source, and ordinary resampling
   drains the final look-ahead tail near EOF;
+- canonical PCM timeline cursors expose monotonic 64-bit sequences while the
+  RV32 per-frame producer/consumer path retains 32-bit modular distances. Epoch
+  changes use versioned snapshots, retained capacity is constrained below
+  `2^31`, and scratch keeps a 64-bit origin across low-word wrap. Scratch
+  release/re-grab control publishes only a packed command epoch; the output task
+  alone mutates handoff gain and phase at block boundaries;
 - stopping or reloading one deck must not close the codec while another deck is
   still loaded or playing;
-- USB removal uses `audio_engine_stop_all()` to tear down both decks and the
-  shared output service.
+- USB removal uses `audio_engine_suspend_loads_and_stop_all()` to close LOAD
+  admission, tear down both decks and the shared output service, clear
+  library/deck state, and only then calls `audio_engine_resume_loads()`.
+- Library LOAD completion is allocation-free after task creation: its bounded
+  result lives on the worker's fixed stack and is copied into the completion
+  queue. Heap/PSRAM exhaustion therefore cannot bypass the LVGL completion that
+  restores LOAD-button and status state.
 
 Current P4 Overview waveform ownership rule:
 
@@ -186,6 +223,19 @@ Current P4 Overview waveform ownership rule:
 8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
    republishes the current P4-owned LED snapshot.
 
+All S3 `0xA5` and `0xA6` transmitters share one serializer. Sequence
+allocation, complete frame construction and the UART write occur under the same
+static mutex, so concurrent heartbeat, semantic, descriptor and profile replies
+cannot appear on wire out of sequence. A failed write still consumes its
+sequence and is therefore visible to P4 gap telemetry.
+
+S3 OTA confirmation additionally requires a bidirectional boot-health exchange.
+After its critical control/USB tasks have actually started, a pending S3 image
+repeats a fresh `0x86` challenge until the P4 UART RX task returns the matching
+`0x87` ACK. A missing, wrong or premature ACK cannot mark the slot valid; the
+bounded 30-second failure path restarts without confirmation and leaves rollback
+to the ESP-IDF bootloader. This does not depend on an attached FLX4.
+
 The control path distinguishes continuous values, physical held levels and
 discrete commands. Continuous absolute values keep the latest sample and
 relative motion accumulates deltas. Jog touch, Shift, Censor, Pad FX and shifted
@@ -194,6 +244,13 @@ can delay but cannot erase their final level; disconnect forces releases and a
 P4 reboot reaccepts the S3 snapshot. Discrete commands remain FIFO and retain
 sequence-gap telemetry because collapsing repeated commands would change their
 meaning.
+
+Connection level and non-VU controller LEDs follow the same convergence rule:
+desired state remains dirty until the next layer accepts it. The S3 USB owner
+replays both connected and disconnected levels periodically and retains an
+already dequeued USB-MIDI OUT buffer across submit or retryable completion
+failure. Controller-profile changes mark all known LED desired states dirty so
+the new mapping receives a coherent refresh.
 
 The MIDI map is not an authority for behavior. `docs/reference/Pioneer-DDJ-FLX4.midi.xml`
 is the proven source for input status/midino values, and
@@ -296,6 +353,13 @@ Roles:
   profile and run a table-driven MIDI-in mapper and LED-out mapper that emit the
   same `control_link` semantic vocabulary the built-in map uses.
 
+The repository also carries a host-qualified
+`hercules_djcontrol_inpulse_500` profile. It exercises a real non-FLX4 layout,
+controller-specific RGB pad values, the relative `deckN.loop_size` semantic and
+the idempotent `sync_off` extended action. This is software evidence only: the
+physical Inpulse 500 descriptor, MIDI/LED reconnect path and four-channel USB
+audio routing remain hardware gates.
+
 Flow (adds to the base data flow above):
 
 ```text
@@ -334,6 +398,10 @@ Design guarantees:
   `flx4_map`/`flx4_led_midi` by a golden-parity host test (12k-message input
   sweep + snapshot + 690-combo LED parity), so routing FLX4 through the dynamic
   profile reproduces the built-in behaviour exactly.
+- Every committed fixture, including Hercules, is deterministically regenerated
+  by the S3 host runner. Hercules also has explicit runtime, registry, RGB,
+  protocol and P4 behavior assertions; it is not advertised as hardware-
+  supported until the checklist in its mapping document passes.
 
 Protocol details: `docs/CONTROL_LINK_PROTOCOL.md` (0xA6 Bulk Frame Layer).
 Verified on hardware 2026-07-09: the SD profile loads into the P4 registry and

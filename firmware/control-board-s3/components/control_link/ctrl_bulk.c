@@ -78,9 +78,10 @@ size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
     wr_u16(p + 0, rep->vid);
     wr_u16(p + 2, rep->pid);
     wr_u16(p + 4, rep->caps);
-    memset(p + 6, 0, CTRL_DESC_PRODUCT_MAX);
+    wr_u32(p + 6, rep->connection_epoch);
+    memset(p + 10, 0, CTRL_DESC_PRODUCT_MAX);
     for (size_t i = 0; i < CTRL_DESC_PRODUCT_MAX && rep->product[i] != '\0'; i++) {
-        p[6 + i] = (uint8_t)rep->product[i];
+        p[10 + i] = (uint8_t)rep->product[i];
     }
     return bulk_finalize(out, CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR, seq,
                          CTRL_DESC_PAYLOAD_LEN);
@@ -263,7 +264,8 @@ bool ctrl_bulk_decode_descriptor(const uint8_t *frame, size_t frame_len,
     rep->vid = rd_u16(p + 0);
     rep->pid = rd_u16(p + 2);
     rep->caps = rd_u16(p + 4);
-    memcpy(rep->product, p + 6, CTRL_DESC_PRODUCT_MAX);
+    rep->connection_epoch = rd_u32(p + 6);
+    memcpy(rep->product, p + 10, CTRL_DESC_PRODUCT_MAX);
     rep->product[CTRL_DESC_PRODUCT_MAX] = '\0';
     return true;
 }

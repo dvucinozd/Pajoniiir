@@ -67,6 +67,32 @@ static void test_offer_freshness_is_wrap_safe(void)
     assert(p4_ota_pull_offer_fresh(5u, UINT32_MAX - 4u, 10u));
 }
 
+static void test_signed_bundle_release_is_bound_to_offer_and_newer_only(void)
+{
+    assert(p4_ota_pull_validate_bundle_release(
+               "RC2-12-gabcdef0", "RC2-12-gabcdef0", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_OK);
+
+    /* A newer channel cannot smuggle a validly signed old bundle. */
+    assert(p4_ota_pull_validate_bundle_release(
+               "RC2-12-gabcdef0", "RC2-10-g7654321", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_MISMATCH);
+
+    /* Prefix equality is not equality. */
+    assert(p4_ota_pull_validate_bundle_release(
+               "RC2-12-gabcdef0-extra", "RC2-12-gabcdef0", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_MISMATCH);
+
+    assert(p4_ota_pull_validate_bundle_release(
+               "RC2-11-g1234567", "RC2-11-g1234567", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_NOT_NEWER);
+    assert(p4_ota_pull_validate_bundle_release(
+               "RC2-10-g7654321", "RC2-10-g7654321", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_NOT_NEWER);
+    assert(p4_ota_pull_validate_bundle_release(NULL, "RC2", "RC1") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_INVALID_ARG);
+}
+
 static void test_unknown_schema_is_refused_not_guessed(void)
 {
     p4_ota_pull_manifest_t m;
@@ -222,6 +248,7 @@ int main(void)
     test_parses_the_document_the_publisher_writes();
     test_release_comparison_is_newer_only_and_monotonic();
     test_offer_freshness_is_wrap_safe();
+    test_signed_bundle_release_is_bound_to_offer_and_newer_only();
     test_unknown_schema_is_refused_not_guessed();
     test_a_document_without_a_p4_target_is_distinguishable();
     test_fields_are_read_from_the_p4_object_only();

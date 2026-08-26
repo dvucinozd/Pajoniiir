@@ -12,13 +12,16 @@
 #include "esp_err.h"
 
 typedef struct {
-    uint8_t audio_out;      // legacy NVS key: 0 = monitor speaker PA on, 1 = headphones / speaker PA off
+    uint8_t audio_out;      // legacy NVS key: 0 = speaker, 1 = safe RCA/headphones route
     uint8_t backlight_pct;  // 10..100
     uint8_t time_remain;    // 0 = elapsed time, 1 = remaining time
     uint8_t cue_mode;       // 0 = stereo master, 1 = split mono (L=master, R=cue)
     uint8_t master_trim_preset; // 0 = 0 dB, 1 = -3 dB, 2 = -6 dB
     uint8_t wifi_remote;    // 0 = Wi-Fi remote off (default), 1 = on (SoftAP + web UI)
 } app_settings_t;
+
+#define APP_SETTINGS_AUDIO_OUT_SPEAKER 0u
+#define APP_SETTINGS_AUDIO_OUT_RCA     1u
 
 // Initialise NVS, load saved settings (or sensible defaults if none stored) and
 // start the backlight persistence worker.

@@ -13,6 +13,7 @@ void audio_fw_task_context_reset(audio_fw_task_context_t *ctx)
     ctx->pcm_ring = NULL;
     ctx->resampler = NULL;
     ctx->task_plan = (audio_fw_task_plan_t) { 0 };
+    ctx->session_generation = 0u;
 }
 
 void audio_fw_task_context_bind(audio_fw_task_context_t *ctx,
@@ -33,6 +34,15 @@ void audio_fw_task_context_bind(audio_fw_task_context_t *ctx,
     ctx->pcm_ring = pcm_ring;
     ctx->resampler = resampler;
     ctx->task_plan = task_plan;
+    ctx->session_generation = audio_fw_runtime_session_generation(runtime);
+}
+
+bool audio_fw_task_context_is_current(const audio_fw_task_context_t *ctx)
+{
+    return audio_fw_task_context_is_bound(ctx) &&
+           ctx->session_generation != 0u &&
+           audio_fw_runtime_session_generation(ctx->runtime) ==
+               ctx->session_generation;
 }
 
 bool audio_fw_task_context_is_bound(const audio_fw_task_context_t *ctx)
