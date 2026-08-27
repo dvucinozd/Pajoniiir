@@ -881,7 +881,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 manager activates the matched profile locally" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
-    -LiteralPatterns @("cpm_activate_profile", "controller_profile_runtime_activate", "cpm_activate_bound_profile")
+    -LiteralPatterns @("cpm_read_profile", "controller_profile_runtime_activate", "cpm_activate_bound_profile")
 
 Assert-FileContains `
     -Name "p4 controller events and LED output stay local" `
@@ -1965,7 +1965,6 @@ $tests = @(
         Target = "test_flx4_led_snapshot.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_flx4_led_snapshot.exe",
@@ -2022,7 +2021,6 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/audio_recorder/include",
             "-I../../firmware/main-deck-p4/components/service_log/include",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
@@ -2322,7 +2320,6 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
             "-o", "test_controller_profile_manager.exe",

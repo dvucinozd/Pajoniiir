@@ -57,7 +57,8 @@ retained while its electrical and hardware acceptance gates remain open.
 > P4 host suite and ESP-IDF 6.0.2 production build pass. The UART control link,
 > S3 heartbeat/debug AP, profile transfer, monitor PCM bridge, S3 firmware
 > reporting and dual-target OTA package are retired from the active product.
-> `firmware/control-board-s3` is retained only as historical/reference source.
+> The former `firmware/control-board-s3` target and its dedicated tests have
+> been removed; dated documents and Git history retain the old implementation.
 > This does not clear the open 5 V/VBUS brownout blocker or replace the required
 > hardware soak.
 
@@ -70,7 +71,7 @@ retained while its electrical and hardware acceptance gates remain open.
 
 The P4 normalizes FLX4 input locally and makes all authoritative deck, mixer,
 audio-position and LED decisions. The former `0xA5`/`0xA6` P4/S3 transport is
-kept only in historical source and protocol records. The detailed ownership and
+kept only in historical protocol records and Git history. The detailed ownership and
 data flow are documented in
 [Architecture](docs/ARCHITECTURE.md).
 
@@ -117,7 +118,6 @@ The Hot Cues tab is implemented but does not yet have an archived screenshot.
 ```text
 controllers/                 Compiled and source controller profiles
 firmware/
-  control-board-s3/          Historical ESP32-S3 reference firmware (inactive)
   main-deck-p4/              ESP32-P4 complete product firmware
   common/                    Shared firmware components
 docs/                        Product, protocol, validation and design records

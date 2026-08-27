@@ -27,8 +27,8 @@ static void test_names_and_severity(void)
     CHECK(strcmp(service_log_event_name(SERVICE_LOG_TRACK_LOAD_DONE), "TRACK_LOAD_DONE") == 0);
     CHECK(strcmp(service_log_event_name(SERVICE_LOG_WEB_LOAD_REQ_FAILED), "WEB_LOAD_REQUEST_FAILED") == 0);
     CHECK(strcmp(service_log_event_name(SERVICE_LOG_CONTROLLER_DISCONNECTED), "CONTROLLER_DISCONNECTED") == 0);
-    CHECK(strcmp(service_log_event_name(SERVICE_LOG_CONTROL_LINK_CRC), "CONTROL_LINK_CRC_ERROR") == 0);
-    CHECK(strcmp(service_log_event_name(SERVICE_LOG_CONTROL_LINK_GAP), "CONTROL_LINK_GAP") == 0);
+    CHECK(strcmp(service_log_event_name(SERVICE_LOG_RETIRED_32), "RETIRED_EVENT_32") == 0);
+    CHECK(strcmp(service_log_event_name(SERVICE_LOG_RETIRED_33), "RETIRED_EVENT_33") == 0);
     CHECK(strcmp(service_log_event_name(SERVICE_LOG_EVENT_COUNT), "UNKNOWN") == 0);
     /* every id resolves to a non-empty, non-UNKNOWN name */
     for (int e = 0; e < SERVICE_LOG_EVENT_COUNT; e++) {

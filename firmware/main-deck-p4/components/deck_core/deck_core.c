@@ -2888,9 +2888,6 @@ static void deck_task(void *arg)
         case CTRL_EV_STATE:
             on_state_event(&ev);
             break;
-        case CTRL_EV_HEARTBEAT:
-            /* Retained protocol enum value; unused by the P4-only runtime. */
-            break;
         }
     }
 }
@@ -3310,8 +3307,6 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         break;
     case CTRL_EV_STATE:
         on_state_event(ev);
-        break;
-    case CTRL_EV_HEARTBEAT:
         break;
     }
 }

@@ -32,13 +32,14 @@ static void msc_event_callback(const msc_host_event_t *event, void *arg)
     }
 }
 
-static void semantic_event_callback(const flx4_control_event_t *event,
-                                    void *ctx)
+static esp_err_t semantic_event_callback(const flx4_control_event_t *event,
+                                         void *ctx)
 {
     (void)ctx;
     if (!event) {
-        return;
+        return ESP_ERR_INVALID_ARG;
     }
+    return ESP_OK;
     const uint32_t count =
         __atomic_add_fetch(&s_semantic_events, 1u, __ATOMIC_RELAXED);
     if (count <= 24u || (count % 256u) == 0u) {
@@ -61,6 +62,10 @@ static void connection_callback(bool connected,
                                 void *ctx)
 {
     (void)ctx;
+    const bool builtin_flx4 = connected && identity &&
+                              identity->vid == 0x2B73u &&
+                              identity->pid == 0x0045u;
+    controller_runtime_set_builtin_flx4_enabled(builtin_flx4);
     controller_runtime_set_connected(connected);
     if (!connected || !identity) {
         ESP_LOGW(TAG, "controller disconnected");

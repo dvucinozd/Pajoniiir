@@ -12,13 +12,17 @@ static flx4_map_state_t s_map;
 static controller_event_buffer_t s_buffer;
 static flx4_control_event_t
     s_snapshot_events[CP_MAX_INPUTS];
+static flx4_control_event_t s_retry_event;
 static size_t s_snapshot_count;
 static size_t s_snapshot_cursor;
 static control_held_state_reconciler_t s_held_states;
 static bool s_initialized;
 static bool s_connected;
+static bool s_builtin_flx4_enabled;
 static bool s_snapshot_pending;
+static bool s_retry_pending;
 static bool s_locked;
+static bool s_dispatch_locked;
 static uint32_t s_midi_messages;
 static uint32_t s_mapped_messages;
 static uint32_t s_semantic_events;
@@ -111,7 +115,7 @@ static void prepare_snapshot_if_possible_locked(void)
     if (controller_profile_runtime_active()) {
         (void)controller_profile_runtime_emit_snapshot(collect_snapshot_event,
                                                        &collector);
-    } else {
+    } else if (__atomic_load_n(&s_builtin_flx4_enabled, __ATOMIC_ACQUIRE)) {
         (void)flx4_map_emit_snapshot(&s_map, collect_snapshot_event,
                                      &collector);
     }
@@ -138,7 +142,10 @@ esp_err_t controller_runtime_init(const controller_runtime_config_t *config)
     controller_event_buffer_init(&s_buffer);
     control_held_state_reset(&s_held_states);
     s_connected = false;
+    __atomic_store_n(&s_builtin_flx4_enabled, false, __ATOMIC_RELEASE);
     s_snapshot_pending = false;
+    s_retry_pending = false;
+    __atomic_clear(&s_dispatch_locked, __ATOMIC_RELEASE);
     s_snapshot_count = 0u;
     s_snapshot_cursor = 0u;
     s_midi_messages = 0u;
@@ -170,8 +177,10 @@ bool controller_runtime_handle_midi(const usb_midi_message_t *message)
                                                 &event.type,
                                                 &event.id,
                                                 &event.value);
-    } else {
+    } else if (__atomic_load_n(&s_builtin_flx4_enabled, __ATOMIC_ACQUIRE)) {
         mapped = flx4_map_message(&s_map, message, &event);
+    } else {
+        mapped = false;
     }
     if (!mapped) {
         runtime_unlock();
@@ -215,10 +224,18 @@ void controller_runtime_set_connected(bool connected)
     runtime_unlock();
 }
 
+void controller_runtime_set_builtin_flx4_enabled(bool enabled)
+{
+    __atomic_store_n(&s_builtin_flx4_enabled, enabled, __ATOMIC_RELEASE);
+}
+
 size_t controller_runtime_dispatch_pending(size_t max_events)
 {
     if (max_events == 0u ||
         !__atomic_load_n(&s_initialized, __ATOMIC_ACQUIRE)) {
+        return 0u;
+    }
+    if (__atomic_test_and_set(&s_dispatch_locked, __ATOMIC_ACQUIRE)) {
         return 0u;
     }
 
@@ -229,6 +246,7 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
         flx4_control_event_t event;
         int held_key = -1;
         bool have_held = false;
+        bool have_retry = false;
         bool have_snapshot = false;
         bool have_buffered = false;
 
@@ -253,20 +271,23 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
                 .id = held_id,
                 .value = held_value,
             };
+        } else if (s_retry_pending) {
+            event = s_retry_event;
+            have_retry = true;
         } else if (s_snapshot_cursor < s_snapshot_count) {
-            event = s_snapshot_events[s_snapshot_cursor++];
+            event = s_snapshot_events[s_snapshot_cursor];
             have_snapshot = true;
-            if (s_snapshot_cursor == s_snapshot_count) {
-                s_snapshot_cursor = 0u;
-                s_snapshot_count = 0u;
-            }
         } else {
             have_buffered = controller_event_buffer_pop(&s_buffer, &event);
         }
         runtime_unlock();
 
         if (have_held) {
-            s_config.event_cb(&event, s_config.callback_ctx);
+            if (s_config.event_cb(&event, s_config.callback_ctx) != ESP_OK) {
+                /* Keep the durable level dirty until the downstream deck
+                 * queue accepts it. */
+                break;
+            }
             runtime_lock();
             control_held_state_mark_scheduled(&s_held_states,
                                                held_key,
@@ -280,8 +301,30 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
             continue;
         }
 
+        if (have_retry) {
+            if (s_config.event_cb(&event, s_config.callback_ctx) != ESP_OK) {
+                break;
+            }
+            runtime_lock();
+            s_retry_pending = false;
+            runtime_unlock();
+            (void)__atomic_add_fetch(&s_semantic_events, 1u,
+                                     __ATOMIC_RELAXED);
+            dispatched++;
+            continue;
+        }
+
         if (have_snapshot) {
-            s_config.event_cb(&event, s_config.callback_ctx);
+            if (s_config.event_cb(&event, s_config.callback_ctx) != ESP_OK) {
+                break;
+            }
+            runtime_lock();
+            s_snapshot_cursor++;
+            if (s_snapshot_cursor == s_snapshot_count) {
+                s_snapshot_cursor = 0u;
+                s_snapshot_count = 0u;
+            }
+            runtime_unlock();
             (void)__atomic_add_fetch(&s_semantic_events, 1u,
                                      __ATOMIC_RELAXED);
             dispatched++;
@@ -299,24 +342,39 @@ size_t controller_runtime_dispatch_pending(size_t max_events)
             continue;
         }
 
-        s_config.event_cb(&event, s_config.callback_ctx);
+        if (s_config.event_cb(&event, s_config.callback_ctx) != ESP_OK) {
+            runtime_lock();
+            s_retry_event = event;
+            s_retry_pending = true;
+            runtime_unlock();
+            break;
+        }
         (void)__atomic_add_fetch(&s_semantic_events, 1u,
                                  __ATOMIC_RELAXED);
         dispatched++;
     }
 
+    __atomic_clear(&s_dispatch_locked, __ATOMIC_RELEASE);
     return dispatched;
 }
 
-size_t controller_runtime_emit_snapshot(void)
+void controller_runtime_request_snapshot(void)
 {
     if (!__atomic_load_n(&s_initialized, __ATOMIC_ACQUIRE)) {
-        return 0u;
+        return;
     }
     runtime_lock();
     invalidate_held_schedule_locked();
     s_snapshot_pending = true;
     runtime_unlock();
+}
+
+size_t controller_runtime_emit_snapshot(void)
+{
+    controller_runtime_request_snapshot();
+    if (!__atomic_load_n(&s_initialized, __ATOMIC_ACQUIRE)) {
+        return 0u;
+    }
     return controller_runtime_dispatch_pending(
         CONTROLLER_EVENT_BUFFER_CAPACITY + CONTROL_HELD_STATE_COUNT);
 }
@@ -329,6 +387,7 @@ size_t controller_runtime_pending_count(void)
     runtime_lock();
     const size_t pending = s_buffer.count + held_dirty_count_locked() +
                            (s_snapshot_count - s_snapshot_cursor) +
+                           (s_retry_pending ? 1u : 0u) +
                            (s_snapshot_pending ? 1u : 0u);
     runtime_unlock();
     return pending;
@@ -348,6 +407,7 @@ void controller_runtime_get_diagnostics(
     const bool connected = s_connected;
     const bool snapshot_pending = s_snapshot_pending;
     const size_t snapshot_queued = s_snapshot_count - s_snapshot_cursor;
+    const size_t retry_queued = s_retry_pending ? 1u : 0u;
     runtime_unlock();
 
     *diag_out = (controller_runtime_diagnostics_t) {
@@ -367,9 +427,11 @@ void controller_runtime_get_diagnostics(
             __atomic_load_n(&s_dispatch_calls, __ATOMIC_ACQUIRE),
         .queue_coalesced = coalesced,
         .queue_dropped = dropped,
-        .queued_events = queued + snapshot_queued,
+        .queued_events = queued + snapshot_queued + retry_queued,
         .connected = connected,
         .snapshot_pending = snapshot_pending,
         .dynamic_profile_active = controller_profile_runtime_active(),
+        .builtin_flx4_enabled =
+            __atomic_load_n(&s_builtin_flx4_enabled, __ATOMIC_ACQUIRE),
     };
 }

@@ -14,13 +14,14 @@ je to prirodnije za firmware projekt.
 Cilj je standalone dual-deck DJ sustav:
 
 - Pioneer DDJ-FLX4 je operator surface.
-- ESP32-S3 je USB MIDI host i MIDI-to-control-link prevoditelj.
-- ESP32-P4 JC4880P443C_I_W je autoritativni playback/UI/audio engine.
-- Postojeci `0xA5` UART `control_link` ostaje interna komunikacija izmedu S3 i
-  P4.
+- ESP32-P4 JC4880P443C_I_W izravno hosta DDJ-FLX4 preko USB1 i autoritativni je
+  playback/UI/audio engine.
+- ESP32-S3 i inter-board UART/PCM veza uklonjeni su iz aktivnog proizvoda.
+- Povijesni `0xA5`/`0xA6` control-link format smije ostati samo u jasno označenoj
+  arhivskoj dokumentaciji; ne vraćaj ga u aktivni firmware bez izričitog zahtjeva.
 
 Trenutni `master` ima funkcionalan dual-deck FLX4 put, vinyl/scratch, Master
-Tempo, dualni MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4/S3 OTA.
+Tempo, dualni MAIN/cue audio, Beat FX Filter/Echo/Flanger/Delay i P4 OTA.
 Pull OTA koristi newer-only politiku, desetominutni offer TTL, provjeru
 channel size/SHA-256, `pajoniiir.local` i dinamički Host allow-list; lokalni
 potpisani push OTA ostaje servisni rollback put. Controller browse/load UI
@@ -46,7 +47,6 @@ buildova i relevantnog hardware smoke testa.
   docs\DOCUMENTATION_STATUS.md
   docs\OTA-UPDATE.md
   docs\reference\Pioneer-DDJ-FLX4.midi.xml
-  firmware\control-board-s3
   firmware\main-deck-p4
   controllers\generic_midi_ci
   tests
@@ -108,15 +108,6 @@ Host suite se pokreće i na Windows PowerShellu 5.1 i na PowerShellu 7.
 
 ## Build naredbe
 
-S3 firmware:
-
-```powershell
-# Najprije inicijaliziraj jedno od podržanih ESP-IDF okruženja.
-$repoRoot = git rev-parse --show-toplevel
-Set-Location "$repoRoot\firmware\control-board-s3"
-idf.py build
-```
-
 P4 firmware:
 
 ```powershell
@@ -144,7 +135,8 @@ P4 host regresije pokreni preko:
 .\tests\run_p4_host_tests.ps1
 ```
 
-To je isti runner koji koristi CI. S3 strana je `.\tests\run_s3_host_tests.ps1`.
+To je isti runner koji koristi CI. Zasebni S3 runner i S3 firmware target više
+ne postoje.
 
 Za dugi deterministicki dual-deck Master Tempo PC regression koristi:
 
@@ -177,11 +169,10 @@ Repo koristi `.gitignore` za ESP-IDF artefakte:
 - `sdkconfig`
 - `sdkconfig.old`
 
-Iznimka: `firmware/control-board-s3/dependencies.lock` i
-`firmware/main-deck-p4/dependencies.lock` **jesu** commitani (`.gitignore` ima
-`!` iznimke za oba) da bi clean build bio reproducibilan. CI provjerava da se
-lock nije promijenio tijekom builda; ako se promijeni, ili commitaj novu
-rezoluciju ili pinaj komponentu koja je odlutala.
+Iznimka: `firmware/main-deck-p4/dependencies.lock` **jest** commitan
+(`.gitignore` ima `!` iznimku) da bi clean build bio reproducibilan. CI
+provjerava da se lock nije promijenio tijekom builda; ako se promijeni, ili
+commitaj novu rezoluciju ili pinaj komponentu koja je odlutala.
 
 Ne commitaj generirane build direktorije ili lokalni `sdkconfig` osim ako
 korisnik eksplicitno trazi drugacije.
@@ -203,13 +194,15 @@ Prije brisanja bilo koje grane pokreni `git branch --no-merged master`, provjeri
 
 - P4 je autoritativan za playback state, deck state, audio position, mixer
   state i LED odluke.
-- S3 smije citati FLX4 MIDI, normalizirati input i slati semanticke evente.
-- S3 ne smije odlucivati je li deck stvarno playing, current/next, cue state
-  ili audio position.
+- P4 USB1 controller runtime čita FLX4 MIDI, normalizira input i lokalno šalje
+  semantičke evente u `deck_core` red.
+- Ugrađeni FLX4 mapping i LED fallback smiju se uključiti samo za točno
+  potvrđeni FLX4 VID/PID; generički uređaj mora imati aktiviran profil.
 - MIDI je transport/input mapping, ne state model.
-- Zadrzi `0xA5` frame za MVP osim ako stvarno blokira implementaciju.
-- Prva firmware faza je `flx4_midi_host` raw MIDI capture na S3, prije
-  promjene P4 dual-deck logike.
+- Ne uvodi ponovno S3 firmware, UART control link ili monitor PCM bridge bez
+  izričite nove arhitektonske odluke.
+- Controller USB callback ne smije blokirati na SD čitanju ili parsiranju
+  profila; aktivacija profila ide kroz worker i mora provjeriti binding epoch.
 
 ## DDJ-FLX4 MVP kontrole
 

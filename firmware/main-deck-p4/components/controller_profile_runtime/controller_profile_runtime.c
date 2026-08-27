@@ -2,6 +2,7 @@
 
 #include "controller_profile.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef CONTROLLER_PROFILE_RUNTIME_PC_TEST
@@ -45,23 +46,31 @@ bool controller_profile_runtime_activate(const uint8_t *blob, size_t len,
 
     /* Parse into a scratch profile first so a failed parse never disturbs a
      * currently active one. */
-    static cp_profile_t parsed;
-    int rc = cp_profile_parse(blob, len, &parsed);
-    if (rc != CP_OK) {
-        RT_LOGW("profile parse failed rc=%d (VID=0x%04X PID=0x%04X)", rc, vid, pid);
+    cp_profile_t *parsed = malloc(sizeof(*parsed));
+    if (!parsed) {
+        RT_LOGW("profile parse allocation failed (VID=0x%04X PID=0x%04X)",
+                vid, pid);
         return false;
     }
-    if (parsed.vid != vid || parsed.pid != pid) {
+    int rc = cp_profile_parse(blob, len, parsed);
+    if (rc != CP_OK) {
+        RT_LOGW("profile parse failed rc=%d (VID=0x%04X PID=0x%04X)", rc, vid, pid);
+        free(parsed);
+        return false;
+    }
+    if (parsed->vid != vid || parsed->pid != pid) {
         RT_LOGW("profile VID/PID mismatch blob=0x%04X:0x%04X transfer=0x%04X:0x%04X",
-                parsed.vid, parsed.pid, vid, pid);
+                parsed->vid, parsed->pid, vid, pid);
+        free(parsed);
         return false;
     }
 
     RT_LOCK();
-    s_profile = parsed;
+    s_profile = *parsed;
     cp_runtime_init(&s_runtime);
     s_active = true;
     RT_UNLOCK();
+    free(parsed);
     RT_LOGI("dynamic profile active: VID=0x%04X PID=0x%04X inputs=%u",
             s_profile.vid, s_profile.pid, (unsigned)s_profile.input_count);
     return true;

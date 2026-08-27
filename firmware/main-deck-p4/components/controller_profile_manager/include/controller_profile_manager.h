@@ -9,10 +9,8 @@
  *
  * The pure functions (header parse, directory scan, registry match) carry no
  * ESP-IDF logging or sdkconfig dependency so the host test harness compiles
- * them directly. The S3CP binary layout mirrors the authoritative S3-side
- * parser in firmware/control-board-s3/components/controller_profile/; the
- * controller_profile_manager host test cross-checks both against the same
- * committed FLX4 fixture so the two format readers cannot drift.
+ * them directly. S3CP is retained as the on-disk format name for compatibility;
+ * it no longer denotes a processor or transport boundary.
  */
 
 #include <stdbool.h>
@@ -104,8 +102,10 @@ esp_err_t controller_profile_manager_get_registry_snapshot(
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid);
 
 /* Full direct USB identity: stores capability bits and product string for
- * UI/web status, then activates a matching local profile. `product` may be
- * NULL. Returns the active index or -1 when the built-in map is used. */
+ * UI/web status, then activates a matching local profile. This call may read
+ * the SD card and must run in the profile worker, never the USB client task.
+ * `product` may be NULL. Returns the active index or -1 when no local profile
+ * became active. */
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                     uint16_t caps,
                                                     const char *product,

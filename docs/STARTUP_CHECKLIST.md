@@ -5,6 +5,8 @@
 > USB0 for Rekordbox storage and USB1 for the FLX4. Historical checked S3 rows
 > below document the last known-good dual-processor baseline only. The protected
 > 5 V/VBUS topology and all open P4 dual-USB acceptance rows still apply.
+> The historical S3 firmware directory and test runner no longer exist; do not
+> treat any older checked S3 row as a command that can be rerun from this tree.
 
 Status: reconciled 2026-08-22. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. RC2
@@ -93,8 +95,8 @@ latest observed P4-only deployment.
 ## Repeat before enclosure close
 
 - [ ] Verify shared ground and that independent 5 V sources are not back-fed.
-- [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
-- [x] Run both host suites and both firmware builds from fresh build directories —
+- [ ] Verify USB0/USB1 data and protected VBUS wiring against `HARDWARE_WIRING.md`.
+- [x] Run the P4 host suite and P4 firmware build from a fresh build directory —
   passed 2026-07-26 with ESP-IDF v5.5.4; passed again 2026-07-30 on `master`
   with ESP-IDF v6.0.2 as the `RC2` clean release build, including bounded cache,
   paginated Library and recorder hardening. Repeat for the final enclosure
@@ -120,15 +122,15 @@ latest observed P4-only deployment.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
-- [x] R3 smoke after flashing both targets: dual-platter scratch/release operates correctly without a latched platter.
-- [x] R4 smoke: both WPA2 APs accept `Pajoniiir`; P4 web UI plus S3 log and OTA update pages load correctly.
+- [x] Historical R3 dual-target smoke: dual-platter scratch/release operated correctly without a latched platter.
+- [x] Historical R4 dual-target smoke: both WPA2 APs accepted `Pajoniiir`; retained as dated evidence only.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
-- [x] Perform one OTA update per target and record slot/version/state; the
+- [x] Historical dual-target OTA was recorded; perform future updates on P4 only. The
   2026-07-16 `RC1-131-gc391e306` rollout is recorded below.
 - [ ] Preserve a wired recovery path or validated service connector.
-- [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, FLX4 USB
-  disconnect recovery, guarded web/profile/OTA mutations and UART-link capture.
+- [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, direct FLX4 USB
+  disconnect recovery and guarded web/profile/OTA mutations.
 
 ## Repository
 
@@ -141,12 +143,10 @@ latest observed P4-only deployment.
 - [x] Confirm v6.0.2 PowerShell profile init script works in PowerShell.
 - [x] Confirm `idf.py --version`.
 - [x] Confirm MinGW/GCC is available for PC tests (msys64 ucrt64).
-- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions (adapted for PowerShell 5.1 compatibility).
 - [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions (runs on both Windows PowerShell 5.1 and PowerShell 7).
 
 ## Baseline Builds
 
-- [x] Build `firmware/control-board-s3`.
 - [x] Build `firmware/main-deck-p4`.
 - [x] Run inherited PC tests that do not require hardware.
 
@@ -394,12 +394,11 @@ latest observed P4-only deployment.
   USB packetizer. COM6 smoke after flashing showed `overruns=0`, `gaps=0`,
   `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two minutes.
 
-## First Firmware Task
+## Historical First Firmware Task (Removed)
 
-`firmware/control-board-s3/components/flx4_midi_host/` contains the raw
-USB MIDI logger and the software translator path. Built with
-`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y` (enabled on 2026-06-14). USB host role is
-unconditional since R5D; disabling the translator leaves the raw logger.
+The original raw USB MIDI logger and translator lived in the removed S3
+firmware target. Its implementation remains available through Git history;
+the active P4 mapper is `firmware/main-deck-p4/components/controller_runtime/`.
 
 ## P4 Overview Waveform Smoke Test
 

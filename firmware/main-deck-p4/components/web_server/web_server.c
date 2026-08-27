@@ -1231,7 +1231,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             "\"last_config_total_length\":%u,"
             "\"last_parent_port\":%u,\"last_direct_root\":%s},"
             "\"runtime\":{"
-            "\"bootstrap_started\":%s,\"local_connected\":%s,"
+            "\"bootstrap_started\":%s,\"bootstrap_ready\":%s,"
+            "\"bootstrap_failures\":%u,\"last_bootstrap_error\":%d,"
+            "\"local_connected\":%s,"
             "\"semantic_events\":%u,\"queue_failures\":%u,"
             "\"profile_activations\":%u,\"profile_fallbacks\":%u}"
             "}",
@@ -1275,6 +1277,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)controller_diag.last_parent_port,
             controller_diag.last_direct_root ? "true" : "false",
             local_diag.bootstrap_started ? "true" : "false",
+            local_diag.bootstrap_ready ? "true" : "false",
+            (unsigned)local_diag.bootstrap_failures,
+            (int)local_diag.last_bootstrap_error,
             local_diag.local_connected ? "true" : "false",
             (unsigned)local_diag.local_semantic_events,
             (unsigned)local_diag.local_queue_failures,

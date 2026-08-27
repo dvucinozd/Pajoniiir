@@ -15,8 +15,11 @@ typedef struct {
     uint32_t local_queue_failures;
     uint32_t profile_activations;
     uint32_t profile_fallbacks;
+    uint32_t bootstrap_failures;
+    int32_t last_bootstrap_error;
     bool local_connected;
     bool bootstrap_started;
+    bool bootstrap_ready;
 } p4_local_controller_diagnostics_t;
 
 esp_err_t p4_local_controller_start(void);

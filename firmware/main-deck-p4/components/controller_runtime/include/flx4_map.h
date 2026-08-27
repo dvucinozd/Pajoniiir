@@ -7,8 +7,7 @@
 
 #include "usb_midi_codec.h"
 
-/* Preserve the mature mapping implementation's input type while replacing
- * the S3 USB transport with the transport-neutral P4 codec type. */
+/* The mature FLX4 mapper consumes the transport-neutral P4 MIDI codec type. */
 typedef usb_midi_message_t flx4_midi_message_t;
 
 typedef struct {

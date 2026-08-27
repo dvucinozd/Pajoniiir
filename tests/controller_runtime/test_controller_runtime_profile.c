@@ -111,12 +111,13 @@ static size_t build_large_replay_profile(uint8_t *blob)
     return total;
 }
 
-static void event_cb(const flx4_control_event_t *event, void *ctx)
+static esp_err_t event_cb(const flx4_control_event_t *event, void *ctx)
 {
     (void)ctx;
     if (s_event_count < sizeof(s_events) / sizeof(s_events[0])) {
         s_events[s_event_count++] = *event;
     }
+    return ESP_OK;
 }
 
 static usb_midi_message_t midi(uint8_t status, uint8_t data1, uint8_t data2)
@@ -180,6 +181,7 @@ int main(void)
 
     controller_profile_runtime_clear();
     CHECK(!controller_profile_runtime_active());
+    controller_runtime_set_builtin_flx4_enabled(true);
     message = midi(0x90u, 0x0Bu, 0x7Fu);
     CHECK(controller_runtime_handle_midi(&message));
     CHECK(controller_runtime_dispatch_pending(1u) == 1u);

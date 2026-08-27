@@ -18,6 +18,7 @@ typedef struct {
     uint32_t send_failures;
 } controller_led_runtime_diagnostics_t;
 
+void controller_led_runtime_set_builtin_flx4_enabled(bool enabled);
 bool controller_led_runtime_build_packet(uint8_t led,
                                          uint8_t state,
                                          uint8_t deck,

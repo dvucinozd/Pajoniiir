@@ -2,8 +2,8 @@
 
 Status: P4-only branch architecture, updated 2026-08-27. The P4 is both the
 authoritative playback/UI engine and the direct dual-root USB host. The former
-S3 transport/audio bridge is retired from the active build and remains only as
-historical source.
+S3 transport/audio bridge and firmware target have been removed. Their dated
+design and validation records remain historical evidence only.
 
 ## High-Level Flow
 
@@ -225,7 +225,7 @@ Active `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
   sampled outside the audio path and rate-limited into the service log.
 
 The prior S3 UART and monitor-I2S implementation remains available only in Git
-history, `firmware/control-board-s3` and dated validation/protocol records.
+history and dated validation/protocol records.
 
 ## Main Code Surfaces
 

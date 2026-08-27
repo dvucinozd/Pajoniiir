@@ -4,8 +4,9 @@
 > Rekordbox medium to P4 USB0 and the DDJ-FLX4 directly to P4 USB1. FLX4 MIDI IN,
 > MIDI OUT and four-channel USB Audio all terminate on P4; cue is sent on UAC
 > channels 3/4 while PCM5102A remains MAIN. Do not wire the former S3/P4 UART or
-> monitor-I2S link. Their tables below are retained only as historical wiring
-> records. The protected downstream VBUS design in the next section is still a
+> monitor-I2S link. Their tables below are historical evidence only and do not
+> describe installable product wiring. The protected downstream VBUS design in
+> the next section is still a
 > mandatory unresolved gate.
 
 Status: current bench wiring, updated 2026-08-12. Revalidate cable routing,
@@ -88,7 +89,7 @@ itself prove VBUS isolation or prevent backfeed. A powered USB hub may be used
 only as a diagnostic aid because it changes the required direct-root topology.
 Do not use a passive Y-cable or tie two independent regulated outputs together.
 
-## Inter-Board UART
+## Historical Inter-Board UART (Removed)
 
 | Signal | ESP32-S3 | ESP32-P4 JC4880 JP1 | Direction |
 | --- | --- | --- | --- |
@@ -99,14 +100,12 @@ Do not use a passive Y-cable or tie two independent regulated outputs together.
 
 Leave the JC4880 UART0 connector free for flashing and diagnostics.
 
-## DDJ-FLX4 To S3
+## Historical DDJ-FLX4 To S3 Path (Removed)
 
 The DDJ-FLX4 connects to the S3 through USB. The S3 must run USB host mode and
 enumerate the FLX4 as a USB MIDI device.
 
-For the Seeed Studio XIAO ESP32S3 / XIAO ESP32S3 Sense replacement board, use
-the dedicated wiring note in `firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`.
-The current product wiring maps the S3-P4 UART to XIAO header pins GPIO5/GPIO6
+The historical XIAO wiring mapped the inter-board UART to GPIO5/GPIO6
 instead of the previous DevKitC GPIO40/GPIO41 pair or the abandoned SuperMini
 GPIO12/GPIO13 candidate.
 
@@ -131,13 +130,12 @@ Implemented hardware plan:
 | Output | Hardware | Notes |
 | --- | --- | --- |
 | Master | external PCM5102A I2S DAC | verified on GPIO50/GPIO52/GPIO51 through RCA and onboard 3.5 mm output |
-| Cue/PFL (`master`) | FLX4 USB headphones | P4 sends monitor PCM to S3 over the inter-board I2S link; S3 streams it to the FLX4 USB Audio endpoint |
-| Cue/PFL (`feat/p4-dual-usb-host`) | FLX4 USB headphones on P4 USB1 | P4 sends MAIN on UAC channels 1/2 and cue on 3/4; there is no S3 fallback |
+| Cue/PFL | FLX4 USB headphones on P4 USB1 | P4 sends MAIN on UAC channels 1/2 and cue on 3/4 |
 
-Headphones Mix DSP is implemented in the P4 monitor path: FLX4 Headphones Mix
+Headphones Mix DSP is implemented in the P4 output path: FLX4 Headphones Mix
 raw `0` is cue/PFL, raw `16383` is master, and intermediate values blend cue
-with stereo master. The monitor buffer is sent over the P4-to-S3 I2S link and
-plays from the physical DDJ-FLX4 headphone jack through USB Audio Class. The
+with stereo master. P4 sends that signal directly to the physical DDJ-FLX4
+headphone jack through USB Audio Class. The
 old onboard ES8311/speaker path is disabled in the product profile to free the
 needed P4 I2S unit.
 
@@ -145,7 +143,7 @@ Important: do not short a BTL speaker amplifier output to ground. If the old
 ES8311/speaker path is ever revived, inspect the schematic and bench-measure it
 again before wiring headphones or line outputs.
 
-## P4 Pins Mentioned In Current Plan
+## Historical Retired Inter-Board Pins
 
 Inherited confirmed UART:
 

@@ -466,6 +466,8 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
         if (audio_rc != ESP_OK) {
             ESP_LOGW(TAG, "FLX4 UAC unavailable; MIDI remains active: %s",
                      esp_err_to_name(audio_rc));
+        } else {
+            state->identity.usb_audio_active = true;
         }
     }
 

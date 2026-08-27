@@ -10,6 +10,12 @@ static uint32_t s_builtin_packets;
 static uint32_t s_builtin_fallbacks;
 static uint32_t s_unsupported;
 static uint32_t s_send_failures;
+static bool s_builtin_flx4_enabled;
+
+void controller_led_runtime_set_builtin_flx4_enabled(bool enabled)
+{
+    __atomic_store_n(&s_builtin_flx4_enabled, enabled, __ATOMIC_RELEASE);
+}
 
 bool controller_led_runtime_build_packet(uint8_t led,
                                          uint8_t state,
@@ -21,7 +27,10 @@ bool controller_led_runtime_build_packet(uint8_t led,
     }
 
     const bool profile_active = controller_profile_runtime_active();
-    const bool authoritative = flx4_led_midi_builtin_authoritative(led);
+    const bool builtin_enabled =
+        __atomic_load_n(&s_builtin_flx4_enabled, __ATOMIC_ACQUIRE);
+    const bool authoritative = builtin_enabled &&
+        flx4_led_midi_builtin_authoritative(led);
     if (profile_active && !authoritative &&
         controller_profile_runtime_map_led(led, deck, state, packet)) {
         (void)__atomic_add_fetch(&s_dynamic_packets, 1u,
@@ -29,7 +38,8 @@ bool controller_led_runtime_build_packet(uint8_t led,
         return true;
     }
 
-    if (flx4_led_midi_build_packet(led, state, deck, packet)) {
+    if (builtin_enabled &&
+        flx4_led_midi_build_packet(led, state, deck, packet)) {
         (void)__atomic_add_fetch(&s_builtin_packets, 1u,
                                  __ATOMIC_RELAXED);
         if (profile_active && !authoritative) {

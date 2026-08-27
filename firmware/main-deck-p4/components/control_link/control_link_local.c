@@ -7,6 +7,7 @@ static QueueHandle_t s_event_queue;
 static atomic_uint_fast8_t s_sequence;
 static control_link_led_sink_fn_t s_led_sink;
 static void *s_led_sink_context;
+static portMUX_TYPE s_led_sink_mux = portMUX_INITIALIZER_UNLOCKED;
 
 esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
 {
@@ -20,14 +21,22 @@ esp_err_t control_link_init(QueueHandle_t ctrl_event_queue)
 
 void control_link_set_led_sink(control_link_led_sink_fn_t sink, void *user_ctx)
 {
+    portENTER_CRITICAL(&s_led_sink_mux);
     s_led_sink = sink;
     s_led_sink_context = user_ctx;
+    portEXIT_CRITICAL(&s_led_sink_mux);
 }
 
 void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck)
 {
-    if (s_led_sink) {
-        (void)s_led_sink((uint8_t)led, state, deck, s_led_sink_context);
+    control_link_led_sink_fn_t sink;
+    void *sink_context;
+    portENTER_CRITICAL(&s_led_sink_mux);
+    sink = s_led_sink;
+    sink_context = s_led_sink_context;
+    portEXIT_CRITICAL(&s_led_sink_mux);
+    if (sink) {
+        (void)sink((uint8_t)led, state, deck, sink_context);
     }
 }
 

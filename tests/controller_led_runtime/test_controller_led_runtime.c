@@ -98,6 +98,9 @@ int main(void)
     controller_profile_runtime_init();
 
     uint8_t packet[4] = {0};
+    CHECK(!controller_led_runtime_build_packet(
+        LED_PLAY, 1u, CTRL_DECK_1, packet));
+    controller_led_runtime_set_builtin_flx4_enabled(true);
     CHECK(controller_led_runtime_build_packet(
         LED_PLAY, 1u, CTRL_DECK_1, packet));
     CHECK(packet[0] == 0x09u);
@@ -109,6 +112,7 @@ int main(void)
     const size_t len = build_profile(blob);
     CHECK(controller_profile_runtime_activate(blob, len,
                                               0x1234u, 0x5678u));
+    controller_led_runtime_set_builtin_flx4_enabled(false);
 
     CHECK(controller_led_runtime_build_packet(
         LED_CUE, 1u, CTRL_DECK_1, packet));
@@ -117,24 +121,17 @@ int main(void)
     CHECK(packet[2] == 0x33u);
     CHECK(packet[3] == 0x66u);
 
-    CHECK(controller_led_runtime_build_packet(
+    CHECK(!controller_led_runtime_build_packet(
         LED_PLAY, 1u, CTRL_DECK_1, packet));
-    CHECK(packet[1] == 0x90u);
-    CHECK(packet[2] == 0x0Bu);
-    CHECK(packet[3] == 0x7Fu);
 
     CHECK(controller_led_runtime_build_packet(
         LED_TRACK_LOAD_DECK1, 1u, CTRL_DECK_1, packet));
-    CHECK(packet[1] == 0x9Fu);
-    CHECK(packet[2] == 0x00u);
-    CHECK(packet[3] == 0x7Fu);
+    CHECK(packet[1] == 0x92u);
+    CHECK(packet[2] == 0x55u);
+    CHECK(packet[3] == 0x02u);
 
-    CHECK(controller_led_runtime_build_packet(
+    CHECK(!controller_led_runtime_build_packet(
         LED_VU_METER, 63u, CTRL_DECK_2, packet));
-    CHECK(packet[0] == 0x0Bu);
-    CHECK(packet[1] == 0xB1u);
-    CHECK(packet[2] == 0x02u);
-    CHECK(packet[3] == 63u);
 
     CHECK(!controller_led_runtime_build_packet(
         0xFFu, 1u, CTRL_DECK_1, packet));
@@ -150,11 +147,12 @@ int main(void)
 
     s_send_result = ESP_ERR_TIMEOUT;
     CHECK(controller_led_runtime_send(
-        LED_PLAY, 1u, CTRL_DECK_1) == ESP_ERR_TIMEOUT);
+        LED_CUE, 1u, CTRL_DECK_1) == ESP_ERR_TIMEOUT);
     CHECK(s_send_calls == 2u);
 
     s_identity_available = true;
     s_send_result = ESP_OK;
+    controller_led_runtime_set_builtin_flx4_enabled(true);
     CHECK(controller_led_runtime_send(
         LED_HOT_CUE_PAD_1, 1u, CTRL_DECK_2) == ESP_OK);
     CHECK(s_send_calls == 4u);

@@ -2,8 +2,9 @@
 
 > **Feature-branch status (2026-08-27):** `feat/p4-dual-usb-host` now has one
 > active firmware/release target: ESP32-P4. P4 directly hosts USB0 storage and
-> USB1 FLX4 MIDI/audio. S3 sources and dated validation remain for reference,
-> but S3 is absent from active CMake, CI, UI/web status and OTA packaging. This
+> USB1 FLX4 MIDI/audio. The S3 firmware target and dedicated tests are removed;
+> dated validation remains for reference. S3 is absent from CMake, CI,
+> UI/web status and OTA packaging. This
 > software transition does not close the VBUS/brownout or physical dual-USB
 > acceptance gates.
 
@@ -66,7 +67,7 @@ repeated. See `validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md` and the updated
 Feature-branch software follow-up (2026-08-27): the direct USB1 FLX4 path now
 includes four-channel 44.1 kHz UAC output, exact 48→44.1 kHz resampling,
 bounded ring clock correction, MIDI session generations, transition/active
-task priorities, FLX4-gated shifted LED mirrors and S3 monitor-link fallback.
+task priorities and FLX4-gated shifted LED mirrors.
 The same work adds headphone gain ramps, three Beat Jump pages, jog loop
 boundary adjustment, gapless slip-reverse Censor and rate-limited UAC health
 alarms. The complete P4 host suite and the ESP-IDF 6.0.2 P4-local feature build

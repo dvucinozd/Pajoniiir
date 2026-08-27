@@ -8,6 +8,7 @@
 static unsigned s_checks;
 static flx4_control_event_t s_events[256];
 static size_t s_event_count;
+static unsigned s_fail_deliveries;
 
 #define CHECK(expr) do { \
     s_checks++; \
@@ -17,12 +18,17 @@ static size_t s_event_count;
     } \
 } while (0)
 
-static void event_cb(const flx4_control_event_t *event, void *ctx)
+static esp_err_t event_cb(const flx4_control_event_t *event, void *ctx)
 {
     (void)ctx;
+    if (s_fail_deliveries > 0u) {
+        s_fail_deliveries--;
+        return ESP_ERR_TIMEOUT;
+    }
     if (s_event_count < sizeof(s_events) / sizeof(s_events[0])) {
         s_events[s_event_count++] = *event;
     }
+    return ESP_OK;
 }
 
 static usb_midi_message_t midi(uint8_t status, uint8_t data1, uint8_t data2)
@@ -50,9 +56,11 @@ int main(void)
         .callback_ctx = NULL,
     };
     CHECK(controller_runtime_init(&config) == ESP_OK);
+    usb_midi_message_t message = midi(0x90, 0x0B, 0x7F);
+    CHECK(!controller_runtime_handle_midi(&message));
+    controller_runtime_set_builtin_flx4_enabled(true);
     CHECK(controller_runtime_pending_count() == 0u);
 
-    usb_midi_message_t message = midi(0x90, 0x0B, 0x7F);
     CHECK(controller_runtime_handle_midi(&message));
     CHECK(s_event_count == 0u);
     dispatch_one_and_check(1u);
@@ -68,6 +76,9 @@ int main(void)
 
     message = midi(0xB1, 0x23, 65);
     CHECK(controller_runtime_handle_midi(&message));
+    s_fail_deliveries = 1u;
+    CHECK(controller_runtime_dispatch_pending(1u) == 0u);
+    CHECK(controller_runtime_pending_count() == 1u);
     dispatch_one_and_check(3u);
     CHECK(s_events[2].type == CTRL_TYPE_ENCODER);
     CHECK(s_events[2].id == CTRL_ID_DECK2_JOG_BEND);
@@ -92,6 +103,9 @@ int main(void)
 
     controller_runtime_set_connected(true);
     CHECK(controller_runtime_pending_count() == 1u);
+    s_fail_deliveries = 1u;
+    CHECK(controller_runtime_dispatch_pending(1u) == 0u);
+    CHECK(controller_runtime_pending_count() == 1u);
     dispatch_one_and_check(6u);
     CHECK(s_events[5].id == CTRL_ID_CH1_VOLUME);
     CHECK(s_events[5].value == ((0x22 << 7) | 0x11));
@@ -99,21 +113,22 @@ int main(void)
     controller_runtime_diagnostics_t diagnostics;
     controller_runtime_get_diagnostics(&diagnostics);
     CHECK(diagnostics.connected);
-    CHECK(diagnostics.midi_messages == 7u);
+    CHECK(diagnostics.midi_messages == 8u);
     CHECK(diagnostics.mapped_messages == 5u);
-    CHECK(diagnostics.non_emitting_messages == 2u);
+    CHECK(diagnostics.non_emitting_messages == 3u);
     CHECK(diagnostics.reconnect_snapshots == 1u);
     CHECK(diagnostics.semantic_events == s_event_count);
 
     message = midi(0xF0, 0x00, 0x00);
     CHECK(!controller_runtime_handle_midi(&message));
     controller_runtime_get_diagnostics(&diagnostics);
-    CHECK(diagnostics.non_emitting_messages == 3u);
+    CHECK(diagnostics.non_emitting_messages == 4u);
 
     /* Reinitialize and prove a held physical level survives a completely full
      * bounded queue. The wake token may drop, but the reconciler remains dirty. */
     s_event_count = 0u;
     CHECK(controller_runtime_init(&config) == ESP_OK);
+    controller_runtime_set_builtin_flx4_enabled(true);
     for (size_t i = 0u; i < 64u; ++i) {
         message = midi(0x90, 0x0B, (uint8_t)((i & 1u) ? 0x7F : 0x00));
         CHECK(controller_runtime_handle_midi(&message));
@@ -124,6 +139,9 @@ int main(void)
     CHECK(controller_runtime_handle_midi(&message));
     controller_runtime_get_diagnostics(&diagnostics);
     CHECK(diagnostics.queue_dropped == 1u);
+    s_fail_deliveries = 1u;
+    CHECK(controller_runtime_dispatch_pending(1u) == 0u);
+    CHECK(s_event_count == 0u);
     dispatch_one_and_check(1u);
     CHECK(s_events[0].id == CTRL_ID_DECK1_JOG_TOUCH);
     CHECK(s_events[0].value == 1);

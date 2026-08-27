@@ -37,8 +37,9 @@ loaded and activated locally on the P4.
 The P4 owns all authoritative deck state. It loads Rekordbox media from USB,
 tracks current position, controls audio decode, drives the local display,
 decides which LEDs should be on and writes cue audio directly to the FLX4.
-`firmware/control-board-s3` remains in the repository as historical/reference
-source, but is not built, packaged or required by the active product.
+The former `firmware/control-board-s3` target and its dedicated regression
+suite have been removed. Dated validation documents and Git history preserve
+the dual-processor baseline without leaving a second firmware product surface.
 
 ## Inherited Firmware Baseline
 
@@ -50,7 +51,7 @@ The imported baseline code already provides:
 - A single-deck `deck_core` state machine.
 - A single-track `audio_engine` with MP3 preload, minimp3 decode, pitch
   resampling, instant seek, hot cue, beat jump, and loop support.
-- An ESP32-S3 firmware target with UART `control_link`.
+- A historical ESP32-S3/UART baseline, now available only through Git history.
 - PC unit tests for parsers, audio engine, control link, and selected UI logic.
 
 ## Capability Ledger

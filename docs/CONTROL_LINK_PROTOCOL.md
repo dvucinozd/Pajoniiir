@@ -8,8 +8,8 @@
 
 Status: historical wire protocol, audited 2026-07-16.
 
-Pajoniiir keeps the inherited UART `control_link` as the internal protocol
-between the ESP32-S3 and ESP32-P4.
+Earlier Pajoniiir revisions used this UART `control_link` between the
+ESP32-S3 and ESP32-P4. The implementation is now available only in Git history.
 
 ## Current Frame
 
@@ -23,7 +23,7 @@ between the ESP32-S3 and ESP32-P4.
 [6] checksum    XOR of bytes [1]..[5]
 ```
 
-Baud rate: `460800` (8N1). Both boards must match; see `UART_BAUD` in each side's `control_link_uart.c`.
+Historical baud rate: `460800` (8N1).
 
 ## Existing Types
 

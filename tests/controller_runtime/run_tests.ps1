@@ -30,14 +30,12 @@ $RuntimeExe = Join-Path $BuildDir "test_controller_runtime"
 $ProfileExe = Join-Path $BuildDir "test_controller_runtime_profile"
 $RecoveryExe = Join-Path $BuildDir "test_usb_host_recovery_arbiter"
 $TopologyExe = Join-Path $BuildDir "test_usb_host_topology"
-$TraceExe = Join-Path $BuildDir "test_p4_s3_trace_equivalence"
 if ($IsWindows) {
     $BufferExe += ".exe"
     $RuntimeExe += ".exe"
     $ProfileExe += ".exe"
     $RecoveryExe += ".exe"
     $TopologyExe += ".exe"
-    $TraceExe += ".exe"
 }
 
 gcc @CommonArgs `
@@ -88,16 +86,4 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $TopologyExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$P4Map = Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_runtime"
-$S3Map = Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host"
-gcc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror `
-    "-I$PSScriptRoot" "-I$(Join-Path $P4Map 'include')" `
-    "-I$(Join-Path $Codec 'include')" "-I$(Join-Path $S3Map 'include')" `
-    "-I$Control" "-I$Stubs" `
-    (Join-Path $PSScriptRoot "p4_map_adapter.c") `
-    (Join-Path $PSScriptRoot "s3_map_adapter.c") `
-    (Join-Path $PSScriptRoot "test_trace_equivalence.c") `
-    -o $TraceExe
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $TraceExe
-exit $LASTEXITCODE
+exit 0

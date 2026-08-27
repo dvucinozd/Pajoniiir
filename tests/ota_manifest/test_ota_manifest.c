@@ -73,7 +73,7 @@ int main(void)
            DDJ_OTA_MANIFEST_BAD_HEADER_SIZE);
     put_le16(header + DDJ_OTA_OFFSET_HEADER_SIZE, DDJ_OTA_HEADER_SIZE);
 
-    header[DDJ_OTA_OFFSET_TARGET] = DDJ_OTA_TARGET_S3;
+    header[DDJ_OTA_OFFSET_TARGET] = DDJ_OTA_TARGET_RETIRED_2;
     assert(parse_p4(header, sizeof(header), &manifest) == DDJ_OTA_MANIFEST_WRONG_TARGET);
     header[DDJ_OTA_OFFSET_TARGET] = DDJ_OTA_TARGET_P4;
     header[DDJ_OTA_OFFSET_FLAGS] = 1u;
@@ -101,10 +101,6 @@ int main(void)
     header[DDJ_OTA_OFFSET_KEY_ID] = 'x';
     assert(parse_p4(header, sizeof(header), &manifest) == DDJ_OTA_MANIFEST_WRONG_KEY);
 
-    make_header(header, DDJ_OTA_TARGET_S3, 0x0009u, "control-board-s3");
-    assert(ddj_ota_manifest_parse(header, sizeof(header), DDJ_OTA_TARGET_S3,
-                                  0x0009u, "control-board-s3", 0x1e0000u,
-                                  &manifest) == DDJ_OTA_MANIFEST_OK);
     assert(strcmp(ddj_ota_manifest_result_name(DDJ_OTA_MANIFEST_BAD_SIGNATURE),
                   "invalid manifest signature") == 0);
 

@@ -12,7 +12,7 @@
 extern "C" {
 #endif
 
-typedef void (*controller_runtime_event_cb_t)(
+typedef esp_err_t (*controller_runtime_event_cb_t)(
     const flx4_control_event_t *event, void *ctx);
 
 typedef struct {
@@ -37,12 +37,15 @@ typedef struct {
     bool connected;
     bool snapshot_pending;
     bool dynamic_profile_active;
+    bool builtin_flx4_enabled;
 } controller_runtime_diagnostics_t;
 
 esp_err_t controller_runtime_init(const controller_runtime_config_t *config);
 bool controller_runtime_handle_midi(const usb_midi_message_t *message);
+void controller_runtime_set_builtin_flx4_enabled(bool enabled);
 void controller_runtime_set_connected(bool connected);
 size_t controller_runtime_dispatch_pending(size_t max_events);
+void controller_runtime_request_snapshot(void);
 size_t controller_runtime_emit_snapshot(void);
 size_t controller_runtime_pending_count(void);
 void controller_runtime_get_diagnostics(

@@ -577,9 +577,11 @@ static void cpm_unlock(void)
     xSemaphoreGive(s_manager_mutex);
 }
 
-static bool cpm_activate_profile(const controller_profile_meta_t *m)
+static bool cpm_read_profile(const controller_profile_meta_t *m,
+                             uint8_t **buf_out)
 {
-    if (!m || !m->valid || m->size == 0u || m->size > CPM_MAX_PROFILE_SIZE) {
+    if (!m || !buf_out || !m->valid || m->size == 0u ||
+        m->size > CPM_MAX_PROFILE_SIZE) {
         return false;
     }
 
@@ -603,11 +605,13 @@ static bool cpm_activate_profile(const controller_profile_meta_t *m)
     }
 
     controller_profile_meta_t parsed = {0};
-    const bool ok = got == m->size &&
-        controller_profile_meta_parse(buf, m->size, &parsed) == ESP_OK &&
-        controller_profile_runtime_activate(buf, m->size, m->vid, m->pid);
-    free(buf);
-    return ok;
+    if (controller_profile_meta_parse(buf, m->size, &parsed) != ESP_OK ||
+        parsed.vid != m->vid || parsed.pid != m->pid) {
+        free(buf);
+        return false;
+    }
+    *buf_out = buf;
+    return true;
 }
 
 static int cpm_activate_bound_profile(void)
@@ -617,7 +621,8 @@ static int cpm_activate_bound_profile(void)
     }
     const int idx = s_registry.matched_index;
     if (!s_registry.controller_present || idx < 0 ||
-        idx >= (int)s_registry.count) {
+        idx >= (int)s_registry.count ||
+        s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
         cpm_unlock();
         return -1;
     }
@@ -626,18 +631,26 @@ static int cpm_activate_bound_profile(void)
     controller_profile_registry_mark_transfer_started(&s_registry, idx);
     cpm_unlock();
 
-    const bool ok = cpm_activate_profile(&meta);
+    uint8_t *blob = NULL;
+    const bool readable = cpm_read_profile(&meta, &blob);
     if (!cpm_lock()) {
+        free(blob);
         return -1;
     }
     const bool still_bound = s_registry.controller_present &&
         s_registry.connected_epoch == epoch && s_registry.matched_index == idx;
-    if (still_bound && ok) {
+    /* Commit only after revalidating the binding while disconnect and a newer
+     * descriptor are excluded by the manager mutex. */
+    const bool ok = still_bound && readable &&
+        controller_profile_runtime_activate(blob, meta.size,
+                                            meta.vid, meta.pid);
+    if (ok) {
         controller_profile_registry_mark_transfer_active(&s_registry, idx);
     } else if (still_bound) {
         controller_profile_registry_mark_transfer_failed(&s_registry, idx);
     }
     cpm_unlock();
+    free(blob);
 
     ESP_LOGI(TAG, "local profile '%s' activation %s", meta.id,
              still_bound && ok ? "OK" : "FAILED");
@@ -645,7 +658,7 @@ static int cpm_activate_bound_profile(void)
                                         : SERVICE_LOG_PROFILE_TRANSFER_FAILED,
                       still_bound && ok ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
                       2u, meta.vid, meta.pid, 0u, 0u, meta.id);
-    return still_bound && ok ? idx : -1;
+    return ok ? idx : -1;
 }
 
 esp_err_t controller_profile_manager_init(void)

@@ -6,8 +6,7 @@
  * Compiler: tools/controller_profile/compile_profile.py
  *
  * Pure C99 with no ESP-IDF dependencies so the host test harness compiles it
- * directly. The future S3 runtime component wraps this with UART transfer and
- * USB MIDI glue; semantic (type, id, value) tuples match control_link.h.
+ * directly. Semantic (type, id, value) tuples match control_link.h.
  */
 
 #include <stdbool.h>

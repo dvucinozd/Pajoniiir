@@ -21,6 +21,7 @@ typedef struct {
     uint8_t speed;
     uint8_t parent_port;
     bool direct_root_child;
+    bool usb_audio_active;
     usb_midi_endpoints_t midi;
     char product[CONTROLLER_USB_PRODUCT_MAX];
 } controller_usb_identity_t;
