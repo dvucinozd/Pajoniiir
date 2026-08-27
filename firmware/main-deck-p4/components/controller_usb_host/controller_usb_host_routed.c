@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Selected only for CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER. */
+/* Production P4 USB1 controller host implementation. */
 #include "controller_usb_host.h"
 #include "controller_midi_out_gate.h"
 

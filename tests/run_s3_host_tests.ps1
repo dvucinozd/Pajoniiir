@@ -1,3 +1,5 @@
+# Historical dual-processor regression entry point. It is intentionally absent
+# from active P4-only CI; run it manually only when auditing retained S3 source.
 param(
     [switch]$KeepArtifacts
 )

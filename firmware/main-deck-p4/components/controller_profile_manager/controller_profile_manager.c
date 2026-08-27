@@ -543,30 +543,17 @@ void controller_profile_registry_mark_transfer_failed(controller_profile_registr
 
 #ifndef CONTROLLER_PROFILE_MANAGER_PC_TEST
 
-#include "control_link.h"
+#include "controller_profile_runtime.h"
 #include "service_log.h"
 #include "sd_io_gate.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "freertos/task.h"
-
-/* Defined near the bottom of this firmware-only section but called by the
- * descriptor worker above it. Declared here rather than through a compilation
- * wrapper that #included this translation unit purely to inject this one line. */
-static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid,
-                                    uint32_t connection_epoch);
 
 #ifndef CONFIG_CONTROLLER_PROFILE_SD_PATH
 #define CONFIG_CONTROLLER_PROFILE_SD_PATH "/sd/controllers"
 #endif
-
-#define CPM_SENDER_STACK      4096
-#define CPM_SEND_ATTEMPTS     3
-#define CPM_REPLY_TIMEOUT_MS  2000
-#define CPM_CHUNK_PACE_MS     2
 
 static const char *TAG = "ctrl_profile";
 
@@ -576,42 +563,8 @@ static uint16_t s_log_vid = 0xFFFFu;
 static uint16_t s_log_pid = 0xFFFFu;
 static uint16_t s_log_caps = 0xFFFFu;
 static int s_log_idx = -2;
-
-/* Profile-transfer sender: runs off the control-link RX task so the multi-KB
- * stream to the S3 never blocks event/descriptor handling. */
-static QueueHandle_t s_send_q;
-static QueueHandle_t s_descriptor_q;
-static SemaphoreHandle_t s_reply_sem;
-static TaskHandle_t s_sender_task;
-static TaskHandle_t s_descriptor_task_handle;
 static bool s_runtime_initialized;
 static volatile bool s_storage_busy;
-
-typedef struct {
-    uint16_t vid;
-    uint16_t pid;
-    uint16_t caps;
-    uint32_t connection_epoch;
-    uint32_t manager_generation;
-    char product[CPM_PRODUCT_MAX + 1];
-} cpm_descriptor_report_t;
-static volatile bool s_reply_ack;
-static volatile uint8_t s_reply_ref;
-static volatile uint8_t s_reply_reason;
-
-/* Dedup: the S3 re-announces the connected controller every heartbeat (~5 s) so
- * a freshly-booted P4 can (re)learn it. Without this guard the P4 would re-stream
- * and re-ACTIVATE the whole (up to 16 KB) profile on every announcement — that
- * floods the control link and resets the S3's live runtime state mid-set.
- * Remember which VID/PID is already transferred+active and skip repeats; a
- * failed transfer clears the mark so the next announcement retries. The S3
- * keeps its runtime profile across a controller unplug/replug, so re-sending on
- * reconnect is unnecessary. */
-static volatile bool s_transferred_valid;
-static volatile uint16_t s_transferred_vid;
-static volatile uint16_t s_transferred_pid;
-static volatile uint32_t s_transferred_epoch;
-static uint32_t s_connection_generation;
 
 static bool cpm_lock(void)
 {
@@ -624,26 +577,7 @@ static void cpm_unlock(void)
     xSemaphoreGive(s_manager_mutex);
 }
 
-static void cpm_on_reply(bool ack, uint8_t ref_type, uint8_t reason)
-{
-    s_reply_ack = ack;
-    s_reply_ref = ref_type;
-    s_reply_reason = reason;
-    if (s_reply_sem) {
-        xSemaphoreGive(s_reply_sem);
-    }
-}
-
-static bool cpm_wait_reply(uint8_t expect_ref)
-{
-    if (xSemaphoreTake(s_reply_sem, pdMS_TO_TICKS(CPM_REPLY_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGW(TAG, "profile reply timeout (expected 0x%02X)", expect_ref);
-        return false;
-    }
-    return s_reply_ack && s_reply_ref == expect_ref;
-}
-
-static bool cpm_stream_profile(const controller_profile_meta_t *m)
+static bool cpm_activate_profile(const controller_profile_meta_t *m)
 {
     if (!m || !m->valid || m->size == 0u || m->size > CPM_MAX_PROFILE_SIZE) {
         return false;
@@ -652,8 +586,8 @@ static bool cpm_stream_profile(const controller_profile_meta_t *m)
     uint8_t *buf = malloc(m->size);
     if (!buf) return false;
 
-    /* Bounded SD read under the global SD owner. Never hold the manager mutex:
-     * the UART RX descriptor callback must remain able to enqueue heartbeats. */
+    /* Bounded SD read under the global SD owner. Never hold the manager mutex
+     * across filesystem I/O. */
     sd_io_gate_begin();
     FILE *f = fopen(m->path, "rb");
     size_t got = 0u;
@@ -668,175 +602,50 @@ static bool cpm_stream_profile(const controller_profile_meta_t *m)
         return false;
     }
 
-    uint32_t crc = cp_xfer_crc32(buf, m->size);
-    bool ok = false;
-    for (int attempt = 1; attempt <= CPM_SEND_ATTEMPTS && !ok; attempt++) {
-        while (xSemaphoreTake(s_reply_sem, 0) == pdTRUE) {}
-        if (control_link_send_profile_begin((uint32_t)m->size, crc,
-                                            m->vid, m->pid) != ESP_OK ||
-            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_BEGIN)) {
-            continue;
-        }
-        bool chunks_ok = true;
-        for (uint32_t off = 0; off < m->size; off += CTRL_PROFILE_CHUNK_MAX) {
-            size_t n = m->size - off;
-            if (n > CTRL_PROFILE_CHUNK_MAX) n = CTRL_PROFILE_CHUNK_MAX;
-            if (control_link_send_profile_chunk(off, buf + off, n) != ESP_OK) {
-                chunks_ok = false;
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(CPM_CHUNK_PACE_MS));
-        }
-        if (!chunks_ok) continue;
-        if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_END) != ESP_OK ||
-            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_END)) continue;
-        if (control_link_send_profile_simple(CTRL_BULK_TYPE_PROFILE_ACTIVATE) != ESP_OK ||
-            !cpm_wait_reply(CTRL_BULK_TYPE_PROFILE_ACTIVATE)) continue;
-        ok = true;
-    }
+    controller_profile_meta_t parsed = {0};
+    const bool ok = got == m->size &&
+        controller_profile_meta_parse(buf, m->size, &parsed) == ESP_OK &&
+        controller_profile_runtime_activate(buf, m->size, m->vid, m->pid);
     free(buf);
     return ok;
 }
 
-static void cpm_sender_task(void *arg)
+static int cpm_activate_bound_profile(void)
 {
-    (void)arg;
-    for (;;) {
-        int idx;
-        if (xQueueReceive(s_send_q, &idx, portMAX_DELAY) != pdTRUE) {
-            continue;
-        }
-        if (!cpm_lock()) {
-            continue;
-        }
-        if (idx < 0 || idx >= (int)s_registry.count ||
-            !s_registry.controller_present ||
-            s_registry.matched_index != idx ||
-            s_registry.transfer_state != CPM_TRANSFER_TRANSFERRING) {
-            cpm_unlock();
-            continue;
-        }
-        controller_profile_meta_t m = s_registry.profiles[idx];
-        uint32_t transfer_epoch = s_registry.connected_epoch;
-        cpm_unlock();
-        if (!m.valid) {
-            continue;
-        }
-        bool ok = cpm_stream_profile(&m);
-        if (!cpm_lock()) {
-            continue;
-        }
-        bool still_connected = s_registry.controller_present &&
-                               s_registry.connected_vid == m.vid &&
-                               s_registry.connected_pid == m.pid &&
-                               s_registry.connected_epoch == transfer_epoch &&
-                               s_registry.matched_index == idx;
-        if (ok && still_connected) {
-            s_transferred_vid = m.vid;
-            s_transferred_pid = m.pid;
-            s_transferred_epoch = transfer_epoch;
-            s_transferred_valid = true;
-            controller_profile_registry_mark_transfer_active(&s_registry, idx);
-        } else if (still_connected) {
-            s_transferred_valid = false;   /* retry on the next announcement */
-            controller_profile_registry_mark_transfer_failed(&s_registry, idx);
-        } else {
-            ok = false;
-            s_transferred_valid = false;
-        }
-        cpm_unlock();
-        ESP_LOGI(TAG, "profile '%s' transfer to S3 %s", m.id,
-                 ok ? "OK" : "FAILED");
-        service_log_event(ok ? SERVICE_LOG_PROFILE_TRANSFER_DONE
-                             : SERVICE_LOG_PROFILE_TRANSFER_FAILED,
-                          ok ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
-                          2u, m.vid, m.pid, 0u, 0u, m.id);
+    if (!cpm_lock()) {
+        return -1;
     }
-}
-
-static int cpm_process_descriptor_report(uint16_t vid, uint16_t pid,
-                                         uint16_t caps, const char *product,
-                                         uint32_t connection_epoch)
-{
-    if (!cpm_lock()) return -1;
-    if (!controller_profile_descriptor_is_fresh(
-            &s_registry, vid, pid, connection_epoch)) {
+    const int idx = s_registry.matched_index;
+    if (!s_registry.controller_present || idx < 0 ||
+        idx >= (int)s_registry.count) {
         cpm_unlock();
         return -1;
     }
-    s_registry.connected_caps = caps;
-    memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
-    if (product) {
-        snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
-                 "%.*s", CPM_PRODUCT_MAX, product);
-    }
-    int idx = cpm_on_descriptor_locked(vid, pid, connection_epoch);
-    char product_copy[CPM_PRODUCT_MAX + 1];
-    snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
+    controller_profile_meta_t meta = s_registry.profiles[idx];
+    const uint32_t epoch = s_registry.connected_epoch;
+    controller_profile_registry_mark_transfer_started(&s_registry, idx);
     cpm_unlock();
 
-    if (vid != s_log_vid || pid != s_log_pid || caps != s_log_caps || idx != s_log_idx) {
-        service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
-                          3u, vid, pid, caps, 0u, product_copy);
-        if (idx < 0) {
-            service_log_event(SERVICE_LOG_PROFILE_MATCHED, SERVICE_LOG_WARN,
-                              2u, vid, pid, 0u, 0u, "unsupported");
-        }
-        s_log_vid = vid;
-        s_log_pid = pid;
-        s_log_caps = caps;
-        s_log_idx = idx;
+    const bool ok = cpm_activate_profile(&meta);
+    if (!cpm_lock()) {
+        return -1;
     }
-    return idx;
-}
+    const bool still_bound = s_registry.controller_present &&
+        s_registry.connected_epoch == epoch && s_registry.matched_index == idx;
+    if (still_bound && ok) {
+        controller_profile_registry_mark_transfer_active(&s_registry, idx);
+    } else if (still_bound) {
+        controller_profile_registry_mark_transfer_failed(&s_registry, idx);
+    }
+    cpm_unlock();
 
-static void cpm_descriptor_task(void *arg)
-{
-    (void)arg;
-    cpm_descriptor_report_t report;
-    for (;;) {
-        if (xQueueReceive(s_descriptor_q, &report, portMAX_DELAY) != pdTRUE) continue;
-        if (report.manager_generation !=
-            __atomic_load_n(&s_connection_generation, __ATOMIC_ACQUIRE)) {
-            continue;
-        }
-        while (__atomic_load_n(&s_storage_busy, __ATOMIC_ACQUIRE)) {
-            vTaskDelay(pdMS_TO_TICKS(5));
-        }
-        (void)cpm_process_descriptor_report(report.vid, report.pid,
-                                            report.caps, report.product,
-                                            report.connection_epoch);
-    }
-}
-
-static void cpm_runtime_cleanup(void)
-{
-    control_link_set_profile_reply_cb(NULL);
-    if (s_descriptor_task_handle) {
-        vTaskDelete(s_descriptor_task_handle);
-        s_descriptor_task_handle = NULL;
-    }
-    if (s_sender_task) {
-        vTaskDelete(s_sender_task);
-        s_sender_task = NULL;
-    }
-    if (s_descriptor_q) {
-        vQueueDelete(s_descriptor_q);
-        s_descriptor_q = NULL;
-    }
-    if (s_send_q) {
-        vQueueDelete(s_send_q);
-        s_send_q = NULL;
-    }
-    if (s_reply_sem) {
-        vSemaphoreDelete(s_reply_sem);
-        s_reply_sem = NULL;
-    }
-    if (s_manager_mutex) {
-        vSemaphoreDelete(s_manager_mutex);
-        s_manager_mutex = NULL;
-    }
-    s_runtime_initialized = false;
+    ESP_LOGI(TAG, "local profile '%s' activation %s", meta.id,
+             still_bound && ok ? "OK" : "FAILED");
+    service_log_event(still_bound && ok ? SERVICE_LOG_PROFILE_TRANSFER_DONE
+                                        : SERVICE_LOG_PROFILE_TRANSFER_FAILED,
+                      still_bound && ok ? SERVICE_LOG_INFO : SERVICE_LOG_WARN,
+                      2u, meta.vid, meta.pid, 0u, 0u, meta.id);
+    return still_bound && ok ? idx : -1;
 }
 
 esp_err_t controller_profile_manager_init(void)
@@ -849,39 +658,19 @@ esp_err_t controller_profile_manager_init(void)
         return ESP_ERR_NO_MEM;
     }
     if (!cpm_lock()) {
-        cpm_runtime_cleanup();
+        vSemaphoreDelete(s_manager_mutex);
+        s_manager_mutex = NULL;
         return ESP_FAIL;
     }
     memset(&s_registry, 0, sizeof(s_registry));
     s_registry.matched_index = -1;
     s_registry.active_index = -1;
     s_registry.transfer_state = CPM_TRANSFER_IDLE;
-    s_transferred_valid = false;
-    __atomic_store_n(&s_connection_generation, 0u, __ATOMIC_RELEASE);
     s_log_vid = 0xFFFFu;
     s_log_pid = 0xFFFFu;
     s_log_caps = 0xFFFFu;
     s_log_idx = -2;
     cpm_unlock();
-
-    s_reply_sem = xSemaphoreCreateBinary();
-    s_send_q = xQueueCreate(2, sizeof(int));
-    s_descriptor_q = xQueueCreate(8, sizeof(cpm_descriptor_report_t));
-    if (!s_reply_sem || !s_send_q || !s_descriptor_q) {
-        cpm_runtime_cleanup();
-        return ESP_ERR_NO_MEM;
-    }
-    if (xTaskCreate(cpm_sender_task, "cpm_send", CPM_SENDER_STACK, NULL, 4,
-                    &s_sender_task) != pdPASS) {
-        cpm_runtime_cleanup();
-        return ESP_ERR_NO_MEM;
-    }
-    if (xTaskCreate(cpm_descriptor_task, "cpm_desc", 3072, NULL, 5,
-                    &s_descriptor_task_handle) != pdPASS) {
-        cpm_runtime_cleanup();
-        return ESP_ERR_NO_MEM;
-    }
-    control_link_set_profile_reply_cb(cpm_on_reply);
     s_runtime_initialized = true;
     return ESP_OK;
 }
@@ -905,7 +694,6 @@ esp_err_t controller_profile_manager_scan_storage(void)
     if (rc == ESP_OK && cpm_lock()) {
         controller_profile_registry_apply_rescan(&s_registry, scanned);
         *scanned = s_registry;
-        s_transferred_valid = false;
         cpm_unlock();
     }
     __atomic_store_n(&s_storage_busy, false, __ATOMIC_RELEASE);
@@ -929,8 +717,7 @@ esp_err_t controller_profile_manager_install_profile(
     if (!scanned) return ESP_ERR_NO_MEM;
 
     if (!cpm_lock()) { free(scanned); return ESP_FAIL; }
-    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING ||
-        (s_send_q && uxQueueMessagesWaiting(s_send_q) > 0) || s_storage_busy) {
+    if (s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING || s_storage_busy) {
         cpm_unlock(); free(scanned); return ESP_ERR_INVALID_STATE;
     }
     __atomic_store_n(&s_storage_busy, true, __ATOMIC_RELEASE);
@@ -951,18 +738,9 @@ esp_err_t controller_profile_manager_install_profile(
     sd_io_gate_end();
 
     bool reactivate = false;
-    uint16_t vid = 0, pid = 0, caps = 0;
-    uint32_t connection_epoch = 0u;
-    char product[CPM_PRODUCT_MAX + 1] = {0};
     if (rc == ESP_OK && cpm_lock()) {
         controller_profile_registry_apply_rescan(&s_registry, scanned);
         reactivate = s_registry.controller_present;
-        vid = s_registry.connected_vid;
-        pid = s_registry.connected_pid;
-        caps = s_registry.connected_caps;
-        connection_epoch = s_registry.connected_epoch;
-        memcpy(product, s_registry.connected_product, sizeof(product));
-        s_transferred_valid = false;
         if (out_meta) *out_meta = installed;
         cpm_unlock();
     }
@@ -973,14 +751,7 @@ esp_err_t controller_profile_manager_install_profile(
         ESP_LOGI(TAG, "profile '%s' installed (%u B), registry rescanned",
                  id, (unsigned)installed.size);
         if (reactivate) {
-            cpm_descriptor_report_t report = {
-                .vid = vid, .pid = pid, .caps = caps,
-                .connection_epoch = connection_epoch,
-                .manager_generation = __atomic_load_n(
-                    &s_connection_generation, __ATOMIC_ACQUIRE),
-            };
-            snprintf(report.product, sizeof(report.product), "%s", product);
-            (void)xQueueSend(s_descriptor_q, &report, 0);
+            (void)cpm_activate_bound_profile();
         }
     }
     return rc;
@@ -1000,49 +771,6 @@ esp_err_t controller_profile_manager_get_registry_snapshot(
     return ESP_OK;
 }
 
-static int cpm_on_descriptor_locked(uint16_t vid, uint16_t pid,
-                                    uint32_t connection_epoch)
-{
-    if (connection_epoch == 0u) return -1;
-    if (s_registry.controller_present &&
-        s_registry.connected_vid == vid && s_registry.connected_pid == pid &&
-        s_registry.connected_epoch == connection_epoch &&
-        s_registry.transfer_state == CPM_TRANSFER_TRANSFERRING) {
-        /* The S3 repeats its descriptor heartbeat. Do not reset MATCHED state
-         * or enqueue a second copy while the sender owns this profile. */
-        return controller_profile_registry_match(&s_registry, vid, pid);
-    }
-    int idx = controller_profile_registry_on_descriptor(&s_registry, vid, pid);
-    s_registry.connected_epoch = connection_epoch;
-    if (idx >= 0) {
-        if (s_transferred_valid && s_transferred_vid == vid &&
-            s_transferred_pid == pid &&
-            s_transferred_epoch == connection_epoch) {
-            /* Already streamed + activated for this controller; the S3 still
-             * holds it. Skip the redundant re-transfer (see dedup note above). */
-            controller_profile_registry_mark_transfer_active(&s_registry, idx);
-            ESP_LOGD(TAG, "controller VID=0x%04X PID=0x%04X profile '%s' already active",
-                     vid, pid, s_registry.profiles[idx].id);
-            return idx;
-        }
-        ESP_LOGI(TAG, "controller VID=0x%04X PID=0x%04X -> profile '%s'",
-                 vid, pid, s_registry.profiles[idx].id);
-        /* Hand the transfer to the sender task; drop silently if it is busy
-         * (the next connect/heartbeat descriptor re-triggers a match). */
-        if (s_send_q) {
-            if (xQueueSend(s_send_q, &idx, 0) == pdTRUE) {
-                controller_profile_registry_mark_transfer_started(&s_registry, idx);
-            }
-        }
-    } else {
-        /* No profile for this controller — forget any previous mark so a later
-         * re-match streams fresh. */
-        s_transferred_valid = false;
-        ESP_LOGW(TAG, "controller VID=0x%04X PID=0x%04X has no profile", vid, pid);
-    }
-    return idx;
-}
-
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid)
 {
     return controller_profile_manager_on_descriptor_report(vid, pid, 0u, NULL, 1u);
@@ -1053,30 +781,53 @@ int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                      const char *product,
                                                      uint32_t connection_epoch)
 {
-    if (!s_descriptor_q) return -1;
-    cpm_descriptor_report_t report = {
-        .vid = vid, .pid = pid, .caps = caps,
-        .connection_epoch = connection_epoch,
-        .manager_generation = __atomic_load_n(
-            &s_connection_generation, __ATOMIC_ACQUIRE),
-    };
+    if (!s_runtime_initialized || !cpm_lock()) return -1;
+    if (!controller_profile_descriptor_is_fresh(
+            &s_registry, vid, pid, connection_epoch)) {
+        cpm_unlock();
+        return -1;
+    }
+    const bool already_active = s_registry.controller_present &&
+        s_registry.connected_vid == vid && s_registry.connected_pid == pid &&
+        s_registry.connected_epoch == connection_epoch &&
+        s_registry.transfer_state == CPM_TRANSFER_ACTIVE;
+    s_registry.connected_caps = caps;
+    memset(s_registry.connected_product, 0, sizeof(s_registry.connected_product));
     if (product) {
-        snprintf(report.product, sizeof(report.product), "%.*s",
-                 CPM_PRODUCT_MAX, product);
+        snprintf(s_registry.connected_product, sizeof(s_registry.connected_product),
+                 "%.*s", CPM_PRODUCT_MAX, product);
     }
-    /* UART RX never waits for SD or the manager mutex. If all slots are busy,
-     * replace the oldest heartbeat with the newest descriptor state. */
-    if (xQueueSend(s_descriptor_q, &report, 0) != pdTRUE) {
-        cpm_descriptor_report_t stale;
-        (void)xQueueReceive(s_descriptor_q, &stale, 0);
-        if (xQueueSend(s_descriptor_q, &report, 0) != pdTRUE) return -1;
+    const int idx = controller_profile_registry_on_descriptor(&s_registry, vid, pid);
+    s_registry.connected_epoch = connection_epoch;
+    char product_copy[CPM_PRODUCT_MAX + 1];
+    snprintf(product_copy, sizeof(product_copy), "%s", s_registry.connected_product);
+    if (already_active && idx >= 0) {
+        controller_profile_registry_mark_transfer_active(&s_registry, idx);
     }
-    return 0;
+    cpm_unlock();
+
+    if (vid != s_log_vid || pid != s_log_pid || caps != s_log_caps || idx != s_log_idx) {
+        service_log_event(SERVICE_LOG_CONTROLLER_CONNECTED, SERVICE_LOG_INFO,
+                          3u, vid, pid, caps, 0u, product_copy);
+        s_log_vid = vid;
+        s_log_pid = pid;
+        s_log_caps = caps;
+        s_log_idx = idx;
+    }
+    if (idx < 0) {
+        controller_profile_runtime_clear();
+        ESP_LOGW(TAG, "controller VID=0x%04X PID=0x%04X uses built-in map",
+                 vid, pid);
+        return -1;
+    }
+    if (already_active) {
+        return idx;
+    }
+    return cpm_activate_bound_profile();
 }
 
 bool controller_profile_manager_on_disconnect(void)
 {
-    (void)__atomic_add_fetch(&s_connection_generation, 1u, __ATOMIC_ACQ_REL);
     if (!cpm_lock()) {
         return false;
     }
@@ -1085,12 +836,13 @@ bool controller_profile_manager_on_disconnect(void)
     char product[CPM_PRODUCT_MAX + 1];
     snprintf(product, sizeof(product), "%s", s_registry.connected_product);
     bool changed = controller_profile_registry_on_disconnect(&s_registry);
-    s_transferred_valid = false;
     s_log_vid = 0xFFFFu;
     s_log_pid = 0xFFFFu;
     s_log_caps = 0xFFFFu;
     s_log_idx = -2;
     cpm_unlock();
+
+    controller_profile_runtime_clear();
 
     if (changed) {
         service_log_event(SERVICE_LOG_CONTROLLER_DISCONNECTED, SERVICE_LOG_WARN,

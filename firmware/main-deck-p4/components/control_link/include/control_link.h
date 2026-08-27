@@ -591,13 +591,19 @@ typedef struct {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-// Initialise UART and start RX task.
-// Parsed events are pushed onto ctrl_event_queue (created by deck_core_init).
+// Bind the P4-local controller producer to deck_core's event queue.
 esp_err_t control_link_init(QueueHandle_t ctrl_event_queue);
 
-// Send LED command to S3. Thread-safe.
+// Send an LED command to the directly attached controller.
 void control_link_send_led(led_id_t led, uint8_t state);  // state: 0 off / 1 on / 2 blink
 void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
+
+typedef esp_err_t (*control_link_led_sink_fn_t)(uint8_t led, uint8_t state,
+                                                uint8_t deck, void *user_ctx);
+void control_link_set_led_sink(control_link_led_sink_fn_t sink, void *user_ctx);
+
+// Inject one transport-neutral semantic event from the direct USB runtime.
+esp_err_t control_link_inject_semantic(uint8_t type, uint8_t id, int16_t value);
 
 // Send a deck-less state/control command to S3. Thread-safe.
 void control_link_send_state(uint8_t id, int16_t value);

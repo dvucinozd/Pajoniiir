@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: current product overview, reconciled 2026-08-02. The ESP-IDF 6.0.2
+Status: P4-only branch overview, reconciled 2026-08-27. The ESP-IDF 6.0.2
 migration is **merged into `master`**; the release prefix moved from `RC1` to
 **`RC2`** to mark the new build baseline, and the latest clean dual-target
 release build is `RC2` (`56905c89`, ESP-IDF 6.0.2). It carries the bounded
@@ -8,7 +8,7 @@ compressed audio cache, paginated Library UI, immutable track sort, recorder
 safety hardening and the full `fix/release-blockers-and-concurrency`
 stabilisation set.
 
-The current bench runs the ESP-IDF v6.0.2 RC2 line: P4 is
+The last fully recorded dual-processor bench ran the ESP-IDF v6.0.2 RC2 line: P4 was
 `RC2-3-g136aad7` on factory and S3 is exact `RC2` on valid `ota_0`. Both RC2
 applications were first installed successfully through OTA. Complete wired
 boot-chain flashes then passed, the P4 SDMMC ownership regression was fixed,
@@ -24,26 +24,21 @@ update, enclosure endurance and production hardening remain open.
 
 Pajoniiir is a standalone two-deck DJ player using the Pioneer DDJ-FLX4 as the
 operator surface. It does not run Mixxx and it does not require a PC during
-performance. The DDJ-FLX4 supplies controls and LEDs; the ESP32 boards provide
+performance. The DDJ-FLX4 supplies controls and LEDs; the ESP32-P4 provides
 media browsing, playback, audio output, and display.
 
 ## Product Shape
 
-The system is split into two firmware targets:
-
-- `firmware/control-board-s3`: USB MIDI host and protocol translator, FLX4
-  USB-headphone output bridge, runtime diagnostics and S3 OTA service.
-- `firmware/main-deck-p4`: media library, dual deck engine, UI, audio mixer.
-
-The S3 stays non-authoritative. It reads raw FLX4 MIDI input, maps it to
-semantic events, forwards those events over UART, mirrors P4 LED feedback back
-to the FLX4 and streams P4 monitor PCM to the controller headphones. Its
-service AP exposes logs and S3 OTA only when P4 requests it. It must not own
-playback state.
+On `feat/p4-dual-usb-host`, the active product has one firmware target:
+`firmware/main-deck-p4`. USB0 owns Rekordbox storage and USB1 owns the direct
+DDJ-FLX4 MIDI, LED and four-channel USB Audio path. Controller profiles are
+loaded and activated locally on the P4.
 
 The P4 owns all authoritative deck state. It loads Rekordbox media from USB,
-tracks current position, controls audio decode, drives the local display, and
-decides which LEDs should be on.
+tracks current position, controls audio decode, drives the local display,
+decides which LEDs should be on and writes cue audio directly to the FLX4.
+`firmware/control-board-s3` remains in the repository as historical/reference
+source, but is not built, packaged or required by the active product.
 
 ## Inherited Firmware Baseline
 
@@ -58,14 +53,15 @@ The imported baseline code already provides:
 - An ESP32-S3 firmware target with UART `control_link`.
 - PC unit tests for parsers, audio engine, control link, and selected UI logic.
 
-## Current Port Status
+## Capability Ledger
 
-The fork is no longer only the imported single-deck baseline:
+This section retains dated acceptance evidence. S3-specific bullets describe
+the historical `master` path; the active branch replacement is the direct P4
+USB1 path documented explicitly below.
 
-- S3 USB MIDI host logging exists, USB descriptor parsing is hardened, and the
-  software translator maps FLX4 MIDI messages into deck-aware `control_link`
-  frames behind `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4`. R5D retired the inherited
-  CDJ GPIO panel/TinyUSB-device path; USB host ownership is unconditional.
+- P4 USB1 descriptor parsing is hardened, and the local controller runtime maps
+  FLX4 MIDI messages directly into deck-aware semantic events. No UART frame or
+  feature overlay is required.
 - Physical DDJ-FLX4 enumeration and raw packet capture were completed on
   2026-06-14. All MVP controls matched the vendored Mixxx XML mapping, and the
   translator is enabled by default.
@@ -121,17 +117,16 @@ The fork is no longer only the imported single-deck baseline:
   re-smoke both ended with zero DSI underruns and zero monitor-PCM drops; the
   operator confirmed fluid motion with no visible flash or jitter. See the
   [focused validation record](validation/P4_OVERVIEW_DSI_SYNC_SMOKE_20260717.md).
-- FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-confirmed
-  control-link feedback and the S3 USB MIDI Out queue. P4 also drives selected
+- FLX4 Play/Cue/PFL LED MIDI output is implemented through P4-owned snapshots
+  and the direct USB1 MIDI Out queue. P4 also drives selected
   pad-mode LEDs, Beat Sync state LEDs, Loop In/Out LEDs from pending marker and
   active loop state, normal Hot Cue pad LEDs, normal Beat Loop pad LEDs, and VU
   meter output.
-- S3 publishes DDJ-FLX4 USB connection state to P4, and P4 forces a P4-owned
-  LED snapshot on reconnect. Hardware verification on 2026-06-20 confirmed
+- P4 USB1 publishes DDJ-FLX4 connection state locally and forces a P4-owned LED
+  snapshot on reconnect. Historical verification on 2026-06-20 confirmed
   Play/Cue/PFL LED recovery without playback or deck-state changes; extended
-  pad-mode/sync/loop reconnect smoke has covered USB replug and S3 reset, and
-  P4-only reset recovery is implemented through S3 heartbeat connected-state
-  refresh with hardware smoke passed on 2026-06-26.
+  pad-mode/sync/loop reconnect behavior on the former S3 path; equivalent
+  direct-P4 physical reconnect/reset acceptance remains open.
 - Smart CFX and Smart Fader raw inputs are captured and mapped as momentary
   semantic button events. P4 now owns their state, LED feedback, status
   exposure, Smart CFX filter DSP with a smoothstep response curve (fine near
@@ -157,18 +152,11 @@ The fork is no longer only the imported single-deck baseline:
   mapping from the official MIDI message PDF, Echo release-tail behavior, and
   host-tested momentary Pad FX pad LED feedback. Pad FX behavior and normal pad
   LED hardware smoke passed on 2026-07-01.
-- The DDJ-FLX4 headphone jack now outputs the P4 cue/monitor mix over USB Audio
-  Class. The S3 stays the FLX4 USB host and streams the P4 `hp_out` bus to the
-  controller's physical headphones output, while PCM5102A remains the RCA MAIN
-  OUT, so CUE/MONITOR (USB headphones) and MASTER (RCA) run simultaneously. The
-  P4 ships the monitor PCM to the S3 over an inter-board I2S link, and ES8311 was
-  dropped to free an I2S unit (the P4 usable I2S budget is two units on eco2
-  silicon). Merged to `master` and hardware-verified end-to-end on 2026-07-02.
-  A 2026-07-09 S3 regression fix keeps the FLX4 USB Audio stream's endpoint
-  rate and packetizer aligned with the active P4 link rate after ring streaming
-  has already started; the follow-up COM6 smoke held `P4_AUDIO_LINK overruns=0`,
-  `gaps=0`, `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two
-  minutes of product playback.
+- The DDJ-FLX4 headphone jack receives the P4 cue/monitor mix directly over
+  USB1 Audio Class while PCM5102A remains RCA MAIN. The former P4-to-S3
+  monitor-I2S bridge is retired. Direct-path audio quality, reconnect and soak
+  acceptance remain open; the 2026-07-02/09 S3 results remain reference
+  behavior only.
 - The Beat FX audio DSP was overhauled on 2026-07-10 for better sound and less
   touchy knob response: the one-knob channel Filter became a resonant ZDF
   state-variable filter with an exponential low-pass/high-pass sweep to full
@@ -191,15 +179,13 @@ The fork is no longer only the imported single-deck baseline:
   sentinel and CLEAR restores disabled FILTER defaults. Software acceptance is
   covered by the P4 host suites and `idf.py build`; physical FLANGER and DELAY
   sound/target/beat/depth smoke remains pending.
-- The FLX4 USB-headphone audio profile was made the default build on both boards
-  (folded into each `sdkconfig.defaults` on 2026-07-10), so a plain `idf.py
-  build` now produces the sound firmware; the per-profile overlays and stale
-  `build_*` dirs were removed.
+- The P4 default build now contains PCM5102A MAIN plus direct FLX4 USB
+  headphones; no feature overlay or second-board audio build is required.
 - The seven official DDJ-FLX4 MIDI gaps were closed against the official Pioneer
   MIDI message list: Censor, Sync (set-master), Quantize, Loop Adjust In/Out,
   Reloop+Stop, Headphone Level, and the shifted Browse/Load/Beat-FX controls.
-  The S3 maps the new physical MIDI notes to semantic control-link events and the
-  P4 owns the resulting state/audio/LED behavior. `master` retains the earlier
+  The P4-local mapper maps the physical MIDI notes directly to semantic events
+  and P4 owns the resulting state/audio/LED behavior. `master` retains the earlier
   seek-back Censor approximation; `feat/p4-dual-usb-host` replaces it with a
   gapless slip-reverse reader over retained canonical PCM and a 10 ms release
   crossfade, without moving the normal playhead.
@@ -207,12 +193,11 @@ The fork is no longer only the imported single-deck baseline:
   2026-07-07 confirmed the connected FLX4 headphone/mixer control path with
   audible USB headphone output; remaining per-control exceptions stay tracked in
   `docs/DDJ_FLX4_MIDI_MAP.md`.
-- The experimental direct-P4 FLX4 path now owns USB-MIDI and four-channel UAC
+- The active direct-P4 FLX4 path now owns USB-MIDI and four-channel UAC
   on USB1 while USB0 remains the Rekordbox storage root. It applies a
   fail-closed HS/FS FIFO source patch, supports 44.1/48 kHz engine input,
   resamples to the FLX4 44.1 kHz endpoint, sends MAIN on channels 1/2 and cue on
-  3/4, and falls back to the established S3 monitor link until direct streaming
-  is ready. Host-side health tracking reports bounded ring pressure and data
+  3/4 with no S3 fallback. Host-side health tracking reports bounded ring pressure and data
   loss; physical audio quality, reconnect and long-soak acceptance remain open.
 - The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
   merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
@@ -244,12 +229,12 @@ The fork is no longer only the imported single-deck baseline:
   producers before drain; finalise uses a transactional
   `patch` → `sync` → `close` → `publish` pipeline that propagates every
   durability failure and refuses to rename a partial `.part` file.
-- OTA is hardware-accepted for both processors. P4 and S3 use alternating OTA
-  slots, validate target/chip/project, confirm health after mandatory startup,
-  preserve the active image on interrupted upload and roll back an unconfirmed
+- P4 OTA uses alternating slots, validates target/chip/project, confirms health
+  after mandatory startup, preserves the active image on interrupted upload and
+  rolls back an unconfirmed
   image. Full signed-path acceptance used `RC1-123-g587cd7a1` on 2026-07-14;
-  the newer matching `RC1-131-gc391e306` rollout was boot/status-verified on
-  2026-07-16 without repeating the full functional smoke.
+  S3 results in that record are retained as historical dual-board evidence;
+  current release packages contain P4 only.
 
 ## Non-Goals For The First Milestone
 
@@ -271,7 +256,7 @@ The fork is no longer only the imported single-deck baseline:
 Two design plans have since been implemented in firmware (details in Phase 8 of
 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)):
 
-- **S3 XIAO GPIO21 user status LED** — implemented as the S3 `status_led`
+- **Historical S3 XIAO GPIO21 user status LED** — retained as the S3 `status_led`
   component for FLX4 host modes. It uses the active-low XIAO onboard user LED
   for reduced USB/link/activity feedback; it does not encode playback state.
 - **WAV + FLAC playback** — implemented through the decoder-abstraction layer
@@ -287,13 +272,13 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
 
 The clean P4 waveform candidate, signed paired package and exact-image focused
 display re-smoke are complete. Remaining hardware-facing work continues with
-Phase 20 USB recovery/queue pressure, guarded web/profile/OTA mutations, UART integrity,
+Phase 20 USB recovery/queue pressure and guarded web/profile/OTA mutations,
 controller-profile replacement/recovery and focused Flanger/Delay
 audio/target/timing/depth behavior. Remaining product work also includes
 selected shifted-control rows still marked in the MIDI map, physical acceptance
 of the host-qualified Hercules Inpulse 500 non-FLX4 profile, production
 signing-key provisioning, enclosure
-power/thermal/RF soak, and a full end-to-end S3/P4/FLX4 regression pass.
+power/thermal/RF soak, and a full end-to-end P4/FLX4 regression pass.
 (Beat feedback from the PQTZ
 beatgrid is already shown on the Overview beat strip with a red downbeat marker;
 a dedicated controller beat LED was declined, so that item is closed.)
@@ -303,11 +288,10 @@ a dedicated controller beat LED was declined, so that item is closed.)
 A data-driven controller-profile platform lets the system support controllers
 beyond the DDJ-FLX4 without a firmware rebuild. Profiles live on the SD/TF card
 (`/controllers/<name>/profile.s3bin`); the P4 matches the connected controller
-by VID/PID and transfers the profile to the S3 over the UART `0xA6` bulk layer,
-which then maps controller MIDI in/out through it (built-in FLX4 map is the
-fallback). A compiled profile can also be atomically overwritten from the P4
+by VID/PID and activates the profile locally for MIDI in/out (the built-in FLX4
+map is the fallback). A compiled profile can also be atomically overwritten from the P4
 Wi-Fi Remote; the P4 validates it, preserves a recoverable backup, rescans and
-queues the matching profile for S3 activation without physical SD access. The
+activates the matching profile locally without physical SD access. The
 firmware side (Phases 1–7 + 11 of the multi-controller plan) is
 implemented, host-tested, and hardware-verified on the profile-loading path;
 see [ARCHITECTURE.md](ARCHITECTURE.md) and

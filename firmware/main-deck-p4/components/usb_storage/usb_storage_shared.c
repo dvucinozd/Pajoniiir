@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Experimental production adapter selected only by
- * CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER.
+ * the P4-only dual-USB runtime.
  *
  * The storage implementation below remains byte-for-byte the mature product
  * owner. These three narrow adapters move Host Library ownership to the shared

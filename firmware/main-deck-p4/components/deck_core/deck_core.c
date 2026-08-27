@@ -57,7 +57,6 @@ static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
 static deck_state_t     s_published_decks[DECK_CORE_DECK_COUNT];
 static deck_core_beat_fx_state_t s_published_beat_fx;
-static uint32_t         s_published_heartbeat_tick;
 static uint32_t         s_snapshot_seq;
 static bool             s_snapshot_writer;
 static deck_loaded_track_store_t s_loaded_tracks;
@@ -84,14 +83,9 @@ static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT
 static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
-static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
-static deck_core_s3_debug_ap_status_cb_t s_s3_debug_ap_status_cb;
-static deck_core_s3_debug_ap_token_cb_t s_s3_debug_ap_token_cb;
-static uint16_t          s_s3_debug_token_hi;
-static bool              s_s3_debug_token_hi_valid;
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -179,7 +173,6 @@ static void publish_state_snapshot(void)
     memcpy(s_published_decks, s_decks, sizeof(s_published_decks));
     memcpy(s_published_loop_shadow, s_loop_shadow, sizeof(s_published_loop_shadow));
     s_published_beat_fx = s_beat_fx;
-    s_published_heartbeat_tick = (uint32_t)s_last_heartbeat_tick;
     (void)__atomic_add_fetch(&s_snapshot_seq, 1u, __ATOMIC_RELEASE); /* even */
     __atomic_store_n(&s_snapshot_writer, false, __ATOMIC_RELEASE);
 }
@@ -187,8 +180,7 @@ static void publish_state_snapshot(void)
 static void copy_state_snapshot(uint8_t deck,
                                 deck_state_t *out_deck,
                                 deck_loop_shadow_t *out_loop,
-                                deck_core_beat_fx_state_t *out_fx,
-                                uint32_t *out_heartbeat)
+                                deck_core_beat_fx_state_t *out_fx)
 {
     /* Retry until a copy is bracketed by the same even sequence number.
      *
@@ -207,7 +199,6 @@ static void copy_state_snapshot(uint8_t deck,
         if (out_deck) *out_deck = s_published_decks[deck];
         if (out_loop) *out_loop = s_published_loop_shadow[deck];
         if (out_fx) *out_fx = s_published_beat_fx;
-        if (out_heartbeat) *out_heartbeat = s_published_heartbeat_tick;
         const uint32_t after = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
         if (after == before) {
             return;     /* no write began or ended while we copied */
@@ -1733,39 +1724,6 @@ static void on_state_event(const ctrl_event_t *ev)
     if (!ev) {
         return;
     }
-    if (ev->id == CTRL_ID_S3_DEBUG_AP) {
-        if (ev->value == CTRL_S3_DEBUG_AP_OFF ||
-            ev->value == CTRL_S3_DEBUG_AP_STARTING ||
-            ev->value == CTRL_S3_DEBUG_AP_ERROR) {
-            s_s3_debug_token_hi = 0u;
-            s_s3_debug_token_hi_valid = false;
-            if (s_s3_debug_ap_token_cb) s_s3_debug_ap_token_cb(0u);
-        }
-        if (s_s3_debug_ap_status_cb) {
-            s_s3_debug_ap_status_cb((uint8_t)ev->value);
-        }
-        ESP_LOGI(TAG, "S3 Debug AP status=%d", ev->value);
-        return;
-    }
-    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_HI) {
-        if (ev->value >= 0 && ev->value <= 999) {
-            s_s3_debug_token_hi = (uint16_t)ev->value;
-            s_s3_debug_token_hi_valid = true;
-        }
-        return;
-    }
-    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_LO) {
-        if (s_s3_debug_token_hi_valid && ev->value >= 0 && ev->value <= 999) {
-            uint32_t token = (uint32_t)s_s3_debug_token_hi * 1000u +
-                             (uint16_t)ev->value;
-            s_s3_debug_token_hi_valid = false;
-            if (s_s3_debug_ap_token_cb &&
-                (token == 0u || (token >= 100000u && token <= 999999u))) {
-                s_s3_debug_ap_token_cb(token);
-            }
-        }
-        return;
-    }
     if (ev->id != CTRL_ID_FLX4_CONNECTION) {
         ESP_LOGW(TAG, "unknown state id %u", (unsigned)ev->id);
         return;
@@ -1780,12 +1738,18 @@ static void on_state_event(const ctrl_event_t *ev)
         }
         s_flx4_connection_state_valid = true;
         s_flx4_connected = true;
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+            s_decks[deck].controller_connected = true;
+        }
     } else if (ev->value == CTRL_FLX4_DISCONNECTED) {
         if (!s_flx4_connection_state_valid || s_flx4_connected) {
             ESP_LOGI(TAG, "FLX4 disconnected");
         }
         s_flx4_connection_state_valid = true;
         s_flx4_connected = false;
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+            s_decks[deck].controller_connected = false;
+        }
         /* A physical disconnect cannot deliver the final Note-On(value=0)
          * touch edge. Force both platters released so scratch/capture never
          * remain latched and silent until the next track load. */
@@ -2847,7 +2811,9 @@ static void deck_task(void *arg)
                 s_decks[idx].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
                 publish_loop_adjust_leds(idx, &s_decks[idx]);
             }
+            const bool controller_connected = s_flx4_connected;
             init_deck_state(&s_decks[idx]);
+            s_decks[idx].controller_connected = controller_connected;
             s_jog_touched[idx] = false;
             s_jog_hold_active[idx] = false;
             s_jog_scratch_active[idx] = false;
@@ -2919,14 +2885,11 @@ static void deck_task(void *arg)
         case CTRL_EV_PITCH:
             on_pitch(deck, ev.value);
             break;
-        case CTRL_EV_HEARTBEAT:
-            xSemaphoreTake(s_mutex, portMAX_DELAY);
-            s_last_heartbeat_tick = xTaskGetTickCount();
-            xSemaphoreGive(s_mutex);
-            ESP_LOGD(TAG, "S3 heartbeat seq=%d", ev.seq);
-            break;
         case CTRL_EV_STATE:
             on_state_event(&ev);
+            break;
+        case CTRL_EV_HEARTBEAT:
+            /* Retained protocol enum value; unused by the P4-only runtime. */
             break;
         }
     }
@@ -3099,21 +3062,11 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
     const uint8_t idx = normalize_deck(deck);
     deck_state_t snap = {0};
-    uint32_t heartbeat_tick = 0u;
-    copy_state_snapshot(idx, &snap, NULL, NULL, &heartbeat_tick);
+    copy_state_snapshot(idx, &snap, NULL, NULL);
 
     if (deck_uses_audio_engine(idx)) {
         snap.playing = audio_engine_deck_is_playing(idx);
         snap.position_ms = audio_engine_deck_position_ms(idx);
-    }
-    const TickType_t now = xTaskGetTickCount();
-    if (heartbeat_tick != 0u) {
-        const uint32_t age_ms = (uint32_t)((now - (TickType_t)heartbeat_tick) * portTICK_PERIOD_MS);
-        snap.last_heartbeat_age_ms = age_ms;
-        snap.control_link_connected = age_ms <= 10000u;
-    } else {
-        snap.last_heartbeat_age_ms = UINT32_MAX;
-        snap.control_link_connected = false;
     }
     return snap;
 }
@@ -3121,7 +3074,7 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 {
     deck_core_beat_fx_state_t snap = {0};
-    copy_state_snapshot(0u, NULL, NULL, &snap, NULL);
+    copy_state_snapshot(0u, NULL, NULL, &snap);
     return snap;
 }
 
@@ -3130,23 +3083,13 @@ deck_core_beat_jump_page_t deck_core_get_beat_jump_page(void)
     return __atomic_load_n(&s_beat_jump_page, __ATOMIC_ACQUIRE);
 }
 
-void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
-{
-    s_s3_debug_ap_status_cb = cb;
-}
-
-void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb)
-{
-    s_s3_debug_ap_token_cb = cb;
-}
-
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
 {
     deck_core_loop_display_t out = {0};
     if (deck >= DECK_CORE_DECK_COUNT) return out;
 
     deck_loop_shadow_t shadow = {0};
-    copy_state_snapshot(deck, NULL, &shadow, NULL, NULL);
+    copy_state_snapshot(deck, NULL, &shadow, NULL);
     bool active = false;
     uint32_t start_ms = 0u;
     uint32_t end_ms = 0u;
@@ -3293,7 +3236,6 @@ void deck_core_test_reset(void)
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
 #endif
     flx4_led_publisher_init(&s_flx4_led_publisher);
-    s_last_heartbeat_tick = 0;
     s_flx4_connection_state_valid = false;
     s_flx4_connected = false;
     s_test_ui_command_count = 0;
@@ -3366,11 +3308,10 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
     case CTRL_EV_PITCH:
         on_pitch(deck, ev->value);
         break;
-    case CTRL_EV_HEARTBEAT:
-        s_last_heartbeat_tick = xTaskGetTickCount();
-        break;
     case CTRL_EV_STATE:
         on_state_event(ev);
+        break;
+    case CTRL_EV_HEARTBEAT:
         break;
     }
 }

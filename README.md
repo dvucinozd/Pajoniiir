@@ -1,9 +1,10 @@
 # Pajoniiir BL-A1800
 
-Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4, a Seeed
-Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
-board. It reads Rekordbox media directly and does not require a PC during
-performance.
+Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 and a
+JC4880P443C_I_W ESP32-P4 multimedia board. On `feat/p4-dual-usb-host`, the P4
+directly hosts USB0 storage and the USB1 FLX4 MIDI/audio interfaces; no ESP32-S3
+is required at runtime. It reads Rekordbox media directly and does not require a
+PC during performance.
 
 Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`. The former
 `dvucinozd/ESP32-DDJ-FLX4` URL is deprecated and retained only as a GitHub
@@ -14,8 +15,8 @@ retained while its electrical and hardware acceptance gates remain open.
 ![Pajoniiir](docs/images/122.jpg)
 
 > [!IMPORTANT]
-> The ESP-IDF 6.0.2 migration is **merged into `master`**; both targets now
-> build only under **ESP-IDF v6.0.2** (the component manifests pin
+> The ESP-IDF 6.0.2 migration is **merged into `master`**. The active P4 target
+> builds only under **ESP-IDF v6.0.2** (the component manifest pins
 > `idf: "==6.0.2"`). The release prefix therefore moved from `RC1` to **`RC2`**,
 > and the latest clean dual-target release build is **`RC2`** (`56905c89`) from
 > 2026-07-30 — see
@@ -47,27 +48,30 @@ retained while its electrical and hardware acceptance gates remain open.
 > [RC2-51 P4 OTA deployment](docs/validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
 
 > [!NOTE]
-> On `feat/p4-dual-usb-host`, the P4 now hosts the direct-root FLX4 MIDI and
+> On `feat/p4-dual-usb-host`, the P4 hosts the direct-root FLX4 MIDI and
 > four-channel UAC interfaces together with USB0 storage. Software coverage
 > includes the fail-closed USB FIFO split, 48→44.1 kHz resampling with bounded
 > ring clock correction, reconnect generations, FLX4-only shifted LED mirrors,
 > headphone gain ramps, Beat Jump size pages, jog loop-boundary adjustment,
 > gapless slip-reverse Censor and rate-limited UAC health alarms. The complete
-> P4 host suite and ESP-IDF 6.0.2 feature build pass; this does not clear the
-> open 5 V/VBUS brownout blocker or replace the required hardware soak.
+> P4 host suite and ESP-IDF 6.0.2 production build pass. The UART control link,
+> S3 heartbeat/debug AP, profile transfer, monitor PCM bridge, S3 firmware
+> reporting and dual-target OTA package are retired from the active product.
+> `firmware/control-board-s3` is retained only as historical/reference source.
+> This does not clear the open 5 V/VBUS brownout blocker or replace the required
+> hardware soak.
 
 ## System at a Glance
 
 | Device | Responsibility |
 | --- | --- |
 | **Pioneer DDJ-FLX4** | Operator surface: transport, jogs, tempo, mixer, pads, cue and LEDs |
-| **XIAO ESP32S3** | USB MIDI host, semantic event translator, LED bridge, FLX4 USB-headphone streamer and service OTA AP |
-| **ESP32-P4 board** | Authoritative playback/deck state, Rekordbox library, LVGL UI, audio DSP/mixer and MAIN/cue routing |
+| **ESP32-P4 board** | USB0 storage, USB1 FLX4 MIDI/audio host, controller profiles/LEDs, authoritative playback/deck state, Rekordbox library, LVGL UI, audio DSP/mixer and MAIN/cue routing |
 
-The S3 normalizes FLX4 input but does not own playback state. The P4 makes all
-authoritative deck, mixer, audio-position and LED decisions. Both boards use
-the existing `0xA5` UART control link, extended with the `0xA6` bulk/status
-layer. The detailed ownership and data flow are documented in
+The P4 normalizes FLX4 input locally and makes all authoritative deck, mixer,
+audio-position and LED decisions. The former `0xA5`/`0xA6` P4/S3 transport is
+kept only in historical source and protocol records. The detailed ownership and
+data flow are documented in
 [Architecture](docs/ARCHITECTURE.md).
 
 ## Current Capabilities
@@ -90,7 +94,7 @@ layer. The detailed ownership and data flow are documented in
   software-complete and still has pending hardware-acceptance rows. A
   host-qualified Hercules DJControl Inpulse 500 profile is included; physical
   MIDI/LED/reconnect and USB-audio qualification remains pending.
-- Signed dual-slot OTA, validation and rollback on both processors.
+- Signed dual-slot P4 OTA, validation and rollback.
 
 Detailed implementation and acceptance status belongs in
 [Project Overview](docs/PROJECT_OVERVIEW.md),
@@ -113,8 +117,8 @@ The Hot Cues tab is implemented but does not yet have an archived screenshot.
 ```text
 controllers/                 Compiled and source controller profiles
 firmware/
-  control-board-s3/          ESP32-S3 host/translator/audio-bridge firmware
-  main-deck-p4/              ESP32-P4 playback/audio/UI firmware
+  control-board-s3/          Historical ESP32-S3 reference firmware (inactive)
+  main-deck-p4/              ESP32-P4 complete product firmware
   common/                    Shared firmware components
 docs/                        Product, protocol, validation and design records
 tests/                       PC-side regression tests
@@ -130,11 +134,10 @@ PowerShell 5.1 (ili noviji) na Windowsima, odnosno standardni shell na Linuxu.
 A standard ESP-IDF installation can be initialized on Windows with:
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
-. "$env:IDF_PATH\export.ps1"
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
 ```
 
-Verify the selected environment before configuring either target:
+Verify the selected environment before configuring the P4 target:
 
 ```powershell
 idf.py --version
@@ -148,23 +151,18 @@ Remove-Item -Recurse -Force build, managed_components -ErrorAction SilentlyConti
 Remove-Item sdkconfig, sdkconfig.old -ErrorAction SilentlyContinue
 ```
 
-Build each target from the repository root:
+Build the active P4 target from the repository root:
 
 ```powershell
-cd firmware\control-board-s3
-idf.py set-target esp32s3
-idf.py build
-
-cd ..\main-deck-p4
+cd firmware\main-deck-p4
 idf.py set-target esp32p4
 idf.py build
 ```
 
-Run the host regression suites from the repository root. These are the same two
-entry points CI uses, and both run under Windows PowerShell 5.1 and PowerShell 7:
+Run the active host regression suite from the repository root. This is the same
+entry point CI uses and runs under Windows PowerShell 5.1 and PowerShell 7:
 
 ```powershell
-.\tests\run_s3_host_tests.ps1
 .\tests\run_p4_host_tests.ps1
 ```
 
@@ -189,7 +187,7 @@ Settings, the screensaver and exact Settings restoration. See
 review and update instructions. This PC gate does not replace P4 display,
 touch or waveform-motion hardware acceptance.
 
-Both default firmware configurations include the FLX4 USB-headphone path.
+The default P4 firmware configuration includes the direct FLX4 USB-headphone path.
 Build, flashing, signed release packaging and rollback procedures are covered
 by [OTA Update](docs/OTA-UPDATE.md). Hardware bring-up and recurring acceptance
 checks are in the [Startup Checklist](docs/STARTUP_CHECKLIST.md).
@@ -203,9 +201,9 @@ operational documents are:
 | --- | --- |
 | Product status and source-of-truth policy | [Documentation Status](docs/DOCUMENTATION_STATUS.md) |
 | Product shape and implemented scope | [Project Overview](docs/PROJECT_OVERVIEW.md) |
-| P4/S3 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
+| P4 dual-USB responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
 | FLX4 inputs, outputs and acceptance ledger | [DDJ-FLX4 MIDI Map](docs/DDJ_FLX4_MIDI_MAP.md) |
-| UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
+| Historical P4/S3 UART protocol | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
 | Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |
 | Current phases and remaining engineering work | [Development Plan](docs/DEVELOPMENT_PLAN.md) |
 | Deferred native folder/APTA library integration | [libapta P4 Integration Plan](docs/LIBAPTA_P4_INTEGRATION_PLAN.md) |

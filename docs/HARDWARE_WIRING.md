@@ -1,5 +1,13 @@
 # Hardware Wiring
 
+> **Active `feat/p4-dual-usb-host` wiring:** the S3 is removed. Connect the
+> Rekordbox medium to P4 USB0 and the DDJ-FLX4 directly to P4 USB1. FLX4 MIDI IN,
+> MIDI OUT and four-channel USB Audio all terminate on P4; cue is sent on UAC
+> channels 3/4 while PCM5102A remains MAIN. Do not wire the former S3/P4 UART or
+> monitor-I2S link. Their tables below are retained only as historical wiring
+> records. The protected downstream VBUS design in the next section is still a
+> mandatory unresolved gate.
+
 Status: current bench wiring, updated 2026-08-12. Revalidate cable routing,
 power budget, cooling and RF behavior after final enclosure installation.
 
@@ -124,7 +132,7 @@ Implemented hardware plan:
 | --- | --- | --- |
 | Master | external PCM5102A I2S DAC | verified on GPIO50/GPIO52/GPIO51 through RCA and onboard 3.5 mm output |
 | Cue/PFL (`master`) | FLX4 USB headphones | P4 sends monitor PCM to S3 over the inter-board I2S link; S3 streams it to the FLX4 USB Audio endpoint |
-| Cue/PFL (`feat/p4-dual-usb-host`) | FLX4 USB headphones on P4 USB1 | P4 sends MAIN on UAC channels 1/2 and cue on 3/4; the established S3 monitor link remains the not-ready/fault fallback |
+| Cue/PFL (`feat/p4-dual-usb-host`) | FLX4 USB headphones on P4 USB1 | P4 sends MAIN on UAC channels 1/2 and cue on 3/4; there is no S3 fallback |
 
 Headphones Mix DSP is implemented in the P4 monitor path: FLX4 Headphones Mix
 raw `0` is cue/PFL, raw `16383` is master, and intermediate values blend cue

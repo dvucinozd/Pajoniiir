@@ -181,7 +181,7 @@ typedef struct {
      * audio_engine_reset_output_phase_stats(). */
     uint32_t phase_mix_max_us;      /* per-frame mixer/decode loop */
     uint32_t phase_push_max_us;     /* recorder tap */
-    uint32_t phase_monitor_max_us;  /* monitor PCM link write (non-blocking) */
+    uint32_t phase_monitor_max_us;  /* direct FLX4 USB headphone enqueue */
     uint32_t phase_main_max_us;     /* blocking PCM5102A I2S write (paces the loop) */
     uint32_t phase_codec_max_us;    /* headphone codec write */
     uint32_t phase_book_max_us;     /* AE_LOCK acquire + per-block bookkeeping */

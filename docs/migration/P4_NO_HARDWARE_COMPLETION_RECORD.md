@@ -1,5 +1,10 @@
 # P4 dual-USB no-hardware completion record
 
+> **Superseded implementation record.** On 2026-08-27 the experimental overlay
+> became the default P4-only product and the S3 fallback was removed. The build
+> variants below are retained to explain the earlier checkpoint and must not be
+> used for current builds.
+
 This record closes the work that can be proven without the physical ESP32-P4,
 Rekordbox drive and DDJ-FLX4.
 

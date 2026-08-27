@@ -1,13 +1,7 @@
-set(USB_STORAGE_OWNER_SOURCE "usb_storage.c")
-if(CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER)
-    # Keep the mature storage/session/mount implementation intact while the
-    # migration build replaces only its Host Library ownership and recovery
-    # calls with the shared dual-controller manager.
-    set(USB_STORAGE_OWNER_SOURCE "usb_storage_shared.c")
-endif()
-
 idf_component_register(
-    SRCS ${USB_STORAGE_OWNER_SOURCE}
+    # The P4-only product always uses the shared dual-controller Host Library
+    # owner and restricts storage recovery to USB0.
+    SRCS "usb_storage_shared.c"
          "usb_storage_session.c" "usb_storage_recovery.c"
          "usb_media_partition.c" "usb_media_mount.c"
          "usb_dwc_hal_compat.c"

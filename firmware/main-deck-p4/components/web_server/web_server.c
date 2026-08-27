@@ -9,7 +9,6 @@
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
-#include "control_link_p4_diagnostics.h"
 #include "p4_ota.h"
 #include "web_firmware_json.h"
 #include "p4_ota_policy.h"
@@ -26,11 +25,9 @@
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
 #include "esp_core_dump.h"
 #endif
-#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
 #include "controller_usb_host.h"
 #include "p4_local_controller.h"
 #include "usb_host_manager.h"
-#endif
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
 #endif
@@ -224,7 +221,6 @@ static const char *controller_profile_state_name(controller_profile_transfer_sta
 }
 #endif
 
-#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
 static const char *controller_usb_probe_stage_name(uint8_t stage)
 {
     switch ((controller_usb_probe_stage_t)stage) {
@@ -242,7 +238,6 @@ static const char *controller_usb_probe_stage_name(uint8_t stage)
     default:                                     return "unknown";
     }
 }
-#endif
 
 static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *uri)
 {
@@ -347,28 +342,6 @@ static esp_err_t app_js_handler(httpd_req_t *req)
     return httpd_resp_send(req, (const char *)app_js_start, size);
 }
 
-static const char *peer_fw_slot_name(uint8_t slot)
-{
-    switch (slot) {
-    case CTRL_FW_SLOT_OTA_0: return "ota_0";
-    case CTRL_FW_SLOT_OTA_1: return "ota_1";
-    case CTRL_FW_SLOT_FACTORY: return "factory";
-    default: return "unknown";
-    }
-}
-
-static const char *peer_fw_state_name(uint8_t state)
-{
-    switch (state) {
-    case CTRL_FW_STATE_NEW: return "new";
-    case CTRL_FW_STATE_PENDING_VERIFY: return "pending_verify";
-    case CTRL_FW_STATE_VALID: return "valid";
-    case CTRL_FW_STATE_INVALID: return "invalid";
-    case CTRL_FW_STATE_ABORTED: return "aborted";
-    default: return "unknown";
-    }
-}
-
 /* ── Web-originated deck mutations ───────────────────────────────────────── *
  *
  * The web UI must not reach into the audio engine directly. deck_core owns deck
@@ -414,7 +387,7 @@ static esp_err_t web_queue_loop_clear(uint8_t deck)
 }
 
 /* These strings end up inside a hand-formatted JSON body below. They originate
- * from partition labels, app descriptors and the S3's own report, so they are not
+ * from partition labels and app descriptors, so they are not
  * attacker-controlled in normal operation — but an unescaped quote or backslash
  * anywhere in that chain produces a response the client cannot parse, and the
  * failure would look like a firmware bug rather than an encoding one. Escape at
@@ -430,40 +403,24 @@ static void web_collect_p4_ota_status(p4_ota_status_t *out)
     web_firmware_json_escape_in_place(out->last_error, sizeof(out->last_error));
 }
 
-static bool web_collect_s3_firmware_report(ctrl_firmware_report_t *out)
-{
-    bool available = control_link_get_s3_firmware_report(out);
-    if (out) {
-        web_firmware_json_escape_in_place(out->version, sizeof(out->version));
-    }
-    return available;
-}
-
 static esp_err_t api_firmware_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     p4_ota_status_t status;
     web_collect_p4_ota_status(&status);
-    ctrl_firmware_report_t s3 = {0};
-    bool s3_available = web_collect_s3_firmware_report(&s3);
-    char json[640];
+    char json[512];
     int len = snprintf(json, sizeof(json),
                        "{\"target\":\"p4\",\"state\":\"%s\","
                        "\"running_slot\":\"%s\",\"running_version\":\"%s\","
                        "\"target_slot\":\"%s\",\"target_version\":\"%s\","
                        "\"expected_size\":%u,\"received_size\":%u,"
-                       "\"last_error\":\"%s\","
-                       "\"s3\":{\"available\":%s,\"slot\":\"%s\","
-                       "\"state\":\"%s\",\"version\":\"%s\"}}",
+                       "\"last_error\":\"%s\"}",
                        p4_ota_state_name(status.state),
                        status.running_slot, status.running_version,
                        status.target_slot, status.target_version,
                        (unsigned)status.expected_size,
                        (unsigned)status.received_size,
-                       status.last_error,
-                       s3_available ? "true" : "false",
-                       peer_fw_slot_name(s3.slot), peer_fw_state_name(s3.state),
-                       s3.version);
+                       status.last_error);
     if (len < 0 || (size_t)len >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA status overflow");
     }
@@ -938,7 +895,7 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
     free(blob);
     if (rc == ESP_ERR_INVALID_ARG) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Invalid S3CP profile or CRC");
+                                   "Invalid controller profile or CRC");
     }
     if (rc == ESP_ERR_INVALID_STATE) {
         httpd_resp_set_status(req, "409 Conflict");
@@ -1163,9 +1120,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
     deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
-    control_link_rx_stats_t link_stats = {0};
     service_log_status_t service_status = {0};
-    control_link_get_rx_stats(&link_stats);
     (void)service_log_get_status(&service_status);
 
     float p1 = deck_core_pitch_percent(&state1);
@@ -1227,15 +1182,6 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                    false, 0, 0, "", false, false, false, "", "idle", 0);
 #endif
 
-    char control_link_json[320] = {0};
-    web_api_format_control_link_json(
-        control_link_json, sizeof(control_link_json),
-        state1.control_link_connected, state1.last_heartbeat_age_ms,
-        link_stats.rx_frames, link_stats.sequence_gaps,
-        link_stats.event_checksum_errors, link_stats.bulk_frames,
-        link_stats.bulk_crc_errors, link_stats.last_sequence,
-        link_stats.sequence_valid);
-
     char service_log_json[256] = {0};
     web_api_format_service_log_json(
         service_log_json, sizeof(service_log_json),
@@ -1244,8 +1190,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_status.written, service_status.current_bytes,
         service_status.last_error);
 
-    char p4_local_usb_json[1536] = {0};
-#if CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER
+    char p4_usb_json[1536] = {0};
     {
         usb_host_manager_diagnostics_t host_diag = {0};
         controller_usb_host_diagnostics_t controller_diag = {0};
@@ -1254,9 +1199,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         controller_usb_host_get_diagnostics(&controller_diag);
         p4_local_controller_get_diagnostics(&local_diag);
         snprintf(
-            p4_local_usb_json, sizeof(p4_local_usb_json),
-            "\"p4_local_usb\":{"
-            "\"enabled\":true,"
+            p4_usb_json, sizeof(p4_usb_json),
+            "\"p4_usb\":{"
             "\"host\":{"
             "\"ready\":%s,\"install_result\":%d,"
             "\"install_result_name\":\"%s\","
@@ -1337,10 +1281,6 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)local_diag.profile_activations,
             (unsigned)local_diag.profile_fallbacks);
     }
-#else
-    snprintf(p4_local_usb_json, sizeof(p4_local_usb_json),
-             "\"p4_local_usb\":{\"enabled\":false}");
-#endif
 
     const size_t crash_dump_json_size = 1024u;
     char *crash_dump_json = calloc(1, crash_dump_json_size);
@@ -1435,7 +1375,6 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "%s,"
         "%s,"
         "%s,"
-        "%s,"
         "\"diagnostics\":{"
         "\"output_codec_open\":%s,"
         "\"output_sample_rate\":%u,"
@@ -1502,9 +1441,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
         beat_fx_json,
         controller_json,
-        control_link_json,
         service_log_json,
-        p4_local_usb_json,
+        p4_usb_json,
         crash_dump_json,
         audio_wdt_trace_json,
         library_load_trace_json,

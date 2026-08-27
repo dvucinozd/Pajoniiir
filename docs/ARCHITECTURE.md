@@ -1,61 +1,22 @@
 # Architecture
 
-Status: current architecture, audited 2026-07-30. P4 remains authoritative;
-S3 remains a transport/translation and USB-audio bridge. The ESP-IDF 6.0.2
-migration is merged into `master` (release line `RC2`); it added the bounded
-compressed audio cache, paginated Library UI and recorder safety hardening
-without changing the P4/S3 ownership split.
+Status: P4-only branch architecture, updated 2026-08-27. The P4 is both the
+authoritative playback/UI engine and the direct dual-root USB host. The former
+S3 transport/audio bridge is retired from the active build and remains only as
+historical source.
 
 ## High-Level Flow
 
 ```text
 Pioneer DDJ-FLX4
     |
-    | USB MIDI
-    v
-ESP32-S3 control-board-s3
-    |
-    | 0xA5 UART semantic events
+    | USB1: MIDI + LEDs + four-channel UAC
     v
 ESP32-P4 main-deck-p4
-    |
-    | dual decode + mixer
-    v
-Master output + cue/PFL output
+    |-- USB0: Rekordbox storage
+    |-- PCM5102A: MAIN output
+    `-- FLX4 UAC channels 3/4: cue/PFL output
 ```
-
-## ESP32-S3 Responsibilities
-
-The S3 firmware should be renamed conceptually from panel controller to FLX4
-controller, but the directory can stay `control-board-s3` until code movement
-is justified.
-
-Responsibilities:
-
-- enumerate the DDJ-FLX4 through ESP-IDF USB host;
-- parse class-compliant USB MIDI packets;
-- translate MIDI status/midino/value triples into semantic events;
-- combine MSB/LSB pairs for 14-bit controls before forwarding when practical;
-- coalesce high-rate jog and analog values locally so stale motion does not
-  flood the UART queue;
-- publish durable DDJ-FLX4 USB connection/disconnection desired state to the
-  P4, including periodic replay of both levels after a lost UART frame;
-- send heartbeat frames to the P4;
-- receive P4 LED/state frames;
-- emit FLX4 MIDI LED feedback using XML/official-list output addresses; non-VU
-  LED state is retained until enqueue/USB completion can converge, while VU is
-  intentionally best-effort;
-- host the runtime-only S3 service AP and S3 OTA endpoint when requested by P4;
-- stage the service-AP netif locally through DHCP/IP configuration before
-  publication, and bound each OTA request by absolute and progress deadlines;
-- stream P4 monitor PCM to the FLX4 USB Audio headphone endpoint.
-
-The S3 must not:
-
-- decide whether a deck is playing;
-- calculate audio position;
-- apply mixer gains itself;
-- invent current/next track state.
 
 ## ESP32-P4 Responsibilities
 
@@ -64,6 +25,9 @@ The P4 remains authoritative for performance state.
 Responsibilities:
 
 - load Rekordbox tracks and analysis data from USB media;
+- host the DDJ-FLX4 directly on USB1 and map MIDI to semantic events;
+- activate SD/web controller profiles locally and send LED MIDI directly;
+- stream cue/PFL audio directly to FLX4 UAC channels 3/4;
 - own two `deck_core` state instances;
 - own the mixer state: channel faders, crossfader, pregain, EQ/filter when
   implemented, cue/PFL selection;
@@ -72,9 +36,8 @@ Responsibilities:
   intra-beat phase-align behavior;
 - decode audio and write master/cue buffers to hardware;
 - render UI state;
-- send LED feedback commands to the S3;
 - force a P4-owned LED snapshot after an FLX4 reconnect so physical LEDs
-  recover without S3 owning playback state.
+  recover from the authoritative state.
 
 Current P4 audio ownership rule:
 
@@ -214,39 +177,27 @@ Current P4 Overview waveform ownership rule:
 ## Data Flow
 
 1. FLX4 sends a MIDI event, for example `0x90 0x0B 0x7F` for Deck 1 Play.
-2. S3 MIDI host parses it and maps it to a deck-aware event.
-3. S3 sends a `control_link` UART frame to P4.
-4. P4 updates the target deck state through `deck_core`.
-5. P4 calls audio engine/mixer APIs.
-6. P4 sends LED feedback back over `control_link`.
-7. S3 emits the matching MIDI LED message to the FLX4.
-8. If the FLX4 disconnects/reconnects, S3 publishes connection state and P4
-   republishes the current P4-owned LED snapshot.
-
-All S3 `0xA5` and `0xA6` transmitters share one serializer. Sequence
-allocation, complete frame construction and the UART write occur under the same
-static mutex, so concurrent heartbeat, semantic, descriptor and profile replies
-cannot appear on wire out of sequence. A failed write still consumes its
-sequence and is therefore visible to P4 gap telemetry.
-
-S3 OTA confirmation additionally requires a bidirectional boot-health exchange.
-After its critical control/USB tasks have actually started, a pending S3 image
-repeats a fresh `0x86` challenge until the P4 UART RX task returns the matching
-`0x87` ACK. A missing, wrong or premature ACK cannot mark the slot valid; the
-bounded 30-second failure path restarts without confirmation and leaves rollback
-to the ESP-IDF bootloader. This does not depend on an attached FLX4.
+2. P4 USB1 decodes the USB-MIDI packet and `controller_runtime` maps it to a
+   deck-aware semantic event.
+3. `control_link_local` injects the event directly into the existing bounded
+   deck queue; no UART framing occurs.
+4. P4 updates authoritative state through `deck_core` and calls audio/mixer/UI
+   APIs.
+5. P4 builds the authoritative LED snapshot and `controller_led_runtime` sends
+   USB-MIDI OUT directly through the USB1 owner.
+6. On disconnect P4 releases held controls and clears the local profile; on
+   reconnect it republishes connection state and the complete LED snapshot.
 
 The control path distinguishes continuous values, physical held levels and
 discrete commands. Continuous absolute values keep the latest sample and
 relative motion accumulates deltas. Jog touch, Shift, Censor, Pad FX and shifted
-roll use a shared S3/P4 desired/scheduled/dirty reconciler, so queue saturation
+roll use the P4-local desired/scheduled/dirty reconciler, so queue saturation
 can delay but cannot erase their final level; disconnect forces releases and a
-P4 reboot reaccepts the S3 snapshot. Discrete commands remain FIFO and retain
-sequence-gap telemetry because collapsing repeated commands would change their
-meaning.
+reconnect snapshot restores the physical state. Discrete commands remain FIFO
+because collapsing repeated commands would change their meaning.
 
 Connection level and non-VU controller LEDs follow the same convergence rule:
-desired state remains dirty until the next layer accepts it. The S3 USB owner
+desired state remains dirty until the next layer accepts it. The P4 USB1 owner
 replays both connected and disconnected levels periodically and retains an
 already dequeued USB-MIDI OUT buffer across submit or retryable completion
 failure. Controller-profile changes mark all known LED desired states dirty so
@@ -258,42 +209,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Current S3 firmware modes:
-
-- DDJ-FLX4 product mode: USB MIDI host for translator input,
-  connection-state publication, and MIDI LED output;
-- optional raw logger: disable `CONFIG_DDJ_FLX4_TRANSLATE_TO_P4` to retain
-  descriptor/MIDI capture without forwarding events to P4.
-
-R5D permanently retired the inherited CDJ GPIO panel/TinyUSB-device mode.
-The S3 USB OTG peripheral is now unconditionally a host; `panel_io`,
-`midi_compat`, `calibration` and `CONFIG_DDJ_FLX4_HOST_MODE` no longer exist.
-
-FLX4 USB headphones path (**hardware-validated 2026-07-02; XIAO wiring
-validated 2026-07-06; S3 overrun regression fixed and re-smoked 2026-07-09**,
-`docs/validation/FLX4_USB_AUDIO_E2E_SMOKE.md`):
-
-- P4 owns the monitor/cue mix and publishes stereo 16-bit `hp_out` blocks
-  through `monitor_pcm_link` (I2S TX master, unit 0).
-- The dedicated P4-to-S3 monitor PCM payload uses `P4HP` blocks (sequence
-  numbers + CRC32 over protected header plus payload) over I2S, intentionally
-  separate from the `0xA5` UART control protocol. Current XIAO wiring pins:
-  P4 GPIO32/GPIO34/GPIO35 -> S3 GPIO7/GPIO8/GPIO9, 64 kHz stereo slots.
-- S3 `p4_audio_link` (I2S slave RX) deframes into a 4096-frame ring; the
-  `flx4_usb_audio` UAC streamer drains the ring into isochronous OUT transfers,
-  mapping P4 `hp_out` onto the FLX4 4-channel format's headphone pair
-  (channels 3/4). Ring streaming autostarts once ~20 ms is buffered and matches
-  the FLX4 endpoint rate to the P4 output rate (44.1 / 48 kHz). While already in
-  ring-streaming mode, S3 continues to track `p4_audio_link.sample_rate` and
-  reinitializes the USB packetizer if the P4 link rate changes; otherwise the
-  producer and USB consumer drift apart and the 4096-frame ring can overrun.
-- Output topology (P4 has 2 usable I2S units; unit 2 freezes on eco2):
-  **PCM5102A RCA = MAIN OUT (unit 1, paces the loop)**, **FLX4 USB = CUE/MONITOR
-  (link on unit 0)**, **ES8311 onboard monitor disabled** to free unit 0. Both
-  outputs run simultaneously. S3 stays the FLX4 USB host and keeps MIDI
-  responsive while streaming audio.
-
-Experimental `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
+Active `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -305,31 +221,27 @@ Experimental `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
 - Three primed isochronous transfers raise the host task to its active priority;
   disconnect/fault lowers it before halt/flush/recycle. MIDI queue entries carry
   a connection generation, so stale packets cannot cross a reconnect.
-- Until direct UAC is streaming, audio continues through the existing P4→S3
-  monitor link. Direct-UAC ring pressure and data loss are sampled outside the
-  audio path and rate-limited into the service log.
+- There is no monitor-link fallback. Direct-UAC ring pressure and data loss are
+  sampled outside the audio path and rate-limited into the service log.
+
+The prior S3 UART and monitor-I2S implementation remains available only in Git
+history, `firmware/control-board-s3` and dated validation/protocol records.
 
 ## Main Code Surfaces
 
-Inherited files that will be touched early:
-
-- `firmware/control-board-s3/main/app_main.c`
-- `firmware/control-board-s3/components/control_link/`
-- `firmware/control-board-s3/components/flx4_midi_host/`
-- `firmware/main-deck-p4/components/control_link/`
-- `firmware/main-deck-p4/components/deck_core/`
-- `firmware/main-deck-p4/components/audio_engine/`
-- `firmware/main-deck-p4/components/ui/`
-
-Current S3 FLX4 component:
-
-```text
-firmware/control-board-s3/components/flx4_midi_host/
-  include/flx4_midi_host.h
-  include/flx4_map.h
-  flx4_midi_host.c
-  flx4_map.c
-```
+- `firmware/main-deck-p4/components/usb_host_manager/` — shared Host Library
+  and per-root recovery arbitration.
+- `firmware/main-deck-p4/components/usb_storage/` — USB0 MSC/media lifecycle.
+- `firmware/main-deck-p4/components/controller_usb_host/` — USB1 composite
+  MIDI/UAC ownership.
+- `firmware/main-deck-p4/components/p4_local_controller/` — connection,
+  profile, semantic dispatch and LED integration.
+- `firmware/main-deck-p4/components/control_link/control_link_local.c` — narrow
+  compatibility adapter into the existing semantic event queue.
+- `firmware/main-deck-p4/components/controller_runtime/` and
+  `controller_led_runtime/` — MIDI mapping and direct feedback.
+- `firmware/main-deck-p4/components/audio_engine/`, `deck_core/` and `ui/` —
+  authoritative behavior and presentation.
 
 Current P4 mixer/audio surfaces live in `audio_engine` helpers such as
 `audio_output_mixer`, deck-local runtime/preload/task-context modules, and the
@@ -345,11 +257,10 @@ does not define the playback model.
 
 ## Data-Driven Multi-Controller Platform
 
-The S3↔P4 split also enables supporting controllers other than the DDJ-FLX4
-**without a firmware rebuild**, using data-driven controller profiles. The
-FLX4 remains the first supported controller and its built-in C map stays as a
-fallback; the platform makes it one profile among many rather than the only
-model. Format details: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
+The P4-local runtime supports controllers other than the DDJ-FLX4 **without a
+firmware rebuild**, using data-driven controller profiles. The FLX4 remains the
+first supported controller and its built-in C map stays as a fallback. Format
+details: `docs/CONTROLLER_PROFILE_SCHEMA.md`.
 
 Roles:
 
@@ -359,15 +270,12 @@ Roles:
 - **SD/TF card**: holds `/controllers/<name>/profile.s3bin` (one directory per
   controller). Rekordbox media stays on the USB drive; profiles live on the SD.
 - **P4 `controller_profile_manager`**: scans `/sd/controllers` at boot, validates
-  each S3CP header (magic/version/CRC), keeps a registry, and matches the
-  connected controller by VID/PID. On a match it streams the `.s3bin` to the S3
-  and reports connection/profile state through `/api/status`. The same manager
-  serializes web installs against profile transfer, atomically swaps the SD
-  file, rescans into a new registry snapshot, invalidates the old activation
-  cache and queues the matching profile for S3 activation again.
-- **S3 `controller_profile` + `controller_profile_runtime`**: parse the received
-  profile and run a table-driven MIDI-in mapper and LED-out mapper that emit the
-  same `control_link` semantic vocabulary the built-in map uses.
+  each S3CP header (magic/version/CRC), keeps a registry, matches the connected
+  controller by VID/PID and activates the profile locally. It also serializes
+  atomic web installs/rescan against activation.
+- **P4 `controller_profile_runtime`**: holds the active profile and runs the
+  table-driven MIDI-in and LED-out maps using the same semantic vocabulary as
+  the built-in FLX4 map.
 
 The repository also carries a host-qualified
 `hercules_djcontrol_inpulse_500` profile. It exercises a real non-FLX4 layout,
@@ -380,10 +288,10 @@ Flow (adds to the base data flow above):
 
 ```text
 controller connect
-  -> S3 sends CONTROLLER_DESCRIPTOR (VID/PID/caps/product) over 0xA6 bulk frame
-  -> P4 matches a profile in /sd/controllers and streams it back (0xA6 transfer)
-  -> S3 verifies crc32, ACKs, activates
-  -> S3 maps MIDI IN and LED OUT through the active profile (FLX4 map fallback)
+  -> P4 USB1 owner publishes VID/PID/caps/product locally
+  -> P4 matches and validates a profile in /sd/controllers
+  -> P4 controller_profile_runtime activates it synchronously
+  -> P4 maps MIDI IN and LED OUT locally (built-in FLX4 map fallback)
   -> P4 deck_core / audio_engine / UI are unchanged: they still receive the
      same semantic events and send the same semantic LED frames
 ```
@@ -395,46 +303,42 @@ compiled profile.s3bin
   -> P4 Wi-Fi Remote POST /api/controller-profile
   -> strict directory ID + bounded body + S3CP length/CRC validation
   -> same-directory upload, fsync, backup and atomic rename on SD
-  -> locked registry rescan + old S3 activation cache invalidation
-  -> profile sender transfers and activates the matching profile on S3
+  -> locked registry rescan
+  -> matching profile is activated locally for the connected controller
 ```
 
-`/api/status.controller.active_profile` is deliberately stricter than a VID/PID
-match: it is empty until the P4 sender receives the S3 ACK for
-`PROFILE_ACTIVATE`. During bring-up, `profile_state` reports `matched`,
-`transferring`, `active`, `failed`, or `unsupported`.
+`/api/status.controller.active_profile` is empty until local validation and
+activation succeed. During bring-up, `profile_state` retains the compatible
+`matched`, `transferring`, `active`, `failed`, or `unsupported` vocabulary.
 
 Design guarantees:
 
 - P4 stays the sole authority for deck/audio/UI/mixer state; the profile only
   changes how raw controller MIDI is translated to and from the semantic bus.
-- The 0xA6 frame codec and the transfer receiver are byte-identical on both
-  sides (asserted by host tests) so the link cannot disagree on the wire.
 - The compiled FLX4 profile is proven byte-equivalent to the built-in
   `flx4_map`/`flx4_led_midi` by a golden-parity host test (12k-message input
   sweep + snapshot + 690-combo LED parity), so routing FLX4 through the dynamic
   profile reproduces the built-in behaviour exactly.
-- Every committed fixture, including Hercules, is deterministically regenerated
-  by the S3 host runner. Hercules also has explicit runtime, registry, RGB,
-  protocol and P4 behavior assertions; it is not advertised as hardware-
+- Every committed fixture, including Hercules, is deterministically generated
+  by the profile tools. Hercules also has explicit runtime, registry, RGB and
+  P4 behavior assertions; it is not advertised as hardware-
   supported until the checklist in its mapping document passes.
 
-Protocol details: `docs/CONTROL_LINK_PROTOCOL.md` (0xA6 Bulk Frame Layer).
 Verified on hardware 2026-07-09: the SD profile loads into the P4 registry and
 `/api/status` reports `profiles:1`.
 
-New components:
+Active P4 components and retained profile tooling:
 
 ```text
-firmware/control-board-s3/components/
-  controller_profile/          S3CP parser + table-driven MIDI/LED matcher (pure C)
-  controller_profile_runtime/  active-profile holder + dynamic mapper (S3)
 firmware/main-deck-p4/components/
-  controller_profile_manager/  SD scan, registry, VID/PID match, profile sender
-firmware/*/components/control_link/
-  ctrl_bulk.c                  0xA6 frame codec (byte-identical both sides)
-  cp_xfer.c                    profile-transfer receiver + crc32 (byte-identical)
+  controller_profile/          S3CP parser + table-driven MIDI/LED matcher (pure C)
+  controller_profile_runtime/  active-profile holder + dynamic P4 mapper
+  controller_profile_manager/  SD scan, registry, VID/PID match, local activation
+  control_link/                 local semantic queue + direct LED snapshot sink
 tools/controller_profile/
   compile_profile.py           profile.json -> profile.s3bin compiler
 controllers/pioneer_ddj_flx4/  hand-written FLX4 profile.json + compiled .s3bin
 ```
+
+The former S3-side runtime and `0xA6` transfer codec remain in the historical
+S3 source tree and Git history; neither is part of the active P4 image.

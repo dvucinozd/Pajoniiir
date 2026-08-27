@@ -1,15 +1,23 @@
 # Pajoniiir ESP32-P4-only Dual USB Host Migration Plan
 
-Status: approved implementation plan
+Status: P4-only source transition implemented; hardware acceptance open
 Created: 2026-08-04
 Working branch: `feat/p4-dual-usb-host`
 Baseline commit: `c7a7cc59cf344ae4ed213ad0c0c3770f69077fca`
 Target SDK: ESP-IDF `6.0.2`
 USB component baseline: `espressif/usb 1.5.0`, `espressif/usb_host_msc 1.2.0`
 
+Software progress (2026-08-27): P4 directly owns controller MIDI/audio,
+semantic events, profiles and LEDs. Active P4 CMake, CI, UI/web status and OTA
+packaging no longer include S3 UART, heartbeat, debug AP, profile transfer,
+monitor PCM or firmware reporting. `firmware/control-board-s3` remains only as
+historical/reference source.
+
 Hardware progress: an initial wired smoke at `fc03034` passed feature-image
-flash/boot and USB0 Rekordbox-library loading with 191 tracks on 2026-08-09.
-USB1 FLX4 and the combined acceptance matrix remain open; see
+flash/boot and USB0 Rekordbox-library loading with 191 tracks on 2026-08-09. A
+later bench run enumerated USB0 storage and USB1 FLX4 together, but the power
+path remained electrically unqualified and produced brownouts. Direct-path
+functional acceptance and the combined matrix remain open; see
 [`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
 
 ## 1. Decision Summary
@@ -768,17 +776,22 @@ Required integration/hardware evidence:
 - 30-minute minimum soak before S3 retirement;
 - longer performance soak before release merge.
 
-CI transition:
+CI transition status (2026-08-27):
 
-1. Keep existing P4 and S3 host suites during migration.
-2. Add P4 USB/controller tests.
-3. Only remove S3 CI after S3 source retirement.
-4. Avoid one commit per tiny change; group coherent changes to prevent unnecessary
-   Actions queue pressure.
+1. Active CI builds P4 and runs the P4 USB/controller host suite.
+2. The S3 runner remains available for manual audits of retained historical
+   source but is no longer an active product gate.
+3. Release packaging produces only the P4 image and bundle.
+4. Group coherent changes to prevent unnecessary Actions queue pressure.
 
 ## Phase 10 — Remove active P4/S3 transport dependencies
 
 Goal: make the product operate without S3 while retaining history.
+
+Source status (2026-08-27): **implemented.** The default P4 build uses local
+semantic injection and direct USB LED/audio output. UART control-link sources,
+heartbeat/debug UI, profile transfer, firmware reporting and monitor PCM are no
+longer registered in the active image. Hardware exit criteria remain open.
 
 Tasks after Phases 1–9 pass:
 
@@ -803,6 +816,11 @@ Exit criteria:
 
 Goal: remove obsolete production code only after the P4-only path is accepted.
 
+Source/release status (2026-08-27): **partially implemented.** S3 is retired
+from active build, CI, package, web/UI and current architecture documentation.
+The source directory and protocol/validation history are intentionally retained
+until P4-only hardware acceptance and rollback documentation are complete.
+
 Prerequisites:
 
 - dual enumeration accepted;
@@ -817,17 +835,17 @@ Prerequisites:
 
 Cleanup tasks:
 
-- remove `firmware/control-board-s3/` from active product builds;
-- remove dual-target OTA packaging and S3 firmware reporting;
-- remove active UART control and P4-to-S3 PCM wiring requirements;
-- update root README and architecture diagrams;
-- update hardware wiring;
-- update development plan and risk register;
-- update OTA, startup and validation documentation;
+- [x] remove `firmware/control-board-s3/` from active product builds;
+- [x] remove dual-target OTA packaging and S3 firmware reporting;
+- [x] remove active UART control and P4-to-S3 PCM wiring requirements;
+- [x] update root README and architecture diagrams;
+- [x] update hardware wiring;
+- [x] update development plan and risk register;
+- [x] update OTA, startup and validation documentation;
 - archive protocol documents as historical where useful instead of erasing design
   history;
-- update CI to one firmware target;
-- update release packaging and version metadata;
+- [x] update CI to one firmware target;
+- [x] update release packaging and version metadata;
 - retain tagged/branch history for the final known-good P4/S3 release.
 
 Exit criteria:

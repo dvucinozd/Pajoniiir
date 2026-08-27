@@ -417,23 +417,6 @@ Assert-FileDoesNotContain `
 Assert-FatfsBoolDefaults
 Assert-CiDependenciesPinned
 
-Assert-FileContains `
-    -Name "s3 debug ap p4 sends state frames" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
-
-Assert-FileContains `
-    -Name "p4 edge backpressure is bounded so the UART RX task cannot wedge" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
-
-# Idiom, not a symbol: nothing links against an argument to xQueueSend.
-# control_link_uart.c has no host coverage.
-Assert-FileDoesNotContain `
-    -Name "p4 control event enqueue never blocks the UART RX task forever" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("xQueueSend(s_event_queue, ev, portMAX_DELAY)")
-
 # The two gates below stay source-level on purpose: both guard firmware-only code
 # paths that the host harness cannot execute (per-task TLS, and the audio engine
 # behind #ifndef WIN32). They are narrow ownership markers, not behaviour tests.
@@ -506,24 +489,6 @@ Assert-FileContains `
     -Name "library refresh and USB removal use durable event generations" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_event_counter_request", "ui_event_counter_sample", "s_library_refresh_applied", "s_usb_removed_applied")
-
-Assert-FileContains `
-    -Name "s3 debug ap status reaches settings ui" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @(
-        "deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP",
-        "deck_core_set_s3_debug_ap_token_cb", "CTRL_ID_S3_DEBUG_TOKEN_HI",
-        "CTRL_ID_S3_DEBUG_TOKEN_LO"
-    )
-
-Assert-FileContains `
-    -Name "s3 debug ap settings ui toggle wiring" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @(
-        "ui_settings_set_s3_debug_ap_toggle_cb",
-        "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)",
-        "deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token)"
-    )
 
 Assert-FileContains `
     -Name "P4 OTA requires signed bundle before flash begin" `
@@ -809,7 +774,7 @@ Assert-FileDoesNotContain `
 Assert-FileContains `
     -Name "P4 Settings wireless switches use dark off-state styling" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
-    -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ", "S3 DEBUG AP: ")
+    -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ")
 
 Assert-FileContains `
     -Name "P4 Settings mixer status strip keeps title clear of controls" `
@@ -822,50 +787,24 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
-    -Name "p4 bulk descriptor frames dispatch to a callback" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("ctrl_bulk_parser_feed", "CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR", "control_link_set_descriptor_report_cb")
-
-Assert-FileContains `
-    -Name "p4 receives and displays S3 firmware reports" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("CTRL_BULK_TYPE_FIRMWARE_REPORT", "ctrl_bulk_decode_firmware_report", "control_link_get_s3_firmware_report")
-
-Assert-FileContains `
     -Name "p4 OTA validates chip and project before activation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota/p4_ota.c") `
     -LiteralPatterns @("P4_OTA_PROJECT_NAME", "wrong firmware project", "esp_ota_set_boot_partition")
 
 Assert-FileContains `
-    -Name "p4 app wires descriptor reports to the profile manager" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("control_link_set_descriptor_report_cb", "controller_profile_manager_on_descriptor_report")
-
-Assert-FileContains `
-    -Name "p4 app wires controller disconnect and UART health into service telemetry" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @(
-        "control_link_set_controller_state_cb",
-        "controller_profile_manager_on_disconnect",
-        "SERVICE_LOG_CONTROL_LINK_CRC",
-        "SERVICE_LOG_CONTROL_LINK_GAP"
-    )
-
-Assert-FileContains `
-    -Name "p4 status API exposes control-link and service-log health" `
+    -Name "p4 status API exposes controller and service-log health" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @(
-        "control_link_get_rx_stats",
         "service_log_get_status",
-        "web_api_format_control_link_json",
+        "web_api_format_controller_json",
         "web_api_format_service_log_json"
     )
 
 Assert-FileContains `
-    -Name "p4 experimental status exposes USB1 probe diagnostics" `
+    -Name "p4 status exposes USB1 probe diagnostics" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @(
-        '\"p4_local_usb\"',
+        '\"p4_usb\"',
         "usb_host_manager_get_diagnostics",
         "controller_usb_host_get_diagnostics",
         '\"last_probe_stage_name\"',
@@ -917,8 +856,8 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
-    -Name "p4 local dual-USB profile keeps a bounded flash coredump" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.p4_local_controller") `
+    -Name "p4 dual-USB defaults keep a bounded flash coredump" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @(
         "CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y",
         "CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8",
@@ -940,14 +879,39 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
-    -Name "p4 manager streams the matched profile to the S3 off the RX task" `
+    -Name "p4 manager activates the matched profile locally" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
-    -LiteralPatterns @("cpm_sender_task", "control_link_send_profile_begin", "control_link_send_profile_chunk", "cp_xfer_crc32", "CTRL_BULK_TYPE_PROFILE_ACTIVATE")
+    -LiteralPatterns @("cpm_activate_profile", "controller_profile_runtime_activate", "cpm_activate_bound_profile")
 
 Assert-FileContains `
-    -Name "p4 dispatches profile ACK/NACK replies to a callback" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("ctrl_bulk_decode_profile_ack", "ctrl_bulk_decode_profile_nack", "s_profile_reply_cb")
+    -Name "p4 controller events and LED output stay local" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @("control_link_inject_semantic", "control_link_set_led_sink", "controller_led_runtime_send")
+
+Assert-FileContains `
+    -Name "p4 active control-link component compiles only the local adapter" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "control_link_local.c" "flx4_led_snapshot.c"')
+
+Assert-FileDoesNotContain `
+    -Name "p4 active control-link component excludes legacy UART and bulk transport" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -LiteralPatterns @("control_link_uart.c", "ctrl_bulk.c", "cp_xfer.c", "control_link_rx_stats.c")
+
+Assert-FileDoesNotContain `
+    -Name "p4 active application has no monitor PCM component dependency" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/CMakeLists.txt") `
+    -LiteralPatterns @("monitor_pcm_link")
+
+Assert-FileContains `
+    -Name "OTA release packager emits only the P4 target" `
+    -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
+    -LiteralPatterns @('-RelativeProjectDir "firmware/main-deck-p4"', '"--target", "p4"', 'target = "p4"')
+
+Assert-FileDoesNotContain `
+    -Name "OTA release packager excludes the retired S3 target" `
+    -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
+    -LiteralPatterns @("firmware/control-board-s3", "control-board-s3", '"--target", "s3"')
 
 Assert-FileContains `
     -Name "p4 status API exposes bounded UAC ring health" `
@@ -1107,30 +1071,6 @@ Assert-FileContains `
     -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strcmp(expected_release, s_status.available_release)")
-
-Assert-FileContains `
-    -Name "controller profile partial init rolls back every runtime resource" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
-    -LiteralPatterns @(
-        "static void cpm_runtime_cleanup(void)",
-        "vTaskDelete(s_descriptor_task_handle)",
-        "vTaskDelete(s_sender_task)",
-        "vQueueDelete(s_descriptor_q)",
-        "vQueueDelete(s_send_q)",
-        "vSemaphoreDelete(s_reply_sem)",
-        "vSemaphoreDelete(s_manager_mutex)"
-    )
-
-Assert-FileContains `
-    -Name "monitor PCM partial init rolls back tasks and I2S channel" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link_i2s.c") `
-    -LiteralPatterns @(
-        "static void monitor_pcm_link_transport_cleanup(i2s_chan_handle_t tx_chan)",
-        "vTaskDelete(s_transport_task)",
-        "i2s_channel_disable(tx_chan)",
-        "i2s_del_channel(tx_chan)",
-        "&s_transport_task"
-    )
 
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
@@ -1495,18 +1435,6 @@ $tests = @(
         )
     },
     @{
-        Name = "control_link_rx_stats"
-        Dir = "tests/control_link_rx_stats"
-        Target = "test_control_link_rx_stats.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-o", "test_control_link_rx_stats.exe",
-            "test_control_link_rx_stats.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c"
-        )
-    },
-    @{
         Name = "service_log"
         Dir = "tests/service_log"
         Target = "test_service_log.exe"
@@ -1548,9 +1476,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
@@ -1583,7 +1509,6 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
             "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c",
-            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c",
             "-lm"
         )
     },
@@ -1889,20 +1814,6 @@ $tests = @(
             "-o", "test_library_load_trace.exe",
             "test_library_load_trace.c",
             "../../firmware/main-deck-p4/components/library/library_load_trace.c"
-        )
-    },
-    @{
-        Name = "monitor_pcm_link"
-        Dir = "tests/monitor_pcm_link"
-        Target = "test_monitor_pcm_link.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../control_link_protocol/stubs",
-            "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
-            "-o", "test_monitor_pcm_link.exe",
-            "test_monitor_pcm_link.c",
-            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c"
         )
     },
     @{
@@ -2405,47 +2316,6 @@ $tests = @(
         )
     },
     @{
-        # First execution coverage for control_link_uart.c. This component
-        # decides what reaches deck_core - which events may be coalesced when
-        # the queue is full and which must never be lost - and until now every
-        # one of those rules was guarded only by grepping the source.
-        Name = "control_link_uart"
-        MinTestsRun = 69
-        Dir = "tests/control_link_uart"
-        Target = "test_control_link_uart.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-DCONTROL_LINK_HOST_TEST",
-            "-Istubs",
-            "-I../support/rtos",
-            "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../../firmware/common/control_state_reconciler/include",
-            "-o", "test_control_link_uart.exe",
-            "test_control_link_uart.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_uart.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c",
-            "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
-            "../support/rtos/fake_rtos.c"
-        )
-    },
-    @{
-        Name = "control_link_protocol"
-        Dir = "tests/control_link_protocol"
-        Target = "test_control_link_protocol.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
-            "-Istubs",
-            "-I../support/stubs",
-            "-I../../firmware/control-board-s3/components/control_link/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-o", "test_control_link_protocol.exe",
-            "test_control_link_protocol.c",
-            "s3_constants.c",
-            "p4_constants.c"
-        )
-    },
-    @{
         Name = "controller_profile_manager"
         Dir = "tests/controller_profile_manager"
         Target = "test_controller_profile_manager.exe"
@@ -2550,17 +2420,6 @@ $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
 if (-not $powerShell) {
     $powerShell = Get-Command powershell -ErrorAction Stop
 }
-# The call-graph audit greps the tree with ripgrep. Without `rg` it cannot run at
-# all, and hard-failing there would also skip every step below it. Skip loudly
-# instead, the same way a missing python skips the signing tests.
-if (Get-Command rg -ErrorAction SilentlyContinue) {
-    Invoke-Step -Name "run R5 dead-code call-graph audit" `
-        -WorkingDirectory $RepoRoot `
-        -Executable $powerShell.Source `
-        -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
-} else {
-    Write-Warning "ripgrep (rg) not found; SKIPPING the R5 dead-code call-graph audit"
-}
 Invoke-Step -Name "run OTA release helper tests" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
@@ -2620,8 +2479,8 @@ Assert-FileContains `
     -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
 
 Assert-FileContains `
-    -Name "p4 experimental profile suppresses brownout-prone ANLZ cache writes" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.p4_local_controller") `
+    -Name "p4 defaults suppress brownout-prone ANLZ cache writes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
     -LiteralPatterns @("# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set")
 
 Invoke-ApiContract
@@ -2636,7 +2495,6 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "deck_core";                  Wrapper = "deck_core_live_led.c" },
-    @{ Board = "control-board-s3"; Component = "s3_debug_ap";               Wrapper = "s3_debug_ap_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -2644,8 +2502,7 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "rekordbox_anlz_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
-    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" },
-    @{ Board = "control-board-s3"; Component = "flx4_midi_host";             Wrapper = "flx4_midi_host_fixed.c" }
+    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" }
 )) {
     $wrapperPath = Join-Path $RepoRoot ("firmware/{0}/components/{1}/{2}" -f $retired.Board, $retired.Component, $retired.Wrapper)
     Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
@@ -2732,28 +2589,6 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "deck_core.c"')
 
-Assert-FileContains `
-    -Name "s3 debug AP serves one bounded /events response and latches start failure" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -LiteralPatterns @("X-Log-Seq", "s_ap_start_failed_latched", "debug AP is latched in ERROR; request OFF before retry")
-
-# Idiom (a bounded for-loop and a keepalive literal). s3_debug_ap.c's
-# production path is excluded from the PC build, so nothing executes it.
-Assert-FileDoesNotContain `
-    -Name "s3 debug AP /events does not hold the httpd task in a polling loop" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -LiteralPatterns @(": keepalive", "for (int i = 0; i < 600; i++)")
-
-Assert-FileContains `
-    -Name "s3 debug AP builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/CMakeLists.txt") `
-    -LiteralPatterns @('SRCS "s3_debug_ap.c"')
-
-Assert-FileContains `
-    -Name "s3 FLX4 MIDI host builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/CMakeLists.txt") `
-    -LiteralPatterns @('SRCS "flx4_midi_host.c"')
-
 # bsp_jc4880.h pulls in esp_lcd/esp_codec_dev, which the host toolchain does not
 # build, so this stays a text check rather than a compile contract.
 Assert-FileContains `
@@ -2784,7 +2619,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 firmware status strings are escaped before JSON formatting" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
-    -LiteralPatterns @("web_collect_p4_ota_status", "web_collect_s3_firmware_report", "web_firmware_json_escape_in_place")
+    -LiteralPatterns @("web_collect_p4_ota_status", "web_firmware_json_escape_in_place")
 
 Assert-FileContains `
     -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `

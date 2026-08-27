@@ -1,5 +1,11 @@
 # Startup Checklist
 
+> **Active branch scope (2026-08-27):** `feat/p4-dual-usb-host` is P4-only.
+> Do not power, flash, connect or wait for an S3 during branch validation. Use
+> USB0 for Rekordbox storage and USB1 for the FLX4. Historical checked S3 rows
+> below document the last known-good dual-processor baseline only. The protected
+> 5 V/VBUS topology and all open P4 dual-USB acceptance rows still apply.
+
 Status: reconciled 2026-08-22. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. RC2
 application OTA succeeded on both boards, and both have since received full

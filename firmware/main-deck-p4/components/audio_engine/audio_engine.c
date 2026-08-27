@@ -46,7 +46,6 @@
 #include "audio_scratch.h"
 #include "audio_resampler.h"
 #include "audio_smart_cfx.h"
-#include "monitor_pcm_link.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
 #include "controller_usb_host.h"
 #endif
@@ -3249,13 +3248,6 @@ static esp_err_t audio_output_service_open_codec(uint32_t sample_rate)
     s_output_codec_open = true;
     s_output_sample_rate = sample_rate;
     audio_output_apply_fx_sample_rate(sample_rate);
-    (void)monitor_pcm_link_set_format(sample_rate, 2u, 16u);
-#if CONFIG_MONITOR_PCM_LINK_ENABLED && !CONFIG_MONITOR_PCM_LINK_BENCH_TONE
-    /* Product path: start publishing real hp_out to the S3 monitor link now
-       that the output rate is known. The bench-tone build enables the link
-       from its own generator task instead. */
-    monitor_pcm_link_set_enabled(true);
-#endif
     ESP_LOGI(TAG, "shared codec open @ %u Hz", (unsigned)sample_rate);
     AE_UNLOCK();
     return ESP_OK;
@@ -3658,13 +3650,10 @@ static void ae_output_task(void *arg)
         }
         ae_wdt_trace(AUDIO_WDT_PHASE_MONITOR, 0u);
 #if !defined(AUDIO_ENGINE_PC_TEST)
-        const esp_err_t direct_usb_rc = controller_usb_host_write_audio(
+        (void)controller_usb_host_write_audio(
             master_out, hp_out, AE_OUT_FRAMES, s_output_sample_rate);
-        if (direct_usb_rc != ESP_OK) {
-            (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
-        }
 #else
-        (void)monitor_pcm_link_write_nonblocking(hp_out, AE_OUT_FRAMES);
+        (void)hp_out;
 #endif
         {
             int64_t now = esp_timer_get_time();
@@ -3940,12 +3929,6 @@ esp_err_t audio_engine_init(void)
     limiter_stats_reset();
     atomic_store_bool(&s_smart_cfx_enabled, false);
     atomic_store_bool(&s_smart_fader_enabled, false);
-    esp_err_t monitor_rc = monitor_pcm_link_init();
-    if (monitor_rc != ESP_OK) {
-        ESP_LOGE(TAG, "monitor_pcm_link_init failed: %d", (int)monitor_rc);
-        return monitor_rc;
-    }
-
 #if AE_FW
     /* Firmware: the ES8311 codec was created by bsp_audio_init(); grab the handle.
      * The I2S clock is configured per-track in audio_engine_load via codec_open. */
@@ -5901,8 +5884,6 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         0u;
 #endif
     limiter_stats_snapshot(&out_snapshot->limiter);
-    monitor_pcm_link_stats_t monitor_stats = { 0 };
-    monitor_pcm_link_get_stats(&monitor_stats);
 #if AE_FW
     controller_usb_host_audio_stats_t direct_stats = { 0 };
     controller_usb_host_get_audio_stats(&direct_stats);
@@ -5923,16 +5904,8 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
             (uint32_t)direct_stats.overrun_frames;
         out_snapshot->usb_headphone_underflow_frames =
             (uint32_t)direct_stats.underrun_frames;
-    } else
-#endif
-    {
-        out_snapshot->usb_headphone_submitted_blocks =
-            monitor_stats.submitted_blocks;
-        out_snapshot->usb_headphone_dropped_blocks =
-            monitor_stats.dropped_blocks;
-        out_snapshot->usb_headphone_submitted_frames =
-            monitor_stats.submitted_frames;
     }
+#endif
 #if AE_FW
     out_snapshot->output_codec_open = s_output_codec_open;
     out_snapshot->output_sample_rate = s_output_sample_rate;

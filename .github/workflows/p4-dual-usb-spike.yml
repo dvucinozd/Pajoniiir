@@ -8,7 +8,7 @@ on:
       - "firmware/main-deck-p4/main/**"
       - "firmware/main-deck-p4/CMakeLists.txt"
       - "firmware/main-deck-p4/dependencies.lock"
-      - "firmware/main-deck-p4/sdkconfig.p4_local_controller"
+      - "firmware/main-deck-p4/sdkconfig.defaults"
       - "firmware/main-deck-p4/components/usb_storage/**"
       - "firmware/main-deck-p4/components/usb_host_manager/**"
       - "firmware/main-deck-p4/components/controller_usb_host/**"
@@ -86,27 +86,6 @@ jobs:
           test "$count" -eq 1
           echo "Reusable scope has one usb_host_install() owner."
 
-      - name: Verify P4 portable sources match S3 references
-        run: |
-          cmp \
-            firmware/control-board-s3/components/flx4_midi_host/flx4_map.c \
-            firmware/main-deck-p4/components/controller_runtime/flx4_map.c
-          cmp \
-            firmware/control-board-s3/components/controller_profile/controller_profile.c \
-            firmware/main-deck-p4/components/controller_profile/controller_profile.c
-          cmp \
-            firmware/control-board-s3/components/controller_profile/include/controller_profile.h \
-            firmware/main-deck-p4/components/controller_profile/include/controller_profile.h
-          cmp \
-            firmware/control-board-s3/components/controller_profile_runtime/controller_profile_runtime.c \
-            firmware/main-deck-p4/components/controller_profile_runtime/controller_profile_runtime.c
-          cmp \
-            firmware/control-board-s3/components/control_link/flx4_led_midi.c \
-            firmware/main-deck-p4/components/controller_led_runtime/flx4_led_midi.c
-          cmp \
-            firmware/control-board-s3/components/control_link/include/flx4_led_midi.h \
-            firmware/main-deck-p4/components/controller_led_runtime/include/flx4_led_midi.h
-
       - name: Build isolated spike and reusable integration harness
         run: |
           set -euo pipefail
@@ -136,7 +115,7 @@ jobs:
             firmware/p4-dual-usb-spike/build \
             firmware/p4-only-software-harness/build
 
-      - name: Build production P4 with local-controller feature overlay
+      - name: Build production P4-only firmware
         run: |
           set -euo pipefail
           docker run --rm \
@@ -146,27 +125,23 @@ jobs:
             -w /project/firmware/main-deck-p4 \
             "$IDF_IMAGE" bash -lc '
               set -e
-              rm -rf build-p4-local sdkconfig.p4-local sdkconfig.p4-local.old managed_components
-              common=(-B build-p4-local
-                      -D SDKCONFIG=sdkconfig.p4-local
-                      -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.p4_local_controller")
+              rm -rf build-p4-only sdkconfig.p4-only sdkconfig.p4-only.old managed_components
+              common=(-B build-p4-only -D SDKCONFIG=sdkconfig.p4-only)
               idf.py "${common[@]}" set-target esp32p4
               idf.py "${common[@]}" reconfigure
-              grep -q "^#define CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER 1$" \
-                build-p4-local/config/sdkconfig.h
               grep -q "^#define CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE 512$" \
-                build-p4-local/config/sdkconfig.h
+                build-p4-only/config/sdkconfig.h
               idf.py "${common[@]}" build
-              test -f build-p4-local/esp-idf/usb_storage/CMakeFiles/__idf_usb_storage.dir/usb_storage_shared.c.obj
-              test -f build-p4-local/esp-idf/controller_usb_host/CMakeFiles/__idf_controller_usb_host.dir/controller_usb_host_routed.c.obj
-              elf=build-p4-local/main-deck-p4.elf
-              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_control_link_init$"
-              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_storage_init$"
+              test -f build-p4-only/esp-idf/usb_storage/CMakeFiles/__idf_usb_storage.dir/usb_storage_shared.c.obj
+              test -f build-p4-only/esp-idf/controller_usb_host/CMakeFiles/__idf_controller_usb_host.dir/controller_usb_host_routed.c.obj
+              elf=build-p4-only/main-deck-p4.elf
+              riscv32-esp-elf-nm "$elf" | grep -q " T p4_local_controller_start$"
+              riscv32-esp-elf-nm "$elf" | grep -q " T control_link_inject_semantic$"
               riscv32-esp-elf-nm "$elf" | grep -q " T controller_usb_host_output_gate_set_connected$"
-            ' 2>&1 | tee p4-local-controller-build.log
+            ' 2>&1 | tee p4-only-build.log
           sudo chown -R "$(id -u):$(id -g)" \
-            firmware/main-deck-p4/build-p4-local \
-            firmware/main-deck-p4/sdkconfig.p4-local*
+            firmware/main-deck-p4/build-p4-only \
+            firmware/main-deck-p4/sdkconfig.p4-only*
           git diff --exit-code -- firmware/main-deck-p4/dependencies.lock
 
       - name: Verify committed dependency locks and sources
@@ -263,7 +238,7 @@ jobs:
           path: |
             p4-dual-usb-spike-build.log
             p4-only-software-harness-build.log
-            p4-local-controller-build.log
+            p4-only-build.log
             firmware/p4-dual-usb-spike/dependencies.lock
             firmware/p4-only-software-harness/dependencies.lock
             firmware/p4-dual-usb-spike/build/*.bin
@@ -272,6 +247,6 @@ jobs:
             firmware/p4-only-software-harness/build/*.bin
             firmware/p4-only-software-harness/build/*.elf
             firmware/p4-only-software-harness/build/*.map
-            firmware/main-deck-p4/build-p4-local/*.bin
-            firmware/main-deck-p4/build-p4-local/*.elf
-            firmware/main-deck-p4/build-p4-local/*.map
+            firmware/main-deck-p4/build-p4-only/*.bin
+            firmware/main-deck-p4/build-p4-only/*.elf
+            firmware/main-deck-p4/build-p4-only/*.map

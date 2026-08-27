@@ -13,12 +13,6 @@ static int s_toggle_library_view_calls;
 static bool s_ui_library_active;
 static bool s_ui_overview_active;
 static int s_overview_zoom_delta;
-static uint32_t s_debug_token_seen;
-
-static void debug_token_cb(uint32_t token)
-{
-    s_debug_token_seen = token;
-}
 int audio_engine_stub_channel_volume[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_pregain[DECK_CORE_DECK_COUNT];
 int audio_engine_stub_master_volume;
@@ -90,42 +84,6 @@ void control_link_stub_reset_leds(void);
 int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
 static anlz_metadata_t beat_jump_meta(void);
-
-static void test_s3_debug_token_halves_publish_only_a_complete_code(void)
-{
-    deck_core_test_reset();
-    s_debug_token_seen = UINT32_MAX;
-    deck_core_set_s3_debug_ap_token_cb(debug_token_cb);
-
-    ctrl_event_t starting = {
-        .type = CTRL_EV_STATE,
-        .id = CTRL_ID_S3_DEBUG_AP,
-        .value = CTRL_S3_DEBUG_AP_STARTING,
-    };
-    ctrl_event_t high = {
-        .type = CTRL_EV_STATE,
-        .id = CTRL_ID_S3_DEBUG_TOKEN_HI,
-        .value = 123,
-    };
-    ctrl_event_t low = {
-        .type = CTRL_EV_STATE,
-        .id = CTRL_ID_S3_DEBUG_TOKEN_LO,
-        .value = 456,
-    };
-    deck_core_test_apply_event(&starting);
-    assert(s_debug_token_seen == 0u);
-    deck_core_test_apply_event(&low);
-    assert(s_debug_token_seen == 0u);
-    deck_core_test_apply_event(&high);
-    assert(s_debug_token_seen == 0u);
-    deck_core_test_apply_event(&low);
-    assert(s_debug_token_seen == 123456u);
-
-    starting.value = CTRL_S3_DEBUG_AP_OFF;
-    deck_core_test_apply_event(&starting);
-    assert(s_debug_token_seen == 0u);
-    deck_core_set_s3_debug_ap_token_cb(NULL);
-}
 
 static void publish_loaded_track(uint8_t deck,
                                  uint32_t track_key,
@@ -2858,7 +2816,6 @@ static void test_smoke_log_policy_logs_deferred_buttons_only_on_press(void)
 
 int main(void)
 {
-    test_s3_debug_token_halves_publish_only_a_complete_code();
     test_decks_track_transport_independently();
     test_deck2_snapshot_follows_audio_engine_position();
     test_failed_deck_play_does_not_mark_deck_playing();

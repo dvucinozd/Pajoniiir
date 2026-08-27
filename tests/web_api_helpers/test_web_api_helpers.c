@@ -163,22 +163,6 @@ static void test_profile_upload_policy_is_bounded_and_explicit(void)
     assert(!web_api_profile_overwrite_parse("1", NULL));
 }
 
-static void test_control_link_json_formats_integrity_counters(void)
-{
-    char out[320];
-
-    int n = web_api_format_control_link_json(out, sizeof(out), true, 125u,
-                                             900u, 2u, 3u, 12u, 4u,
-                                             77u, true);
-    assert(n > 0);
-    assert(strcmp(out,
-        "\"control_link\":{\"connected\":true,\"heartbeat_age_ms\":125,"
-        "\"rx_frames\":900,\"sequence_gaps\":2,\"crc_errors\":7,"
-        "\"event_checksum_errors\":3,"
-        "\"bulk_frames\":12,\"bulk_crc_errors\":4,\"last_sequence\":77,"
-        "\"sequence_valid\":true}") == 0);
-}
-
 static void test_service_log_json_formats_writer_health(void)
 {
     char out[256];
@@ -237,7 +221,6 @@ int main(void)
     test_alloc_printf_handles_payload_larger_than_legacy_status_buffer();
     test_clamp_seek_ms_bounds_to_loaded_track_duration();
     test_controller_json_formats_connected_and_absent();
-    test_control_link_json_formats_integrity_counters();
     test_service_log_json_formats_writer_health();
     test_profile_upload_policy_is_bounded_and_explicit();
     test_api_host_allow_list_tracks_ap_ip_and_mdns_name();

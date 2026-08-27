@@ -3,6 +3,11 @@
 Status: current, reviewed 2026-08-22. Mitigated risks remain listed because a
 future USB/audio/UI change can reintroduce them.
 
+On `feat/p4-dual-usb-host`, S3-specific rows are historical reference risks,
+not active product dependencies. The active release blocker is the protected
+P4 dual-root 5 V/VBUS path, followed by direct USB1 FLX4 and combined-load
+hardware acceptance.
+
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | S3 USB host power or enumeration regresses | Blocks controller input | Enumeration and a 30-minute stability run passed on 2026-06-14; preserve raw logger diagnostics and recheck OTG port, powered hub orientation, 5 V VBUS, and shared ground after USB host changes |

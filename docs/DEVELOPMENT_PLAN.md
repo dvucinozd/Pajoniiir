@@ -1,6 +1,13 @@
 # Development Plan
 
-Status: current phase ledger, reconciled 2026-08-02.
+Status: current phase ledger, P4-only branch reconciled 2026-08-27.
+
+> On `feat/p4-dual-usb-host`, P4 directly owns USB0 storage and USB1 controller
+> MIDI/audio. The S3 UART/heartbeat/debug AP, profile-transfer, monitor PCM and
+> firmware/release paths have been removed from the active build. Older phase
+> entries below remain dated evidence for the dual-processor `master` baseline;
+> they are not instructions for this branch. Physical VBUS qualification,
+> direct-controller acceptance and the combined soak remain open.
 
 ## Executive status
 
@@ -16,7 +23,7 @@ Status: current phase ledger, reconciled 2026-08-02.
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted; armed Loop In dynamic overlay burning implemented in `ui_overview.c` for smooth 60 FPS scrolling highlight without strip invalidation. Verified on P4 hardware 2026-08-19 |
 | Controller profiles | Firmware path implemented; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; `generic_midi_ci` and a specification-derived Hercules Inpulse 500 profile are compiler/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; non-FLX4 hardware and remote update acceptance pending |
-| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash, and S3 received the exact clean RC2 bootloader/application pair over COM10 |
+| P4 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; P4 RC2 application OTA and full IDF 6.0.2 boot-chain flash passed. S3 OTA evidence is retained as historical baseline only |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |

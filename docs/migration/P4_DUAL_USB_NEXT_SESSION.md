@@ -12,7 +12,7 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Final firmware-changing checkpoint before the hardware pause: `850ab3f`
+- Current firmware checkpoint: `6e41d7f`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
@@ -21,13 +21,17 @@ to resume without reconstructing today's terminal history.
 - Last diagnostic build directory: `firmware/main-deck-p4/build_diag_audio_wdt_local`
 - Generated build directories and signed packages remain ignored.
 
-The 2026-08-27 source checkpoint adds the complete direct FLX4 UAC path and
-the selected reusable M3 behavior slices. `build_p4_local_uac` passes under
-ESP-IDF 6.0.2; `main-deck-p4.bin` is 2,490,368 bytes, leaves 1,179,648 bytes
-in the application partition budget, and has SHA-256
-`4111cc92cb6ec1bb659b17e22f1ae88e9e2c9767ba206fdfd4fa18615bd93d9c`.
-The complete P4 host suite also passes. This artifact has not been installed or
-hardware-accepted yet.
+The 2026-08-27 source checkpoint adds the complete direct FLX4 UAC path, the
+selected reusable M3 behavior slices and final active-S3 retirement. A clean
+P4-only `build_p4_only` passes under ESP-IDF 6.0.2 and reports
+`RC2-104-g6e41d7f-dirty`; `main-deck-p4.bin` is 2,445,904 bytes, leaves
+1,748,400 bytes in its 4 MiB OTA slot and has SHA-256
+`152ca38af87cba70d5b54369994a07ddb789c4a40f1364236c6e47b22634b212`.
+It also leaves 1,224,112 bytes against the stricter P4-only migration budget.
+The complete P4 host suite, visually reviewed UI simulator gate, ELF legacy-
+symbol audit and signed P4-only package verification pass. Exact evidence is in
+[`../validation/P4_ONLY_RC2_104_BUILD_20260827.md`](../validation/P4_ONLY_RC2_104_BUILD_20260827.md).
+These artifacts have not been installed, uploaded or hardware-accepted yet.
 
 The P4 currently reports `RC2-58-g008cfa4-dirty` from `ota_1`. It is the normal
 monitor-enabled image with retained audio/library tracing, built from the
@@ -135,14 +139,14 @@ git status -sb
 git log -3 --oneline --decorate
 ```
 
-Build the current feature source with the P4-local overlay and flash the exact
+Build the current P4-only product defaults and flash the exact
 verified build directory with:
 
 ```powershell
 Set-Location "$repoRoot\firmware\main-deck-p4"
-idf.py -B build_p4_local_uac -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.p4_local_controller" build
-idf.py -B build_p4_local_uac -p COM15 flash
-idf.py -B build_p4_local_uac -p COM15 monitor
+idf.py -B build_p4_only -D SDKCONFIG=build_p4_only/sdkconfig build
+idf.py -B build_p4_only -p COM15 flash
+idf.py -B build_p4_only -p COM15 monitor
 ```
 
 A new flash is not required merely to continue testing the image that is
@@ -161,7 +165,8 @@ Get-CimInstance Win32_Process |
 
 ## First test after stable power is available
 
-The installed image already has the normal MAIN plus monitor/cue path and the
+The installed image predates the final S3 retirement. The current source has
+PCM5102A MAIN plus direct FLX4 UAC cue and
 latest retained tracing. Rebuild and install only if the source changes before
 the next session, then:
 
@@ -181,7 +186,7 @@ the next session, then:
    - `p4_local_ctrl` reports `P4-local controller active ... port=1`.
 6. Exercise Browse/Load, PLAY/CUE on both decks, both jogs, pitch, channel
    faders, crossfader, EQ/filter, PFL, pads and Beat FX. Confirm that each action
-   changes the authoritative P4 UI/audio state once, with no duplicate S3 event.
+   changes the authoritative P4 UI/audio state once.
 7. Confirm transport, PFL, loop, pad-mode, Hot Cue, Beat FX and Smart-control
    LEDs through the direct P4 path, including shifted pad mirrors.
 8. Confirm direct UAC MAIN channels 1/2 and headphone channels 3/4, headphone
@@ -189,7 +194,7 @@ the next session, then:
    and gapless Censor. Record ring pressure and data-loss counters.
 9. While the storage/library remains usable, disconnect the FLX4. Expect
    `USB-MIDI controller disconnected` followed by
-   `P4-local controller disconnected; S3 fallback resumed` and no P4 reset.
+   `P4-local controller disconnected` and no P4 reset or storage loss.
 10. Reconnect the FLX4 and confirm direct-root identity, control recovery and the
    authoritative LED snapshot.
 11. Save the complete log and record every operator-visible or audible result;
@@ -228,5 +233,6 @@ end-to-end product behavior.
 Direct USB1 enumeration itself is now confirmed, but it remains part of every
 repeat matrix because the power delivery is not accepted.
 
-Do not merge this branch into `master` or retire the S3 fallback until the
-applicable hardware matrix is complete and its logs are archived.
+The S3 fallback is already retired in source by product decision. Do not merge
+this branch into `master` until the applicable P4-only hardware matrix is
+complete and its logs are archived.

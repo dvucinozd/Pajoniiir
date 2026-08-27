@@ -58,10 +58,10 @@ class EvidenceToolsTest(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(relative, encoding="utf-8")
-            feature = root / manifest.FEATURE_PATH
-            feature.parent.mkdir(parents=True, exist_ok=True)
-            feature.write_text(
-                "CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y\n",
+            product_config = root / manifest.PRODUCT_CONFIG_PATH
+            product_config.parent.mkdir(parents=True, exist_ok=True)
+            product_config.write_text(
+                manifest.PRODUCT_CONFIG_MARKER + "\n",
                 encoding="utf-8",
             )
             first = manifest.build_manifest(root, "a" * 40, None)

@@ -15,7 +15,8 @@ LOCK_PATHS = (
     "firmware/p4-dual-usb-spike/dependencies.lock",
     "firmware/p4-only-software-harness/dependencies.lock",
 )
-FEATURE_PATH = "firmware/main-deck-p4/sdkconfig.p4_local_controller"
+PRODUCT_CONFIG_PATH = "firmware/main-deck-p4/sdkconfig.defaults"
+PRODUCT_CONFIG_MARKER = "# ── P4-only direct controller/audio product"
 
 
 def file_record(root: Path, relative: str) -> dict[str, object]:
@@ -32,15 +33,15 @@ def build_manifest(root: Path, commit: str, artifact: Path | None) -> dict[str, 
     if not COMMIT_RE.fullmatch(commit):
         raise ValueError("commit must be a lowercase 40-character SHA-1")
     records = [file_record(root, relative) for relative in LOCK_PATHS]
-    feature = (root / FEATURE_PATH).read_text(encoding="utf-8")
-    if "CONFIG_PAJONIIIR_P4_LOCAL_CONTROLLER=y" not in feature.splitlines():
-        raise ValueError("P4-local feature overlay is missing or disabled")
+    product_config = (root / PRODUCT_CONFIG_PATH).read_text(encoding="utf-8")
+    if PRODUCT_CONFIG_MARKER not in product_config:
+        raise ValueError("P4-only product defaults are missing")
 
     result: dict[str, object] = {
         "schema": "pajoniiir.p4-dual-usb-acceptance.v1",
         "software_commit": commit,
         "hardware_accepted": False,
-        "feature_overlay": FEATURE_PATH,
+        "product_config": PRODUCT_CONFIG_PATH,
         "dependency_locks": records,
     }
     if artifact:

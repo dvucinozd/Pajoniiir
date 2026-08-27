@@ -1,5 +1,12 @@
 # Documentation Status
 
+> **Feature-branch status (2026-08-27):** `feat/p4-dual-usb-host` now has one
+> active firmware/release target: ESP32-P4. P4 directly hosts USB0 storage and
+> USB1 FLX4 MIDI/audio. S3 sources and dated validation remain for reference,
+> but S3 is absent from active CMake, CI, UI/web status and OTA packaging. This
+> software transition does not close the VBUS/brownout or physical dual-USB
+> acceptance gates.
+
 Last full status reconciliation: **2026-08-22**. The `migration/esp-idf-6.0.2`
 branch has been **merged into `master`** and deleted; there is no separate
 migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
@@ -34,7 +41,7 @@ real WAV/FLAC, sustained USB/cache, recovery and fault-injection rows remain;
 the 2026-08-22 P4 run specifically required a physical USB reinsert after the
 post-OTA enumerator exhausted its fast recovery cycles.
 
-Feature-branch addendum (2026-08-09): the experimental
+Historical feature-branch addendum (2026-08-09): the experimental
 `feat/p4-dual-usb-host` image at `fc03034` was wired-flashed to the P4, booted
 cleanly and loaded 191 Rekordbox tracks through the USB0 storage path. This is
 partial bring-up evidence only; direct USB1 FLX4 enumeration, P4-local
