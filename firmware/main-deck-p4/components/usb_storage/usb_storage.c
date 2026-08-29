@@ -13,6 +13,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -56,6 +57,16 @@ static usb_media_mount_t       *s_mount;
 static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static usb_storage_session_t s_session;
 static bool s_announced_mounted;
+static atomic_uint_fast32_t s_connect_events;
+static atomic_uint_fast32_t s_connect_accepted;
+static atomic_uint_fast32_t s_disconnect_events;
+static atomic_uint_fast32_t s_disconnect_accepted;
+static atomic_uint_fast32_t s_mount_attempts;
+static atomic_uint_fast32_t s_mount_successes;
+static atomic_int s_last_mount_result;
+static atomic_uint_fast32_t s_releases;
+static atomic_int s_last_unmount_result;
+static atomic_int s_last_uninstall_result;
 
 static usb_storage_session_t desired_snapshot(void)
 {
@@ -85,6 +96,7 @@ static void notify_storage_owner(void)
 
 static void publish_desired_connect(uint8_t dev_addr)
 {
+    atomic_fetch_add_explicit(&s_connect_events, 1u, memory_order_relaxed);
     usb_storage_connect_result_t result;
     portENTER_CRITICAL(&s_state_mux);
     result = usb_storage_session_on_connect(&s_session, dev_addr);
@@ -96,12 +108,16 @@ static void publish_desired_connect(uint8_t dev_addr)
         return;
     }
     if (result == USB_STORAGE_CONNECT_ACCEPTED) {
+        atomic_fetch_add_explicit(&s_connect_accepted, 1u,
+                                  memory_order_relaxed);
         notify_storage_owner();
     }
 }
 
 static void publish_desired_disconnect(msc_host_device_handle_t handle)
 {
+    atomic_fetch_add_explicit(&s_disconnect_events, 1u,
+                              memory_order_relaxed);
     usb_storage_disconnect_result_t result;
     portENTER_CRITICAL(&s_state_mux);
     result = usb_storage_session_on_disconnect(
@@ -115,6 +131,9 @@ static void publish_desired_disconnect(msc_host_device_handle_t handle)
     if (result == USB_STORAGE_DISCONNECT_ALREADY_INACTIVE) {
         return;
     }
+
+    atomic_fetch_add_explicit(&s_disconnect_accepted, 1u,
+                              memory_order_relaxed);
 
     /* Disconnect is level state, not a lossy edge. Block new reads immediately;
      * the owner task performs the safe unmount after gate holders drain. */
@@ -141,17 +160,15 @@ static void root_port_power_cycle(const char *why)
 
 static void release_device(void)
 {
+    /* Detach the sole-owner handles before entering either teardown routine.
+     * A DEV_GONE edge can be published while the MSC/VFS layers are being
+     * dismantled; no reconcile pass may observe and release the same handles
+     * twice. */
+    usb_media_mount_t *released_mount = s_mount;
     msc_host_device_handle_t released_handle = s_msc_dev;
-    media_io_gate_begin();
-    if (s_mount) {
-        usb_media_unmount(s_mount);
-        s_mount = NULL;
-    }
-    if (s_msc_dev) {
-        msc_host_uninstall_device(s_msc_dev);
-        s_msc_dev = NULL;
-    }
-    media_io_gate_end();
+    s_mount = NULL;
+    s_msc_dev = NULL;
+    atomic_fetch_add_explicit(&s_releases, 1u, memory_order_relaxed);
 
     if (released_handle) {
         portENTER_CRITICAL(&s_state_mux);
@@ -159,6 +176,25 @@ static void release_device(void)
             &s_session, (uintptr_t)released_handle);
         portEXIT_CRITICAL(&s_state_mux);
     }
+
+    media_io_gate_begin();
+    if (released_mount) {
+        esp_err_t rc = usb_media_unmount(released_mount);
+        atomic_store_explicit(&s_last_unmount_result, rc,
+                              memory_order_relaxed);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "usb_media_unmount: %s", esp_err_to_name(rc));
+        }
+    }
+    if (released_handle) {
+        esp_err_t rc = msc_host_uninstall_device(released_handle);
+        atomic_store_explicit(&s_last_uninstall_result, rc,
+                              memory_order_relaxed);
+        if (rc != ESP_OK) {
+            ESP_LOGW(TAG, "msc_host_uninstall_device: %s", esp_err_to_name(rc));
+        }
+    }
+    media_io_gate_end();
 }
 
 static void publish_unmounted(void)
@@ -210,6 +246,39 @@ bool usb_storage_is_mounted(void)
     mounted = s_session.mounted;
     portEXIT_CRITICAL(&s_state_mux);
     return mounted;
+}
+
+void usb_storage_get_diagnostics(usb_storage_diagnostics_t *out)
+{
+    if (!out) {
+        return;
+    }
+
+    usb_storage_session_t session = desired_snapshot();
+    *out = (usb_storage_diagnostics_t) {
+        .desired_connected = session.connected,
+        .mounted = session.mounted,
+        .connect_events = (uint32_t)atomic_load_explicit(
+            &s_connect_events, memory_order_relaxed),
+        .connect_accepted = (uint32_t)atomic_load_explicit(
+            &s_connect_accepted, memory_order_relaxed),
+        .disconnect_events = (uint32_t)atomic_load_explicit(
+            &s_disconnect_events, memory_order_relaxed),
+        .disconnect_accepted = (uint32_t)atomic_load_explicit(
+            &s_disconnect_accepted, memory_order_relaxed),
+        .mount_attempts = (uint32_t)atomic_load_explicit(
+            &s_mount_attempts, memory_order_relaxed),
+        .mount_successes = (uint32_t)atomic_load_explicit(
+            &s_mount_successes, memory_order_relaxed),
+        .last_mount_result = (esp_err_t)atomic_load_explicit(
+            &s_last_mount_result, memory_order_relaxed),
+        .releases = (uint32_t)atomic_load_explicit(
+            &s_releases, memory_order_relaxed),
+        .last_unmount_result = (esp_err_t)atomic_load_explicit(
+            &s_last_unmount_result, memory_order_relaxed),
+        .last_uninstall_result = (esp_err_t)atomic_load_explicit(
+            &s_last_uninstall_result, memory_order_relaxed),
+    };
 }
 
 /* MSC callback runs in the driver task. It never blocks on mount I/O and never
@@ -359,10 +428,13 @@ static void log_mount_layout(void)
 
 static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
 {
+    atomic_fetch_add_explicit(&s_mount_attempts, 1u, memory_order_relaxed);
     if (!desired_matches(epoch, dev_addr)) {
         return ESP_ERR_INVALID_STATE;
     }
     if (!USB_STORAGE_DEVICE_ROUTE_ALLOWED(dev_addr)) {
+        atomic_store_explicit(&s_last_mount_result, ESP_ERR_NOT_SUPPORTED,
+                              memory_order_relaxed);
         ESP_LOGW(TAG, "rejecting MSC addr=%u outside the USB0 direct root",
                  (unsigned)dev_addr);
         return ESP_ERR_NOT_SUPPORTED;
@@ -377,6 +449,8 @@ static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
              (unsigned)dev_addr, USB_STORAGE_MOUNT_POINT);
     esp_err_t rc = msc_host_install_device(dev_addr, &s_msc_dev);
     if (rc != ESP_OK) {
+        atomic_store_explicit(&s_last_mount_result, rc,
+                              memory_order_relaxed);
         ESP_LOGW(TAG, "msc_host_install_device: %s", esp_err_to_name(rc));
         s_msc_dev = NULL;
         return rc;
@@ -406,6 +480,8 @@ static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
     rc = usb_media_mount(s_msc_dev, USB_STORAGE_MOUNT_POINT,
                          &mount_cfg, &s_mount);
     if (rc != ESP_OK) {
+        atomic_store_explicit(&s_last_mount_result, rc,
+                              memory_order_relaxed);
         ESP_LOGW(TAG, "usb_media_mount: %s", esp_err_to_name(rc));
         ESP_LOGW(TAG,
                  "mount retry scheduled; supported media is FAT32/exFAT on superfloppy, MBR, or GPT");
@@ -422,9 +498,14 @@ static esp_err_t mount_desired_device(uint32_t epoch, uint8_t dev_addr)
     log_device_info("mounted");
 
     if (!commit_mounted(epoch, dev_addr)) {
+        atomic_store_explicit(&s_last_mount_result, ESP_ERR_INVALID_STATE,
+                              memory_order_relaxed);
         release_device();
         return ESP_ERR_INVALID_STATE;
     }
+    atomic_fetch_add_explicit(&s_mount_successes, 1u, memory_order_relaxed);
+    atomic_store_explicit(&s_last_mount_result, ESP_OK,
+                          memory_order_relaxed);
     return ESP_OK;
 }
 

@@ -26,6 +26,9 @@ size_t controller_audio_resampler_output_bound(uint32_t source_rate,
     if (source_rate == 0u || target_rate == 0u || input_frames == 0u) {
         return 0u;
     }
+    if (source_rate == target_rate) {
+        return input_frames;
+    }
     const uint64_t scaled = (uint64_t)input_frames * target_rate;
     const uint64_t bound =
         (scaled + (uint64_t)source_rate - 1u) / source_rate + 1u;
@@ -60,6 +63,31 @@ size_t controller_audio_resampler_process(controller_audio_resampler_t *resample
         resampler->source_rate, resampler->target_rate, input_frames);
     if (bound == 0u || output_capacity_frames < bound) {
         return 0u;
+    }
+
+    /* The FLX4 and most source material both run at 44.1 kHz. The generic
+     * rational path would otherwise perform four 64-bit interpolations and
+     * divisions for every frame even though the result is bit-identical to
+     * the input. Keep the state coherent so a later source-rate transition
+     * can reinitialise through the existing caller-owned policy. */
+    if (resampler->source_rate == resampler->target_rate) {
+        const size_t channels = (size_t)resampler->channels;
+        if (input_frames > SIZE_MAX / channels) {
+            return 0u;
+        }
+        const size_t samples = input_frames * channels;
+        if (samples > SIZE_MAX / sizeof(*output)) {
+            return 0u;
+        }
+        memcpy(output, input, samples * sizeof(*output));
+        memcpy(resampler->previous,
+               &input[(input_frames - 1u) * channels],
+               channels * sizeof(*input));
+        resampler->input_frames_seen += input_frames;
+        resampler->next_output_time =
+            resampler->input_frames_seen * resampler->source_rate;
+        resampler->has_previous = true;
+        return input_frames;
     }
 
     size_t produced = 0u;

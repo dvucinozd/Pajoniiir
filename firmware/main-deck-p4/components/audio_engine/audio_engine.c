@@ -2201,11 +2201,9 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 /* Per-deck decode scratch stays static and independent of the bounded compressed cache. */
 static int16_t s_decode_pcm[AUDIO_ENGINE_DECK_COUNT][MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
 
-#define AE_DIAG_OUTPUT_REPORT_BLOCKS 300u
 #define AE_DIAG_DECODE_REPORT_FRAMES 120u
 #define AE_DIAG_PRELOAD_REPORT_CHUNKS 64u
 
-static audio_diag_counter_t s_diag_output_blocks;
 static audio_diag_late_counter_t s_diag_output_late;
 
 /* Per-phase worst-case timing for one output block. Owned by the output task
@@ -2386,7 +2384,6 @@ static esp_err_t audio_output_service_stop(void);
 
 static void ae_diag_reset(void)
 {
-    audio_diag_counter_init(&s_diag_output_blocks, AE_DIAG_OUTPUT_REPORT_BLOCKS);
     audio_diag_late_counter_init(&s_diag_output_late, 1u);
     s_phase = (ae_output_phase_stats_t){ 0 };
     limiter_stats_reset();
@@ -2452,62 +2449,16 @@ static void ae_diag_record_preload_chunk(uint8_t deck,
 }
 
 static void ae_diag_record_output_block(uint32_t block_us,
-                                        uint32_t late_threshold_us,
-                                        uint32_t consumed0,
-                                        uint32_t consumed1,
-                                        bool active0,
-                                        bool active1,
-                                        const audio_mixer_limiter_stats_t *limiter_stats)
+                                        uint32_t late_threshold_us)
 {
-    audio_diag_report_t report;
-    if (audio_diag_record(&s_diag_output_blocks, block_us, &report)) {
-        ESP_LOGI(TAG,
-                 "diag output: last=%u us avg=%u us max=%u us samples=%u active=%u/%u consumed=%u/%u future=%u/%u history=%u/%u underrun=%u/%u edge=%u/%u limiter=%u +%u -%u peak=%d late=%u late_max=%u us heap=%u internal=%u psram=%u",
-                 (unsigned)report.last_us,
-                 (unsigned)report.avg_us,
-                 (unsigned)report.max_us,
-                 (unsigned)report.samples,
-                 active0 ? 1u : 0u,
-                 active1 ? 1u : 0u,
-                 (unsigned)consumed0,
-                 (unsigned)consumed1,
-                 (unsigned)deck_pcm_used(0u),
-                 (unsigned)deck_pcm_used(1u),
-                 (unsigned)(timeline_active(0u) ? audio_pcm_timeline_history_frames(&s_pcm_timelines[0]) : 0u),
-                 (unsigned)(timeline_active(1u) ? audio_pcm_timeline_history_frames(&s_pcm_timelines[1]) : 0u),
-                 (unsigned)s_pcm_underrun_count[0],
-                 (unsigned)s_pcm_underrun_count[1],
-                 (unsigned)s_scratch_engine[0].edge_hits,
-                 (unsigned)s_scratch_engine[1].edge_hits,
-                 limiter_stats ? (unsigned)limiter_stats->limited_samples : 0u,
-                 limiter_stats ? (unsigned)limiter_stats->positive_overloads : 0u,
-                 limiter_stats ? (unsigned)limiter_stats->negative_overloads : 0u,
-                 limiter_stats ? (int)limiter_stats->peak_input_abs : 0,
-                 (unsigned)s_diag_output_late.count,
-                 (unsigned)s_diag_output_late.max_us,
-                 (unsigned)esp_get_free_heap_size(),
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    }
-
     if (late_threshold_us > 0) {
         s_diag_output_late.threshold_us = late_threshold_us;
-    }
-    if (late_threshold_us > 0 && audio_diag_late_record(&s_diag_output_late, block_us)) {
-        ESP_LOGW(TAG,
-                 "diag output late: block=%u us threshold=%u us active=%u/%u pcm_future=%u/%u %u/%u history=%u/%u late_count=%u late_max=%u us",
-                 (unsigned)block_us,
-                 (unsigned)late_threshold_us,
-                 active0 ? 1u : 0u,
-                 active1 ? 1u : 0u,
-                 (unsigned)deck_pcm_used(0u),
-                 (unsigned)(timeline_active(0u) ? AE_TIMELINE_CAPACITY_FRAMES : AUDIO_PCM_RING_FRAMES),
-                 (unsigned)deck_pcm_used(1u),
-                 (unsigned)(timeline_active(1u) ? AE_TIMELINE_CAPACITY_FRAMES : AUDIO_PCM_RING_FRAMES),
-                 (unsigned)(timeline_active(0u) ? audio_pcm_timeline_history_frames(&s_pcm_timelines[0]) : 0u),
-                 (unsigned)(timeline_active(1u) ? audio_pcm_timeline_history_frames(&s_pcm_timelines[1]) : 0u),
-                 (unsigned)s_diag_output_late.count,
-                 (unsigned)s_diag_output_late.max_us);
+        /* Never format or print from ae_output. At 115200 baud one detailed
+         * warning exceeds an audio block period and turns a single deadline
+         * miss into a self-sustaining late-block/watchdog cascade. The
+         * low-priority health monitor reads this counter and emits the
+         * rate-limited service-log summary. */
+        (void)audio_diag_late_record(&s_diag_output_late, block_us);
     }
 }
 
@@ -3707,15 +3658,8 @@ static void ae_output_task(void *arg)
 #endif
         uint32_t block_period_us = audio_output_block_period_us(s_output_sample_rate);
         uint32_t late_warning_us = audio_output_late_warning_threshold_us(s_output_sample_rate);
-        audio_mixer_limiter_stats_t cumulative_limiter_stats = { 0 };
-        limiter_stats_snapshot(&cumulative_limiter_stats);
         ae_diag_record_output_block(block_elapsed_us > 0 ? (uint32_t)block_elapsed_us : 0u,
-                                    late_warning_us > 0u ? late_warning_us : block_period_us,
-                                    consumed[deck0_index],
-                                    consumed[deck1_index],
-                                    deck0.active,
-                                    deck1.active,
-                                    &cumulative_limiter_stats);
+                                    late_warning_us > 0u ? late_warning_us : block_period_us);
         /* No software pacing delay: the i2s_channel_write above blocks on DMA and
          * is what actually paces this loop. The retired
          * audio_output_remaining_delay_ms() helper always returned zero, and the

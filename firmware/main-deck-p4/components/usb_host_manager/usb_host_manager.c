@@ -8,6 +8,11 @@
 #include "freertos/task.h"
 #include "usb_host_topology.h"
 
+/* Added to the pinned esp-usb build by
+ * apply_espressif_usb_idle_recovery_patch.cmake. */
+extern esp_err_t usb_host_lib_power_off_root_port_if_idle_by_index(
+    uint8_t root_port_index);
+
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
 #include "hal/usb_wrap_ll.h"
 #include "soc/usb_wrap_struct.h"
@@ -18,6 +23,8 @@ static const char *TAG = "usb_host_mgr";
 #define TOPOLOGY_EVENT_DEPTH       16
 #define RECOVERY_QUEUE_DEPTH       16
 #define RECOVERY_SETTLE_MS         150u
+#define RECOVERY_POWER_ON_RETRY_MS 20u
+#define RECOVERY_POWER_ON_TIMEOUT_MS 1000u
 #define RECOVERY_RETRY_BASE_MS     250u
 #define RECOVERY_RETRY_MAX_MS      30000u
 
@@ -50,6 +57,7 @@ static uint32_t s_recovery_queue_drops;
 static uint32_t s_recovery_requests;
 static uint32_t s_recovery_coalesced_requests;
 static uint32_t s_recovery_successes;
+static uint32_t s_recovery_suppressed_active;
 static uint32_t s_recovery_failures;
 static usb_host_topology_t s_topology;
 static usb_host_recovery_arbiter_t s_recovery_arbiter;
@@ -60,6 +68,12 @@ typedef struct {
     uint8_t port;
     usb_host_recovery_reason_t reason;
 } recovery_request_t;
+
+typedef enum {
+    RECOVERY_CYCLE_FAILED = 0,
+    RECOVERY_CYCLE_COMPLETED,
+    RECOVERY_CYCLE_SUPPRESSED_ACTIVE,
+} recovery_cycle_result_t;
 
 static inline manager_state_t state_get(void)
 {
@@ -155,25 +169,85 @@ static void topology_client_task(void *arg)
     }
 }
 
-static bool recovery_power_cycle(uint8_t port,
-                                 usb_host_recovery_reason_t reason)
+static esp_err_t recovery_power_off_if_idle(uint8_t port)
+{
+    if (!usb_host_manager_is_ready()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (port >= 32u) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const uint32_t bit = 1u << port;
+    if ((s_config.peripheral_map & bit) == 0u) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    const esp_err_t rc =
+        usb_host_lib_power_off_root_port_if_idle_by_index(port);
+    if (rc == ESP_OK) {
+        (void)__atomic_fetch_and(&s_root_power_requested_mask, ~bit,
+                                __ATOMIC_ACQ_REL);
+    }
+    return rc;
+}
+
+static recovery_cycle_result_t recovery_power_cycle(
+    uint8_t port,
+    usb_host_recovery_reason_t reason)
 {
     ESP_LOGW(TAG, "recovering USB%u reason=%u", (unsigned)port,
              (unsigned)reason);
-    esp_err_t rc = usb_host_manager_set_root_power_by_index(port, false);
+    esp_err_t rc = recovery_power_off_if_idle(port);
+    if (rc == ESP_ERR_NOT_FINISHED) {
+        ESP_LOGI(TAG,
+                 "USB%u recovery suppressed: attach/enumeration is active",
+                 (unsigned)port);
+        return RECOVERY_CYCLE_SUPPRESSED_ACTIVE;
+    }
+    const bool powered_off_now = rc == ESP_OK;
     if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "USB%u recovery power-off: %s", (unsigned)port,
                  esp_err_to_name(rc));
-        return false;
+        return RECOVERY_CYCLE_FAILED;
     }
-    vTaskDelay(pdMS_TO_TICKS(RECOVERY_SETTLE_MS));
-    rc = usb_host_manager_set_root_power_by_index(port, true);
-    if (rc != ESP_OK && rc != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "USB%u recovery power-on: %s", (unsigned)port,
-                 esp_err_to_name(rc));
-        return false;
+    if (powered_off_now) {
+        vTaskDelay(pdMS_TO_TICKS(RECOVERY_SETTLE_MS));
+    } else {
+        /* A prior attempt can have completed POWER_OFF but timed out waiting
+         * for the Host Library to accept POWER_ON. The arbiter retry must
+         * resume that half-completed cycle instead of failing forever because
+         * the root is already off. Manager-ready plus an enabled port makes
+         * ESP_ERR_INVALID_STATE here the idempotent already-off case; active
+         * attach/enumeration was distinguished above as NOT_FINISHED. */
+        ESP_LOGI(TAG, "USB%u recovery resumes from already-off root",
+                 (unsigned)port);
     }
-    return true;
+
+    /* POWER_OFF can leave an HCD disconnect event pending. The Host Library
+     * daemon processes that event concurrently, and the indexed POWER_ON API
+     * returns ESP_ERR_INVALID_STATE until it has done so. Do not report that
+     * transient state as a successful recovery: doing so leaves this root
+     * unpowered indefinitely (the requested-power mask remains clear). This
+     * bounded wait mirrors the mature storage owner's repeated recovery loop
+     * while keeping all Host Library power calls under the shared manager. */
+    const TickType_t deadline =
+        xTaskGetTickCount() + pdMS_TO_TICKS(RECOVERY_POWER_ON_TIMEOUT_MS);
+    do {
+        rc = usb_host_manager_set_root_power_by_index(port, true);
+        if (rc == ESP_OK) {
+            return RECOVERY_CYCLE_COMPLETED;
+        }
+        if (rc != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "USB%u recovery power-on: %s", (unsigned)port,
+                     esp_err_to_name(rc));
+            return RECOVERY_CYCLE_FAILED;
+        }
+        vTaskDelay(pdMS_TO_TICKS(RECOVERY_POWER_ON_RETRY_MS));
+    } while ((int32_t)(deadline - xTaskGetTickCount()) > 0);
+
+    ESP_LOGW(TAG, "USB%u recovery power-on timed out: %s",
+             (unsigned)port, esp_err_to_name(rc));
+    return RECOVERY_CYCLE_FAILED;
 }
 
 static void recovery_task(void *arg)
@@ -199,13 +273,19 @@ static void recovery_task(void *arg)
         const uint32_t now = (uint32_t)xTaskGetTickCount();
         if (usb_host_recovery_arbiter_acquire(&s_recovery_arbiter, now,
                                               &port, &reason)) {
-            const bool success = recovery_power_cycle(port, reason);
+            const recovery_cycle_result_t result =
+                recovery_power_cycle(port, reason);
             (void)usb_host_recovery_arbiter_complete(
-                &s_recovery_arbiter, port, success,
+                &s_recovery_arbiter, port,
+                result != RECOVERY_CYCLE_FAILED,
                 (uint32_t)xTaskGetTickCount());
-            (void)__atomic_add_fetch(success ? &s_recovery_successes
-                                             : &s_recovery_failures,
-                                     1u, __ATOMIC_RELAXED);
+            uint32_t *counter = &s_recovery_failures;
+            if (result == RECOVERY_CYCLE_COMPLETED) {
+                counter = &s_recovery_successes;
+            } else if (result == RECOVERY_CYCLE_SUPPRESSED_ACTIVE) {
+                counter = &s_recovery_suppressed_active;
+            }
+            (void)__atomic_add_fetch(counter, 1u, __ATOMIC_RELAXED);
             continue;
         }
 
@@ -533,6 +613,9 @@ void usb_host_manager_get_diagnostics(usb_host_manager_diagnostics_t *diag_out)
                             __ATOMIC_ACQUIRE),
         .recovery_successes =
             __atomic_load_n(&s_recovery_successes, __ATOMIC_ACQUIRE),
+        .recovery_suppressed_active =
+            __atomic_load_n(&s_recovery_suppressed_active,
+                            __ATOMIC_ACQUIRE),
         .recovery_failures =
             __atomic_load_n(&s_recovery_failures, __ATOMIC_ACQUIRE),
         .peripheral_map = s_config.peripheral_map,

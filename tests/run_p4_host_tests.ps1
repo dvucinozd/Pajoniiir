@@ -414,6 +414,38 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("static int64_t ae_now_us(", "static void ae_diag_log_memory(")
 
+# A UART warning at 115200 baud is longer than one 256-frame audio period and
+# can turn the first timing outlier into a permanent warning/deadline cascade.
+# Keep all ESP_LOG formatting outside the ae_output block accounting helper;
+# the periodic health monitor owns aggregated service-log reporting.
+$audioEnginePath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+$audioEngineSource = Get-Content -LiteralPath $audioEnginePath -Raw
+$outputDiagMatch = [regex]::Match(
+    $audioEngineSource,
+    '(?s)static void ae_diag_record_output_block\(.*?\r?\n\}\r?\n\r?\nstatic void ae_fail_load')
+Write-Host "==> p4 realtime output diagnostics never format ESP logs"
+if (-not $outputDiagMatch.Success) {
+    throw "could not locate ae_diag_record_output_block for realtime logging gate"
+}
+if ($outputDiagMatch.Value -match '(?:ESP_(?:EARLY_|DRAM_)?LOG[A-Z_]*|esp_log_writev?)\s*\(') {
+    throw "ae_diag_record_output_block performs blocking ESP_LOG formatting"
+}
+Write-Host "    PASS"
+
+Assert-FileContains `
+    -Name "p4 late-output anomalies are aggregated outside the audio task" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late")
+
+Assert-FileContains `
+    -Name "p4 library load worker preserves internal RAM for audio task startup" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @(
+        "xTaskCreateWithCaps(ui_track_load_worker",
+        "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT",
+        "vTaskDeleteWithCaps(NULL)"
+    )
+
 Assert-FatfsBoolDefaults
 Assert-CiDependenciesPinned
 
@@ -828,12 +860,69 @@ Assert-FileContains `
         '"USB Full-Speed root routed to PHY%u"'
     )
 
+Assert-FileContains `
+    -Name "p4 USB recovery only succeeds after indexed root power-on completes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "RECOVERY_POWER_ON_TIMEOUT_MS",
+        "if (rc == ESP_OK)",
+        "if (rc != ESP_ERR_INVALID_STATE)",
+        '"USB%u recovery power-on timed out: %s"',
+        "return RECOVERY_CYCLE_FAILED;"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB recovery atomically preserves an active per-root enumeration" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_idle_recovery_patch.cmake") `
+    -LiteralPatterns @(
+        "pajoniiir_hcd_port_power_off_if_disconnected",
+        "port->state == HCD_PORT_STATE_DISCONNECTED",
+        "port->flags.event_pending",
+        "ESP_ERR_NOT_FINISHED",
+        "usb_host_lib_power_off_root_port_if_idle_by_index",
+        "Could not replace all esp-usb HCD, Hub, and Host Library sources"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB manager suppresses recovery once attach or enumeration is active" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "recovery_power_off_if_idle",
+        "RECOVERY_CYCLE_SUPPRESSED_ACTIVE",
+        '"USB%u recovery suppressed: attach/enumeration is active"',
+        "s_recovery_suppressed_active"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB recovery resumes a prior half-completed power cycle" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "const bool powered_off_now = rc == ESP_OK",
+        "rc != ESP_OK && rc != ESP_ERR_INVALID_STATE",
+        '"USB%u recovery resumes from already-off root"',
+        "usb_host_manager_set_root_power_by_index(port, true)"
+    )
+
+Assert-FileContains `
+    -Name "p4 status exposes USB root recovery outcomes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"recovery_coalesced\"',
+        "host_diag.recovery_successes",
+        "host_diag.recovery_suppressed_active",
+        "host_diag.recovery_failures",
+        "host_diag.recovery_queue_drops"
+    )
+
 # CMake source replacement cannot execute in the host harness, so pin both the
 # fail-closed integration hook and the accepted HS/FS FIFO values textually.
 Assert-FileContains `
     -Name "p4 dual USB build applies a fail-closed per-controller FIFO layout" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
-    -LiteralPatterns @("apply_espressif_usb_fifo_patch.cmake")
+    -LiteralPatterns @(
+        "apply_espressif_usb_fifo_patch.cmake",
+        "apply_espressif_usb_idle_recovery_patch.cmake"
+    )
 
 Assert-FileContains `
     -Name "p4 dual USB FIFO patch preserves bulk HS and periodic OUT FS capacity" `
@@ -887,6 +976,16 @@ Assert-FileContains `
     -Name "p4 controller events and LED output stay local" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
     -LiteralPatterns @("control_link_inject_semantic", "control_link_set_led_sink", "controller_led_runtime_send")
+
+Assert-FileContains `
+    -Name "p4 controller USB client remains scheduler-unpinned" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @(".task_core_id = tskNO_AFFINITY")
+
+Assert-FileDoesNotContain `
+    -Name "p4 controller USB client excludes the experimental CPU0 pin" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @("LOCAL_CONTROLLER_USB_TASK_CORE")
 
 Assert-FileContains `
     -Name "p4 active control-link component compiles only the local adapter" `
@@ -1577,7 +1676,7 @@ $tests = @(
     },
     @{
         Name = "usb_storage_session"
-        MinTestsRun = 63
+        MinTestsRun = 73
         Dir = "tests/usb_storage_session"
         Target = "test_usb_storage_session.exe"
         Args = @(
@@ -1826,6 +1925,18 @@ $tests = @(
             "-o", "test_audio_uac_health.exe",
             "test_audio_uac_health.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_uac_health.c"
+        )
+    },
+    @{
+        Name = "controller_audio_resampler"
+        Dir = "tests/controller_audio_resampler"
+        Target = "test_controller_audio_resampler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
+            "-o", "test_controller_audio_resampler.exe",
+            "test_controller_audio_resampler.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_resampler.c"
         )
     },
     @{
@@ -2448,6 +2559,31 @@ Assert-FileContains `
     -Name "p4 USB storage reconciles desired/current state and retries mount failures" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "usb_storage_recovery_observe", "usb_storage_recovery_cycle_due", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
+
+Assert-FileContains `
+    -Name "p4 USB teardown detaches sole-owner handles before destructive cleanup" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("usb_media_mount_t *released_mount = s_mount", "s_mount = NULL", "s_msc_dev = NULL", "usb_media_unmount(released_mount)", "msc_host_uninstall_device(released_handle)")
+
+Assert-FileContains `
+    -Name "p4 USB MSC patch preserves callback ownership through hot-unplug teardown" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_usb_host_msc_teardown_patch.cmake") `
+    -LiteralPatterns @("usb_host_transfer_free(dev->xfer)", "dev->xfer = NULL", "vSemaphoreDelete(dev->transfer_done)", "DEFAULT_XFER_SIZE   (8 * 1024)", "return ESP_ERR_INVALID_SIZE", "if (xfer == NULL)", "fail-closed source")
+
+Assert-FileContains `
+    -Name "p4 USB media bounds every FatFS transfer by bytes, not sector count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -LiteralPatterns @("USB_MEDIA_MAX_XFER_BYTES", "max_transfer_sectors", "USB_MEDIA_MAX_XFER_BYTES / sector_size", "batch = max_batch")
+
+Assert-FileContains `
+    -Name "p4 USB Rekordbox probe distinguishes absent export from transport failure" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -LiteralPatterns @("probe_rekordbox_export", "errno == ENOENT || errno == ENOTDIR", "return ESP_ERR_MSC_MOUNT_FAILED", "usb_media_unmount(candidate_mount)")
+
+Assert-FileContains `
+    -Name "p4 status exposes USB storage hot-plug lifecycle evidence" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("usb_storage_diagnostics_t storage_diag", "storage_diag.connect_events", "storage_diag.mount_attempts", "storage_diag.last_uninstall_result", "usb_storage_get_diagnostics")
 
 Assert-FileDoesNotContain `
     -Name "p4 USB root-port recovery is not disabled by a firmware-lifetime seen-device latch" `

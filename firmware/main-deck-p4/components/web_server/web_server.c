@@ -28,6 +28,7 @@
 #include "controller_usb_host.h"
 #include "p4_local_controller.h"
 #include "usb_host_manager.h"
+#include "usb_storage.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
 #endif
@@ -1190,14 +1191,16 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_status.written, service_status.current_bytes,
         service_status.last_error);
 
-    char p4_usb_json[1536] = {0};
+    char p4_usb_json[2048] = {0};
     {
         usb_host_manager_diagnostics_t host_diag = {0};
         controller_usb_host_diagnostics_t controller_diag = {0};
         p4_local_controller_diagnostics_t local_diag = {0};
+        usb_storage_diagnostics_t storage_diag = {0};
         usb_host_manager_get_diagnostics(&host_diag);
         controller_usb_host_get_diagnostics(&controller_diag);
         p4_local_controller_get_diagnostics(&local_diag);
+        usb_storage_get_diagnostics(&storage_diag);
         snprintf(
             p4_usb_json, sizeof(p4_usb_json),
             "\"p4_usb\":{"
@@ -1206,7 +1209,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             "\"install_result_name\":\"%s\","
             "\"peripheral_map\":%u,\"root_power_mask\":%u,"
             "\"fs_phy_override\":%s,\"fs_phy_index\":%u,"
-            "\"daemon_iterations\":%u,\"daemon_errors\":%u},"
+            "\"daemon_iterations\":%u,\"daemon_errors\":%u,"
+            "\"recovery_requests\":%u,\"recovery_coalesced\":%u,"
+            "\"recovery_successes\":%u,\"recovery_suppressed_active\":%u,"
+            "\"recovery_failures\":%u,"
+            "\"recovery_queue_drops\":%u},"
             "\"topology\":{"
             "\"observations\":%u,\"probe_failures\":%u,"
             "\"last_result\":%d,\"last_result_name\":\"%s\","
@@ -1235,7 +1242,16 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             "\"bootstrap_failures\":%u,\"last_bootstrap_error\":%d,"
             "\"local_connected\":%s,"
             "\"semantic_events\":%u,\"queue_failures\":%u,"
-            "\"profile_activations\":%u,\"profile_fallbacks\":%u}"
+            "\"profile_activations\":%u,\"profile_fallbacks\":%u},"
+            "\"storage\":{"
+            "\"desired_connected\":%s,\"mounted\":%s,"
+            "\"connect_events\":%u,\"connect_accepted\":%u,"
+            "\"disconnect_events\":%u,\"disconnect_accepted\":%u,"
+            "\"mount_attempts\":%u,\"mount_successes\":%u,"
+            "\"last_mount_result\":%d,\"last_mount_result_name\":\"%s\","
+            "\"releases\":%u,"
+            "\"last_unmount_result\":%d,\"last_unmount_result_name\":\"%s\","
+            "\"last_uninstall_result\":%d,\"last_uninstall_result_name\":\"%s\"}"
             "}",
             host_diag.ready ? "true" : "false",
             (int)host_diag.install_result,
@@ -1246,6 +1262,12 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)host_diag.fs_phy_index,
             (unsigned)host_diag.daemon_iterations,
             (unsigned)host_diag.daemon_errors,
+            (unsigned)host_diag.recovery_requests,
+            (unsigned)host_diag.recovery_coalesced_requests,
+            (unsigned)host_diag.recovery_successes,
+            (unsigned)host_diag.recovery_suppressed_active,
+            (unsigned)host_diag.recovery_failures,
+            (unsigned)host_diag.recovery_queue_drops,
             (unsigned)host_diag.topology_observations,
             (unsigned)host_diag.topology_probe_failures,
             (int)host_diag.last_topology_result,
@@ -1284,7 +1306,22 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)local_diag.local_semantic_events,
             (unsigned)local_diag.local_queue_failures,
             (unsigned)local_diag.profile_activations,
-            (unsigned)local_diag.profile_fallbacks);
+            (unsigned)local_diag.profile_fallbacks,
+            storage_diag.desired_connected ? "true" : "false",
+            storage_diag.mounted ? "true" : "false",
+            (unsigned)storage_diag.connect_events,
+            (unsigned)storage_diag.connect_accepted,
+            (unsigned)storage_diag.disconnect_events,
+            (unsigned)storage_diag.disconnect_accepted,
+            (unsigned)storage_diag.mount_attempts,
+            (unsigned)storage_diag.mount_successes,
+            (int)storage_diag.last_mount_result,
+            esp_err_to_name(storage_diag.last_mount_result),
+            (unsigned)storage_diag.releases,
+            (int)storage_diag.last_unmount_result,
+            esp_err_to_name(storage_diag.last_unmount_result),
+            (int)storage_diag.last_uninstall_result,
+            esp_err_to_name(storage_diag.last_uninstall_result));
     }
 
     const size_t crash_dump_json_size = 1024u;

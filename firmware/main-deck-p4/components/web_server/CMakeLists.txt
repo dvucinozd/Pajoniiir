@@ -3,7 +3,7 @@ set(WEB_SERVER_REQUIRES
     "media_catalog" "library" "esp_http_server" "esp_netif" "mdns" "deck_core"
     "controller_profile_manager" "p4_ota" "ota_manifest" "service_log"
     "sd_io_gate" "audio_recorder" usb_host_manager controller_usb_host
-    p4_local_controller espcoredump)
+    p4_local_controller usb_storage espcoredump)
 
 idf_component_register(SRCS "web_server.c" "dns_server.c" "dns_reply.c"
                             "web_api_helpers.c" "web_firmware_json.c"

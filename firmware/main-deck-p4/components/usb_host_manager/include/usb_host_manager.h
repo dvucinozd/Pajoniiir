@@ -47,6 +47,7 @@ typedef struct {
     uint32_t recovery_requests;
     uint32_t recovery_coalesced_requests;
     uint32_t recovery_successes;
+    uint32_t recovery_suppressed_active;
     uint32_t recovery_failures;
     unsigned peripheral_map;
     bool fs_phy_override_requested;
