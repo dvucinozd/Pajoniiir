@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: P4-only branch overview, reconciled 2026-08-27. The ESP-IDF 6.0.2
+Status: P4-only branch overview, reconciled 2026-08-29. The ESP-IDF 6.0.2
 migration is **merged into `master`**; the release prefix moved from `RC1` to
 **`RC2`** to mark the new build baseline, and the latest clean dual-target
 release build is `RC2` (`56905c89`, ESP-IDF 6.0.2). It carries the bounded
@@ -19,6 +19,13 @@ rows but no physical WAV/FLAC files. The latest fully functionally accepted
 complete-system baseline therefore remains `RC1-123-g587cd7a1`; targeted
 Phase 20/E1A, remaining IDF6 recovery/sustained-load rows, remote-profile
 update, enclosure endurance and production hardening remain open.
+
+The focused 2026-08-29 P4-only follow-up installed
+`RC2-106-gfa55e43-dirty` through signed OTA and passed one USB0 hotplug cycle
+while USB1 FLX4 MIDI/UAC stayed active. The Library remounted and reloaded
+without a P4 reboot, and later track loads completed. The tested source is
+commit `77aa23a`; repeated recovery, power measurement and long soak remain
+open.
 
 ## Goal
 
@@ -199,7 +206,8 @@ USB1 path documented explicitly below.
   fail-closed HS/FS FIFO source patch, supports 44.1/48 kHz engine input,
   resamples to the FLX4 44.1 kHz endpoint, sends MAIN on channels 1/2 and cue on
   3/4 with no S3 fallback. Host-side health tracking reports bounded ring pressure and data
-  loss; physical audio quality, reconnect and long-soak acceptance remain open.
+  loss. The 2026-08-29 USB0 hotplug pass kept the controller active, but focused
+  USB1 reconnect, physical audio quality and long-soak acceptance remain open.
 - The FLX4 USB headphones and official-MIDI-gap-closure feature branches were
   merged to `master` and deleted after the 2026-07-02 work. On 2026-07-03 the
   remaining stale Codex branches were reviewed and removed (local + remote),
@@ -271,9 +279,10 @@ Two design plans have since been implemented in firmware (details in Phase 8 of
 - **Overview waveform visualisations** — implemented ("Punchy" colours, loop
   highlight, hot-cue markers, mini played-progress).
 
-The clean P4 waveform candidate, signed paired package and exact-image focused
-display re-smoke are complete. Remaining hardware-facing work continues with
-Phase 20 USB recovery/queue pressure and guarded web/profile/OTA mutations,
+The clean P4 waveform candidate, signed historical paired package and exact-image
+focused display re-smoke are complete. One focused P4-only OTA/USB0 hotplug pass
+is also complete. Remaining hardware-facing work continues with repeated Phase
+20 USB recovery/queue pressure and guarded web/profile/OTA mutations,
 controller-profile replacement/recovery and focused Flanger/Delay
 audio/target/timing/depth behavior. Remaining product work also includes
 selected shifted-control rows still marked in the MIDI map, physical acceptance

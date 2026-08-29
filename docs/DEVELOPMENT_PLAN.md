@@ -2809,11 +2809,33 @@ four-channel UAC; stateful 48→44.1 kHz resampling and bounded ring correction;
 hotplug generations and task-priority transitions; FLX4-only shifted LED
 mirrors; headphone level ramps; fractional/default/large Beat Jump pages; jog
 loop-boundary editing; gapless slip-reverse Censor; and bounded UAC health
-alarms with a playback-start baseline. The direct audio path falls back to the
-existing S3 monitor link until UAC is ready. The P4 host suite and ESP-IDF 6.0.2
-P4-local build pass. Hardware installation, electrical qualification,
-independent reconnect and the sustained dual-device/audio soak remain the
-release gate.
+alarms with a playback-start baseline. The direct audio path has no S3 monitor
+fallback: if USB1 UAC is unavailable, cue output is unavailable until direct
+UAC recovers. The P4 host suite and ESP-IDF 6.0.2 P4-local build pass.
+
+### Focused dual-root hotplug acceptance, 2026-08-29
+
+The first physical reconnect pass after S3 retirement is complete. The accepted
+source (`77aa23a`) adds indexed idle-only root recovery, suppresses a power
+cycle once attach/enumeration is active, retires MSC callback ownership before
+teardown, and keeps one fixed 8 KiB DMA-capable MSC transfer for the complete
+device lifetime. FatFs transactions are split to the same 8 KiB bound. This
+preserves the disconnect-race fix while avoiding the contiguous 32 KiB
+internal-DMA allocation that returned `ESP_ERR_NO_MEM` after hotplug.
+
+The complete P4 host suite and ESP-IDF 6.0.2 `build_signed` passed. The signed
+`RC2-106-gfa55e43-dirty` bundle booted from `ota_0` with USB0 storage and USB1
+FLX4 active. One physical USB0 remove/reinsert cycle completed without reboot;
+the service journal recorded `USB_UNMOUNTED`, `USB_MOUNTED` and
+`LIBRARY_LOADED`, while status reported 2/2 successful mounts, clean
+unmount/uninstall, zero host/recovery failures and an active FLX4 MIDI/UAC
+profile. Two later track loads completed from the remounted medium. See
+`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`.
+
+This closes the focused hotplug reproduction, not the release gate. Electrical
+qualification, repeated cold/warm boots and insertion orders, removal during
+active decode, repeated USB1 reconnect, 30-minute combined-load diagnostics and
+the later multi-hour soak remain open.
 
 ## Idle Screensaver
 

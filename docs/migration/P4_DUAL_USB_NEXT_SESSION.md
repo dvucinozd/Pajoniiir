@@ -2,7 +2,7 @@
 
 Saved: **2026-08-12**
 
-Software checkpoint updated: **2026-08-27**
+Software/hardware checkpoint updated: **2026-08-29**
 
 This is the operational checkpoint for the next physical bench session. It is
 deliberately narrower than the architecture plan and records only facts needed
@@ -12,7 +12,7 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Current firmware checkpoint: `6e41d7f`
+- Current firmware checkpoint: `77aa23a`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
@@ -21,23 +21,22 @@ to resume without reconstructing today's terminal history.
 - Last diagnostic build directory: `firmware/main-deck-p4/build_diag_audio_wdt_local`
 - Generated build directories and signed packages remain ignored.
 
-The 2026-08-27 source checkpoint adds the complete direct FLX4 UAC path, the
-selected reusable M3 behavior slices and final active-S3 retirement. A clean
-P4-only `build_p4_only` passes under ESP-IDF 6.0.2 and reports
-`RC2-104-g6e41d7f-dirty`; `main-deck-p4.bin` is 2,445,904 bytes, leaves
-1,748,400 bytes in its 4 MiB OTA slot and has SHA-256
-`152ca38af87cba70d5b54369994a07ddb789c4a40f1364236c6e47b22634b212`.
-It also leaves 1,224,112 bytes against the stricter P4-only migration budget.
-The complete P4 host suite, visually reviewed UI simulator gate, ELF legacy-
-symbol audit and signed P4-only package verification pass. Exact evidence is in
-[`../validation/P4_ONLY_RC2_104_BUILD_20260827.md`](../validation/P4_ONLY_RC2_104_BUILD_20260827.md).
-These artifacts have not been installed, uploaded or hardware-accepted yet.
+The 2026-08-29 checkpoint retains the complete direct FLX4 UAC path and final
+active-S3 retirement, then hardens both-root recovery and USB0 MSC ownership.
+Root power-off is conditional on the indexed HCD root still being idle;
+attach/enumeration suppresses recovery. MSC teardown retires callback ownership
+before destruction and one fixed 8 KiB DMA transfer serves the full device
+lifetime, with larger FatFs operations split into bounded transactions.
 
-The P4 currently reports `RC2-58-g008cfa4-dirty` from `ota_1`. It is the normal
-monitor-enabled image with retained audio/library tracing, built from the
-current dirty working tree. Its payload is 2,465,424 bytes, SHA-256
-`b1993a41b6a6ac78f4a26e57f9d63691a8fb2d3b205adfe96ee5e89ba8672e6d`.
-It is a diagnostic image, not a merge candidate.
+The complete P4 host suite and ESP-IDF v6.0.2 `build_signed` pass. The tested
+application is 2,449,552 bytes, leaves 1,744,752 bytes in its 4 MiB OTA slot and
+has SHA-256
+`a8f377bd4b310338cae545c1f7b07b0da60bdc415569993e4c7c416d912faa1a`.
+It was signed as `RC2-106-gfa55e43-dirty`, installed through OTA and is now
+running from `ota_0`. The tested source was committed immediately afterward as
+`77aa23a` without intervening firmware changes; therefore the runtime version
+is not an exact-commit artifact label. Exact evidence is in
+[`../validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](../validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md).
 
 ## Current blocker and branch status
 
@@ -51,8 +50,10 @@ breadcrumbs varied between normal I2S output and snapshot preparation; the
 Task-WDT ISR hook never fired. This rules out one deterministic audio-task
 deadlock and leaves the unqualified power/VBUS path as the blocker.
 
-Testing may resume only after the common 5 V path and each downstream VBUS are
-electrically qualified under startup and sustained dual-deck load, without
+One 2026-08-29 signed-OTA boot and USB0 remove/reinsert cycle passed with USB1
+FLX4 active, so focused software hotplug work may continue. Release and
+enclosure qualification still require the common 5 V path and each downstream
+VBUS to be measured under startup and sustained dual-deck load without
 backfeeding the P4-side VBUS. The circuit and pre-connection checks are in
 [`../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md)
 and [`../HARDWARE_WIRING.md`](../HARDWARE_WIRING.md); the runtime record is
@@ -105,6 +106,19 @@ Confirmed in the 2026-08-12 continuation:
   load spike; the attempted one-second load pacing was removed because it did
   not prevent an isolated reset and only added operator latency.
 
+Confirmed in the 2026-08-29 continuation:
+
+- signed OTA booted `RC2-106-gfa55e43-dirty` from `ota_0`;
+- USB0 storage mounted and loaded a 100-track Library while USB1 FLX4 activated
+  its local MIDI/UAC profile;
+- one physical USB0 remove/reinsert cycle completed without reboot or FLX4
+  loss, with 2/2 mount success and clean unmount/uninstall diagnostics;
+- the remounted Library loaded again and two later MP3 track loads completed;
+- host daemon errors, root recovery failures and recovery queue drops remained
+  zero;
+- the retained coredump shown by status is historical; the current OTA boot was
+  `SW` and the hotplug cycle did not create a new panic.
+
 Full evidence and the non-fatal startup warnings are recorded in
 [`../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md`](../validation/P4_DUAL_USB_INITIAL_WIRED_SMOKE_20260809.md).
 
@@ -122,9 +136,8 @@ The external PCM5102A MAIN-output DAC is wired as follows:
 | BCK / BCLK | GPIO50, JP1 pin 9 |
 | SCK / MCLK | not connected |
 
-The boot message `monitor PCM I2S transport started: BCLK=32 WS=34 DOUT=35`
-describes the separate P4-to-S3 monitor/cue link. Those pins are **not** the
-PCM5102A MAIN-output wiring.
+GPIO32/GPIO34/GPIO35 belonged to the retired P4-to-S3 monitor/cue link and must
+remain disconnected. They are **not** the PCM5102A MAIN-output wiring.
 
 ## Resume commands
 
@@ -144,9 +157,9 @@ verified build directory with:
 
 ```powershell
 Set-Location "$repoRoot\firmware\main-deck-p4"
-idf.py -B build_p4_only -D SDKCONFIG=build_p4_only/sdkconfig build
-idf.py -B build_p4_only -p COM15 flash
-idf.py -B build_p4_only -p COM15 monitor
+idf.py -B build_signed build
+idf.py -B build_signed -p COM15 flash
+idf.py -B build_signed -p COM15 monitor
 ```
 
 A new flash is not required merely to continue testing the image that is
@@ -165,10 +178,9 @@ Get-CimInstance Win32_Process |
 
 ## First test after stable power is available
 
-The installed image predates the final S3 retirement. The current source has
-PCM5102A MAIN plus direct FLX4 UAC cue and
-latest retained tracing. Rebuild and install only if the source changes before
-the next session, then:
+The installed image already contains the final S3 retirement, PCM5102A MAIN,
+direct FLX4 UAC cue and the accepted USB recovery/MSC fix. Rebuild and install
+only if the source changes before the next session, then:
 
 1. With both protected outputs disabled, verify the interposer continuity,
    VBUS isolation, polarity and absence of shorts. Power the P4 from the common
@@ -220,10 +232,12 @@ end-to-end product behavior.
 ## Gates that remain open
 
 - measured stable 5 V rail and protected, backfeed-free VBUS on both ports;
-- boot with both USB devices attached and both insertion orders;
+- repeat boot with both USB devices attached and both insertion orders (one
+  post-OTA boot with both active passed 2026-08-29);
 - complete P4-local MIDI input and LED output acceptance;
 - simultaneous storage reads, playback and controller traffic;
-- independent USB0/USB1 disconnect and recovery;
+- repeated independent USB0/USB1 disconnect and recovery (one USB0 replug
+  passed 2026-08-29; USB1 and remove-during-decode remain);
 - playback/cache-miss stress while operating the controller;
 - heap, DMA heap, stack, latency, VBUS and current measurements;
 - 30-minute dual-active diagnostic soak and later multi-hour product soak;

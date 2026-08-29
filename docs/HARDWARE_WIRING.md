@@ -9,7 +9,7 @@
 > the next section is still a
 > mandatory unresolved gate.
 
-Status: current bench wiring, updated 2026-08-12. Revalidate cable routing,
+Status: current bench wiring, updated 2026-08-29. Revalidate cable routing,
 power budget, cooling and RF behavior after final enclosure installation.
 
 ## P4 Dual-USB VBUS Blocker
@@ -63,6 +63,14 @@ and shield remain continuous to the intended P4 root port. The same result may
 instead be obtained by cutting the two native VBUS traces and injecting the
 protected outputs at the connector pads, but that is an invasive board
 modification and must be continuity-checked before power-up.
+
+The same bench topology passed a focused functional follow-up on 2026-08-29:
+USB0 storage and USB1 FLX4 were active after signed OTA, and one USB0
+remove/reinsert cycle remounted the medium and reloaded the Library without a
+P4 reboot or FLX4 loss. That result verifies the remediated firmware lifecycle;
+it does **not** replace the voltage-drop, current-limit, isolation or sustained
+combined-load measurements required below. See
+[`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md).
 
 Use one independently protected high-side output per port. A TPS2561-class
 dual USB power switch is a candidate; configure it disabled by default, add

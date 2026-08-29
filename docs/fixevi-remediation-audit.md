@@ -68,8 +68,8 @@ Statusi:
 | OTA GET ne escapea JSON | **Zatvoreno** | SSID, URL, detail i address prolaze kroz `web_api_json_escape`. |
 | Web loop zaobilazi `deck_core` | **Zatvoreno** | Web loop/exit se pretvaraju u autoritativne deck evente. |
 | Probe i pull-OTA paralelno mijenjaju Wi-Fi stack | **Zatvoreno** | Centralni `wifi_transition_lease` rezervira probe ili OTA prijelaz prije stvaranja workera. |
-| USB mount nema retry / disconnect se može izgubiti | **Zatvoreno; HW pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. Replug i fault-injection test na stvarnom P4 ostaju. |
-| Library refresh/USB remove koriste lossy `volatile` zastavice | **Zatvoreno; HW pending** | Atomski event-generation brojači čuvaju request pristigao tijekom obrade; samo LVGL task invalidira page cache. USB remove podiže deck media floor, a load worker nakon audio loadanja ponovno provjerava generation i gasi stale sesiju. |
+| USB mount nema retry / disconnect se može izgubiti | **Zatvoreno; fokusirani HW pass, stress pending** | Desired/current state, task notification + periodični reconciliation i eksponencijalni bounded mount retry. P4-only follow-up `77aa23a` dodaje indexed idle-only root recovery, suppression aktivne enumeracije, callback-safe MSC teardown i fiksni 8 KiB transfer bez runtime realloca. Signed OTA boot i jedan USB0 replug uz aktivni USB1 FLX4 prošli su 2026-08-29: 2/2 mounta, clean unmount/uninstall, Library reload i bez reboota. Ponavljani reconnect i remove-during-decode fault injection ostaju. |
+| Library refresh/USB remove koriste lossy `volatile` zastavice | **Zatvoreno; fokusirani HW pass, stress pending** | Atomski event-generation brojači čuvaju request pristigao tijekom obrade; samo LVGL task invalidira page cache. USB remove podiže deck media floor, a load worker nakon audio loadanja ponovno provjerava generation i gasi stale sesiju. Fokusirani 2026-08-29 replug objavio je `USB_UNMOUNTED`, novi `USB_MOUNTED`, `LIBRARY_LOADED a0=100` i dva uspješna kasnija track loada; remove usred aktivnog decodea i burst ostaju. |
 | ANLZ short-read postaje valjani cache | **Zatvoreno; fuzz pending** | Exact-read marker, bounded section walk, privremeni objekt i publish tek nakon pune validacije. Fuzz/truncation corpus još nije kompletan. |
 | PDB duration se zamijeni zadnjim beatom | **Zatvoreno** | Javni `library_load_anlz()` čuva svaki nonzero PDB/audio duration; beatgrid duration ostaje fallback kada duration nedostaje. |
 | PVBR 32-bit overflow | **Zatvoreno** | `uint64_t` račun i clamp na `duration_ms`. |
@@ -98,22 +98,23 @@ Statusi:
 - realni MP3/FLAC/WAV decode fixture i realni `export.pdb`
 - širi TSan/fuzz corpus izvan novih bounded-cache i recorder fault-injection host testova
 - stvarno dual-deck P4 mjerenje keylock/PSRAM deadlinea i odluka treba li DSP optimizaciju
-- USB mount/disconnect fault injection, uključujući remove usred stvarnog audio load/decode prozora
-- S3/P4/FLX4 held-control saturation, disconnect/reconnect i P4-only reboot smoke
+- ponavljani USB mount/disconnect fault injection, uključujući remove usred stvarnog audio load/decode prozora
+- P4/FLX4 held-control saturation, USB1 disconnect/reconnect i P4-only reboot smoke
 - prikaz bez tearinga nakon single-framebuffer korekcije
 - dugotrajni dual-deck audio/control/USB/SD soak, uključujući cache-miss i recorder power-loss fault injection
 
 ## Preporučeni nastavak
 
-P4 dual-USB dodatak, 2026-08-12: izravna USB0 pohrana i USB1 FLX4 enumeracija
-rade zajedno, a pronađeni upstream disconnect/recycle race je zakrpan i pinan.
-Grana ipak ostaje blokirana: kontrolirani dual-deck test bez FLX4 završio je
-raw `BROWNOUT` resetom nakon približno 6,5 s, uz nula audio late/underrun
-brojača. Prije daljnjeg firmware rada treba izmjeriti i stabilizirati zajednički
-5 V/VBUS put te ponoviti cijelu fizičku matricu.
+P4 dual-USB dodatak, 2026-08-29: izravna USB0 pohrana i USB1 FLX4 rade zajedno,
+a focused USB0 hotplug/Library reload bez reboota sada prolazi. Upstream recycle
+fix, indexed idle-only recovery, callback-safe teardown i fiksni 8 KiB MSC
+transfer su pinani source-contract gateovima. Grana ipak ostaje blokirana:
+kontrolirani dual-deck test 2026-08-12 završio je raw `BROWNOUT` resetom nakon
+približno 6,5 s, uz nula audio late/underrun brojača. Treba izmjeriti i
+stabilizirati zajednički 5 V/VBUS put te ponoviti cijelu fizičku matricu.
 
 1. Dovršiti USB reconciliation i bounded-cache stress: single-framebuffer fokusirani prikaz i realni MP3 prošli su, ali treba ispravno re-eksportati fizičke WAV/FLAC fixturee te ih pokrenuti pod sustained dual-deck opterećenjem s brojačima.
 2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
 3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.
-4. FLX4 MIDI/LED, PCM5102A i fokusirani monitor/headphone put su potvrđeni na RC2/IDF6; dovršiti S3↔P4 reconnect, numeric monitor soak, held-control saturation/reboot, Wi-Fi/OTA exclusion i dugotrajne fizičke gateove.
+4. FLX4 MIDI/LED, PCM5102A i fokusirani direct-UAC put su potvrđeni; dovršiti ponavljani USB1 reconnect, direct-UAC numeric/data-loss soak, held-control saturation/reboot, Wi-Fi/OTA exclusion i dugotrajne fizičke gateove.
 5. AP autentikaciju, fizičku OTA potvrdu, PMF/WPA3 te Secure Boot/Flash Encryption voditi kao zasebne proizvodne i provisioning odluke.

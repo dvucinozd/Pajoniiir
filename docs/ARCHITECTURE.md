@@ -209,7 +209,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
+Active `feat/p4-dual-usb-host` path (focused hardware-qualified 2026-08-29):
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -223,6 +223,15 @@ Active `feat/p4-dual-usb-host` path (software-qualified 2026-08-27):
   a connection generation, so stale packets cannot cross a reconnect.
 - There is no monitor-link fallback. Direct-UAC ring pressure and data loss are
   sampled outside the audio path and rate-limited into the service log.
+- USB0 storage publishes desired connect/disconnect state from the MSC callback
+  and reconciles it on one storage-owner task. Teardown first detaches the VFS
+  mount and MSC handle from shared state, retires the fixed 8 KiB transfer, then
+  destroys callback-backed resources. Larger FatFs operations are split into
+  bounded 8 KiB SCSI transactions; no transfer object is replaced during I/O.
+- Root recovery is indexed. A root is powered off only if the HCD still reports
+  it disconnected with no pending event; an active attach or enumeration
+  suppresses recovery. The 2026-08-29 OTA/hotplug smoke passed one USB0
+  remove/reinsert cycle while USB1 FLX4 MIDI/UAC remained active.
 
 The prior S3 UART and monitor-I2S implementation remains available only in Git
 history and dated validation/protocol records.

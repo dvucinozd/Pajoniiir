@@ -46,6 +46,17 @@ retained while its electrical and hardware acceptance gates remain open.
 > row remains open. The S3 was not updated in that session and continued to
 > report `RC2-44-g1923a3b`. See
 > [RC2-51 P4 OTA deployment](docs/validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+>
+> The focused P4-only follow-up on 2026-08-29 installed
+> `RC2-106-gfa55e43-dirty` into `ota_0` and passed the previously failing
+> dual-root hotplug path. With the FLX4 active on USB1, USB0 removal and
+> reinsertion completed without reboot: lifecycle diagnostics reported two
+> successful mounts from two attempts, one clean unmount/uninstall, zero host
+> daemon/recovery failures, a reloaded 100-track Library and successful track
+> loads. The accepted source was committed as `77aa23a`; see
+> [P4 dual-USB hotplug and OTA smoke](docs/validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md).
+> Repeated reboot/insertion-order testing, protected VBUS measurements and the
+> long combined-load soak remain open.
 
 > [!NOTE]
 > On `feat/p4-dual-usb-host`, the P4 hosts the direct-root FLX4 MIDI and
@@ -53,7 +64,8 @@ retained while its electrical and hardware acceptance gates remain open.
 > includes the fail-closed USB FIFO split, 48→44.1 kHz resampling with bounded
 > ring clock correction, reconnect generations, FLX4-only shifted LED mirrors,
 > headphone gain ramps, Beat Jump size pages, jog loop-boundary adjustment,
-> gapless slip-reverse Censor and rate-limited UAC health alarms. The complete
+> gapless slip-reverse Censor, indexed idle-only root recovery, fixed 8 KiB MSC
+> transfers and rate-limited UAC health alarms. The complete
 > P4 host suite and ESP-IDF 6.0.2 production build pass. The UART control link,
 > S3 heartbeat/debug AP, profile transfer, monitor PCM bridge, S3 firmware
 > reporting and dual-target OTA package are retired from the active product.
