@@ -433,6 +433,25 @@ if ($outputDiagMatch.Value -match '(?:ESP_(?:EARLY_|DRAM_)?LOG[A-Z_]*|esp_log_wr
 Write-Host "    PASS"
 
 Assert-FileContains `
+    -Name "p4 audio output defers position bookkeeping without blocking its deadline" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "audio_output_note_bookkeeping(output_position_epochs, consumed);",
+        "audio_output_commit_bookkeeping();",
+        "if (!AE_TRY_LOCK()) return;"
+    )
+
+Assert-FileContains `
+    -Name "p4 live seek rearms prebuffer and invalidates stale output progress" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "!__atomic_exchange_n(&s_start_waiting[deck], true, __ATOMIC_ACQ_REL)",
+        "atomic_load_bool(&s_start_seek_pending[deck]) ||",
+        "atomic_store_bool(&s_start_seek_pending[ctx->deck], false);",
+        "output_position_epoch_bump(deck);"
+    )
+
+Assert-FileContains `
     -Name "p4 late-output anomalies are aggregated outside the audio task" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
     -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late")
@@ -1403,6 +1422,18 @@ $tests = @(
             "-o", "test_audio_start_gate.exe",
             "test_audio_start_gate.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_start_gate.c"
+        )
+    },
+    @{
+        Name = "audio_output_bookkeeping"
+        Dir = "tests/audio_output_bookkeeping"
+        Target = "test_audio_output_bookkeeping.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_output_bookkeeping.exe",
+            "test_audio_output_bookkeeping.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_bookkeeping.c"
         )
     },
     @{

@@ -23,6 +23,7 @@
 #include "audio_decoder.h"
 #include "audio_eof_policy.h"
 #include "audio_start_gate.h"
+#include "audio_output_bookkeeping.h"
 #include "audio_format.h"
 #include "audio_diag.h"
 #include "audio_delay_fx.h"
@@ -128,6 +129,8 @@ static audio_pcm_ring_t   s_pcm_rings[AUDIO_ENGINE_DECK_COUNT];
 #define AE_TIMELINE_CAPACITY_FRAMES (AE_TIMELINE_SECONDS * AE_TIMELINE_MAX_RATE)
 static audio_pcm_timeline_t s_pcm_timelines[AUDIO_ENGINE_DECK_COUNT];
 static int16_t             *s_pcm_timeline_storage[AUDIO_ENGINE_DECK_COUNT];
+_Static_assert(AUDIO_ENGINE_DECK_COUNT == AUDIO_OUTPUT_BOOKKEEPING_DECKS,
+               "output bookkeeping deck count must match audio engine");
 /* Sole writer is the output task; diagnostics reads are best-effort snapshots. */
 static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
 #if AE_FW
@@ -135,7 +138,13 @@ static uint32_t s_pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
  * runway. The open bench issue was exactly 512 failed frame pops at startup. */
 #define AE_START_PREBUFFER_FRAMES 512u
 static bool     s_start_waiting[AUDIO_ENGINE_DECK_COUNT];
+/* A live seek initially leaves the old PCM runway visible until the decode
+ * task reaches its flush point. Keep the start gate closed across that window
+ * so it cannot mistake pre-seek frames for the new prebuffer. */
+static bool     s_start_seek_pending[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_start_wait_count[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_output_position_epoch[AUDIO_ENGINE_DECK_COUNT];
+static audio_output_bookkeeping_t s_output_bookkeeping;
 #endif
 /* Runway the loop-wrap trim must leave behind, in frames. The decoder needs to
  * reseek, reinit the MP3 decoder and produce its first batch before the output
@@ -602,6 +611,10 @@ static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     if (deck >= AUDIO_ENGINE_DECK_COUNT) deck = AE_DECK_0;
+    /* A control task can arm a seek after this output block snapshotted the
+     * deck as active. Do not pop (or count an underrun) from that stale block. */
+    if (atomic_load_bool(&s_start_waiting[deck]) ||
+        atomic_load_bool(&s_start_seek_pending[deck])) return false;
     if (timeline_active(deck)) {
         bool ok = audio_pcm_timeline_pop(&s_pcm_timelines[deck], out_frame);
         if (!ok) s_pcm_underrun_count[deck]++;
@@ -1079,6 +1092,7 @@ static void apply_all_deck_filter_raw(void)
 static pthread_mutex_t    s_file_mutex  = PTHREAD_MUTEX_INITIALIZER;
 #   define AE_LOCK()   pthread_mutex_lock(&s_file_mutex)
 #   define AE_UNLOCK() pthread_mutex_unlock(&s_file_mutex)
+#   define AE_TRY_LOCK() (pthread_mutex_trylock(&s_file_mutex) == 0)
 static pthread_mutex_t s_lifecycle_admission_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT] = {
     PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER
@@ -1087,11 +1101,13 @@ static pthread_mutex_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT] = {
 static SemaphoreHandle_t  s_file_mutex  = NULL;   /* created in audio_engine_init */
 #   define AE_LOCK()   do { if (s_file_mutex) xSemaphoreTakeRecursive(s_file_mutex, portMAX_DELAY); } while (0)
 #   define AE_UNLOCK() do { if (s_file_mutex) xSemaphoreGiveRecursive(s_file_mutex); } while (0)
+#   define AE_TRY_LOCK() (!s_file_mutex || xSemaphoreTakeRecursive(s_file_mutex, 0) == pdTRUE)
 static SemaphoreHandle_t s_lifecycle_admission_mutex;
 static SemaphoreHandle_t s_lifecycle_mutex[AUDIO_ENGINE_DECK_COUNT];
 #else
 #   define AE_LOCK()   do {} while (0)
 #   define AE_UNLOCK() do {} while (0)
+#   define AE_TRY_LOCK() true
 #endif
 
 static bool s_lifecycle_loads_blocked;
@@ -1334,6 +1350,8 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     if (deck >= AUDIO_ENGINE_DECK_COUNT || !timeline_active(deck) || !out) return false;
+    if (atomic_load_bool(&s_start_waiting[deck]) ||
+        atomic_load_bool(&s_start_seek_pending[deck])) return false;
     audio_pcm_timeline_t *timeline = &s_pcm_timelines[deck];
     uint32_t generation = audio_pcm_timeline_generation(timeline);
     if (!s_keylocks[deck].initialized || s_keylock_generation[deck] != generation) {
@@ -1437,6 +1455,7 @@ static bool deck_output_active(uint8_t deck)
                    !atomic_load_bool(&eng->paused);
     if (!playing) return false;
     if (atomic_load_bool(&s_start_waiting[deck])) {
+        if (atomic_load_bool(&s_start_seek_pending[deck])) return false;
         uint32_t future = deck_pcm_used(deck);
         if (!audio_start_gate_ready(future, AE_START_PREBUFFER_FRAMES,
                                     atomic_load_bool(&eng->eof))) {
@@ -1497,7 +1516,7 @@ static void audio_output_apply_censor_commands(void)
 }
 #endif
 
-static void update_deck_output_position(uint8_t deck, uint32_t consumed)
+static void update_deck_output_position(uint8_t deck, uint64_t consumed)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT || consumed == 0u) return;
     audio_engine_state_t *eng = &s_engines[deck];
@@ -1511,6 +1530,48 @@ static void update_deck_output_position(uint8_t deck, uint32_t consumed)
         }
     }
 }
+
+#if AE_FW
+static uint32_t output_position_epoch_load(uint8_t deck)
+{
+    return deck < AUDIO_ENGINE_DECK_COUNT
+        ? __atomic_load_n(&s_output_position_epoch[deck], __ATOMIC_ACQUIRE)
+        : 0u;
+}
+
+static void output_position_epoch_bump(uint8_t deck)
+{
+    if (deck < AUDIO_ENGINE_DECK_COUNT) {
+        (void)__atomic_add_fetch(&s_output_position_epoch[deck], 1u,
+                                 __ATOMIC_RELEASE);
+    }
+}
+
+static void audio_output_note_bookkeeping(const uint32_t *epochs,
+                                          const uint32_t *consumed)
+{
+    if (!epochs || !consumed) return;
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        audio_output_bookkeeping_note(&s_output_bookkeeping, deck,
+                                      epochs[deck], consumed[deck]);
+    }
+}
+
+static void audio_output_commit_bookkeeping(void)
+{
+    /* Decoder seek/decode work may own the metadata mutex for longer than the
+     * output deadline. Never wait from the real-time task: accepted frames stay
+     * in output-owned pending state and are applied at the next free boundary. */
+    if (!AE_TRY_LOCK()) return;
+    for (uint8_t deck = 0u; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
+        uint32_t epoch = output_position_epoch_load(deck);
+        uint64_t frames = audio_output_bookkeeping_take(
+            &s_output_bookkeeping, deck, epoch);
+        update_deck_output_position(deck, frames);
+    }
+    AE_UNLOCK();
+}
+#endif
 
 static void reset_all_resamplers(void)
 {
@@ -2779,6 +2840,7 @@ static void ae_decode_task(void *arg)
                     deck_pcm_reset(ctx->deck);
                     audio_resampler_reset(resampler);
                     taskEXIT_CRITICAL(&s_ring_flush_mux);
+                    atomic_store_bool(&s_start_seek_pending[ctx->deck], false);
                 }
                 if (seek_reason == AE_SEEK_REASON_SCRATCH_ABORT) {
                     atomic_store_bool(&s_scratch_abort_seek_waiting[ctx->deck], false);
@@ -3404,6 +3466,10 @@ static void ae_output_task(void *arg)
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 2u);
         const uint8_t deck0_index = AE_DECK_0;
         const uint8_t deck1_index = 1u;
+        const uint32_t output_position_epochs[AUDIO_ENGINE_DECK_COUNT] = {
+            output_position_epoch_load(deck0_index),
+            output_position_epoch_load(deck1_index),
+        };
         const float deck0_pitch = engine_pitch_load(deck0_index) *
                                   (1.0f + jog_bend_load(deck0_index));
         const float deck1_pitch = engine_pitch_load(deck1_index) *
@@ -3494,6 +3560,7 @@ static void ae_output_task(void *arg)
         ae_wdt_trace(AUDIO_WDT_PHASE_SNAPSHOT, 5u);
 
         if (!deck0.active && !deck1.active) {
+            audio_output_commit_bookkeeping();
             audio_output_gain_ramp_reset(&s_headphone_level_ramp,
                                          headphone_level_target);
             /* No audio block will reach the normal peak-recording path below,
@@ -3635,15 +3702,13 @@ static void ae_output_task(void *arg)
         bool headphone_ok = !s_codec || hp_rc == ESP_OK;
         if (main_ok && headphone_ok) {
             ae_wdt_trace(AUDIO_WDT_PHASE_BOOK_LOCK, 0u);
-            AE_LOCK();
-            update_deck_output_position(deck0_index, consumed[deck0_index]);
-            update_deck_output_position(deck1_index, consumed[deck1_index]);
+            audio_output_note_bookkeeping(output_position_epochs, consumed);
+            audio_output_commit_bookkeeping();
             record_deck_peak_value(deck0_index, block_peak[deck0_index]);
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
             record_deck_ui_peak(deck0_index, block_peak[deck0_index]);
             record_deck_ui_peak(deck1_index, block_peak[deck1_index]);
             limiter_stats_record(&block_limiter_stats);
-            AE_UNLOCK();
         } else {
             /* Stateful resamplers/DSP have already rendered this block, so it
              * cannot be replayed safely. Do not publish an inaudible position;
@@ -3800,6 +3865,7 @@ static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, c
         clear_scratch_playback_state(deck);
 #if AE_FW
         atomic_store_bool(&s_start_waiting[deck], false);
+        atomic_store_bool(&s_start_seek_pending[deck], false);
 #endif
     }
     memset(eng, 0, sizeof(*eng));
@@ -3827,6 +3893,7 @@ esp_err_t audio_engine_init(void)
     reset_all_fw_preloads();
     reset_all_fw_runtimes();
     reset_all_fw_task_contexts();
+    audio_output_bookkeeping_reset(&s_output_bookkeeping);
     ae_diag_reset();
     s_main_sink_stats = (audio_output_sink_stats_t) { 0 };
     s_headphone_sink_errors = 0u;
@@ -3837,7 +3904,9 @@ esp_err_t audio_engine_init(void)
         s_pcm_underrun_count[i] = 0u;
 #if AE_FW
         atomic_store_bool(&s_start_waiting[i], false);
+        atomic_store_bool(&s_start_seek_pending[i], false);
         s_start_wait_count[i] = 0u;
+        __atomic_store_n(&s_output_position_epoch[i], 1u, __ATOMIC_RELEASE);
 #endif
         s_loop_trim_wraps[i] = 0u;
         s_loop_trim_dropped_max[i] = 0u;
@@ -4032,6 +4101,9 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
     eng->frames_since_seek = 0u;
     eng->output_base_ms    = 0u;
     eng->output_frames_since_seek = 0u;
+#if AE_FW
+    output_position_epoch_bump(deck);
+#endif
     atomic_store_bool(&eng->playing, false);
     atomic_store_bool(&eng->paused, false);
     atomic_store_bool(&eng->eof, false);
@@ -4201,6 +4273,7 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
 
 #if AE_FW
     bool wait_for_prebuffer =
+        atomic_load_bool(&s_start_seek_pending[deck]) ||
         !audio_start_gate_ready(deck_pcm_used(deck),
                                 AE_START_PREBUFFER_FRAMES,
                                 atomic_load_bool(&eng->eof));
@@ -4240,6 +4313,7 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
     atomic_store_bool(&eng->playback_finished, false);
 #if AE_FW
     atomic_store_bool(&s_start_waiting[deck], false);
+    atomic_store_bool(&s_start_seek_pending[deck], false);
 #endif
     eng->loading = false;
     eng->load_progress = 100;
@@ -4308,6 +4382,9 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 #endif
 
     audio_engine_reset_state(eng, ESP_OK, "OK");
+#if AE_FW
+    output_position_epoch_bump(deck);
+#endif
     deck_pcm_reset(deck);
     audio_scratch_buffer_reset(&s_scratch_buf[deck]);
 
@@ -4335,6 +4412,19 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
     if (!eng->loaded || (!eng->fp && !eng->decoder_open)) return ESP_ERR_INVALID_STATE;
 #endif
 
+#if AE_FW
+    if (reason != AE_SEEK_REASON_LOOP) {
+        atomic_store_bool(&s_start_seek_pending[deck], true);
+    }
+    if (reason != AE_SEEK_REASON_LOOP &&
+        atomic_load_bool(&eng->playing) &&
+        !atomic_load_bool(&eng->paused)) {
+        if (!__atomic_exchange_n(&s_start_waiting[deck], true, __ATOMIC_ACQ_REL)) {
+            __atomic_add_fetch(&s_start_wait_count[deck], 1u, __ATOMIC_RELAXED);
+        }
+    }
+#endif
+
     AE_LOCK();
     /* The decode task writes the same seek fields under the lock (loop-wrap
      * seek and end-of-handling clear), so a user seek must publish them under
@@ -4347,6 +4437,9 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
     atomic_store_bool(&eng->playback_finished, false);
     eng->output_base_ms = position_ms;
     eng->output_frames_since_seek = 0u;
+#if AE_FW
+    output_position_epoch_bump(deck);
+#endif
     eng->seek_base_ms = position_ms;
     eng->frames_since_seek = 0u;
 #if !AE_FW
@@ -4926,6 +5019,7 @@ void audio_engine_deck_scratch_end(uint8_t deck)
         s_engines[deck].output_base_ms = s_scratch_origin_pos_ms[deck];
         s_engines[deck].output_frames_since_seek = 0u;
 #if AE_FW
+        output_position_epoch_bump(deck);
         audio_resampler_reset(&s_resamplers[deck]);
 #endif
         atomic_store_bool(&s_scratch_return_paused[deck], true);
@@ -4943,6 +5037,7 @@ void audio_engine_deck_scratch_end(uint8_t deck)
             s_engines[deck].output_base_ms = target;
             s_engines[deck].output_frames_since_seek = 0u;
 #if AE_FW
+            output_position_epoch_bump(deck);
             audio_resampler_reset(&s_resamplers[deck]);
 #endif
         }
