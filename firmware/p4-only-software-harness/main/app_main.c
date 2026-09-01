@@ -164,7 +164,8 @@ void app_main(void)
                  " disc=%" PRIu32 ") MIDI(connected=%u conn=%" PRIu32
                  " disc=%" PRIu32 " packets=%" PRIu32
                  " in_fail=%" PRIu32 " out_fail=%" PRIu32
-                 " queue_drop=%" PRIu32 ") MAP(events=%" PRIu32
+                 " queue_drop=%" PRIu32 " recovery=%" PRIu32
+                 " epochs=%" PRIu32 ") MAP(events=%" PRIu32
                  " non_emit=%" PRIu32 " snapshots=%" PRIu32
                  " held=%" PRIu32 " queued=%u coalesced=%" PRIu32
                  " dropped=%" PRIu32 ")",
@@ -182,6 +183,8 @@ void app_main(void)
                  controller_diag.midi_in_submit_failures,
                  controller_diag.midi_out_submit_failures,
                  controller_diag.midi_out_queue_drops,
+                 controller_diag.recovery_requests,
+                 controller_diag.fault_recovery_epochs,
                  runtime_diag.semantic_events,
                  runtime_diag.non_emitting_messages,
                  runtime_diag.reconnect_snapshots,

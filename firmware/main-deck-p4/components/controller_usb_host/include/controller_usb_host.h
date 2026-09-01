@@ -72,6 +72,7 @@ typedef struct {
     uint32_t midi_out_queue_drops;
     uint32_t probe_event_drops;
     uint32_t recovery_requests;
+    uint32_t fault_recovery_epochs;
     int32_t last_probe_result;
     uint16_t last_seen_vid;
     uint16_t last_seen_pid;

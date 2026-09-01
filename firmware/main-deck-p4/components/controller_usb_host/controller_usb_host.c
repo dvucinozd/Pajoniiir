@@ -5,6 +5,7 @@
 
 #include "esp_log.h"
 #include "controller_usb_audio_stream.h"
+#include "controller_usb_recovery_gate.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "usb/usb_host.h"
@@ -37,6 +38,8 @@ typedef struct {
     bool closing;
     bool device_gone;
     bool out_generation_closed;
+    bool midi_flush_attempted;
+    controller_usb_recovery_gate_t recovery_gate;
 } controller_state_t;
 
 static controller_state_t s_state;
@@ -82,12 +85,37 @@ static void record_probe_result(controller_usb_probe_stage_t stage,
                      __ATOMIC_RELEASE);
 }
 
-static void request_controller_recovery(void)
+static void begin_controller_fault_recovery(controller_state_t *state,
+                                            const char *operation,
+                                            esp_err_t error)
 {
+    if (!state || !controller_usb_recovery_gate_begin_fault(
+            &state->recovery_gate)) {
+        return;
+    }
+    ESP_LOGW(TAG, "%s fault (%s); closing USB1 before one recovery request",
+             operation ? operation : "controller USB", esp_err_to_name(error));
+    __atomic_store_n(&s_accepting_out, false, __ATOMIC_RELEASE);
+    state->closing = true;
+    state->device_gone = false;
+    state->midi_flush_attempted = false;
+    controller_usb_audio_stream_request_stop(false);
+}
+
+static void submit_deferred_controller_recovery(controller_state_t *state)
+{
+    if (!state || !controller_usb_recovery_gate_pending(
+            &state->recovery_gate)) {
+        return;
+    }
     const esp_err_t rc = usb_host_manager_request_recovery(
         1u, USB_HOST_RECOVERY_REASON_TRANSFER);
     if (rc == ESP_OK) {
         count_inc(&s_recovery_requests);
+        controller_usb_recovery_gate_complete(&state->recovery_gate);
+    } else if (rc != ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "deferred USB1 recovery request: %s",
+                 esp_err_to_name(rc));
     }
 }
 
@@ -139,7 +167,7 @@ static esp_err_t submit_in_if_idle(controller_state_t *state)
         state->in_active = true;
     } else {
         count_inc(&s_midi_in_submit_failures);
-        request_controller_recovery();
+        begin_controller_fault_recovery(state, "MIDI IN submit", rc);
     }
     return rc;
 }
@@ -178,7 +206,7 @@ static esp_err_t submit_out_if_idle(controller_state_t *state)
         state->out_active = true;
     } else {
         count_inc(&s_midi_out_submit_failures);
-        request_controller_recovery();
+        begin_controller_fault_recovery(state, "MIDI OUT submit", rc);
     }
     return rc;
 }
@@ -197,6 +225,9 @@ static void midi_in_callback(usb_transfer_t *transfer)
         state->device_gone =
             state->device_gone ||
             transfer->status == USB_TRANSFER_STATUS_NO_DEVICE;
+        if (state->device_gone) {
+            controller_usb_recovery_gate_cancel(&state->recovery_gate);
+        }
         __atomic_store_n(&s_accepting_out, false, __ATOMIC_RELEASE);
     }
 
@@ -221,7 +252,8 @@ static void midi_in_callback(usb_transfer_t *transfer)
     } else if (transfer->status != USB_TRANSFER_STATUS_NO_DEVICE &&
                transfer->status != USB_TRANSFER_STATUS_CANCELED) {
         ESP_LOGW(TAG, "MIDI IN transfer status=%d", (int)transfer->status);
-        request_controller_recovery();
+        begin_controller_fault_recovery(state, "MIDI IN transfer",
+                                         ESP_FAIL);
     }
 
     if (!state->closing && !terminal) {
@@ -246,6 +278,9 @@ static void midi_out_callback(usb_transfer_t *transfer)
         state->device_gone =
             state->device_gone ||
             transfer->status == USB_TRANSFER_STATUS_NO_DEVICE;
+        if (state->device_gone) {
+            controller_usb_recovery_gate_cancel(&state->recovery_gate);
+        }
         __atomic_store_n(&s_accepting_out, false, __ATOMIC_RELEASE);
     }
 
@@ -253,7 +288,8 @@ static void midi_out_callback(usb_transfer_t *transfer)
         transfer->status != USB_TRANSFER_STATUS_NO_DEVICE &&
         transfer->status != USB_TRANSFER_STATUS_CANCELED) {
         ESP_LOGW(TAG, "MIDI OUT transfer status=%d", (int)transfer->status);
-        request_controller_recovery();
+        begin_controller_fault_recovery(state, "MIDI OUT transfer",
+                                         ESP_FAIL);
     }
     if (!state->closing && !terminal) {
         (void)submit_out_if_idle(state);
@@ -274,6 +310,34 @@ static void close_step(controller_state_t *state)
     }
     if (state->out_queue) {
         (void)xQueueReset(state->out_queue);
+    }
+    if (!state->device_gone && state->claimed && state->device &&
+        (state->in_active || state->out_active) &&
+        !state->midi_flush_attempted) {
+        state->midi_flush_attempted = true;
+        const uint8_t endpoints[] = {
+            state->identity.midi.in_ep_addr,
+            state->identity.midi.out_ep_addr,
+        };
+        const bool active[] = { state->in_active, state->out_active };
+        for (size_t i = 0u; i < 2u; ++i) {
+            if (!active[i]) {
+                continue;
+            }
+            const esp_err_t halt_rc =
+                usb_host_endpoint_halt(state->device, endpoints[i]);
+            if (halt_rc == ESP_OK || halt_rc == ESP_ERR_INVALID_STATE) {
+                const esp_err_t flush_rc =
+                    usb_host_endpoint_flush(state->device, endpoints[i]);
+                if (flush_rc != ESP_OK && flush_rc != ESP_ERR_INVALID_STATE) {
+                    ESP_LOGW(TAG, "flush MIDI endpoint 0x%02X: %s",
+                             endpoints[i], esp_err_to_name(flush_rc));
+                }
+            } else {
+                ESP_LOGW(TAG, "halt MIDI endpoint 0x%02X: %s",
+                         endpoints[i], esp_err_to_name(halt_rc));
+            }
+        }
     }
     if (state->in_active || state->out_active) {
         return;
@@ -317,6 +381,7 @@ static void close_step(controller_state_t *state)
     state->closing = false;
     state->device_gone = false;
     state->out_generation_closed = false;
+    state->midi_flush_attempted = false;
     if (was_connected) {
         count_inc(&s_midi_disconnects);
         if (state->config.connection_cb) {
@@ -325,6 +390,7 @@ static void close_step(controller_state_t *state)
         }
         ESP_LOGI(TAG, "USB-MIDI controller disconnected");
     }
+    submit_deferred_controller_recovery(state);
 }
 
 static esp_err_t probe_device(controller_state_t *state, uint8_t address)
@@ -398,6 +464,8 @@ static esp_err_t probe_device(controller_state_t *state, uint8_t address)
     state->opened = true;
     state->closing = false;
     state->device_gone = false;
+    state->midi_flush_attempted = false;
+    controller_usb_recovery_gate_cancel(&state->recovery_gate);
     state->identity = (controller_usb_identity_t) {
         .vid = device_desc->idVendor,
         .pid = device_desc->idProduct,
@@ -505,6 +573,7 @@ static void client_event_callback(const usb_host_client_event_msg_t *event_msg,
         if (state->opened && event_msg->dev_gone.dev_hdl == state->device) {
             state->closing = true;
             state->device_gone = true;
+            controller_usb_recovery_gate_cancel(&state->recovery_gate);
             __atomic_store_n(&s_accepting_out, false, __ATOMIC_RELEASE);
             controller_usb_audio_stream_request_stop(true);
         }
@@ -549,6 +618,18 @@ static void controller_task(void *arg)
             close_step(&s_state);
             continue;
         }
+        if (!s_state.opened) {
+            submit_deferred_controller_recovery(&s_state);
+        }
+        controller_usb_audio_stream_stats_t audio_stats = {0};
+        controller_usb_audio_stream_get_stats(&audio_stats);
+        if (s_state.opened && s_state.identity.usb_audio_active &&
+            audio_stats.faulted) {
+            begin_controller_fault_recovery(&s_state, "FLX4 UAC stream",
+                                             ESP_FAIL);
+            close_step(&s_state);
+            continue;
+        }
         (void)controller_usb_audio_stream_poll_cleanup();
         uint8_t address = 0u;
         while (!s_state.closing && s_state.probe_queue &&
@@ -580,6 +661,7 @@ esp_err_t controller_usb_host_init(const controller_usb_host_config_t *config)
     }
 
     memset(&s_state, 0, sizeof(s_state));
+    controller_usb_recovery_gate_init(&s_state.recovery_gate);
     s_state.config = *config;
     s_state.out_queue = xQueueCreate(config->midi_out_queue_depth,
                                      sizeof(controller_midi_out_item_t));
@@ -696,6 +778,9 @@ void controller_usb_host_get_diagnostics(
             __atomic_load_n(&s_probe_event_drops, __ATOMIC_ACQUIRE),
         .recovery_requests =
             __atomic_load_n(&s_recovery_requests, __ATOMIC_ACQUIRE),
+        .fault_recovery_epochs =
+            controller_usb_recovery_gate_fault_epochs(
+                &s_state.recovery_gate),
         .last_probe_result =
             __atomic_load_n(&s_last_probe_result, __ATOMIC_ACQUIRE),
         .last_seen_vid =

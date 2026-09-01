@@ -1229,6 +1229,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             "\"midi_connects\":%u,\"midi_disconnects\":%u,"
             "\"midi_packets\":%u,\"midi_bytes\":%u,"
             "\"probe_event_drops\":%u,\"recovery_requests\":%u,"
+            "\"fault_recovery_epochs\":%u,"
             "\"last_probe_stage\":%u,"
             "\"last_probe_stage_name\":\"%s\","
             "\"last_probe_result\":%d,"
@@ -1289,6 +1290,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)controller_diag.midi_bytes,
             (unsigned)controller_diag.probe_event_drops,
             (unsigned)controller_diag.recovery_requests,
+            (unsigned)controller_diag.fault_recovery_epochs,
             (unsigned)controller_diag.last_probe_stage,
             controller_usb_probe_stage_name(controller_diag.last_probe_stage),
             (int)controller_diag.last_probe_result,

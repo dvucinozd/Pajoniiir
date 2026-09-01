@@ -29,12 +29,14 @@ $BufferExe = Join-Path $BuildDir "test_controller_event_buffer"
 $RuntimeExe = Join-Path $BuildDir "test_controller_runtime"
 $ProfileExe = Join-Path $BuildDir "test_controller_runtime_profile"
 $RecoveryExe = Join-Path $BuildDir "test_usb_host_recovery_arbiter"
+$ControllerRecoveryExe = Join-Path $BuildDir "test_controller_usb_recovery_gate"
 $TopologyExe = Join-Path $BuildDir "test_usb_host_topology"
 if ($IsWindows) {
     $BufferExe += ".exe"
     $RuntimeExe += ".exe"
     $ProfileExe += ".exe"
     $RecoveryExe += ".exe"
+    $ControllerRecoveryExe += ".exe"
     $TopologyExe += ".exe"
 }
 
@@ -76,6 +78,14 @@ gcc @CommonArgs `
     -o $RecoveryExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $RecoveryExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+gcc @CommonArgs `
+    (Join-Path $Codec "controller_usb_recovery_gate.c") `
+    (Join-Path $PSScriptRoot "test_controller_usb_recovery_gate.c") `
+    -o $ControllerRecoveryExe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $ControllerRecoveryExe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 gcc @CommonArgs `
