@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: current phase ledger, P4-only branch reconciled 2026-08-27.
+Status: current phase ledger, P4-only branch reconciled 2026-09-01.
 
 > On `feat/p4-dual-usb-host`, P4 directly owns USB0 storage and USB1 controller
 > MIDI/audio. The S3 UART/heartbeat/debug AP, profile-transfer, monitor PCM and
@@ -30,7 +30,7 @@ section and retries controller bootstrap while exposing health diagnostics.
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted; armed Loop In dynamic overlay burning implemented in `ui_overview.c` for smooth 60 FPS scrolling highlight without strip invalidation. Verified on P4 hardware 2026-08-19 |
 | Controller profiles | Firmware path implemented; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; `generic_midi_ci` and a specification-derived Hercules Inpulse 500 profile are compiler/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; non-FLX4 hardware and remote update acceptance pending |
-| Direct-controller runtime hardening | Identity-gated built-in mapping, durable held-state retries, off-USB-task profile activation with epoch validation, truthful UAC capability reporting and retrying bootstrap implemented; host suite and clean ESP-IDF 6.0.2 P4 build pass, hardware reconnect/profile acceptance pending |
+| Direct-controller runtime hardening | Identity-gated built-in mapping, durable held-state retries, off-USB-task profile activation with epoch validation, truthful UAC capability reporting, retrying bootstrap and bounded transfer/UAC fault recovery implemented. Host suite and clean ESP-IDF 6.0.2 P4 build pass; exact `RC2-109-g269036b` OTA, one USB1 reconnect and post-reconnect dual-deck audio pass. Repeated reconnect/profile acceptance remains pending |
 | P4 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; P4 RC2 application OTA and full IDF 6.0.2 boot-chain flash passed. S3 OTA evidence is retained as historical baseline only |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
@@ -2836,6 +2836,31 @@ This closes the focused hotplug reproduction, not the release gate. Electrical
 qualification, repeated cold/warm boots and insertion orders, removal during
 active decode, repeated USB1 reconnect, 30-minute combined-load diagnostics and
 the later multi-hour soak remain open.
+
+### Bounded USB1 controller fault recovery, 2026-09-01
+
+Commit `269036b` closes the observed high-rate controller recovery-request
+storm. The first MIDI transfer/submit or direct-UAC fault opens one epoch,
+stops new output, retires endpoint callbacks and tears down ownership before at
+most one deferred USB1 recovery request. Duplicate reports in the epoch are
+coalesced, and a physical device-gone event cancels the pending soft request.
+The controller task also observes a latched UAC fault, eliminating the previous
+false-active state with a stopped consumer.
+
+The complete P4 host suite passed with the new pure-C recovery-gate test. A
+clean ESP-IDF 6.0.2 build from exact commit `269036b` produced
+`RC2-109-g269036b` (2,450,656 bytes; SHA-256
+`7776f287f9f795abeee36ac648dc518517ec270823928293bf0b04cb334cd9ee`).
+The signed candidate booted `ota_0`, mounted a 100-track USB0 Library and
+activated direct FLX4 MIDI/UAC. Idle, 30-second dual-deck audio, one physical
+USB1 reconnect and 20-second post-reconnect dual-deck audio completed with zero
+new recovery requests, late blocks, UAC drops/overflow, PCM underruns or daemon
+errors. USB0 remained at one mount and zero disconnects. See
+`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`.
+
+This closes only the focused controller-storm reproduction and one reconnect.
+The repeated USB0/USB1 matrix, removal during decode, 30-minute/multi-hour soak
+and measured protected-VBUS qualification remain open.
 
 ## Idle Screensaver
 

@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: P4-only branch overview, reconciled 2026-08-29. The ESP-IDF 6.0.2
+Status: P4-only branch overview, reconciled 2026-09-01. The ESP-IDF 6.0.2
 migration is **merged into `master`**; the release prefix moved from `RC1` to
 **`RC2`** to mark the new build baseline, and the latest clean dual-target
 release build is `RC2` (`56905c89`, ESP-IDF 6.0.2). It carries the bounded
@@ -26,6 +26,14 @@ while USB1 FLX4 MIDI/UAC stayed active. The Library remounted and reloaded
 without a P4 reboot, and later track loads completed. The tested source is
 commit `77aa23a`; repeated recovery, power measurement and long soak remain
 open.
+
+The 2026-09-01 exact-commit follow-up installed `RC2-109-g269036b` through
+signed OTA. Commit `269036b` bounds one USB1 transfer/UAC fault to one teardown
+epoch and at most one deferred recovery request. Idle, dual-deck playback, one
+FLX4 disconnect/reconnect and post-reconnect dual-deck audio passed while USB0
+remained mounted; the old approximately 100-request/s recovery storm did not
+return. The repeated matrix, 30-minute soak and measured protected-VBUS gate
+remain open.
 
 ## Goal
 

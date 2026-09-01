@@ -57,6 +57,15 @@ retained while its electrical and hardware acceptance gates remain open.
 > [P4 dual-USB hotplug and OTA smoke](docs/validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md).
 > Repeated reboot/insertion-order testing, protected VBUS measurements and the
 > long combined-load soak remain open.
+>
+> The 2026-09-01 follow-up installed the exact clean commit candidate
+> `RC2-109-g269036b` into `ota_0` and closed the high-rate USB1 controller
+> recovery storm. Idle and dual-deck direct-UAC windows remained at zero new
+> recovery requests, late blocks, drops, overflows and PCM underruns. One FLX4
+> disconnect/reconnect preserved the mounted USB0 Library and post-reconnect
+> dual-deck audio. See
+> [P4 USB1 bounded fault recovery and OTA smoke](docs/validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md).
+> The repeated reconnect, long soak and electrical gates remain open.
 
 > [!NOTE]
 > On `feat/p4-dual-usb-host`, the P4 hosts the direct-root FLX4 MIDI and

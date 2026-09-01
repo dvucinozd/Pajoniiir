@@ -2,7 +2,7 @@
 
 Saved: **2026-08-12**
 
-Software/hardware checkpoint updated: **2026-08-29**
+Software/hardware checkpoint updated: **2026-09-01**
 
 This is the operational checkpoint for the next physical bench session. It is
 deliberately narrower than the architecture plan and records only facts needed
@@ -12,7 +12,7 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Current firmware checkpoint: `77aa23a`
+- Current firmware checkpoint: `269036b`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
@@ -38,6 +38,15 @@ running from `ota_0`. The tested source was committed immediately afterward as
 is not an exact-commit artifact label. Exact evidence is in
 [`../validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](../validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md).
 
+The newer exact-commit checkpoint is `RC2-109-g269036b`, built clean with
+ESP-IDF v6.0.2. Its 2,450,656-byte application has SHA-256
+`7776f287f9f795abeee36ac648dc518517ec270823928293bf0b04cb334cd9ee`.
+The signed bundle booted `ota_0`; USB0 mounted a 100-track Library and USB1
+activated FLX4 MIDI/UAC. Idle and dual-deck counters stayed clean, one FLX4
+disconnect/reconnect preserved USB0, and post-reconnect dual-deck UAC playback
+passed. Exact evidence is in
+[`../validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](../validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md).
+
 ## Current blocker and branch status
 
 JP1 alone did not provide downstream VBUS on 2026-08-10. A later unqualified
@@ -50,8 +59,11 @@ breadcrumbs varied between normal I2S output and snapshot preparation; the
 Task-WDT ISR hook never fired. This rules out one deterministic audio-task
 deadlock and leaves the unqualified power/VBUS path as the blocker.
 
-One 2026-08-29 signed-OTA boot and USB0 remove/reinsert cycle passed with USB1
-FLX4 active, so focused software hotplug work may continue. Release and
+One 2026-08-29 USB0 remove/reinsert cycle and one 2026-09-01 USB1 FLX4
+disconnect/reconnect cycle passed, so focused software hotplug work may
+continue. Commit `269036b` also bounds each controller transfer/UAC fault to one
+teardown epoch and at most one deferred USB1 recovery request; the observed
+approximately 100-request/s storm is closed. Release and
 enclosure qualification still require the common 5 V path and each downstream
 VBUS to be measured under startup and sustained dual-deck load without
 backfeeding the P4-side VBUS. The circuit and pre-connection checks are in
@@ -237,7 +249,8 @@ end-to-end product behavior.
 - complete P4-local MIDI input and LED output acceptance;
 - simultaneous storage reads, playback and controller traffic;
 - repeated independent USB0/USB1 disconnect and recovery (one USB0 replug
-  passed 2026-08-29; USB1 and remove-during-decode remain);
+  passed 2026-08-29 and one USB1 replug passed 2026-09-01;
+  remove-during-decode and the repeated matrix remain);
 - playback/cache-miss stress while operating the controller;
 - heap, DMA heap, stack, latency, VBUS and current measurements;
 - 30-minute dual-active diagnostic soak and later multi-hour product soak;

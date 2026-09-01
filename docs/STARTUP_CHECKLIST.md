@@ -1,6 +1,6 @@
 # Startup Checklist
 
-> **Active branch scope (2026-08-29):** `feat/p4-dual-usb-host` is P4-only.
+> **Active branch scope (2026-09-01):** `feat/p4-dual-usb-host` is P4-only.
 > Do not power, flash, connect or wait for an S3 during branch validation. Use
 > USB0 for Rekordbox storage and USB1 for the FLX4. Historical checked S3 rows
 > below document the last known-good dual-processor baseline only. The protected
@@ -8,10 +8,10 @@
 > The historical S3 firmware directory and test runner no longer exist; do not
 > treat any older checked S3 row as a command that can be rerun from this tree.
 
-Status: reconciled 2026-08-29. Checked items below are historical bring-up
+Status: reconciled 2026-09-01. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. The active
-P4-only bench runs `RC2-106-gfa55e43-dirty` from `ota_0`; its tested source was
-committed as `77aa23a`. S3 entries below are historical only.
+P4-only bench runs exact clean commit candidate `RC2-109-g269036b` from
+`ota_0`. S3 entries below are historical only.
 
 ## Current installed and accepted baselines
 
@@ -67,6 +67,15 @@ committed as `77aa23a`. S3 entries below are historical only.
   recovery failures, a reloaded 100-track Library and successful track loads.
   Tested source is commit `77aa23a`. Dokaz:
   `validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`.
+- [x] P4-only bounded USB1 recovery follow-up 2026-09-01: clean ESP-IDF 6.0.2
+  build and signed exact-commit OTA installed `RC2-109-g269036b` into `ota_0`.
+  A 20-second idle window, 30-second dual-deck window, one FLX4
+  disconnect/reconnect and 20-second post-reconnect dual-deck window completed
+  with USB0 still mounted and zero new recovery requests, late blocks, UAC
+  drops/overflow, PCM underruns or daemon errors. This closes the observed
+  high-rate controller recovery storm and one focused USB1 cycle, not the
+  repeated/power/long-soak gates. Dokaz:
+  `validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -108,6 +117,9 @@ committed as `77aa23a`. S3 entries below are historical only.
   candidate. The suite and `build_signed` passed again on 2026-08-29 for the
   USB recovery/MSC remediation; the application was 2,449,552 bytes with
   SHA-256 `a8f377bd4b310338cae545c1f7b07b0da60bdc415569993e4c7c416d912faa1a`.
+  The host suite and a clean exact-commit `build_signed` also passed for
+  `269036b` on 2026-09-01; `RC2-109-g269036b` is 2,450,656 bytes with SHA-256
+  `7776f287f9f795abeee36ac648dc518517ec270823928293bf0b04cb334cd9ee`.
 - [x] Focused direct dual-root USB smoke: one signed OTA reboot plus one USB0
   remove/reinsert cycle with USB1 FLX4 active completed without reboot, panic,
   mount failure or controller loss on 2026-08-29.

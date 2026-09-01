@@ -209,7 +209,8 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `feat/p4-dual-usb-host` path (focused hardware-qualified 2026-08-29):
+Active `feat/p4-dual-usb-host` path (focused hardware-qualified through
+2026-09-01):
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -232,6 +233,12 @@ Active `feat/p4-dual-usb-host` path (focused hardware-qualified 2026-08-29):
   it disconnected with no pending event; an active attach or enumeration
   suppresses recovery. The 2026-08-29 OTA/hotplug smoke passed one USB0
   remove/reinsert cycle while USB1 FLX4 MIDI/UAC remained active.
+- USB1 controller transfer and UAC faults share one bounded fault epoch. The
+  owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
+  and releases device/interface ownership, then submits at most one deferred
+  root-recovery request. A physical device-gone event cancels that soft request.
+  The exact `RC2-109-g269036b` smoke passed one FLX4 reconnect and
+  post-reconnect dual-deck UAC playback without disturbing USB0.
 
 The prior S3 UART and monitor-I2S implementation remains available only in Git
 history and dated validation/protocol records.
