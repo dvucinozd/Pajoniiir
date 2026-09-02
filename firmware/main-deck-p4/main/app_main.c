@@ -84,6 +84,7 @@ static void health_monitor_cb(void *arg)
         d.usb_headphone_dropped_blocks,
         d.usb_headphone_overflow_frames,
         d.usb_headphone_underflow_frames);
+    audio_engine_set_uac_active_data_loss_flags(uac.active_data_loss_flags);
     pending_uac_dropped = add_u32_saturating(
         pending_uac_dropped, uac.delta_dropped_blocks);
     pending_uac_overflow = add_u32_saturating(

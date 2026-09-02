@@ -894,6 +894,13 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.usb_headphone_submitted_blocks == 0, "diagnostics USB headphone submitted blocks start clear");
     EXPECT(diag.usb_headphone_dropped_blocks == 0, "diagnostics USB headphone dropped blocks start clear");
     EXPECT(diag.usb_headphone_submitted_frames == 0, "diagnostics USB headphone submitted frames start clear");
+    EXPECT(diag.usb_headphone_active_data_loss_flags == 0u,
+           "diagnostics active UAC data-loss flags start clear");
+    audio_engine_set_uac_active_data_loss_flags(0x14u);
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.usb_headphone_active_data_loss_flags == 0x14u,
+           "diagnostics publishes playback-session UAC data-loss flags");
+    audio_engine_set_uac_active_data_loss_flags(0u);
 
     audio_mixer_limiter_stats_t limiter_stats = {
         .limited_samples = 9,

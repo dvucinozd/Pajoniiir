@@ -43,6 +43,14 @@ static void test_pressure_and_active_data_loss(void)
     assert(r.delta_dropped_blocks == 2u);
     assert(r.delta_overflow_frames == 3u);
     assert(r.delta_underflow_frames == 4u);
+    assert(r.active_data_loss_flags == (AUDIO_UAC_HEALTH_DROPPED |
+                                        AUDIO_UAC_HEALTH_OVERFLOW |
+                                        AUDIO_UAC_HEALTH_UNDERFLOW));
+    r = sample(&monitor, true, 4u, 1024u, 10u, 12u, 14u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    assert(r.active_data_loss_flags == (AUDIO_UAC_HEALTH_DROPPED |
+                                        AUDIO_UAC_HEALTH_OVERFLOW |
+                                        AUDIO_UAC_HEALTH_UNDERFLOW));
 }
 
 static void test_idle_and_playback_start_establish_baseline(void)
@@ -57,10 +65,15 @@ static void test_idle_and_playback_start_establish_baseline(void)
     assert(r.delta_dropped_blocks == 0u);
     assert(r.delta_overflow_frames == 0u);
     assert(r.delta_underflow_frames == 0u);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
     r = sample(&monitor, true, 12u, 1024u, 5u, 8u, 213585u);
     assert(r.flags == (AUDIO_UAC_HEALTH_DROPPED |
                        AUDIO_UAC_HEALTH_OVERFLOW |
                        AUDIO_UAC_HEALTH_UNDERFLOW));
+    assert(r.active_data_loss_flags == r.flags);
+    r = sample(&monitor, false, 13u, 0u, 5u, 8u, 999999u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
 }
 
 static void test_counter_reset_does_not_wrap(void)

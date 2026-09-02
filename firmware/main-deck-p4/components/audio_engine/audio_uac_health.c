@@ -88,12 +88,14 @@ audio_uac_health_result_t audio_uac_health_sample(
     monitor->initialized = true;
 
     if (!playback_active) {
+        monitor->active_data_loss_flags = AUDIO_UAC_HEALTH_NONE;
         result.delta_dropped_blocks = 0u;
         result.delta_overflow_frames = 0u;
         result.delta_underflow_frames = 0u;
         return result;
     }
     if (playback_started) {
+        monitor->active_data_loss_flags = AUDIO_UAC_HEALTH_NONE;
         result.delta_dropped_blocks = 0u;
         result.delta_overflow_frames = 0u;
         result.delta_underflow_frames = 0u;
@@ -106,5 +108,10 @@ audio_uac_health_result_t audio_uac_health_sample(
     if (result.delta_dropped_blocks > 0u) result.flags |= AUDIO_UAC_HEALTH_DROPPED;
     if (result.delta_overflow_frames > 0u) result.flags |= AUDIO_UAC_HEALTH_OVERFLOW;
     if (result.delta_underflow_frames > 0u) result.flags |= AUDIO_UAC_HEALTH_UNDERFLOW;
+    monitor->active_data_loss_flags |= result.flags &
+        (AUDIO_UAC_HEALTH_DROPPED |
+         AUDIO_UAC_HEALTH_OVERFLOW |
+         AUDIO_UAC_HEALTH_UNDERFLOW);
+    result.active_data_loss_flags = monitor->active_data_loss_flags;
     return result;
 }

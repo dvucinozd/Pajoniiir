@@ -231,6 +231,7 @@ typedef struct {
     uint32_t usb_headphone_ring_high_water_frames;
     uint32_t usb_headphone_overflow_frames;
     uint32_t usb_headphone_underflow_frames;
+    uint32_t usb_headphone_active_data_loss_flags;
     uint32_t heap_free;
     uint32_t internal_free;
     uint32_t psram_free;
@@ -306,6 +307,7 @@ esp_err_t audio_engine_set_cue_mode(uint8_t mode);
 uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot);
+void audio_engine_set_uac_active_data_loss_flags(uint32_t flags);
 
 /* Decode reads that still hit USB while the engine lock was held, per deck.
  * The decode loop warms the compressed cache before taking the lock precisely so

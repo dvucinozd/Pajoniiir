@@ -1041,7 +1041,19 @@ Assert-FileContains `
         '\"ring_low_alarm_frames\":%u',
         '\"ring_high_alarm_frames\":%u',
         '\"ring_state\":\"%s\"',
-        '\"data_loss\":%s'
+        '\"data_loss\":%s',
+        '\"data_loss_flags\":%u',
+        "usb_headphone_active_data_loss_flags"
+    )
+
+Assert-FileContains `
+    -Name "authenticated web controls wake without consuming the mutation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "deck_core_queue_remote_event",
+        "web_wait_for_play_state",
+        '"409 Conflict"',
+        '"Play state unchanged"'
     )
 
 Assert-FileContains `
@@ -1358,7 +1370,7 @@ Assert-FileContains `
         "api_request_allowed(req, true)",
         "web_api_host_allowed(host, ap_ipv4)",
         '"X-DDJ-Control"',
-        "queue_rc = deck_core_queue_event(&ev);",
+        "queue_rc = deck_core_queue_remote_event(&ev);",
         '"503 Service Unavailable"',
         '.method = HTTP_POST'
     )
@@ -2788,7 +2800,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
-    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_event(&ev)")
+    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_remote_event(&ev)")
 
 # The symbols exist and are reachable by design - they are simply the wrong
 # call for this component - so no link contract can express it.

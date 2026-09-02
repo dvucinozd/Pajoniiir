@@ -26,6 +26,7 @@ typedef struct {
     uint32_t last_dropped_blocks;
     uint32_t last_overflow_frames;
     uint32_t last_underflow_frames;
+    uint32_t active_data_loss_flags;
 } audio_uac_health_monitor_t;
 
 typedef struct {
@@ -35,6 +36,7 @@ typedef struct {
     uint32_t delta_dropped_blocks;
     uint32_t delta_overflow_frames;
     uint32_t delta_underflow_frames;
+    uint32_t active_data_loss_flags;
 } audio_uac_health_result_t;
 
 uint32_t audio_uac_ring_low_alarm_frames(uint32_t capacity_frames);

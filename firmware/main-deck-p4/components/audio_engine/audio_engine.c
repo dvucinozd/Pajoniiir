@@ -2257,6 +2257,8 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 
 
 
+static uint32_t s_uac_active_data_loss_flags;
+
 /* ── Firmware decode + I2S output tasks (ESP32-P4) ────────────────────────── */
 #if AE_FW
 /* Per-deck decode scratch stays static and independent of the bounded compressed cache. */
@@ -3884,6 +3886,7 @@ esp_err_t audio_engine_init(void)
 #if AE_FW
     ae_wdt_trace_boot_init();
 #endif
+    __atomic_store_n(&s_uac_active_data_loss_flags, 0u, __ATOMIC_RELEASE);
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_engine_reset_state(&s_engines[i], ESP_OK, "OK");
     }
@@ -5856,6 +5859,11 @@ void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot
     limiter_stats_snapshot(&out_snapshot->limiter);
 }
 
+void audio_engine_set_uac_active_data_loss_flags(uint32_t flags)
+{
+    __atomic_store_n(&s_uac_active_data_loss_flags, flags, __ATOMIC_RELEASE);
+}
+
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot)
 {
     if (!out_snapshot) return;
@@ -5945,6 +5953,8 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
             (uint32_t)direct_stats.underrun_frames;
     }
 #endif
+    out_snapshot->usb_headphone_active_data_loss_flags =
+        __atomic_load_n(&s_uac_active_data_loss_flags, __ATOMIC_ACQUIRE);
 #if AE_FW
     out_snapshot->output_codec_open = s_output_codec_open;
     out_snapshot->output_sample_rate = s_output_sample_rate;

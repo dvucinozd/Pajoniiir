@@ -135,6 +135,11 @@ void deck_core_set_activity_cb(deck_core_activity_cb_t cb);
 
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
 
+/* Queue an authenticated remote mutation. It still reports activity so the
+ * screensaver is dismissed, but unlike a physical wake press the mutation is
+ * never consumed solely to wake the display. */
+esp_err_t deck_core_queue_remote_event(const ctrl_event_t *ev);
+
 /*
  * Coherent loaded-track ownership.
  *

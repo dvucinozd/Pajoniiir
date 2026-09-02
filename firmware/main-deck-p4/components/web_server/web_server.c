@@ -368,7 +368,7 @@ static esp_err_t web_queue_loop_set(uint8_t deck)
         .control = CTRL_DECK_CTL_PAD_ACTION,
         .seq = 0u,
     };
-    return deck_core_queue_event(&ev);
+    return deck_core_queue_remote_event(&ev);
 }
 
 static esp_err_t web_queue_loop_clear(uint8_t deck)
@@ -384,7 +384,25 @@ static esp_err_t web_queue_loop_clear(uint8_t deck)
         .control = CTRL_DECK_CTL_EXT_ACTION,
         .seq = 0u,
     };
-    return deck_core_queue_event(&ev);
+    return deck_core_queue_remote_event(&ev);
+}
+
+#define WEB_PLAY_APPLY_TIMEOUT_MS 250u
+#define WEB_PLAY_POLL_MS            5u
+
+static bool web_wait_for_play_state(uint8_t deck, bool expected_playing)
+{
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(WEB_PLAY_APPLY_TIMEOUT_MS);
+    const TickType_t poll_delay = pdMS_TO_TICKS(WEB_PLAY_POLL_MS) > 0
+        ? pdMS_TO_TICKS(WEB_PLAY_POLL_MS) : 1;
+    do {
+        if (deck_core_get_deck_state(deck).playing == expected_playing) {
+            return true;
+        }
+        vTaskDelay(poll_delay);
+    } while ((xTaskGetTickCount() - started) < timeout);
+    return deck_core_get_deck_state(deck).playing == expected_playing;
 }
 
 /* These strings end up inside a hand-formatted JSON body below. They originate
@@ -1359,9 +1377,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         diagnostics.usb_headphone_ring_capacity_frames);
     const uint32_t uac_ring_high_alarm = audio_uac_ring_high_alarm_frames(
         diagnostics.usb_headphone_ring_capacity_frames);
-    const bool uac_data_loss = diagnostics.usb_headphone_dropped_blocks > 0u ||
-                               diagnostics.usb_headphone_overflow_frames > 0u ||
-                               diagnostics.usb_headphone_underflow_frames > 0u;
+    const uint32_t uac_data_loss_flags =
+        diagnostics.usb_headphone_active_data_loss_flags;
+    const bool uac_data_loss = uac_data_loss_flags != 0u;
 
     char *json = NULL;
     int json_len = web_api_alloc_printf(
@@ -1463,7 +1481,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u,"
         "\"ring_queued_frames\":%u,\"ring_capacity_frames\":%u,\"ring_high_water_frames\":%u,"
         "\"ring_low_alarm_frames\":%u,\"ring_high_alarm_frames\":%u,\"ring_state\":\"%s\","
-        "\"overflow_frames\":%u,\"underflow_frames\":%u,\"data_loss\":%s},"
+        "\"overflow_frames\":%u,\"underflow_frames\":%u,\"data_loss\":%s,"
+        "\"data_loss_flags\":%u},"
         "%s,"
         "\"heap_free\":%u,"
         "\"internal_free\":%u,"
@@ -1542,6 +1561,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.usb_headphone_overflow_frames,
         (unsigned)diagnostics.usb_headphone_underflow_frames,
         uac_data_loss ? "true" : "false",
+        (unsigned)uac_data_loss_flags,
         beat_fx_echo_diag_json,
         (unsigned)diagnostics.heap_free,
         (unsigned)diagnostics.internal_free,
@@ -1727,6 +1747,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
 
     esp_err_t queue_rc = ESP_OK;
     if (strcmp(action, "play_pause") == 0) {
+        const bool expected_playing = !deck_core_get_deck_state(deck).playing;
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
             .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_PLAY : CTRL_ID_DECK1_PLAY,
@@ -1734,7 +1755,13 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
+        if (queue_rc == ESP_OK &&
+            !web_wait_for_play_state(deck, expected_playing)) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Play state unchanged",
+                                   HTTPD_RESP_USE_STRLEN);
+        }
     } else if (strcmp(action, "cue") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1743,7 +1770,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "pfl") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1752,7 +1779,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "volume") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1761,7 +1788,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "crossfader") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1770,7 +1797,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "pitch") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_PITCH,
@@ -1779,7 +1806,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "loop_4") == 0) {
         audio_engine_deck_status_t status = {0};
         esp_err_t rc = audio_engine_deck_get_status(deck, &status);
@@ -1800,6 +1827,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
     } else if (strcmp(action, "seek") == 0) {
+        (void)ui_activity_notice();
         audio_engine_deck_status_t status = {0};
         if (audio_engine_deck_get_status(deck, &status) != ESP_OK ||
             !status.loaded ||
