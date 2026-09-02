@@ -28,7 +28,7 @@ static const char *TAG = "deck";
 #define BEAT_SYNC_MAX_PERCENT 20u
 #define BROWSE_SHIFT_LIBRARY_MULTIPLIER 10
 #define BROWSE_SHIFT_OVERVIEW_MULTIPLIER 4
-#define CENSOR_REPEAT_BACK_MS 1000u
+#define LOOP_ADJUST_MS_PER_TICK 1
 #define DECK_TASK_STACK_BYTES 8192u
 #define DECK_UI_COMMAND_QUEUE_LEN 16
 #define DECK_UI_COMMANDS_PER_FRAME 8u
@@ -57,13 +57,13 @@ static SemaphoreHandle_t s_mutex;
 static deck_state_t     s_decks[DECK_CORE_DECK_COUNT];
 static deck_state_t     s_published_decks[DECK_CORE_DECK_COUNT];
 static deck_core_beat_fx_state_t s_published_beat_fx;
-static uint32_t         s_published_heartbeat_tick;
 static uint32_t         s_snapshot_seq;
 static bool             s_snapshot_writer;
 static deck_loaded_track_store_t s_loaded_tracks;
 static SemaphoreHandle_t s_reset_done_sem;
 static flx4_led_publisher_t s_flx4_led_publisher;
 static deck_core_beat_fx_state_t s_beat_fx;
+static deck_core_beat_jump_page_t s_beat_jump_page = DECK_CORE_BEAT_JUMP_PAGE_DEFAULT;
 static bool              s_track_load_led_valid[DECK_CORE_DECK_COUNT];
 static uint8_t           s_track_load_led_state[DECK_CORE_DECK_COUNT];
 static bool              s_loaded_hot_cue_mask_valid[DECK_CORE_DECK_COUNT];
@@ -83,14 +83,9 @@ static bool              s_beat_jump_shift_helper_led_valid[DECK_CORE_DECK_COUNT
 static uint8_t           s_beat_jump_shift_helper_led_state[DECK_CORE_DECK_COUNT][2];
 static uint32_t          s_drop_count;
 static TickType_t        s_last_drop_warn;
-static TickType_t        s_last_heartbeat_tick;
 static bool              s_flx4_connection_state_valid;
 static bool              s_flx4_connected;
 static uint8_t           s_sync_master_deck = CTRL_DECK_NONE;
-static deck_core_s3_debug_ap_status_cb_t s_s3_debug_ap_status_cb;
-static deck_core_s3_debug_ap_token_cb_t s_s3_debug_ap_token_cb;
-static uint16_t          s_s3_debug_token_hi;
-static bool              s_s3_debug_token_hi_valid;
 
 typedef enum {
     DECK_UI_CMD_LOAD_SELECTED,
@@ -178,7 +173,6 @@ static void publish_state_snapshot(void)
     memcpy(s_published_decks, s_decks, sizeof(s_published_decks));
     memcpy(s_published_loop_shadow, s_loop_shadow, sizeof(s_published_loop_shadow));
     s_published_beat_fx = s_beat_fx;
-    s_published_heartbeat_tick = (uint32_t)s_last_heartbeat_tick;
     (void)__atomic_add_fetch(&s_snapshot_seq, 1u, __ATOMIC_RELEASE); /* even */
     __atomic_store_n(&s_snapshot_writer, false, __ATOMIC_RELEASE);
 }
@@ -186,8 +180,7 @@ static void publish_state_snapshot(void)
 static void copy_state_snapshot(uint8_t deck,
                                 deck_state_t *out_deck,
                                 deck_loop_shadow_t *out_loop,
-                                deck_core_beat_fx_state_t *out_fx,
-                                uint32_t *out_heartbeat)
+                                deck_core_beat_fx_state_t *out_fx)
 {
     /* Retry until a copy is bracketed by the same even sequence number.
      *
@@ -206,7 +199,6 @@ static void copy_state_snapshot(uint8_t deck,
         if (out_deck) *out_deck = s_published_decks[deck];
         if (out_loop) *out_loop = s_published_loop_shadow[deck];
         if (out_fx) *out_fx = s_published_beat_fx;
-        if (out_heartbeat) *out_heartbeat = s_published_heartbeat_tick;
         const uint32_t after = __atomic_load_n(&s_snapshot_seq, __ATOMIC_ACQUIRE);
         if (after == before) {
             return;     /* no write began or ended while we copied */
@@ -231,9 +223,6 @@ static deck_beat_loop_led_state_t s_beat_loop_led[DECK_CORE_DECK_COUNT];
 
 typedef struct {
     bool active;
-    bool was_playing;
-    uint32_t origin_ms;
-    TickType_t press_tick;
 } deck_censor_shadow_t;
 
 static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
@@ -277,6 +266,8 @@ static bool apply_beat_sync(uint8_t deck, deck_state_t *state);
 static uint8_t beat_sync_reference_deck(uint8_t deck);
 static void set_sync_master(uint8_t deck, deck_state_t *state);
 static float deck_effective_bpm(uint8_t deck, const deck_state_t *state);
+static void deck_send_led(led_id_t led, uint8_t state, uint8_t deck);
+static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state);
 
 static void init_deck_state(deck_state_t *state)
 {
@@ -801,8 +792,25 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
     }
 }
 
-static const int s_beat_jump_pad_shifts[8] = {
-    -32, -16, -8, -4, 4, 8, 16, 32,
+typedef struct {
+    int16_t numerator;
+    uint16_t denominator;
+} beat_jump_size_t;
+
+static const beat_jump_size_t
+s_beat_jump_pad_sizes[DECK_CORE_BEAT_JUMP_PAGE_COUNT][8] = {
+    [DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL] = {
+        {-1, 16}, {1, 16}, {-1, 8}, {1, 8},
+        {-1, 4}, {1, 4}, {-1, 2}, {1, 2},
+    },
+    [DECK_CORE_BEAT_JUMP_PAGE_DEFAULT] = {
+        {-1, 1}, {1, 1}, {-2, 1}, {2, 1},
+        {-4, 1}, {4, 1}, {-8, 1}, {8, 1},
+    },
+    [DECK_CORE_BEAT_JUMP_PAGE_LARGE] = {
+        {-16, 1}, {16, 1}, {-32, 1}, {32, 1},
+        {-64, 1}, {64, 1}, {-128, 1}, {128, 1},
+    },
 };
 
 static bool acquire_loaded_track_for_deck(
@@ -819,9 +827,12 @@ static uint16_t loaded_bpm_for_deck(uint8_t deck)
     return deck_base_bpm(deck);
 }
 
-static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
+static void handle_beat_jump(uint8_t deck,
+                             int beat_numerator,
+                             uint16_t beat_denominator,
+                             deck_state_t *state)
 {
-    if (deck >= DECK_CORE_DECK_COUNT || !state || beat_shift == 0) {
+    if (deck >= DECK_CORE_DECK_COUNT || !state || beat_numerator == 0) {
         return;
     }
 
@@ -836,31 +847,53 @@ static void handle_beat_jump(uint8_t deck, int beat_shift, deck_state_t *state)
                        : loaded_bpm_for_deck(deck);
     const anlz_metadata_t *meta_ptr =
         has_loaded && loaded.has_anlz ? meta : NULL;
-    uint32_t target_ms = beat_jump_calculate_target_ms(
-        position_ms, bpm, beat_shift, meta_ptr);
+    uint32_t target_ms = beat_jump_calculate_fractional_target_ms(
+        position_ms, bpm, beat_numerator, beat_denominator, meta_ptr);
     anlz_snapshot_release(snapshot);
 
     esp_err_t rc = audio_engine_deck_seek(deck, target_ms);
     if (rc == ESP_OK) {
         state->position_ms = target_ms;
-        ESP_LOGI(TAG, "deck %u beat jump %+d -> %lu ms",
+        ESP_LOGI(TAG, "deck %u beat jump %+d/%u -> %lu ms",
                  (unsigned)deck + 1,
-                 beat_shift,
+                 beat_numerator,
+                 (unsigned)beat_denominator,
                  (unsigned long)target_ms);
     } else {
-        ESP_LOGW(TAG, "deck %u beat jump %+d failed: %s",
+        ESP_LOGW(TAG, "deck %u beat jump %+d/%u failed: %s",
                  (unsigned)deck + 1,
-                 beat_shift,
+                 beat_numerator,
+                 (unsigned)beat_denominator,
                  esp_err_to_name(rc));
     }
 }
 
-static bool beat_jump_shift_for_pad(uint8_t pad, int *out_shift)
+static bool beat_jump_size_for_pad(uint8_t pad, beat_jump_size_t *out_size)
 {
-    if (!out_shift || pad >= 8) {
+    const deck_core_beat_jump_page_t page = deck_core_get_beat_jump_page();
+    if (!out_size || pad >= 8 || page >= DECK_CORE_BEAT_JUMP_PAGE_COUNT) {
         return false;
     }
-    *out_shift = s_beat_jump_pad_shifts[pad];
+    *out_size = s_beat_jump_pad_sizes[page][pad];
+    return true;
+}
+
+static bool change_beat_jump_page(int delta)
+{
+    int next = (int)deck_core_get_beat_jump_page() + delta;
+    if (next < DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL) {
+        next = DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL;
+    }
+    if (next > DECK_CORE_BEAT_JUMP_PAGE_LARGE) {
+        next = DECK_CORE_BEAT_JUMP_PAGE_LARGE;
+    }
+    if (next == (int)deck_core_get_beat_jump_page()) {
+        return false;
+    }
+    __atomic_store_n(&s_beat_jump_page,
+                     (deck_core_beat_jump_page_t)next,
+                     __ATOMIC_RELEASE);
+    ESP_LOGI(TAG, "beat jump page -> %d", next);
     return true;
 }
 
@@ -984,6 +1017,9 @@ static void stop_and_forget_loop(uint8_t deck)
         return;
     }
     (void)audio_engine_deck_clear_loop(deck);
+    s_decks[deck].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+    deck_send_led(LED_LOOP_ADJUST_IN, 0u, deck);
+    deck_send_led(LED_LOOP_ADJUST_OUT, 0u, deck);
     memset(&s_loop_shadow[deck], 0, sizeof(s_loop_shadow[deck]));
     memset(&s_shifted_loop_roll[deck], 0, sizeof(s_shifted_loop_roll[deck]));
     memset(&s_beat_loop_led[deck], 0, sizeof(s_beat_loop_led[deck]));
@@ -991,36 +1027,102 @@ static void stop_and_forget_loop(uint8_t deck)
     publish_flx4_led_snapshot(false);
 }
 
-static void adjust_loop_boundary(uint8_t deck, bool adjust_in, deck_state_t *state)
+static void publish_loop_adjust_leds(uint8_t deck, const deck_state_t *state)
 {
-    bool active = false;
-    uint32_t start_ms = 0;
-    uint32_t end_ms = 0;
-    if (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active) {
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
+        return;
+    }
+    deck_send_led(LED_LOOP_ADJUST_IN,
+                  state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_IN ? 1u : 0u,
+                  deck);
+    deck_send_led(LED_LOOP_ADJUST_OUT,
+                  state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_OUT ? 1u : 0u,
+                  deck);
+}
+
+static void set_loop_adjust_mode(uint8_t deck,
+                                 deck_state_t *state,
+                                 deck_core_loop_adjust_mode_t requested)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state) {
         return;
     }
 
-    uint32_t position_ms = quantized_deck_position_ms(deck, state);
-    if (adjust_in) {
-        if (position_ms < end_ms) {
-            set_deck_loop(deck, position_ms, end_ms);
-        }
-    } else if (position_ms > start_ms) {
-        set_deck_loop(deck, start_ms, position_ms);
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (requested != DECK_CORE_LOOP_ADJUST_NONE &&
+        (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active ||
+         end_ms <= start_ms)) {
+        requested = DECK_CORE_LOOP_ADJUST_NONE;
     }
+
+    state->loop_adjust_mode = state->loop_adjust_mode == requested
+                                  ? DECK_CORE_LOOP_ADJUST_NONE
+                                  : requested;
+    publish_loop_adjust_leds(deck, state);
+    ESP_LOGI(TAG, "deck %u loop adjust -> %s",
+             (unsigned)deck + 1,
+             state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_IN ? "IN" :
+             state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_OUT ? "OUT" : "OFF");
 }
 
-/*
- * Censor approximation. Real Pioneer censor plays the track in reverse while
- * held and, on release, resumes exactly where the untouched timeline would be
- * (so beat alignment is preserved). We approximate that without a reverse
- * decoder: on press we seek back CENSOR_REPEAT_BACK_MS and keep playing
- * FORWARD, and on release we snap to the "real" position (origin + time held)
- * so sync is not lost. Consequences of the approximation: playback is forward,
- * not reversed; the CENSOR_REPEAT_BACK_MS window plays once and does not loop;
- * and if held longer than that window the audible content diverges from a true
- * censor even though the release position stays correct.
- */
+static bool adjust_loop_boundary_from_jog(uint8_t deck,
+                                          int16_t delta,
+                                          deck_state_t *state)
+{
+    if (deck >= DECK_CORE_DECK_COUNT || !state ||
+        state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_NONE) {
+        return false;
+    }
+
+    bool active = false;
+    uint32_t start_ms = 0;
+    uint32_t end_ms = 0;
+    if (!read_active_loop(deck, &active, &start_ms, &end_ms) || !active ||
+        end_ms <= start_ms) {
+        state->loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+        publish_loop_adjust_leds(deck, state);
+        return true;
+    }
+
+    if (delta == 0) {
+        return true;
+    }
+
+    int64_t movement_ms = (int64_t)delta * LOOP_ADJUST_MS_PER_TICK;
+    uint32_t next_start_ms = start_ms;
+    uint32_t next_end_ms = end_ms;
+    if (state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_IN) {
+        int64_t target = (int64_t)start_ms + movement_ms;
+        if (target < 0) target = 0;
+        if (target >= (int64_t)end_ms) target = (int64_t)end_ms - 1;
+        next_start_ms = (uint32_t)target;
+    } else {
+        int64_t target = (int64_t)end_ms + movement_ms;
+        if (target <= (int64_t)start_ms) target = (int64_t)start_ms + 1;
+        if (target > UINT32_MAX) target = UINT32_MAX;
+        next_end_ms = (uint32_t)target;
+    }
+
+    esp_err_t rc = audio_engine_deck_set_loop(deck, next_start_ms, next_end_ms);
+    if (rc == ESP_OK) {
+        remember_last_loop(deck, next_start_ms, next_end_ms);
+        ESP_LOGD(TAG, "deck %u loop adjust %s %+d -> %lu-%lu ms",
+                 (unsigned)deck + 1,
+                 state->loop_adjust_mode == DECK_CORE_LOOP_ADJUST_IN ? "IN" : "OUT",
+                 (int)delta,
+                 (unsigned long)next_start_ms,
+                 (unsigned long)next_end_ms);
+    } else {
+        ESP_LOGW(TAG, "deck %u loop adjust failed: %s",
+                 (unsigned)deck + 1, esp_err_to_name(rc));
+    }
+    return true;
+}
+
+/* The engine renders retained PCM backwards while the ordinary playhead keeps
+ * advancing silently, then cross-fades to that slip playhead on release. */
 static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
 {
     if (deck >= DECK_CORE_DECK_COUNT || !state) {
@@ -1032,19 +1134,13 @@ static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
         if (shadow->active) {
             return;
         }
-        uint32_t origin = current_deck_position_ms(deck, state);
-        uint32_t repeat = origin > CENSOR_REPEAT_BACK_MS ? origin - CENSOR_REPEAT_BACK_MS : 0u;
-        shadow->active = true;
-        shadow->was_playing = audio_engine_deck_is_playing(deck);
-        shadow->origin_ms = origin;
-        shadow->press_tick = xTaskGetTickCount();
-        state->censor_active = true;
-        if (audio_engine_deck_seek(deck, repeat) == ESP_OK) {
-            state->position_ms = repeat;
+        if (!audio_engine_deck_censor_begin(deck)) {
+            ESP_LOGW(TAG, "deck %u censor unavailable", (unsigned)deck + 1u);
+            return;
         }
-        ESP_LOGI(TAG, "deck %u censor press -> %lu ms",
-                 (unsigned)deck + 1,
-                 (unsigned long)repeat);
+        shadow->active = true;
+        state->censor_active = true;
+        ESP_LOGI(TAG, "deck %u censor reverse begin", (unsigned)deck + 1u);
         publish_flx4_led_snapshot(false);
         return;
     }
@@ -1053,20 +1149,10 @@ static void handle_censor(uint8_t deck, bool pressed, deck_state_t *state)
         return;
     }
 
-    uint32_t target = shadow->origin_ms;
-    if (shadow->was_playing) {
-        TickType_t elapsed_ticks = xTaskGetTickCount() - shadow->press_tick;
-        uint32_t elapsed_ms = (uint32_t)(elapsed_ticks * portTICK_PERIOD_MS);
-        target += elapsed_ms;
-    }
-    if (audio_engine_deck_seek(deck, target) == ESP_OK) {
-        state->position_ms = target;
-    }
+    audio_engine_deck_censor_end(deck);
     state->censor_active = false;
     memset(shadow, 0, sizeof(*shadow));
-    ESP_LOGI(TAG, "deck %u censor release -> %lu ms",
-             (unsigned)deck + 1,
-             (unsigned long)target);
+    ESP_LOGI(TAG, "deck %u censor slip release", (unsigned)deck + 1u);
     publish_flx4_led_snapshot(false);
 }
 
@@ -1142,6 +1228,8 @@ static void handle_shifted_beat_loop_release(uint8_t deck)
     } else {
         esp_err_t rc = audio_engine_deck_clear_loop(deck);
         if (rc == ESP_OK) {
+            s_decks[deck].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+            publish_loop_adjust_leds(deck, &s_decks[deck]);
             s_beat_loop_led[deck].active = false;
             ESP_LOGI(TAG, "deck %u shifted beat loop released -> clear loop",
                      (unsigned)deck + 1);
@@ -1200,6 +1288,8 @@ static void on_loop_control(uint8_t deck, ctrl_deck_control_t control, deck_stat
             remember_last_loop(deck, start_ms, end_ms);
             esp_err_t rc = audio_engine_deck_clear_loop(deck);
             if (rc == ESP_OK) {
+                state->loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+                publish_loop_adjust_leds(deck, state);
                 s_beat_loop_led[deck].active = false;
                 ESP_LOGI(TAG, "deck %u loop exit", (unsigned)deck + 1);
                 publish_flx4_led_snapshot(false);
@@ -1302,7 +1392,15 @@ static void deck_send_led(led_id_t led, uint8_t state, uint8_t deck)
             state = beat_jump_mode && loaded ? 1u : 0u;
         } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
                    led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
-            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+            const bool decrease = led == LED_BEAT_JUMP_SHIFT_HELPER_7;
+            const deck_core_beat_jump_page_t page = deck_core_get_beat_jump_page();
+            const bool page_available = decrease
+                                            ? page > DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL
+                                            : page < DECK_CORE_BEAT_JUMP_PAGE_LARGE;
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded &&
+                            page_available
+                        ? 1u
+                        : 0u;
         }
     }
     control_link_send_led_deck(led, state, deck);
@@ -1404,11 +1502,15 @@ static void publish_beat_jump_pad_leds(bool force)
 static void publish_beat_jump_shift_helper_leds_for_deck(uint8_t deck, bool force)
 {
     if (deck >= DECK_CORE_DECK_COUNT) return;
-    deck_state_t state = deck_core_get_deck_state(deck);
-    uint8_t value = (state.pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
-                     s_deck_shift_held[deck] &&
-                     deck_has_loaded_track(deck)) ? 1u : 0u;
+    const bool active = s_decks[deck].pad_mode == CTRL_PAD_MODE_BEAT_JUMP &&
+                        s_deck_shift_held[deck] &&
+                        deck_has_loaded_track(deck);
+    const deck_core_beat_jump_page_t page = deck_core_get_beat_jump_page();
     for (uint8_t pad = 0; pad < 2; pad++) {
+        const bool page_available = pad == 0u
+                                        ? page > DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL
+                                        : page < DECK_CORE_BEAT_JUMP_PAGE_LARGE;
+        const uint8_t value = active && page_available ? 1u : 0u;
         if (force ||
             !s_beat_jump_shift_helper_led_valid[deck][pad] ||
             s_beat_jump_shift_helper_led_state[deck][pad] != value) {
@@ -1617,44 +1719,9 @@ static bool enqueue_ui_command(const deck_ui_command_t *cmd)
 #endif
 }
 
-static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state);
-
 static void on_state_event(const ctrl_event_t *ev)
 {
     if (!ev) {
-        return;
-    }
-    if (ev->id == CTRL_ID_S3_DEBUG_AP) {
-        if (ev->value == CTRL_S3_DEBUG_AP_OFF ||
-            ev->value == CTRL_S3_DEBUG_AP_STARTING ||
-            ev->value == CTRL_S3_DEBUG_AP_ERROR) {
-            s_s3_debug_token_hi = 0u;
-            s_s3_debug_token_hi_valid = false;
-            if (s_s3_debug_ap_token_cb) s_s3_debug_ap_token_cb(0u);
-        }
-        if (s_s3_debug_ap_status_cb) {
-            s_s3_debug_ap_status_cb((uint8_t)ev->value);
-        }
-        ESP_LOGI(TAG, "S3 Debug AP status=%d", ev->value);
-        return;
-    }
-    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_HI) {
-        if (ev->value >= 0 && ev->value <= 999) {
-            s_s3_debug_token_hi = (uint16_t)ev->value;
-            s_s3_debug_token_hi_valid = true;
-        }
-        return;
-    }
-    if (ev->id == CTRL_ID_S3_DEBUG_TOKEN_LO) {
-        if (s_s3_debug_token_hi_valid && ev->value >= 0 && ev->value <= 999) {
-            uint32_t token = (uint32_t)s_s3_debug_token_hi * 1000u +
-                             (uint16_t)ev->value;
-            s_s3_debug_token_hi_valid = false;
-            if (s_s3_debug_ap_token_cb &&
-                (token == 0u || (token >= 100000u && token <= 999999u))) {
-                s_s3_debug_ap_token_cb(token);
-            }
-        }
         return;
     }
     if (ev->id != CTRL_ID_FLX4_CONNECTION) {
@@ -1665,20 +1732,30 @@ static void on_state_event(const ctrl_event_t *ev)
         if (!s_flx4_connection_state_valid || !s_flx4_connected) {
             ESP_LOGI(TAG, "FLX4 connected; forcing LED snapshot");
             publish_flx4_led_snapshot(true);
+            for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+                publish_loop_adjust_leds(deck, &s_decks[deck]);
+            }
         }
         s_flx4_connection_state_valid = true;
         s_flx4_connected = true;
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+            s_decks[deck].controller_connected = true;
+        }
     } else if (ev->value == CTRL_FLX4_DISCONNECTED) {
         if (!s_flx4_connection_state_valid || s_flx4_connected) {
             ESP_LOGI(TAG, "FLX4 disconnected");
         }
         s_flx4_connection_state_valid = true;
         s_flx4_connected = false;
+        for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; ++deck) {
+            s_decks[deck].controller_connected = false;
+        }
         /* A physical disconnect cannot deliver the final Note-On(value=0)
          * touch edge. Force both platters released so scratch/capture never
          * remain latched and silent until the next track load. */
         for (uint8_t deck = 0; deck < DECK_CORE_DECK_COUNT; deck++) {
             handle_jog_touch(deck, false, &s_decks[deck]);
+            s_decks[deck].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
         }
     } else {
         ESP_LOGW(TAG, "unknown FLX4 connection state %d", ev->value);
@@ -2062,6 +2139,12 @@ static void handle_jog_touch(uint8_t deck, bool pressed, deck_state_t *state)
         return;
     }
 
+    /* A loop boundary owns the jog while adjust mode is active. Still accept
+     * release so an earlier touch can never leave scratch/hold latched. */
+    if (pressed && state->loop_adjust_mode != DECK_CORE_LOOP_ADJUST_NONE) {
+        return;
+    }
+
     if (pressed) {
         /* Touch is a level on the wire, but scratch begin/end are edge-driven.
          * Ignore a repeated press while already held; otherwise the engine
@@ -2224,12 +2307,10 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
             stop_and_forget_loop(deck);
             return true;
         case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_IN:
-            adjust_loop_boundary(deck, true, state);
-            send_momentary_led(LED_LOOP_ADJUST_IN, deck);
+            set_loop_adjust_mode(deck, state, DECK_CORE_LOOP_ADJUST_IN);
             return true;
         case CTRL_DECK_EXT_ACTION_LOOP_ADJUST_OUT:
-            adjust_loop_boundary(deck, false, state);
-            send_momentary_led(LED_LOOP_ADJUST_OUT, deck);
+            set_loop_adjust_mode(deck, state, DECK_CORE_LOOP_ADJUST_OUT);
             return true;
         case CTRL_DECK_EXT_ACTION_QUANTIZE:
             state->quantize_enabled = !state->quantize_enabled;
@@ -2254,6 +2335,7 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         if (pressed) {
             handle_beat_jump(deck,
                              control_link_id_control(ev->id) == CTRL_DECK_CTL_BEAT_JUMP_BACK ? -1 : 1,
+                             1u,
                              state);
         }
         return true;
@@ -2334,9 +2416,17 @@ static bool on_deck_extension_button(const ctrl_event_t *ev)
         } else if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
                    CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_JUMP &&
                    !CTRL_PAD_ACTION_SHIFTED(ev->value)) {
-            int beat_shift = 0;
-            if (beat_jump_shift_for_pad(CTRL_PAD_ACTION_PAD(ev->value), &beat_shift)) {
-                handle_beat_jump(deck, beat_shift, state);
+            beat_jump_size_t size = {0};
+            if (beat_jump_size_for_pad(CTRL_PAD_ACTION_PAD(ev->value), &size)) {
+                handle_beat_jump(deck, size.numerator, size.denominator, state);
+            }
+        } else if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
+                   CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_JUMP &&
+                   CTRL_PAD_ACTION_SHIFTED(ev->value)) {
+            const uint8_t pad = CTRL_PAD_ACTION_PAD(ev->value);
+            if ((pad == 6u && change_beat_jump_page(-1)) ||
+                (pad == 7u && change_beat_jump_page(1))) {
+                publish_beat_jump_shift_helper_leds(false);
             }
         } else if (CTRL_PAD_ACTION_PRESSED(ev->value) &&
                    CTRL_PAD_ACTION_MODE(ev->value) == CTRL_PAD_MODE_BEAT_LOOP &&
@@ -2395,6 +2485,11 @@ static void on_jog(uint8_t deck, uint8_t control, int16_t delta)
 {
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     bool touched = deck < DECK_CORE_DECK_COUNT && s_jog_touched[deck];
+
+    /* Platter and side-ring deltas edit the selected boundary exclusively. */
+    if (adjust_loop_boundary_from_jog(deck, delta, state)) {
+        return;
+    }
 
 #if CONFIG_AUDIO_SCRATCH_ENABLED
     if (touched && s_jog_scratch_active[deck] &&
@@ -2712,7 +2807,13 @@ static void deck_task(void *arg)
 
         if (ev.type == CTRL_EV_STATE && ev.id == DECK_CORE_INTERNAL_RESET_ID) {
             const uint8_t idx = normalize_deck(ev.deck);
+            if (s_decks[idx].loop_adjust_mode != DECK_CORE_LOOP_ADJUST_NONE) {
+                s_decks[idx].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+                publish_loop_adjust_leds(idx, &s_decks[idx]);
+            }
+            const bool controller_connected = s_flx4_connected;
             init_deck_state(&s_decks[idx]);
+            s_decks[idx].controller_connected = controller_connected;
             s_jog_touched[idx] = false;
             s_jog_hold_active[idx] = false;
             s_jog_scratch_active[idx] = false;
@@ -2784,12 +2885,6 @@ static void deck_task(void *arg)
         case CTRL_EV_PITCH:
             on_pitch(deck, ev.value);
             break;
-        case CTRL_EV_HEARTBEAT:
-            xSemaphoreTake(s_mutex, portMAX_DELAY);
-            s_last_heartbeat_tick = xTaskGetTickCount();
-            xSemaphoreGive(s_mutex);
-            ESP_LOGD(TAG, "S3 heartbeat seq=%d", ev.seq);
-            break;
         case CTRL_EV_STATE:
             on_state_event(&ev);
             break;
@@ -2806,6 +2901,9 @@ esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out)
         init_deck_state(&s_decks[i]);
     }
     init_beat_fx_state();
+    __atomic_store_n(&s_beat_jump_page,
+                     DECK_CORE_BEAT_JUMP_PAGE_DEFAULT,
+                     __ATOMIC_RELEASE);
     flx4_led_publisher_init(&s_flx4_led_publisher);
 
     s_mutex = xSemaphoreCreateMutex();
@@ -2895,13 +2993,15 @@ void deck_core_set_activity_cb(deck_core_activity_cb_t cb)
     s_activity_cb = cb;
 }
 
-esp_err_t deck_core_queue_event(const ctrl_event_t *ev)
+static esp_err_t queue_event_with_wake_policy(const ctrl_event_t *ev,
+                                              bool consume_wake)
 {
     if (!s_queue || !ev) return ESP_ERR_INVALID_ARG;
     /* Single choke point for every FLX4 button, jog, fader and web mutation.
-     * Swallowing the waking event here is what stops a PLAY press that
-     * dismisses the screensaver from also starting the deck. */
-    if (s_activity_cb && s_activity_cb()) return ESP_OK;
+     * Physical controls consume a wake press; authenticated remote mutations
+     * dismiss the screensaver but still enter the authoritative deck queue. */
+    const bool woke_screensaver = s_activity_cb && s_activity_cb();
+    if (woke_screensaver && consume_wake) return ESP_OK;
     if (xQueueSend(s_queue, ev, 0) != pdTRUE) {
         s_drop_count++;
         TickType_t now = xTaskGetTickCount();
@@ -2913,6 +3013,16 @@ esp_err_t deck_core_queue_event(const ctrl_event_t *ev)
         return ESP_FAIL;
     }
     return ESP_OK;
+}
+
+esp_err_t deck_core_queue_event(const ctrl_event_t *ev)
+{
+    return queue_event_with_wake_policy(ev, true);
+}
+
+esp_err_t deck_core_queue_remote_event(const ctrl_event_t *ev)
+{
+    return queue_event_with_wake_policy(ev, false);
 }
 
 deck_state_t deck_core_get_state(void)
@@ -2961,21 +3071,11 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
 {
     const uint8_t idx = normalize_deck(deck);
     deck_state_t snap = {0};
-    uint32_t heartbeat_tick = 0u;
-    copy_state_snapshot(idx, &snap, NULL, NULL, &heartbeat_tick);
+    copy_state_snapshot(idx, &snap, NULL, NULL);
 
     if (deck_uses_audio_engine(idx)) {
         snap.playing = audio_engine_deck_is_playing(idx);
         snap.position_ms = audio_engine_deck_position_ms(idx);
-    }
-    const TickType_t now = xTaskGetTickCount();
-    if (heartbeat_tick != 0u) {
-        const uint32_t age_ms = (uint32_t)((now - (TickType_t)heartbeat_tick) * portTICK_PERIOD_MS);
-        snap.last_heartbeat_age_ms = age_ms;
-        snap.control_link_connected = age_ms <= 10000u;
-    } else {
-        snap.last_heartbeat_age_ms = UINT32_MAX;
-        snap.control_link_connected = false;
     }
     return snap;
 }
@@ -2983,18 +3083,13 @@ deck_state_t deck_core_get_deck_state(uint8_t deck)
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void)
 {
     deck_core_beat_fx_state_t snap = {0};
-    copy_state_snapshot(0u, NULL, NULL, &snap, NULL);
+    copy_state_snapshot(0u, NULL, NULL, &snap);
     return snap;
 }
 
-void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb)
+deck_core_beat_jump_page_t deck_core_get_beat_jump_page(void)
 {
-    s_s3_debug_ap_status_cb = cb;
-}
-
-void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb)
-{
-    s_s3_debug_ap_token_cb = cb;
+    return __atomic_load_n(&s_beat_jump_page, __ATOMIC_ACQUIRE);
 }
 
 deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
@@ -3003,7 +3098,7 @@ deck_core_loop_display_t deck_core_get_loop_display(uint8_t deck)
     if (deck >= DECK_CORE_DECK_COUNT) return out;
 
     deck_loop_shadow_t shadow = {0};
-    copy_state_snapshot(deck, NULL, &shadow, NULL, NULL);
+    copy_state_snapshot(deck, NULL, &shadow, NULL);
     bool active = false;
     uint32_t start_ms = 0u;
     uint32_t end_ms = 0u;
@@ -3027,6 +3122,10 @@ void deck_core_reset_deck(uint8_t deck)
 {
 #if defined(DECK_CORE_PC_TEST)
     const uint8_t idx = normalize_deck(deck);
+    if (s_decks[idx].loop_adjust_mode != DECK_CORE_LOOP_ADJUST_NONE) {
+        s_decks[idx].loop_adjust_mode = DECK_CORE_LOOP_ADJUST_NONE;
+        publish_loop_adjust_leds(idx, &s_decks[idx]);
+    }
     init_deck_state(&s_decks[idx]);
     s_jog_touched[idx] = false;
     s_jog_hold_active[idx] = false;
@@ -3119,6 +3218,9 @@ void deck_core_test_reset(void)
     }
     s_sync_master_deck = CTRL_DECK_NONE;
     init_beat_fx_state();
+    __atomic_store_n(&s_beat_jump_page,
+                     DECK_CORE_BEAT_JUMP_PAGE_DEFAULT,
+                     __ATOMIC_RELEASE);
     memset(s_loop_shadow, 0, sizeof(s_loop_shadow));
     memset(s_shifted_loop_roll, 0, sizeof(s_shifted_loop_roll));
     memset(s_pad_fx_led, 0, sizeof(s_pad_fx_led));
@@ -3143,7 +3245,6 @@ void deck_core_test_reset(void)
     memset(s_deferred_mixer_seen, 0, sizeof(s_deferred_mixer_seen));
 #endif
     flx4_led_publisher_init(&s_flx4_led_publisher);
-    s_last_heartbeat_tick = 0;
     s_flx4_connection_state_valid = false;
     s_flx4_connected = false;
     s_test_ui_command_count = 0;
@@ -3215,9 +3316,6 @@ void deck_core_test_apply_event(const ctrl_event_t *ev)
         break;
     case CTRL_EV_PITCH:
         on_pitch(deck, ev->value);
-        break;
-    case CTRL_EV_HEARTBEAT:
-        s_last_heartbeat_tick = xTaskGetTickCount();
         break;
     case CTRL_EV_STATE:
         on_state_event(ev);

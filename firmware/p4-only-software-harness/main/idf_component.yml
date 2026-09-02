@@ -1,0 +1,11 @@
+dependencies:
+  idf:
+    version: "==6.0.2"
+  usb:
+    git: https://github.com/dvucinozd/esp-usb.git
+    path: host/usb
+    version: "3b6ce7111cb71f4e7ecd11393eb4363b96dccf53"
+  espressif/usb_host_msc:
+    git: https://github.com/dvucinozd/esp-usb.git
+    path: host/class/msc/usb_host_msc
+    version: "3b6ce7111cb71f4e7ecd11393eb4363b96dccf53"

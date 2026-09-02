@@ -1,11 +1,17 @@
 # Startup Checklist
 
-Status: reconciled 2026-08-22. Checked items below are historical bring-up
-evidence, not instructions to repeat old commit-specific flashes. RC2
-application OTA succeeded on both boards, and both have since received full
-wired ESP-IDF 6.0.2 boot-chain flashes. The P4 now runs the later signed
-`RC2-51-g050ab43` application; the S3 remained on `RC2-44-g1923a3b` during the
-latest observed P4-only deployment.
+> **Active branch scope (2026-09-02):** `feat/p4-dual-usb-host` is P4-only.
+> Do not power, flash, connect or wait for an S3 during branch validation. Use
+> USB0 for Rekordbox storage and USB1 for the FLX4. Historical checked S3 rows
+> below document the last known-good dual-processor baseline only. The protected
+> 5 V/VBUS topology and all open P4 dual-USB acceptance rows still apply.
+> The historical S3 firmware directory and test runner no longer exist; do not
+> treat any older checked S3 row as a command that can be rerun from this tree.
+
+Status: reconciled 2026-09-02. Checked items below are historical bring-up
+evidence, not instructions to repeat old commit-specific flashes. The active
+P4-only bench runs exact clean commit candidate `RC2-109-g269036b` from
+`ota_0`. S3 entries below are historical only.
 
 ## Current installed and accepted baselines
 
@@ -54,6 +60,28 @@ latest observed P4-only deployment.
   but not hands-free software-reboot recovery or the complete functional
   smoke. Dokaz:
   `validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`.
+- [x] P4-only USB recovery/MSC follow-up 2026-08-29: signed
+  `RC2-106-gfa55e43-dirty` booted from `ota_0` with USB0 storage and USB1 FLX4
+  active. Removing and reinserting USB0 caused no reboot; status reported two
+  successful mounts from two attempts, clean unmount/uninstall, zero host or
+  recovery failures, a reloaded 100-track Library and successful track loads.
+  Tested source is commit `77aa23a`. Dokaz:
+  `validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`.
+- [x] P4-only bounded USB1 recovery follow-up 2026-09-01: clean ESP-IDF 6.0.2
+  build and signed exact-commit OTA installed `RC2-109-g269036b` into `ota_0`.
+  A 20-second idle window, 30-second dual-deck window, one FLX4
+  disconnect/reconnect and 20-second post-reconnect dual-deck window completed
+  with USB0 still mounted and zero new recovery requests, late blocks, UAC
+  drops/overflow, PCM underruns or daemon errors. This closes the observed
+  high-rate controller recovery storm and one focused USB1 cycle, not the
+  repeated/power/long-soak gates. Dokaz:
+  `validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`.
+- [x] P4-only exact-image 30-minute dual-active soak 2026-09-02:
+  `RC2-111-g4ee76a6` ran two real MP3 tracks for 1,800 seconds with seven
+  controlled seek-to-zero restarts, no reboot or USB loss and zero new audio
+  late, PCM underrun, UAC drop/overflow, recovery or disconnect counters. This
+  closes the bounded 30-minute gate, not the multi-hour or electrical gate.
+  Dokaz: `validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -87,12 +115,22 @@ latest observed P4-only deployment.
 ## Repeat before enclosure close
 
 - [ ] Verify shared ground and that independent 5 V sources are not back-fed.
-- [ ] Verify UART and PCM-link wiring against `HARDWARE_WIRING.md`.
-- [x] Run both host suites and both firmware builds from fresh build directories —
+- [ ] Verify USB0/USB1 data and protected VBUS wiring against `HARDWARE_WIRING.md`.
+- [x] Run the P4 host suite and P4 firmware build from a fresh build directory —
   passed 2026-07-26 with ESP-IDF v5.5.4; passed again 2026-07-30 on `master`
   with ESP-IDF v6.0.2 as the `RC2` clean release build, including bounded cache,
   paginated Library and recorder hardening. Repeat for the final enclosure
-  candidate.
+  candidate. The suite and `build_signed` passed again on 2026-08-29 for the
+  USB recovery/MSC remediation; the application was 2,449,552 bytes with
+  SHA-256 `a8f377bd4b310338cae545c1f7b07b0da60bdc415569993e4c7c416d912faa1a`.
+  The host suite and a clean exact-commit `build_signed` also passed for
+  `269036b` on 2026-09-01; `RC2-109-g269036b` is 2,450,656 bytes with SHA-256
+  `7776f287f9f795abeee36ac648dc518517ec270823928293bf0b04cb334cd9ee`.
+- [x] Focused direct dual-root USB smoke: one signed OTA reboot plus one USB0
+  remove/reinsert cycle with USB1 FLX4 active completed without reboot, panic,
+  mount failure or controller loss on 2026-08-29.
+- [ ] Repeat cold/warm boot, both insertion orders and at least 20 independent
+  USB0/USB1 reconnect cycles, including USB0 removal during active load/decode.
 - [ ] Hardware-validate bounded compressed cache under sustained dual-deck load
   with real MP3/WAV/FLAC files. Focused real-MP3 playback passed 2026-08-02.
   The attempted WAV entries were dead PDB rows: audit of USB `L:` found 68 MP3
@@ -110,19 +148,20 @@ latest observed P4-only deployment.
   ESP-IDF, managed components and project sources.
 - [x] Hardware-validate paginated Library table on the P4 touch display —
   operator-confirmed in the 2026-08-02 focused RC2/IDF6 smoke.
-- [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
+- [ ] Perform the later multi-hour dual-deck audio/vinyl/key-lock product soak.
+  The bounded 30-minute exact-image dual-active run passed 2026-09-02.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.
-- [x] R3 smoke after flashing both targets: dual-platter scratch/release operates correctly without a latched platter.
-- [x] R4 smoke: both WPA2 APs accept `Pajoniiir`; P4 web UI plus S3 log and OTA update pages load correctly.
+- [x] Historical R3 dual-target smoke: dual-platter scratch/release operated correctly without a latched platter.
+- [x] Historical R4 dual-target smoke: both WPA2 APs accepted `Pajoniiir`; retained as dated evidence only.
 - [x] Repeat a 45-second dual-deck MT serial capture and confirm no `IDLE0` task watchdog.
 - [ ] Measure enclosure temperature and check RF/AP reachability.
-- [x] Perform one OTA update per target and record slot/version/state; the
+- [x] Historical dual-target OTA was recorded; perform future updates on P4 only. The
   2026-07-16 `RC1-131-gc391e306` rollout is recorded below.
 - [ ] Preserve a wired recovery path or validated service connector.
-- [ ] Run Phase 20 hardware acceptance: dual-deck DSP/FX soak, FLX4 USB
-  disconnect recovery, guarded web/profile/OTA mutations and UART-link capture.
+- [ ] Finish Phase 20 hardware acceptance: dual-deck DSP/FX soak, repeated
+  direct FLX4 USB disconnect recovery and guarded web/profile/OTA mutations.
 
 ## Repository
 
@@ -135,12 +174,10 @@ latest observed P4-only deployment.
 - [x] Confirm v6.0.2 PowerShell profile init script works in PowerShell.
 - [x] Confirm `idf.py --version`.
 - [x] Confirm MinGW/GCC is available for PC tests (msys64 ucrt64).
-- [x] Use `tests/run_s3_host_tests.ps1` for S3 host regressions (adapted for PowerShell 5.1 compatibility).
 - [x] Use `tests/run_p4_host_tests.ps1` for P4 host regressions (runs on both Windows PowerShell 5.1 and PowerShell 7).
 
 ## Baseline Builds
 
-- [x] Build `firmware/control-board-s3`.
 - [x] Build `firmware/main-deck-p4`.
 - [x] Run inherited PC tests that do not require hardware.
 
@@ -388,12 +425,11 @@ latest observed P4-only deployment.
   USB packetizer. COM6 smoke after flashing showed `overruns=0`, `gaps=0`,
   `crc=0`, and `FLX4_USB_AUDIO skipped=0 underrun=0` for roughly two minutes.
 
-## First Firmware Task
+## Historical First Firmware Task (Removed)
 
-`firmware/control-board-s3/components/flx4_midi_host/` contains the raw
-USB MIDI logger and the software translator path. Built with
-`CONFIG_DDJ_FLX4_TRANSLATE_TO_P4=y` (enabled on 2026-06-14). USB host role is
-unconditional since R5D; disabling the translator leaves the raw logger.
+The original raw USB MIDI logger and translator lived in the removed S3
+firmware target. Its implementation remains available through Git history;
+the active P4 mapper is `firmware/main-deck-p4/components/controller_runtime/`.
 
 ## P4 Overview Waveform Smoke Test
 
@@ -659,30 +695,27 @@ Verification (hardware, 2026-07-09 — profile-loading path confirmed):
 - [x] P4 scans `/sd/controllers` at boot and loads the profile into the
   registry — confirmed via `http://192.168.4.1/api/status` reporting
   `"controller":{...,"profiles":1}` over the `Pajoniiir` Wi-Fi remote AP.
-- [ ] Connect the DDJ-FLX4 to the S3: S3 sends the descriptor, P4 matches and
-  streams the profile (`profile 'pioneer_ddj_flx4' transfer to S3 OK`),
-  `/api/status` shows `"present":true`,
-  `"profile_state":"active"`, and
-  `"active_profile":"pioneer_ddj_flx4"` only after the S3 ACKs
-  `PROFILE_ACTIVATE`; then confirm FLX4 controls/LEDs work through the dynamic
-  profile — pending controller being attached to the S3.
+- [x] Connect the DDJ-FLX4 directly to P4 USB1: P4 matches and activates the
+  profile locally. On 2026-08-29 `/api/status` showed `"present":true`,
+  `"profile_state":"active"`, `"active_profile":"pioneer_ddj_flx4"`, MIDI
+  IN/OUT and USB Audio available while USB0 storage was also mounted.
 
 Notes:
 
 - Web upload requires a profile ID containing only letters, digits, `_` and
   `-` (1-39 characters), a 32-16384 byte `.s3bin`, and an explicit overwrite
   confirmation if the ID already exists. See `CONTROLLER_PROFILE_UPDATE.md`.
-- [ ] Hardware-accept profile overwrite, automatic S3 reactivation, reboot
+- [ ] Hardware-accept profile overwrite, automatic P4-local reactivation, reboot
   persistence, corrupt/truncated rejection and interrupted-upload recovery.
-- [ ] Unplug the FLX4 from the running S3 and confirm `/api/status.controller`
+- [ ] Unplug the FLX4 from running P4 USB1 and confirm `/api/status.controller`
   changes to `"present":false`, the active profile clears, and
   `/api/diagnostic-log` gains exactly one `CONTROLLER_DISCONNECTED` record;
-  reconnect and confirm descriptor matching/profile activation recover.
-- [ ] During a controlled control-link fault injection, confirm
-  `/api/status.control_link.crc_errors` and/or `sequence_gaps` increase and the
-  service journal receives the corresponding `CONTROL_LINK_CRC_ERROR` /
-  `CONTROL_LINK_GAP` summary. In a normal steady run both counters should stay
-  at zero.
+  reconnect and confirm direct-root identity, generation change, descriptor
+  matching, profile activation and authoritative LED snapshot recover without
+  disturbing USB0 storage.
+- [ ] During controlled USB1 queue-pressure/reconnect injection, confirm stale
+  MIDI packets do not cross the new connection generation, recovery failures
+  and queue drops remain zero, and storage stays mounted.
 - [ ] Confirm `/api/status.service_log` reports the expected SD availability,
   bounded queue depth/capacity, drop/write counters, current file bytes and
   last writer error while the service journal is active.
@@ -838,6 +871,25 @@ R5 cleanup status:
   recorded;
 - [x] R5F clean P4 image wired-flashed and monitored without reset/panic/watchdog;
 - [x] R5F clean S3 image wired-flashed and final dual-target scratch soak accepted.
+
+## Experimental P4 dual-USB checkpoint, 2026-08-12
+
+- [x] USB0 storage and direct USB1 FLX4 enumerate together; storage exposes 191
+  tracks and FLX4 reaches USB-MIDI ready as `2B73:0045`.
+- [x] Captured USB disconnect/recycle panic is fixed in the exact pinned
+  `esp-usb` fork commit; P4 host regressions and ESP-IDF v6.0.2 build pass.
+- [ ] Qualify the 5 V/VBUS path. A two-deck isolation run reset as raw
+  `BROWNOUT` after about 6.5 seconds even without FLX4, despite clean audio
+  deadline and underrun counters.
+- [x] Rebuild the direct P4 monitor/cue source in software: four-channel FLX4
+  UAC, 48→44.1 kHz resampler, bounded clocked ring, headphone gain ramp and S3
+  fallback all pass the P4 host suite and ESP-IDF 6.0.2 feature build on
+  2026-08-27.
+- [ ] Install that build, then repeat both insertion orders, controls/LEDs,
+  independent reconnect, ring/data-loss counter inspection and 30-minute soak.
+- [ ] Hardware-smoke shifted LED mirrors, all three Beat Jump pages, jog
+  loop-adjust IN/OUT and gapless Censor on both decks.
+- [ ] Do not merge `feat/p4-dual-usb-host` until all rows above pass.
 
 ## Deferred libapta P4 integration entry gate
 

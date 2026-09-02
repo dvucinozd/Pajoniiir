@@ -292,24 +292,6 @@
         </div>
     </section>
 
-    <!-- ── S3 Firmware (status only) ────────────────────────────────────── -->
-    <!--
-      Read-only on purpose. The P4 has no channel for pushing an S3 image: the
-      0xA6 bulk layer carries controller profiles, and /api/ota/s3 is served by
-      the S3's own debug AP, not by this board. Showing status here and naming
-      the real upload route beats a button that cannot work.
-    -->
-    <section class="card" id="s3-card">
-        <div class="card-head">
-            <h2 class="card-title">S3 FIRMWARE</h2>
-            <span class="badge" id="s3-state-badge">—</span>
-        </div>
-        <div class="card-body">
-            <p id="s3-firmware-info" class="card-info">Reading S3 status...</p>
-            <p class="maintenance-warning">Upload is not available from this page. Enable <strong>S3 DEBUG AP</strong> in the P4 Settings screen, join the <code>Pajoniiir-S3-DEBUG</code> network, then open <code>http://192.168.4.1</code> and upload the signed <code>control-board-s3.ddjota</code> there.</p>
-        </div>
-    </section>
-
     </main>
 
     <script src="app.js?v=12"></script>

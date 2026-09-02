@@ -4,15 +4,13 @@
  *
  * Scans the SD/TF card for compiled controller profiles (S3CP `.s3bin`,
  * see docs/CONTROLLER_PROFILE_SCHEMA.md), validates their headers, and keeps a
- * registry the P4 uses to pick a profile for a connected controller, transfer
- * it to the S3, and expose whether the S3 has actually ACKed activation.
+ * registry the P4 uses to pick and locally activate a profile for the directly
+ * attached controller.
  *
  * The pure functions (header parse, directory scan, registry match) carry no
  * ESP-IDF logging or sdkconfig dependency so the host test harness compiles
- * them directly. The S3CP binary layout mirrors the authoritative S3-side
- * parser in firmware/control-board-s3/components/controller_profile/; the
- * controller_profile_manager host test cross-checks both against the same
- * committed FLX4 fixture so the two format readers cannot drift.
+ * them directly. S3CP is retained as the on-disk format name for compatibility;
+ * it no longer denotes a processor or transport boundary.
  */
 
 #include <stdbool.h>
@@ -72,13 +70,13 @@ typedef struct {
     controller_profile_meta_t profiles[CPM_MAX_PROFILES];
     uint8_t count;
     int8_t matched_index;      /* profile matching the connected VID/PID, -1 = none */
-    int8_t active_index;       /* S3-ACKed active profile, -1 = not active yet */
+    int8_t active_index;       /* locally active profile, -1 = built-in map */
     controller_profile_transfer_state_t transfer_state;
-    bool controller_present;   /* an S3 controller descriptor has been received */
+    bool controller_present;   /* direct USB controller identity is present */
     uint16_t connected_vid;
     uint16_t connected_pid;
-    uint16_t connected_caps;   /* CTRL_DESC_CAP_* bits from the S3 report */
-    uint32_t connected_epoch;  /* S3 USB connection epoch */
+    uint16_t connected_caps;   /* CTRL_DESC_CAP_* transport capabilities */
+    uint32_t connected_epoch;  /* direct USB connection epoch */
     char connected_product[CPM_PRODUCT_MAX + 1];
 } controller_profile_registry_t;
 
@@ -100,13 +98,14 @@ esp_err_t controller_profile_manager_install_profile(
 esp_err_t controller_profile_manager_get_registry_snapshot(
     controller_profile_registry_t *out_registry);
 
-/* Record a connected controller (fed by the S3 descriptor report in a later
- * phase) and re-select the active profile. Returns the matched index or -1. */
+/* Record a connected controller and select its local profile. */
 int controller_profile_manager_on_descriptor(uint16_t vid, uint16_t pid);
 
-/* Full descriptor report from the S3 (0xA6 bulk frame): also stores the
- * capability bits and product string for UI/web status. `product` may be
- * NULL. Returns the matched index or -1. */
+/* Full direct USB identity: stores capability bits and product string for
+ * UI/web status, then activates a matching local profile. This call may read
+ * the SD card and must run in the profile worker, never the USB client task.
+ * `product` may be NULL. Returns the active index or -1 when no local profile
+ * became active. */
 int controller_profile_manager_on_descriptor_report(uint16_t vid, uint16_t pid,
                                                     uint16_t caps,
                                                     const char *product,

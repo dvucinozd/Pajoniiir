@@ -1,0 +1,252 @@
+name: P4 dual USB host software gates
+
+on:
+  pull_request:
+    paths:
+      - "firmware/p4-dual-usb-spike/**"
+      - "firmware/p4-only-software-harness/**"
+      - "firmware/main-deck-p4/main/**"
+      - "firmware/main-deck-p4/CMakeLists.txt"
+      - "firmware/main-deck-p4/dependencies.lock"
+      - "firmware/main-deck-p4/sdkconfig.defaults"
+      - "firmware/main-deck-p4/components/usb_storage/**"
+      - "firmware/main-deck-p4/components/usb_host_manager/**"
+      - "firmware/main-deck-p4/components/controller_usb_host/**"
+      - "firmware/main-deck-p4/components/controller_profile/**"
+      - "firmware/main-deck-p4/components/controller_profile_runtime/**"
+      - "firmware/main-deck-p4/components/controller_runtime/**"
+      - "firmware/main-deck-p4/components/controller_led_runtime/**"
+      - "firmware/main-deck-p4/components/controller_usb_audio/**"
+      - "firmware/main-deck-p4/components/p4_local_controller/**"
+      - "tests/p4_dual_usb_spike/**"
+      - "tests/p4_dual_usb_log_validator/**"
+      - "tests/controller_usb_host/**"
+      - "tests/controller_runtime/**"
+      - "tests/controller_led_runtime/**"
+      - "tests/controller_usb_audio/**"
+      - "tools/validate_p4_dual_usb_log.py"
+      - "tools/create_p4_acceptance_manifest.py"
+      - "tools/check_p4_binary_budget.py"
+      - ".github/workflows/p4-dual-usb-spike.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IDF_IMAGE: espressif/idf:v6.0.2@sha256:0d8c9773d48a327233f9c1d7c654ff0bcf133ae24503ea2e97a57cfe02b8cb67
+
+jobs:
+  build-and-test:
+    name: Host tests and ESP32-P4 builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Run isolated spike parser tests
+        shell: pwsh
+        run: ./tests/p4_dual_usb_spike/run_tests.ps1
+
+      - name: Run reusable USB-MIDI codec and lifecycle tests
+        shell: pwsh
+        run: ./tests/controller_usb_host/run_tests.ps1
+
+      - name: Run P4-local controller runtime tests
+        shell: pwsh
+        run: ./tests/controller_runtime/run_tests.ps1
+
+      - name: Run P4-local LED runtime tests
+        shell: pwsh
+        run: ./tests/controller_led_runtime/run_tests.ps1
+
+      - name: Run portable P4 USB Audio core tests
+        shell: pwsh
+        run: ./tests/controller_usb_audio/run_tests.ps1
+
+      - name: Run hardware-log validator tests
+        shell: pwsh
+        run: ./tests/p4_dual_usb_log_validator/run_tests.ps1
+
+      - name: Verify single Host Library owner in reusable scope
+        run: |
+          count=$(grep -R --include='*.c' -n 'usb_host_install(' \
+            firmware/main-deck-p4/components/usb_host_manager \
+            firmware/main-deck-p4/components/controller_usb_host \
+            firmware/main-deck-p4/components/controller_profile \
+            firmware/main-deck-p4/components/controller_profile_runtime \
+            firmware/main-deck-p4/components/controller_runtime \
+            firmware/main-deck-p4/components/controller_led_runtime \
+            firmware/main-deck-p4/components/p4_local_controller \
+            firmware/p4-only-software-harness | wc -l)
+          test "$count" -eq 1
+          echo "Reusable scope has one usb_host_install() owner."
+
+      - name: Build isolated spike and reusable integration harness
+        run: |
+          set -euo pipefail
+          docker pull --quiet "$IDF_IMAGE" >/dev/null
+          for project in \
+            firmware/p4-dual-usb-spike \
+            firmware/p4-only-software-harness
+          do
+            name=$(basename "$project")
+            docker run --rm \
+              -e HOME=/tmp \
+              -e IDF_GIT_SAFE_DIR='*' \
+              -v "$PWD:/project" \
+              -w "/project/$project" \
+              "$IDF_IMAGE" bash -lc '
+                set -e
+                idf.py --version
+                rm -rf build sdkconfig sdkconfig.old managed_components
+                idf.py set-target esp32p4
+                idf.py reconfigure
+                grep -q "^#define CONFIG_IDF_TARGET_ESP32P4 1$" build/config/sdkconfig.h
+                grep -q "^#define CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE 512$" build/config/sdkconfig.h
+                idf.py build
+              ' 2>&1 | tee "${name}-build.log"
+          done
+          sudo chown -R "$(id -u):$(id -g)" \
+            firmware/p4-dual-usb-spike/build \
+            firmware/p4-only-software-harness/build
+
+      - name: Build production P4-only firmware
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e HOME=/tmp \
+            -e IDF_GIT_SAFE_DIR='*' \
+            -v "$PWD:/project" \
+            -w /project/firmware/main-deck-p4 \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              rm -rf build-p4-only sdkconfig.p4-only sdkconfig.p4-only.old managed_components
+              common=(-B build-p4-only -D SDKCONFIG=sdkconfig.p4-only)
+              idf.py "${common[@]}" set-target esp32p4
+              idf.py "${common[@]}" reconfigure
+              grep -q "^#define CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE 512$" \
+                build-p4-only/config/sdkconfig.h
+              idf.py "${common[@]}" build
+              test -f build-p4-only/esp-idf/usb_storage/CMakeFiles/__idf_usb_storage.dir/usb_storage_shared.c.obj
+              test -f build-p4-only/esp-idf/controller_usb_host/CMakeFiles/__idf_controller_usb_host.dir/controller_usb_host_routed.c.obj
+              elf=build-p4-only/main-deck-p4.elf
+              riscv32-esp-elf-nm "$elf" | grep -q " T p4_local_controller_start$"
+              riscv32-esp-elf-nm "$elf" | grep -q " T control_link_inject_semantic$"
+              riscv32-esp-elf-nm "$elf" | grep -q " T controller_usb_host_output_gate_set_connected$"
+            ' 2>&1 | tee p4-only-build.log
+          sudo chown -R "$(id -u):$(id -g)" \
+            firmware/main-deck-p4/build-p4-only \
+            firmware/main-deck-p4/sdkconfig.p4-only*
+          git diff --exit-code -- firmware/main-deck-p4/dependencies.lock
+
+      - name: Verify committed dependency locks and sources
+        run: |
+          for project in \
+            firmware/p4-dual-usb-spike \
+            firmware/p4-only-software-harness
+          do
+            lock="$project/dependencies.lock"
+            test -f "$lock"
+            git diff --exit-code -- "$lock"
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          expected_sha = "3b6ce7111cb71f4e7ecd11393eb4363b96dccf53"
+          expected_git = "https://github.com/dvucinozd/esp-usb.git"
+          lock_paths = (
+              Path("firmware/p4-dual-usb-spike/dependencies.lock"),
+              Path("firmware/p4-only-software-harness/dependencies.lock"),
+          )
+
+          def dependency_section(text: str, key: str) -> str:
+              lines = text.splitlines()
+              marker = f"  {key}:"
+              try:
+                  start = lines.index(marker)
+              except ValueError as exc:
+                  raise SystemExit(f"missing dependency section {key!r}") from exc
+              end = len(lines)
+              for index in range(start + 1, len(lines)):
+                  line = lines[index]
+                  if line and not line.startswith("    "):
+                      end = index
+                      break
+              return "\n".join(lines[start:end])
+
+          def require_line(block: str, line: str, lock_path: Path) -> None:
+              if line not in block.splitlines():
+                  raise SystemExit(f"{lock_path}: missing {line!r}")
+
+          for lock_path in lock_paths:
+              text = lock_path.read_text(encoding="utf-8")
+              usb = dependency_section(text, "usb")
+              msc = dependency_section(text, "espressif/usb_host_msc")
+              idf = dependency_section(text, "idf")
+
+              require_line(usb, f"      git: {expected_git}", lock_path)
+              require_line(usb, "      path: host/usb", lock_path)
+              require_line(usb, "      type: git", lock_path)
+              require_line(usb, f"    version: {expected_sha}", lock_path)
+
+              require_line(msc, f"      git: {expected_git}", lock_path)
+              require_line(msc, "      path: host/class/msc/usb_host_msc", lock_path)
+              require_line(msc, "      type: git", lock_path)
+              require_line(msc, f"    version: {expected_sha}", lock_path)
+
+              require_line(idf, "    version: 6.0.2", lock_path)
+
+              direct = text.split("direct_dependencies:\n", 1)[1].split("manifest_hash:", 1)[0]
+              direct_lines = set(direct.splitlines())
+              if "- usb" not in direct_lines:
+                  raise SystemExit(f"{lock_path}: usb is not a direct dependency")
+              if "- espressif/usb_host_msc" not in direct_lines:
+                  raise SystemExit(f"{lock_path}: usb_host_msc is not a direct dependency")
+              if "- espressif/usb" in direct_lines:
+                  raise SystemExit(f"{lock_path}: stale registry usb dependency remains")
+          PY
+
+      - name: Verify spike DWC BNA recovery wrapper is linked
+        run: |
+          docker run --rm \
+            -e HOME=/tmp \
+            -v "$PWD:/project" \
+            -w /project/firmware/p4-dual-usb-spike \
+            "$IDF_IMAGE" bash -lc '
+              set -e
+              elf=build/p4-dual-usb-spike.elf
+              test -f "$elf"
+              riscv32-esp-elf-nm "$elf" | grep -q " T __wrap_usb_dwc_hal_chan_decode_intr$"
+              if riscv32-esp-elf-nm "$elf" | grep -q " T usb_dwc_hal_chan_decode_intr$"; then
+                echo "unwrapped USB DWC interrupt decoder remains reachable" >&2
+                exit 1
+              fi
+            '
+
+      - name: Upload software-gate evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: p4-dual-usb-software-evidence
+          if-no-files-found: ignore
+          path: |
+            p4-dual-usb-spike-build.log
+            p4-only-software-harness-build.log
+            p4-only-build.log
+            firmware/p4-dual-usb-spike/dependencies.lock
+            firmware/p4-only-software-harness/dependencies.lock
+            firmware/p4-dual-usb-spike/build/*.bin
+            firmware/p4-dual-usb-spike/build/*.elf
+            firmware/p4-dual-usb-spike/build/*.map
+            firmware/p4-only-software-harness/build/*.bin
+            firmware/p4-only-software-harness/build/*.elf
+            firmware/p4-only-software-harness/build/*.map
+            firmware/main-deck-p4/build-p4-only/*.bin
+            firmware/main-deck-p4/build-p4-only/*.elf
+            firmware/main-deck-p4/build-p4-only/*.map

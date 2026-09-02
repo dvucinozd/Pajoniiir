@@ -87,15 +87,6 @@ $p4 = Read-TargetBuild `
     -ExpectedProject "main-deck-p4" `
     -ExpectedChipId 0x0012 `
     -SlotSize 0x400000
-$s3 = Read-TargetBuild `
-    -RelativeProjectDir "firmware/control-board-s3" `
-    -ExpectedProject "control-board-s3" `
-    -ExpectedChipId 0x0009 `
-    -SlotSize 0x1e0000
-
-if ($p4.SourceVersion -ne $s3.SourceVersion) {
-    throw "P4/S3 versions differ: '$($p4.SourceVersion)' vs '$($s3.SourceVersion)'"
-}
 if ($p4.SourceVersion -ne $p4.Version) {
     Write-Warning "ESP application version truncated to 31 UTF-8 bytes: '$($p4.Version)'"
 }
@@ -105,12 +96,9 @@ $outputDir = Join-Path (Join-Path $RepoRoot $OutputRoot) "pajoniiir-$safeVersion
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
 Copy-Item -LiteralPath $p4.Source -Destination (Join-Path $outputDir $p4.File) -Force
-Copy-Item -LiteralPath $s3.Source -Destination (Join-Path $outputDir $s3.File) -Force
 
 $p4BundleFile = [System.IO.Path]::GetFileNameWithoutExtension($p4.File) + ".ddjota"
-$s3BundleFile = [System.IO.Path]::GetFileNameWithoutExtension($s3.File) + ".ddjota"
 $p4BundlePath = Join-Path $outputDir $p4BundleFile
-$s3BundlePath = Join-Path $outputDir $s3BundleFile
 
 Invoke-SigningTool @(
     "bundle", "--private-key", $SigningKeyPath,
@@ -118,15 +106,7 @@ Invoke-SigningTool @(
     "--project", $p4.Project, "--version", $p4.Version,
     "--key-id", $KeyId, "--input", $p4.Source, "--output", $p4BundlePath
 )
-Invoke-SigningTool @(
-    "bundle", "--private-key", $SigningKeyPath,
-    "--target", "s3", "--chip-id", "0x0009",
-    "--project", $s3.Project, "--version", $s3.Version,
-    "--key-id", $KeyId, "--input", $s3.Source, "--output", $s3BundlePath
-)
-
 $p4Bundle = Get-Item -LiteralPath $p4BundlePath
-$s3Bundle = Get-Item -LiteralPath $s3BundlePath
 
 $manifest = [ordered]@{
     schema_version = 2
@@ -148,18 +128,6 @@ $manifest = [ordered]@{
             slot_size = $p4.SlotSize
             sha256 = $p4.Sha256
             bundle_sha256 = (Get-FileHash -LiteralPath $p4BundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
-        },
-        [ordered]@{
-            target = "s3"
-            project = $s3.Project
-            chip_id = ("0x{0:X4}" -f $s3.ChipId)
-            file = $s3.File
-            ota_bundle = $s3BundleFile
-            size = $s3.Size
-            bundle_size = $s3Bundle.Length
-            slot_size = $s3.SlotSize
-            sha256 = $s3.Sha256
-            bundle_sha256 = (Get-FileHash -LiteralPath $s3BundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
         }
     )
 }
@@ -172,7 +140,6 @@ Invoke-SigningTool @(
 )
 
 Invoke-SigningTool @("verify-bundle", "--public-key", $PublicKeyPath, "--input", $p4BundlePath)
-Invoke-SigningTool @("verify-bundle", "--public-key", $PublicKeyPath, "--input", $s3BundlePath)
 Invoke-SigningTool @(
     "verify-file", "--public-key", $PublicKeyPath,
     "--input", $manifestPath, "--signature", $manifestSignaturePath
@@ -180,6 +147,5 @@ Invoke-SigningTool @(
 
 Write-Host "Signed OTA release package: $outputDir"
 Write-Host "  P4 $($p4.Size) bytes sha256=$($p4.Sha256)"
-Write-Host "  S3 $($s3.Size) bytes sha256=$($s3.Sha256)"
 Write-Host "  signing key id=$KeyId algorithm=ECDSA-P256-SHA256"
-Write-Host "  upload $p4BundleFile to P4 and $s3BundleFile to S3"
+Write-Host "  upload $p4BundleFile to P4"

@@ -119,6 +119,12 @@ the silicon behaves. Work the remaining rows in order.
   `../validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
 - [ ] P4 USB MSC cold boot, software reboot, disconnect and reconnect pass.
   Focused Library/MP3 access passed, but the complete recovery sequence did not.
+  The separate `feat/p4-dual-usb-host` bench later confirmed simultaneous USB0
+  storage and direct USB1 FLX4 enumeration under IDF 6.0.2 and fixed a captured
+  upstream hub recycle race in the pinned `esp-usb` fork. That branch still
+  cannot close this master gate: its 2026-08-12 dual-deck isolation run ended
+  in raw `BROWNOUT` after about 6.5 seconds, so power stability and the full
+  recovery matrix remain open.
   On 2026-08-22 `RC2-51-g050ab43` reached `ota_0 / valid` and mounted microSD,
   while the already-inserted USB medium exhausted eight fast enumeration
   recovery cycles. Physical removal/reinsertion then mounted the exFAT volume

@@ -1,6 +1,21 @@
 # Development Plan
 
-Status: current phase ledger, reconciled 2026-08-02.
+Status: current phase ledger, P4-only branch reconciled 2026-09-02.
+
+> On `feat/p4-dual-usb-host`, P4 directly owns USB0 storage and USB1 controller
+> MIDI/audio. The S3 UART/heartbeat/debug AP, profile-transfer, monitor PCM and
+> firmware/release paths have been removed from the active build. Older phase
+> entries below remain dated evidence for the dual-processor `master` baseline;
+> they are not instructions for this branch. The bounded 30-minute exact-image
+> combined soak passed 2026-09-02; physical VBUS qualification, the repeated
+> controller/reconnect matrix and the later multi-hour soak remain open.
+
+The 2026-08-27 cleanup also removed the historical S3 firmware tree and its
+dedicated test runners. The direct P4 controller path now gates the built-in
+FLX4 mapper by exact USB identity, retries held-state delivery until the deck
+queue accepts it, resolves SD profiles outside the USB client task, validates
+connection epochs before activation, publishes the LED sink under a critical
+section and retries controller bootstrap while exposing health diagnostics.
 
 ## Executive status
 
@@ -16,12 +31,13 @@ Status: current phase ledger, reconciled 2026-08-02.
 | Idle screensaver | Implemented and hardware-accepted 2026-07-24 in `RC1-237-g7bf0fd3c`. Fixed two-minute timeout by operator decision; the Settings entry from the plan was declined, not skipped |
 | Loop (manual in/out + beat pads) | Timing corrected and hardware-accepted; armed Loop In dynamic overlay burning implemented in `ui_overview.c` for smooth 60 FPS scrolling highlight without strip invalidation. Verified on P4 hardware 2026-08-19 |
 | Controller profiles | Firmware path implemented; FLX4 profile hardware-verified and deployed in `RC1-131-gc391e306`; `generic_midi_ci` and a specification-derived Hercules Inpulse 500 profile are compiler/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; non-FLX4 hardware and remote update acceptance pending |
-| P4/S3 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; RC2 application OTA succeeded on both targets 2026-08-02. P4 then received a full wired `RC2-3-g136aad7` ESP-IDF 6.0.2 boot-chain flash, and S3 received the exact clean RC2 bootloader/application pair over COM10 |
+| Direct-controller runtime hardening | Identity-gated built-in mapping, durable held-state retries, off-USB-task profile activation with epoch validation, truthful UAC capability reporting, retrying bootstrap and bounded transfer/UAC fault recovery implemented. Host suite and clean ESP-IDF 6.0.2 P4 build pass; exact `RC2-109-g269036b` OTA, one USB1 reconnect and post-reconnect dual-deck audio pass. Exact `RC2-111-g4ee76a6` also passed a 30-minute dual-active seek/restart soak. Repeated reconnect/profile acceptance remains pending |
+| P4 OTA and rollback | Signed negative-path/rollback acceptance passed 2026-07-14; P4 RC2 application OTA and full IDF 6.0.2 boot-chain flash passed. S3 OTA evidence is retained as historical baseline only |
 | Pull OTA (P4, Wi-Fi STA) | **Core path proven end to end on hardware 2026-07-24.** Software hardening now enforces monotonic newer-only pull offers, a ten-minute offer lifetime, channel size/SHA-256 verification, strict relative bundle paths, canonical `pajoniiir.local` mDNS and a dynamic AP-IP/mDNS Host allow-list. Hardware re-smoke of the hardened path remains |
 | ANLZ metadata loading | Unified single-resolver path implemented, host-tested and deployed; on-device timings 31 ms warm / 267 ms warm-under-load / 698 ms cold |
 | microSD service journal | Structured event log with rotation, status and `GET /api/diagnostic-log` implemented and hardware-verified 2026-07-21 |
 | Master-output recorder | **Compiled out by default since 2026-07-24** (`CONFIG_AUDIO_RECORDER_ENABLED`, off). Implemented and functionally accepted 2026-07-21, but write latency is card-bound, not firmware-bound; shelved rather than removed. Safety hardened: producer stop-gate, transactional finalise (`patch`→`sync`→`close`→`publish`) and durability-failure propagation |
-| Bounded compressed cache | On `master` since the ESP-IDF 6.0.2 merge. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Focused real-MP3 playback passed 2026-08-02. WAV/FLAC were not exercised because the audited USB contained 68 MP3 files but zero physical WAV/FLAC files despite stale PDB entries; sustained dual-deck acceptance remains pending |
+| Bounded compressed cache | On `master` since the ESP-IDF 6.0.2 merge. MP3/WAV/FLAC use a seekable LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM; eliminates `TRACK TOO LARGE` and fragmentation. Exact-image sustained dual-deck real-MP3 acceptance passed for 30 minutes on 2026-09-02. WAV/FLAC remain unexercised because the audited USB contained 68 MP3 files but zero physical WAV/FLAC files despite stale PDB entries |
 | Paginated Library UI | On `master` since the ESP-IDF 6.0.2 merge. LVGL table renders one 8-row page with PREV/NEXT (≤40 live cells instead of up to 5120). Host-tested and operator-confirmed on P4 hardware 2026-08-02 |
 | Immutable track sort | On `master` since the ESP-IDF 6.0.2 merge. Library sorting uses double-buffered `uint16_t` row-order over immutable records. No large-struct copies or qsort. Software-tested |
 
@@ -2773,13 +2789,95 @@ real short EOF tail exists). `/api/status` now reports
 `startup_prebuffer_frames` alongside `pcm_underrun1/2`. Host policy coverage
 passes; hardware confirmation that the initial counter remains zero is pending.
 
-### Bench power BROWNOUT / POWERON — resolved externally
+### Bench power BROWNOUT / POWERON — recurred on experimental dual USB
 
 `boot=84 reset=BROWNOUT` then `boot=85 reset=POWERON` on 2026-07-24, and the
 FLX4 stopped enumerating until it was physically reconnected. The later bench
-session traced this to the power supply and replacement resolved it. This is no
-longer an open firmware item; future unexplained resets still invalidate the
-affected measurement and must be recorded as a new power/hardware observation.
+session traced this to the power supply and replacement resolved it for the
+master topology. The experimental P4 dual-USB bench reproduced a raw
+`BROWNOUT` on 2026-08-12: one deck ran 33 seconds cleanly, while two decks reset
+after about 6.5 seconds even with FLX4 disconnected and zero reported audio
+late blocks or underruns. This is an open power/hardware blocker for
+`feat/p4-dual-usb-host`, not evidence of an audio scheduling fix. Measure and
+stabilise the common 5 V/VBUS path, rebuild the restored monitor/cue source and
+repeat the complete hardware matrix before merge.
+
+### Experimental dual-USB software closure, 2026-08-27
+
+The reusable M3 slices selected for this branch are implemented and
+software-verified: fail-closed USB FIFO sizing; direct FLX4 MIDI plus
+four-channel UAC; stateful 48→44.1 kHz resampling and bounded ring correction;
+hotplug generations and task-priority transitions; FLX4-only shifted LED
+mirrors; headphone level ramps; fractional/default/large Beat Jump pages; jog
+loop-boundary editing; gapless slip-reverse Censor; and bounded UAC health
+alarms with a playback-start baseline. The direct audio path has no S3 monitor
+fallback: if USB1 UAC is unavailable, cue output is unavailable until direct
+UAC recovers. The P4 host suite and ESP-IDF 6.0.2 P4-local build pass.
+
+### Focused dual-root hotplug acceptance, 2026-08-29
+
+The first physical reconnect pass after S3 retirement is complete. The accepted
+source (`77aa23a`) adds indexed idle-only root recovery, suppresses a power
+cycle once attach/enumeration is active, retires MSC callback ownership before
+teardown, and keeps one fixed 8 KiB DMA-capable MSC transfer for the complete
+device lifetime. FatFs transactions are split to the same 8 KiB bound. This
+preserves the disconnect-race fix while avoiding the contiguous 32 KiB
+internal-DMA allocation that returned `ESP_ERR_NO_MEM` after hotplug.
+
+The complete P4 host suite and ESP-IDF 6.0.2 `build_signed` passed. The signed
+`RC2-106-gfa55e43-dirty` bundle booted from `ota_0` with USB0 storage and USB1
+FLX4 active. One physical USB0 remove/reinsert cycle completed without reboot;
+the service journal recorded `USB_UNMOUNTED`, `USB_MOUNTED` and
+`LIBRARY_LOADED`, while status reported 2/2 successful mounts, clean
+unmount/uninstall, zero host/recovery failures and an active FLX4 MIDI/UAC
+profile. Two later track loads completed from the remounted medium. See
+`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`.
+
+This closes the focused hotplug reproduction, not the release gate. Electrical
+qualification, repeated cold/warm boots and insertion orders, removal during
+active decode, repeated USB1 reconnect, 30-minute combined-load diagnostics and
+the later multi-hour soak remain open.
+
+### Bounded USB1 controller fault recovery, 2026-09-01
+
+Commit `269036b` closes the observed high-rate controller recovery-request
+storm. The first MIDI transfer/submit or direct-UAC fault opens one epoch,
+stops new output, retires endpoint callbacks and tears down ownership before at
+most one deferred USB1 recovery request. Duplicate reports in the epoch are
+coalesced, and a physical device-gone event cancels the pending soft request.
+The controller task also observes a latched UAC fault, eliminating the previous
+false-active state with a stopped consumer.
+
+The complete P4 host suite passed with the new pure-C recovery-gate test. A
+clean ESP-IDF 6.0.2 build from exact commit `269036b` produced
+`RC2-109-g269036b` (2,450,656 bytes; SHA-256
+`7776f287f9f795abeee36ac648dc518517ec270823928293bf0b04cb334cd9ee`).
+The signed candidate booted `ota_0`, mounted a 100-track USB0 Library and
+activated direct FLX4 MIDI/UAC. Idle, 30-second dual-deck audio, one physical
+USB1 reconnect and 20-second post-reconnect dual-deck audio completed with zero
+new recovery requests, late blocks, UAC drops/overflow, PCM underruns or daemon
+errors. USB0 remained at one mount and zero disconnects. See
+`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`.
+
+This closes only the focused controller-storm reproduction and one reconnect.
+At that checkpoint, the repeated USB0/USB1 matrix, removal during decode,
+30-minute/multi-hour soak and measured protected-VBUS qualification remained
+open; the next dated section records the later 30-minute result.
+
+### Exact-image 30-minute dual-active soak, 2026-09-02
+
+Clean candidate `RC2-111-g4ee76a6` (commit `4ee76a6`, `ota_1`) completed a
+strict 1,800-second real-MP3 dual-deck run with seven controlled
+pause/seek-to-zero/play cycles. USB0 storage and direct USB1 FLX4 MIDI/UAC
+remained active on the same boot. Audio late, per-deck PCM underrun, UAC
+dropped-block/overflow, host/controller recovery, storage/MIDI disconnect and
+service-log drop deltas were all zero. See
+`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`.
+
+This closes the bounded 30-minute exact-image diagnostic soak. It does not
+close measured protected-VBUS qualification, the repeated reconnect and
+remove-during-decode matrix, verified WAV/FLAC/direct-UAC rate cases or the
+later multi-hour product soak.
 
 ## Idle Screensaver
 

@@ -1,5 +1,4 @@
 #include "ui_settings.h"
-#include "control_link.h"
 #ifndef WIN32
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -71,57 +70,6 @@ const char *ui_settings_master_trim_label(uint8_t preset)
     return s_master_trim_presets[preset].label;
 }
 
-const char *ui_settings_s3_debug_ap_status_label(uint8_t status)
-{
-    switch (status) {
-    case CTRL_S3_DEBUG_AP_OFF:
-        return "OFF";
-    case CTRL_S3_DEBUG_AP_STARTING:
-        return "STARTING";
-    case CTRL_S3_DEBUG_AP_ON:
-        return "ON";
-    case CTRL_S3_DEBUG_AP_ERROR:
-        return "ERROR";
-    default:
-        return "UNKNOWN";
-    }
-}
-
-void ui_settings_s3_debug_ap_format(char *out, size_t out_size,
-                                     uint8_t status, uint32_t token)
-{
-    if (!out || out_size == 0u) return;
-    if (status == CTRL_S3_DEBUG_AP_ON &&
-        token >= 100000u && token <= 999999u) {
-        snprintf(out, out_size, "S3 DEBUG AP: ON  CODE %06u", (unsigned)token);
-    } else {
-        snprintf(out, out_size, "S3 DEBUG AP: %s",
-                 ui_settings_s3_debug_ap_status_label(status));
-    }
-}
-
-const char *ui_settings_firmware_slot_label(uint8_t slot)
-{
-    switch (slot) {
-    case CTRL_FW_SLOT_OTA_0: return "ota_0";
-    case CTRL_FW_SLOT_OTA_1: return "ota_1";
-    case CTRL_FW_SLOT_FACTORY: return "factory";
-    default: return "unknown";
-    }
-}
-
-const char *ui_settings_firmware_state_label(uint8_t state)
-{
-    switch (state) {
-    case CTRL_FW_STATE_NEW: return "NEW";
-    case CTRL_FW_STATE_PENDING_VERIFY: return "PENDING";
-    case CTRL_FW_STATE_VALID: return "VALID";
-    case CTRL_FW_STATE_INVALID: return "INVALID";
-    case CTRL_FW_STATE_ABORTED: return "ABORTED";
-    default: return "UNKNOWN";
-    }
-}
-
 bool ui_settings_is_active_tab(int active_tab, int settings_tab_index)
 {
     return settings_tab_index >= 0 && active_tab == settings_tab_index;
@@ -159,9 +107,6 @@ static lv_obj_t *s_label_brightness_val = NULL;
 static lv_obj_t *s_label_cue_mode = NULL;
 static lv_obj_t *s_label_master_trim = NULL;
 static lv_obj_t *s_label_wifi_remote = NULL;
-static lv_obj_t *s_label_s3_debug_ap = NULL;
-static lv_obj_t *s_switch_s3_debug_ap = NULL;
-static lv_obj_t *s_label_s3_firmware = NULL;
 static uint8_t s_master_trim_preset = 0;
 static ui_settings_wifi_toggle_cb_t s_wifi_toggle_cb = NULL;
 static ui_settings_recording_toggle_cb_t s_recording_toggle_cb = NULL;
@@ -171,22 +116,14 @@ static lv_obj_t *s_label_rec_btn = NULL;
 static lv_obj_t *s_label_rec_status = NULL;
 #endif
 static lv_obj_t *s_label_svc_log = NULL;
-static ui_settings_s3_debug_ap_toggle_cb_t s_s3_debug_ap_toggle_cb = NULL;
-static volatile uint8_t s_s3_debug_ap_status = CTRL_S3_DEBUG_AP_OFF;
-static volatile uint32_t s_s3_debug_ap_token;
-static uint8_t s_s3_debug_ap_displayed_status = UINT8_MAX;
-static uint32_t s_s3_debug_ap_displayed_token = UINT32_MAX;
-static ui_settings_color_cache_t s_cache_uart_color;
+static ui_settings_color_cache_t s_cache_controller_color;
 static ui_settings_color_cache_t s_cache_sd_color;
-static int s_cache_uart_state = -1;
-static uint32_t s_cache_uart_age_bucket = UINT32_MAX;
+static int s_cache_controller_state = -1;
 static int s_cache_sd_state = -1;
 static uint32_t s_cache_sd_free_mib = UINT32_MAX;
 static uint32_t s_cache_sd_total_mib = UINT32_MAX;
 static uint32_t s_cache_sd_last_poll_ms = 0;
 static ui_settings_text_cache_t s_cache_sd_text;
-static ui_settings_text_cache_t s_cache_s3_firmware_text;
-static ui_settings_color_cache_t s_cache_s3_firmware_color;
 
 static void ui_settings_copy_str(char *dst, size_t dst_len, const char *src)
 {
@@ -466,64 +403,6 @@ void ui_settings_set_recording_toggle_cb(ui_settings_recording_toggle_cb_t cb)
     s_recording_toggle_cb = cb;
 }
 
-static lv_color_t s3_debug_ap_status_color(uint8_t status)
-{
-    switch (status) {
-    case CTRL_S3_DEBUG_AP_ON:
-        return COL_GREEN;
-    case CTRL_S3_DEBUG_AP_STARTING:
-        return COL_AMBER;
-    case CTRL_S3_DEBUG_AP_ERROR:
-        return COL_RED;
-    default:
-        return COL_TEXT_DIM;
-    }
-}
-
-static void ui_settings_apply_s3_debug_ap_status(void)
-{
-    uint8_t status = s_s3_debug_ap_status;
-    uint32_t token = s_s3_debug_ap_token;
-    if (!s_label_s3_debug_ap ||
-        (s_s3_debug_ap_displayed_status == status &&
-         s_s3_debug_ap_displayed_token == token)) {
-        return;
-    }
-
-    char text[48];
-    ui_settings_s3_debug_ap_format(text, sizeof(text), status, token);
-    lv_label_set_text(s_label_s3_debug_ap, text);
-    lv_obj_set_style_text_color(s_label_s3_debug_ap,
-                                s3_debug_ap_status_color(status),
-                                LV_PART_MAIN);
-    if (s_switch_s3_debug_ap) {
-        if (status == CTRL_S3_DEBUG_AP_ON || status == CTRL_S3_DEBUG_AP_STARTING) {
-            lv_obj_add_state(s_switch_s3_debug_ap, LV_STATE_CHECKED);
-        } else {
-            lv_obj_clear_state(s_switch_s3_debug_ap, LV_STATE_CHECKED);
-        }
-    }
-    s_s3_debug_ap_displayed_status = status;
-    s_s3_debug_ap_displayed_token = token;
-}
-
-static void s3_debug_ap_event_cb(lv_event_t *event)
-{
-    lv_obj_t *sw = lv_event_get_target(event);
-    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
-
-    s_s3_debug_ap_status = on ? CTRL_S3_DEBUG_AP_STARTING : CTRL_S3_DEBUG_AP_OFF;
-    if (!on) s_s3_debug_ap_token = 0u;
-    s_s3_debug_ap_displayed_status = UINT8_MAX;
-    s_s3_debug_ap_displayed_token = UINT32_MAX;
-    ui_settings_apply_s3_debug_ap_status();
-
-    if (s_s3_debug_ap_toggle_cb) {
-        s_s3_debug_ap_toggle_cb(on);
-    }
-    ESP_LOGI(TAG, "S3 Debug AP requested: %s", on ? "on" : "off");
-}
-
 #ifndef WIN32
 static void master_trim_event_cb(lv_event_t *event)
 {
@@ -558,27 +437,6 @@ static void cue_mode_event_cb(lv_event_t *event)
 void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb)
 {
     s_wifi_toggle_cb = cb;
-}
-
-void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t cb)
-{
-    s_s3_debug_ap_toggle_cb = cb;
-}
-
-void ui_settings_set_s3_debug_ap_status(uint8_t status)
-{
-    s_s3_debug_ap_status = status;
-    if (status == CTRL_S3_DEBUG_AP_OFF || status == CTRL_S3_DEBUG_AP_ERROR) {
-        s_s3_debug_ap_token = 0u;
-    }
-    s_s3_debug_ap_displayed_status = UINT8_MAX;
-    s_s3_debug_ap_displayed_token = UINT32_MAX;
-}
-
-void ui_settings_set_s3_debug_ap_token(uint32_t token)
-{
-    s_s3_debug_ap_token = token <= 999999u ? token : 0u;
-    s_s3_debug_ap_displayed_token = UINT32_MAX;
 }
 
 void ui_settings_configure(const ui_settings_config_t *config)
@@ -713,12 +571,12 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
 
     lv_obj_t *status_section = ui_settings_section(screen, 410, 20, 360, 210, "SYSTEM STATUS");
 
-    lv_obj_t *label_uart_status =
+    lv_obj_t *label_controller_status =
         ui_settings_value_label(status_section,
-                                "Control Link (S3): Offline (no heartbeat)",
+                                "Controller (USB1): Disconnected",
                                 COL_RED, &lv_font_montserrat_12, 16, 40);
-    lv_obj_set_width(label_uart_status, 320);
-    lv_label_set_long_mode(label_uart_status, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(label_controller_status, 320);
+    lv_label_set_long_mode(label_controller_status, LV_LABEL_LONG_CLIP);
 
     ui_settings_value_label(status_section, "SD Card", COL_TEXT_MUTED,
                             &lv_font_montserrat_12, 16, 76);
@@ -752,12 +610,6 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                 COL_GREEN, &lv_font_montserrat_12, 16, 146);
     }
 #endif
-    s_label_s3_firmware =
-        ui_settings_value_label(status_section, "S3: waiting for firmware report",
-                                COL_TEXT_DIM, &lv_font_montserrat_12, 16, 168);
-    lv_obj_set_width(s_label_s3_firmware, 320);
-    lv_label_set_long_mode(s_label_s3_firmware, LV_LABEL_LONG_CLIP);
-
 #ifndef WIN32
     {
         esp_reset_reason_t rr = esp_reset_reason();
@@ -768,11 +620,11 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
         snprintf(rr_buf, sizeof(rr_buf), "Last reset: %s", ui_settings_reset_reason_str());
         ui_settings_value_label(status_section, rr_buf,
                                 rr_bad ? COL_RED : COL_TEXT_DIM,
-                                &lv_font_montserrat_12, 16, 190);
+                                &lv_font_montserrat_12, 16, 174);
     }
 #endif
 
-    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 108, "WIRELESS");
+    lv_obj_t *wifi_section = ui_settings_section(screen, 410, 240, 360, 82, "WIRELESS");
     lv_obj_t *sw_wifi = lv_switch_create(wifi_section);
     ui_settings_style_wireless_switch(sw_wifi, COL_GREEN);
     lv_obj_set_pos(sw_wifi, 16, 38);
@@ -786,20 +638,6 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
                                                   wifi_remote_init ? COL_GREEN : COL_TEXT_DIM,
                                                   &lv_font_montserrat_14,
                                                   96, 41);
-
-    s_switch_s3_debug_ap = lv_switch_create(wifi_section);
-    ui_settings_style_wireless_switch(s_switch_s3_debug_ap, COL_ACCENT);
-    lv_obj_set_pos(s_switch_s3_debug_ap, 16, 74);
-    lv_obj_add_event_cb(s_switch_s3_debug_ap, s3_debug_ap_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    s_label_s3_debug_ap = ui_settings_value_label(wifi_section,
-                                                  "S3 DEBUG AP: OFF",
-                                                  COL_TEXT_DIM,
-                                                  &lv_font_montserrat_14,
-                                                  96, 77);
-    s_s3_debug_ap_displayed_status = UINT8_MAX;
-    s_s3_debug_ap_displayed_token = UINT32_MAX;
-    ui_settings_apply_s3_debug_ap_status();
 
     lv_obj_t *mixer_section = ui_settings_section(screen, 30, 356, 740, 64, "MIXER STATUS");
     ui_settings_static_tile(mixer_section, 18, 34, 110, 22,
@@ -836,7 +674,7 @@ lv_obj_t *ui_settings_create(lv_obj_t *parent)
     lv_obj_align(s_label_cue_mode, LV_ALIGN_CENTER, 0, 0);
 
     ui_settings_widgets_t settings_widgets = {
-        .uart_status = label_uart_status,
+        .controller_status = label_controller_status,
         .sd_status = label_sd_status,
     };
     ui_settings_init(&settings_widgets);
@@ -856,17 +694,14 @@ void ui_settings_init(const ui_settings_widgets_t *widgets)
 
 void ui_settings_invalidate(void)
 {
-    s_cache_uart_color.valid = false;
+    s_cache_controller_color.valid = false;
     s_cache_sd_color.valid = false;
-    s_cache_uart_state = -1;
-    s_cache_uart_age_bucket = UINT32_MAX;
+    s_cache_controller_state = -1;
     s_cache_sd_state = -1;
     s_cache_sd_free_mib = UINT32_MAX;
     s_cache_sd_total_mib = UINT32_MAX;
     s_cache_sd_last_poll_ms = 0;
     s_cache_sd_text.valid = false;
-    s_cache_s3_firmware_text.valid = false;
-    s_cache_s3_firmware_color.valid = false;
 }
 
 static void ui_settings_format_storage_size(uint64_t bytes, char *out, size_t out_size)
@@ -889,59 +724,23 @@ static void ui_settings_format_storage_size(uint64_t bytes, char *out, size_t ou
 }
 
 #ifndef WIN32
-static void ui_settings_update_uart_status_label(const deck_state_t *state)
+static void ui_settings_update_controller_status_label(const deck_state_t *state)
 {
-    if (!s_widgets.uart_status || !state) {
+    if (!s_widgets.controller_status || !state) {
         return;
     }
 
-    int display_state;
-    uint32_t age_bucket;
-    if (state->control_link_connected) {
-        display_state = 1;
-        if (state->last_heartbeat_age_ms < 1000u) {
-            age_bucket = state->last_heartbeat_age_ms / 100u;
-            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-                lv_label_set_text_fmt(s_widgets.uart_status,
-                                      "Control Link (S3): Connected (age %lu ms)",
-                                      (unsigned long)(age_bucket * 100u));
-                s_cache_uart_state = display_state;
-                s_cache_uart_age_bucket = age_bucket;
-            }
-        } else {
-            age_bucket = state->last_heartbeat_age_ms / 1000u;
-            if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-                lv_label_set_text_fmt(s_widgets.uart_status,
-                                      "Control Link (S3): Connected (age %lu s)",
-                                      (unsigned long)age_bucket);
-                s_cache_uart_state = display_state;
-                s_cache_uart_age_bucket = age_bucket;
-            }
-        }
-        ui_settings_obj_set_text_color_cached(s_widgets.uart_status, &s_cache_uart_color, COL_GREEN);
-        return;
+    const int display_state = state->controller_connected ? 1 : 0;
+    if (s_cache_controller_state != display_state) {
+        lv_label_set_text(s_widgets.controller_status,
+                          state->controller_connected
+                              ? "Controller (USB1): Connected"
+                              : "Controller (USB1): Disconnected");
+        s_cache_controller_state = display_state;
     }
-
-    if (state->last_heartbeat_age_ms == UINT32_MAX) {
-        display_state = 0;
-        age_bucket = UINT32_MAX;
-        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-            lv_label_set_text(s_widgets.uart_status, "Control Link (S3): Offline (no heartbeat)");
-            s_cache_uart_state = display_state;
-            s_cache_uart_age_bucket = age_bucket;
-        }
-    } else {
-        display_state = 2;
-        age_bucket = state->last_heartbeat_age_ms / 1000u;
-        if (s_cache_uart_state != display_state || s_cache_uart_age_bucket != age_bucket) {
-            lv_label_set_text_fmt(s_widgets.uart_status,
-                                  "Control Link (S3): Offline (last %lu s ago)",
-                                  (unsigned long)age_bucket);
-            s_cache_uart_state = display_state;
-            s_cache_uart_age_bucket = age_bucket;
-        }
-    }
-    ui_settings_obj_set_text_color_cached(s_widgets.uart_status, &s_cache_uart_color, COL_RED);
+    ui_settings_obj_set_text_color_cached(
+        s_widgets.controller_status, &s_cache_controller_color,
+        state->controller_connected ? COL_GREEN : COL_RED);
 }
 
 static void ui_settings_update_sd_status_label(bool force)
@@ -990,36 +789,6 @@ static void ui_settings_update_sd_status_label(bool force)
     ui_settings_obj_set_text_color_cached(s_widgets.sd_status, &s_cache_sd_color, COL_GREEN);
 }
 
-static void ui_settings_update_s3_firmware_label(void)
-{
-    if (!s_label_s3_firmware) return;
-
-    ctrl_firmware_report_t report;
-    if (!control_link_get_s3_firmware_report(&report)) {
-        ui_settings_label_set_text_cached(s_label_s3_firmware,
-                                          &s_cache_s3_firmware_text,
-                                          "S3: waiting for firmware report");
-        ui_settings_obj_set_text_color_cached(s_label_s3_firmware,
-                                               &s_cache_s3_firmware_color,
-                                               COL_TEXT_DIM);
-        return;
-    }
-
-    char text[80];
-    snprintf(text, sizeof(text), "S3: %s [%s/%s]",
-             report.version[0] ? report.version : "unknown",
-             ui_settings_firmware_slot_label(report.slot),
-             ui_settings_firmware_state_label(report.state));
-    ui_settings_label_set_text_cached(s_label_s3_firmware,
-                                      &s_cache_s3_firmware_text, text);
-    lv_color_t color = report.state == CTRL_FW_STATE_VALID ? COL_GREEN :
-                       report.state == CTRL_FW_STATE_PENDING_VERIFY ? COL_AMBER :
-                       (report.state == CTRL_FW_STATE_INVALID ||
-                        report.state == CTRL_FW_STATE_ABORTED) ? COL_RED : COL_TEXT_DIM;
-    ui_settings_obj_set_text_color_cached(s_label_s3_firmware,
-                                           &s_cache_s3_firmware_color, color);
-}
-
 #endif
 
 void ui_settings_update(const ui_frame_context_t *ctx)
@@ -1028,10 +797,8 @@ void ui_settings_update(const ui_frame_context_t *ctx)
         return;
     }
 #ifndef WIN32
-    ui_settings_update_uart_status_label(&ctx->deck_state[CTRL_DECK_1]);
+    ui_settings_update_controller_status_label(&ctx->deck_state[CTRL_DECK_1]);
     ui_settings_update_sd_status_label(false);
-    ui_settings_update_s3_firmware_label();
-    ui_settings_apply_s3_debug_ap_status();
 #if CONFIG_AUDIO_RECORDER_ENABLED
     ui_settings_update_recording_label();
 #endif

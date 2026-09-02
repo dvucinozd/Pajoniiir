@@ -1,0 +1,12 @@
+menu "Media library"
+
+config LIBRARY_ANLZ_CACHE_WRITE
+    bool "Write parsed ANLZ metadata cache to microSD"
+    default n
+    help
+        Cache cold USB ANLZ parses on microSD so later loads are faster. Disable
+        this on hardware whose supply cannot tolerate the microSD commit current
+        peak. Existing cache entries remain readable; only new writes are
+        suppressed.
+
+endmenu

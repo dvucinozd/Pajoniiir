@@ -2,17 +2,18 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "audio_engine.h"
+#include "audio_uac_health.h"
 #include "media_catalog.h"
 #include "ui.h"
 #include "ui_library.h"
 #include "web_api_helpers.h"
 #include "deck_core.h"
 #include "control_link.h"
-#include "control_link_p4_diagnostics.h"
 #include "p4_ota.h"
 #include "web_firmware_json.h"
 #include "p4_ota_policy.h"
 #include "service_log.h"
+#include "library_load_trace.h"
 #include "sd_io_gate.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -21,6 +22,13 @@
 #include "app_settings.h"
 #include <stdio.h>
 #include "sdkconfig.h"
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+#include "esp_core_dump.h"
+#endif
+#include "controller_usb_host.h"
+#include "p4_local_controller.h"
+#include "usb_host_manager.h"
+#include "usb_storage.h"
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
 #include "controller_profile_manager.h"
 #endif
@@ -35,6 +43,152 @@
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
 static bool s_mdns_started;
+
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+typedef struct {
+    esp_core_dump_summary_t summary;
+    char reason[192];
+    char reason_esc[384];
+    char task_esc[40];
+} crash_dump_work_t;
+#endif
+
+static void format_crash_dump_json(char *out, size_t out_size)
+{
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+    size_t image_address = 0u;
+    size_t image_size = 0u;
+    const esp_err_t check_rc = esp_core_dump_image_check();
+    esp_err_t image_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t summary_rc = ESP_ERR_NOT_FOUND;
+    esp_err_t reason_rc = ESP_ERR_NOT_FOUND;
+    crash_dump_work_t *work = NULL;
+    if (check_rc == ESP_OK) {
+        image_rc = esp_core_dump_image_get(&image_address, &image_size);
+        work = calloc(1, sizeof(*work));
+        if (work) {
+            summary_rc = esp_core_dump_get_summary(&work->summary);
+            reason_rc = esp_core_dump_get_panic_reason(work->reason,
+                                                       sizeof(work->reason));
+            web_api_json_escape(reason_rc == ESP_OK ? work->reason : "",
+                                work->reason_esc, sizeof(work->reason_esc));
+            web_api_json_escape(summary_rc == ESP_OK ? work->summary.exc_task : "",
+                                work->task_esc, sizeof(work->task_esc));
+        } else {
+            summary_rc = ESP_ERR_NO_MEM;
+            reason_rc = ESP_ERR_NO_MEM;
+        }
+    }
+    const esp_core_dump_summary_t *summary = work ? &work->summary : NULL;
+    snprintf(
+        out, out_size,
+        "\"crash_dump\":{"
+        "\"enabled\":true,\"present\":%s,"
+        "\"check_result\":%d,\"check_result_name\":\"%s\","
+        "\"image_result\":%d,\"image_result_name\":\"%s\","
+        "\"image_size\":%u,"
+        "\"summary_result\":%d,\"summary_result_name\":\"%s\","
+        "\"panic_reason_result\":%d,"
+        "\"panic_reason\":\"%s\",\"task\":\"%s\","
+        "\"pc\":\"0x%08X\",\"ra\":\"0x%08X\","
+        "\"sp\":\"0x%08X\",\"mcause\":\"0x%08X\","
+        "\"mtval\":\"0x%08X\"}",
+        check_rc == ESP_OK ? "true" : "false",
+        (int)check_rc, esp_err_to_name(check_rc),
+        (int)image_rc, esp_err_to_name(image_rc), (unsigned)image_size,
+        (int)summary_rc, esp_err_to_name(summary_rc), (int)reason_rc,
+        work ? work->reason_esc : "", work ? work->task_esc : "",
+        summary ? (unsigned)summary->exc_pc : 0u,
+        summary ? (unsigned)summary->ex_info.ra : 0u,
+        summary ? (unsigned)summary->ex_info.sp : 0u,
+        summary ? (unsigned)summary->ex_info.mcause : 0u,
+        summary ? (unsigned)summary->ex_info.mtval : 0u);
+    free(work);
+#else
+    snprintf(out, out_size, "\"crash_dump\":{\"enabled\":false}");
+#endif
+}
+
+static void format_audio_wdt_trace_json(
+    char *out, size_t out_size,
+    const audio_engine_diagnostics_snapshot_t *diagnostics)
+{
+    const audio_wdt_trace_record_t *previous =
+        &diagnostics->wdt_trace_previous;
+    const audio_wdt_trace_record_t *current =
+        &diagnostics->wdt_trace_current;
+    uint32_t previous_no_idle_us = diagnostics->wdt_trace_previous_valid
+        ? (uint32_t)((uint32_t)previous->entered_us -
+                     (uint32_t)previous->last_idle_us)
+        : 0u;
+    uint32_t current_no_idle_us = diagnostics->wdt_trace_current_valid
+        ? (uint32_t)((uint32_t)current->entered_us -
+                     (uint32_t)current->last_idle_us)
+        : 0u;
+    snprintf(
+        out, out_size,
+        "\"audio_wdt_trace\":{"
+        "\"previous\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu},"
+        "\"current\":{"
+        "\"valid\":%s,\"phase\":%u,\"phase_name\":\"%s\","
+        "\"boot\":%u,\"sequence\":%u,\"block\":%u,\"mix_group\":%u,"
+        "\"busy_blocks\":%u,\"active_deck_mask\":%u,\"twdt_isr_seen\":%s,"
+        "\"entered_us\":%llu,\"last_idle_us\":%llu,\"no_idle_us\":%llu}}",
+        diagnostics->wdt_trace_previous_valid ? "true" : "false",
+        (unsigned)previous->phase,
+        diagnostics->wdt_trace_previous_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)previous->phase) : "none",
+        (unsigned)previous->boot_id, (unsigned)previous->sequence,
+        (unsigned)previous->block, (unsigned)previous->mix_group,
+        (unsigned)previous->busy_blocks, (unsigned)previous->active_deck_mask,
+        previous->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)previous->entered_us,
+        (unsigned long long)previous->last_idle_us,
+        (unsigned long long)previous_no_idle_us,
+        diagnostics->wdt_trace_current_valid ? "true" : "false",
+        (unsigned)current->phase,
+        diagnostics->wdt_trace_current_valid
+            ? audio_wdt_trace_phase_name((audio_wdt_phase_t)current->phase) : "none",
+        (unsigned)current->boot_id, (unsigned)current->sequence,
+        (unsigned)current->block, (unsigned)current->mix_group,
+        (unsigned)current->busy_blocks, (unsigned)current->active_deck_mask,
+        current->twdt_isr_seen ? "true" : "false",
+        (unsigned long long)current->entered_us,
+        (unsigned long long)current->last_idle_us,
+        (unsigned long long)current_no_idle_us);
+}
+
+static void format_library_load_trace_json(char *out, size_t out_size)
+{
+    library_load_trace_record_t previous = {0};
+    library_load_trace_record_t current = {0};
+    bool previous_valid = false;
+    bool current_valid = false;
+    library_load_trace_snapshot(&previous_valid, &previous,
+                                &current_valid, &current);
+    snprintf(out, out_size,
+             "\"library_load_trace\":{"
+             "\"previous\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u},"
+             "\"current\":{\"valid\":%s,\"phase\":%u,"
+             "\"phase_name\":\"%s\",\"boot\":%u,\"sequence\":%u,"
+             "\"track_key\":%u,\"entered_us\":%u}}",
+             previous_valid ? "true" : "false", (unsigned)previous.phase,
+             previous_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)previous.phase) : "none",
+             (unsigned)previous.boot_id, (unsigned)previous.sequence,
+             (unsigned)previous.track_key, (unsigned)previous.entered_us,
+             current_valid ? "true" : "false", (unsigned)current.phase,
+             current_valid ? library_load_trace_phase_name(
+                 (library_load_phase_t)current.phase) : "none",
+             (unsigned)current.boot_id, (unsigned)current.sequence,
+             (unsigned)current.track_key, (unsigned)current.entered_us);
+}
 
 static void current_ap_ipv4(char out[16])
 {
@@ -67,6 +221,24 @@ static const char *controller_profile_state_name(controller_profile_transfer_sta
     }
 }
 #endif
+
+static const char *controller_usb_probe_stage_name(uint8_t stage)
+{
+    switch ((controller_usb_probe_stage_t)stage) {
+    case CONTROLLER_USB_PROBE_NONE:              return "none";
+    case CONTROLLER_USB_PROBE_OPEN:              return "open";
+    case CONTROLLER_USB_PROBE_DEVICE_INFO:       return "device_info";
+    case CONTROLLER_USB_PROBE_DEVICE_DESCRIPTOR: return "device_descriptor";
+    case CONTROLLER_USB_PROBE_CONFIG_DESCRIPTOR: return "config_descriptor";
+    case CONTROLLER_USB_PROBE_MIDI_DESCRIPTOR:   return "midi_descriptor";
+    case CONTROLLER_USB_PROBE_ALREADY_OWNED:     return "already_owned";
+    case CONTROLLER_USB_PROBE_INTERFACE_CLAIM:   return "interface_claim";
+    case CONTROLLER_USB_PROBE_TRANSFER_ALLOC:    return "transfer_alloc";
+    case CONTROLLER_USB_PROBE_IN_SUBMIT:         return "in_submit";
+    case CONTROLLER_USB_PROBE_READY:             return "ready";
+    default:                                     return "unknown";
+    }
+}
 
 static esp_err_t register_uri_or_stop(httpd_handle_t server, const httpd_uri_t *uri)
 {
@@ -171,28 +343,6 @@ static esp_err_t app_js_handler(httpd_req_t *req)
     return httpd_resp_send(req, (const char *)app_js_start, size);
 }
 
-static const char *peer_fw_slot_name(uint8_t slot)
-{
-    switch (slot) {
-    case CTRL_FW_SLOT_OTA_0: return "ota_0";
-    case CTRL_FW_SLOT_OTA_1: return "ota_1";
-    case CTRL_FW_SLOT_FACTORY: return "factory";
-    default: return "unknown";
-    }
-}
-
-static const char *peer_fw_state_name(uint8_t state)
-{
-    switch (state) {
-    case CTRL_FW_STATE_NEW: return "new";
-    case CTRL_FW_STATE_PENDING_VERIFY: return "pending_verify";
-    case CTRL_FW_STATE_VALID: return "valid";
-    case CTRL_FW_STATE_INVALID: return "invalid";
-    case CTRL_FW_STATE_ABORTED: return "aborted";
-    default: return "unknown";
-    }
-}
-
 /* ── Web-originated deck mutations ───────────────────────────────────────── *
  *
  * The web UI must not reach into the audio engine directly. deck_core owns deck
@@ -218,7 +368,7 @@ static esp_err_t web_queue_loop_set(uint8_t deck)
         .control = CTRL_DECK_CTL_PAD_ACTION,
         .seq = 0u,
     };
-    return deck_core_queue_event(&ev);
+    return deck_core_queue_remote_event(&ev);
 }
 
 static esp_err_t web_queue_loop_clear(uint8_t deck)
@@ -234,11 +384,29 @@ static esp_err_t web_queue_loop_clear(uint8_t deck)
         .control = CTRL_DECK_CTL_EXT_ACTION,
         .seq = 0u,
     };
-    return deck_core_queue_event(&ev);
+    return deck_core_queue_remote_event(&ev);
+}
+
+#define WEB_PLAY_APPLY_TIMEOUT_MS 250u
+#define WEB_PLAY_POLL_MS            5u
+
+static bool web_wait_for_play_state(uint8_t deck, bool expected_playing)
+{
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(WEB_PLAY_APPLY_TIMEOUT_MS);
+    const TickType_t poll_delay = pdMS_TO_TICKS(WEB_PLAY_POLL_MS) > 0
+        ? pdMS_TO_TICKS(WEB_PLAY_POLL_MS) : 1;
+    do {
+        if (deck_core_get_deck_state(deck).playing == expected_playing) {
+            return true;
+        }
+        vTaskDelay(poll_delay);
+    } while ((xTaskGetTickCount() - started) < timeout);
+    return deck_core_get_deck_state(deck).playing == expected_playing;
 }
 
 /* These strings end up inside a hand-formatted JSON body below. They originate
- * from partition labels, app descriptors and the S3's own report, so they are not
+ * from partition labels and app descriptors, so they are not
  * attacker-controlled in normal operation — but an unescaped quote or backslash
  * anywhere in that chain produces a response the client cannot parse, and the
  * failure would look like a firmware bug rather than an encoding one. Escape at
@@ -254,40 +422,24 @@ static void web_collect_p4_ota_status(p4_ota_status_t *out)
     web_firmware_json_escape_in_place(out->last_error, sizeof(out->last_error));
 }
 
-static bool web_collect_s3_firmware_report(ctrl_firmware_report_t *out)
-{
-    bool available = control_link_get_s3_firmware_report(out);
-    if (out) {
-        web_firmware_json_escape_in_place(out->version, sizeof(out->version));
-    }
-    return available;
-}
-
 static esp_err_t api_firmware_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     p4_ota_status_t status;
     web_collect_p4_ota_status(&status);
-    ctrl_firmware_report_t s3 = {0};
-    bool s3_available = web_collect_s3_firmware_report(&s3);
-    char json[640];
+    char json[512];
     int len = snprintf(json, sizeof(json),
                        "{\"target\":\"p4\",\"state\":\"%s\","
                        "\"running_slot\":\"%s\",\"running_version\":\"%s\","
                        "\"target_slot\":\"%s\",\"target_version\":\"%s\","
                        "\"expected_size\":%u,\"received_size\":%u,"
-                       "\"last_error\":\"%s\","
-                       "\"s3\":{\"available\":%s,\"slot\":\"%s\","
-                       "\"state\":\"%s\",\"version\":\"%s\"}}",
+                       "\"last_error\":\"%s\"}",
                        p4_ota_state_name(status.state),
                        status.running_slot, status.running_version,
                        status.target_slot, status.target_version,
                        (unsigned)status.expected_size,
                        (unsigned)status.received_size,
-                       status.last_error,
-                       s3_available ? "true" : "false",
-                       peer_fw_slot_name(s3.slot), peer_fw_state_name(s3.state),
-                       s3.version);
+                       status.last_error);
     if (len < 0 || (size_t)len >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA status overflow");
     }
@@ -762,7 +914,7 @@ static esp_err_t api_controller_profile_upload_handler(httpd_req_t *req)
     free(blob);
     if (rc == ESP_ERR_INVALID_ARG) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                   "Invalid S3CP profile or CRC");
+                                   "Invalid controller profile or CRC");
     }
     if (rc == ESP_ERR_INVALID_STATE) {
         httpd_resp_set_status(req, "409 Conflict");
@@ -987,9 +1139,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
     deck_state_t state1 = deck_core_get_deck_state(0);
     deck_state_t state2 = deck_core_get_deck_state(1);
     deck_core_beat_fx_state_t beat_fx = deck_core_get_beat_fx_state();
-    control_link_rx_stats_t link_stats = {0};
     service_log_status_t service_status = {0};
-    control_link_get_rx_stats(&link_stats);
     (void)service_log_get_status(&service_status);
 
     float p1 = deck_core_pitch_percent(&state1);
@@ -1051,15 +1201,6 @@ static esp_err_t api_status_handler(httpd_req_t *req)
                                    false, 0, 0, "", false, false, false, "", "idle", 0);
 #endif
 
-    char control_link_json[320] = {0};
-    web_api_format_control_link_json(
-        control_link_json, sizeof(control_link_json),
-        state1.control_link_connected, state1.last_heartbeat_age_ms,
-        link_stats.rx_frames, link_stats.sequence_gaps,
-        link_stats.event_checksum_errors, link_stats.bulk_frames,
-        link_stats.bulk_crc_errors, link_stats.last_sequence,
-        link_stats.sequence_valid);
-
     char service_log_json[256] = {0};
     web_api_format_service_log_json(
         service_log_json, sizeof(service_log_json),
@@ -1067,6 +1208,178 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         service_status.queue_capacity, service_status.dropped,
         service_status.written, service_status.current_bytes,
         service_status.last_error);
+
+    char p4_usb_json[2048] = {0};
+    {
+        usb_host_manager_diagnostics_t host_diag = {0};
+        controller_usb_host_diagnostics_t controller_diag = {0};
+        p4_local_controller_diagnostics_t local_diag = {0};
+        usb_storage_diagnostics_t storage_diag = {0};
+        usb_host_manager_get_diagnostics(&host_diag);
+        controller_usb_host_get_diagnostics(&controller_diag);
+        p4_local_controller_get_diagnostics(&local_diag);
+        usb_storage_get_diagnostics(&storage_diag);
+        snprintf(
+            p4_usb_json, sizeof(p4_usb_json),
+            "\"p4_usb\":{"
+            "\"host\":{"
+            "\"ready\":%s,\"install_result\":%d,"
+            "\"install_result_name\":\"%s\","
+            "\"peripheral_map\":%u,\"root_power_mask\":%u,"
+            "\"fs_phy_override\":%s,\"fs_phy_index\":%u,"
+            "\"daemon_iterations\":%u,\"daemon_errors\":%u,"
+            "\"recovery_requests\":%u,\"recovery_coalesced\":%u,"
+            "\"recovery_successes\":%u,\"recovery_suppressed_active\":%u,"
+            "\"recovery_failures\":%u,"
+            "\"recovery_queue_drops\":%u},"
+            "\"topology\":{"
+            "\"observations\":%u,\"probe_failures\":%u,"
+            "\"last_result\":%d,\"last_result_name\":\"%s\","
+            "\"last_address\":%u,\"last_parent_port\":%u,"
+            "\"last_direct_root\":%s},"
+            "\"controller\":{"
+            "\"registered\":%s,\"connected\":%s,"
+            "\"accepting_midi_out\":%s,\"devices_probed\":%u,"
+            "\"descriptor_rejects\":%u,"
+            "\"midi_descriptor_rejects\":%u,"
+            "\"interface_claim_failures\":%u,"
+            "\"transfer_alloc_failures\":%u,"
+            "\"midi_connects\":%u,\"midi_disconnects\":%u,"
+            "\"midi_packets\":%u,\"midi_bytes\":%u,"
+            "\"probe_event_drops\":%u,\"recovery_requests\":%u,"
+            "\"fault_recovery_epochs\":%u,"
+            "\"last_probe_stage\":%u,"
+            "\"last_probe_stage_name\":\"%s\","
+            "\"last_probe_result\":%d,"
+            "\"last_probe_result_name\":\"%s\","
+            "\"last_probe_address\":%u,"
+            "\"last_vid\":\"0x%04X\",\"last_pid\":\"0x%04X\","
+            "\"last_config_total_length\":%u,"
+            "\"last_parent_port\":%u,\"last_direct_root\":%s},"
+            "\"runtime\":{"
+            "\"bootstrap_started\":%s,\"bootstrap_ready\":%s,"
+            "\"bootstrap_failures\":%u,\"last_bootstrap_error\":%d,"
+            "\"local_connected\":%s,"
+            "\"semantic_events\":%u,\"queue_failures\":%u,"
+            "\"profile_activations\":%u,\"profile_fallbacks\":%u},"
+            "\"storage\":{"
+            "\"desired_connected\":%s,\"mounted\":%s,"
+            "\"connect_events\":%u,\"connect_accepted\":%u,"
+            "\"disconnect_events\":%u,\"disconnect_accepted\":%u,"
+            "\"mount_attempts\":%u,\"mount_successes\":%u,"
+            "\"last_mount_result\":%d,\"last_mount_result_name\":\"%s\","
+            "\"releases\":%u,"
+            "\"last_unmount_result\":%d,\"last_unmount_result_name\":\"%s\","
+            "\"last_uninstall_result\":%d,\"last_uninstall_result_name\":\"%s\"}"
+            "}",
+            host_diag.ready ? "true" : "false",
+            (int)host_diag.install_result,
+            esp_err_to_name(host_diag.install_result),
+            host_diag.peripheral_map,
+            (unsigned)host_diag.root_power_requested_mask,
+            host_diag.fs_phy_override_requested ? "true" : "false",
+            (unsigned)host_diag.fs_phy_index,
+            (unsigned)host_diag.daemon_iterations,
+            (unsigned)host_diag.daemon_errors,
+            (unsigned)host_diag.recovery_requests,
+            (unsigned)host_diag.recovery_coalesced_requests,
+            (unsigned)host_diag.recovery_successes,
+            (unsigned)host_diag.recovery_suppressed_active,
+            (unsigned)host_diag.recovery_failures,
+            (unsigned)host_diag.recovery_queue_drops,
+            (unsigned)host_diag.topology_observations,
+            (unsigned)host_diag.topology_probe_failures,
+            (int)host_diag.last_topology_result,
+            esp_err_to_name((esp_err_t)host_diag.last_topology_result),
+            (unsigned)host_diag.last_topology_address,
+            (unsigned)host_diag.last_topology_parent_port,
+            host_diag.last_topology_direct_root ? "true" : "false",
+            controller_diag.registered ? "true" : "false",
+            controller_diag.connected ? "true" : "false",
+            controller_diag.accepting_midi_out ? "true" : "false",
+            (unsigned)controller_diag.devices_probed,
+            (unsigned)controller_diag.descriptor_rejects,
+            (unsigned)controller_diag.midi_descriptor_rejects,
+            (unsigned)controller_diag.interface_claim_failures,
+            (unsigned)controller_diag.transfer_alloc_failures,
+            (unsigned)controller_diag.midi_connects,
+            (unsigned)controller_diag.midi_disconnects,
+            (unsigned)controller_diag.midi_packets,
+            (unsigned)controller_diag.midi_bytes,
+            (unsigned)controller_diag.probe_event_drops,
+            (unsigned)controller_diag.recovery_requests,
+            (unsigned)controller_diag.fault_recovery_epochs,
+            (unsigned)controller_diag.last_probe_stage,
+            controller_usb_probe_stage_name(controller_diag.last_probe_stage),
+            (int)controller_diag.last_probe_result,
+            esp_err_to_name((esp_err_t)controller_diag.last_probe_result),
+            (unsigned)controller_diag.last_probe_address,
+            controller_diag.last_seen_vid, controller_diag.last_seen_pid,
+            (unsigned)controller_diag.last_config_total_length,
+            (unsigned)controller_diag.last_parent_port,
+            controller_diag.last_direct_root ? "true" : "false",
+            local_diag.bootstrap_started ? "true" : "false",
+            local_diag.bootstrap_ready ? "true" : "false",
+            (unsigned)local_diag.bootstrap_failures,
+            (int)local_diag.last_bootstrap_error,
+            local_diag.local_connected ? "true" : "false",
+            (unsigned)local_diag.local_semantic_events,
+            (unsigned)local_diag.local_queue_failures,
+            (unsigned)local_diag.profile_activations,
+            (unsigned)local_diag.profile_fallbacks,
+            storage_diag.desired_connected ? "true" : "false",
+            storage_diag.mounted ? "true" : "false",
+            (unsigned)storage_diag.connect_events,
+            (unsigned)storage_diag.connect_accepted,
+            (unsigned)storage_diag.disconnect_events,
+            (unsigned)storage_diag.disconnect_accepted,
+            (unsigned)storage_diag.mount_attempts,
+            (unsigned)storage_diag.mount_successes,
+            (int)storage_diag.last_mount_result,
+            esp_err_to_name(storage_diag.last_mount_result),
+            (unsigned)storage_diag.releases,
+            (int)storage_diag.last_unmount_result,
+            esp_err_to_name(storage_diag.last_unmount_result),
+            (int)storage_diag.last_uninstall_result,
+            esp_err_to_name(storage_diag.last_uninstall_result));
+    }
+
+    const size_t crash_dump_json_size = 1024u;
+    char *crash_dump_json = calloc(1, crash_dump_json_size);
+    if (!crash_dump_json) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for crash status");
+    }
+    format_crash_dump_json(crash_dump_json, crash_dump_json_size);
+    const size_t trace_json_size = 1536u;
+    char *trace_json = calloc(1, trace_json_size);
+    if (!trace_json) {
+        free(crash_dump_json);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "No memory for retained trace status");
+    }
+    char *audio_wdt_trace_json = trace_json;
+    char *library_load_trace_json = trace_json + 1024u;
+    format_audio_wdt_trace_json(audio_wdt_trace_json,
+                                1024u,
+                                &diagnostics);
+    format_library_load_trace_json(library_load_trace_json,
+                                   trace_json_size - 1024u);
+
+    const bool uac_playback_active = diagnostics.deck_active[0] ||
+                                     diagnostics.deck_active[1];
+    const audio_uac_ring_state_t uac_ring_state = audio_uac_ring_state(
+        uac_playback_active,
+        diagnostics.usb_headphone_submitted_blocks,
+        diagnostics.usb_headphone_ring_queued_frames,
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_low_alarm = audio_uac_ring_low_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_ring_high_alarm = audio_uac_ring_high_alarm_frames(
+        diagnostics.usb_headphone_ring_capacity_frames);
+    const uint32_t uac_data_loss_flags =
+        diagnostics.usb_headphone_active_data_loss_flags;
+    const bool uac_data_loss = uac_data_loss_flags != 0u;
 
     char *json = NULL;
     int json_len = web_api_alloc_printf(
@@ -1121,6 +1434,9 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "%s,"
         "%s,"
         "%s,"
+        "%s,"
+        "%s,"
+        "%s,"
         "\"diagnostics\":{"
         "\"output_codec_open\":%s,"
         "\"output_sample_rate\":%u,"
@@ -1162,7 +1478,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"limiter_positive\":%u,"
         "\"limiter_negative\":%u,"
         "\"limiter_peak\":%d,"
-        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u},"
+        "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u,"
+        "\"ring_queued_frames\":%u,\"ring_capacity_frames\":%u,\"ring_high_water_frames\":%u,"
+        "\"ring_low_alarm_frames\":%u,\"ring_high_alarm_frames\":%u,\"ring_state\":\"%s\","
+        "\"overflow_frames\":%u,\"underflow_frames\":%u,\"data_loss\":%s,"
+        "\"data_loss_flags\":%u},"
         "%s,"
         "\"heap_free\":%u,"
         "\"internal_free\":%u,"
@@ -1184,8 +1504,11 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         mixer.pfl_enabled[0] ? "true" : "false", mixer.pfl_enabled[1] ? "true" : "false",
         beat_fx_json,
         controller_json,
-        control_link_json,
         service_log_json,
+        p4_usb_json,
+        crash_dump_json,
+        audio_wdt_trace_json,
+        library_load_trace_json,
         diagnostics.output_codec_open ? "true" : "false",
         (unsigned)diagnostics.output_sample_rate,
         (unsigned)diagnostics.output_late_count,
@@ -1229,10 +1552,22 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.usb_headphone_submitted_blocks,
         (unsigned)diagnostics.usb_headphone_dropped_blocks,
         (unsigned)diagnostics.usb_headphone_submitted_frames,
+        (unsigned)diagnostics.usb_headphone_ring_queued_frames,
+        (unsigned)diagnostics.usb_headphone_ring_capacity_frames,
+        (unsigned)diagnostics.usb_headphone_ring_high_water_frames,
+        (unsigned)uac_ring_low_alarm,
+        (unsigned)uac_ring_high_alarm,
+        audio_uac_ring_state_name(uac_ring_state),
+        (unsigned)diagnostics.usb_headphone_overflow_frames,
+        (unsigned)diagnostics.usb_headphone_underflow_frames,
+        uac_data_loss ? "true" : "false",
+        (unsigned)uac_data_loss_flags,
         beat_fx_echo_diag_json,
         (unsigned)diagnostics.heap_free,
         (unsigned)diagnostics.internal_free,
         (unsigned)diagnostics.psram_free);
+    free(crash_dump_json);
+    free(trace_json);
     if (!json || json_len < 0) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No memory");
         return ESP_ERR_NO_MEM;
@@ -1412,6 +1747,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
 
     esp_err_t queue_rc = ESP_OK;
     if (strcmp(action, "play_pause") == 0) {
+        const bool expected_playing = !deck_core_get_deck_state(deck).playing;
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
             .id    = (deck == CTRL_DECK_2) ? CTRL_ID_DECK2_PLAY : CTRL_ID_DECK1_PLAY,
@@ -1419,7 +1755,13 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
+        if (queue_rc == ESP_OK &&
+            !web_wait_for_play_state(deck, expected_playing)) {
+            httpd_resp_set_status(req, "409 Conflict");
+            return httpd_resp_send(req, "Play state unchanged",
+                                   HTTPD_RESP_USE_STRLEN);
+        }
     } else if (strcmp(action, "cue") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1428,7 +1770,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "pfl") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1437,7 +1779,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = 1,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "volume") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1446,7 +1788,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "crossfader") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_BUTTON,
@@ -1455,7 +1797,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "pitch") == 0) {
         ctrl_event_t ev = {
             .type  = CTRL_EV_PITCH,
@@ -1464,7 +1806,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .value = (int16_t)value,
             .seq   = 0
         };
-        queue_rc = deck_core_queue_event(&ev);
+        queue_rc = deck_core_queue_remote_event(&ev);
     } else if (strcmp(action, "loop_4") == 0) {
         audio_engine_deck_status_t status = {0};
         esp_err_t rc = audio_engine_deck_get_status(deck, &status);
@@ -1485,6 +1827,7 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
     } else if (strcmp(action, "seek") == 0) {
+        (void)ui_activity_notice();
         audio_engine_deck_status_t status = {0};
         if (audio_engine_deck_get_status(deck, &status) != ESP_OK ||
             !status.loaded ||

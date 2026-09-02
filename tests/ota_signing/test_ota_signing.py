@@ -45,8 +45,8 @@ class OtaSigningTests(unittest.TestCase):
         self.assertEqual(info["version"], "RC2-test")
         self.assertEqual(info["image_size"], len(self.image))
 
-        s3 = self.bundle("s3", 0x0009, "control-board-s3")
-        self.assertEqual(ota_signing.inspect_bundle(s3, self.public)["target"], "s3")
+        with self.assertRaisesRegex(ValueError, "unsupported target"):
+            self.bundle("retired-target", 0x0009, "retired-target")
 
     def test_tampered_signed_manifest_is_rejected(self):
         bundle = bytearray(self.bundle())

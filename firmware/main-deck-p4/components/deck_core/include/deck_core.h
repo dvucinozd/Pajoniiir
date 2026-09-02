@@ -27,11 +27,17 @@ typedef enum {
 #define DECK_CORE_DECK_COUNT 2
 #define DECK_CORE_COMPAT_DECK CTRL_DECK_1
 
+typedef enum {
+    DECK_CORE_LOOP_ADJUST_NONE = 0,
+    DECK_CORE_LOOP_ADJUST_IN,
+    DECK_CORE_LOOP_ADJUST_OUT,
+} deck_core_loop_adjust_mode_t;
+
 typedef struct {
     bool          playing;
     uint32_t      position_ms;
     uint32_t      cue_point_ms;
-    int16_t       pitch;          // 0–16383, center = 8192, from S3 ADC
+    int16_t       pitch;          // 0–16383, center = 8192, from FLX4 MIDI
     int16_t       pitch_centipercent; // effective tempo adjust in 0.01% units
     uint16_t      tempo_range_percent; // selected tempo fader range, e.g. 6/10/16
     perf_mode_t   perf_mode;
@@ -39,10 +45,10 @@ typedef struct {
     bool          sync_enabled;
     bool          sync_master;
     bool          quantize_enabled;
+    deck_core_loop_adjust_mode_t loop_adjust_mode;
     bool          censor_active;
     bool          master_tempo;
-    bool          control_link_connected;
-    uint32_t      last_heartbeat_age_ms;
+    bool          controller_connected;
 } deck_state_t;
 
 typedef enum {
@@ -63,6 +69,13 @@ typedef enum {
     DECK_CORE_BEAT_FX_BEAT_COUNT,
 } deck_core_beat_fx_beat_t;
 
+typedef enum {
+    DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL = 0,
+    DECK_CORE_BEAT_JUMP_PAGE_DEFAULT,
+    DECK_CORE_BEAT_JUMP_PAGE_LARGE,
+    DECK_CORE_BEAT_JUMP_PAGE_COUNT,
+} deck_core_beat_jump_page_t;
+
 typedef struct {
     deck_core_beat_fx_effect_t effect;
     deck_core_beat_fx_beat_t beat;
@@ -79,7 +92,7 @@ static inline float deck_core_pitch_percent(const deck_state_t *state)
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 // Create the ctrl_event_queue and start the deck task.
-// Returns the queue handle — pass to control_link_init().
+// Returns the queue handle — bind it to the P4-local semantic producer.
 esp_err_t deck_core_init(QueueHandle_t *ctrl_event_queue_out);
 
 // Thread-safe snapshot of the current deck state.
@@ -94,11 +107,8 @@ void deck_core_toggle_master_tempo(uint8_t deck);
 // exposed for low-rate diagnostics and controller smoke verification.
 deck_core_beat_fx_state_t deck_core_get_beat_fx_state(void);
 
-// Called from the deck task when S3 acknowledges the runtime Debug AP status.
-typedef void (*deck_core_s3_debug_ap_status_cb_t)(uint8_t status);
-void deck_core_set_s3_debug_ap_status_cb(deck_core_s3_debug_ap_status_cb_t cb);
-typedef void (*deck_core_s3_debug_ap_token_cb_t)(uint32_t token);
-void deck_core_set_s3_debug_ap_token_cb(deck_core_s3_debug_ap_token_cb_t cb);
+// FLX4 Beat Jump sizes are global, matching the controller's Mixxx mapping.
+deck_core_beat_jump_page_t deck_core_get_beat_jump_page(void);
 
 // Loop region for waveform display. `active` = a full loop (in+out) is set;
 // `armed` = loop-in pressed and waiting for loop-out (highlight from start_ms to
@@ -124,6 +134,11 @@ typedef bool (*deck_core_activity_cb_t)(void);
 void deck_core_set_activity_cb(deck_core_activity_cb_t cb);
 
 esp_err_t deck_core_queue_event(const ctrl_event_t *ev);
+
+/* Queue an authenticated remote mutation. It still reports activity so the
+ * screensaver is dismissed, but unlike a physical wake press the mutation is
+ * never consumed solely to wake the display. */
+esp_err_t deck_core_queue_remote_event(const ctrl_event_t *ev);
 
 /*
  * Coherent loaded-track ownership.

@@ -118,9 +118,6 @@ illustrative and may lag small firmware polish changes.
 
 - [`../README.md`](../README.md) — repository entry point.
 - [`../AGENTS.md`](../AGENTS.md) — contribution and verification rules.
-- [`../firmware/control-board-s3/CLAUDE.md`](../firmware/control-board-s3/CLAUDE.md) — S3 developer guide.
-- [`../firmware/control-board-s3/PINOUT.md`](../firmware/control-board-s3/PINOUT.md) — legacy/board pinout context.
-- [`../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`](../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md) — active XIAO wiring.
 - [`../firmware/main-deck-p4/CLAUDE.md`](../firmware/main-deck-p4/CLAUDE.md) — P4 developer guide.
 - [`../firmware/main-deck-p4/PINOUT_P4.md`](../firmware/main-deck-p4/PINOUT_P4.md) — P4 pin assignments.
 - [`../firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md`](../firmware/main-deck-p4/components/fatfs/README-Pajoniiir.md) — local FATFS integration notes.

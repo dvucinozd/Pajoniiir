@@ -29,6 +29,9 @@ int audio_engine_stub_scratch_move_count[2] = {0, 0};
 int audio_engine_stub_scratch_move_last_delta[2] = {0, 0};
 int audio_engine_stub_scratch_end_count[2] = {0, 0};
 bool audio_engine_stub_scratch_available[2] = {true, true};
+int audio_engine_stub_censor_begin_count[2] = {0, 0};
+int audio_engine_stub_censor_end_count[2] = {0, 0};
+bool audio_engine_stub_censor_available[2] = {true, true};
 
 int audio_engine_stub_channel_volume[2] = {16383, 13800};
 int audio_engine_stub_pregain[2] = {8192, 8192};

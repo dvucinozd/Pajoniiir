@@ -8,6 +8,7 @@
 // refresh the UI. The drive plugs into the board's High-Speed USB-C port.
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "esp_err.h"
 
 #define USB_STORAGE_MOUNT_POINT  "/usb"
@@ -23,3 +24,21 @@ esp_err_t usb_storage_init(usb_storage_event_cb_t cb);
 
 // Whether a drive is currently mounted at /usb.
 bool usb_storage_is_mounted(void);
+
+typedef struct {
+    bool desired_connected;
+    bool mounted;
+    uint32_t connect_events;
+    uint32_t connect_accepted;
+    uint32_t disconnect_events;
+    uint32_t disconnect_accepted;
+    uint32_t mount_attempts;
+    uint32_t mount_successes;
+    esp_err_t last_mount_result;
+    uint32_t releases;
+    esp_err_t last_unmount_result;
+    esp_err_t last_uninstall_result;
+} usb_storage_diagnostics_t;
+
+// Lock-free/read-only runtime evidence for hot-plug diagnosis.
+void usb_storage_get_diagnostics(usb_storage_diagnostics_t *out);

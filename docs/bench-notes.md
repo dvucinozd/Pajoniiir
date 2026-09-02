@@ -1353,3 +1353,34 @@ verify both files physically exist under `Contents`, then run sustained
 dual-deck playback with BNA, underrun and locked-backend-read counters. Full
 evidence is in
 `validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`.
+
+## 2026-08-29 — P4-only USB hotplug finally remounts cleanly
+
+The direct P4 image was already running USB0 Rekordbox storage and USB1 FLX4
+MIDI/UAC together, but the first post-remediation replug exposed a new failure:
+enumeration completed and the board no longer panicked, yet every mount retry
+returned `ESP_ERR_NO_MEM`. The cause was the fixed 32 KiB internal-DMA MSC
+transfer introduced to remove the upstream free/reallocate disconnect race.
+Total internal heap was sufficient, but there was no suitable contiguous DMA
+block after the UI, Wi-Fi and audio services had settled.
+
+The related `PAJONIIIR-M3` tree starts MSC at 64 bytes and grows the transfer on
+demand. Reintroducing that ownership-changing realloc would reopen the observed
+disconnect race, so the P4-only fix keeps one transfer for the complete device
+lifetime and reduces the bounded transaction to 8 KiB. FatFs operations larger
+than that are split into 8 KiB READ10/WRITE10 batches.
+
+The full host suite passed, including 393/393 audio-engine checks, 73 USB
+session checks and 88 USB recovery checks. ESP-IDF v6.0.2 `build_signed` passed;
+the image was 2,449,552 bytes with SHA-256
+`a8f377bd4b310338cae545c1f7b07b0da60bdc415569993e4c7c416d912faa1a`.
+Signed OTA returned the P4 on `ota_0`.
+
+With the FLX4 still active, the operator removed and reinserted USB0. Boot state
+did not change. Status reported 2/2 successful mounts, clean unmount/uninstall,
+zero host/recovery failures and an active FLX4 profile. The journal recorded
+`USB_UNMOUNTED`, `USB_MOUNTED`, `LIBRARY_LOADED a0=100`, followed by successful
+loads of two MP3 tracks. The focused regression is closed; repeated reconnect,
+remove-during-decode, protected-VBUS measurement and long combined-load soak
+remain. Full evidence:
+`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`.

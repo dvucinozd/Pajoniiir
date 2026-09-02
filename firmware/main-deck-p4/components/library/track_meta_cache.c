@@ -1,4 +1,5 @@
 #include "track_meta_cache.h"
+#include "library_load_trace.h"
 
 #include "esp_log.h"
 #include "media_io_gate.h"
@@ -148,7 +149,9 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
     }
     memset(out_meta, 0, sizeof(*out_meta));
 
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_GATE_WAIT, track_key);
     sd_io_gate_begin();
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_GATE_HELD, track_key);
     const esp_err_t load_rc = track_meta_cache_load_gated(track_key, dat_path, ext_path,
                                                           include_high_waveform, out_meta);
     sd_io_gate_end();
@@ -172,9 +175,12 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
     int64_t dat_mtime = 0;
     uint64_t ext_size = 0;
     int64_t ext_mtime = 0;
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_MEDIA_GATE_WAIT, track_key);
     media_io_gate_begin();
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_DAT_STAT, track_key);
     esp_err_t dat_rc = file_signature(dat_path, &dat_size, &dat_mtime);
     if (dat_rc == ESP_OK) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_EXT_STAT, track_key);
         file_signature(ext_path, &ext_size, &ext_mtime);
     }
     media_io_gate_end();
@@ -189,11 +195,13 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
         return rc;
     }
 
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_OPEN, track_key);
     FILE *fp = fopen(path, "rb");
     if (!fp) {
         return ESP_ERR_NOT_FOUND;
     }
 
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_READ, track_key);
     track_meta_cache_header_t header;
     bool ok = read_exact(fp, &header, sizeof(header)) &&
               header_matches(&header, track_key, dat_size, dat_mtime, ext_size, ext_mtime);
@@ -303,6 +311,7 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         return ESP_ERR_INVALID_SIZE;
     }
 
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_SD_OPEN, track_key);
     FILE *fp = fopen(part, "wb");
     if (!fp) {
         return ESP_FAIL;
@@ -326,18 +335,37 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         .waveform_high_len = meta->waveform_high && meta->waveform_high_len > 0 ? meta->waveform_high_len : 0,
     };
 
-    bool ok = write_exact(fp, &header, sizeof(header)) &&
-              write_exact(fp, meta->waveform_low, sizeof(meta->waveform_low)) &&
-              write_exact(fp, meta->vbr, sizeof(meta->vbr)) &&
-              write_exact(fp, meta->cues, sizeof(meta->cues)) &&
-              write_exact(fp, meta->beats, (size_t)meta->beat_count * sizeof(anlz_beat_t)) &&
-              write_exact(fp, meta->waveform_high, header.waveform_high_len);
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_HEADER, track_key);
+    bool ok = write_exact(fp, &header, sizeof(header));
+    if (ok) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_LOW, track_key);
+        ok = write_exact(fp, meta->waveform_low, sizeof(meta->waveform_low));
+    }
+    if (ok) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_VBR, track_key);
+        ok = write_exact(fp, meta->vbr, sizeof(meta->vbr));
+    }
+    if (ok) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_CUES, track_key);
+        ok = write_exact(fp, meta->cues, sizeof(meta->cues));
+    }
+    if (ok) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_BEATS, track_key);
+        ok = write_exact(fp, meta->beats,
+                         (size_t)meta->beat_count * sizeof(anlz_beat_t));
+    }
+    if (ok) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_HIGH, track_key);
+        ok = write_exact(fp, meta->waveform_high, header.waveform_high_len);
+    }
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_CLOSE, track_key);
     fclose(fp);
 
     if (!ok) {
         unlink(part);
         return ESP_FAIL;
     }
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_REPLACE, track_key);
     unlink(path);
     if (rename(part, path) != 0) {
         unlink(part);

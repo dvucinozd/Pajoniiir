@@ -109,6 +109,31 @@ static void test_duplicate_events_are_idempotent(void)
     CHECK(session.epoch == disconnected_epoch);
 }
 
+static void test_new_address_replaces_stale_unbound_connect(void)
+{
+    printf("== stable reconnect replaces stale unbound enumeration address ==\n");
+    usb_storage_session_t session;
+    usb_storage_session_reset(&session);
+
+    CHECK(usb_storage_session_on_connect(&session, 3u) ==
+          USB_STORAGE_CONNECT_ACCEPTED);
+    const uint32_t stale_epoch = session.epoch;
+    CHECK(session.accepted_handle == 0u);
+    CHECK(!session.mounted);
+
+    CHECK(usb_storage_session_on_connect(&session, 4u) ==
+          USB_STORAGE_CONNECT_ACCEPTED);
+    CHECK(session.connected);
+    CHECK(session.dev_addr == 4u);
+    CHECK(session.epoch > stale_epoch);
+    CHECK(!usb_storage_session_bind_handle(
+        &session, stale_epoch, 3u, 0xC0u));
+    CHECK(usb_storage_session_bind_handle(
+        &session, session.epoch, 4u, 0xC1u));
+    CHECK(usb_storage_session_commit_mounted(
+        &session, session.epoch, 4u));
+}
+
 static void test_failed_mount_can_retry_without_changing_session(void)
 {
     printf("== failed mount releases handle and retries in same epoch ==\n");
@@ -167,6 +192,7 @@ int main(void)
     test_secondary_disconnect_cannot_remove_primary();
     test_disconnect_during_opening_invalidates_late_completion();
     test_duplicate_events_are_idempotent();
+    test_new_address_replaces_stale_unbound_connect();
     test_failed_mount_can_retry_without_changing_session();
     test_stale_previous_session_cannot_mutate_reconnect();
 

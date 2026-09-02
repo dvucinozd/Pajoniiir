@@ -1,33 +1,33 @@
 # Controller Profile Schema v1
 
-Document status: current schema, audited 2026-07-16. Firmware loading and FLX4
-profile transfer are verified. The guarded web replacement path is deployed in
+Document status: current schema, audited 2026-08-27. Firmware loading and FLX4
+local activation are verified. The guarded web replacement path is deployed in
 `RC1-131-gc391e306` and still awaits focused hardware acceptance; a first
 non-FLX4 controller also remains pending.
 
-Data-driven controller profiles let the S3 map a USB MIDI controller to the
-existing deck-aware `control_link` semantic events without a firmware rebuild.
+Data-driven controller profiles let the P4 map a USB MIDI controller to the
+existing deck-aware semantic events without a firmware rebuild.
 This document is the authoritative specification for both formats:
 
 - `profile.json` — human/tool-friendly source format (Windows Profile Builder
   output, hand-editable).
-- `profile.s3bin` — compact binary runtime format the P4 sends to the S3 over
-  the UART link and the S3 executes as a lookup table.
+- `profile.s3bin` — compact binary runtime format loaded and executed locally
+  by P4. The filename and `S3CP` magic remain for format compatibility only.
 
 The compiler between the two is `tools/controller_profile/compile_profile.py`.
-The S3-side parser/matcher is
-`firmware/control-board-s3/components/controller_profile/`.
+The parser/matcher is
+`firmware/main-deck-p4/components/controller_profile/`.
 
 Design constraints:
 
 - The semantic vocabulary is exactly the existing `control_link.h` ID space
   (`CTRL_TYPE_*` / `CTRL_ID_*`). Profiles translate raw MIDI into that
   vocabulary; they cannot invent new semantics.
-- The S3 runtime is a table interpreter: no JSON, no allocation surprises, no
-  per-controller code. Everything stateful it needs (14-bit pairing, paired
+- The P4 runtime is a table interpreter: no JSON and no per-controller code.
+  Everything stateful it needs (14-bit pairing, paired
   toggle state) is declared in the table.
-- One profile targets one controller (VID/PID). The FLX4 built-in C map stays
-  as fallback; the hand-written FLX4 profile in
+- One profile targets one controller (VID/PID). The FLX4 built-in C map is
+  enabled only for the exact FLX4 VID/PID; the hand-written FLX4 profile in
   `controllers/pioneer_ddj_flx4/profile.json` must reproduce it exactly (the
   `controller_profile` host parity test enforces this).
 
@@ -250,14 +250,14 @@ The S3 runtime allocates per active profile:
   profiles.
 - Audio layout is capability metadata only; the FLX4 USB audio path remains
   hardcoded.
-- LED blink is a value choice per entry, not an S3-side timer.
+- LED blink is a value choice per entry, not a profile-runtime timer.
 
 ## Verification
 
 - `tools/controller_profile/compile_profile.py profile.json -o profile.s3bin`
   compiles; `--dump profile.s3bin` pretty-prints a binary for debugging.
-- Host tests (`tests/controller_profile/`, run by
-  `tests/run_s3_host_tests.ps1`):
+- Host tests (`tests/controller_runtime/` and
+  `tests/controller_profile_manager/`, run by `tests/run_p4_host_tests.ps1`):
   - header/CRC/bounds validation of the parser;
   - **golden parity**: a brute-force sweep of MIDI messages through the
     compiled FLX4 profile and the built-in `flx4_map` must produce identical

@@ -28,6 +28,4 @@ Assert-FileContains "firmware/main-deck-p4/components/ui/CMakeLists.txt" '"splas
 Assert-FileContains "firmware/main-deck-p4/components/ui/CMakeLists.txt" '"Musieer_80\.c"'
 Assert-FileContains "firmware/main-deck-p4/components/ui/include/splash_screen.h" 'void splash_screen_show\(void \(\*loaded_cb\)\(void\)\);'
 Assert-FileContains "firmware/main-deck-p4/components/ui/splash_screen.c" 'static const char \*splash_text = "Pajoniiir";'
-Assert-FileContains "firmware/main-deck-p4/components/control_link/control_link_uart.c" 'xTaskCreate\(uart_rx_task, "ctrl_rx", 4096, NULL, 5, NULL\)'
-
 Write-Host "splash port tests passed"

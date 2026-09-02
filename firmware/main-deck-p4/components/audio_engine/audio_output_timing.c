@@ -12,7 +12,9 @@ uint32_t audio_output_late_warning_threshold_us(uint32_t sample_rate)
     return period_us > 0u ? period_us * 2u : 0u;
 }
 
-bool audio_output_should_force_idle(uint32_t consecutive_busy_blocks)
+bool audio_output_should_force_idle(uint32_t consecutive_busy_blocks,
+                                    uint32_t elapsed_since_idle_us)
 {
-    return consecutive_busy_blocks >= AUDIO_OUTPUT_MAX_BUSY_BLOCKS;
+    return consecutive_busy_blocks >= AUDIO_OUTPUT_MAX_BUSY_BLOCKS ||
+           elapsed_since_idle_us >= AUDIO_OUTPUT_MAX_BUSY_US;
 }

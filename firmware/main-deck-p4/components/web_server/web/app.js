@@ -560,15 +560,10 @@ async function clearOtaNetwork() {
     }
 }
 
-// Fills the P4 update card and the read-only S3 card from one /api/firmware
-// read. The S3 half is reported separately rather than appended to the P4 line,
-// because the two boards drift apart whenever only one of them is updated and a
-// single run-on line makes that easy to miss.
+// Fills the P4 update card from /api/firmware.
 async function refreshFirmwareStatus() {
     const info = document.getElementById('ota-firmware-info');
-    const s3Info = document.getElementById('s3-firmware-info');
-    const s3Badge = document.getElementById('s3-state-badge');
-    if (!info && !s3Info) return;
+    if (!info) return;
     try {
         const response = await fetch('/api/firmware', { cache: 'no-store' });
         if (!response.ok) throw new Error(await response.text());
@@ -578,31 +573,8 @@ async function refreshFirmwareStatus() {
             info.innerText = `P4 ${fw.running_version || 'unknown'} from ${fw.running_slot || 'unknown'}`;
         }
 
-        const s3 = fw.s3 || {};
-        if (s3Info) {
-            s3Info.innerText = s3.available
-                ? `${s3.version || 'unknown'} from ${s3.slot || 'unknown'}`
-                : 'S3 did not report firmware status. Check the UART control link.';
-        }
-        if (s3Badge) {
-            s3Badge.innerText = s3.available ? (s3.state || 'unknown') : 'offline';
-            s3Badge.className = 'badge';
-            if (!s3.available) {
-                s3Badge.classList.add('error');
-            } else if (s3.state === 'valid') {
-                s3Badge.classList.add('ready');
-            }
-            // A matching pair is the normal case; flag a mismatch, since running
-            // different builds on the two boards is a real source of confusion.
-            if (s3.available && fw.running_version && s3.version &&
-                s3.version !== fw.running_version) {
-                s3Badge.innerText = 'mismatch';
-                s3Badge.className = 'badge error';
-            }
-        }
     } catch (err) {
         if (info) info.innerText = `Firmware status unavailable: ${err.message}`;
-        if (s3Info) s3Info.innerText = `S3 status unavailable: ${err.message}`;
     }
 }
 
@@ -713,7 +685,7 @@ function uploadControllerProfile() {
         button.disabled = false;
         if (xhr.status >= 200 && xhr.status < 300) {
             progress.value = 100;
-            status.innerText = 'Profile validated and stored; S3 activation is queued.';
+            status.innerText = 'Profile validated, stored, and activated on P4.';
             refreshControllerProfiles();
             refreshFirmwareStatus();
         } else if (xhr.status === 409 && !overwrite) {
@@ -733,6 +705,5 @@ refreshFirmwareStatus();
 refreshControllerProfiles();
 refreshOtaNetwork();
 
-// The S3 card is a live readout, so re-read it periodically — slowly, because
-// this shares five httpd sockets with the 250 ms status poll.
+// Refresh firmware state periodically without competing with the fast status poll.
 setInterval(refreshFirmwareStatus, 15000);

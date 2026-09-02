@@ -34,7 +34,7 @@ dependencies:
       type: service
     version: 1.6.2
   espressif/esp_hosted:
-    component_hash: f970ce453bcd6e779e067de04488aa6212295f4a607f041d038844c8cf8edea3
+    component_hash: 8ca10092db3e8c8122540d907ab705805a269377d31192f087ba1def2f5f4f91
     dependencies:
     - name: idf
       require: private
@@ -42,7 +42,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 2.12.11
+    version: 2.12.12
   espressif/esp_lcd_st7701:
     component_hash: 3fb061112bfe5402dcf5e09ff7e7f5b09a96b9a3fdd81c59d69996626b4dbc2f
     dependencies:
@@ -124,39 +124,23 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.11.3
-  espressif/usb:
-    component_hash: 6c2cff118141dbbca181d0d27d71801fdddfc78f7ac03ae43f6e5a8cbd89cb99
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.5.3'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    targets:
-    - esp32s2
-    - esp32s3
-    - esp32s31
-    - esp32p4
-    - esp32h4
-    - linux
-    version: 1.5.0
   espressif/usb_host_msc:
-    component_hash: a7330d2bc4f81c21fd335df073405085bbad5cdf084a1be79fb52383d0d0d6fd
+    component_hash: f5f178d5941a0ff4baa97ea8cfe0a7831731acc548773a2560ded1947a29a52e
     dependencies:
     - name: idf
-      require: private
       version: '>=5.0'
-    - name: espressif/usb
-      registry_url: https://components.espressif.com
-      require: public
+    - git: https://github.com/dvucinozd/esp-usb.git
+      name: usb
+      path: host/usb
+      public: true
       rules:
       - if: idf_version >=6.0
       - if: target not in ["linux"]
-      version: ^1.0.0
+      version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
     source:
-      registry_url: https://components.espressif.com/
-      type: service
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/class/msc/usb_host_msc
+      type: git
     targets:
     - esp32s2
     - esp32s3
@@ -164,7 +148,7 @@ dependencies:
     - esp32h4
     - esp32s31
     - linux
-    version: 1.2.0
+    version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
   espressif/wifi_remote_over_eppp:
     component_hash: 1fd6968af20f0b19e421f6b519b0a8caf81d689afc3783b564c28559e45f66ef
     dependencies:
@@ -190,6 +174,23 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 9.5.0
+  usb:
+    component_hash: 46e3c0998d347f0ed9413ed9884b8be7393e3bb364bae3c87cdc21419aca9eab
+    dependencies:
+    - name: idf
+      version: '>=5.5.3'
+    source:
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/usb
+      type: git
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb
 direct_dependencies:
 - espressif/esp_codec_dev
 - espressif/esp_hosted
@@ -197,10 +198,10 @@ direct_dependencies:
 - espressif/esp_lcd_touch_gt911
 - espressif/esp_wifi_remote
 - espressif/mdns
-- espressif/usb
 - espressif/usb_host_msc
 - idf
 - lvgl/lvgl
-manifest_hash: ff0aaabaa2600079ea8d3d1ddaa335bb55d6516c12da52f2df75f970bd3e3b66
+- usb
+manifest_hash: 2e6c50da461a7e6e3599ecfea26a033d70b3b59de53dd0af05fd011fb371dedf
 target: esp32p4
 version: 3.0.0

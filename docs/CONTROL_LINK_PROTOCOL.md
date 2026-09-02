@@ -1,10 +1,15 @@
 # Control Link Protocol
 
-Status: current wire protocol, audited 2026-07-16. The fixed `0xA5` event layer
-and variable-length `0xA6` bulk layer are both active in production firmware.
+> **Historical document on `feat/p4-dual-usb-host`.** The production P4 now
+> hosts FLX4 MIDI/audio directly and injects semantic events locally. UART
+> `0xA5`/`0xA6`, S3 heartbeat, profile transfer, firmware reporting and monitor
+> transport are not compiled into the active P4 image. This file is retained as
+> the protocol record for the last dual-processor baseline.
 
-Pajoniiir keeps the inherited UART `control_link` as the internal protocol
-between the ESP32-S3 and ESP32-P4.
+Status: historical wire protocol, audited 2026-07-16.
+
+Earlier Pajoniiir revisions used this UART `control_link` between the
+ESP32-S3 and ESP32-P4. The implementation is now available only in Git history.
 
 ## Current Frame
 
@@ -18,7 +23,7 @@ between the ESP32-S3 and ESP32-P4.
 [6] checksum    XOR of bytes [1]..[5]
 ```
 
-Baud rate: `460800` (8N1). Both boards must match; see `UART_BAUD` in each side's `control_link_uart.c`.
+Historical baud rate: `460800` (8N1).
 
 ## Existing Types
 

@@ -113,7 +113,9 @@ static esp_lcd_panel_handle_t   s_panel    = NULL;
 static esp_ldo_channel_handle_t s_mipi_ldo = NULL;
 static i2c_master_bus_handle_t  s_i2c_bus  = NULL;
 static esp_lcd_touch_handle_t   s_touch    = NULL;
+#if CONFIG_BSP_ES8311_MONITOR
 static i2s_chan_handle_t        s_i2s_tx   = NULL;
+#endif
 static i2s_chan_handle_t        s_i2s_tx_pcm5102 = NULL;
 static bool                     s_i2s_tx_pcm5102_enabled = false;
 static esp_codec_dev_handle_t   s_codec    = NULL;
@@ -443,11 +445,10 @@ esp_err_t bsp_audio_init(void)
     ESP_RETURN_ON_ERROR(bsp_i2c_bus_init(), TAG, "I2C bus init failed");
 
 #if !CONFIG_BSP_ES8311_MONITOR
-    /* ES8311 monitor disabled: I2S unit 0 is left free for the FLX4 USB
-       monitor link. Only bring up the PCM5102A MAIN OUT DAC (its own guard
-       makes this a no-op when PCM5102A is also disabled). */
+    /* ES8311 monitor disabled: only bring up the PCM5102A MAIN OUT DAC.
+       FLX4 cue/headphones use direct USB Audio from P4. */
     ESP_RETURN_ON_ERROR(bsp_audio_init_i2s_pcm5102(), TAG, "PCM5102A init failed");
-    ESP_LOGI(TAG, "ES8311 monitor disabled; I2S unit 0 free for FLX4 monitor link");
+    ESP_LOGI(TAG, "ES8311 monitor disabled; FLX4 cue uses direct USB Audio");
     return ESP_OK;
 #else
     if (s_codec && s_i2s_tx) {

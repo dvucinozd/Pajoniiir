@@ -165,6 +165,7 @@ int ui_library_page_selection_after_delta(int total_tracks,
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "media_catalog.h"
+#include "service_log.h"
 
 #define UI_TRACK_LOAD_STACK (16 * 1024)
 #endif
@@ -688,6 +689,28 @@ static void ui_track_load_worker(void *arg)
                 result->loaded.has_pvbr ? result->loaded.pvbr : NULL,
                 result->loaded.duration_ms,
                 &result->audio_session_generation);
+            if (result->rc != ESP_OK) {
+                audio_engine_deck_status_t deck_status = {0};
+                const char *audio_err = "AUDIO BIND ERR";
+                if (audio_engine_deck_get_status(req.deck, &deck_status) ==
+                        ESP_OK &&
+                    deck_status.last_error_text[0] != '\0') {
+                    audio_err = deck_status.last_error_text;
+                }
+                /* Asynchronous decoder/loader failures are journaled by
+                 * ae_fail_load(). This covers the synchronous bind/startup
+                 * failures that otherwise disappear when the UI retires the
+                 * failed session and returns the deck to IDLE. */
+                service_log_event(
+                    SERVICE_LOG_AUDIO_LOAD_FAILED,
+                    SERVICE_LOG_ERROR,
+                    3u,
+                    (uint32_t)req.deck + 1u,
+                    (uint32_t)result->rc,
+                    (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                    (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                    audio_err);
+            }
             if (result->rc == ESP_OK &&
                 (media_catalog_generation() != req.generation ||
                  !ui_library_track_load_is_current(req.load_id))) {
@@ -728,7 +751,10 @@ static void ui_track_load_worker(void *arg)
         ESP_LOGI(TAG, "ui_load stack high water=%u words",
                  (unsigned)uxTaskGetStackHighWaterMark(NULL));
     }
-    vTaskDelete(NULL);
+    /* This task's large, bounded completion object lives on a PSRAM-backed
+     * stack. Tasks created with xTaskCreateWithCaps() must use the matching
+     * delete API so IDF releases that external stack correctly. */
+    vTaskDeleteWithCaps(NULL);
 }
 
 static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t generation, uint8_t deck)
@@ -758,7 +784,20 @@ static esp_err_t ui_submit_track_load(int index, uint32_t track_key, uint32_t ge
     req->track_key = track_key;
     req->load_id = ui_library_active_track_load_id();
 
-    if (xTaskCreate(ui_track_load_worker, "ui_load", UI_TRACK_LOAD_STACK, req, 3, NULL) != pdPASS) {
+    /* Keep the 16 KiB completion stack out of scarce internal RAM. LOAD starts
+     * the audio loader, decoder and shared output tasks before this worker
+     * exits; an internal ui_load stack can fragment/exhaust the exact heap those
+     * realtime tasks need, producing a brief OUTPUT/TASK CREATE error followed
+     * by an apparently ignored LOAD button. The track-load worker is bounded,
+     * non-ISR work and the board requires PSRAM, so an external 8-bit stack is
+     * the appropriate allocation class. */
+    if (xTaskCreateWithCaps(ui_track_load_worker,
+                            "ui_load",
+                            UI_TRACK_LOAD_STACK,
+                            req,
+                            3,
+                            NULL,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         free(req);
         ui_library_status_hold("NO TASK", COL_RED, 2500);
         ui_library_set_load_busy(false, "NO TASK");
