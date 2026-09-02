@@ -2,7 +2,7 @@
 
 Saved: **2026-08-12**
 
-Software/hardware checkpoint updated: **2026-09-01**
+Software/hardware checkpoint updated: **2026-09-02**
 
 This is the operational checkpoint for the next physical bench session. It is
 deliberately narrower than the architecture plan and records only facts needed
@@ -12,7 +12,7 @@ to resume without reconstructing today's terminal history.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Current firmware checkpoint: `269036b`
+- Current firmware checkpoint: `4ee76a6`
 - Upstream `esp-usb` recovery fix: branch `codex/p4-hub-recycle-race`, commit
   `cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb`; both local USB dependencies are
   pinned to that exact commit
@@ -47,6 +47,16 @@ disconnect/reconnect preserved USB0, and post-reconnect dual-deck UAC playback
 passed. Exact evidence is in
 [`../validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](../validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md).
 
+The current exact candidate is `RC2-111-g4ee76a6`, running from `ota_1` after a
+clean ESP-IDF v6.0.2 build and signed OTA. Its 2,451,680-byte application has
+SHA-256
+`238808c1c0918fbd132387437c70a711176f2ab43fc0b675902834328aa3c006`.
+On 2026-09-02 it completed a strict 1,800-second dual-active real-MP3 soak with
+seven controlled seek-to-zero restarts, zero API retries and zero new audio
+late, PCM underrun, UAC drop/overflow, USB recovery or disconnect counters.
+Exact evidence is in
+[`../validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`](../validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md).
+
 ## Current blocker and branch status
 
 JP1 alone did not provide downstream VBUS on 2026-08-10. A later unqualified
@@ -70,6 +80,9 @@ backfeeding the P4-side VBUS. The circuit and pre-connection checks are in
 [`../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](../validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md)
 and [`../HARDWARE_WIRING.md`](../HARDWARE_WIRING.md); the runtime record is
 [`../validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md`](../validation/P4_DUAL_USB_RUNTIME_SMOKE_20260812.md).
+The 2026-09-02 exact-image 30-minute dual-active run stayed stable on the
+improved supply, but no voltage/current/backfeed/protection measurement was
+available, so the electrical blocker remains unchanged.
 Do not merge this branch before the power blocker and remaining matrix pass.
 
 The preferred permanent remediation is one internal 5 V distribution
@@ -247,13 +260,15 @@ end-to-end product behavior.
 - repeat boot with both USB devices attached and both insertion orders (one
   post-OTA boot with both active passed 2026-08-29);
 - complete P4-local MIDI input and LED output acceptance;
-- simultaneous storage reads, playback and controller traffic;
+- simultaneous storage reads, playback and controller traffic (one exact-image
+  30-minute dual-active real-MP3 run passed 2026-09-02);
 - repeated independent USB0/USB1 disconnect and recovery (one USB0 replug
   passed 2026-08-29 and one USB1 replug passed 2026-09-01;
   remove-during-decode and the repeated matrix remain);
 - playback/cache-miss stress while operating the controller;
 - heap, DMA heap, stack, latency, VBUS and current measurements;
-- 30-minute dual-active diagnostic soak and later multi-hour product soak;
+- later multi-hour product soak (the bounded 30-minute exact-image diagnostic
+  soak passed 2026-09-02);
 - physical direct P4-to-FLX4 USB Audio acceptance with 44.1 and 48 kHz engine
   sources, clean reconnect and sustained zero unexpected data-loss alarms.
 

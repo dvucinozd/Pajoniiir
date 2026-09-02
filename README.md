@@ -66,6 +66,15 @@ retained while its electrical and hardware acceptance gates remain open.
 > dual-deck audio. See
 > [P4 USB1 bounded fault recovery and OTA smoke](docs/validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md).
 > The repeated reconnect, long soak and electrical gates remain open.
+>
+> The 2026-09-02 exact candidate `RC2-111-g4ee76a6` then passed a strict
+> 1,800-second dual-active real-MP3 soak with seven controlled seek-to-zero
+> restarts. USB0 and USB1 remained active, the boot epoch did not change and
+> audio late, PCM underrun, UAC drop/overflow, recovery and disconnect deltas
+> all remained zero. See
+> [P4 exact-image dual-deck seek soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md).
+> This closes the bounded 30-minute gate, not the multi-hour, repeated-reconnect
+> or measured protected-VBUS qualification.
 
 > [!NOTE]
 > On `feat/p4-dual-usb-host`, the P4 hosts the direct-root FLX4 MIDI and
@@ -81,7 +90,7 @@ retained while its electrical and hardware acceptance gates remain open.
 > The former `firmware/control-board-s3` target and its dedicated tests have
 > been removed; dated documents and Git history retain the old implementation.
 > This does not clear the open 5 V/VBUS brownout blocker or replace the required
-> hardware soak.
+> multi-hour and closed-enclosure hardware soak.
 
 ## System at a Glance
 

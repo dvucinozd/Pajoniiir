@@ -1,6 +1,6 @@
 # Documentation Status
 
-> **Feature-branch status (2026-09-01):** `feat/p4-dual-usb-host` now has one
+> **Feature-branch status (2026-09-02):** `feat/p4-dual-usb-host` now has one
 > active firmware/release target: ESP32-P4. P4 directly hosts USB0 storage and
 > USB1 FLX4 MIDI/audio. The S3 firmware target and dedicated tests are removed;
 > dated validation remains for reference. S3 is absent from CMake, CI,
@@ -9,9 +9,12 @@
 > candidate then passed signed OTA, idle, dual playback, one physical USB1 FLX4
 > reconnect and post-reconnect dual playback while USB0 remained mounted. These
 > close the focused reproductions, but not the VBUS/brownout, repeated-reconnect,
-> remove-during-decode or long dual-active acceptance gates.
+> remove-during-decode or long dual-active acceptance gates. The newer exact
+> `RC2-111-g4ee76a6` candidate passed a strict 30-minute dual-active MP3
+> seek/restart soak with zero gated audio/USB counter deltas. This closes the
+> bounded 30-minute gate, not the multi-hour or electrical qualification.
 
-Last full status reconciliation: **2026-09-01**. The `migration/esp-idf-6.0.2`
+Last full status reconciliation: **2026-09-02**. The `migration/esp-idf-6.0.2`
 branch has been **merged into `master`** and deleted; there is no separate
 migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
 (`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`) and carries the
@@ -42,8 +45,10 @@ OTA deployment is recorded in
 remediation and hardware smoke are recorded in
 `validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`. The bounded USB1 fault
 recovery implementation and exact-candidate smoke are recorded in
-`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`. The focused migrated
-smoke now passes display/touch/Library, FLX4 MIDI/LED, MAIN/headphone audio and
+`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`. The
+30-minute exact-image soak is recorded in
+`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`. The focused migrated
+hardware path now passes display/touch/Library, FLX4 MIDI/LED, MAIN/headphone audio and
 real-MP3 playback. The RC2 line is still **not** release-qualified because the
 real WAV/FLAC, sustained USB/cache, repeated recovery and fault-injection rows
 remain. The 2026-08-29 run passed one hands-free post-OTA mount and one USB0
@@ -103,6 +108,15 @@ USB0 remained mounted with the 100-track Library available, and the accepted
 intervals added no host/controller recovery request, audio late/drop/overflow,
 daemon-failure or UAC underrun counters. Repeated reconnect, removal during
 decode, long combined load and electrical qualification remain open.
+
+Feature-branch exact-image soak follow-up (2026-09-02): clean candidate
+`RC2-111-g4ee76a6` on `ota_1` ran two real MP3 tracks for 1,800 seconds with
+seven controlled seek-to-zero restarts. USB0 storage and direct USB1 FLX4
+MIDI/UAC remained active on the same boot; audio late, PCM underrun, UAC
+drop/overflow, recovery, disconnect and service-log drop deltas stayed zero.
+This closes the bounded 30-minute dual-active gate. The measured electrical,
+repeated reconnect/remove-during-decode, verified WAV/FLAC and multi-hour gates
+remain open.
 
 This page explains which documents describe the current product and which are
 historical design or validation records. Four states must not be conflated:
@@ -166,12 +180,12 @@ existing Rekordbox/PDB/ANLZ path remain authoritative.
 
 | Area | Current state |
 | --- | --- |
-| Controller | Pioneer DDJ-FLX4 enumerates directly on P4 USB1 as `2B73:0045`; P4-local MIDI mapping, profile activation and LED ownership are active. Commit `269036b` bounds USB1 controller/audio fault recovery to one epoch. The 2026-09-01 exact-candidate smoke passed one physical FLX4 remove/reconnect and post-reconnect dual playback without repeated recovery requests, audio drops or overruns; repeated reconnect and reconnect-LED acceptance remain open |
+| Controller | Pioneer DDJ-FLX4 enumerates directly on P4 USB1 as `2B73:0045`; P4-local MIDI mapping, profile activation and LED ownership are active. Commit `269036b` bounds USB1 controller/audio fault recovery to one epoch. The 2026-09-01 exact-candidate smoke passed one physical FLX4 remove/reconnect and post-reconnect dual playback without repeated recovery requests, audio drops or overruns; `RC2-111-g4ee76a6` then passed a 30-minute dual-active seek/restart soak. Repeated reconnect and reconnect-LED acceptance remain open |
 | Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls; compressed audio uses a bounded LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM allocation. Focused real-MP3 playback passed on RC2; real WAV/FLAC remain untested because those physical files were missing from the audited USB export |
 | Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
 | Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26 with zero source drift, detected clicks or clipping |
-| Audio | PCM5102A RCA MAIN plus direct four-channel FLX4 USB Audio on P4 USB1: MAIN channels 1/2 and cue/headphones channels 3/4, with exact-rational 48→44.1 kHz resampling and bounded ring correction. One 2026-09-01 direct-UAC physical reconnect plus post-reconnect dual playback passed; repeated reconnect, listening-quality and long data-loss-counter soaks remain open |
-| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order. USB0 uses storage-task reconciliation, indexed idle-only recovery, callback-safe teardown and fixed 8 KiB MSC transactions. One 2026-08-29 USB0 hotplug cycle remounted and reloaded a 100-track Library without reboot; USB0 also remained mounted through the 2026-09-01 USB1 reconnect. Repeated removal-during-decode and long cache stress remain open |
+| Audio | PCM5102A RCA MAIN plus direct four-channel FLX4 USB Audio on P4 USB1: MAIN channels 1/2 and cue/headphones channels 3/4, with exact-rational 48→44.1 kHz resampling and bounded ring correction. One 2026-09-01 direct-UAC physical reconnect plus post-reconnect dual playback passed; the 2026-09-02 exact image also passed 30 minutes with zero new audio late, PCM underrun or UAC drop/overflow counters. Repeated reconnect, listening-quality and multi-hour data-loss-counter soaks remain open |
+| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order. USB0 uses storage-task reconciliation, indexed idle-only recovery, callback-safe teardown and fixed 8 KiB MSC transactions. One 2026-08-29 USB0 hotplug cycle remounted and reloaded a 100-track Library without reboot; USB0 also remained mounted through the 2026-09-01 USB1 reconnect and the 2026-09-02 30-minute dual-MP3 soak. Repeated removal-during-decode, verified WAV/FLAC and multi-hour cache stress remain open |
 | UI | Overview, Library, Hot Cues and Settings tabs; Library table is paginated (one 8-row page with PREV/NEXT, max 40 live LVGL cells); stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800×480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter. Display, touch, PSRAM-backed UI, Settings SD-online state and paginated Library were operator-confirmed again on RC2/IDF6 on 2026-08-02 |
 | Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
 | OTA | ECDSA P-256 signed P4-only `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback. Signed clean `RC2-109-g269036b` installed successfully on 2026-09-01 and returned on `ota_0`; the older dual-target evidence is historical. Pull OTA is hardware-proven and software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation. OTA does not replace the bootloader |

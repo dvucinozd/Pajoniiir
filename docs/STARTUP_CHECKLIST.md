@@ -1,6 +1,6 @@
 # Startup Checklist
 
-> **Active branch scope (2026-09-01):** `feat/p4-dual-usb-host` is P4-only.
+> **Active branch scope (2026-09-02):** `feat/p4-dual-usb-host` is P4-only.
 > Do not power, flash, connect or wait for an S3 during branch validation. Use
 > USB0 for Rekordbox storage and USB1 for the FLX4. Historical checked S3 rows
 > below document the last known-good dual-processor baseline only. The protected
@@ -8,7 +8,7 @@
 > The historical S3 firmware directory and test runner no longer exist; do not
 > treat any older checked S3 row as a command that can be rerun from this tree.
 
-Status: reconciled 2026-09-01. Checked items below are historical bring-up
+Status: reconciled 2026-09-02. Checked items below are historical bring-up
 evidence, not instructions to repeat old commit-specific flashes. The active
 P4-only bench runs exact clean commit candidate `RC2-109-g269036b` from
 `ota_0`. S3 entries below are historical only.
@@ -76,6 +76,12 @@ P4-only bench runs exact clean commit candidate `RC2-109-g269036b` from
   high-rate controller recovery storm and one focused USB1 cycle, not the
   repeated/power/long-soak gates. Dokaz:
   `validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`.
+- [x] P4-only exact-image 30-minute dual-active soak 2026-09-02:
+  `RC2-111-g4ee76a6` ran two real MP3 tracks for 1,800 seconds with seven
+  controlled seek-to-zero restarts, no reboot or USB loss and zero new audio
+  late, PCM underrun, UAC drop/overflow, recovery or disconnect counters. This
+  closes the bounded 30-minute gate, not the multi-hour or electrical gate.
+  Dokaz: `validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`.
 - [x] P4 pull OTA is hardware-proven end to end: temporary STA visit, HTTPS
   channel read, signed bundle download/verification, inactive-slot flash and
   reboot.
@@ -142,7 +148,8 @@ P4-only bench runs exact clean commit candidate `RC2-109-g269036b` from
   ESP-IDF, managed components and project sources.
 - [x] Hardware-validate paginated Library table on the P4 touch display —
   operator-confirmed in the 2026-08-02 focused RC2/IDF6 smoke.
-- [ ] Perform a long dual-deck audio/vinyl/key-lock soak.
+- [ ] Perform the later multi-hour dual-deck audio/vinyl/key-lock product soak.
+  The bounded 30-minute exact-image dual-active run passed 2026-09-02.
 - [ ] Extend R1 smoke to both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [x] R2 basic smoke: dual-deck playback/scratch capture has no writer timeout, fallback or PCM drop.
 - [x] R2 USB smoke: 30-second playback/storage capture has no DWC assert, reboot or media loss.

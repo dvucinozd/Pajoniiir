@@ -105,16 +105,20 @@ Statusi:
 
 ## Preporučeni nastavak
 
-P4 dual-USB dodatak, 2026-08-29: izravna USB0 pohrana i USB1 FLX4 rade zajedno,
-a focused USB0 hotplug/Library reload bez reboota sada prolazi. Upstream recycle
+P4 dual-USB dodatak, ažuriran 2026-09-02: izravna USB0 pohrana i USB1 FLX4 rade
+zajedno, a focused USB0 hotplug/Library reload bez reboota sada prolazi. Upstream recycle
 fix, indexed idle-only recovery, callback-safe teardown i fiksni 8 KiB MSC
 transfer su pinani source-contract gateovima. Grana ipak ostaje blokirana:
 kontrolirani dual-deck test 2026-08-12 završio je raw `BROWNOUT` resetom nakon
 približno 6,5 s, uz nula audio late/underrun brojača. Treba izmjeriti i
 stabilizirati zajednički 5 V/VBUS put te ponoviti cijelu fizičku matricu.
+Exact `RC2-111-g4ee76a6` kandidat je 2026-09-02 prošao 1.800 s dual-active MP3
+soak sa sedam kontroliranih seek/restart ciklusa i nultim delatama praćenih
+audio/USB gate brojača. Time je zatvoren bounded 30-minutni gate, ali bez električnih
+mjerenja ne i VBUS/power blocker.
 
 1. Dovršiti USB reconciliation i bounded-cache stress: single-framebuffer fokusirani prikaz i realni MP3 prošli su, ali treba ispravno re-eksportati fizičke WAV/FLAC fixturee te ih pokrenuti pod sustained dual-deck opterećenjem s brojačima.
 2. Izmjeriti Master Tempo/keylock deadline na stvarnom P4 s dva aktivna decka te optimizirati DSP samo ako mjerenja pokažu prekoračenje audio budgeta.
 3. Recorder zadržati release-disabled dok microSD i power-loss fault injection ne potvrde STOP drain, zadržavanje neuspjelog `.part` filea i objavu samo potpuno finaliziranog WAV-a.
-4. FLX4 MIDI/LED, PCM5102A i fokusirani direct-UAC put su potvrđeni; dovršiti ponavljani USB1 reconnect, direct-UAC numeric/data-loss soak, held-control saturation/reboot, Wi-Fi/OTA exclusion i dugotrajne fizičke gateove.
+4. FLX4 MIDI/LED, PCM5102A i 30-minutni dual-active direct-UAC put su potvrđeni; dovršiti ponavljani USB1 reconnect, verified 44.1/48 kHz direct-UAC numeric/data-loss slučajeve, held-control saturation/reboot, Wi-Fi/OTA exclusion i višesatne fizičke gateove.
 5. AP autentikaciju, fizičku OTA potvrdu, PMF/WPA3 te Secure Boot/Flash Encryption voditi kao zasebne proizvodne i provisioning odluke.
