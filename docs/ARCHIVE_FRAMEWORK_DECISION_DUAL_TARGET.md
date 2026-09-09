@@ -1,7 +1,8 @@
 # Framework Decision: ESP-IDF With Arduino Smoke Tests
 
-Document status: accepted decision, reviewed 2026-07-13. ESP-IDF v5.5 remains
-the production build environment for both firmware targets.
+Document status: **archived framework decision**. The active single P4 target
+uses ESP-IDF v6.0.2; legacy target and v5.5 statements below are provenance
+only.
 
 ## Decision
 
@@ -31,7 +32,7 @@ Arduino is limited to early validation:
 1. Flash the supplied `Wifi_scan` example to confirm board upload and serial output.
 2. Flash the supplied LVGL example to confirm display and touch.
 3. Flash the supplied `mp3_player` example to confirm SDMMC, ES8311, I2S, and speaker output.
-4. Record working pins and any setup quirks into `docs/bench-notes.md`.
+4. Record working pins and any setup quirks into `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 
 After these tests, new product firmware should move to ESP-IDF.
 

@@ -1,8 +1,8 @@
 # Control Board Decision: ESP32-S3 MIDI/Input Controller
 
-Document status: historical origin of the accepted two-board split, audited
-2026-07-16. The split and S3 state-ownership boundary remain valid; the original
-DevKitC/CDJ-panel/USB-device implementation details below are superseded.
+Document status: **archived and superseded**. This is the historical origin of
+the former two-board split. None of the processor, state-ownership, wiring or
+protocol decisions below apply to the P4-only product.
 
 ## Current Disposition
 
@@ -17,7 +17,8 @@ DevKitC/CDJ-panel/USB-device implementation details below are superseded.
 
 Use [`ARCHITECTURE.md`](ARCHITECTURE.md),
 [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) and
-[`../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md`](../firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md)
+The former `firmware/control-board-s3/PINOUT_XIAO_ESP32S3.md` is available in
+Git history only.
 for the current design and wiring. The remainder of this file is retained as
 the original decision history.
 

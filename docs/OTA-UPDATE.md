@@ -1,26 +1,13 @@
 # Pajoniiir OTA Update Procedure
 
-Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. Signed
-dual-slot P4 OTA and rollback retain their hardware acceptance. The former
-dual-target `.ddjota` implementation, valid A/B updates, rejection matrix,
-interrupted uploads and forced rollback passed on 2026-07-14 with release
-`RC1-123-g587cd7a1`; that S3 evidence is historical and is not an active release
-instruction. See
-[`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for the design and acceptance record.
-The latest matching rollout, `RC1-131-gc391e306`, was signed, independently
-verified and installed on 2026-07-16: P4 finished on `ota_1`, S3 on
-`ota_0 / valid`. This rollout proved package/install/boot health but intentionally
-did not repeat the complete functional hardware smoke.
-
-The latest P4-only deployment was `RC2-51-g050ab43` on 2026-08-22. The local
-push endpoint accepted the signed bundle, and COM15 later confirmed P4
-`ota_0 / valid`, a mounted 29,520 MB SDHC card and the still-running S3 at
-`RC2-44-g1923a3b / ota_1 / valid`. The USB medium exhausted eight automatic
-enumeration-recovery cycles after the restart and required one physical
-reinsert before its exFAT volume and 324-track library loaded. This is positive
-P4 OTA and reconnect evidence, not a matching dual-target rollout or complete
-reboot-recovery pass. See
-[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. The current
+source candidate `RC2-114-gc8b2711` has a verified signed bundle but has not
+been installed. The latest installed image `RC2-113-gaf597d8` reached `ota_1`
+through signed OTA and passed post-update USB/controller/audio checks. This
+procedure is the current P4 operator authority. The superseded multi-target design and its
+acceptance history are retained in
+[`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
+and dated validation records.
 
 ## Safety rules
 
@@ -112,19 +99,10 @@ idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
 Do not package unless the P4 build exits with code 0 and fits its 4 MiB slot.
 
-The latest clean-build evidence, including raw-image sizes and SHA-256 values,
-is recorded in
-[`validation/CLEAN_RELEASE_RC2_BUILD.md`](validation/CLEAN_RELEASE_RC2_BUILD.md).
-Both signed RC2 application packages were installed successfully through OTA
-on P4 and S3 on 2026-08-02 and both targets reported `RC2`. Complete ESP-IDF
-v6.0.2 boot chains were installed afterwards over the wired recovery ports,
-because application OTA does not replace bootloaders or partition tables. See
-[`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`](validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md).
-The later `RC2-51-g050ab43` clean dual-target development build and P4-only OTA
-deployment are recorded in
-[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
-The superseded ESP-IDF 5.5.4 record is
-[`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
+The current exact-image build and focused OTA evidence is recorded in
+[`validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md).
+Application OTA does not replace the bootloader or partition table; use a full
+wired flash whenever either changes.
 
 ### Version strings
 

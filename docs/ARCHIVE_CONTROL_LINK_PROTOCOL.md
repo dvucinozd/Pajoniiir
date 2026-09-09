@@ -357,7 +357,7 @@ MIDI notes `0x10` and `0x11` on `0x90`/`0x91`.
 ## S3 Debug AP Control
 
 `CTRL_ID_S3_DEBUG_AP` (`0x85`) drives the runtime, bench-only S3 Wi-Fi debug
-access point and live log viewer (see `docs/S3_WIFI_DEBUG_LOG.md`). It is a
+access point and live log viewer (see `docs/ARCHIVE_S3_WIFI_DEBUG_LOG.md`). It is a
 diagnostic control, not an audio/deck control, and rides on the existing 7-byte
 frame with `CTRL_TYPE_STATE` (`0x82`) in both directions.
 

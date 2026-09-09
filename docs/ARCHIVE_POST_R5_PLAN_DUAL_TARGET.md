@@ -1,6 +1,6 @@
 # Post-R5 Plan
 
-Status: active and reconciled 2026-08-02. R5A-R5F remediation and E1 signed-OTA
+Status: **archived and superseded plan**, last reconciled 2026-08-02. R5A-R5F remediation and E1 signed-OTA
 acceptance are complete. The latest clean dual-target release build is `RC2`
 (`56905c89`, ESP-IDF 6.0.2, 2026-07-30); the previous line closed at
 `RC1-259-gdaf4639`. Both signed RC2 applications were installed successfully
@@ -17,7 +17,7 @@ showed card-level `fwrite` stalls that drained the 2.95 s ring. A replacement
 card produced encouraging first-five-minute figures but the required 25-minute
 soak was deliberately stopped when the feature was shelved, so it is not an
 acceptance result. Do not resume recorder optimization unless the product scope
-explicitly reopens it; full measurements remain in `bench-notes.md`.
+explicitly reopens it; full measurements remain in `ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 This document is the ordered continuation plan for current-candidate functional
 acceptance, enclosure readiness and production hardening.
 

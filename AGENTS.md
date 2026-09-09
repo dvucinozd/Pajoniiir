@@ -39,7 +39,7 @@ buildova i relevantnog hardware smoke testa.
   docs\PROJECT_OVERVIEW.md
   docs\ARCHITECTURE.md
   docs\DDJ_FLX4_MIDI_MAP.md
-  docs\CONTROL_LINK_PROTOCOL.md
+  docs\ARCHIVE_CONTROL_LINK_PROTOCOL.md
   docs\HARDWARE_WIRING.md
   docs\DEVELOPMENT_PLAN.md
   docs\STARTUP_CHECKLIST.md

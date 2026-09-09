@@ -1,5 +1,9 @@
 # ESP-IDF 6.0.2 migration — code review i remediation plan
 
+> **Arhivirani migracijski zapis.** Popis oba tadašnja targeta i njihove gateove
+> čuvamo samo kao dokaz prijelaza. Aktualni P4-only status je u
+> [`ESP_IDF_6_0_2_MIGRATION.md`](ESP_IDF_6_0_2_MIGRATION.md).
+
 Datum pregleda: **2026-07-29**
 
 Pregledani commit:

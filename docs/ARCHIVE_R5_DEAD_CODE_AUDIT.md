@@ -1,6 +1,6 @@
 # R5 Dead-Code And Legacy-Path Audit
 
-Status: R5A-R5F complete. Final host/build gates, matching-version wired flashes
+Status: **archived audit evidence**. R5A-R5F complete. Final host/build gates, matching-version wired flashes
 and the dual-target scratch soak were accepted on 2026-07-14. This document is
 the evidence and decision log for cleanup batches R5A-R5F.
 

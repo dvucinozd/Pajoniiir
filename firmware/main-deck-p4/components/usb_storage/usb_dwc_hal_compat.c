@@ -17,7 +17,8 @@
  * CONFIG_HAL_DEFAULT_ASSERTION_LEVEL=2 that is a panic and a reboot.
  *
  * This is not theoretical on this board. A 30-second capture on the P4 hit it
- * (docs/DEVELOPMENT_PLAN.md), and docs/bench-notes.md records the trigger
+ * (docs/DEVELOPMENT_PLAN.md), and
+ * docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md records the trigger
  * precisely: streaming from USB during playback. The original mitigation was to
  * preload each track into PSRAM so playback never touched USB. That mitigation
  * is gone - the bounded compressed cache streams from USB by design - so this

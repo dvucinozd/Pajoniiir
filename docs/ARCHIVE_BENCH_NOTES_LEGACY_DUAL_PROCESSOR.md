@@ -1,7 +1,9 @@
 # Bench Notes
 
-Document status: dated hardware evidence, reviewed 2026-07-16. New observations
-should include date, firmware version, board, port and pass/fail evidence.
+Document status: **archived legacy bench ledger**. It preserves dated evidence
+from earlier product topologies and must not receive new release instructions.
+Record new P4-only observations under `docs/validation/` and link them from
+`DOCUMENTATION_STATUS.md`.
 
 ## Test Setup
 

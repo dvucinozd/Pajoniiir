@@ -1,6 +1,7 @@
 # Pajoniiir ESP32-P4-only Dual USB Host Migration Plan
 
-Status: P4-only source transition implemented; hardware acceptance open
+Status: **archived migration plan**; the source transition is implemented and
+current hardware acceptance is tracked in `P4_DUAL_USB_NEXT_SESSION.md`.
 Created: 2026-08-04
 Working branch: `feat/p4-dual-usb-host`
 Baseline commit: `c7a7cc59cf344ae4ed213ad0c0c3770f69077fca`

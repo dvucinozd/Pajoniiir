@@ -17,7 +17,7 @@ The committed source and compiled fixtures are
 
 | Parameter | Profile value | Status |
 | --- | --- | --- |
-| USB VID:PID | `06F8:B12B` | Matches published Inpulse 500 hardware IDs; confirm from the S3 descriptor report on the target unit |
+| USB VID:PID | `06F8:B12B` | Matches published Inpulse 500 hardware IDs; confirm from the P4 USB descriptor report on the target unit |
 | Decks | 2 | Profile/runtime verified |
 | MIDI input/output | Enabled | Host verified; hardware pending |
 | Jog touch | Enabled | Host/profile path verified; hardware pending |
@@ -131,15 +131,15 @@ the profile advertises the controller's documented four-channel capability.
 Host coverage verifies deterministic fixture regeneration, exact VID/PID
 matching and rejection of `B105`, representative transport/shift/loop/pad
 input mapping, Mode 6 addresses, RGB MIDI output, registry discovery, all 69
-remote LED IDs, shared S3/P4 protocol values and P4 `sync_off`/`loop_size`
+remote LED IDs, the P4-local semantic vocabulary and P4 `sync_off`/`loop_size`
 behavior.
 
 Before this profile can be called hardware-supported, connect a physical
 Inpulse 500 and record:
 
-1. S3 descriptor VID/PID/product and successful P4 match/transfer/activation.
+1. P4 descriptor VID/PID/product and successful local match/activation.
 2. A two-deck MIDI input sweep, including releases and Shift variants.
-3. Pad colours, mode LEDs, VU meters, reconnect and P4/S3 reboot resync.
+3. Pad colours, mode LEDs, VU meters, reconnect and P4 reboot resync.
 4. Jog/scratch, Sync Off, Quantize/tempo-range and autoloop rotary behavior.
 5. MAIN/headphone USB-audio channel routing, rate selection, underrun counters
    and simultaneous PCM5102A MAIN behavior.

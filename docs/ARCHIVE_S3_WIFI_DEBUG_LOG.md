@@ -1,6 +1,9 @@
 # S3 Wi-Fi Debug Log
 
-Document status: current service-mode guide, audited 2026-07-16. The Debug AP
+> **ARCHIVED DUAL-PROCESSOR RECORD.** This service is not part of the active
+> P4-only product. Do not use this file as an operational or release checklist.
+
+Document status: historical service-mode guide, audited 2026-07-16. The Debug AP
 also exposes S3 firmware status and OTA; use `OTA-UPDATE.md` for update steps.
 
 Use this when the XIAO ESP32S3 UART adapter is disconnected because the FLX4
@@ -33,7 +36,7 @@ The debug AP is OFF after every boot and is controlled entirely from the P4:
    S3 automatically stops the AP after fifteen minutes.
 
 The switch is not persisted in P4 NVS; P4 also sends OFF at boot so the AP never
-lingers after a reboot. See `docs/CONTROL_LINK_PROTOCOL.md`
+lingers after a reboot. See `docs/ARCHIVE_CONTROL_LINK_PROTOCOL.md`
 (`CTRL_ID_S3_DEBUG_AP`) for the control-link handshake and status enum.
 
 ### S3 Firmware Update

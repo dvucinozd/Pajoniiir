@@ -1,12 +1,13 @@
 # Pajoniiir OTA Update Plan
 
-Status: design and acceptance record, reviewed 2026-07-16. The unsigned
+Status: **archived dual-target design and acceptance record**, reviewed
+2026-07-16. The unsigned
 dual-slot/rollback path was hardware-accepted on 2026-07-13. Batch 6 signed OTA,
 including complete rejection, interrupted-upload and forced-rollback testing,
 was hardware-accepted on both targets on 2026-07-14. A later matching
 `RC1-131-gc391e306` signed release was deployed and boot-verified on both
 targets on 2026-07-16; its functional smoke remains separate. For the operator
-workflow use
+P4-only operator workflow use
 [`OTA-UPDATE.md`](OTA-UPDATE.md).
 
 ## Implementation status

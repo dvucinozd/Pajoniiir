@@ -10,10 +10,11 @@ release-disabled until physical microSD and power-loss fault injection passes.
 
 Release line: the prefix moved from `RC1` to **`RC2`** on 2026-07-30 to mark the
 ESP-IDF 6.0.2 baseline; the annotated tag sits on `56905c89` and the clean
-dual-target build is recorded in `docs/validation/CLEAN_RELEASE_RC2_BUILD.md`.
+baseline build is recorded in `docs/validation/CLEAN_RELEASE_RC2_BUILD.md`.
 Application version comes from `git describe`, so the tagged commit builds as the
-bare string `RC2` and later commits as `RC2-<n>-g<hash>`. **Both boards are still
-on `RC1-254-g21f21963`** — pre-migration firmware built with ESP-IDF 5.5.4.
+bare string `RC2` and later commits as `RC2-<n>-g<hash>`. The current source
+candidate is `RC2-114-gc8b2711` (signed package verified, not installed); the
+latest hardware-tested image is `RC2-113-gaf597d8` on `ota_1`.
 
 Software acceptance is enforced by `.github/workflows/esp-idf-6-migration.yml`:
 P4 host regressions plus a clean ESP32-P4 build using ESP-IDF 6.0.2.
@@ -36,12 +37,12 @@ out at depth 1, so a CI build carries a bare commit hash as its version, not
 > the host with `root_port_unpowered` and cycles `usb_host_lib_set_root_port_power()`,
 > retrying while nothing has connected. Do not "simplify" that back to a plain
 > `usb_host_install()`. Lengthening the port-off window is not the lever; the
-> repeat is. See `docs/bench-notes.md`.
+> repeat is. See `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 
 > ⚠️ **`max_open_sockets` is 5.** With `lru_purge_enable` unset, five held
 > keep-alive sockets made the server refuse every new client — including
 > `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
-> `docs/bench-notes.md` for the diagnostic signature.
+> `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md` for the diagnostic signature.
 
 > ⚠️ **The last journal record before a panic is not evidence.** The service-log
 > writer syncs at most every few seconds, so a panic destroys whatever is still
@@ -73,7 +74,7 @@ out at depth 1, so a CI build carries a bare commit hash as its version, not
 > The next step is a card swap, qualified with
 > `tools/sd_card_latency_probe.ps1`. If a known-good card stalls at the same
 > ~370 ms, suspect the SDMMC driver or bus configuration rather than the media.
-> Full history and numbers in `docs/bench-notes.md`.
+> Full history and numbers in `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 >
 > **Deliberately left on:** the output block is timed phase by phase on the
 > audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block. Gate or
@@ -105,8 +106,8 @@ translucent played-progress highlight on the mini. The **ESP-Hosted Wi-Fi + web
 UI mobile controller** is re-enabled behind a Settings switch (default off). A
 2026-07-04 audit hardened thread-safety (atomics), load-failure abort, and the
 web status JSON. PCM5102A MAIN, FLX4 USB headphone cue, LED feedback, vinyl
-scratch and Master Tempo have recorded acceptance on the historical S3 path.
-The direct P4 path still requires the explicit dual-USB hardware rows.
+scratch and Master Tempo run on the direct P4 path. The remaining release
+boundary is tracked in the explicit dual-USB hardware rows.
 
 P4 web OTA accepts only signed `main-deck-p4.ddjota` bundles. The common
 `ota_manifest` component verifies the embedded ECDSA P-256 manifest before
@@ -216,39 +217,9 @@ FLX4 on P4 USB1 → controller_runtime → local semantic queue → deck_core
 
 ---
 
-## Historical UART Control Link Protocol
-
-This section documents the retired two-board transport for archaeology and old
-validation-record interpretation. The P4-only image does not compile this UART
-transport or exchange these frames at runtime.
-
-7-byte frame (same on S3 and P4 sides):
-```
-[0xA5] [type] [id] [val_lo] [val_hi] [seq] [checksum]
-checksum = type ^ id ^ val_lo ^ val_hi ^ seq
-```
-
-| Type | Direction | Meaning |
-|------|-------|----------|
-| 0x01 BUTTON | S3→P4 | id=button_id (0–13), val=0/1 |
-| 0x02 ENCODER | S3→P4 | id=0 (jog) / id=1 (browse), val=signed delta |
-| 0x03 PITCH | S3→P4 | id=0, val=0–16383 (14-bit) |
-| 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime s |
-| 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
-| 0x82 STATE | both | S3→P4 FLX4 connection + S3 Debug AP status; P4→S3 S3 Debug AP enable request (`CTRL_ID_S3_DEBUG_AP` 0x85) |
-| 0xA6 BULK | both | variable-length `[A6][type][seq][len][payload][crc16]`: S3→P4 controller descriptor; P4→S3 profile transfer (BEGIN/CHUNK/END/ACTIVATE) + S3→P4 ACK/NACK/STATUS. See `docs/CONTROL_LINK_PROTOCOL.md` |
-
----
-
-## Historical UART Pins (P4 side, JP1 header)
-
-| Signal | GPIO | Note |
-|--------|------|----------|
-| UART1 RX | **GPIO28** | receives from S3 GPIO40 TX (JP1 pin 19) |
-| UART1 TX | **GPIO29** | sends to S3 GPIO41 RX (JP1 pin 12) |
-
-These pins belonged to the retired S3 wiring and are not required by the active
-P4-only product.
+The retired transport format and pin tables are documented only in
+`docs/ARCHIVE_CONTROL_LINK_PROTOCOL.md` and
+`docs/ARCHIVE_HARDWARE_WIRING_LEGACY_DUAL_PROCESSOR.md`.
 
 ---
 

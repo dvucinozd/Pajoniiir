@@ -21,8 +21,8 @@ hardware smoke disagree, record the conflict here and do not implement behavior
 until the hardware path is verified.
 
 The XML is not executable runtime logic. `Script-Binding` entries identify MIDI
-addresses, but the standalone behavior must be defined as a semantic S3 event
-and P4-owned state transition. Hardware capture remains the acceptance test for
+addresses, but the standalone behavior must be defined as a P4-local semantic
+event and P4-owned state transition. Hardware capture remains the acceptance test for
 each newly delivered control group, and any difference must be recorded here.
 
 Additional physical capture on 2026-06-20 verified SMART CFX and SMART FADER
@@ -74,9 +74,9 @@ Smart Fader drives the conservative transition-assist curve.
 
 ## Tempo, Mixer, And Cue
 
-The FLX4 sends several analog controls as 14-bit MIDI pairs. The S3 should
-combine MSB/LSB into a single `0..16383` value before forwarding when both
-halves are available.
+The FLX4 sends several analog controls as 14-bit MIDI pairs. The P4 controller
+runtime combines MSB/LSB into a single `0..16383` value once both halves are
+available.
 
 | Control | Deck/group | Status | MSB midino | LSB midino | Semantic target |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -93,7 +93,7 @@ halves are available.
 
 ## Mapping Header Seed
 
-Initial S3 header constants should be generated from this table rather than
+Controller-mapping constants should be generated from this table rather than
 hardcoded ad hoc in parser logic.
 
 ```c
@@ -145,8 +145,8 @@ hardcoded ad hoc in parser logic.
 
 This inventory is generated from the vendored Mixxx XML as the implementation
 seed. It is not a claim that Mixxx behavior is implemented. Semantic IDs marked
-`proposed` must be added to both S3 and P4 `control_link.h` files before
-firmware uses them.
+`proposed` must be added to the P4-local semantic vocabulary and owning state
+handler before firmware uses them.
 
 Status legend:
 
@@ -156,8 +156,9 @@ Status legend:
 - **Deferred:** address is recorded, but standalone P4 behavior is not defined.
 - **Candidate LED:** XML output address is recorded; P4-driven LED feedback is
   not implemented unless explicitly noted.
-- **Mapped output only:** S3 can emit the official LED packet, but P4 does not
-  yet publish reconnect-safe state for that indicator.
+- **Mapped output only:** the P4 controller runtime can emit the official LED
+  packet, but the authoritative state owner does not yet publish reconnect-safe
+  state for that indicator.
 - **Implemented snapshot output:** P4 owns the state and includes the LED in the
   reconnect-safe FLX4 snapshot.
 
@@ -175,7 +176,7 @@ Status legend:
 | Play/Pause Deck 1 / Deck 2 | `0x90/0x0B`, `0x91/0x0B` | press/release | deck-local | `CTRL_ID_DECK1_PLAY`, `CTRL_ID_DECK2_PLAY` | `deck_core` | Implemented | Verified 2026-06-14 |
 | Play + Shift / Censor | `0x90/0x0E`, `0x91/0x0E` | press/release | shifted deck-local | `CTRL_ID_DECK*_EXT_ACTION` / `CTRL_DECK_EXT_ACTION_CENSOR` | `deck_core` slip-censor MVP | Implemented MVP | Host-tested from XML; hardware smoke pending |
 | Cue Deck 1 / Deck 2 | `0x90/0x0C`, `0x91/0x0C` | press/release | deck-local | `CTRL_ID_DECK1_CUE`, `CTRL_ID_DECK2_CUE` | `deck_core` | Implemented | Verified 2026-06-14 |
-| Fader-start generated Play/Cue | D1 `0x90/0x66`, `0x90/0x52`; D2 `0x91/0x66`, `0x91/0x52` | generated note press/release from official PDF fader-start behavior | deck-local generated automation | none | none | Explicitly ignored by product decision; S3 must not emit PLAY, CUE, or any other semantic event | Host-tested as ignored; fader-start playback automation not implemented |
+| Fader-start generated Play/Cue | D1 `0x90/0x66`, `0x90/0x52`; D2 `0x91/0x66`, `0x91/0x52` | generated note press/release from official PDF fader-start behavior | deck-local generated automation | none | none | Explicitly ignored by product decision; the controller runtime must not emit PLAY, CUE, or any other semantic event | Host-tested as ignored; fader-start playback automation not implemented |
 | Cue + Shift / track start | `0x90/0x48`, `0x91/0x48` | press/release | shifted deck-local | `CTRL_ID_DECK1_TO_START`, `CTRL_ID_DECK2_TO_START` | `deck_core` seek | Implemented | Verified end-to-end 2026-06-20 / 2026-06-21 |
 | Jog platter scratch | `0xB0/0x22`, `0xB1/0x22` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_SCRATCH`, `CTRL_ID_DECK2_JOG_SCRATCH` | `deck_core` / audio seek | Implemented MVP input | Verified 2026-06-14 |
 | Jog platter bend | `0xB0/0x23`, `0xB1/0x23` | relative/encoder CC | deck-local | `CTRL_ID_DECK1_JOG_BEND`, `CTRL_ID_DECK2_JOG_BEND` | `deck_core` / tempo bend | Implemented MVP input | Verified 2026-06-14 |
@@ -227,9 +228,9 @@ Status legend:
 | Beat FX on/off | CH1/global `0x94/0x47`, CH2 `0x95/0x47` | press/release; press toggles P4 Beat FX enabled state | FX channel selector | `CTRL_ID_BEAT_FX_ON` / `LED_BEAT_FX_ON` | P4 Beat FX state model + LED feedback | Implemented state/mapping; FILTER, damped multi-repeat ECHO, FLANGER, and one-shot full-band DELAY (`4`) DSP; DELAY Level/Depth controls wet gain; time FX derives timing when Beat FX state is applied, uses 40–300 BPM or a 120 BPM fallback, caps at 1000 ms, and BOTH uses Deck 1 BPM; later tempo/track changes do not automatically retime it; ON/OFF LED follows P4 state | Host-tested from XML; FILTER/Echo hardware smoke and Echo BPM/beat-size smoke passed 2026-07-01; FLANGER/DELAY hardware smoke pending |
 | Beat FX on/off + Shift | CH1/global `0x94/0x43`, CH2 `0x95/0x43` | press/release | shifted FX channel selector | `CTRL_ID_BEAT_FX_CLEAR` | P4 Beat FX state reset | Implemented state/mapping; restores disabled FILTER, beat `1`, target BOTH and depth `64`; ECHO/DELAY may finish their bounded audio tail | Host-tested from XML; existing reset hardware smoke passed 2026-07-01; FLANGER/DELAY reset smoke pending |
 
-Snapshot/reconnect note: S3 now replays the last known absolute input values
-for the mixer/monitoring/effect-depth rows above after a heartbeat-driven FLX4
-connection refresh. This is a known-value cache, not a physical USB query:
+Snapshot/reconnect note: the P4-local controller path replays the last known
+absolute input values for the mixer/monitoring/effect-depth rows above after an
+FLX4 connection refresh. This is a known-value cache, not a physical USB query:
 unknown controls are skipped, tempo faders are excluded, and buttons/toggles
 are not replayed.
 
@@ -244,8 +245,8 @@ is direct or shifted.
 Project scope decision 2026-07-07: `Keyboard/Stems`, `Sampler`, and `Key Shift`
 are excluded from Pajoniiir standalone behavior. Their XML addresses remain
 documented for trace analysis, and the `control_link` numeric constants are kept
-stable for compatibility, but S3 ignores those input messages and P4 ignores
-stale/manual events for those modes.
+stable for compatibility, but the local controller runtime ignores those input
+messages and P4 ignores stale/manual events for those modes.
 
 For Pad FX performance-pad inputs, `docs/reference/DDJ-FLX4_MIDI_message_List_E1.pdf`
 is the source of truth because the Mixxx XML reference does not expose the
@@ -285,7 +286,7 @@ notes `0x10..0x17` and Pad FX2 pads as notes `0x50..0x57` on the existing Deck
 
 ### Candidate LED Output Inventory
 
-| LED/output group | Output status/midino | Source state | S3/P4 state owner | Status | HW verification |
+| LED/output group | Output status/midino | Source state | P4 state owner | Status | HW verification |
 | --- | --- | --- | --- | --- | --- |
 | Play LEDs | `0x90/0x0B`, `0x91/0x0B` | deck playing | P4 `deck_core` | Implemented | Verified 2026-06-20 reconnect |
 | Play + Shift / Censor LEDs | official list/PDF output: `0x90/0x0E`, `0x91/0x0E` | P4 `deck_state_t.censor_active` | P4 `deck_core` snapshot | Implemented snapshot output | Host-tested from official packet; hardware smoke passed 2026-07-07 |
@@ -341,5 +342,5 @@ Hardware smoke passed for the 2026-07-02 Jog Search / Master Cue slice:
   directions and clamps at track start.
 - MASTER CUE toggles only the monitor/headphone master contribution; RCA/main
   output must not change.
-- MASTER CUE LED follows P4 state and recovers after FLX4 reconnect, S3 reset,
-  and P4 reset snapshot refresh.
+- MASTER CUE LED follows P4 state and recovers after FLX4 reconnect and P4
+  reset snapshot refresh.

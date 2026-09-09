@@ -1,6 +1,6 @@
 # P4-only migration: software completion boundary without hardware
 
-> **Superseded implementation record.** On 2026-08-27 the local-controller
+> **Archived and superseded implementation record.** On 2026-08-27 the local-controller
 > overlay became the sole P4 product configuration and the S3 fallback was
 > retired. References below to an optional feature flag, A/B duplication and
 > active S3 CI describe the earlier migration checkpoint only.

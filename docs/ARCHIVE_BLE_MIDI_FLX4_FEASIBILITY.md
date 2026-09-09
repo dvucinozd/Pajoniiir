@@ -1,7 +1,8 @@
 # Wireless FLX4 over BLE-MIDI — feasibility note
 
-Document status: active decision note, reviewed 2026-07-13. Wired USB remains
-the product path; OTA Wi-Fi does not change this decision.
+Document status: **archived feasibility note**. Its legacy processor examples
+are historical only. Wired FLX4 on P4 USB1 remains the product path; OTA Wi-Fi
+does not change this decision.
 
 Status: **hard / low-priority development option — not planned.** Recorded
 2026-07-10 after investigating whether the ESP32 could talk to the DDJ-FLX4 over
