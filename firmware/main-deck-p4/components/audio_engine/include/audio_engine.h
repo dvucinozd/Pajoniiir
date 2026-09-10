@@ -367,6 +367,7 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
  * max_duration_ms = 0 decodes the entire track.
  */
 #if defined(AUDIO_ENGINE_PC_TEST)
+typedef void (*audio_engine_limiter_publish_test_hook_t)(void);
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
 bool audio_engine_test_snapshot_beat_fx_time_command(
     uint8_t deck,
@@ -374,6 +375,8 @@ bool audio_engine_test_snapshot_beat_fx_time_command(
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
+void audio_engine_test_set_limiter_publish_hook(
+    audio_engine_limiter_publish_test_hook_t hook);
 void audio_engine_test_get_headphone_routing_snapshot(audio_headphone_mode_t *out_mode,
                                                        uint8_t *out_cue_mode);
 void audio_engine_test_disable_pcm_timeline(uint8_t deck);
