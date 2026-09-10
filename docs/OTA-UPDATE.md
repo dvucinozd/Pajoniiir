@@ -1,10 +1,12 @@
 # Pajoniiir OTA Update Procedure
 
 Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. The current
-source candidate `RC2-114-gc8b2711` has a verified signed bundle but has not
-been installed. The latest installed image `RC2-113-gaf597d8` reached `ota_1`
-through signed OTA and passed post-update USB/controller/audio checks. This
-procedure is the current P4 operator authority. The superseded multi-target design and its
+validated firmware and latest installed candidate is `RC2-116-g77d723c` on
+`ota_1`. Its
+signed OTA, exact-image check and targeted three-hour continuous dual-MP3
+limiter/WDT soak passed without a reset, PCM underrun, active UAC loss or
+USB/controller loss. This procedure is the current P4 operator authority. The
+superseded multi-target design and its
 acceptance history are retained in
 [`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
 and dated validation records.
@@ -99,8 +101,9 @@ idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
 Do not package unless the P4 build exits with code 0 and fits its 4 MiB slot.
 
-The current exact-image build and focused OTA evidence is recorded in
-[`validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md).
+The current exact-image build, OTA and three-hour focused soak evidence is
+recorded in
+[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 Application OTA does not replace the bootloader or partition table; use a full
 wired flash whenever either changes.
 

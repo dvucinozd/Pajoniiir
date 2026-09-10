@@ -1,21 +1,22 @@
 # P4 Startup and Release Checklist
 
-Status: **active P4-only checklist, reconciled 2026-09-09**.
+Status: **active P4-only checklist, reconciled 2026-09-11**.
 
 ## Repository and build
 
 - [x] Branch is `feat/p4-dual-usb-host`.
-- [x] Current source commit `c8b2711` is pushed and local/remote SHA matched.
+- [x] Validated firmware commit `77d723c` is pushed and local/remote SHA
+  matched.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [ ] Install and focused-smoke `RC2-114-gc8b2711` on hardware.
+- [x] Install and focused-smoke `RC2-116-g77d723c` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-113-gaf597d8` installed on `ota_1` with empty OTA error.
+- [x] `RC2-116-g77d723c` installed on `ota_1` with empty OTA error.
 - [x] USB0 mounts and exposes the 100-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -23,6 +24,12 @@ Status: **active P4-only checklist, reconciled 2026-09-09**.
 - [x] Thirty-second dual-deck window has zero drop/overflow/underflow/late
   deltas.
 - [x] Thirty-minute exact-image dual-active MP3 seek/restart soak passes.
+- [x] Targeted three-hour dual-MP3 limiter/WDT soak holds one boot epoch with
+  zero PCM underrun or active UAC loss and no observable USB/controller/output
+  failure.
+- [x] Fourteen rare output-late warnings analyzed; maximum `12,169 us` versus
+  `11,610 us` warning threshold, with no downstream failure and no justified
+  code change.
 
 ## Electrical blocker
 

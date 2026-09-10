@@ -1,6 +1,6 @@
 # P4 Release Remediation Audit
 
-Status: **active P4-only tracker, reconciled 2026-09-09**.
+Status: **active P4-only tracker, reconciled 2026-09-11**.
 
 The full legacy audit is retained in
 [`ARCHIVE_FIXEVI_REMEDIATION_AUDIT.md`](ARCHIVE_FIXEVI_REMEDIATION_AUDIT.md).
@@ -8,12 +8,13 @@ Only the rows below remain relevant to the active product.
 
 ## Review remediation closed in source at `c8b2711`
 
-The current source candidate fixes audio worker teardown/ownership, output-path
-lock blocking, controller connection delivery convergence, UAC cleanup/write
-races, per-packet USB loss accounting and invalid low hardware sample-rate
-selection. The full P4 host suite, UI simulator, keylock soak, ESP-IDF 6.0.2
-product/harness builds and signed-package verification pass. Hardware
-installation, fault injection, timing and listening acceptance remain open.
+The `c8b2711` review checkpoint fixes audio worker teardown/ownership,
+output-path lock blocking, controller connection delivery convergence, UAC
+cleanup/write races, per-packet USB loss accounting and invalid low hardware
+sample-rate selection. The full P4 host suite, UI simulator, keylock soak,
+ESP-IDF 6.0.2 product/harness builds and signed-package verification pass. Its
+source protections are retained by the later installed `77d723c` checkpoint;
+the remaining fault-injection, worst-case timing and listening gates stay open.
 
 Evidence:
 [`validation/CODE_REVIEW_P4_REMEDIATION_20260906.md`](validation/CODE_REVIEW_P4_REMEDIATION_20260906.md).
@@ -27,6 +28,25 @@ Evidence:
 
 Evidence:
 [`validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md).
+
+## Limiter telemetry WDT regression closed at `77d723c`
+
+The limiter-statistics path no longer holds the audio-engine lock while
+updating shared telemetry. The complete P4 host suite, clean ESP-IDF v6.0.2
+signed build and signed-package verification passed. Exact image
+`RC2-116-g77d723c` was installed on `ota_1` and completed a targeted three-hour
+continuous dual-MP3 loop on one boot epoch without watchdog reset, PCM
+underrun or active UAC loss and without observable output or USB/controller
+failure.
+
+Fourteen `AUDIO_OUTPUT_LATE` warnings were recorded over 1,999,090 submitted
+UAC blocks. The maximum was `12,169 us` against an `11,610 us` warning
+threshold. Source and phase-counter analysis supports bounded blocking-I2S
+pacing/scheduler jitter, while no downstream failure supports changing code.
+The broader combined-load timing/listening gate remains open.
+
+Evidence:
+[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
 ## Software-complete, hardware gate still open
 

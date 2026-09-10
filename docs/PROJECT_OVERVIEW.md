@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: **active P4-only overview, updated 2026-09-09**.
+Status: **active P4-only overview, updated 2026-09-11**.
 
 Pajoniiir is a standalone dual-deck DJ system. A single ESP32-P4
 JC4880P443C_I_W board owns playback, USB, controller state, mixer/DSP, display,
@@ -24,21 +24,24 @@ decisions.
 
 ## Current source and installed baseline
 
-The current source candidate is `RC2-114-gc8b2711` from commit `c8b2711`. It is
-pushed, host/build validated and packaged as a verified signed P4 bundle, but it
-has not been installed or exercised on hardware.
+The current validated firmware and latest installed hardware candidate is
+`RC2-116-g77d723c` from commit `77d723c`, on `ota_1`. It passed:
 
-The latest installed and hardware-tested image is `RC2-113-gaf597d8` from
-commit `af597d8`, on `ota_1`. It passed:
-
+- the complete P4 host suite, clean ESP-IDF v6.0.2 signed build and package
+  verification;
 - signed OTA and exact-image identity verification;
-- USB0 mount plus FLX4 MIDI, MIDI OUT and UAC activation;
-- the first remote PLAY after more than two minutes of idle/screensaver;
-- a 30-second dual-deck counter window with zero new drop, overflow,
-  underflow or output-late events.
+- USB0 mount plus FLX4 profile, MIDI IN/OUT and UAC activation;
+- a targeted three-hour continuous dual-MP3 limiter/WDT soak with one boot
+  epoch and no watchdog reset, PCM underrun or active UAC loss and no
+  observable USB/controller/output failure.
 
-The earlier exact candidate also passed a 30-minute dual-active MP3
-seek/restart soak. These focused results do not make the branch release-ready.
+The run recorded 14 rare output-late warnings over 1,999,090 submitted UAC
+blocks. The worst was 12,169 us against the deliberately sensitive 11,610 us
+warning threshold, with no downstream failure. Inspection points to bounded
+I2S pacing/scheduler jitter rather than a limiter or DSP defect, so no code
+change was made. An earlier exact candidate also passed a 30-minute dual-active
+MP3 seek/restart soak. These focused results do not make the branch
+release-ready.
 The complete evidence and remaining gates are in
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) and
 [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).

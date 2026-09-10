@@ -1,6 +1,6 @@
 # P4 Development Plan
 
-Status: **active P4-only plan, reconciled 2026-09-09**.
+Status: **active P4-only plan, reconciled 2026-09-11**.
 
 ## Current position
 
@@ -9,9 +9,13 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-114-gc8b2711` is the pushed, verified signed source candidate and still
-  requires installation plus focused hardware smoke;
-- `RC2-113-gaf597d8` is the latest installed and focused hardware-smoked image;
+- `RC2-116-g77d723c` is the pushed, verified signed firmware checkpoint and
+  latest installed hardware image on `ota_1`;
+- its targeted three-hour continuous dual-MP3 limiter/WDT soak passed without
+  reset, underrun, active UAC loss or USB/controller loss;
+- 14 rare output-late warnings were investigated as bounded I2S
+  pacing/scheduler jitter with no downstream failure, so no code change was
+  made;
 - the 30-minute exact-image dual-active MP3 gate is closed.
 
 No further architecture conversion is planned. Remaining work is ordered

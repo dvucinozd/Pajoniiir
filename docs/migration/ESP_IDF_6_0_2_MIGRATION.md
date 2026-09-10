@@ -1,6 +1,6 @@
 # ESP-IDF 6.0.2 P4 Acceptance Status
 
-Status: **active P4-only migration acceptance, reconciled 2026-09-09**.
+Status: **active P4-only migration acceptance, reconciled 2026-09-11**.
 
 The full historical migration record is
 [`ARCHIVE_ESP_IDF_6_0_2_MIGRATION.md`](ARCHIVE_ESP_IDF_6_0_2_MIGRATION.md).
@@ -15,10 +15,13 @@ SDK.
 - [x] Headless LVGL exact-screenshot gate passes for the implemented UI.
 - [x] Clean P4 `build_signed` passes under ESP-IDF v6.0.2.
 - [x] Signed OTA packaging and verification pass.
-- [x] Current `RC2-114-gc8b2711` source candidate passes automated/build gates
-  and signed-package verification.
-- [x] Exact `RC2-113-gaf597d8` image boots from the opposite OTA slot.
-- [ ] Install and focused-smoke `RC2-114-gc8b2711` on P4 hardware.
+- [x] Validated `RC2-116-g77d723c` firmware checkpoint passes automated/build
+  gates and signed-package verification.
+- [x] Exact `RC2-116-g77d723c` image installs and boots from `ota_1` through
+  signed OTA.
+- [x] Targeted three-hour continuous dual-MP3 limiter/WDT soak passes with one
+  boot epoch and no watchdog reset, PCM underrun or active UAC loss and no
+  observable USB/controller/output failure.
 
 ## Hardware gates already demonstrated
 
@@ -31,6 +34,7 @@ SDK.
 - [x] Thirty-minute exact-image dual-active MP3 seek/restart soak.
 - [x] First remote PLAY after the two-minute screensaver timeout.
 - [x] Playback-scoped UAC data-loss reporting on the exact image.
+- [x] Targeted three-hour limiter/WDT regression on `RC2-116-g77d723c`.
 
 ## Hardware gates still open
 

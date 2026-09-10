@@ -14,12 +14,14 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
-> source candidate is `RC2-114-gc8b2711`; it is pushed, built and packaged as a
-> verified signed bundle, but has not been installed. The latest hardware-tested
-> image is `RC2-113-gaf597d8` on `ota_1`; it passed signed OTA, USB0/FLX4 startup,
-> first remote PLAY after the two-minute screensaver and a clean dual-deck UAC
-> counter window. An earlier exact image also passed a 30-minute dual-active MP3
-> seek/restart soak. The branch remains
+> validated firmware and installed hardware candidate is
+> `RC2-116-g77d723c` on `ota_1`.
+> Its signed OTA and exact-image checks passed, followed by a targeted
+> three-hour continuous dual-MP3 limiter/WDT soak with one boot epoch, no
+> watchdog reset, PCM underrun or active UAC loss and no observable
+> USB/controller/output failure. Fourteen rare output-late warnings were below
+> fault severity and had no downstream failure; their analysis does not justify
+> a code change. The branch remains
 > **not release-qualified** until protected 5 V/VBUS, repeated USB recovery,
 > verified WAV/FLAC, on-device timing/listening, guarded OTA, multi-hour and
 > closed-enclosure gates pass.
@@ -87,7 +89,7 @@ committed and must remain reproducible.
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
 - [OTA procedure](docs/OTA-UPDATE.md)
 - [FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
-- [Latest exact-image focused smoke](docs/validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md)
+- [Latest exact-image three-hour soak](docs/validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
 - [30-minute exact-image soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
 
 Superseded plans and checklists are retained only as files prefixed with

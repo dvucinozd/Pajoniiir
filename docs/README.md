@@ -1,6 +1,6 @@
 # Pajoniiir P4 Documentation
 
-Status: **active P4-only index, updated 2026-09-09**.
+Status: **active P4-only index, updated 2026-09-11**.
 
 ## Start here
 
@@ -30,6 +30,7 @@ Status: **active P4-only index, updated 2026-09-09**.
 
 ## Latest focused validation
 
+- [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
 - [`validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md)
 - [`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`](validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
 - [`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md)

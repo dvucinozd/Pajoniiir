@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-09**
+Saved: **2026-09-11**
 
 Status: **active P4-only operational handoff**.
 
@@ -8,62 +8,61 @@ Status: **active P4-only operational handoff**.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Current source checkpoint: `c8b27116d1d261e15357f89ee2928f333b75d291`
-- Current source version: `RC2-114-gc8b2711`
-- Current signed bundle: `2,453,116` bytes, SHA-256
-  `e19815a1c843c64f2f10f420e13906309d779ca18a4fdbc1b39136f34c551510`
-- Current application: `2,452,928` bytes, SHA-256
-  `7cdaf7ec9b5d6b8d386121c0ed9e4b658b182963be86073fadafc9c148ae70e8`
+- Validated firmware checkpoint:
+  `77d723c8d19b1a859b9f5b4fa8421928250c68d3`
+- Validated firmware version: `RC2-116-g77d723c`
+- Current signed bundle: `2,452,860` bytes, SHA-256
+  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
+- Current application: `2,452,672` bytes, SHA-256
+  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
 - Current bundle path:
-  `releases/pajoniiir-RC2-114-gc8b2711/main-deck-p4.ddjota`
-- Current source validation: automated and signed-package gates pass; not
-  installed or hardware-smoked
+  `releases/pajoniiir-RC2-116-g77d723c/main-deck-p4.ddjota`
+- Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2
+  signed build, package verification, signed OTA and targeted three-hour
+  limiter/WDT hardware soak pass
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-113-gaf597d8` from commit `af597d8`
+- Latest installed version: `RC2-116-g77d723c` from commit `77d723c`
 - Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,451,840` bytes
+- Application: `2,452,672` bytes
 - Application SHA-256:
-  `e9966017d078dece284ee1e8c7813ea1820ebc65022a618101572641b4d40eca`
-- Signed bundle: `2,452,028` bytes
+  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
+- Signed bundle: `2,452,860` bytes
 - Signed bundle SHA-256:
-  `6858a36f714e61926f12f88ad4c3d3b506b9a5fb728f28e3f0c43931a29a3e17`
+  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
 - Bundle path:
-  `releases/pajoniiir-RC2-113-gaf597d8/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-116-g77d723c/main-deck-p4.ddjota`
 
-The latest installed image currently has USB0 mounted, the direct FLX4 profile active,
-MIDI IN available, direct USB audio available, zero USB host daemon errors and
-zero service-log drops. Both decks were deliberately stopped at the end of the
-last smoke.
+During the latest captured hardware run, USB0 remained mounted and the direct
+FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
+errors and zero service-log drops. Both decks continuously looped MP3 material.
 
 ## Latest closed gate
 
-Commit `c8b2711` closes the current P4 review remediations with host/build
-evidence: safe audio worker teardown, nonblocking EOF/scratch bookkeeping,
-durable controller connection delivery, UAC producer/cleanup ownership,
-per-packet loss diagnostics and valid 44.1/48 kHz hardware-rate selection. Its
-signed package verifies, but the image has not been installed; start the next
-software/hardware session by installing it and running a focused regression
-smoke before relying on the broader matrix below.
-
-The latest installed baseline remains `af597d8`:
-
-Commit `af597d8` separates physical wake-only controls from authenticated
-remote controls and adds authoritative PLAY state confirmation. It also makes
-UAC data-loss status playback-session scoped while retaining lifetime
-underflow telemetry.
+Commit `77d723c` removes the limiter-telemetry lock cycle that could deadlock
+the audio task and trigger its watchdog. The exact image was installed through
+signed OTA and then ran continuous dual-MP3 playback for approximately three
+hours four minutes on boot epoch `389`.
 
 On the exact image:
 
-- both decks remained idle for more than the 120-second screensaver timeout;
-- exactly one web PLAY returned HTTP 200 and Deck 1 entered PLAYING;
-- lifetime idle underflow remained visible while `data_loss=false`, flags `0`;
-- a 30-second dual-deck window added zero drop, overflow, underflow and
-  output-late counts;
-- both decks stopped cleanly and both USB roots remained active.
+- no watchdog reset, panic or brownout occurred;
+- PCM underruns, UAC drops/overflows/packet failures, active UAC loss,
+  controller disconnects and USB daemon errors remained zero, and no output
+  failure was observed;
+- 1,999,090 UAC blocks were submitted;
+- 14 rare output-late warnings reached at most `12,169 us` against an
+  `11,610 us` warning threshold, without any downstream failure;
+- source and phase-counter inspection supports bounded blocking-I2S
+  pacing/scheduler jitter rather than a limiter or DSP defect, so no firmware
+  change was made.
+
+This closes the targeted limiter/WDT regression only. The full combined-load
+soak remains open because scratch, Master Tempo, FX, web traffic, mixed formats
+and controlled reconnects were not all exercised.
 
 Evidence:
-[`../validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](../validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md).
+[`../validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](../validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
 ## Current release blocker
 
@@ -169,6 +168,15 @@ row or successful parser unit test is not codec hardware acceptance.
 Optimize source only when measured hardware evidence violates a defined
 budget or produces an audible defect.
 
+The targeted `RC2-116` run established a useful baseline: 14 warnings over
+1,999,090 submitted UAC blocks, maximum `12,169 us` versus the `11,610 us`
+warning threshold, with zero downstream failure. Reset/capture phase and sink
+counters at the start of the later declared stress run and correlate any new
+warning with the active operation before changing code. The internal main-sink
+counters are not currently serialized by `/api/status`; expose them or capture
+them through an equivalent exact-image diagnostic before claiming the strict
+sink-error gate.
+
 ## Session 5 — Wi-Fi, web, profile and OTA fault matrix
 
 1. Confirm the service AP and mDNS address.
@@ -204,6 +212,10 @@ Include:
 Acceptance requires one boot epoch, no brownout/reset, no lost media or
 controller, no latched state, no audible defect and no increase in gated audio,
 USB or service-log failure counters.
+
+The 2026-09-10 three-hour dual-MP3 loop is a passed targeted sub-gate for the
+limiter/WDT regression. It does not close this session because the complete
+stress mix and predeclared reconnect checkpoints were not included.
 
 ## Session 7 — final enclosure and release
 
