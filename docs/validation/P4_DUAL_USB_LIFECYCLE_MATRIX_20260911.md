@@ -2,8 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — remediation cold-boot retests R-A1 and R-A2 PASS; A3
-is the next lifecycle cycle**.
+Status: **IN PROGRESS — cold-boot Group A complete after remediation; Group B
+warm/software reboot is next**.
 
 ## Exact test image
 
@@ -41,7 +41,7 @@ load/decode.
 
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
-| A | Cold boot with USB0 and USB1 already attached | 4 | 0 | Original A1 observation/A2 fail; remediation R-A1 and R-A2 PASS; A3-A4 pending |
+| A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
 | B | Warm/software reboot with both attached | 4 | 0 | pending |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
@@ -275,3 +275,55 @@ Status: **PASS**.
 R-A1 and R-A2 therefore satisfy the remediation stop gate. Continue with A3
 and A4 on the same exact image; do not reinterpret the historical original A2
 failure as a pass.
+
+### A3 — third accepted cold boot with both devices attached
+
+Status: **PASS**.
+
+- Boot 397 reported the expected `POWERON` reset reason on exact image
+  `RC2-118-g6c7a0f6` from `ota_0`.
+- USB0 mounted at `1,388 ms`; the 100-track Library loaded at `1,439 ms`.
+- DDJ-FLX4 connected at `1,933 ms`; profile activation completed at
+  `1,940 ms` with MIDI IN/OUT and USB Audio active.
+- Before playback, controller/storage disconnects, daemon/recovery/queue
+  failures, UAC drop/overflow/packet failures, PCM underruns, output-late
+  count, active data-loss flags and current TWDT ISR flag were all zero/clear.
+- The operator loaded one track per deck, played both and confirmed audible
+  output.
+- Across two active snapshots 10 seconds apart, both decks remained `PLAYING`
+  and each position advanced by `10,072 ms`.
+- UAC submitted blocks advanced by 1,735 and the ring remained `nominal`
+  (`1,016 -> 992` queued frames). Underflow, drop, overflow, packet-failure,
+  packet-lost, PCM-underrun and output-late deltas were all zero.
+- Controller/storage disconnect, daemon-error, recovery-failure,
+  runtime-queue-failure and service-log-drop deltas were all zero.
+- `data_loss=false`, `data_loss_flags=0` and current TWDT ISR flag false at
+  both active samples.
+
+### A4 — fourth accepted cold boot with both devices attached
+
+Status: **PASS**.
+
+- Boot 398 reported the expected `POWERON` reset reason on exact image
+  `RC2-118-g6c7a0f6` from `ota_0`.
+- USB0 mounted at `1,519 ms`; the 100-track Library loaded at `1,572 ms`.
+- DDJ-FLX4 connected at `1,931 ms`; profile activation completed at
+  `1,939 ms` with MIDI IN/OUT and USB Audio active.
+- Before playback, controller/storage disconnects, daemon/recovery/queue
+  failures, UAC drop/overflow/packet failures, PCM underruns, output-late
+  count, active data-loss flags and current TWDT ISR flag were all zero/clear.
+- The operator loaded one track per deck, played both and confirmed audible
+  output.
+- Across two active snapshots 10 seconds apart, both decks remained `PLAYING`
+  and each position advanced by `10,077 ms`.
+- UAC submitted blocks advanced by 1,735 and the ring remained `nominal`
+  (`897 -> 1,224` queued frames). Underflow, drop, overflow, packet-failure,
+  packet-lost, PCM-underrun and output-late deltas were all zero.
+- Controller/storage disconnect, daemon-error, recovery-failure,
+  runtime-queue-failure and service-log-drop deltas were all zero.
+- `data_loss=false`, `data_loss_flags=0` and current TWDT ISR flag false at
+  both active samples.
+
+Group A is complete on the remediated exact image: four accepted cold boots
+with USB0 and USB1 continuously attached all reached dual-deck playback with
+clear active audio-loss flags. Proceed to Group B warm/software reboot cycles.
