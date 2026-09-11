@@ -35,10 +35,11 @@ SDK.
 - [x] First remote PLAY after the two-minute screensaver timeout.
 - [x] Playback-scoped UAC data-loss reporting on the exact image.
 - [x] Targeted three-hour limiter/WDT regression on `RC2-116-g77d723c`.
+- [x] Current bench protected and backfeed-free 5 V/dual-VBUS measurement gate
+  passed by operator report.
 
 ## Hardware gates still open
 
-- [ ] Measured protected and backfeed-free 5 V/VBUS topology.
 - [ ] Cold/warm boot, both insertion orders and repeated USB0/USB1 lifecycle
   matrix.
 - [ ] USB0 removal during active load/decode and hands-free reboot recovery.

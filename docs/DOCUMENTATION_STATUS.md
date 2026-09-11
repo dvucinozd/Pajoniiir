@@ -77,17 +77,22 @@ The branch is **not release-qualified and must not be merged yet**. The code,
 host tests, signed build and focused product paths are healthy; the critical
 path is now hardware qualification:
 
-1. measured, protected and backfeed-free common 5 V/VBUS distribution;
-2. complete cold/warm boot, insertion-order and repeated USB0/USB1 recovery
+1. complete cold/warm boot, insertion-order and repeated USB0/USB1 recovery
    matrix, including USB0 removal during active load/decode;
-3. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
-4. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
-5. guarded P4 web, profile and pull/push OTA fault/recovery matrix;
-6. multi-hour combined-load soak;
-7. closed-enclosure power, thermal, RF and wired-recovery acceptance;
-8. production credential, signing-key, rotation and optional irreversible
+2. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
+3. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
+4. guarded P4 web, profile and pull/push OTA fault/recovery matrix;
+5. multi-hour combined-load soak;
+6. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
+   repetition of the passed bench electrical measurements;
+7. production credential, signing-key, rotation and optional irreversible
    security decisions;
-9. exact final-candidate full functional smoke, documentation freeze and tag.
+8. exact final-candidate full functional smoke, documentation freeze and tag.
+
+The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
+[`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
+Raw numeric readings were not preserved, so the result applies only to the
+unchanged current bench wiring and must be repeated in the final enclosure.
 
 The complete ordered handoff is
 [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).

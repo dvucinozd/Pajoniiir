@@ -64,17 +64,19 @@ and controlled reconnects were not all exercised.
 Evidence:
 [`../validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](../validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
-## Current release blocker
+## Current release gate
 
-The product is not release-qualified because the common 5 V rail and both
-downstream VBUS branches have not been electrically measured or proven
-protected against backfeed and overcurrent. Earlier bench wiring produced a
-raw brownout during dual-deck load. The improved supply has passed focused and
-30-minute runs, but supply quality alone does not prove the installed wiring.
+The current bench common 5 V rail and both downstream VBUS branches passed the
+requested electrical measurements by operator report on 2026-09-11. The
+earlier P0 bench blocker is closed for the unchanged current wiring. Raw
+numeric readings were not preserved, so the test must be repeated if the
+wiring or supply changes and with the final enclosure configuration.
 
-Do not merge the branch or close the enclosure until this gate passes.
+The next release gate is the complete 50-cycle dual-USB lifecycle/recovery
+matrix. Do not merge the branch until that and the other mandatory P1 gates
+pass.
 
-## Session 1 — electrical qualification
+## Session 1 — electrical qualification — PASS for current bench wiring
 
 Required equipment: at minimum a trusted multimeter or USB power meter capable
 of observing voltage/current on each branch. An oscilloscope is preferable for
@@ -101,6 +103,11 @@ Acceptance:
 - no brownout or reset;
 - measured rail remains inside the device and board limits throughout startup
   and sustained load.
+
+Result on 2026-09-11: operator-confirmed PASS for all requested measurements;
+readings were reported as ideal or inside the allowed limits. See
+[`../validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](../validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
+Final-enclosure repetition remains open.
 
 ## Session 2 — complete dual-USB lifecycle matrix
 

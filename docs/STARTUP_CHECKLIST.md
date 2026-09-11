@@ -31,15 +31,16 @@ Status: **active P4-only checklist, reconciled 2026-09-11**.
   `11,610 us` warning threshold, with no downstream failure and no justified
   code change.
 
-## Electrical blocker
+## Electrical qualification
 
-- [ ] Verify common ground.
-- [ ] Verify independent sources cannot backfeed each other.
-- [ ] Isolate native VBUS and provide protected, current-limited USB0 and USB1
+- [x] Verify common ground.
+- [x] Verify independent sources cannot backfeed each other.
+- [x] Isolate native VBUS and provide protected, current-limited USB0 and USB1
   device-side VBUS.
-- [ ] Measure 5 V at idle, cold start, enumeration, track load and sustained
+- [x] Measure 5 V at idle, cold start, enumeration, track load and sustained
   dual-deck playback.
-- [ ] Record maximum and sustained current and brownout margin.
+- [x] Confirm maximum and sustained current and brownout margin are inside the
+  defined limits; raw numeric readings were not preserved.
 - [ ] Repeat measurements in final enclosure wiring.
 
 ## Dual-USB lifecycle matrix

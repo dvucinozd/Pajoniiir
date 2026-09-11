@@ -68,12 +68,33 @@ static void test_idle_and_playback_start_establish_baseline(void)
     assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
     r = sample(&monitor, true, 12u, 1024u, 5u, 8u, 213585u);
     assert(r.flags == (AUDIO_UAC_HEALTH_DROPPED |
-                       AUDIO_UAC_HEALTH_OVERFLOW |
-                       AUDIO_UAC_HEALTH_UNDERFLOW));
+                       AUDIO_UAC_HEALTH_OVERFLOW));
     assert(r.active_data_loss_flags == r.flags);
-    r = sample(&monitor, false, 13u, 0u, 5u, 8u, 999999u);
+    assert(r.delta_underflow_frames == 0u);
+    r = sample(&monitor, true, 13u, 1024u, 5u, 8u, 213588u);
+    assert(r.flags == AUDIO_UAC_HEALTH_UNDERFLOW);
+    assert(r.delta_underflow_frames == 3u);
+    assert(r.active_data_loss_flags == (AUDIO_UAC_HEALTH_DROPPED |
+                                        AUDIO_UAC_HEALTH_OVERFLOW |
+                                        AUDIO_UAC_HEALTH_UNDERFLOW));
+    r = sample(&monitor, false, 14u, 0u, 5u, 8u, 999999u);
     assert(r.flags == AUDIO_UAC_HEALTH_NONE);
     assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
+}
+
+static void test_startup_grace_does_not_hide_sustained_underflow(void)
+{
+    audio_uac_health_monitor_t monitor = {0};
+    (void)sample(&monitor, false, 10u, 0u, 0u, 0u, 100000u);
+    audio_uac_health_result_t r = sample(
+        &monitor, true, 11u, 100u, 0u, 0u, 100100u);
+    assert(r.flags == AUDIO_UAC_HEALTH_PRESSURE_LOW);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
+    r = sample(&monitor, true, 12u, 200u, 0u, 0u, 100200u);
+    assert(r.flags == (AUDIO_UAC_HEALTH_PRESSURE_LOW |
+                       AUDIO_UAC_HEALTH_UNDERFLOW));
+    assert(r.delta_underflow_frames == 100u);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_UNDERFLOW);
 }
 
 static void test_counter_reset_does_not_wrap(void)
@@ -100,6 +121,7 @@ int main(void)
     test_ring_thresholds_and_states();
     test_pressure_and_active_data_loss();
     test_idle_and_playback_start_establish_baseline();
+    test_startup_grace_does_not_hide_sustained_underflow();
     test_counter_reset_does_not_wrap();
     puts("audio_uac_health tests passed");
     return 0;

@@ -1,6 +1,6 @@
 # Hardware Wiring
 
-Status: **active P4-only wiring, updated 2026-09-09**.
+Status: **active P4-only wiring, updated 2026-09-11**.
 
 ## Product connections
 
@@ -17,9 +17,13 @@ No inter-board data or audio wiring is part of the active product.
 ## Mandatory downstream VBUS design
 
 The bench has demonstrated that the firmware can run USB0 storage and USB1
-FLX4 together. It has not yet electrically qualified the permanent power path.
-Feeding `VCC5V` on JP1 pin 2 powers the P4 board but must not be assumed to
-provide safe or adequate downstream VBUS.
+FLX4 together. On 2026-09-11 the operator confirmed that the current bench
+wiring passed the requested continuity, isolation/backfeed, voltage, drop and
+current checks. Raw numeric readings were not preserved, so this acceptance
+applies only to the unchanged bench configuration and must be repeated after a
+wiring/supply change and in the final enclosure. Feeding `VCC5V` on JP1 pin 2
+powers the P4 board but must not by itself be assumed to provide safe or
+adequate downstream VBUS.
 
 Use one common regulated supply and an independently protected high-side output
 for each downstream USB port:
@@ -67,6 +71,9 @@ cable, and verify cooling and RF behavior with the enclosure closed.
 
 Detailed acceptance limits and the bench sequence are in
 [`validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md)
-and [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
+and the passed current-bench record is
+[`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
+The continuation plan is in
+[`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
 The superseded dual-board wiring tables are preserved in
 [`ARCHIVE_HARDWARE_WIRING_LEGACY_DUAL_PROCESSOR.md`](ARCHIVE_HARDWARE_WIRING_LEGACY_DUAL_PROCESSOR.md).

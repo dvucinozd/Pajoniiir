@@ -50,12 +50,13 @@ The complete evidence and remaining gates are in
 
 Before release, complete and record:
 
-1. protected 5 V and independently current-limited downstream VBUS validation;
-2. repeated USB0/USB1 hotplug and recovery matrix;
-3. real WAV and FLAC load, seek, cache and playback checks;
-4. on-device audio deadline, DSP and listening acceptance;
-5. guarded web-control and push/pull OTA acceptance;
-6. multi-hour dual-deck soak and closed-enclosure thermal/power/RF test;
+1. repeated USB0/USB1 hotplug and recovery matrix;
+2. real WAV and FLAC load, seek, cache and playback checks;
+3. on-device audio deadline, DSP and listening acceptance;
+4. guarded web-control and push/pull OTA acceptance;
+5. multi-hour combined-load soak;
+6. closed-enclosure thermal/power/RF test, including repetition of the passed
+   bench 5 V/VBUS measurements;
 7. production security decision and final clean exact-commit signed build.
 
 ## Source of truth

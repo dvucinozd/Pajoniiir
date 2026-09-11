@@ -63,14 +63,18 @@ Evidence:
 
 ## Mandatory acceptance order
 
-1. measured protected 5 V/VBUS;
-2. 50-cycle dual-USB lifecycle/recovery matrix;
-3. real MP3/WAV/FLAC bounded-cache stress;
-4. P4 audio deadline/listening and detailed DSP/FX smoke;
-5. guarded web/profile/OTA fault matrix;
-6. multi-hour combined-load run;
-7. closed-enclosure power/thermal/RF/service acceptance;
-8. exact final-candidate full smoke and release record.
+1. 50-cycle dual-USB lifecycle/recovery matrix;
+2. real MP3/WAV/FLAC bounded-cache stress;
+3. P4 audio deadline/listening and detailed DSP/FX smoke;
+4. guarded web/profile/OTA fault matrix;
+5. multi-hour combined-load run;
+6. closed-enclosure power/thermal/RF/service acceptance, including repetition
+   of the passed bench electrical measurements;
+7. exact final-candidate full smoke and release record.
+
+The current bench protected 5 V/VBUS gate passed by operator report on
+2026-09-11. See
+[`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
 
 No further source optimization is authorized solely by an old audit note; a
 new code change must be tied to a reproducible current P4 failure or a measured

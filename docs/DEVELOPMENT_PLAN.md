@@ -16,6 +16,8 @@ The direct dual-root product path is implemented:
 - 14 rare output-late warnings were investigated as bounded I2S
   pacing/scheduler jitter with no downstream failure, so no code change was
   made;
+- the current bench common 5 V and dual-VBUS measurement gate is
+  operator-confirmed PASS;
 - the 30-minute exact-image dual-active MP3 gate is closed.
 
 No further architecture conversion is planned. Remaining work is ordered
@@ -24,8 +26,8 @@ real defect.
 
 ## Ordered remaining phases
 
-Phase 1 is complete in this documentation checkpoint. Phases 2--11 remain
-deferred for later sessions.
+Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
+is now in progress; phases 4--11 remain deferred for later sessions.
 
 | Phase | Work | Exit criterion |
 | --- | --- | --- |
@@ -53,8 +55,8 @@ deferred for later sessions.
   reconnects and explicit active-load/decode removals.
 - Preserve raw counters, firmware version, slot, boot epoch and operator-visible
   or audible results for every acceptance session.
-- Do not merge the feature branch before the electrical and full recovery gates
-  pass.
+- Do not merge the feature branch before the full recovery gate and remaining
+  mandatory qualification pass.
 
 ## Deferred work
 

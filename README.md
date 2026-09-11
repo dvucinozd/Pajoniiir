@@ -21,10 +21,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > watchdog reset, PCM underrun or active UAC loss and no observable
 > USB/controller/output failure. Fourteen rare output-late warnings were below
 > fault severity and had no downstream failure; their analysis does not justify
-> a code change. The branch remains
-> **not release-qualified** until protected 5 V/VBUS, repeated USB recovery,
-> verified WAV/FLAC, on-device timing/listening, guarded OTA, multi-hour and
-> closed-enclosure gates pass.
+> a code change. The current bench 5 V/dual-VBUS measurement gate is
+> operator-confirmed PASS. The branch remains **not release-qualified** until
+> repeated USB recovery, verified WAV/FLAC, on-device timing/listening, guarded
+> OTA, combined-load and closed-enclosure gates pass.
 
 ## Current capabilities
 

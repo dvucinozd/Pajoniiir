@@ -93,6 +93,7 @@ audio_uac_health_result_t audio_uac_health_sample(
 
     if (!playback_active) {
         monitor->active_data_loss_flags = AUDIO_UAC_HEALTH_NONE;
+        monitor->startup_underflow_grace_pending = false;
         result.delta_dropped_blocks = 0u;
         result.delta_overflow_frames = 0u;
         result.delta_underflow_frames = 0u;
@@ -101,6 +102,7 @@ audio_uac_health_result_t audio_uac_health_sample(
     }
     if (playback_started) {
         monitor->active_data_loss_flags = AUDIO_UAC_HEALTH_NONE;
+        monitor->startup_underflow_grace_pending = true;
         result.delta_dropped_blocks = 0u;
         result.delta_overflow_frames = 0u;
         result.delta_underflow_frames = 0u;
@@ -109,6 +111,20 @@ audio_uac_health_result_t audio_uac_health_sample(
 
     audio_uac_ring_state_t state = audio_uac_ring_state(
         playback_active, submitted_blocks, queued_frames, capacity_frames);
+    /* The UAC isochronous consumer runs continuously and zero-fills an empty
+     * ring while playback is idle. The first producer transition can therefore
+     * leave an expected empty-read delta between the sample that observes PLAY
+     * and the sample that observes the primed ring. Ignore that delta exactly
+     * once, and only when the follow-up sample proves the ring recovered. A
+     * ring that remains low/unavailable still reports the underflow, as does
+     * every post-prime interval. */
+    if (!playback_started && monitor->startup_underflow_grace_pending) {
+        if (state == AUDIO_UAC_RING_NOMINAL ||
+            state == AUDIO_UAC_RING_HIGH) {
+            result.delta_underflow_frames = 0u;
+        }
+        monitor->startup_underflow_grace_pending = false;
+    }
     if (state == AUDIO_UAC_RING_LOW) result.flags |= AUDIO_UAC_HEALTH_PRESSURE_LOW;
     else if (state == AUDIO_UAC_RING_HIGH) result.flags |= AUDIO_UAC_HEALTH_PRESSURE_HIGH;
     if (result.delta_dropped_blocks > 0u) result.flags |= AUDIO_UAC_HEALTH_DROPPED;
