@@ -2,9 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **PAUSED — first-playback UAC underflow flag reproduced on A1 and A2;
-local monitor fix passes host tests/build, but exact-image hardware retest is
-required before A3**.
+Status: **IN PROGRESS — remediation cold-boot retests R-A1 and R-A2 PASS; A3
+is the next lifecycle cycle**.
 
 ## Exact test image
 
@@ -42,7 +41,7 @@ load/decode.
 
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
-| A | Cold boot with USB0 and USB1 already attached | 4 | 0 | A1 PASS with observation; A2 FAIL release gate (startup underflow reproduced); A3-A4 paused |
+| A | Cold boot with USB0 and USB1 already attached | 4 | 0 | Original A1 observation/A2 fail; remediation R-A1 and R-A2 PASS; A3-A4 pending |
 | B | Warm/software reboot with both attached | 4 | 0 | pending |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
@@ -206,3 +205,73 @@ Validation completed before hardware installation:
 The dirty image is build evidence only. Commit and package the exact resulting
 revision before installation, then repeat A1 and A2 from cold boot. Do not resume
 A3 until both retests keep `data_loss_flags=0` during the first playback session.
+
+## Remediation exact-image retest
+
+### Installation and OTA reboot
+
+- Firmware commit: `6c7a0f69880928184da0d660037a57a6dd344c33`.
+- Installed version/slot: `RC2-118-g6c7a0f6`, `ota_0`.
+- Signed bundle SHA-256:
+  `19fb02de5d19902e078bcdbfdb88e20ea9ac24a65b28de461851f935c262f2ac`.
+- Upload returned `ok=true`, `rebooting=true`; boot 393 reported expected `SW`
+  reset, OTA returned to `idle` with an empty error, and USB0/USB1 recovered.
+
+### R-A1 — first remediation cold boot with both devices attached
+
+Status: **PASS**.
+
+- Boot epoch advanced `393 -> 394` with expected `POWERON` reset reason.
+- USB0 mounted at `1,401 ms`; the 100-track Library loaded at `1,456 ms`.
+- DDJ-FLX4 connected at `1,934 ms`; profile activation completed at
+  `1,941 ms`.
+- Before playback, controller disconnects, daemon/recovery/queue failures,
+  UAC drop/overflow/packet failures, PCM underruns, output-late count, active
+  data-loss flags and current TWDT ISR flag were all zero/clear.
+- The operator loaded one track per deck, played both and confirmed audible
+  MAIN plus FLX4 cue.
+- Across two active snapshots 10 seconds apart, both decks remained `PLAYING`,
+  1,737 UAC blocks were submitted, the ring remained `nominal`
+  (`1,126 -> 1,261` frames), and underflow/drop/overflow/packet/PCM/late,
+  daemon-error and runtime-queue-failure deltas were all zero.
+- `data_loss=false` and `data_loss_flags=0` at both active samples: the original
+  first-playback false positive did not recur.
+
+The service log also contained two FLX4 disconnect/reconnect actions at about
+128 s and 155 s. The operator confirmed these were intentional manual unplug
+and replug actions during the test, so they are excluded from unexpected-fault
+classification. USB0 remained mounted, playback continued, FLX4 recovered and
+the UAC active data-loss flag stayed clear.
+
+### R-A2 — second remediation cold boot with both devices attached
+
+Status: **PASS**.
+
+- The accepted cycle ran on boot 396 with expected `POWERON` reset reason and
+  exact image `RC2-118-g6c7a0f6` from `ota_0`. An additional `POWERON` boot 395
+  was present in the retained log but was not used as the controlled R-A2
+  sample.
+- USB0 mounted at `1,408 ms`; the 100-track Library loaded at `1,461 ms`.
+- DDJ-FLX4 connected at `1,933 ms`; profile activation completed at
+  `1,940 ms` with MIDI IN/OUT and USB Audio active.
+- The initial controller check showed one successful host recovery request,
+  with zero daemon errors, recovery failures, probe drops, runtime queue
+  failures, controller disconnects, storage disconnects and service-log drops.
+- Browse rotation initially appeared inactive while the empty Overview screen
+  owned the encoder as waveform zoom. A controlled input check proved the USB
+  path live: MIDI packets advanced `8,971 -> 8,991`, with matching semantic
+  events. Pressing browse opened Library, after which track selection worked.
+- The operator loaded one track per deck, played both and confirmed audible
+  output. Across two active snapshots 10 seconds apart, both decks remained
+  `PLAYING` and each position advanced by `10,101 ms`.
+- UAC submitted blocks advanced by 1,740 and the ring remained `nominal`
+  (`1,229 -> 1,253` queued frames). Underflow, drop, overflow, packet-failure,
+  packet-lost, PCM-underrun and output-late deltas were all zero.
+- Controller/storage disconnect, daemon-error, recovery-failure,
+  runtime-queue-failure and service-log-drop deltas were all zero.
+- `data_loss=false`, `data_loss_flags=0` and current TWDT ISR flag false at
+  both active samples. The first-playback false positive did not recur.
+
+R-A1 and R-A2 therefore satisfy the remediation stop gate. Continue with A3
+and A4 on the same exact image; do not reinterpret the historical original A2
+failure as a pass.
