@@ -2,8 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot B1-B2 PASS
-after remediation; B3 is next**.
+Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot B1-B3 PASS
+after remediation; B4 is next**.
 
 ## Exact test image
 
@@ -51,7 +51,7 @@ load/decode.
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
 | A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
-| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 PASS after remediation on boot 402; B3-B4 pending |
+| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 PASS after remediation on boot 402; B3 PASS on boot 403; B4 pending |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | pending |
@@ -514,3 +514,40 @@ B2 is accepted after remediation. The known key-8 `ESP_ERR_NOT_FOUND` remains
 a separate media/catalog consistency defect; this test confirms that it no
 longer contaminates the new playback session's UAC health evidence. Proceed to
 B3 on the same exact image.
+
+### B3 — third external warm reset with both devices attached
+
+Status: **PASS**.
+
+- The operator pressed the board `RST/RESET` button while USB0, USB1 and the
+  common supply remained continuously connected. Boot 403 retained exact image
+  `RC2-121-g7b7b29a` on `ota_1`; this board again reported the external reset
+  line as raw reason `POWERON`.
+- Startup recovery was bounded and automatic: FLX4 connected at 1,478 ms, the
+  expected root-port cycle disconnected it at 1,610 ms, USB0 mounted at
+  1,760 ms, all 100 Library tracks loaded at 1,818 ms, and FLX4 reconnected and
+  activated by 2,131 ms.
+- The startup snapshot had both roots powered, recovery 1 request / 1 success,
+  and zero daemon errors, recovery failures, runtime queue failures,
+  service-log drops, PCM underruns, output-late events, active UAC flags or
+  current TWDT ISR indication.
+- Known-good tracks key 3 (Pearl Jam) and key 10 (Anna Nalick) loaded on D1/D2.
+  Both decks remained `PLAYING` across an active ten-second window and each
+  position advanced by 10,042 ms.
+- UAC submitted blocks advanced by 1,730; its ring remained nominal
+  (`1,058 -> 1,148` frames). Underflow, dropped-block, overflow,
+  packet-failure and packet-lost deltas were all zero. PCM 1/2, output-late,
+  controller/storage disconnect, daemon-error, recovery-failure,
+  runtime-queue-failure and service-log-drop deltas were also zero; active UAC
+  data-loss flags remained clear.
+- The operator confirmed audible physical output, then exercised D1
+  `PLAY/PAUSE` twice on the FLX4 and confirmed that the physical controller
+  stopped and resumed playback correctly. The final snapshot recorded 342 MIDI
+  packets, 344 semantic events, active MIDI output acceptance and no runtime
+  controller disconnect.
+- Both decks were stopped cleanly after the test. USB0 remained mounted, FLX4
+  remained active and the complete boot-403 journal contained zero
+  `UAC_DATA_LOSS`, `AUDIO_UNDERRUN`, `AUDIO_OUTPUT_LATE` or USB-unmount events.
+
+B3 is accepted. Proceed to B4 on the same exact image with both USB devices
+continuously attached.
