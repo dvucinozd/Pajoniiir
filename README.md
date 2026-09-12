@@ -15,16 +15,19 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
 > validated firmware and installed hardware candidate is
-> `RC2-116-g77d723c` on `ota_1`.
-> Its signed OTA and exact-image checks passed, followed by a targeted
-> three-hour continuous dual-MP3 limiter/WDT soak with one boot epoch, no
-> watchdog reset, PCM underrun or active UAC loss and no observable
-> USB/controller/output failure. Fourteen rare output-late warnings were below
-> fault severity and had no downstream failure; their analysis does not justify
-> a code change. The current bench 5 V/dual-VBUS measurement gate is
-> operator-confirmed PASS. The branch remains **not release-qualified** until
-> repeated USB recovery, verified WAV/FLAC, on-device timing/listening, guarded
-> OTA, combined-load and closed-enclosure gates pass.
+> `RC2-121-g7b7b29a` on `ota_1`.
+> Its signed OTA and exact-image checks passed. The earlier
+> `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
+> limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
+> active UAC loss and no observable USB/controller/output failure. Fourteen
+> rare output-late warnings were below fault severity and had no downstream
+> failure; their analysis does not justify a code change. The current bench
+> 5 V/dual-VBUS measurement gate is
+> operator-confirmed PASS. Lifecycle Groups A--E pass, accounting for 21/50
+> controlled cycles and 21 planned physical attachment/reconnect actions. The
+> branch remains **not release-qualified** until the remaining lifecycle,
+> verified WAV/FLAC, on-device timing/listening, guarded OTA, combined-load and
+> closed-enclosure gates pass.
 
 ## Current capabilities
 

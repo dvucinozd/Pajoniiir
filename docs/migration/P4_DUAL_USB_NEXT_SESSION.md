@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-11**
+Saved: **2026-09-12**
 
 Status: **active P4-only operational handoff**.
 
@@ -9,35 +9,35 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `77d723c8d19b1a859b9f5b4fa8421928250c68d3`
-- Validated firmware version: `RC2-116-g77d723c`
-- Current signed bundle: `2,452,860` bytes, SHA-256
-  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
-- Current application: `2,452,672` bytes, SHA-256
-  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
+  `7b7b29a40a8ff154c22a2d5556a81ffdb3993495`
+- Validated firmware version: `RC2-121-g7b7b29a`
+- Current signed bundle: `2,453,116` bytes, SHA-256
+  `91bdb72ba7faf0627e4c7fd3fe94ddbb38df7d84af1b1d0aabd888ac4af3719f`
+- Current application: `2,452,928` bytes, SHA-256
+  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
 - Current bundle path:
-  `releases/pajoniiir-RC2-116-g77d723c/main-deck-p4.ddjota`
-- Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2
-  signed build, package verification, signed OTA and targeted three-hour
-  limiter/WDT hardware soak pass
+  `releases/pajoniiir-RC2-121-g7b7b29a/main-deck-p4.ddjota`
+- Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
+  build, package verification, signed OTA and lifecycle Groups A--E pass; the
+  earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-116-g77d723c` from commit `77d723c`
+- Latest installed version: `RC2-121-g7b7b29a` from commit `7b7b29a`
 - Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,452,672` bytes
+- Application: `2,452,928` bytes
 - Application SHA-256:
-  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
-- Signed bundle: `2,452,860` bytes
+  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
+- Signed bundle: `2,453,116` bytes
 - Signed bundle SHA-256:
-  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
+  `91bdb72ba7faf0627e4c7fd3fe94ddbb38df7d84af1b1d0aabd888ac4af3719f`
 - Bundle path:
-  `releases/pajoniiir-RC2-116-g77d723c/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-121-g7b7b29a/main-deck-p4.ddjota`
 
 During the latest captured hardware run, USB0 remained mounted and the direct
 FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
 errors and zero service-log drops. Both decks continuously looped MP3 material.
 
-## Latest closed gate
+## Earlier firmware soak gate
 
 Commit `77d723c` removes the limiter-telemetry lock cycle that could deadlock
 the audio task and trigger its watchdog. The exact image was installed through
@@ -110,6 +110,18 @@ readings were reported as ideal or inside the allowed limits. See
 Final-enclosure repetition remains open.
 
 ## Session 2 — complete dual-USB lifecycle matrix
+
+Checkpoint 2026-09-12: Groups A--E pass on the installed exact validation
+image `RC2-121-g7b7b29a`, `ota_1`. Progress is 21/50 controlled cycles and 21
+planned physical attachment/reconnect actions. The accepted C1--E5 sequence
+ended on boot 413 with both USB roles healthy and both decks stopped. The first
+D4 attempt was operator-invalidated and the first E3 attempt exposed a harness
+Library-timing race; neither counts. Next, inspect the Library-load trigger and
+extend `tools/run_p4_lifecycle_cycle.ps1` for a deterministic Group F removal
+window before requesting a cable action. Do not ask the operator to target the
+approximately 50--60 ms `USB_MOUNTED` to `LIBRARY_LOADED` interval manually.
+Accepted per-cycle details are in
+[`../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

@@ -2,10 +2,11 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot Group B
-complete after remediation; Group C is next**.
+Status: **IN PROGRESS — Groups A--E complete; Group F is next**.
 
-## Exact test image
+## Test images and current installed image
+
+Opening Group A baseline:
 
 - Firmware commit: `77d723c8d19b1a859b9f5b4fa8421928250c68d3`
 - Installed version: `RC2-116-g77d723c`
@@ -15,17 +16,18 @@ complete after remediation; Group C is next**.
 - Power prerequisite:
   [`P4_POWER_VBUS_ACCEPTANCE_20260911.md`](P4_POWER_VBUS_ACCEPTANCE_20260911.md)
 
-The documentation-only branch successor does not change the installed binary.
 Capture `/api/firmware`, `/api/status` and the diagnostic log before cycle 1
-and after every group. Each cycle must record its boot epoch and operator-visible
-result.
+and after every group. Each cycle must record its exact firmware, boot epoch
+and operator-visible result.
 
-Current B2 remediation image:
+Current installed validation image, used from remediated B2 through E5:
 
 - Firmware commit: `7b7b29a40a8ff154c22a2d5556a81ffdb3993495`
 - Installed version/slot: `RC2-121-g7b7b29a`, `ota_1`
-- Signed image size/SHA-256: 2,452,928 bytes;
+- Application size/SHA-256: 2,452,928 bytes;
   `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
+- Signed bundle size/SHA-256: 2,453,116 bytes;
+  `91bdb72ba7faf0627e4c7fd3fe94ddbb38df7d84af1b1d0aabd888ac4af3719f`
 - Installed by signed push OTA with USB0 and USB1 continuously attached; boot
   402 reports `SW` reset.
 
@@ -46,15 +48,59 @@ The complete gate requires 50 controlled cycles, including at least 20
 independent physical reconnects and explicit USB0 removal during active
 load/decode.
 
+## Guided Groups C--E harness
+
+Groups C--E use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
+to the required cable actions and listening/controller confirmation. The
+harness verifies the exact installed image, empty-boot baseline, attachment
+order, both USB roles, 100-track Library, dual-deck playback progress, UAC ring
+health, full-cycle counter deltas, current-boot service events and absence of a
+reboot. It stops both decks and writes machine-readable JSON plus a short
+Markdown summary under the ignored `tmp/p4-lifecycle` directory.
+
+The two staged attachments produce one or two bounded host recoveries depending
+on whether the second topology change requires another root reconciliation.
+The harness accepts only one to two total requests, requires every request to
+have a matching success and rejects any recovery failure or queue drop.
+
+Before each cycle, disconnect USB0 and USB1, leave the P4 powered, press the
+board reset button and wait for the empty boot. Run from the repository root:
+
+```powershell
+.\tools\run_p4_lifecycle_cycle.ps1 -Group C -Cycle 1 `
+    -ExpectedVersion RC2-121-g7b7b29a
+```
+
+Use `-Group D` for the reverse attachment order and advance `-Cycle` from 1 to
+4. The script prints `ACTION_REQUIRED` for each physical attachment and asks
+for `yes` only after audible MAIN and FLX4 cue output, physical PLAY/PAUSE,
+controller LEDs and absence of latched controls have been confirmed. A failed
+or interrupted run remains evidence only and does not count as an accepted
+matrix cycle. The pure parser/counter logic can be checked without hardware:
+
+```powershell
+.\tools\run_p4_lifecycle_cycle.ps1 -SelfTest
+```
+
+Group E starts with both devices active and both decks stopped; it does not
+require a reboot between cycles. Use `-Group E -Cycle 1` through 5. The harness
+waits for the expected USB0 disconnect/release and one `USB_UNMOUNTED` event,
+requires Library count `0` while absent, verifies FLX4 remains active, then
+requires the same medium to remount with all 100 tracks. While USB0 is absent,
+the storage owner intentionally runs up to eight fast recovery probes before a
+30-second slow cadence. Their count therefore depends on operator timing; the
+harness requires every request to have a matching success and rejects every
+recovery failure or queue drop rather than imposing a time-dependent count.
+
 ## Planned distribution
 
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
 | A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
 | B | Warm/software reboot with both attached | 4 | 0 | PASS: B1, remediated B2, B3 and B4 |
-| C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
-| D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
-| E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | pending |
+| C | Boot empty, attach USB0 then USB1 | 4 | 8 | PASS: C1--C4 |
+| D | Boot empty, attach USB1 then USB0 | 4 | 8 | PASS: D1--D4 |
+| E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | PASS: E1--E5 |
 | F | USB0 remove/reinsert during Library load | 5 | 5 | pending |
 | G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | pending |
 | H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | pending |
@@ -587,3 +633,357 @@ Status: **PASS**.
 B4 and Group B are accepted. Groups A and B account for 8 of the planned 50
 controlled lifecycle cycles. Proceed to Group C: boot empty, then attach USB0
 followed by USB1, on the same exact firmware image.
+
+### C1 — empty boot, USB0 then USB1
+
+Status: **PASS**.
+
+- The operator disconnected both downstream devices, reset the powered P4 and
+  began from empty boot 405 on exact image `RC2-121-g7b7b29a`, `ota_1`.
+- The guided harness first accepted USB0 alone: storage mounted, the Library
+  contained all 100 tracks and FLX4 remained absent. FLX4 was then attached to
+  USB1 and reached active profile, MIDI IN/OUT, MIDI-output acceptance and UAC
+  while USB0 remained mounted.
+- Known-good keys 3 and 10 loaded on D1/D2. Across the measured playback window
+  both deck positions advanced by 10,118 ms, UAC submitted 1,743 blocks and
+  the ring finished nominal with 1,073 queued frames.
+- UAC active data-loss flags remained zero. PCM 1/2, output-late,
+  storage/controller disconnect, topology/probe/allocation, USB daemon,
+  recovery-failure/drop, runtime-queue and service-log-drop deltas were all
+  zero. The single host recovery request completed successfully.
+- The operator confirmed audible MAIN and FLX4 cue output, normal LEDs and no
+  latched controls. Two physical D1 PLAY/PAUSE presses produced four MIDI
+  packets and four semantic events and returned both decks to playback.
+- Cleanup stopped both decks with both devices healthy. Boot 405 remained
+  current and its journal contained zero `UAC_DATA_LOSS`, `AUDIO_UNDERRUN`,
+  `AUDIO_OUTPUT_LATE` or `USB_UNMOUNTED` events.
+
+C1 accounts for two controlled physical attachment actions and raises matrix
+progress to 9/50 cycles. Repeat the same empty-boot USB0-then-USB1 sequence for
+C2.
+
+### C2 — empty boot, USB0 then USB1
+
+Status: **PASS with bounded-recovery observation**.
+
+- Empty boot 406 retained exact image `RC2-121-g7b7b29a`, `ota_1`. USB0 was
+  attached alone and mounted with all 100 Library tracks before FLX4 was
+  attached and reached its active MIDI IN/OUT, LED-output and UAC state.
+- USB0 diagnostics recorded two accepted connect/mount attempts and one mount
+  success. One host recovery request completed successfully, after which the
+  mount and Library remained stable; there was no storage disconnect, release,
+  final mount error or `USB_UNMOUNTED` event. This is accepted as the required
+  single bounded recovery, not as an unexplained successful first attempt.
+- During the measured dual-deck window D1/D2 advanced by 10,119/10,118 ms,
+  UAC submitted 1,743 blocks and its ring finished nominal with 1,100 queued
+  frames. Active data-loss flags remained zero.
+- All full-cycle fault deltas were zero: PCM 1/2, output-late,
+  storage/controller disconnect, topology/probe/allocation, controller fault
+  recovery, USB daemon, recovery failure/drop, runtime queue and service-log
+  drop. The boot journal had no UAC-loss, audio-underrun, output-late or USB
+  unmount events and boot 406 remained current.
+- The operator confirmed audible MAIN and FLX4 cue, normal LEDs and no latched
+  controls. Two physical D1 PLAY/PAUSE presses produced four MIDI packets and
+  four semantic events and returned both decks to playback before automated
+  cleanup stopped them.
+
+C1 and C2 account for four controlled attachment actions. Matrix progress is
+now 10/50 cycles; continue with C3 on the same exact image.
+
+### C3 — empty boot, USB0 then USB1
+
+Status: **PASS**.
+
+- Empty boot 407 retained exact image `RC2-121-g7b7b29a`, `ota_1`. USB0 alone
+  produced one connect event and one successful mount attempt with all 100
+  Library tracks. FLX4 then activated on USB1 while storage remained mounted.
+- The required host recovery was exactly one request and one success, with no
+  recovery failure/drop, USB daemon error, topology/probe/allocation failure,
+  controller fault-recovery epoch, storage/controller disconnect, runtime
+  queue failure or service-log drop.
+- D1 and D2 each advanced by 10,118 ms during the measured playback window.
+  UAC submitted 1,743 blocks and finished nominal with 1,154 queued frames;
+  active UAC flags, PCM 1/2 and output-late deltas stayed zero.
+- The operator confirmed MAIN and FLX4 cue audio, LEDs, control state and the
+  physical D1 double PLAY/PAUSE action. It produced four MIDI packets and four
+  semantic events and returned both decks to playback before cleanup.
+- Both devices remained healthy, both decks stopped cleanly, boot 407 did not
+  change and the boot journal contained none of the four gated fault events.
+
+Group C is 3/4 complete and matrix progress is 11/50 cycles. Repeat once more
+as C4 before reversing the attachment order for Group D.
+
+### C4 — empty boot, USB0 then USB1
+
+Status: **PASS; Group C complete**.
+
+- Empty boot 408 retained `RC2-121-g7b7b29a`, `ota_1`. USB0 produced one
+  connect and one successful mount attempt with all 100 Library tracks; FLX4
+  subsequently reached its complete active state without disturbing storage.
+- Host recovery completed as exactly one request and one success. Every gated
+  full-cycle fault delta and boot-journal event count remained zero.
+- D1/D2 both advanced by 10,153 ms. UAC submitted 1,749 blocks, finished
+  nominal with 1,114 queued frames and retained zero active data-loss flags,
+  PCM underruns or output-late events.
+- The operator confirmed MAIN/cue audio, LEDs, controls and two physical D1
+  PLAY/PAUSE presses; four MIDI packets and four semantic events were observed.
+  Automated cleanup stopped both decks with both USB devices healthy and no
+  intervening reboot.
+
+All four Group C cycles passed on the exact image. They contribute eight
+controlled physical attachment actions and bring matrix progress to 12/50
+cycles. Proceed to Group D: boot empty, attach USB1 first, then USB0.
+
+### D1 — empty boot, USB1 then USB0
+
+Status: **PASS after correcting a harness-only recovery-count assumption**.
+
+- Empty boot 409 retained exact image `RC2-121-g7b7b29a`, `ota_1`. FLX4 first
+  reached active profile, MIDI IN/OUT, MIDI-output acceptance and UAC with USB0
+  absent. USB0 was then attached, mounted on its first attempt and exposed all
+  100 Library tracks while FLX4 remained active.
+- The reverse order correctly produced two sequential host recovery requests
+  and two successes: one after FLX4 activation and one after USB0 attachment.
+  There were no recovery failures/drops, USB daemon errors,
+  topology/probe/allocation faults, controller fault-recovery epochs,
+  storage/controller disconnects, runtime queue failures or service-log drops.
+- D1/D2 advanced by 10,112/10,113 ms, UAC submitted 1,742 blocks and finished
+  nominal with 1,119 queued frames. UAC flags, PCM 1/2 and output-late deltas
+  remained zero.
+- The operator confirmed MAIN/cue audio, LEDs, normal control state and the
+  physical D1 double PLAY/PAUSE action. It produced four MIDI packets and four
+  semantic events. Final cleanup left both devices healthy on unchanged boot
+  409, with none of the four gated journal events.
+- The first harness verdict said `FAIL` solely because its newly added check
+  still expected Group C's one total recovery. Offline re-evaluation confirmed
+  that this was the only failure entry and that every hardware criterion was
+  clean. The harness now accepts the bounded one-to-two range, requires
+  matching successes and rejects more than two total requests across the two
+  staged attachments; the physical D1 cycle does not need to be repeated.
+
+D1 contributes two attachment actions and brings matrix progress to 13/50
+cycles. Continue with D2 on the same exact image.
+
+### D2 — empty boot, USB1 then USB0
+
+Status: **PASS**.
+
+- Empty boot 410 retained exact image `RC2-121-g7b7b29a`, `ota_1`. FLX4
+  activated completely while alone, then USB0 mounted on its single attempt
+  and exposed all 100 tracks without disturbing the controller.
+- The corrected Group D gate directly accepted the expected two recovery
+  requests and two matching successes. All recovery-failure/drop, daemon,
+  topology, controller, storage, queue and service-log fault deltas were zero.
+- Both decks advanced by 10,130 ms, UAC submitted 1,745 blocks and finished
+  nominal with 1,225 queued frames. UAC flags, PCM 1/2 and output-late deltas
+  remained zero.
+- MAIN/cue audio, LEDs and unlatched control state were operator-confirmed.
+  Two D1 PLAY/PAUSE presses produced four MIDI packets and four semantic
+  events. Both devices remained healthy, cleanup stopped the decks, boot 410
+  remained current and the journal had none of the gated fault events.
+
+Group D is 2/4 complete and matrix progress is 14/50 cycles. Continue with D3.
+
+### D3 — empty boot, USB1 then USB0
+
+Status: **PASS after correcting a harness-only exact-count assumption**.
+
+- Empty boot 411 retained exact image `RC2-121-g7b7b29a`, `ota_1`. FLX4
+  activation required one successful bounded recovery. USB0 then mounted
+  directly on its first attempt with all 100 Library tracks, so the second
+  staged topology change did not require another root reconciliation.
+- The cycle therefore recorded one request and one success, with zero recovery
+  failure/drop and zero daemon, topology, controller, storage, runtime-queue,
+  service-log, PCM or output-late fault deltas.
+- D1 and D2 each advanced by 10,118 ms. UAC submitted 1,743 blocks, finished
+  nominal with 1,076 queued frames and retained clear active data-loss flags.
+- The operator confirmed MAIN/cue audio, LEDs, controls and the physical D1
+  double PLAY/PAUSE action, which produced four MIDI packets and four semantic
+  events. Both devices remained healthy, cleanup stopped both decks, boot 411
+  did not change and its journal contained none of the four gated events.
+- The initial `FAIL` was solely the harness assumption that Group D must always
+  total exactly two recoveries. Offline checks confirmed that it was the only
+  failure entry. The revised 1--2 bounded range covers both valid observed
+  paths while still rejecting missing successes, more than two requests and
+  all existing fault counters; self-tests pass in both supported shells.
+
+Group D is 3/4 complete and matrix progress is 15/50 cycles. Continue with D4.
+
+### D4 — empty boot, USB1 then USB0
+
+Status: **PASS on controlled repeat; Group D complete**.
+
+- The first boot-412 attempt was operator-invalidated before USB enumeration:
+  FLX4 was accidentally unplugged, so the host recorded zero topology
+  observations, probes, VID/PID or connect events and the harness timed out at
+  the first attachment gate. Live status after reconnect confirmed the correct
+  FLX4 identity and full profile/MIDI/UAC activation with no host fault. This
+  attempt is retained as operator-interrupted evidence and is not a D4 cycle.
+- The controlled repeat began from empty boot 413 on exact image
+  `RC2-121-g7b7b29a`, `ota_1`. FLX4 activated alone; USB0 was then attached and
+  mounted 1/1 with all 100 Library tracks while the controller remained active.
+- Recovery completed with two requests and two successes. Every full-cycle
+  fault delta and gated boot-journal event count remained zero.
+- D1/D2 each advanced by 10,112 ms, UAC submitted 1,742 blocks and finished
+  nominal with 995 queued frames and clear active loss flags.
+- The operator confirmed MAIN/cue audio, LEDs, controls and the physical D1
+  double PLAY/PAUSE check, producing four MIDI packets and four semantic
+  events. Cleanup stopped both decks with both USB devices healthy and boot
+  413 unchanged.
+
+All four Group D cycles passed on the exact image. Groups C and D together add
+16 controlled attachment actions; total matrix progress is 16/50 cycles.
+Proceed to Group E: remove and reinsert USB0 while idle and keep FLX4 active.
+
+### E1 — idle USB0 remove/reinsert with FLX4 active
+
+Status: **PASS after correcting a harness-only time-dependent recovery cap**.
+
+- E1 began on boot 413 with both devices healthy, all 100 Library tracks
+  present and both decks stopped. Removing USB0 produced exactly one accepted
+  storage disconnect, one release and one `USB_UNMOUNTED` event. Library count
+  became zero while FLX4 retained its active profile, MIDI IN/OUT, LED-output
+  acceptance and UAC with zero controller disconnects.
+- Reinserting the same medium produced one connect, one successful mount
+  attempt and all 100 Library tracks. The host performed eight storage-owner
+  recovery probes during the operator-timed absent interval; all eight
+  completed successfully with zero failure/drop, daemon error or controller
+  fault. Source review confirmed the deliberate eight-cycle 900 ms fast
+  cadence followed by a 30-second slow cadence while no storage session exists.
+- After remount, D1/D2 advanced by 10,280/10,281 ms, UAC submitted 1,771 blocks
+  and finished nominal with clear active loss flags. PCM, output-late and every
+  non-storage fault delta remained zero.
+- The operator confirmed MAIN/cue audio, LEDs, controls and physical D1
+  PLAY/PAUSE response. Both devices remained healthy, both decks stopped on
+  cleanup and boot 413 remained current.
+- The original automated `FAIL` was solely the invalid 0--1 recovery-count cap;
+  offline re-evaluation confirmed every hardware criterion above. The harness
+  now treats E recovery count as timing-dependent while requiring matching
+  successes and zero failure/drop, with host self-tests in both PowerShell
+  versions. The physical E1 cycle does not need to be repeated.
+
+E1 contributes one remove/reinsert action and brings matrix progress to 17/50
+cycles. Continue with E2 without rebooting.
+
+### E2 — idle USB0 remove/reinsert with FLX4 active
+
+Status: **PASS**.
+
+- E2 continued on boot 413 with both devices healthy and both decks stopped.
+  USB0 removal again produced one disconnect, one release, one
+  `USB_UNMOUNTED` event and Library count zero while FLX4 stayed fully active
+  with zero controller disconnects.
+- Reinsertion followed the storage owner's alternative bounded retry path:
+  eight mount attempts produced one final successful mount and restored all
+  100 tracks, without a host root-power recovery request. The final mount
+  result was `ESP_OK`; recovery failures/drops, daemon and topology/controller
+  fault deltas were all zero.
+- D1/D2 each advanced by 10,217 ms. UAC submitted 1,760 blocks and finished
+  nominal with 1,033 queued frames and clear loss flags; PCM and output-late
+  deltas stayed zero.
+- The operator confirmed MAIN/cue audio, LEDs, controls and D1 PLAY/PAUSE
+  response. Four MIDI packets and four semantic events were observed. Cleanup
+  left both devices healthy and boot 413 unchanged.
+
+Group E is 2/5 complete and matrix progress is 18/50 cycles. Continue with E3
+without rebooting.
+
+### E3 — idle USB0 remove/reinsert with FLX4 active
+
+Status: **PASS on controlled repeat after fixing a harness-only Library race**.
+
+- E3 continued on unchanged boot 413 and exact image
+  `RC2-121-g7b7b29a`, `ota_1`. The accepted repeat began with both devices
+  healthy, all 100 Library tracks present and both decks stopped.
+- Removing USB0 produced exactly one storage disconnect, one release and one
+  `USB_UNMOUNTED` event. Library count became zero while FLX4 stayed fully
+  active; controller disconnects and all controller fault counters remained
+  zero.
+- Reinsertion recorded two connect observations, seven mount attempts and one
+  successful mount, with final result `ESP_OK` and all 100 tracks restored.
+  No host recovery was needed during this operator-timed interval. Recovery
+  failures/drops, USB daemon errors and topology faults remained zero.
+- D1/D2 each advanced by 10,490 ms, UAC submitted 1,807 blocks and finished
+  nominal with 1,244 queued frames. Active loss flags, PCM 1/2, output-late,
+  runtime-queue and service-log-drop deltas all stayed zero.
+- The operator confirmed MAIN/cue audio, LEDs, controls and two physical D1
+  PLAY/PAUSE presses. Four MIDI packets and four semantic events were observed.
+  Cleanup stopped both decks with both USB devices healthy and no reboot.
+- The first E3 attempt reached a successful USB mount, but the harness sampled
+  Library count once before the asynchronous `LIBRARY_LOADED` event, which
+  followed `USB_MOUNTED` by about 62 ms. That attempt was invalidated as a
+  harness timing race, not counted as a device failure, and the repeat used a
+  bounded wait for the required 100-track Library state.
+
+Group E is 3/5 complete and matrix progress is 19/50 cycles. Continue with E4
+without rebooting.
+
+### E4 — idle USB0 remove/reinsert with FLX4 active
+
+Status: **PASS**.
+
+- E4 continued on boot 413 with both devices healthy, 100 Library tracks and
+  both decks stopped. USB0 removal produced exactly one disconnect, one
+  release, one `USB_UNMOUNTED` event and Library count zero while FLX4 remained
+  fully active with zero controller disconnects.
+- Reinserting the same medium mounted successfully on its first attempt and
+  restored all 100 tracks. Nine operator-timed host recovery requests all had
+  matching successes, with no recovery failure/drop, daemon error, topology
+  fault, controller fault or final mount error.
+- D1/D2 each advanced by 10,118 ms, UAC submitted 1,743 blocks and finished
+  nominal with 1,235 queued frames. Active data-loss flags, PCM 1/2,
+  output-late, runtime-queue and service-log-drop deltas remained zero.
+- The operator confirmed MAIN/cue audio, LEDs, controls and the physical D1
+  PLAY/PAUSE check. Eight MIDI packets and eight semantic events were observed.
+  Cleanup stopped both decks with both USB roles healthy and boot 413
+  unchanged.
+
+Group E is 4/5 complete and matrix progress is 20/50 cycles. Complete E5 on
+the same exact image without rebooting.
+
+### E5 — idle USB0 remove/reinsert with FLX4 active
+
+Status: **PASS; Group E complete**.
+
+- E5 continued on unchanged boot 413 and exact image
+  `RC2-121-g7b7b29a`, `ota_1`, with both devices healthy, all 100 Library
+  tracks present and both decks stopped.
+- USB0 removal produced exactly one disconnect, one release and one
+  `USB_UNMOUNTED` event. Library count became zero while FLX4 retained its
+  active profile, MIDI IN/OUT, LED-output acceptance and UAC; controller
+  disconnects remained zero.
+- The same medium remounted successfully on its first attempt and restored all
+  100 tracks. Nine operator-timed recovery requests had nine matching
+  successes. Recovery failures/drops, daemon errors, topology/controller
+  faults and the final mount error all remained zero.
+- D1/D2 each advanced by 10,217 ms, UAC submitted 1,760 blocks and finished
+  nominal with 1,149 queued frames. Active UAC-loss flags, PCM 1/2,
+  output-late, runtime-queue and service-log-drop deltas stayed zero.
+- The operator confirmed MAIN/cue audio, LEDs, controls and the physical D1
+  double PLAY/PAUSE check. Four MIDI packets and four semantic events were
+  observed. Cleanup stopped both decks with both USB devices healthy and no
+  reboot.
+
+All five idle USB0 remove/reinsert cycles passed while FLX4 remained active.
+Groups A--E now account for 21/50 controlled lifecycle cycles and 21 planned
+physical attachment/reconnect actions. Proceed to Group F: five controlled
+USB0 remove/reinsert cycles during Library load.
+
+## Next-session checkpoint — 2026-09-12
+
+- Installed hardware remains on exact image `RC2-121-g7b7b29a`, partition
+  `ota_1`; the accepted C1--E5 sequence ended on boot 413 with USB0 and FLX4
+  healthy and both decks stopped.
+- Groups A--E are complete: 21/50 controlled cycles. Groups F--N remain open:
+  29 cycles covering Library load, audio load/decode or playback, USB1 idle
+  and active reconnects, held controls, reboot recovery and mixed stress.
+- The operator-invalidated first D4 attempt and the first E3 harness-race
+  attempt do not count toward the 50-cycle total.
+- `tools/run_p4_lifecycle_cycle.ps1` currently supports accepted Groups C--E.
+  Its local JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a
+  release artifact; this document preserves the accepted results.
+- First action next session: inspect the Library-load trigger and event timing,
+  then extend and self-test the harness for a deterministic Group F removal
+  window before asking for any cable action. Do not rely on trying to hit the
+  roughly 50--60 ms interval between `USB_MOUNTED` and `LIBRARY_LOADED` by
+  hand.

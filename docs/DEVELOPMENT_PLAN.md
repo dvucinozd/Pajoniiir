@@ -9,16 +9,20 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-116-g77d723c` is the pushed, verified signed firmware checkpoint and
-  latest installed hardware image on `ota_1`;
-- its targeted three-hour continuous dual-MP3 limiter/WDT soak passed without
+- `RC2-121-g7b7b29a` is the latest installed exact hardware image on `ota_1`;
+  subsequent branch commits through this checkpoint change only lifecycle
+  tooling and evidence;
+- the earlier `RC2-116-g77d723c` targeted three-hour continuous dual-MP3
+  limiter/WDT soak passed without
   reset, underrun, active UAC loss or USB/controller loss;
 - 14 rare output-late warnings were investigated as bounded I2S
   pacing/scheduler jitter with no downstream failure, so no code change was
   made;
 - the current bench common 5 V and dual-VBUS measurement gate is
   operator-confirmed PASS;
-- the 30-minute exact-image dual-active MP3 gate is closed.
+- the 30-minute exact-image dual-active MP3 gate is closed;
+- lifecycle Groups A--E pass: 21/50 controlled cycles and 21 planned physical
+  attachment/reconnect actions are complete; Group F is next.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -27,7 +31,8 @@ real defect.
 ## Ordered remaining phases
 
 Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is now in progress; phases 4--11 remain deferred for later sessions.
+is 21/50 cycles complete through Group E; Group F is next. Phases 4--11 remain
+deferred for later sessions.
 
 | Phase | Work | Exit criterion |
 | --- | --- | --- |
