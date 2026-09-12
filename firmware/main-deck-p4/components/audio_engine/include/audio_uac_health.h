@@ -25,6 +25,7 @@ typedef struct {
     bool initialized;
     bool last_playback_active;
     bool startup_underflow_grace_pending;
+    uint32_t last_playback_session_epoch;
     uint32_t last_dropped_blocks;
     uint32_t last_overflow_frames;
     uint32_t last_underflow_frames;
@@ -54,6 +55,7 @@ void audio_uac_health_reset(audio_uac_health_monitor_t *monitor);
 audio_uac_health_result_t audio_uac_health_sample(
     audio_uac_health_monitor_t *monitor,
     bool playback_active,
+    uint32_t playback_session_epoch,
     uint32_t submitted_blocks,
     uint32_t queued_frames,
     uint32_t capacity_frames,

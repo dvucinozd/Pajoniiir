@@ -2217,6 +2217,7 @@ static void seek_estimate(audio_engine_state_t *eng, uint32_t position_ms)
 
 
 static uint32_t s_uac_active_data_loss_flags;
+static uint32_t s_playback_session_epoch;
 
 /* ── Firmware decode + I2S output tasks (ESP32-P4) ────────────────────────── */
 #if AE_FW
@@ -3859,6 +3860,7 @@ esp_err_t audio_engine_init(void)
     ae_wdt_trace_boot_init();
 #endif
     __atomic_store_n(&s_uac_active_data_loss_flags, 0u, __ATOMIC_RELEASE);
+    s_playback_session_epoch = 0u;
     for (uint8_t i = 0; i < AUDIO_ENGINE_DECK_COUNT; i++) {
         audio_engine_reset_state(&s_engines[i], ESP_OK, "OK");
     }
@@ -4256,8 +4258,24 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
         __atomic_add_fetch(&s_start_wait_count[deck], 1u, __ATOMIC_RELAXED);
     }
 #endif
+    AE_LOCK();
+    bool playback_was_idle = true;
+    for (uint8_t other = 0u; other < AUDIO_ENGINE_DECK_COUNT; other++) {
+        if (atomic_load_bool(&s_engines[other].playing) &&
+            !atomic_load_bool(&s_engines[other].paused)) {
+            playback_was_idle = false;
+            break;
+        }
+    }
     atomic_store_bool(&eng->paused, false);
     atomic_store_bool(&eng->playing, true);
+    if (playback_was_idle) {
+        s_playback_session_epoch++;
+        if (s_playback_session_epoch == 0u) {
+            s_playback_session_epoch = 1u;
+        }
+    }
+    AE_UNLOCK();
     return ESP_OK;
 }
 
@@ -5892,6 +5910,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
             unpack_pad_fx_command(pad_command).active &&
             pad_fx_kind_from_command(pad_command) != AUDIO_PAD_FX_KIND_NONE;
     }
+    out_snapshot->playback_session_epoch = s_playback_session_epoch;
     out_snapshot->startup_prebuffer_frames =
 #if AE_FW
         AE_START_PREBUFFER_FRAMES;

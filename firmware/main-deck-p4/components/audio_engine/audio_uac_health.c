@@ -56,6 +56,7 @@ static uint32_t counter_delta(uint32_t current, uint32_t previous)
 audio_uac_health_result_t audio_uac_health_sample(
     audio_uac_health_monitor_t *monitor,
     bool playback_active,
+    uint32_t playback_session_epoch,
     uint32_t submitted_blocks,
     uint32_t queued_frames,
     uint32_t capacity_frames,
@@ -70,9 +71,15 @@ audio_uac_health_result_t audio_uac_health_sample(
     };
     if (!monitor) return result;
 
+    /* A STOP -> PLAY interval can fit entirely between two health callbacks.
+     * The sampled active boolean then remains true and cannot distinguish the
+     * new playback session from the old one. The audio engine owns the exact
+     * transition and advances this epoch whenever all-idle becomes active. */
     const bool playback_started = playback_active &&
                                   (!monitor->initialized ||
-                                   !monitor->last_playback_active);
+                                   !monitor->last_playback_active ||
+                                   playback_session_epoch !=
+                                       monitor->last_playback_session_epoch);
     if (monitor->initialized) {
         result.delta_dropped_blocks =
             counter_delta(dropped_blocks, monitor->last_dropped_blocks);
@@ -89,6 +96,7 @@ audio_uac_health_result_t audio_uac_health_sample(
     monitor->last_underflow_frames = underflow_frames;
     monitor->last_packet_lost_frames = packet_lost_frames;
     monitor->last_playback_active = playback_active;
+    monitor->last_playback_session_epoch = playback_session_epoch;
     monitor->initialized = true;
 
     if (!playback_active) {

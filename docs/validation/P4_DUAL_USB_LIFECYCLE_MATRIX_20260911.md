@@ -2,8 +2,9 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — cold-boot Group A complete after remediation; Group B
-warm/software reboot is next**.
+Status: **PAUSED — cold-boot Group A and external warm-reset B1 PASS; B2
+monitor/session-boundary false positive is remediated in source and awaits an
+exact-image hardware retest before B3**.
 
 ## Exact test image
 
@@ -42,7 +43,7 @@ load/decode.
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
 | A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
-| B | Warm/software reboot with both attached | 4 | 0 | pending |
+| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 false-positive remediation built, exact-image retest pending; B3-B4 paused |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | pending |
@@ -327,3 +328,133 @@ Status: **PASS**.
 Group A is complete on the remediated exact image: four accepted cold boots
 with USB0 and USB1 continuously attached all reached dual-deck playback with
 clear active audio-loss flags. Proceed to Group B warm/software reboot cycles.
+
+### B1 — external warm reset with both devices attached
+
+Status: **PASS**.
+
+- The P4 common supply and both downstream USB connections remained on and
+  continuously attached. The operator briefly pressed the board `RST/RESET`
+  button; no power-cycle or USB reinsert was used.
+- Boot 400 retained exact image `RC2-118-g6c7a0f6` from `ota_0`. This board's
+  external reset line is reported by `esp_reset_reason()` as `POWERON`, so the
+  operator-observed continuous-power procedure is recorded alongside the raw
+  reset reason. This is not evidence of an `esp_restart()` cycle.
+- The startup root-port reconciliation connected FLX4 at `1,415 ms`, produced
+  one bounded controller disconnect at `1,549 ms`, mounted USB0 at `1,697 ms`,
+  loaded the 100-track Library at `1,753 ms`, and reconnected/reactivated FLX4
+  by `2,018 ms` without manual intervention.
+- Recovery ended with both roots active, one recovery request/success, and zero
+  daemon errors, recovery failures, runtime queue failures, storage disconnects
+  or service-log drops.
+- The operator loaded one track per deck, played both and confirmed audible
+  output.
+- Across two active snapshots 10 seconds apart, both decks remained `PLAYING`
+  and each position advanced by `10,095 ms`.
+- UAC submitted blocks advanced by 1,739 and the ring remained `nominal`
+  (`969 -> 1,088` queued frames). Underflow, drop, overflow, packet-failure,
+  packet-lost, PCM-underrun and output-late deltas were all zero.
+- Controller/storage disconnect, daemon-error, recovery-failure,
+  runtime-queue-failure and service-log-drop deltas were all zero during the
+  active measurement; `data_loss=false`, `data_loss_flags=0` and current TWDT
+  ISR flag false at both samples.
+
+### B2 — second external warm reset with both devices attached
+
+Status: **FAIL — active UAC underflow; stop before B3**.
+
+- Boot 401 retained exact image `RC2-118-g6c7a0f6` from `ota_0`; the board
+  again reported raw reset reason `POWERON` for the operator-performed external
+  reset with the common supply and both USB devices continuously connected.
+- Startup recovery was bounded and automatic: FLX4 connected at `1,415 ms`,
+  the expected root-port cycle disconnected it at `1,526 ms`, USB0 mounted at
+  `1,698 ms`, the 100-track Library loaded at `1,753 ms`, and FLX4 reactivated
+  at `1,996 ms`.
+- Initial recovery counters were otherwise clean: one recovery request/success,
+  with zero daemon errors, recovery failures/drops, runtime queue failures,
+  storage disconnects, active UAC flags, PCM underruns, output-late events and
+  current TWDT ISR indication.
+- Deck 1 track load completed at `39,574 ms`. A first Deck 2 selection completed
+  Library metadata work at `40,465 ms` but audio open failed immediately with
+  `ESP_ERR_NOT_FOUND`; a replacement Deck 2 load completed at `60,131 ms`.
+- At `55,491 ms`, before the successful replacement Deck 2 load, the service
+  journal emitted `UAC_DATA_LOSS` with 23,673 underflow frames and a recovered
+  ring depth of 1,256 frames. This is an active-session counter delta, not only
+  a stale lifetime value.
+- During the later two-snapshot window, both decks remained `PLAYING` and
+  advanced by `10,077/10,078 ms`; UAC submitted blocks advanced by 1,736, the
+  ring remained `nominal` (`1,176 -> 1,050` frames), and all measured fault
+  deltas were zero. Nevertheless, `data_loss=true` and `data_loss_flags=16`
+  remained latched at both samples, so the release criterion is not met.
+
+Do not continue to B3 until a focused reproduction separates single-deck UAC
+startup from the concurrent failed Deck 2 load and the active underflow cause is
+remediated or otherwise dispositioned with evidence.
+
+#### B2 focused diagnosis
+
+The original B2 health event is now classified as a monitor/session-boundary
+false positive rather than demonstrated post-PLAY UAC starvation:
+
+- After stopping both decks, the session-scoped flag cleared normally. The raw
+  UAC underflow counter continued to rise while idle, as expected because the
+  isochronous consumer continuously zero-fills an empty ring.
+- A D1-only restart ran for 25 seconds with 4,697 submitted blocks, nominal ring
+  depth and zero post-PLAY raw underflow, PCM underrun, output-late or active
+  data-loss flags.
+- Repeating the known `ESP_ERR_NOT_FOUND` Deck 2 load while D1 was already
+  stable left the raw underflow delta and active flags at zero for 15 seconds.
+- A controlled `LOAD1 -> immediately PLAY1` transition captured 6,703 frames
+  accrued between the last idle sample and the first PLAY sample, followed by
+  zero post-PLAY underflow for 25 seconds; the startup grace handled this case.
+- A precise `good LOAD1 -> failed LOAD2 -> immediately PLAY1` reproduction
+  captured 7,232 idle-to-PLAY frames, zero post-PLAY underflow for 30 seconds,
+  nominal ring depth and clear flags.
+- Five automated 18-second repetitions used different known-good D1 tracks and
+  the same failing Deck 2 track. All five had 6,350--7,056 idle-to-PLAY frames,
+  zero post-PLAY raw underflow, nominal ring depth and zero PCM/output-late
+  faults. Nevertheless, health flag 16 appeared in repetitions 1 and 4.
+
+The false flags depended on the phase of the five-second health timer. A short
+STOP/PLAY interval can occur entirely between two health callbacks, leaving
+`last_playback_active=true`; the next callback then attributes raw underflow
+accumulated while idle to the new active session. The monitor therefore needs
+an audio-engine-owned playback-session epoch (or equivalent exact transition
+signal) instead of inferring session boundaries solely from periodic boolean
+samples. B2 remains a release-gate failure until that diagnostic defect is
+fixed and the exact-image hardware retest passes.
+
+#### B2 remediation implementation
+
+Status: **IMPLEMENTED AND BUILT — hardware retest pending**.
+
+- The audio engine now owns a monotonically advancing playback-session epoch.
+  It advances only when `PLAY` changes the overall dual-deck engine from all
+  idle to active; starting the second deck while the first is already active
+  remains part of the same session.
+- The diagnostics snapshot publishes the epoch atomically with the sampled
+  deck-active state under the audio-engine lock. The five-second UAC health
+  monitor uses an epoch change as an exact new-session boundary even when both
+  STOP and PLAY occurred between callbacks.
+- A new host regression reproduces the missed-idle case directly: two
+  consecutive monitor samples are both active, the epoch changes between them,
+  and 7,000 idle underflow frames accrue. The new session clears the old
+  latched loss and establishes a fresh baseline, while a later genuine
+  post-prime underflow is still reported and latched.
+- Audio-engine host coverage verifies epoch zero after initialization, epoch
+  one on the first all-idle-to-active transition, no change when the second deck
+  joins active playback, and epoch two after both decks pause and playback
+  restarts.
+- `tests/run_p4_host_tests.ps1` passed in full on 2026-09-12, including all
+  static gates, 408/408 audio-engine assertions and the focused
+  `audio_uac_health` suite.
+- A firmware build completed with ESP-IDF v6.0.2. The uncommitted development
+  image identified itself as `RC2-120-g92e87d9-dirty`; `main-deck-p4.bin` was
+  2,452,880 bytes with 1,217,136 bytes free inside the configured binary budget
+  and SHA-256
+  `dc9634c82713cf81fa1c6394e047b867ea624753570dace18dbe045700a46444`.
+
+Do not use the dirty development version as release evidence. The next action
+is to commit and build/package the exact commit, install that exact image, then
+repeat B2's STOP/PLAY sequence and require zero active UAC data-loss flags
+before continuing with B3.

@@ -979,6 +979,8 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
 
     audio_engine_diagnostics_snapshot_t diag;
     audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 0u,
+           "diagnostics playback session epoch starts at zero");
     EXPECT(diag.ring_capacity > AUDIO_PCM_RING_FRAMES,
            "diagnostics reports canonical timeline capacity");
     EXPECT(diag.pcm_timeline_active[0] && diag.pcm_timeline_active[1],
@@ -1046,6 +1048,9 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(audio_engine_deck_load(1, path, NULL, 10000) == ESP_OK,
            "deck 1 dummy diagnostics load returns ESP_OK");
     EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 diagnostics play returns ESP_OK");
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 1u,
+           "first all-idle to active transition advances playback session epoch");
     EXPECT(audio_engine_deck_play(1) == ESP_OK, "deck 1 diagnostics play returns ESP_OK");
     audio_engine_get_diagnostics_snapshot(&diag);
     EXPECT(diag.deck_active[0], "diagnostics captures deck 0 active");
@@ -1054,6 +1059,17 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.deck_file_bytes[1] > 0, "diagnostics captures deck 1 file size");
     EXPECT(diag.deck_load_progress[0] == 100, "diagnostics captures deck 0 load progress");
     EXPECT(diag.deck_load_progress[1] == 100, "diagnostics captures deck 1 load progress");
+    EXPECT(diag.playback_session_epoch == 1u,
+           "starting a second deck within active playback keeps the same session epoch");
+    EXPECT(audio_engine_deck_pause(0) == ESP_OK,
+           "deck 0 diagnostics pause returns ESP_OK");
+    EXPECT(audio_engine_deck_pause(1) == ESP_OK,
+           "deck 1 diagnostics pause returns ESP_OK");
+    EXPECT(audio_engine_deck_play(1) == ESP_OK,
+           "deck 1 diagnostics restart returns ESP_OK");
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 2u,
+           "new all-idle to active transition advances playback session epoch");
     remove(path);
 }
 

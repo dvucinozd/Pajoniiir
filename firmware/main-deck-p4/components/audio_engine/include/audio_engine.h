@@ -191,6 +191,7 @@ typedef struct {
     bool wdt_trace_current_valid;
     audio_wdt_trace_record_t wdt_trace_current;
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t playback_session_epoch;
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;
     bool pcm_timeline_active[AUDIO_ENGINE_DECK_COUNT];
