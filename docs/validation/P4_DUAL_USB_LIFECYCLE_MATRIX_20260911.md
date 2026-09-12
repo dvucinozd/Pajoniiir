@@ -2,8 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot B1-B3 PASS
-after remediation; B4 is next**.
+Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot Group B
+complete after remediation; Group C is next**.
 
 ## Exact test image
 
@@ -51,7 +51,7 @@ load/decode.
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
 | A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
-| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 PASS after remediation on boot 402; B3 PASS on boot 403; B4 pending |
+| B | Warm/software reboot with both attached | 4 | 0 | PASS: B1, remediated B2, B3 and B4 |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | pending |
@@ -551,3 +551,39 @@ Status: **PASS**.
 
 B3 is accepted. Proceed to B4 on the same exact image with both USB devices
 continuously attached.
+
+### B4 — fourth external warm reset with both devices attached
+
+Status: **PASS**.
+
+- The operator pressed `RST/RESET` with the common supply, USB0 and USB1
+  continuously connected. Boot 404 retained exact image
+  `RC2-121-g7b7b29a` on `ota_1` and reported raw reason `POWERON`, consistent
+  with the previous external-reset observations on this board.
+- Startup recovery was bounded and automatic: FLX4 connected at 1,574 ms, the
+  expected root-port cycle disconnected it at 1,693 ms, USB0 mounted at
+  1,856 ms, all 100 Library tracks loaded at 1,908 ms, and FLX4 reconnected and
+  activated by 2,162 ms.
+- The startup snapshot had both roots powered, recovery 1/1, and zero daemon
+  errors, recovery failures, runtime queue failures, service-log drops, PCM
+  underruns, output-late events, active UAC flags or current TWDT indication.
+- Known-good tracks key 5 (Heart) and key 13 (Kate Bush) loaded on D1/D2. Both
+  decks remained `PLAYING` across the active measurement and advanced by
+  10,065/10,066 ms.
+- UAC submitted blocks advanced by 1,734 and the ring remained nominal
+  (`941 -> 1,164` frames). Underflow, dropped-block, overflow, packet-failure,
+  packet-lost, PCM 1/2, output-late, controller/storage disconnect,
+  daemon-error, recovery-failure, runtime-queue-failure and service-log-drop
+  deltas were all zero; active UAC flags stayed clear.
+- The operator confirmed audible physical output and pressed D2 `PLAY/PAUSE`
+  twice on the FLX4. The final pre-stop snapshot showed both decks playing,
+  confirming physical stop/resume. Controller diagnostics recorded four MIDI
+  packets and seven semantic events, retained active MIDI-output acceptance and
+  had no runtime disconnect.
+- Both decks were stopped cleanly after the test. USB0 remained mounted, FLX4
+  remained active, and the complete boot-404 journal contained zero
+  `UAC_DATA_LOSS`, `AUDIO_UNDERRUN`, `AUDIO_OUTPUT_LATE` or USB-unmount events.
+
+B4 and Group B are accepted. Groups A and B account for 8 of the planned 50
+controlled lifecycle cycles. Proceed to Group C: boot empty, then attach USB0
+followed by USB1, on the same exact firmware image.
