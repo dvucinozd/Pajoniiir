@@ -503,6 +503,9 @@ it is not release evidence.
   underruns 0/0, output-late 0 and current TWDT ISR false. Across the complete
   boot 402 service journal there were zero `UAC_DATA_LOSS`, `AUDIO_UNDERRUN`,
   `AUDIO_OUTPUT_LATE` or USB-unmount events.
+- The operator confirmed that the test playback was audible on the physical
+  MAIN output after the exact-image OTA; this closes the listening check rather
+  than inferring sound solely from advancing transport and UAC counters.
 - The one controller disconnect in boot 402 is the expected bounded startup
   root-port cycle between the initial 1,348 ms connection and the successful
   1,936 ms reconnect, not a runtime disconnect.
