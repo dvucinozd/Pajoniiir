@@ -2,9 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **PAUSED — cold-boot Group A and external warm-reset B1 PASS; B2
-monitor/session-boundary false positive is remediated in source and awaits an
-exact-image hardware retest before B3**.
+Status: **IN PROGRESS — cold-boot Group A and warm/software-reboot B1-B2 PASS
+after remediation; B3 is next**.
 
 ## Exact test image
 
@@ -20,6 +19,15 @@ The documentation-only branch successor does not change the installed binary.
 Capture `/api/firmware`, `/api/status` and the diagnostic log before cycle 1
 and after every group. Each cycle must record its boot epoch and operator-visible
 result.
+
+Current B2 remediation image:
+
+- Firmware commit: `7b7b29a40a8ff154c22a2d5556a81ffdb3993495`
+- Installed version/slot: `RC2-121-g7b7b29a`, `ota_1`
+- Signed image size/SHA-256: 2,452,928 bytes;
+  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
+- Installed by signed push OTA with USB0 and USB1 continuously attached; boot
+  402 reports `SW` reset.
 
 ## Acceptance requirements
 
@@ -43,7 +51,7 @@ load/decode.
 | Group | Scenario | Cycles | Physical reconnects | Status |
 | --- | --- | ---: | ---: | --- |
 | A | Cold boot with USB0 and USB1 already attached | 4 | 0 | PASS after remediation: R-A1, R-A2, A3 and A4 |
-| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 false-positive remediation built, exact-image retest pending; B3-B4 paused |
+| B | Warm/software reboot with both attached | 4 | 0 | B1 PASS; B2 PASS after remediation on boot 402; B3-B4 pending |
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | pending |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | pending |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | pending |
@@ -361,7 +369,7 @@ Status: **PASS**.
 
 ### B2 — second external warm reset with both devices attached
 
-Status: **FAIL — active UAC underflow; stop before B3**.
+Status: **INITIAL FAIL — active UAC underflow; remediated and passed below**.
 
 - Boot 401 retained exact image `RC2-118-g6c7a0f6` from `ota_0`; the board
   again reported raw reset reason `POWERON` for the operator-performed external
@@ -426,7 +434,7 @@ fixed and the exact-image hardware retest passes.
 
 #### B2 remediation implementation
 
-Status: **IMPLEMENTED AND BUILT — hardware retest pending**.
+Status: **PASS — implemented, exact-commit OTA installed and hardware-retested**.
 
 - The audio engine now owns a monotonically advancing playback-session epoch.
   It advances only when `PLAY` changes the overall dual-deck engine from all
@@ -454,7 +462,52 @@ Status: **IMPLEMENTED AND BUILT — hardware retest pending**.
   and SHA-256
   `dc9634c82713cf81fa1c6394e047b867ea624753570dace18dbe045700a46444`.
 
-Do not use the dirty development version as release evidence. The next action
-is to commit and build/package the exact commit, install that exact image, then
-repeat B2's STOP/PLAY sequence and require zero active UAC data-loss flags
-before continuing with B3.
+The dirty development version is retained only as build-development evidence;
+it is not release evidence.
+
+#### B2 exact-image OTA and hardware retest
+
+- Commit `7b7b29a40a8ff154c22a2d5556a81ffdb3993495` was pushed and its remote SHA
+  verified before packaging. Both normal and isolated `build_signed` targets
+  built as `RC2-121-g7b7b29a` with ESP-IDF v6.0.2.
+- The signed `rel-001` bundle verified before upload. Its application image was
+  2,452,928 bytes with SHA-256
+  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`.
+- Push OTA from `RC2-118-g6c7a0f6`/`ota_0` returned HTTP 200 and rebooted into
+  the exact expected image on `ota_1`; `/api/firmware` reported transfer state
+  `idle` and an empty `last_error`.
+- Boot 402 reported `SW` reset. With both roots continuously occupied, startup
+  connected FLX4 at 1,348 ms, performed the expected bounded root cycle,
+  mounted USB0 at 1,631 ms, loaded all 100 tracks at 1,686 ms and reactivated
+  the FLX4 profile at 1,943 ms. Recovery was 1/1 with zero daemon errors,
+  recovery failures, runtime queue failures or service-log drops.
+- The first automation pass completed two clean reproduction cycles. Its third
+  load request intentionally stopped on HTTP 409 because the test polled the
+  old `READY` presentation before the asynchronous loader had claimed its next
+  session. The service journal records this as one
+  `WEB_LOAD_REQUEST_FAILED`; it caused no USB, audio or device fault. The
+  corrected harness waits for the requested title and lifecycle completion.
+- Five accepted 18-second reproductions used good D1 keys 3, 10, 13, 15 and 5
+  followed by the known missing-audio D2 key 8 and immediate D1 PLAY:
+
+| D1 key | Idle-to-PLAY underflow | Post-PLAY underflow | Submitted blocks | Final ring | UAC flags | PCM 1/2 | Late |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 3 | 1,411 | 0 | 3,110 | 1,237 nominal | 0 | 0/0 | 0 |
+| 10 | 1,411 | 0 | 3,107 | 870 nominal | 0 | 0/0 | 0 |
+| 13 | 1,411 | 0 | 3,108 | 953 nominal | 0 | 0/0 | 0 |
+| 15 | 1,235 | 0 | 3,107 | 1,239 nominal | 0 | 0/0 | 0 |
+| 5 | 1,235 | 0 | 3,105 | 1,020 nominal | 0 | 0/0 | 0 |
+
+- The final idle snapshot retained both devices and both powered roots, with
+  controller profile active, USB0 mounted, UAC session flags clear, PCM
+  underruns 0/0, output-late 0 and current TWDT ISR false. Across the complete
+  boot 402 service journal there were zero `UAC_DATA_LOSS`, `AUDIO_UNDERRUN`,
+  `AUDIO_OUTPUT_LATE` or USB-unmount events.
+- The one controller disconnect in boot 402 is the expected bounded startup
+  root-port cycle between the initial 1,348 ms connection and the successful
+  1,936 ms reconnect, not a runtime disconnect.
+
+B2 is accepted after remediation. The known key-8 `ESP_ERR_NOT_FOUND` remains
+a separate media/catalog consistency defect; this test confirms that it no
+longer contaminates the new playback session's UAC health evidence. Proceed to
+B3 on the same exact image.
