@@ -162,7 +162,7 @@ asks for one FLX4 disconnect/reconnect while USB0 remains untouched. While
 FLX4 is absent it requires USB0 to stay mounted and the Library to retain all
 100 tracks. After reconnection it requires one controller disconnect and one
 connect, active FLX4 profile, MIDI IN/OUT, LED output acceptance, UAC recovery,
-zero to two matched host recovery requests, exactly one controller fault epoch
+zero to two matched host recovery requests, at most one controller fault epoch
 and the standard dual-playback/operator checks.
 
 Run H1 through H5 on the current exact installed candidate:
@@ -175,6 +175,12 @@ Run H1 through H5 on the current exact installed candidate:
 The extended harness self-test passes. One earlier focused USB1 reconnect smoke
 passed on `RC2-109-g269036b`, but it is not one of the five formal Group H
 cycles on the current candidate. Group H therefore remains 0/5.
+
+The first current-candidate H1 attempt completed the physical reconnect,
+retained USB0 and passed audio/controller checks, but the initial harness
+incorrectly required exactly one soft-fault epoch. Current physical
+`DEV_GONE` handling correctly produced zero. That attempt remains rejected;
+the corrected gate accepts zero or one epoch and rejects duplicates.
 
 ## Planned distribution
 

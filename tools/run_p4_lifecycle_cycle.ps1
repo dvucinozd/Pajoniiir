@@ -435,7 +435,8 @@ function Get-CycleFailures {
         [uint64]$ExpectedStorageDisconnects,
         [uint64]$ExpectedControllerDisconnects,
         [uint64]$ExpectedStorageReleases,
-        [uint64]$ExpectedControllerFaultRecoveryEpochs = 0
+        [uint64]$MinimumControllerFaultRecoveryEpochs = 0,
+        [uint64]$MaximumControllerFaultRecoveryEpochs = 0
     )
     $failures = New-Object 'System.Collections.Generic.List[string]'
     $strictCounters = @(
@@ -461,12 +462,17 @@ function Get-CycleFailures {
     foreach ($expectation in @(
             @{ Field = "storage_disconnects"; Expected = $ExpectedStorageDisconnects },
             @{ Field = "controller_disconnects"; Expected = $ExpectedControllerDisconnects },
-            @{ Field = "storage_releases"; Expected = $ExpectedStorageReleases },
-            @{ Field = "controller_fault_recovery_epochs"; Expected = $ExpectedControllerFaultRecoveryEpochs })) {
+            @{ Field = "storage_releases"; Expected = $ExpectedStorageReleases })) {
         $delta = Get-CounterDelta $Final.($expectation.Field) $Baseline.($expectation.Field)
         if ($delta -ne $expectation.Expected) {
             Add-Failure $failures "$($expectation.Field) delta is $delta, expected $($expectation.Expected)"
         }
+    }
+    $faultEpochDelta = Get-CounterDelta $Final.controller_fault_recovery_epochs `
+        $Baseline.controller_fault_recovery_epochs
+    if ($faultEpochDelta -lt $MinimumControllerFaultRecoveryEpochs -or
+        $faultEpochDelta -gt $MaximumControllerFaultRecoveryEpochs) {
+        Add-Failure $failures "controller_fault_recovery_epochs delta is $faultEpochDelta, expected $MinimumControllerFaultRecoveryEpochs-$MaximumControllerFaultRecoveryEpochs"
     }
     if ($Final.version -ne $Baseline.version -or $Final.slot -ne $Baseline.slot) {
         Add-Failure $failures "firmware identity changed during the cycle"
@@ -773,8 +779,19 @@ function Invoke-SelfTest {
             -MinimumRecoveryCount 1 -MaximumRecoveryCount 2 `
             -ExpectedStorageDisconnects 0 -ExpectedControllerDisconnects 1 `
             -ExpectedStorageReleases 0 `
-            -ExpectedControllerFaultRecoveryEpochs 1).Count -ne 0) {
+            -MinimumControllerFaultRecoveryEpochs 0 `
+            -MaximumControllerFaultRecoveryEpochs 1).Count -ne 0) {
         throw "good Group H FLX4 idle reconnect window failed"
+    }
+    $cycleHDuplicateEpoch = $cycleH.psobject.Copy()
+    $cycleHDuplicateEpoch.controller_fault_recovery_epochs = [uint64]2
+    if (@(Get-CycleFailures -Baseline $cycleBase -Final $cycleHDuplicateEpoch `
+            -MinimumRecoveryCount 1 -MaximumRecoveryCount 2 `
+            -ExpectedStorageDisconnects 0 -ExpectedControllerDisconnects 1 `
+            -ExpectedStorageReleases 0 `
+            -MinimumControllerFaultRecoveryEpochs 0 `
+            -MaximumControllerFaultRecoveryEpochs 1).Count -ne 1) {
+        throw "duplicate Group H controller fault epoch was not rejected"
     }
     Write-Output "P4 lifecycle harness self-test passed"
 }
@@ -1032,7 +1049,8 @@ try {
         -ExpectedStorageDisconnects $expectedStorageDisconnects `
         -ExpectedControllerDisconnects $(if ($Group -eq "H") { 1 } else { 0 }) `
         -ExpectedStorageReleases $expectedStorageReleases `
-        -ExpectedControllerFaultRecoveryEpochs $(if ($Group -eq "H") { 1 } else { 0 }))
+        -MinimumControllerFaultRecoveryEpochs 0 `
+        -MaximumControllerFaultRecoveryEpochs $(if ($Group -eq "H") { 1 } else { 0 }))
     $evidence.cycle_deltas = Get-CycleDeltas -Baseline $baseline -Final $final
     $evidence.cycle_failures = $cycleFailures
     foreach ($failure in $cycleFailures) {
