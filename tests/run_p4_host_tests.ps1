@@ -1408,6 +1408,21 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 software-reboot validation endpoint is guarded and requires idle dual USB" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_validation_reboot_handler",
+        "api_request_allowed(req, true)",
+        "req->content_len != 0",
+        "ota.state != P4_OTA_IDLE",
+        "!usb_storage_is_mounted()",
+        "!controller_usb_host_is_connected()",
+        "!audio.streaming",
+        "deck1.state == AE_LOADING",
+        '"/api/validation/reboot"'
+    )
+
+Assert-FileContains `
     -Name "p4 DSP applies control-task FX commands on output block boundaries" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
@@ -2655,6 +2670,11 @@ Invoke-Step -Name "run P4 lifecycle I/J batch self-test" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_ij_batch.ps1", "-SelfTest")
+
+Invoke-Step -Name "run P4 lifecycle Group K harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_k.ps1", "-SelfTest")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {

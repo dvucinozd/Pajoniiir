@@ -1243,4 +1243,14 @@ actions.
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: begin Group K software-reboot recovery with both roots occupied.
+- The guarded Group K software-reboot endpoint and
+  `tools/run_p4_lifecycle_k.ps1` K1/K2 harness are implemented. The endpoint
+  refuses non-empty requests, active OTA, missing/unhealthy USB roots and
+  loading or playing decks. The harness requires an observable API outage, a
+  higher boot epoch with reset reason `SW`, unchanged exact version/slot,
+  automatic recovery of both roots and the coherent 100-track Library, clean
+  post-boot fault counters, dual playback and operator-confirmed MAIN/cue,
+  LEDs and controls. Host self-tests and the ESP-IDF v6.0.2 build pass, but no
+  K cycle is counted until exact-image hardware evidence passes.
+- First action: install the exact committed Group K image, then run K1 with both
+  roots occupied. Run K2 only after K1 passes; a power cycle does not count.

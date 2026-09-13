@@ -452,9 +452,10 @@ static esp_err_t api_firmware_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, (size_t)len);
 }
 
-static void ota_restart_task(void *arg)
+static void delayed_restart_task(void *arg)
 {
     (void)arg;
+    service_log_sync();
     vTaskDelay(pdMS_TO_TICKS(1000));
     esp_restart();
 }
@@ -779,7 +780,7 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     httpd_resp_set_hdr(req, "Connection", "close");
     esp_err_t send_rc = httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
                                         HTTPD_RESP_USE_STRLEN);
-    if (xTaskCreate(ota_restart_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(delayed_restart_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "failed to create OTA reboot task");
         esp_restart();
     }
@@ -1232,6 +1233,60 @@ static esp_err_t api_audio_load_validation_gate_cancel_handler(httpd_req_t *req)
     if (!api_request_allowed(req, true)) return ESP_FAIL;
     audio_load_validation_gate_cancel();
     return send_audio_load_validation_gate_status(req);
+}
+
+/* Service-only Group K trigger. A plain power cycle is not evidence of the
+ * software-reboot lifecycle path, so expose one guarded, bodyless POST. The
+ * handler refuses to reboot during playback, loading, OTA activity or unless
+ * both physical USB product roots are already healthy. */
+static esp_err_t api_validation_reboot_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (req->content_len != 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Reboot request body must be empty");
+    }
+
+    p4_ota_status_t ota = {0};
+    p4_ota_get_status(&ota);
+    if (ota.state != P4_OTA_IDLE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "OTA service is not idle",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    controller_usb_host_audio_stats_t audio = {0};
+    controller_usb_host_get_audio_stats(&audio);
+    if (!usb_storage_is_mounted() ||
+        !controller_usb_host_is_connected() || !audio.streaming) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "USB0 and FLX4 must both be healthy",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    if (audio_engine_deck_get_status(0, &deck1) != ESP_OK ||
+        audio_engine_deck_get_status(1, &deck2) != ESP_OK ||
+        deck1.state == AE_LOADING || deck1.state == AE_PLAYING ||
+        deck2.state == AE_LOADING || deck2.state == AE_PLAYING) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before reboot",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    httpd_resp_set_status(req, "202 Accepted");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    esp_err_t send_rc = httpd_resp_send(
+        req, "{\"ok\":true,\"rebooting\":true}", HTTPD_RESP_USE_STRLEN);
+    if (xTaskCreate(delayed_restart_task, "validation_reboot", 2048,
+                    NULL, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create validation reboot task");
+        esp_restart();
+    }
+    return send_rc;
 }
 
 static esp_err_t api_status_handler(httpd_req_t *req)
@@ -2243,6 +2298,15 @@ esp_err_t web_server_start(void)
     };
     rc = register_uri_or_stop(s_web_server,
                               &audio_load_validation_gate_cancel_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t validation_reboot_uri = {
+        .uri = "/api/validation/reboot",
+        .method = HTTP_POST,
+        .handler = api_validation_reboot_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &validation_reboot_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t firmware_uri = {

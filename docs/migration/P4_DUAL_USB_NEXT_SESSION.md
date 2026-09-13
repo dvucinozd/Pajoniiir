@@ -173,7 +173,15 @@ Group I/J closure checkpoint 2026-09-14: stream-epoch remediation image
 boot 420 with USB0 and 100 tracks retained, exact disconnect/connect event
 pairs, continued dual playback, audible MAIN/cue and zero critical fault
 deltas. I3--I5 and J2--J5 are explicitly operator-waived, are not passes and
-will not be resumed. Next action is Group K software-reboot recovery.
+will not be resumed. The guarded `POST /api/validation/reboot` trigger and
+`tools/run_p4_lifecycle_k.ps1` K1/K2 harness are now implemented and pass host
+self-tests plus the ESP-IDF v6.0.2 firmware build. Next action is to install the
+exact committed Group K image and run K1 with USB0 and FLX4 both occupied;
+K2 follows only after K1 passes. A power cycle does not count.
+
+The requested release-prefix migration from `RC2` to `M2` is intentionally
+deferred until after K/L and must be handled as a separate version/OTA-policy
+change.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

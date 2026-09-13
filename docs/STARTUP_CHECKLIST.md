@@ -71,6 +71,9 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
 - [x] Held-control reconnect acceptance: J1 jog-touch release passed.
 - [x] Close Groups I/J by explicit operator decision: I3--I5 and J2--J5 are
   waived, are not counted as PASS and will not be resumed.
+- [x] Implement and self-test the guarded Group K software-reboot endpoint and
+  deterministic K1/K2 evidence harness. The endpoint requires OTA idle, both
+  USB roots healthy and both decks stopped; a power cycle cannot satisfy it.
 - [ ] Complete the remaining K/L reboot gates. Matrix accounting is 39/50 PASS,
   7/50 waived and 4/50 pending, with 39 accepted physical actions.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.

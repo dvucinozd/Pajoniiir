@@ -37,7 +37,11 @@ The direct dual-root product path is implemented:
   by the reconnect-prime underflow being charged to the old playback session.
   UAC stream-epoch accounting is implemented and exact-image confirmed: I1,
   I2 and J1 passed on boot 420 with zero critical fault deltas. By explicit
-  operator decision, I3--I5 and J2--J5 are waived and permanently closed.
+  operator decision, I3--I5 and J2--J5 are waived and permanently closed;
+- the guarded Group K software-reboot endpoint and deterministic K1/K2 harness
+  are implemented and pass the complete host suite and ESP-IDF v6.0.2 firmware
+  build. Hardware K1/K2 evidence remains pending and must use an exact committed
+  image with both USB roots occupied.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -50,6 +54,11 @@ waived I/J cycles and four remaining K/L reboot cycles. Groups I and J are
 administratively closed and will not be resumed.
 Phases 4--11 remain
 deferred for later sessions.
+
+After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a
+separate change. That migration must update `git describe` assumptions,
+newer-only OTA ordering, package tests and release documentation together; it
+is deliberately not part of the Group K candidate.
 
 | Phase | Work | Exit criterion |
 | --- | --- | --- |
