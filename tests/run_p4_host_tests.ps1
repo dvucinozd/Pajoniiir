@@ -2674,7 +2674,7 @@ Invoke-Step -Name "run P4 lifecycle I/J batch self-test" `
 Invoke-Step -Name "run P4 lifecycle Group K harness self-test" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
-    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_k.ps1", "-SelfTest")
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_k.ps1", "-Cycle", "2", "-SelfTest")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {

@@ -17,12 +17,17 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $kSelfTest = [bool]$SelfTest
+$kCycle = $Cycle
 
 . (Join-Path $PSScriptRoot "run_p4_lifecycle_cycle.ps1") `
-    -BaseUri $BaseUri -ExpectedVersion $ExpectedVersion `
+    -Cycle $kCycle -BaseUri $BaseUri -ExpectedVersion $ExpectedVersion `
     -PlaybackSeconds $PlaybackSeconds `
     -DeviceTimeoutSeconds $DeviceTimeoutSeconds `
     -OutputDirectory $OutputDirectory -DefineOnly
+
+if ($Cycle -ne $kCycle) {
+    throw "Group K cycle identity changed while loading shared helpers"
+}
 
 function Get-ResetReason {
     param([string[]]$BootLog)

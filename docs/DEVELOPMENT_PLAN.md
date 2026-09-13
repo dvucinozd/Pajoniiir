@@ -9,7 +9,7 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-134-g09f7efc` is the latest installed exact hardware image on `ota_0`;
+- `RC2-136-g034cd76` is the latest installed exact hardware image on `ota_1`;
 - deterministic Group F support is implemented and hardware-qualified: the PDB
   reader releases media ownership after at most 8 KiB, incomplete rebuilds
   fail closed, and a guarded one-shot validation barrier lets the harness
@@ -40,8 +40,12 @@ The direct dual-root product path is implemented:
   operator decision, I3--I5 and J2--J5 are waived and permanently closed;
 - the guarded Group K software-reboot endpoint and deterministic K1/K2 harness
   are implemented and pass the complete host suite and ESP-IDF v6.0.2 firmware
-  build. Hardware K1/K2 evidence remains pending and must use an exact committed
-  image with both USB roots occupied.
+  build. Exact-image K1 and K2 passed on boots 424 and 426 with `SW` reset,
+  unchanged version/slot, automatic USB0/FLX4 and 100-track Library recovery,
+  clean fault evidence, dual playback and audible MAIN/cue confirmation. The
+  first K2 launch also passed technically on boot 425 but is not counted because
+  the shared helper overwrote its evidence label; the harness now preserves and
+  self-tests the requested cycle identity.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -49,9 +53,9 @@ real defect.
 
 ## Ordered remaining phases
 
-Phases 1 and 2 are complete. Phase 3 has 39/50 accepted cycles, seven explicitly
-waived I/J cycles and four remaining K/L reboot cycles. Groups I and J are
-administratively closed and will not be resumed.
+Phases 1 and 2 are complete. Phase 3 has 41/50 accepted cycles, seven explicitly
+waived I/J cycles and two remaining Group L OTA-reboot cycles. Groups I and J
+are administratively closed and will not be resumed; Group K is complete.
 Phases 4--11 remain
 deferred for later sessions.
 

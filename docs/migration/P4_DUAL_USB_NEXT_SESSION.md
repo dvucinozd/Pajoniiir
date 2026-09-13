@@ -9,30 +9,30 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `09f7efc28274da37ae943d61094179f463e2eaf4`
-- Validated firmware version: `RC2-134-g09f7efc`
-- Current signed bundle: `2,456,972` bytes, SHA-256
-  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
-- Current application: `2,456,784` bytes, SHA-256
-  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
+  `034cd7617c0493b87874ea928d7090ff16105c01`
+- Validated firmware version: `RC2-136-g034cd76`
+- Current signed bundle: `2,457,836` bytes, SHA-256
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+- Current application: `2,457,648` bytes, SHA-256
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
 - Current bundle path:
-  `releases/pajoniiir-RC2-134-g09f7efc/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-136-g034cd76/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--H plus
-  I1/I2/J1 pass; the earlier `RC2-116-g77d723c` passed the targeted three-hour
-  limiter/WDT soak
+  I1/I2/J1 and K1/K2 pass; the earlier `RC2-116-g77d723c` passed the targeted
+  three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-134-g09f7efc` from commit `09f7efc`
-- Installed slot: `ota_0`
+- Latest installed version: `RC2-136-g034cd76` from commit `034cd76`
+- Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,456,784` bytes
+- Application: `2,457,648` bytes
 - Application SHA-256:
-  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
-- Signed bundle: `2,456,972` bytes
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+- Signed bundle: `2,457,836` bytes
 - Signed bundle SHA-256:
-  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
 - Bundle path:
-  `releases/pajoniiir-RC2-134-g09f7efc/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-136-g034cd76/main-deck-p4.ddjota`
 
 During the latest captured hardware run, USB0 remained mounted and the direct
 FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
@@ -175,9 +175,11 @@ pairs, continued dual playback, audible MAIN/cue and zero critical fault
 deltas. I3--I5 and J2--J5 are explicitly operator-waived, are not passes and
 will not be resumed. The guarded `POST /api/validation/reboot` trigger and
 `tools/run_p4_lifecycle_k.ps1` K1/K2 harness are now implemented and pass host
-self-tests plus the ESP-IDF v6.0.2 firmware build. Next action is to install the
-exact committed Group K image and run K1 with USB0 and FLX4 both occupied;
-K2 follows only after K1 passes. A power cycle does not count.
+self-tests plus the ESP-IDF v6.0.2 firmware build. Exact-image K1/K2 passed on
+boots 424 and 426 with both roots occupied and no manual reinsert. Boot 425 was
+a technically clean second run but is not counted because its local evidence
+was mislabeled K1 by a shared-script variable collision; the corrected harness
+preserves and self-tests `Cycle=2`. Next action is Group L OTA-reboot recovery.
 
 The requested release-prefix migration from `RC2` to `M2` is intentionally
 deferred until after K/L and must be handled as a separate version/OTA-policy

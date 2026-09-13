@@ -2,7 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups I/J closed; 39 PASS, 7 waived, 4 pending**.
+Status: **IN PROGRESS — Groups I/J closed, Group K passed; 41 PASS, 7 waived, 2 pending**.
 
 ## Test images and current installed image
 
@@ -1224,17 +1224,18 @@ Status: **CLOSED — 3 PASS, 7 explicitly waived**.
 | I3--I5 | — | — | — | — | — | WAIVED |
 | J2--J5 | — | — | — | — | — | WAIVED |
 
-The matrix now accounts for 39/50 PASS cycles, 7/50 waived cycles and 4/50
-pending K/L reboot cycles, with 39 accepted physical attachment/reconnect
-actions.
+The matrix now accounts for 41/50 PASS cycles, 7/50 waived cycles and 2/50
+pending Group L OTA-reboot cycles, with 39 accepted physical
+attachment/reconnect actions.
 
 ## Continuation checkpoint — 2026-09-14
 
-- Installed hardware is on exact image `RC2-134-g09f7efc`, partition `ota_0`;
+- Installed hardware is on exact image `RC2-136-g034cd76`, partition `ota_1`;
   signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
 - Groups I/J are closed: I1, I2 and J1 passed; seven remaining cycles are
-  explicitly waived. Only four K/L reboot and OTA-reboot cycles remain.
+  explicitly waived. Group K is complete; only two Group L OTA-reboot cycles
+  remain.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
 - `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H, all with accepted
@@ -1252,5 +1253,29 @@ actions.
   post-boot fault counters, dual playback and operator-confirmed MAIN/cue,
   LEDs and controls. Host self-tests and the ESP-IDF v6.0.2 build pass, but no
   K cycle is counted until exact-image hardware evidence passes.
-- First action: install the exact committed Group K image, then run K1 with both
-  roots occupied. Run K2 only after K1 passes; a power cycle does not count.
+
+### Group K closure — software reboot with both roots occupied
+
+Status: **PASS — 2/2**.
+
+- Exact installed image: `RC2-136-g034cd76`, `ota_1`.
+- K1 advanced boot 423 to 424 and K2 advanced boot 425 to 426; both reported
+  reset reason `SW`, retained the exact version and slot, automatically restored
+  USB0, FLX4 profile/MIDI/LED/UAC and the coherent 100-track Library, and had no
+  harness failures or critical post-boot fault evidence.
+- K1 advanced D1/D2 by 10,101/10,101 ms and submitted 1,740 UAC blocks. K2
+  advanced D1/D2 by 10,123/10,124 ms and submitted 1,744 UAC blocks. MAIN/cue,
+  LEDs, controls and the physical D1 PLAY/PAUSE event were operator-confirmed in
+  both accepted cycles.
+- The first requested K2 run on boot 425 also passed all technical and operator
+  checks, but the shared helper reset its evidence label to K1. It is not counted;
+  the harness now preserves the requested cycle before dot-sourcing helpers and
+  its host self-test explicitly runs with `Cycle=2`.
+
+| Cycle | Boot transition | Reset | D1 advance | D2 advance | UAC blocks | Result |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| K1 | 423 -> 424 | `SW` | 10,101 ms | 10,101 ms | 1,740 | PASS |
+| K2 | 425 -> 426 | `SW` | 10,123 ms | 10,124 ms | 1,744 | PASS |
+
+- First action: implement or select a deterministic Group L OTA-reboot harness,
+  then run L1/L2 with both roots occupied and no manual reinsert.
