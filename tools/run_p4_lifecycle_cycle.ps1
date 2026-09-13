@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("C", "D", "E")]
+    [ValidateSet("C", "D", "E", "F")]
     [string]$Group,
 
     [ValidateRange(1, 5)]
@@ -18,7 +18,7 @@ param(
     [switch]$SelfTest
 )
 
-# Guided hardware harness for Groups C, D and E of the P4 dual-USB lifecycle
+# Guided hardware harness for Groups C--F of the P4 dual-USB lifecycle
 # matrix. The operator performs only the physical cable actions and listening
 # check. The harness owns API polling, exact-image checks, counter deltas,
 # dual-deck playback, cleanup and durable local evidence.
@@ -73,6 +73,46 @@ function Invoke-ControlPost {
     Invoke-WebRequest -UseBasicParsing -Method Post -Headers $headers `
         -Uri "$BaseUri/api/control?deck=$Deck&action=$Action" `
         -TimeoutSec 5 | Out-Null
+}
+
+function Invoke-ValidationGatePost {
+    param([ValidateSet("arm", "cancel")][string]$Action)
+    $headers = @{ "X-DDJ-Control" = "1" }
+    $response = Invoke-WebRequest -UseBasicParsing -Method Post -Headers $headers `
+        -Uri "$BaseUri/api/validation/library-load-gate/$Action" `
+        -TimeoutSec 5
+    return $response.Content | ConvertFrom-Json
+}
+
+function Get-ValidationGate {
+    return Invoke-ApiJson -Path "/api/validation/library-load-gate" -Attempts 3
+}
+
+function Wait-ValidationGateState {
+    param(
+        [string]$ExpectedState,
+        [uint32]$ExpectedSequence
+    )
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $lastState = "unavailable"
+    while ($timer.Elapsed.TotalSeconds -lt $DeviceTimeoutSeconds) {
+        try {
+            $gate = Get-ValidationGate
+            $lastState = [string]$gate.state
+            if ([uint32]$gate.sequence -eq $ExpectedSequence -and
+                $lastState -eq $ExpectedState) {
+                return $gate
+            }
+            if ($lastState -in @("timed_out", "canceled")) {
+                throw "Validation gate ended as $lastState"
+            }
+        }
+        catch {
+            if ($_.Exception.Message -like "Validation gate ended*") { throw }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "Timed out waiting for validation gate $ExpectedState (last=$lastState)"
 }
 
 function Invoke-LoadPost {
@@ -646,6 +686,18 @@ function Invoke-SelfTest {
             -ExpectedStorageReleases 1).Count -ne 0) {
         throw "good Group E removal/reinsert window failed"
     }
+    $cycleF = $cycleBase.psobject.Copy()
+    $cycleF.storage_disconnects = [uint64]2
+    $cycleF.storage_releases = [uint64]2
+    $cycleF.recovery_requests = [uint64]18
+    $cycleF.recovery_successes = [uint64]18
+    if (@(Get-CycleFailures -Baseline $cycleBase -Final $cycleF `
+            -MinimumRecoveryCount 0 -MaximumRecoveryCount 1 `
+            -EnforceRecoveryRange $false `
+            -ExpectedStorageDisconnects 2 -ExpectedControllerDisconnects 0 `
+            -ExpectedStorageReleases 2).Count -ne 0) {
+        throw "good Group F Library-load removal window failed"
+    }
     Write-Output "P4 lifecycle harness self-test passed"
 }
 
@@ -655,7 +707,7 @@ if ($SelfTest) {
 }
 
 if (-not $Group) {
-    throw "-Group C, -Group D or -Group E is required"
+    throw "-Group C, -Group D, -Group E or -Group F is required"
 }
 if (-not $ExpectedVersion) {
     throw "-ExpectedVersion is required for hardware evidence"
@@ -665,6 +717,7 @@ $scenario = switch ($Group) {
     "C" { "boot empty, attach USB0 then USB1" }
     "D" { "boot empty, attach USB1 then USB0" }
     "E" { "both active, remove and reinsert idle USB0 while FLX4 remains active" }
+    "F" { "remove and reinsert USB0 during deterministic Library load while FLX4 remains active" }
 }
 
 $evidence = [ordered]@{
@@ -682,7 +735,7 @@ try {
     $bootLog = @(Get-CurrentBootLog)
     $bootEpoch = Get-BootEpoch -BootLog $bootLog
     $baselineEventCounts = Get-GatedEventCounts -BootLog $bootLog
-    $baselineName = if ($Group -eq "E") { "both_active_idle_baseline" } else { "empty_boot_baseline" }
+    $baselineName = if ($Group -in @("E", "F")) { "both_active_idle_baseline" } else { "empty_boot_baseline" }
     $baseline = Get-DeviceSnapshot -Name $baselineName
     $evidence.boot_epoch = $bootEpoch
     $evidence.firmware_version = $baseline.version
@@ -696,12 +749,12 @@ try {
     if ($baseline.ota_state -ne "idle" -or $baseline.ota_error) {
         throw "OTA state is not a clean idle baseline"
     }
-    $baselineStoragePresent = $Group -eq "E"
-    $baselineControllerPresent = $Group -eq "E"
+    $baselineStoragePresent = $Group -in @("E", "F")
+    $baselineControllerPresent = $Group -in @("E", "F")
     if (-not (Test-DeviceState -Snapshot $baseline `
             -StoragePresent $baselineStoragePresent `
             -ControllerPresent $baselineControllerPresent)) {
-        $requiredState = if ($Group -eq "E") { "both devices active and idle" } else { "an empty boot" }
+        $requiredState = if ($Group -in @("E", "F")) { "both devices active and idle" } else { "an empty boot" }
         throw "Cycle must start with $requiredState (storage=$($baseline.storage_mounted), controller=$($baseline.controller_present))"
     }
     if ($baseline.deck1_playing -or $baseline.deck2_playing) {
@@ -729,7 +782,7 @@ try {
             -StoragePresent $false -ControllerPresent $true
         Request-OperatorStep "Attach the Rekordbox USB stick to USB0; leave FLX4 connected."
     }
-    else {
+    elseif ($Group -eq "E") {
         $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
         $evidence.baseline_library_count = $baselineLibrary.count
         Request-OperatorStep "Remove the Rekordbox USB stick from USB0; leave FLX4 connected and do not touch its controls."
@@ -742,6 +795,41 @@ try {
             throw "FLX4 disconnected while USB0 was removed"
         }
         Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0; leave FLX4 connected."
+    }
+    else {
+        $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
+        $evidence.baseline_library_count = $baselineLibrary.count
+
+        Request-OperatorStep "Remove the Rekordbox USB stick from USB0 to prepare the controlled Library-load window; leave FLX4 connected."
+        $afterPreparationRemoval = Wait-DeviceState `
+            -Name "after_preparation_removal" `
+            -StoragePresent $false -ControllerPresent $true
+        $preparationLibrary = Wait-LibraryCount -ExpectedCount 0
+        $evidence.after_preparation_removal = $afterPreparationRemoval
+        $evidence.preparation_library_count = $preparationLibrary.count
+
+        $armed = Invoke-ValidationGatePost -Action "arm"
+        if ([string]$armed.state -ne "armed") {
+            throw "Validation gate did not arm (state=$($armed.state))"
+        }
+        $gateSequence = [uint32]$armed.sequence
+        $evidence.validation_gate_armed = $armed
+
+        Request-OperatorStep "Reinsert USB0 to start the controlled Library load; leave FLX4 connected. The harness will tell you when to remove it again."
+        $holding = Wait-ValidationGateState -ExpectedState "holding" `
+            -ExpectedSequence $gateSequence
+        $evidence.validation_gate_holding = $holding
+
+        Request-OperatorStep "Remove USB0 now. The Library parser is paused after its first bounded PDB read; leave FLX4 connected."
+        $removedGate = Wait-ValidationGateState -ExpectedState "media_removed" `
+            -ExpectedSequence $gateSequence
+        $afterFirst = Wait-DeviceState -Name "after_library_load_removal" `
+            -StoragePresent $false -ControllerPresent $true
+        $libraryAfterRemoval = Wait-LibraryCount -ExpectedCount 0
+        $evidence.validation_gate_removed = $removedGate
+        $evidence.library_after_load_removal_count = $libraryAfterRemoval.count
+
+        Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0 for normal recovery; leave FLX4 connected."
     }
     $afterBoth = Wait-DeviceState -Name "after_both" `
         -StoragePresent $true -ControllerPresent $true
@@ -790,11 +878,11 @@ try {
             -StoragePresent $true -ControllerPresent $true)) {
         Add-Failure $allFailures "both USB devices were not healthy at final snapshot"
     }
-    $minimumRecoveryCount = if ($Group -eq "E") { 0 } else { 1 }
-    $maximumRecoveryCount = if ($Group -eq "E") { 1 } else { 2 }
-    $enforceRecoveryRange = $Group -ne "E"
-    $expectedStorageDisconnects = if ($Group -eq "E") { 1 } else { 0 }
-    $expectedStorageReleases = if ($Group -eq "E") { 1 } else { 0 }
+    $minimumRecoveryCount = if ($Group -in @("E", "F")) { 0 } else { 1 }
+    $maximumRecoveryCount = if ($Group -in @("E", "F")) { 1 } else { 2 }
+    $enforceRecoveryRange = $Group -notin @("E", "F")
+    $expectedStorageDisconnects = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
+    $expectedStorageReleases = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
     $cycleFailures = @(Get-CycleFailures -Baseline $baseline -Final $final `
         -MinimumRecoveryCount $minimumRecoveryCount `
         -MaximumRecoveryCount $maximumRecoveryCount `
@@ -823,7 +911,7 @@ try {
             Add-Failure $allFailures "$eventName event delta is $($eventDeltas.$eventName)"
         }
     }
-    $expectedUsbUnmountedEvents = if ($Group -eq "E") { 1 } else { 0 }
+    $expectedUsbUnmountedEvents = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
     if ($eventDeltas.usb_unmounted -ne $expectedUsbUnmountedEvents) {
         Add-Failure $allFailures "usb_unmounted event delta is $($eventDeltas.usb_unmounted), expected $expectedUsbUnmountedEvents"
     }
@@ -834,6 +922,7 @@ try {
 catch {
     $evidence.failures = @([string]$_.Exception.Message)
     $evidence.error = [string]$_
+    try { Invoke-ValidationGatePost -Action "cancel" | Out-Null } catch { }
     try { Stop-Decks } catch { }
 }
 finally {

@@ -57,6 +57,7 @@ static int              s_active_buf = 0;
 static int              s_active_order_buf = 0;
 static int              s_track_count = 0;
 static uint32_t         s_generation = 0;
+static pdb_import_stats_t s_import_stats;
 static SemaphoreHandle_t s_library_mutex = NULL;
 static bool             s_index_building = false;
 
@@ -284,21 +285,12 @@ esp_err_t library_init(void)
     library_order_entry_t *build_order = s_order_buf[build_order_buf];
     int build_count = 0;
 
-    /* media_io_gate serialises every USB reader, and the audio decode path takes
-     * it on each compressed-cache miss. Holding it across the whole catalog walk
-     * therefore blocked playback for the entire parse - up to LIBRARY_MAX_TRACKS
-     * reads - so loading the library stalled both decks. Take the gate per USB
-     * operation instead: the parse gets slightly more gate traffic, and audio
-     * gets to interleave.
-     *
-     * Releasing between rows also makes an unmount observable mid-parse rather
-     * than something the parse holds straight through, which the loop below
-     * checks for. */
+    /* pdb_open() owns bounded media access and releases media_io_gate after at
+     * most 8 KiB. This keeps audio cache reads schedulable and makes an
+     * asynchronous disconnect observable while the catalog is being parsed. */
     pdb_t *pdb = NULL;
-    media_io_gate_begin();
     rc = pdb_open(USB_PDB_PATH, &pdb);
     int n = (rc == ESP_OK) ? pdb_track_count(pdb) : 0;
-    media_io_gate_end();
     if (rc != ESP_OK) {
         xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
         s_index_building = false;
@@ -313,9 +305,7 @@ esp_err_t library_init(void)
      * reserving LIBRARY_MAX_TRACKS up front. */
     rc = reserve_track_buffer(build_buf, n);
     if (rc != ESP_OK) {
-        media_io_gate_begin();
         pdb_close(pdb);
-        media_io_gate_end();
         xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
         s_index_building = false;
         xSemaphoreGiveRecursive(s_library_mutex);
@@ -324,22 +314,16 @@ esp_err_t library_init(void)
     library_track_t *build_index = s_track_buf[build_buf];
     memset(build_index, 0, (size_t)s_track_cap[build_buf] * sizeof(library_track_t));
 
+    bool media_lost = false;
     for (int i = 0; i < n; i++) {
-        pdb_track_t pt;
-        media_io_gate_begin();
-        esp_err_t row_rc = pdb_get_track(pdb, i, &pt);
-        media_io_gate_end();
-
-        /* The drive can go away between rows now that the gate is released
-         * there. Check before acting on row_rc, not after: an unmount makes
-         * every remaining read fail, and `continue` would then walk the whole
-         * rest of the catalog against a dead mount. Stop instead - the rows
-         * gathered so far are still published, which is what the old code
-         * produced for a mid-parse read failure anyway. */
         if (!media_io_gate_is_available()) {
-            ESP_LOGW(TAG, "media went away %d/%d rows into the catalog walk", i, n);
+            ESP_LOGW(TAG, "media went away %d/%d rows into catalog publication",
+                     i, n);
+            media_lost = true;
             break;
         }
+        pdb_track_t pt;
+        esp_err_t row_rc = pdb_get_track(pdb, i, &pt);
         if (row_rc != ESP_OK) continue;
 
         library_track_t *lt = &build_index[build_count];
@@ -358,9 +342,20 @@ esp_err_t library_init(void)
         build_count++;
     }
 
-    media_io_gate_begin();
+    pdb_import_stats_t import_stats;
+    pdb_get_import_stats(pdb, &import_stats);
     pdb_close(pdb);
-    media_io_gate_end();
+
+    if (!media_io_gate_is_available()) {
+        media_lost = true;
+    }
+    if (media_lost) {
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Discarding library index built across media removal");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     for (int i = 0; i < build_count; ++i) {
         build_order[i] = (library_order_entry_t)i;
@@ -379,6 +374,7 @@ esp_err_t library_init(void)
     s_active_buf = build_buf;
     s_active_order_buf = build_order_buf;
     s_track_count = build_count;
+    s_import_stats = import_stats;
     if (s_ui_track_idx >= build_count) {
         s_ui_track_idx = 0;
     }
@@ -418,6 +414,16 @@ uint32_t library_generation(void)
     return gen;
 }
 
+void library_get_import_stats(pdb_import_stats_t *stats)
+{
+    if (!stats) return;
+    *stats = (pdb_import_stats_t){0};
+    if (ensure_library_mutex() != ESP_OK) return;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_track_count) *stats = s_import_stats;
+    xSemaphoreGiveRecursive(s_library_mutex);
+}
+
 void library_clear(void)
 {
     if (ensure_library_mutex() != ESP_OK) return;
@@ -427,6 +433,7 @@ void library_clear(void)
         s_current_meta_valid = false;
     }
     s_track_count = 0;
+    s_import_stats = (pdb_import_stats_t){0};
     s_generation++;
     s_ui_track_idx = 0;
     xSemaphoreGiveRecursive(s_library_mutex);

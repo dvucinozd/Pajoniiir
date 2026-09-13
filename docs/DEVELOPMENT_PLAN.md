@@ -10,8 +10,12 @@ The direct dual-root product path is implemented:
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
 - `RC2-121-g7b7b29a` is the latest installed exact hardware image on `ota_1`;
-  subsequent branch commits through this checkpoint change only lifecycle
-  tooling and evidence;
+- deterministic Group F support is implemented in the working tree: the PDB
+  reader releases media ownership after at most 8 KiB, incomplete rebuilds
+  fail closed, and a guarded one-shot validation barrier lets the harness
+  request removal after the first PDB read instead of relying on operator
+  timing; host tests and an ESP-IDF 6.0.2 build pass, but this code is not yet
+  installed;
 - the earlier `RC2-116-g77d723c` targeted three-hour continuous dual-MP3
   limiter/WDT soak passed without
   reset, underrun, active UAC loss or USB/controller loss;
@@ -22,7 +26,8 @@ The direct dual-root product path is implemented:
   operator-confirmed PASS;
 - the 30-minute exact-image dual-active MP3 gate is closed;
 - lifecycle Groups A--E pass: 21/50 controlled cycles and 21 planned physical
-  attachment/reconnect actions are complete; Group F is next.
+  attachment/reconnect actions are complete; Group F firmware installation and
+  five physical cycles are next.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -31,7 +36,8 @@ real defect.
 ## Ordered remaining phases
 
 Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is 21/50 cycles complete through Group E; Group F is next. Phases 4--11 remain
+is 21/50 cycles complete through Group E; the Group F implementation is ready
+for an exact committed OTA and hardware execution. Phases 4--11 remain
 deferred for later sessions.
 
 | Phase | Work | Exit criterion |

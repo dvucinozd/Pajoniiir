@@ -14,6 +14,7 @@
 #include "p4_ota_policy.h"
 #include "service_log.h"
 #include "library_load_trace.h"
+#include "library_validation_gate.h"
 #include "sd_io_gate.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -1089,6 +1090,69 @@ static esp_err_t api_diagnostic_log_handler(httpd_req_t *req)
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+static esp_err_t send_library_validation_gate_status(httpd_req_t *req)
+{
+    library_validation_gate_snapshot_t gate = {0};
+    library_validation_gate_snapshot(&gate);
+    char json[160];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sequence\":%u,\"timeout_ms\":%u}",
+                     library_validation_gate_state_name(gate.state),
+                     (unsigned)gate.sequence, (unsigned)gate.timeout_ms);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Validation status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+
+/* Service-only, one-shot barrier for the physical Group F acceptance test.
+ * It is bounded to 60 seconds and may only be armed while USB0 is absent and
+ * both decks are stopped. Normal mount/library operation never waits unless a
+ * marked local POST explicitly arms it. */
+static esp_err_t api_library_validation_gate_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return send_library_validation_gate_status(req);
+}
+
+static esp_err_t api_library_validation_gate_arm_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (usb_storage_is_mounted()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Disconnect USB0 before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    audio_engine_deck_get_status(0, &deck1);
+    audio_engine_deck_get_status(1, &deck2);
+    if (deck1.state != AE_IDLE || deck2.state != AE_IDLE) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop and clear both decks before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    esp_err_t rc = library_validation_gate_arm(60000u);
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE
+                                      ? "409 Conflict"
+                                      : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc),
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    return send_library_validation_gate_status(req);
+}
+
+static esp_err_t api_library_validation_gate_cancel_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    library_validation_gate_cancel();
+    return send_library_validation_gate_status(req);
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
@@ -2039,6 +2103,35 @@ esp_err_t web_server_start(void)
         .user_ctx = NULL
     };
     rc = register_uri_or_stop(s_web_server, &diag_log_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_status_uri = {
+        .uri = "/api/validation/library-load-gate",
+        .method = HTTP_GET,
+        .handler = api_library_validation_gate_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &library_validation_gate_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_arm_uri = {
+        .uri = "/api/validation/library-load-gate/arm",
+        .method = HTTP_POST,
+        .handler = api_library_validation_gate_arm_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server, &library_validation_gate_arm_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t library_validation_gate_cancel_uri = {
+        .uri = "/api/validation/library-load-gate/cancel",
+        .method = HTTP_POST,
+        .handler = api_library_validation_gate_cancel_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &library_validation_gate_cancel_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t firmware_uri = {

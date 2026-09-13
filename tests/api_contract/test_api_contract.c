@@ -23,6 +23,7 @@
 #include "audio_pcm_timeline.h"
 #include "audio_scratch_buffer.h"
 #include "library.h"
+#include "library_validation_gate.h"
 #include "wifi_link.h"
 
 /* ── library ─────────────────────────────────────────────────────────────── */
@@ -53,6 +54,20 @@ static int  (*const c_library_selected)(void) = library_selected_track_index;
  * stop copying a ~2.9 KB record per candidate row. */
 static esp_err_t (*const c_library_get_row_key)(int, uint32_t *) = library_get_row_key;
 static int       (*const c_library_find_row_by_key)(uint32_t) = library_find_row_by_key;
+static void      (*const c_library_import_stats)(pdb_import_stats_t *) =
+    library_get_import_stats;
+
+/* The one-shot Group F barrier is a service validation surface. Keep its
+ * signatures compiler-checked because the lifecycle harness depends on the
+ * web layer being able to arm, inspect and cancel it. */
+static esp_err_t (*const c_library_gate_arm)(uint32_t) = library_validation_gate_arm;
+static void      (*const c_library_gate_cancel)(void) = library_validation_gate_cancel;
+static bool      (*const c_library_gate_checkpoint)(void) =
+    library_validation_gate_checkpoint;
+static void      (*const c_library_gate_snapshot)(library_validation_gate_snapshot_t *) =
+    library_validation_gate_snapshot;
+static const char *(*const c_library_gate_state_name)(library_validation_gate_state_t) =
+    library_validation_gate_state_name;
 
 /* ── bounded compressed audio cache ──────────────────────────────────────── */
 
@@ -115,6 +130,10 @@ static inline void api_contract_reference_all(void)
     CONTRACT_USE(c_library_free_current_anlz);
     CONTRACT_USE(c_library_set_selected);   CONTRACT_USE(c_library_selected);
     CONTRACT_USE(c_library_get_row_key);    CONTRACT_USE(c_library_find_row_by_key);
+    CONTRACT_USE(c_library_import_stats);
+    CONTRACT_USE(c_library_gate_arm);       CONTRACT_USE(c_library_gate_cancel);
+    CONTRACT_USE(c_library_gate_checkpoint); CONTRACT_USE(c_library_gate_snapshot);
+    CONTRACT_USE(c_library_gate_state_name);
     CONTRACT_USE(c_cache_init);             CONTRACT_USE(c_cache_reset);
     CONTRACT_USE(c_cache_read);             CONTRACT_USE(c_cache_prefetch);
     CONTRACT_USE(c_cache_capacity);

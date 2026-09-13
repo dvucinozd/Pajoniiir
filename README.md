@@ -24,7 +24,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > failure; their analysis does not justify a code change. The current bench
 > 5 V/dual-VBUS measurement gate is
 > operator-confirmed PASS. Lifecycle Groups A--E pass, accounting for 21/50
-> controlled cycles and 21 planned physical attachment/reconnect actions. The
+> controlled cycles and 21 planned physical attachment/reconnect actions.
+> Deterministic Group F Library-load removal support is host-tested and builds
+> with ESP-IDF 6.0.2, but is not installed and its five hardware cycles have
+> not started. The
 > branch remains **not release-qualified** until the remaining lifecycle,
 > verified WAV/FLAC, on-device timing/listening, guarded OTA, combined-load and
 > closed-enclosure gates pass.

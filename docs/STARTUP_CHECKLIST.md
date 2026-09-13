@@ -50,6 +50,9 @@ Status: **active P4-only checklist, reconciled 2026-09-11**.
 - [x] Boot empty, then attach USB0 followed by USB1: Group C 4/4.
 - [x] Boot empty, then attach USB1 followed by USB0: Group D 4/4.
 - [x] USB0 idle remove/reinsert while FLX4 remains active: Group E 5/5.
+- [x] Implement and host-test a guarded deterministic Group F Library-load
+  removal trigger; ESP-IDF 6.0.2 compile-validation passes.
+- [ ] Commit, sign, install and smoke the exact Group F firmware image.
 - [ ] USB0 remove during Library load, audio load and active decode/playback.
 - [ ] USB1 idle disconnect/reconnect while USB0 remains mounted.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
@@ -58,7 +61,8 @@ Status: **active P4-only checklist, reconciled 2026-09-11**.
   latched.
 - [ ] Complete 50 controlled lifecycle cycles, including at least 20
   independent physical reconnects. Current progress: 21/50 cycles and 21
-  planned attachment/reconnect actions; Groups F--N remain.
+  planned attachment/reconnect actions; Groups F--N remain. Group F tooling is
+  ready, but its five hardware cycles do not count until run on the exact image.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.
 
 ## Media and audio

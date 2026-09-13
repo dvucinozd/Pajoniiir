@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "rekordbox_anlz.h"
+#include "rekordbox_pdb.h"
 
 #define LIBRARY_PATH_MAX  256
 #define LIBRARY_STR_MAX   128
@@ -54,6 +55,7 @@ esp_err_t library_init(void);
 void      library_clear(void);
 uint32_t  library_generation(void);
 int       library_count(void);
+void      library_get_import_stats(pdb_import_stats_t *stats);
 esp_err_t library_get(int index, library_track_t *out);
 esp_err_t library_get_summary(int index,
                               uint16_t *out_bpm,

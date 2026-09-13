@@ -1359,6 +1359,16 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pdb backend reads are bounded and stop after media removal" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
+    -LiteralPatterns @(
+        "len > 8192u ? 8192u : len",
+        "media_io_gate_is_available()",
+        "pdb_read_at(p->source",
+        "p->read_failed = true"
+    )
+
+Assert-FileContains `
     -Name "p4 web library stream aborts when the client disconnects" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
@@ -1373,6 +1383,17 @@ Assert-FileContains `
         "queue_rc = deck_core_queue_remote_event(&ev);",
         '"503 Service Unavailable"',
         '.method = HTTP_POST'
+    )
+
+Assert-FileContains `
+    -Name "p4 Library-load validation gate is guarded, bounded and requires USB0 absent" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_library_validation_gate_arm_handler",
+        "api_request_allowed(req, true)",
+        "usb_storage_is_mounted()",
+        "library_validation_gate_arm(60000u)",
+        '"/api/validation/library-load-gate/arm"'
     )
 
 Assert-FileContains `
@@ -1399,6 +1420,24 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("atoi(")
 
 $tests = @(
+    @{
+        Name = "library_validation_gate"
+        Dir = "tests/library_validation_gate"
+        Target = "test_library_validation_gate.exe"
+        Args = @(
+            "-O1", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DLIBRARY_VALIDATION_GATE_HOST_TEST",
+            "-DMEDIA_IO_GATE_STANDALONE_TEST",
+            "-I../support/rtos", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-o", "test_library_validation_gate.exe",
+            "test_library_validation_gate.c",
+            "../support/rtos/fake_rtos.c",
+            "../../firmware/main-deck-p4/components/library/library_validation_gate.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+        )
+    },
     @{
         Name = "ui_load_gate"
         MinTestsRun = 12
@@ -2399,7 +2438,9 @@ $tests = @(
     },
     @{
         Name = "library_anlz"
-        MinTestsRun = 253
+        # PDB backend gating is now exercised by the bounded-page parser suite;
+        # catalog publication copies parsed rows without incidental gate checks.
+        MinTestsRun = 207
         Dir = "tests/library_anlz"
         Target = "test_library_anlz.exe"
         Args = @(

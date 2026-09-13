@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-12**
+Saved: **2026-09-13**
 
 Status: **active P4-only operational handoff**.
 
@@ -122,6 +122,20 @@ window before requesting a cable action. Do not ask the operator to target the
 approximately 50--60 ms `USB_MOUNTED` to `LIBRARY_LOADED` interval manually.
 Accepted per-cycle details are in
 [`../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
+
+Implementation checkpoint 2026-09-13: Group F no longer depends on that manual
+timing window. `rekordbox_pdb` now reads one bounded page at a time and releases
+`media_io_gate` after at most 8 KiB; a media loss aborts the rebuild instead of
+publishing a partial Library. A guarded, one-shot validation endpoint can be
+armed only while USB0 is absent and both decks are idle. The next PDB load then
+pauses immediately after its first header read until USB0 is removed, the gate
+is canceled, or its 60-second bound expires. The Group F harness detects the
+holding state before asking for removal, verifies the `media_removed` result,
+then requires a normal remount and coherent 100-track Library before playback.
+The complete P4 host suite and ESP-IDF v6.0.2 compile-validation build pass.
+This working image is not installed and does not count as Group F evidence.
+Next action: create an exact committed and signed OTA from these changes,
+install it, run the focused smoke, then execute F1--F5.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

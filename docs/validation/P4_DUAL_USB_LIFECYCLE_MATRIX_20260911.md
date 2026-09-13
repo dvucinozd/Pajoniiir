@@ -2,7 +2,8 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups A--E complete; Group F is next**.
+Status: **IN PROGRESS — Groups A--E complete; Group F implementation ready,
+hardware cycles pending**.
 
 ## Test images and current installed image
 
@@ -48,9 +49,9 @@ The complete gate requires 50 controlled cycles, including at least 20
 independent physical reconnects and explicit USB0 removal during active
 load/decode.
 
-## Guided Groups C--E harness
+## Guided Groups C--F harness
 
-Groups C--E use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
+Groups C--F use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
 to the required cable actions and listening/controller confirmation. The
 harness verifies the exact installed image, empty-boot baseline, attachment
 order, both USB roles, 100-track Library, dual-deck playback progress, UAC ring
@@ -91,6 +92,30 @@ the storage owner intentionally runs up to eight fast recovery probes before a
 30-second slow cadence. Their count therefore depends on operator timing; the
 harness requires every request to have a matching success and rejects every
 recovery failure or queue drop rather than imposing a time-dependent count.
+
+Group F also starts with both devices healthy and both decks stopped. The
+harness first requests removal of USB0 and confirms the absent-media baseline,
+then arms a guarded one-shot firmware barrier. After USB0 is reinserted, the
+firmware pauses the Library rebuild immediately after the first bounded PDB
+header read. Only after the harness observes `holding` does it ask the operator
+to remove USB0. The disconnect must change the barrier state to
+`media_removed`, keep FLX4 active and leave Library count zero. A final normal
+reinsert must restore all 100 tracks before the standard dual-playback and
+operator checks run. The barrier expires after 60 seconds and normal product
+operation is a no-op unless it was explicitly armed.
+
+Run F1 through F5 on the exact installed candidate:
+
+```powershell
+.\tools\run_p4_lifecycle_cycle.ps1 -Group F -Cycle 1 `
+    -ExpectedVersion <exact-installed-version>
+```
+
+The bounded PDB reader, partial-index rejection, validation barrier and Group F
+harness passed the complete P4 host suite on 2026-09-13. An ESP-IDF v6.0.2
+compile-validation build also passed at 2,454,800 bytes with 41% of the smallest
+application partition free. This is software readiness only: the build was
+dirty, was not packaged or installed, and no Group F cycle has yet been counted.
 
 ## Planned distribution
 
@@ -969,7 +994,7 @@ Groups A--E now account for 21/50 controlled lifecycle cycles and 21 planned
 physical attachment/reconnect actions. Proceed to Group F: five controlled
 USB0 remove/reinsert cycles during Library load.
 
-## Next-session checkpoint — 2026-09-12
+## Continuation checkpoint — 2026-09-13
 
 - Installed hardware remains on exact image `RC2-121-g7b7b29a`, partition
   `ota_1`; the accepted C1--E5 sequence ended on boot 413 with USB0 and FLX4
@@ -979,11 +1004,13 @@ USB0 remove/reinsert cycles during Library load.
   and active reconnects, held controls, reboot recovery and mixed stress.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
-- `tools/run_p4_lifecycle_cycle.ps1` currently supports accepted Groups C--E.
+- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--F. Groups C--E are
+  accepted hardware evidence; Group F is software-ready but unexecuted.
   Its local JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a
   release artifact; this document preserves the accepted results.
-- First action next session: inspect the Library-load trigger and event timing,
-  then extend and self-test the harness for a deterministic Group F removal
-  window before asking for any cable action. Do not rely on trying to hit the
-  roughly 50--60 ms interval between `USB_MOUNTED` and `LIBRARY_LOADED` by
-  hand.
+- The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
+  are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
+- First action: commit and push the implementation, create and verify a signed
+  OTA from that exact commit, install it and pass focused USB0/FLX4/Library/audio
+  smoke. Then run F1--F5; do not count the preparation or target removal as a
+  pass until the harness and operator confirmation both succeed.
