@@ -61,14 +61,14 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
   deterministic first-cache-page triggers.
 - [x] Implement and self-test the Group H USB1 idle reconnect harness while
   preserving the USB0 100-track Library.
-- [ ] USB1 idle disconnect/reconnect while USB0 remains mounted: Group H 0/5.
+- [x] USB1 idle disconnect/reconnect while USB0 remains mounted: Group H 5/5.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
 - [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
 - [ ] Confirm held controls release and no scratch/pad/shift state remains
   latched.
 - [ ] Complete 50 controlled lifecycle cycles, including at least 20
-  independent physical reconnects. Current progress: 31/50 cycles and 31
-  planned attachment/reconnect actions; Groups H--L remain.
+  independent physical reconnects. Current progress: 36/50 cycles and 36
+  planned attachment/reconnect actions; Groups I--L remain.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.
 
 ## Media and audio

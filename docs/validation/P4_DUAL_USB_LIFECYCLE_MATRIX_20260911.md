@@ -2,7 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups A--G complete; 31/50 cycles pass**.
+Status: **IN PROGRESS — Groups A--H complete; 36/50 cycles pass**.
 
 ## Test images and current installed image
 
@@ -174,7 +174,8 @@ Run H1 through H5 on the current exact installed candidate:
 
 The extended harness self-test passes. One earlier focused USB1 reconnect smoke
 passed on `RC2-109-g269036b`, but it is not one of the five formal Group H
-cycles on the current candidate. Group H therefore remains 0/5.
+cycles on the current candidate. H1--H4 passed on boot 416 and H5 passed on
+boot 417 after a clean controlled reboot, all on `RC2-128-g495947e`.
 
 The first current-candidate H1 attempt completed the physical reconnect,
 retained USB0 and passed audio/controller checks, but the initial harness
@@ -193,7 +194,7 @@ the corrected gate accepts zero or one epoch and rejects duplicates.
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | PASS: E1--E5 |
 | F | USB0 remove/reinsert during Library load | 5 | 5 | PASS: F1--F5 |
 | G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | PASS: G1--G5 |
-| H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | pending |
+| H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | PASS: H1--H5 |
 | I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | pending |
 | J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | pending |
 | K | Software reboot with both roots occupied | 2 | 0 | pending |
@@ -1123,22 +1124,59 @@ Groups A--G now account for 31/50 controlled lifecycle cycles and 31 planned
 physical reconnect actions. Proceed to Group H: USB1 idle disconnect/reconnect
 while USB0 remains mounted.
 
+### H1--H5 — USB1 idle disconnect/reconnect with USB0 retained
+
+Status: **PASS; Group H complete**.
+
+- Exact installed image: `RC2-128-g495947e`, `ota_1`; H1--H4 used boot epoch
+  416 and H5 used boot epoch 417 after a controlled clean reboot.
+- Every accepted cycle observed exactly one controller disconnect and connect,
+  zero storage disconnects, a continuously mounted USB0 and a coherent
+  100-track Library.
+- FLX4 identity/profile, MIDI IN/OUT, LED delivery and UAC returned after each
+  reconnect. Both decks then advanced for more than ten seconds and the
+  operator confirmed audible MAIN/cue plus physical Deck 1 PLAY/PAUSE.
+- Host recovery requests remained matched to successes, controller fault
+  recovery stayed within the allowed zero-to-one epoch bound, and accepted
+  cycles had zero PCM-underrun, output-late, UAC-loss, runtime-queue, daemon,
+  storage or controller fault deltas with no reboot.
+
+| Cycle | Boot | D1 advance | D2 advance | UAC blocks | Controller disconnect/connect | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| H1 | 416 | 10,112 ms | 10,113 ms | 1,742 | 1 / 1 | PASS |
+| H2 | 416 | 10,106 ms | 10,107 ms | 1,742 | 1 / 1 | PASS |
+| H3 | 416 | 10,228 ms | 10,228 ms | 1,763 | 1 / 1 | PASS |
+| H4 | 416 | 10,235 ms | 10,235 ms | 1,762 | 1 / 1 | PASS |
+| H5 | 417 | 10,130 ms | 10,129 ms | 1,745 | 1 / 1 | PASS |
+
+Rejected attempts do not count. The first H1 run exposed an overly strict
+harness expectation of exactly one soft-fault epoch even though a normal
+physical `DEV_GONE` can correctly produce zero; the corrected harness accepts
+zero or one and rejects duplicates. One H5 attempt included an unintended cable
+movement and another included an unintended USB0 removal. A following launch
+correctly refused the dirty output-late baseline. After the controlled reboot,
+the complete H5 sequence passed cleanly.
+
+Groups A--H now account for 36/50 controlled lifecycle cycles and 36 planned
+physical attachment/reconnect actions. Proceed to Group I: USB1
+disconnect/reconnect during dual-deck playback.
+
 ## Continuation checkpoint — 2026-09-13
 
 - Installed hardware is on exact image `RC2-128-g495947e`, partition `ota_1`;
   signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
-- Groups A--G are complete: 31/50 controlled cycles. Groups H--L remain open:
-  19 cycles covering USB1 idle and active
-  reconnects, held controls and reboot/OTA recovery.
+- Groups A--H are complete: 36/50 controlled cycles. Groups I--L remain open:
+  14 cycles covering USB1 active reconnects, held controls and reboot/OTA
+  recovery.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
-- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H. Groups C--G have
-  accepted hardware evidence; Group H is harness-ready but unexecuted. Local
+- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H, all with accepted
+  hardware evidence. Local
   JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a release
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: run Group H USB1 idle disconnect/reconnect on
-  `RC2-128-g495947e`, preserving USB0 mount/Library and checking controller
-  profile, MIDI, LEDs, UAC, recovery epochs and all fault counters.
+- First action: implement a deterministic Group I harness for USB1
+  disconnect/reconnect during dual-deck playback, self-test it, then run I1--I5
+  on the exact installed candidate while preserving USB0 and the Library.

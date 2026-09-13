@@ -30,7 +30,7 @@ they actually tested; they are not current instructions.
   documentation-only successor
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; lifecycle Groups
-  A--G pass; the earlier
+  A--H pass; the earlier
   `RC2-116-g77d723c` targeted three-hour limiter/WDT
   hardware soak remains valid within its scope
 
@@ -57,7 +57,7 @@ catalog handling and guarded deterministic Library-load validation barrier.
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
 profile/MIDI/UAC startup and a ten-second dual-deck smoke. Both decks advanced,
 1,750 UAC blocks were submitted, and drop/overflow/packet-failure, both PCM
-underrun and output-late deltas stayed zero. Groups A--G account for 31/50
+underrun and output-late deltas stayed zero. Groups A--H account for 36/50
 accepted lifecycle cycles. The earlier `RC2-116-g77d723c` remained on
 boot epoch 389 through its
 targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
@@ -75,6 +75,13 @@ ESP-IDF v6.0.2 build, signed-package verification, OTA and focused smoke pass.
 G1--G5 also pass on boot 416: every cycle restored 100 tracks, advanced both
 decks for more than ten seconds, retained FLX4 MIDI/UAC, matched all recovery
 requests to successes and produced zero critical fault deltas.
+
+H1--H4 passed on boot 416 and H5 passed after a clean controlled reboot on
+boot 417. Each accepted cycle disconnected only FLX4, retained USB0 plus the
+coherent 100-track Library, observed exactly one controller disconnect/connect
+and restored profile, MIDI, LEDs, UAC, dual playback and audible MAIN/cue with
+zero accepted-cycle critical fault deltas. Operator-invalid attempts involving
+an unintended cable action or USB0 removal do not count.
 
 Earlier focused evidence remains valid within its stated limits:
 

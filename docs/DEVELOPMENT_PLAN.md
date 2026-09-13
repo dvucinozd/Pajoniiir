@@ -25,11 +25,13 @@ The direct dual-root product path is implemented:
 - the current bench common 5 V and dual-VBUS measurement gate is
   operator-confirmed PASS;
 - the 30-minute exact-image dual-active MP3 gate is closed;
-- lifecycle Groups A--G pass: 31/50 controlled cycles and 31 planned physical
+- lifecycle Groups A--H pass: 36/50 controlled cycles and 36 planned physical
   attachment/reconnect actions are complete. Deterministic Group G audio-load
   removal alternated D1/D2 across five cycles; every remount restored 100
   tracks, all recovery requests matched successes, and controller/audio fault
-  deltas stayed zero. USB1 idle reconnect is next.
+  deltas stayed zero. Five idle USB1 reconnects then retained USB0 and its
+  100-track Library and restored FLX4 profile, MIDI, LEDs, UAC and audible
+  MAIN/cue. USB1 reconnect during dual-deck playback is next.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -38,8 +40,8 @@ real defect.
 ## Ordered remaining phases
 
 Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is 31/50 cycles complete through Group G; USB1 idle disconnect/reconnect is
-next on the installed exact candidate.
+is 36/50 cycles complete through Group H; USB1 disconnect/reconnect during
+dual-deck playback is next on the installed exact candidate.
 Phases 4--11 remain
 deferred for later sessions.
 

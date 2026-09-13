@@ -18,7 +18,7 @@ Status: **active P4-only operational handoff**.
 - Current bundle path:
   `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
-  build, package verification, signed OTA and lifecycle Groups A--G pass; the
+  build, package verification, signed OTA and lifecycle Groups A--H pass; the
   earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
 - Latest installed version: `RC2-128-g495947e` from commit `495947e`
@@ -111,8 +111,8 @@ Final-enclosure repetition remains open.
 
 ## Session 2 — complete dual-USB lifecycle matrix
 
-Checkpoint 2026-09-13: Groups A--G pass. Progress is 31/50 controlled cycles
-and 31 planned physical attachment/reconnect actions. Group F ran on exact
+Checkpoint 2026-09-13: Groups A--H pass. Progress is 36/50 controlled cycles
+and 36 planned physical attachment/reconnect actions. Group F ran on exact
 image `RC2-127-g06c0e85`, `ota_0`, boot epoch 415. F1--F5 each reached the
 guarded `holding` state, changed to `media_removed` on the controlled USB0
 removal, kept Library empty while absent, restored all 100 tracks and passed
@@ -151,18 +151,22 @@ the gate alternated D1/D2, every removal produced `media_removed`, every normal
 remount restored 100 tracks, every recovery request matched a success and all
 critical controller/audio deltas stayed zero. One first G4 attempt had an
 extra fast physical USB0 disconnect/remount after reinsertion and was rejected;
-the clean repeated G4 passed. Next action: start Group H, USB1 idle
-disconnect/reconnect while USB0 remains mounted.
+the clean repeated G4 passed. Group H then continued with USB1 idle
+disconnect/reconnect while USB0 remained mounted.
 
-Group H harness checkpoint 2026-09-13: the lifecycle runner now guides one
+Group H completion checkpoint 2026-09-13: the lifecycle runner guides one
 idle FLX4 disconnect/reconnect while USB0 remains untouched. It requires the
 100-track Library throughout the controller absence, exactly one controller
 disconnect/connect, active profile plus MIDI/UAC recovery, zero to two matched
 host recoveries, at most one controller fault epoch and the standard
 playback/operator checks. Its self-test is included in the complete P4 host
-runner. The older `RC2-109-g269036b` focused USB1 reconnect smoke remains valid
-within its scope but is not one of the five current-candidate Group H cycles;
-H1--H5 remain unexecuted.
+runner. H1--H4 passed on boot 416 and H5 passed on boot 417 after a controlled
+clean reboot, all on exact installed image `RC2-128-g495947e`. Each accepted
+cycle retained USB0 and 100 tracks, restored FLX4 profile/MIDI/LED/UAC and
+passed dual playback plus audible MAIN/cue confirmation with zero critical
+fault deltas. The initial H1 harness-policy attempt and H5 attempts containing
+unintended cable/USB0 actions remain rejected and do not count. Next action:
+implement and run Group I, USB1 disconnect/reconnect during dual-deck playback.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.
