@@ -42,6 +42,17 @@ Current installed Group F validation image:
 - Installed and exact-image smoke-tested by signed OTA; F1--F5 ran on boot
   epoch 415 with USB0 and FLX4 healthy.
 
+Current installed Group G validation candidate:
+
+- Firmware commit: `495947e0da847b377375b898838fb0c522d97ef5`
+- Installed version/slot: `RC2-128-g495947e`, `ota_1`
+- Application size/SHA-256: 2,456,528 bytes;
+  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
+- Signed bundle size/SHA-256: 2,456,716 bytes;
+  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
+- Clean ESP-IDF v6.0.2 build, package verification, signed OTA and focused
+  ten-second dual-deck smoke pass. No Group G physical cycle counts yet.
+
 ## Acceptance requirements
 
 Every cycle requires:
@@ -142,10 +153,10 @@ Run G1 through G5 only on the exact installed candidate containing the gate:
     -ExpectedVersion <exact-installed-version>
 ```
 
-The Group G gate unit test, harness self-test, complete P4 host suite and an
-ESP-IDF v6.0.2 compile-validation build pass. The dirty build is 2,456,480
-bytes with 41% of the smallest application partition free. This is software
-readiness only: the image is not installed and no Group G cycle counts yet.
+The Group G gate unit test, harness self-test, complete P4 host suite, clean
+ESP-IDF v6.0.2 build, signed-package verification, OTA and focused exact-image
+smoke pass on `RC2-128-g495947e`. This is execution readiness only: no Group G
+cycle counts yet.
 
 ## Planned distribution
 
@@ -1059,8 +1070,8 @@ audio load/decode or active playback.
 
 ## Continuation checkpoint — 2026-09-13
 
-- Installed hardware is on exact image `RC2-127-g06c0e85`, partition `ota_0`;
-  the accepted F1--F5 sequence ended on boot 415 with USB0 and FLX4 healthy and
+- Installed hardware is on exact image `RC2-128-g495947e`, partition `ota_1`;
+  signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
 - Groups A--F are complete: 26/50 controlled cycles. Groups G--L remain open:
   24 cycles covering audio load/decode or playback, USB1 idle and active
@@ -1073,7 +1084,6 @@ audio load/decode or active playback.
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: commit and push the Group G implementation, create and verify a
-  signed OTA from that exact commit, install it and pass focused smoke. Then run
-  G1--G5; do not count a cycle until the gate, remount, dual playback, physical
+- First action: run G1--G5 on `RC2-128-g495947e`; do not count a cycle until
+  the gate, remount, dual playback, physical
   controller check and all fault counters pass.

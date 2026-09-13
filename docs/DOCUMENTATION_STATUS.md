@@ -17,20 +17,21 @@ they actually tested; they are not current instructions.
 ## Current validated firmware checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `06c0e858ec77b0264b21566ee726e2d2135f365f`
-- Version: `RC2-127-g06c0e85`
-- Application size: `2,454,848` bytes
+- Commit: `495947e0da847b377375b898838fb0c522d97ef5`
+- Version: `RC2-128-g495947e`
+- Application size: `2,456,528` bytes
 - Application SHA-256:
-  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
-- Signed bundle size: `2,455,036` bytes
+  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
+- Signed bundle size: `2,456,716` bytes
 - Signed bundle SHA-256:
-  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
+  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: pushed; local and remote SHA matched before this
   documentation-only successor
 - Validation state: P4 host/build and signed-package verification passed;
-  installed by signed OTA, exact-image smoke passed and lifecycle Groups
-  A--F pass; the earlier `RC2-116-g77d723c` targeted three-hour limiter/WDT
+  installed by signed OTA and exact-image smoke passed; lifecycle Groups
+  A--F pass and Group G is ready for physical execution; the earlier
+  `RC2-116-g77d723c` targeted three-hour limiter/WDT
   hardware soak remains valid within its scope
 
 This firmware checkpoint retains the review remediations recorded in
@@ -42,21 +43,23 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware baseline
 
-- Commit: `06c0e858ec77b0264b21566ee726e2d2135f365f`
-- Installed version: `RC2-127-g06c0e85`
-- Installed slot: `ota_0`
-- Application size: `2,454,848` bytes
+- Commit: `495947e0da847b377375b898838fb0c522d97ef5`
+- Installed version: `RC2-128-g495947e`
+- Installed slot: `ota_1`
+- Application size: `2,456,528` bytes
 - Application SHA-256:
-  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
-- Signed bundle size: `2,455,036` bytes
+  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
+- Signed bundle size: `2,456,716` bytes
 - Signed bundle SHA-256:
-  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
+  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
 - Toolchain: ESP-IDF v6.0.2
 
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup and all five deterministic Library-load removal
-cycles on boot epoch 415. Groups A--F now account for 26/50 accepted lifecycle
-cycles. The earlier `RC2-116-g77d723c` remained on boot epoch 389 through its
+profile/MIDI/UAC startup and a ten-second dual-deck smoke. Both decks advanced,
+1,750 UAC blocks were submitted, and drop/overflow/packet-failure, both PCM
+underrun and output-late deltas stayed zero. Groups A--F still account for
+26/50 accepted lifecycle cycles. The earlier `RC2-116-g77d723c` remained on
+boot epoch 389 through its
 targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
 reset, PCM underrun or active UAC loss and no observable output failure,
 controller disconnect or USB host daemon error. Fourteen output-late warnings
@@ -64,13 +67,12 @@ over 1,999,090 submitted UAC blocks did not correlate with a downstream
 failure; no source change is justified from that count alone. See
 [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
-The working tree also contains deterministic Group G audio-load removal
+The installed candidate contains deterministic Group G audio-load removal
 support. Its guarded loader gate pauses after the first bounded 32 KiB cache
 read, and the updated lifecycle harness alternates the target deck across
-G1--G5. The gate unit test, harness self-test, complete P4 host suite and
-ESP-IDF v6.0.2 build pass. This dirty build is not installed and provides no
-Group G hardware evidence until committed, signed, installed and physically
-executed.
+G1--G5. The gate unit test, harness self-test, complete P4 host suite, clean
+ESP-IDF v6.0.2 build, signed-package verification, OTA and focused smoke pass.
+No Group G cycle counts until the physical removal sequence is executed.
 
 Earlier focused evidence remains valid within its stated limits:
 

@@ -9,29 +9,29 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `06c0e858ec77b0264b21566ee726e2d2135f365f`
-- Validated firmware version: `RC2-127-g06c0e85`
-- Current signed bundle: `2,455,036` bytes, SHA-256
-  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
-- Current application: `2,454,848` bytes, SHA-256
-  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
+  `495947e0da847b377375b898838fb0c522d97ef5`
+- Validated firmware version: `RC2-128-g495947e`
+- Current signed bundle: `2,456,716` bytes, SHA-256
+  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
+- Current application: `2,456,528` bytes, SHA-256
+  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
 - Current bundle path:
-  `releases/pajoniiir-RC2-127-g06c0e85/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--F pass; the
   earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-127-g06c0e85` from commit `06c0e85`
-- Installed slot: `ota_0`
+- Latest installed version: `RC2-128-g495947e` from commit `495947e`
+- Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,454,848` bytes
+- Application: `2,456,528` bytes
 - Application SHA-256:
-  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
-- Signed bundle: `2,455,036` bytes
+  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
+- Signed bundle: `2,456,716` bytes
 - Signed bundle SHA-256:
-  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
+  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
 - Bundle path:
-  `releases/pajoniiir-RC2-127-g06c0e85/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
 
 During the latest captured hardware run, USB0 remained mounted and the direct
 FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
@@ -142,11 +142,11 @@ publishing `load_done`, and exits as `media_removed` when USB0 disappears.
 gate before requesting removal, requires an empty Library while absent, then
 requires a coherent 100-track remount and the standard dual-playback/controller
 checks. The new gate unit test, harness self-test, complete P4 host suite and
-ESP-IDF v6.0.2 build pass; the dirty build is 2,456,480 bytes with 41% of the
-smallest app partition free. This working image is not installed and does not
-count as Group G evidence. Next action: commit and push, create and verify a
-signed OTA from that exact commit, install it, pass focused smoke, then execute
-G1--G5.
+ESP-IDF v6.0.2 host and clean signed builds pass. Exact image
+`RC2-128-g495947e` is 2,456,528 bytes with 41% of the smallest app partition
+free; its signed bundle verifies, is installed on `ota_1`, and passed focused
+dual-deck smoke with zero critical audio deltas. This establishes readiness,
+not Group G cycle evidence. Next action: execute G1--G5.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

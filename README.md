@@ -15,7 +15,7 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
 > validated firmware and installed hardware candidate is
-> `RC2-127-g06c0e85` on `ota_0`.
+> `RC2-128-g495947e` on `ota_1`.
 > Its signed OTA and exact-image checks passed. The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
@@ -28,6 +28,9 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > All five deterministic Group F Library-load removal cycles passed on the
 > exact installed image without reboot, partial Library publication, recovery
 > mismatch, controller loss or audio fault. The
+> deterministic Group G audio-load trigger is installed and its exact-image
+> dual-deck smoke passed; the five physical Group G cycles have not run yet.
+> The
 > branch remains **not release-qualified** until the remaining lifecycle,
 > verified WAV/FLAC, on-device timing/listening, guarded OTA, combined-load and
 > closed-enclosure gates pass.
