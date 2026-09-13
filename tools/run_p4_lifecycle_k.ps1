@@ -5,7 +5,8 @@ param(
     [ValidateRange(5, 60)][int]$PlaybackSeconds = 10,
     [ValidateRange(20, 180)][int]$DeviceTimeoutSeconds = 90,
     [string]$OutputDirectory = "tmp/p4-lifecycle",
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [switch]$DefineOnly
 )
 
 # Deterministic Group K software-reboot lifecycle harness. The firmware owns
@@ -49,7 +50,7 @@ function Get-PostBootFailures {
         Add-Failure $failures "firmware version changed to $($Snapshot.version)"
     }
     if ($Snapshot.slot -ne $ExpectedSlot) {
-        Add-Failure $failures "software reboot changed slot to $($Snapshot.slot)"
+        Add-Failure $failures "reboot selected unexpected slot $($Snapshot.slot)"
     }
     if ($Snapshot.ota_state -ne "idle" -or $Snapshot.ota_error) {
         Add-Failure $failures "OTA status is not clean and idle"
@@ -111,7 +112,7 @@ function Wait-ApiOutage {
         }
         Start-Sleep -Milliseconds 200
     }
-    throw "Software reboot produced no observable API outage"
+    throw "Reboot produced no observable API outage"
 }
 
 function Wait-NewBootLog {
@@ -195,6 +196,9 @@ function Invoke-KSelfTest {
 if ($kSelfTest) {
     Invoke-KSelfTest
     exit 0
+}
+if ($DefineOnly) {
+    return
 }
 if (-not $ExpectedVersion) {
     throw "-ExpectedVersion is required for hardware evidence"

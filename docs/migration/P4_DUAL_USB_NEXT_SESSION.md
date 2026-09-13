@@ -179,7 +179,12 @@ self-tests plus the ESP-IDF v6.0.2 firmware build. Exact-image K1/K2 passed on
 boots 424 and 426 with both roots occupied and no manual reinsert. Boot 425 was
 a technically clean second run but is not counted because its local evidence
 was mislabeled K1 by a shared-script variable collision; the corrected harness
-preserves and self-tests `Cycle=2`. Next action is Group L OTA-reboot recovery.
+preserves and self-tests `Cycle=2`. `tools/run_p4_lifecycle_l.ps1` now provides
+the deterministic L1/L2 path: it verifies the signed bundle before upload,
+requires the inactive slot to become active after a real OTA reboot, and applies
+the same strict dual-USB, 100-track, fault, playback and operator checks. Its
+PowerShell 7 and 5.1 self-tests pass. Next action is L1 with the existing exact
+`RC2-136-g034cd76` bundle; L2 follows only after L1 passes.
 
 The requested release-prefix migration from `RC2` to `M2` is intentionally
 deferred until after K/L and must be handled as a separate version/OTA-policy

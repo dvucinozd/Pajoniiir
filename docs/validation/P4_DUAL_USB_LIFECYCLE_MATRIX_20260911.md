@@ -238,7 +238,7 @@ test orchestration only; no firmware build or OTA is required.
 | I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | I1/I2 PASS; I3--I5 operator-waived and closed |
 | J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | J1 PASS; J2--J5 operator-waived and closed |
 | K | Software reboot with both roots occupied | 2 | 0 | pending |
-| L | Signed OTA reboot with both roots occupied | 2 | 0 | pending |
+| L | Signed OTA reboot with both roots occupied | 2 | 0 | harness ready; hardware pending |
 | **Total** |  | **50** | **46 attachment/reconnect actions** | **pending** |
 
 Groups C and D count two physical attachment actions per cycle; groups E--J
@@ -1277,5 +1277,12 @@ Status: **PASS — 2/2**.
 | K1 | 423 -> 424 | `SW` | 10,101 ms | 10,101 ms | 1,740 | PASS |
 | K2 | 425 -> 426 | `SW` | 10,123 ms | 10,124 ms | 1,744 | PASS |
 
-- First action: implement or select a deterministic Group L OTA-reboot harness,
-  then run L1/L2 with both roots occupied and no manual reinsert.
+- `tools/run_p4_lifecycle_l.ps1` is the deterministic Group L harness. It first
+  verifies the ECDSA signature and exact bundle identity, uploads through the
+  signed push-OTA endpoint, requires an HTTP acknowledgement, observable API
+  outage, higher `SW` boot epoch and opposite OTA slot, then applies the strict
+  Group K dual-USB, 100-track, post-boot fault, playback and operator checks.
+  The same exact signed version may alternate between `ota_0` and `ota_1`; no
+  artificial firmware commit is needed. PowerShell 7 and 5.1 self-tests pass.
+- First action: run L1 with the exact `RC2-136-g034cd76` signed bundle and both
+  roots occupied. Run L2 only after L1 passes; no manual reinsert is allowed.

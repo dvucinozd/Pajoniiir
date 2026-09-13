@@ -78,6 +78,9 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
   reinsert: K1/K2 passed on boots 424 and 426.
 - [ ] Complete the remaining Group L OTA-reboot gates. Matrix accounting is
   41/50 PASS, 7/50 waived and 2/50 pending, with 39 accepted physical actions.
+- [x] Implement and self-test the deterministic Group L signed push-OTA harness;
+  require a verified exact-version bundle, opposite-slot boot and automatic
+  recovery of both roots before playback/operator acceptance.
 - [ ] Confirm two OTA reboots recover both roots without manual reinsert.
 
 ## Media and audio

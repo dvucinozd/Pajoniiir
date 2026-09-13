@@ -45,7 +45,11 @@ The direct dual-root product path is implemented:
   clean fault evidence, dual playback and audible MAIN/cue confirmation. The
   first K2 launch also passed technically on boot 425 but is not counted because
   the shared helper overwrote its evidence label; the harness now preserves and
-  self-tests the requested cycle identity.
+  self-tests the requested cycle identity;
+- the deterministic Group L harness verifies the local ECDSA-signed bundle,
+  performs a real push OTA, requires the inactive OTA slot to become active and
+  reuses the strict Group K USB/Library/audio acceptance. Its PowerShell 7 and
+  Windows PowerShell 5.1 self-tests pass; L1/L2 hardware evidence is pending.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
