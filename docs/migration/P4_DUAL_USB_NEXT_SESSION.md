@@ -18,7 +18,7 @@ Status: **active P4-only operational handoff**.
 - Current bundle path:
   `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
-  build, package verification, signed OTA and lifecycle Groups A--F pass; the
+  build, package verification, signed OTA and lifecycle Groups A--G pass; the
   earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
 - Latest installed version: `RC2-128-g495947e` from commit `495947e`
@@ -111,8 +111,8 @@ Final-enclosure repetition remains open.
 
 ## Session 2 — complete dual-USB lifecycle matrix
 
-Checkpoint 2026-09-13: Groups A--F pass. Progress is 26/50 controlled cycles
-and 26 planned physical attachment/reconnect actions. Group F ran on exact
+Checkpoint 2026-09-13: Groups A--G pass. Progress is 31/50 controlled cycles
+and 31 planned physical attachment/reconnect actions. Group F ran on exact
 image `RC2-127-g06c0e85`, `ota_0`, boot epoch 415. F1--F5 each reached the
 guarded `holding` state, changed to `media_removed` on the controlled USB0
 removal, kept Library empty while absent, restored all 100 tracks and passed
@@ -146,7 +146,13 @@ ESP-IDF v6.0.2 host and clean signed builds pass. Exact image
 `RC2-128-g495947e` is 2,456,528 bytes with 41% of the smallest app partition
 free; its signed bundle verifies, is installed on `ota_1`, and passed focused
 dual-deck smoke with zero critical audio deltas. This establishes readiness,
-not Group G cycle evidence. Next action: execute G1--G5.
+not Group G cycle evidence by itself. G1--G5 subsequently passed on boot 416:
+the gate alternated D1/D2, every removal produced `media_removed`, every normal
+remount restored 100 tracks, every recovery request matched a success and all
+critical controller/audio deltas stayed zero. One first G4 attempt had an
+extra fast physical USB0 disconnect/remount after reinsertion and was rejected;
+the clean repeated G4 passed. Next action: start Group H, USB1 idle
+disconnect/reconnect while USB0 remains mounted.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

@@ -23,13 +23,14 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > rare output-late warnings were below fault severity and had no downstream
 > failure; their analysis does not justify a code change. The current bench
 > 5 V/dual-VBUS measurement gate is
-> operator-confirmed PASS. Lifecycle Groups A--F pass, accounting for 26/50
-> controlled cycles and 26 planned physical attachment/reconnect actions.
+> operator-confirmed PASS. Lifecycle Groups A--G pass, accounting for 31/50
+> controlled cycles and 31 planned physical attachment/reconnect actions.
 > All five deterministic Group F Library-load removal cycles passed on the
 > exact installed image without reboot, partial Library publication, recovery
 > mismatch, controller loss or audio fault. The
-> deterministic Group G audio-load trigger is installed and its exact-image
-> dual-deck smoke passed; the five physical Group G cycles have not run yet.
+> deterministic Group G audio-load trigger and all five physical Group G
+> cycles passed on the exact image without reboot, controller loss or audio
+> fault.
 > The
 > branch remains **not release-qualified** until the remaining lifecycle,
 > verified WAV/FLAC, on-device timing/listening, guarded OTA, combined-load and

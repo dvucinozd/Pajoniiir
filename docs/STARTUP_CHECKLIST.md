@@ -57,15 +57,16 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
   trigger after the first 32 KiB compressed-cache read; ESP-IDF 6.0.2 build
   passes.
 - [x] Commit, sign, install and smoke the exact Group G firmware image.
-- [ ] USB0 remove during audio load and active decode/playback.
+- [x] USB0 remove during audio load: Group G 5/5 with alternating D1/D2
+  deterministic first-cache-page triggers.
 - [ ] USB1 idle disconnect/reconnect while USB0 remains mounted.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
 - [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
 - [ ] Confirm held controls release and no scratch/pad/shift state remains
   latched.
 - [ ] Complete 50 controlled lifecycle cycles, including at least 20
-  independent physical reconnects. Current progress: 26/50 cycles and 26
-  planned attachment/reconnect actions; Groups G--L remain.
+  independent physical reconnects. Current progress: 31/50 cycles and 31
+  planned attachment/reconnect actions; Groups H--L remain.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.
 
 ## Media and audio

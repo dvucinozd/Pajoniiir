@@ -2,7 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups A--F complete; 26/50 cycles pass**.
+Status: **IN PROGRESS — Groups A--G complete; 31/50 cycles pass**.
 
 ## Test images and current installed image
 
@@ -51,7 +51,7 @@ Current installed Group G validation candidate:
 - Signed bundle size/SHA-256: 2,456,716 bytes;
   `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
 - Clean ESP-IDF v6.0.2 build, package verification, signed OTA and focused
-  ten-second dual-deck smoke pass. No Group G physical cycle counts yet.
+  ten-second dual-deck smoke pass. G1--G5 passed on boot epoch 416.
 
 ## Acceptance requirements
 
@@ -155,8 +155,7 @@ Run G1 through G5 only on the exact installed candidate containing the gate:
 
 The Group G gate unit test, harness self-test, complete P4 host suite, clean
 ESP-IDF v6.0.2 build, signed-package verification, OTA and focused exact-image
-smoke pass on `RC2-128-g495947e`. This is execution readiness only: no Group G
-cycle counts yet.
+smoke pass on `RC2-128-g495947e`; G1--G5 then passed on boot epoch 416.
 
 ## Planned distribution
 
@@ -168,7 +167,7 @@ cycle counts yet.
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | PASS: D1--D4 |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | PASS: E1--E5 |
 | F | USB0 remove/reinsert during Library load | 5 | 5 | PASS: F1--F5 |
-| G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | pending |
+| G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | PASS: G1--G5 |
 | H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | pending |
 | I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | pending |
 | J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | pending |
@@ -1068,22 +1067,53 @@ Groups A--F now account for 26/50 controlled lifecycle cycles and 26 planned
 physical attachment/reconnect actions. Proceed to Group G: USB0 removal during
 audio load/decode or active playback.
 
+### G1--G5 — USB0 removal after deterministic first audio-cache read
+
+Status: **PASS; Group G complete**.
+
+- Exact installed image: `RC2-128-g495947e`, `ota_1`, boot epoch 416.
+- The guarded gate alternated D1 on odd cycles and D2 on even cycles. Every
+  selected loader reached `holding` after its first bounded 32 KiB cache read,
+  then changed to `media_removed` when USB0 was removed.
+- FLX4 profile, MIDI and UAC stayed active while USB0 was absent. Every normal
+  reinsert restored a coherent 100-track Library, and all eight recovery
+  requests per accepted cycle had matching successes.
+- Both decks advanced for more than ten seconds in every cycle. MIDI and
+  semantic deltas were 4/4 per cycle; PCM underrun, output-late, UAC-loss,
+  runtime-queue, daemon and service-log fault deltas stayed zero with no reboot.
+
+| Cycle | Target | D1 advance | D2 advance | UAC blocks | Recovery | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| G1 | D1 | 10,251 ms | 10,251 ms | 1,766 | 8 / 8 | PASS |
+| G2 | D2 | 10,107 ms | 10,107 ms | 1,741 | 8 / 8 | PASS |
+| G3 | D1 | 10,124 ms | 10,123 ms | 1,745 | 8 / 8 | PASS |
+| G4 | D2 | 10,304 ms | 10,304 ms | 1,774 | 8 / 8 | PASS |
+| G5 | D1 | 10,112 ms | 10,112 ms | 1,742 | 8 / 8 | PASS |
+
+The first G4 attempt had an additional rapid USB0 disconnect/remount roughly
+0.75 seconds after reinsertion. The strict harness rejected it because the
+cycle contained two disconnects/releases/unmount events. It does not count;
+the complete G4 sequence was repeated from a stable baseline and passed.
+Groups A--G now account for 31/50 controlled lifecycle cycles and 31 planned
+physical reconnect actions. Proceed to Group H: USB1 idle disconnect/reconnect
+while USB0 remains mounted.
+
 ## Continuation checkpoint — 2026-09-13
 
 - Installed hardware is on exact image `RC2-128-g495947e`, partition `ota_1`;
   signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
-- Groups A--F are complete: 26/50 controlled cycles. Groups G--L remain open:
-  24 cycles covering audio load/decode or playback, USB1 idle and active
+- Groups A--G are complete: 31/50 controlled cycles. Groups H--L remain open:
+  19 cycles covering USB1 idle and active
   reconnects, held controls and reboot/OTA recovery.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
 - `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--G. Groups C--F have
-  accepted hardware evidence; Group G is software-ready but unexecuted. Local
+  accepted hardware evidence through Group G. Local
   JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a release
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: run G1--G5 on `RC2-128-g495947e`; do not count a cycle until
-  the gate, remount, dual playback, physical
-  controller check and all fault counters pass.
+- First action: define and run Group H USB1 idle disconnect/reconnect on
+  `RC2-128-g495947e`, preserving USB0 mount/Library and checking controller
+  profile, MIDI, LEDs, UAC, recovery epochs and all fault counters.
