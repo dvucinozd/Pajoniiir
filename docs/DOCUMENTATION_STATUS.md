@@ -1,6 +1,6 @@
 # Documentation Status
 
-Status: **active P4-only source of truth, reconciled 2026-09-13**.
+Status: **active P4-only source of truth, reconciled 2026-09-14**.
 
 ## Product boundary
 
@@ -17,20 +17,21 @@ they actually tested; they are not current instructions.
 ## Current validated firmware checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `09f7efc28274da37ae943d61094179f463e2eaf4`
-- Version: `RC2-134-g09f7efc`
-- Application size: `2,456,784` bytes
+- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
+- Version: `RC2-136-g034cd76`
+- Application size: `2,457,648` bytes
 - Application SHA-256:
-  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
-- Signed bundle size: `2,456,972` bytes
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+- Signed bundle size: `2,457,836` bytes
 - Signed bundle SHA-256:
-  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: pushed; local and remote SHA matched before this
   documentation-only successor
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; lifecycle Groups
-  A--H pass; the earlier
+  A--H, K and L pass, I1/I2/J1 pass and seven remaining I/J cycles are
+  explicitly waived; the earlier
   `RC2-116-g77d723c` targeted three-hour limiter/WDT
   hardware soak remains valid within its scope
 
@@ -43,25 +44,27 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware baseline
 
-- Commit: `09f7efc28274da37ae943d61094179f463e2eaf4`
-- Installed version: `RC2-134-g09f7efc`
-- Installed slot: `ota_0`
-- Application size: `2,456,784` bytes
+- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
+- Installed version: `RC2-136-g034cd76`
+- Installed slot: `ota_1`
+- Application size: `2,457,648` bytes
 - Application SHA-256:
-  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
-- Signed bundle size: `2,456,972` bytes
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+- Signed bundle size: `2,457,836` bytes
 - Signed bundle SHA-256:
-  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
 - Toolchain: ESP-IDF v6.0.2
 
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup and active reconnect cycles I1, I2 and jog-held J1.
+profile/MIDI/UAC startup, active reconnect cycles I1, I2 and jog-held J1,
+software reboot K1/K2 and signed OTA reboot L1/L2.
 Every accepted cycle retained the 100-track Library, advanced both decks for
 more than five seconds, restored controller/UAC and passed audible MAIN/cue;
 drop, overflow, packet-loss, PCM-underrun and output-late deltas stayed zero.
-Lifecycle accounting is 39/50
-accepted, 7/50 explicitly waived in Groups I/J and 4/50 K/L cycles pending.
-Groups I/J are permanently closed by operator decision. The earlier
+Lifecycle accounting is complete: 43/50 PASS, 7/50 explicitly waived in Groups
+I/J and zero pending. The accepted runs include 39 physical
+attachment/reconnect actions. Groups I/J are permanently closed by operator
+decision. The earlier
 `RC2-116-g77d723c` remained on
 boot epoch 389 through its
 targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
@@ -72,8 +75,8 @@ failure; no source change is justified from that count alone. See
 [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
 The installed candidate contains deterministic Group G audio-load removal
-support. Its guarded loader gate pauses after the first bounded 32 KiB cache
-read, and the updated lifecycle harness alternates the target deck across
+support. Its guarded loader gate pauses after the first bounded 8 KiB PDB read,
+and the updated lifecycle harness alternates the target deck across
 G1--G5. The gate unit test, harness self-test, complete P4 host suite, clean
 ESP-IDF v6.0.2 build, signed-package verification, OTA and focused smoke pass.
 G1--G5 also pass on boot 416: every cycle restored 100 tracks, advanced both
@@ -99,20 +102,18 @@ Earlier focused evidence remains valid within its stated limits:
 ## Release status
 
 The branch is **not release-qualified and must not be merged yet**. The code,
-host tests, signed build and focused product paths are healthy; the critical
-path is now hardware qualification:
+host tests, signed build, lifecycle matrix and focused product paths are healthy;
+the critical path is now the remaining release qualification:
 
-1. complete cold/warm boot, insertion-order and repeated USB0/USB1 recovery
-   matrix, including USB0 removal during active load/decode;
-2. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
-3. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
-4. guarded P4 web, profile and pull/push OTA fault/recovery matrix;
-5. multi-hour combined-load soak;
-6. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
+1. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
+2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
+3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
+4. multi-hour combined-load soak;
+5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
    repetition of the passed bench electrical measurements;
-7. production credential, signing-key, rotation and optional irreversible
+6. production credential, signing-key, rotation and optional irreversible
    security decisions;
-8. exact final-candidate full functional smoke, documentation freeze and tag.
+7. exact final-candidate full functional smoke, documentation freeze and tag.
 
 The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).

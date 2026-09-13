@@ -183,8 +183,12 @@ preserves and self-tests `Cycle=2`. `tools/run_p4_lifecycle_l.ps1` now provides
 the deterministic L1/L2 path: it verifies the signed bundle before upload,
 requires the inactive slot to become active after a real OTA reboot, and applies
 the same strict dual-USB, 100-track, fault, playback and operator checks. Its
-PowerShell 7 and 5.1 self-tests pass. Next action is L1 with the existing exact
-`RC2-136-g034cd76` bundle; L2 follows only after L1 passes.
+PowerShell 7 and 5.1 self-tests pass. L1 and L2 then passed on boots 427 and 428
+with the existing exact `RC2-136-g034cd76` bundle, alternating
+`ota_1 -> ota_0 -> ota_1`. Both runs automatically restored USB0, FLX4 and the
+100-track Library, passed dual playback plus operator MAIN/cue, LED and control
+checks, and recorded zero critical failures. The 50-cycle lifecycle matrix is
+now fully accounted: 43 PASS, seven explicitly waived and zero pending.
 
 The requested release-prefix migration from `RC2` to `M2` is intentionally
 deferred until after K/L and must be handled as a separate version/OTA-policy

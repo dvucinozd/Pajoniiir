@@ -15,7 +15,7 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
 > validated firmware and installed hardware candidate is
-> `RC2-134-g09f7efc` on `ota_0`.
+> `RC2-136-g034cd76` on `ota_1`.
 > Its signed OTA and exact-image checks passed. The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
@@ -23,10 +23,11 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > rare output-late warnings were below fault severity and had no downstream
 > failure; their analysis does not justify a code change. The current bench
 > 5 V/dual-VBUS measurement gate is
-> operator-confirmed PASS. The lifecycle matrix has 39/50 accepted cycles and
-> 39 physical attachment/reconnect actions. I1, I2 and J1 passed on the exact
-> installed image; by explicit operator decision I3--I5 and J2--J5 are waived
-> and permanently closed rather than reported as passes.
+> operator-confirmed PASS. The 50-cycle lifecycle matrix is complete with 43
+> PASS, seven explicitly waived I/J cycles and 39 accepted physical
+> attachment/reconnect actions. I1, I2 and J1 passed on the exact installed
+> image; by explicit operator decision I3--I5 and J2--J5 are waived and
+> permanently closed rather than reported as passes.
 > All five deterministic Group F Library-load removal cycles passed on the
 > exact installed image without reboot, partial Library publication, recovery
 > mismatch, controller loss or audio fault. The
@@ -36,9 +37,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > All five Group H idle FLX4 disconnect/reconnect cycles also passed while
 > USB0 remained mounted with a coherent 100-track Library; profile, MIDI, LEDs,
 > UAC, dual playback and audible MAIN/cue recovered in every accepted cycle.
-> The branch remains **not release-qualified** until the remaining lifecycle,
-> verified WAV/FLAC, on-device timing/listening, guarded OTA, combined-load and
-> closed-enclosure gates pass.
+> Group K software-reboot and Group L signed OTA-reboot recovery both passed
+> 2/2 with both roots occupied and no manual reinsert. The branch remains **not
+> release-qualified** until verified WAV/FLAC, on-device timing/listening,
+> remaining OTA fault paths, combined-load and closed-enclosure gates pass.
 
 ## Current capabilities
 

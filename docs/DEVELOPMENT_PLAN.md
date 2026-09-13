@@ -49,7 +49,10 @@ The direct dual-root product path is implemented:
 - the deterministic Group L harness verifies the local ECDSA-signed bundle,
   performs a real push OTA, requires the inactive OTA slot to become active and
   reuses the strict Group K USB/Library/audio acceptance. Its PowerShell 7 and
-  Windows PowerShell 5.1 self-tests pass; L1/L2 hardware evidence is pending.
+  Windows PowerShell 5.1 self-tests pass. L1 and L2 passed on boots 427 and 428,
+  alternating `ota_1 -> ota_0 -> ota_1` while restoring both USB roots, 100
+  tracks, dual playback, MAIN/cue, LEDs and controls without manual reinsert or
+  critical fault evidence.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -57,11 +60,10 @@ real defect.
 
 ## Ordered remaining phases
 
-Phases 1 and 2 are complete. Phase 3 has 41/50 accepted cycles, seven explicitly
-waived I/J cycles and two remaining Group L OTA-reboot cycles. Groups I and J
-are administratively closed and will not be resumed; Group K is complete.
-Phases 4--11 remain
-deferred for later sessions.
+Phases 1--3 are complete. The lifecycle matrix is fully accounted: 43/50 PASS,
+seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
+attachment/reconnect actions. Groups I/J are administratively closed and will
+not be resumed. Phases 4--11 remain deferred for later sessions.
 
 After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a
 separate change. That migration must update `git describe` assumptions,

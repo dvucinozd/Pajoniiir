@@ -5,17 +5,17 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
 ## Repository and build
 
 - [x] Branch is `feat/p4-dual-usb-host`.
-- [x] Installed validation firmware commit `495947e` is pushed.
+- [x] Installed validation firmware commit `034cd76` is pushed.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-134-g09f7efc` on hardware.
+- [x] Install and focused-smoke `RC2-136-g034cd76` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-134-g09f7efc` installed on `ota_0` with empty OTA error.
+- [x] `RC2-136-g034cd76` installed on `ota_1` with empty OTA error.
 - [x] USB0 mounts and exposes the 100-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -76,12 +76,14 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
   USB roots healthy and both decks stopped; a power cycle cannot satisfy it.
 - [x] Confirm two exact-image software reboots recover both roots without manual
   reinsert: K1/K2 passed on boots 424 and 426.
-- [ ] Complete the remaining Group L OTA-reboot gates. Matrix accounting is
-  41/50 PASS, 7/50 waived and 2/50 pending, with 39 accepted physical actions.
+- [x] Complete Group L OTA-reboot gates. The final matrix accounting is 43/50
+  PASS, 7/50 waived and 0 pending, with 39 accepted physical actions.
 - [x] Implement and self-test the deterministic Group L signed push-OTA harness;
   require a verified exact-version bundle, opposite-slot boot and automatic
   recovery of both roots before playback/operator acceptance.
-- [ ] Confirm two OTA reboots recover both roots without manual reinsert.
+- [x] Confirm two OTA reboots recover both roots without manual reinsert: L1
+  changed `ota_1 -> ota_0` on boot 427 and L2 returned `ota_0 -> ota_1` on boot
+  428, both with clean dual-deck and operator checks.
 
 ## Media and audio
 
@@ -100,7 +102,7 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
 - [ ] Verify interrupted/slow upload recovery and subsequent server availability.
 - [ ] Verify signed push OTA rollback and opposite-slot boot.
 - [ ] Verify guarded control, load, seek and profile mutations.
-- [ ] Verify USB0 and FLX4 recover automatically after OTA reboot.
+- [x] Verify USB0 and FLX4 recover automatically after two signed OTA reboots.
 
 ## Product soak and enclosure
 

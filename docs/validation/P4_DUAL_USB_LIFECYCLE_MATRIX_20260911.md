@@ -2,7 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups I/J closed, Group K passed; 41 PASS, 7 waived, 2 pending**.
+Status: **COMPLETE — 43 PASS, 7 explicitly waived, 0 pending**.
 
 ## Test images and current installed image
 
@@ -237,9 +237,9 @@ test orchestration only; no firmware build or OTA is required.
 | H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | PASS: H1--H5 |
 | I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | I1/I2 PASS; I3--I5 operator-waived and closed |
 | J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | J1 PASS; J2--J5 operator-waived and closed |
-| K | Software reboot with both roots occupied | 2 | 0 | pending |
-| L | Signed OTA reboot with both roots occupied | 2 | 0 | harness ready; hardware pending |
-| **Total** |  | **50** | **46 attachment/reconnect actions** | **pending** |
+| K | Software reboot with both roots occupied | 2 | 0 | PASS: K1--K2 |
+| L | Signed OTA reboot with both roots occupied | 2 | 0 | PASS: L1--L2 |
+| **Total** |  | **50** | **46 planned; 39 accepted actions** | **COMPLETE: 43 PASS, 7 waived** |
 
 Groups C and D count two physical attachment actions per cycle; groups E--J
 count one remove/reinsert or disconnect/reconnect action per cycle. The total
@@ -1224,18 +1224,16 @@ Status: **CLOSED — 3 PASS, 7 explicitly waived**.
 | I3--I5 | — | — | — | — | — | WAIVED |
 | J2--J5 | — | — | — | — | — | WAIVED |
 
-The matrix now accounts for 41/50 PASS cycles, 7/50 waived cycles and 2/50
-pending Group L OTA-reboot cycles, with 39 accepted physical
-attachment/reconnect actions.
+The matrix now accounts for 43/50 PASS cycles, 7/50 explicitly waived cycles
+and 0 pending cycles, with 39 accepted physical attachment/reconnect actions.
 
-## Continuation checkpoint — 2026-09-14
+## Completion checkpoint — 2026-09-14
 
 - Installed hardware is on exact image `RC2-136-g034cd76`, partition `ota_1`;
   signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
 - Groups I/J are closed: I1, I2 and J1 passed; seven remaining cycles are
-  explicitly waived. Group K is complete; only two Group L OTA-reboot cycles
-  remain.
+  explicitly waived. Groups K and L are complete; no lifecycle cycles remain.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
 - `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H, all with accepted
@@ -1251,8 +1249,8 @@ attachment/reconnect actions.
   higher boot epoch with reset reason `SW`, unchanged exact version/slot,
   automatic recovery of both roots and the coherent 100-track Library, clean
   post-boot fault counters, dual playback and operator-confirmed MAIN/cue,
-  LEDs and controls. Host self-tests and the ESP-IDF v6.0.2 build pass, but no
-  K cycle is counted until exact-image hardware evidence passes.
+  LEDs and controls. Host self-tests and the ESP-IDF v6.0.2 build pass; the two
+  accepted exact-image hardware cycles are recorded below.
 
 ### Group K closure — software reboot with both roots occupied
 
@@ -1284,5 +1282,29 @@ Status: **PASS — 2/2**.
   Group K dual-USB, 100-track, post-boot fault, playback and operator checks.
   The same exact signed version may alternate between `ota_0` and `ota_1`; no
   artificial firmware commit is needed. PowerShell 7 and 5.1 self-tests pass.
-- First action: run L1 with the exact `RC2-136-g034cd76` signed bundle and both
-  roots occupied. Run L2 only after L1 passes; no manual reinsert is allowed.
+
+### Group L closure — signed OTA reboot with both roots occupied
+
+Status: **PASS — 2/2**.
+
+- Exact signed image: `RC2-136-g034cd76`, application SHA-256
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`.
+- L1 advanced boot 426 to 427 and changed `ota_1 -> ota_0`; L2 advanced boot
+  427 to 428 and changed `ota_0 -> ota_1`. Both reported reset reason `SW`,
+  retained the exact version, automatically restored USB0, FLX4
+  profile/MIDI/LED/UAC and the coherent 100-track Library, and had no harness
+  failures or critical post-boot fault evidence.
+- L1 advanced D1/D2 by 10,135/10,136 ms and submitted 1,746 UAC blocks. L2
+  advanced both decks by 10,113 ms and submitted 1,742 UAC blocks. MAIN/cue,
+  LEDs, controls and the physical D1 PLAY/PAUSE event were operator-confirmed in
+  both cycles without touching either USB cable.
+
+| Cycle | Boot transition | Slot transition | Reset | D1 advance | D2 advance | UAC blocks | Result |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- |
+| L1 | 426 -> 427 | `ota_1 -> ota_0` | `SW` | 10,135 ms | 10,136 ms | 1,746 | PASS |
+| L2 | 427 -> 428 | `ota_0 -> ota_1` | `SW` | 10,113 ms | 10,113 ms | 1,742 | PASS |
+
+The 50-cycle lifecycle matrix is complete. The requested `RC2` to `M2` version
+prefix migration remains a separate deferred change; the next release phase is
+real-file mixed MP3/WAV/FLAC qualification unless that migration is selected
+first.
