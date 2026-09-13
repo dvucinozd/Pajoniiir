@@ -154,6 +154,16 @@ extra fast physical USB0 disconnect/remount after reinsertion and was rejected;
 the clean repeated G4 passed. Next action: start Group H, USB1 idle
 disconnect/reconnect while USB0 remains mounted.
 
+Group H harness checkpoint 2026-09-13: the lifecycle runner now guides one
+idle FLX4 disconnect/reconnect while USB0 remains untouched. It requires the
+100-track Library throughout the controller absence, exactly one controller
+disconnect/connect, active profile plus MIDI/UAC recovery, zero to two matched
+host recoveries, exactly one controller fault epoch and the standard
+playback/operator checks. Its self-test is included in the complete P4 host
+runner. The older `RC2-109-g269036b` focused USB1 reconnect smoke remains valid
+within its scope but is not one of the five current-candidate Group H cycles;
+H1--H5 remain unexecuted.
+
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.
 

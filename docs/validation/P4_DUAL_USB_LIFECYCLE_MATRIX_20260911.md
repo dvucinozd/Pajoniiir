@@ -70,9 +70,9 @@ The complete gate requires 50 controlled cycles, including at least 20
 independent physical reconnects and explicit USB0 removal during active
 load/decode.
 
-## Guided Groups C--G harness
+## Guided Groups C--H harness
 
-Groups C--G use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
+Groups C--H use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
 to the required cable actions and listening/controller confirmation. The
 harness verifies the exact installed image, empty-boot baseline, attachment
 order, both USB roles, 100-track Library, dual-deck playback progress, UAC ring
@@ -156,6 +156,25 @@ Run G1 through G5 only on the exact installed candidate containing the gate:
 The Group G gate unit test, harness self-test, complete P4 host suite, clean
 ESP-IDF v6.0.2 build, signed-package verification, OTA and focused exact-image
 smoke pass on `RC2-128-g495947e`; G1--G5 then passed on boot epoch 416.
+
+Group H starts with both devices healthy and both decks stopped. The harness
+asks for one FLX4 disconnect/reconnect while USB0 remains untouched. While
+FLX4 is absent it requires USB0 to stay mounted and the Library to retain all
+100 tracks. After reconnection it requires one controller disconnect and one
+connect, active FLX4 profile, MIDI IN/OUT, LED output acceptance, UAC recovery,
+zero to two matched host recovery requests, exactly one controller fault epoch
+and the standard dual-playback/operator checks.
+
+Run H1 through H5 on the current exact installed candidate:
+
+```powershell
+.\tools\run_p4_lifecycle_cycle.ps1 -Group H -Cycle 1 `
+    -ExpectedVersion RC2-128-g495947e
+```
+
+The extended harness self-test passes. One earlier focused USB1 reconnect smoke
+passed on `RC2-109-g269036b`, but it is not one of the five formal Group H
+cycles on the current candidate. Group H therefore remains 0/5.
 
 ## Planned distribution
 
@@ -1108,12 +1127,12 @@ while USB0 remains mounted.
   reconnects, held controls and reboot/OTA recovery.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
-- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--G. Groups C--F have
-  accepted hardware evidence through Group G. Local
+- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H. Groups C--G have
+  accepted hardware evidence; Group H is harness-ready but unexecuted. Local
   JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a release
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: define and run Group H USB1 idle disconnect/reconnect on
+- First action: run Group H USB1 idle disconnect/reconnect on
   `RC2-128-g495947e`, preserving USB0 mount/Library and checking controller
   profile, MIDI, LEDs, UAC, recovery epochs and all fault counters.

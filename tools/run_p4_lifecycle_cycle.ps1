@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("C", "D", "E", "F", "G")]
+    [ValidateSet("C", "D", "E", "F", "G", "H")]
     [string]$Group,
 
     [ValidateRange(1, 5)]
@@ -18,7 +18,7 @@ param(
     [switch]$SelfTest
 )
 
-# Guided hardware harness for Groups C--G of the P4 dual-USB lifecycle
+# Guided hardware harness for Groups C--H of the P4 dual-USB lifecycle
 # matrix. The operator performs only the physical cable actions and listening
 # check. The harness owns API polling, exact-image checks, counter deltas,
 # dual-deck playback, cleanup and durable local evidence.
@@ -256,6 +256,7 @@ function Get-DeviceSnapshot {
         controller_midi_out = [bool]$status.controller.midi_out
         controller_usb_audio = [bool]$status.controller.usb_audio
         controller_midi_packets = [uint64]$status.p4_usb.controller.midi_packets
+        controller_connects = [uint64]$status.p4_usb.controller.midi_connects
         controller_disconnects = [uint64]$status.p4_usb.controller.midi_disconnects
         controller_interface_claim_failures = [uint64]$status.p4_usb.controller.interface_claim_failures
         controller_transfer_alloc_failures = [uint64]$status.p4_usb.controller.transfer_alloc_failures
@@ -433,7 +434,8 @@ function Get-CycleFailures {
         [bool]$EnforceRecoveryRange = $true,
         [uint64]$ExpectedStorageDisconnects,
         [uint64]$ExpectedControllerDisconnects,
-        [uint64]$ExpectedStorageReleases
+        [uint64]$ExpectedStorageReleases,
+        [uint64]$ExpectedControllerFaultRecoveryEpochs = 0
     )
     $failures = New-Object 'System.Collections.Generic.List[string]'
     $strictCounters = @(
@@ -441,7 +443,6 @@ function Get-CycleFailures {
         "controller_interface_claim_failures",
         "controller_transfer_alloc_failures",
         "controller_probe_event_drops",
-        "controller_fault_recovery_epochs",
         "daemon_errors",
         "recovery_failures",
         "recovery_queue_drops",
@@ -460,7 +461,8 @@ function Get-CycleFailures {
     foreach ($expectation in @(
             @{ Field = "storage_disconnects"; Expected = $ExpectedStorageDisconnects },
             @{ Field = "controller_disconnects"; Expected = $ExpectedControllerDisconnects },
-            @{ Field = "storage_releases"; Expected = $ExpectedStorageReleases })) {
+            @{ Field = "storage_releases"; Expected = $ExpectedStorageReleases },
+            @{ Field = "controller_fault_recovery_epochs"; Expected = $ExpectedControllerFaultRecoveryEpochs })) {
         $delta = Get-CounterDelta $Final.($expectation.Field) $Baseline.($expectation.Field)
         if ($delta -ne $expectation.Expected) {
             Add-Failure $failures "$($expectation.Field) delta is $delta, expected $($expectation.Expected)"
@@ -500,7 +502,7 @@ function Get-CycleDeltas {
     foreach ($field in @(
             "storage_connect_events", "storage_connects", "storage_disconnects",
             "storage_mount_attempts", "storage_mount_successes", "storage_releases",
-            "controller_disconnects", "controller_midi_packets", "semantic_events",
+            "controller_connects", "controller_disconnects", "controller_midi_packets", "semantic_events",
             "topology_probe_failures", "controller_interface_claim_failures",
             "controller_transfer_alloc_failures", "controller_probe_event_drops",
             "controller_fault_recovery_epochs", "recovery_requests",
@@ -563,6 +565,8 @@ function Get-GatedEventCounts {
         audio_underrun = Get-EventCount $BootLog "AUDIO_UNDERRUN"
         audio_output_late = Get-EventCount $BootLog "AUDIO_OUTPUT_LATE"
         usb_unmounted = Get-EventCount $BootLog "USB_UNMOUNTED"
+        controller_connected = Get-EventCount $BootLog "CONTROLLER_CONNECTED"
+        controller_disconnected = Get-EventCount $BootLog "CONTROLLER_DISCONNECTED"
     }
 }
 
@@ -573,6 +577,8 @@ function Get-GatedEventDeltas {
         audio_underrun = Get-CounterDelta $Final.audio_underrun $Baseline.audio_underrun
         audio_output_late = Get-CounterDelta $Final.audio_output_late $Baseline.audio_output_late
         usb_unmounted = Get-CounterDelta $Final.usb_unmounted $Baseline.usb_unmounted
+        controller_connected = Get-CounterDelta $Final.controller_connected $Baseline.controller_connected
+        controller_disconnected = Get-CounterDelta $Final.controller_disconnected $Baseline.controller_disconnected
     }
 }
 
@@ -758,6 +764,18 @@ function Invoke-SelfTest {
             -ExpectedStorageReleases 1).Count -ne 0) {
         throw "good Group G audio-load removal window failed"
     }
+    $cycleH = $cycleBase.psobject.Copy()
+    $cycleH.controller_disconnects = [uint64]1
+    $cycleH.controller_fault_recovery_epochs = [uint64]1
+    $cycleH.recovery_requests = [uint64]9
+    $cycleH.recovery_successes = [uint64]9
+    if (@(Get-CycleFailures -Baseline $cycleBase -Final $cycleH `
+            -MinimumRecoveryCount 1 -MaximumRecoveryCount 2 `
+            -ExpectedStorageDisconnects 0 -ExpectedControllerDisconnects 1 `
+            -ExpectedStorageReleases 0 `
+            -ExpectedControllerFaultRecoveryEpochs 1).Count -ne 0) {
+        throw "good Group H FLX4 idle reconnect window failed"
+    }
     Write-Output "P4 lifecycle harness self-test passed"
 }
 
@@ -767,7 +785,7 @@ if ($SelfTest) {
 }
 
 if (-not $Group) {
-    throw "-Group C, -Group D, -Group E, -Group F or -Group G is required"
+    throw "-Group C, -Group D, -Group E, -Group F, -Group G or -Group H is required"
 }
 if (-not $ExpectedVersion) {
     throw "-ExpectedVersion is required for hardware evidence"
@@ -779,6 +797,7 @@ $scenario = switch ($Group) {
     "E" { "both active, remove and reinsert idle USB0 while FLX4 remains active" }
     "F" { "remove and reinsert USB0 during deterministic Library load while FLX4 remains active" }
     "G" { "remove and reinsert USB0 after the first bounded audio-cache read while FLX4 remains active" }
+    "H" { "disconnect and reconnect idle FLX4 while USB0 remains mounted" }
 }
 
 $evidence = [ordered]@{
@@ -796,7 +815,7 @@ try {
     $bootLog = @(Get-CurrentBootLog)
     $bootEpoch = Get-BootEpoch -BootLog $bootLog
     $baselineEventCounts = Get-GatedEventCounts -BootLog $bootLog
-    $baselineName = if ($Group -in @("E", "F", "G")) { "both_active_idle_baseline" } else { "empty_boot_baseline" }
+    $baselineName = if ($Group -in @("E", "F", "G", "H")) { "both_active_idle_baseline" } else { "empty_boot_baseline" }
     $baseline = Get-DeviceSnapshot -Name $baselineName
     $evidence.boot_epoch = $bootEpoch
     $evidence.firmware_version = $baseline.version
@@ -810,12 +829,12 @@ try {
     if ($baseline.ota_state -ne "idle" -or $baseline.ota_error) {
         throw "OTA state is not a clean idle baseline"
     }
-    $baselineStoragePresent = $Group -in @("E", "F", "G")
-    $baselineControllerPresent = $Group -in @("E", "F", "G")
+    $baselineStoragePresent = $Group -in @("E", "F", "G", "H")
+    $baselineControllerPresent = $Group -in @("E", "F", "G", "H")
     if (-not (Test-DeviceState -Snapshot $baseline `
             -StoragePresent $baselineStoragePresent `
             -ControllerPresent $baselineControllerPresent)) {
-        $requiredState = if ($Group -in @("E", "F", "G")) { "both devices active and idle" } else { "an empty boot" }
+        $requiredState = if ($Group -in @("E", "F", "G", "H")) { "both devices active and idle" } else { "an empty boot" }
         throw "Cycle must start with $requiredState (storage=$($baseline.storage_mounted), controller=$($baseline.controller_present))"
     }
     if ($baseline.deck1_playing -or $baseline.deck2_playing) {
@@ -892,7 +911,7 @@ try {
 
         Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0 for normal recovery; leave FLX4 connected."
     }
-    else {
+    elseif ($Group -eq "G") {
         $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
         $evidence.baseline_library_count = $baselineLibrary.count
         $targetDeck = if (($Cycle % 2) -eq 0) { 2 } else { 1 }
@@ -932,6 +951,23 @@ try {
             $libraryAfterRemoval.count
 
         Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0 for normal recovery; leave FLX4 connected."
+    }
+    else {
+        $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
+        $evidence.baseline_library_count = $baselineLibrary.count
+
+        Request-OperatorStep "Disconnect FLX4 from USB1 while both decks are stopped; leave USB0 connected and do not touch the stick."
+        $afterFirst = Wait-DeviceState -Name "after_flx4_idle_disconnect" `
+            -StoragePresent $true -ControllerPresent $false
+        $libraryWhileControllerAbsent = Wait-LibraryCount -ExpectedCount 100
+        $evidence.library_while_controller_absent_count = `
+            $libraryWhileControllerAbsent.count
+        if ((Get-CounterDelta $afterFirst.storage_disconnects `
+                $baseline.storage_disconnects) -ne 0) {
+            throw "USB0 disconnected while FLX4 was removed"
+        }
+
+        Request-OperatorStep "Reconnect FLX4 to USB1; leave USB0 connected and wait for profile, MIDI and UAC recovery."
     }
     $afterBoth = Wait-DeviceState -Name "after_both" `
         -StoragePresent $true -ControllerPresent $true
@@ -980,7 +1016,7 @@ try {
             -StoragePresent $true -ControllerPresent $true)) {
         Add-Failure $allFailures "both USB devices were not healthy at final snapshot"
     }
-    $minimumRecoveryCount = if ($Group -in @("E", "F", "G")) { 0 } else { 1 }
+    $minimumRecoveryCount = if ($Group -in @("E", "F", "G", "H")) { 0 } else { 1 }
     $maximumRecoveryCount = if ($Group -in @("E", "F", "G")) { 1 } else { 2 }
     $enforceRecoveryRange = $Group -notin @("E", "F", "G")
     $expectedStorageDisconnects = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
@@ -994,12 +1030,20 @@ try {
         -MaximumRecoveryCount $maximumRecoveryCount `
         -EnforceRecoveryRange $enforceRecoveryRange `
         -ExpectedStorageDisconnects $expectedStorageDisconnects `
-        -ExpectedControllerDisconnects 0 `
-        -ExpectedStorageReleases $expectedStorageReleases)
+        -ExpectedControllerDisconnects $(if ($Group -eq "H") { 1 } else { 0 }) `
+        -ExpectedStorageReleases $expectedStorageReleases `
+        -ExpectedControllerFaultRecoveryEpochs $(if ($Group -eq "H") { 1 } else { 0 }))
     $evidence.cycle_deltas = Get-CycleDeltas -Baseline $baseline -Final $final
     $evidence.cycle_failures = $cycleFailures
     foreach ($failure in $cycleFailures) {
         Add-Failure $allFailures ([string]$failure)
+    }
+    if ($Group -eq "H") {
+        $controllerConnectDelta = Get-CounterDelta $final.controller_connects `
+            $baseline.controller_connects
+        if ($controllerConnectDelta -ne 1) {
+            Add-Failure $allFailures "controller_connects delta is $controllerConnectDelta, expected 1"
+        }
     }
 
     $finalBootLog = @(Get-CurrentBootLog)
@@ -1020,6 +1064,14 @@ try {
     $expectedUsbUnmountedEvents = if ($Group -eq "F") { 2 } elseif ($Group -in @("E", "G")) { 1 } else { 0 }
     if ($eventDeltas.usb_unmounted -ne $expectedUsbUnmountedEvents) {
         Add-Failure $allFailures "usb_unmounted event delta is $($eventDeltas.usb_unmounted), expected $expectedUsbUnmountedEvents"
+    }
+    if ($Group -eq "H") {
+        if ($eventDeltas.controller_disconnected -ne 1) {
+            Add-Failure $allFailures "controller_disconnected event delta is $($eventDeltas.controller_disconnected), expected 1"
+        }
+        if ($eventDeltas.controller_connected -ne 1) {
+            Add-Failure $allFailures "controller_connected event delta is $($eventDeltas.controller_connected), expected 1"
+        }
     }
 
     $evidence.failures = @($allFailures)

@@ -59,7 +59,9 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
 - [x] Commit, sign, install and smoke the exact Group G firmware image.
 - [x] USB0 remove during audio load: Group G 5/5 with alternating D1/D2
   deterministic first-cache-page triggers.
-- [ ] USB1 idle disconnect/reconnect while USB0 remains mounted.
+- [x] Implement and self-test the Group H USB1 idle reconnect harness while
+  preserving the USB0 100-track Library.
+- [ ] USB1 idle disconnect/reconnect while USB0 remains mounted: Group H 0/5.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
 - [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
 - [ ] Confirm held controls release and no scratch/pad/shift state remains

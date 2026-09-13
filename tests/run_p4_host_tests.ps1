@@ -2646,6 +2646,11 @@ Invoke-Step -Name "run OTA release helper tests" `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tests/ota_packaging/test_ota_release_helpers.ps1")
 
+Invoke-Step -Name "run P4 lifecycle harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_cycle.ps1", "-SelfTest")
+
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {
         if (Test-Path -LiteralPath $path) {
