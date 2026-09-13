@@ -1,6 +1,6 @@
 # P4 Development Plan
 
-Status: **active P4-only plan, reconciled 2026-09-13**.
+Status: **active P4-only plan, reconciled 2026-09-14**.
 
 ## Current position
 
@@ -9,7 +9,7 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-128-g495947e` is the latest installed exact hardware image on `ota_1`;
+- `RC2-134-g09f7efc` is the latest installed exact hardware image on `ota_0`;
 - deterministic Group F support is implemented and hardware-qualified: the PDB
   reader releases media ownership after at most 8 KiB, incomplete rebuilds
   fail closed, and a guarded one-shot validation barrier lets the harness
@@ -35,7 +35,9 @@ The direct dual-root product path is implemented:
   self-tested. Its first valid Group I run preserved playback, USB0, Library,
   controller and audible audio, but exposed a false UAC data-loss latch caused
   by the reconnect-prime underflow being charged to the old playback session.
-  UAC stream-epoch accounting is implemented and awaits exact-image rerun.
+  UAC stream-epoch accounting is implemented and exact-image confirmed: I1,
+  I2 and J1 passed on boot 420 with zero critical fault deltas. By explicit
+  operator decision, I3--I5 and J2--J5 are waived and permanently closed.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -43,10 +45,9 @@ real defect.
 
 ## Ordered remaining phases
 
-Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is 36/50 cycles complete through Group H. The paired I/J harness is ready;
-the UAC reconnect-prime remediation now needs an exact-image I1 rerun before
-USB1 active-playback qualification can advance.
+Phases 1 and 2 are complete. Phase 3 has 39/50 accepted cycles, seven explicitly
+waived I/J cycles and four remaining K/L reboot cycles. Groups I and J are
+administratively closed and will not be resumed.
 Phases 4--11 remain
 deferred for later sessions.
 

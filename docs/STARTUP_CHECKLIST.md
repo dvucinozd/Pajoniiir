@@ -1,6 +1,6 @@
 # P4 Startup and Release Checklist
 
-Status: **active P4-only checklist, reconciled 2026-09-13**.
+Status: **active P4-only checklist, reconciled 2026-09-14**.
 
 ## Repository and build
 
@@ -10,12 +10,12 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-128-g495947e` on hardware.
+- [x] Install and focused-smoke `RC2-134-g09f7efc` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-128-g495947e` installed on `ota_1` with empty OTA error.
+- [x] `RC2-134-g09f7efc` installed on `ota_0` with empty OTA error.
 - [x] USB0 mounts and exposes the 100-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -66,15 +66,13 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
   one load/play setup, ten independent evidence records and fail-fast cleanup.
 - [x] Give every successfully primed UAC stream a monotonic epoch and scope the
   one-shot underflow grace to that stream without hiding other loss classes.
-- [ ] Rerun I1 on the exact stream-epoch remediation image; the valid boot 418
-  attempt preserved function but failed only its stale reconnect-prime latch.
-- [ ] USB1 disconnect/reconnect during dual-deck playback.
-- [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
-- [ ] Confirm held controls release and no scratch/pad/shift state remains
-  latched.
-- [ ] Complete 50 controlled lifecycle cycles, including at least 20
-  independent physical reconnects. Current progress: 36/50 cycles and 36
-  planned attachment/reconnect actions; Groups I--L remain.
+- [x] Exact-image active reconnect acceptance: I1 and I2 passed; MIDI, LEDs,
+  UAC, dual playback and audible MAIN/cue recovered with clean fault deltas.
+- [x] Held-control reconnect acceptance: J1 jog-touch release passed.
+- [x] Close Groups I/J by explicit operator decision: I3--I5 and J2--J5 are
+  waived, are not counted as PASS and will not be resumed.
+- [ ] Complete the remaining K/L reboot gates. Matrix accounting is 39/50 PASS,
+  7/50 waived and 4/50 pending, with 39 accepted physical actions.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.
 
 ## Media and audio

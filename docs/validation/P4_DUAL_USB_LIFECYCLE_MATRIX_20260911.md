@@ -2,7 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups A--H complete; 36/50 cycles pass**.
+Status: **IN PROGRESS — Groups I/J closed; 39 PASS, 7 waived, 4 pending**.
 
 ## Test images and current installed image
 
@@ -235,8 +235,8 @@ test orchestration only; no firmware build or OTA is required.
 | F | USB0 remove/reinsert during Library load | 5 | 5 | PASS: F1--F5 |
 | G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | PASS: G1--G5 |
 | H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | PASS: H1--H5 |
-| I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | pending |
-| J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | pending |
+| I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | I1/I2 PASS; I3--I5 operator-waived and closed |
+| J | USB1 disconnect/reconnect while a defined control is held | 5 | 5 | J1 PASS; J2--J5 operator-waived and closed |
 | K | Software reboot with both roots occupied | 2 | 0 | pending |
 | L | Signed OTA reboot with both roots occupied | 2 | 0 | pending |
 | **Total** |  | **50** | **46 attachment/reconnect actions** | **pending** |
@@ -1197,18 +1197,44 @@ movement and another included an unintended USB0 removal. A following launch
 correctly refused the dirty output-late baseline. After the controlled reboot,
 the complete H5 sequence passed cleanly.
 
-Groups A--H now account for 36/50 controlled lifecycle cycles and 36 planned
-physical attachment/reconnect actions. Proceed to Group I: USB1
-disconnect/reconnect during dual-deck playback.
+### I/J closure — active playback and lost held-control release
 
-## Continuation checkpoint — 2026-09-13
+Status: **CLOSED — 3 PASS, 7 explicitly waived**.
 
-- Installed hardware is on exact image `RC2-128-g495947e`, partition `ota_1`;
+- Exact installed image: `RC2-134-g09f7efc`, `ota_0`, boot epoch 420.
+- I1 and I2 each retained USB0 and the coherent 100-track Library through an
+  active dual-deck FLX4 disconnect/reconnect. Profile, MIDI, LEDs, UAC,
+  audible MAIN/cue and both deck positions recovered with zero critical fault
+  deltas and exactly one controller disconnect/connect event pair.
+- J1 repeated the active reconnect while Deck 1 jog touch was held until after
+  disconnect. Jog/scratch did not remain latched, and the same automated and
+  operator checks passed.
+- The pre-remediation boot 418 I1 attempt is not counted: it exposed the false
+  reconnect-prime UAC underflow latch fixed by the stream epoch. Attempts
+  disturbed by cable movement, a device fall or loss of power are also invalid.
+- By explicit operator decision on 2026-09-14, I3--I5 and J2--J5 are waived,
+  are not counted as PASS and will not be resumed. Untested held-control
+  variants remain an accepted release-scope limitation.
+
+| Cycle | Boot | D1 advance | D2 advance | UAC blocks | Controller disconnect/connect | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| I1 | 420 | 5,231 ms | 5,231 ms | 901 | 1 / 1 | PASS |
+| I2 | 420 | 5,225 ms | 5,225 ms | 900 | 1 / 1 | PASS |
+| J1 jog touch | 420 | 5,120 ms | 5,120 ms | 882 | 1 / 1 | PASS |
+| I3--I5 | — | — | — | — | — | WAIVED |
+| J2--J5 | — | — | — | — | — | WAIVED |
+
+The matrix now accounts for 39/50 PASS cycles, 7/50 waived cycles and 4/50
+pending K/L reboot cycles, with 39 accepted physical attachment/reconnect
+actions.
+
+## Continuation checkpoint — 2026-09-14
+
+- Installed hardware is on exact image `RC2-134-g09f7efc`, partition `ota_0`;
   signed OTA and focused dual-deck smoke passed with USB0 and FLX4 healthy and
   both decks stopped.
-- Groups A--H are complete: 36/50 controlled cycles. Groups I--L remain open:
-  14 cycles covering USB1 active reconnects, held controls and reboot/OTA
-  recovery.
+- Groups I/J are closed: I1, I2 and J1 passed; seven remaining cycles are
+  explicitly waived. Only four K/L reboot and OTA-reboot cycles remain.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
 - `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--H, all with accepted
@@ -1217,6 +1243,4 @@ disconnect/reconnect during dual-deck playback.
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: install the exact committed stream-epoch remediation image,
-  then rerun paired Group I/J from I1 during active dual playback while
-  preserving USB0 plus the Library.
+- First action: begin Group K software-reboot recovery with both roots occupied.

@@ -17,14 +17,14 @@ they actually tested; they are not current instructions.
 ## Current validated firmware checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `495947e0da847b377375b898838fb0c522d97ef5`
-- Version: `RC2-128-g495947e`
-- Application size: `2,456,528` bytes
+- Commit: `09f7efc28274da37ae943d61094179f463e2eaf4`
+- Version: `RC2-134-g09f7efc`
+- Application size: `2,456,784` bytes
 - Application SHA-256:
-  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
-- Signed bundle size: `2,456,716` bytes
+  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
+- Signed bundle size: `2,456,972` bytes
 - Signed bundle SHA-256:
-  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
+  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: pushed; local and remote SHA matched before this
   documentation-only successor
@@ -43,22 +43,26 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware baseline
 
-- Commit: `495947e0da847b377375b898838fb0c522d97ef5`
-- Installed version: `RC2-128-g495947e`
-- Installed slot: `ota_1`
-- Application size: `2,456,528` bytes
+- Commit: `09f7efc28274da37ae943d61094179f463e2eaf4`
+- Installed version: `RC2-134-g09f7efc`
+- Installed slot: `ota_0`
+- Application size: `2,456,784` bytes
 - Application SHA-256:
-  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
-- Signed bundle size: `2,456,716` bytes
+  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
+- Signed bundle size: `2,456,972` bytes
 - Signed bundle SHA-256:
-  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
+  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
 - Toolchain: ESP-IDF v6.0.2
 
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup and a ten-second dual-deck smoke. Both decks advanced,
-1,750 UAC blocks were submitted, and drop/overflow/packet-failure, both PCM
-underrun and output-late deltas stayed zero. Groups A--H account for 36/50
-accepted lifecycle cycles. The earlier `RC2-116-g77d723c` remained on
+profile/MIDI/UAC startup and active reconnect cycles I1, I2 and jog-held J1.
+Every accepted cycle retained the 100-track Library, advanced both decks for
+more than five seconds, restored controller/UAC and passed audible MAIN/cue;
+drop, overflow, packet-loss, PCM-underrun and output-late deltas stayed zero.
+Lifecycle accounting is 39/50
+accepted, 7/50 explicitly waived in Groups I/J and 4/50 K/L cycles pending.
+Groups I/J are permanently closed by operator decision. The earlier
+`RC2-116-g77d723c` remained on
 boot epoch 389 through its
 targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
 reset, PCM underrun or active UAC loss and no observable output failure,

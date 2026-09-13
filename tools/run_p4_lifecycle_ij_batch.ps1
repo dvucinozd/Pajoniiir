@@ -14,6 +14,9 @@ param(
     [ValidateRange(1, 5)]
     [int]$EndPair = 5,
 
+    [ValidateSet("I", "J")]
+    [string[]]$Groups = @("I", "J"),
+
     [string]$OutputDirectory = "tmp/p4-lifecycle",
     [switch]$SelfTest
 )
@@ -489,6 +492,7 @@ $batch = [ordered]@{
     expected_version = $ExpectedVersion
     start_pair = $StartPair
     end_pair = $EndPair
+    groups = @($Groups)
     result = "FAIL"
     cycles = @()
     failures = @()
@@ -520,12 +524,22 @@ try {
 
     $results = New-Object 'System.Collections.Generic.List[object]'
     for ($pair = $StartPair; $pair -le $EndPair; $pair++) {
-        $results.Add((Invoke-IjCycle -Group I -Cycle $pair `
-            -HeldControl $null -BootEpoch $bootEpoch))
-        $results.Add((Invoke-IjCycle -Group J -Cycle $pair `
-            -HeldControl $heldControls[$pair - 1] -BootEpoch $bootEpoch))
+        if ($Groups -contains "I") {
+            $results.Add((Invoke-IjCycle -Group I -Cycle $pair `
+                -HeldControl $null -BootEpoch $bootEpoch))
+        }
+        if ($Groups -contains "J") {
+            $results.Add((Invoke-IjCycle -Group J -Cycle $pair `
+                -HeldControl $heldControls[$pair - 1] -BootEpoch $bootEpoch))
+        }
     }
-    $batch.cycles = @($results)
+    # PowerShell 7 can throw "Argument types do not match" when @() expands a
+    # generic List[object] during assignment into an OrderedDictionary value.
+    # Copy explicitly so completed cycle evidence cannot turn a passing batch
+    # into a harness failure during final serialization.
+    $cycleArray = [object[]]::new($results.Count)
+    $results.CopyTo($cycleArray)
+    $batch.cycles = $cycleArray
     $batch.result = "PASS"
 }
 catch {

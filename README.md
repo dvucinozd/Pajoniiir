@@ -15,7 +15,7 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
 > validated firmware and installed hardware candidate is
-> `RC2-128-g495947e` on `ota_1`.
+> `RC2-134-g09f7efc` on `ota_0`.
 > Its signed OTA and exact-image checks passed. The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
@@ -23,8 +23,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > rare output-late warnings were below fault severity and had no downstream
 > failure; their analysis does not justify a code change. The current bench
 > 5 V/dual-VBUS measurement gate is
-> operator-confirmed PASS. Lifecycle Groups A--H pass, accounting for 36/50
-> controlled cycles and 36 planned physical attachment/reconnect actions.
+> operator-confirmed PASS. The lifecycle matrix has 39/50 accepted cycles and
+> 39 physical attachment/reconnect actions. I1, I2 and J1 passed on the exact
+> installed image; by explicit operator decision I3--I5 and J2--J5 are waived
+> and permanently closed rather than reported as passes.
 > All five deterministic Group F Library-load removal cycles passed on the
 > exact installed image without reboot, partial Library publication, recovery
 > mismatch, controller loss or audio fault. The

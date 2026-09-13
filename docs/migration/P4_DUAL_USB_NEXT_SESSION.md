@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-13**
+Saved: **2026-09-14**
 
 Status: **active P4-only operational handoff**.
 
@@ -9,29 +9,30 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `495947e0da847b377375b898838fb0c522d97ef5`
-- Validated firmware version: `RC2-128-g495947e`
-- Current signed bundle: `2,456,716` bytes, SHA-256
-  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
-- Current application: `2,456,528` bytes, SHA-256
-  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
+  `09f7efc28274da37ae943d61094179f463e2eaf4`
+- Validated firmware version: `RC2-134-g09f7efc`
+- Current signed bundle: `2,456,972` bytes, SHA-256
+  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
+- Current application: `2,456,784` bytes, SHA-256
+  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
 - Current bundle path:
-  `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-134-g09f7efc/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
-  build, package verification, signed OTA and lifecycle Groups A--H pass; the
-  earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
+  build, package verification, signed OTA and lifecycle Groups A--H plus
+  I1/I2/J1 pass; the earlier `RC2-116-g77d723c` passed the targeted three-hour
+  limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-128-g495947e` from commit `495947e`
-- Installed slot: `ota_1`
+- Latest installed version: `RC2-134-g09f7efc` from commit `09f7efc`
+- Installed slot: `ota_0`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,456,528` bytes
+- Application: `2,456,784` bytes
 - Application SHA-256:
-  `656f543f6ba30e768a06e94bde1c1022b14679710a546e0eb60191288969c805`
-- Signed bundle: `2,456,716` bytes
+  `88a7dbc4ade5c7241e7ee47277f9fdab7151f68e234d0f09d7fe088a2b2feaff`
+- Signed bundle: `2,456,972` bytes
 - Signed bundle SHA-256:
-  `33952d47ee7762ce5a84b5a89e53b9f8e5618c92fc94fc86117f18b4d2c4f927`
+  `b72b099b858d6387571a3077fe4288ba0d8d73d4682e1e4c7b35cb320bc81ec3`
 - Bundle path:
-  `releases/pajoniiir-RC2-128-g495947e/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-134-g09f7efc/main-deck-p4.ddjota`
 
 During the latest captured hardware run, USB0 remained mounted and the direct
 FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
@@ -165,15 +166,14 @@ clean reboot, all on exact installed image `RC2-128-g495947e`. Each accepted
 cycle retained USB0 and 100 tracks, restored FLX4 profile/MIDI/LED/UAC and
 passed dual playback plus audible MAIN/cue confirmation with zero critical
 fault deltas. The initial H1 harness-policy attempt and H5 attempts containing
-unintended cable/USB0 actions remain rejected and do not count. Next action:
-install the stream-epoch remediation and rerun I1 with the accelerated paired
-Group I/J harness. It shares one dual-deck load/play setup but retains ten
-independent cycle baselines and evidence files, seeks both loaded tracks back
-to the start before each reconnect, and stops on the first failure. Boot 418
-preserved USB0, 100 tracks, controller recovery, dual playback and audible
-audio, but failed because the initial 745-frame UAC reconnect-prime underflow
-latched against an unchanged playback epoch. The new UAC stream epoch scopes
-that one-shot grace without masking drops, overflow or packet loss.
+unintended cable/USB0 actions remain rejected and do not count.
+
+Group I/J closure checkpoint 2026-09-14: stream-epoch remediation image
+`RC2-134-g09f7efc` was installed into `ota_0`. I1, I2 and jog-held J1 passed on
+boot 420 with USB0 and 100 tracks retained, exact disconnect/connect event
+pairs, continued dual playback, audible MAIN/cue and zero critical fault
+deltas. I3--I5 and J2--J5 are explicitly operator-waived, are not passes and
+will not be resumed. Next action is Group K software-reboot recovery.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.
