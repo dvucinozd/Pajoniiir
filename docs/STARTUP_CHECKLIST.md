@@ -62,6 +62,12 @@ Status: **active P4-only checklist, reconciled 2026-09-13**.
 - [x] Implement and self-test the Group H USB1 idle reconnect harness while
   preserving the USB0 100-track Library.
 - [x] USB1 idle disconnect/reconnect while USB0 remains mounted: Group H 5/5.
+- [x] Implement and self-test the accelerated paired Group I/J harness with
+  one load/play setup, ten independent evidence records and fail-fast cleanup.
+- [x] Give every successfully primed UAC stream a monotonic epoch and scope the
+  one-shot underflow grace to that stream without hiding other loss classes.
+- [ ] Rerun I1 on the exact stream-epoch remediation image; the valid boot 418
+  attempt preserved function but failed only its stale reconnect-prime latch.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
 - [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
 - [ ] Confirm held controls release and no scratch/pad/shift state remains

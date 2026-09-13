@@ -63,6 +63,8 @@ static uint32_t s_config_failures;
 static uint32_t s_transfer_failures;
 static uint32_t s_packet_failures;
 static uint64_t s_packet_lost_frames;
+/* Monotonic per-boot identity for each successfully primed UAC stream. */
+static uint32_t s_stream_epoch;
 
 static void lower_to_transition_priority(void)
 {
@@ -326,6 +328,7 @@ static void control_callback(usb_transfer_t *transfer)
 
     s_control_step = 0u;
     s_configuring = false;
+    __atomic_add_fetch(&s_stream_epoch, 1u, __ATOMIC_RELEASE);
     s_streaming = true;
     set_accepting(true);
     if (s_owner_task && s_active_priority > 0u) {
@@ -595,6 +598,7 @@ void controller_usb_audio_stream_get_stats(
     out_stats->transfer_failures = s_transfer_failures;
     out_stats->packet_failures = __atomic_load_n(&s_packet_failures, __ATOMIC_RELAXED);
     out_stats->packet_lost_frames = __atomic_load_n(&s_packet_lost_frames, __ATOMIC_RELAXED);
+    out_stats->stream_epoch = __atomic_load_n(&s_stream_epoch, __ATOMIC_ACQUIRE);
     out_stats->claimed = s_claimed;
     out_stats->configuring = s_configuring;
     out_stats->streaming = s_streaming;

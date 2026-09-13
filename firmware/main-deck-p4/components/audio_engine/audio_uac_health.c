@@ -57,6 +57,7 @@ audio_uac_health_result_t audio_uac_health_sample(
     audio_uac_health_monitor_t *monitor,
     bool playback_active,
     uint32_t playback_session_epoch,
+    uint32_t uac_stream_epoch,
     uint32_t submitted_blocks,
     uint32_t queued_frames,
     uint32_t capacity_frames,
@@ -80,6 +81,14 @@ audio_uac_health_result_t audio_uac_health_sample(
                                    !monitor->last_playback_active ||
                                    playback_session_epoch !=
                                        monitor->last_playback_session_epoch);
+    /* The controller can disappear and return while both decks keep playing.
+     * Its freshly primed isochronous consumer may observe an empty ring before
+     * the producer's first block. A stream epoch distinguishes that boundary
+     * from a genuine underflow later in the same UAC connection. Epoch zero is
+     * deliberately ignored so disconnect itself cannot clear a latched fault. */
+    const bool stream_started = playback_active && monitor->initialized &&
+                                uac_stream_epoch != 0u &&
+                                uac_stream_epoch != monitor->last_uac_stream_epoch;
     if (monitor->initialized) {
         result.delta_dropped_blocks =
             counter_delta(dropped_blocks, monitor->last_dropped_blocks);
@@ -97,6 +106,7 @@ audio_uac_health_result_t audio_uac_health_sample(
     monitor->last_packet_lost_frames = packet_lost_frames;
     monitor->last_playback_active = playback_active;
     monitor->last_playback_session_epoch = playback_session_epoch;
+    monitor->last_uac_stream_epoch = uac_stream_epoch;
     monitor->initialized = true;
 
     if (!playback_active) {
@@ -115,6 +125,13 @@ audio_uac_health_result_t audio_uac_health_sample(
         result.delta_overflow_frames = 0u;
         result.delta_underflow_frames = 0u;
         result.delta_packet_lost_frames = 0u;
+    } else if (stream_started) {
+        /* A new physical UAC stream starts a new health session, but only its
+         * producer-prime underflow is eligible for grace. Transport loss,
+         * producer drops and ring overflow on reconnect remain reportable. */
+        monitor->active_data_loss_flags = AUDIO_UAC_HEALTH_NONE;
+        monitor->startup_underflow_grace_pending = true;
+        result.delta_underflow_frames = 0u;
     }
 
     audio_uac_ring_state_t state = audio_uac_ring_state(
@@ -126,7 +143,8 @@ audio_uac_health_result_t audio_uac_health_sample(
      * once, and only when the follow-up sample proves the ring recovered. A
      * ring that remains low/unavailable still reports the underflow, as does
      * every post-prime interval. */
-    if (!playback_started && monitor->startup_underflow_grace_pending) {
+    if (!playback_started && !stream_started &&
+        monitor->startup_underflow_grace_pending) {
         if (state == AUDIO_UAC_RING_NOMINAL ||
             state == AUDIO_UAC_RING_HIGH) {
             result.delta_underflow_frames = 0u;

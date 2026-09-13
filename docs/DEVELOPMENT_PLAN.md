@@ -31,7 +31,11 @@ The direct dual-root product path is implemented:
   tracks, all recovery requests matched successes, and controller/audio fault
   deltas stayed zero. Five idle USB1 reconnects then retained USB0 and its
   100-track Library and restored FLX4 profile, MIDI, LEDs, UAC and audible
-  MAIN/cue. USB1 reconnect during dual-deck playback is next.
+  MAIN/cue. The accelerated paired Group I/J harness is implemented and
+  self-tested. Its first valid Group I run preserved playback, USB0, Library,
+  controller and audible audio, but exposed a false UAC data-loss latch caused
+  by the reconnect-prime underflow being charged to the old playback session.
+  UAC stream-epoch accounting is implemented and awaits exact-image rerun.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -40,8 +44,9 @@ real defect.
 ## Ordered remaining phases
 
 Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is 36/50 cycles complete through Group H; USB1 disconnect/reconnect during
-dual-deck playback is next on the installed exact candidate.
+is 36/50 cycles complete through Group H. The paired I/J harness is ready;
+the UAC reconnect-prime remediation now needs an exact-image I1 rerun before
+USB1 active-playback qualification can advance.
 Phases 4--11 remain
 deferred for later sessions.
 

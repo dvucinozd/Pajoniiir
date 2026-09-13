@@ -12,7 +12,7 @@ static audio_uac_health_result_t sample(audio_uac_health_monitor_t *monitor,
                                         uint32_t overflow,
                                         uint32_t underflow)
 {
-    return audio_uac_health_sample(monitor, active, playback_session_epoch,
+    return audio_uac_health_sample(monitor, active, playback_session_epoch, 1u,
                                    submitted, queued, 2048u,
                                    dropped, overflow, underflow, 0u);
 }
@@ -141,21 +141,68 @@ static void test_epoch_detects_restart_between_active_samples(void)
     assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_UNDERFLOW);
 }
 
+static void test_uac_stream_epoch_scopes_reconnect_prime(void)
+{
+    audio_uac_health_monitor_t monitor = {0};
+    audio_uac_health_result_t r = audio_uac_health_sample(
+        &monitor, true, 1u, 1u, 100u, 1024u, 2048u,
+        0u, 0u, 100u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 1u, 101u, 1024u, 2048u,
+        0u, 0u, 110u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 1u, 102u, 1024u, 2048u,
+        0u, 0u, 120u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_UNDERFLOW);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_UNDERFLOW);
+
+    /* A successful reconnect clears the old stream latch and forgives only
+     * the underflow accumulated while the new isochronous queue primes. */
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 2u, 103u, 1024u, 2048u,
+        0u, 0u, 745u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    assert(r.delta_underflow_frames == 0u);
+    assert(r.active_data_loss_flags == AUDIO_UAC_HEALTH_NONE);
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 2u, 104u, 1024u, 2048u,
+        0u, 0u, 745u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_NONE);
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 2u, 105u, 1024u, 2048u,
+        0u, 0u, 755u, 0u);
+    assert(r.flags == AUDIO_UAC_HEALTH_UNDERFLOW);
+    assert(r.delta_underflow_frames == 10u);
+
+    /* A later reconnect may forgive its prime underflow, never independent
+     * transport or producer failures observed in the same interval. */
+    r = audio_uac_health_sample(
+        &monitor, true, 1u, 3u, 106u, 1024u, 2048u,
+        1u, 2u, 700u, 3u);
+    assert(r.flags == (AUDIO_UAC_HEALTH_DROPPED |
+                       AUDIO_UAC_HEALTH_OVERFLOW |
+                       AUDIO_UAC_HEALTH_PACKET_LOSS));
+    assert(r.delta_underflow_frames == 0u);
+    assert(r.active_data_loss_flags == r.flags);
+}
+
 int main(void)
 {
     audio_uac_health_monitor_t packets = {0};
     audio_uac_health_result_t p = audio_uac_health_sample(
-        &packets, true, 1u, 1u, 1024u, 2048u, 0u, 0u, 0u, 100u);
+        &packets, true, 1u, 1u, 1u, 1024u, 2048u, 0u, 0u, 0u, 100u);
     assert(p.flags == 0); /* Earlier idle USB losses establish a baseline. */
     p = audio_uac_health_sample(
-        &packets, true, 1u, 2u, 1024u, 2048u, 0u, 0u, 0u, 190u);
+        &packets, true, 1u, 1u, 2u, 1024u, 2048u, 0u, 0u, 0u, 190u);
     assert(p.flags == AUDIO_UAC_HEALTH_PACKET_LOSS);
     assert(p.delta_packet_lost_frames == 90);
     p = audio_uac_health_sample(
-        &packets, true, 1u, 3u, 1024u, 2048u, 0u, 0u, 0u, 190u);
+        &packets, true, 1u, 1u, 3u, 1024u, 2048u, 0u, 0u, 0u, 190u);
     assert(p.flags == 0 && p.active_data_loss_flags == AUDIO_UAC_HEALTH_PACKET_LOSS);
     p = audio_uac_health_sample(
-        &packets, false, 1u, 3u, 1024u, 2048u, 0u, 0u, 0u, 200u);
+        &packets, false, 1u, 1u, 3u, 1024u, 2048u, 0u, 0u, 0u, 200u);
     assert(p.flags == 0 && p.active_data_loss_flags == 0 && p.delta_packet_lost_frames == 0);
     test_ring_thresholds_and_states();
     test_pressure_and_active_data_loss();
@@ -163,6 +210,7 @@ int main(void)
     test_startup_grace_does_not_hide_sustained_underflow();
     test_counter_reset_does_not_wrap();
     test_epoch_detects_restart_between_active_samples();
+    test_uac_stream_epoch_scopes_reconnect_prime();
     puts("audio_uac_health tests passed");
     return 0;
 }

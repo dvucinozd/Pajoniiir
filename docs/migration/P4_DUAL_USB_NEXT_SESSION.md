@@ -166,7 +166,14 @@ cycle retained USB0 and 100 tracks, restored FLX4 profile/MIDI/LED/UAC and
 passed dual playback plus audible MAIN/cue confirmation with zero critical
 fault deltas. The initial H1 harness-policy attempt and H5 attempts containing
 unintended cable/USB0 actions remain rejected and do not count. Next action:
-implement and run Group I, USB1 disconnect/reconnect during dual-deck playback.
+install the stream-epoch remediation and rerun I1 with the accelerated paired
+Group I/J harness. It shares one dual-deck load/play setup but retains ten
+independent cycle baselines and evidence files, seeks both loaded tracks back
+to the start before each reconnect, and stops on the first failure. Boot 418
+preserved USB0, 100 tracks, controller recovery, dual playback and audible
+audio, but failed because the initial 745-frame UAC reconnect-prime underflow
+latched against an unchanged playback epoch. The new UAC stream epoch scopes
+that one-shot grace without masking drops, overflow or packet loss.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

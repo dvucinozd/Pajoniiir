@@ -5931,6 +5931,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
     controller_usb_host_get_audio_stats(&direct_stats);
     out_snapshot->usb_headphone_packet_failures = direct_stats.packet_failures;
     out_snapshot->usb_headphone_packet_lost_frames = (uint32_t)direct_stats.packet_lost_frames;
+    out_snapshot->usb_headphone_stream_epoch = direct_stats.stream_epoch;
     if (direct_stats.streaming || direct_stats.submitted_blocks != 0u) {
         out_snapshot->usb_headphone_submitted_blocks =
             (uint32_t)direct_stats.submitted_blocks;

@@ -837,6 +837,7 @@ void controller_usb_host_get_audio_stats(
         .transfer_failures = stream_stats.transfer_failures,
         .packet_failures = stream_stats.packet_failures,
         .packet_lost_frames = stream_stats.packet_lost_frames,
+        .stream_epoch = stream_stats.stream_epoch,
         .claimed = stream_stats.claimed,
         .configuring = stream_stats.configuring,
         .streaming = stream_stats.streaming,

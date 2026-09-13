@@ -28,6 +28,7 @@ typedef struct {
     uint32_t transfer_failures;
     uint32_t packet_failures;
     uint64_t packet_lost_frames;
+    uint32_t stream_epoch;
     bool claimed;
     bool configuring;
     bool streaming;

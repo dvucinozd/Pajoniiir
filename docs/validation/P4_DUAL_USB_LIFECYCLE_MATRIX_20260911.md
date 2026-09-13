@@ -169,7 +169,7 @@ Run H1 through H5 on the current exact installed candidate:
 
 ```powershell
 .\tools\run_p4_lifecycle_cycle.ps1 -Group H -Cycle 1 `
-    -ExpectedVersion RC2-128-g495947e
+    -ExpectedVersion (git describe --tags --always)
 ```
 
 The extended harness self-test passes. One earlier focused USB1 reconnect smoke
@@ -182,6 +182,46 @@ retained USB0 and passed audio/controller checks, but the initial harness
 incorrectly required exactly one soft-fault epoch. Current physical
 `DEV_GONE` handling correctly produced zero. That attempt remains rejected;
 the corrected gate accepts zero or one epoch and rejects duplicates.
+
+## Accelerated paired Groups I/J harness
+
+`tools/run_p4_lifecycle_ij_batch.ps1` runs I1/J1 through I5/J5 in one guided
+session. It loads the two test tracks and starts both decks once, then seeks the
+already loaded tracks back to zero before each reconnect so operator time
+cannot reach EOF. Each I or J reconnect still has its own baseline, current-boot
+event delta, JSON/Markdown evidence and PASS/FAIL result; one physical reconnect
+therefore never counts as two lifecycle cycles. The batch stops immediately on
+the first failure and stops both decks during cleanup.
+
+Group I disconnects FLX4 while both decks are playing. Group J repeats the
+active-playback disconnect while one defined Deck 1 control is held, rotating
+through jog touch, Shift, Censor, Pad FX1 pad 1 and shifted Beat Loop roll pad 1.
+USB0 must remain mounted with 100 tracks throughout. After every reconnect the
+harness requires profile/MIDI/UAC recovery, continued dual playback, a clean
+post-reconnect audio window, exact controller disconnect/connect events and an
+operator-confirmed MAIN/cue, LED, transport and unlatched-control check.
+
+Run from a clean boot with USB0 and FLX4 attached and both decks stopped:
+
+```powershell
+.\tools\run_p4_lifecycle_ij_batch.ps1 `
+    -ExpectedVersion RC2-128-g495947e
+```
+
+Two pre-remediation I1 attempts do not count. The boot 417 attempt is
+operator-invalid because cables were touched. The clean boot 418 attempt kept
+USB0 mounted with all 100 tracks, both decks advanced by about 5.14 seconds,
+FLX4 profile/MIDI/UAC recovered and audio was confirmed audible. It failed only
+because the UAC health latch reported the 745-frame isochronous reconnect-prime
+underflow (`flags=16`) even though underflow stopped growing and drop, overflow
+and packet-loss deltas were zero. The remediation assigns a monotonic epoch to
+each successfully primed UAC stream and gives only that boundary its bounded
+underflow grace; all other loss classes and later underflows remain fatal.
+
+Use `-StartPair` and `-EndPair` only to resume at a documented pair after a
+failed or operator-invalid run. The batch and original lifecycle harness
+self-tests are both part of `tests/run_p4_host_tests.ps1`. This harness changes
+test orchestration only; no firmware build or OTA is required.
 
 ## Planned distribution
 
@@ -1177,6 +1217,6 @@ disconnect/reconnect during dual-deck playback.
   artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: implement a deterministic Group I harness for USB1
-  disconnect/reconnect during dual-deck playback, self-test it, then run I1--I5
-  on the exact installed candidate while preserving USB0 and the Library.
+- First action: install the exact committed stream-epoch remediation image,
+  then rerun paired Group I/J from I1 during active dual playback while
+  preserving USB0 plus the Library.

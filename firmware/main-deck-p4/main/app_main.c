@@ -80,6 +80,7 @@ static void health_monitor_cb(void *arg)
     const bool playback_active = d.deck_active[0] || d.deck_active[1];
     audio_uac_health_result_t uac = audio_uac_health_sample(
         &uac_monitor, playback_active, d.playback_session_epoch,
+        d.usb_headphone_stream_epoch,
         d.usb_headphone_submitted_blocks,
         d.usb_headphone_ring_queued_frames,
         d.usb_headphone_ring_capacity_frames,

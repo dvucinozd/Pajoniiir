@@ -15,7 +15,8 @@ param(
     [int]$DeviceTimeoutSeconds = 30,
 
     [string]$OutputDirectory = "tmp/p4-lifecycle",
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [switch]$DefineOnly
 )
 
 # Guided hardware harness for Groups C--H of the P4 dual-USB lifecycle
@@ -794,6 +795,10 @@ function Invoke-SelfTest {
         throw "duplicate Group H controller fault epoch was not rejected"
     }
     Write-Output "P4 lifecycle harness self-test passed"
+}
+
+if ($DefineOnly) {
+    return
 }
 
 if ($SelfTest) {

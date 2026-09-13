@@ -40,6 +40,8 @@ void review_enter_critical(void)
 
 static void start(void)
 {
+    const uint32_t previous_epoch =
+        __atomic_load_n(&s_stream_epoch, __ATOMIC_ACQUIRE);
     assert(controller_usb_audio_stream_is_quiesced());
     assert(controller_usb_audio_stream_start((void *)1, (void *)2,
         descriptor, sizeof(descriptor), (void *)3, 10, 5) == ESP_OK);
@@ -49,6 +51,8 @@ static void start(void)
     assert(s_control_step == 2);
     control_callback(s_control);
     assert(s_streaming && !s_configuring);
+    assert(__atomic_load_n(&s_stream_epoch, __ATOMIC_ACQUIRE) ==
+           previous_epoch + 1u);
 }
 
 static void retire_transfers(void)
@@ -79,6 +83,7 @@ static void test_packet_loss(void)
     isoc_callback(t);
     controller_usb_audio_stream_stats_t stats;
     controller_usb_audio_stream_get_stats(&stats);
+    assert(stats.stream_epoch == 1u);
     assert(stats.packet_failures == 3);
     assert(stats.packet_lost_frames == 90); /* 44 + 44 + 2 */
     assert(stats.transfer_failures == 0 && !stats.faulted);
