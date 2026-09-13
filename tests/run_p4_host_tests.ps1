@@ -1397,6 +1397,17 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 audio-load validation gate is guarded, bounded and requires USB0 present" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_audio_load_validation_gate_arm_handler",
+        "api_request_allowed(req, true)",
+        "!usb_storage_is_mounted()",
+        "audio_load_validation_gate_arm(deck, 60000u)",
+        '"/api/validation/audio-load-gate/arm"'
+    )
+
+Assert-FileContains `
     -Name "p4 DSP applies control-task FX commands on output block boundaries" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @(
@@ -1420,6 +1431,24 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("atoi(")
 
 $tests = @(
+    @{
+        Name = "audio_load_validation_gate"
+        Dir = "tests/audio_load_validation_gate"
+        Target = "test_audio_load_validation_gate.exe"
+        Args = @(
+            "-O1", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DAUDIO_LOAD_VALIDATION_GATE_HOST_TEST",
+            "-DMEDIA_IO_GATE_STANDALONE_TEST",
+            "-I../support/rtos", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-o", "test_audio_load_validation_gate.exe",
+            "test_audio_load_validation_gate.c",
+            "../support/rtos/fake_rtos.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_load_validation_gate.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+        )
+    },
     @{
         Name = "library_validation_gate"
         Dir = "tests/library_validation_gate"

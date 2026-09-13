@@ -18,6 +18,7 @@
  * each of which must fail to compile.
  */
 #include "audio_fw_preload.h"
+#include "audio_load_validation_gate.h"
 #include "audio_mixer.h"
 #include "audio_output_timing.h"
 #include "audio_pcm_timeline.h"
@@ -68,6 +69,17 @@ static void      (*const c_library_gate_snapshot)(library_validation_gate_snapsh
     library_validation_gate_snapshot;
 static const char *(*const c_library_gate_state_name)(library_validation_gate_state_t) =
     library_validation_gate_state_name;
+
+static esp_err_t (*const c_audio_load_gate_arm)(uint8_t, uint32_t) =
+    audio_load_validation_gate_arm;
+static void (*const c_audio_load_gate_cancel)(void) =
+    audio_load_validation_gate_cancel;
+static bool (*const c_audio_load_gate_checkpoint)(uint8_t) =
+    audio_load_validation_gate_checkpoint;
+static void (*const c_audio_load_gate_snapshot)(
+    audio_load_validation_gate_snapshot_t *) = audio_load_validation_gate_snapshot;
+static const char *(*const c_audio_load_gate_state_name)(
+    audio_load_validation_gate_state_t) = audio_load_validation_gate_state_name;
 
 /* ── bounded compressed audio cache ──────────────────────────────────────── */
 
@@ -134,6 +146,10 @@ static inline void api_contract_reference_all(void)
     CONTRACT_USE(c_library_gate_arm);       CONTRACT_USE(c_library_gate_cancel);
     CONTRACT_USE(c_library_gate_checkpoint); CONTRACT_USE(c_library_gate_snapshot);
     CONTRACT_USE(c_library_gate_state_name);
+    CONTRACT_USE(c_audio_load_gate_arm);     CONTRACT_USE(c_audio_load_gate_cancel);
+    CONTRACT_USE(c_audio_load_gate_checkpoint);
+    CONTRACT_USE(c_audio_load_gate_snapshot);
+    CONTRACT_USE(c_audio_load_gate_state_name);
     CONTRACT_USE(c_cache_init);             CONTRACT_USE(c_cache_reset);
     CONTRACT_USE(c_cache_read);             CONTRACT_USE(c_cache_prefetch);
     CONTRACT_USE(c_cache_capacity);

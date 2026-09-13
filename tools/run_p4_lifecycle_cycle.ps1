@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("C", "D", "E", "F")]
+    [ValidateSet("C", "D", "E", "F", "G")]
     [string]$Group,
 
     [ValidateRange(1, 5)]
@@ -18,7 +18,7 @@ param(
     [switch]$SelfTest
 )
 
-# Guided hardware harness for Groups C--F of the P4 dual-USB lifecycle
+# Guided hardware harness for Groups C--G of the P4 dual-USB lifecycle
 # matrix. The operator performs only the physical cable actions and listening
 # check. The harness owns API polling, exact-image checks, counter deltas,
 # dual-deck playback, cleanup and durable local evidence.
@@ -86,6 +86,54 @@ function Invoke-ValidationGatePost {
 
 function Get-ValidationGate {
     return Invoke-ApiJson -Path "/api/validation/library-load-gate" -Attempts 3
+}
+
+function Invoke-AudioLoadValidationGatePost {
+    param(
+        [ValidateSet("arm", "cancel")][string]$Action,
+        [ValidateRange(1, 2)][int]$Deck = 1
+    )
+    $headers = @{ "X-DDJ-Control" = "1" }
+    $query = if ($Action -eq "arm") { "?deck=$Deck" } else { "" }
+    $response = Invoke-WebRequest -UseBasicParsing -Method Post -Headers $headers `
+        -Uri "$BaseUri/api/validation/audio-load-gate/$Action$query" `
+        -TimeoutSec 5
+    return $response.Content | ConvertFrom-Json
+}
+
+function Get-AudioLoadValidationGate {
+    return Invoke-ApiJson -Path "/api/validation/audio-load-gate" -Attempts 3
+}
+
+function Wait-AudioLoadValidationGateState {
+    param(
+        [string]$ExpectedState,
+        [uint32]$ExpectedSequence,
+        [int]$ExpectedDeck
+    )
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $lastState = "unavailable"
+    while ($timer.Elapsed.TotalSeconds -lt $DeviceTimeoutSeconds) {
+        try {
+            $gate = Get-AudioLoadValidationGate
+            $lastState = [string]$gate.state
+            if ([uint32]$gate.sequence -eq $ExpectedSequence -and
+                [int]$gate.deck -eq $ExpectedDeck -and
+                $lastState -eq $ExpectedState) {
+                return $gate
+            }
+            if ($lastState -in @("timed_out", "canceled")) {
+                throw "Audio-load validation gate ended as $lastState"
+            }
+        }
+        catch {
+            if ($_.Exception.Message -like "Audio-load validation gate ended*") {
+                throw
+            }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "Timed out waiting for audio-load validation gate $ExpectedState (last=$lastState)"
 }
 
 function Wait-ValidationGateState {
@@ -698,6 +746,18 @@ function Invoke-SelfTest {
             -ExpectedStorageReleases 2).Count -ne 0) {
         throw "good Group F Library-load removal window failed"
     }
+    $cycleG = $cycleBase.psobject.Copy()
+    $cycleG.storage_disconnects = [uint64]1
+    $cycleG.storage_releases = [uint64]1
+    $cycleG.recovery_requests = [uint64]16
+    $cycleG.recovery_successes = [uint64]16
+    if (@(Get-CycleFailures -Baseline $cycleBase -Final $cycleG `
+            -MinimumRecoveryCount 0 -MaximumRecoveryCount 1 `
+            -EnforceRecoveryRange $false `
+            -ExpectedStorageDisconnects 1 -ExpectedControllerDisconnects 0 `
+            -ExpectedStorageReleases 1).Count -ne 0) {
+        throw "good Group G audio-load removal window failed"
+    }
     Write-Output "P4 lifecycle harness self-test passed"
 }
 
@@ -707,7 +767,7 @@ if ($SelfTest) {
 }
 
 if (-not $Group) {
-    throw "-Group C, -Group D, -Group E or -Group F is required"
+    throw "-Group C, -Group D, -Group E, -Group F or -Group G is required"
 }
 if (-not $ExpectedVersion) {
     throw "-ExpectedVersion is required for hardware evidence"
@@ -718,6 +778,7 @@ $scenario = switch ($Group) {
     "D" { "boot empty, attach USB1 then USB0" }
     "E" { "both active, remove and reinsert idle USB0 while FLX4 remains active" }
     "F" { "remove and reinsert USB0 during deterministic Library load while FLX4 remains active" }
+    "G" { "remove and reinsert USB0 after the first bounded audio-cache read while FLX4 remains active" }
 }
 
 $evidence = [ordered]@{
@@ -735,7 +796,7 @@ try {
     $bootLog = @(Get-CurrentBootLog)
     $bootEpoch = Get-BootEpoch -BootLog $bootLog
     $baselineEventCounts = Get-GatedEventCounts -BootLog $bootLog
-    $baselineName = if ($Group -in @("E", "F")) { "both_active_idle_baseline" } else { "empty_boot_baseline" }
+    $baselineName = if ($Group -in @("E", "F", "G")) { "both_active_idle_baseline" } else { "empty_boot_baseline" }
     $baseline = Get-DeviceSnapshot -Name $baselineName
     $evidence.boot_epoch = $bootEpoch
     $evidence.firmware_version = $baseline.version
@@ -749,12 +810,12 @@ try {
     if ($baseline.ota_state -ne "idle" -or $baseline.ota_error) {
         throw "OTA state is not a clean idle baseline"
     }
-    $baselineStoragePresent = $Group -in @("E", "F")
-    $baselineControllerPresent = $Group -in @("E", "F")
+    $baselineStoragePresent = $Group -in @("E", "F", "G")
+    $baselineControllerPresent = $Group -in @("E", "F", "G")
     if (-not (Test-DeviceState -Snapshot $baseline `
             -StoragePresent $baselineStoragePresent `
             -ControllerPresent $baselineControllerPresent)) {
-        $requiredState = if ($Group -in @("E", "F")) { "both devices active and idle" } else { "an empty boot" }
+        $requiredState = if ($Group -in @("E", "F", "G")) { "both devices active and idle" } else { "an empty boot" }
         throw "Cycle must start with $requiredState (storage=$($baseline.storage_mounted), controller=$($baseline.controller_present))"
     }
     if ($baseline.deck1_playing -or $baseline.deck2_playing) {
@@ -796,7 +857,7 @@ try {
         }
         Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0; leave FLX4 connected."
     }
-    else {
+    elseif ($Group -eq "F") {
         $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
         $evidence.baseline_library_count = $baselineLibrary.count
 
@@ -828,6 +889,47 @@ try {
         $libraryAfterRemoval = Wait-LibraryCount -ExpectedCount 0
         $evidence.validation_gate_removed = $removedGate
         $evidence.library_after_load_removal_count = $libraryAfterRemoval.count
+
+        Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0 for normal recovery; leave FLX4 connected."
+    }
+    else {
+        $baselineLibrary = Wait-LibraryCount -ExpectedCount 100
+        $evidence.baseline_library_count = $baselineLibrary.count
+        $targetDeck = if (($Cycle % 2) -eq 0) { 2 } else { 1 }
+        $targetTrackKey = if ($targetDeck -eq 1) { [uint32]3 } else { [uint32]10 }
+        $targetTrack = Get-TrackByKey -Library $baselineLibrary `
+            -TrackKey $targetTrackKey
+        $evidence.audio_load_target = [ordered]@{
+            deck = $targetDeck
+            track_key = $targetTrackKey
+            title = [string]$targetTrack.title
+        }
+
+        $armed = Invoke-AudioLoadValidationGatePost -Action "arm" `
+            -Deck $targetDeck
+        if ([string]$armed.state -ne "armed" -or
+            [int]$armed.deck -ne $targetDeck) {
+            throw "Audio-load validation gate did not arm for Deck $targetDeck"
+        }
+        $gateSequence = [uint32]$armed.sequence
+        $evidence.audio_load_gate_armed = $armed
+
+        Invoke-LoadPost -TrackKey $targetTrackKey `
+            -Generation $baselineLibrary.generation -Deck $targetDeck
+        $holding = Wait-AudioLoadValidationGateState -ExpectedState "holding" `
+            -ExpectedSequence $gateSequence -ExpectedDeck $targetDeck
+        $evidence.audio_load_gate_holding = $holding
+
+        Request-OperatorStep "Remove USB0 now. Deck $targetDeck has read its first bounded audio-cache page and its loader is paused; leave FLX4 connected."
+        $removedGate = Wait-AudioLoadValidationGateState `
+            -ExpectedState "media_removed" -ExpectedSequence $gateSequence `
+            -ExpectedDeck $targetDeck
+        $afterFirst = Wait-DeviceState -Name "after_audio_load_removal" `
+            -StoragePresent $false -ControllerPresent $true
+        $libraryAfterRemoval = Wait-LibraryCount -ExpectedCount 0
+        $evidence.audio_load_gate_removed = $removedGate
+        $evidence.library_after_audio_load_removal_count = `
+            $libraryAfterRemoval.count
 
         Request-OperatorStep "Reinsert the same Rekordbox USB stick into USB0 for normal recovery; leave FLX4 connected."
     }
@@ -878,11 +980,15 @@ try {
             -StoragePresent $true -ControllerPresent $true)) {
         Add-Failure $allFailures "both USB devices were not healthy at final snapshot"
     }
-    $minimumRecoveryCount = if ($Group -in @("E", "F")) { 0 } else { 1 }
-    $maximumRecoveryCount = if ($Group -in @("E", "F")) { 1 } else { 2 }
-    $enforceRecoveryRange = $Group -notin @("E", "F")
+    $minimumRecoveryCount = if ($Group -in @("E", "F", "G")) { 0 } else { 1 }
+    $maximumRecoveryCount = if ($Group -in @("E", "F", "G")) { 1 } else { 2 }
+    $enforceRecoveryRange = $Group -notin @("E", "F", "G")
     $expectedStorageDisconnects = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
     $expectedStorageReleases = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
+    if ($Group -eq "G") {
+        $expectedStorageDisconnects = 1
+        $expectedStorageReleases = 1
+    }
     $cycleFailures = @(Get-CycleFailures -Baseline $baseline -Final $final `
         -MinimumRecoveryCount $minimumRecoveryCount `
         -MaximumRecoveryCount $maximumRecoveryCount `
@@ -911,7 +1017,7 @@ try {
             Add-Failure $allFailures "$eventName event delta is $($eventDeltas.$eventName)"
         }
     }
-    $expectedUsbUnmountedEvents = if ($Group -eq "F") { 2 } elseif ($Group -eq "E") { 1 } else { 0 }
+    $expectedUsbUnmountedEvents = if ($Group -eq "F") { 2 } elseif ($Group -in @("E", "G")) { 1 } else { 0 }
     if ($eventDeltas.usb_unmounted -ne $expectedUsbUnmountedEvents) {
         Add-Failure $allFailures "usb_unmounted event delta is $($eventDeltas.usb_unmounted), expected $expectedUsbUnmountedEvents"
     }
@@ -923,6 +1029,7 @@ catch {
     $evidence.failures = @([string]$_.Exception.Message)
     $evidence.error = [string]$_
     try { Invoke-ValidationGatePost -Action "cancel" | Out-Null } catch { }
+    try { Invoke-AudioLoadValidationGatePost -Action "cancel" | Out-Null } catch { }
     try { Stop-Decks } catch { }
 }
 finally {

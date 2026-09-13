@@ -9,29 +9,29 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `7b7b29a40a8ff154c22a2d5556a81ffdb3993495`
-- Validated firmware version: `RC2-121-g7b7b29a`
-- Current signed bundle: `2,453,116` bytes, SHA-256
-  `91bdb72ba7faf0627e4c7fd3fe94ddbb38df7d84af1b1d0aabd888ac4af3719f`
-- Current application: `2,452,928` bytes, SHA-256
-  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
+  `06c0e858ec77b0264b21566ee726e2d2135f365f`
+- Validated firmware version: `RC2-127-g06c0e85`
+- Current signed bundle: `2,455,036` bytes, SHA-256
+  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
+- Current application: `2,454,848` bytes, SHA-256
+  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
 - Current bundle path:
-  `releases/pajoniiir-RC2-121-g7b7b29a/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-127-g06c0e85/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
-  build, package verification, signed OTA and lifecycle Groups A--E pass; the
+  build, package verification, signed OTA and lifecycle Groups A--F pass; the
   earlier `RC2-116-g77d723c` passed the targeted three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-121-g7b7b29a` from commit `7b7b29a`
-- Installed slot: `ota_1`
+- Latest installed version: `RC2-127-g06c0e85` from commit `06c0e85`
+- Installed slot: `ota_0`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,452,928` bytes
+- Application: `2,454,848` bytes
 - Application SHA-256:
-  `f3c55750ca4c555d4eb854597cc19919eba1b6320273311eba7ff4c6bb46c015`
-- Signed bundle: `2,453,116` bytes
+  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
+- Signed bundle: `2,455,036` bytes
 - Signed bundle SHA-256:
-  `91bdb72ba7faf0627e4c7fd3fe94ddbb38df7d84af1b1d0aabd888ac4af3719f`
+  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
 - Bundle path:
-  `releases/pajoniiir-RC2-121-g7b7b29a/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-127-g06c0e85/main-deck-p4.ddjota`
 
 During the latest captured hardware run, USB0 remained mounted and the direct
 FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
@@ -111,16 +111,14 @@ Final-enclosure repetition remains open.
 
 ## Session 2 — complete dual-USB lifecycle matrix
 
-Checkpoint 2026-09-12: Groups A--E pass on the installed exact validation
-image `RC2-121-g7b7b29a`, `ota_1`. Progress is 21/50 controlled cycles and 21
-planned physical attachment/reconnect actions. The accepted C1--E5 sequence
-ended on boot 413 with both USB roles healthy and both decks stopped. The first
-D4 attempt was operator-invalidated and the first E3 attempt exposed a harness
-Library-timing race; neither counts. Next, inspect the Library-load trigger and
-extend `tools/run_p4_lifecycle_cycle.ps1` for a deterministic Group F removal
-window before requesting a cable action. Do not ask the operator to target the
-approximately 50--60 ms `USB_MOUNTED` to `LIBRARY_LOADED` interval manually.
-Accepted per-cycle details are in
+Checkpoint 2026-09-13: Groups A--F pass. Progress is 26/50 controlled cycles
+and 26 planned physical attachment/reconnect actions. Group F ran on exact
+image `RC2-127-g06c0e85`, `ota_0`, boot epoch 415. F1--F5 each reached the
+guarded `holding` state, changed to `media_removed` on the controlled USB0
+removal, kept Library empty while absent, restored all 100 tracks and passed
+dual-deck playback plus physical FLX4 verification. The initially incomplete
+F3 operator check did not count and was rerun cleanly. Accepted per-cycle
+details are in
 [`../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](../validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
 
 Implementation checkpoint 2026-09-13: Group F no longer depends on that manual
@@ -132,10 +130,23 @@ pauses immediately after its first header read until USB0 is removed, the gate
 is canceled, or its 60-second bound expires. The Group F harness detects the
 holding state before asking for removal, verifies the `media_removed` result,
 then requires a normal remount and coherent 100-track Library before playback.
-The complete P4 host suite and ESP-IDF v6.0.2 compile-validation build pass.
-This working image is not installed and does not count as Group F evidence.
-Next action: create an exact committed and signed OTA from these changes,
-install it, run the focused smoke, then execute F1--F5.
+The complete P4 host suite, ESP-IDF v6.0.2 signed build, exact-image OTA smoke
+and F1--F5 hardware execution pass.
+
+Group G implementation checkpoint 2026-09-13: a separate one-shot audio-load
+gate can be armed for either deck only through the guarded service API while
+USB0 is mounted and neither deck is loading or playing. The selected loader
+reads its first bounded 32 KiB compressed-cache page, enters `holding` before
+publishing `load_done`, and exits as `media_removed` when USB0 disappears.
+`tools/run_p4_lifecycle_cycle.ps1` alternates decks across G1--G5, waits for the
+gate before requesting removal, requires an empty Library while absent, then
+requires a coherent 100-track remount and the standard dual-playback/controller
+checks. The new gate unit test, harness self-test, complete P4 host suite and
+ESP-IDF v6.0.2 build pass; the dirty build is 2,456,480 bytes with 41% of the
+smallest app partition free. This working image is not installed and does not
+count as Group G evidence. Next action: commit and push, create and verify a
+signed OTA from that exact commit, install it, pass focused smoke, then execute
+G1--G5.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

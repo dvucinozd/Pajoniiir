@@ -1,6 +1,6 @@
 # P4 Development Plan
 
-Status: **active P4-only plan, reconciled 2026-09-11**.
+Status: **active P4-only plan, reconciled 2026-09-13**.
 
 ## Current position
 
@@ -9,13 +9,13 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-121-g7b7b29a` is the latest installed exact hardware image on `ota_1`;
-- deterministic Group F support is implemented in the working tree: the PDB
+- `RC2-127-g06c0e85` is the latest installed exact hardware image on `ota_0`;
+- deterministic Group F support is implemented and hardware-qualified: the PDB
   reader releases media ownership after at most 8 KiB, incomplete rebuilds
   fail closed, and a guarded one-shot validation barrier lets the harness
   request removal after the first PDB read instead of relying on operator
-  timing; host tests and an ESP-IDF 6.0.2 build pass, but this code is not yet
-  installed;
+  timing; host tests, the ESP-IDF 6.0.2 signed build, exact-image OTA smoke and
+  all five Group F hardware cycles pass;
 - the earlier `RC2-116-g77d723c` targeted three-hour continuous dual-MP3
   limiter/WDT soak passed without
   reset, underrun, active UAC loss or USB/controller loss;
@@ -25,9 +25,11 @@ The direct dual-root product path is implemented:
 - the current bench common 5 V and dual-VBUS measurement gate is
   operator-confirmed PASS;
 - the 30-minute exact-image dual-active MP3 gate is closed;
-- lifecycle Groups A--E pass: 21/50 controlled cycles and 21 planned physical
-  attachment/reconnect actions are complete; Group F firmware installation and
-  five physical cycles are next.
+- lifecycle Groups A--F pass: 26/50 controlled cycles and 26 planned physical
+  attachment/reconnect actions are complete; Group G active load/decode and
+  playback removal is next. Deterministic Group G audio-load support is
+  implemented in the working tree and passes host tests plus an ESP-IDF 6.0.2
+  build, but is not installed and does not count as hardware evidence.
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
@@ -36,8 +38,9 @@ real defect.
 ## Ordered remaining phases
 
 Phases 1 and 2 are complete. Phase 3, the complete dual-USB lifecycle matrix,
-is 21/50 cycles complete through Group E; the Group F implementation is ready
-for an exact committed OTA and hardware execution. Phases 4--11 remain
+is 26/50 cycles complete through Group F; Group G active load/decode and
+playback removal is next after exact commit, signed OTA and focused smoke.
+Phases 4--11 remain
 deferred for later sessions.
 
 | Phase | Work | Exit criterion |

@@ -1,6 +1,6 @@
 # Documentation Status
 
-Status: **active P4-only source of truth, reconciled 2026-09-11**.
+Status: **active P4-only source of truth, reconciled 2026-09-13**.
 
 ## Product boundary
 
@@ -17,50 +17,60 @@ they actually tested; they are not current instructions.
 ## Current validated firmware checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `77d723c8d19b1a859b9f5b4fa8421928250c68d3`
-- Version: `RC2-116-g77d723c`
-- Application size: `2,452,672` bytes
+- Commit: `06c0e858ec77b0264b21566ee726e2d2135f365f`
+- Version: `RC2-127-g06c0e85`
+- Application size: `2,454,848` bytes
 - Application SHA-256:
-  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
-- Signed bundle size: `2,452,860` bytes
+  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
+- Signed bundle size: `2,455,036` bytes
 - Signed bundle SHA-256:
-  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
+  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: pushed; local and remote SHA matched before this
   documentation-only successor
 - Validation state: P4 host/build and signed-package verification passed;
-  installed by signed OTA and targeted three-hour limiter/WDT hardware soak
-  passed
+  installed by signed OTA, exact-image smoke passed and lifecycle Groups
+  A--F pass; the earlier `RC2-116-g77d723c` targeted three-hour limiter/WDT
+  hardware soak remains valid within its scope
 
 This firmware checkpoint retains the review remediations recorded in
 [`validation/CODE_REVIEW_P4_REMEDIATION_20260906.md`](validation/CODE_REVIEW_P4_REMEDIATION_20260906.md),
 including audio worker teardown ownership, nonblocking output bookkeeping,
 controller delivery convergence, UAC packet-loss accounting and valid hardware
-rate selection. It also removes the limiter-telemetry lock cycle that caused
-the earlier audio-task watchdog reset. Later documentation-only commits do not
-alter this installed binary or its exact-image evidence.
+rate selection. It also includes the bounded PDB reader, fail-closed partial
+catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware baseline
 
-- Commit: `77d723c8d19b1a859b9f5b4fa8421928250c68d3`
-- Installed version: `RC2-116-g77d723c`
-- Installed slot: `ota_1`
-- Application size: `2,452,672` bytes
+- Commit: `06c0e858ec77b0264b21566ee726e2d2135f365f`
+- Installed version: `RC2-127-g06c0e85`
+- Installed slot: `ota_0`
+- Application size: `2,454,848` bytes
 - Application SHA-256:
-  `ead88e980b12c06be8f8655cd1018a5671525f07c4c4a5e21b58cfb303a62d19`
-- Signed bundle size: `2,452,860` bytes
+  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
+- Signed bundle size: `2,455,036` bytes
 - Signed bundle SHA-256:
-  `753b22ca2f3276786897f8fd48401fd9c397084489bfdbcc9eb808452170fb3d`
+  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
 - Toolchain: ESP-IDF v6.0.2
 
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup and a targeted three-hour continuous dual-MP3
-limiter/WDT soak. Boot epoch `389` remained unchanged, with no watchdog reset,
-PCM underrun or active UAC loss and no observable output failure, controller
-disconnect or USB host daemon error. Fourteen output-late warnings over
-1,999,090 submitted UAC blocks were investigated and did not correlate with a
-downstream failure; no source change is justified from that count alone. See
+profile/MIDI/UAC startup and all five deterministic Library-load removal
+cycles on boot epoch 415. Groups A--F now account for 26/50 accepted lifecycle
+cycles. The earlier `RC2-116-g77d723c` remained on boot epoch 389 through its
+targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
+reset, PCM underrun or active UAC loss and no observable output failure,
+controller disconnect or USB host daemon error. Fourteen output-late warnings
+over 1,999,090 submitted UAC blocks did not correlate with a downstream
+failure; no source change is justified from that count alone. See
 [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
+
+The working tree also contains deterministic Group G audio-load removal
+support. Its guarded loader gate pauses after the first bounded 32 KiB cache
+read, and the updated lifecycle harness alternates the target deck across
+G1--G5. The gate unit test, harness self-test, complete P4 host suite and
+ESP-IDF v6.0.2 build pass. This dirty build is not installed and provides no
+Group G hardware evidence until committed, signed, installed and physically
+executed.
 
 Earlier focused evidence remains valid within its stated limits:
 

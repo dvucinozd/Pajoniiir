@@ -48,6 +48,7 @@
 #include "audio_resampler.h"
 #include "audio_smart_cfx.h"
 #if !defined(AUDIO_ENGINE_PC_TEST)
+#include "audio_load_validation_gate.h"
 #include "controller_usb_host.h"
 #endif
 
@@ -2615,6 +2616,13 @@ static void ae_loader_task(void *arg)
         goto park;
     }
     fw->loaded_bytes = fw->cache.backend_bytes;
+    /* Service-only Group G checkpoint. The first bounded cache page has been
+     * read, but load_done is still false so the decoder cannot consume this
+     * session. Normal product operation reaches this as an immediate no-op. */
+    if (!audio_load_validation_gate_checkpoint(ctx->deck)) {
+        ae_fail_load(eng, fw, runtime, ESP_ERR_INVALID_STATE, "MEDIA REMOVED");
+        goto park;
+    }
     fw->load_done = true;
     eng->load_progress = 100u;
     ESP_LOGI(TAG, "bounded compressed cache D%u: file=%u cache=%u page=%u x %u",

@@ -1,22 +1,21 @@
 # P4 Startup and Release Checklist
 
-Status: **active P4-only checklist, reconciled 2026-09-11**.
+Status: **active P4-only checklist, reconciled 2026-09-13**.
 
 ## Repository and build
 
 - [x] Branch is `feat/p4-dual-usb-host`.
-- [x] Installed validation firmware commit `7b7b29a` is pushed; later commits
-  through this checkpoint change only lifecycle tooling and evidence.
+- [x] Installed validation firmware commit `06c0e85` is pushed.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-121-g7b7b29a` on hardware.
+- [x] Install and focused-smoke `RC2-127-g06c0e85` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-121-g7b7b29a` installed on `ota_1` with empty OTA error.
+- [x] `RC2-127-g06c0e85` installed on `ota_0` with empty OTA error.
 - [x] USB0 mounts and exposes the 100-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -52,17 +51,21 @@ Status: **active P4-only checklist, reconciled 2026-09-11**.
 - [x] USB0 idle remove/reinsert while FLX4 remains active: Group E 5/5.
 - [x] Implement and host-test a guarded deterministic Group F Library-load
   removal trigger; ESP-IDF 6.0.2 compile-validation passes.
-- [ ] Commit, sign, install and smoke the exact Group F firmware image.
-- [ ] USB0 remove during Library load, audio load and active decode/playback.
+- [x] Commit, sign, install and smoke the exact Group F firmware image.
+- [x] USB0 remove during Library load: Group F 5/5.
+- [x] Implement and host-test a guarded deterministic Group G audio-load
+  trigger after the first 32 KiB compressed-cache read; ESP-IDF 6.0.2 build
+  passes.
+- [ ] Commit, sign, install and smoke the exact Group G firmware image.
+- [ ] USB0 remove during audio load and active decode/playback.
 - [ ] USB1 idle disconnect/reconnect while USB0 remains mounted.
 - [ ] USB1 disconnect/reconnect during dual-deck playback.
 - [ ] Confirm MIDI, LEDs and UAC recover without duplicate recovery epochs.
 - [ ] Confirm held controls release and no scratch/pad/shift state remains
   latched.
 - [ ] Complete 50 controlled lifecycle cycles, including at least 20
-  independent physical reconnects. Current progress: 21/50 cycles and 21
-  planned attachment/reconnect actions; Groups F--N remain. Group F tooling is
-  ready, but its five hardware cycles do not count until run on the exact image.
+  independent physical reconnects. Current progress: 26/50 cycles and 26
+  planned attachment/reconnect actions; Groups G--L remain.
 - [ ] Confirm software reboot and OTA recover both roots without manual reinsert.
 
 ## Media and audio

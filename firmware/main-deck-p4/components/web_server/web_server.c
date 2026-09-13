@@ -15,6 +15,7 @@
 #include "service_log.h"
 #include "library_load_trace.h"
 #include "library_validation_gate.h"
+#include "audio_load_validation_gate.h"
 #include "sd_io_gate.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -44,6 +45,8 @@
 static const char *TAG = "web_server";
 static httpd_handle_t s_web_server = NULL;
 static bool s_mdns_started;
+
+static bool api_parse_deck(const char *value, uint8_t *out_deck);
 
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
 typedef struct {
@@ -1153,6 +1156,84 @@ static esp_err_t api_library_validation_gate_cancel_handler(httpd_req_t *req)
     return send_library_validation_gate_status(req);
 }
 
+static esp_err_t send_audio_load_validation_gate_status(httpd_req_t *req)
+{
+    audio_load_validation_gate_snapshot_t gate = {0};
+    audio_load_validation_gate_snapshot(&gate);
+    char json[176];
+    int n = snprintf(json, sizeof(json),
+                     "{\"state\":\"%s\",\"sequence\":%u,"
+                     "\"timeout_ms\":%u,\"deck\":%u}",
+                     audio_load_validation_gate_state_name(gate.state),
+                     (unsigned)gate.sequence, (unsigned)gate.timeout_ms,
+                     (unsigned)gate.deck + 1u);
+    if (n < 0 || (size_t)n >= sizeof(json)) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Validation status overflow");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json, (size_t)n);
+}
+
+/* Service-only, one-shot barrier for deterministic Group G load removal.
+ * The selected loader pauses only after its first bounded compressed-cache
+ * read. Product loads never wait unless this guarded endpoint arms the gate. */
+static esp_err_t api_audio_load_validation_gate_status_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, false)) return ESP_FAIL;
+    return send_audio_load_validation_gate_status(req);
+}
+
+static esp_err_t api_audio_load_validation_gate_arm_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    if (!usb_storage_is_mounted()) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Connect USB0 before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    char query[32] = {0};
+    char deck_str[16] = {0};
+    uint8_t deck = CTRL_DECK_NONE;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "deck", deck_str,
+                              sizeof(deck_str)) != ESP_OK ||
+        !api_parse_deck(deck_str, &deck)) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                                   "Missing or invalid deck");
+    }
+
+    audio_engine_deck_status_t deck1 = {0};
+    audio_engine_deck_status_t deck2 = {0};
+    audio_engine_deck_get_status(0, &deck1);
+    audio_engine_deck_get_status(1, &deck2);
+    if (deck1.state == AE_LOADING || deck1.state == AE_PLAYING ||
+        deck2.state == AE_LOADING || deck2.state == AE_PLAYING) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_send(req, "Stop both decks before arming",
+                               HTTPD_RESP_USE_STRLEN);
+    }
+
+    esp_err_t rc = audio_load_validation_gate_arm(deck, 60000u);
+    if (rc != ESP_OK) {
+        httpd_resp_set_status(req, rc == ESP_ERR_INVALID_STATE
+                                      ? "409 Conflict"
+                                      : "400 Bad Request");
+        return httpd_resp_send(req, esp_err_to_name(rc),
+                               HTTPD_RESP_USE_STRLEN);
+    }
+    return send_audio_load_validation_gate_status(req);
+}
+
+static esp_err_t api_audio_load_validation_gate_cancel_handler(httpd_req_t *req)
+{
+    if (!api_request_allowed(req, true)) return ESP_FAIL;
+    audio_load_validation_gate_cancel();
+    return send_audio_load_validation_gate_status(req);
+}
+
 static esp_err_t api_status_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
@@ -2132,6 +2213,36 @@ esp_err_t web_server_start(void)
     };
     rc = register_uri_or_stop(s_web_server,
                               &library_validation_gate_cancel_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_status_uri = {
+        .uri = "/api/validation/audio-load-gate",
+        .method = HTTP_GET,
+        .handler = api_audio_load_validation_gate_status_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_status_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_arm_uri = {
+        .uri = "/api/validation/audio-load-gate/arm",
+        .method = HTTP_POST,
+        .handler = api_audio_load_validation_gate_arm_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_arm_uri);
+    if (rc != ESP_OK) return rc;
+
+    httpd_uri_t audio_load_validation_gate_cancel_uri = {
+        .uri = "/api/validation/audio-load-gate/cancel",
+        .method = HTTP_POST,
+        .handler = api_audio_load_validation_gate_cancel_handler,
+        .user_ctx = NULL
+    };
+    rc = register_uri_or_stop(s_web_server,
+                              &audio_load_validation_gate_cancel_uri);
     if (rc != ESP_OK) return rc;
 
     httpd_uri_t firmware_uri = {

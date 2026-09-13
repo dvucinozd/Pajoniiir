@@ -2,8 +2,7 @@
 
 Opened: **2026-09-11**
 
-Status: **IN PROGRESS — Groups A--E complete; Group F implementation ready,
-hardware cycles pending**.
+Status: **IN PROGRESS — Groups A--F complete; 26/50 cycles pass**.
 
 ## Test images and current installed image
 
@@ -32,6 +31,17 @@ Current installed validation image, used from remediated B2 through E5:
 - Installed by signed push OTA with USB0 and USB1 continuously attached; boot
   402 reports `SW` reset.
 
+Current installed Group F validation image:
+
+- Firmware commit: `06c0e858ec77b0264b21566ee726e2d2135f365f`
+- Installed version/slot: `RC2-127-g06c0e85`, `ota_0`
+- Application size/SHA-256: 2,454,848 bytes;
+  `9ad6149bf48605ad6b25b76f097e53c82bf1cca6c7f3d7fe9fc6f76c36875cdc`
+- Signed bundle size/SHA-256: 2,455,036 bytes;
+  `2aa8162ff522905e3e055d40656f5ab38c4df4942c17e5d3ec5d9bdb2688a9a2`
+- Installed and exact-image smoke-tested by signed OTA; F1--F5 ran on boot
+  epoch 415 with USB0 and FLX4 healthy.
+
 ## Acceptance requirements
 
 Every cycle requires:
@@ -49,9 +59,9 @@ The complete gate requires 50 controlled cycles, including at least 20
 independent physical reconnects and explicit USB0 removal during active
 load/decode.
 
-## Guided Groups C--F harness
+## Guided Groups C--G harness
 
-Groups C--F use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
+Groups C--G use `tools/run_p4_lifecycle_cycle.ps1` to reduce operator work
 to the required cable actions and listening/controller confirmation. The
 harness verifies the exact installed image, empty-boot baseline, attachment
 order, both USB roles, 100-track Library, dual-deck playback progress, UAC ring
@@ -112,10 +122,30 @@ Run F1 through F5 on the exact installed candidate:
 ```
 
 The bounded PDB reader, partial-index rejection, validation barrier and Group F
-harness passed the complete P4 host suite on 2026-09-13. An ESP-IDF v6.0.2
-compile-validation build also passed at 2,454,800 bytes with 41% of the smallest
-application partition free. This is software readiness only: the build was
-dirty, was not packaged or installed, and no Group F cycle has yet been counted.
+harness passed the complete P4 host suite on 2026-09-13. The exact committed
+ESP-IDF v6.0.2 image was signed, installed and smoke-tested, then all five
+Group F hardware cycles passed.
+
+Group G also starts with both devices healthy and both decks stopped. A
+separate guarded one-shot audio-load barrier is armed for D1 on odd cycles and
+D2 on even cycles. The harness submits a LOAD; the selected loader reads its
+first bounded 32 KiB compressed-cache page and enters `holding` before
+publishing `load_done`. Only then does the harness ask the operator to remove
+USB0. The disconnect must change the barrier state to `media_removed`, retain
+FLX4 and leave Library count zero. A normal reinsert must restore all 100
+tracks before the standard dual-playback and physical controller checks.
+
+Run G1 through G5 only on the exact installed candidate containing the gate:
+
+```powershell
+.\tools\run_p4_lifecycle_cycle.ps1 -Group G -Cycle 1 `
+    -ExpectedVersion <exact-installed-version>
+```
+
+The Group G gate unit test, harness self-test, complete P4 host suite and an
+ESP-IDF v6.0.2 compile-validation build pass. The dirty build is 2,456,480
+bytes with 41% of the smallest application partition free. This is software
+readiness only: the image is not installed and no Group G cycle counts yet.
 
 ## Planned distribution
 
@@ -126,7 +156,7 @@ dirty, was not packaged or installed, and no Group F cycle has yet been counted.
 | C | Boot empty, attach USB0 then USB1 | 4 | 8 | PASS: C1--C4 |
 | D | Boot empty, attach USB1 then USB0 | 4 | 8 | PASS: D1--D4 |
 | E | USB0 idle remove/reinsert while FLX4 remains active | 5 | 5 | PASS: E1--E5 |
-| F | USB0 remove/reinsert during Library load | 5 | 5 | pending |
+| F | USB0 remove/reinsert during Library load | 5 | 5 | PASS: F1--F5 |
 | G | USB0 remove/reinsert during load/decode or active playback | 5 | 5 | pending |
 | H | USB1 idle disconnect/reconnect while USB0 remains mounted | 5 | 5 | pending |
 | I | USB1 disconnect/reconnect during dual-deck playback | 5 | 5 | pending |
@@ -990,27 +1020,60 @@ Status: **PASS; Group E complete**.
   reboot.
 
 All five idle USB0 remove/reinsert cycles passed while FLX4 remained active.
-Groups A--E now account for 21/50 controlled lifecycle cycles and 21 planned
-physical attachment/reconnect actions. Proceed to Group F: five controlled
-USB0 remove/reinsert cycles during Library load.
+Groups A--E account for 21/50 controlled lifecycle cycles and 21 planned
+physical attachment/reconnect actions.
+
+### F1--F5 — USB0 removal during deterministic Library load
+
+Status: **PASS; Group F complete**.
+
+- Exact installed image: `RC2-127-g06c0e85`, `ota_0`, boot epoch 415.
+- Every cycle reached validation-gate state `holding` after the first bounded
+  PDB header read. Removing USB0 changed the state to `media_removed`, produced
+  no partial catalog and left Library count zero while FLX4 stayed active.
+- Reinserting the same medium restored a coherent 100-track Library in every
+  cycle. All recovery requests had matching successes; recovery failures,
+  queue drops, daemon errors, topology/controller failures and mount errors
+  remained zero.
+- Both decks advanced for more than ten seconds in every cycle. PCM 1/2,
+  output-late, active UAC-loss, runtime-queue and service-log-drop deltas stayed
+  zero, with no reboot.
+- The operator confirmed MAIN/cue audio, LEDs and controls after every cycle.
+  Each accepted D1 double PLAY/PAUSE check produced four MIDI packets and four
+  semantic events.
+
+| Cycle | Library | D1 advance | D2 advance | MIDI / semantic | Recovery | Result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| F1 | 100 | 10,170 ms | 10,170 ms | 4 / 4 | 18 / 18 | PASS |
+| F2 | 100 | 10,118 ms | 10,118 ms | 4 / 4 | 20 / 20 | PASS |
+| F3 | 100 | 10,123 ms | 10,124 ms | 4 / 4 | 16 / 16 | PASS |
+| F4 | 100 | 10,181 ms | 10,182 ms | 4 / 4 | 16 / 16 | PASS |
+| F5 | 100 | 10,245 ms | 10,246 ms | 4 / 4 | 16 / 16 | PASS |
+
+The first F3 attempt completed the USB and audio sequence but the operator
+forgot the required D1 double PLAY/PAUSE action. The harness correctly rejected
+that attempt; it does not count. F3 was repeated from the beginning and passed.
+Groups A--F now account for 26/50 controlled lifecycle cycles and 26 planned
+physical attachment/reconnect actions. Proceed to Group G: USB0 removal during
+audio load/decode or active playback.
 
 ## Continuation checkpoint — 2026-09-13
 
-- Installed hardware remains on exact image `RC2-121-g7b7b29a`, partition
-  `ota_1`; the accepted C1--E5 sequence ended on boot 413 with USB0 and FLX4
-  healthy and both decks stopped.
-- Groups A--E are complete: 21/50 controlled cycles. Groups F--N remain open:
-  29 cycles covering Library load, audio load/decode or playback, USB1 idle
-  and active reconnects, held controls, reboot recovery and mixed stress.
+- Installed hardware is on exact image `RC2-127-g06c0e85`, partition `ota_0`;
+  the accepted F1--F5 sequence ended on boot 415 with USB0 and FLX4 healthy and
+  both decks stopped.
+- Groups A--F are complete: 26/50 controlled cycles. Groups G--L remain open:
+  24 cycles covering audio load/decode or playback, USB1 idle and active
+  reconnects, held controls and reboot/OTA recovery.
 - The operator-invalidated first D4 attempt and the first E3 harness-race
   attempt do not count toward the 50-cycle total.
-- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--F. Groups C--E are
-  accepted hardware evidence; Group F is software-ready but unexecuted.
-  Its local JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a
-  release artifact; this document preserves the accepted results.
+- `tools/run_p4_lifecycle_cycle.ps1` supports Groups C--G. Groups C--F have
+  accepted hardware evidence; Group G is software-ready but unexecuted. Local
+  JSON/Markdown evidence under ignored `tmp/p4-lifecycle` is not a release
+  artifact; this document preserves the accepted results.
 - The deterministic Group F trigger, bounded PDB reader and fail-closed rebuild
   are implemented; the complete host suite and ESP-IDF v6.0.2 build pass.
-- First action: commit and push the implementation, create and verify a signed
-  OTA from that exact commit, install it and pass focused USB0/FLX4/Library/audio
-  smoke. Then run F1--F5; do not count the preparation or target removal as a
-  pass until the harness and operator confirmation both succeed.
+- First action: commit and push the Group G implementation, create and verify a
+  signed OTA from that exact commit, install it and pass focused smoke. Then run
+  G1--G5; do not count a cycle until the gate, remount, dual playback, physical
+  controller check and all fault counters pass.
