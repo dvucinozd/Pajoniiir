@@ -17,3 +17,8 @@ bool audio_eof_policy_play_requires_rewind(bool playback_finished)
 {
     return playback_finished;
 }
+
+bool audio_eof_policy_should_count_empty_source(bool decoder_eof)
+{
+    return !decoder_eof;
+}

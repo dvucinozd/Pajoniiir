@@ -173,6 +173,7 @@ function Invoke-ApiContract {
         "-I../support/stubs",
         "-I../../firmware/main-deck-p4/components/library/include",
         "-I../../firmware/main-deck-p4/components/audio_engine/include",
+        "-I../../firmware/main-deck-p4/components/usb_storage/include",
         "-I../../firmware/main-deck-p4/components/wifi_link/include"
     )
 
@@ -455,6 +456,24 @@ Assert-FileContains `
     -Name "p4 late-output anomalies are aggregated outside the audio task" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
     -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late")
+
+Assert-FileContains `
+    -Name "p4 media acceptance counters are exposed by status" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"locked_backend_reads1\":%u',
+        '\"locked_backend_reads2\":%u',
+        '\"bna_recovered\":%u',
+        "usb_dwc_compat_bna_recovered_count()"
+    )
+
+Assert-FileContains `
+    -Name "p4 natural EOF tail is not reported as PCM starvation" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "audio_eof_policy_should_count_empty_source(",
+        "atomic_load_bool(&s_engines[deck].eof)"
+    )
 
 Assert-FileContains `
     -Name "p4 library load worker preserves internal RAM for audio task startup" `

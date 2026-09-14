@@ -61,14 +61,13 @@ This file mirrors the 6.0.x implementation and must be verified against any othe
 /* Observability for the hardware acceptance run that is still open on this:
  * "reproduce sustained USB playback/storage activity and confirm BNA recovery".
  * Without a counter that check has nothing to look at - a silent recovery and a
- * BNA that never happened are indistinguishable. Plain uint32_t written only
- * from the USB interrupt path and read for diagnostics; a torn read would at
- * worst misreport a count. */
+ * BNA that never happened are indistinguishable. The ISR increments atomically
+ * because the web diagnostics task reads this value concurrently. */
 static uint32_t s_bna_recovered_count;
 
 uint32_t usb_dwc_compat_bna_recovered_count(void)
 {
-    return s_bna_recovered_count;
+    return __atomic_load_n(&s_bna_recovered_count, __ATOMIC_ACQUIRE);
 }
 
 usb_dwc_hal_chan_event_t __wrap_usb_dwc_hal_chan_decode_intr(
@@ -88,7 +87,8 @@ usb_dwc_hal_chan_event_t __wrap_usb_dwc_hal_chan_decode_intr(
             abort();
         }
         if (!halted && bna) {
-            s_bna_recovered_count++;
+            (void)__atomic_add_fetch(&s_bna_recovered_count, 1u,
+                                     __ATOMIC_RELAXED);
         }
 
         usb_dwc_hal_chan_error_t error;

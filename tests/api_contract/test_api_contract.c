@@ -25,6 +25,7 @@
 #include "audio_scratch_buffer.h"
 #include "library.h"
 #include "library_validation_gate.h"
+#include "usb_storage.h"
 #include "wifi_link.h"
 
 /* ── library ─────────────────────────────────────────────────────────────── */
@@ -124,6 +125,11 @@ static bool   (*const c_preload_stream_seek)(audio_fw_preload_t *, int64_t, int)
 static size_t (*const c_preload_stream_tell)(const audio_fw_preload_t *) =
     audio_fw_preload_stream_tell;
 
+/* Hardware acceptance needs to distinguish a recovered DWC BNA from a run in
+ * which the interrupt never occurred. */
+static uint32_t (*const c_usb_bna_recovered)(void) =
+    usb_dwc_compat_bna_recovered_count;
+
 /* ── wifi_link ───────────────────────────────────────────────────────────── */
 
 _Static_assert(sizeof(WIFI_LINK_PASSWORD) - 1u >= 8u,
@@ -156,4 +162,5 @@ static inline void api_contract_reference_all(void)
     CONTRACT_USE(c_preload_bind);           CONTRACT_USE(c_preload_read_at);
     CONTRACT_USE(c_preload_stream_read);    CONTRACT_USE(c_preload_stream_seek);
     CONTRACT_USE(c_preload_stream_tell);
+    CONTRACT_USE(c_usb_bna_recovered);
 }

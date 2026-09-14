@@ -1431,7 +1431,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             "\"recovery_requests\":%u,\"recovery_coalesced\":%u,"
             "\"recovery_successes\":%u,\"recovery_suppressed_active\":%u,"
             "\"recovery_failures\":%u,"
-            "\"recovery_queue_drops\":%u},"
+            "\"recovery_queue_drops\":%u,"
+            "\"bna_recovered\":%u},"
             "\"topology\":{"
             "\"observations\":%u,\"probe_failures\":%u,"
             "\"last_result\":%d,\"last_result_name\":\"%s\","
@@ -1487,6 +1488,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
             (unsigned)host_diag.recovery_suppressed_active,
             (unsigned)host_diag.recovery_failures,
             (unsigned)host_diag.recovery_queue_drops,
+            (unsigned)usb_dwc_compat_bna_recovered_count(),
             (unsigned)host_diag.topology_observations,
             (unsigned)host_diag.topology_probe_failures,
             (int)host_diag.last_topology_result,
@@ -1645,6 +1647,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"output_late_threshold_us\":%u,"
         "\"pcm_underrun1\":%u,"
         "\"pcm_underrun2\":%u,"
+        "\"locked_backend_reads1\":%u,"
+        "\"locked_backend_reads2\":%u,"
         "\"startup_waiting1\":%s,"
         "\"startup_waiting2\":%s,"
         "\"startup_wait_count1\":%u,"
@@ -1716,6 +1720,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.output_late_threshold_us,
         (unsigned)diagnostics.pcm_underrun_count[0],
         (unsigned)diagnostics.pcm_underrun_count[1],
+        (unsigned)diagnostics.locked_backend_read_count[0],
+        (unsigned)diagnostics.locked_backend_read_count[1],
         diagnostics.startup_waiting[0] ? "true" : "false",
         diagnostics.startup_waiting[1] ? "true" : "false",
         (unsigned)diagnostics.startup_wait_count[0],

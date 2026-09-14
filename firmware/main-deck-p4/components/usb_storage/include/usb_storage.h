@@ -42,3 +42,7 @@ typedef struct {
 
 // Lock-free/read-only runtime evidence for hot-plug diagnosis.
 void usb_storage_get_diagnostics(usb_storage_diagnostics_t *out);
+
+/* Recoverable DWC BNA interrupts observed by the IDF 6.0.2 compatibility
+ * decoder. Used by the hardware acceptance status surface. */
+uint32_t usb_dwc_compat_bna_recovered_count(void);

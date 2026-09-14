@@ -40,6 +40,8 @@ int main(void)
 
     assert(!audio_eof_policy_play_requires_rewind(false));
     assert(audio_eof_policy_play_requires_rewind(true));
+    assert(audio_eof_policy_should_count_empty_source(false));
+    assert(!audio_eof_policy_should_count_empty_source(true));
     assert(!audio_eof_policy_should_finish(NULL));
 
     puts("audio_eof_policy tests passed");

@@ -577,11 +577,17 @@ static bool pop_deck_source(void *ctx, audio_mixer_frame_t *out_frame)
         atomic_load_bool(&s_start_seek_pending[deck])) return false;
     if (timeline_active(deck)) {
         bool ok = audio_pcm_timeline_pop(&s_pcm_timelines[deck], out_frame);
-        if (!ok) s_pcm_underrun_count[deck]++;
+        if (!ok && audio_eof_policy_should_count_empty_source(
+                       atomic_load_bool(&s_engines[deck].eof))) {
+            s_pcm_underrun_count[deck]++;
+        }
         return ok;
     }
     bool ok = audio_pcm_ring_pop(&s_pcm_rings[deck], out_frame);
-    if (!ok) s_pcm_underrun_count[deck]++;
+    if (!ok && audio_eof_policy_should_count_empty_source(
+                   atomic_load_bool(&s_engines[deck].eof))) {
+        s_pcm_underrun_count[deck]++;
+    }
     return ok;
 }
 #endif
@@ -1755,7 +1761,7 @@ static uint32_t s_locked_backend_reads[AUDIO_ENGINE_DECK_COUNT];
 uint32_t audio_engine_locked_backend_read_count(uint8_t deck)
 {
     if (deck >= AUDIO_ENGINE_DECK_COUNT) return 0u;
-    return s_locked_backend_reads[deck];
+    return __atomic_load_n(&s_locked_backend_reads[deck], __ATOMIC_ACQUIRE);
 }
 #endif /* AE_FW */
 
@@ -2849,7 +2855,8 @@ static void ae_decode_task(void *arg)
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         if (fw->cache.backend_bytes != backend_before &&
             ctx->deck < AUDIO_ENGINE_DECK_COUNT) {
-            s_locked_backend_reads[ctx->deck]++;
+            (void)__atomic_add_fetch(&s_locked_backend_reads[ctx->deck], 1u,
+                                     __ATOMIC_RELAXED);
         }
         /* How much of this batch may be published. Only a loop wrap lowers it,
          * and it is kept separate from `samples` on purpose: `samples <= 0` is
@@ -5881,6 +5888,8 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
             ? audio_pcm_timeline_generation(&s_pcm_timelines[deck]) : 0u;
         out_snapshot->pcm_underrun_count[deck] = s_pcm_underrun_count[deck];
 #if AE_FW
+        out_snapshot->locked_backend_read_count[deck] =
+            audio_engine_locked_backend_read_count(deck);
         out_snapshot->startup_waiting[deck] =
             atomic_load_bool(&s_start_waiting[deck]);
         out_snapshot->startup_wait_count[deck] =
