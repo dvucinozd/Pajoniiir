@@ -2,6 +2,7 @@
 #include "rekordbox_pdb.h"
 #include "rekordbox_anlz.h"
 #include "track_meta_cache.h"
+#include "library_load_trace.h"
 #include "media_io_gate.h"
 #include "esp_check.h"
 #include "esp_log.h"
@@ -13,6 +14,12 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Host suites compile this source without sdkconfig.h and exercise the product
+ * default. Firmware receives the Kconfig value from ESP-IDF. */
+#if defined(WIN32) && !defined(CONFIG_LIBRARY_ANLZ_CACHE_WRITE)
+#define CONFIG_LIBRARY_ANLZ_CACHE_WRITE 1
+#endif
 
 /* Referenced only by the ESP_LOG* macros, which the PC host stubs compile away.
  * Marking it used keeps -Wall clean there without an #ifdef around every log. */
@@ -50,6 +57,7 @@ static int              s_active_buf = 0;
 static int              s_active_order_buf = 0;
 static int              s_track_count = 0;
 static uint32_t         s_generation = 0;
+static pdb_import_stats_t s_import_stats;
 static SemaphoreHandle_t s_library_mutex = NULL;
 static bool             s_index_building = false;
 
@@ -277,21 +285,12 @@ esp_err_t library_init(void)
     library_order_entry_t *build_order = s_order_buf[build_order_buf];
     int build_count = 0;
 
-    /* media_io_gate serialises every USB reader, and the audio decode path takes
-     * it on each compressed-cache miss. Holding it across the whole catalog walk
-     * therefore blocked playback for the entire parse - up to LIBRARY_MAX_TRACKS
-     * reads - so loading the library stalled both decks. Take the gate per USB
-     * operation instead: the parse gets slightly more gate traffic, and audio
-     * gets to interleave.
-     *
-     * Releasing between rows also makes an unmount observable mid-parse rather
-     * than something the parse holds straight through, which the loop below
-     * checks for. */
+    /* pdb_open() owns bounded media access and releases media_io_gate after at
+     * most 8 KiB. This keeps audio cache reads schedulable and makes an
+     * asynchronous disconnect observable while the catalog is being parsed. */
     pdb_t *pdb = NULL;
-    media_io_gate_begin();
     rc = pdb_open(USB_PDB_PATH, &pdb);
     int n = (rc == ESP_OK) ? pdb_track_count(pdb) : 0;
-    media_io_gate_end();
     if (rc != ESP_OK) {
         xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
         s_index_building = false;
@@ -306,9 +305,7 @@ esp_err_t library_init(void)
      * reserving LIBRARY_MAX_TRACKS up front. */
     rc = reserve_track_buffer(build_buf, n);
     if (rc != ESP_OK) {
-        media_io_gate_begin();
         pdb_close(pdb);
-        media_io_gate_end();
         xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
         s_index_building = false;
         xSemaphoreGiveRecursive(s_library_mutex);
@@ -317,22 +314,16 @@ esp_err_t library_init(void)
     library_track_t *build_index = s_track_buf[build_buf];
     memset(build_index, 0, (size_t)s_track_cap[build_buf] * sizeof(library_track_t));
 
+    bool media_lost = false;
     for (int i = 0; i < n; i++) {
-        pdb_track_t pt;
-        media_io_gate_begin();
-        esp_err_t row_rc = pdb_get_track(pdb, i, &pt);
-        media_io_gate_end();
-
-        /* The drive can go away between rows now that the gate is released
-         * there. Check before acting on row_rc, not after: an unmount makes
-         * every remaining read fail, and `continue` would then walk the whole
-         * rest of the catalog against a dead mount. Stop instead - the rows
-         * gathered so far are still published, which is what the old code
-         * produced for a mid-parse read failure anyway. */
         if (!media_io_gate_is_available()) {
-            ESP_LOGW(TAG, "media went away %d/%d rows into the catalog walk", i, n);
+            ESP_LOGW(TAG, "media went away %d/%d rows into catalog publication",
+                     i, n);
+            media_lost = true;
             break;
         }
+        pdb_track_t pt;
+        esp_err_t row_rc = pdb_get_track(pdb, i, &pt);
         if (row_rc != ESP_OK) continue;
 
         library_track_t *lt = &build_index[build_count];
@@ -351,9 +342,20 @@ esp_err_t library_init(void)
         build_count++;
     }
 
-    media_io_gate_begin();
+    pdb_import_stats_t import_stats;
+    pdb_get_import_stats(pdb, &import_stats);
     pdb_close(pdb);
-    media_io_gate_end();
+
+    if (!media_io_gate_is_available()) {
+        media_lost = true;
+    }
+    if (media_lost) {
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Discarding library index built across media removal");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     for (int i = 0; i < build_count; ++i) {
         build_order[i] = (library_order_entry_t)i;
@@ -372,6 +374,7 @@ esp_err_t library_init(void)
     s_active_buf = build_buf;
     s_active_order_buf = build_order_buf;
     s_track_count = build_count;
+    s_import_stats = import_stats;
     if (s_ui_track_idx >= build_count) {
         s_ui_track_idx = 0;
     }
@@ -411,6 +414,16 @@ uint32_t library_generation(void)
     return gen;
 }
 
+void library_get_import_stats(pdb_import_stats_t *stats)
+{
+    if (!stats) return;
+    *stats = (pdb_import_stats_t){0};
+    if (ensure_library_mutex() != ESP_OK) return;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    if (s_track_count) *stats = s_import_stats;
+    xSemaphoreGiveRecursive(s_library_mutex);
+}
+
 void library_clear(void)
 {
     if (ensure_library_mutex() != ESP_OK) return;
@@ -420,6 +433,7 @@ void library_clear(void)
         s_current_meta_valid = false;
     }
     s_track_count = 0;
+    s_import_stats = (pdb_import_stats_t){0};
     s_generation++;
     s_ui_track_idx = 0;
     xSemaphoreGiveRecursive(s_library_mutex);
@@ -561,6 +575,7 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
     uint32_t track_key = library_track_key(track);
 
     /* Warm path: a single cache load carrying the high-resolution waveform. */
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_USB_STAT, track_key);
     esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, out);
     if (cache_rc == ESP_OK) {
         if (source) *source = LIBRARY_ANLZ_SRC_CACHE;
@@ -570,17 +585,28 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
     /* Cold path: parse DAT once and EXT once, then one best-effort cache write.
      * track_meta_cache_load already zeroed *out on its miss return. */
     media_io_gate_begin();
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_USB_DAT, track_key);
     esp_err_t rc = anlz_parse_dat(dat_path, out);
     if (rc != ESP_OK) {
         media_io_gate_end();
         ESP_LOGE(TAG, "anlz_parse_dat failed: %s", dat_path);
         return rc;
     }
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_USB_EXT, track_key);
     anlz_parse_ext(ext_path, out);           /* best-effort high-res waveform */
     media_io_gate_end();
 
+#if CONFIG_LIBRARY_ANLZ_CACHE_WRITE
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_USB_STAT, track_key);
     esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, out);
     if (cache_written) *cache_written = (save_rc == ESP_OK);
+#else
+    /* Optional acceleration only. On the experimental P4 power setup, the
+     * larger cache commit was hardware-proven to brown out during fclose()/
+     * atomic replacement. Parsing remains successful and the owned metadata
+     * continues through the normal publish path. */
+    if (cache_written) *cache_written = false;
+#endif
     return ESP_OK;
 }
 
@@ -608,11 +634,14 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
 esp_err_t library_load_anlz(library_track_t *track)
 {
     if (!track) return ESP_ERR_INVALID_ARG;
+    library_load_trace_boot_init();
     ESP_RETURN_ON_ERROR(ensure_library_mutex(), TAG, "library mutex");
 
     int64_t t_start = esp_timer_get_time();
 
     anlz_metadata_t meta;
+    uint32_t track_key = library_track_key(track);
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_RESOLVE, track_key);
     library_anlz_source_t source = LIBRARY_ANLZ_SRC_USB;
     bool cache_written = false;
     esp_err_t rc = library_resolve_anlz(track, &meta, &source, &cache_written);
@@ -635,8 +664,10 @@ esp_err_t library_load_anlz(library_track_t *track)
         s_current_meta_valid = false;
         xSemaphoreGiveRecursive(s_library_mutex);
         if (have_stale) {
+            library_load_trace_mark(LIBRARY_LOAD_PHASE_FREE_OLD, track_key);
             anlz_free(&stale_meta);
         }
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_FAILED, track_key);
         return rc;
     }
 
@@ -649,6 +680,7 @@ esp_err_t library_load_anlz(library_track_t *track)
      * on a free. Ownership of meta moves into s_current_meta. */
     anlz_metadata_t old_meta;
     bool have_old = false;
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_PUBLISH_LOCK, track_key);
     xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
     if (s_current_meta_valid) {
         old_meta = s_current_meta;
@@ -658,6 +690,7 @@ esp_err_t library_load_anlz(library_track_t *track)
     s_current_meta_valid = true;
     xSemaphoreGiveRecursive(s_library_mutex);
     if (have_old) {
+        library_load_trace_mark(LIBRARY_LOAD_PHASE_FREE_OLD, track_key);
         anlz_free(&old_meta);
     }
 
@@ -672,6 +705,7 @@ esp_err_t library_load_anlz(library_track_t *track)
              track->bpm, (unsigned long)track->duration_ms,
              meta.cue_count, meta.beat_count, meta.waveform_high_len,
              (long long)elapsed_us);
+    library_load_trace_mark(LIBRARY_LOAD_PHASE_DONE, track_key);
     return ESP_OK;
 }
 

@@ -18,9 +18,20 @@ usb_storage_connect_result_t usb_storage_session_on_connect(
         return USB_STORAGE_CONNECT_IGNORED_SECONDARY;
     }
     if (session->connected) {
-        return session->dev_addr == dev_addr
-                   ? USB_STORAGE_CONNECT_DUPLICATE
-                   : USB_STORAGE_CONNECT_IGNORED_SECONDARY;
+        if (session->dev_addr == dev_addr) {
+            return USB_STORAGE_CONNECT_DUPLICATE;
+        }
+        if (session->accepted_handle != 0u || session->mounted) {
+            return USB_STORAGE_CONNECT_IGNORED_SECONDARY;
+        }
+
+        /* Enumeration bounce can retire an address before install_device()
+         * creates a handle. The MSC driver then has no device object through
+         * which to publish DEV_GONE, so the next stable address must supersede
+         * this stale, unbound desired session. */
+        session->dev_addr = dev_addr;
+        session->epoch++;
+        return USB_STORAGE_CONNECT_ACCEPTED;
     }
 
     session->connected = true;

@@ -42,7 +42,14 @@ static int s_lifecycle_stop_finished;
 
 #define TELEMETRY_THREAD_ITERATIONS 50000u
 static int s_telemetry_writer_done;
-static uint32_t s_telemetry_consistency_errors;
+static uint32_t s_telemetry_snapshot_errors;
+
+static pthread_mutex_t s_limiter_publish_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_limiter_publish_cond = PTHREAD_COND_INITIALIZER;
+static int s_limiter_publish_hook_entered;
+static int s_limiter_publish_hook_release;
+static int s_limiter_snapshot_finished;
+static audio_mixer_limiter_stats_t s_limiter_preempted_snapshot;
 
 static void *telemetry_writer_thread(void *arg)
 {
@@ -74,16 +81,22 @@ static void *telemetry_writer_thread(void *arg)
 static void *telemetry_reader_thread(void *arg)
 {
     (void)arg;
+    audio_mixer_limiter_stats_t previous = { 0 };
     do {
         audio_engine_mixer_snapshot_t snapshot = { 0 };
         audio_engine_get_mixer_snapshot(&snapshot);
-        if (snapshot.limiter.limited_samples != snapshot.limiter.positive_overloads ||
-            snapshot.limiter.limited_samples != snapshot.limiter.negative_overloads ||
+        if (snapshot.limiter.limited_samples < previous.limited_samples ||
+            snapshot.limiter.positive_overloads < previous.positive_overloads ||
+            snapshot.limiter.negative_overloads < previous.negative_overloads ||
+            snapshot.limiter.limited_samples > TELEMETRY_THREAD_ITERATIONS ||
+            snapshot.limiter.positive_overloads > TELEMETRY_THREAD_ITERATIONS ||
+            snapshot.limiter.negative_overloads > TELEMETRY_THREAD_ITERATIONS ||
             (snapshot.limiter.peak_input_abs != 0 &&
              snapshot.limiter.peak_input_abs != 48000)) {
-            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+            __atomic_fetch_add(&s_telemetry_snapshot_errors, 1u,
                                __ATOMIC_RELAXED);
         }
+        previous = snapshot.limiter;
 
         audio_headphone_mode_t mode = AUDIO_HEADPHONE_MODE_MASTER_MONO;
         uint8_t cue_mode = 0u;
@@ -93,7 +106,7 @@ static void *telemetry_reader_thread(void *arg)
             (mode == AUDIO_HEADPHONE_MODE_CUE_MONO && cue_mode == 1u) ||
             (mode == AUDIO_HEADPHONE_MODE_SPLIT_MONO && cue_mode == 1u);
         if (!route_consistent) {
-            __atomic_fetch_add(&s_telemetry_consistency_errors, 1u,
+            __atomic_fetch_add(&s_telemetry_snapshot_errors, 1u,
                                __ATOMIC_RELAXED);
         }
     } while (__atomic_load_n(&s_telemetry_writer_done, __ATOMIC_ACQUIRE) == 0);
@@ -112,6 +125,44 @@ static void lifecycle_after_stop_hook(uint8_t deck)
     pthread_mutex_unlock(&s_lifecycle_test_mutex);
 }
 
+static void limiter_publish_hook(void)
+{
+    pthread_mutex_lock(&s_limiter_publish_mutex);
+    s_limiter_publish_hook_entered = 1;
+    pthread_cond_broadcast(&s_limiter_publish_cond);
+    while (!s_limiter_publish_hook_release) {
+        pthread_cond_wait(&s_limiter_publish_cond, &s_limiter_publish_mutex);
+    }
+    pthread_mutex_unlock(&s_limiter_publish_mutex);
+}
+
+static void *limiter_preempted_writer_thread(void *arg)
+{
+    (void)arg;
+    const audio_mixer_limiter_stats_t increment = {
+        .limited_samples = 1u,
+        .positive_overloads = 1u,
+        .negative_overloads = 1u,
+        .peak_input_abs = 48000,
+    };
+    audio_engine_test_record_limiter_stats(&increment);
+    return NULL;
+}
+
+static void *limiter_snapshot_thread(void *arg)
+{
+    (void)arg;
+    audio_engine_mixer_snapshot_t snapshot = { 0 };
+    audio_engine_get_mixer_snapshot(&snapshot);
+
+    pthread_mutex_lock(&s_limiter_publish_mutex);
+    s_limiter_preempted_snapshot = snapshot.limiter;
+    s_limiter_snapshot_finished = 1;
+    pthread_cond_broadcast(&s_limiter_publish_cond);
+    pthread_mutex_unlock(&s_limiter_publish_mutex);
+    return NULL;
+}
+
 static void *lifecycle_load_thread(void *arg)
 {
     const char *path = (const char *)arg;
@@ -119,13 +170,13 @@ static void *lifecycle_load_thread(void *arg)
     return NULL;
 }
 
-static void test_cross_core_routing_and_limiter_snapshots_are_consistent(void)
+static void test_cross_core_routing_and_limiter_snapshots_are_nonblocking(void)
 {
     puts("\n[Test 4b] Cross-core routing and limiter snapshots");
     EXPECT(audio_engine_init() == ESP_OK,
            "audio_engine_init resets threaded telemetry fixture");
     __atomic_store_n(&s_telemetry_writer_done, 0, __ATOMIC_RELAXED);
-    __atomic_store_n(&s_telemetry_consistency_errors, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_telemetry_snapshot_errors, 0u, __ATOMIC_RELAXED);
 
     pthread_t writer;
     pthread_t reader;
@@ -138,13 +189,81 @@ static void test_cross_core_routing_and_limiter_snapshots_are_consistent(void)
 
     audio_engine_mixer_snapshot_t snapshot = { 0 };
     audio_engine_get_mixer_snapshot(&snapshot);
-    EXPECT(__atomic_load_n(&s_telemetry_consistency_errors, __ATOMIC_RELAXED) == 0u,
-           "all concurrent routing and limiter snapshots are coherent");
+    EXPECT(__atomic_load_n(&s_telemetry_snapshot_errors, __ATOMIC_RELAXED) == 0u,
+           "concurrent routing snapshots stay coherent and limiter counters monotonic");
     EXPECT(snapshot.limiter.limited_samples == TELEMETRY_THREAD_ITERATIONS &&
            snapshot.limiter.positive_overloads == TELEMETRY_THREAD_ITERATIONS &&
            snapshot.limiter.negative_overloads == TELEMETRY_THREAD_ITERATIONS &&
            snapshot.limiter.peak_input_abs == 48000,
            "threaded limiter publisher loses no updates");
+}
+
+static void test_limiter_snapshot_does_not_wait_for_preempted_writer(void)
+{
+    puts("\n[Test 4c] Limiter snapshot with preempted writer");
+    EXPECT(audio_engine_init() == ESP_OK,
+           "audio_engine_init resets preemption telemetry fixture");
+
+    pthread_mutex_lock(&s_limiter_publish_mutex);
+    s_limiter_publish_hook_entered = 0;
+    s_limiter_publish_hook_release = 0;
+    s_limiter_snapshot_finished = 0;
+    memset(&s_limiter_preempted_snapshot, 0, sizeof(s_limiter_preempted_snapshot));
+    pthread_mutex_unlock(&s_limiter_publish_mutex);
+    audio_engine_test_set_limiter_publish_hook(limiter_publish_hook);
+
+    pthread_t writer;
+    pthread_t reader;
+    int writer_rc = pthread_create(&writer, NULL,
+                                   limiter_preempted_writer_thread, NULL);
+    EXPECT(writer_rc == 0, "limiter writer thread starts");
+
+    pthread_mutex_lock(&s_limiter_publish_mutex);
+    while (writer_rc == 0 && !s_limiter_publish_hook_entered) {
+        pthread_cond_wait(&s_limiter_publish_cond, &s_limiter_publish_mutex);
+    }
+    pthread_mutex_unlock(&s_limiter_publish_mutex);
+
+    int reader_rc = writer_rc == 0
+        ? pthread_create(&reader, NULL, limiter_snapshot_thread, NULL)
+        : -1;
+    EXPECT(reader_rc == 0, "limiter snapshot reader thread starts");
+
+    pthread_mutex_lock(&s_limiter_publish_mutex);
+    struct timespec deadline = { 0 };
+    (void)clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += 2;
+    while (reader_rc == 0 && !s_limiter_snapshot_finished) {
+        int wait_rc = pthread_cond_timedwait(&s_limiter_publish_cond,
+                                             &s_limiter_publish_mutex,
+                                             &deadline);
+        if (wait_rc != 0) break;
+    }
+    bool snapshot_finished_while_writer_paused =
+        s_limiter_snapshot_finished != 0;
+    s_limiter_publish_hook_release = 1;
+    pthread_cond_broadcast(&s_limiter_publish_cond);
+    pthread_mutex_unlock(&s_limiter_publish_mutex);
+
+    if (writer_rc == 0) pthread_join(writer, NULL);
+    if (reader_rc == 0) pthread_join(reader, NULL);
+    audio_engine_test_set_limiter_publish_hook(NULL);
+
+    EXPECT(snapshot_finished_while_writer_paused,
+           "limiter diagnostics never wait for a preempted output writer");
+    EXPECT(s_limiter_preempted_snapshot.limited_samples == 1u &&
+           s_limiter_preempted_snapshot.positive_overloads == 0u &&
+           s_limiter_preempted_snapshot.negative_overloads == 0u &&
+           s_limiter_preempted_snapshot.peak_input_abs == 0,
+           "best-effort snapshot may expose a safe partial aggregate");
+
+    audio_engine_mixer_snapshot_t final_snapshot = { 0 };
+    audio_engine_get_mixer_snapshot(&final_snapshot);
+    EXPECT(final_snapshot.limiter.limited_samples == 1u &&
+           final_snapshot.limiter.positive_overloads == 1u &&
+           final_snapshot.limiter.negative_overloads == 1u &&
+           final_snapshot.limiter.peak_input_abs == 48000,
+           "limiter aggregate is complete after the writer resumes");
 }
 
 static void *lifecycle_stop_thread(void *arg)
@@ -860,6 +979,8 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
 
     audio_engine_diagnostics_snapshot_t diag;
     audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 0u,
+           "diagnostics playback session epoch starts at zero");
     EXPECT(diag.ring_capacity > AUDIO_PCM_RING_FRAMES,
            "diagnostics reports canonical timeline capacity");
     EXPECT(diag.pcm_timeline_active[0] && diag.pcm_timeline_active[1],
@@ -894,6 +1015,13 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.usb_headphone_submitted_blocks == 0, "diagnostics USB headphone submitted blocks start clear");
     EXPECT(diag.usb_headphone_dropped_blocks == 0, "diagnostics USB headphone dropped blocks start clear");
     EXPECT(diag.usb_headphone_submitted_frames == 0, "diagnostics USB headphone submitted frames start clear");
+    EXPECT(diag.usb_headphone_active_data_loss_flags == 0u,
+           "diagnostics active UAC data-loss flags start clear");
+    audio_engine_set_uac_active_data_loss_flags(0x14u);
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.usb_headphone_active_data_loss_flags == 0x14u,
+           "diagnostics publishes playback-session UAC data-loss flags");
+    audio_engine_set_uac_active_data_loss_flags(0u);
 
     audio_mixer_limiter_stats_t limiter_stats = {
         .limited_samples = 9,
@@ -920,6 +1048,9 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(audio_engine_deck_load(1, path, NULL, 10000) == ESP_OK,
            "deck 1 dummy diagnostics load returns ESP_OK");
     EXPECT(audio_engine_deck_play(0) == ESP_OK, "deck 0 diagnostics play returns ESP_OK");
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 1u,
+           "first all-idle to active transition advances playback session epoch");
     EXPECT(audio_engine_deck_play(1) == ESP_OK, "deck 1 diagnostics play returns ESP_OK");
     audio_engine_get_diagnostics_snapshot(&diag);
     EXPECT(diag.deck_active[0], "diagnostics captures deck 0 active");
@@ -928,6 +1059,17 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.deck_file_bytes[1] > 0, "diagnostics captures deck 1 file size");
     EXPECT(diag.deck_load_progress[0] == 100, "diagnostics captures deck 0 load progress");
     EXPECT(diag.deck_load_progress[1] == 100, "diagnostics captures deck 1 load progress");
+    EXPECT(diag.playback_session_epoch == 1u,
+           "starting a second deck within active playback keeps the same session epoch");
+    EXPECT(audio_engine_deck_pause(0) == ESP_OK,
+           "deck 0 diagnostics pause returns ESP_OK");
+    EXPECT(audio_engine_deck_pause(1) == ESP_OK,
+           "deck 1 diagnostics pause returns ESP_OK");
+    EXPECT(audio_engine_deck_play(1) == ESP_OK,
+           "deck 1 diagnostics restart returns ESP_OK");
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.playback_session_epoch == 2u,
+           "new all-idle to active transition advances playback session epoch");
     remove(path);
 }
 
@@ -1399,7 +1541,8 @@ int main(int argc, char *argv[])
     test_load_missing();
     test_pitch();
     test_mixer_state_api();
-    test_cross_core_routing_and_limiter_snapshots_are_consistent();
+    test_cross_core_routing_and_limiter_snapshots_are_nonblocking();
+    test_limiter_snapshot_does_not_wait_for_preempted_writer();
     test_beat_fx_delay_state_api();
     test_scratch_handoff_commands_apply_only_on_output_boundary();
     test_deck_peak_meter_api_returns_and_resets_peak();

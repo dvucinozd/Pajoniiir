@@ -83,9 +83,8 @@ The P4 remains the sole owner of:
 - analyzer task scheduling around real-time product pressure;
 - all LVGL state and presentation.
 
-The S3 and the existing `0xA5` control link do not change. No analysis state is
-moved to the controller board. P4 remains authoritative for deck/playback/mixer
-state and LED decisions.
+No secondary transport or controller processor participates in analysis. P4
+remains authoritative for deck/playback/mixer state and LED decisions.
 
 Locked scope:
 

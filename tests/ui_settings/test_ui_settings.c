@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "control_link.h"
 #include "ui_settings.h"
 
 static void test_force_poll_always_allows_refresh(void)
@@ -43,23 +42,6 @@ static void test_master_trim_presets_are_non_boosting_and_cycle(void)
     assert(ui_settings_master_trim_label(99) == ui_settings_master_trim_label(0));
 }
 
-static void test_s3_debug_ap_status_labels_are_stable(void)
-{
-    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_OFF), "OFF") == 0);
-    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_STARTING), "STARTING") == 0);
-    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ON), "ON") == 0);
-    assert(strcmp(ui_settings_s3_debug_ap_status_label(CTRL_S3_DEBUG_AP_ERROR), "ERROR") == 0);
-    assert(strcmp(ui_settings_s3_debug_ap_status_label(99), "UNKNOWN") == 0);
-
-    char text[48];
-    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_ON, 123456u);
-    assert(strcmp(text, "S3 DEBUG AP: ON  CODE 123456") == 0);
-    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_ON, 0u);
-    assert(strcmp(text, "S3 DEBUG AP: ON") == 0);
-    ui_settings_s3_debug_ap_format(text, sizeof(text), CTRL_S3_DEBUG_AP_OFF, 123456u);
-    assert(strcmp(text, "S3 DEBUG AP: OFF") == 0);
-}
-
 static void test_settings_active_tab_uses_configured_index(void)
 {
     assert(ui_settings_is_active_tab(5, 5));
@@ -67,26 +49,12 @@ static void test_settings_active_tab_uses_configured_index(void)
     assert(!ui_settings_is_active_tab(5, -1));
 }
 
-static void test_firmware_status_labels_are_stable(void)
-{
-    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_OTA_0), "ota_0") == 0);
-    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_OTA_1), "ota_1") == 0);
-    assert(strcmp(ui_settings_firmware_slot_label(CTRL_FW_SLOT_FACTORY), "factory") == 0);
-    assert(strcmp(ui_settings_firmware_slot_label(99), "unknown") == 0);
-    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_PENDING_VERIFY), "PENDING") == 0);
-    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_VALID), "VALID") == 0);
-    assert(strcmp(ui_settings_firmware_state_label(CTRL_FW_STATE_INVALID), "INVALID") == 0);
-    assert(strcmp(ui_settings_firmware_state_label(99), "UNKNOWN") == 0);
-}
-
 int main(void)
 {
     test_force_poll_always_allows_refresh();
     test_first_poll_and_interval_gate();
     test_master_trim_presets_are_non_boosting_and_cycle();
-    test_s3_debug_ap_status_labels_are_stable();
     test_settings_active_tab_uses_configured_index();
-    test_firmware_status_labels_are_stable();
 
     puts("ui_settings tests passed");
     return 0;

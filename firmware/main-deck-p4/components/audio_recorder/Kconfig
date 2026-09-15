@@ -13,7 +13,7 @@ config AUDIO_RECORDER_ENABLED
         hundreds of milliseconds at a time drains the ring no matter how the
         writer is arranged, and chasing that consumed a great deal of bench time
         for something that is not on the critical path. See the recorder entries
-        in docs/bench-notes.md before turning it back on - the firmware-side
+        in docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md before turning it back on - the firmware-side
         contributions were already eliminated, so the next step is card
         selection, not more code.
 

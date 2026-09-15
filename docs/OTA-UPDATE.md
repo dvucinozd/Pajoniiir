@@ -1,32 +1,23 @@
 # Pajoniiir OTA Update Procedure
 
-Status: signed dual-slot OTA and rollback are hardware-accepted on both targets.
-The `.ddjota` implementation, host tests, release builds, valid A/B updates,
-full rejection matrix, interrupted uploads and forced rollback passed on
-2026-07-14 with release `RC1-123-g587cd7a1`. See
-[`OTA_UPDATE_PLAN.md`](OTA_UPDATE_PLAN.md) for the design and acceptance record.
-The latest matching rollout, `RC1-131-gc391e306`, was signed, independently
-verified and installed on 2026-07-16: P4 finished on `ota_1`, S3 on
-`ota_0 / valid`. This rollout proved package/install/boot health but intentionally
-did not repeat the complete functional hardware smoke.
-
-The latest P4-only deployment was `RC2-51-g050ab43` on 2026-08-22. The local
-push endpoint accepted the signed bundle, and COM15 later confirmed P4
-`ota_0 / valid`, a mounted 29,520 MB SDHC card and the still-running S3 at
-`RC2-44-g1923a3b / ota_1 / valid`. The USB medium exhausted eight automatic
-enumeration-recovery cycles after the restart and required one physical
-reinsert before its exFAT volume and 324-track library loaded. This is positive
-P4 OTA and reconnect evidence, not a matching dual-target rollout or complete
-reboot-recovery pass. See
-[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. The current
+validated firmware and latest installed candidate is `RC2-116-g77d723c` on
+`ota_1`. Its
+signed OTA, exact-image check and targeted three-hour continuous dual-MP3
+limiter/WDT soak passed without a reset, PCM underrun, active UAC loss or
+USB/controller loss. This procedure is the current P4 operator authority. The
+superseded multi-target design and its
+acceptance history are retained in
+[`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
+and dated validation records.
 
 ## Safety rules
 
-- Update one processor at a time and wait for a clean reboot.
-- Upload only the target's signed `.ddjota` bundle. Raw `.bin` files are for
+- Update P4 only and wait for a clean reboot.
+- Upload only `main-deck-p4.ddjota`. Raw `.bin` files are for
   wired recovery and the one-time transition described below.
 - Keep power stable and do not play audio during an update.
-- Keep wired access until both signed update paths have passed on hardware.
+- Keep wired P4 access until the signed update path has passed on hardware.
 - Do not distribute or commit `keys/ota_signing_private.pem`.
 
 The device verifies the embedded ECDSA P-256 signature before flash erase. It
@@ -87,13 +78,13 @@ mandatory.
 
 Use local signed upload when an intentional rollback is required.
 
-## Build both targets
+## Build the P4 target
 
 Initialize ESP-IDF and use an isolated release build so stale ignored
 `sdkconfig` files cannot silently select an old partition layout:
 
 ESP-IDF **6.0.2 is required**, not merely recommended:
-`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`, so an older
+`firmware/main-deck-p4/main/idf_component.yml` pins `idf: "==6.0.2"`, so an older
 environment fails during dependency resolution rather than producing a
 questionable image. The 5.5 environments below are no longer usable for this
 tree.
@@ -106,28 +97,15 @@ $repoRoot = git rev-parse --show-toplevel
 Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py -B build_signed fullclean
 idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
-
-Set-Location "$repoRoot\firmware\control-board-s3"
-idf.py -B build_signed fullclean
-idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 ```
 
-Do not package unless both commands exit with code 0. P4 must fit its 4 MiB
-slot; S3 must fit `0x1e0000` bytes (1.875 MiB).
+Do not package unless the P4 build exits with code 0 and fits its 4 MiB slot.
 
-The latest clean-build evidence, including raw-image sizes and SHA-256 values,
-is recorded in
-[`validation/CLEAN_RELEASE_RC2_BUILD.md`](validation/CLEAN_RELEASE_RC2_BUILD.md).
-Both signed RC2 application packages were installed successfully through OTA
-on P4 and S3 on 2026-08-02 and both targets reported `RC2`. Complete ESP-IDF
-v6.0.2 boot chains were installed afterwards over the wired recovery ports,
-because application OTA does not replace bootloaders or partition tables. See
-[`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`](validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md).
-The later `RC2-51-g050ab43` clean dual-target development build and P4-only OTA
-deployment are recorded in
-[`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`](validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
-The superseded ESP-IDF 5.5.4 record is
-[`validation/CLEAN_RELEASE_RC1_259_BUILD.md`](validation/CLEAN_RELEASE_RC1_259_BUILD.md).
+The current exact-image build, OTA and three-hour focused soak evidence is
+recorded in
+[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
+Application OTA does not replace the bootloader or partition table; use a full
+wired flash whenever either changes.
 
 ### Version strings
 
@@ -147,12 +125,12 @@ Set-Location $repoRoot
 ```
 
 The packager requires the initialized ESP-IDF Python environment and the local
-private key. It validates both builds, signs each bundle and the outer release
+private key. It validates the P4 build, signs its bundle and the outer release
 manifest, and verifies its own output before succeeding. It creates the ignored
 directory `releases\pajoniiir-<version>\` with:
 
-- `main-deck-p4.ddjota` and `control-board-s3.ddjota` for web OTA;
-- raw `main-deck-p4.bin` and `control-board-s3.bin` for wired recovery only;
+- `main-deck-p4.ddjota` for web OTA;
+- raw `main-deck-p4.bin` for wired recovery only;
 - `manifest.json` with target metadata, sizes, hashes and signing key ID;
 - `manifest.sig`, the ECDSA P-256 signature of `manifest.json`.
 
@@ -162,10 +140,6 @@ Independent verification is available with:
 python .\tools\ota_signing.py verify-bundle `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
   --input .\releases\pajoniiir-<version>\main-deck-p4.ddjota
-
-python .\tools\ota_signing.py verify-bundle `
-  --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
-  --input .\releases\pajoniiir-<version>\control-board-s3.ddjota
 
 python .\tools\ota_signing.py verify-file `
   --public-key .\firmware\common\ota_manifest\keys\ddj_ota_release_public.der `
@@ -186,7 +160,7 @@ python .\tools\ota_signing.py verify-file `
    top-level `state` is the OTA transfer-service state (`idle` after reboot),
    not the ESP-IDF image state; explicit partition-state evidence comes from
    the `fw_health` boot log. Then check display/touch, USB library, MAIN audio,
-   UART and S3 status.
+   direct USB0 storage, USB1 FLX4 MIDI/audio and controller LED status.
 
 Raw API equivalent:
 
@@ -199,62 +173,17 @@ curl.exe -X POST `
   http://192.168.4.1/api/ota/p4
 ```
 
-## Update S3
+## Historical S3 OTA path
 
-The S3 service AP uses WPA2-PSK and returns to OFF after reboot. Association
-with the published WPA2 credential does not authorize an update: every ON edge
-creates a short-lived six-digit maintenance code shown in P4 Settings, and the
-S3 OTA POST requires that code. Signature validation remains the firmware-
-authenticity boundary.
-
-The S3 upload endpoint rejects an oversized Content-Length before allocating a
-receive buffer, receives/verifies the signed manifest and ESP image header
-before `esp_ota_begin`, and enforces two availability budgets: at most 180 s for
-the complete request and at least 4096 received bytes in each 10 s progress
-window. A timeout or slow-client rejection returns HTTP 408; if flashing has
-already begun, the OTA handle is aborted before the request closes.
-
-1. Enable **S3 DEBUG AP** in P4 Settings, wait for `ON`, and note the six-digit
-   `CODE` displayed on the same row.
-2. Connect to `Pajoniiir-S3-DEBUG` using the default WPA2 password
-   `Pajoniiir`, then open
-   `http://192.168.4.1/update`.
-3. Record the S3 running version, slot and state.
-4. Enter the displayed maintenance code, select
-   **`control-board-s3.ddjota`**, confirm and upload. The code expires after ten
-   minutes and locks after five invalid attempts; toggle the AP OFF and ON to
-   generate a replacement. The AP also shuts itself down after fifteen minutes.
-5. After restart, the S3 Debug AP turns OFF by design. Reconnect to the P4
-   `Pajoniiir` Wi-Fi Remote and inspect its `/api/firmware` response.
-6. Confirm nested `s3.available=true` plus the expected `s3.version`, opposite
-   `s3.slot` and `s3.state=valid`. Re-enable the S3 Debug AP only if local logs
-   are needed, then turn it off and verify FLX4 controls, LEDs, UART and USB
-   headphone cue.
-
-During a pending-image boot, S3 does not mark the slot valid merely because its
-init calls returned success. It first confirms that the critical UART/heartbeat,
-translator and USB host tasks have entered their run loops, then requires the P4
-UART RX task to echo a fresh boot challenge. S3 retries every 500 ms for at most
-30 s. If P4 is absent, the reverse UART path is broken, or only a stale/wrong ACK
-arrives, S3 restarts without confirmation and ESP-IDF rolls the image back. An
-absent FLX4 controller is valid and does not block confirmation.
-
-Raw API equivalent:
-
-```powershell
-curl.exe -X POST `
-  -H "Content-Type: application/octet-stream" `
-  -H "X-DDJ-Control: 1" `
-  -H "X-DDJ-OTA: s3" `
-  --data-binary "@releases\pajoniiir-<version>\control-board-s3.ddjota" `
-  http://192.168.4.1/api/ota/s3
-```
+The S3 Debug AP, maintenance token, `/api/ota/s3` endpoint and S3 bundle were
+retired from the active product on `feat/p4-dual-usb-host`. Their accepted
+behavior remains documented in the dated validation records and Git history;
+do not build, package or deploy an S3 image as part of a P4-only release.
 
 ## Acceptance and failure behavior
 
-For both targets record project, version, slot and last error. Record image
-state from `fw_health`/serial for the local target or, for S3, from the P4
-nested `s3.state` firmware report. Do not interpret the HTTP OTA service's
+For P4 record project, version, slot and last error. Record image state from
+`fw_health`/serial. Do not interpret the HTTP OTA service's
 top-level `idle` as an image state. Confirm FLX4 reconnect/control/LED behavior,
 PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
 
@@ -262,11 +191,6 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   rejected without selecting the inactive slot.
 - A disconnected or interrupted transfer aborts the OTA handle; the current
   slot remains bootable.
-- A too-large or deliberately slow S3 upload is rejected before the absolute
-  deadline; it must not keep the single HTTP server task occupied indefinitely.
-- A new S3 image stays `PENDING_VERIFY` until critical tasks are alive and the
-  P4 returns the exact current-boot challenge; local init success alone is not
-  enough.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
 The unsigned rollback baseline accepted on 2026-07-13 was
@@ -307,9 +231,6 @@ ESP-IDF set at the offsets reported by the build:
 $repoRoot = git rev-parse --show-toplevel
 Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py -p <P4-COM-PORT> flash monitor
-
-Set-Location "$repoRoot\firmware\control-board-s3"
-idf.py -p <S3-COM-PORT> flash monitor
 ```
 
 ## Release record template
@@ -319,7 +240,6 @@ Date/time and operator:
 Release version and key ID:
 Bundle and manifest signatures verified: yes/no
 P4 before -> after slot/version/state:
-S3 before -> after slot/version/state:
 Wrong-key/tamper rejection tested: yes/no/details
 MAIN audio / headphone cue: pass/fail
 FLX4 controls/LEDs / USB library/UI: pass/fail

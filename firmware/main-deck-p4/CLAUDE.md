@@ -1,22 +1,23 @@
 # Pajoniiir P4 Main Deck Firmware — Claude Guide
 
-Documentation status: current ESP-IDF 6.0.2 developer guide, refreshed after
-the `fixevi.md` remediation audit. The release branch now uses transactional
-media loading, strict ANLZ parsing, actor-owned deck snapshots, bounded S3 Debug
-AP/SSE handling, USB desired/current reconciliation, a shared Wi-Fi transition
+Documentation status: current ESP-IDF 6.0.2 P4-only developer guide, refreshed
+for `feat/p4-dual-usb-host` on 2026-08-27. The branch uses transactional media
+loading, strict ANLZ parsing, actor-owned deck snapshots, direct USB1 controller
+MIDI/audio, USB desired/current reconciliation, a shared Wi-Fi transition
 lease, a single real DPI framebuffer and a bounded compressed-audio page cache.
 The master-output recorder has software STOP/finalize safety coverage but remains
 release-disabled until physical microSD and power-loss fault injection passes.
 
 Release line: the prefix moved from `RC1` to **`RC2`** on 2026-07-30 to mark the
 ESP-IDF 6.0.2 baseline; the annotated tag sits on `56905c89` and the clean
-dual-target build is recorded in `docs/validation/CLEAN_RELEASE_RC2_BUILD.md`.
+baseline build is recorded in `docs/validation/CLEAN_RELEASE_RC2_BUILD.md`.
 Application version comes from `git describe`, so the tagged commit builds as the
-bare string `RC2` and later commits as `RC2-<n>-g<hash>`. **Both boards are still
-on `RC1-254-g21f21963`** — pre-migration firmware built with ESP-IDF 5.5.4.
+bare string `RC2` and later commits as `RC2-<n>-g<hash>`. The current source
+candidate is `RC2-114-gc8b2711` (signed package verified, not installed); the
+latest hardware-tested image is `RC2-113-gaf597d8` on `ota_1`.
 
 Software acceptance is enforced by `.github/workflows/esp-idf-6-migration.yml`:
-host regressions plus clean ESP32-S3 and ESP32-P4 builds using ESP-IDF 6.0.2.
+P4 host regressions plus a clean ESP32-P4 build using ESP-IDF 6.0.2.
 Physical release checks remain tracked in `docs/fixevi-remediation-audit.md`,
 `docs/migration/ESP_IDF_6_0_2_MIGRATION.md` and PR #8 rather than being inferred
 from a successful build. That workflow does **not** trigger on tags and checks
@@ -36,12 +37,12 @@ out at depth 1, so a CI build carries a bare commit hash as its version, not
 > the host with `root_port_unpowered` and cycles `usb_host_lib_set_root_port_power()`,
 > retrying while nothing has connected. Do not "simplify" that back to a plain
 > `usb_host_install()`. Lengthening the port-off window is not the lever; the
-> repeat is. See `docs/bench-notes.md`.
+> repeat is. See `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 
 > ⚠️ **`max_open_sockets` is 5.** With `lru_purge_enable` unset, five held
 > keep-alive sockets made the server refuse every new client — including
 > `/api/ota/p4` — from a board that still answered ping. Fixed in RC1-175; see
-> `docs/bench-notes.md` for the diagnostic signature.
+> `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md` for the diagnostic signature.
 
 > ⚠️ **The last journal record before a panic is not evidence.** The service-log
 > writer syncs at most every few seconds, so a panic destroys whatever is still
@@ -73,7 +74,7 @@ out at depth 1, so a CI build carries a bare commit hash as its version, not
 > The next step is a card swap, qualified with
 > `tools/sd_card_latency_probe.ps1`. If a known-good card stalls at the same
 > ~370 ms, suspect the SDMMC driver or bus configuration rather than the media.
-> Full history and numbers in `docs/bench-notes.md`.
+> Full history and numbers in `docs/ARCHIVE_BENCH_NOTES_LEGACY_DUAL_PROCESSOR.md`.
 >
 > **Deliberately left on:** the output block is timed phase by phase on the
 > audio task, about 25 `esp_timer_get_time()` calls per 5.8 ms block. Gate or
@@ -90,24 +91,23 @@ archived under `attic/*` tags.
 
 ESP32-P4 firmware for the Pajoniiir main-deck board (JC4880P443C_I_W).
 Responsible for authoritative dual-deck state, LVGL UI, media library,
-decode/mixer/DSP, LED decisions, web service and P4 OTA. It communicates with
-the ESP32-S3 over UART1 using fixed `0xA5` events and `0xA6` bulk/status frames.
+decode/mixer/DSP, direct FLX4 USB MIDI/audio, LED decisions, web service and P4
+OTA. No ESP32-S3 or inter-board UART/PCM link is required by the active image.
 
 **Status:** Display, touch, USB media library (FAT32/exFAT on MBR/GPT), audio
 (PCM5102A I2S MAIN, MP3/WAV/FLAC), SDMMC mount, a single DPI framebuffer fed by the partial LVGL/PPA path, and the
 dual-deck P4 touchscreen path are operational on hardware. `deck_core` drives
-`audio_engine` through deck-aware APIs; the S3 control board populates the same
-event queue over the UART control link (FLX4 controls verified). The Overview
+`audio_engine` through deck-aware APIs; the P4-local controller runtime maps
+USB1 FLX4 input into the same semantic event queue. The Overview
 waveform is feature-complete: both decks use the direct PPA overlay path with
 "Punchy" colour-waveform rendering, white transient tips, an active/armed loop
 region highlight, hot-cue markers on the large + mini waveforms, and a
 translucent played-progress highlight on the mini. The **ESP-Hosted Wi-Fi + web
 UI mobile controller** is re-enabled behind a Settings switch (default off). A
 2026-07-04 audit hardened thread-safety (atomics), load-failure abort, and the
-web status JSON. PCM5102A RCA MAIN, FLX4 USB headphone cue, FLX4 LED feedback,
-vinyl scratch, Master Tempo and P4/S3 OTA have since passed their recorded basic
-hardware acceptance. Remaining work is release/enclosure hardening and the
-explicitly pending rows in active validation documents.
+web status JSON. PCM5102A MAIN, FLX4 USB headphone cue, LED feedback, vinyl
+scratch and Master Tempo run on the direct P4 path. The remaining release
+boundary is tracked in the explicit dual-USB hardware rows.
 
 P4 web OTA accepts only signed `main-deck-p4.ddjota` bundles. The common
 `ota_manifest` component verifies the embedded ECDSA P-256 manifest before
@@ -121,19 +121,19 @@ under repository-root `keys/` must never be copied into firmware or committed.
 
 | Component | Status | Description |
 |-----------|--------|-------------|
-| `control_link` | ✅ **IMPLEMENTED** | UART RX/TX, frame parser, LED send |
-| `deck_core` | ✅ **RUNNING ON HW** | state machine + drives `audio_engine` (play/pause/cue→seek/jog/pitch); `deck_core_queue_event()` for UI/S3 sources |
+| `control_link` | ✅ **P4-LOCAL** | transport-neutral semantic queue injection and direct LED sink; legacy UART sources are not compiled |
+| `deck_core` | ✅ **RUNNING ON HW** | state machine + drives `audio_engine` (play/pause/cue→seek/jog/pitch); `deck_core_queue_event()` for UI/local-controller sources |
 | `library/rekordbox_pdb` | ✅ **RUNNING ON HW** | PDB parser — title/artist/album/anlz_path + musical key (Keys table 0x05) from export.pdb |
 | `library/rekordbox_anlz` | ✅ **RUNNING ON HW** | ANLZ parser — BPM/beatgrid/waveform/cues; strict bounded section walk; host regression coverage |
 | `library` (USB) | ✅ **RUNNING ON HW** | `library_init()` transactionally publishes immutable track records from `/usb`; sort republishes only a compact double-buffered `uint16_t` row order; Library UI pages eight rows at a time instead of allocating up to 1024×5 LVGL cells; `library_get_summary()` is the copy accessor (`library_get_ptr()` is simulator-only) |
 | `usb_storage` | ✅ **RUNNING ON HW** | USB Host + MSC → `usb_media_mount` (FAT32/exFAT on superfloppy, MBR, or GPT) → `/usb`; callback reloads library + UI |
 | `app_settings` | ✅ **RUNNING ON HW** | NVS persistence (audio output, backlight %, time mode, cue mode, master trim, `wifi_remote`); apply at boot |
-| `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; module-split Overview/Library/Controls/Performance/Settings/Status; Overview waveform loop highlight + hot-cue markers + mini played-progress + per-deck VU meters; 2026-07-09 stability pass (cue-fingerprint guard, tab-return reblit, VU-segment/play-button invalidate diffing, `LV_INV_BUF_SIZE=64`); Settings Wi-Fi remote switch, non-persisted **S3 DEBUG AP** switch (status label OFF/STARTING/ON/ERROR), + "Last reset" diagnostic |
+| `ui` | ✅ **RUNNING ON HW** | 4-screen 800×480 dual-deck UI (Overview/Library/Hot Cues/Settings); PPA rotation; touch indev; direct Controller USB1 connection state and P4-only firmware status |
 | `bsp_jc4880` | ✅ **RUNNING ON HW** | ST7701 display + GT911 touch + PCM5102A MAIN out (ES8311 dropped); SDMMC `/sd` mount hardware-verified (on-chip LDO ch4; `bsp_sd_init` retries the mount 3× to ride out cold-boot `send_op_cond` timeouts) |
 | `audio_engine` | ✅ **RUNNING ON HW** | MP3 (minimp3) + WAV + FLAC (dr_flac) → PCM5102A I2S MAIN + FLX4 USB headphone cue; fixed 8 × 32 KiB compressed-page cache per deck instead of whole-track PSRAM preload; pitch resampling; PVBR/estimated seek on decode task; loop (set/clear/get); dual-deck mixer/EQ/channel-filter/beat-FX (filter/echo/flanger/delay) + Smart CFX; FLANGER/DELAY and cache-miss hardware stress pending; RELAXED-atomic shared state (incl. lock-free deck VU peaks: raw `s_deck_peak` + decaying pre-fader `deck_peak_display`); `ae_fail_load()` aborts a stalled load; SDL2/WAV on PC |
 | `wifi_link` | ✅ **RUNNING ON HW** | ESP-Hosted (onboard ESP32-C6, SDIO) SoftAP `Pajoniiir`; Settings toggle (default off); `wifi_link_start/stop` + async `request_enable`; brings up `web_server`/`dns_server` |
 | `web_server` | ✅ **RUNNING ON HW** | httpd mobile controller at `http://192.168.4.1`; `/api/status` (dynamic JSON incl. `controller` object), `/api/library`, `/api/control` (play/cue/pfl/volume/crossfader/pitch/loop/seek), `/api/load`; captive DNS |
-| `controller_profile_manager` | ✅ **RUNNING ON HW** | Scans `/sd/controllers/<name>/profile.s3bin` at boot (verified 2026-07-09: `profiles:1`), registry + VID/PID match; on S3 descriptor report streams the matched `.s3bin` to the S3 over the 0xA6 bulk layer (sender task, ACK/retry). `CONFIG_CONTROLLER_PROFILE_MANAGER=y`, path `CONFIG_CONTROLLER_PROFILE_SD_PATH=/sd/controllers` |
+| `controller_profile_manager` | ✅ **P4-LOCAL** | Scans `/sd/controllers/<name>/profile.s3bin`, validates VID/PID and activates the matching profile synchronously in the local controller runtime; no UART transfer task |
 
 ---
 
@@ -165,11 +165,9 @@ idf.py build
 idf.py -p COM15 flash
 ```
 
-> **Sound is in the default build (2026-07-10).** The FLX4 USB-headphones audio
-> profile (PCM5102A RCA MAIN on I2S unit 1 + monitor PCM link on unit 0, ES8311
-> off) was folded into `sdkconfig.defaults`, so a plain `idf.py build` now
-> produces the audio firmware. The former `sdkconfig.flx4_hp_e2e` /
-> `sdkconfig.monitor_link_bench` overlays and all `build_*` dirs were removed.
+> **Sound is in the default build.** PCM5102A RCA MAIN and direct FLX4 USB
+> headphone audio are enabled in `sdkconfig.defaults`; no monitor PCM overlay or
+> S3 audio bridge is required.
 
 `idf.py monitor` requires a TTY; for boot logs use pyserial capture
 (`serial.Serial('COM15',115200)` + DTR/RTS reset toggle). Keep only one
@@ -180,23 +178,21 @@ process active on COM15 (capture and flash are mutually exclusive — "Access is
 ## Architecture
 
 ```
-S3 (panel events)
-    ↓ UART 460800
-control_link  →  ctrl_event_queue  →  deck_core
-                                           ↓
-                               audio_engine  |  ui (LVGL)
-                                           ↓
-                           control_link_send_led()  →  S3 LEDs
+FLX4 on P4 USB1 → controller_runtime → local semantic queue → deck_core
+          ↑                                                     ↓
+          └──────── direct USB-MIDI LED sink ─────── audio_engine + UI
+                                                              ↓
+                                    PCM5102A MAIN + FLX4 UAC cue
 ```
 
 **Initialization sequence** (from `app_main.c`):
 1. `deck_core_init()` — creates ctrl_event_queue
-2. `control_link_init(queue)` — UART RX task, pushes events onto queue
+2. `control_link_init(queue)` — installs the local semantic queue adapter
 3. `bsp_display_init()` ✅ + `bsp_touch_init()` ✅ + `bsp_audio_init()` ✅ + `bsp_sd_init()` (`/sd`, non-fatal without card)
 4. `library_init()` — returns NOT_FOUND until USB is mounted (OK at boot)
-5. `audio_engine_init()` — grabs the PCM5102A/monitor output handles, creates mutex/tasks
+5. `audio_engine_init()` — starts PCM5102A and direct FLX4 UAC output paths
 6. `ui_init()` — LVGL 800×480, 4 screens, PPA rotation, touch indev
-7. `usb_storage_init(cb)` — USB host; on mount loads library + refreshes UI
+7. `usb_storage_init(cb)` + `p4_local_controller_start()` — shared dual-root USB host
 
 > **Wi-Fi remote — user-toggled from Settings, default OFF (2026-07-04).**
 > The P4 has no native radio; the onboard **ESP32-C6** provides Wi-Fi over the
@@ -221,34 +217,9 @@ control_link  →  ctrl_event_queue  →  deck_core
 
 ---
 
-## UART Control Link Protocol
-
-7-byte frame (same on S3 and P4 sides):
-```
-[0xA5] [type] [id] [val_lo] [val_hi] [seq] [checksum]
-checksum = type ^ id ^ val_lo ^ val_hi ^ seq
-```
-
-| Type | Direction | Meaning |
-|------|-------|----------|
-| 0x01 BUTTON | S3→P4 | id=button_id (0–13), val=0/1 |
-| 0x02 ENCODER | S3→P4 | id=0 (jog) / id=1 (browse), val=signed delta |
-| 0x03 PITCH | S3→P4 | id=0, val=0–16383 (14-bit) |
-| 0x04 HEARTBEAT | S3→P4 | id=0, val=uptime s |
-| 0x81 LED | P4→S3 | id=led_id (0–3), val=0/1/2 (off/on/blink) |
-| 0x82 STATE | both | S3→P4 FLX4 connection + S3 Debug AP status; P4→S3 S3 Debug AP enable request (`CTRL_ID_S3_DEBUG_AP` 0x85) |
-| 0xA6 BULK | both | variable-length `[A6][type][seq][len][payload][crc16]`: S3→P4 controller descriptor; P4→S3 profile transfer (BEGIN/CHUNK/END/ACTIVATE) + S3→P4 ACK/NACK/STATUS. See `docs/CONTROL_LINK_PROTOCOL.md` |
-
----
-
-## UART Pins (P4 side, JP1 header)
-
-| Signal | GPIO | Note |
-|--------|------|----------|
-| UART1 RX | **GPIO28** | receives from S3 GPIO40 TX (JP1 pin 19) |
-| UART1 TX | **GPIO29** | sends to S3 GPIO41 RX (JP1 pin 12) |
-
-**Hardware verification required** — GPIO28/29 are JP1 pins 19/12.
+The retired transport format and pin tables are documented only in
+`docs/ARCHIVE_CONTROL_LINK_PROTOCOL.md` and
+`docs/ARCHIVE_HARDWARE_WIRING_LEGACY_DUAL_PROCESSOR.md`.
 
 ---
 
@@ -612,7 +583,10 @@ Format details: `docs/rekordbox-format-analysis.md`
 
 ---
 
-## Pending
+## Historical acceptance ledger and current pending work
+
+Checked S3/UART rows below are retained as evidence for the superseded
+dual-board design. They are not active P4 wiring or release requirements.
 
 - ✅ ~~BSP display (ST7701)~~ — WORKS (verified, COM15)
 - ✅ ~~BSP touch (GT911)~~ — WORKS (taps accurate)

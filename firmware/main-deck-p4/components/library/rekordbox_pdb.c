@@ -21,7 +21,42 @@
 
 #ifndef REKORDBOX_PDB_STANDALONE_TEST
 #include "esp_heap_caps.h"
+#include "media_io_gate.h"
+#include "library_validation_gate.h"
+#else
+#define media_io_gate_begin() ((void)0)
+#define media_io_gate_end() ((void)0)
+#define media_io_gate_is_available() (true)
+#define library_validation_gate_checkpoint() (true)
 #endif
+
+static void pdb_close_file(FILE *fp)
+{
+    if (!fp) return;
+    media_io_gate_begin();
+    fclose(fp);
+    media_io_gate_end();
+}
+
+/* Keep every backend ownership interval bounded. The MSC disconnect callback
+ * can close media_io_gate asynchronously; the next chunk then fails before
+ * touching a VFS handle that is being removed. */
+static bool pdb_read_at(FILE *fp, size_t offset, uint8_t *dst, size_t len)
+{
+    while (len) {
+        size_t bytes = len > 8192u ? 8192u : len;
+        media_io_gate_begin();
+        bool ok = media_io_gate_is_available() &&
+                  fseek(fp, (long)offset, SEEK_SET) == 0 &&
+                  fread(dst, 1, bytes, fp) == bytes;
+        media_io_gate_end();
+        if (!ok) return false;
+        offset += bytes;
+        dst += bytes;
+        len -= bytes;
+    }
+    return true;
+}
 
 static const char *TAG = "pdb";
 
@@ -252,7 +287,10 @@ typedef struct {
 /* ── Internal PDB handle ─────────────────────────────────────────────────── */
 
 struct pdb_s {
-    uint8_t  *data;          /* malloc'd file contents (freed after build_index) */
+    uint8_t  *data;          /* One bounded page, freed after build_index. */
+    FILE *source;
+    bool read_failed;
+    pdb_import_stats_t stats;
     size_t    data_len;
     uint32_t  page_size;
     uint32_t  num_tables;
@@ -280,7 +318,9 @@ struct pdb_s {
 
 static inline size_t page_base_off(const struct pdb_s *p, uint32_t pn)
 {
-    return (size_t)pn * (size_t)p->page_size;
+    (void)p;
+    (void)pn;
+    return 0; /* The walker has loaded this page into the bounded buffer. */
 }
 
 static uint32_t page_nrows(const struct pdb_s *p, uint32_t pn)
@@ -353,9 +393,10 @@ static void iter_page_rows(const struct pdb_s *p, uint32_t page_num,
 
 /* ── Table walker helper ─────────────────────────────────────────────────── */
 
-static void walk_table(const struct pdb_s *p, uint32_t table_type,
+static void walk_table(struct pdb_s *p, uint32_t table_type,
                         row_cb_t cb, void *user)
 {
+    if (p->read_failed) return;
     for (uint32_t i = 0u; i < p->num_tables; i++) {
         if (p->tables[i].type != table_type) continue;
         uint32_t page_num = p->tables[i].first_page;
@@ -368,6 +409,12 @@ static void walk_table(const struct pdb_s *p, uint32_t table_type,
                          table_type);
                 break;
             }
+            if (!pdb_read_at(p->source,
+                             (size_t)page_num * p->page_size,
+                             p->data, p->page_size)) {
+                p->read_failed = true;
+                return;
+            }
             iter_page_rows(p, page_num, cb, user);
             page_num = page_next(p, page_num);
         }
@@ -379,6 +426,7 @@ static void walk_table(const struct pdb_s *p, uint32_t table_type,
 
 typedef struct {
     name_entry_t *arr;
+    struct pdb_s *owner;
     int          *count;
     int           max;
     /* Row layout — Artists/Albums and Keys place id/name differently */
@@ -391,7 +439,10 @@ static bool name_cb(const struct pdb_s *p, uint32_t page_num,
                      uint32_t heap_off, void *user)
 {
     name_ctx_t *ctx = (name_ctx_t *)user;
-    if (*ctx->count >= ctx->max) return false;
+    if (*ctx->count >= ctx->max) {
+        ctx->owner->stats.names_truncated = true;
+        return false;
+    }
 
     size_t row = page_base_off(p, page_num) + PAGE_HEAP_OFFSET + (size_t)heap_off;
     if (row + ctx->min_size > p->data_len) return true;
@@ -417,10 +468,13 @@ static void parse_name_table(struct pdb_s *p, uint32_t table_type,
     *out_count = 0;
 
     *out = (name_entry_t *)malloc((size_t)max * sizeof(name_entry_t));
-    if (!*out) return;
+    if (!*out) {
+        p->stats.names_truncated = true;
+        return;
+    }
     memset(*out, 0, (size_t)max * sizeof(name_entry_t));
 
-    name_ctx_t ctx = { *out, out_count, max, id_off, str_off, min_size };
+    name_ctx_t ctx = { *out, p, out_count, max, id_off, str_off, min_size };
     walk_table(p, table_type, name_cb, &ctx);
 
     PDB_LOGI(TAG, "Name table 0x%02X: %d entries", table_type, *out_count);
@@ -449,16 +503,17 @@ static bool track_cb(const struct pdb_s *p, uint32_t page_num,
                       uint32_t heap_off, void *user)
 {
     track_ctx_t *ctx = (track_ctx_t *)user;
-    if (ctx->count >= (int)PDB_MAX_TRACKS) {
-        ctx->truncated = true;
-        return false;
-    }
-
     size_t row = page_base_off(p, page_num) + PAGE_HEAP_OFFSET + (size_t)heap_off;
     if (row + TRACK_ROW_MIN_SIZE > p->data_len) return true;
 
     /* Verify track row subtype at offset 0 */
     if (rd_le16(p->data + row) != TRACK_ROW_SUBTYPE) return true;
+    ctx->p->stats.total_tracks++;
+    if (ctx->count >= (int)PDB_MAX_TRACKS) {
+        ctx->truncated = true;
+        ctx->p->stats.tracks_truncated = true;
+        return true;
+    }
 
     pdb_track_t *t = &p->tracks[ctx->count];
     memset(t, 0, sizeof(*t));
@@ -523,27 +578,48 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
     if (!pdb_path || !out) return ESP_ERR_INVALID_ARG;
     *out = NULL;
 
-    /* Read entire file into memory */
-    FILE *fp = fopen(pdb_path, "rb");
+    /* Read the header before allocating, then walk one page at a time. */
+    media_io_gate_begin();
+    FILE *fp = media_io_gate_is_available() ? fopen(pdb_path, "rb") : NULL;
+    media_io_gate_end();
     if (!fp) {
         PDB_LOGE(TAG, "Cannot open: %s", pdb_path);
         return ESP_ERR_NOT_FOUND;
     }
 
-    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return ESP_FAIL; }
-    long fsize = ftell(fp);
-    rewind(fp);
+    media_io_gate_begin();
+    long fsize = media_io_gate_is_available() &&
+                 fseek(fp, 0, SEEK_END) == 0 ? ftell(fp) : -1;
+    media_io_gate_end();
 
     if (fsize < 28) {
         PDB_LOGE(TAG, "File too short (%ld bytes)", fsize);
-        fclose(fp);
+        pdb_close_file(fp);
         return ESP_FAIL;
     }
 
     struct pdb_s *p = (struct pdb_s *)calloc(1u, sizeof(struct pdb_s));
-    if (!p) { fclose(fp); return ESP_ERR_NO_MEM; }
+    if (!p) { pdb_close_file(fp); return ESP_ERR_NO_MEM; }
+    p->source = fp;
+    uint8_t header[28];
+    if (!pdb_read_at(fp, 0, header, sizeof(header))) {
+        pdb_close(p);
+        return ESP_FAIL;
+    }
+    if (!library_validation_gate_checkpoint()) {
+        pdb_close(p);
+        return ESP_FAIL;
+    }
+    p->page_size = rd_le32(header + 4u);
+    p->num_tables = rd_le32(header + 8u);
+    if (p->page_size < PAGE_HEAP_OFFSET || p->page_size > 65536u ||
+        p->page_size > (size_t)fsize) {
+        PDB_LOGE(TAG, "Bad page_size=%u", p->page_size);
+        pdb_close(p);
+        return ESP_FAIL;
+    }
 
-    size_t data_size = (size_t)fsize;
+    size_t data_size = p->page_size;
 #ifndef REKORDBOX_PDB_STANDALONE_TEST
     p->data = (uint8_t *)heap_caps_malloc(data_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!p->data) {
@@ -552,24 +628,14 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
 #else
     p->data = (uint8_t *)malloc(data_size);
 #endif
-    if (!p->data) { free(p); fclose(fp); return ESP_ERR_NO_MEM; }
+    if (!p->data) { pdb_close(p); return ESP_ERR_NO_MEM; }
 
-    if (fread(p->data, 1u, data_size, fp) != data_size) {
+    if (!pdb_read_at(fp, 0, p->data, data_size)) {
         PDB_LOGE(TAG, "Read error");
-        free(p->data); free(p); fclose(fp);
+        pdb_close(p);
         return ESP_FAIL;
     }
-    fclose(fp);
-
-    p->data_len    = (size_t)fsize;
-    p->page_size   = rd_le32(p->data + 4u);
-    p->num_tables  = rd_le32(p->data + 8u);
-
-    if (p->page_size == 0u || p->page_size > 65536u) {
-        PDB_LOGE(TAG, "Bad page_size=%u", p->page_size);
-        free(p->data); free(p);
-        return ESP_FAIL;
-    }
+    p->data_len = data_size;
     p->total_pages = (uint32_t)((size_t)fsize / p->page_size);
 
     if (p->num_tables > 32u) p->num_tables = 32u;
@@ -595,18 +661,25 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
     parse_name_table(p, TABLE_TYPE_KEYS,
                      &p->keys,    &p->key_count,    (int)PDB_MAX_NAMES,
                      KEY_ROW_ID_OFF, KEY_ROW_STR_OFF, KEY_ROW_MIN_SIZE);
+    if (p->read_failed) {
+        pdb_close(p);
+        return ESP_FAIL;
+    }
 
     /* Allocate track array */
     p->tracks = (pdb_track_t *)calloc(PDB_MAX_TRACKS, sizeof(pdb_track_t));
     if (!p->tracks) {
-        free(p->artists); free(p->albums); free(p->keys);
-        free(p->data); free(p);
+        pdb_close(p);
         return ESP_ERR_NO_MEM;
     }
 
     /* Parse tracks */
     track_ctx_t ctx = { .p = p, .count = 0, .truncated = false };
     walk_table(p, TABLE_TYPE_TRACKS, track_cb, &ctx);
+    if (p->read_failed) {
+        pdb_close(p);
+        return ESP_FAIL;
+    }
     p->track_count = ctx.count;
     if (ctx.truncated) {
         PDB_LOGW(TAG, "Track index truncated at %u entries", PDB_MAX_TRACKS);
@@ -616,6 +689,7 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
              p->track_count, p->artist_count, p->album_count, p->key_count);
 
     /* Free intermediary data — no longer needed after index is built */
+    pdb_close_file(p->source); p->source = NULL;
     free(p->data);     p->data          = NULL; p->data_len    = 0;
     free(p->artists);  p->artists       = NULL; p->artist_count = 0;
     free(p->albums);   p->albums        = NULL; p->album_count  = 0;
@@ -628,6 +702,7 @@ esp_err_t pdb_open(const char *pdb_path, pdb_t **out)
 void pdb_close(pdb_t *pdb)
 {
     if (!pdb) return;
+    pdb_close_file(pdb->source);
     free(pdb->data);
     free(pdb->tracks);
     free(pdb->artists);
@@ -639,6 +714,11 @@ void pdb_close(pdb_t *pdb)
 int pdb_track_count(const pdb_t *pdb)
 {
     return pdb ? pdb->track_count : 0;
+}
+
+void pdb_get_import_stats(const pdb_t *pdb, pdb_import_stats_t *stats)
+{
+    if (stats) *stats = pdb ? pdb->stats : (pdb_import_stats_t){0};
 }
 
 esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)

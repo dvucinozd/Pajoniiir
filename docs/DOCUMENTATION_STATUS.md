@@ -1,159 +1,144 @@
 # Documentation Status
 
-Last full status reconciliation: **2026-08-22**. The `migration/esp-idf-6.0.2`
-branch has been **merged into `master`** and deleted; there is no separate
-migration head any more. `master` now builds only under **ESP-IDF v6.0.2**
-(`firmware/*/main/idf_component.yml` pins `idf: "==6.0.2"`) and carries the
-bounded compressed audio cache, paginated Library UI, immutable track sort,
-recorder safety hardening and the full `fix/release-blockers-and-concurrency`
-stabilisation set.
+Status: **active P4-only source of truth, reconciled 2026-09-14**.
 
-Latest read-only source audit: **2026-08-16**, at
-`10c91c2aa536be3852cdd6a41e831088d85625d7`. It is tracked in
-[`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md)
-and adds six open P1 release blockers plus
-the ordered P2/P3 remediation plan. That audit is the current code-review gate
-list; it does not supersede dated build or hardware validation evidence.
+## Product boundary
 
-Because that is a different build baseline, the release prefix moved from `RC1`
-to **`RC2`**: the annotated tag `RC2` sits on `56905c89` and the latest clean
-dual-target release build is `RC2`, recorded in
-`validation/CLEAN_RELEASE_RC2_BUILD.md`. Builds after the tagged commit report
-`RC2-<distance>-g<hash>`.
+The active product has one firmware and release target: ESP32-P4. The P4 owns
+USB0 Rekordbox storage, direct USB1 DDJ-FLX4 MIDI/audio, controller mapping and
+LEDs, dual-deck playback, mixer/DSP, MAIN/cue outputs, LVGL UI, Wi-Fi service
+and OTA. No secondary processor, inter-board transport or secondary firmware
+gate belongs to the active product.
 
-Hardware acceptance is in progress — see
-`migration/ESP_IDF_6_0_2_MIGRATION.md` and
-`validation/P4_IDF6_SDMMC_SMOKE_20260802.md` plus
-`validation/S3_IDF6_WIRED_FLASH_20260802.md` and
-`validation/RC2_FOCUSED_FUNCTIONAL_SMOKE_20260802.md`. A later P4-only signed
-OTA deployment is recorded in
-`validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md`. The focused migrated
-smoke now passes display/touch/Library, FLX4 MIDI/LED, MAIN/headphone audio and
-real-MP3 playback. The RC2 line is still **not** release-qualified because the
-real WAV/FLAC, sustained USB/cache, recovery and fault-injection rows remain;
-the 2026-08-22 P4 run specifically required a physical USB reinsert after the
-post-OTA enumerator exhausted its fast recovery cycles.
+Legacy dual-processor ledgers are retained only in files whose names begin with
+`ARCHIVE_`. Dated validation records remain evidence of the image and topology
+they actually tested; they are not current instructions.
 
-This page explains which documents describe the current product and which are
-historical design or validation records. Four states must not be conflated:
+## Current validated firmware checkpoint
 
-- **latest clean tagged release artifacts:** `RC2` (`56905c89`, built with
-  ESP-IDF 6.0.2 on 2026-07-30; see
-  `validation/CLEAN_RELEASE_RC2_BUILD.md`). The images were signed, packaged and
-  later installed through OTA on both boards. That deployment is not full
-  hardware acceptance;
-- **previous release line:** `RC1-259-gdaf4639` (ESP-IDF 5.5.4, 2026-07-26).
-  Superseded; `RC1` is closed and no further `RC1-*` builds are expected;
-- **current bench state:** P4 accepted the signed `RC2-51-g050ab43` bundle on
-  2026-08-22 and COM15 confirmed `ota_0`, `valid`, the ESP-IDF v6.0.2
-  bootloader and a mounted 29,520 MB SDHC card. The already-inserted USB medium
-  exhausted eight fast recovery cycles, then mounted as exFAT and loaded 324
-  tracks after physical reinsertion. S3 was not updated and the P4 control link
-  reported it as `RC2-44-g1923a3b`, `ota_1`, `valid`. The earlier 2026-08-02
-  focused functional smoke remains the latest evidence for P4
-  UI/Settings/Library, FLX4 MIDI/LED and both product audio outputs; the
-  attempted WAV row was a missing file in the PDB rather than a decoder run;
-- **fully functionally hardware-accepted:** `RC1-123-g587cd7a1`, accepted on
-  2026-07-14 after positive updates, the rejection matrix, interrupted uploads,
-  forced rollback and final UI/audio/controller smoke. Later releases have
-  extensive focused acceptance but have not replaced this complete-system baseline.
+- Branch: `feat/p4-dual-usb-host`
+- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
+- Version: `RC2-136-g034cd76`
+- Application size: `2,457,648` bytes
+- Application SHA-256:
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+- Signed bundle size: `2,457,836` bytes
+- Signed bundle SHA-256:
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+- Toolchain: ESP-IDF v6.0.2
+- Publication state: pushed; local and remote SHA matched before this
+  documentation-only successor
+- Validation state: P4 host/build and signed-package verification passed;
+  installed by signed OTA and exact-image smoke passed; lifecycle Groups
+  A--H, K and L pass, I1/I2/J1 pass and seven remaining I/J cycles are
+  explicitly waived; the earlier
+  `RC2-116-g77d723c` targeted three-hour limiter/WDT
+  hardware soak remains valid within its scope
 
-Since RC1-168 the product added and hardware-tested the single-resolver ANLZ
-metadata path, the structured
-`/sd/logs/system.log` service journal with its read-only
-`GET /api/diagnostic-log`, controller disconnect and control-link CRC/gap
-summaries, `/api/status` control-link/service-log health, Beat FX headroom
-fixes, corrected loop timing, the
-idle screensaver and P4 pull OTA through a temporary STA visit. The
-master-output recorder and guarded `/api/recording` API remain in the tree but
-are **compiled out by default since 2026-07-24** because card-level latency
-stalls failed the long soak. Still open: the targeted Phase 20/E1A rows,
-remote-profile replacement/recovery, enclosure endurance and production
-hardening.
+This firmware checkpoint retains the review remediations recorded in
+[`validation/CODE_REVIEW_P4_REMEDIATION_20260906.md`](validation/CODE_REVIEW_P4_REMEDIATION_20260906.md),
+including audio worker teardown ownership, nonblocking output bookkeeping,
+controller delivery convergence, UAC packet-loss accounting and valid hardware
+rate selection. It also includes the bounded PDB reader, fail-closed partial
+catalog handling and guarded deterministic Library-load validation barrier.
+
+## Latest installed hardware baseline
+
+- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
+- Installed version: `RC2-136-g034cd76`
+- Installed slot: `ota_1`
+- Application size: `2,457,648` bytes
+- Application SHA-256:
+  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+- Signed bundle size: `2,457,836` bytes
+- Signed bundle SHA-256:
+  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+- Toolchain: ESP-IDF v6.0.2
+
+This exact installed image passed signed OTA, USB0 mount, direct FLX4
+profile/MIDI/UAC startup, active reconnect cycles I1, I2 and jog-held J1,
+software reboot K1/K2 and signed OTA reboot L1/L2.
+Every accepted cycle retained the 100-track Library, advanced both decks for
+more than five seconds, restored controller/UAC and passed audible MAIN/cue;
+drop, overflow, packet-loss, PCM-underrun and output-late deltas stayed zero.
+Lifecycle accounting is complete: 43/50 PASS, 7/50 explicitly waived in Groups
+I/J and zero pending. The accepted runs include 39 physical
+attachment/reconnect actions. Groups I/J are permanently closed by operator
+decision. The earlier
+`RC2-116-g77d723c` remained on
+boot epoch 389 through its
+targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
+reset, PCM underrun or active UAC loss and no observable output failure,
+controller disconnect or USB host daemon error. Fourteen output-late warnings
+over 1,999,090 submitted UAC blocks did not correlate with a downstream
+failure; no source change is justified from that count alone. See
+[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
+
+The installed candidate contains deterministic Group G audio-load removal
+support. Its guarded loader gate pauses after the first bounded 8 KiB PDB read,
+and the updated lifecycle harness alternates the target deck across
+G1--G5. The gate unit test, harness self-test, complete P4 host suite, clean
+ESP-IDF v6.0.2 build, signed-package verification, OTA and focused smoke pass.
+G1--G5 also pass on boot 416: every cycle restored 100 tracks, advanced both
+decks for more than ten seconds, retained FLX4 MIDI/UAC, matched all recovery
+requests to successes and produced zero critical fault deltas.
+
+H1--H4 passed on boot 416 and H5 passed after a clean controlled reboot on
+boot 417. Each accepted cycle disconnected only FLX4, retained USB0 plus the
+coherent 100-track Library, observed exactly one controller disconnect/connect
+and restored profile, MIDI, LEDs, UAC, dual playback and audible MAIN/cue with
+zero accepted-cycle critical fault deltas. Operator-invalid attempts involving
+an unintended cable action or USB0 removal do not count.
+
+Earlier focused evidence remains valid within its stated limits:
+
+- [`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md)
+  — one USB0 remove/reinsert with FLX4 active;
+- [`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md)
+  — one FLX4 reconnect with USB0 retained and post-reconnect dual playback;
+- [`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`](validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
+  — 30-minute dual-active MP3 soak with seven seek/restart cycles.
+
+## Release status
+
+The branch is **not release-qualified and must not be merged yet**. The code,
+host tests, signed build, lifecycle matrix and focused product paths are healthy;
+the critical path is now the remaining release qualification:
+
+1. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
+2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
+3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
+4. multi-hour combined-load soak;
+5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
+   repetition of the passed bench electrical measurements;
+6. production credential, signing-key, rotation and optional irreversible
+   security decisions;
+7. exact final-candidate full functional smoke, documentation freeze and tag.
+
+The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
+[`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
+Raw numeric readings were not preserved, so the result applies only to the
+unchanged current bench wiring and must be repeated in the final enclosure.
+
+The complete ordered handoff is
+[`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
+The compact recurring checklist is
+[`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md).
+
+## Scope deferred beyond the first FLX4 release
+
+The following are not blockers unless explicitly added to the first release:
+
+- physical acceptance of non-FLX4 controller profiles;
+- re-enabling the master-output recorder;
+- LIBAPTA integration;
+- new UI or controller features outside the current FLX4 scope.
 
 ## Source-of-truth order
 
-When documents disagree, use this order:
-
-1. current firmware, host tests and build configuration;
-2. active operational documents: `ARCHITECTURE.md`, `CONTROL_LINK_PROTOCOL.md`,
-   `DDJ_FLX4_MIDI_MAP.md`, `HARDWARE_WIRING.md`, `OTA-UPDATE.md`,
-   `CONTROLLER_PROFILE_UPDATE.md`, `POST_R5_PLAN.md` and
-   `STARTUP_CHECKLIST.md`;
-3. dated validation records under `validation/`;
-4. dated design records under `superpowers/specs/`;
-5. imported or vendor reference material under `reference/`.
-
-Dated design records are intentionally retained. They explain why a feature
-was built, but their original pending tasks do not override the current status
-in the active documents.
-
-[`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) is an active
-future implementation plan, not a description of current firmware. Until its
-entry and acceptance gates pass, the verified product snapshot below and the
-existing Rekordbox/PDB/ANLZ path remain authoritative.
-
-## Verified product snapshot
-
-| Area | Current state |
-| --- | --- |
-| Controller | Pioneer DDJ-FLX4 enumerates on the S3 USB host; input mapping and P4-owned LED feedback are operational and were operator-confirmed again on the migrated RC2/IDF6 pair 2026-08-02 |
-| Playback | Two independent P4 decks, Rekordbox library, MP3/WAV/FLAC, hot cues, loops, beat jump, sync and mixer controls; compressed audio uses a bounded LRU page cache (8 × 32 KiB per deck) instead of whole-file PSRAM allocation. Focused real-MP3 playback passed on RC2; real WAV/FLAC remain untested because those physical files were missing from the audited USB export |
-| Vinyl | Forward/reverse scratch, paused/CUE scratch, loop wrapping and release/re-grab; canonical-only scratch storage and final dual-deck stress hardware-validated 2026-07-14 |
-| Master Tempo | P4 key-lock callback and Overview `MT` control implemented; basic hardware behavior accepted 2026-07-12; deterministic five-minute simultaneous dual-deck host soak passed 2026-07-26 with zero source drift, detected clicks or clipping |
-| Audio | PCM5102A RCA MAIN plus simultaneous FLX4 USB headphone cue via the P4-to-S3 PCM link; both paths were operator-confirmed on the migrated RC2 pair 2026-08-02, while the numeric sustained-link soak remains separate |
-| Media | FAT32/exFAT on superfloppy, MBR and GPT USB layouts; immutable track records with compact double-buffered sort order. P4 ESP-IDF 6.0.2 now reuses ESP-Hosted's initialized SDMMC controller for microSD slot 0; a repaired 59,688 MB exFAT SDHC card mounted in 4-bit mode in the 2026-08-02 focused smoke |
-| UI | Overview, Library, Hot Cues and Settings tabs; Library table is paginated (one 8-row page with PREV/NEXT, max 40 live LVGL cells); stopped-deck VU meters decay to zero; a pinned headless LVGL gate now drives real button callbacks and locks exact 800×480 screenshots for D1/D2, all tabs and the screensaver restore path; DSI-synchronised 49.981 Hz dual-waveform path passed the 132-second development smoke and a more-than-71-second exact signed-candidate COM15 re-smoke on 2026-07-17 with no underrun, visible flash, watery motion or jitter. Display, touch, PSRAM-backed UI, Settings SD-online state and paginated Library were operator-confirmed again on RC2/IDF6 on 2026-08-02 |
-| Effects | Beat FX Filter/Echo/Flanger/Delay all have recorded hardware acceptance as of 2026-07-24 (Flanger re-tuned; Echo/Delay confirmed as-is). A measured headroom defect in all three - wet added on unity dry peaks at up to 3.34x and hard-clipped inside the effect - was fixed with a soft knee in `RC1-223-gdfa619a9` |
-| OTA | ECDSA P-256 signed `.ddjota`, dual-slot update, rejection, interruption safety and forced rollback hardware-accepted on both targets 2026-07-14; both RC2 applications installed successfully through OTA on 2026-08-02. A P4-only `RC2-51-g050ab43` push on 2026-08-22 reached `ota_0 / valid`, while S3 remained on `RC2-44-g1923a3b`; this did not repeat the negative matrix or full functional smoke. Pull OTA is hardware-proven and software-hardened with newer-only policy, offer expiry, channel hash/size checks, strict relative paths, mDNS and dynamic Host validation. OTA does not replace the bootloader, so the IDF 6 boot chain requires a wired flash per target |
-| Profiles | SD loading, registry matching and S3 transfer are hardware-verified with FLX4; `generic_midi_ci` and the official-specification-derived Hercules Inpulse 500 profile are compile/registry/runtime/LED host-tested, with Hercules P4 Sync Off/autoloop behavior covered; atomic web overwrite/rescan/reactivation and all non-FLX4 physical/audio paths still await hardware acceptance |
-
-## Remaining work
-
-- close the P1 and applicable P2 gates from
-  [`CODE_REVIEW_REMEDIATION_20260816.md`](CODE_REVIEW_REMEDIATION_20260816.md)
-  before claiming a new release candidate
-  is hardware-accepted or production-ready;
-- **ESP-IDF 6.0.2 hardware acceptance**: display/touch, paginated Library,
-  FLX4 MIDI/UAC, PCM5102A and the focused monitor path now pass. USB MSC
-  recovery, sustained monitor/cache counters, ESP-Hosted AP/OTA and migrated
-  rollback coverage still must pass before RC2 can be release-qualified;
-- re-export real WAV/FLAC fixtures, verify they physically exist under
-  `Contents`, then hardware-validate bounded cache under sustained dual-deck
-  MP3/WAV/FLAC load;
-- define production key provisioning and rotation beyond the current backed-up
-  `rel-001` development key, preferably with encrypted or hardware-backed
-  signing;
-- perform enclosure power, thermal, RF and long-duration audio soaks;
-- run longer simultaneous dual-deck key-lock quality/CPU testing on P4
-  hardware; the five-minute deterministic PC regression is complete but does
-  not measure device deadlines or listening quality;
-- close the detailed E1A Beat FX transition/timing/target rows that go beyond
-  the recorded per-effect sound and headroom acceptance;
-- run the Phase 20 USB queue-pressure/recovery, guarded web-mutation and UART
-  integrity acceptance set;
-- hardware-validate the host-qualified Hercules Inpulse 500 profile, including
-  descriptor identity, two-deck MIDI/LED/reconnect behavior, RGB pads and
-  four-channel USB audio, before advertising non-FLX4 compatibility;
-- hardware-accept web profile overwrite, corrupt/interrupted rejection,
-  automatic S3 reactivation and reboot persistence;
-- complete only the still-pending hardware rows identified in the MIDI and
-  validation documents.
-
-The one-time Deck 1 pad sweep observed for one initial load ordering is tracked
-as a low-priority cosmetic indication. Routing, playback and pad state were
-correct and no stack/audio fault accompanied it.
-
-## Non-Markdown artifacts in `docs/`
-
-| File | Purpose | Treatment |
-| --- | --- | --- |
-| `images/p4.jpg` | P4 board photograph | Current repository asset |
-| `images/overview.jpg` | Overview UI screenshot | Illustrative; live UI may contain newer details |
-| `images/library.jpg` | Library UI screenshot | Illustrative |
-| `images/settings.jpg` | Settings UI screenshot | Illustrative; OTA/status controls may be newer |
-| `reference/Pioneer-DDJ-FLX4.midi.xml` | Mixxx FLX4 mapping | Authoritative address seed; not runtime behavior |
-| `reference/DDJ-FLX4_MIDI_message_List_E1.pdf` | Pioneer MIDI reference | Vendor reference, preserved unchanged |
-
-Binary and vendor artifacts are intentionally not rewritten during
-documentation-only audits.
+1. active firmware, tests and build configuration;
+2. this status page and `migration/P4_DUAL_USB_NEXT_SESSION.md`;
+3. `STARTUP_CHECKLIST.md`, `RISK_REGISTER.md` and
+   `fixevi-remediation-audit.md`;
+4. dated validation records;
+5. `ARCHIVE_*` files and Git history.

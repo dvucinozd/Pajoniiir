@@ -80,6 +80,10 @@ typedef struct {
     bool master_cue_enabled;
 } audio_output_mixer_controls_t;
 
+typedef struct {
+    float current;
+} audio_output_gain_ramp_t;
+
 float audio_output_mixer_rate_ratio(uint32_t source_sample_rate,
                                     uint32_t output_sample_rate);
 float audio_output_mixer_resample_factor(float pitch_factor,
@@ -93,6 +97,10 @@ void audio_output_mixer_prepare_controls(audio_output_mixer_controls_t *out,
                                          uint16_t headphone_level,
                                          float master_trim_gain,
                                          bool master_cue_enabled);
+void audio_output_gain_ramp_reset(audio_output_gain_ramp_t *ramp, float gain);
+float audio_output_gain_ramp_next(audio_output_gain_ramp_t *ramp,
+                                  float target_gain,
+                                  uint32_t frames_remaining);
 
 audio_output_mix_result_t audio_output_mixer_next_prepared(
                                                        const audio_output_mixer_deck_t *deck0,

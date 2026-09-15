@@ -1,7 +1,6 @@
 # Controller Profile Update Procedure
 
-Status: software-complete and deployed on both processors in signed release
-`RC1-131-gc391e306` on 2026-07-16. Dedicated hardware acceptance of overwrite,
+Status: software-complete on the P4-only runtime. Dedicated hardware acceptance of overwrite,
 corrupt/interrupted rejection, automatic reactivation and reboot persistence is
 still pending.
 
@@ -34,10 +33,10 @@ letters, digits, `_` and `-`, with a maximum of 39 characters.
    default.
 5. Select **UPLOAD PROFILE** and confirm the dialog. Keep power connected until
    the success message appears.
-6. The P4 validates and stores the file, rescans the registry and queues the
-   matching profile for S3 activation. Check `/api/status`: `profile_state`
-   should progress through `matched`/`transferring` to `active`, and
-   `active_profile` should equal the uploaded ID only after the S3 ACK.
+6. The P4 validates and stores the file, rescans the registry and activates a
+   matching profile in its local controller runtime. Check `/api/status`:
+   `profile_state` should reach `active`, and `active_profile` should equal the
+   uploaded ID only after the current USB binding epoch is revalidated.
 
 ## Direct API
 
@@ -67,9 +66,9 @@ returns 408; storage failures return 500.
 - If final validation fails, the backup is restored. On a later scan, a missing
   target is restored from backup and an incomplete upload is removed. A valid
   completed target wins over stale temporary files.
-- Install returns HTTP 409 while a profile transfer is active or queued. The
-  existing file and active S3 runtime remain unchanged.
+- Install returns HTTP 409 while profile activation is active or queued. The
+  existing file and active P4-local runtime remain unchanged.
 
-The built-in FLX4 map remains the S3 fallback. A successful HTTP response means
-the SD install and P4 rescan succeeded; S3 activation is asynchronous and must
-be confirmed through `/api/status` or serial logs.
+The built-in FLX4 map remains the exact-VID/PID fallback. A successful HTTP
+response means the SD install and P4 rescan succeeded; local activation must be
+confirmed through `/api/status` or P4 logs.

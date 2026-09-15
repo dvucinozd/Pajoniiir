@@ -130,6 +130,43 @@ static void test_malformed_page_zero_row_groups(void)
     CHECK(safe_empty_result, "malformed page should be safely truncated");
 }
 
+static void test_paged_track_import_reports_truncation(void)
+{
+    const char *path = "test_paged_import.pdb";
+    uint8_t page[512] = {0};
+    FILE *fp = fopen(path, "wb");
+    TEST("bounded page reader counts tracks beyond retained index");
+    if (!fp) { FAIL("fixture open"); return; }
+    put_le32(page + 4, sizeof(page));
+    put_le32(page + 8, 1);
+    put_le32(page + 36, 1); /* Tracks table starts at page 1. */
+    bool written = fwrite(page, 1, sizeof(page), fp) == sizeof(page);
+    for (unsigned i = 1; i <= 1026; ++i) {
+        memset(page, 0, sizeof(page));
+        put_le32(page + 12, i == 1026 ? UINT32_MAX : i + 1);
+        put_le32(page + 24, 1);
+        page[40] = 0x24; /* Track row subtype. */
+        put_le32(page + 40 + 0x48, i);
+        put_le32(page + 40 + 0x38, 12800);
+        page[508] = 1; /* row present, heap offset at 506 is zero */
+        written = written && fwrite(page, 1, sizeof(page), fp) == sizeof(page);
+    }
+    written = fclose(fp) == 0 && written;
+    pdb_t *pdb = NULL;
+    esp_err_t rc = written ? pdb_open(path, &pdb) : ESP_FAIL;
+    pdb_import_stats_t stats;
+    pdb_get_import_stats(pdb, &stats);
+    pdb_track_t last = {0};
+    bool valid = rc == ESP_OK && pdb_track_count(pdb) == 1024 &&
+        stats.total_tracks == 1026 && stats.tracks_truncated &&
+        !stats.names_truncated &&
+        pdb_get_track(pdb, 1023, &last) == ESP_OK &&
+        last.track_id == 1024 && last.bpm == 128;
+    pdb_close(pdb);
+    remove(path);
+    CHECK(valid, "count, ordering or truncation metadata");
+}
+
 /* ── Real-file integration test ──────────────────────────────────────────── */
 
 static void test_real_file(const char *pdb_path, int limit)
@@ -219,6 +256,7 @@ int main(int argc, char *argv[])
     test_api_contracts();
     test_devicesql_utf16_to_utf8();
     test_malformed_page_zero_row_groups();
+    test_paged_track_import_reports_truncation();
 
     /* Real-file test if a path is provided */
     if (argc >= 2) {

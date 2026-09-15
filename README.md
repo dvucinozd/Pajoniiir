@@ -1,206 +1,112 @@
 # Pajoniiir BL-A1800
 
-Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4, a Seeed
-Studio XIAO ESP32S3 control board and a JC4880P443C_I_W ESP32-P4 multimedia
-board. It reads Rekordbox media directly and does not require a PC during
-performance.
+Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 and a
+JC4880P443C_I_W ESP32-P4 multimedia board.
 
-Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`. The former
-`dvucinozd/ESP32-DDJ-FLX4` URL is deprecated and retained only as a GitHub
-redirect. The branch inventory was audited on 2026-07-26; only `master`
-remains locally and on `origin`.
+The P4 directly hosts Rekordbox storage on USB0 and DDJ-FLX4 MIDI plus
+four-channel USB audio on USB1. It is authoritative for playback, controller
+state, LEDs, mixer/DSP, MAIN/cue audio, LVGL UI, Wi-Fi service and OTA. No PC is
+required during performance.
+
+Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 
 ![Pajoniiir](docs/images/122.jpg)
 
 > [!IMPORTANT]
-> The ESP-IDF 6.0.2 migration is **merged into `master`**; both targets now
-> build only under **ESP-IDF v6.0.2** (the component manifests pin
-> `idf: "==6.0.2"`). The release prefix therefore moved from `RC1` to **`RC2`**,
-> and the latest clean dual-target release build is **`RC2`** (`56905c89`) from
-> 2026-07-30 — see
-> [CLEAN_RELEASE_RC2_BUILD.md](docs/validation/CLEAN_RELEASE_RC2_BUILD.md). It
-> was signed, packaged and installed successfully through OTA on both boards
-> on 2026-08-02. It carries the full
-> `fix/release-blockers-and-concurrency` stabilisation set (bounded compressed
-> audio cache, paginated Library UI, immutable track sort, recorder safety
-> hardening, lossless control queue, ANLZ ownership fixes and more).
->
-> RC2 hardware acceptance is now **in progress**. Both targets have complete
-> ESP-IDF v6.0.2 boot chains; the P4 microSD regression is fixed, and a focused
-> 2026-08-02 smoke passed display/touch/Library, FLX4 MIDI/LED, MAIN/headphone
-> audio and real-MP3 playback. Real WAV/FLAC cache testing was not performed:
-> the Rekordbox database referenced files that were absent from the USB drive.
-> Long-duration, USB recovery and fault-injection rows remain open in
-> [ESP_IDF_6_0_2_MIGRATION.md](docs/migration/ESP_IDF_6_0_2_MIGRATION.md), so
-> the latest **complete** functional hardware baseline remains
-> **`RC1-123-g587cd7a1`** of 2026-07-14. See
-> [Documentation Status](docs/DOCUMENTATION_STATUS.md) for the precise boundary.
->
-> A later P4-only signed development update installed
-> `RC2-51-g050ab43` into `ota_0` on 2026-08-22 and reached `valid`. COM15
-> confirmed the 29,520 MB SDHC mount and, after one physical USB reinsert, an
-> exFAT library load of 324 tracks. The already-inserted USB medium had first
-> exhausted eight automatic enumeration-recovery cycles, so the reboot recovery
-> row remains open. The S3 was not updated in that session and continued to
-> report `RC2-44-g1923a3b`. See
-> [RC2-51 P4 OTA deployment](docs/validation/RC2_51_P4_OTA_DEPLOYMENT_20260822.md).
+> The active release candidate line builds only with ESP-IDF v6.0.2. The exact
+> validated firmware and installed hardware candidate is
+> `RC2-136-g034cd76` on `ota_1`.
+> Its signed OTA and exact-image checks passed. The earlier
+> `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
+> limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
+> active UAC loss and no observable USB/controller/output failure. Fourteen
+> rare output-late warnings were below fault severity and had no downstream
+> failure; their analysis does not justify a code change. The current bench
+> 5 V/dual-VBUS measurement gate is
+> operator-confirmed PASS. The 50-cycle lifecycle matrix is complete with 43
+> PASS, seven explicitly waived I/J cycles and 39 accepted physical
+> attachment/reconnect actions. I1, I2 and J1 passed on the exact installed
+> image; by explicit operator decision I3--I5 and J2--J5 are waived and
+> permanently closed rather than reported as passes.
+> All five deterministic Group F Library-load removal cycles passed on the
+> exact installed image without reboot, partial Library publication, recovery
+> mismatch, controller loss or audio fault. The
+> deterministic Group G audio-load trigger and all five physical Group G
+> cycles passed on the exact image without reboot, controller loss or audio
+> fault.
+> All five Group H idle FLX4 disconnect/reconnect cycles also passed while
+> USB0 remained mounted with a coherent 100-track Library; profile, MIDI, LEDs,
+> UAC, dual playback and audible MAIN/cue recovered in every accepted cycle.
+> Group K software-reboot and Group L signed OTA-reboot recovery both passed
+> 2/2 with both roots occupied and no manual reinsert. The branch remains **not
+> release-qualified** until verified WAV/FLAC, on-device timing/listening,
+> remaining OTA fault paths, combined-load and closed-enclosure gates pass.
 
-## System at a Glance
+## Current capabilities
 
-| Device | Responsibility |
-| --- | --- |
-| **Pioneer DDJ-FLX4** | Operator surface: transport, jogs, tempo, mixer, pads, cue and LEDs |
-| **XIAO ESP32S3** | USB MIDI host, semantic event translator, LED bridge, FLX4 USB-headphone streamer and service OTA AP |
-| **ESP32-P4 board** | Authoritative playback/deck state, Rekordbox library, LVGL UI, audio DSP/mixer and MAIN/cue routing |
+- Two independent decks with Rekordbox browsing and bounded MP3/WAV/FLAC cache.
+- FLX4 transport, jog/vinyl, tempo and Master Tempo, mixer/EQ, cue, Hot Cues,
+  loops, Beat Jump/Sync, Pad FX and Beat FX.
+- Simultaneous PCM5102A RCA MAIN and FLX4 USB headphone cue.
+- P4-owned FLX4 LED feedback with reconnect resynchronization.
+- LVGL Overview, Library, Hot Cues and Settings screens.
+- P4 Wi-Fi remote, diagnostic status/log and signed push/pull OTA paths.
+- SD/web-installable controller profiles with exact FLX4 built-in fallback.
 
-The S3 normalizes FLX4 input but does not own playback state. The P4 makes all
-authoritative deck, mixer, audio-position and LED decisions. Both boards use
-the existing `0xA5` UART control link, extended with the `0xA6` bulk/status
-layer. The detailed ownership and data flow are documented in
-[Architecture](docs/ARCHITECTURE.md).
+## Build
 
-## Current Capabilities
-
-- Two independent decks with Rekordbox library browsing and MP3, WAV and FLAC
-  playback. Compressed audio uses a bounded LRU page cache (8 × 32 KiB per
-  deck) instead of whole-file PSRAM allocation. The current WAV subset is
-  classic RIFF/WAVE PCM16 mono/stereo.
-- FLX4 transport, jog/vinyl scratch, tempo and Master Tempo, mixer/EQ,
-  headphone cue, hot cues, loops, beat jump/sync, Pad FX and Beat FX control.
-  Beat FX Filter and Echo have recorded hardware acceptance; Flanger and the
-  new one-shot Delay are software-tested and deployed, with focused physical
-  audio/routing smoke still pending.
-- Simultaneous PCM5102A RCA MAIN output and FLX4 USB headphone cue.
-- P4-owned FLX4 LED feedback with reconnect and board-reboot resynchronization.
-- LVGL Overview, Library (paginated 8-row table with PREV/NEXT), Hot Cues and
-  Settings tabs, plus the optional P4 Wi-Fi remote.
-- Data-driven controller profiles loaded from SD or installed through the web
-  UI; the built-in DDJ-FLX4 map remains the fallback. The web overwrite path is
-  software-complete and still has pending hardware-acceptance rows. A
-  host-qualified Hercules DJControl Inpulse 500 profile is included; physical
-  MIDI/LED/reconnect and USB-audio qualification remains pending.
-- Signed dual-slot OTA, validation and rollback on both processors.
-
-Detailed implementation and acceptance status belongs in
-[Project Overview](docs/PROJECT_OVERVIEW.md),
-[Development Plan](docs/DEVELOPMENT_PLAN.md) and
-[Documentation Status](docs/DOCUMENTATION_STATUS.md), rather than in this
-repository entry page.
-
-## Interface
-
-The captures are representative; small UI details may be newer in firmware.
-
-| Overview | Library | Settings |
-| --- | --- | --- |
-| ![Overview screen](docs/images/overview.jpg) | ![Library screen](docs/images/library.jpg) | ![Settings screen](docs/images/settings.jpg) |
-
-The Hot Cues tab is implemented but does not yet have an archived screenshot.
-
-## Repository Layout
-
-```text
-controllers/                 Compiled and source controller profiles
-firmware/
-  control-board-s3/          ESP32-S3 host/translator/audio-bridge firmware
-  main-deck-p4/              ESP32-P4 playback/audio/UI firmware
-  common/                    Shared firmware components
-docs/                        Product, protocol, validation and design records
-tests/                       PC-side regression tests
-tools/                       Profile compiler, OTA packager and support tools
-```
-
-## Build and Test
-
-Required baseline: **ESP-IDF v6.0.2** and its matching Espressif Python and
-toolchain environment. Host tests additionally require native GCC/Make and
-PowerShell 5.1 (ili noviji) na Windowsima, odnosno standardni shell na Linuxu.
-
-A standard ESP-IDF installation can be initialized on Windows with:
+Required SDK: **ESP-IDF v6.0.2**.
 
 ```powershell
-$env:IDF_PATH = "C:\Espressif\frameworks\esp-idf-v6.0.2"
-. "$env:IDF_PATH\export.ps1"
-```
-
-Verify the selected environment before configuring either target:
-
-```powershell
+. C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
 idf.py --version
-```
 
-It must report `ESP-IDF v6.0.2`. For the first build after switching from IDF
-5.5.4, remove the previous generated configuration and managed components:
-
-```powershell
-Remove-Item -Recurse -Force build, managed_components -ErrorAction SilentlyContinue
-Remove-Item sdkconfig, sdkconfig.old -ErrorAction SilentlyContinue
-```
-
-Build each target from the repository root:
-
-```powershell
-cd firmware\control-board-s3
-idf.py set-target esp32s3
-idf.py build
-
-cd ..\main-deck-p4
-idf.py set-target esp32p4
+$repoRoot = git rev-parse --show-toplevel
+Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
-Run the host regression suites from the repository root. These are the same two
-entry points CI uses, and both run under Windows PowerShell 5.1 and PowerShell 7:
+Host regressions:
 
 ```powershell
-.\tests\run_s3_host_tests.ps1
+Set-Location $repoRoot
 .\tests\run_p4_host_tests.ps1
 ```
 
-If `gcc` is not already on `PATH`, append msys2 rather than prepending it —
-prepending shadows the system `python.exe` with msys2's, which cannot run the
-OTA signing suite:
-
-```powershell
-$env:Path = "$env:Path;C:\msys64\ucrt64\bin"
-```
-
-Run the headless LVGL navigation and exact-framebuffer screenshot gate:
+Exact UI simulator gate:
 
 ```powershell
 .\tests\ui_simulator\run_ui_simulator_e2e.ps1
 ```
 
-The first run fetches the pinned LVGL source into the ignored `.cache`
-directory. The gate covers Overview Deck 1/2 selection, Library, Hot Cues,
-Settings, the screensaver and exact Settings restoration. See
-[`tests/ui_simulator/README.md`](tests/ui_simulator/README.md) for baseline
-review and update instructions. This PC gate does not replace P4 display,
-touch or waveform-motion hardware acceptance.
+Signed isolated build:
 
-Both default firmware configurations include the FLX4 USB-headphone path.
-Build, flashing, signed release packaging and rollback procedures are covered
-by [OTA Update](docs/OTA-UPDATE.md). Hardware bring-up and recurring acceptance
-checks are in the [Startup Checklist](docs/STARTUP_CHECKLIST.md).
+```powershell
+Set-Location "$repoRoot\firmware\main-deck-p4"
+idf.py -B build_signed fullclean
+idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
+
+Set-Location $repoRoot
+.\tools\package_ota_release.ps1
+```
+
+Generated build directories, local sdkconfig files, signing keys and release
+packages are not committed. `firmware/main-deck-p4/dependencies.lock` is
+committed and must remain reproducible.
 
 ## Documentation
 
-Start with the [complete documentation index](docs/README.md). The primary
-operational documents are:
+- [Current status](docs/DOCUMENTATION_STATUS.md)
+- [Complete next-session handoff](docs/migration/P4_DUAL_USB_NEXT_SESSION.md)
+- [Startup and release checklist](docs/STARTUP_CHECKLIST.md)
+- [Development plan](docs/DEVELOPMENT_PLAN.md)
+- [Risk register](docs/RISK_REGISTER.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Hardware wiring](docs/HARDWARE_WIRING.md)
+- [OTA procedure](docs/OTA-UPDATE.md)
+- [FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
+- [Latest exact-image three-hour soak](docs/validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
+- [30-minute exact-image soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
 
-| Topic | Document |
-| --- | --- |
-| Product status and source-of-truth policy | [Documentation Status](docs/DOCUMENTATION_STATUS.md) |
-| Product shape and implemented scope | [Project Overview](docs/PROJECT_OVERVIEW.md) |
-| P4/S3 responsibilities and data flow | [Architecture](docs/ARCHITECTURE.md) |
-| FLX4 inputs, outputs and acceptance ledger | [DDJ-FLX4 MIDI Map](docs/DDJ_FLX4_MIDI_MAP.md) |
-| UART events and bulk/status transport | [Control Link Protocol](docs/CONTROL_LINK_PROTOCOL.md) |
-| Wiring, USB and audio connections | [Hardware Wiring](docs/HARDWARE_WIRING.md) |
-| Current phases and remaining engineering work | [Development Plan](docs/DEVELOPMENT_PLAN.md) |
-| Deferred native folder/APTA library integration | [libapta P4 Integration Plan](docs/LIBAPTA_P4_INTEGRATION_PLAN.md) |
-| Open and accepted risks | [Risk Register](docs/RISK_REGISTER.md) |
-
-Controller-profile schema/update guides, OTA records, validation evidence,
-historical design decisions and upstream/vendor references are linked from the
-documentation index. Dated design records explain intent; they do not override
-current firmware or active operational documents.
+Superseded plans and checklists are retained only as files prefixed with
+`ARCHIVE_` and in Git history. They are not active release instructions.

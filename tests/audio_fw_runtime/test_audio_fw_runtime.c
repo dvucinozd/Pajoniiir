@@ -88,6 +88,40 @@ static void test_invalidate_changes_generation_and_closes_run_gate(void)
     assert(!runtime.run);
 }
 
+static bool consume_exit(void *ctx)
+{
+    int *tokens = ctx;
+    if (*tokens == 0) return false;
+    --*tokens;
+    return true;
+}
+
+static void test_partial_join_preserves_ownership_and_can_retry(void)
+{
+    audio_fw_runtime_t runtime = {
+        .loader_task = (void *)0x1000,
+        .decode_task = (void *)0x2000,
+        .tasks_started = 2,
+        .run = true,
+    };
+    int tokens = 1;
+    assert(!audio_fw_runtime_join(&runtime, consume_exit, &tokens));
+    assert(tokens == 1); /* Never join an admitted session. */
+    audio_fw_runtime_invalidate_session(&runtime);
+    assert(!audio_fw_runtime_join(&runtime, consume_exit, &tokens));
+    assert(tokens == 0 && runtime.tasks_started == 1);
+    assert(runtime.decode_task == (void *)0x2000);
+    assert(!audio_fw_runtime_join(&runtime, consume_exit, &tokens));
+    assert(runtime.tasks_started == 1);
+    tokens = 1; /* delayed worker finally exits */
+    assert(audio_fw_runtime_join(&runtime, consume_exit, &tokens));
+    assert(tokens == 0 && runtime.tasks_started == 0);
+    audio_fw_runtime_mark_stopped(&runtime);
+    assert(runtime.loader_task == NULL && runtime.decode_task == NULL);
+    audio_fw_runtime_begin_load(&runtime);
+    assert(runtime.run); /* next LOAD may now bind a new session */
+}
+
 int main(void)
 {
     test_reset_clears_task_lifecycle_state();
@@ -95,6 +129,7 @@ int main(void)
     test_mark_task_started_counts_started_tasks();
     test_mark_stopped_clears_run_and_owned_handles();
     test_invalidate_changes_generation_and_closes_run_gate();
+    test_partial_join_preserves_ownership_and_can_retry();
     puts("audio_fw_runtime tests passed");
     return 0;
 }

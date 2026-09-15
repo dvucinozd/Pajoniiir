@@ -29,6 +29,7 @@
 #include "audio_filter.h"
 #include "audio_mixer.h"
 #include "audio_pad_fx.h"
+#include "audio_wdt_trace.h"
 
 #if defined(AUDIO_ENGINE_PC_TEST)
     /* Stand-alone PC test build: provide ESP-IDF types without IDF headers */
@@ -111,6 +112,10 @@ void audio_engine_deck_set_hold(uint8_t deck, bool held);
 bool audio_engine_deck_scratch_begin(uint8_t deck);
 void audio_engine_deck_scratch_move(uint8_t deck, int16_t delta);
 void audio_engine_deck_scratch_end(uint8_t deck);
+/* Gapless slip-censor. Reverse audio is heard while the normal timeline keeps
+ * advancing; release cross-fades back without a transport seek. */
+bool audio_engine_deck_censor_begin(uint8_t deck);
+void audio_engine_deck_censor_end(uint8_t deck);
 uint32_t audio_engine_deck_position_ms(uint8_t deck);
 bool audio_engine_deck_is_playing(uint8_t deck);
 uint16_t audio_engine_get_deck_peak(uint8_t deck);
@@ -176,12 +181,17 @@ typedef struct {
      * audio_engine_reset_output_phase_stats(). */
     uint32_t phase_mix_max_us;      /* per-frame mixer/decode loop */
     uint32_t phase_push_max_us;     /* recorder tap */
-    uint32_t phase_monitor_max_us;  /* monitor PCM link write (non-blocking) */
+    uint32_t phase_monitor_max_us;  /* direct FLX4 USB headphone enqueue */
     uint32_t phase_main_max_us;     /* blocking PCM5102A I2S write (paces the loop) */
     uint32_t phase_codec_max_us;    /* headphone codec write */
     uint32_t phase_book_max_us;     /* AE_LOCK acquire + per-block bookkeeping */
     uint32_t phase_head_max_us;     /* block start to mixer entry: snapshot prep */
+    bool wdt_trace_previous_valid;
+    audio_wdt_trace_record_t wdt_trace_previous;
+    bool wdt_trace_current_valid;
+    audio_wdt_trace_record_t wdt_trace_current;
     bool deck_active[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t playback_session_epoch;
     uint32_t ring_used[AUDIO_ENGINE_DECK_COUNT];
     uint32_t ring_capacity;
     bool pcm_timeline_active[AUDIO_ENGINE_DECK_COUNT];
@@ -189,6 +199,7 @@ typedef struct {
     uint32_t pcm_timeline_future[AUDIO_ENGINE_DECK_COUNT];
     uint32_t pcm_timeline_generation[AUDIO_ENGINE_DECK_COUNT];
     uint32_t pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t locked_backend_read_count[AUDIO_ENGINE_DECK_COUNT];
     bool startup_waiting[AUDIO_ENGINE_DECK_COUNT];
     uint32_t startup_wait_count[AUDIO_ENGINE_DECK_COUNT];
     uint32_t startup_prebuffer_frames;
@@ -217,6 +228,15 @@ typedef struct {
     uint32_t usb_headphone_submitted_blocks;
     uint32_t usb_headphone_dropped_blocks;
     uint32_t usb_headphone_submitted_frames;
+    uint32_t usb_headphone_ring_queued_frames;
+    uint32_t usb_headphone_ring_capacity_frames;
+    uint32_t usb_headphone_ring_high_water_frames;
+    uint32_t usb_headphone_overflow_frames;
+    uint32_t usb_headphone_underflow_frames;
+    uint32_t usb_headphone_packet_failures;
+    uint32_t usb_headphone_packet_lost_frames;
+    uint32_t usb_headphone_stream_epoch;
+    uint32_t usb_headphone_active_data_loss_flags;
     uint32_t heap_free;
     uint32_t internal_free;
     uint32_t psram_free;
@@ -292,6 +312,7 @@ esp_err_t audio_engine_set_cue_mode(uint8_t mode);
 uint8_t audio_engine_get_cue_mode(void);
 void audio_engine_get_mixer_snapshot(audio_engine_mixer_snapshot_t *out_snapshot);
 void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *out_snapshot);
+void audio_engine_set_uac_active_data_loss_flags(uint32_t flags);
 
 /* Decode reads that still hit USB while the engine lock was held, per deck.
  * The decode loop warms the compressed cache before taking the lock precisely so
@@ -349,6 +370,7 @@ esp_err_t audio_engine_deck_get_loop_state(uint8_t deck,
  * max_duration_ms = 0 decodes the entire track.
  */
 #if defined(AUDIO_ENGINE_PC_TEST)
+typedef void (*audio_engine_limiter_publish_test_hook_t)(void);
 esp_err_t audio_engine_decode_to_wav(const char *wav_path, uint32_t max_duration_ms);
 bool audio_engine_test_snapshot_beat_fx_time_command(
     uint8_t deck,
@@ -356,6 +378,8 @@ bool audio_engine_test_snapshot_beat_fx_time_command(
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
+void audio_engine_test_set_limiter_publish_hook(
+    audio_engine_limiter_publish_test_hook_t hook);
 void audio_engine_test_get_headphone_routing_snapshot(audio_headphone_mode_t *out_mode,
                                                        uint8_t *out_cue_mode);
 void audio_engine_test_disable_pcm_timeline(uint8_t deck);

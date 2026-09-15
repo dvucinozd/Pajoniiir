@@ -166,41 +166,6 @@ int web_api_format_controller_json(char *dst,
                     profile_count);
 }
 
-int web_api_format_control_link_json(char *dst,
-                                     size_t dst_size,
-                                     bool connected,
-                                     uint32_t heartbeat_age_ms,
-                                     uint32_t rx_frames,
-                                     uint32_t sequence_gaps,
-                                     uint32_t event_checksum_errors,
-                                     uint32_t bulk_frames,
-                                     uint32_t bulk_crc_errors,
-                                     uint8_t last_sequence,
-                                     bool sequence_valid)
-{
-    if (!dst || dst_size == 0) {
-        return 0;
-    }
-    return snprintf(dst,
-                    dst_size,
-                    "\"control_link\":{\"connected\":%s,"
-                    "\"heartbeat_age_ms\":%u,\"rx_frames\":%u,"
-                    "\"sequence_gaps\":%u,\"crc_errors\":%u,"
-                    "\"event_checksum_errors\":%u,"
-                    "\"bulk_frames\":%u,\"bulk_crc_errors\":%u,"
-                    "\"last_sequence\":%u,\"sequence_valid\":%s}",
-                    connected ? "true" : "false",
-                    (unsigned)heartbeat_age_ms,
-                    (unsigned)rx_frames,
-                    (unsigned)sequence_gaps,
-                    (unsigned)(event_checksum_errors + bulk_crc_errors),
-                    (unsigned)event_checksum_errors,
-                    (unsigned)bulk_frames,
-                    (unsigned)bulk_crc_errors,
-                    (unsigned)last_sequence,
-                    sequence_valid ? "true" : "false");
-}
-
 int web_api_format_service_log_json(char *dst,
                                     size_t dst_size,
                                     bool available,

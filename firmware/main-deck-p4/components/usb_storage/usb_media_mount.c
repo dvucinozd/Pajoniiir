@@ -7,6 +7,7 @@
 #include "usb/msc_host.h"
 #include "usb_media_partition.h"
 
+#include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -87,7 +88,15 @@ static bool logical_range_is_valid(const usb_media_mount_t *mount,
  * issues bigger disk_read()s than FAT32 (32 KB clusters); a single large
  * scsi_cmd_read10 can exceed the MSC bulk transfer limit and fail, which
  * stalled large-file playback on exFAT while FAT32 (smaller runs) worked. */
-#define USB_MEDIA_MAX_XFER_SECTORS 64u
+#define USB_MEDIA_MAX_XFER_BYTES (8u * 1024u)
+
+static UINT max_transfer_sectors(uint32_t sector_size)
+{
+    if (sector_size == 0u || sector_size > USB_MEDIA_MAX_XFER_BYTES) {
+        return 0u;
+    }
+    return (UINT)(USB_MEDIA_MAX_XFER_BYTES / sector_size);
+}
 
 static DRESULT translated_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
 {
@@ -104,10 +113,14 @@ static DRESULT translated_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
     }
 
     UINT done = 0;
+    const UINT max_batch = max_transfer_sectors(mount->sector_size);
+    if (max_batch == 0u) {
+        return RES_PARERR;
+    }
     while (done < count) {
         UINT batch = count - done;
-        if (batch > USB_MEDIA_MAX_XFER_SECTORS) {
-            batch = USB_MEDIA_MAX_XFER_SECTORS;
+        if (batch > max_batch) {
+            batch = max_batch;
         }
         esp_err_t rc = scsi_cmd_read10(mount->device,
                                        buff + (size_t)done * mount->sector_size,
@@ -138,10 +151,14 @@ static DRESULT translated_write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT 
     }
 
     UINT done = 0;
+    const UINT max_batch = max_transfer_sectors(mount->sector_size);
+    if (max_batch == 0u) {
+        return RES_PARERR;
+    }
     while (done < count) {
         UINT batch = count - done;
-        if (batch > USB_MEDIA_MAX_XFER_SECTORS) {
-            batch = USB_MEDIA_MAX_XFER_SECTORS;
+        if (batch > max_batch) {
+            batch = max_batch;
         }
         esp_err_t rc = scsi_cmd_write10(mount->device,
                                         buff + (size_t)done * mount->sector_size,
@@ -289,21 +306,42 @@ out:
     return rc;
 }
 
-static bool rekordbox_export_exists(const char *base_path)
+static esp_err_t probe_rekordbox_export(const char *base_path, bool *out_exists)
 {
+    if (base_path == NULL || out_exists == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_exists = false;
+
     char path[160];
     int n = snprintf(path, sizeof(path), "%s/PIONEER/rekordbox/export.pdb", base_path);
     if (n < 0 || (size_t)n >= sizeof(path)) {
-        return false;
+        return ESP_ERR_INVALID_SIZE;
     }
 
+    errno = 0;
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
-        return false;
+        /* A normal non-Rekordbox FAT volume is still a valid fallback mount.
+         * A transport/not-ready error is different: accepting that candidate
+         * would publish a mounted drive whose every later PDB read times out.
+         * Return the error so the storage owner retires the MSC handle and
+         * retries enumeration with a fresh transfer context. */
+        if (errno == ENOENT || errno == ENOTDIR) {
+            return ESP_OK;
+        }
+        ESP_LOGW(TAG, "Rekordbox export probe failed: errno=%d (%s)",
+                 errno, strerror(errno));
+        return ESP_ERR_MSC_MOUNT_FAILED;
     }
 
-    fclose(fp);
-    return true;
+    if (fclose(fp) != 0) {
+        ESP_LOGW(TAG, "Rekordbox export probe close failed: errno=%d (%s)",
+                 errno, strerror(errno));
+        return ESP_ERR_MSC_MOUNT_FAILED;
+    }
+    *out_exists = true;
+    return ESP_OK;
 }
 
 static esp_err_t copy_base_path(usb_media_mount_t *mount, const char *base_path)
@@ -452,9 +490,9 @@ static esp_err_t mount_candidate(msc_host_device_handle_t device,
                  (unsigned)candidate->first_lba,
                  (int)fr);
         (void)f_mount(NULL, mount->drive, 0);
-        (void)esp_vfs_fat_unregister_path(base_path);
         ff_diskio_unregister(pdrv);
         s_mounts[pdrv] = NULL;
+        (void)esp_vfs_fat_unregister_path(base_path);
         free_mount_object(mount);
         return ESP_ERR_MSC_MOUNT_FAILED;
     }
@@ -512,7 +550,13 @@ esp_err_t usb_media_mount(msc_host_device_handle_t device,
             continue;
         }
 
-        if (rekordbox_export_exists(base_path)) {
+        bool has_rekordbox_export = false;
+        rc = probe_rekordbox_export(base_path, &has_rekordbox_export);
+        if (rc != ESP_OK) {
+            (void)usb_media_unmount(candidate_mount);
+            return rc;
+        }
+        if (has_rekordbox_export) {
             *out_mount = candidate_mount;
             ESP_LOGI(TAG, "mounted rekordbox volume at LBA %u%s",
                      (unsigned)candidate_mount->base_lba,
@@ -554,20 +598,28 @@ esp_err_t usb_media_unmount(usb_media_mount_t *mount)
         return ESP_ERR_INVALID_ARG;
     }
 
+    const BYTE pdrv = mount->pdrv;
+    char drive[USB_MEDIA_DRIVE_STR_LEN];
+    memcpy(drive, mount->drive, sizeof(drive));
+
+    /* Stop new disk I/O before dismantling FatFs/VFS. This mirrors the IDF
+     * unmount order and makes the global disk binding disappear before any
+     * allocator-backed context is released. */
+    if (pdrv < USB_MEDIA_MAX_MOUNTS && s_mounts[pdrv] == mount) {
+        s_mounts[pdrv] = NULL;
+    }
+
     esp_err_t rc = ESP_OK;
-    FRESULT fr = f_mount(NULL, mount->drive, 0);
+    FRESULT fr = f_mount(NULL, drive, 0);
     if (fr != FR_OK) {
         rc = ESP_FAIL;
     }
 
+    ff_diskio_unregister(pdrv);
+
     esp_err_t unregister_rc = esp_vfs_fat_unregister_path(mount->base_path);
     if (unregister_rc != ESP_OK && rc == ESP_OK) {
         rc = unregister_rc;
-    }
-
-    ff_diskio_unregister(mount->pdrv);
-    if (mount->pdrv < USB_MEDIA_MAX_MOUNTS) {
-        s_mounts[mount->pdrv] = NULL;
     }
     free_mount_object(mount);
     return rc;
