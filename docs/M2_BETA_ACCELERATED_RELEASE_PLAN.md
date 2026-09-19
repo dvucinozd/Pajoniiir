@@ -145,4 +145,14 @@ overflow and drop deltas all zero, PCM `0/0`, no packet loss, no output-late
 event and no WDT. A following strict ten-minute dual-Master-Tempo window also
 passed with all those deltas at zero, final ring fill 1,056/2,048 and explicit
 operator confirmation of clean MAIN/cue audio. This closes the scheduler
-remediation only; the complete 45--60 minute functional gate remains open.
+remediation.
+
+The operator then continued the same session beyond one hour. The UAC producer
+accounted for 206,853,017 additional frames, or 78.176 minutes at 44.1 kHz.
+The complete current-boot service log has no `UAC_DATA_LOSS`,
+`AUDIO_UNDERRUN`, disconnect, reset or WDT event; PCM, locked reads, UAC
+drop/overflow and packet-loss counters stayed at zero. Six isolated late blocks
+(maximum `16,401 us`) had no correlated loss or audible defect. The operator
+confirmed uninterrupted, artifact-free sound for the entire period. The
+combined 45--60 minute functional gate is therefore **PASS**. The next
+accelerated release gate is the automated three-hour combined soak.

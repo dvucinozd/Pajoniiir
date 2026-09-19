@@ -179,3 +179,40 @@ not counted as active playback acceptance evidence.
 The focused scheduler remediation is therefore **hardware PASS**. The earlier
 45-minute functional run remains a correctly recorded FAIL; a new complete
 functional gate is still required for release closure.
+
+The same installed image subsequently passed the focused Stage 3 operator
+matrix. Filter/Echo/Delay routing was exercised across CH1, CH2 and BOTH,
+including beat-size changes, effect tails and both PFL/MAIN paths. The operator
+confirmed normal sound and returned Beat FX plus both PFL states to OFF. The
+window produced 588 MIDI packets with zero UAC underflow/overflow/drop delta,
+PCM `0/0`, no packet loss, a nominal UAC ring and no WDT. Five isolated
+output-late blocks had no correlated counter loss or audible artifact. Stage 3
+is **PASS** for this image; the declared total functional duration remains a
+separate gate.
+
+## Completed combined functional gate
+
+The operator continued the same installed-image session for more than one
+hour and confirmed that sound remained continuously clean, without interruption
+or artifacts. Relative to the initial active-playback sample, the UAC producer
+submitted 206,853,017 additional frames, equivalent to 4,690.545 seconds or
+78.176 minutes at 44.1 kHz.
+
+The retained boot-463 service journal contains no `UAC_DATA_LOSS`,
+`AUDIO_UNDERRUN`, controller disconnect, reset or WDT event. Final monotonic
+counters remained PCM `0/0`, locked backend reads `0/0`, dropped UAC blocks
+`0`, overflow `0`, packet failures/lost frames `0/0`. Six isolated output-late
+blocks were recorded in total, with maximum `16,401 us`; none correlated with
+counter loss, reset or an audible defect.
+
+After playback stopped, the raw UAC underflow counter grew while the
+isochronous consumer continued zero-filling an intentionally empty ring. This
+is not active-playback loss: both decks were `READY`, the ring state was
+`idle`, active data-loss flags were zero, and no `UAC_DATA_LOSS` event was
+emitted. The session-aware health policy explicitly discards idle deltas.
+
+The combined 45--60 minute functional requirement is therefore **PASS** on the
+installed equal-priority candidate. Actual positive active-audio evidence
+exceeds the minimum duration at 78.176 minutes and includes the mixed-rate dual
+Master Tempo fixture, Stage 2 deck-by-deck jog/scratch/Hot Cue/Shift+Jog stress,
+Stage 3 Beat FX/PFL/MAIN routing and explicit final acoustic acceptance.
