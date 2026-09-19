@@ -1322,9 +1322,16 @@ Assert-FileDoesNotContain `
     -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
 
 Assert-FileContains `
-    -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
+    -Name "p4 continuous audio output coordinates an idle window with both decoders" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @("audio_output_should_force_idle", "vTaskDelay(pdMS_TO_TICKS(1))", "IDLE0 one real tick")
+    -LiteralPatterns @(
+        "audio_output_should_force_idle",
+        "atomic_store_bool(&s_audio_idle_window, true)",
+        "vTaskDelay(pdMS_TO_TICKS(2))",
+        "atomic_store_bool(&s_audio_idle_window, false)",
+        "atomic_load_bool(&s_audio_idle_window)",
+        "leaving a real scheduler window for IDLE0"
+    )
 
 Assert-FileContains `
     -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
