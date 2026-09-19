@@ -12,6 +12,13 @@ typedef struct {
     uint8_t *valid;
 } keylock_read_cache_t;
 
+enum {
+    KEYLOCK_REFERENCE_STRIDE = 32,
+    KEYLOCK_REFERENCE_COUNT = 2,
+    KEYLOCK_COARSE_POINTS = 8,
+    KEYLOCK_REFINE_RADIUS = 3,
+};
+
 static bool read_cached(void *ctx, uint64_t seq, audio_mixer_frame_t *out)
 {
     keylock_read_cache_t *cache = ctx;
@@ -78,7 +85,8 @@ static bool candidate_sad(audio_keylock_t *s,
     s->last_search_candidates++;
     for (uint32_t sample = 0u; sample < reference_count; sample++) {
         audio_mixer_frame_t b;
-        float offset = (float)(sample * 16u) * s->rate_ratio;
+        float offset = (float)(sample * KEYLOCK_REFERENCE_STRIDE) *
+                       s->rate_ratio;
         if (!read_fractional(read_cached, cache, s->origin_seq,
                              candidate + offset, &b)) {
             return false;
@@ -105,9 +113,9 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
     /* The reference window is identical for every candidate.  Reading and
      * interpolating it inside the candidate loop doubled canonical-timeline
      * traffic in the most expensive Master Tempo hot path. */
-    audio_mixer_frame_t reference_frames[16];
+    audio_mixer_frame_t reference_frames[KEYLOCK_REFERENCE_COUNT];
     uint32_t reference_count = 0u;
-    for (uint32_t i = 0; i < 64u; i += 16u) {
+    for (uint32_t i = 0; i < 64u; i += KEYLOCK_REFERENCE_STRIDE) {
         float offset = (float)i * s->rate_ratio;
         if (!read_fractional(read, ctx, s->origin_seq, reference + offset,
                              &reference_frames[reference_count])) {
@@ -135,39 +143,28 @@ static float select_grain_start(audio_keylock_t *s, audio_keylock_read_fn read,
         .valid = s->search_valid,
     };
 
-    /* The former exhaustive SSD scan made two MT decks miss a 5.8-ms output
-     * deadline. Native 32-bit SAD plus coarse-to-fine search bounds every hop
-     * while still covering the complete radius before local convergence. */
+    /* Two MT decks share a 5.8-ms output deadline. Sample the complete search
+     * radius at eight evenly spaced points, then inspect seven frames around
+     * the best point. This caps every hop at 15 candidates; the previous
+     * multi-stage search reached 30 and starved the high-rate decoder. */
     s->last_search_candidates = 0u;
     int center = 0;
-    int span = radius;
-    int step = radius / 3;
-    if (step < 1) step = 1;
-    while (step > 1) {
-        int first_delta = center - span;
-        int last_delta = center + span;
-        if (first_delta < -radius) first_delta = -radius;
-        if (last_delta > radius) last_delta = radius;
-        int stage_best = center;
-        for (int delta = first_delta; delta <= last_delta; delta += step) {
-            float candidate = nominal + (float)delta;
-            if (candidate < 0.0f) continue;
-            uint32_t error = 0u;
-            if (candidate_sad(s, &cache, reference_frames, reference_count,
-                              candidate, best_error, &error) &&
-                error < best_error) {
-                best_error = error;
-                best = candidate;
-                stage_best = delta;
-            }
+    for (int point = 0; point < KEYLOCK_COARSE_POINTS; point++) {
+        int delta = -radius +
+                    (2 * radius * point) / (KEYLOCK_COARSE_POINTS - 1);
+        float candidate = nominal + (float)delta;
+        if (candidate < 0.0f) continue;
+        uint32_t error = 0u;
+        if (candidate_sad(s, &cache, reference_frames, reference_count,
+                          candidate, best_error, &error) &&
+            error < best_error) {
+            best_error = error;
+            best = candidate;
+            center = delta;
         }
-        center = stage_best;
-        span = step - 1;
-        step /= 4;
-        if (step < 1) step = 1;
     }
-    int first_delta = center - span;
-    int last_delta = center + span;
+    int first_delta = center - KEYLOCK_REFINE_RADIUS;
+    int last_delta = center + KEYLOCK_REFINE_RADIUS;
     if (first_delta < -radius) first_delta = -radius;
     if (last_delta > radius) last_delta = radius;
     for (int delta = first_delta; delta <= last_delta; delta++) {

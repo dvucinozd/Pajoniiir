@@ -1306,7 +1306,8 @@ static bool keylock_timeline_read(void *ctx, uint64_t seq, audio_mixer_frame_t *
 {
     uint8_t deck = ctx ? *(const uint8_t *)ctx : AE_DECK_0;
     return deck < AUDIO_ENGINE_DECK_COUNT &&
-           audio_pcm_timeline_read(&s_pcm_timelines[deck], seq, out);
+           audio_pcm_timeline_read_output_owner(&s_pcm_timelines[deck], seq,
+                                                out);
 }
 
 static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
@@ -1328,7 +1329,7 @@ static bool ae_keylock_render_cb(void *ctx, float tempo_factor,
     uint64_t play_seq = audio_pcm_timeline_play_seq(timeline);
     if (!audio_keylock_next(&s_keylocks[deck], keylock_timeline_read, ctx,
                             out, out_consumed, &play_seq)) return false;
-    return audio_pcm_timeline_set_playhead(timeline, play_seq);
+    return audio_pcm_timeline_set_playhead_output_owner(timeline, play_seq);
 }
 
 static void complete_eof_drain_if_ready(uint8_t deck)
@@ -3074,6 +3075,7 @@ cleanup:
  * The codec/I2S writes block on DMA, which paces real-time playback. */
 #define AE_OUT_FRAMES 256
 #define AE_OUTPUT_TASK_STACK 8192
+#define AE_OUTPUT_TASK_PRIORITY 6u
 /* Keep real-time audio producer/output work off the LVGL core. */
 #define AE_AUDIO_TASK_CORE 0
 
@@ -3805,7 +3807,8 @@ static esp_err_t audio_output_service_ensure_started(void)
         }
     }
     s_output_run = true;
-    if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, NULL, 6,
+    if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, NULL,
+                                AE_OUTPUT_TASK_PRIORITY,
                                 &s_output_task, AE_AUDIO_TASK_CORE) != pdPASS) {
         s_output_run = false;
         s_output_task = NULL;
@@ -4190,7 +4193,8 @@ static esp_err_t audio_engine_load_for_deck(uint8_t deck,
         }
     }
     if (task_plan.start_output) {
-        if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, task_ctx, 6,
+        if (xTaskCreatePinnedToCore(ae_output_task, "ae_output", AE_OUTPUT_TASK_STACK, task_ctx,
+                                    AE_OUTPUT_TASK_PRIORITY,
                                     (TaskHandle_t *)&runtime->output_task,
                                     AE_AUDIO_TASK_CORE) == pdPASS) {
             audio_fw_runtime_mark_task_started(runtime);

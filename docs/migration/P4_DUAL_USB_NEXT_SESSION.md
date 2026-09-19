@@ -8,31 +8,27 @@ Status: **active P4-only operational handoff**.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Validated firmware checkpoint:
-  `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
-- Validated firmware version: `RC2-147-gc21ad86`
-- Current signed bundle: `2,458,684` bytes, SHA-256
-  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
-- Current application: `2,458,496` bytes, SHA-256
-  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
-- Current bundle path:
-  `releases/pajoniiir-RC2-147-gc21ad86/main-deck-p4.ddjota`
+- Source checkpoint: working tree after `838c254`; commit/push pending
+- Installed firmware version: `RC2-151-g838c254-dirty`
+- Current application: `2,459,136` bytes, SHA-256
+  `a96e78e9fb498decd7820846c1105221d21b4989bc4e733280b0d00496be40b0`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--H plus
   I1/I2/J1 and K1/K2 pass; the earlier `RC2-116-g77d723c` passed the targeted
   three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-147-gc21ad86` from commit `c21ad86`
-- Installed slot: `ota_1`
+- Latest installed version: `RC2-151-g838c254-dirty`
+- Installed slot: `ota_0`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,458,496` bytes
+- Application: `2,459,136` bytes
 - Application SHA-256:
-  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
-- Signed bundle: `2,458,684` bytes
-- Signed bundle SHA-256:
-  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
-- Bundle path:
-  `releases/pajoniiir-RC2-147-gc21ad86/main-deck-p4.ddjota`
+  `a96e78e9fb498decd7820846c1105221d21b4989bc4e733280b0d00496be40b0`
+
+The installed image adds the output-owner timeline fast path and the
+loop-safe/EOF-clamped Shift+Jog search fix to the bounded dual-Master-Tempo
+path. Focused exact-image smokes pass; the declared functional run remains open
+after a Stage 2 counter failure that did not reproduce in isolated actions. See
+[`../validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](../validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md).
 
 During the latest captured hardware run, USB0 remained mounted with a coherent
 324-track Library and the direct FLX4 profile, MIDI IN/OUT and UAC remained
@@ -71,6 +67,12 @@ Evidence:
 
 ## Current release gate
 
+The remaining work follows the accelerated M2 beta path in
+[`../M2_BETA_ACCELERATED_RELEASE_PLAN.md`](../M2_BETA_ACCELERATED_RELEASE_PLAN.md):
+one 45--60 minute combined functional run, one automated three-hour combined
+soak, three physical OTA paths and one final freeze/release pass. Final
+enclosure and production-security decisions remain explicit production gates.
+
 The current bench common 5 V rail and both downstream VBUS branches passed the
 requested electrical measurements by operator report on 2026-09-11. The
 earlier P0 bench blocker is closed for the unchanged current wiring. Raw
@@ -78,10 +80,10 @@ numeric readings were not preserved, so the test must be repeated if the
 wiring or supply changes and with the final enclosure configuration.
 
 The lifecycle matrix is closed at 43 PASS and seven explicitly waived I/J
-cycles. The active release gate is the remainder of Phase 4: mixed-format
-seek, loop, CUE, scratch/hold and near-EOF manipulation with listening and flat
-counter evidence. Do not merge the branch until that and the other mandatory
-release gates pass.
+cycles. Next action is to rerun the declared 45-minute functional gate with
+the deterministic deck-by-deck Stage 2 instructions. If it passes, run the
+automated three-hour combined soak. Do not merge the branch until those and the
+other mandatory release gates pass.
 
 ## Session 1 — electrical qualification — PASS for current bench wiring
 

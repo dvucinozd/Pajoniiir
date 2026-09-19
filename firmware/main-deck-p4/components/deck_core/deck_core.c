@@ -2537,10 +2537,37 @@ static void on_jog_search(uint8_t deck, int16_t delta)
 
     deck_state_t *state = &s_decks[normalize_deck(deck)];
     bool uses_audio = deck_uses_audio_engine(deck);
+
+    /* Shift+jog is an explicit transport search, not loop-boundary editing.
+     * Exit an active loop before publishing the seek. Leaving the old loop
+     * armed while repeated search events cross its end can make the decoder's
+     * loop-wrap seek race the newest user seek and leave the output playhead
+     * parked on a tiny repeated segment. Keep the remembered loop so RELOOP
+     * still restores it. */
+    bool loop_active = false;
+    uint32_t loop_start_ms = 0u;
+    uint32_t loop_end_ms = 0u;
+    if (read_active_loop(deck, &loop_active, &loop_start_ms, &loop_end_ms) &&
+        loop_active) {
+        on_loop_control(deck, CTRL_DECK_CTL_RELOOP_EXIT, state);
+    }
+
     uint32_t current = uses_audio ? audio_engine_deck_position_ms(deck) : state->position_ms;
     int64_t target = (int64_t)current + ((int64_t)delta * (int64_t)JOG_SEARCH_STEP_MS);
     if (target < 0) {
         target = 0;
+    }
+
+    /* Never seek to or beyond EOF. At exact EOF there is no frame available
+     * to release the startup gate; rapid held-search events used to leave the
+     * deck logically PLAYING with a frozen waveform and a full PCM runway. */
+    deck_loaded_track_summary_t loaded = {0};
+    if (deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) &&
+        loaded.valid && loaded.duration_ms > 0u) {
+        uint32_t last_valid_ms = loaded.duration_ms - 1u;
+        if (target > (int64_t)last_valid_ms) {
+            target = (int64_t)last_valid_ms;
+        }
     }
 
     esp_err_t rc = uses_audio ? audio_engine_deck_seek(deck, (uint32_t)target) : ESP_OK;

@@ -98,6 +98,11 @@ Status: **active P4-only checklist, reconciled 2026-09-19**.
 - [x] Reproduce and fix the immediate dual-Master-Tempo `IDLE0` WDT; exact
   `RC2-150-g909e068` MP3 + 96 kHz FLAC smoke exceeded the old reset point with
   normal sound and zero underrun/UAC-loss counters.
+- [x] Remove the per-sample 64-bit timeline seqlock cost and verify the exact
+  `RC2-151-g838c254-dirty` MP3 + 96 kHz FLAC fixture for 184 seconds with zero
+  PCM/UAC/WDT errors and clean listening.
+- [x] Fix active-loop Shift+Jog search freezing at near EOF; post-OTA D2 reaches
+  natural EOF and restarts normally with clean counters and sound.
 - [ ] Listen for clicks, flat-top clipping, pitch artefacts and MAIN/cue defects.
 - [ ] Exercise both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [ ] Complete detailed Beat FX CH1/CH2/1&2 transition and tail checks.
@@ -113,7 +118,12 @@ Status: **active P4-only checklist, reconciled 2026-09-19**.
 
 ## Product soak and enclosure
 
-- [ ] Define and run the final multi-hour combined-load soak.
+- [x] Define the accelerated M2 beta functional and combined-load soak harness.
+- [ ] Run the 45--60 minute combined functional session on the candidate image.
+  First declared run stopped at Stage 2 after about 16.8 minutes on D1 +165 PCM
+  frames and +47,234 headphone underflow frames; no reboot/UAC/WDT or confirmed
+  audible fault, and isolated actions did not reproduce it. Rerun deck-by-deck.
+- [ ] Run the automated three-hour combined-load soak on the candidate image.
 - [ ] Include seeks, restart, Master Tempo, scratch, loops, Hot Cues, FX, MIDI,
   LEDs, MAIN/cue, USB cache and web status traffic.
 - [ ] Require no reset, brownout, lost mount/controller, latched control or
@@ -137,3 +147,6 @@ Status: **active P4-only checklist, reconciled 2026-09-19**.
   tag.
 
 Detailed procedure: [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
+
+Accelerated beta path:
+[`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md).

@@ -1030,6 +1030,22 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
     -LiteralPatterns @("LOCAL_CONTROLLER_USB_TASK_CORE")
 
+# The USB client consumes the UAC ring and ae_output is its sole producer.
+# Keep them at equal priority so dense MIDI traffic cannot starve the producer;
+# ae_output's blocking I2S write and explicit yield points still service USB.
+Assert-FileContains `
+    -Name "p4 UAC consumer and audio producer share a scheduler priority" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host/controller_usb_host.c") `
+    -LiteralPatterns @("#define CONTROLLER_USB_ACTIVE_PRIORITY 6u")
+
+Assert-FileContains `
+    -Name "p4 audio output priority contract remains explicit" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @(
+        "#define AE_OUTPUT_TASK_PRIORITY 6u",
+        "AE_OUTPUT_TASK_PRIORITY"
+    )
+
 Assert-FileContains `
     -Name "p4 active control-link component compiles only the local adapter" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
@@ -2208,7 +2224,7 @@ $tests = @(
     },
     @{
         Name = "audio_pcm_timeline"
-        MinTestsRun = 229
+        MinTestsRun = 309
         Dir = "tests/audio_pcm_timeline"
         Target = "test_audio_pcm_timeline.exe"
         Args = @(
@@ -2731,6 +2747,11 @@ Invoke-Step -Name "run P4 lifecycle Group L harness self-test" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_l.ps1", "-Cycle", "2", "-SelfTest")
+
+Invoke-Step -Name "run P4 release qualification harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_release_qualification.ps1", "-SelfTest")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {

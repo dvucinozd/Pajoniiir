@@ -102,6 +102,7 @@ committed and must remain reproducible.
 - [Complete next-session handoff](docs/migration/P4_DUAL_USB_NEXT_SESSION.md)
 - [Startup and release checklist](docs/STARTUP_CHECKLIST.md)
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
+- [Accelerated M2 beta release plan](docs/M2_BETA_ACCELERATED_RELEASE_PLAN.md)
 - [Risk register](docs/RISK_REGISTER.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)

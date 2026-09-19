@@ -65,7 +65,11 @@ static void run(float ratio, float tempo, bool missing)
            "max_reads=%u limit=%u max_candidates=%u\n",
            ratio, tempo, missing, failures, max_calls, limit, max_candidates);
     assert(max_calls <= limit);
-    assert(max_candidates <= 40u);
+    assert(max_calls <= 64u);
+    /* Two simultaneous Master Tempo decks share one output deadline. Keep
+     * each WSOLA alignment search to one bounded coarse pass plus a small
+     * local refinement so a high-rate deck cannot starve decode. */
+    assert(max_candidates <= 16u);
 }
 
 int main(void)
@@ -79,7 +83,7 @@ int main(void)
                                    3000.0 * cos(phase * 197.0));
     }
     const float ratios[] = {0.25f, 44100.0f / 48000.0f, 1.0f,
-                            48000.0f / 44100.0f, 4.0f};
+                            48000.0f / 44100.0f, 96000.0f / 44100.0f, 4.0f};
     for (unsigned r = 0; r < sizeof(ratios) / sizeof(ratios[0]); ++r) {
         run(ratios[r], 0.95f, false);
         run(ratios[r], 1.05f, false);

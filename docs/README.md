@@ -1,6 +1,6 @@
 # Pajoniiir P4 Documentation
 
-Status: **active P4-only index, updated 2026-09-11**.
+Status: **active P4-only index, updated 2026-09-19**.
 
 ## Start here
 
@@ -15,6 +15,8 @@ Status: **active P4-only index, updated 2026-09-11**.
 - [`fixevi-remediation-audit.md`](fixevi-remediation-audit.md) — current P4
   remediation disposition.
 - [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — phase order through release.
+- [`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md)
+  — approved compressed qualification and beta-release path.
 
 ## Product and implementation
 

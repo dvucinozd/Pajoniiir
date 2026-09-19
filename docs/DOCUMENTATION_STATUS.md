@@ -114,7 +114,8 @@ the critical path is now the remaining release qualification:
    near-EOF acceptance matrix (focused load/play/EOF and mixed playback pass);
 2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
 3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
-4. multi-hour combined-load soak;
+4. accelerated M2 beta qualification: one 45--60 minute combined functional
+   run and one automated three-hour combined-load soak;
 5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
    repetition of the passed bench electrical measurements;
 6. production credential, signing-key, rotation and optional irreversible

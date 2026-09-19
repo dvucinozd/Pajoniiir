@@ -9,7 +9,10 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-147-gc21ad86` is the latest installed exact hardware image on `ota_1`;
+- `RC2-151-g838c254-dirty` is the latest installed exact hardware image on
+  `ota_0`; its full host suite, ESP-IDF v6.0.2 signed build and focused
+  mixed-rate dual-Master-Tempo/search smoke pass, while the declared combined
+  functional gate remains open after a Stage 2 counter failure;
 - the bounded-cache LRU defect is fixed and exact-image verified: complete real
   96 kHz/24-bit FLAC and PCM16 WAV files reached natural EOF without PCM/BNA
   failure, simultaneous MP3+FLAC and MP3+WAV 30-second windows had zero locked
@@ -70,8 +73,11 @@ real defect. Exact cache evidence is in
 Phases 1--3 are complete. The lifecycle matrix is fully accounted: 43/50 PASS,
 seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
 attachment/reconnect actions. Groups I/J are administratively closed and will
-not be resumed. Phase 4 is active; Phases 5--11 remain deferred for later
-sessions.
+not be resumed. The remaining gates now follow the approved accelerated M2 beta
+path: one combined functional session, one three-hour combined soak, a reduced
+physical OTA matrix and one final freeze/release pass. Detailed scope and beta
+versus production boundaries are in
+[`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md).
 
 After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a
 separate change. That migration must update `git describe` assumptions,

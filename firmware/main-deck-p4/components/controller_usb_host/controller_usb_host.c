@@ -15,7 +15,13 @@ static const char *TAG = "controller_usb";
 #define DEFAULT_TRANSFER_BYTES 64
 #define FLX4_USB_VID 0x2B73u
 #define FLX4_USB_PID 0x0045u
-#define CONTROLLER_USB_ACTIVE_PRIORITY 7u
+/* Keep the UAC consumer level with the priority-6 ae_output producer. Raising
+ * this client above ae_output lets dense jog MIDI traffic continuously preempt
+ * the only task that refills the UAC ring, producing headphone underruns while
+ * both deck PCM rings remain healthy. Equal priority retains prompt ISO event
+ * service through FreeRTOS time slicing and ae_output's explicit yield/block
+ * points without increasing the audio ring or its cue latency. */
+#define CONTROLLER_USB_ACTIVE_PRIORITY 6u
 
 typedef struct {
     uint32_t generation;

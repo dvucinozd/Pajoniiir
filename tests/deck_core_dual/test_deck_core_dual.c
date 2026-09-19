@@ -905,6 +905,25 @@ static void test_jog_search_encoder_clamps_at_track_start(void)
     assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 0);
 }
 
+static void test_jog_search_exits_loop_and_clamps_before_track_end(void)
+{
+    deck_core_test_reset();
+    reset_audio_engine_stub();
+    publish_loaded_track(CTRL_DECK_2, 2002u, 120u, NULL);
+    audio_engine_stub_deck_position_ms[CTRL_DECK_2] = 299500u;
+    audio_engine_stub_loop_active[CTRL_DECK_2] = true;
+    audio_engine_stub_loop_start_ms[CTRL_DECK_2] = 1000u;
+    audio_engine_stub_loop_end_ms[CTRL_DECK_2] = 3000u;
+
+    ctrl_event_t forward = deck_encoder(CTRL_ID_DECK2_JOG_SEARCH, 2);
+    deck_core_test_apply_event(&forward);
+
+    assert(audio_engine_stub_loop_clear_count[CTRL_DECK_2] == 1);
+    assert(!audio_engine_stub_loop_active[CTRL_DECK_2]);
+    assert(audio_engine_stub_deck_seek_count[CTRL_DECK_2] == 1);
+    assert(audio_engine_stub_deck_position_ms[CTRL_DECK_2] == 299999u);
+}
+
 static void test_jog_nudges_while_playing_scrubs_while_paused(void)
 {
     deck_core_test_reset();
@@ -2846,6 +2865,7 @@ int main(void)
     test_system_namespace_routes_master_cue_toggle_on_press();
     test_jog_search_encoder_seeks_relative_to_deck_position();
     test_jog_search_encoder_clamps_at_track_start();
+    test_jog_search_exits_loop_and_clamps_before_track_end();
     test_jog_nudges_while_playing_scrubs_while_paused();
     test_platter_touch_holds_and_scrubs_while_playing();
     test_platter_touch_while_paused_does_not_hold();
