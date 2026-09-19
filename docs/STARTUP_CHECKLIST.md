@@ -95,6 +95,9 @@ Status: **active P4-only checklist, reconciled 2026-09-19**.
 - [ ] Run mixed MP3/WAV/FLAC dual-deck load, seek, loop, CUE, scratch and EOF.
 - [ ] Confirm BNA recovery and locked-backend-read counters remain acceptable.
 - [ ] Measure worst-case dual Master Tempo CPU/I2S deadlines on P4.
+- [x] Reproduce and fix the immediate dual-Master-Tempo `IDLE0` WDT; exact
+  `RC2-150-g909e068` MP3 + 96 kHz FLAC smoke exceeded the old reset point with
+  normal sound and zero underrun/UAC-loss counters.
 - [ ] Listen for clicks, flat-top clipping, pitch artefacts and MAIN/cue defects.
 - [ ] Exercise both decks with Master Tempo off/on and near-EOF scratch/hold.
 - [ ] Complete detailed Beat FX CH1/CH2/1&2 transition and tail checks.

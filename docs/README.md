@@ -30,6 +30,8 @@ Status: **active P4-only index, updated 2026-09-11**.
 
 ## Latest focused validation
 
+- [`validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md)
+- [`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md)
 - [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md)
 - [`validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
 - [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
