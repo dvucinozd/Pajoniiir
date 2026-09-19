@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-14**
+Saved: **2026-09-19**
 
 Status: **active P4-only operational handoff**.
 
@@ -9,34 +9,38 @@ Status: **active P4-only operational handoff**.
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
 - Validated firmware checkpoint:
-  `034cd7617c0493b87874ea928d7090ff16105c01`
-- Validated firmware version: `RC2-136-g034cd76`
-- Current signed bundle: `2,457,836` bytes, SHA-256
-  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
-- Current application: `2,457,648` bytes, SHA-256
-  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
+  `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
+- Validated firmware version: `RC2-147-gc21ad86`
+- Current signed bundle: `2,458,684` bytes, SHA-256
+  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
+- Current application: `2,458,496` bytes, SHA-256
+  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
 - Current bundle path:
-  `releases/pajoniiir-RC2-136-g034cd76/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-147-gc21ad86/main-deck-p4.ddjota`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--H plus
   I1/I2/J1 and K1/K2 pass; the earlier `RC2-116-g77d723c` passed the targeted
   three-hour limiter/WDT soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-136-g034cd76` from commit `034cd76`
+- Latest installed version: `RC2-147-gc21ad86` from commit `c21ad86`
 - Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,457,648` bytes
+- Application: `2,458,496` bytes
 - Application SHA-256:
-  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
-- Signed bundle: `2,457,836` bytes
+  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
+- Signed bundle: `2,458,684` bytes
 - Signed bundle SHA-256:
-  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
 - Bundle path:
-  `releases/pajoniiir-RC2-136-g034cd76/main-deck-p4.ddjota`
+  `releases/pajoniiir-RC2-147-gc21ad86/main-deck-p4.ddjota`
 
-During the latest captured hardware run, USB0 remained mounted and the direct
-FLX4 profile, MIDI IN/OUT and UAC remained active, with zero USB host daemon
-errors and zero service-log drops. Both decks continuously looped MP3 material.
+During the latest captured hardware run, USB0 remained mounted with a coherent
+324-track Library and the direct FLX4 profile, MIDI IN/OUT and UAC remained
+active. Complete real WAV and FLAC files reached natural EOF without PCM/BNA
+failure. Simultaneous MP3+FLAC and MP3+WAV 30-second windows had zero locked
+read, PCM-underrun, output-late and BNA deltas, and both received explicit
+operator audible acceptance. See
+[`../validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](../validation/P4_BOUNDED_MEDIA_CACHE_20260919.md).
 
 ## Earlier firmware soak gate
 
@@ -73,9 +77,11 @@ earlier P0 bench blocker is closed for the unchanged current wiring. Raw
 numeric readings were not preserved, so the test must be repeated if the
 wiring or supply changes and with the final enclosure configuration.
 
-The next release gate is the complete 50-cycle dual-USB lifecycle/recovery
-matrix. Do not merge the branch until that and the other mandatory P1 gates
-pass.
+The lifecycle matrix is closed at 43 PASS and seven explicitly waived I/J
+cycles. The active release gate is the remainder of Phase 4: mixed-format
+seek, loop, CUE, scratch/hold and near-EOF manipulation with listening and flat
+counter evidence. Do not merge the branch until that and the other mandatory
+release gates pass.
 
 ## Session 1 — electrical qualification — PASS for current bench wiring
 

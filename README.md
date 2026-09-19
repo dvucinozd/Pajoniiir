@@ -15,7 +15,7 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
 > validated firmware and installed hardware candidate is
-> `RC2-136-g034cd76` on `ota_1`.
+> `RC2-147-gc21ad86` on `ota_1`.
 > Its signed OTA and exact-image checks passed. The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
@@ -39,8 +39,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > UAC, dual playback and audible MAIN/cue recovered in every accepted cycle.
 > Group K software-reboot and Group L signed OTA-reboot recovery both passed
 > 2/2 with both roots occupied and no manual reinsert. The branch remains **not
-> release-qualified** until verified WAV/FLAC, on-device timing/listening,
-> remaining OTA fault paths, combined-load and closed-enclosure gates pass.
+> release-qualified**. Real MP3/WAV/FLAC load/play/EOF and simultaneous
+> MP3+FLAC/MP3+WAV focused cache checks now pass with audible confirmation;
+> mixed-format seek/loop/CUE/scratch edges, on-device timing, remaining OTA
+> fault paths, combined-load and closed-enclosure gates remain open.
 
 ## Current capabilities
 

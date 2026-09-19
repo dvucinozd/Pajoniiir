@@ -1,6 +1,6 @@
 # P4 Development Plan
 
-Status: **active P4-only plan, reconciled 2026-09-14**.
+Status: **active P4-only plan, reconciled 2026-09-19**.
 
 ## Current position
 
@@ -9,7 +9,13 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-136-g034cd76` is the latest installed exact hardware image on `ota_1`;
+- `RC2-147-gc21ad86` is the latest installed exact hardware image on `ota_1`;
+- the bounded-cache LRU defect is fixed and exact-image verified: complete real
+  96 kHz/24-bit FLAC and PCM16 WAV files reached natural EOF without PCM/BNA
+  failure, simultaneous MP3+FLAC and MP3+WAV 30-second windows had zero locked
+  read, underrun, late and BNA deltas, and both mixed pairs received explicit
+  audible acceptance; the remaining seek/loop/CUE/scratch edges keep Phase 4
+  open;
 - deterministic Group F support is implemented and hardware-qualified: the PDB
   reader releases media ownership after at most 8 KiB, incomplete rebuilds
   fail closed, and a guarded one-shot validation barrier lets the harness
@@ -56,14 +62,16 @@ The direct dual-root product path is implemented:
 
 No further architecture conversion is planned. Remaining work is ordered
 release qualification, with implementation only when a measured gate exposes a
-real defect.
+real defect. Exact cache evidence is in
+[`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md).
 
 ## Ordered remaining phases
 
 Phases 1--3 are complete. The lifecycle matrix is fully accounted: 43/50 PASS,
 seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
 attachment/reconnect actions. Groups I/J are administratively closed and will
-not be resumed. Phases 4--11 remain deferred for later sessions.
+not be resumed. Phase 4 is active; Phases 5--11 remain deferred for later
+sessions.
 
 After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a
 separate change. That migration must update `git describe` assumptions,

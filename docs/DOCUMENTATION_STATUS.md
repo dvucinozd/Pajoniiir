@@ -1,6 +1,6 @@
 # Documentation Status
 
-Status: **active P4-only source of truth, reconciled 2026-09-14**.
+Status: **active P4-only source of truth, reconciled 2026-09-19**.
 
 ## Product boundary
 
@@ -17,20 +17,21 @@ they actually tested; they are not current instructions.
 ## Current validated firmware checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
-- Version: `RC2-136-g034cd76`
-- Application size: `2,457,648` bytes
+- Commit: `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
+- Version: `RC2-147-gc21ad86`
+- Application size: `2,458,496` bytes
 - Application SHA-256:
-  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
-- Signed bundle size: `2,457,836` bytes
+  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
+- Signed bundle size: `2,458,684` bytes
 - Signed bundle SHA-256:
-  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: pushed; local and remote SHA matched before this
   documentation-only successor
 - Validation state: P4 host/build and signed-package verification passed;
-  installed by signed OTA and exact-image smoke passed; lifecycle Groups
-  A--H, K and L pass, I1/I2/J1 pass and seven remaining I/J cycles are
+  installed by signed OTA and exact-image smoke passed; focused real-file
+  MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
+  Groups A--H, K and L pass, I1/I2/J1 pass and seven remaining I/J cycles are
   explicitly waived; the earlier
   `RC2-116-g77d723c` targeted three-hour limiter/WDT
   hardware soak remains valid within its scope
@@ -44,20 +45,24 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware baseline
 
-- Commit: `034cd7617c0493b87874ea928d7090ff16105c01`
-- Installed version: `RC2-136-g034cd76`
+- Commit: `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
+- Installed version: `RC2-147-gc21ad86`
 - Installed slot: `ota_1`
-- Application size: `2,457,648` bytes
+- Application size: `2,458,496` bytes
 - Application SHA-256:
-  `be8bcda3b37ec72ed15073c06aab765112b61f5a1b7873f1c72934323da9fa31`
-- Signed bundle size: `2,457,836` bytes
+  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
+- Signed bundle size: `2,458,684` bytes
 - Signed bundle SHA-256:
-  `989005f2e619d17faf53a7745683f1ac9ec70968be762366edb2c9001ac5627e`
+  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
 - Toolchain: ESP-IDF v6.0.2
 
 This exact installed image passed signed OTA, USB0 mount, direct FLX4
 profile/MIDI/UAC startup, active reconnect cycles I1, I2 and jog-held J1,
 software reboot K1/K2 and signed OTA reboot L1/L2.
+The current 324-track media fixture additionally passed complete real WAV and
+FLAC natural EOF plus simultaneous MP3+FLAC and MP3+WAV playback with audible
+operator acceptance and flat focused fault deltas. See
+[`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md).
 Every accepted cycle retained the 100-track Library, advanced both decks for
 more than five seconds, restored controller/UAC and passed audible MAIN/cue;
 drop, overflow, packet-loss, PCM-underrun and output-late deltas stayed zero.
@@ -105,7 +110,8 @@ The branch is **not release-qualified and must not be merged yet**. The code,
 host tests, signed build, lifecycle matrix and focused product paths are healthy;
 the critical path is now the remaining release qualification:
 
-1. real MP3/WAV/FLAC bounded-cache acceptance with physically verified files;
+1. finish the physically verified MP3/WAV/FLAC seek, loop, CUE, scratch and
+   near-EOF acceptance matrix (focused load/play/EOF and mixed playback pass);
 2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
 3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
 4. multi-hour combined-load soak;

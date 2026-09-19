@@ -1,22 +1,22 @@
 # P4 Startup and Release Checklist
 
-Status: **active P4-only checklist, reconciled 2026-09-14**.
+Status: **active P4-only checklist, reconciled 2026-09-19**.
 
 ## Repository and build
 
 - [x] Branch is `feat/p4-dual-usb-host`.
-- [x] Installed validation firmware commit `034cd76` is pushed.
+- [x] Installed validation firmware commit `c21ad86` is pushed.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-136-g034cd76` on hardware.
+- [x] Install and focused-smoke `RC2-147-gc21ad86` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-136-g034cd76` installed on `ota_1` with empty OTA error.
-- [x] USB0 mounts and exposes the 100-track Library.
+- [x] `RC2-147-gc21ad86` installed on `ota_1` with empty OTA error.
+- [x] USB0 mounts and exposes the current 324-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
 - [x] Idle lifetime UAC underflow does not set active `data_loss`.
@@ -87,7 +87,11 @@ Status: **active P4-only checklist, reconciled 2026-09-14**.
 
 ## Media and audio
 
-- [ ] Re-export WAV and FLAC fixtures and verify physical `Contents` files.
+- [x] Verify physical MP3, WAV and FLAC fixtures by real USB0 playback.
+- [x] Run complete natural-EOF playback for PCM16/44.1 kHz WAV and
+  96 kHz/24-bit FLAC with zero PCM underruns and BNA recovery.
+- [x] Run 30-second simultaneous MP3+FLAC and MP3+WAV counter windows; both
+  windows have zero locked-read, PCM-underrun, late and BNA deltas.
 - [ ] Run mixed MP3/WAV/FLAC dual-deck load, seek, loop, CUE, scratch and EOF.
 - [ ] Confirm BNA recovery and locked-backend-read counters remain acceptable.
 - [ ] Measure worst-case dual Master Tempo CPU/I2S deadlines on P4.
