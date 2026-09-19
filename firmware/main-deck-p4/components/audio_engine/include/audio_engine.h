@@ -200,6 +200,10 @@ typedef struct {
     uint32_t pcm_timeline_generation[AUDIO_ENGINE_DECK_COUNT];
     uint32_t pcm_underrun_count[AUDIO_ENGINE_DECK_COUNT];
     uint32_t locked_backend_read_count[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t locked_backend_predicted_offset[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t locked_backend_actual_offset[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t locked_backend_stream_after[AUDIO_ENGINE_DECK_COUNT];
+    uint32_t locked_backend_delta_bytes[AUDIO_ENGINE_DECK_COUNT];
     bool startup_waiting[AUDIO_ENGINE_DECK_COUNT];
     uint32_t startup_wait_count[AUDIO_ENGINE_DECK_COUNT];
     uint32_t startup_prebuffer_frames;

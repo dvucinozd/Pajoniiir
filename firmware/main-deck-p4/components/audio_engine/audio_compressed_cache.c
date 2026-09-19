@@ -56,6 +56,7 @@ static audio_compressed_cache_page_t *load_page(audio_compressed_cache_t *cache,
     if (wanted > cache->file_size - aligned_offset) {
         wanted = cache->file_size - aligned_offset;
     }
+    cache->last_backend_offset = aligned_offset;
     size_t got = cache->read_at(cache->read_ctx, aligned_offset, dst, wanted);
     cache->misses++;
     cache->backend_bytes += got;

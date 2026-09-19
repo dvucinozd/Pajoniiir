@@ -64,10 +64,12 @@ static void test_cross_page_read_and_eof_clamp(void)
     CHECK(memcmp(out, source.data + 17u, sizeof(out)) == 0);
     CHECK(cache.misses == 3u);
     CHECK(source.calls == 3u);
+    CHECK(cache.last_backend_offset == 64u);
 
     uint8_t tail[32];
     CHECK(audio_compressed_cache_read(&cache, 250u, tail, sizeof(tail)) == 7u);
     CHECK(memcmp(tail, source.data + 250u, 7u) == 0);
+    CHECK(cache.last_backend_offset == 256u);
 }
 
 static void test_hits_and_lru_eviction_stay_bounded(void)

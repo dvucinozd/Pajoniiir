@@ -1781,6 +1781,10 @@ static void ae_warm_cache_for_next_read(const audio_engine_state_t *eng,
  * under the lock instead of assuming there are none - a rising count is the
  * signal that the prediction no longer matches how the decoder reads. */
 static uint32_t s_locked_backend_reads[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_locked_backend_predicted_offset[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_locked_backend_actual_offset[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_locked_backend_stream_after[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_locked_backend_delta_bytes[AUDIO_ENGINE_DECK_COUNT];
 
 uint32_t audio_engine_locked_backend_read_count(uint8_t deck)
 {
@@ -2870,6 +2874,7 @@ static void ae_decode_task(void *arg)
 
         /* Warm the pages this decode will need before taking the lock, so the
          * USB read happens with the output task free to run. */
+        const size_t predicted_read_offset = ae_next_read_offset(eng, fw);
         ae_warm_cache_for_next_read(eng, fw);
 
         AE_LOCK();
@@ -2879,6 +2884,16 @@ static void ae_decode_task(void *arg)
         uint32_t decode_us = (uint32_t)(esp_timer_get_time() - decode_start_us);
         if (fw->cache.backend_bytes != backend_before &&
             ctx->deck < AUDIO_ENGINE_DECK_COUNT) {
+            __atomic_store_n(&s_locked_backend_predicted_offset[ctx->deck],
+                             (uint32_t)predicted_read_offset, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_locked_backend_actual_offset[ctx->deck],
+                             (uint32_t)fw->cache.last_backend_offset,
+                             __ATOMIC_RELAXED);
+            __atomic_store_n(&s_locked_backend_stream_after[ctx->deck],
+                             (uint32_t)fw->stream_pos, __ATOMIC_RELAXED);
+            __atomic_store_n(&s_locked_backend_delta_bytes[ctx->deck],
+                             (uint32_t)(fw->cache.backend_bytes - backend_before),
+                             __ATOMIC_RELAXED);
             (void)__atomic_add_fetch(&s_locked_backend_reads[ctx->deck], 1u,
                                      __ATOMIC_RELAXED);
         }
@@ -5914,6 +5929,18 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
 #if AE_FW
         out_snapshot->locked_backend_read_count[deck] =
             audio_engine_locked_backend_read_count(deck);
+        out_snapshot->locked_backend_predicted_offset[deck] =
+            __atomic_load_n(&s_locked_backend_predicted_offset[deck],
+                            __ATOMIC_RELAXED);
+        out_snapshot->locked_backend_actual_offset[deck] =
+            __atomic_load_n(&s_locked_backend_actual_offset[deck],
+                            __ATOMIC_RELAXED);
+        out_snapshot->locked_backend_stream_after[deck] =
+            __atomic_load_n(&s_locked_backend_stream_after[deck],
+                            __ATOMIC_RELAXED);
+        out_snapshot->locked_backend_delta_bytes[deck] =
+            __atomic_load_n(&s_locked_backend_delta_bytes[deck],
+                            __ATOMIC_RELAXED);
         out_snapshot->startup_waiting[deck] =
             atomic_load_bool(&s_start_waiting[deck]);
         out_snapshot->startup_wait_count[deck] =

@@ -1649,6 +1649,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"pcm_underrun2\":%u,"
         "\"locked_backend_reads1\":%u,"
         "\"locked_backend_reads2\":%u,"
+        "\"locked_backend_predicted2\":%u,"
+        "\"locked_backend_actual2\":%u,"
+        "\"locked_backend_stream_after2\":%u,"
+        "\"locked_backend_delta_bytes2\":%u,"
         "\"startup_waiting1\":%s,"
         "\"startup_waiting2\":%s,"
         "\"startup_wait_count1\":%u,"
@@ -1722,6 +1726,10 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.pcm_underrun_count[1],
         (unsigned)diagnostics.locked_backend_read_count[0],
         (unsigned)diagnostics.locked_backend_read_count[1],
+        (unsigned)diagnostics.locked_backend_predicted_offset[1],
+        (unsigned)diagnostics.locked_backend_actual_offset[1],
+        (unsigned)diagnostics.locked_backend_stream_after[1],
+        (unsigned)diagnostics.locked_backend_delta_bytes[1],
         diagnostics.startup_waiting[0] ? "true" : "false",
         diagnostics.startup_waiting[1] ? "true" : "false",
         (unsigned)diagnostics.startup_wait_count[0],
