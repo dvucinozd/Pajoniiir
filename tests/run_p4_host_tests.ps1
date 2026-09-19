@@ -1322,16 +1322,9 @@ Assert-FileDoesNotContain `
     -RegexPattern "eng->(playing|paused|eof|playback_finished)\s*="
 
 Assert-FileContains `
-    -Name "p4 continuous audio output coordinates an idle window with both decoders" `
+    -Name "p4 continuous audio output periodically gives IDLE0 a watchdog tick" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
-    -LiteralPatterns @(
-        "audio_output_should_force_idle",
-        "atomic_store_bool(&s_audio_idle_window, true)",
-        "vTaskDelay(pdMS_TO_TICKS(2))",
-        "atomic_store_bool(&s_audio_idle_window, false)",
-        "atomic_load_bool(&s_audio_idle_window)",
-        "leaving a real scheduler window for IDLE0"
-    )
+    -LiteralPatterns @("audio_output_should_force_idle", "vTaskDelay(pdMS_TO_TICKS(1))", "IDLE0 one real tick")
 
 Assert-FileContains `
     -Name "p4 scratch freeze promptly releases an in-flight canonical timeline writer" `
@@ -1572,6 +1565,33 @@ $tests = @(
             "-o", "test_audio_keylock.exe",
             "test_audio_keylock.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_keylock_search"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock_search.exe"
+        Args = @(
+            "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock_search.exe",
+            "test_audio_keylock_search.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_keylock_tempo"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock_tempo.exe"
+        Args = @(
+            "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock_tempo.exe",
+            "test_audio_keylock_tempo.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c",
             "-lm"
         )
     },

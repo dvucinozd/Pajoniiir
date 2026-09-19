@@ -2313,11 +2313,6 @@ static uint32_t s_phase_block[AE_PH_COUNT];
 #define AE_MIX_GROUPS 16
 static uint32_t s_mix_group_max_us;
 static uint32_t s_mix_group_worst;
-/* A delay in the priority-6 output task alone does not guarantee that IDLE0
- * runs: either priority-5 decoder can consume that same tick. The output task
- * raises this flag around its periodic two-tick idle window so both decoders
- * cooperatively stay off CPU0 until the window closes. */
-static bool s_audio_idle_window;
 
 #if !defined(AUDIO_ENGINE_PC_TEST)
 /* Internal .noinit RAM is intentionally not zeroed by the P4 startup path.
@@ -2793,10 +2788,6 @@ static void ae_decode_task(void *arg)
 
     /* Steady-state decode loop (reads from PSRAM memory — no USB). */
     while (runtime->run) {
-        if (atomic_load_bool(&s_audio_idle_window)) {
-            vTaskDelay(pdMS_TO_TICKS(1));
-            continue;
-        }
         if (eng->seek_requested) {
             AE_LOCK();
             if (eng->seek_requested) {
@@ -3363,7 +3354,6 @@ static void audio_output_mark_sink_fault(esp_err_t main_rc, esp_err_t hp_rc)
 static void ae_output_task(void *arg)
 {
     (void)arg;
-    atomic_store_bool(&s_audio_idle_window, false);
     int16_t master_out[AE_OUT_FRAMES * 2];
     int16_t hp_out[AE_OUT_FRAMES * 2];
     uint32_t consecutive_busy_blocks = 0u;
@@ -3779,14 +3769,12 @@ static void ae_output_task(void *arg)
         if (scratch_writer_needs_cpu ||
             audio_output_should_force_idle(++consecutive_busy_blocks,
                                            elapsed_since_idle_us)) {
-            /* taskYIELD only offers CPU0 to equal/higher-priority tasks. A
-             * delay in this priority-6 task is not sufficient either: the two
-             * priority-5 decoders can occupy the released tick and still starve
-             * IDLE0. Hold them behind a shared flag and keep the output asleep
-             * for two ticks, leaving a real scheduler window for IDLE0. */
-            atomic_store_bool(&s_audio_idle_window, true);
-            vTaskDelay(pdMS_TO_TICKS(2));
-            atomic_store_bool(&s_audio_idle_window, false);
+            /* taskYIELD only offers CPU0 to equal/higher-priority tasks. Give
+             * the lower-priority decoder one real tick immediately when a
+             * scratch freeze is waiting for its writer flag. The same delay
+             * also gives IDLE0 one real tick periodically for its watchdog
+             * during continuous DSP. */
+            vTaskDelay(pdMS_TO_TICKS(1));
             consecutive_busy_blocks = 0u;
             last_idle_tick_us = esp_timer_get_time();
 #if !defined(AUDIO_ENGINE_PC_TEST)
