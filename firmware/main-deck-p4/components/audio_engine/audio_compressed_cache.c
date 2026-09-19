@@ -158,7 +158,16 @@ bool audio_compressed_cache_prefetch(audio_compressed_cache_t *cache,
 {
     if (!cache || offset >= cache->file_size) return false;
     size_t aligned = page_aligned_offset(cache, offset);
-    if (find_page(cache, aligned, NULL)) return true;
+    audio_compressed_cache_page_t *page = find_page(cache, aligned, NULL);
+    if (page) {
+        /* Prefetch is also an LRU touch. The FLAC decode path warms the current
+         * page followed by the forward window. If a hit does not refresh its
+         * stamp, loading a later missing page can evict the current (formerly
+         * oldest) page before decode starts and force the same backend read
+         * back under the engine lock. */
+        page->stamp = ++cache->stamp;
+        return true;
+    }
     return load_page(cache, aligned, NULL) != NULL;
 }
 
