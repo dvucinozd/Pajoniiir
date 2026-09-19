@@ -1725,17 +1725,21 @@ static size_t ae_next_read_offset(const audio_engine_state_t *eng,
     return eng->file_pos;
 }
 
-/* Largest single read any decoder issues: WAV asks for
- * MINIMP3_MAX_SAMPLES_PER_FRAME * block_align (4608 B at 16-bit stereo) and
- * minimp3 refills 4096 B. Rounded up so the span below covers both. */
-#define AE_MAX_DECODE_READ_BYTES 8192u
+/* The MP3 and WAV readers issue one bounded read per decode call. Note that
+ * MINIMP3_MAX_SAMPLES_PER_FRAME is 2304 in the bundled decoder, so a stereo
+ * PCM16 WAV read is 9216 bytes, not 4608 bytes. FLAC is different: one
+ * drflac_read_pcm_frames_s16() call may refill its internal bitstream buffer
+ * several times while decoding a compressed frame. For FLAC, warm every page
+ * in the bounded cache's forward window. */
+#define AE_MP3_DECODE_READ_BYTES 4096u
+#define AE_WAV_DECODE_READ_BYTES (MINIMP3_MAX_SAMPLES_PER_FRAME * 4u)
 
-/* AE_LOCK is a single global recursive mutex, and ae_output_task takes it for
- * every audio block. A cache miss taken while holding it therefore blocks the
- * priority-6 output task for the whole USB transfer, which is an audible
- * dropout rather than merely a late decode. Fetch the pages the next decode
- * will touch *before* the lock: the cache has exactly one client (this decode
- * task), so warming it outside the lock races with nobody.
+/* AE_LOCK is a single global recursive mutex shared with transport/status and
+ * the output task's scratch-control path. A cache miss taken while holding it
+ * therefore blocks unrelated real-time/control work for the whole USB
+ * transfer. Fetch the pages the next decode will touch *before* the lock: the
+ * cache has exactly one client (this decode task), so warming it outside the
+ * lock races with nobody.
  *
  * Both ends of the read span are warmed. A read is up to 8 KiB against 32 KiB
  * pages, so it usually sits inside one page, but a read that starts near a page
@@ -1745,11 +1749,31 @@ static size_t ae_next_read_offset(const audio_engine_state_t *eng,
 static void ae_warm_cache_for_next_read(const audio_engine_state_t *eng,
                                         audio_fw_preload_t *fw)
 {
-    if (!fw) return;
+    if (!eng || !fw || fw->cache.page_size == 0u ||
+        fw->cache.page_count == 0u) return;
     const size_t start = ae_next_read_offset(eng, fw);
-    (void)audio_compressed_cache_prefetch(&fw->cache, start);
-    (void)audio_compressed_cache_prefetch(&fw->cache,
-                                          start + AE_MAX_DECODE_READ_BYTES - 1u);
+    size_t page_count = fw->cache.page_count;
+    if (eng->format != AUDIO_FORMAT_FLAC) {
+        const size_t span = eng->format == AUDIO_FORMAT_WAV
+            ? (size_t)AE_WAV_DECODE_READ_BYTES
+            : (size_t)AE_MP3_DECODE_READ_BYTES;
+        const size_t first_page_offset = start % fw->cache.page_size;
+        page_count = (first_page_offset + span + fw->cache.page_size - 1u) /
+                     fw->cache.page_size;
+        if (page_count > fw->cache.page_count) {
+            page_count = fw->cache.page_count;
+        }
+    }
+
+    /* Adding one page size to the unaligned start advances to the next cache
+     * page each time. Capping at page_count is important: warming a full cache
+     * plus an unaligned end point would touch page_count + 1 pages and evict the
+     * first page before decode starts. */
+    for (size_t page = 0u; page < page_count; ++page) {
+        size_t offset = start + page * fw->cache.page_size;
+        if (offset < start) break; /* size_t overflow guard */
+        (void)audio_compressed_cache_prefetch(&fw->cache, offset);
+    }
 }
 
 /* Warming is a prediction, so it can miss: a seek retargets the cursor, and the

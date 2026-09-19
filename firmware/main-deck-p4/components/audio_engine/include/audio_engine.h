@@ -316,8 +316,9 @@ void audio_engine_set_uac_active_data_loss_flags(uint32_t flags);
 
 /* Decode reads that still hit USB while the engine lock was held, per deck.
  * The decode loop warms the compressed cache before taking the lock precisely so
- * this stays flat; every increment is one audio block during which the output
- * task could not run. Firmware only - the PC test build has no cache. */
+ * this stays flat; every increment is one decode call that held the shared
+ * engine lock across a backend transfer. Firmware only - the PC test build has
+ * no cache. */
 #if !defined(AUDIO_ENGINE_PC_TEST)
 uint32_t audio_engine_locked_backend_read_count(uint8_t deck);
 #endif

@@ -284,17 +284,16 @@ function Invoke-SinglePrecisionContract {
                       "-std=c99", "-Iinclude", "-I.") + $sources)
 }
 
-# AE_LOCK is one global recursive mutex and ae_output_task takes it on every
-# audio block, so a USB page fetch taken while holding it stalls the priority-6
-# output task for the whole transfer - an audible dropout, not just a slow
-# decode. The decode loops therefore warm the pages first and take the lock
-# afterwards. The ordering is the entire point, so check the order rather than
-# the presence of the call: a later edit that moves the warm below AE_LOCK()
-# would keep every substring intact while restoring the stall.
+# AE_LOCK is one global recursive mutex shared with transport/status and the
+# output task's scratch-control path. A USB page fetch taken while holding it
+# therefore blocks unrelated real-time/control work for the whole transfer.
+# The decode loops warm the pages first and take the lock afterwards. The
+# ordering is the entire point, so check the order rather than only presence.
 function Assert-DecodeWarmsCacheBeforeEngineLock {
     $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
     Write-Host "==> static decode warms the compressed cache before taking AE_LOCK"
     $lines = Get-Content -LiteralPath $Path
+    $audioEngineText = Get-Content -LiteralPath $Path -Raw
     $callSites = 0
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -notmatch 'ae_warm_cache_for_next_read\(eng, fw\);') { continue }
@@ -308,6 +307,12 @@ function Assert-DecodeWarmsCacheBeforeEngineLock {
     }
     if ($callSites -ne 2) {
         throw "expected 2 ae_warm_cache_for_next_read call sites in audio_engine.c (sample-rate latch and steady-state decode), found $callSites"
+    }
+    if ($audioEngineText -notmatch 'AE_WAV_DECODE_READ_BYTES\s+\(MINIMP3_MAX_SAMPLES_PER_FRAME\s*\*\s*4u\)' -or
+        $audioEngineText -notmatch 'eng->format\s*!=\s*AUDIO_FORMAT_FLAC' -or
+        $audioEngineText -notmatch 'page_count\s*=\s*fw->cache\.page_count' -or
+        $audioEngineText -notmatch 'page\s*<\s*page_count') {
+        throw "decode cache warming must cover the exact PCM16 WAV read and the full bounded FLAC window"
     }
 }
 
