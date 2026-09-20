@@ -1,6 +1,6 @@
 # P4 Release Remediation Audit
 
-Status: **active P4-only tracker, reconciled 2026-09-11**.
+Status: **active P4-only tracker, reconciled 2026-09-20**.
 
 The full legacy audit is retained in
 [`ARCHIVE_FIXEVI_REMEDIATION_AUDIT.md`](ARCHIVE_FIXEVI_REMEDIATION_AUDIT.md).
@@ -68,7 +68,13 @@ operations, zero strict counter delta, no reboot/TWDT and operator-confirmed
 clean audio. This closes the time-based regression gate. Evidence:
 [`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
 
-## Software-complete, hardware gate still open
+## M2 beta remediation complete
+
+The rows below preserve the original remediation-to-gate mapping. All mandatory
+M2 beta gates represented by them were subsequently closed or explicitly
+waived and documented before merge. The current production-only boundary is in
+[`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) and
+[`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md).
 
 | Area | Implemented protection | Remaining gate |
 | --- | --- | --- |

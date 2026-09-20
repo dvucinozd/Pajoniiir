@@ -1,6 +1,6 @@
 # ESP-IDF 6.0.2 P4 Acceptance Status
 
-Status: **active P4-only migration acceptance, reconciled 2026-09-11**.
+Status: **active P4-only migration acceptance, reconciled 2026-09-20**.
 
 The full historical migration record is
 [`ARCHIVE_ESP_IDF_6_0_2_MIGRATION.md`](ARCHIVE_ESP_IDF_6_0_2_MIGRATION.md).
@@ -38,18 +38,19 @@ SDK.
 - [x] Current bench protected and backfeed-free 5 V/dual-VBUS measurement gate
   passed by operator report.
 
-## Hardware gates still open
+## Final hardware disposition
 
-- [ ] Cold/warm boot, both insertion orders and repeated USB0/USB1 lifecycle
-  matrix.
-- [ ] USB0 removal during active load/decode and hands-free reboot recovery.
-- [ ] Verified physical WAV/FLAC fixtures and sustained mixed-format cache load.
-- [ ] BNA and locked-backend-read counter acceptance under sustained playback.
-- [ ] Worst-case dual Master Tempo P4 CPU/I2S and listening acceptance.
-- [ ] Detailed near-EOF, scratch/re-grab, STOP/reload and Beat FX matrix.
-- [ ] Hardened pull OTA, negative/slow/interrupted upload and rollback smoke.
-- [ ] Multi-hour combined-load run.
-- [ ] Closed-enclosure power, thermal, RF and wired-recovery acceptance.
+- [x] Dual-USB lifecycle matrix accounted: 43 PASS, seven explicit I/J waivers
+  and zero pending cycles.
+- [x] Active-load removal, reboot recovery and post-OTA dual-root recovery.
+- [x] Physical MP3/WAV/FLAC and sustained mixed-format cache acceptance.
+- [x] BNA/locked-read, dual Master Tempo, near-EOF, scratch, reload and Beat FX
+  acceptance within the recorded M2 beta scope.
+- [x] Hardened pull OTA, interruption recovery, rollback and multi-hour
+  combined-load run.
+- [x] Existing enclosure accepted by operator after approximately two months
+  of use; wired recovery confirmed. Numeric thermal/RF/strain margins remain
+  uncaptured and must be repeated after a physical or power-topology change.
 
 A green build is not hardware acceptance. Work these rows through
 [`P4_DUAL_USB_NEXT_SESSION.md`](P4_DUAL_USB_NEXT_SESSION.md).

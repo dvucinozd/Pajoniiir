@@ -1,6 +1,6 @@
 # Pajoniiir Project Overview
 
-Status: **active P4-only overview, updated 2026-09-11**.
+Status: **active P4-only overview, reconciled 2026-09-20**.
 
 Pajoniiir is a standalone dual-deck DJ system. A single ESP32-P4
 JC4880P443C_I_W board owns playback, USB, controller state, mixer/DSP, display,
@@ -24,40 +24,42 @@ decisions.
 
 ## Current source and installed baseline
 
-The current validated firmware and latest installed hardware candidate is
-`RC2-116-g77d723c` from commit `77d723c`, on `ota_1`. It passed:
+The installed and validated beta image is the immutable annotated `M2` tag at
+`d2dabfa7561ff1e0486acc42c7acf42607654e19`, on `ota_0`. The completed feature
+was merged into `master` by `d3099f9`; post-merge portability fixes leave
+`master` at `c786de7`. The final post-merge GitHub Actions run passed the host,
+UI, ESP-IDF v6.0.2 build and binary/provenance gates. The installed M2 image
+passed:
 
 - the complete P4 host suite, clean ESP-IDF v6.0.2 signed build and package
   verification;
 - signed OTA and exact-image identity verification;
 - USB0 mount plus FLX4 profile, MIDI IN/OUT and UAC activation;
-- a targeted three-hour continuous dual-MP3 limiter/WDT soak with one boot
-  epoch and no watchdog reset, PCM underrun or active UAC loss and no
-  observable USB/controller/output failure.
+- the complete dual-USB lifecycle accounting and reduced OTA recovery matrix;
+- real MP3/WAV/FLAC and combined functional acceptance;
+- a 180.156-minute combined soak with zero strict counter delta, no reboot or
+  TWDT and operator-confirmed clean audio;
+- the final physical FLX4, Library, MAIN and cue smoke.
 
-The run recorded 14 rare output-late warnings over 1,999,090 submitted UAC
-blocks. The worst was 12,169 us against the deliberately sensitive 11,610 us
-warning threshold, with no downstream failure. Inspection points to bounded
-I2S pacing/scheduler jitter rather than a limiter or DSP defect, so no code
-change was made. An earlier exact candidate also passed a 30-minute dual-active
-MP3 seek/restart soak. These focused results do not make the branch
-release-ready.
 The complete evidence and remaining gates are in
 [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) and
 [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
 
 ## Release boundary
 
-Before release, complete and record:
+The accelerated M2 beta and merge are complete. Before an unrestricted
+production release:
 
-1. repeated USB0/USB1 hotplug and recovery matrix;
-2. real WAV and FLAC load, seek, cache and playback checks;
-3. on-device audio deadline, DSP and listening acceptance;
-4. guarded web-control and push/pull OTA acceptance;
-5. multi-hour combined-load soak;
-6. closed-enclosure thermal/power/RF test, including repetition of the passed
-   bench 5 V/VBUS measurements;
-7. production security decision and final clean exact-commit signed build.
+1. provision and verify the selected encrypted offline signing-key storage and
+   separate encrypted backup, then resolve rotation, Secure Boot, Flash
+   Encryption, PMF/WPA3 and SBOM decisions;
+2. select a new immutable production version without moving the `M2` tag;
+3. run a clean exact-commit signed build, install and final product smoke;
+4. publish hashes, slot/version evidence and the production release record.
+
+The operator accepted the current enclosure after approximately two months of
+use and confirmed a wired recovery path. No separate enclosure rerun is
+planned; numeric enclosure thermal/RF margins remain uncaptured.
 
 ## Source of truth
 

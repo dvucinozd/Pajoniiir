@@ -40,8 +40,9 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > USB0 remained mounted with a coherent 100-track Library; profile, MIDI, LEDs,
 > UAC, dual playback and audible MAIN/cue recovered in every accepted cycle.
 > Group K software-reboot and Group L signed OTA-reboot recovery both passed
-> 2/2 with both roots occupied and no manual reinsert. The branch remains **not
-> release-qualified**. Real MP3/WAV/FLAC load/play/EOF and simultaneous
+> 2/2 with both roots occupied and no manual reinsert. The accelerated **M2
+> beta is release-qualified and merged into `master`**. Real MP3/WAV/FLAC
+> load/play/EOF and simultaneous
 > MP3+FLAC/MP3+WAV focused cache checks now pass with audible confirmation;
 > the combined functional run passed for 78.176 minutes with clean audible
 > confirmation. The first following combined soak exposed a reproducible UAC
@@ -53,7 +54,12 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > opposite-slot rollback. Guarded control/load/seek/profile mutation and
 > profile persistence through boot 17 also pass. The final physical FLX4 and
 > audible MAIN/cue smoke passed with zero strict counter delta, completing the
-> accelerated M2 beta gate. Closed-enclosure/production gates remain open.
+> accelerated M2 beta gate. The operator accepted the existing two-month
+> enclosure deployment and confirmed wired recovery access, so no separate
+> enclosure rerun is planned. Signing-key custody is defined as encrypted
+> offline storage with a separate encrypted backup; provisioning/verification,
+> rotation, remaining security decisions and a final exact production release
+> pass remain open.
 
 ## Current capabilities
 

@@ -9,9 +9,9 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-153-g66b5fee-dirty` is the latest installed candidate on `ota_1`; its
-  full host suite, clean ESP-IDF v6.0.2 signed build, package verification and
-  focused hardware regression pass;
+- immutable tagged `M2` at `d2dabfa` is the installed candidate on `ota_0`;
+  its full host suite, clean ESP-IDF v6.0.2 signed build, package verification,
+  public pull OTA and focused hardware regression pass;
 - the 78.176-minute combined functional gate is PASS with explicit clean-audio
   confirmation. The first following three-hour combined soak stopped after
   69.187 minutes on `+18,316` UAC underflow frames. The failure was reproduced
@@ -82,10 +82,11 @@ The lifecycle matrix is fully accounted: 43/50 PASS,
 seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
 attachment/reconnect actions. Groups I/J are administratively closed and will
 not be resumed. The combined functional session and repaired three-hour soak
-are also complete. The RC2-to-M2 prefix migration and public positive pull-OTA
-path are complete. The remaining accelerated M2 beta path is completion of the
-reduced negative/recovery OTA matrix and one final freeze/release pass. Detailed
-scope and beta versus production boundaries are in
+are also complete. The RC2-to-M2 prefix migration, public positive pull-OTA,
+reduced negative/recovery OTA matrix and final M2 beta acceptance are complete.
+The feature was merged into `master` at `d3099f9`; post-merge CI passed at
+`c786de7`. Remaining work belongs only to the unrestricted production release.
+Detailed scope and beta versus production boundaries are in
 [`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md).
 
 The release/version prefix migration from `RC2` to `M2` is complete as an
@@ -105,9 +106,9 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
 | 6 | Close functional DSP/FX rows | Near-EOF, STOP/LOAD, mixer/PFL and detailed Beat FX transition/routing checks pass |
 | 7 | Close Wi-Fi, web, profile and OTA fault paths | Pull/push OTA, rollback, invalid/slow/interrupted requests and post-reboot USB recovery pass |
 | 8 | Run multi-hour combined soak | Defined multi-hour run completes without reset, media/controller loss, latched control or gated counter increase |
-| 9 | Qualify final enclosure | Power, temperature, RF, connector strain and wired recovery pass with enclosure closed |
-| 10 | Resolve production security | Credentials, signing-key storage/rotation, SBOM and irreversible security decisions are implemented or explicitly accepted |
-| 11 | Freeze and release | Clean exact commit, full automated gates, signed artifact, complete manual smoke, validation record, merge and tag |
+| 9 | Qualify final enclosure | Accepted for this scope by operator after approximately two months in the existing enclosure; wired recovery confirmed; repeat after physical/power changes |
+| 10 | Resolve production security | Shared service credential accepted; encrypted offline signing-key custody with a separate encrypted backup selected; provision/verify custody and resolve rotation, SBOM and irreversible security decisions |
+| 11 | Freeze and release | Select a new immutable production version, clean exact commit, full automated gates, signed artifact, complete manual smoke, validation record and tag |
 
 ## Test policy
 
@@ -121,8 +122,8 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
   reconnects and explicit active-load/decode removals.
 - Preserve raw counters, firmware version, slot, boot epoch and operator-visible
   or audible results for every acceptance session.
-- Do not merge the feature branch before the full recovery gate and remaining
-  mandatory qualification pass.
+- Do not move the immutable `M2` tag. Production release must use a new version
+  identifying its exact source commit.
 
 ## Deferred work
 

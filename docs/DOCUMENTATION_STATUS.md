@@ -16,7 +16,9 @@ they actually tested; they are not current instructions.
 
 ## Current candidate checkpoint
 
-- Branch: `feat/p4-dual-usb-host`
+- Canonical branch: `master`
+- Current source head: `c786de7f6fe423331942749b7a651a5e83bcf688`
+- Merge commit: `d3099f9609802a6a0f6c18d660c2ead54c2fe6d0`
 - Release commit and annotated tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19`
   / `M2`
 - Installed build version and slot: `M2` / `ota_0`, current boot identity `17`
@@ -118,20 +120,30 @@ and exact installed image. Host/UI/build/package gates, lifecycle and focused
 media matrices, combined functional/soak runs, reduced OTA fault recovery,
 guarded mutations and the final physical/audible operator smoke all pass.
 
-This is not an unrestricted production-release claim. The branch has not been
-merged, and production release still requires an explicit merge/release
-decision plus:
+The completed feature was merged into `master` at `d3099f9`. Post-merge
+portability fixes culminated at `c786de7`, where GitHub Actions run `35523213652`
+passed the complete host, UI, ESP-IDF v6.0.2 build and artifact gates. See
+[`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md).
 
-1. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
-   repetition of the passed bench electrical measurements;
-2. production credential, signing-key, rotation and optional irreversible
-   security decisions;
-3. exact production-candidate full functional smoke and documentation freeze.
+This is not an unrestricted production-release claim. The operator accepted
+the existing enclosure configuration after approximately two months of use and
+confirmed an accessible wired recovery path; the dedicated enclosure rerun is
+waived, with numeric thermal/RF margins explicitly uncaptured. Production
+release still requires:
+
+1. provision and verify the selected encrypted offline signing-key storage plus
+   separate encrypted backup, then resolve rotation and remaining optional
+   irreversible security decisions; the shared service-password risk is
+   accepted;
+2. a new immutable production version without moving the `M2` tag;
+3. exact production-candidate signed build/install, full smoke and release
+   record.
 
 The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
-Raw numeric readings were not preserved, so the result applies only to the
-unchanged current bench wiring and must be repeated in the final enclosure.
+Raw numeric readings were not preserved, so the electrical result applies only
+to the unchanged wiring and enclosure. Repeat it after any wiring, supply or
+enclosure change.
 
 The complete ordered handoff is
 [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).

@@ -4,18 +4,20 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
 
 ## Repository and build
 
-- [x] Branch is `feat/p4-dual-usb-host`.
+- [x] Canonical branch is `master`; feature completion was merged by `d3099f9`.
+- [x] Post-merge source head `c786de7` matches `origin/master`.
 - [x] UAC idle-continuity remediation is committed as `b9139e1`.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-153-g66b5fee-dirty` on hardware.
-- [ ] Repeat all automated gates from a fresh checkout for the final candidate.
+- [x] Install and focused-smoke immutable tagged `M2` on hardware.
+- [x] Repeat automated host/UI/build/artifact gates after merge; GitHub Actions
+  run `35523213652` passes at `c786de7`.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-153-g66b5fee-dirty` installed on `ota_1` with empty OTA error.
+- [x] `M2` installed on `ota_0` with empty OTA error.
 - [x] USB0 mounts and exposes the current 324-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -40,7 +42,9 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   dual-deck playback.
 - [x] Confirm maximum and sustained current and brownout margin are inside the
   defined limits; raw numeric readings were not preserved.
-- [ ] Repeat measurements in final enclosure wiring.
+- [x] Operator confirmed the accepted wiring is already in its approximately
+  two-month enclosure configuration. A separate rerun is waived; repeat after
+  any wiring, supply or enclosure change.
 
 ## Dual-USB lifecycle matrix
 
@@ -92,9 +96,13 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   96 kHz/24-bit FLAC with zero PCM underruns and BNA recovery.
 - [x] Run 30-second simultaneous MP3+FLAC and MP3+WAV counter windows; both
   windows have zero locked-read, PCM-underrun, late and BNA deltas.
-- [ ] Run mixed MP3/WAV/FLAC dual-deck load, seek, loop, CUE, scratch and EOF.
-- [ ] Confirm BNA recovery and locked-backend-read counters remain acceptable.
-- [ ] Measure worst-case dual Master Tempo CPU/I2S deadlines on P4.
+- [x] Run mixed MP3/WAV/FLAC dual-deck load, seek, loop, CUE, scratch and EOF
+  across the focused media, functional and combined-soak gates.
+- [x] Confirm BNA recovery and locked-backend-read counters remain acceptable;
+  accepted windows completed with zero gated delta.
+- [x] Accept exact-image dual Master Tempo deadline evidence from the focused
+  regression and 180.156-minute combined soak. Direct cycle-margin profiling
+  remains uncaptured and must be repeated after audio/DSP scheduling changes.
 - [x] Reproduce and fix the immediate dual-Master-Tempo `IDLE0` WDT; exact
   `RC2-150-g909e068` MP3 + 96 kHz FLAC smoke exceeded the old reset point with
   normal sound and zero underrun/UAC-loss counters.
@@ -103,9 +111,11 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   PCM/UAC/WDT errors and clean listening.
 - [x] Fix active-loop Shift+Jog search freezing at near EOF; post-OTA D2 reaches
   natural EOF and restarts normally with clean counters and sound.
-- [ ] Listen for clicks, flat-top clipping, pitch artefacts and MAIN/cue defects.
-- [ ] Exercise both decks with Master Tempo off/on and near-EOF scratch/hold.
-- [ ] Complete detailed Beat FX CH1/CH2/1&2 transition and tail checks.
+- [x] Listen for clicks, flat-top clipping, pitch artefacts and MAIN/cue defects;
+  operator confirmed clean accepted runs.
+- [x] Exercise both decks with Master Tempo off/on and near-EOF scratch/hold.
+- [x] Complete Beat FX routing/transition/tail coverage required by the
+  accelerated M2 functional gate.
 
 ## Wi-Fi, web, profile and OTA
 
@@ -159,17 +169,25 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
 - [x] Complete the final exact-image operator smoke on M2 boot 17: physical
   dual PLAY, both jog wheels, D1/D2 CUE/PFL and Library browse/LOAD passed;
   MAIN/cue audio was clean and the correlated strict counters stayed at zero.
-- [ ] Measure closed-enclosure power and temperature margins.
-- [ ] Verify RF/AP reachability and connector strain relief.
-- [ ] Preserve an accessible wired recovery/service path.
+- [x] Dedicated closed-enclosure power/temperature rerun waived by operator
+  after approximately two months of operation in the existing enclosure;
+  numeric thermal margin remains uncaptured.
+- [x] Existing enclosure operation and Pajoniiir AP access accepted by operator;
+  no separate RF/strain qualification is planned for this scope.
+- [x] Accessible wired recovery/service path confirmed by operator.
 
 Automated and unattended M2 evidence:
 [`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md).
 
 ## Production and release
 
-- [ ] Decide per-device service credentials versus documented accepted risk.
-- [ ] Define production signing-key custody and rotation.
+- [x] Use one shared service password; shared-credential risk explicitly
+  accepted for this product scope.
+- [x] Define signing-key custody: encrypted offline primary storage plus a
+  separate encrypted offline backup; never commit or publish either copy.
+- [ ] Provision both signing-key copies, restrict access and verify recovery
+  from the backup without exposing private key material.
+- [ ] Define production signing-key rotation.
 - [ ] Decide Secure Boot, Flash Encryption, PMF/WPA3 and irreversible
   provisioning policy.
 - [ ] Select and pin an SPDX/CycloneDX SBOM generator if required for release.
@@ -177,8 +195,10 @@ Automated and unattended M2 evidence:
 - [ ] Build, sign, verify and install the exact final image.
 - [ ] Run the complete manual product smoke.
 - [ ] Publish hashes, slot/version evidence and all remaining acceptance results.
-- [ ] Merge only after every mandatory gate is closed, then create the release
-  tag.
+- [x] Merge the release-qualified M2 beta successor into `master`; completed by
+  `d3099f9` without moving the immutable `M2` tag.
+- [ ] Select a new immutable production version, tag the exact production
+  commit and publish its release record.
 
 Detailed procedure: [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
 

@@ -2,7 +2,9 @@
 
 Status: current mapping and acceptance ledger, audited 2026-07-16. `Implemented`
 means a firmware path exists; hardware acceptance is stated separately per row
-or section. XML supplies addresses, never standalone runtime behavior.
+or section. XML supplies addresses, never standalone runtime behavior. Rows
+that name `feat/p4-dual-usb-host` preserve their implementation provenance;
+that completed branch was merged into `master` at `d3099f9` on 2026-09-20.
 
 Source file:
 [docs/reference/Pioneer-DDJ-FLX4.midi.xml](reference/Pioneer-DDJ-FLX4.midi.xml)

@@ -7,24 +7,25 @@ Status: **active P4-only operational handoff**.
 ## Repository and device checkpoint
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
-- Branch: `feat/p4-dual-usb-host`
-- Source checkpoint: UAC idle-continuity remediation commit `b9139e1`; the
-  installed dirty-build metadata predates the source-equivalent commit
-- Installed firmware version: `RC2-153-g66b5fee-dirty`
-- Current application: `2,459,392` bytes, SHA-256
-  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
+- Branch: `master`
+- Current source head: `c786de7f6fe423331942749b7a651a5e83bcf688`
+- Merge commit: `d3099f9609802a6a0f6c18d660c2ead54c2fe6d0`
+- Installed firmware version/source tag: `M2` /
+  `d2dabfa7561ff1e0486acc42c7acf42607654e19`
+- Current application: `2,459,520` bytes, SHA-256
+  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--H plus
   I1/I2/J1 and K1/K2 pass; the earlier `RC2-116-g77d723c` passed the targeted
   limiter/WDT soak, and the current repaired candidate passed the final
   180.156-minute combined soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-153-g66b5fee-dirty`
-- Installed slot: `ota_1`
+- Latest installed version: `M2`
+- Installed slot: `ota_0`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,459,392` bytes
+- Application: `2,459,520` bytes
 - Application SHA-256:
-  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
+  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
 
 The installed image retains the output-owner timeline and loop-safe Shift+Jog
 fixes and adds continuous silent MAIN/UAC clocking while both renderers are
@@ -75,24 +76,26 @@ Evidence:
 
 ## Current release gate
 
-The remaining work follows the accelerated M2 beta path in
-[`../M2_BETA_ACCELERATED_RELEASE_PLAN.md`](../M2_BETA_ACCELERATED_RELEASE_PLAN.md).
-The combined functional and three-hour soak gates are complete; the reduced
-physical OTA/fault matrix, version-prefix migration and final freeze/release
-pass remain. Final enclosure and production-security decisions remain explicit
-production gates.
+The accelerated M2 beta path in
+[`../M2_BETA_ACCELERATED_RELEASE_PLAN.md`](../M2_BETA_ACCELERATED_RELEASE_PLAN.md)
+is complete and merged into `master`. The immutable `M2` tag remains on the
+exact installed source commit; post-merge host/UI/build/artifact CI passed at
+`c786de7`.
 
 The current bench common 5 V rail and both downstream VBUS branches passed the
 requested electrical measurements by operator report on 2026-09-11. The
 earlier P0 bench blocker is closed for the unchanged current wiring. Raw
-numeric readings were not preserved, so the test must be repeated if the
-wiring or supply changes and with the final enclosure configuration.
+numeric readings were not preserved. The operator confirmed on 2026-09-20 that
+this wiring is already in the enclosure used for approximately two months and
+that wired recovery is accessible, so a separate enclosure rerun is waived.
+Repeat qualification after any wiring, supply or enclosure change.
 
 The lifecycle matrix is closed at 43 PASS and seven explicitly waived I/J
-cycles. The combined functional and repaired three-hour soak gates are PASS.
-The next action is the reduced OTA/fault matrix, followed by version-prefix
-migration and the final release pass. Do not merge the branch until the
-remaining mandatory release gates pass.
+cycles. The combined functional and repaired three-hour soak gates, reduced
+OTA/fault matrix, M2 migration, physical smoke, merge and post-merge CI are
+PASS. The next action is to resolve or explicitly accept the remaining
+production-security decisions, choose a new immutable production version and
+run its exact-commit signed release pass.
 
 ## Session 1 — electrical qualification — PASS for current bench wiring
 
@@ -326,23 +329,23 @@ The 2026-09-10 three-hour dual-MP3 loop is a passed targeted sub-gate for the
 limiter/WDT regression. It does not close this session because the complete
 stress mix and predeclared reconnect checkpoints were not included.
 
-## Session 7 — final enclosure and release
+## Session 7 — production release
 
-With production-intent wiring and the enclosure closed:
+The enclosure-specific rerun is waived by operator decision for the unchanged
+current unit. For the production release:
 
-1. repeat power measurements;
-2. measure temperatures at idle and worst sustained load;
-3. verify Wi-Fi/AP reachability;
-4. verify connector retention and cable strain relief;
-5. retain a reachable wired recovery/service connector;
-6. repeat the full manual product smoke;
-7. decide service credentials, signing-key custody/rotation, SBOM and
-   irreversible security provisioning;
-8. freeze one final commit;
-9. run the full host suite, UI simulator and clean signed build;
-10. install the exact final image and repeat the complete functional smoke;
-11. publish hashes, slot/version evidence and all acceptance results;
-12. merge only after mandatory gates close, then create the release tag.
+1. preserve the accepted enclosure, wiring and reachable wired recovery path;
+2. use the operator-selected shared service password and record its accepted
+   risk;
+3. provision and verify encrypted offline signing-key storage plus its separate
+   encrypted backup, then decide rotation, SBOM and irreversible security
+   provisioning;
+4. select a new version without moving the immutable `M2` tag;
+5. freeze one final commit;
+6. run the full host suite, UI simulator and clean signed build;
+7. install the exact final image and repeat the complete functional smoke;
+8. publish hashes, slot/version evidence and all acceptance results;
+9. create the production release tag.
 
 ## Resume commands
 

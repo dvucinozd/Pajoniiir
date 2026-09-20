@@ -209,8 +209,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `feat/p4-dual-usb-host` path (focused hardware-qualified through
-2026-09-01):
+Active `master` path (M2 beta hardware-qualified through 2026-09-20):
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID

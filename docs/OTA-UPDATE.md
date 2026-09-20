@@ -1,10 +1,11 @@
 # Pajoniiir OTA Update Procedure
 
-Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. The current
-installed candidate is `RC2-153-g66b5fee-dirty` on `ota_1`, source-equivalent
-to committed repair `b9139e1`. Its signed OTA, exact-image checks and final
-180.156-minute combined soak passed without a reset, strict audio/USB counter
-increase or audible defect. This procedure is the current P4 operator authority. The
+Status on `master`: P4 is the only active OTA target. The current installed
+candidate is immutable tagged `M2` at `d2dabfa`, on `ota_0`. Its signed public
+pull OTA, exact-image checks and final 180.156-minute combined soak passed
+without a reset, strict audio/USB counter increase or audible defect. The M2
+successor was merged at `d3099f9`, and the post-merge source head is `c786de7`.
+This procedure is the current P4 operator authority. The
 superseded multi-target design and its
 acceptance history are retained in
 [`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
@@ -43,11 +44,14 @@ the new signed endpoint.
 - The ignored private key is `keys/ota_signing_private.pem`.
 - The trusted public key is committed at
   `firmware/common/ota_manifest/keys/ddj_ota_release_public.der`.
-- Back up the private key offline and restrict access. Losing it prevents
-  future OTA releases unless a new trust key is installed over a wired path.
+- Production custody policy is encrypted offline primary storage with a
+  separate encrypted offline backup. Restrict access to both copies, keep them
+  outside Git and release artifacts, and verify backup recovery without
+  exposing private key material. Losing both copies prevents future OTA
+  releases unless a new trust key is installed over a wired path.
 - The current PEM is an unencrypted development/release key. Before production
-  distribution, move signing to encrypted offline storage, a secret store or
-  hardware-backed signer and define a key-rotation procedure.
+  distribution, provision and verify the selected encrypted stores and define
+  a key-rotation procedure.
 
 The current firmware trusts one key ID, `rel-001`. Adding or replacing trusted
 keys requires a firmware update signed by the existing key or a wired recovery
@@ -217,7 +221,8 @@ curl.exe -X POST `
 ## Historical S3 OTA path
 
 The S3 Debug AP, maintenance token, `/api/ota/s3` endpoint and S3 bundle were
-retired from the active product on `feat/p4-dual-usb-host`. Their accepted
+retired during P4 dual-USB development and the removal is now part of `master`.
+Their accepted
 behavior remains documented in the dated validation records and Git history;
 do not build, package or deploy an S3 image as part of a P4-only release.
 

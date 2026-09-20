@@ -12,8 +12,9 @@ physical evidence.
 
 Production security decisions, final closed-enclosure power/thermal/RF checks
 and non-FLX4 controller qualification may be deferred from M2 beta only when
-they remain explicitly listed as open. They are not silently waived and still
-block a production release.
+their disposition is explicit. On 2026-09-20 the operator accepted the current
+two-month enclosure deployment and confirmed wired recovery, waiving a separate
+enclosure rerun for this scope. Production security decisions remain separate.
 
 ## Compressed execution path
 
@@ -226,5 +227,8 @@ reactivated after boot 17 with USB0, MIDI and UAC healthy. The final physical
 FLX4 smoke then passed: both PLAY controls, both jog wheels, D1/D2 headphone
 CUE/PFL, Library browse/LOAD and clean MAIN/cue audio were operator-confirmed;
 the correlated strict counters stayed at zero. This completes the accelerated
-M2 beta definition of done. The documentation/merge decision and production
-enclosure and security gates remain outside that beta claim.
+M2 beta definition of done. The successor was merged into `master` at
+`d3099f9`; post-merge CI passed at `c786de7` without moving the immutable `M2`
+tag. The accepted enclosure disposition and remaining production-security
+gates stay outside the beta claim. See
+[`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md).
