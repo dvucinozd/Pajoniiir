@@ -1,6 +1,10 @@
-[![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
-
 # Pajoniiir M2.1
+
+[![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
+[![ESP-IDF 6.0.2](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml)
+[![User manual](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml)
+[![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
+[![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)
 
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
@@ -32,6 +36,39 @@ The current production release is
 | PCM5102A DAC | Stereo MAIN output over RCA |
 | Regulated 5 V / 3 A or better supply | Common system supply with separately protected USB outputs |
 | Pajoniiir enclosure | Printable model and reference renders in [`misc/`](misc/) |
+
+### Parts used
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/parts/Part-JC4880P443C-I-W-Y.jpg" alt="Guition JC4880P443C_I_W ESP32-P4 touchscreen development board"></td>
+    <td width="50%"><img src="docs/images/parts/Part-PCM5102A_side.jpg" alt="PCM5102A stereo RCA DAC module"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Guition JC4880P443C_I_W touchscreen board</sub></td>
+    <td align="center"><sub>PCM5102A stereo RCA DAC</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/parts/Part-USB-A.png" alt="Panel-mount USB-A socket"></td>
+    <td><img src="docs/images/parts/Part-Board2USB-A.jpg" alt="Board-to-panel USB cable"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Panel-mount USB-A socket for the Rekordbox drive</sub></td>
+    <td align="center"><sub>Board-to-panel USB cable</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/parts/Part-usb-c.jpg" alt="Panel-mount USB-C OTG cable"></td>
+    <td><img src="docs/images/parts/Part-power_usb_c.jpg" alt="Panel-mount USB-C power input"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Panel-mount USB-C OTG lead for the DDJ-FLX4</sub></td>
+    <td align="center"><sub>Panel-mount USB-C power input</sub></td>
+  </tr>
+</table>
+
+These are reference photos of the parts used in the build. Seller revisions
+and cable pinouts can vary; verify every part electrically and follow the
+wiring documentation rather than relying on product photos.
 
 > [!CAUTION]
 > USB0 and USB1 must receive safe, current-limited 5 V power. Isolate the
