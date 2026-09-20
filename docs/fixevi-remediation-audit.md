@@ -48,6 +48,26 @@ The broader combined-load timing/listening gate remains open.
 Evidence:
 [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
 
+## UAC idle-continuity regression closed in the current candidate
+
+The first final combined soak on `RC2-153-g66b5fee-dirty` reproduced a strict
+FLX4 UAC underflow after D2 loop clear plus D1 CUE/restart. The output task had
+slept without producing frames while both deck renderers were temporarily
+inactive, although the isochronous FLX4 endpoint continued draining its ring.
+The output task now clocks explicit silent MAIN/headphone blocks through that
+transition. The complete host suite and ESP-IDF v6.0.2 signed build pass, and
+the exact OTA image completed 126 fully sampled focused transitions plus one
+partially sampled natural-EOF transition with zero UAC, PCM, packet or reboot
+delta.
+
+Evidence:
+[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md).
+
+The following fresh combined soak passed for 180.156 minutes with 60 scheduled
+operations, zero strict counter delta, no reboot/TWDT and operator-confirmed
+clean audio. This closes the time-based regression gate. Evidence:
+[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
+
 ## Software-complete, hardware gate still open
 
 | Area | Implemented protection | Remaining gate |

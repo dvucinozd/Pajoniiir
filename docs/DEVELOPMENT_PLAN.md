@@ -1,6 +1,6 @@
 # P4 Development Plan
 
-Status: **active P4-only plan, reconciled 2026-09-19**.
+Status: **active P4-only plan, reconciled 2026-09-20**.
 
 ## Current position
 
@@ -9,10 +9,18 @@ The direct dual-root product path is implemented:
 - USB0 hosts Rekordbox media;
 - USB1 hosts the DDJ-FLX4 MIDI and four-channel USB audio interfaces;
 - P4 owns controller state, playback, UI, LEDs, MAIN and cue audio;
-- `RC2-151-g838c254-dirty` is the latest installed exact hardware image on
-  `ota_0`; its full host suite, ESP-IDF v6.0.2 signed build and focused
-  mixed-rate dual-Master-Tempo/search smoke pass, while the declared combined
-  functional gate remains open after a Stage 2 counter failure;
+- `RC2-153-g66b5fee-dirty` is the latest installed candidate on `ota_1`; its
+  full host suite, clean ESP-IDF v6.0.2 signed build, package verification and
+  focused hardware regression pass;
+- the 78.176-minute combined functional gate is PASS with explicit clean-audio
+  confirmation. The first following three-hour combined soak stopped after
+  69.187 minutes on `+18,316` UAC underflow frames. The failure was reproduced
+  in one focused pre-fix cycle and traced to the output task not feeding silence
+  while both renderers were temporarily idle during CUE/restart. The installed
+  repair keeps MAIN/UAC clocking through that transition and has zero strict
+  deltas across 126 fully sampled focused transitions. The fresh combined soak
+  then passed for 180.156 minutes and 60 operations with zero strict counter
+  delta, no reboot/TWDT and operator-confirmed clean audio throughout;
 - the bounded-cache LRU defect is fixed and exact-image verified: complete real
   96 kHz/24-bit FLAC and PCM16 WAV files reached natural EOF without PCM/BNA
   failure, simultaneous MP3+FLAC and MP3+WAV 30-second windows had zero locked
@@ -70,13 +78,13 @@ real defect. Exact cache evidence is in
 
 ## Ordered remaining phases
 
-Phases 1--3 are complete. The lifecycle matrix is fully accounted: 43/50 PASS,
+The lifecycle matrix is fully accounted: 43/50 PASS,
 seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
 attachment/reconnect actions. Groups I/J are administratively closed and will
-not be resumed. The remaining gates now follow the approved accelerated M2 beta
-path: one combined functional session, one three-hour combined soak, a reduced
-physical OTA matrix and one final freeze/release pass. Detailed scope and beta
-versus production boundaries are in
+not be resumed. The combined functional session and repaired three-hour soak
+are also complete. The remaining accelerated M2 beta path is the reduced
+physical OTA/fault matrix, version-prefix migration and one final
+freeze/release pass. Detailed scope and beta versus production boundaries are in
 [`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md).
 
 After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a

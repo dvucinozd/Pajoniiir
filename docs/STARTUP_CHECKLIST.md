@@ -1,21 +1,21 @@
 # P4 Startup and Release Checklist
 
-Status: **active P4-only checklist, reconciled 2026-09-19**.
+Status: **active P4-only checklist, reconciled 2026-09-20**.
 
 ## Repository and build
 
 - [x] Branch is `feat/p4-dual-usb-host`.
-- [x] Installed validation firmware commit `c21ad86` is pushed.
+- [x] UAC idle-continuity remediation is committed as `b9139e1`.
 - [x] ESP-IDF v6.0.2 is the only supported SDK.
 - [x] Complete P4 host suite passes.
 - [x] Clean `build_signed` and signed-bundle verification pass.
 - [x] `dependencies.lock` is tracked and unchanged by the exact build.
-- [x] Install and focused-smoke `RC2-147-gc21ad86` on hardware.
+- [x] Install and focused-smoke `RC2-153-g66b5fee-dirty` on hardware.
 - [ ] Repeat all automated gates from a fresh checkout for the final candidate.
 
 ## Latest installed exact-image evidence
 
-- [x] `RC2-147-gc21ad86` installed on `ota_1` with empty OTA error.
+- [x] `RC2-153-g66b5fee-dirty` installed on `ota_1` with empty OTA error.
 - [x] USB0 mounts and exposes the current 324-track Library.
 - [x] Direct FLX4 profile, MIDI IN and USB audio activate on USB1.
 - [x] First web PLAY after more than 120 seconds idle executes immediately.
@@ -119,14 +119,18 @@ Status: **active P4-only checklist, reconciled 2026-09-19**.
 ## Product soak and enclosure
 
 - [x] Define the accelerated M2 beta functional and combined-load soak harness.
-- [ ] Run the 45--60 minute combined functional session on the candidate image.
-  First declared run stopped at Stage 2 after about 16.8 minutes on D1 +165 PCM
-  frames and +47,234 headphone underflow frames; no reboot/UAC/WDT or confirmed
-  audible fault, and isolated actions did not reproduce it. Rerun deck-by-deck.
-- [ ] Run the automated three-hour combined-load soak on the candidate image.
-- [ ] Include seeks, restart, Master Tempo, scratch, loops, Hot Cues, FX, MIDI,
+- [x] Run the 45--60 minute combined functional session on the candidate image;
+  the accepted run continued for 78.176 minutes with clean strict counters and
+  operator-confirmed uninterrupted, artifact-free MAIN/cue audio.
+- [x] Reproduce and repair the later combined-soak UAC idle-continuity failure:
+  pre-fix first-cycle reproduction failed; the installed repair passed 126
+  complete focused CUE/restart transitions with zero strict counter delta.
+- [x] Run the automated three-hour combined-load soak on the repaired candidate:
+  180.156 minutes, 60 operations, zero strict counter delta, no reboot/TWDT and
+  operator-confirmed clean audio throughout.
+- [x] Include seeks, restart, Master Tempo, scratch, loops, Hot Cues, FX, MIDI,
   LEDs, MAIN/cue, USB cache and web status traffic.
-- [ ] Require no reset, brownout, lost mount/controller, latched control or
+- [x] Require no reset, brownout, lost mount/controller, latched control or
   gated error-counter increase.
 - [ ] Measure closed-enclosure power and temperature margins.
 - [ ] Verify RF/AP reachability and connector strain relief.

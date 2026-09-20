@@ -1,6 +1,6 @@
 # Documentation Status
 
-Status: **active P4-only source of truth, reconciled 2026-09-19**.
+Status: **active P4-only source of truth, reconciled 2026-09-20**.
 
 ## Product boundary
 
@@ -14,20 +14,21 @@ Legacy dual-processor ledgers are retained only in files whose names begin with
 `ARCHIVE_`. Dated validation records remain evidence of the image and topology
 they actually tested; they are not current instructions.
 
-## Current validated firmware checkpoint
+## Current candidate checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Commit: `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
-- Version: `RC2-147-gc21ad86`
-- Application size: `2,458,496` bytes
+- Repair commit: `b9139e1bdab79e7d0aec279383e0b8f859d3eea3`
+- Installed build version: `RC2-153-g66b5fee-dirty`; the build predates the
+  commit but has the same firmware source content
+- Application size: `2,459,392` bytes
 - Application SHA-256:
-  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
-- Signed bundle size: `2,458,684` bytes
+  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
+- Signed bundle size: `2,459,580` bytes
 - Signed bundle SHA-256:
-  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
+  `a0679ac71548aa19a01752ad7aa862fe9039b16768c06ee18d7912239bc261e5`
 - Toolchain: ESP-IDF v6.0.2
-- Publication state: pushed; local and remote SHA matched before this
-  documentation-only successor
+- Publication state: repair committed; this documentation successor records
+  its hardware evidence
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; focused real-file
   MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
@@ -43,22 +44,29 @@ controller delivery convergence, UAC packet-loss accounting and valid hardware
 rate selection. It also includes the bounded PDB reader, fail-closed partial
 catalog handling and guarded deterministic Library-load validation barrier.
 
-## Latest installed hardware baseline
+## Latest installed hardware candidate
 
-- Commit: `c21ad8628ba62be7d9e113cff46787a0a6c828f3`
-- Installed version: `RC2-147-gc21ad86`
+- Source-equivalent repair commit:
+  `b9139e1bdab79e7d0aec279383e0b8f859d3eea3`
+- Installed version: `RC2-153-g66b5fee-dirty`
 - Installed slot: `ota_1`
-- Application size: `2,458,496` bytes
+- Application size: `2,459,392` bytes
 - Application SHA-256:
-  `bdf90aa7b186822f0d4c43d1157dda635fa116335f34929b044a1a77aa7fb254`
-- Signed bundle size: `2,458,684` bytes
+  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
+- Signed bundle size: `2,459,580` bytes
 - Signed bundle SHA-256:
-  `0bf3b5698ae47a9c97fbb0db5114b7a6baf34398af528f729b7969d4ad96a8da`
+  `a0679ac71548aa19a01752ad7aa862fe9039b16768c06ee18d7912239bc261e5`
 - Toolchain: ESP-IDF v6.0.2
 
-This exact installed image passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup, active reconnect cycles I1, I2 and jog-held J1,
-software reboot K1/K2 and signed OTA reboot L1/L2.
+This installed candidate passed signed OTA, USB0 mount, direct FLX4
+profile/MIDI/UAC startup and the focused UAC idle-continuity regression. It
+completed 126 fully sampled CUE/restart transitions with zero strict counter
+delta. A subsequent fresh combined soak passed for 180.156 minutes and 60
+scheduled operations with zero strict counter delta, no reboot/TWDT and
+operator-confirmed clean audio throughout. Evidence:
+[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
+and
+[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
 The current 324-track media fixture additionally passed complete real WAV and
 FLAC natural EOF plus simultaneous MP3+FLAC and MP3+WAV playback with audible
 operator acceptance and flat focused fault deltas. See
@@ -114,8 +122,7 @@ the critical path is now the remaining release qualification:
    near-EOF acceptance matrix (focused load/play/EOF and mixed playback pass);
 2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
 3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
-4. accelerated M2 beta qualification: one 45--60 minute combined functional
-   run and one automated three-hour combined-load soak;
+4. complete the reduced OTA/fault matrix and `RC2` to `M2` prefix migration;
 5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
    repetition of the passed bench electrical measurements;
 6. production credential, signing-key, rotation and optional irreversible

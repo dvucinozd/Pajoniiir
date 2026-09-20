@@ -156,3 +156,35 @@ drop/overflow and packet-loss counters stayed at zero. Six isolated late blocks
 confirmed uninterrupted, artifact-free sound for the entire period. The
 combined 45--60 minute functional gate is therefore **PASS**. The next
 accelerated release gate is the automated three-hour combined soak.
+
+## 2026-09-20 combined-soak remediation checkpoint
+
+The first automated three-hour combined soak stopped after `69.187` minutes
+with `+18,316` FLX4 UAC underflow frames and active loss flag `0x10`. PCM
+underruns, dropped blocks, overflow, packet failures/lost frames, locked reads,
+reboot and TWDT evidence all remained zero. The last scheduled operation was
+D2 loop clear followed by D1 CUE/restart and loop set.
+
+A seconds-scale focused harness reproduced the same class of underflow on its
+first pre-fix cycle. `ae_output_task()` was sleeping when both renderers were
+temporarily inactive instead of continuing to clock the FLX4 isochronous sink.
+The candidate now submits silence to UAC and MAIN through that state. The full
+host suite, clean ESP-IDF v6.0.2 signed build and signed-package verification
+pass. The package was installed on `ota_1`, boot epoch `472`, and completed 126
+fully sampled focused transitions plus one partially sampled natural-EOF
+transition with zero UAC/PCM/packet loss, no reboot/TWDT and stable post-stop
+idle continuity. See
+[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md).
+
+This closes the deterministic defect. The subsequent fresh combined soak on
+the same installed candidate passed for `180.156` minutes and 60 scheduled
+operations. UAC underflow, overflow, drops, packet failures/lost frames, PCM
+underruns, locked reads and active loss flags all had zero delta; firmware,
+slot and boot identity stayed fixed and no TWDT occurred. The `+68`
+output-late count remained below the declared 120 allowance without correlated
+loss. The operator confirmed that audio was clean throughout. See
+[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
+
+The accelerated combined functional and soak gates are now closed. Continue
+with the reduced OTA/fault matrix, `RC2` to `M2` prefix migration and final
+fresh-checkout release pass.

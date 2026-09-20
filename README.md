@@ -14,9 +14,11 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
-> validated firmware and installed hardware candidate is
-> `RC2-147-gc21ad86` on `ota_1`.
-> Its signed OTA and exact-image checks passed. The earlier
+> installed hardware candidate is `RC2-153-g66b5fee-dirty` on `ota_1`. Its
+> firmware source content is committed as `b9139e1`; the installed version
+> string retains the pre-commit dirty-build metadata. Its full host suite,
+> signed build/package, OTA and focused exact-image checks pass.
+> The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
 > active UAC loss and no observable USB/controller/output failure. Fourteen
@@ -41,8 +43,14 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > 2/2 with both roots occupied and no manual reinsert. The branch remains **not
 > release-qualified**. Real MP3/WAV/FLAC load/play/EOF and simultaneous
 > MP3+FLAC/MP3+WAV focused cache checks now pass with audible confirmation;
-> mixed-format seek/loop/CUE/scratch edges, on-device timing, remaining OTA
-> fault paths, combined-load and closed-enclosure gates remain open.
+> the combined functional run passed for 78.176 minutes with clean audible
+> confirmation. The first following combined soak exposed a reproducible UAC
+> starvation during CUE/restart. The installed repair passed 126 complete
+> focused transitions with zero strict counter delta, then passed a fresh
+> 180.156-minute combined soak with 60 scheduled operations, zero strict
+> counter delta and operator-confirmed clean audio throughout. Remaining OTA
+> fault paths, final-candidate smoke and the closed-enclosure/production gates
+> remain open.
 
 ## Current capabilities
 
@@ -109,6 +117,8 @@ committed and must remain reproducible.
 - [OTA procedure](docs/OTA-UPDATE.md)
 - [FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
 - [Latest exact-image three-hour soak](docs/validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
+- [Latest UAC idle-continuity remediation](docs/validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
+- [Final combined three-hour soak](docs/validation/P4_FINAL_COMBINED_SOAK_20260920.md)
 - [30-minute exact-image soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
 
 Superseded plans and checklists are retained only as files prefixed with

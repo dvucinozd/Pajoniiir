@@ -1,6 +1,6 @@
 # P4 dual-USB next-session handoff
 
-Saved: **2026-09-19**
+Saved: **2026-09-20**
 
 Status: **active P4-only operational handoff**.
 
@@ -8,27 +8,35 @@ Status: **active P4-only operational handoff**.
 
 - Repository: `https://github.com/dvucinozd/Pajoniiir.git`
 - Branch: `feat/p4-dual-usb-host`
-- Source checkpoint: working tree after `838c254`; commit/push pending
-- Installed firmware version: `RC2-151-g838c254-dirty`
-- Current application: `2,459,136` bytes, SHA-256
-  `a96e78e9fb498decd7820846c1105221d21b4989bc4e733280b0d00496be40b0`
+- Source checkpoint: UAC idle-continuity remediation commit `b9139e1`; the
+  installed dirty-build metadata predates the source-equivalent commit
+- Installed firmware version: `RC2-153-g66b5fee-dirty`
+- Current application: `2,459,392` bytes, SHA-256
+  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
 - Firmware validation: complete P4 host suite, clean ESP-IDF v6.0.2 signed
   build, package verification, signed OTA and lifecycle Groups A--H plus
   I1/I2/J1 and K1/K2 pass; the earlier `RC2-116-g77d723c` passed the targeted
-  three-hour limiter/WDT soak
+  limiter/WDT soak, and the current repaired candidate passed the final
+  180.156-minute combined soak
 - Required SDK: ESP-IDF v6.0.2
-- Latest installed version: `RC2-151-g838c254-dirty`
-- Installed slot: `ota_0`
+- Latest installed version: `RC2-153-g66b5fee-dirty`
+- Installed slot: `ota_1`
 - OTA state: `idle`, empty `last_error`
-- Application: `2,459,136` bytes
+- Application: `2,459,392` bytes
 - Application SHA-256:
-  `a96e78e9fb498decd7820846c1105221d21b4989bc4e733280b0d00496be40b0`
+  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
 
-The installed image adds the output-owner timeline fast path and the
-loop-safe/EOF-clamped Shift+Jog search fix to the bounded dual-Master-Tempo
-path. Focused exact-image smokes pass; the declared functional run remains open
-after a Stage 2 counter failure that did not reproduce in isolated actions. See
-[`../validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](../validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md).
+The installed image retains the output-owner timeline and loop-safe Shift+Jog
+fixes and adds continuous silent MAIN/UAC clocking while both renderers are
+temporarily inactive. The combined functional run passed for 78.176 minutes.
+The first combined soak then exposed a deterministic CUE/restart UAC starvation
+path; the installed repair passes the full host/build/package gates and 126
+fully sampled focused hardware transitions with zero strict counter delta. A
+fresh 180.156-minute combined soak then passed with 60 operations, zero strict
+counter delta, no reboot/TWDT and clean audio throughout. See
+[`../validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](../validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
+and
+[`../validation/P4_FINAL_COMBINED_SOAK_20260920.md`](../validation/P4_FINAL_COMBINED_SOAK_20260920.md).
 
 During the latest captured hardware run, USB0 remained mounted with a coherent
 324-track Library and the direct FLX4 profile, MIDI IN/OUT and UAC remained
@@ -68,10 +76,11 @@ Evidence:
 ## Current release gate
 
 The remaining work follows the accelerated M2 beta path in
-[`../M2_BETA_ACCELERATED_RELEASE_PLAN.md`](../M2_BETA_ACCELERATED_RELEASE_PLAN.md):
-one 45--60 minute combined functional run, one automated three-hour combined
-soak, three physical OTA paths and one final freeze/release pass. Final
-enclosure and production-security decisions remain explicit production gates.
+[`../M2_BETA_ACCELERATED_RELEASE_PLAN.md`](../M2_BETA_ACCELERATED_RELEASE_PLAN.md).
+The combined functional and three-hour soak gates are complete; the reduced
+physical OTA/fault matrix, version-prefix migration and final freeze/release
+pass remain. Final enclosure and production-security decisions remain explicit
+production gates.
 
 The current bench common 5 V rail and both downstream VBUS branches passed the
 requested electrical measurements by operator report on 2026-09-11. The
@@ -80,10 +89,10 @@ numeric readings were not preserved, so the test must be repeated if the
 wiring or supply changes and with the final enclosure configuration.
 
 The lifecycle matrix is closed at 43 PASS and seven explicitly waived I/J
-cycles. Next action is to rerun the declared 45-minute functional gate with
-the deterministic deck-by-deck Stage 2 instructions. If it passes, run the
-automated three-hour combined soak. Do not merge the branch until those and the
-other mandatory release gates pass.
+cycles. The combined functional and repaired three-hour soak gates are PASS.
+The next action is the reduced OTA/fault matrix, followed by version-prefix
+migration and the final release pass. Do not merge the branch until the
+remaining mandatory release gates pass.
 
 ## Session 1 — electrical qualification — PASS for current bench wiring
 
