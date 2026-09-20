@@ -156,6 +156,9 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   LEDs, MAIN/cue, USB cache and web status traffic.
 - [x] Require no reset, brownout, lost mount/controller, latched control or
   gated error-counter increase.
+- [x] Complete the final exact-image operator smoke on M2 boot 17: physical
+  dual PLAY, both jog wheels, D1/D2 CUE/PFL and Library browse/LOAD passed;
+  MAIN/cue audio was clean and the correlated strict counters stayed at zero.
 - [ ] Measure closed-enclosure power and temperature margins.
 - [ ] Verify RF/AP reachability and connector strain relief.
 - [ ] Preserve an accessible wired recovery/service path.

@@ -113,21 +113,20 @@ Earlier focused evidence remains valid within its stated limits:
 
 ## Release status
 
-The branch is **not release-qualified and must not be merged yet**. The code,
-host tests, signed build, lifecycle matrix and focused product paths are healthy;
-the critical path is now the remaining release qualification:
+The accelerated **M2 beta is release-qualified** on the recorded bench wiring
+and exact installed image. Host/UI/build/package gates, lifecycle and focused
+media matrices, combined functional/soak runs, reduced OTA fault recovery,
+guarded mutations and the final physical/audible operator smoke all pass.
 
-1. finish the physically verified MP3/WAV/FLAC seek, loop, CUE, scratch and
-   near-EOF acceptance matrix (focused load/play/EOF and mixed playback pass);
-2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
-3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
-4. run the final short operator smoke; the reduced beta OTA matrix,
-   `RC2`-to-`M2` migration and isolated fresh-checkout automated gates pass;
-5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
+This is not an unrestricted production-release claim. The branch has not been
+merged, and production release still requires an explicit merge/release
+decision plus:
+
+1. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
    repetition of the passed bench electrical measurements;
-6. production credential, signing-key, rotation and optional irreversible
+2. production credential, signing-key, rotation and optional irreversible
    security decisions;
-7. exact final-candidate full functional smoke, documentation freeze and tag.
+3. exact production-candidate full functional smoke and documentation freeze.
 
 The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).

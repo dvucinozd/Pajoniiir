@@ -51,8 +51,9 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > counter delta and operator-confirmed clean audio throughout. The reduced beta
 > OTA fault paths now pass, including interrupted upload recovery and signed
 > opposite-slot rollback. Guarded control/load/seek/profile mutation and
-> profile persistence through boot 17 also pass. The final short operator
-> smoke and the closed-enclosure/production gates remain open.
+> profile persistence through boot 17 also pass. The final physical FLX4 and
+> audible MAIN/cue smoke passed with zero strict counter delta, completing the
+> accelerated M2 beta gate. Closed-enclosure/production gates remain open.
 
 ## Current capabilities
 

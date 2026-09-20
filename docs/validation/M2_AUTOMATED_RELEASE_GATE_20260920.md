@@ -1,8 +1,8 @@
 # M2 automated release gate — 2026-09-20
 
-Status: **PASS for automated, remote OTA and unattended hardware checks**.
-Operator listening, physical FLX4 control smoke and enclosure/production gates
-remain separate.
+Status: **PASS for the complete accelerated M2 beta gate**. Automated, remote
+OTA, unattended hardware, operator listening and physical FLX4 smoke checks
+pass. Enclosure and production gates remain separate.
 
 ## Immutable source
 
@@ -92,11 +92,20 @@ The final autonomous web/API smoke ran on the same installed `M2` image:
 This closes the guarded control/load/seek/profile-mutation row. The reboot is
 also direct persistence evidence for the replaced FLX4 profile.
 
-## Remaining operator gates
+## Final operator smoke
 
-Playback was exercised during the later guarded mutation smoke, but remote
-state and counters cannot establish acoustic quality or physical-control feel.
-This record therefore does not replace the final short operator smoke for
-audible MAIN/cue output and physical FLX4 controls. It also does not close the
+On boot identity 17, the operator used the physical FLX4 to start both decks,
+exercise both jog wheels, switch D1/D2 headphone CUE/PFL, browse the Library
+and LOAD a different track. MAIN and cue audio were explicitly confirmed clean,
+without interruption or artifacts. The service log recorded the physical load
+of `Comanchero MoonRay Video Clip 1984 (MCM).mp3`.
+
+The correlated post-smoke snapshot remained `M2 / ota_0 / boot 17`; USB0,
+FLX4, MIDI IN/OUT, UAC and `pioneer_ddj_flx4` were healthy. PCM underrun,
+locked-read, UAC drop/overflow/packet-failure/packet-loss, data-loss,
+output-late, USB recovery-failure and service-log-drop counters were all zero,
+with no TWDT. Both decks were then left stopped in `READY`.
+
+This completes the accelerated M2 beta acceptance. It does not close the
 production enclosure, thermal/RF, credential/key-custody or
 irreversible-security decisions.

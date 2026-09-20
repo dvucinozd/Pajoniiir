@@ -1,6 +1,6 @@
 # Accelerated M2 beta release plan
 
-Status: **automated and reduced OTA gates pass; final operator smoke remains**.
+Status: **M2 beta acceptance complete; production-only gates remain**.
 
 ## Release boundary
 
@@ -222,8 +222,9 @@ All automated, remote OTA and unattended hardware portions of the accelerated
 M2 beta path are closed. The guarded control/load/seek/profile smoke also
 passed on the installed image: both decks loaded, played, sought and stopped
 with zero strict counter delta; the valid FLX4 profile overwrite persisted and
-reactivated after boot 17 with USB0, MIDI and UAC healthy. The remaining
-release action is the short operator smoke for physical FLX4 controls and
-audible MAIN/cue output, followed by the documentation/merge decision.
-Production enclosure and security gates remain explicitly outside that beta
-claim.
+reactivated after boot 17 with USB0, MIDI and UAC healthy. The final physical
+FLX4 smoke then passed: both PLAY controls, both jog wheels, D1/D2 headphone
+CUE/PFL, Library browse/LOAD and clean MAIN/cue audio were operator-confirmed;
+the correlated strict counters stayed at zero. This completes the accelerated
+M2 beta definition of done. The documentation/merge decision and production
+enclosure and security gates remain outside that beta claim.
