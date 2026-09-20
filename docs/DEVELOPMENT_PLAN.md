@@ -107,8 +107,8 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
 | 7 | Close Wi-Fi, web, profile and OTA fault paths | Pull/push OTA, rollback, invalid/slow/interrupted requests and post-reboot USB recovery pass |
 | 8 | Run multi-hour combined soak | Defined multi-hour run completes without reset, media/controller loss, latched control or gated counter increase |
 | 9 | Qualify final enclosure | Accepted for this scope by operator after approximately two months in the existing enclosure; wired recovery confirmed; repeat after physical/power changes |
-| 10 | Resolve production security | Shared service credential accepted; encrypted offline signing-key custody with a separate encrypted backup selected; provision/verify custody and resolve rotation, SBOM and irreversible security decisions |
-| 11 | Freeze and release | Select a new immutable production version, clean exact commit, full automated gates, signed artifact, complete manual smoke, validation record and tag |
+| 10 | Resolve production security | Policy complete for M2.1: shared credential accepted, WPA2/WPA3 transition mode plus PMF capability, encrypted offline key custody and backup, defined rotation boundary, SBOM waived, and irreversible P4 security deferred on the sole board; physical key-store verification remains operationally open |
+| 11 | Freeze and release | Freeze exact commit, run pre-tag gates, create local `M2.1` tag, build/sign/install and smoke the exact tagged artifact, then publish the validation record, channel and immutable tag |
 
 ## Test policy
 
@@ -123,7 +123,11 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
 - Preserve raw counters, firmware version, slot, boot epoch and operator-visible
   or audible results for every acceptance session.
 - Do not move the immutable `M2` tag. Production release must use a new version
-  identifying its exact source commit.
+  identifying its exact source commit. The selected production version is
+  `M2.1`; create it locally only after the frozen commit passes pre-tag gates,
+  and do not push it before final exact-image acceptance.
+- Apply [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md):
+  no Secure Boot, Flash Encryption or security eFuse burn on the sole P4 board.
 
 ## Deferred work
 

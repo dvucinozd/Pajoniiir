@@ -53,14 +53,18 @@ firmware authenticity remains protected by signed OTA verification.
 The operator selected encrypted offline storage for the production OTA signing
 key with a separate encrypted offline backup. Neither copy may enter Git or a
 release artifact. Provisioning, restricted-access and backup-recovery evidence
-remain to be recorded, and the rotation policy is still unresolved. Secure
-Boot, Flash Encryption, PMF/WPA3 and SBOM decisions also remain open.
+remain to be recorded. The production version is selected as `M2.1`; WPA2/WPA3
+transition mode with PMF capability is implemented, SBOM is waived, and Secure
+Boot, Flash Encryption and security eFuse provisioning are intentionally
+deferred because there is no spare P4 board. See
+[`../SECURITY_PROVISIONING_POLICY.md`](../SECURITY_PROVISIONING_POLICY.md).
 
 ## Remaining production-release boundary
 
 Before an unrestricted production release:
 
-1. close or explicitly accept the remaining security/provisioning decisions;
-2. select a new immutable production version without moving `M2`;
-3. build, sign, install and smoke the exact production commit;
-4. publish its hashes, slot/version evidence and release record.
+1. provision and verify both encrypted signing-key stores;
+2. build, sign, install and smoke the exact `M2.1` production commit;
+3. create a local `M2.1` tag, build/install/smoke that exact image, then publish
+   its hashes, slot/version evidence, release record and immutable tag without
+   moving `M2`.

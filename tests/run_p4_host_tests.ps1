@@ -585,9 +585,26 @@ Assert-FileContains `
     -LiteralPatterns @(".ddjota", "signed P4")
 
 Assert-FileContains `
-    -Name "P4 Wi-Fi Remote uses the accepted default WPA2 credential" `
+    -Name "P4 Wi-Fi Remote uses the accepted shared service credential" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/include/wifi_link.h") `
     -LiteralPatterns @('WIFI_LINK_PASSWORD    "Pajoniiir"')
+
+Assert-FileContains `
+    -Name "P4 SoftAP offers WPA2/WPA3 transition mode with PMF capability" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @(
+        "cfg.ap.authmode = WIFI_AUTH_WPA2_WPA3_PSK;",
+        "cfg.ap.pmf_cfg.capable = true;",
+        "cfg.ap.pmf_cfg.required = false;"
+    )
+
+Assert-FileContains `
+    -Name "P4 clean configuration enables SoftAP SAE support" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @(
+        "CONFIG_WIFI_RMT_ENABLE_WPA3_SAE=y",
+        "CONFIG_WIFI_RMT_SOFTAP_SAE_SUPPORT=y"
+    )
 
 Assert-FileDoesNotContain `
     -Name "audio_engine per-deck firmware decode PCM buffers" `

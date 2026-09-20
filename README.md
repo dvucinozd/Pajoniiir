@@ -58,8 +58,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > enclosure deployment and confirmed wired recovery access, so no separate
 > enclosure rerun is planned. Signing-key custody is defined as encrypted
 > offline storage with a separate encrypted backup; provisioning/verification,
-> rotation, remaining security decisions and a final exact production release
-> pass remain open.
+> rotation and a final exact `M2.1` production release pass remain open. The
+> M2.1 policy enables WPA2/WPA3 transition mode with PMF capability, waives an
+> SBOM, and defers irreversible Secure Boot/Flash Encryption/eFuse provisioning
+> because there is no spare P4 board.
 
 ## Current capabilities
 
@@ -121,6 +123,7 @@ committed and must remain reproducible.
 - [Development plan](docs/DEVELOPMENT_PLAN.md)
 - [Accelerated M2 beta release plan](docs/M2_BETA_ACCELERATED_RELEASE_PLAN.md)
 - [Risk register](docs/RISK_REGISTER.md)
+- [M2.1 security and provisioning policy](docs/SECURITY_PROVISIONING_POLICY.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
 - [OTA procedure](docs/OTA-UPDATE.md)

@@ -131,13 +131,18 @@ confirmed an accessible wired recovery path; the dedicated enclosure rerun is
 waived, with numeric thermal/RF margins explicitly uncaptured. Production
 release still requires:
 
-1. provision and verify the selected encrypted offline signing-key storage plus
-   separate encrypted backup, then resolve rotation and remaining optional
-   irreversible security decisions; the shared service-password risk is
-   accepted;
-2. a new immutable production version without moving the `M2` tag;
-3. exact production-candidate signed build/install, full smoke and release
+1. verify recovery from the operator-confirmed encrypted offline signing-key
+   backup without exposing private key material;
+2. exact `M2.1` production-candidate signed build/install, full smoke and release
    record.
+
+The remaining security choices are closed by
+[`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): the shared
+credential is accepted, WPA2/WPA3 transition mode and PMF capability are in
+source, SBOM is waived, and irreversible Secure Boot/Flash Encryption/eFuse
+provisioning is deferred because no spare P4 exists. Create `M2.1` locally only
+after pre-tag gates, then push the immutable tag only after exact-image
+acceptance.
 
 The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).

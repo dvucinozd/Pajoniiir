@@ -185,20 +185,30 @@ Automated and unattended M2 evidence:
   accepted for this product scope.
 - [x] Define signing-key custody: encrypted offline primary storage plus a
   separate encrypted offline backup; never commit or publish either copy.
-- [ ] Provision both signing-key copies, restrict access and verify recovery
-  from the backup without exposing private key material.
-- [ ] Define production signing-key rotation.
-- [ ] Decide Secure Boot, Flash Encryption, PMF/WPA3 and irreversible
-  provisioning policy.
-- [ ] Select and pin an SPDX/CycloneDX SBOM generator if required for release.
+- [x] Provision encrypted offline primary and separately stored encrypted
+  backup copies of the signing key; operator confirmed completion on
+  2026-09-20 without exposing private key material.
+- [ ] Verify recovery from the encrypted backup by signing a disposable test
+  payload and validating it with the committed public key.
+- [x] Define the M2.1 signing-key rotation boundary: `rel-001` remains trusted;
+  planned rotation installs a successor trust key while `rel-001` is still
+  available, while emergency replacement uses wired recovery.
+- [x] Decide Secure Boot, Flash Encryption, PMF/WPA3 and irreversible
+  provisioning policy: WPA2/WPA3 transition mode with PMF capability is in
+  source; Secure Boot, Flash Encryption and security eFuse burns are deferred
+  because there is no spare P4 board on which to qualify irreversible recovery.
+- [x] SBOM explicitly waived for M2.1; retain dependency lock/provenance gates.
 - [ ] Freeze the final commit and rerun automated gates.
 - [ ] Build, sign, verify and install the exact final image.
 - [ ] Run the complete manual product smoke.
 - [ ] Publish hashes, slot/version evidence and all remaining acceptance results.
 - [x] Merge the release-qualified M2 beta successor into `master`; completed by
   `d3099f9` without moving the immutable `M2` tag.
-- [ ] Select a new immutable production version, tag the exact production
-  commit and publish its release record.
+- [x] Select production version `M2.1`.
+- [ ] Locally tag the frozen production commit as `M2.1`, build/install/smoke
+  the exact tagged image, then push the immutable tag and publish its record.
+
+Security policy: [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md).
 
 Detailed procedure: [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
 

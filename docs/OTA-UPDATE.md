@@ -53,10 +53,12 @@ the new signed endpoint.
   distribution, provision and verify the selected encrypted stores and define
   a key-rotation procedure.
 
-The current firmware trusts one key ID, `rel-001`. Adding or replacing trusted
+The current firmware trusts one key ID, `rel-001`. M2.1 retains this key.
+Adding or replacing trusted
 keys requires a firmware update signed by the existing key or a wired recovery
 flash. The remote pull channel accepts only a newer monotonic Pajoniiir
-`RC<tag>-<commits>-g<hash>` version. Older signed releases remain installable
+`RC<tag>-<commits>-g<hash>`, `M<tag>-<commits>-g<hash>` or
+`M<major>.<minor>-<commits>-g<hash>` version. Older signed releases remain installable
 intentionally through the local push-OTA service path, preserving controlled
 rollback without allowing the unauthenticated discovery document to select it.
 
@@ -150,14 +152,21 @@ wired flash whenever either changes.
 ### Version strings
 
 The application version comes from `git describe`. The historical lines use
-`RC<tag>` and the M2 beta line begins at the annotated `M2` tag. A tagged build
-reports the bare tag; later commits report `<tag>-<distance>-g<hash>`.
+`RC<tag>` and the beta line begins at the annotated `M2` tag. The selected
+production version is `M2.1`. A tagged build reports the bare tag; later commits
+report `<tag>-<distance>-g<hash>`.
 
 Pull OTA orders the milestone family (`M`) after the historical release-
-candidate family (`RC`), then orders by tag number and commit distance within
-one family. Therefore `M2` is newer than every `RC*`, while a later
-`M2-<distance>` remains newer than the bare `M2`. The signed local push path is
-still required for intentional rollback.
+candidate family (`RC`), then orders milestone major, optional minor and commit
+distance. Therefore `M2` is newer than every `RC*`, `M2.1` is newer than every
+`M2-<distance>`, and a later `M2.1-<distance>` is newer than bare `M2.1`. The
+signed local push path is still required for intentional rollback.
+
+After the exact clean production commit passes pre-tag gates, create `M2.1`
+locally and build/sign/install/smoke that tagged image. Do not push the tag or
+publish the channel until acceptance; never move a published tag. Hardware
+security and key custody policy is in
+[`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md).
 
 ## Create and verify a signed release
 

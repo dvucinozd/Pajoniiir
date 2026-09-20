@@ -167,7 +167,12 @@ static esp_err_t start_web_ap(void)
      * The AP serves a handful of small JSON requests; four clients is not a
      * meaningful load. */
     cfg.ap.max_connection = 4;
-    cfg.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    /* Transition mode keeps existing WPA2 service clients usable while newer
+     * clients negotiate WPA3-SAE. PMF is advertised and used by WPA3 clients,
+     * but is not mandatory for WPA2 compatibility. Signed OTA remains the
+     * firmware-authenticity boundary; Wi-Fi association is service access. */
+    cfg.ap.authmode = WIFI_AUTH_WPA2_WPA3_PSK;
+    cfg.ap.pmf_cfg.capable = true;
     cfg.ap.pmf_cfg.required = false;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_AP), TAG, "set AP mode");

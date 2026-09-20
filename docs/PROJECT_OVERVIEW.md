@@ -47,15 +47,21 @@ The complete evidence and remaining gates are in
 
 ## Release boundary
 
-The accelerated M2 beta and merge are complete. Before an unrestricted
-production release:
+The accelerated M2 beta and merge are complete. The selected production
+version is `M2.1`. Before that exact release:
 
 1. provision and verify the selected encrypted offline signing-key storage and
-   separate encrypted backup, then resolve rotation, Secure Boot, Flash
-   Encryption, PMF/WPA3 and SBOM decisions;
-2. select a new immutable production version without moving the `M2` tag;
-3. run a clean exact-commit signed build, install and final product smoke;
-4. publish hashes, slot/version evidence and the production release record.
+   separate encrypted backup;
+2. run a clean exact-commit signed build, install and final product smoke;
+3. create a local `M2.1` tag, build/install/smoke that exact tagged image, then
+   publish hashes, slot/version evidence, release record and immutable tag
+   without moving `M2`.
+
+The security decision is fixed in
+[`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): WPA2/WPA3
+transition mode with PMF capability is enabled; SBOM is waived; Secure Boot,
+Flash Encryption and security eFuse burns are deferred on the sole P4 board,
+with the physical-access limitation explicitly accepted.
 
 The operator accepted the current enclosure after approximately two months of
 use and confirmed a wired recovery path. No separate enclosure rerun is
@@ -68,6 +74,7 @@ planned; numeric enclosure thermal/RF margins remain uncaptured.
 - [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md)
 - [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md)
 - [`RISK_REGISTER.md`](RISK_REGISTER.md)
+- [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md)
 - [`OTA-UPDATE.md`](OTA-UPDATE.md)
 
 Superseded dual-processor plans and evidence are retained under `ARCHIVE_*`,

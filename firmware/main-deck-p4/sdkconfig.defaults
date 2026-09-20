@@ -104,6 +104,12 @@ CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
 CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
 CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
 CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+# WPA2/WPA3 transition-mode SoftAP. This target uses ESP-Hosted, so the
+# authoritative user-facing Kconfig symbols are WIFI_RMT_*; esp_wifi_remote
+# derives the matching ESP_WIFI_* feature bits from them. PMF requirement is
+# selected in wifi_link.c so legacy WPA2 service clients remain usable.
+CONFIG_WIFI_RMT_ENABLE_WPA3_SAE=y
+CONFIG_WIFI_RMT_SOFTAP_SAE_SUPPORT=y
 CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM=16
 CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM=64
 CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM=64

@@ -47,7 +47,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "test key generation failed" }
     & $Python (Join-Path $RepoRoot "tools/ota_signing.py") bundle `
         --private-key $privateKey --target p4 --chip-id 0x0012 `
-        --project main-deck-p4 --version M2 `
+        --project main-deck-p4 --version M2.1 `
         --input $image --output $bundle
     if ($LASTEXITCODE -ne 0) { throw "test bundle creation failed" }
 
@@ -59,7 +59,7 @@ try {
     }
     $latest = Get-Content -LiteralPath (Join-Path $releaseDir "latest.json") `
         -Raw | ConvertFrom-Json
-    Assert-Equal "M2" ([string]$latest.release) `
+    Assert-Equal "M2.1" ([string]$latest.release) `
         "publisher derives release from signed bundle"
 } finally {
     if (Test-Path -LiteralPath $tempRoot) {
