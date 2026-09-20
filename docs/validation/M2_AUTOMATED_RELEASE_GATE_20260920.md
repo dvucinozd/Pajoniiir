@@ -70,9 +70,33 @@ profile/MIDI/UAC active, zero PCM/packet/drop/overflow fault counters and no
 TWDT. This closes the reduced M2 beta OTA matrix: successful public pull,
 interrupted upload recovery and signed opposite-slot rollback.
 
+## Guarded mutation and persistence smoke
+
+The final autonomous web/API smoke ran on the same installed `M2` image:
+
+- an unguarded control POST returned HTTP 403 without changing deck state;
+- stable catalog identities loaded `Extatique.mp3` on D1 and
+  `TAINTED DUB - CLIP.mp3` on D2 from the 324-track generation;
+- guarded PLAY and seeks to 5,000/7,000 ms left both decks playing, after
+  which guarded PLAY/PAUSE stopped both decks in `READY`;
+- PCM underrun, UAC drop/overflow, packet failure/loss, data-loss and
+  output-late deltas were all zero;
+- an unguarded profile POST returned 403 and an existing-profile install
+  without overwrite returned 409;
+- an explicit overwrite with the freshly compiled 6,236-byte
+  `pioneer_ddj_flx4` profile returned 200 and left that profile active;
+- a controlled reboot advanced boot identity 16 to 17, retained all four
+  profiles and restored the FLX4 profile, MIDI IN/OUT, UAC, USB0 mount and all
+  324 Library rows without TWDT or strict-counter failure.
+
+This closes the guarded control/load/seek/profile-mutation row. The reboot is
+also direct persistence evidence for the replaced FLX4 profile.
+
 ## Remaining operator gates
 
-No playback was active during the OTA fault sequence. This record therefore
-does not replace the final short operator smoke for audible MAIN/cue output and
-physical FLX4 controls. It also does not close the production enclosure,
-thermal/RF, credential/key-custody or irreversible-security decisions.
+Playback was exercised during the later guarded mutation smoke, but remote
+state and counters cannot establish acoustic quality or physical-control feel.
+This record therefore does not replace the final short operator smoke for
+audible MAIN/cue output and physical FLX4 controls. It also does not close the
+production enclosure, thermal/RF, credential/key-custody or
+irreversible-security decisions.

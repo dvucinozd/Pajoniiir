@@ -19,7 +19,7 @@ they actually tested; they are not current instructions.
 - Branch: `feat/p4-dual-usb-host`
 - Release commit and annotated tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19`
   / `M2`
-- Installed build version and slot: `M2` / `ota_0`, boot identity `14`
+- Installed build version and slot: `M2` / `ota_0`, current boot identity `17`
 - Application size: `2,459,520` bytes
 - Application SHA-256:
   `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
@@ -48,7 +48,7 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 - Source commit and tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19` / `M2`
 - Installed version: `M2`
-- Installed slot and boot identity: `ota_0` / `14`
+- Installed slot and current boot identity: `ota_0` / `17`
 - Application size: `2,459,520` bytes
 - Application SHA-256:
   `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`

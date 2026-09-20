@@ -219,7 +219,11 @@ signed-package verification with an unchanged dependency lock. See
 [`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md).
 
 All automated, remote OTA and unattended hardware portions of the accelerated
-M2 beta path are closed. The remaining release action is the short operator
-smoke for physical FLX4 controls and audible MAIN/cue output, followed by the
-documentation/merge decision. Production enclosure and security gates remain
-explicitly outside that beta claim.
+M2 beta path are closed. The guarded control/load/seek/profile smoke also
+passed on the installed image: both decks loaded, played, sought and stopped
+with zero strict counter delta; the valid FLX4 profile overwrite persisted and
+reactivated after boot 17 with USB0, MIDI and UAC healthy. The remaining
+release action is the short operator smoke for physical FLX4 controls and
+audible MAIN/cue output, followed by the documentation/merge decision.
+Production enclosure and security gates remain explicitly outside that beta
+claim.

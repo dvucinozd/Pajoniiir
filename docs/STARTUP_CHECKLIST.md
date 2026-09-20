@@ -133,7 +133,11 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   healthy USB0/FLX4.
 - [x] Verify signed push rollback and opposite-slot boot: the RC2 bridge booted
   on `ota_1` as boot 15, then public pull restored `M2 / ota_0 / boot 16`.
-- [ ] Verify guarded control, load, seek and profile mutations.
+- [x] Verify guarded control, load, seek and profile mutations. Unguarded
+  control/profile POSTs returned 403; guarded identity loads, dual PLAY,
+  D1/D2 seeks and STOP completed with zero strict counter delta. An existing
+  profile without overwrite returned 409, while an explicit valid FLX4
+  overwrite returned 200 and remained active after boot 16 -> 17.
 - [x] Verify USB0 and FLX4 recover automatically after two signed OTA reboots.
 
 ## Product soak and enclosure
