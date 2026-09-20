@@ -1,144 +1,176 @@
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 
+# Pajoniiir M2.1
 
-# Pajoniiir BL-A1800
+**A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
+single ESP32-P4 board.**
 
-Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 and a
-JC4880P443C_I_W ESP32-P4 multimedia board.
+![Pajoniiir M2.1 running the dual-deck Overview screen](docs/images/Pajoniiir1.jpg)
 
-The P4 directly hosts Rekordbox storage on USB0 and DDJ-FLX4 MIDI plus
-four-channel USB audio on USB1. It is authoritative for playback, controller
-state, LEDs, mixer/DSP, MAIN/cue audio, LVGL UI, Wi-Fi service and OTA. No PC is
-required during performance.
+Pajoniiir plays a Rekordbox-exported USB library without a laptop. The
+ESP32-P4 hosts both the USB drive and DDJ-FLX4, renders the touchscreen UI,
+runs the two playback decks and mixer, and sends MAIN and headphone-cue audio.
 
-Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
+- No PC is required during a performance.
+- MP3, WAV and FLAC playback is supported.
+- Two independent decks provide waveforms, tempo control, Master Tempo,
+  Hot Cues, loops, Beat Jump, Sync, Pad FX and Beat FX.
+- MAIN audio is available on the PCM5102A RCA output.
+- Headphone cue is returned through the DDJ-FLX4.
+- Signed local and remote OTA updates are supported.
 
-![Pajoniiir](docs/images/122.jpg)
+The current production release is
+[`M2.1`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.1).
 
-> [!IMPORTANT]
-> The active release candidate line builds only with ESP-IDF v6.0.2. The exact
-> installed hardware candidate is the annotated `M2` tag at `d2dabfa` on
-> `ota_0`. Its full host suite, clean signed build/package and public pull-OTA
-> migration from an RC2 bridge pass; USB0 and FLX4 MIDI/UAC recovered on boot
-> 14 without a new TWDT or OTA error.
-> The earlier
-> `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
-> limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or
-> active UAC loss and no observable USB/controller/output failure. Fourteen
-> rare output-late warnings were below fault severity and had no downstream
-> failure; their analysis does not justify a code change. The current bench
-> 5 V/dual-VBUS measurement gate is
-> operator-confirmed PASS. The 50-cycle lifecycle matrix is complete with 43
-> PASS, seven explicitly waived I/J cycles and 39 accepted physical
-> attachment/reconnect actions. I1, I2 and J1 passed on the exact installed
-> image; by explicit operator decision I3--I5 and J2--J5 are waived and
-> permanently closed rather than reported as passes.
-> All five deterministic Group F Library-load removal cycles passed on the
-> exact installed image without reboot, partial Library publication, recovery
-> mismatch, controller loss or audio fault. The
-> deterministic Group G audio-load trigger and all five physical Group G
-> cycles passed on the exact image without reboot, controller loss or audio
-> fault.
-> All five Group H idle FLX4 disconnect/reconnect cycles also passed while
-> USB0 remained mounted with a coherent 100-track Library; profile, MIDI, LEDs,
-> UAC, dual playback and audible MAIN/cue recovered in every accepted cycle.
-> Group K software-reboot and Group L signed OTA-reboot recovery both passed
-> 2/2 with both roots occupied and no manual reinsert. The accelerated **M2
-> beta is release-qualified and merged into `master`**. Real MP3/WAV/FLAC
-> load/play/EOF and simultaneous
-> MP3+FLAC/MP3+WAV focused cache checks now pass with audible confirmation;
-> the combined functional run passed for 78.176 minutes with clean audible
-> confirmation. The first following combined soak exposed a reproducible UAC
-> starvation during CUE/restart. The installed repair passed 126 complete
-> focused transitions with zero strict counter delta, then passed a fresh
-> 180.156-minute combined soak with 60 scheduled operations, zero strict
-> counter delta and operator-confirmed clean audio throughout. The reduced beta
-> OTA fault paths now pass, including interrupted upload recovery and signed
-> opposite-slot rollback. Guarded control/load/seek/profile mutation and
-> profile persistence through boot 17 also pass. The final physical FLX4 and
-> audible MAIN/cue smoke passed with zero strict counter delta, completing the
-> accelerated M2 beta gate. The operator accepted the existing two-month
-> enclosure deployment and confirmed wired recovery access, so no separate
-> enclosure rerun is planned. Signing-key custody is defined as encrypted
-> offline storage with a separate encrypted backup. The operator explicitly
-> accepted backup recovery signing as deferred maintenance, so it is not an
-> open M2.1 gate. The exact
-> tagged `M2.1` production image has passed build, signed OTA installation,
-> dual-USB/audio/UI smoke and public-channel verification. The M2.1 policy
-> enables WPA2/WPA3 transition mode with PMF capability, waives an
-> SBOM, and defers irreversible Secure Boot/Flash Encryption/eFuse provisioning
-> because there is no spare P4 board.
+## Hardware
 
-## Current capabilities
+| Part | Purpose |
+| --- | --- |
+| Guition `JC4880P443C_I_W` | ESP32-P4 board, 4.3-inch touchscreen and main processor |
+| Pioneer DDJ-FLX4 | MIDI control surface and four-channel USB audio device |
+| Rekordbox USB drive | Music library connected to USB0 |
+| PCM5102A DAC | Stereo MAIN output over RCA |
+| Regulated 5 V / 3 A or better supply | Common system supply with separately protected USB outputs |
+| Pajoniiir enclosure | Printable model and reference renders in [`misc/`](misc/) |
 
-- Two independent decks with Rekordbox browsing and bounded MP3/WAV/FLAC cache.
-- FLX4 transport, jog/vinyl, tempo and Master Tempo, mixer/EQ, cue, Hot Cues,
-  loops, Beat Jump/Sync, Pad FX and Beat FX.
-- Simultaneous PCM5102A RCA MAIN and FLX4 USB headphone cue.
-- P4-owned FLX4 LED feedback with reconnect resynchronization.
-- LVGL Overview, Library, Hot Cues and Settings screens.
-- P4 Wi-Fi remote, diagnostic status/log and signed push/pull OTA paths.
-- SD/web-installable controller profiles with exact FLX4 built-in fallback.
+> [!CAUTION]
+> USB0 and USB1 must receive safe, current-limited 5 V power. Isolate the
+> native P4-side VBUS conductors before injecting protected downstream VBUS.
+> Never combine independent supplies with a passive Y-cable. Read the complete
+> [hardware wiring and electrical acceptance guide](docs/HARDWARE_WIRING.md)
+> before building or changing the power wiring.
 
-## Build
+## Connect the system
 
-Required SDK: **ESP-IDF v6.0.2**.
+![Pajoniiir M2 wiring diagram](docs/images/wiring_M2.jpg)
+
+1. With power off, connect the regulated system supply and common ground as
+   shown above.
+2. Insert the Rekordbox USB drive into **USB0**.
+3. Connect the DDJ-FLX4 to **USB1** using the USB-C OTG connection.
+4. Connect the PCM5102A RCA output to the MAIN amplifier or powered speakers.
+5. Connect headphones to the DDJ-FLX4 if cue monitoring is required.
+6. Power on the system and wait for the Library to appear.
+7. Browse a track, load it to D1 or D2, and press Play on the controller.
+
+Both USB insertion orders and reconnect recovery have been physically tested.
+For connector details and electrical limits, use
+[`docs/HARDWARE_WIRING.md`](docs/HARDWARE_WIRING.md) as the source of truth.
+
+## Touchscreen and controller workflow
+
+- **Overview** shows both deck waveforms, transport state, time, BPM, pitch,
+  Master Tempo and the active Beat FX.
+- **Library** browses the Rekordbox USB collection and loads tracks to either
+  deck.
+- **Hot Cues** displays and manages performance cue points.
+- **Settings** controls device options, diagnostics and Wi-Fi Remote.
+- The DDJ-FLX4 controls transport, jog/vinyl, tempo, mixer/EQ, cue, loops,
+  Beat Jump, Sync, pads and effects, with LED state restored after reconnect.
+
+## Wi-Fi Remote and updates
+
+1. Enable **Wi-Fi Remote** on the Settings screen.
+2. Connect a phone or computer to the `Pajoniiir` Wi-Fi network. The default
+   WPA password is `Pajoniiir`.
+3. Open [`http://192.168.4.1`](http://192.168.4.1) or
+   [`http://pajoniiir.local`](http://pajoniiir.local).
+
+For a local update, upload only the signed `main-deck-p4.ddjota` package. Keep
+power stable, stop playback and wait for the device to reboot completely.
+Remote releases are published through `https://ota.pajoniiir.eu`.
+
+See the [OTA update procedure](docs/OTA-UPDATE.md) for installation,
+verification, rollback and wired-recovery instructions.
+
+## Gallery
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/Pajoniiir2.jpg" alt="Pajoniiir M2.1 side view with touchscreen and USB cable"></td>
+    <td width="50%"><img src="docs/images/Pajoniiir3.jpg" alt="Pajoniiir M2.1 dual-deck Overview screen"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Compact standalone player and touchscreen</sub></td>
+    <td align="center"><sub>Dual-deck Overview during playback</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/Pajoniiir4.jpg" alt="Rear of the Pajoniiir enclosure with USB drive, RCA outputs and service connector"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Enclosure connections and ventilation</sub></td>
+  </tr>
+</table>
+
+## 3D-print enclosure
+
+The printable enclosure and assembly references are stored in
+[`misc/`](misc/):
+
+- [`PajoniiirCASE.stl`](misc/PajoniiirCASE.stl) — binary STL ready for slicer
+  preparation;
+- [`case_anim.gif`](misc/case_anim.gif) — exploded assembly animation;
+- `case_assembe.png`, `case_assembe2.png` and `case1.jpg` — assembly and case
+  reference views.
+
+![Pajoniiir enclosure exploded view](misc/case_anim.gif)
+
+Confirm dimensions, orientation, supports and material settings in your slicer
+before printing.
+
+## Build from source
+
+ESP-IDF **v6.0.2** is required.
 
 ```powershell
 . C:\Espressif\tools\Microsoft.v6.0.2.PowerShell_profile.ps1
-idf.py --version
+idf.py --version  # must report ESP-IDF v6.0.2
 
 $repoRoot = git rev-parse --show-toplevel
 Set-Location "$repoRoot\firmware\main-deck-p4"
 idf.py build
 ```
 
-Host regressions:
+Run the same P4 host regression suite used by CI:
 
 ```powershell
 Set-Location $repoRoot
+$env:Path = "$env:Path;C:\msys64\ucrt64\bin"
 .\tests\run_p4_host_tests.ps1
 ```
 
-Exact UI simulator gate:
+Run the headless UI screenshot and navigation gate:
 
 ```powershell
 .\tests\ui_simulator\run_ui_simulator_e2e.ps1
 ```
 
-Signed isolated build:
+Generated build directories, local `sdkconfig` files, signing keys and release
+packages are intentionally excluded from Git. The reproducible dependency lock
+at `firmware/main-deck-p4/dependencies.lock` is committed.
 
-```powershell
-Set-Location "$repoRoot\firmware\main-deck-p4"
-idf.py -B build_signed fullclean
-idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
+## Project status and documentation
 
-Set-Location $repoRoot
-.\tools\package_ota_release.ps1
-```
+`M2.1` is the immutable production release based on commit `70824d24`. Its
+exact tagged ESP-IDF v6.0.2 build, signed OTA installation, dual-USB recovery,
+dual-deck audio, touchscreen UI and three-hour combined hardware soak passed.
+The detailed evidence is recorded in the
+[M2.1 production release report](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
-Generated build directories, local sdkconfig files, signing keys and release
-packages are not committed. `firmware/main-deck-p4/dependencies.lock` is
-committed and must remain reproducible.
-
-## Documentation
-
-- [Current status](docs/DOCUMENTATION_STATUS.md)
-- [Complete next-session handoff](docs/migration/P4_DUAL_USB_NEXT_SESSION.md)
-- [Startup and release checklist](docs/STARTUP_CHECKLIST.md)
-- [Development plan](docs/DEVELOPMENT_PLAN.md)
-- [Accelerated M2 beta release plan](docs/M2_BETA_ACCELERATED_RELEASE_PLAN.md)
-- [Risk register](docs/RISK_REGISTER.md)
-- [M2.1 security and provisioning policy](docs/SECURITY_PROVISIONING_POLICY.md)
+- [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Hardware wiring](docs/HARDWARE_WIRING.md)
-- [OTA procedure](docs/OTA-UPDATE.md)
+- [Startup and release checklist](docs/STARTUP_CHECKLIST.md)
 - [FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
-- [Latest exact-image three-hour soak](docs/validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
-- [M2 automated release gate](docs/validation/M2_AUTOMATED_RELEASE_GATE_20260920.md)
-- [Latest UAC idle-continuity remediation](docs/validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
-- [Final combined three-hour soak](docs/validation/P4_FINAL_COMBINED_SOAK_20260920.md)
-- [30-minute exact-image soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
+- [OTA update procedure](docs/OTA-UPDATE.md)
+- [Security and provisioning policy](docs/SECURITY_PROVISIONING_POLICY.md)
+- [Development plan](docs/DEVELOPMENT_PLAN.md)
+- [Risk register](docs/RISK_REGISTER.md)
 
-Superseded plans and checklists are retained only as files prefixed with
-`ARCHIVE_` and in Git history. They are not active release instructions.
+The active product contains one P4 firmware target:
+`firmware/main-deck-p4`. Historical S3 and dual-processor material is retained
+only in clearly named archives and is not part of the current build.
+
+## License
+
+Pajoniiir is available under the [MIT License](LICENSE).
