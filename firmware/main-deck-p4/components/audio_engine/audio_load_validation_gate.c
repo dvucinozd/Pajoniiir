@@ -1,5 +1,6 @@
 #include "audio_load_validation_gate.h"
 
+#include <stddef.h>
 #include <stdatomic.h>
 
 #include "freertos/FreeRTOS.h"

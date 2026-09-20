@@ -156,6 +156,11 @@ jobs:
             -w /project/firmware/main-deck-p4 \
             "$IDF_IMAGE" bash -lc '
               set -e
+              # The pinned esp-usb git components were resolved with CRLF
+              # worktree files. Component Manager hashes the checked-out
+              # bytes, so make its Linux clone reproduce the committed lock
+              # instead of rejecting the untouched dependency as corrupted.
+              git config --global core.autocrlf true
               idf.py --version
               rm -rf build sdkconfig sdkconfig.old managed_components
               idf.py set-target esp32p4
