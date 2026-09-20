@@ -57,8 +57,9 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > accelerated M2 beta gate. The operator accepted the existing two-month
 > enclosure deployment and confirmed wired recovery access, so no separate
 > enclosure rerun is planned. Signing-key custody is defined as encrypted
-> offline storage with a separate encrypted backup; backup recovery signing
-> remains an operational follow-up. The exact
+> offline storage with a separate encrypted backup. The operator explicitly
+> accepted backup recovery signing as deferred maintenance, so it is not an
+> open M2.1 gate. The exact
 > tagged `M2.1` production image has passed build, signed OTA installation,
 > dual-USB/audio/UI smoke and public-channel verification. The M2.1 policy
 > enables WPA2/WPA3 transition mode with PMF capability, waives an

@@ -35,11 +35,12 @@ intentionally deferred**.
   separately located encrypted offline backup. Neither copy may enter Git,
   build logs, release artifacts, firmware/NVS or the hosting account.
 - The operator confirmed creation of both encrypted offline copies on
-  2026-09-20. Backup recovery verification remains open.
+  2026-09-20 and explicitly accepted backup recovery signing as deferred
+  maintenance rather than an open M2.1 gate.
 - Verify backup recovery by signing a disposable test payload which the
   committed public key accepts. Record only success, key ID and public-key
-  fingerprint; never record the private key or its passphrase. This remains an
-  operational follow-up after M2.1 publication.
+  fingerprint; never record the private key or its passphrase. This is a future
+  maintenance action and is not claimed as completed M2.1 evidence.
 - Normal rotation is a firmware release signed by `rel-001` that introduces a
   successor trust key before `rel-001` is retired. Emergency recovery after
   loss or compromise uses the confirmed wired service path. Multi-key overlap

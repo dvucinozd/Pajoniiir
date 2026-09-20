@@ -30,7 +30,9 @@ they actually tested; they are not current instructions.
   `a93f1a4cfab91d4c5f39abba70cfc011183f8b1e2666da219fd1592241ef2425`
 - Toolchain: ESP-IDF v6.0.2
 - Publication state: public `latest.json` and versioned `M2.1` bundle verified;
-  immutable annotated `M2.1` tag identifies the exact installed source commit
+  immutable annotated `M2.1` tag identifies the exact installed source commit;
+  GitHub Release `M2.1` publishes the hash-verified OTA bundle, wired-recovery
+  binary, manifest and signature
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; focused real-file
   MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
@@ -129,10 +131,10 @@ M2.1 is the released production checkpoint within the explicitly accepted
 security and physical limitations. The operator accepted
 the existing enclosure configuration after approximately two months of use and
 confirmed an accessible wired recovery path; the dedicated enclosure rerun is
-waived, with numeric thermal/RF margins explicitly uncaptured. The only open
-key-custody item is a recovery signing test from the operator-confirmed
-encrypted offline backup without exposing private key material; it is an
-operational follow-up rather than an M2.1 release blocker.
+waived, with numeric thermal/RF margins explicitly uncaptured. Recovery
+signing from the operator-confirmed encrypted offline backup was not tested;
+the operator explicitly accepted it as deferred maintenance, so no M2.1
+release gate remains open.
 
 The remaining security choices are closed by
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): the shared

@@ -66,4 +66,5 @@ The operator subsequently confirmed encrypted primary and separately stored
 encrypted backup key copies. Exact tagged `M2.1` build/sign/install/smoke,
 public channel verification and immutable tag publication are closed in
 [`M2_1_PRODUCTION_RELEASE_20260920.md`](M2_1_PRODUCTION_RELEASE_20260920.md).
-Backup recovery signing remains an operational follow-up.
+Backup recovery signing was not executed; the operator explicitly accepted it
+as deferred future maintenance and closed it as an M2.1 release gate.

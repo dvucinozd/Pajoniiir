@@ -188,8 +188,10 @@ Automated and unattended M2 evidence:
 - [x] Provision encrypted offline primary and separately stored encrypted
   backup copies of the signing key; operator confirmed completion on
   2026-09-20 without exposing private key material.
-- [ ] Verify recovery from the encrypted backup by signing a disposable test
-  payload and validating it with the committed public key.
+- [x] Close backup recovery for the M2.1 release by explicit operator decision:
+  encrypted primary and separately stored backup copies are confirmed, while a
+  disposable recovery-signing test is accepted as deferred future maintenance
+  and is not claimed as executed evidence.
 - [x] Define the M2.1 signing-key rotation boundary: `rel-001` remains trusted;
   planned rotation installs a successor trust key while `rel-001` is still
   available, while emergency replacement uses wired recovery.
@@ -206,6 +208,9 @@ Automated and unattended M2 evidence:
   and the operator confirmed audio, display and touch.
 - [x] Publish hashes, slot/version evidence and remaining acceptance results in
   `validation/M2_1_PRODUCTION_RELEASE_20260920.md`.
+- [x] Publish GitHub Release `M2.1` with the signed OTA bundle, wired-recovery
+  binary, manifest and signature; download all four assets again and verify
+  their recorded SHA-256 values.
 - [x] Merge the release-qualified M2 beta successor into `master`; completed by
   `d3099f9` without moving the immutable `M2` tag.
 - [x] Select production version `M2.1`.

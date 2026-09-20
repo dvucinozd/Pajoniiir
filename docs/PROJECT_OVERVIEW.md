@@ -54,8 +54,9 @@ display/touch smoke, immutable tag and public OTA channel all pass. See
 [`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
 The encrypted offline primary and separately stored encrypted backup signing
-key copies are operator-confirmed. A recovery signing test from the backup is
-an operational follow-up; it is not claimed as completed release evidence.
+key copies are operator-confirmed. Recovery signing from the backup was not
+tested and is not claimed as evidence; the operator explicitly accepted it as
+deferred maintenance rather than an open M2.1 gate.
 
 The security decision is fixed in
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): WPA2/WPA3

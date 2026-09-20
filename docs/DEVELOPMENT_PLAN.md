@@ -107,7 +107,7 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
 | 7 | Close Wi-Fi, web, profile and OTA fault paths | Pull/push OTA, rollback, invalid/slow/interrupted requests and post-reboot USB recovery pass |
 | 8 | Run multi-hour combined soak | Defined multi-hour run completes without reset, media/controller loss, latched control or gated counter increase |
 | 9 | Qualify final enclosure | Accepted for this scope by operator after approximately two months in the existing enclosure; wired recovery confirmed; repeat after physical/power changes |
-| 10 | Resolve production security | Policy complete for M2.1: shared credential accepted, WPA2/WPA3 transition mode plus PMF capability, encrypted offline key custody and backup, defined rotation boundary, SBOM waived, and irreversible P4 security deferred on the sole board; physical key-store verification remains operationally open |
+| 10 | Resolve production security | **Complete for M2.1:** shared credential accepted, WPA2/WPA3 transition mode plus PMF capability, encrypted offline key custody and backup, defined rotation boundary, SBOM waived, irreversible P4 security deferred on the sole board, and backup recovery signing explicitly accepted as future maintenance |
 | 11 | Freeze and release | **Complete:** `M2.1` freezes `70824d24`; exact tagged build/sign/install, dual-deck and operator smoke, public channel/hash verification, validation record and immutable tag publication pass |
 
 ## Test policy

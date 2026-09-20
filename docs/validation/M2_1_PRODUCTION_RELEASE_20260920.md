@@ -70,6 +70,13 @@ An independently downloaded public bundle matched both size and hash.
 [`../../deploy/ota/.htaccess`](../../deploy/ota/.htaccess) is the tracked
 Apache MIME policy deployed for JSON and `.ddjota` artifacts.
 
+GitHub Release
+[`M2.1`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.1) is published
+as the latest non-draft, non-prerelease release. It contains the signed
+`main-deck-p4.ddjota`, wired-recovery `main-deck-p4.bin`, `manifest.json` and
+`manifest.sig`. All four assets were downloaded again from GitHub and their
+sizes and SHA-256 values matched the table above.
+
 ## Accepted limitations and follow-up
 
 - Secure Boot, Flash Encryption and security eFuse provisioning remain
@@ -77,7 +84,8 @@ Apache MIME policy deployed for JSON and `.ddjota` artifacts.
 - The shared service credential and absence of an SBOM are accepted decisions
   for M2.1.
 - Encrypted offline primary and separately stored encrypted backup copies of
-  the signing key are operator-confirmed. A recovery signing test from the
-  backup remains an operational follow-up, not a blocker for this release.
-- Multi-key trust overlap must be implemented before a planned future signing
+  the signing key are operator-confirmed. Recovery signing from the backup was
+  not tested; the operator explicitly accepted it as deferred future
+  maintenance and closed it as an M2.1 release gate.
+- Multi-key trust overlap is deferred until before a planned future signing
   key rotation; emergency replacement retains the wired recovery path.
