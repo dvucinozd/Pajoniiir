@@ -72,11 +72,14 @@ uint32_t controller_audio_ring_write_clocked(controller_audio_ring_t *ring,
         return 0u;
     }
 
-    /* The I2S producer and USB SOF consumer use independent clocks. Keep a
-     * wide dead band around half-full and slip no more than one frame per
-     * producer block outside it. */
-    const uint32_t low_water = (ring->frame_capacity * 3u) / 8u;
-    const uint32_t high_water = (ring->frame_capacity * 5u) / 8u;
+    /* The I2S producer and USB SOF consumer use independent clocks.  Bias the
+     * dead band upward because an underflow is audible while queued latency is
+     * confined to FLX4 monitoring.  A release soak exhausted the old
+     * 3/8..5/8 band during a measured 28 ms main-sink stall.  The 5/8..7/8
+     * band retains the same bounded allocation and slips no more than one
+     * frame per producer block while keeping roughly 35 ms of nominal runway. */
+    const uint32_t low_water = (ring->frame_capacity * 5u) / 8u;
+    const uint32_t high_water = (ring->frame_capacity * 7u) / 8u;
     const uint32_t free_frames = controller_audio_ring_free(ring);
 
     if (ring->queued_frames >= high_water && frames > 1u) {

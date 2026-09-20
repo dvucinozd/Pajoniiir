@@ -26,6 +26,23 @@ def block(marker):
     return source[start:end]
 
 
+# A CUE/restart can leave both deck renderers temporarily inactive while the
+# FLX4 isochronous endpoint continues consuming frames.  The production idle
+# branch must therefore submit a zero block to UAC and pace it with the main
+# I2S sink instead of sleeping and allowing the UAC ring to drain.
+idle_output_block = block("if (!deck0.active && !deck1.active) {")
+for required in (
+    "memset(master_out, 0",
+    "memset(hp_out, 0",
+    "controller_usb_host_write_audio(",
+    "audio_output_write_main(",
+):
+    if required not in idle_output_block:
+        raise AssertionError(
+            f"firmware idle output does not preserve UAC continuity: {required}"
+        )
+
+
 prelude = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -37,6 +54,7 @@ prelude = r'''
 #include "audio_eof_policy.h"
 #define AE_FW 1
 #define AUDIO_ENGINE_DECK_COUNT 2
+#define AE_START_PREBUFFER_FRAMES 512u
 #define ESP_OK 0
 #define ESP_ERR_TIMEOUT 0x107
 #define ESP_ERR_NO_MEM 0x101
@@ -68,6 +86,7 @@ static audio_engine_state_t s_engines[2];
 static audio_fw_runtime_t s_fw_runtimes[2];
 static audio_fw_preload_t s_fw_preloads[2];
 static bool s_start_waiting[2], s_start_seek_pending[2];
+static uint32_t s_start_prebuffer_frames[2];
 static bool s_deck_hold[2], s_scratch_playing[2], s_scratch_abort_seek_waiting[2];
 static int s_fw_task_contexts[2], s_scratch_buf[2], s_resamplers[2];
 static struct { bool initialized; } s_keylocks[2];
@@ -81,6 +100,7 @@ static int xSemaphoreTake(SemaphoreHandle_t sem, unsigned timeout) {
 }
 static void atomic_store_bool(bool *dst, bool value) { *dst = value; }
 static bool atomic_load_bool(const bool *src) { return *src; }
+static void atomic_store_u32(uint32_t *dst, uint32_t value) { *dst = value; }
 static void audio_fw_task_context_reset(int *ctx) { *ctx = 0; }
 static void audio_decoder_close(int *ctx) { (void)ctx; }
 static void drflac_close(drflac *ctx) { (void)ctx; }

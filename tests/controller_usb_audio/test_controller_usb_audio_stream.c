@@ -55,6 +55,23 @@ static void start(void)
            previous_epoch + 1u);
 }
 
+static void test_clocked_ring_keeps_underflow_runway(void)
+{
+    controller_audio_ring_t ring;
+    int16_t storage[2048u * 4u] = {0};
+    int16_t block[256u * 4u] = {0};
+    assert(controller_audio_ring_init(&ring, storage, 2048u, 4u, 44100u));
+
+    assert(controller_audio_ring_write(&ring, storage, 1024u) == 1024u);
+    assert(controller_audio_ring_write_clocked(&ring, block, 256u) == 257u);
+    assert(ring.clock_duplicated_frames == 1u);
+
+    controller_audio_ring_reset(&ring, 44100u);
+    assert(controller_audio_ring_write(&ring, storage, 1536u) == 1536u);
+    assert(controller_audio_ring_write_clocked(&ring, block, 256u) == 256u);
+    assert(ring.clock_trimmed_frames == 0u);
+}
+
 static void retire_transfers(void)
 {
     for (unsigned i = 0; i < STREAM_TRANSFER_COUNT; ++i) {
@@ -122,6 +139,7 @@ static void test_stop_during_write(uint32_t rate)
 
 int main(void)
 {
+    test_clocked_ring_keeps_underflow_runway();
     test_packet_loss();
     test_stop_during_write(44100);
     test_stop_during_write(48000);

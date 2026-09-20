@@ -451,6 +451,10 @@ Assert-FileContains `
     -Name "p4 live seek rearms prebuffer and invalidates stale output progress" `
     -Path $audioEnginePath `
     -LiteralPatterns @(
+        "#define AE_SEEK_PREBUFFER_FRAMES  AE_LOOP_TRIM_MIN_RUNWAY_FRAMES",
+        "atomic_store_u32(&s_start_prebuffer_frames[deck],",
+        "AE_SEEK_PREBUFFER_FRAMES);",
+        "atomic_load_u32(&s_start_prebuffer_frames[deck])",
         "!__atomic_exchange_n(&s_start_waiting[deck], true, __ATOMIC_ACQ_REL)",
         "atomic_load_bool(&s_start_seek_pending[deck]) ||",
         "atomic_store_bool(&s_start_seek_pending[ctx->deck], false);",
@@ -2752,6 +2756,11 @@ Invoke-Step -Name "run P4 release qualification harness self-test" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tools/run_p4_release_qualification.ps1", "-SelfTest")
+
+Invoke-Step -Name "run P4 UAC transition stress harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_uac_transition_stress.ps1", "-SelfTest")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {

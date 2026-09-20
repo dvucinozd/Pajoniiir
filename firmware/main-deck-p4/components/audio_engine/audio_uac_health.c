@@ -5,12 +5,17 @@
 
 uint32_t audio_uac_ring_low_alarm_frames(uint32_t capacity_frames)
 {
-    return capacity_frames / 4u;
+    /* The clock regulator deliberately keeps the ring above 5/8 full.  Warn
+     * once it falls below half-full, before the remaining runway can be
+     * consumed by the measured main-sink scheduling jitter. */
+    return capacity_frames / 2u;
 }
 
 uint32_t audio_uac_ring_high_alarm_frames(uint32_t capacity_frames)
 {
-    return (uint32_t)(((uint64_t)capacity_frames * 3u) / 4u);
+    /* 7/8 is the regulator's upper edge, so values inside that working band
+     * are nominal.  Reserve the warning for a genuine approach to overflow. */
+    return (uint32_t)(((uint64_t)capacity_frames * 15u) / 16u);
 }
 
 audio_uac_ring_state_t audio_uac_ring_state(bool playback_active,

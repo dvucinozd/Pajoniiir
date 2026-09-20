@@ -19,14 +19,14 @@ static audio_uac_health_result_t sample(audio_uac_health_monitor_t *monitor,
 
 static void test_ring_thresholds_and_states(void)
 {
-    assert(audio_uac_ring_low_alarm_frames(2048u) == 512u);
-    assert(audio_uac_ring_high_alarm_frames(2048u) == 1536u);
+    assert(audio_uac_ring_low_alarm_frames(2048u) == 1024u);
+    assert(audio_uac_ring_high_alarm_frames(2048u) == 1920u);
     assert(audio_uac_ring_state(false, 10u, 0u, 2048u) == AUDIO_UAC_RING_IDLE);
     assert(audio_uac_ring_state(true, 0u, 0u, 2048u) == AUDIO_UAC_RING_UNAVAILABLE);
-    assert(audio_uac_ring_state(true, 10u, 511u, 2048u) == AUDIO_UAC_RING_LOW);
-    assert(audio_uac_ring_state(true, 10u, 512u, 2048u) == AUDIO_UAC_RING_NOMINAL);
-    assert(audio_uac_ring_state(true, 10u, 1536u, 2048u) == AUDIO_UAC_RING_NOMINAL);
-    assert(audio_uac_ring_state(true, 10u, 1537u, 2048u) == AUDIO_UAC_RING_HIGH);
+    assert(audio_uac_ring_state(true, 10u, 1023u, 2048u) == AUDIO_UAC_RING_LOW);
+    assert(audio_uac_ring_state(true, 10u, 1024u, 2048u) == AUDIO_UAC_RING_NOMINAL);
+    assert(audio_uac_ring_state(true, 10u, 1920u, 2048u) == AUDIO_UAC_RING_NOMINAL);
+    assert(audio_uac_ring_state(true, 10u, 1921u, 2048u) == AUDIO_UAC_RING_HIGH);
     assert(audio_uac_ring_state(true, 10u, 0u, 0u) == AUDIO_UAC_RING_UNAVAILABLE);
 }
 
@@ -35,9 +35,9 @@ static void test_pressure_and_active_data_loss(void)
     audio_uac_health_monitor_t monitor = {0};
     audio_uac_health_result_t r = sample(&monitor, true, 1u, 1u, 1024u, 8u, 9u, 10u);
     assert(r.flags == AUDIO_UAC_HEALTH_NONE);
-    r = sample(&monitor, true, 1u, 2u, 511u, 8u, 9u, 10u);
+    r = sample(&monitor, true, 1u, 2u, 1023u, 8u, 9u, 10u);
     assert(r.flags == AUDIO_UAC_HEALTH_PRESSURE_LOW);
-    r = sample(&monitor, true, 1u, 3u, 1537u, 10u, 12u, 14u);
+    r = sample(&monitor, true, 1u, 3u, 1921u, 10u, 12u, 14u);
     assert(r.flags == (AUDIO_UAC_HEALTH_PRESSURE_HIGH |
                        AUDIO_UAC_HEALTH_DROPPED |
                        AUDIO_UAC_HEALTH_OVERFLOW |

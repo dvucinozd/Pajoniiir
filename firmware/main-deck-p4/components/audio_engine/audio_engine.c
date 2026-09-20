@@ -143,6 +143,7 @@ static bool     s_start_waiting[AUDIO_ENGINE_DECK_COUNT];
  * task reaches its flush point. Keep the start gate closed across that window
  * so it cannot mistake pre-seek frames for the new prebuffer. */
 static bool     s_start_seek_pending[AUDIO_ENGINE_DECK_COUNT];
+static uint32_t s_start_prebuffer_frames[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_start_wait_count[AUDIO_ENGINE_DECK_COUNT];
 static uint32_t s_output_position_epoch[AUDIO_ENGINE_DECK_COUNT];
 static audio_output_bookkeeping_t s_output_bookkeeping;
@@ -153,6 +154,10 @@ static audio_output_bookkeeping_t s_output_bookkeeping;
  * four times the observed need. Frames kept back are past loop_end, hence the
  * cost of raising it is overrun at the loop's first pass. */
 #define AE_LOOP_TRIM_MIN_RUNWAY_FRAMES 2048u
+/* A live seek flushes the old runway and can immediately collide with a loop
+ * wrap. Keep the deck muted until the same measured-safe runway used by loop
+ * recovery is present; ordinary PLAY keeps the smaller low-latency gate. */
+#define AE_SEEK_PREBUFFER_FRAMES  AE_LOOP_TRIM_MIN_RUNWAY_FRAMES
 
 /* Loop-wrap trim accounting. The trim runs on the decode task and is otherwise
  * invisible: it withdraws already-published frames and clamps the current
@@ -1424,13 +1429,16 @@ static bool deck_output_active(uint8_t deck)
     if (atomic_load_bool(&s_start_waiting[deck])) {
         if (atomic_load_bool(&s_start_seek_pending[deck])) return false;
         uint32_t future = deck_pcm_used(deck);
-        if (!audio_start_gate_ready(future, AE_START_PREBUFFER_FRAMES,
+        uint32_t minimum = atomic_load_u32(&s_start_prebuffer_frames[deck]);
+        if (!audio_start_gate_ready(future, minimum,
                                     atomic_load_bool(&eng->eof))) {
             return false;
         }
         atomic_store_bool(&s_start_waiting[deck], false);
-        ESP_LOGI(TAG, "startup gate D%u released with %u future frames",
-                 (unsigned)deck + 1u, (unsigned)future);
+        atomic_store_u32(&s_start_prebuffer_frames[deck],
+                         AE_START_PREBUFFER_FRAMES);
+        ESP_LOGI(TAG, "startup gate D%u released with %u future frames (min %u)",
+                 (unsigned)deck + 1u, (unsigned)future, (unsigned)minimum);
     }
     return true;
 }
@@ -3589,16 +3597,43 @@ static void ae_output_task(void *arg)
             /* No audio block will reach the normal peak-recording path below,
              * but the UI meter still needs zero-input release ticks. */
             decay_idle_deck_ui_peaks();
+            /* FLX4 UAC is isochronous and keeps consuming its ring while CUE,
+             * seek or a startup gate temporarily makes both renderers
+             * inactive. Sleeping here used to drain the ring for the full
+             * CUE -> PLAY prebuffer window even though deck_core still had an
+             * active playback session. Feed an explicit silent block and use
+             * the main I2S sink as the same hardware clock that paces active
+             * blocks, so a transport transition cannot create USB data loss. */
+            memset(master_out, 0, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+            memset(hp_out, 0, AE_OUT_FRAMES * 2 * sizeof(int16_t));
 #if !defined(AUDIO_ENGINE_PC_TEST) && CONFIG_AUDIO_RECORDER_ENABLED
             /* Keep the recording timeline continuous across an idle gap by
              * pushing correctly paced silence at the established output rate. */
             if (audio_recorder_get_state() == AUDIO_RECORDER_RECORDING) {
-                memset(master_out, 0, AE_OUT_FRAMES * 2 * sizeof(int16_t));
                 audio_recorder_push_master(master_out, AE_OUT_FRAMES, s_output_sample_rate);
             }
 #endif
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            (void)controller_usb_host_write_audio(
+                master_out, hp_out, AE_OUT_FRAMES, s_output_sample_rate);
+            const esp_err_t idle_main_rc = audio_output_write_main(
+                master_out, AE_OUT_FRAMES * 2 * sizeof(int16_t));
+            if (idle_main_rc != ESP_OK &&
+                idle_main_rc != ESP_ERR_NOT_SUPPORTED) {
+                audio_output_mark_sink_fault(idle_main_rc, ESP_OK);
+                continue;
+            }
+#endif
             ae_wdt_trace(AUDIO_WDT_PHASE_IDLE_DELAY, 0u);
+#if !defined(AUDIO_ENGINE_PC_TEST)
+            if (idle_main_rc == ESP_ERR_NOT_SUPPORTED) {
+                vTaskDelay(pdMS_TO_TICKS(5));
+            } else {
+                taskYIELD();
+            }
+#else
             vTaskDelay(pdMS_TO_TICKS(5));
+#endif
 #if !defined(AUDIO_ENGINE_PC_TEST)
             s_audio_wdt_last_idle_us = (uint64_t)esp_timer_get_time();
 #endif
@@ -3890,6 +3925,8 @@ static void audio_engine_reset_state(audio_engine_state_t *eng, esp_err_t err, c
 #if AE_FW
         atomic_store_bool(&s_start_waiting[deck], false);
         atomic_store_bool(&s_start_seek_pending[deck], false);
+        atomic_store_u32(&s_start_prebuffer_frames[deck],
+                         AE_START_PREBUFFER_FRAMES);
 #endif
     }
     memset(eng, 0, sizeof(*eng));
@@ -3939,6 +3976,8 @@ esp_err_t audio_engine_init(void)
 #if AE_FW
         atomic_store_bool(&s_start_waiting[i], false);
         atomic_store_bool(&s_start_seek_pending[i], false);
+        atomic_store_u32(&s_start_prebuffer_frames[i],
+                         AE_START_PREBUFFER_FRAMES);
         s_start_wait_count[i] = 0u;
         __atomic_store_n(&s_output_position_epoch[i], 1u, __ATOMIC_RELEASE);
 #endif
@@ -4306,10 +4345,16 @@ static esp_err_t audio_engine_play_for_deck(uint8_t deck)
     }
 
 #if AE_FW
+    if (!atomic_load_bool(&s_start_seek_pending[deck])) {
+        atomic_store_u32(&s_start_prebuffer_frames[deck],
+                         AE_START_PREBUFFER_FRAMES);
+    }
+    uint32_t prebuffer_frames =
+        atomic_load_u32(&s_start_prebuffer_frames[deck]);
     bool wait_for_prebuffer =
         atomic_load_bool(&s_start_seek_pending[deck]) ||
         !audio_start_gate_ready(deck_pcm_used(deck),
-                                AE_START_PREBUFFER_FRAMES,
+                                prebuffer_frames,
                                 atomic_load_bool(&eng->eof));
     atomic_store_bool(&s_start_waiting[deck], wait_for_prebuffer);
     if (wait_for_prebuffer) {
@@ -4364,6 +4409,8 @@ static esp_err_t audio_engine_stop_for_deck(uint8_t deck)
 #if AE_FW
     atomic_store_bool(&s_start_waiting[deck], false);
     atomic_store_bool(&s_start_seek_pending[deck], false);
+    atomic_store_u32(&s_start_prebuffer_frames[deck],
+                     AE_START_PREBUFFER_FRAMES);
 #endif
     eng->loading = false;
     eng->load_progress = 100;
@@ -4457,6 +4504,8 @@ static esp_err_t audio_engine_seek_for_deck_reason(uint8_t deck,
 
 #if AE_FW
     if (reason != AE_SEEK_REASON_LOOP) {
+        atomic_store_u32(&s_start_prebuffer_frames[deck],
+                         AE_SEEK_PREBUFFER_FRAMES);
         atomic_store_bool(&s_start_seek_pending[deck], true);
     }
     if (reason != AE_SEEK_REASON_LOOP &&
