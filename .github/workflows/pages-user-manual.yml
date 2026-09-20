@@ -3,8 +3,7 @@ name: Deploy Pajoniiir user manual to Pages
 on:
   push:
     branches:
-      - feat/p4-dual-usb-host
-      - docs/user-manual-pages
+      - master
     paths:
       - "docs/**"
       - ".github/workflows/pages-user-manual.yml"
