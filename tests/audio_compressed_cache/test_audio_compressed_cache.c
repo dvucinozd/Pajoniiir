@@ -64,10 +64,12 @@ static void test_cross_page_read_and_eof_clamp(void)
     CHECK(memcmp(out, source.data + 17u, sizeof(out)) == 0);
     CHECK(cache.misses == 3u);
     CHECK(source.calls == 3u);
+    CHECK(cache.last_backend_offset == 64u);
 
     uint8_t tail[32];
     CHECK(audio_compressed_cache_read(&cache, 250u, tail, sizeof(tail)) == 7u);
     CHECK(memcmp(tail, source.data + 250u, 7u) == 0);
+    CHECK(cache.last_backend_offset == 256u);
 }
 
 static void test_hits_and_lru_eviction_stay_bounded(void)
@@ -147,6 +149,33 @@ static void test_prefetch_and_invalid_config(void)
     CHECK(audio_compressed_cache_prefetch(&cache, 47u));
     CHECK(source.calls == 1u);
     CHECK(!audio_compressed_cache_prefetch(&cache, source.size));
+}
+
+/* A prefetch hit must refresh LRU age. FLAC warms the current page and then its
+ * forward window before decoding; without this touch, the current page can
+ * remain the oldest and be evicted by the first missing forward page. */
+static void test_prefetch_hit_keeps_current_page_resident(void)
+{
+    memory_source_t source;
+    fill_source(&source);
+    uint8_t storage[8 * 32];
+    audio_compressed_cache_t cache;
+    CHECK(audio_compressed_cache_init(&cache, storage, sizeof(storage), 32u,
+                                      source.size, memory_read_at, &source));
+
+    for (size_t page = 0u; page < 8u; ++page) {
+        CHECK(audio_compressed_cache_prefetch(&cache, page * 32u));
+    }
+    CHECK(source.calls == 8u);
+
+    CHECK(audio_compressed_cache_prefetch(&cache, 0u));   /* current-page hit */
+    CHECK(audio_compressed_cache_prefetch(&cache, 256u)); /* one new page */
+    uint32_t calls_after_warm = source.calls;
+
+    uint8_t out[16];
+    CHECK(audio_compressed_cache_read(&cache, 0u, out, sizeof(out)) == sizeof(out));
+    CHECK(source.calls == calls_after_warm);
+    CHECK(memcmp(out, source.data, sizeof(out)) == 0);
 }
 
 /* A backend fault that truncates one transfer must never become a cached page.
@@ -255,6 +284,7 @@ int main(void)
     test_hits_and_lru_eviction_stay_bounded();
     test_lru_order_survives_uint32_boundary();
     test_prefetch_and_invalid_config();
+    test_prefetch_hit_keeps_current_page_resident();
     test_mid_file_short_read_is_not_cached();
     test_eof_tail_page_is_cached();
     test_warming_both_span_ends_makes_a_straddling_read_hit();

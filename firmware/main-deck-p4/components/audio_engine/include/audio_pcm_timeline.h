@@ -13,9 +13,10 @@
  * frames between play_seq and write_seq form scratch forward runway.
  *
  * Caller owns `frames` (capacity*2 interleaved stereo int16), normally PSRAM.
- * Single producer writes; the output task owns play_seq. Scratch may read any
- * immutable sequence inside [oldest_seq, write_seq). Integration must freeze the
- * producer before allowing the scratch reader to use a stable window.
+ * Single producer writes; the output task owns play_seq. Random readers may
+ * address any retained sequence inside [oldest_seq, write_seq). Jog scratch
+ * freezes the producer because its movable window must remain stable; slip
+ * Censor leaves it running and treats a concurrently evicted frame as an edge.
  */
 typedef struct {
     int16_t *frames;
@@ -60,8 +61,19 @@ uint32_t audio_pcm_timeline_drop_newest(audio_pcm_timeline_t *t, uint32_t frames
 bool audio_pcm_timeline_read(const audio_pcm_timeline_t *t, uint64_t seq,
                              audio_mixer_frame_t *out);
 
+/* Fast random access for the sole output-task owner of play_seq/play_index.
+ * It preserves producer eviction checks but avoids RV32 64-bit cursor
+ * snapshots in the per-sample key-lock path. Never call it from another task. */
+bool audio_pcm_timeline_read_output_owner(const audio_pcm_timeline_t *t,
+                                          uint64_t seq,
+                                          audio_mixer_frame_t *out);
+
 /* Reposition normal playback to any retained frame, or write_seq (end). */
 bool audio_pcm_timeline_set_playhead(audio_pcm_timeline_t *t, uint64_t seq);
+
+/* Output-task-only counterpart used by key-lock's monotonic per-frame cursor. */
+bool audio_pcm_timeline_set_playhead_output_owner(audio_pcm_timeline_t *t,
+                                                  uint64_t seq);
 
 /* Reposition using the scratch coordinate (0 = newest retained frame). */
 bool audio_pcm_timeline_set_playhead_frames_back(audio_pcm_timeline_t *t,

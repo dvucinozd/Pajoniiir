@@ -118,18 +118,25 @@ CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCP_SACK_OUT=y
 
-# ── FLX4 USB headphones audio — product default (merged 2026-07-10) ───────────
-# Was the separate sdkconfig.flx4_hp_e2e overlay; folded in so a plain
-# `idf.py build` produces the sound firmware. Simultaneous outputs: PCM5102A RCA
-# MAIN (I2S unit 1, paces the output loop) + FLX4 USB headphones CUE fed by the
-# monitor link (I2S unit 0). ES8311 is disabled to free unit 0.
-CONFIG_MONITOR_PCM_LINK_ENABLED=y
-CONFIG_MONITOR_PCM_LINK_I2S_UNIT=0
+# ── P4-only direct controller/audio product ──────────────────────────────────
+# One shared Host Library owns USB0 storage and USB1 FLX4 MIDI/UAC. MAIN uses
+# PCM5102A; CUE/headphones are sent directly over FLX4 USB Audio.
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=512
 CONFIG_BSP_PCM5102A_MAIN_OUT=y
 # CONFIG_BSP_ES8311_MONITOR is not set
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_22=y
-# Surface the monitor-link INFO diagnostics (default runtime log level is WARN).
+# Keep bounded crash evidence in the fixed 64 KiB coredump partition.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_CHECK_BOOT=y
+CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8
+CONFIG_ESP_COREDUMP_LOGS=n
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+# Optional ANLZ cache writes remain disabled until the dual-USB power/VBUS path
+# passes brownout acceptance. Existing cache entries remain readable.
+# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set
+# Surface direct USB-controller INFO diagnostics (default runtime log level is WARN).
 CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
 
 # ── Master recorder release policy ───────────────────────────────────────────

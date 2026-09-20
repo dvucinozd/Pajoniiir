@@ -81,8 +81,11 @@ const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r);
  * Compare Pajoniiir's `git describe` versions:
  *
  *   RC<tag>-<commits-since-tag>-g<hash>[-dirty]
+ *   M<tag>-<commits-since-tag>-g<hash>[-dirty]
  *
- * Pull OTA accepts only NEWER. A signed older bundle remains installable
+ * Milestone (`M`) releases sort after the historical release-candidate (`RC`)
+ * family; within a family, tag and commit distance remain monotonic. Pull OTA
+ * accepts only NEWER. A signed older bundle remains installable
  * through the local push-OTA service path, which keeps rollback possible
  * without allowing an unauthenticated channel document to force it.
  */

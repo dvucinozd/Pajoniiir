@@ -34,7 +34,7 @@ extern "C" {
 
 typedef enum {
     DDJ_OTA_TARGET_P4 = 1,
-    DDJ_OTA_TARGET_S3 = 2,
+    DDJ_OTA_TARGET_RETIRED_2 = 2,
 } ddj_ota_target_t;
 
 typedef enum {

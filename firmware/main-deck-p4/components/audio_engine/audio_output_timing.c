@@ -1,5 +1,10 @@
 #include "audio_output_timing.h"
 
+uint32_t audio_output_select_sample_rate(uint32_t source_rate)
+{
+    return source_rate == 0u ? 0u : (source_rate > 44100u ? 48000u : 44100u);
+}
+
 uint32_t audio_output_block_period_us(uint32_t sample_rate)
 {
     if (sample_rate == 0u) return 0u;
@@ -12,7 +17,9 @@ uint32_t audio_output_late_warning_threshold_us(uint32_t sample_rate)
     return period_us > 0u ? period_us * 2u : 0u;
 }
 
-bool audio_output_should_force_idle(uint32_t consecutive_busy_blocks)
+bool audio_output_should_force_idle(uint32_t consecutive_busy_blocks,
+                                    uint32_t elapsed_since_idle_us)
 {
-    return consecutive_busy_blocks >= AUDIO_OUTPUT_MAX_BUSY_BLOCKS;
+    return consecutive_busy_blocks >= AUDIO_OUTPUT_MAX_BUSY_BLOCKS ||
+           elapsed_since_idle_us >= AUDIO_OUTPUT_MAX_BUSY_US;
 }

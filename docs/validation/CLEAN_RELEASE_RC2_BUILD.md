@@ -132,3 +132,7 @@ would make every P4 running an `RC1-*` release see RC2 as NEWER and offer to
 install it — which, given the open hardware-acceptance rows above, is a decision
 to make deliberately rather than as a side effect of packaging. Wired flash or
 local push OTA remains the safer first path for RC2.
+
+That URL records the channel location used by this dated RC2 build evidence.
+It was later retired; the active channel root and publication procedure are in
+[`../OTA-UPDATE.md`](../OTA-UPDATE.md).

@@ -125,6 +125,35 @@ bool audio_pcm_timeline_read(const audio_pcm_timeline_t *t, uint64_t seq,
     return seq >= audio_pcm_timeline_oldest_seq(t);
 }
 
+bool audio_pcm_timeline_read_output_owner(const audio_pcm_timeline_t *t,
+                                          uint64_t seq,
+                                          audio_mixer_frame_t *out)
+{
+    if (!t || !t->frames || !out || t->capacity == 0u) return false;
+
+    const uint32_t seq_low = (uint32_t)seq;
+    const uint32_t oldest = __atomic_load_n(&t->oldest_seq, __ATOMIC_ACQUIRE);
+    const uint32_t write = __atomic_load_n(&t->write_seq, __ATOMIC_ACQUIRE);
+    const uint32_t retained = write - oldest;
+    if ((uint32_t)(seq_low - oldest) >= retained) return false;
+
+    /* play_seq/play_index are mutated only by this caller's output task. The
+     * retained span is below 2^31, so the signed modular delta identifies the
+     * same physical slot even while the low sequence word wraps. */
+    const int32_t delta = (int32_t)(seq_low - t->play_seq);
+    int64_t index = (int64_t)t->play_index + delta;
+    if (index < 0) index += t->capacity;
+    if (index >= t->capacity) index -= t->capacity;
+    out->left = t->frames[(uint32_t)index * 2u];
+    out->right = t->frames[(uint32_t)index * 2u + 1u];
+
+    /* The producer can evict the copied slot concurrently. Refuse it if the
+     * eviction cursor moved beyond seq while the two samples were copied. */
+    const uint32_t oldest_after = __atomic_load_n(&t->oldest_seq,
+                                                   __ATOMIC_ACQUIRE);
+    return (uint32_t)(seq_low - oldest_after) < t->capacity;
+}
+
 bool audio_pcm_timeline_pop(audio_pcm_timeline_t *t, audio_mixer_frame_t *out)
 {
     if (!t || !out) {
@@ -159,6 +188,32 @@ bool audio_pcm_timeline_set_playhead(audio_pcm_timeline_t *t, uint64_t seq)
     t->play_index = index;
     cursor_store_absolute(&t->play_epoch, &t->play_seq,
                           &t->play_version, seq);
+    return true;
+}
+
+bool audio_pcm_timeline_set_playhead_output_owner(audio_pcm_timeline_t *t,
+                                                  uint64_t seq)
+{
+    if (!t || t->capacity == 0u) return false;
+    const uint32_t seq_low = (uint32_t)seq;
+    const uint32_t oldest = __atomic_load_n(&t->oldest_seq, __ATOMIC_ACQUIRE);
+    const uint32_t write = __atomic_load_n(&t->write_seq, __ATOMIC_ACQUIRE);
+    const uint32_t retained = write - oldest;
+    if ((uint32_t)(seq_low - oldest) > retained) return false;
+
+    const int32_t delta = (int32_t)(seq_low - t->play_seq);
+    int64_t index = (int64_t)t->play_index + delta;
+    if (index < 0) index += t->capacity;
+    if (index >= t->capacity) index -= t->capacity;
+    t->play_index = (uint32_t)index;
+
+    const uint32_t epoch = (uint32_t)(seq >> 32);
+    if (epoch == t->play_epoch) {
+        __atomic_store_n(&t->play_seq, seq_low, __ATOMIC_RELEASE);
+    } else {
+        cursor_store_absolute(&t->play_epoch, &t->play_seq,
+                              &t->play_version, seq);
+    }
     return true;
 }
 

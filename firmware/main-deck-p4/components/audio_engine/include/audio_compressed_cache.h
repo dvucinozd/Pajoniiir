@@ -29,6 +29,7 @@ typedef struct {
     audio_compressed_cache_page_t pages[AUDIO_COMPRESSED_CACHE_MAX_PAGES];
     uint64_t stamp;
     size_t backend_bytes;
+    size_t last_backend_offset;
     uint32_t hits;
     uint32_t misses;
     uint32_t short_reads;  /* backend returned less than the clamped page extent */

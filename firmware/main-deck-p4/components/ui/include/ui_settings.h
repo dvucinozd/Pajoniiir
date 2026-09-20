@@ -13,11 +13,6 @@ uint8_t ui_settings_master_trim_sanitize_preset(uint8_t preset);
 uint8_t ui_settings_master_trim_next_preset(uint8_t current);
 float ui_settings_master_trim_gain(uint8_t preset);
 const char *ui_settings_master_trim_label(uint8_t preset);
-const char *ui_settings_s3_debug_ap_status_label(uint8_t status);
-void ui_settings_s3_debug_ap_format(char *out, size_t out_size,
-                                     uint8_t status, uint32_t token);
-const char *ui_settings_firmware_slot_label(uint8_t slot);
-const char *ui_settings_firmware_state_label(uint8_t state);
 bool ui_settings_is_active_tab(int active_tab, int settings_tab_index);
 
 #ifndef UI_SETTINGS_HOST_TEST
@@ -37,7 +32,7 @@ typedef struct {
 } ui_settings_config_t;
 
 typedef struct {
-    lv_obj_t *uart_status;
+    lv_obj_t *controller_status;
     lv_obj_t *sd_status;
 } ui_settings_widgets_t;
 
@@ -51,11 +46,6 @@ void ui_settings_set_wifi_toggle_cb(ui_settings_wifi_toggle_cb_t cb);
  * (enable=false) recording and returns true on success. */
 typedef bool (*ui_settings_recording_toggle_cb_t)(bool enable);
 void ui_settings_set_recording_toggle_cb(ui_settings_recording_toggle_cb_t cb);
-
-typedef void (*ui_settings_s3_debug_ap_toggle_cb_t)(bool enable);
-void ui_settings_set_s3_debug_ap_toggle_cb(ui_settings_s3_debug_ap_toggle_cb_t cb);
-void ui_settings_set_s3_debug_ap_status(uint8_t status);
-void ui_settings_set_s3_debug_ap_token(uint32_t token);
 
 void ui_settings_configure(const ui_settings_config_t *config);
 lv_obj_t *ui_settings_create(lv_obj_t *parent);

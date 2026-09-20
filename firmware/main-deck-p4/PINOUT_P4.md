@@ -4,7 +4,7 @@ Documentation status: active P4 pin inventory, reviewed 2026-07-13. Keep it in
 sync with `docs/HARDWARE_WIRING.md` before enclosure installation.
 
 This file is the source of truth for P4-side peripheral wiring.
-Do not use `firmware/control-board-s3/PINOUT.md` for P4 peripherals.
+The retired S3 pinout is available only through Git history.
 
 ## Occupied P4 pins in current firmware
 
@@ -26,17 +26,15 @@ Do not use `firmware/control-board-s3/PINOUT.md` for P4 peripherals.
 | GPIO42 | SDMMC D3 | `slot_config.d3` | Forbidden |
 | GPIO43 | SDMMC CLK | `slot_config.clk` | Forbidden |
 | GPIO44 | SDMMC CMD | `slot_config.cmd` | Forbidden |
-| GPIO28 | Control link UART RX | `PIN_UART_RX` | Forbidden |
-| GPIO29 | Control link UART TX | `PIN_UART_TX` | Forbidden |
 
 ## JP1 candidate pins from board analysis
 
 | JP1 pin | GPIO | Candidate use | Status |
 | --- | --- | --- | --- |
-| bench-confirmed header pin required | GPIO32 | P4 -> S3 monitor PCM link I2S BCLK | Candidate for FLX4 USB headphones transport |
-| bench-confirmed header pin required | GPIO34 | P4 -> S3 monitor PCM link I2S WS/LRCK | Candidate for FLX4 USB headphones transport |
-| bench-confirmed header pin required | GPIO35 | P4 -> S3 monitor PCM link I2S DOUT | Candidate for FLX4 USB headphones transport |
-| 11 | GPIO49 | P4 -> S3 monitor PCM link READY/FLOW or debug | Candidate; not used by PCM5102A bring-up |
+| bench-confirmed header pin required | GPIO32 | Unassigned; retired monitor-link BCLK | Available after schematic/continuity check |
+| bench-confirmed header pin required | GPIO34 | Unassigned; retired monitor-link WS/LRCK | Available after schematic/continuity check |
+| bench-confirmed header pin required | GPIO35 | Unassigned; retired monitor-link DOUT | Available after schematic/continuity check |
+| 11 | GPIO49 | Unassigned; retired monitor-link READY/FLOW | Available after schematic/continuity check |
 | 5 | GPIO52 | PCM5102A WS/LRCK | Candidate, requires bench verification |
 | 7 | GPIO51 | PCM5102A DIN from P4 DOUT | Candidate, requires bench verification |
 | 9 | GPIO50 | PCM5102A BCLK | Candidate, requires bench verification |

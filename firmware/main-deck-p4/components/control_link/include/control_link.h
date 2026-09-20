@@ -7,32 +7,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-// ─── Wire protocol (shared with ESP32-S3) ─────────────────────────────────────
-//
-// Frame layout (7 bytes):
-//   [0] 0xA5        start byte
-//   [1] type        CTRL_TYPE_* below
-//   [2] id          button / encoder / led id
-//   [3] val_lo      value LSB
-//   [4] val_hi      value MSB
-//   [5] seq         rolling sequence 0–255
-//   [6] checksum    XOR of bytes [1]..[5]
+/* Transport-neutral semantic event kinds produced by the local USB runtime. */
+#define CTRL_TYPE_BUTTON  0x01
+#define CTRL_TYPE_ENCODER 0x02
+#define CTRL_TYPE_PITCH   0x03
+#define CTRL_TYPE_STATE   0x82
 
-#define CTRL_FRAME_LEN    7
-#define CTRL_FRAME_START  0xA5
-
-// S3 → P4
-#define CTRL_TYPE_BUTTON     0x01  // id = button_id_t,  val = 0 released / 1 pressed
-#define CTRL_TYPE_ENCODER    0x02  // id = 0 jog,        val = signed delta
-#define CTRL_TYPE_PITCH      0x03  // id = 0,            val = 0–16383
-#define CTRL_TYPE_HEARTBEAT  0x04  // id = 0,            val = firmware uptime s
-
-// P4 → S3; CTRL_TYPE_STATE also carries the S3 boot challenge in the reverse
-// direction so P4 can prove the bidirectional link is live.
-#define CTRL_TYPE_LED        0x81  // id = led_id_t, val = 0 off / 1 on / 2 blink
-#define CTRL_TYPE_STATE      0x82  // reserved
-
-// ─── Button IDs (must match ESP32-S3 button_id_t) ────────────────────────────
+// ─── Legacy deck button IDs ──────────────────────────────────────────────────
 
 typedef enum {
     BTN_EJECT = 0,
@@ -52,7 +33,7 @@ typedef enum {
     BTN_COUNT,
 } button_id_t;
 
-// ─── LED IDs (must match ESP32-S3 led_id_t) ──────────────────────────────────
+// ─── Controller LED IDs ──────────────────────────────────────────────────────
 
 typedef enum {
     LED_CUE = 0,
@@ -112,10 +93,9 @@ typedef enum {
     /* State-driven: published via the periodic FLX4 LED snapshot from
      * deck_state_t.censor_active (flx4_led_snapshot.c). */
     LED_CENSOR,
-    /* Output-only capability below: MIDI note mapping exists in flx4_led_midi.c
-     * and is packet-tested, but no deck handler drives these yet. Reserved for
-     * the momentary press/release feedback in the gap-closure plan; intentionally
-     * NOT part of the state snapshot. */
+    /* Direct deck feedback outside the fixed periodic snapshot. CUE_SHIFT is a
+     * momentary acknowledgement; LOOP_ADJUST_IN/OUT show the active jog-edit
+     * mode and are restored explicitly on controller reconnect. */
     LED_CUE_SHIFT,
     LED_LOOP_ADJUST_IN,
     LED_LOOP_ADJUST_OUT,
@@ -238,208 +218,17 @@ typedef enum {
  * Once 0x7F is used the namespace is full; any further global IDs live as flat
  * values at 0x80 and above, outside every namespace. 0x80..0x82 are left
  * reserved as headroom, so 0x83..0x89 are the current overflow allocations.
- * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
- * control_link_protocol host test asserts the two sides agree.
+ * 0x80..0x82 remain reserved as headroom.
  */
 #define CTRL_ID_HEADPHONE_LEVEL     0x7D  /* CTRL_NS_SYSTEM | 0x0D */
 #define CTRL_ID_SMART_CFX_SHIFT     0x7E  /* CTRL_NS_SYSTEM | 0x0E */
 #define CTRL_ID_SMART_FADER_SHIFT   0x7F  /* CTRL_NS_SYSTEM | 0x0F -- namespace full */
-/* Flat global overflow region (no namespace); 0x80..0x82 reserved for future use. */
+/* Flat global overflow region (no namespace). */
 #define CTRL_ID_BEAT_FX_BEAT_DEC_SHIFT 0x83
 #define CTRL_ID_BEAT_FX_BEAT_INC_SHIFT 0x84
-#define CTRL_ID_S3_DEBUG_AP            0x85
-#define CTRL_ID_S3_BOOT_CHALLENGE      0x86
-#define CTRL_ID_S3_BOOT_ACK            0x87
-#define CTRL_ID_S3_DEBUG_TOKEN_HI      0x88
-#define CTRL_ID_S3_DEBUG_TOKEN_LO      0x89
-
-typedef enum {
-    CTRL_S3_DEBUG_AP_OFF = 0,
-    CTRL_S3_DEBUG_AP_STARTING = 1,
-    CTRL_S3_DEBUG_AP_ON = 2,
-    CTRL_S3_DEBUG_AP_ERROR = 3,
-} ctrl_s3_debug_ap_status_t;
-
-/*
- * ── 0xA6 bulk frame layer ────────────────────────────────────────────────────
- * Variable-length frames on the same UART for payloads that do not fit the
- * 7-byte 0xA5 event frame (controller descriptor reports now; the profile
- * transfer protocol later). Layout:
- *
- *   [0] 0xA6 start   [1] type   [2] seq   [3] len (0..128)
- *   [4..4+len)  payload
- *   [4+len]     crc_lo   [5+len] crc_hi
- *
- * CRC16-CCITT (poly 0x1021, init 0xFFFF, no reflection) over bytes [1..4+len).
- * Keep this block byte-for-byte identical on the S3 and P4 headers -- the
- * control_link_protocol host test asserts the two sides agree.
- */
-#define CTRL_BULK_FRAME_START 0xA6
-#define CTRL_BULK_MAX_PAYLOAD 128
-#define CTRL_BULK_HEADER_LEN  4
-#define CTRL_BULK_CRC_LEN     2
-#define CTRL_BULK_MAX_FRAME   (CTRL_BULK_HEADER_LEN + CTRL_BULK_MAX_PAYLOAD + CTRL_BULK_CRC_LEN)
-
-#define CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR 0x01
-#define CTRL_BULK_TYPE_PROFILE_BEGIN         0x02  /* P4->S3 */
-#define CTRL_BULK_TYPE_PROFILE_CHUNK         0x03  /* P4->S3 */
-#define CTRL_BULK_TYPE_PROFILE_END           0x04  /* P4->S3 */
-#define CTRL_BULK_TYPE_PROFILE_ACK           0x05  /* S3->P4 */
-#define CTRL_BULK_TYPE_PROFILE_NACK          0x06  /* S3->P4 */
-#define CTRL_BULK_TYPE_PROFILE_ACTIVATE      0x07  /* P4->S3 */
-#define CTRL_BULK_TYPE_PROFILE_STATUS        0x08  /* S3->P4 */
-#define CTRL_BULK_TYPE_PROFILE_CLEAR         0x09  /* P4->S3 */
-#define CTRL_BULK_TYPE_FIRMWARE_REPORT       0x0A  /* S3->P4 */
-
-#define CTRL_FW_VERSION_MAX 32
-#define CTRL_FW_REPORT_LEN  (2 + CTRL_FW_VERSION_MAX)
-
-typedef enum {
-    CTRL_FW_SLOT_UNKNOWN = 0,
-    CTRL_FW_SLOT_OTA_0 = 1,
-    CTRL_FW_SLOT_OTA_1 = 2,
-    CTRL_FW_SLOT_FACTORY = 3,
-} ctrl_firmware_slot_t;
-
-typedef enum {
-    CTRL_FW_STATE_UNKNOWN = 0,
-    CTRL_FW_STATE_NEW = 1,
-    CTRL_FW_STATE_PENDING_VERIFY = 2,
-    CTRL_FW_STATE_VALID = 3,
-    CTRL_FW_STATE_INVALID = 4,
-    CTRL_FW_STATE_ABORTED = 5,
-} ctrl_firmware_state_t;
-
-typedef struct {
-    uint8_t slot;
-    uint8_t state;
-    char version[CTRL_FW_VERSION_MAX + 1];
-} ctrl_firmware_report_t;
-
-/* CONTROLLER_DESCRIPTOR payload: vid u16 LE, pid u16 LE, caps u16 LE,
- * connection epoch u32 LE, then product string (CTRL_DESC_PRODUCT_MAX bytes,
- * NUL-padded). */
-#define CTRL_DESC_PRODUCT_MAX 32
-#define CTRL_DESC_PAYLOAD_LEN (10 + CTRL_DESC_PRODUCT_MAX)
 #define CTRL_DESC_CAP_MIDI_IN   0x0001
 #define CTRL_DESC_CAP_MIDI_OUT  0x0002
 #define CTRL_DESC_CAP_USB_AUDIO 0x0004
-
-typedef struct {
-    uint16_t vid;
-    uint16_t pid;
-    uint16_t caps;
-    uint32_t connection_epoch;
-    char product[CTRL_DESC_PRODUCT_MAX + 1];
-} ctrl_descriptor_report_t;
-
-/* Profile transfer payloads (P4 sends a compiled S3CP profile to the S3):
- *   BEGIN    total_size u32, transfer crc32 u32, vid u16, pid u16   (12 B)
- *   CHUNK    offset u32, data[1..CTRL_PROFILE_CHUNK_MAX]
- *   END      (empty)
- *   ACTIVATE (empty)      CLEAR (empty)
- *   ACK      acked_type u8
- *   NACK     nacked_type u8, reason u8 (ctrl_profile_nack_t)
- *   STATUS   state u8 (ctrl_profile_state_t), vid u16, pid u16      (5 B)
- * The transfer crc32 is IEEE 802.3 over the whole blob; the S3CP file also
- * carries its own internal crc32, so a transfer is double-checked. */
-#define CTRL_PROFILE_BEGIN_LEN  12
-#define CTRL_PROFILE_CHUNK_HDR  4
-#define CTRL_PROFILE_CHUNK_MAX  (CTRL_BULK_MAX_PAYLOAD - CTRL_PROFILE_CHUNK_HDR)
-#define CTRL_PROFILE_STATUS_LEN 5
-
-typedef enum {
-    CTRL_PROFILE_NACK_NONE = 0,
-    CTRL_PROFILE_NACK_SIZE,    /* total_size zero or beyond receiver capacity */
-    CTRL_PROFILE_NACK_STATE,   /* frame arrived in the wrong transfer state */
-    CTRL_PROFILE_NACK_OFFSET,  /* chunk offset/len out of range */
-    CTRL_PROFILE_NACK_CRC,     /* END transfer crc32 mismatch */
-    CTRL_PROFILE_NACK_PARSE,   /* ACTIVATE: reassembled bytes are not a profile */
-} ctrl_profile_nack_t;
-
-typedef enum {
-    CTRL_PROFILE_STATE_IDLE = 0,
-    CTRL_PROFILE_STATE_RECEIVING,
-    CTRL_PROFILE_STATE_STORED,
-    CTRL_PROFILE_STATE_ACTIVE,
-    CTRL_PROFILE_STATE_ERROR,
-} ctrl_profile_state_t;
-
-/* Incremental 0xA6 frame parser (pure; host-tested). Feed RX bytes one at a
- * time: returns the full frame length when a valid frame completed (frame
- * bytes in .buf), 0 while in progress or idle, -1 on CRC/format error (the
- * parser resets itself). Bytes that are not part of a bulk frame are only
- * consumed when the parser is mid-frame. */
-typedef struct {
-    uint8_t buf[CTRL_BULK_MAX_FRAME];
-    int pos;
-    int total_len;
-} ctrl_bulk_parser_t;
-
-void ctrl_bulk_parser_reset(ctrl_bulk_parser_t *p);
-int ctrl_bulk_parser_feed(ctrl_bulk_parser_t *p, uint8_t b);
-
-/* Frame builders: serialise into `out` (cap bytes), return frame length or 0. */
-size_t ctrl_bulk_build_descriptor_frame(uint8_t *out, size_t cap, uint8_t seq,
-                                        const ctrl_descriptor_report_t *rep);
-size_t ctrl_bulk_build_profile_begin(uint8_t *out, size_t cap, uint8_t seq,
-                                     uint32_t total_size, uint32_t crc32,
-                                     uint16_t vid, uint16_t pid);
-size_t ctrl_bulk_build_profile_chunk(uint8_t *out, size_t cap, uint8_t seq,
-                                     uint32_t offset, const uint8_t *data,
-                                     size_t len);
-size_t ctrl_bulk_build_profile_simple(uint8_t *out, size_t cap, uint8_t seq,
-                                      uint8_t type);
-size_t ctrl_bulk_build_profile_ack(uint8_t *out, size_t cap, uint8_t seq,
-                                   uint8_t acked_type);
-size_t ctrl_bulk_build_profile_nack(uint8_t *out, size_t cap, uint8_t seq,
-                                    uint8_t nacked_type, uint8_t reason);
-size_t ctrl_bulk_build_profile_status(uint8_t *out, size_t cap, uint8_t seq,
-                                      uint8_t state, uint16_t vid, uint16_t pid);
-size_t ctrl_bulk_build_firmware_report(uint8_t *out, size_t cap, uint8_t seq,
-                                       const ctrl_firmware_report_t *rep);
-
-/* Frame decoders operate on a parser-validated frame (type + length checked). */
-bool ctrl_bulk_decode_descriptor(const uint8_t *frame, size_t frame_len,
-                                 ctrl_descriptor_report_t *rep);
-bool ctrl_bulk_decode_profile_begin(const uint8_t *frame, size_t frame_len,
-                                    uint32_t *total_size, uint32_t *crc32,
-                                    uint16_t *vid, uint16_t *pid);
-bool ctrl_bulk_decode_profile_chunk(const uint8_t *frame, size_t frame_len,
-                                    uint32_t *offset, const uint8_t **data,
-                                    size_t *len);
-bool ctrl_bulk_decode_profile_ack(const uint8_t *frame, size_t frame_len,
-                                  uint8_t *acked_type);
-bool ctrl_bulk_decode_profile_nack(const uint8_t *frame, size_t frame_len,
-                                   uint8_t *nacked_type, uint8_t *reason);
-bool ctrl_bulk_decode_profile_status(const uint8_t *frame, size_t frame_len,
-                                     uint8_t *state, uint16_t *vid, uint16_t *pid);
-bool ctrl_bulk_decode_firmware_report(const uint8_t *frame, size_t frame_len,
-                                      ctrl_firmware_report_t *rep);
-
-/* Profile transfer receiver (S3 role): reassembles PROFILE_BEGIN/CHUNK/END
- * into a caller-provided buffer and verifies the transfer crc32. Chunks must
- * arrive in order and contiguous. Pure; host-tested. Each step returns a
- * ctrl_profile_nack_t (0 == CTRL_PROFILE_NACK_NONE == ok); on any non-zero the
- * receiver moves to CTRL_PROFILE_STATE_ERROR and a fresh BEGIN restarts it. */
-typedef struct {
-    uint8_t *buf;
-    size_t cap;
-    uint8_t state;      /* ctrl_profile_state_t */
-    uint16_t vid;
-    uint16_t pid;
-    uint32_t total;
-    uint32_t crc;
-    uint32_t received;
-} cp_xfer_rx_t;
-
-uint32_t cp_xfer_crc32(const uint8_t *data, size_t len);
-void cp_xfer_rx_init(cp_xfer_rx_t *rx, uint8_t *buf, size_t cap);
-uint8_t cp_xfer_rx_begin(cp_xfer_rx_t *rx, uint32_t total_size, uint32_t crc32,
-                         uint16_t vid, uint16_t pid);
-uint8_t cp_xfer_rx_chunk(cp_xfer_rx_t *rx, uint32_t offset,
-                         const uint8_t *data, size_t len);
-uint8_t cp_xfer_rx_end(cp_xfer_rx_t *rx);
 
 typedef enum {
     CTRL_BEAT_FX_TARGET_CH1 = 0,
@@ -577,7 +366,6 @@ typedef enum {
     CTRL_EV_JOG,
     CTRL_EV_BROWSE,
     CTRL_EV_PITCH,
-    CTRL_EV_HEARTBEAT,
     CTRL_EV_STATE,
 } ctrl_event_type_t;
 
@@ -592,39 +380,16 @@ typedef struct {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-// Initialise UART and start RX task.
-// Parsed events are pushed onto ctrl_event_queue (created by deck_core_init).
+// Bind the P4-local controller producer to deck_core's event queue.
 esp_err_t control_link_init(QueueHandle_t ctrl_event_queue);
 
-// Send LED command to S3. Thread-safe.
+// Send an LED command to the directly attached controller.
 void control_link_send_led(led_id_t led, uint8_t state);  // state: 0 off / 1 on / 2 blink
 void control_link_send_led_deck(led_id_t led, uint8_t state, uint8_t deck);
 
-// Send a deck-less state/control command to S3. Thread-safe.
-void control_link_send_state(uint8_t id, int16_t value);
+typedef esp_err_t (*control_link_led_sink_fn_t)(uint8_t led, uint8_t state,
+                                                uint8_t deck, void *user_ctx);
+void control_link_set_led_sink(control_link_led_sink_fn_t sink, void *user_ctx);
 
-// Register a callback invoked (from the RX task) whenever the S3 reports a
-// connected controller descriptor over the 0xA6 bulk layer.
-typedef void (*control_link_descriptor_cb_t)(const ctrl_descriptor_report_t *rep);
-void control_link_set_descriptor_report_cb(control_link_descriptor_cb_t cb);
-
-// Profile transfer (P4 -> S3): send BEGIN/CHUNK and the empty END/ACTIVATE/
-// CLEAR frames over the 0xA6 bulk layer. Thread-safe; call from the sender
-// task, not the RX task.
-esp_err_t control_link_send_profile_begin(uint32_t total_size, uint32_t crc32,
-                                          uint16_t vid, uint16_t pid);
-esp_err_t control_link_send_profile_chunk(uint32_t offset, const uint8_t *data,
-                                          size_t len);
-esp_err_t control_link_send_profile_simple(uint8_t type);
-
-// Register a callback invoked (from the RX task) when the S3 replies to a
-// profile transfer frame. `ack` is true for PROFILE_ACK, false for
-// PROFILE_NACK; `ref_type` is the frame type being acked/nacked and `reason`
-// is a ctrl_profile_nack_t (0 on ACK).
-typedef void (*control_link_profile_reply_cb_t)(bool ack, uint8_t ref_type,
-                                                uint8_t reason);
-void control_link_set_profile_reply_cb(control_link_profile_reply_cb_t cb);
-
-// Copy the latest S3 firmware report received over 0xA6. Returns false until
-// the first report arrives.
-bool control_link_get_s3_firmware_report(ctrl_firmware_report_t *out_report);
+// Inject one transport-neutral semantic event from the direct USB runtime.
+esp_err_t control_link_inject_semantic(uint8_t type, uint8_t id, int16_t value);

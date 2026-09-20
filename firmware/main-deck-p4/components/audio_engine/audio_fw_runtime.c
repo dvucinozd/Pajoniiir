@@ -64,3 +64,14 @@ uint32_t audio_fw_runtime_session_generation(const audio_fw_runtime_t *runtime)
     return runtime ? __atomic_load_n(&runtime->session_generation,
                                      __ATOMIC_ACQUIRE) : 0u;
 }
+
+bool audio_fw_runtime_join(audio_fw_runtime_t *runtime,
+                           audio_fw_wait_exit_fn wait_exit, void *ctx)
+{
+    if (!runtime || !wait_exit || runtime->run) return false;
+    while (runtime->tasks_started > 0) {
+        if (!wait_exit(ctx)) return false;
+        runtime->tasks_started--;
+    }
+    return true;
+}

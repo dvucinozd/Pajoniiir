@@ -58,7 +58,15 @@ static void deck_core_test_live_send_led_deck(led_id_t led, uint8_t state, uint8
             state = beat_jump_mode && loaded ? 1u : 0u;
         } else if (led >= LED_BEAT_JUMP_SHIFT_HELPER_7 &&
                    led <= LED_BEAT_JUMP_SHIFT_HELPER_8) {
-            state = beat_jump_mode && s_deck_shift_held[deck] && loaded ? 1u : 0u;
+            const bool decrease = led == LED_BEAT_JUMP_SHIFT_HELPER_7;
+            const deck_core_beat_jump_page_t page = deck_core_get_beat_jump_page();
+            const bool page_available = decrease
+                                            ? page > DECK_CORE_BEAT_JUMP_PAGE_FRACTIONAL
+                                            : page < DECK_CORE_BEAT_JUMP_PAGE_LARGE;
+            state = beat_jump_mode && s_deck_shift_held[deck] && loaded &&
+                            page_available
+                        ? 1u
+                        : 0u;
         }
     }
     control_link_send_led_deck(led, state, deck);

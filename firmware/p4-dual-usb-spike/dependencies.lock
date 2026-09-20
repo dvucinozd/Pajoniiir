@@ -1,0 +1,54 @@
+dependencies:
+  espressif/usb_host_msc:
+    component_hash: f5f178d5941a0ff4baa97ea8cfe0a7831731acc548773a2560ded1947a29a52e
+    dependencies:
+    - name: idf
+      version: '>=5.0'
+    - git: https://github.com/dvucinozd/esp-usb.git
+      name: usb
+      path: host/usb
+      public: true
+      rules:
+      - if: idf_version >=6.0
+      - if: target not in ["linux"]
+      version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+    source:
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/class/msc/usb_host_msc
+      type: git
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    - linux
+    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+  idf:
+    source:
+      type: idf
+    version: 6.0.2
+  usb:
+    component_hash: bcca23e17d3b086ff9d19007007d90aed8b350888e7e4db1cbea5201c8a0c850
+    dependencies:
+    - name: idf
+      version: '>=5.5.3'
+    source:
+      git: https://github.com/dvucinozd/esp-usb.git
+      path: host/usb
+      type: git
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32s31
+    - esp32p4
+    - esp32h4
+    - linux
+    version: 3b6ce7111cb71f4e7ecd11393eb4363b96dccf53
+direct_dependencies:
+- espressif/usb_host_msc
+- idf
+- usb
+manifest_hash: e2165916000909f7bdbc19523eb5f3f7e77e89d803643ee0b468e3e08a0eca03
+target: esp32p4
+version: 3.0.0

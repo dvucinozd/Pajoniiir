@@ -67,4 +67,5 @@ was loaded. Therefore this deployment record does not close:
 - the Phase 20 queue-pressure, web/profile mutation and long UART-link smokes;
 - display/touch/media operation by physical observation.
 
-Those checks remain in `STARTUP_CHECKLIST.md` and `POST_R5_PLAN.md`.
+Those checks remain in `STARTUP_CHECKLIST.md`; the historical plan is
+`ARCHIVE_POST_R5_PLAN_DUAL_TARGET.md`.

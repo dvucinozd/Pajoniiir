@@ -21,8 +21,7 @@ CFLAGS  = -Wall -Wextra -std=c11 \
            -I../../firmware/main-deck-p4/components/audio_engine \
            -I../../firmware/main-deck-p4/components/audio_engine/include \
            -I../../firmware/main-deck-p4/components/library/include \
-           -I../../firmware/main-deck-p4/components/monitor_pcm_link/include \
-           -I../control_link_protocol/stubs
+           -I../support/stubs
 
 AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_delay_fx.c \
@@ -38,8 +37,7 @@ AUDIO_SRC = ../../firmware/main-deck-p4/components/audio_engine/audio_engine.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_fw_runtime.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c \
             ../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c \
-            ../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c \
-            ../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c
+            ../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c
 
 SRCS    = test_audio_engine.c \
           $(AUDIO_SRC)

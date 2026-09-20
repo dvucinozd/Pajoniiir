@@ -7,6 +7,35 @@ static float clamp_gain(float gain)
     return gain;
 }
 
+static float clamp_unit_gain(float gain)
+{
+    if (!(gain > 0.0f)) return 0.0f;
+    if (gain > 1.0f) return 1.0f;
+    return gain;
+}
+
+void audio_output_gain_ramp_reset(audio_output_gain_ramp_t *ramp, float gain)
+{
+    if (!ramp) return;
+    ramp->current = clamp_unit_gain(gain);
+}
+
+float audio_output_gain_ramp_next(audio_output_gain_ramp_t *ramp,
+                                  float target_gain,
+                                  uint32_t frames_remaining)
+{
+    target_gain = clamp_unit_gain(target_gain);
+    if (!ramp) return target_gain;
+    ramp->current = clamp_unit_gain(ramp->current);
+    if (frames_remaining <= 1u) {
+        ramp->current = target_gain;
+    } else {
+        ramp->current += (target_gain - ramp->current) /
+                         (float)frames_remaining;
+    }
+    return ramp->current;
+}
+
 float audio_output_mixer_rate_ratio(uint32_t source_sample_rate,
                                     uint32_t output_sample_rate)
 {

@@ -10,6 +10,19 @@ uint32_t beat_jump_calculate_target_ms(uint32_t position_ms,
                                        int beat_shift,
                                        const anlz_metadata_t *meta)
 {
+    return beat_jump_calculate_fractional_target_ms(position_ms, bpm,
+                                                    beat_shift, 1u, meta);
+}
+
+uint32_t beat_jump_calculate_fractional_target_ms(uint32_t position_ms,
+                                                  uint16_t bpm,
+                                                  int beat_numerator,
+                                                  uint16_t beat_denominator,
+                                                  const anlz_metadata_t *meta)
+{
+    if (beat_numerator == 0) return position_ms;
+    const uint16_t denominator = beat_denominator > 0u
+                                     ? beat_denominator : 1u;
     if (meta && meta->beats && meta->beat_count > 0) {
         uint16_t closest_idx = 0;
         uint32_t min_diff = UINT32_MAX;
@@ -22,20 +35,54 @@ uint32_t beat_jump_calculate_target_ms(uint32_t position_ms,
             }
         }
 
-        int target_idx = (int)closest_idx + beat_shift;
-        if (target_idx < 0) {
-            target_idx = 0;
+        if ((beat_numerator % (int)denominator) == 0) {
+            int target_idx = (int)closest_idx +
+                             beat_numerator / (int)denominator;
+            if (target_idx < 0) target_idx = 0;
+            if (target_idx >= (int)meta->beat_count) {
+                target_idx = (int)meta->beat_count - 1;
+            }
+            return meta->beats[target_idx].time_ms;
         }
-        if (target_idx >= (int)meta->beat_count) {
-            target_idx = (int)meta->beat_count - 1;
+
+        const bool forward = beat_numerator > 0;
+        if ((forward && closest_idx + 1u >= meta->beat_count) ||
+            (!forward && closest_idx == 0u)) {
+            return meta->beats[closest_idx].time_ms;
         }
-        return meta->beats[target_idx].time_ms;
+        const uint16_t adjacent_idx = forward ? closest_idx + 1u
+                                              : closest_idx - 1u;
+        const uint32_t closest_ms = meta->beats[closest_idx].time_ms;
+        const uint32_t adjacent_ms = meta->beats[adjacent_idx].time_ms;
+        const uint32_t interval_ms = forward ? adjacent_ms - closest_ms
+                                             : closest_ms - adjacent_ms;
+        const uint64_t magnitude = beat_numerator < 0
+            ? (uint64_t)(-(int64_t)beat_numerator)
+            : (uint64_t)beat_numerator;
+        const uint64_t delta_ms =
+            ((uint64_t)interval_ms * magnitude + denominator - 1u) /
+            denominator;
+        if (forward) {
+            const uint64_t target_ms = (uint64_t)closest_ms + delta_ms;
+            return target_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)target_ms;
+        }
+        return delta_ms >= closest_ms ? 0u
+                                      : closest_ms - (uint32_t)delta_ms;
     }
 
     uint16_t safe_bpm = bpm > 0 ? bpm : 120u;
-    int64_t beat_len_ms = 60000 / safe_bpm;
-    int64_t target_ms = (int64_t)position_ms + (beat_len_ms * (int64_t)beat_shift);
-    return target_ms > 0 ? (uint32_t)target_ms : 0u;
+    const uint64_t beat_len_ms = 60000u / safe_bpm;
+    const uint64_t magnitude = beat_numerator < 0
+        ? (uint64_t)(-(int64_t)beat_numerator)
+        : (uint64_t)beat_numerator;
+    const uint64_t delta_ms =
+        (beat_len_ms * magnitude + denominator - 1u) / denominator;
+    if (beat_numerator < 0) {
+        return delta_ms >= position_ms ? 0u
+                                       : position_ms - (uint32_t)delta_ms;
+    }
+    const uint64_t target_ms = (uint64_t)position_ms + delta_ms;
+    return target_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)target_ms;
 }
 
 uint32_t beat_loop_calculate_duration_ms(uint32_t position_ms,

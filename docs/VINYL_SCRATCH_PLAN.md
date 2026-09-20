@@ -36,7 +36,7 @@ already implemented.
 - **Waveform tracking (done):** the mixer snapshot carries
   `effective_speed_permille` (fader × bend), fed to the Overview position
   interpolator.
-- **`JOG_TOUCH` (Phase 1 done):** the S3 emits `CTRL_ID_DECK{1,2}_JOG_TOUCH`
+- **`JOG_TOUCH` (Phase 1 done):** the P4 controller runtime emits `CTRL_ID_DECK{1,2}_JOG_TOUCH`
   (button press/release, from `FLX4_BTN_JOG_TOUCH` 0x36). `deck_core` now
   consumes it (`handle_jog_touch` → per-deck `s_jog_touched[]`) and gates the
   jog: touched → scrub, untouched + playing → bend.
@@ -235,7 +235,7 @@ normal playback.
 
 ### Reliability remediation batch 1 (implemented, HW validation pending)
 
-- S3 and P4 queue saturation now **accumulates** relative jog deltas instead of
+- Controller-input queue saturation now **accumulates** relative jog deltas instead of
   replacing an earlier delta with the newest one. Absolute fader/pitch values
   retain latest-value semantics.
 - `JOG_TOUCH` edges evict high-rate traffic when a full queue is saturated by

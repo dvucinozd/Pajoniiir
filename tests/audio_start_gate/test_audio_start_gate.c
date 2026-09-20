@@ -10,6 +10,10 @@ int main(void)
     assert(audio_start_gate_ready(512u, 512u, false));
     assert(audio_start_gate_ready(4096u, 512u, false));
 
+    /* A live seek uses the larger loop-recovery runway. */
+    assert(!audio_start_gate_ready(2047u, 2048u, false));
+    assert(audio_start_gate_ready(2048u, 2048u, false));
+
     /* EOF releases a real short tail, but never an empty source. */
     assert(audio_start_gate_ready(1u, 512u, true));
     assert(!audio_start_gate_ready(0u, 512u, true));

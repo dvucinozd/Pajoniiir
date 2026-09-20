@@ -8,7 +8,7 @@
 # the bundle parser is entered.
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
-    [string]$BaseUrl = "https://pajoniiir.zadar.click/ota",
+    [string]$BaseUrl = "https://ota.pajoniiir.eu",
     [string]$PublicKey = "firmware/common/ota_manifest/keys/ddj_ota_release_public.der",
     [switch]$WriteToReleaseDir
 )
@@ -81,7 +81,7 @@ Write-Output ""
 Write-Output "--- latest.json ---"
 Write-Output $json
 Write-Output ""
-Write-Output "--- upload to the VPS so these resolve ---"
+Write-Output "--- publish so these HTTPS URLs resolve ---"
 Write-Output "  $BaseUrl/latest.json"
 Write-Output "  $BaseUrl/$version/main-deck-p4.ddjota   ($($bytes.Length) bytes)"
 Write-Output ""

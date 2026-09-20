@@ -334,6 +334,32 @@ static void test_all_cursors_and_random_reads_cross_uint32_wrap(void)
     CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 80);
 }
 
+static void test_output_owner_fast_path_matches_public_cursor_semantics(void)
+{
+    const uint64_t base = (uint64_t)UINT32_MAX - 2u;
+    audio_pcm_timeline_t t;
+    seed_empty_at(&t, base);
+    push_value(&t, 10);
+    push_value(&t, 20);
+    push_value(&t, 30);
+    push_value(&t, 40);
+
+    audio_mixer_frame_t out = { 0 };
+    for (uint64_t seq = base; seq < base + 4u; seq++) {
+        CHECK(audio_pcm_timeline_read_output_owner(&t, seq, &out));
+        CHECK(out.left == (int16_t)(10 + 10 * (seq - base)));
+    }
+    CHECK(!audio_pcm_timeline_read_output_owner(&t, base - 1u, &out));
+    CHECK(!audio_pcm_timeline_read_output_owner(&t, base + 4u, &out));
+
+    CHECK(audio_pcm_timeline_set_playhead_output_owner(&t, base + 3u));
+    CHECK(audio_pcm_timeline_play_seq(&t) == base + 3u);
+    CHECK(audio_pcm_timeline_pop(&t, &out) && out.left == 40);
+    CHECK(audio_pcm_timeline_set_playhead_output_owner(&t, base + 4u));
+    CHECK(audio_pcm_timeline_future_frames(&t) == 0u);
+    CHECK(!audio_pcm_timeline_set_playhead_output_owner(&t, base + 5u));
+}
+
 static void test_drop_newest_crosses_uint32_wrap_backwards(void)
 {
     const uint64_t base = (uint64_t)UINT32_MAX - 1u;
@@ -372,6 +398,7 @@ int main(void)
     test_random_read_derives_slot_from_sequence_after_many_evictions();
     test_random_read_rejects_sequences_outside_the_retained_window();
     test_all_cursors_and_random_reads_cross_uint32_wrap();
+    test_output_owner_fast_path_matches_public_cursor_semantics();
     test_drop_newest_crosses_uint32_wrap_backwards();
     printf("TESTS_RUN=%u\n", s_checks);
     puts("audio_pcm_timeline tests passed");

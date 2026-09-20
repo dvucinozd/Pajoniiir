@@ -1,12 +1,12 @@
 # S3 Debug AP Log Viewer Design
 
 Document status (2026-07-13): implemented and extended with S3 OTA. Use
-`../../S3_WIFI_DEBUG_LOG.md` and `../../OTA-UPDATE.md` for current operation.
+`../../ARCHIVE_S3_WIFI_DEBUG_LOG.md` and `../../OTA-UPDATE.md` for provenance and current P4 operation.
 
 > Follow-up: OTA Batch 4 adds a dedicated `/update` firmware-upload page and
 > `/api/firmware` status endpoint. The live log and `/events` stream described
 > here remain read-only; the OTA exception and its validation rules are defined
-> in `docs/OTA_UPDATE_PLAN.md`.
+> in `docs/ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`.
 
 ## Goal
 

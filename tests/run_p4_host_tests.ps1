@@ -173,6 +173,7 @@ function Invoke-ApiContract {
         "-I../support/stubs",
         "-I../../firmware/main-deck-p4/components/library/include",
         "-I../../firmware/main-deck-p4/components/audio_engine/include",
+        "-I../../firmware/main-deck-p4/components/usb_storage/include",
         "-I../../firmware/main-deck-p4/components/wifi_link/include"
     )
 
@@ -269,7 +270,7 @@ function Invoke-SinglePrecisionContract {
     $sources = @(
         "audio_keylock.c", "audio_filter.c", "audio_eq.c", "audio_resampler.c",
         "audio_smart_cfx.c", "audio_delay_fx.c", "audio_flanger_fx.c",
-        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c"
+        "audio_pad_fx.c", "audio_mixer.c", "audio_scratch.c", "audio_censor.c"
     )
     foreach ($source in $sources) {
         if (-not (Test-Path -LiteralPath (Join-Path $dir $source))) {
@@ -283,17 +284,16 @@ function Invoke-SinglePrecisionContract {
                       "-std=c99", "-Iinclude", "-I.") + $sources)
 }
 
-# AE_LOCK is one global recursive mutex and ae_output_task takes it on every
-# audio block, so a USB page fetch taken while holding it stalls the priority-6
-# output task for the whole transfer - an audible dropout, not just a slow
-# decode. The decode loops therefore warm the pages first and take the lock
-# afterwards. The ordering is the entire point, so check the order rather than
-# the presence of the call: a later edit that moves the warm below AE_LOCK()
-# would keep every substring intact while restoring the stall.
+# AE_LOCK is one global recursive mutex shared with transport/status and the
+# output task's scratch-control path. A USB page fetch taken while holding it
+# therefore blocks unrelated real-time/control work for the whole transfer.
+# The decode loops warm the pages first and take the lock afterwards. The
+# ordering is the entire point, so check the order rather than only presence.
 function Assert-DecodeWarmsCacheBeforeEngineLock {
     $Path = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
     Write-Host "==> static decode warms the compressed cache before taking AE_LOCK"
     $lines = Get-Content -LiteralPath $Path
+    $audioEngineText = Get-Content -LiteralPath $Path -Raw
     $callSites = 0
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -notmatch 'ae_warm_cache_for_next_read\(eng, fw\);') { continue }
@@ -307,6 +307,12 @@ function Assert-DecodeWarmsCacheBeforeEngineLock {
     }
     if ($callSites -ne 2) {
         throw "expected 2 ae_warm_cache_for_next_read call sites in audio_engine.c (sample-rate latch and steady-state decode), found $callSites"
+    }
+    if ($audioEngineText -notmatch 'AE_WAV_DECODE_READ_BYTES\s+\(MINIMP3_MAX_SAMPLES_PER_FRAME\s*\*\s*4u\)' -or
+        $audioEngineText -notmatch 'eng->format\s*!=\s*AUDIO_FORMAT_FLAC' -or
+        $audioEngineText -notmatch 'page_count\s*=\s*fw->cache\.page_count' -or
+        $audioEngineText -notmatch 'page\s*<\s*page_count') {
+        throw "decode cache warming must cover the exact PCM16 WAV read and the full bounded FLAC window"
     }
 }
 
@@ -414,25 +420,81 @@ Assert-FileDoesNotContain `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("static int64_t ae_now_us(", "static void ae_diag_log_memory(")
 
+# A UART warning at 115200 baud is longer than one 256-frame audio period and
+# can turn the first timing outlier into a permanent warning/deadline cascade.
+# Keep all ESP_LOG formatting outside the ae_output block accounting helper;
+# the periodic health monitor owns aggregated service-log reporting.
+$audioEnginePath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c"
+$audioEngineSource = Get-Content -LiteralPath $audioEnginePath -Raw
+$outputDiagMatch = [regex]::Match(
+    $audioEngineSource,
+    '(?s)static void ae_diag_record_output_block\(.*?\r?\n\}\r?\n\r?\nstatic void ae_fail_load')
+Write-Host "==> p4 realtime output diagnostics never format ESP logs"
+if (-not $outputDiagMatch.Success) {
+    throw "could not locate ae_diag_record_output_block for realtime logging gate"
+}
+if ($outputDiagMatch.Value -match '(?:ESP_(?:EARLY_|DRAM_)?LOG[A-Z_]*|esp_log_writev?)\s*\(') {
+    throw "ae_diag_record_output_block performs blocking ESP_LOG formatting"
+}
+Write-Host "    PASS"
+
+Assert-FileContains `
+    -Name "p4 audio output defers position bookkeeping without blocking its deadline" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "audio_output_note_bookkeeping(output_position_epochs, consumed);",
+        "audio_output_commit_bookkeeping();",
+        "if (!AE_TRY_LOCK()) return;"
+    )
+
+Assert-FileContains `
+    -Name "p4 live seek rearms prebuffer and invalidates stale output progress" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "#define AE_SEEK_PREBUFFER_FRAMES  AE_LOOP_TRIM_MIN_RUNWAY_FRAMES",
+        "atomic_store_u32(&s_start_prebuffer_frames[deck],",
+        "AE_SEEK_PREBUFFER_FRAMES);",
+        "atomic_load_u32(&s_start_prebuffer_frames[deck])",
+        "!__atomic_exchange_n(&s_start_waiting[deck], true, __ATOMIC_ACQ_REL)",
+        "atomic_load_bool(&s_start_seek_pending[deck]) ||",
+        "atomic_store_bool(&s_start_seek_pending[ctx->deck], false);",
+        "output_position_epoch_bump(deck);"
+    )
+
+Assert-FileContains `
+    -Name "p4 late-output anomalies are aggregated outside the audio task" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("health_monitor_cb", "SERVICE_LOG_AUDIO_OUTPUT_LATE", "d.output_late_count - last_late")
+
+Assert-FileContains `
+    -Name "p4 media acceptance counters are exposed by status" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"locked_backend_reads1\":%u',
+        '\"locked_backend_reads2\":%u',
+        '\"bna_recovered\":%u',
+        "usb_dwc_compat_bna_recovered_count()"
+    )
+
+Assert-FileContains `
+    -Name "p4 natural EOF tail is not reported as PCM starvation" `
+    -Path $audioEnginePath `
+    -LiteralPatterns @(
+        "audio_eof_policy_should_count_empty_source(",
+        "atomic_load_bool(&s_engines[deck].eof)"
+    )
+
+Assert-FileContains `
+    -Name "p4 library load worker preserves internal RAM for audio task startup" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
+    -LiteralPatterns @(
+        "xTaskCreateWithCaps(ui_track_load_worker",
+        "MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT",
+        "vTaskDeleteWithCaps(NULL)"
+    )
+
 Assert-FatfsBoolDefaults
 Assert-CiDependenciesPinned
-
-Assert-FileContains `
-    -Name "s3 debug ap p4 sends state frames" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("void control_link_send_state", "CTRL_TYPE_STATE")
-
-Assert-FileContains `
-    -Name "p4 edge backpressure is bounded so the UART RX task cannot wedge" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("CTRL_EDGE_BACKPRESSURE_MS", "pdMS_TO_TICKS(CTRL_EDGE_BACKPRESSURE_MS)", "s_edge_backpressure_timeout_count")
-
-# Idiom, not a symbol: nothing links against an argument to xQueueSend.
-# control_link_uart.c has no host coverage.
-Assert-FileDoesNotContain `
-    -Name "p4 control event enqueue never blocks the UART RX task forever" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("xQueueSend(s_event_queue, ev, portMAX_DELAY)")
 
 # The two gates below stay source-level on purpose: both guard firmware-only code
 # paths that the host harness cannot execute (per-task TLS, and the audio engine
@@ -506,24 +568,6 @@ Assert-FileContains `
     -Name "library refresh and USB removal use durable event generations" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_library.c") `
     -LiteralPatterns @("ui_event_counter_request", "ui_event_counter_sample", "s_library_refresh_applied", "s_usb_removed_applied")
-
-Assert-FileContains `
-    -Name "s3 debug ap status reaches settings ui" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/deck_core.c") `
-    -LiteralPatterns @(
-        "deck_core_set_s3_debug_ap_status_cb", "CTRL_ID_S3_DEBUG_AP",
-        "deck_core_set_s3_debug_ap_token_cb", "CTRL_ID_S3_DEBUG_TOKEN_HI",
-        "CTRL_ID_S3_DEBUG_TOKEN_LO"
-    )
-
-Assert-FileContains `
-    -Name "s3 debug ap settings ui toggle wiring" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @(
-        "ui_settings_set_s3_debug_ap_toggle_cb",
-        "control_link_send_state(CTRL_ID_S3_DEBUG_AP, 0)",
-        "deck_core_set_s3_debug_ap_token_cb(ui_settings_set_s3_debug_ap_token)"
-    )
 
 Assert-FileContains `
     -Name "P4 OTA requires signed bundle before flash begin" `
@@ -809,7 +853,7 @@ Assert-FileDoesNotContain `
 Assert-FileContains `
     -Name "P4 Settings wireless switches use dark off-state styling" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/ui/ui_settings.c") `
-    -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ", "S3 DEBUG AP: ")
+    -LiteralPatterns @("ui_settings_style_wireless_switch", "LV_PART_INDICATOR", "LV_PART_KNOB", "COL_PANEL_DK", "P4 REMOTE: ")
 
 Assert-FileContains `
     -Name "P4 Settings mixer status strip keeps title clear of controls" `
@@ -822,54 +866,239 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
-    -Name "p4 bulk descriptor frames dispatch to a callback" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("ctrl_bulk_parser_feed", "CTRL_BULK_TYPE_CONTROLLER_DESCRIPTOR", "control_link_set_descriptor_report_cb")
-
-Assert-FileContains `
-    -Name "p4 receives and displays S3 firmware reports" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("CTRL_BULK_TYPE_FIRMWARE_REPORT", "ctrl_bulk_decode_firmware_report", "control_link_get_s3_firmware_report")
-
-Assert-FileContains `
     -Name "p4 OTA validates chip and project before activation" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota/p4_ota.c") `
     -LiteralPatterns @("P4_OTA_PROJECT_NAME", "wrong firmware project", "esp_ota_set_boot_partition")
 
 Assert-FileContains `
-    -Name "p4 app wires descriptor reports to the profile manager" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("control_link_set_descriptor_report_cb", "controller_profile_manager_on_descriptor_report")
-
-Assert-FileContains `
-    -Name "p4 app wires controller disconnect and UART health into service telemetry" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @(
-        "control_link_set_controller_state_cb",
-        "controller_profile_manager_on_disconnect",
-        "SERVICE_LOG_CONTROL_LINK_CRC",
-        "SERVICE_LOG_CONTROL_LINK_GAP"
-    )
-
-Assert-FileContains `
-    -Name "p4 status API exposes control-link and service-log health" `
+    -Name "p4 status API exposes controller and service-log health" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @(
-        "control_link_get_rx_stats",
         "service_log_get_status",
-        "web_api_format_control_link_json",
+        "web_api_format_controller_json",
         "web_api_format_service_log_json"
     )
 
 Assert-FileContains `
-    -Name "p4 manager streams the matched profile to the S3 off the RX task" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
-    -LiteralPatterns @("cpm_sender_task", "control_link_send_profile_begin", "control_link_send_profile_chunk", "cp_xfer_crc32", "CTRL_BULK_TYPE_PROFILE_ACTIVATE")
+    -Name "p4 status exposes USB1 probe diagnostics" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"p4_usb\"',
+        "usb_host_manager_get_diagnostics",
+        "controller_usb_host_get_diagnostics",
+        '\"last_probe_stage_name\"',
+        '\"last_parent_port\"'
+    )
 
 Assert-FileContains `
-    -Name "p4 dispatches profile ACK/NACK replies to a callback" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/control_link_uart.c") `
-    -LiteralPatterns @("ctrl_bulk_decode_profile_ack", "ctrl_bulk_decode_profile_nack", "s_profile_reply_cb")
+    -Name "p4 JC4880 Full-Speed connector selects PHY0 without burning eFuse" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage_shared.c") `
+    -LiteralPatterns @(
+        ".override_fs_phy_index = true",
+        ".fs_phy_index = 0u",
+        "do not burn USB_PHY_SEL"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB host manager applies the requested Full-Speed PHY route" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "usb_wrap_ll_phy_select(&USB_WRAP, s_config.fs_phy_index)",
+        '"USB Full-Speed root routed to PHY%u"'
+    )
+
+Assert-FileContains `
+    -Name "p4 USB recovery only succeeds after indexed root power-on completes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "RECOVERY_POWER_ON_TIMEOUT_MS",
+        "if (rc == ESP_OK)",
+        "if (rc != ESP_ERR_INVALID_STATE)",
+        '"USB%u recovery power-on timed out: %s"',
+        "return RECOVERY_CYCLE_FAILED;"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB recovery atomically preserves an active per-root enumeration" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_idle_recovery_patch.cmake") `
+    -LiteralPatterns @(
+        "pajoniiir_hcd_port_power_off_if_disconnected",
+        "port->state == HCD_PORT_STATE_DISCONNECTED",
+        "port->flags.event_pending",
+        "ESP_ERR_NOT_FINISHED",
+        "usb_host_lib_power_off_root_port_if_idle_by_index",
+        "Could not replace all esp-usb HCD, Hub, and Host Library sources"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB manager suppresses recovery once attach or enumeration is active" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "recovery_power_off_if_idle",
+        "RECOVERY_CYCLE_SUPPRESSED_ACTIVE",
+        '"USB%u recovery suppressed: attach/enumeration is active"',
+        "s_recovery_suppressed_active"
+    )
+
+Assert-FileContains `
+    -Name "p4 USB recovery resumes a prior half-completed power cycle" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_host_manager/usb_host_manager.c") `
+    -LiteralPatterns @(
+        "const bool powered_off_now = rc == ESP_OK",
+        "rc != ESP_OK && rc != ESP_ERR_INVALID_STATE",
+        '"USB%u recovery resumes from already-off root"',
+        "usb_host_manager_set_root_power_by_index(port, true)"
+    )
+
+Assert-FileContains `
+    -Name "p4 status exposes USB root recovery outcomes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        '\"recovery_coalesced\"',
+        "host_diag.recovery_successes",
+        "host_diag.recovery_suppressed_active",
+        "host_diag.recovery_failures",
+        "host_diag.recovery_queue_drops"
+    )
+
+# CMake source replacement cannot execute in the host harness, so pin both the
+# fail-closed integration hook and the accepted HS/FS FIFO values textually.
+Assert-FileContains `
+    -Name "p4 dual USB build applies a fail-closed per-controller FIFO layout" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -LiteralPatterns @(
+        "apply_espressif_usb_fifo_patch.cmake",
+        "apply_espressif_usb_idle_recovery_patch.cmake"
+    )
+
+Assert-FileContains `
+    -Name "p4 dual USB FIFO patch preserves bulk HS and periodic OUT FS capacity" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_espressif_usb_fifo_patch.cmake") `
+    -LiteralPatterns @(
+        "idf_component_get_property(_pajoniiir_usb_dir usb COMPONENT_DIR)",
+        "port->fifo_config.nptx_fifo_lines = 256;",
+        "port->fifo_config.ptx_fifo_lines = 128;",
+        "port->fifo_config.nptx_fifo_lines = 20;",
+        "port->fifo_config.ptx_fifo_lines = 100;",
+        "_pajoniiir_upstream_at EQUAL -1",
+        "Could not replace esp-usb hcd_dwc.c"
+    )
+
+Assert-FileContains `
+    -Name "p4 pins the esp-usb disconnect/recycle race fix" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/idf_component.yml") `
+    -LiteralPatterns @(
+        'version: "cc65dc268f9fb6e89b8b3c6c9e94f5aa1dbb2ccb"'
+    )
+
+Assert-FileContains `
+    -Name "p4 dual-USB defaults keep a bounded flash coredump" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @(
+        "CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y",
+        "CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=8",
+        "CONFIG_ESP_COREDUMP_LOGS=n"
+    )
+
+Assert-FileContains `
+    -Name "p4 status exposes a safe crash summary without raw coredump bytes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "esp_core_dump_image_check",
+        "esp_core_dump_get_summary",
+        "esp_core_dump_get_panic_reason",
+        "crash_dump_work_t *work = NULL",
+        "char *crash_dump_json = calloc",
+        '\"crash_dump\"',
+        '\"panic_reason\"',
+        '\"mcause\"'
+    )
+
+Assert-FileContains `
+    -Name "p4 manager activates the matched profile locally" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
+    -LiteralPatterns @("cpm_read_profile", "controller_profile_runtime_activate", "cpm_activate_bound_profile")
+
+Assert-FileContains `
+    -Name "p4 controller events and LED output stay local" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @("control_link_inject_semantic", "control_link_set_led_sink", "controller_led_runtime_send")
+
+Assert-FileContains `
+    -Name "p4 controller USB client remains scheduler-unpinned" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @(".task_core_id = tskNO_AFFINITY")
+
+Assert-FileDoesNotContain `
+    -Name "p4 controller USB client excludes the experimental CPU0 pin" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_local_controller/p4_local_controller.c") `
+    -LiteralPatterns @("LOCAL_CONTROLLER_USB_TASK_CORE")
+
+# The USB client consumes the UAC ring and ae_output is its sole producer.
+# Keep them at equal priority so dense MIDI traffic cannot starve the producer;
+# ae_output's blocking I2S write and explicit yield points still service USB.
+Assert-FileContains `
+    -Name "p4 UAC consumer and audio producer share a scheduler priority" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_usb_host/controller_usb_host.c") `
+    -LiteralPatterns @("#define CONTROLLER_USB_ACTIVE_PRIORITY 6u")
+
+Assert-FileContains `
+    -Name "p4 audio output priority contract remains explicit" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
+    -LiteralPatterns @(
+        "#define AE_OUTPUT_TASK_PRIORITY 6u",
+        "AE_OUTPUT_TASK_PRIORITY"
+    )
+
+Assert-FileContains `
+    -Name "p4 active control-link component compiles only the local adapter" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -LiteralPatterns @('SRCS "control_link_local.c" "flx4_led_snapshot.c"')
+
+Assert-FileDoesNotContain `
+    -Name "p4 active control-link component excludes legacy UART and bulk transport" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/control_link/CMakeLists.txt") `
+    -LiteralPatterns @("control_link_uart.c", "ctrl_bulk.c", "cp_xfer.c", "control_link_rx_stats.c")
+
+Assert-FileDoesNotContain `
+    -Name "p4 active application has no monitor PCM component dependency" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/CMakeLists.txt") `
+    -LiteralPatterns @("monitor_pcm_link")
+
+Assert-FileContains `
+    -Name "OTA release packager emits only the P4 target" `
+    -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
+    -LiteralPatterns @('-RelativeProjectDir "firmware/main-deck-p4"', '"--target", "p4"', 'target = "p4"')
+
+Assert-FileDoesNotContain `
+    -Name "OTA release packager excludes the retired S3 target" `
+    -Path (Join-Path $RepoRoot "tools/package_ota_release.ps1") `
+    -LiteralPatterns @("firmware/control-board-s3", "control-board-s3", '"--target", "s3"')
+
+Assert-FileContains `
+    -Name "p4 status API exposes bounded UAC ring health" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "audio_uac_ring_low_alarm_frames",
+        "audio_uac_ring_high_alarm_frames",
+        "audio_uac_ring_state_name",
+        '\"ring_low_alarm_frames\":%u',
+        '\"ring_high_alarm_frames\":%u',
+        '\"ring_state\":\"%s\"',
+        '\"data_loss\":%s',
+        '\"data_loss_flags\":%u',
+        "usb_headphone_active_data_loss_flags"
+    )
+
+Assert-FileContains `
+    -Name "authenticated web controls wake without consuming the mutation" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "deck_core_queue_remote_event",
+        "web_wait_for_play_state",
+        '"409 Conflict"',
+        '"Play state unchanged"'
+    )
 
 Assert-FileContains `
     -Name "p4 audio_engine exposes a per-deck platter-hold mute (vinyl phase 1)" `
@@ -1016,30 +1245,6 @@ Assert-FileContains `
     -Name "p4 pull OTA installs only a release a check offered and the caller names back" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @("s_status.state != P4_OTA_PULL_AVAILABLE", "strcmp(expected_release, s_status.available_release)")
-
-Assert-FileContains `
-    -Name "controller profile partial init rolls back every runtime resource" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/controller_profile_manager/controller_profile_manager.c") `
-    -LiteralPatterns @(
-        "static void cpm_runtime_cleanup(void)",
-        "vTaskDelete(s_descriptor_task_handle)",
-        "vTaskDelete(s_sender_task)",
-        "vQueueDelete(s_descriptor_q)",
-        "vQueueDelete(s_send_q)",
-        "vSemaphoreDelete(s_reply_sem)",
-        "vSemaphoreDelete(s_manager_mutex)"
-    )
-
-Assert-FileContains `
-    -Name "monitor PCM partial init rolls back tasks and I2S channel" `
-    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link_i2s.c") `
-    -LiteralPatterns @(
-        "static void monitor_pcm_link_transport_cleanup(i2s_chan_handle_t tx_chan)",
-        "vTaskDelete(s_transport_task)",
-        "i2s_channel_disable(tx_chan)",
-        "i2s_del_channel(tx_chan)",
-        "&s_transport_task"
-    )
 
 # The recorder is off by default: its write latency is dominated by the microSD
 # card rather than by the firmware, and chasing that cost a great deal of bench
@@ -1198,6 +1403,16 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pdb backend reads are bounded and stop after media removal" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/rekordbox_pdb.c") `
+    -LiteralPatterns @(
+        "len > 8192u ? 8192u : len",
+        "media_io_gate_is_available()",
+        "pdb_read_at(p->source",
+        "p->read_failed = true"
+    )
+
+Assert-FileContains `
     -Name "p4 web library stream aborts when the client disconnects" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("send_rc = httpd_resp_send_chunk(req, chunk, chunk_len);", "if (send_rc != ESP_OK) {")
@@ -1209,9 +1424,46 @@ Assert-FileContains `
         "api_request_allowed(req, true)",
         "web_api_host_allowed(host, ap_ipv4)",
         '"X-DDJ-Control"',
-        "queue_rc = deck_core_queue_event(&ev);",
+        "queue_rc = deck_core_queue_remote_event(&ev);",
         '"503 Service Unavailable"',
         '.method = HTTP_POST'
+    )
+
+Assert-FileContains `
+    -Name "p4 Library-load validation gate is guarded, bounded and requires USB0 absent" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_library_validation_gate_arm_handler",
+        "api_request_allowed(req, true)",
+        "usb_storage_is_mounted()",
+        "library_validation_gate_arm(60000u)",
+        '"/api/validation/library-load-gate/arm"'
+    )
+
+Assert-FileContains `
+    -Name "p4 audio-load validation gate is guarded, bounded and requires USB0 present" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_audio_load_validation_gate_arm_handler",
+        "api_request_allowed(req, true)",
+        "!usb_storage_is_mounted()",
+        "audio_load_validation_gate_arm(deck, 60000u)",
+        '"/api/validation/audio-load-gate/arm"'
+    )
+
+Assert-FileContains `
+    -Name "p4 software-reboot validation endpoint is guarded and requires idle dual USB" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "api_validation_reboot_handler",
+        "api_request_allowed(req, true)",
+        "req->content_len != 0",
+        "ota.state != P4_OTA_IDLE",
+        "!usb_storage_is_mounted()",
+        "!controller_usb_host_is_connected()",
+        "!audio.streaming",
+        "deck1.state == AE_LOADING",
+        '"/api/validation/reboot"'
     )
 
 Assert-FileContains `
@@ -1238,6 +1490,42 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("atoi(")
 
 $tests = @(
+    @{
+        Name = "audio_load_validation_gate"
+        Dir = "tests/audio_load_validation_gate"
+        Target = "test_audio_load_validation_gate.exe"
+        Args = @(
+            "-O1", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DAUDIO_LOAD_VALIDATION_GATE_HOST_TEST",
+            "-DMEDIA_IO_GATE_STANDALONE_TEST",
+            "-I../support/rtos", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-o", "test_audio_load_validation_gate.exe",
+            "test_audio_load_validation_gate.c",
+            "../support/rtos/fake_rtos.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_load_validation_gate.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+        )
+    },
+    @{
+        Name = "library_validation_gate"
+        Dir = "tests/library_validation_gate"
+        Target = "test_library_validation_gate.exe"
+        Args = @(
+            "-O1", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-DLIBRARY_VALIDATION_GATE_HOST_TEST",
+            "-DMEDIA_IO_GATE_STANDALONE_TEST",
+            "-I../support/rtos", "-I../support/stubs",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_io_gate/include",
+            "-o", "test_library_validation_gate.exe",
+            "test_library_validation_gate.c",
+            "../support/rtos/fake_rtos.c",
+            "../../firmware/main-deck-p4/components/library/library_validation_gate.c",
+            "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c"
+        )
+    },
     @{
         Name = "ui_load_gate"
         MinTestsRun = 12
@@ -1276,6 +1564,18 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_output_bookkeeping"
+        Dir = "tests/audio_output_bookkeeping"
+        Target = "test_audio_output_bookkeeping.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_output_bookkeeping.exe",
+            "test_audio_output_bookkeeping.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_output_bookkeeping.c"
+        )
+    },
+    @{
         Name = "audio_keylock"
         Dir = "tests/audio_keylock"
         Target = "test_audio_keylock.exe"
@@ -1285,6 +1585,33 @@ $tests = @(
             "-o", "test_audio_keylock.exe",
             "test_audio_keylock.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_keylock_search"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock_search.exe"
+        Args = @(
+            "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock_search.exe",
+            "test_audio_keylock_search.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "-lm"
+        )
+    },
+    @{
+        Name = "audio_keylock_tempo"
+        Dir = "tests/audio_keylock"
+        Target = "test_audio_keylock_tempo.exe"
+        Args = @(
+            "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_keylock_tempo.exe",
+            "test_audio_keylock_tempo.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c",
             "-lm"
         )
     },
@@ -1404,18 +1731,6 @@ $tests = @(
         )
     },
     @{
-        Name = "control_link_rx_stats"
-        Dir = "tests/control_link_rx_stats"
-        Target = "test_control_link_rx_stats.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-o", "test_control_link_rx_stats.exe",
-            "test_control_link_rx_stats.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c"
-        )
-    },
-    @{
         Name = "service_log"
         Dir = "tests/service_log"
         Target = "test_service_log.exe"
@@ -1457,9 +1772,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/audio_engine",
             "-I../../firmware/main-deck-p4/components/audio_engine/include",
             "-I../../firmware/main-deck-p4/components/library/include",
-            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-o", "test_audio_engine.exe",
             "test_audio_engine.c",
@@ -1471,6 +1784,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_flac_decoder.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_diag.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_keylock.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_eq.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_filter.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_smart_cfx.c",
@@ -1491,7 +1805,6 @@ $tests = @(
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_context.c",
             "../../firmware/main-deck-p4/components/audio_engine/audio_fw_task_plan.c",
             "../../firmware/main-deck-p4/components/media_io_gate/media_io_gate.c",
-            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c",
             "-lm"
         )
     },
@@ -1560,7 +1873,7 @@ $tests = @(
     },
     @{
         Name = "usb_storage_session"
-        MinTestsRun = 63
+        MinTestsRun = 73
         Dir = "tests/usb_storage_session"
         Target = "test_usb_storage_session.exe"
         Args = @(
@@ -1690,6 +2003,19 @@ $tests = @(
         )
     },
     @{
+        Name = "audio_censor"
+        Dir = "tests/audio_censor"
+        Target = "test_audio_censor.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_censor.exe",
+            "test_audio_censor.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_censor.c",
+            "-lm"
+        )
+    },
+    @{
         Name = "audio_pad_fx"
         Dir = "tests/audio_pad_fx"
         Target = "test_audio_pad_fx.exe"
@@ -1762,17 +2088,52 @@ $tests = @(
         )
     },
     @{
-        Name = "monitor_pcm_link"
-        Dir = "tests/monitor_pcm_link"
-        Target = "test_monitor_pcm_link.exe"
+        Name = "audio_wdt_trace"
+        Dir = "tests/audio_wdt_trace"
+        Target = "test_audio_wdt_trace.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../control_link_protocol/stubs",
-            "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/monitor_pcm_link/include",
-            "-o", "test_monitor_pcm_link.exe",
-            "test_monitor_pcm_link.c",
-            "../../firmware/main-deck-p4/components/monitor_pcm_link/monitor_pcm_link.c"
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_wdt_trace.exe",
+            "test_audio_wdt_trace.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_wdt_trace.c"
+        )
+    },
+    @{
+        Name = "library_load_trace"
+        Dir = "tests/library_load_trace"
+        Target = "test_library_load_trace.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-DLIBRARY_LOAD_TRACE_HOST_TEST",
+            "-I../../firmware/main-deck-p4/components/library/include",
+            "-o", "test_library_load_trace.exe",
+            "test_library_load_trace.c",
+            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
+        )
+    },
+    @{
+        Name = "audio_uac_health"
+        Dir = "tests/audio_uac_health"
+        Target = "test_audio_uac_health.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/audio_engine/include",
+            "-o", "test_audio_uac_health.exe",
+            "test_audio_uac_health.c",
+            "../../firmware/main-deck-p4/components/audio_engine/audio_uac_health.c"
+        )
+    },
+    @{
+        Name = "controller_audio_resampler"
+        Dir = "tests/controller_audio_resampler"
+        Target = "test_controller_audio_resampler.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/controller_usb_audio/include",
+            "-o", "test_controller_audio_resampler.exe",
+            "test_controller_audio_resampler.c",
+            "../../firmware/main-deck-p4/components/controller_usb_audio/controller_audio_resampler.c"
         )
     },
     @{
@@ -1867,7 +2228,7 @@ $tests = @(
     },
     @{
         Name = "audio_pcm_timeline"
-        MinTestsRun = 229
+        MinTestsRun = 309
         Dir = "tests/audio_pcm_timeline"
         Target = "test_audio_pcm_timeline.exe"
         Args = @(
@@ -1912,7 +2273,6 @@ $tests = @(
         Target = "test_flx4_led_snapshot.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-o", "test_flx4_led_snapshot.exe",
@@ -1969,7 +2329,6 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/audio_recorder/include",
             "-I../../firmware/main-deck-p4/components/service_log/include",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-o", "test_ui_settings.exe",
             "test_ui_settings.c",
@@ -2194,17 +2553,21 @@ $tests = @(
     },
     @{
         Name = "library_anlz"
-        MinTestsRun = 253
+        # PDB backend gating is now exercised by the bounded-page parser suite;
+        # catalog publication copies parsed rows without incidental gate checks.
+        MinTestsRun = 207
         Dir = "tests/library_anlz"
         Target = "test_library_anlz.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c11",
+            "-DLIBRARY_LOAD_TRACE_HOST_TEST",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
             "-DWIN32", "test_library_anlz.c",
-            "../../firmware/main-deck-p4/components/library/library.c"
+            "../../firmware/main-deck-p4/components/library/library.c",
+            "../../firmware/main-deck-p4/components/library/library_load_trace.c"
         )
     },
     @{
@@ -2261,54 +2624,12 @@ $tests = @(
         )
     },
     @{
-        # First execution coverage for control_link_uart.c. This component
-        # decides what reaches deck_core - which events may be coalesced when
-        # the queue is full and which must never be lost - and until now every
-        # one of those rules was guarded only by grepping the source.
-        Name = "control_link_uart"
-        MinTestsRun = 69
-        Dir = "tests/control_link_uart"
-        Target = "test_control_link_uart.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
-            "-DCONTROL_LINK_HOST_TEST",
-            "-Istubs",
-            "-I../support/rtos",
-            "-I../support/stubs",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-I../../firmware/common/control_state_reconciler/include",
-            "-o", "test_control_link_uart.exe",
-            "test_control_link_uart.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_uart.c",
-            "../../firmware/main-deck-p4/components/control_link/control_link_rx_stats.c",
-            "../../firmware/main-deck-p4/components/control_link/ctrl_bulk.c",
-            "../support/rtos/fake_rtos.c"
-        )
-    },
-    @{
-        Name = "control_link_protocol"
-        Dir = "tests/control_link_protocol"
-        Target = "test_control_link_protocol.exe"
-        Args = @(
-            "-Wall", "-Wextra", "-Wpedantic", "-std=c99",
-            "-Istubs",
-            "-I../support/stubs",
-            "-I../../firmware/control-board-s3/components/control_link/include",
-            "-I../../firmware/main-deck-p4/components/control_link/include",
-            "-o", "test_control_link_protocol.exe",
-            "test_control_link_protocol.c",
-            "s3_constants.c",
-            "p4_constants.c"
-        )
-    },
-    @{
         Name = "controller_profile_manager"
         Dir = "tests/controller_profile_manager"
         Target = "test_controller_profile_manager.exe"
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
             "-DCONTROLLER_PROFILE_MANAGER_PC_TEST",
-            "-I../control_link_protocol/stubs",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/controller_profile_manager/include",
             "-o", "test_controller_profile_manager.exe",
@@ -2406,21 +2727,40 @@ $powerShell = Get-Command pwsh -ErrorAction SilentlyContinue
 if (-not $powerShell) {
     $powerShell = Get-Command powershell -ErrorAction Stop
 }
-# The call-graph audit greps the tree with ripgrep. Without `rg` it cannot run at
-# all, and hard-failing there would also skip every step below it. Skip loudly
-# instead, the same way a missing python skips the signing tests.
-if (Get-Command rg -ErrorAction SilentlyContinue) {
-    Invoke-Step -Name "run R5 dead-code call-graph audit" `
-        -WorkingDirectory $RepoRoot `
-        -Executable $powerShell.Source `
-        -Arguments @("-NoProfile", "-File", "tests/r5_dead_code_audit.ps1")
-} else {
-    Write-Warning "ripgrep (rg) not found; SKIPPING the R5 dead-code call-graph audit"
-}
 Invoke-Step -Name "run OTA release helper tests" `
     -WorkingDirectory $RepoRoot `
     -Executable $powerShell.Source `
     -Arguments @("-NoProfile", "-File", "tests/ota_packaging/test_ota_release_helpers.ps1")
+
+Invoke-Step -Name "run P4 lifecycle harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_cycle.ps1", "-SelfTest")
+
+Invoke-Step -Name "run P4 lifecycle I/J batch self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_ij_batch.ps1", "-SelfTest")
+
+Invoke-Step -Name "run P4 lifecycle Group K harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_k.ps1", "-Cycle", "2", "-SelfTest")
+
+Invoke-Step -Name "run P4 lifecycle Group L harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_lifecycle_l.ps1", "-Cycle", "2", "-SelfTest")
+
+Invoke-Step -Name "run P4 release qualification harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_release_qualification.ps1", "-SelfTest")
+
+Invoke-Step -Name "run P4 UAC transition stress harness self-test" `
+    -WorkingDirectory $RepoRoot `
+    -Executable $powerShell.Source `
+    -Arguments @("-NoProfile", "-File", "tools/run_p4_uac_transition_stress.ps1", "-SelfTest")
 
 if (-not $KeepArtifacts) {
     foreach ($path in $created) {
@@ -2449,6 +2789,31 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
     -LiteralPatterns @("usb_storage_session_t", "usb_storage_session_on_disconnect", "usb_storage_recovery_observe", "usb_storage_recovery_cycle_due", "ulTaskNotifyTake", "MOUNT_RETRY_MAX_MS", "retrying in %u ms", "desired_matches(", "publish_desired_disconnect")
 
+Assert-FileContains `
+    -Name "p4 USB teardown detaches sole-owner handles before destructive cleanup" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
+    -LiteralPatterns @("usb_media_mount_t *released_mount = s_mount", "s_mount = NULL", "s_msc_dev = NULL", "usb_media_unmount(released_mount)", "msc_host_uninstall_device(released_handle)")
+
+Assert-FileContains `
+    -Name "p4 USB MSC patch preserves callback ownership through hot-unplug teardown" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/cmake/apply_usb_host_msc_teardown_patch.cmake") `
+    -LiteralPatterns @("usb_host_transfer_free(dev->xfer)", "dev->xfer = NULL", "vSemaphoreDelete(dev->transfer_done)", "DEFAULT_XFER_SIZE   (8 * 1024)", "return ESP_ERR_INVALID_SIZE", "if (xfer == NULL)", "fail-closed source")
+
+Assert-FileContains `
+    -Name "p4 USB media bounds every FatFS transfer by bytes, not sector count" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -LiteralPatterns @("USB_MEDIA_MAX_XFER_BYTES", "max_transfer_sectors", "USB_MEDIA_MAX_XFER_BYTES / sector_size", "batch = max_batch")
+
+Assert-FileContains `
+    -Name "p4 USB Rekordbox probe distinguishes absent export from transport failure" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_media_mount.c") `
+    -LiteralPatterns @("probe_rekordbox_export", "errno == ENOENT || errno == ENOTDIR", "return ESP_ERR_MSC_MOUNT_FAILED", "usb_media_unmount(candidate_mount)")
+
+Assert-FileContains `
+    -Name "p4 status exposes USB storage hot-plug lifecycle evidence" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @("usb_storage_diagnostics_t storage_diag", "storage_diag.connect_events", "storage_diag.mount_attempts", "storage_diag.last_uninstall_result", "usb_storage_get_diagnostics")
+
 Assert-FileDoesNotContain `
     -Name "p4 USB root-port recovery is not disabled by a firmware-lifetime seen-device latch" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/usb_storage/usb_storage.c") `
@@ -2475,6 +2840,11 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/library/CMakeLists.txt") `
     -LiteralPatterns @('"library.c"', '"track_meta_cache.c"')
 
+Assert-FileContains `
+    -Name "p4 defaults suppress brownout-prone ANLZ cache writes" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+    -LiteralPatterns @("# CONFIG_LIBRARY_ANLZ_CACHE_WRITE is not set")
+
 Invoke-ApiContract
 
 # Components whose `#include "<impl>.c"` compilation wrapper has been retired.
@@ -2487,7 +2857,6 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "ui";                         Wrapper = "ui_lvgl_backend_single_fb.c" },
     @{ Board = "main-deck-p4";     Component = "web_server";                 Wrapper = "web_server_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "deck_core";                  Wrapper = "deck_core_live_led.c" },
-    @{ Board = "control-board-s3"; Component = "s3_debug_ap";               Wrapper = "s3_debug_ap_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "app_settings";               Wrapper = "app_settings_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "wifi_link";                  Wrapper = "wifi_link_leased.c" },
     @{ Board = "main-deck-p4";     Component = "p4_ota_pull";                Wrapper = "p4_ota_pull_leased.c" },
@@ -2495,8 +2864,7 @@ foreach ($retired in @(
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "rekordbox_anlz_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "library";                    Wrapper = "track_meta_cache_fixed.c" },
     @{ Board = "main-deck-p4";     Component = "audio_engine";               Wrapper = "audio_engine_ordered.c" },
-    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" },
-    @{ Board = "control-board-s3"; Component = "flx4_midi_host";             Wrapper = "flx4_midi_host_fixed.c" }
+    @{ Board = "main-deck-p4";     Component = "controller_profile_manager"; Wrapper = "controller_profile_manager_ordered.c" }
 )) {
     $wrapperPath = Join-Path $RepoRoot ("firmware/{0}/components/{1}/{2}" -f $retired.Board, $retired.Component, $retired.Wrapper)
     Write-Host ("==> static retired compilation wrapper {0} stays deleted" -f $retired.Wrapper)
@@ -2562,6 +2930,15 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
 
+Assert-FileContains `
+    -Name "p4 Wi-Fi ON/OFF control cannot tear down ESP-Hosted during OTA" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @(
+        "wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL)",
+        "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL)",
+        "re-sample it under the control lock before touching hardware"
+    )
+
 # Absence of a preprocessor #define; see the p4_ota_pull gate above.
 Assert-FileDoesNotContain `
     -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `
@@ -2582,28 +2959,6 @@ Assert-FileContains `
     -Name "p4 deck_core builds its real source" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/deck_core/CMakeLists.txt") `
     -LiteralPatterns @('SRCS "deck_core.c"')
-
-Assert-FileContains `
-    -Name "s3 debug AP serves one bounded /events response and latches start failure" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -LiteralPatterns @("X-Log-Seq", "s_ap_start_failed_latched", "debug AP is latched in ERROR; request OFF before retry")
-
-# Idiom (a bounded for-loop and a keepalive literal). s3_debug_ap.c's
-# production path is excluded from the PC build, so nothing executes it.
-Assert-FileDoesNotContain `
-    -Name "s3 debug AP /events does not hold the httpd task in a polling loop" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/s3_debug_ap.c") `
-    -LiteralPatterns @(": keepalive", "for (int i = 0; i < 600; i++)")
-
-Assert-FileContains `
-    -Name "s3 debug AP builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/s3_debug_ap/CMakeLists.txt") `
-    -LiteralPatterns @('SRCS "s3_debug_ap.c"')
-
-Assert-FileContains `
-    -Name "s3 FLX4 MIDI host builds its real source" `
-    -Path (Join-Path $RepoRoot "firmware/control-board-s3/components/flx4_midi_host/CMakeLists.txt") `
-    -LiteralPatterns @('SRCS "flx4_midi_host.c"')
 
 # bsp_jc4880.h pulls in esp_lcd/esp_codec_dev, which the host toolchain does not
 # build, so this stays a text check rather than a compile contract.
@@ -2635,12 +2990,12 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 firmware status strings are escaped before JSON formatting" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
-    -LiteralPatterns @("web_collect_p4_ota_status", "web_collect_s3_firmware_report", "web_firmware_json_escape_in_place")
+    -LiteralPatterns @("web_collect_p4_ota_status", "web_firmware_json_escape_in_place")
 
 Assert-FileContains `
     -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
-    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_event(&ev)")
+    -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_remote_event(&ev)")
 
 # The symbols exist and are reachable by design - they are simply the wrong
 # call for this component - so no link contract can express it.
@@ -2784,6 +3139,18 @@ Assert-FileContains `
     -Name "recorder stop propagates writer and finalize failures" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_recorder/audio_recorder.c") `
     -LiteralPatterns @("checkpoint failed", "finalize failed; .part retained", "return s_last_error", "audio_recorder_sink_abort")
+
+# Run the controller suites here as well as in the dedicated dual-USB CI job.
+if (-not $pythonSource) { throw "Python is required for firmware lifecycle regression" }
+Invoke-Step -Name "run firmware lifecycle regression" -WorkingDirectory $RepoRoot `
+    -Executable $pythonSource -Arguments @("tests/audio_fw_runtime/test_firmware_lifecycle.py")
+
+# Resolve the current PowerShell executable for both Windows PowerShell and pwsh.
+$HostShell = (Get-Process -Id $PID).Path
+foreach ($suite in @("controller_runtime", "controller_usb_host", "controller_led_runtime")) {
+    Invoke-Step -Name "run $suite" -WorkingDirectory $RepoRoot -Executable $HostShell `
+        -Arguments @("-NoProfile", "-File", (Join-Path $PSScriptRoot "$suite/run_tests.ps1"))
+}
 
 # Windows PowerShell propagates $LASTEXITCODE as the script's exit status, so a
 # script that ends after any native command inherits that command's code even

@@ -78,13 +78,20 @@ typedef struct {
 
 /* ── Opaque PDB handle ───────────────────────────────────────────────────── */
 typedef struct pdb_s pdb_t;
+typedef struct {
+    uint32_t total_tracks;
+    bool tracks_truncated;
+    bool names_truncated;
+} pdb_import_stats_t;
+void pdb_get_import_stats(const pdb_t *pdb, pdb_import_stats_t *stats);
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
 /**
  * Open and parse export.pdb.
  *
- * Reads the entire file, then parses the Tracks, Artists, and Albums tables.
+ * Reads one bounded page at a time, parsing Tracks, Artists, Albums and Keys.
+ * Backend reads release media_io_gate after at most 8 KiB.
  * Allocates pdb_t on heap; call pdb_close() when done.
  *
  * @param pdb_path  Absolute path to export.pdb.

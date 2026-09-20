@@ -173,6 +173,9 @@ extern int audio_engine_stub_scratch_move_count[2];
 extern int audio_engine_stub_scratch_move_last_delta[2];
 extern int audio_engine_stub_scratch_end_count[2];
 extern bool audio_engine_stub_scratch_available[2];
+extern int audio_engine_stub_censor_begin_count[2];
+extern int audio_engine_stub_censor_end_count[2];
+extern bool audio_engine_stub_censor_available[2];
 
 static inline bool audio_engine_deck_scratch_begin(uint8_t deck) {
   if (deck >= 2)
@@ -192,6 +195,20 @@ static inline void audio_engine_deck_scratch_end(uint8_t deck) {
   if (deck >= 2)
     return;
   audio_engine_stub_scratch_end_count[deck]++;
+}
+
+static inline bool audio_engine_deck_censor_begin(uint8_t deck) {
+  if (deck >= 2)
+    return false;
+  audio_engine_stub_censor_begin_count[deck]++;
+  return audio_engine_stub_censor_available[deck] &&
+         audio_engine_stub_deck_playing[deck];
+}
+
+static inline void audio_engine_deck_censor_end(uint8_t deck) {
+  if (deck >= 2)
+    return;
+  audio_engine_stub_censor_end_count[deck]++;
 }
 
 static inline uint32_t audio_engine_deck_position_ms(uint8_t deck) {

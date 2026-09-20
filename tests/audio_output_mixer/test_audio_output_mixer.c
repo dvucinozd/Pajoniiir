@@ -18,6 +18,20 @@ static bool pop_source(void *ctx, audio_mixer_frame_t *out_frame)
     return true;
 }
 
+static void test_headphone_gain_ramp_is_continuous_and_retargetable(void)
+{
+    audio_output_gain_ramp_t ramp;
+    audio_output_gain_ramp_reset(&ramp, 1.0f);
+    assert(fabsf(audio_output_gain_ramp_next(&ramp, 0.0f, 4u) - 0.75f) < 0.00001f);
+    assert(fabsf(audio_output_gain_ramp_next(&ramp, 0.0f, 3u) - 0.50f) < 0.00001f);
+    assert(fabsf(audio_output_gain_ramp_next(&ramp, 1.0f, 2u) - 0.75f) < 0.00001f);
+    assert(fabsf(audio_output_gain_ramp_next(&ramp, 1.0f, 1u) - 1.00f) < 0.00001f);
+    audio_output_gain_ramp_reset(&ramp, -1.0f);
+    assert(ramp.current == 0.0f);
+    audio_output_gain_ramp_reset(&ramp, 2.0f);
+    assert(ramp.current == 1.0f);
+}
+
 static audio_output_mix_result_t mix_full(const audio_output_mixer_deck_t *deck0,
                                           const audio_output_mixer_deck_t *deck1,
                                           bool deck0_pfl,
@@ -759,6 +773,7 @@ static void test_scratch_source_silence(void)
 
 int main(void)
 {
+    test_headphone_gain_ramp_is_continuous_and_retargetable();
     test_mixes_two_active_decks_with_output_gains();
     test_scratch_source_replaces_ring_without_consuming();
     test_scratch_source_silence();

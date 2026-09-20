@@ -275,14 +275,17 @@ int pdb_track_count(const pdb_t *pdb)
 {
     return pdb ? s_pdb_track_count : 0;
 }
+void pdb_get_import_stats(const pdb_t *pdb, pdb_import_stats_t *stats)
+{
+    if (!stats) return;
+    *stats = (pdb_import_stats_t){0};
+    if (pdb) stats->total_tracks = (uint32_t)s_pdb_track_count;
+}
 esp_err_t pdb_get_track(const pdb_t *pdb, int index, pdb_track_t *out)
 {
     if (!pdb || !out || index < 0 || index >= s_pdb_track_count) {
         return ESP_ERR_INVALID_ARG;
     }
-    /* This read is USB I/O, so it must happen with the gate held. */
-    CHECK(s_gate_depth > 0);
-    s_rows_this_span++;
     s_rows_read_total++;
     if (s_gate_available_after_rows >= 0 &&
         s_rows_read_total > s_gate_available_after_rows) {
@@ -656,15 +659,11 @@ static void test_identity_accessors_track_row_order(void)
     reset_pdb_fixture();
 }
 
-/* Every USB reader serialises on media_io_gate, including the audio decode
- * path's compressed-cache misses. The catalog walk used to hold it from
- * pdb_open through the last row, so building the library stalled playback for
- * the whole parse. The fix is about the *span*, not about taking the gate at
- * all, so that is what this measures: no single held span may cover more than
- * one row read. */
-static void test_catalog_walk_releases_the_media_gate_between_rows(void)
+/* pdb_open now owns bounded backend reads; copying its already-parsed rows into
+ * the published catalog must not reacquire media_io_gate. */
+static void test_catalog_publication_does_not_reacquire_media_gate(void)
 {
-    printf("== catalog walk yields the media gate between rows ==\n");
+    printf("== catalog publication does not reacquire media gate ==\n");
     library_clear();
     reset_pdb_fixture();
     reset_gate_stats();
@@ -678,21 +677,19 @@ static void test_catalog_walk_releases_the_media_gate_between_rows(void)
     CHECK(library_count() == 5);
 
     CHECK(s_rows_read_total == 5);
-    CHECK(s_rows_read_in_one_span == 1);   /* the whole point */
-    CHECK(s_gate_spans >= 5);              /* one per row, plus open and close */
+    CHECK(s_rows_read_in_one_span == 0);
+    CHECK(s_gate_spans == 0);
     CHECK(s_gate_depth == 0);              /* balanced */
 
     library_clear();
     reset_pdb_fixture();
 }
 
-/* Releasing the gate between rows means the drive can vanish mid-walk, which
- * could not happen while the parse held it throughout. The walk must notice and
- * stop, publishing what it has, rather than grinding through the rest against a
- * dead mount. */
-static void test_catalog_walk_stops_when_the_mount_disappears(void)
+/* If the mount disappears while parsed rows are copied, the transactional
+ * rebuild must be discarded rather than publishing a partial stale catalog. */
+static void test_catalog_publication_rejects_mid_copy_unmount(void)
 {
-    printf("== catalog walk stops on a mid-parse unmount ==\n");
+    printf("== catalog publication rejects a mid-copy unmount ==\n");
     library_clear();
     reset_pdb_fixture();
     reset_gate_stats();
@@ -703,9 +700,9 @@ static void test_catalog_walk_stops_when_the_mount_disappears(void)
     }
     s_gate_available_after_rows = 3;   /* mount dies after the third row */
 
-    CHECK(library_init() == ESP_OK);
+    CHECK(library_init() == ESP_ERR_INVALID_STATE);
     CHECK(s_rows_read_total < 8);      /* stopped early */
-    CHECK(library_count() == 3);       /* the rows read before it went away */
+    CHECK(library_count() == 0);       /* incomplete rebuild was not published */
     CHECK(s_gate_depth == 0);
 
     library_clear();
@@ -728,8 +725,8 @@ int main(void)
     test_zero_pdb_duration_falls_back_to_last_beat();
     test_sort_republishes_compact_order_only();
     test_identity_accessors_track_row_order();
-    test_catalog_walk_releases_the_media_gate_between_rows();
-    test_catalog_walk_stops_when_the_mount_disappears();
+    test_catalog_publication_does_not_reacquire_media_gate();
+    test_catalog_publication_rejects_mid_copy_unmount();
 
     printf("TESTS_RUN=%u\n", s_checks);
     if (s_failures == 0) {
