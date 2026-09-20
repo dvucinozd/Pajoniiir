@@ -14,23 +14,23 @@ Legacy dual-processor ledgers are retained only in files whose names begin with
 `ARCHIVE_`. Dated validation records remain evidence of the image and topology
 they actually tested; they are not current instructions.
 
-## Current candidate checkpoint
+## Current production checkpoint
 
 - Canonical branch: `master`
-- Current source head: `c786de7f6fe423331942749b7a651a5e83bcf688`
+- Frozen production source: `70824d24dbb1c8d72d19f15797afa2946c5eb909`
 - Merge commit: `d3099f9609802a6a0f6c18d660c2ead54c2fe6d0`
-- Release commit and annotated tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19`
-  / `M2`
-- Installed build version and slot: `M2` / `ota_0`, current boot identity `17`
-- Application size: `2,459,520` bytes
+- Production release commit and annotated tag:
+  `70824d24dbb1c8d72d19f15797afa2946c5eb909` / `M2.1`
+- Installed build version and slot: `M2.1` / `ota_1`, service-log boot `483`
+- Application size: `2,459,664` bytes
 - Application SHA-256:
-  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
-- Signed bundle size: `2,459,708` bytes
+  `73260a2d529fb7ee5e7f6dbf2c839cb769d3f06e01f56b095d93fdaaa6f39e76`
+- Signed bundle size: `2,459,852` bytes
 - Signed bundle SHA-256:
-  `f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`
+  `a93f1a4cfab91d4c5f39abba70cfc011183f8b1e2666da219fd1592241ef2425`
 - Toolchain: ESP-IDF v6.0.2
-- Publication state: public `latest.json` and versioned `M2` bundle verified;
-  annotated `M2` tag identifies the exact installed source commit
+- Publication state: public `latest.json` and versioned `M2.1` bundle verified;
+  immutable annotated `M2.1` tag identifies the exact installed source commit
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; focused real-file
   MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
@@ -125,24 +125,21 @@ portability fixes culminated at `c786de7`, where GitHub Actions run `35523213652
 passed the complete host, UI, ESP-IDF v6.0.2 build and artifact gates. See
 [`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md).
 
-This is not an unrestricted production-release claim. The operator accepted
+M2.1 is the released production checkpoint within the explicitly accepted
+security and physical limitations. The operator accepted
 the existing enclosure configuration after approximately two months of use and
 confirmed an accessible wired recovery path; the dedicated enclosure rerun is
-waived, with numeric thermal/RF margins explicitly uncaptured. Production
-release still requires:
-
-1. verify recovery from the operator-confirmed encrypted offline signing-key
-   backup without exposing private key material;
-2. exact `M2.1` production-candidate signed build/install, full smoke and release
-   record.
+waived, with numeric thermal/RF margins explicitly uncaptured. The only open
+key-custody item is a recovery signing test from the operator-confirmed
+encrypted offline backup without exposing private key material; it is an
+operational follow-up rather than an M2.1 release blocker.
 
 The remaining security choices are closed by
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): the shared
 credential is accepted, WPA2/WPA3 transition mode and PMF capability are in
 source, SBOM is waived, and irreversible Secure Boot/Flash Encryption/eFuse
-provisioning is deferred because no spare P4 exists. Create `M2.1` locally only
-after pre-tag gates, then push the immutable tag only after exact-image
-acceptance.
+provisioning is deferred because no spare P4 exists. `M2.1` was tagged after
+pre-tag gates and pushed only after exact-image acceptance.
 
 The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
 [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).

@@ -47,15 +47,15 @@ The complete evidence and remaining gates are in
 
 ## Release boundary
 
-The accelerated M2 beta and merge are complete. The selected production
-version is `M2.1`. Before that exact release:
+The accelerated M2 beta and merge are complete. Production release `M2.1`
+freezes commit `70824d24`. Its exact tagged ESP-IDF v6.0.2 build, signed OTA
+installation to `ota_1`, dual-deck counter smoke, operator-confirmed audio/
+display/touch smoke, immutable tag and public OTA channel all pass. See
+[`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
-1. provision and verify the selected encrypted offline signing-key storage and
-   separate encrypted backup;
-2. run a clean exact-commit signed build, install and final product smoke;
-3. create a local `M2.1` tag, build/install/smoke that exact tagged image, then
-   publish hashes, slot/version evidence, release record and immutable tag
-   without moving `M2`.
+The encrypted offline primary and separately stored encrypted backup signing
+key copies are operator-confirmed. A recovery signing test from the backup is
+an operational follow-up; it is not claimed as completed release evidence.
 
 The security decision is fixed in
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): WPA2/WPA3

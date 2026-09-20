@@ -59,12 +59,11 @@ Boot, Flash Encryption and security eFuse provisioning are intentionally
 deferred because there is no spare P4 board. See
 [`../SECURITY_PROVISIONING_POLICY.md`](../SECURITY_PROVISIONING_POLICY.md).
 
-## Remaining production-release boundary
+## Production-release closure
 
-Before an unrestricted production release:
-
-1. provision and verify both encrypted signing-key stores;
-2. build, sign, install and smoke the exact `M2.1` production commit;
-3. create a local `M2.1` tag, build/install/smoke that exact image, then publish
-   its hashes, slot/version evidence, release record and immutable tag without
-   moving `M2`.
+This record captured the boundary as it stood immediately after the M2 merge.
+The operator subsequently confirmed encrypted primary and separately stored
+encrypted backup key copies. Exact tagged `M2.1` build/sign/install/smoke,
+public channel verification and immutable tag publication are closed in
+[`M2_1_PRODUCTION_RELEASE_20260920.md`](M2_1_PRODUCTION_RELEASE_20260920.md).
+Backup recovery signing remains an operational follow-up.

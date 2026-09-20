@@ -198,15 +198,19 @@ Automated and unattended M2 evidence:
   source; Secure Boot, Flash Encryption and security eFuse burns are deferred
   because there is no spare P4 board on which to qualify irreversible recovery.
 - [x] SBOM explicitly waived for M2.1; retain dependency lock/provenance gates.
-- [ ] Freeze the final commit and rerun automated gates.
-- [ ] Build, sign, verify and install the exact final image.
-- [ ] Run the complete manual product smoke.
-- [ ] Publish hashes, slot/version evidence and all remaining acceptance results.
+- [x] Freeze the final commit and rerun automated gates; `M2.1` identifies
+  `70824d24`, and GitHub Actions run `35532529630` passed.
+- [x] Build, sign, verify and install the exact final image; M2.1 runs from
+  `ota_1` and the signed bundle hash is recorded in the release evidence.
+- [x] Run the final exact-image product smoke; dual-deck counters stayed clean
+  and the operator confirmed audio, display and touch.
+- [x] Publish hashes, slot/version evidence and remaining acceptance results in
+  `validation/M2_1_PRODUCTION_RELEASE_20260920.md`.
 - [x] Merge the release-qualified M2 beta successor into `master`; completed by
   `d3099f9` without moving the immutable `M2` tag.
 - [x] Select production version `M2.1`.
-- [ ] Locally tag the frozen production commit as `M2.1`, build/install/smoke
-  the exact tagged image, then push the immutable tag and publish its record.
+- [x] Tag the frozen production commit as `M2.1`, build/install/smoke the exact
+  tagged image, then push the immutable tag and publish its record/channel.
 
 Security policy: [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md).
 

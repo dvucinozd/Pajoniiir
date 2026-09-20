@@ -1,16 +1,16 @@
 # M2.1 security and provisioning policy
 
-Status: **selected for the first production release; irreversible ESP32-P4
-provisioning intentionally deferred**.
+Status: **applied to released M2.1; irreversible ESP32-P4 provisioning
+intentionally deferred**.
 
 ## Release identity
 
-- The selected production version is `M2.1`.
+- The production version is `M2.1`, frozen at `70824d24`.
 - The existing annotated `M2` tag is immutable and must not be moved.
-- After the frozen commit passes pre-tag automated gates, create the annotated
-  `M2.1` tag locally and build the exact tagged image. Do not push the tag or
-  publish the production channel until that image passes installation and
-  product smoke. A published tag is immutable and must never be moved.
+- The annotated `M2.1` tag was created after pre-tag automated gates, and its
+  exact tagged image passed installation and product smoke before the tag and
+  production channel were published. The published tag is immutable and must
+  never be moved.
 - Pull OTA accepts the bare `M2.1` tag and later
   `M2.1-<distance>-g<hash>` development versions. Local signed push OTA remains
   the intentional rollback path.
@@ -36,10 +36,10 @@ provisioning intentionally deferred**.
   build logs, release artifacts, firmware/NVS or the hosting account.
 - The operator confirmed creation of both encrypted offline copies on
   2026-09-20. Backup recovery verification remains open.
-- Before creating the local M2.1 tag, verify that both encrypted copies open and that the
-  backup can sign a disposable test payload which the committed public key
-  verifies. Record only success, key ID and public-key fingerprint; never
-  record the private key or its passphrase.
+- Verify backup recovery by signing a disposable test payload which the
+  committed public key accepts. Record only success, key ID and public-key
+  fingerprint; never record the private key or its passphrase. This remains an
+  operational follow-up after M2.1 publication.
 - Normal rotation is a firmware release signed by `rel-001` that introduces a
   successor trust key before `rel-001` is retired. Emergency recovery after
   loss or compromise uses the confirmed wired service path. Multi-key overlap

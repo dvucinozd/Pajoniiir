@@ -22,8 +22,9 @@ Status: **active P4-only register, reconciled 2026-09-20**.
 ## Release rule
 
 The accelerated M2 beta was merged into `master` after its mandatory beta gates
-closed. An unrestricted production release remains blocked by unresolved
-production signing-key primary/backup verification and exact M2.1 release. The
+closed. M2.1 is released with encrypted primary/backup signing-key custody
+operator-confirmed and exact-image acceptance complete. Backup recovery signing
+testing remains an operational follow-up. The
 security decisions themselves are recorded in
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md). A focused
 smoke closes only the exact scenario it exercised; it must not be promoted to

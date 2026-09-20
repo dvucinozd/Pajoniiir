@@ -108,7 +108,7 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
 | 8 | Run multi-hour combined soak | Defined multi-hour run completes without reset, media/controller loss, latched control or gated counter increase |
 | 9 | Qualify final enclosure | Accepted for this scope by operator after approximately two months in the existing enclosure; wired recovery confirmed; repeat after physical/power changes |
 | 10 | Resolve production security | Policy complete for M2.1: shared credential accepted, WPA2/WPA3 transition mode plus PMF capability, encrypted offline key custody and backup, defined rotation boundary, SBOM waived, and irreversible P4 security deferred on the sole board; physical key-store verification remains operationally open |
-| 11 | Freeze and release | Freeze exact commit, run pre-tag gates, create local `M2.1` tag, build/sign/install and smoke the exact tagged artifact, then publish the validation record, channel and immutable tag |
+| 11 | Freeze and release | **Complete:** `M2.1` freezes `70824d24`; exact tagged build/sign/install, dual-deck and operator smoke, public channel/hash verification, validation record and immutable tag publication pass |
 
 ## Test policy
 
@@ -124,8 +124,8 @@ booted `M2` from the opposite slot with USB0 and FLX4 MIDI/UAC healthy.
   or audible results for every acceptance session.
 - Do not move the immutable `M2` tag. Production release must use a new version
   identifying its exact source commit. The selected production version is
-  `M2.1`; create it locally only after the frozen commit passes pre-tag gates,
-  and do not push it before final exact-image acceptance.
+  `M2.1`; it was created after the frozen commit passed pre-tag gates and
+  pushed only after final exact-image acceptance.
 - Apply [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md):
   no Secure Boot, Flash Encryption or security eFuse burn on the sole P4 board.
 
