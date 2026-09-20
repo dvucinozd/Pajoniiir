@@ -17,18 +17,18 @@ they actually tested; they are not current instructions.
 ## Current candidate checkpoint
 
 - Branch: `feat/p4-dual-usb-host`
-- Repair commit: `b9139e1bdab79e7d0aec279383e0b8f859d3eea3`
-- Installed build version: `RC2-153-g66b5fee-dirty`; the build predates the
-  commit but has the same firmware source content
-- Application size: `2,459,392` bytes
+- Release commit and annotated tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19`
+  / `M2`
+- Installed build version and slot: `M2` / `ota_0`, boot identity `14`
+- Application size: `2,459,520` bytes
 - Application SHA-256:
-  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
-- Signed bundle size: `2,459,580` bytes
+  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
+- Signed bundle size: `2,459,708` bytes
 - Signed bundle SHA-256:
-  `a0679ac71548aa19a01752ad7aa862fe9039b16768c06ee18d7912239bc261e5`
+  `f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`
 - Toolchain: ESP-IDF v6.0.2
-- Publication state: repair committed; this documentation successor records
-  its hardware evidence
+- Publication state: public `latest.json` and versioned `M2` bundle verified;
+  annotated `M2` tag identifies the exact installed source commit
 - Validation state: P4 host/build and signed-package verification passed;
   installed by signed OTA and exact-image smoke passed; focused real-file
   MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
@@ -46,24 +46,23 @@ catalog handling and guarded deterministic Library-load validation barrier.
 
 ## Latest installed hardware candidate
 
-- Source-equivalent repair commit:
-  `b9139e1bdab79e7d0aec279383e0b8f859d3eea3`
-- Installed version: `RC2-153-g66b5fee-dirty`
-- Installed slot: `ota_1`
-- Application size: `2,459,392` bytes
+- Source commit and tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19` / `M2`
+- Installed version: `M2`
+- Installed slot and boot identity: `ota_0` / `14`
+- Application size: `2,459,520` bytes
 - Application SHA-256:
-  `f2f4424f58800d201963b661d86a69052300de9f146124e4073576a878c4b153`
-- Signed bundle size: `2,459,580` bytes
+  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
+- Signed bundle size: `2,459,708` bytes
 - Signed bundle SHA-256:
-  `a0679ac71548aa19a01752ad7aa862fe9039b16768c06ee18d7912239bc261e5`
+  `f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`
 - Toolchain: ESP-IDF v6.0.2
 
-This installed candidate passed signed OTA, USB0 mount, direct FLX4
-profile/MIDI/UAC startup and the focused UAC idle-continuity regression. It
-completed 126 fully sampled CUE/restart transitions with zero strict counter
-delta. A subsequent fresh combined soak passed for 180.156 minutes and 60
-scheduled operations with zero strict counter delta, no reboot/TWDT and
-operator-confirmed clean audio throughout. Evidence:
+The installed M2 candidate passed the signed public pull OTA, opposite-slot
+boot, USB0 mount and direct FLX4 profile/MIDI/UAC startup without a new TWDT or
+OTA error. Its audio predecessor completed 126 fully sampled CUE/restart
+transitions with zero strict counter delta. A subsequent fresh combined soak
+passed for 180.156 minutes and 60 scheduled operations with zero strict counter
+delta, no reboot/TWDT and operator-confirmed clean audio throughout. Evidence:
 [`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
 and
 [`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
@@ -122,7 +121,9 @@ the critical path is now the remaining release qualification:
    near-EOF acceptance matrix (focused load/play/EOF and mixed playback pass);
 2. on-device Master Tempo CPU/I2S deadline and listening-quality acceptance;
 3. guarded P4 web, profile and remaining pull/push OTA fault/recovery matrix;
-4. complete the reduced OTA/fault matrix and `RC2` to `M2` prefix migration;
+4. complete the remaining interrupted-transfer and signed-rollback portions of
+   the reduced OTA/fault matrix; the `RC2` to `M2` migration and positive public
+   pull path pass;
 5. closed-enclosure power, thermal, RF and wired-recovery acceptance, including
    repetition of the passed bench electrical measurements;
 6. production credential, signing-key, rotation and optional irreversible

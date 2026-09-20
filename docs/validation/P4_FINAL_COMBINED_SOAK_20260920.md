@@ -70,6 +70,7 @@ misrepresented as an active-playback fault.
 
 Together with the earlier 78.176-minute combined functional PASS and the
 focused UAC idle-continuity remediation, this closes the accelerated combined
-functional/soak gate for the current candidate. Remaining M2 beta work is the
-reduced OTA/fault matrix, version-prefix migration, final fresh-checkout
-build/test/package pass, exact-image smoke, documentation freeze and tag.
+functional/soak gate for the current candidate. The version-prefix migration
+and positive public pull path subsequently passed. Remaining M2 beta work is
+the negative/recovery OTA matrix, final fresh-checkout build/test/package pass,
+exact-image smoke and documentation freeze.

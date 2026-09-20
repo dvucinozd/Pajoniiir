@@ -14,10 +14,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 
 > [!IMPORTANT]
 > The active release candidate line builds only with ESP-IDF v6.0.2. The exact
-> installed hardware candidate is `RC2-153-g66b5fee-dirty` on `ota_1`. Its
-> firmware source content is committed as `b9139e1`; the installed version
-> string retains the pre-commit dirty-build metadata. Its full host suite,
-> signed build/package, OTA and focused exact-image checks pass.
+> installed hardware candidate is the annotated `M2` tag at `d2dabfa` on
+> `ota_0`. Its full host suite, clean signed build/package and public pull-OTA
+> migration from an RC2 bridge pass; USB0 and FLX4 MIDI/UAC recovered on boot
+> 14 without a new TWDT or OTA error.
 > The earlier
 > `RC2-116-g77d723c` completed a targeted three-hour continuous dual-MP3
 > limiter/WDT soak with one boot epoch, no watchdog reset, PCM underrun or

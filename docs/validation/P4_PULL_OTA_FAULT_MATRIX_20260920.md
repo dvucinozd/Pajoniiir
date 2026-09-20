@@ -1,7 +1,7 @@
 # P4 reduced pull-OTA fault matrix — 2026-09-20
 
-Status: **SDIO panic remediation and public HTTPS channel check PASS on exact
-image; M2 pull installation pending**.
+Status: **SDIO panic remediation, public HTTPS channel and RC2-to-M2 pull
+installation PASS; remaining negative/recovery paths open**.
 
 ## Candidate and channel
 
@@ -121,8 +121,37 @@ real AP -> STA -> HTTPS channel read -> AP round trip and reported
 FLX4 profile, MIDI IN/OUT and UAC stayed healthy with zero daemon or recovery
 failure and no TWDT evidence.
 
-The remaining positive-path test is a genuinely newer public pull install.
-That is coupled to the planned `RC2` -> `M2` prefix migration: install a local
-signed RC2 bridge that understands the new family, publish the same commit as
-the annotated `M2` tag, then require the device to download, verify, activate
-and boot that public artifact on the opposite slot.
+## RC2-to-M2 bridge and public pull closure
+
+Commit `d2dabfa7561ff1e0486acc42c7acf42607654e19` adds family-aware version
+ordering: every valid `M*` release orders after every valid `RC*` release,
+while tag distance and same-position hash ambiguity retain fail-closed
+semantics. The complete P4 host suite passed before deployment.
+
+The clean ESP-IDF v6.0.2 bridge build identified as `RC2-156-gd2dabfa`. Its
+application was 2,459,520 bytes with SHA-256
+`fd3dac5b4a0c3764df1d7e795f8cf06e624e35b151ca46dad6b92e257269bb25`.
+Signed local push OTA returned HTTP 200 and moved the device from
+`RC2-155-ga896c45-dirty` / `ota_0` / boot 12 to the bridge on `ota_1` / boot
+13. USB0, FLX4 profile, MIDI IN/OUT and UAC recovered without an OTA error or
+new TWDT.
+
+The same source commit was annotated as `M2` and rebuilt from `fullclean`.
+The application remained 2,459,520 bytes and had SHA-256
+`4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`.
+ECDSA-P256 packaging verification passed with key ID `rel-001`. The public
+bundle is 2,459,708 bytes with SHA-256
+`f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`;
+both normal DNS and a direct hosting-IP HTTPS check returned matching
+`latest.json`, and a downloaded bundle matched its declared size and hash.
+
+The installed bridge's guarded check completed AP -> STA -> HTTPS -> AP and
+reported `update available: M2`. The following guarded install returned HTTP
+202, downloaded and authenticated the public artifact, and booted `M2` on
+`ota_0` as boot identity 14. OTA returned `idle` with no error; USB0 was
+mounted and FLX4 profile, MIDI IN/OUT and UAC were active. No new TWDT or USB
+host/runtime recovery failure appeared. This closes the successful public pull
+path and prefix migration. A follow-up check from the installed `M2` image
+reported `already running this build`; slot `ota_0` and boot identity 14 stayed
+unchanged and dual-USB health remained intact. Interrupted-transfer recovery
+and signed rollback remain open beta fault-matrix items.

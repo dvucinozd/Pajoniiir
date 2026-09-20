@@ -1,6 +1,6 @@
 # Accelerated M2 beta release plan
 
-Status: **approved execution plan, active from 2026-09-19**.
+Status: **active; combined gates and RC2-to-M2 positive pull migration pass**.
 
 ## Release boundary
 
@@ -35,9 +35,10 @@ block a production release.
    installed pre-migration RC2 image cannot order an `M` offer, so first use a
    signed local RC2 bridge built from the migration commit; then tag that same
    commit `M2` and prove the public newer-only pull path end to end.
-5. Freeze one commit, run the complete host/UI and clean ESP-IDF v6.0.2 signed
-   build gates, install that exact image, repeat the short manual smoke, publish
-   hashes/evidence, then merge and tag the beta.
+5. Run the final fresh-checkout host/UI and clean ESP-IDF v6.0.2 signed build
+   gates for the immutable `M2` source tag, repeat the short manual smoke,
+   publish hashes/evidence and then merge the documentation successor without
+   moving the tag.
 
 ## Executable harness
 
@@ -189,5 +190,24 @@ loss. The operator confirmed that audio was clean throughout. See
 [`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
 
 The accelerated combined functional and soak gates are now closed. Continue
-with the reduced OTA/fault matrix, `RC2` to `M2` prefix migration and final
-fresh-checkout release pass.
+with the remaining negative/recovery OTA cases and final fresh-checkout release
+pass.
+
+## 2026-09-20 M2 migration checkpoint
+
+Commit `d2dabfa7561ff1e0486acc42c7acf42607654e19` passed the full P4 host
+suite and a clean ESP-IDF v6.0.2 signed build. Its signed
+`RC2-156-gd2dabfa` bridge was installed locally on `ota_1`, boot identity 13,
+and restored USB0 plus FLX4 MIDI/UAC. The same commit was annotated as `M2`,
+rebuilt cleanly and published at `https://ota.pajoniiir.eu`.
+
+The device's own guarded check reported `update available: M2`; the subsequent
+pull downloaded and authenticated the 2,459,708-byte signed bundle, booted
+`M2` on `ota_0` as boot identity 14, and returned with an idle OTA state,
+USB0 mounted, FLX4 profile/MIDI/UAC active and no new TWDT. The public bundle
+SHA-256 is
+`f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`.
+
+This closes plan step 4 and the successful pull portion of step 3. Interrupted
+transfer/recovery, signed rollback and the final frozen-candidate pass remain
+open.
