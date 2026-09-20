@@ -125,9 +125,14 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
   `RC2-156-gd2dabfa` bridge on `ota_1`, receive the public `M2` offer, then
   download, authenticate and boot `M2` on `ota_0`; boot 14 restored USB0 and
   FLX4 MIDI/UAC with no OTA error or new TWDT.
-- [ ] Verify newer-only, offer TTL, size, SHA-256 and signature rejection paths.
-- [ ] Verify interrupted/slow upload recovery and subsequent server availability.
-- [ ] Verify signed push OTA rollback and opposite-slot boot.
+- [x] Verify newer-only, offer TTL, size, SHA-256 and signature rejection paths
+  through the complete host suite; live M2 channel recheck also refused a
+  reinstall as `already running this build`.
+- [x] Interrupt a declared full upload after 131,072 image bytes and verify
+  `HTTP upload interrupted`, unchanged `M2 / ota_0 / boot 14`, live API and
+  healthy USB0/FLX4.
+- [x] Verify signed push rollback and opposite-slot boot: the RC2 bridge booted
+  on `ota_1` as boot 15, then public pull restored `M2 / ota_0 / boot 16`.
 - [ ] Verify guarded control, load, seek and profile mutations.
 - [x] Verify USB0 and FLX4 recover automatically after two signed OTA reboots.
 
@@ -150,6 +155,9 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
 - [ ] Measure closed-enclosure power and temperature margins.
 - [ ] Verify RF/AP reachability and connector strain relief.
 - [ ] Preserve an accessible wired recovery/service path.
+
+Automated and unattended M2 evidence:
+[`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md).
 
 ## Production and release
 

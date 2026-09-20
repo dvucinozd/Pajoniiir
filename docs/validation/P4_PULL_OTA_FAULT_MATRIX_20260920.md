@@ -1,7 +1,7 @@
 # P4 reduced pull-OTA fault matrix — 2026-09-20
 
-Status: **SDIO panic remediation, public HTTPS channel and RC2-to-M2 pull
-installation PASS; remaining negative/recovery paths open**.
+Status: **reduced M2 beta OTA matrix PASS: public pull, interrupted upload
+recovery and signed opposite-slot rollback**.
 
 ## Candidate and channel
 
@@ -153,5 +153,20 @@ mounted and FLX4 profile, MIDI IN/OUT and UAC were active. No new TWDT or USB
 host/runtime recovery failure appeared. This closes the successful public pull
 path and prefix migration. A follow-up check from the installed `M2` image
 reported `already running this build`; slot `ota_0` and boot identity 14 stayed
-unchanged and dual-USB health remained intact. Interrupted-transfer recovery
-and signed rollback remain open beta fault-matrix items.
+unchanged and dual-USB health remained intact.
+
+## Interrupted upload and signed rollback closure
+
+A controlled client disconnect declared the full M2 bundle, transferred the
+signed header plus exactly 131,072 image bytes and closed the socket. Firmware
+reported `failed / HTTP upload interrupted` while retaining `M2 / ota_0 / boot
+14`. The API remained available, USB0 stayed mounted and FLX4 MIDI/UAC stayed
+active without TWDT or USB recovery failure.
+
+The existing signed `RC2-156-gd2dabfa` bridge was then pushed as an intentional
+rollback. It booted on `ota_1` as boot identity 15 and restored both USB roots.
+Its guarded check again offered `M2`; public pull returned the device to
+`M2 / ota_0 / boot 16`, OTA `idle`, with USB0 and FLX4 profile/MIDI/UAC healthy
+with PCM underruns, UAC overflow/drop/packet-loss, USB failures and TWDT all
+clear. The complete unattended evidence is in
+[`M2_AUTOMATED_RELEASE_GATE_20260920.md`](M2_AUTOMATED_RELEASE_GATE_20260920.md).

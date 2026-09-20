@@ -1,6 +1,6 @@
 # Accelerated M2 beta release plan
 
-Status: **active; combined gates and RC2-to-M2 positive pull migration pass**.
+Status: **automated and reduced OTA gates pass; final operator smoke remains**.
 
 ## Release boundary
 
@@ -208,6 +208,18 @@ USB0 mounted, FLX4 profile/MIDI/UAC active and no new TWDT. The public bundle
 SHA-256 is
 `f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`.
 
-This closes plan step 4 and the successful pull portion of step 3. Interrupted
-transfer/recovery, signed rollback and the final frozen-candidate pass remain
-open.
+This closes plan step 4 and the successful pull portion of step 3.
+
+The remaining step 3 paths subsequently passed: a client disconnect after
+131,072 image bytes left `M2 / ota_0 / boot 14` running with healthy dual USB,
+and a signed rollback booted the RC2 bridge on `ota_1 / boot 15` before public
+pull restored `M2 / ota_0 / boot 16`. An isolated `M2` worktree then passed the
+complete host suite, UI E2E/screenshot gate, clean ESP-IDF v6.0.2 build and
+signed-package verification with an unchanged dependency lock. See
+[`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md).
+
+All automated, remote OTA and unattended hardware portions of the accelerated
+M2 beta path are closed. The remaining release action is the short operator
+smoke for physical FLX4 controls and audible MAIN/cue output, followed by the
+documentation/merge decision. Production enclosure and security gates remain
+explicitly outside that beta claim.

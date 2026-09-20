@@ -48,9 +48,10 @@ Canonical repository: `https://github.com/dvucinozd/Pajoniiir.git`.
 > starvation during CUE/restart. The installed repair passed 126 complete
 > focused transitions with zero strict counter delta, then passed a fresh
 > 180.156-minute combined soak with 60 scheduled operations, zero strict
-> counter delta and operator-confirmed clean audio throughout. Remaining OTA
-> fault paths, final-candidate smoke and the closed-enclosure/production gates
-> remain open.
+> counter delta and operator-confirmed clean audio throughout. The reduced beta
+> OTA fault paths now pass, including interrupted upload recovery and signed
+> opposite-slot rollback. The final short operator smoke and the
+> closed-enclosure/production gates remain open.
 
 ## Current capabilities
 
@@ -117,6 +118,7 @@ committed and must remain reproducible.
 - [OTA procedure](docs/OTA-UPDATE.md)
 - [FLX4 MIDI map](docs/DDJ_FLX4_MIDI_MAP.md)
 - [Latest exact-image three-hour soak](docs/validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
+- [M2 automated release gate](docs/validation/M2_AUTOMATED_RELEASE_GATE_20260920.md)
 - [Latest UAC idle-continuity remediation](docs/validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
 - [Final combined three-hour soak](docs/validation/P4_FINAL_COMBINED_SOAK_20260920.md)
 - [30-minute exact-image soak](docs/validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
