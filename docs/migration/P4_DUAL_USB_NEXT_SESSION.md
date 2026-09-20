@@ -207,9 +207,11 @@ with the existing exact `RC2-136-g034cd76` bundle, alternating
 checks, and recorded zero critical failures. The 50-cycle lifecycle matrix is
 now fully accounted: 43 PASS, seven explicitly waived and zero pending.
 
-The requested release-prefix migration from `RC2` to `M2` is intentionally
-deferred until after K/L and must be handled as a separate version/OTA-policy
-change.
+The requested release-prefix migration from `RC2` to `M2` started after K/L as
+a separate version/OTA-policy change. Since the installed pre-migration RC2
+image cannot parse an `M` offer, use a signed local RC2 bridge built from the
+migration commit, then tag that same commit `M2` and verify the public pull OTA
+end to end.
 
 Use the exact candidate or a newer exact committed image. Record version, slot,
 boot epoch and baseline counters before the first cycle.

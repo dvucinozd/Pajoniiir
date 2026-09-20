@@ -2930,6 +2930,15 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_PROBE)", "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_PROBE)")
 
+Assert-FileContains `
+    -Name "p4 Wi-Fi ON/OFF control cannot tear down ESP-Hosted during OTA" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @(
+        "wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL)",
+        "wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL)",
+        "re-sample it under the control lock before touching hardware"
+    )
+
 # Absence of a preprocessor #define; see the p4_ota_pull gate above.
 Assert-FileDoesNotContain `
     -Name "p4 wifi_link does not hook vTaskDelete to release the lease" `

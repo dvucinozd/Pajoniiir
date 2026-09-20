@@ -55,10 +55,10 @@ static void test_password_enforces_wpa2_bounds(void)
 
 static void test_url_requires_https_and_a_host(void)
 {
-    assert(p4_ota_cfg_check_url("https://pajoniiir.zadar.click/ota") == P4_OTA_CFG_OK);
+    assert(p4_ota_cfg_check_url("https://ota.pajoniiir.eu") == P4_OTA_CFG_OK);
     assert(p4_ota_cfg_check_url("https://host") == P4_OTA_CFG_OK);
-    assert(p4_ota_cfg_check_url("http://pajoniiir.zadar.click/ota") == P4_OTA_CFG_NOT_HTTPS);
-    assert(p4_ota_cfg_check_url("pajoniiir.zadar.click/ota") == P4_OTA_CFG_NOT_HTTPS);
+    assert(p4_ota_cfg_check_url("http://ota.pajoniiir.eu") == P4_OTA_CFG_NOT_HTTPS);
+    assert(p4_ota_cfg_check_url("ota.pajoniiir.eu") == P4_OTA_CFG_NOT_HTTPS);
     assert(p4_ota_cfg_check_url("https://") == P4_OTA_CFG_EMPTY);
     assert(p4_ota_cfg_check_url("https:///ota") == P4_OTA_CFG_EMPTY);
     assert(p4_ota_cfg_check_url("") == P4_OTA_CFG_EMPTY);

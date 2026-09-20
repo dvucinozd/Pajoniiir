@@ -208,9 +208,15 @@ const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r)
 }
 
 typedef struct {
+    uint32_t family;
     uint32_t tag;
     uint32_t distance;
 } release_version_t;
+
+enum {
+    RELEASE_FAMILY_RC = 1u,
+    RELEASE_FAMILY_M = 2u,
+};
 
 static bool parse_u32_part(const char **cursor, uint32_t *out)
 {
@@ -231,9 +237,18 @@ static bool parse_u32_part(const char **cursor, uint32_t *out)
 
 static bool parse_release_version(const char *text, release_version_t *out)
 {
-    if (!text || !out || text[0] != 'R' || text[1] != 'C') return false;
-    const char *p = text + 2;
+    if (!text || !out) return false;
+    const char *p = text;
     release_version_t parsed = {0};
+    if (p[0] == 'R' && p[1] == 'C') {
+        parsed.family = RELEASE_FAMILY_RC;
+        p += 2;
+    } else if (p[0] == 'M') {
+        parsed.family = RELEASE_FAMILY_M;
+        p += 1;
+    } else {
+        return false;
+    }
     if (!parse_u32_part(&p, &parsed.tag)) return false;
     if (*p == '\0') {
         *out = parsed;
@@ -269,6 +284,10 @@ p4_ota_pull_release_order_t p4_ota_pull_release_compare(
     if (!parse_release_version(offered_version, &offered) ||
         !parse_release_version(running_version, &running)) {
         return P4_OTA_PULL_RELEASE_UNORDERED;
+    }
+    if (offered.family != running.family) {
+        return offered.family > running.family ? P4_OTA_PULL_RELEASE_NEWER
+                                                : P4_OTA_PULL_RELEASE_OLDER;
     }
     if (offered.tag != running.tag) {
         return offered.tag > running.tag ? P4_OTA_PULL_RELEASE_NEWER

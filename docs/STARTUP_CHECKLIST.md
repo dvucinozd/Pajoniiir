@@ -109,7 +109,17 @@ Status: **active P4-only checklist, reconciled 2026-09-20**.
 
 ## Wi-Fi, web, profile and OTA
 
-- [ ] Re-smoke hardened pull OTA AP-to-STA-to-AP transition.
+- [x] Move the canonical pull-channel root from the retired
+  `pajoniiir.zadar.click/ota` path to `https://ota.pajoniiir.eu` in the
+  publisher, URL regression and active OTA procedure. Deployment credentials
+  remain outside Git and firmware.
+- [x] Publish `latest.json` and the versioned signed bundle, then verify both
+  public HTTPS paths from a network outside the Pajoniiir captive AP. The
+  public `RC2-155-ga896c45-dirty` bundle matched channel size and SHA-256.
+- [x] Re-smoke hardened pull OTA AP-to-STA-to-AP transition on the remediated
+  exact image: the probe and longer check both restored the AP without reboot.
+  After DNS propagation, the device read the public HTTPS channel and reported
+  `already running this build`; boot 12 and dual-USB health stayed unchanged.
 - [ ] Verify newer-only, offer TTL, size, SHA-256 and signature rejection paths.
 - [ ] Verify interrupted/slow upload recovery and subsequent server availability.
 - [ ] Verify signed push OTA rollback and opposite-slot boot.

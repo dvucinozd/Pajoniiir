@@ -31,7 +31,10 @@ block a production release.
    to the opposite slot. Keep deterministic host tests for size, hash,
    signature, project/chip/version, newer-only and TTL rejection.
 4. Migrate the version prefix from `RC2` to `M2` as one atomic change covering
-   `git describe`, OTA ordering, packaging tests and documentation.
+   `git describe`, OTA ordering, packaging tests and documentation. The
+   installed pre-migration RC2 image cannot order an `M` offer, so first use a
+   signed local RC2 bridge built from the migration commit; then tag that same
+   commit `M2` and prove the public newer-only pull path end to end.
 5. Freeze one commit, run the complete host/UI and clean ESP-IDF v6.0.2 signed
    build gates, install that exact image, repeat the short manual smoke, publish
    hashes/evidence, then merge and tag the beta.

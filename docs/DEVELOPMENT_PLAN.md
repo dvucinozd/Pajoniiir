@@ -82,15 +82,17 @@ The lifecycle matrix is fully accounted: 43/50 PASS,
 seven explicitly waived I/J cycles, zero pending cycles and 39 accepted physical
 attachment/reconnect actions. Groups I/J are administratively closed and will
 not be resumed. The combined functional session and repaired three-hour soak
-are also complete. The remaining accelerated M2 beta path is the reduced
-physical OTA/fault matrix, version-prefix migration and one final
+are also complete. The remaining accelerated M2 beta path is completion of the
+reduced physical OTA/fault matrix, the in-progress version-prefix migration and one final
 freeze/release pass. Detailed scope and beta versus production boundaries are in
 [`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md).
 
-After K/L closure, migrate the release/version prefix from `RC2` to `M2` as a
-separate change. That migration must update `git describe` assumptions,
-newer-only OTA ordering, package tests and release documentation together; it
-is deliberately not part of the Group K candidate.
+The release/version prefix migration from `RC2` to `M2` is now active as a
+separate atomic change. It updates `git describe` assumptions, newer-only OTA
+ordering, package tests and release documentation together. Because installed
+`RC2-155` predates `M` parsing, validation uses a signed local RC2 bridge image
+from the migration commit, followed by a public pull OTA to the `M2` tag built
+from that same source commit.
 
 | Phase | Work | Exit criterion |
 | --- | --- | --- |

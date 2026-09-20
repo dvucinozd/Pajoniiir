@@ -515,6 +515,29 @@ static void wifi_link_worker(void *arg)
         }
         xSemaphoreGive(s_ctrl_lock);
 
+        /* A full operator ON/OFF cycle owns the same ESP-Hosted, esp_wifi and
+         * netif objects as an AP->STA->AP probe or pull OTA. Serialise it with
+         * those transitions. Without this gate, an ON/OFF request that lands
+         * while the pull worker is away from the AP can deinit the SDIO
+         * transport underneath it; the following esp_hosted_init then asserts
+         * in sdio_drv because the old handle is still being torn down. Keep
+         * the latest desired state and retry after the current transition. */
+        if (wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL) != ESP_OK) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
+
+        /* The desired state may have changed while this worker waited for the
+         * lease. Re-sample it under the control lock before touching hardware. */
+        xSemaphoreTake(s_ctrl_lock, portMAX_DELAY);
+        desired = s_desired;
+        active = s_active;
+        xSemaphoreGive(s_ctrl_lock);
+        if (desired == active) {
+            wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
+            continue;
+        }
+
         if (desired) {
             /* Breadcrumb before the risky part, then force it onto the card.
              * The journal writer only syncs every few seconds, so anything
@@ -573,11 +596,13 @@ static void wifi_link_worker(void *arg)
                     xSemaphoreGive(s_ctrl_lock);
                     /* Leave nothing half-initialised behind. */
                     wifi_link_stop();
+                    wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
                     continue;
                 }
                 ESP_LOGW(TAG, "Wi-Fi start failed (attempt %u); retrying in %u ms",
                          (unsigned)wifi_link_retry_attempts(&retry),
                          (unsigned)wait_ms);
+                wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
                 vTaskDelay(pdMS_TO_TICKS(wait_ms));
                 continue;
             }
@@ -590,6 +615,7 @@ static void wifi_link_worker(void *arg)
                               (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                               0u, 0u, 0u, NULL);
         }
+        wifi_transition_lease_release(WIFI_TRANSITION_OWNER_CONTROL);
     }
     vTaskDelete(NULL);
 }

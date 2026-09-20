@@ -1,11 +1,10 @@
 # Pajoniiir OTA Update Procedure
 
 Status on `feat/p4-dual-usb-host`: P4 is the only active OTA target. The current
-validated firmware and latest installed candidate is `RC2-116-g77d723c` on
-`ota_1`. Its
-signed OTA, exact-image check and targeted three-hour continuous dual-MP3
-limiter/WDT soak passed without a reset, PCM underrun, active UAC loss or
-USB/controller loss. This procedure is the current P4 operator authority. The
+installed candidate is `RC2-153-g66b5fee-dirty` on `ota_1`, source-equivalent
+to committed repair `b9139e1`. Its signed OTA, exact-image checks and final
+180.156-minute combined soak passed without a reset, strict audio/USB counter
+increase or audible defect. This procedure is the current P4 operator authority. The
 superseded multi-target design and its
 acceptance history are retained in
 [`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
@@ -78,6 +77,41 @@ mandatory.
 
 Use local signed upload when an intentional rollback is required.
 
+## Production pull channel
+
+The canonical public channel root is:
+
+```text
+https://ota.pajoniiir.eu
+```
+
+There is no trailing `/ota` path. A published release must therefore expose:
+
+```text
+https://ota.pajoniiir.eu/latest.json
+https://ota.pajoniiir.eu/<version>/main-deck-p4.ddjota
+```
+
+Generate and verify the channel document with:
+
+```powershell
+.\tools\publish_ota_release.ps1 `
+  -ReleaseDir .\releases\pajoniiir-<version> `
+  -WriteToReleaseDir
+```
+
+The hosting account is a deployment secret supplied out of band. Never commit
+its username or password, embed either in the public HTTPS URL, place them in a
+release artifact or copy them into firmware/NVS. Load credentials only from a
+local secret store or interactive credential prompt during publication. If the
+host offers only plain FTP, treat the transport as unsuitable for production
+credentials and enable FTPS or SFTP before release publication.
+
+Publishing uses the private upload service only to place files. Devices use
+the public HTTPS URLs above and never receive the upload credentials. After
+upload, verify both public paths, MIME/content length and SHA-256 from a network
+that is not connected to the Pajoniiir captive AP before initiating a pull OTA.
+
 ## Build the P4 target
 
 Initialize ESP-IDF and use an isolated release build so stale ignored
@@ -101,18 +135,25 @@ idf.py -B build_signed -D SDKCONFIG=build_signed/sdkconfig build
 
 Do not package unless the P4 build exits with code 0 and fits its 4 MiB slot.
 
-The current exact-image build, OTA and three-hour focused soak evidence is
-recorded in
-[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
+The current exact-image remediation and final three-hour combined-soak evidence
+is recorded in
+[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
+and
+[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
 Application OTA does not replace the bootloader or partition table; use a full
 wired flash whenever either changes.
 
 ### Version strings
 
-The application version comes from `git describe`, so it is `RC<tag>` at a
-tagged commit and `RC<tag>-<distance>-g<hash>` afterwards. The prefix moved from
-`RC1` to `RC2` on 2026-07-30 to mark the ESP-IDF 6.0.2 baseline. Pull OTA orders
-releases on the tag number first, so any `RC2*` is newer than every `RC1*`.
+The application version comes from `git describe`. The historical lines use
+`RC<tag>` and the M2 beta line begins at the annotated `M2` tag. A tagged build
+reports the bare tag; later commits report `<tag>-<distance>-g<hash>`.
+
+Pull OTA orders the milestone family (`M`) after the historical release-
+candidate family (`RC`), then orders by tag number and commit distance within
+one family. Therefore `M2` is newer than every `RC*`, while a later
+`M2-<distance>` remains newer than the bare `M2`. The signed local push path is
+still required for intentional rollback.
 
 ## Create and verify a signed release
 

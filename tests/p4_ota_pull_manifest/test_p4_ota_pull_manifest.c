@@ -48,8 +48,23 @@ static void test_release_comparison_is_newer_only_and_monotonic(void)
            P4_OTA_PULL_RELEASE_NEWER);
     assert(p4_ota_pull_release_compare("RC1-1-gabcdef0", "RC2") ==
            P4_OTA_PULL_RELEASE_OLDER);
+    assert(p4_ota_pull_release_compare("M2", "RC2-999-gffffffff") ==
+           P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_release_compare("RC9-999-gffffffff", "M1") ==
+           P4_OTA_PULL_RELEASE_OLDER);
+    assert(p4_ota_pull_release_compare("M2-1-gabcdef0", "M2") ==
+           P4_OTA_PULL_RELEASE_NEWER);
+    assert(p4_ota_pull_release_compare("M2", "M2-1-gabcdef0") ==
+           P4_OTA_PULL_RELEASE_OLDER);
+    assert(p4_ota_pull_release_compare("M3", "M2-999-gffffffff") ==
+           P4_OTA_PULL_RELEASE_NEWER);
     assert(p4_ota_pull_release_compare("RC1-7-gabcdef0",
                                        "RC1-7-g1234567") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_release_compare("M2-7-gabcdef0",
+                                       "M2-7-g1234567") ==
+           P4_OTA_PULL_RELEASE_UNORDERED);
+    assert(p4_ota_pull_release_compare("M", "RC2") ==
            P4_OTA_PULL_RELEASE_UNORDERED);
     assert(p4_ota_pull_release_compare("custom", "RC1") ==
            P4_OTA_PULL_RELEASE_UNORDERED);
@@ -71,6 +86,9 @@ static void test_signed_bundle_release_is_bound_to_offer_and_newer_only(void)
 {
     assert(p4_ota_pull_validate_bundle_release(
                "RC2-12-gabcdef0", "RC2-12-gabcdef0", "RC2-11-g1234567") ==
+           P4_OTA_PULL_BUNDLE_RELEASE_OK);
+    assert(p4_ota_pull_validate_bundle_release(
+               "M2", "M2", "RC2-155-gabcdef0") ==
            P4_OTA_PULL_BUNDLE_RELEASE_OK);
 
     /* A newer channel cannot smuggle a validly signed old bundle. */
