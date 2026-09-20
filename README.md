@@ -1,3 +1,6 @@
+[![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
+
+
 # Pajoniiir BL-A1800
 
 Standalone dual-deck DJ system built around a Pioneer DDJ-FLX4 and a
