@@ -1,15 +1,10 @@
 # Pajoniiir OTA Update Procedure
 
-Status on `master`: P4 is the only active OTA target. The current installed
-candidate is immutable tagged `M2` at `d2dabfa`, on `ota_0`. Its signed public
-pull OTA, exact-image checks and final 180.156-minute combined soak passed
-without a reset, strict audio/USB counter increase or audible defect. The M2
-successor was merged at `d3099f9`, and the post-merge source head is `c786de7`.
-This procedure is the current P4 operator authority. The
-superseded multi-target design and its
-acceptance history are retained in
-[`ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md`](ARCHIVE_OTA_UPDATE_PLAN_DUAL_TARGET.md)
-and dated validation records.
+Status on `master`: P4 is the only active OTA target. Production release
+`M2.1` freezes commit `70824d24`, was installed on `ota_1` during its accepted
+release session and is published through the canonical HTTPS channel and
+GitHub Releases. This procedure is the current P4 operator authority.
+Superseded multi-target OTA procedures remain available in Git history only.
 
 ## Safety rules
 
@@ -49,9 +44,10 @@ the new signed endpoint.
   outside Git and release artifacts, and verify backup recovery without
   exposing private key material. Losing both copies prevents future OTA
   releases unless a new trust key is installed over a wired path.
-- The current PEM is an unencrypted development/release key. Before production
-  distribution, provision and verify the selected encrypted stores and define
-  a key-rotation procedure.
+- Encrypted offline primary and separately located backup copies are the
+  production custody authority. If an unencrypted working PEM is materialized
+  for a supervised release build, keep it outside Git and artifacts, restrict
+  access, and remove the working copy after publication verification.
 
 The current firmware trusts one key ID, `rel-001`. M2.1 retains this key.
 Adding or replacing trusted
@@ -110,8 +106,9 @@ The hosting account is a deployment secret supplied out of band. Never commit
 its username or password, embed either in the public HTTPS URL, place them in a
 release artifact or copy them into firmware/NVS. Load credentials only from a
 local secret store or interactive credential prompt during publication. If the
-host offers only plain FTP, treat the transport as unsuitable for production
-credentials and enable FTPS or SFTP before release publication.
+host offers only plain FTP, restrict it to the private publication control
+plane and migrate to FTPS or SFTP before broadening operator access. The public
+device-facing channel must remain HTTPS.
 
 Publishing uses the private upload service only to place files. Devices use
 the public HTTPS URLs above and never receive the upload credentials. After
@@ -204,8 +201,9 @@ python .\tools\ota_signing.py verify-file `
 ## Update P4
 
 1. Enable **Wi-Fi Remote** in P4 Settings.
-2. Connect to `Pajoniiir` using the default WPA2 password `Pajoniiir`, then
-   open `http://192.168.4.1`.
+2. Connect to `Pajoniiir` using the shared service password `Pajoniiir`. M2.1
+   advertises WPA2/WPA3 transition mode with PMF capability. Then open
+   `http://192.168.4.1`.
 3. Record the running P4 version, slot and state.
 4. Select **`main-deck-p4.ddjota`**, confirm and upload.
 5. Wait for success and restart; reconnect and refresh `/api/firmware`.
@@ -227,14 +225,6 @@ curl.exe -X POST `
   http://192.168.4.1/api/ota/p4
 ```
 
-## Historical S3 OTA path
-
-The S3 Debug AP, maintenance token, `/api/ota/s3` endpoint and S3 bundle were
-retired during P4 dual-USB development and the removal is now part of `master`.
-Their accepted
-behavior remains documented in the dated validation records and Git history;
-do not build, package or deploy an S3 image as part of a P4-only release.
-
 ## Acceptance and failure behavior
 
 For P4 record project, version, slot and last error. Record image state from
@@ -248,33 +238,11 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   slot remains bootable.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
-The unsigned rollback baseline accepted on 2026-07-13 was
-`RC1-106-g717b6ab3`, with both targets at `ota_0 / valid`. The first signed
-hardware smoke used `RC1-108-g1be328a9-dirty`: P4 completed
-`factory -> ota_0 -> ota_1`, S3 completed `ota_0 -> ota_1 -> ota_0`, both
-targets rejected modified signed fields, wrong targets and modified image data,
-and final status was P4 `ota_1` plus S3 `ota_0 / valid`.
-
-The complete signed E1 acceptance on 2026-07-14 used clean release
-`RC1-123-g587cd7a1` and key ID `rel-001`. P4 updated from
-`factory / RC1-121-gb7ac66a5` to `ota_0`; S3 updated from
-`ota_0 / RC1-121-gb7ac66a5` to `ota_1`. Both targets rejected a wrong signing
-key (HTTP 403), wrong key ID, chip/project mismatch and truncated/extended
-bundles (HTTP 400) without changing the active slot. A client disconnect after
-128 KiB left each current release bootable. Signed `ROLLBACK-TEST-P4-123` and
-`ROLLBACK-TEST-S3-123` images restarted before confirmation and were rolled back
-to P4 `ota_0` and S3 `ota_1`. Final UI/touch, dual-deck playback and scratch,
-FLX4 controls/LEDs, MAIN and headphone-cue smoke passed. The private `rel-001`
-key has an offline USB backup; production key rotation remains future work.
-
-The non-destructive 2026-07-16 rollout used clean release
-`RC1-131-gc391e306`, key ID `rel-001`, signed P4/S3 bundles and a signed outer
-manifest. P4 updated `ota_0 / RC1-126-g812ad70f -> ota_1 /
-RC1-131-gc391e306`; S3 updated `ota_1 / RC1-123-g587cd7a1 -> ota_0 / valid /
-RC1-131-gc391e306`. Both uploads returned HTTP 200, P4 status remained stable,
-and the P4-visible periodic S3 report confirmed the matching valid S3 image.
-Exact artifact sizes, hashes and deferred checks are recorded in
-[`validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md`](validation/SIGNED_OTA_RC1_131_DEPLOYMENT.md).
+M2.1 exact-tagged build, signed installation, public-channel and GitHub asset
+verification are recorded in
+[`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
+The retained pull/push recovery matrix is
+[`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md).
 
 ## Wired recovery
 

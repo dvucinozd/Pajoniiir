@@ -1,6 +1,6 @@
 # Rekordbox File Format Analysis
 
-Document status: active format reference, reviewed 2026-07-13. Runtime parser
+Document status: **active format reference, reconciled 2026-09-20**. Runtime parser
 and host tests remain the authority when this exploratory analysis differs.
 
 Validated on real USB drive (308 tracks, 2026-05-20).
@@ -11,14 +11,11 @@ Rekordbox USB drives contain analyzed metadata for each track. We can read this 
 
 **Medium: USB drive** (not SD card). Rekordbox formats the USB drive with a specific folder structure. The P4 reads tracks and metadata from this USB via the USB host interface.
 
-**Filesystem support note (2026-06-29):** Newer AlphaTheta/rekordbox
-OneLibrary-style USB exports still include `PIONEER/rekordbox/export.pdb` and
-`PIONEER/USBANLZ`, and those files parse successfully on PC. The current P4 USB
-MSC/FatFs path supports FAT32 only when the disk uses an MBR partition table. It
-does not mount exFAT (`FF_FS_EXFAT=0`) and failed with FatFs
-`FR_NO_FILESYSTEM` on the tested FAT32-on-GPT stick. After converting the same
-stick to MBR + FAT32 and re-exporting, P4 read the USB library. exFAT and GPT
-support remain firmware backlog items.
+**Filesystem support:** Newer AlphaTheta/rekordbox OneLibrary-style USB exports
+still include `PIONEER/rekordbox/export.pdb` and `PIONEER/USBANLZ`. The current
+P4 USB path supports FAT32 and exFAT on superfloppy, MBR and GPT layouts. All
+four MBR/GPT × FAT32/exFAT combinations passed the retained hardware smoke in
+[`validation/P4_USB_EXFAT_GPT_SMOKE.md`](validation/P4_USB_EXFAT_GPT_SMOKE.md).
 
 ---
 

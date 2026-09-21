@@ -1,9 +1,8 @@
 # Architecture
 
-Status: P4-only branch architecture, updated 2026-08-27. The P4 is both the
-authoritative playback/UI engine and the direct dual-root USB host. The former
-S3 transport/audio bridge and firmware target have been removed. Their dated
-design and validation records remain historical evidence only.
+Status: **current M2.1 P4-only architecture, reconciled 2026-09-20**. The P4 is
+both the authoritative playback/UI engine and the direct dual-root USB host.
+No secondary firmware target or inter-board transport belongs to the product.
 
 ## High-Level Flow
 
@@ -56,8 +55,8 @@ Current P4 audio ownership rule:
   share the same core;
 - when `CONFIG_BSP_PCM5102A_MAIN_OUT` is enabled, the shared output service
   reconfigures the PCM5102A I2S1 clock to the loaded track sample rate before
-  starting playback; the ES8311 monitor path and PCM5102A main path must stay
-  sample-rate aligned;
+  starting playback. The release configuration disables the legacy ES8311
+  monitor path;
 - PCM5102 writes are bounded to one block period per driver call and at most
   three calls for a short write. The sink resumes only at the unwritten byte
   suffix, publishes call/short/timeout/error counters, and playback position is
@@ -209,7 +208,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `master` path (M2 beta hardware-qualified through 2026-09-20):
+Active `master` path inherited by the M2.1 production release:
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -230,17 +229,18 @@ Active `master` path (M2 beta hardware-qualified through 2026-09-20):
   bounded 8 KiB SCSI transactions; no transfer object is replaced during I/O.
 - Root recovery is indexed. A root is powered off only if the HCD still reports
   it disconnected with no pending event; an active attach or enumeration
-  suppresses recovery. The 2026-08-29 OTA/hotplug smoke passed one USB0
-  remove/reinsert cycle while USB1 FLX4 MIDI/UAC remained active.
+  suppresses recovery. The completed lifecycle matrix covers both insertion
+  orders, USB0/USB1 removal, active load/decode removal and reboot recovery.
 - USB1 controller transfer and UAC faults share one bounded fault epoch. The
   owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
   and releases device/interface ownership, then submits at most one deferred
   root-recovery request. A physical device-gone event cancels that soft request.
-  The exact `RC2-109-g269036b` smoke passed one FLX4 reconnect and
-  post-reconnect dual-deck UAC playback without disturbing USB0.
+  M2.1 inherits the repeated reconnect and post-reboot dual-playback evidence
+  summarized in
+  [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
 
-The prior S3 UART and monitor-I2S implementation remains available only in Git
-history and dated validation/protocol records.
+The retired S3 UART and monitor-I2S implementation is available only in Git
+history.
 
 ## Main Code Surfaces
 
@@ -355,5 +355,5 @@ tools/controller_profile/
 controllers/pioneer_ddj_flx4/  hand-written FLX4 profile.json + compiled .s3bin
 ```
 
-The former S3-side runtime and `0xA6` transfer codec remain in the historical
-S3 source tree and Git history; neither is part of the active P4 image.
+The former S3-side runtime and `0xA6` transfer codec remain only in Git history;
+neither is part of the active P4 image.

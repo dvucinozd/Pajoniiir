@@ -1,9 +1,9 @@
 # Controller Profile Schema v1
 
-Document status: current schema, audited 2026-08-27. Firmware loading and FLX4
-local activation are verified. The guarded web replacement path is deployed in
-`RC1-131-gc391e306` and still awaits focused hardware acceptance; a first
-non-FLX4 controller also remains pending.
+Document status: **current P4-local schema, reconciled 2026-09-20**. Firmware
+loading, FLX4 activation, guarded web replacement and reboot persistence are
+verified in the M2 qualification. Physical qualification of a non-FLX4
+controller remains future work.
 
 Data-driven controller profiles let the P4 map a USB MIDI controller to the
 existing deck-aware semantic events without a firmware rebuild.

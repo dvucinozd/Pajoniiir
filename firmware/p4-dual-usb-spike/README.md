@@ -1,7 +1,11 @@
-# ESP32-P4 Dual USB Host Phase 1 Spike
+# ESP32-P4 dual-USB host historical spike
 
-This is an isolated ESP-IDF 6.0.2 hardware proof. It does not modify or start the
-Pajoniiir production firmware.
+Status: **retained engineering fixture; superseded as product evidence by the
+M2.1 production firmware and validation record**.
+
+This isolated ESP-IDF 6.0.2 hardware proof established the original dual-root
+host feasibility. It is not Pajoniiir production firmware and should not be
+used as a release image.
 
 ## Purpose
 
@@ -14,7 +18,8 @@ controllers concurrently:
 | P4 USB1 Full-Speed | Pioneer DDJ-FLX4 or USB-MIDI fixture | Descriptor validation, MIDIStreaming interface claim and raw MIDI IN |
 
 The image deliberately does not mount a filesystem, parse Rekordbox data,
-translate controls, send LEDs or stream USB Audio. Those belong to later phases.
+translate controls, send LEDs or stream USB Audio. Those functions are
+implemented in `firmware/main-deck-p4`.
 
 ## Architecture under test
 
@@ -26,17 +31,18 @@ translate controls, send LEDs or stream USB Audio. Those belong to later phases.
 - one project-local asynchronous client that probes every enumerated device and
   claims the first valid USB Audio/MIDIStreaming interface;
 - no hub requirement;
-- no production `usb_storage`, UI, audio engine or S3 code linked into the image.
+- no production `usb_storage`, UI or audio engine linked into the image.
 
-The current public API reports `usb_device_info_t.parent.port_num`, which is a
-USB topology parent-port field. It does not explicitly expose the P4 USB
+The ESP-IDF API used by this historical spike reports
+`usb_device_info_t.parent.port_num`, which is a USB topology parent-port field.
+It does not explicitly expose the P4 USB
 peripheral/controller index. The spike records this field, device speed,
 VID/PID, class detection and a direct-root mask so hardware logs can establish
-whether the field distinguishes USB0 from USB1. If it does not, root-controller
-identity remains an API gap for Phase 2/8.
+whether the field distinguishes USB0 from USB1. Production root ownership and
+recovery are implemented and qualified separately in `main-deck-p4`.
 
-The current root-port power API is global. Phase 1 uses it only for initial
-bring-up. Independent recovery is intentionally not attempted here.
+The spike uses the original global root-port power API only for initial
+bring-up. Independent recovery is intentionally outside this fixture.
 
 ## Build
 
@@ -96,8 +102,8 @@ traffic:
 PHASE1 30-MINUTE DUAL-HOST SOAK REACHED
 ```
 
-That marker does not by itself close Phase 1. The disconnect/reconnect matrix
-must also be performed and the complete serial log archived.
+That marker never constituted production acceptance. The retained M2.1
+lifecycle and release records are the current evidence authority.
 
 ## Hardware procedure
 
@@ -115,7 +121,7 @@ must also be performed and the complete serial log archived.
 12. Boot once with both fixtures already connected.
 13. Save the complete monitor log under `docs/validation/`.
 
-## Phase 1 acceptance requirements
+## Historical spike acceptance requirements
 
 - one Host Library instance serves both controllers;
 - both fixtures enumerate in one boot;

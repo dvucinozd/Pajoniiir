@@ -1,173 +1,78 @@
-# Documentation Status
+# Documentation status
 
-Status: **active P4-only source of truth, reconciled 2026-09-20**.
+Status: **current P4-only source of truth, reconciled 2026-09-20**.
 
 ## Product boundary
 
-The active product has one firmware and release target: ESP32-P4. The P4 owns
-USB0 Rekordbox storage, direct USB1 DDJ-FLX4 MIDI/audio, controller mapping and
-LEDs, dual-deck playback, mixer/DSP, MAIN/cue outputs, LVGL UI, Wi-Fi service
-and OTA. No secondary processor, inter-board transport or secondary firmware
-gate belongs to the active product.
+The active product has one firmware and release target:
+`firmware/main-deck-p4`. The ESP32-P4 owns USB0 Rekordbox storage, direct USB1
+DDJ-FLX4 MIDI/audio, controller profiles and LEDs, dual-deck playback,
+mixer/DSP, PCM5102A MAIN, FLX4 headphone cue, LVGL UI, Wi-Fi Remote and signed
+OTA. No S3 firmware, UART control link or inter-board PCM bridge belongs to the
+active product.
 
-Legacy dual-processor ledgers are retained only in files whose names begin with
-`ARCHIVE_`. Dated validation records remain evidence of the image and topology
-they actually tested; they are not current instructions.
+Compatibility names such as `control_link`, `S3CP` and `profile.s3bin` remain
+in current code/file formats. They do not imply an active S3 processor.
 
-## Current production checkpoint
+## Production release
 
-- Canonical branch: `master`
-- Frozen production source: `70824d24dbb1c8d72d19f15797afa2946c5eb909`
-- Merge commit: `d3099f9609802a6a0f6c18d660c2ead54c2fe6d0`
-- Production release commit and annotated tag:
-  `70824d24dbb1c8d72d19f15797afa2946c5eb909` / `M2.1`
-- Installed build version and slot: `M2.1` / `ota_1`, service-log boot `483`
-- Application size: `2,459,664` bytes
-- Application SHA-256:
-  `73260a2d529fb7ee5e7f6dbf2c839cb769d3f06e01f56b095d93fdaaa6f39e76`
-- Signed bundle size: `2,459,852` bytes
-- Signed bundle SHA-256:
-  `a93f1a4cfab91d4c5f39abba70cfc011183f8b1e2666da219fd1592241ef2425`
-- Toolchain: ESP-IDF v6.0.2
-- Publication state: public `latest.json` and versioned `M2.1` bundle verified;
-  immutable annotated `M2.1` tag identifies the exact installed source commit;
-  GitHub Release `M2.1` publishes the hash-verified OTA bundle, wired-recovery
-  binary, manifest and signature
-- Validation state: P4 host/build and signed-package verification passed;
-  installed by signed OTA and exact-image smoke passed; focused real-file
-  MP3/WAV/FLAC cache/playback and audible mixed-format checks pass; lifecycle
-  Groups A--H, K and L pass, I1/I2/J1 pass and seven remaining I/J cycles are
-  explicitly waived; the earlier
-  `RC2-116-g77d723c` targeted three-hour limiter/WDT
-  hardware soak remains valid within its scope
+| Item | M2.1 value |
+| --- | --- |
+| Annotated tag | `M2.1` |
+| Frozen source | `70824d24dbb1c8d72d19f15797afa2946c5eb909` |
+| Tag object | `517bacaf04552f591d7f42fe3201ecbe10f2241c` |
+| Toolchain | ESP-IDF v6.0.2 |
+| Installed release record | `M2.1`, `ota_1`, service-log boot `483` |
+| Application | 2,459,664 bytes; SHA-256 `73260a2d529fb7ee5e7f6dbf2c839cb769d3f06e01f56b095d93fdaaa6f39e76` |
+| Signed OTA bundle | 2,459,852 bytes; SHA-256 `a93f1a4cfab91d4c5f39abba70cfc011183f8b1e2666da219fd1592241ef2425` |
+| Public channel | `https://ota.pajoniiir.eu` |
+| GitHub Release | `https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.1` |
 
-This firmware checkpoint retains the review remediations recorded in
-[`validation/CODE_REVIEW_P4_REMEDIATION_20260906.md`](validation/CODE_REVIEW_P4_REMEDIATION_20260906.md),
-including audio worker teardown ownership, nonblocking output bookkeeping,
-controller delivery convergence, UAC packet-loss accounting and valid hardware
-rate selection. It also includes the bounded PDB reader, fail-closed partial
-catalog handling and guarded deterministic Library-load validation barrier.
+The installation identity above records the accepted release session; it is
+not a claim about a later live boot unless `/api/firmware` is checked again.
+Commits after the immutable tag are maintenance/development commits and do not
+change the published M2.1 artifact.
 
-## Latest installed hardware candidate
+## Acceptance summary
 
-- Source commit and tag: `d2dabfa7561ff1e0486acc42c7acf42607654e19` / `M2`
-- Installed version: `M2`
-- Installed slot and current boot identity: `ota_0` / `17`
-- Application size: `2,459,520` bytes
-- Application SHA-256:
-  `4216867d72c4a76f37cc04a5c3b3cf067e08bb9602be8bbd9a8282fe5804dacd`
-- Signed bundle size: `2,459,708` bytes
-- Signed bundle SHA-256:
-  `f5620858e9983f8272eceb4d3dc93afee7b906cc6e8335e8280b1ceed5bcf9a5`
-- Toolchain: ESP-IDF v6.0.2
+M2.1 inherits the completed P4 qualification and passed its own exact-tagged
+build, signature/package verification, signed OTA installation, opposite-slot
+boot, USB0/USB1 recovery, dual-deck strict-counter smoke and operator-confirmed
+audio/display/touch smoke. The production release record is
+[`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
-The installed M2 candidate passed the signed public pull OTA, opposite-slot
-boot, USB0 mount and direct FLX4 profile/MIDI/UAC startup without a new TWDT or
-OTA error. Its audio predecessor completed 126 fully sampled CUE/restart
-transitions with zero strict counter delta. A subsequent fresh combined soak
-passed for 180.156 minutes and 60 scheduled operations with zero strict counter
-delta, no reboot/TWDT and operator-confirmed clean audio throughout. Evidence:
-[`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
-and
-[`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md).
-The current 324-track media fixture additionally passed complete real WAV and
-FLAC natural EOF plus simultaneous MP3+FLAC and MP3+WAV playback with audible
-operator acceptance and flat focused fault deltas. See
-[`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md).
-Every accepted cycle retained the 100-track Library, advanced both decks for
-more than five seconds, restored controller/UAC and passed audible MAIN/cue;
-drop, overflow, packet-loss, PCM-underrun and output-late deltas stayed zero.
-Lifecycle accounting is complete: 43/50 PASS, 7/50 explicitly waived in Groups
-I/J and zero pending. The accepted runs include 39 physical
-attachment/reconnect actions. Groups I/J are permanently closed by operator
-decision. The earlier
-`RC2-116-g77d723c` remained on
-boot epoch 389 through its
-targeted three-hour continuous dual-MP3 limiter/WDT soak, with no watchdog
-reset, PCM underrun or active UAC loss and no observable output failure,
-controller disconnect or USB host daemon error. Fourteen output-late warnings
-over 1,999,090 submitted UAC blocks did not correlate with a downstream
-failure; no source change is justified from that count alone. See
-[`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md).
+The retained supporting evidence covers:
 
-The installed candidate contains deterministic Group G audio-load removal
-support. Its guarded loader gate pauses after the first bounded 8 KiB PDB read,
-and the updated lifecycle harness alternates the target deck across
-G1--G5. The gate unit test, harness self-test, complete P4 host suite, clean
-ESP-IDF v6.0.2 build, signed-package verification, OTA and focused smoke pass.
-G1--G5 also pass on boot 416: every cycle restored 100 tracks, advanced both
-decks for more than ten seconds, retained FLX4 MIDI/UAC, matched all recovery
-requests to successes and produced zero critical fault deltas.
+- complete lifecycle accounting: 43 PASS, seven explicitly waived I/J cycles,
+  zero pending and 39 accepted physical attachment/reconnect actions;
+- real MP3/WAV/FLAC playback, FAT32/exFAT and superfloppy/MBR/GPT media;
+- dual Master Tempo remediation, UAC idle continuity and a clean
+  180.156-minute combined soak with operator-confirmed audio;
+- public pull OTA, interrupted-transfer recovery, signed rollback and
+  post-reboot dual-USB recovery;
+- accepted common 5 V and protected dual-VBUS bench/enclosure wiring.
 
-H1--H4 passed on boot 416 and H5 passed after a clean controlled reboot on
-boot 417. Each accepted cycle disconnected only FLX4, retained USB0 plus the
-coherent 100-track Library, observed exactly one controller disconnect/connect
-and restored profile, MIDI, LEDs, UAC, dual playback and audible MAIN/cue with
-zero accepted-cycle critical fault deltas. Operator-invalid attempts involving
-an unintended cable action or USB0 removal do not count.
+## Accepted limitations
 
-Earlier focused evidence remains valid within its stated limits:
-
-- [`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md)
-  — one USB0 remove/reinsert with FLX4 active;
-- [`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md)
-  — one FLX4 reconnect with USB0 retained and post-reconnect dual playback;
-- [`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`](validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
-  — 30-minute dual-active MP3 soak with seven seek/restart cycles.
-
-## Release status
-
-The accelerated **M2 beta is release-qualified** on the recorded bench wiring
-and exact installed image. Host/UI/build/package gates, lifecycle and focused
-media matrices, combined functional/soak runs, reduced OTA fault recovery,
-guarded mutations and the final physical/audible operator smoke all pass.
-
-The completed feature was merged into `master` at `d3099f9`. Post-merge
-portability fixes culminated at `c786de7`, where GitHub Actions run `35523213652`
-passed the complete host, UI, ESP-IDF v6.0.2 build and artifact gates. See
-[`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md).
-
-M2.1 is the released production checkpoint within the explicitly accepted
-security and physical limitations. The operator accepted
-the existing enclosure configuration after approximately two months of use and
-confirmed an accessible wired recovery path; the dedicated enclosure rerun is
-waived, with numeric thermal/RF margins explicitly uncaptured. Recovery
-signing from the operator-confirmed encrypted offline backup was not tested;
-the operator explicitly accepted it as deferred maintenance, so no M2.1
-release gate remains open.
-
-The remaining security choices are closed by
-[`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md): the shared
-credential is accepted, WPA2/WPA3 transition mode and PMF capability are in
-source, SBOM is waived, and irreversible Secure Boot/Flash Encryption/eFuse
-provisioning is deferred because no spare P4 exists. `M2.1` was tagged after
-pre-tag gates and pushed only after exact-image acceptance.
-
-The operator-confirmed common 5 V and dual-VBUS bench acceptance is recorded in
-[`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md).
-Raw numeric readings were not preserved, so the electrical result applies only
-to the unchanged wiring and enclosure. Repeat it after any wiring, supply or
-enclosure change.
-
-The complete ordered handoff is
-[`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md).
-The compact recurring checklist is
-[`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md).
-
-## Scope deferred beyond the first FLX4 release
-
-The following are not blockers unless explicitly added to the first release:
-
-- physical acceptance of non-FLX4 controller profiles;
-- re-enabling the master-output recorder;
-- LIBAPTA integration;
-- new UI or controller features outside the current FLX4 scope.
+- I3-I5 and J2-J5 remain operator-waived; they are not reported as passes.
+- Numeric enclosure thermal/RF/strain margins were not captured. Repeat
+  qualification after any enclosure, wiring, supply or RF-layout change.
+- The shared service credential is accepted for this deployment. WPA2/WPA3
+  transition mode with PMF capability is enabled; per-device credentials and
+  WPA3-only/PMF-required mode remain future hardening.
+- Secure Boot, Flash Encryption and security eFuse provisioning are disabled
+  because the sole board has no sacrificial provisioning/recovery pilot.
+- Encrypted offline primary and separate encrypted backup signing-key copies
+  are operator-confirmed. Recovery signing from the backup remains deferred
+  maintenance, not completed evidence.
+- The recorder is compiled out. Non-FLX4 profiles are host evidence only.
 
 ## Source-of-truth order
 
-1. active firmware, tests and build configuration;
-2. this status page and `migration/P4_DUAL_USB_NEXT_SESSION.md`;
-3. `STARTUP_CHECKLIST.md`, `RISK_REGISTER.md` and
-   `fixevi-remediation-audit.md`;
-4. dated validation records;
-5. `ARCHIVE_*` files and Git history.
+1. active firmware, tests, build configuration and immutable release artifacts;
+2. this status, `PROJECT_OVERVIEW.md`, `ARCHITECTURE.md`,
+   `HARDWARE_WIRING.md`, `OTA-UPDATE.md` and
+   `SECURITY_PROVISIONING_POLICY.md`;
+3. `STARTUP_CHECKLIST.md`, `DEVELOPMENT_PLAN.md` and `RISK_REGISTER.md`;
+4. retained dated validation records;
+5. Git history for removed superseded plans and intermediate evidence.

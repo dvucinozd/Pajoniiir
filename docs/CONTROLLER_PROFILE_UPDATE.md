@@ -1,8 +1,8 @@
 # Controller Profile Update Procedure
 
-Status: software-complete on the P4-only runtime. Dedicated hardware acceptance of overwrite,
-corrupt/interrupted rejection, automatic reactivation and reboot persistence is
-still pending.
+Status: **current P4-only procedure, reconciled 2026-09-20**. Guarded overwrite
+and reboot persistence passed with the FLX4 profile during M2 qualification.
+Physical use of a non-FLX4 profile remains unqualified.
 
 This procedure replaces `SD:/controllers/<id>/profile.s3bin` through the P4
 Wi-Fi Remote, so the enclosed SD card does not need to be removed. The P4 does

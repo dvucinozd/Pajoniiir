@@ -205,8 +205,8 @@ The detailed evidence is recorded in the
 - [Risk register](docs/RISK_REGISTER.md)
 
 The active product contains one P4 firmware target:
-`firmware/main-deck-p4`. Historical S3 and dual-processor material is retained
-only in clearly named archives and is not part of the current build.
+`firmware/main-deck-p4`. Historical S3 and dual-processor material is available
+through Git history and is not part of the current tree or build.
 
 ## License
 

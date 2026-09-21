@@ -1,10 +1,9 @@
 # ESP32-P4 Pinout Inventory for JC4880P443C_I_W
 
-Documentation status: active P4 pin inventory, reviewed 2026-07-13. Keep it in
-sync with `docs/HARDWARE_WIRING.md` before enclosure installation.
+Documentation status: active M2.1 P4 pin inventory, reconciled 2026-09-20. Keep
+it in sync with `docs/HARDWARE_WIRING.md` after any wiring or enclosure change.
 
 This file is the source of truth for P4-side peripheral wiring.
-The retired S3 pinout is available only through Git history.
 
 ## Occupied P4 pins in current firmware
 
@@ -27,17 +26,17 @@ The retired S3 pinout is available only through Git history.
 | GPIO43 | SDMMC CLK | `slot_config.clk` | Forbidden |
 | GPIO44 | SDMMC CMD | `slot_config.cmd` | Forbidden |
 
-## JP1 candidate pins from board analysis
+## JP1 expansion pins
 
-| JP1 pin | GPIO | Candidate use | Status |
+| JP1 pin | GPIO | Use | Status |
 | --- | --- | --- | --- |
 | bench-confirmed header pin required | GPIO32 | Unassigned; retired monitor-link BCLK | Available after schematic/continuity check |
 | bench-confirmed header pin required | GPIO34 | Unassigned; retired monitor-link WS/LRCK | Available after schematic/continuity check |
 | bench-confirmed header pin required | GPIO35 | Unassigned; retired monitor-link DOUT | Available after schematic/continuity check |
 | 11 | GPIO49 | Unassigned; retired monitor-link READY/FLOW | Available after schematic/continuity check |
-| 5 | GPIO52 | PCM5102A WS/LRCK | Candidate, requires bench verification |
-| 7 | GPIO51 | PCM5102A DIN from P4 DOUT | Candidate, requires bench verification |
-| 9 | GPIO50 | PCM5102A BCLK | Candidate, requires bench verification |
+| 5 | GPIO52 | PCM5102A WS/LRCK | Accepted M2.1 wiring |
+| 7 | GPIO51 | PCM5102A DIN from P4 DOUT | Accepted M2.1 wiring |
+| 9 | GPIO50 | PCM5102A BCLK | Accepted M2.1 wiring |
 
 ## Rejected DAC pin proposals
 
@@ -66,7 +65,7 @@ BCK
 WS. The module does not expose MCLK/SCK, so first bring-up uses
 `I2S_GPIO_UNUSED`.
 
-## PCM5102A wiring target after bench verification
+## PCM5102A accepted M2.1 wiring
 
 | PCM board header | Signal meaning | P4 GPIO | JP1 pin | Firmware define |
 | --- | --- | --- | --- | --- |
@@ -80,11 +79,12 @@ WS. The module does not expose MCLK/SCK, so first bring-up uses
 
 ## Bench verification record
 
-Before enabling PCM5102A firmware, verify continuity from JP1 to the DAC module
-wiring and verify that LCD backlight, touch, SD, USB media, and ES8311 playback
-still work with the DAC connected but idle.
+The M2.1 unit passed continuity/power checks and playback validation with the
+PCM5102A wiring below. Repeat the electrical and functional checks after any
+wiring, supply, DAC-module or enclosure change.
 
 | Date | Check | Result |
 | --- | --- | --- |
-| 2026-06-26 | GPIO50/GPIO52/GPIO51 assigned as PCM5102A candidate set | Not bench-verified |
+| 2026-06-26 | GPIO50/GPIO52/GPIO51 assigned as PCM5102A candidate set | Superseded by bench result below |
 | 2026-06-30 | PCM5102A board wired on GPIO50/GPIO52/GPIO51; RCA and onboard 3.5 mm outputs tested during playback | Pass |
+| 2026-09-20 | Released M2.1 topology retained in enclosure; power/VBUS and combined audio acceptance closed | Pass |

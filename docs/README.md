@@ -1,58 +1,66 @@
-# Pajoniiir P4 Documentation
+# Pajoniiir documentation
 
-Status: **active P4-only index, updated 2026-09-19**.
+Status: **current P4-only documentation index, reconciled 2026-09-20**.
 
-## Start here
+Pajoniiir M2.1 is a released standalone dual-deck system. The ESP32-P4 owns
+USB media, DDJ-FLX4 control/audio, playback, mixer/DSP, display, network
+services and signed OTA. There is no active S3 firmware or inter-board link.
 
-- [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) — current exact image,
-  acceptance boundary and source-of-truth order.
-- [`migration/P4_DUAL_USB_NEXT_SESSION.md`](migration/P4_DUAL_USB_NEXT_SESSION.md)
-  — complete ordered continuation plan for future bench sessions.
-- [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — compact recurring
-  pre-release checklist.
-- [`RISK_REGISTER.md`](RISK_REGISTER.md) — active electrical, USB, audio, OTA,
-  enclosure and production risks.
-- [`fixevi-remediation-audit.md`](fixevi-remediation-audit.md) — current P4
-  remediation disposition.
-- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — phase order through release.
-- [`M2_BETA_ACCELERATED_RELEASE_PLAN.md`](M2_BETA_ACCELERATED_RELEASE_PLAN.md)
-  — approved compressed qualification and beta-release path.
+## User documentation
 
-## Product and implementation
+- [`index.html`](index.html) — published M2.1 user manual.
+- [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) — concise product and release
+  overview.
+- [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md) — power, USB and PCM5102A wiring.
+- [`STARTUP_CHECKLIST.md`](STARTUP_CHECKLIST.md) — operation, maintenance and
+  release checklist.
+- [`OTA-UPDATE.md`](OTA-UPDATE.md) — signed local/pull OTA and wired recovery.
 
-- [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- [`HARDWARE_WIRING.md`](HARDWARE_WIRING.md)
-- [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md)
-- [`CONTROLLER_PROFILE_SCHEMA.md`](CONTROLLER_PROFILE_SCHEMA.md)
-- [`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md)
-- [`OTA-UPDATE.md`](OTA-UPDATE.md)
-- [`VINYL_SCRATCH_PLAN.md`](VINYL_SCRATCH_PLAN.md)
-- [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md)
+## Developer documentation
 
-## Latest focused validation
+- [`DOCUMENTATION_STATUS.md`](DOCUMENTATION_STATUS.md) — current production
+  identity, accepted limitations and source-of-truth order.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — P4 runtime architecture and ownership.
+- [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) — post-M2.1 maintenance roadmap.
+- [`RISK_REGISTER.md`](RISK_REGISTER.md) — active and accepted product risks.
+- [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md) — M2.1
+  network, signing-key and irreversible-provisioning decisions.
+- [`DDJ_FLX4_MIDI_MAP.md`](DDJ_FLX4_MIDI_MAP.md) — FLX4 mapping and per-control
+  acceptance status.
+- [`CONTROLLER_PROFILE_SCHEMA.md`](CONTROLLER_PROFILE_SCHEMA.md) and
+  [`CONTROLLER_PROFILE_UPDATE.md`](CONTROLLER_PROFILE_UPDATE.md) — P4-local
+  controller profile format and update procedure.
+- [`HERCULES_INPULSE_500_MIDI_MAP.md`](HERCULES_INPULSE_500_MIDI_MAP.md) —
+  host-qualified, not hardware-qualified non-FLX4 profile.
+- [`rekordbox-format-analysis.md`](rekordbox-format-analysis.md) — Rekordbox
+  media/metadata reference.
+- [`LIBAPTA_P4_INTEGRATION_PLAN.md`](LIBAPTA_P4_INTEGRATION_PLAN.md) — deferred
+  optional integration, not current firmware capability.
+- [`../firmware/main-deck-p4/PINOUT_P4.md`](../firmware/main-deck-p4/PINOUT_P4.md)
+  — active P4/PCM5102A pin inventory.
 
-- [`validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md)
-- [`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md)
-- [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md)
+## M2.1 release evidence
+
+- [`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md)
+  — exact tagged build, installation, smoke and publication record.
+- [`validation/M2_AUTOMATED_RELEASE_GATE_20260920.md`](validation/M2_AUTOMATED_RELEASE_GATE_20260920.md)
+  and [`validation/M2_POST_MERGE_20260920.md`](validation/M2_POST_MERGE_20260920.md)
+  — beta qualification and merge/CI provenance inherited by M2.1.
 - [`validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md`](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md)
-- [`validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md`](validation/P4_RC2_116_LIMITER_WDT_OTA_SOAK_20260910.md)
-- [`validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md`](validation/P4_REMOTE_PLAY_UAC_HEALTH_OTA_SMOKE_20260902.md)
-- [`validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md`](validation/P4_EXACT_IMAGE_DUAL_DECK_SEEK_SOAK_20260902.md)
-- [`validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md`](validation/P4_USB1_FAULT_RECOVERY_OTA_SMOKE_20260901.md)
-- [`validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md`](validation/P4_DUAL_USB_HOTPLUG_OTA_SMOKE_20260829.md)
-- [`validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md`](validation/P4_DUAL_USB_VBUS_BLOCKER_20260810.md)
+  — complete USB lifecycle accounting.
+- [`validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md`](validation/P4_POWER_VBUS_ACCEPTANCE_20260911.md)
+  — accepted unchanged power/VBUS wiring.
+- [`validation/P4_BOUNDED_MEDIA_CACHE_20260919.md`](validation/P4_BOUNDED_MEDIA_CACHE_20260919.md)
+  and [`validation/P4_USB_EXFAT_GPT_SMOKE.md`](validation/P4_USB_EXFAT_GPT_SMOKE.md)
+  — media, filesystem and partition-layout evidence.
+- [`validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md`](validation/P4_DUAL_MASTER_TEMPO_WDT_20260919.md),
+  [`validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md`](validation/P4_UAC_IDLE_CONTINUITY_REMEDIATION_20260920.md)
+  and [`validation/P4_FINAL_COMBINED_SOAK_20260920.md`](validation/P4_FINAL_COMBINED_SOAK_20260920.md)
+  — final audio remediation and soak evidence.
+- [`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md)
+  — signed pull/push OTA recovery evidence.
 
-Validation files are dated evidence. They close only the scenario they actually
-observed.
-
-## Archived ledgers
-
-Files whose names begin with `ARCHIVE_` preserve the superseded
-dual-processor plans, protocols, checklists, audits and service guides. They are
-historical records, not active implementation or release instructions. Git
-history retains all earlier revisions as well.
-
-Historical specifications below `superpowers/specs/` and older validation
-records remain useful for provenance but do not override the P4-only documents
-listed under **Start here**.
+Superseded S3/dual-processor documents, completed implementation plans and
+intermediate RC validation notes were removed from the working tree during the
+M2.1 documentation reconciliation. They remain available in Git history when
+historical investigation is required.
