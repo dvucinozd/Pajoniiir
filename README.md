@@ -139,6 +139,8 @@ verification, rollback and wired-recovery instructions.
   </tr>
 </table>
 
+[![Watch the demo video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
+
 ## 3D-print enclosure
 
 The printable enclosure and assembly references are stored in
