@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $Gcc = Get-Command gcc -ErrorAction Stop
+$Node = Get-Command node -ErrorAction Stop
 
 # ── What the Assert-File* gates are, and are not ────────────────────────────
 #
@@ -407,6 +408,12 @@ function Assert-CiDependenciesPinned {
         throw "IDF_IMAGE must pin the v6.0.2 OCI digest exactly once in $path"
     }
 }
+
+Invoke-Step -Name "web UI browser contract" `
+    -WorkingDirectory (Join-Path $RepoRoot "tests/web_ui_contract") `
+    -Executable $Node.Source `
+    -Arguments @("test_web_ui_contract.mjs") `
+    -MinTestsRun 7
 
 Assert-FileDoesNotContain `
     -Name "audio_engine explicit deck state" `
@@ -3013,6 +3020,21 @@ Assert-FileContains `
     -Name "p4 web loop actions go through deck_core, not straight to the audio engine" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
     -LiteralPatterns @("web_queue_loop_set", "web_queue_loop_clear", "deck_core_queue_remote_event(&ev)")
+
+# api_control_handler and the embedded status formatter are file-static ESP-IDF
+# handlers, so the firmware build plus this narrow source contract are the
+# available host-side guard for the web-to-deck_core SYNC route.
+Assert-FileContains `
+    -Name "p4 web sync uses authoritative deck_core state" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "web_queue_sync",
+        "CTRL_ID_DECK1_SYNC",
+        "CTRL_ID_DECK2_SYNC",
+        'strcmp(action, "sync")',
+        '\"sync_enabled\":%s',
+        '\"sync_master\":%s'
+    )
 
 # The symbols exist and are reachable by design - they are simply the wrong
 # call for this component - so no link contract can express it.

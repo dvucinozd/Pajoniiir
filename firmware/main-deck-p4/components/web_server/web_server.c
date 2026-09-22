@@ -391,6 +391,21 @@ static esp_err_t web_queue_loop_clear(uint8_t deck)
     return deck_core_queue_remote_event(&ev);
 }
 
+static esp_err_t web_queue_sync(uint8_t deck)
+{
+    if (deck > CTRL_DECK_2) return ESP_ERR_INVALID_ARG;
+
+    ctrl_event_t ev = {
+        .type = CTRL_EV_BUTTON,
+        .id = deck == CTRL_DECK_2 ? CTRL_ID_DECK2_SYNC : CTRL_ID_DECK1_SYNC,
+        .value = 1,
+        .deck = deck,
+        .control = CTRL_DECK_CTL_SYNC,
+        .seq = 0u,
+    };
+    return deck_core_queue_remote_event(&ev);
+}
+
 #define WEB_PLAY_APPLY_TIMEOUT_MS 250u
 #define WEB_PLAY_POLL_MS            5u
 
@@ -1596,6 +1611,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"position_ms\":%u,"
         "\"duration_ms\":%u,"
         "\"playing\":%s,"
+        "\"sync_enabled\":%s,"
+        "\"sync_master\":%s,"
         "\"state_text\":\"%s\""
         "},"
         "\"deck2\":{"
@@ -1607,6 +1624,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"position_ms\":%u,"
         "\"duration_ms\":%u,"
         "\"playing\":%s,"
+        "\"sync_enabled\":%s,"
+        "\"sync_master\":%s,"
         "\"state_text\":\"%s\""
         "},"
         "\"mixer\":{"
@@ -1697,8 +1716,8 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"psram_free\":%u"
         "}"
         "}",
-        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state_text1,
-        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state_text2,
+        title1_esc, artist1_esc, (unsigned)current_bpm1, p1, state1.pitch, (unsigned)state1.position_ms, (unsigned)duration1_ms, state1.playing ? "true" : "false", state1.sync_enabled ? "true" : "false", state1.sync_master ? "true" : "false", state_text1,
+        title2_esc, artist2_esc, (unsigned)current_bpm2, p2, state2.pitch, (unsigned)state2.position_ms, (unsigned)duration2_ms, state2.playing ? "true" : "false", state2.sync_enabled ? "true" : "false", state2.sync_master ? "true" : "false", state_text2,
         mixer.channel_volume[0], mixer.channel_volume[1], mixer.crossfader,
         mixer.master_volume,
         mixer.headphone_mix,
@@ -2023,6 +2042,8 @@ static esp_err_t api_control_handler(httpd_req_t *req)
             .seq   = 0
         };
         queue_rc = deck_core_queue_remote_event(&ev);
+    } else if (strcmp(action, "sync") == 0) {
+        queue_rc = web_queue_sync(deck);
     } else if (strcmp(action, "loop_4") == 0) {
         audio_engine_deck_status_t status = {0};
         esp_err_t rc = audio_engine_deck_get_status(deck, &status);

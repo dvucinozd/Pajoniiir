@@ -10,6 +10,9 @@ let isInteracting = {
 
 // Track duration per deck (ms), used to map the progress bar to a seek target.
 let deckDuration = { 1: 0, 2: 0 };
+let lastDeckData = { 1: null, 2: null };
+let timeMode = { 1: 'elapsed', 2: 'elapsed' }; // 'elapsed' | 'remaining'
+let isScrubbing = { 1: false, 2: false };
 
 // Waveform palette (matches the on-device "Punchy"-style colour bands).
 const WAVE_PAL = { lo: '#1E8F87', mid: '#3FE0D0', hi: '#F5B841' };
@@ -24,11 +27,21 @@ const mutationOptions = {
     headers: { 'X-DDJ-Control': '1' },
     cache: 'no-store'
 };
+
+async function sendMutation(url) {
+    const response = await fetch(url, mutationOptions);
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `HTTP ${response.status}`);
+    }
+    return response;
+}
+
 function throttledSend(key, urlFor, value, minInterval = 90) {
     const st = _throttle[key] || (_throttle[key] = { last: 0, timer: null, pending: null });
     const send = (v) => {
         st.last = Date.now();
-        fetch(urlFor(v), mutationOptions).catch(err => console.error(err));
+        sendMutation(urlFor(v)).catch(err => console.error(err));
     };
     const elapsed = Date.now() - st.last;
     if (elapsed >= minInterval) {
@@ -51,15 +64,13 @@ function setConnected(ok) {
     dot.classList.toggle('offline', !ok);
 }
 
-// Build the decorative waveform strip once per deck. The bar heights are a fixed
-// stylised pattern (the /api/status stream carries no waveform data); the played
-// portion is tinted live from the real playback position (see updateWaveform).
+// Build the waveform strip and setup interactive needle drop / scrubbing.
 function buildWaveform(deckNum) {
     const el = document.getElementById(`deck-${deckNum}-wave`);
     if (!el) return;
     let seed = 91 + deckNum * 7;
     const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-    let html = '';
+    let html = `<div class="needle-playhead" id="deck-${deckNum}-needle"></div>`;
     for (let i = 0; i < WAVE_BARS; i++) {
         const env = Math.pow(Math.abs(Math.sin(i * 0.09)) * 0.6 + rnd() * 0.55, 1.15);
         const h = Math.max(8, Math.min(100, env * 100));
@@ -68,16 +79,156 @@ function buildWaveform(deckNum) {
         html += `<div class="wave-bar" style="height:${h.toFixed(1)}%;background:${c}"></div>`;
     }
     el.innerHTML = html;
+    attachWaveformScrubbing(deckNum, el);
 }
 
 function updateWaveform(deckNum, frac) {
     const el = document.getElementById(`deck-${deckNum}-wave`);
     if (!el) return;
-    const bars = el.children;
+    const bars = el.querySelectorAll('.wave-bar');
     const lit = Math.round(frac * bars.length);
     for (let i = 0; i < bars.length; i++) {
         bars[i].classList.toggle('played', i < lit);
     }
+    if (!isScrubbing[deckNum]) {
+        const needle = document.getElementById(`deck-${deckNum}-needle`);
+        if (needle && !el.matches(':hover')) {
+            needle.style.left = (frac * 100) + '%';
+        }
+    }
+}
+
+// ── Feature 2: Needle Drop & Interactive Scrubbing ──────────────────────────
+function attachWaveformScrubbing(deckNum, waveEl) {
+    const needle = document.getElementById(`deck-${deckNum}-needle`);
+
+    const handleScrub = (clientX, commit = false) => {
+        const dur = deckDuration[deckNum] || 0;
+        if (dur <= 0) return;
+        const rect = waveEl.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const ms = Math.floor(frac * dur);
+
+        // Ažuriraj vizualni prikaz vala i igle trenutno
+        updateWaveform(deckNum, frac);
+        const fill = document.getElementById(`deck-${deckNum}-fill`);
+        if (fill) fill.style.width = (frac * 100) + '%';
+        if (needle) needle.style.left = (frac * 100) + '%';
+
+        // Ažuriraj digitalni sat odmah u toku povlačenja
+        if (lastDeckData[deckNum]) {
+            renderDeckTime(deckNum, { ...lastDeckData[deckNum], position_ms: ms });
+        }
+
+        // Dragging is a browser-only preview. Decoder seeks are deliberately
+        // single-shot so one gesture cannot flood ESP httpd or repeatedly tear
+        // down an active decoder. Commit only when the pointer is released.
+        if (commit) {
+            sendMutation(`/api/control?deck=${deckNum}&action=seek&value=${ms}`)
+                .catch(err => console.error(`Seek failed: ${err.message}`));
+        }
+    };
+
+    waveEl.addEventListener('pointerdown', (e) => {
+        try { waveEl.setPointerCapture(e.pointerId); } catch (_) {}
+        isScrubbing[deckNum] = true;
+        waveEl.classList.add('scrubbing');
+        handleScrub(e.clientX, false);
+    });
+
+    waveEl.addEventListener('pointermove', (e) => {
+        if (isScrubbing[deckNum]) {
+            handleScrub(e.clientX, false);
+        } else {
+            const rect = waveEl.getBoundingClientRect();
+            const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            if (needle) needle.style.left = (frac * 100) + '%';
+        }
+    });
+
+    const finishScrub = (e) => {
+        if (isScrubbing[deckNum]) {
+            isScrubbing[deckNum] = false;
+            waveEl.classList.remove('scrubbing');
+            handleScrub(e.clientX, true);
+        }
+    };
+
+    const cancelScrub = () => {
+        if (!isScrubbing[deckNum]) return;
+        isScrubbing[deckNum] = false;
+        waveEl.classList.remove('scrubbing');
+        const data = lastDeckData[deckNum];
+        if (data) {
+            const duration = data.duration_ms || 0;
+            const fraction = duration > 0
+                ? Math.max(0, Math.min(1, (data.position_ms || 0) / duration))
+                : 0;
+            updateWaveform(deckNum, fraction);
+            const fill = document.getElementById(`deck-${deckNum}-fill`);
+            if (fill) fill.style.width = (fraction * 100) + '%';
+            renderDeckTime(deckNum, data);
+        }
+    };
+
+    waveEl.addEventListener('pointerup', finishScrub);
+    waveEl.addEventListener('pointercancel', cancelScrub);
+}
+
+// ── Feature 3: Elapsed vs Remaining Time Toggle ─────────────────────────────
+function toggleTimeMode(deckNum) {
+    timeMode[deckNum] = (timeMode[deckNum] === 'elapsed') ? 'remaining' : 'elapsed';
+    if (lastDeckData[deckNum]) {
+        renderDeckTime(deckNum, lastDeckData[deckNum]);
+    }
+}
+
+function renderDeckTime(deckNum, data) {
+    const timeEl = document.getElementById(`deck-${deckNum}-time`);
+    const remainTop = document.getElementById(`deck-${deckNum}-remain-top`);
+    if (!timeEl) return;
+
+    const pos = data.position_ms || 0;
+    const dur = data.duration_ms || 0;
+    const rem = Math.max(0, dur - pos);
+    const isCritical = (dur > 0 && rem <= 30000 && data.playing);
+
+    if (timeMode[deckNum] === 'remaining') {
+        timeEl.innerText = '-' + formatMs(rem);
+        timeEl.classList.add('remaining-mode');
+        if (remainTop) {
+            remainTop.innerText = 'ELAPSED ' + formatMs(pos);
+        }
+    } else {
+        timeEl.innerText = formatMs(pos);
+        timeEl.classList.remove('remaining-mode');
+        if (remainTop) {
+            remainTop.innerText = (dur > 0) ? ('-' + formatMs(rem)) : 'ELAPSED';
+        }
+    }
+
+    timeEl.classList.toggle('time-critical', isCritical);
+}
+
+// ── Feature 4: BPM & Tempo SYNC ─────────────────────────────────────────────
+function syncDeck(deckNum) {
+    const syncBtn = document.getElementById(`deck-${deckNum}-sync-btn`);
+    if (syncBtn) {
+        syncBtn.classList.add('syncing');
+        syncBtn.classList.remove('mutation-error');
+    }
+
+    // The P4 remains authoritative. Do not synthesize BPM/pitch locally: the
+    // next /api/status snapshot confirms whether deck_core accepted the event.
+    sendMutation(`/api/control?deck=${deckNum}&action=sync`)
+        .then(() => scheduleNextPoll())
+        .catch(err => {
+            console.error(`Sync failed: ${err.message}`);
+            if (syncBtn) syncBtn.classList.add('mutation-error');
+        })
+        .finally(() => {
+            if (syncBtn) syncBtn.classList.remove('syncing');
+        });
 }
 
 function init() {
@@ -122,7 +273,7 @@ function fetchLibrary() {
         .catch(err => {
             console.error('Greška kod dohvaćanja knjižnice:', err);
             document.getElementById('library-body').innerHTML =
-                '<tr><td colspan="3" class="loading-cell" style="color: var(--col-red)">Pogreška u komunikaciji.</td></tr>';
+                '<tr><td colspan="3" class="loading-cell" style="color: var(--col-red)">Communication error.</td></tr>';
         });
 }
 
@@ -143,8 +294,8 @@ function renderLibrary(tracks) {
                 <td class="lib-bpm">${track.bpm}</td>
                 <td>
                     <div class="library-actions">
-                        <button class="btn btn-load" onclick="loadTrack(${track.track_key}, libraryGeneration, 1)">D1</button>
-                        <button class="btn btn-load" onclick="loadTrack(${track.track_key}, libraryGeneration, 2)">D2</button>
+                        <button class="btn btn-load btn-load-d1" onclick="loadTrack(${track.track_key}, libraryGeneration, 1)" title="Load Deck 1">D1</button>
+                        <button class="btn btn-load btn-load-d2" onclick="loadTrack(${track.track_key}, libraryGeneration, 2)" title="Load Deck 2">D2</button>
                     </div>
                 </td>
             </tr>
@@ -218,37 +369,62 @@ function updateVu(diag) {
         const rankFromBottom = total - 1 - i;
         seg.classList.toggle('vu-active', rankFromBottom < lit);
     });
+
+    const peakText = document.getElementById('mixer-peak-text');
+    if (peakText) {
+        if (peak <= 0) {
+            peakText.innerText = '-inf dB';
+        } else {
+            const db = Math.round(20 * Math.log10(peak / 32767));
+            peakText.innerText = `${db} dB`;
+        }
+    }
 }
 
 function updateDeckUI(deckNum, data) {
     if (!data) return;
+    lastDeckData[deckNum] = data;
 
     // Tekstovi i statusi
     document.getElementById(`deck-${deckNum}-title`).innerText = data.title || "No Track";
     document.getElementById(`deck-${deckNum}-artist`).innerText = data.artist || "Unknown Artist";
+
+    const tbTitle = document.getElementById(`tb-d${deckNum}-title`);
+    if (tbTitle) tbTitle.innerText = data.title || "--";
     // API sends whole BPM (already pitch-adjusted), matching the on-device UI.
     document.getElementById(`deck-${deckNum}-bpm`).innerText = Number(data.bpm).toFixed(2);
     document.getElementById(`deck-${deckNum}-pitch`).innerText = data.pitch_percent >= 0
         ? `+${data.pitch_percent.toFixed(2)}%`
         : `${data.pitch_percent.toFixed(2)}%`;
 
-    // Vrijeme + progress / preostalo
+    // Vrijeme + progress / preostalo (podržava Elapsed i Remaining način)
     const pos = data.position_ms || 0;
     const dur = data.duration_ms || 0;
     deckDuration[deckNum] = dur;
-    document.getElementById(`deck-${deckNum}-time`).innerText = formatMs(pos);
 
-    const fill = document.getElementById(`deck-${deckNum}-fill`);
-    const remainTop = document.getElementById(`deck-${deckNum}-remain-top`);
-    if (dur > 0) {
-        const frac = Math.max(0, Math.min(1, pos / dur));
-        if (fill) fill.style.width = (frac * 100) + '%';
-        if (remainTop) remainTop.innerText = '-' + formatMs(dur > pos ? dur - pos : 0);
-        updateWaveform(deckNum, frac);
-    } else {
-        if (fill) fill.style.width = '0%';
-        if (remainTop) remainTop.innerText = '';
-        updateWaveform(deckNum, 0);
+    if (!isScrubbing[deckNum]) {
+        renderDeckTime(deckNum, data);
+
+        const fill = document.getElementById(`deck-${deckNum}-fill`);
+        if (dur > 0) {
+            const frac = Math.max(0, Math.min(1, pos / dur));
+            if (fill) fill.style.width = (frac * 100) + '%';
+            updateWaveform(deckNum, frac);
+        } else {
+            if (fill) fill.style.width = '0%';
+            updateWaveform(deckNum, 0);
+        }
+    }
+
+    // deck_core state is authoritative; equal BPM alone does not mean SYNC is on.
+    const sBtn = document.getElementById(`deck-${deckNum}-sync-btn`);
+    if (sBtn && !sBtn.classList.contains('syncing')) {
+        sBtn.classList.toggle('active', Boolean(data.sync_enabled));
+        sBtn.classList.toggle('sync-master', Boolean(data.sync_master));
+        sBtn.setAttribute('aria-pressed', data.sync_enabled ? 'true' : 'false');
+        sBtn.title = data.sync_master
+            ? 'Ovaj deck je SYNC MASTER'
+            : `Sinkroniziraj Deck ${deckNum} s drugim deckom`;
     }
 
     // Status badge
@@ -312,11 +488,8 @@ function updatePflButton(deckNum, active) {
 
 // REST Api slanje naredbi
 function sendControl(deck, action) {
-    fetch(`/api/control?deck=${deck}&action=${action}`, mutationOptions)
-        .then(res => {
-            if (!res.ok) console.error(`Control failed: ${action}`);
-        })
-        .catch(err => console.error(err));
+    sendMutation(`/api/control?deck=${deck}&action=${action}`)
+        .catch(err => console.error(`Control failed (${action}): ${err.message}`));
 }
 
 function onVolumeChange(deck, value) {
@@ -340,8 +513,8 @@ function onSeek(deck, event) {
     const rect = wrap.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     const ms = Math.floor(frac * dur);
-    fetch(`/api/control?deck=${deck}&action=seek&value=${ms}`, mutationOptions)
-        .catch(err => console.error(err));
+    sendMutation(`/api/control?deck=${deck}&action=seek&value=${ms}`)
+        .catch(err => console.error(`Seek failed: ${err.message}`));
 }
 
 function loadTrack(trackKey, generation, deck) {
@@ -382,13 +555,46 @@ function escapeHtml(str) {
               .replace(/'/g, '&#039;');
 }
 
-// Generic show/hide for the collapsible maintenance cards (USB browser,
-// controller profile, P4 firmware update).
-function toggleCollapse(cardId, btn) {
+// Toggle on/off for the maintenance cards (USB browser, controller profile,
+// P4 firmware update, update server).
+function toggleCard(cardId) {
     const card = document.getElementById(cardId);
     if (!card) return;
-    const collapsed = card.classList.toggle('collapsed');
-    if (btn) btn.innerText = collapsed ? 'SHOW' : 'HIDE';
+    const isCurrentlyCollapsed = card.classList.contains('collapsed');
+    const willBeOpen = isCurrentlyCollapsed; // if collapsed, toggle to open (ON)
+
+    card.classList.toggle('collapsed', !willBeOpen);
+    updateCardToggleUI(cardId, willBeOpen);
+
+    if (willBeOpen) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function updateCardToggleUI(cardId, isOpen) {
+    // 1. Update the toggle switch in the card header
+    const switchBtn = document.getElementById(`toggle-btn-${cardId}`);
+    if (switchBtn) {
+        switchBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        switchBtn.classList.toggle('is-on', isOpen);
+        const label = switchBtn.querySelector('.toggle-label');
+        if (label) label.innerText = isOpen ? 'OPEN' : 'CLOSED';
+    }
+
+    // 2. Update the quick tab in the landscape navigation bar
+    const navBtn = document.getElementById(`nav-btn-${cardId}`);
+    if (navBtn) {
+        navBtn.classList.toggle('active-tab', isOpen);
+    }
+    const badge = document.getElementById(`tab-badge-${cardId}`);
+    if (badge) {
+        badge.innerText = isOpen ? 'OPEN' : 'CLOSED';
+        badge.classList.toggle('badge-on', isOpen);
+    }
+}
+
+function toggleCollapse(cardId, btn) {
+    toggleCard(cardId);
 }
 
 // ── Pull-OTA service network ────────────────────────────────────────────────
@@ -707,3 +913,58 @@ refreshOtaNetwork();
 
 // Refresh firmware state periodically without competing with the fast status poll.
 setInterval(refreshFirmwareStatus, 15000);
+
+// ── Mobile Landscape UI Helpers ──────────────────────────────────────────────
+function toggleFullscreen() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) {
+            elem.requestFullscreen().catch(() => {});
+        } else if (elem.webkitRequestFullscreen) {
+            elem.webkitRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+function dismissOrientBanner() {
+    const banner = document.getElementById('orient-banner');
+    if (banner) banner.style.display = 'none';
+}
+
+function openDrawer(cardId) {
+    toggleCard(cardId);
+}
+
+// ── Services Toggle ──────────────────────────────────────────────────────────
+let servicesVisible = false;
+
+function toggleServices() {
+    servicesVisible = !servicesVisible;
+    const navBar = document.getElementById('landscape-nav-bar');
+    const btn = document.getElementById('btn-services');
+
+    if (navBar) {
+        navBar.classList.toggle('services-active', servicesVisible);
+    }
+    if (btn) {
+        btn.classList.toggle('active-services', servicesVisible);
+    }
+
+    // When closing services, collapse and hide any active service cards
+    if (!servicesVisible) {
+        const serviceCardIds = ['profile-card', 'ota-card', 'ota-net-card'];
+        serviceCardIds.forEach(id => {
+            const card = document.getElementById(id);
+            if (card && !card.classList.contains('collapsed')) {
+                card.classList.add('collapsed');
+                updateCardToggleUI(id, false);
+            }
+        });
+    }
+}

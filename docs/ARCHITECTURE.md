@@ -270,6 +270,25 @@ does not define the playback model.
 
 `deck_core` and the audio engine on P4 own the actual state.
 
+## Wi-Fi Remote
+
+The embedded Wi-Fi Remote lives in
+`firmware/main-deck-p4/components/web_server/web/` and is served directly from
+the P4 firmware image. It is an operator client, not an alternate state owner:
+
+- `/api/status` publishes authoritative deck, SYNC and mixer snapshots;
+- marked POST requests translate remote actions into the same semantic
+  `deck_core` events used by the physical controller;
+- slider traffic is bounded and waveform dragging stays local until one final
+  seek is committed;
+- library loads retain media-generation identity, and OTA/profile maintenance
+  retains its existing signature, validation and confirmation boundaries;
+- all layout assets are embedded locally so the SoftAP path has no internet
+  dependency.
+
+The browser contract suite in `tests/web_ui_contract/` checks the embedded asset
+boundary, handler wiring, failed-mutation behavior and single-shot seek rule.
+
 ## Data-Driven Multi-Controller Platform
 
 The P4-local runtime supports controllers other than the DDJ-FLX4 **without a

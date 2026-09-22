@@ -2,8 +2,8 @@
 <html lang="hr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pajoniiir Web Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Pajoniiir M2.2 Web Controller</title>
     <!--
       No webfont <link> here on purpose. This page is served from the P4's own
       SoftAP, which has no route to the internet, and the captive DNS answers
@@ -11,18 +11,37 @@
       resolves back to this device, fails the TLS handshake, and blocks first
       paint until it times out. style.css falls back to system faces instead.
     -->
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
     <!-- ── Top Bar ──────────────────────────────────────────────────────── -->
     <header class="topbar">
-        <div class="topbar-brand">Pajoniiir</div>
+        <div class="topbar-left">
+            <span class="topbar-brand">Pajoniiir</span>
+            <span class="topbar-model">M2.2</span>
+            <div class="topbar-deck-indicators">
+                <span class="deck-pill deck1-pill" id="tb-deck1-pill">D1: <b id="tb-d1-title">--</b></span>
+                <span class="deck-pill deck2-pill" id="tb-deck2-pill">D2: <b id="tb-d2-title">--</b></span>
+            </div>
+        </div>
         <div class="topbar-right">
+            <button class="topbar-btn" id="fs-btn" onclick="toggleFullscreen()" title="Prebaci na cijeli zaslon">⛶ <span class="fs-text">FULL</span></button>
+            <button class="topbar-btn topbar-services" id="btn-services" onclick="toggleServices()" title="Prikaži / sakrij servisne kartice (Profile Kontrolera, P4 Firmware, WiFi Settings)">⚙️ Services</button>
+            <a href="https://dvucinozd.github.io/Pajoniiir/" target="_blank" rel="noopener noreferrer" id="manual-link" class="topbar-btn topbar-manual" title="Online korisnički priručnik (potrebna internetska veza)">MANUAL ↗</a>
             <span class="topbar-label">LIVE</span>
             <span class="status-dot" id="conn-dot" title="API status"></span>
         </div>
     </header>
+
+    <!-- ── Mobile Portrait Advisory Banner ──────────────────────────────── -->
+    <div class="orientation-banner" id="orient-banner">
+        <div class="orient-icon" aria-hidden="true">🔄</div>
+        <div class="orient-text">
+            <strong>Savjet za DJ konzolu:</strong> Zakrenite uređaj <strong>vodoravno (Landscape)</strong> za puni pregled oba decka i miksete.
+        </div>
+        <button class="orient-dismiss" onclick="dismissOrientBanner()" title="Zatvori obavijest">✕</button>
+    </div>
 
     <main class="app">
 
@@ -30,9 +49,12 @@
     <div class="perf-zone">
 
         <!-- DECK 1 ──────────────────────────────────────────────────────── -->
-        <div class="deck-card" id="deck-1-card">
+        <div class="deck-card deck-1" id="deck-1-card">
             <div class="deck-head">
-                <span class="deck-name">DECK 1</span>
+                <div class="deck-tag">
+                    <span class="deck-dot d1-dot"></span>
+                    <span class="deck-name d1-name">DECK 1</span>
+                </div>
                 <span class="badge" id="deck-1-status">IDLE</span>
             </div>
 
@@ -41,36 +63,42 @@
                     <div class="track-title" id="deck-1-title">No Track</div>
                     <div class="track-artist" id="deck-1-artist">Unknown Artist</div>
                 </div>
-                <div class="time-block">
+                <div class="time-block" id="deck-1-time-block" onclick="toggleTimeMode(1)" title="Kliknite za prebacivanje (Elapsed / Remaining)">
                     <div class="time-display" id="deck-1-time">00:00:00</div>
-                    <div class="time-remain-top" id="deck-1-remain-top"></div>
+                    <div class="time-remain-top" id="deck-1-remain-top">ELAPSED</div>
                 </div>
             </div>
 
-            <!-- Decorative waveform (played portion tracks real position) -->
-            <div class="wave" id="deck-1-wave"></div>
+            <!-- Interactive waveform with needle drop & scrubbing -->
+            <div class="wave" id="deck-1-wave" title="Povucite ili kliknite za brzo premotavanje (Needle Drop)">
+                <div class="needle-playhead" id="deck-1-needle"></div>
+            </div>
 
             <!-- Progress / seek -->
-            <div class="progress-wrap" id="deck-1-progress" onclick="onSeek(1, event)" title="Tap to seek">
+            <div class="progress-wrap" id="deck-1-progress" onclick="onSeek(1, event)" title="Dodirnite za skok (Seek)">
                 <div class="progress-fill" id="deck-1-fill"></div>
                 <span class="time-remain" id="deck-1-remain">-00:00:00</span>
             </div>
 
-            <!-- Stat chips -->
-            <div class="stat-chips">
-                <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-1-bpm">0</span></div>
-                <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent" id="deck-1-pitch">+0.00%</span></div>
+            <!-- Stats & Tempo Control Grid -->
+            <div class="deck-controls-strip">
+                <div class="stat-chips">
+                    <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-1-bpm">0</span></div>
+                    <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent d1-accent" id="deck-1-pitch">+0.00%</span></div>
+                    <button class="btn-sync d1-sync" id="deck-1-sync-btn" onclick="syncDeck(1)" title="Sinkroniziraj BPM i tempo s Deckom 2">SYNC</button>
+                </div>
+                <div class="pitch-control">
+                    <span class="pitch-control-label">TEMPO</span>
+                    <div class="pitch-slider-wrap">
+                        <input type="range" id="deck-1-pitch-slider"
+                               min="0" max="16383" value="8192"
+                               oninput="onPitchChange(1, this.value)">
+                        <div class="pitch-center-mark" title="Center 0%"></div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Pitch / Tempo control -->
-            <div class="pitch-control">
-                <span class="pitch-control-label">TEMPO</span>
-                <input type="range" id="deck-1-pitch-slider"
-                       min="0" max="16383" value="8192"
-                       oninput="onPitchChange(1, this.value)">
-            </div>
-
-            <!-- Controls row -->
+            <!-- Transport controls -->
             <div class="deck-footer">
                 <button class="btn btn-cue" onclick="sendControl(1, 'cue')">CUE</button>
                 <button class="btn btn-play" id="deck-1-play-btn" onclick="sendControl(1, 'play_pause')">PLAY</button>
@@ -80,12 +108,15 @@
         </div>
 
         <!-- MIXER ───────────────────────────────────────────────────────── -->
-        <section class="mixer-card">
-            <div class="mixer-title-strip">MIXER</div>
+        <section class="mixer-card" id="mixer-section">
+            <div class="mixer-title-strip">
+                <span class="mixer-title">MIXER</span>
+                <span class="mixer-peak-val" id="mixer-peak-text">0 dB</span>
+            </div>
 
             <div class="mixer-body">
                 <!-- Channel 1 -->
-                <div class="channel-strip">
+                <div class="channel-strip ch-1">
                     <span class="ch-label">CH 1</span>
                     <button class="btn btn-pfl" id="deck-1-pfl-btn" onclick="sendControl(1, 'pfl')">CUE</button>
                     <div class="fader-track-wrap">
@@ -98,7 +129,8 @@
 
                 <!-- Master VU meter -->
                 <div class="vu-column">
-                    <div class="vu-bar-container" id="vu-master" title="Master output level">
+                    <div class="vu-header-label">VU</div>
+                    <div class="vu-bar-container" id="vu-master" title="Master izlazni nivo">
                         <div class="vu-seg vu-red"></div>
                         <div class="vu-seg vu-red"></div>
                         <div class="vu-seg vu-amber"></div>
@@ -113,7 +145,7 @@
                 </div>
 
                 <!-- Channel 2 -->
-                <div class="channel-strip">
+                <div class="channel-strip ch-2">
                     <span class="ch-label">CH 2</span>
                     <button class="btn btn-pfl" id="deck-2-pfl-btn" onclick="sendControl(2, 'pfl')">CUE</button>
                     <div class="fader-track-wrap">
@@ -127,7 +159,11 @@
 
             <!-- Crossfader -->
             <div class="crossfader-section">
-                <span class="crossfader-label">CROSSFADER</span>
+                <div class="crossfader-header">
+                    <span class="cf-deck-mark">1</span>
+                    <span class="crossfader-label">CROSSFADER</span>
+                    <span class="cf-deck-mark">2</span>
+                </div>
                 <div class="crossfader-wrap">
                     <input type="range" id="crossfader"
                            min="0" max="16383" value="8192"
@@ -138,9 +174,12 @@
         </section>
 
         <!-- DECK 2 ──────────────────────────────────────────────────────── -->
-        <div class="deck-card" id="deck-2-card">
+        <div class="deck-card deck-2" id="deck-2-card">
             <div class="deck-head">
-                <span class="deck-name">DECK 2</span>
+                <div class="deck-tag">
+                    <span class="deck-dot d2-dot"></span>
+                    <span class="deck-name d2-name">DECK 2</span>
+                </div>
                 <span class="badge" id="deck-2-status">IDLE</span>
             </div>
 
@@ -149,34 +188,44 @@
                     <div class="track-title" id="deck-2-title">No Track</div>
                     <div class="track-artist" id="deck-2-artist">Unknown Artist</div>
                 </div>
-                <div class="time-block">
+                <div class="time-block" id="deck-2-time-block" onclick="toggleTimeMode(2)" title="Kliknite za prebacivanje (Elapsed / Remaining)">
                     <div class="time-display" id="deck-2-time">00:00:00</div>
-                    <div class="time-remain-top" id="deck-2-remain-top"></div>
+                    <div class="time-remain-top" id="deck-2-remain-top">ELAPSED</div>
                 </div>
             </div>
 
-            <div class="wave" id="deck-2-wave"></div>
+            <!-- Interactive waveform with needle drop & scrubbing -->
+            <div class="wave" id="deck-2-wave" title="Povucite ili kliknite za brzo premotavanje (Needle Drop)">
+                <div class="needle-playhead" id="deck-2-needle"></div>
+            </div>
 
-            <div class="progress-wrap" id="deck-2-progress" onclick="onSeek(2, event)" title="Tap to seek">
-                <div class="progress-fill" id="deck-2-fill"></div>
+            <!-- Progress / seek -->
+            <div class="progress-wrap" id="deck-2-progress" onclick="onSeek(2, event)" title="Dodirnite za skok (Seek)">
+                <div class="progress-fill d2-fill" id="deck-2-fill"></div>
                 <span class="time-remain" id="deck-2-remain">-00:00:00</span>
             </div>
 
-            <div class="stat-chips">
-                <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-2-bpm">0</span></div>
-                <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent" id="deck-2-pitch">+0.00%</span></div>
-            </div>
-
-            <div class="pitch-control">
-                <span class="pitch-control-label">TEMPO</span>
-                <input type="range" id="deck-2-pitch-slider"
-                       min="0" max="16383" value="8192"
-                       oninput="onPitchChange(2, this.value)">
+            <!-- Stats & Tempo Control Grid -->
+            <div class="deck-controls-strip">
+                <div class="stat-chips">
+                    <div class="chip"><span class="chip-label">BPM</span><span class="chip-val" id="deck-2-bpm">0</span></div>
+                    <div class="chip"><span class="chip-label">PITCH</span><span class="chip-val accent d2-accent" id="deck-2-pitch">+0.00%</span></div>
+                    <button class="btn-sync d2-sync" id="deck-2-sync-btn" onclick="syncDeck(2)" title="Sinkroniziraj BPM i tempo s Deckom 1">SYNC</button>
+                </div>
+                <div class="pitch-control">
+                    <span class="pitch-control-label">TEMPO</span>
+                    <div class="pitch-slider-wrap">
+                        <input type="range" id="deck-2-pitch-slider"
+                               min="0" max="16383" value="8192"
+                               oninput="onPitchChange(2, this.value)">
+                        <div class="pitch-center-mark" title="Center 0%"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="deck-footer">
                 <button class="btn btn-cue" onclick="sendControl(2, 'cue')">CUE</button>
-                <button class="btn btn-play" id="deck-2-play-btn" onclick="sendControl(2, 'play_pause')">PLAY</button>
+                <button class="btn btn-play btn-play-d2" id="deck-2-play-btn" onclick="sendControl(2, 'play_pause')">PLAY</button>
                 <button class="btn btn-loop" onclick="sendControl(2, 'loop_4')">4B LOOP</button>
                 <button class="btn btn-loop" onclick="sendControl(2, 'loop_clear')">CLEAR</button>
             </div>
@@ -184,11 +233,36 @@
 
     </div>
 
-    <!-- ── USB Browser ──────────────────────────────────────────────────── -->
+    <!-- ── Quick Landscape Navigation Tabs ──────────────────────────────── -->
+    <div class="landscape-nav-bar" id="landscape-nav-bar">
+        <button class="nav-tab-btn" id="nav-btn-browser-card" onclick="toggleCard('browser-card')">
+            <span class="tab-icon">📁</span> USB Library <span class="tab-badge" id="tab-badge-browser-card">CLOSED</span>
+        </button>
+        <button class="nav-tab-btn service-tab" id="nav-btn-profile-card" onclick="toggleCard('profile-card')">
+            <span class="tab-icon">🎛️</span> Profil Kontrolera <span class="tab-badge" id="tab-badge-profile-card">CLOSED</span>
+        </button>
+        <button class="nav-tab-btn service-tab" id="nav-btn-ota-card" onclick="toggleCard('ota-card')">
+            <span class="tab-icon">⚡</span> P4 Firmware <span class="tab-badge" id="tab-badge-ota-card">CLOSED</span>
+        </button>
+        <button class="nav-tab-btn service-tab" id="nav-btn-ota-net-card" onclick="toggleCard('ota-net-card')">
+            <span class="tab-icon">📶</span> WiFi Settings <span class="tab-badge" id="tab-badge-ota-net-card">CLOSED</span>
+        </button>
+    </div>
+
+    <!-- ── 1. USB Browser ───────────────────────────────────────────────── -->
     <section class="card collapsible collapsed" id="browser-card">
-        <div class="card-head">
-            <h2 class="card-title">USB BROWSER</h2>
-            <button class="btn btn-toggle" id="browser-expand-btn" onclick="toggleCollapse('browser-card', this)">SHOW</button>
+        <div class="card-head" onclick="toggleCard('browser-card')" title="Prikaži ili sakrij USB preglednik">
+            <div class="card-head-left">
+                <span class="card-icon">📁</span>
+                <h2 class="card-title">USB BROWSER</h2>
+            </div>
+            <div class="card-head-right">
+                <button class="toggle-switch" id="toggle-btn-browser-card" aria-label="Prikaži USB preglednik" aria-expanded="false" onclick="event.stopPropagation(); toggleCard('browser-card')">
+                    <span class="toggle-label">CLOSED</span>
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </button>
+                <button class="card-close-btn" onclick="event.stopPropagation(); toggleCard('browser-card')" title="Zatvori sekciju">✕</button>
+            </div>
         </div>
         <div class="card-body">
             <div class="search-wrap">
@@ -199,7 +273,7 @@
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input type="text" id="search-input"
-                       placeholder="Search collection..."
+                       placeholder="Search.."
                        oninput="filterLibrary()">
             </div>
             <div class="library-container">
@@ -214,7 +288,7 @@
                     </thead>
                     <tbody id="library-body">
                         <tr>
-                            <td colspan="3" class="loading-cell">Učitavanje knjižnice...</td>
+                            <td colspan="3" class="loading-cell">Loading library..</td>
                         </tr>
                     </tbody>
                 </table>
@@ -222,11 +296,20 @@
         </div>
     </section>
 
-    <!-- ── Controller Profile ───────────────────────────────────────────── -->
+    <!-- ── 2. Controller Profile ────────────────────────────────────────── -->
     <section class="card collapsible collapsed" id="profile-card">
-        <div class="card-head">
-            <h2 class="card-title">CONTROLLER PROFILE</h2>
-            <button class="btn btn-toggle" onclick="toggleCollapse('profile-card', this)">SHOW</button>
+        <div class="card-head" onclick="toggleCard('profile-card')" title="Prikaži ili sakrij profil kontrolera">
+            <div class="card-head-left">
+                <span class="card-icon">🎛️</span>
+                <h2 class="card-title">CONTROLLER PROFILE</h2>
+            </div>
+            <div class="card-head-right">
+                <button class="toggle-switch" id="toggle-btn-profile-card" aria-label="Prikaži profil kontrolera" aria-expanded="false" onclick="event.stopPropagation(); toggleCard('profile-card')">
+                    <span class="toggle-label">CLOSED</span>
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </button>
+                <button class="card-close-btn" onclick="event.stopPropagation(); toggleCard('profile-card')" title="Zatvori sekciju">✕</button>
+            </div>
         </div>
         <div class="card-body">
             <p id="profile-list-info" class="card-info">Reading profiles from the SD card...</p>
@@ -246,11 +329,20 @@
         </div>
     </section>
 
-    <!-- ── P4 Firmware Update ───────────────────────────────────────────── -->
+    <!-- ── 3. P4 Firmware Update ────────────────────────────────────────── -->
     <section class="card collapsible collapsed" id="ota-card">
-        <div class="card-head">
-            <h2 class="card-title">P4 FIRMWARE UPDATE</h2>
-            <button class="btn btn-toggle" onclick="toggleCollapse('ota-card', this)">SHOW</button>
+        <div class="card-head" onclick="toggleCard('ota-card')" title="Prikaži ili sakrij nadogradnju firmwarea">
+            <div class="card-head-left">
+                <span class="card-icon">⚡</span>
+                <h2 class="card-title">P4 FIRMWARE UPDATE</h2>
+            </div>
+            <div class="card-head-right">
+                <button class="toggle-switch" id="toggle-btn-ota-card" aria-label="Prikaži nadogradnju firmwarea" aria-expanded="false" onclick="event.stopPropagation(); toggleCard('ota-card')">
+                    <span class="toggle-label">CLOSED</span>
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </button>
+                <button class="card-close-btn" onclick="event.stopPropagation(); toggleCard('ota-card')" title="Zatvori sekciju">✕</button>
+            </div>
         </div>
         <div class="card-body">
             <p id="ota-firmware-info" class="card-info">Reading firmware status...</p>
@@ -262,19 +354,23 @@
         </div>
     </section>
 
-    <!-- ── Pull-OTA service network ──────────────────────────────────────── -->
-    <!--
-      Entry lives here rather than on the deck screen: typing a WPA2
-      passphrase on the touch panel is miserable, and the physical Settings
-      view only needs the action buttons.
-    -->
+    <!-- ── 4. WiFi Settings ─────────────────────────────────────────── -->
     <section class="card collapsible collapsed" id="ota-net-card">
-        <div class="card-head">
-            <h2 class="card-title">UPDATE SERVER</h2>
-            <button class="btn btn-toggle" onclick="toggleCollapse('ota-net-card', this)">SHOW</button>
+        <div class="card-head" onclick="toggleCard('ota-net-card')" title="Prikaži ili sakrij Wi-Fi postavke">
+            <div class="card-head-left">
+                <span class="card-icon">📶</span>
+                <h2 class="card-title">WIFI SETTINGS</h2>
+            </div>
+            <div class="card-head-right">
+                <button class="toggle-switch" id="toggle-btn-ota-net-card" aria-label="Prikaži Wi-Fi postavke" aria-expanded="false" onclick="event.stopPropagation(); toggleCard('ota-net-card')">
+                    <span class="toggle-label">CLOSED</span>
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </button>
+                <button class="card-close-btn" onclick="event.stopPropagation(); toggleCard('ota-net-card')" title="Zatvori sekciju">✕</button>
+            </div>
         </div>
         <div class="card-body">
-            <p id="ota-net-info" class="card-info">Reading update-server settings...</p>
+            <p id="ota-net-info" class="card-info">Reading WiFi & update settings...</p>
             <p class="maintenance-warning">The controller joins this network only while checking for and downloading an update, then returns to its own <code>Pajoniiir</code> access point. The passphrase is stored on the deck and is never sent back to this page.</p>
             <label class="field"><span>Wi-Fi network (SSID)</span>
                 <input id="ota-net-ssid" type="text" maxlength="32" autocomplete="off" placeholder="service network name"></label>
@@ -294,6 +390,6 @@
 
     </main>
 
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
 </body>
 </html>

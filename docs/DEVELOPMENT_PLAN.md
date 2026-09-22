@@ -1,6 +1,6 @@
 # P4 post-release development plan
 
-Status: **M2.1 released; no open M2.1 release gate**.
+Status: **M2.1 released; M2.2 Wi-Fi Remote refresh in development**.
 
 ## Current baseline
 
@@ -31,6 +31,28 @@ Every change starts from its impact, not from the age of the previous test:
 
 Preserve firmware version, source commit, slot, boot identity, strict counter
 deltas and operator-visible/audible results in new validation records.
+
+## Active M2.2 scope
+
+M2.2 is a focused Wi-Fi Remote upgrade. It preserves the M2.1 USB, playback,
+audio, OTA and controller topology while replacing the embedded HTML/CSS/JS
+operator surface with a responsive dual-deck console.
+
+The implementation contract is:
+
+- the page remains fully embedded and has no runtime CDN, webfont or framework
+  dependency;
+- P4 `deck_core` remains authoritative for playback and SYNC state;
+- continuous browser gestures may preview locally, but decoder seek is committed
+  once per completed gesture;
+- every mutation remains a marked POST request and must handle non-2xx responses;
+- service cards expose existing signed OTA, network and controller-profile APIs
+  without weakening their confirmations or credential boundaries;
+- desktop, phone landscape and phone portrait layouts receive automated contract
+  coverage plus visual review;
+- release acceptance requires the complete P4 host suite, ESP-IDF v6.0.2 build,
+  OTA installation and a focused physical Wi-Fi Remote playback/seek/mixer/OTA
+  smoke on the exact candidate image.
 
 ## Ordered future work
 
