@@ -5,6 +5,7 @@
 [![User manual](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
 [![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)
+[![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
 
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
@@ -139,7 +140,6 @@ verification, rollback and wired-recovery instructions.
   </tr>
 </table>
 
-[![Watch the demo video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
 
 ## 3D-print enclosure
 
