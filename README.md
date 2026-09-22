@@ -140,6 +140,10 @@ verification, rollback and wired-recovery instructions.
   </tr>
 </table>
 
+## DEMO Video
+
+[![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/hqdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
+
 
 ## 3D-print enclosure
 
