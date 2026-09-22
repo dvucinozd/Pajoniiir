@@ -1,0 +1,64 @@
+name: Documentation integrity
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "**/*.md"
+      - "**/*.html"
+      - "**/*.png"
+      - "**/*.jpg"
+      - "**/*.jpeg"
+      - "**/*.gif"
+      - "**/*.svg"
+      - "**/*.webp"
+      - "tools/check_documentation.ps1"
+      - ".github/workflows/documentation-integrity.yml"
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "**/*.html"
+      - "**/*.png"
+      - "**/*.jpg"
+      - "**/*.jpeg"
+      - "**/*.gif"
+      - "**/*.svg"
+      - "**/*.webp"
+      - "tools/check_documentation.ps1"
+      - ".github/workflows/documentation-integrity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+  documentation:
+    name: Links, retired paths and whitespace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out complete documentation history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check documentation integrity
+        shell: pwsh
+        run: ./tools/check_documentation.ps1
+
+      - name: Check changed-file whitespace
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          if [ -n "${BASE_SHA:-}" ] && [ "$BASE_SHA" != "$zero" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git diff --check "$BASE_SHA" "$GITHUB_SHA"
+          else
+            git show --check --format= "$GITHUB_SHA"
+          fi

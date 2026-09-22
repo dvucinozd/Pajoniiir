@@ -39,6 +39,17 @@ services and signed OTA. There is no active S3 firmware or inter-board link.
 - [`../firmware/main-deck-p4/PINOUT_P4.md`](../firmware/main-deck-p4/PINOUT_P4.md)
   — active P4/PCM5102A pin inventory.
 
+Before committing documentation or media changes, run:
+
+```powershell
+.\tools\check_documentation.ps1
+git diff --check
+```
+
+The `Documentation integrity` workflow repeats those checks for Markdown/HTML
+links, local assets, references to removed documentation and changed-file
+whitespace. Changes to `docs/` also retain the separate Pages deployment gate.
+
 ## M2.1 release evidence
 
 - [`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md)

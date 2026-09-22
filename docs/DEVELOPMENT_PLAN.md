@@ -21,7 +21,7 @@ Every change starts from its impact, not from the age of the previous test:
 
 | Change area | Minimum evidence before release |
 | --- | --- |
-| Documentation/media only | local link check, `git diff --check`, Pages review when `index.html` changes |
+| Documentation/media only | `tools/check_documentation.ps1`, `git diff --check`, Documentation integrity CI and Pages review when `index.html` changes |
 | Host-only tooling/test | affected suite plus complete P4 host suite when shared behavior changes |
 | Firmware logic | complete P4 host suite and ESP-IDF v6.0.2 build |
 | UI | UI simulator E2E plus firmware build; physical display/touch smoke for release |
