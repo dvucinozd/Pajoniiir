@@ -171,12 +171,8 @@ static void check_task(void *arg)
     (void)arg;
     static char doc[CHANNEL_DOC_MAX];
 
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
-    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    app_settings_ota_get_url(url, sizeof(url));
-    app_settings_ota_copy_password(pass, sizeof(pass));
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
 
     /* Let the HTTP handler finish and its 202 reach the client before the
      * transition starts. Without this the first thing this task does is stop
@@ -186,8 +182,8 @@ static void check_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(500));
 
     note(P4_OTA_PULL_CHECKING, ESP_OK, "joining service network");
-    esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, STA_TIMEOUT_MS);
-    memset(pass, 0, sizeof(pass));   /* done with it; do not leave it on the stack */
+    esp_err_t rc = wifi_link_switch_to_sta(config.ssid, config.password, STA_TIMEOUT_MS);
+    memset(config.password, 0, sizeof(config.password));
 
     if (rc != ESP_OK) {
         note(P4_OTA_PULL_FAILED, rc,
@@ -195,7 +191,7 @@ static void check_task(void *arg)
                                    : "could not join network");
     } else {
         note(P4_OTA_PULL_CHECKING, ESP_OK, "reading update channel");
-        int got = fetch_channel_doc(url, doc, sizeof(doc));
+        int got = fetch_channel_doc(config.url, doc, sizeof(doc));
         if (got < 0) {
             esp_err_t herr = (esp_err_t)(-got);
             note(P4_OTA_PULL_FAILED, herr,
@@ -430,22 +426,18 @@ static void install_task(void *arg)
     free(arg);
     vTaskDelay(pdMS_TO_TICKS(500));   /* let the 202 out; see check_task */
 
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
-    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    app_settings_ota_get_url(url, sizeof(url));
-    app_settings_ota_copy_password(pass, sizeof(pass));
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
 
     note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "joining service network");
-    esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, STA_TIMEOUT_MS);
-    memset(pass, 0, sizeof(pass));
+    esp_err_t rc = wifi_link_switch_to_sta(config.ssid, config.password, STA_TIMEOUT_MS);
+    memset(config.password, 0, sizeof(config.password));
 
     if (rc != ESP_OK) {
         note(P4_OTA_PULL_FAILED, rc, "could not join network");
     } else {
         note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "downloading");
-        rc = download_and_install(url, offer.url, offer.release, offer.size,
+        rc = download_and_install(config.url, offer.url, offer.release, offer.size,
                                   offer.sha256);
         if (rc == ESP_OK) {
             note(P4_OTA_PULL_READY_TO_REBOOT, ESP_OK, "verified, restarting");
@@ -548,7 +540,10 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
     note_locked(P4_OTA_PULL_DOWNLOADING, ESP_OK, "starting");
     portEXIT_CRITICAL(&s_state_mux);
     /* 10 KiB: TLS records plus the flash write path run on this task. */
-    if (xTaskCreate(install_task, "ota_install", 10240, offer, 4, NULL) != pdPASS) {
+    /* install_task ends in esp_restart(); keep that ESP32-P4 cache/reset path
+     * on the same core-0 contract as app_main and push OTA. */
+    if (xTaskCreatePinnedToCore(install_task, "ota_install", 10240, offer, 4,
+                                NULL, 0) != pdPASS) {
         note(P4_OTA_PULL_FAILED, ESP_ERR_NO_MEM, "could not start task");
         memset(offer, 0, sizeof(*offer));
         free(offer);
@@ -561,12 +556,10 @@ esp_err_t p4_ota_pull_install_start(const char *expected_release)
 
 esp_err_t p4_ota_pull_check_start(void)
 {
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    app_settings_ota_get_url(url, sizeof(url));
-    if (ssid[0] == '\0' || url[0] == '\0') return ESP_ERR_INVALID_ARG;
-    if (p4_ota_cfg_check_url(url) != P4_OTA_CFG_OK) return ESP_ERR_INVALID_ARG;
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
+    if (config.ssid[0] == '\0' || config.url[0] == '\0') return ESP_ERR_INVALID_ARG;
+    if (p4_ota_cfg_check_url(config.url) != P4_OTA_CFG_OK) return ESP_ERR_INVALID_ARG;
     if (!p4_ota_pull_gate_try_acquire(&s_operation_gate)) {
         return ESP_ERR_INVALID_STATE;
     }

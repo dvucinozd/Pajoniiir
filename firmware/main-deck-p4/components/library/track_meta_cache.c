@@ -13,10 +13,11 @@
 #include <unistd.h>
 
 static const char *TAG = "track_meta_cache";
-static const char *CACHE_ROOT = "/sd/trackcache";
+static const char *CACHE_PARENT = "/sd/trackcache";
+static const char *CACHE_ROOT = "/sd/trackcache/v3";
 
 #define TRACK_META_CACHE_MAGIC   0x31434D54u /* "TMC1" */
-#define TRACK_META_CACHE_VERSION 2u
+#define TRACK_META_CACHE_VERSION 3u
 #define TRACK_META_CACHE_FLAGS_LOW  0x01u
 #define TRACK_META_CACHE_FLAGS_VBR  0x02u
 #define TRACK_META_CACHE_FLAGS_HIGH 0x04u
@@ -27,6 +28,7 @@ typedef struct {
     uint16_t version;
     uint16_t header_size;
     uint32_t track_key;
+    uint8_t persistent_id[32];
     uint64_t dat_size;
     int64_t dat_mtime;
     uint64_t ext_size;
@@ -75,16 +77,26 @@ static esp_err_t mkdir_if_missing(const char *path)
     return ESP_FAIL;
 }
 
-static esp_err_t cache_paths(uint32_t track_key, char *dir, size_t dir_len,
+static esp_err_t cache_paths(const media_persistent_id_t *persistent_id,
+                             char *dir, size_t dir_len,
                              char *path, size_t path_len)
 {
     if (sd_available() != ESP_OK) {
         return ESP_ERR_NOT_FOUND;
     }
-    if (mkdir_if_missing(CACHE_ROOT) != ESP_OK) {
+    if (mkdir_if_missing(CACHE_PARENT) != ESP_OK ||
+        mkdir_if_missing(CACHE_ROOT) != ESP_OK) {
         return ESP_FAIL;
     }
-    int written = snprintf(dir, dir_len, "%s/%08lx", CACHE_ROOT, (unsigned long)track_key);
+    if (!persistent_id || !persistent_id->valid) return ESP_ERR_INVALID_ARG;
+    char digest_hex[65];
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < 32u; i++) {
+        digest_hex[i * 2u] = hex[persistent_id->bytes[i] >> 4u];
+        digest_hex[i * 2u + 1u] = hex[persistent_id->bytes[i] & 0x0fu];
+    }
+    digest_hex[64] = '\0';
+    int written = snprintf(dir, dir_len, "%s/%s", CACHE_ROOT, digest_hex);
     if (written < 0 || written >= (int)dir_len) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -97,6 +109,7 @@ static esp_err_t cache_paths(uint32_t track_key, char *dir, size_t dir_len,
 
 static bool header_matches(const track_meta_cache_header_t *header,
                            uint32_t track_key,
+                           const media_persistent_id_t *persistent_id,
                            uint64_t dat_size,
                            int64_t dat_mtime,
                            uint64_t ext_size,
@@ -107,6 +120,8 @@ static bool header_matches(const track_meta_cache_header_t *header,
            header->version == TRACK_META_CACHE_VERSION &&
            header->header_size == sizeof(*header) &&
            header->track_key == track_key &&
+           persistent_id && persistent_id->valid &&
+           memcmp(header->persistent_id, persistent_id->bytes, 32u) == 0 &&
            header->dat_size == dat_size &&
            header->dat_mtime == dat_mtime &&
            header->ext_size == ext_size &&
@@ -133,18 +148,20 @@ static bool write_exact(FILE *fp, const void *src, size_t len)
  * the transaction it protects. media_io_gate (USB, a different medium) is taken
  * separately around the source-file stats below. */
 static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
+                                             const media_persistent_id_t *persistent_id,
                                              const char *dat_path,
                                              const char *ext_path,
                                              bool include_high_waveform,
                                              anlz_metadata_t *out_meta);
 
 esp_err_t track_meta_cache_load(uint32_t track_key,
+                                const media_persistent_id_t *persistent_id,
                                 const char *dat_path,
                                 const char *ext_path,
                                 bool include_high_waveform,
                                 anlz_metadata_t *out_meta)
 {
-    if (!out_meta || track_key == 0) {
+    if (!out_meta || track_key == 0 || !persistent_id || !persistent_id->valid) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(out_meta, 0, sizeof(*out_meta));
@@ -152,13 +169,14 @@ esp_err_t track_meta_cache_load(uint32_t track_key,
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_GATE_WAIT, track_key);
     sd_io_gate_begin();
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_GATE_HELD, track_key);
-    const esp_err_t load_rc = track_meta_cache_load_gated(track_key, dat_path, ext_path,
+    const esp_err_t load_rc = track_meta_cache_load_gated(track_key, persistent_id, dat_path, ext_path,
                                                           include_high_waveform, out_meta);
     sd_io_gate_end();
     return load_rc;
 }
 
 static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
+                                             const media_persistent_id_t *persistent_id,
                                              const char *dat_path,
                                              const char *ext_path,
                                              bool include_high_waveform,
@@ -188,9 +206,9 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
         return ESP_ERR_NOT_FOUND;
     }
 
-    char dir[64];
-    char path[96];
-    esp_err_t rc = cache_paths(track_key, dir, sizeof(dir), path, sizeof(path));
+    char dir[96];
+    char path[112];
+    esp_err_t rc = cache_paths(persistent_id, dir, sizeof(dir), path, sizeof(path));
     if (rc != ESP_OK) {
         return rc;
     }
@@ -204,7 +222,7 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SD_READ, track_key);
     track_meta_cache_header_t header;
     bool ok = read_exact(fp, &header, sizeof(header)) &&
-              header_matches(&header, track_key, dat_size, dat_mtime, ext_size, ext_mtime);
+              header_matches(&header, track_key, persistent_id, dat_size, dat_mtime, ext_size, ext_mtime);
     if (!ok) {
         fclose(fp);
         return ESP_ERR_INVALID_RESPONSE;
@@ -252,28 +270,31 @@ static esp_err_t track_meta_cache_load_gated(uint32_t track_key,
 }
 
 static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
+                                             const media_persistent_id_t *persistent_id,
                                              const char *dat_path,
                                              const char *ext_path,
                                              const anlz_metadata_t *meta);
 
 esp_err_t track_meta_cache_save(uint32_t track_key,
+                                const media_persistent_id_t *persistent_id,
                                 const char *dat_path,
                                 const char *ext_path,
                                 const anlz_metadata_t *meta)
 {
     sd_io_gate_begin();
-    const esp_err_t save_rc = track_meta_cache_save_gated(track_key, dat_path,
+    const esp_err_t save_rc = track_meta_cache_save_gated(track_key, persistent_id, dat_path,
                                                           ext_path, meta);
     sd_io_gate_end();
     return save_rc;
 }
 
 static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
+                                             const media_persistent_id_t *persistent_id,
                                              const char *dat_path,
                                              const char *ext_path,
                                              const anlz_metadata_t *meta)
 {
-    if (!meta || track_key == 0) {
+    if (!meta || track_key == 0 || !persistent_id || !persistent_id->valid) {
         return ESP_ERR_INVALID_ARG;
     }
     if ((meta->beat_count > 0 && !meta->beats) ||
@@ -298,9 +319,9 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
         return ESP_ERR_NOT_FOUND;
     }
 
-    char dir[64];
-    char path[96];
-    esp_err_t rc = cache_paths(track_key, dir, sizeof(dir), path, sizeof(path));
+    char dir[96];
+    char path[112];
+    esp_err_t rc = cache_paths(persistent_id, dir, sizeof(dir), path, sizeof(path));
     if (rc != ESP_OK) {
         return rc;
     }
@@ -334,6 +355,7 @@ static esp_err_t track_meta_cache_save_gated(uint32_t track_key,
                  (meta->waveform_high && meta->waveform_high_len > 0 ? TRACK_META_CACHE_FLAGS_HIGH : 0u),
         .waveform_high_len = meta->waveform_high && meta->waveform_high_len > 0 ? meta->waveform_high_len : 0,
     };
+    memcpy(header.persistent_id, persistent_id->bytes, sizeof(header.persistent_id));
 
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_HEADER, track_key);
     bool ok = write_exact(fp, &header, sizeof(header));

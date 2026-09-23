@@ -108,11 +108,13 @@ static void reset_state(uint16_t bpm, uint16_t beats)
 }
 
 /* ── external symbols library.c depends on ─────────────────────────────────── */
-esp_err_t track_meta_cache_load(uint32_t track_key, const char *dat_path,
+esp_err_t track_meta_cache_load(uint32_t track_key,
+                                const media_persistent_id_t *persistent_id,
+                                const char *dat_path,
                                 const char *ext_path, bool include_high_waveform,
                                 anlz_metadata_t *out_meta)
 {
-    (void)track_key; (void)dat_path; (void)ext_path;
+    (void)track_key; (void)persistent_id; (void)dat_path; (void)ext_path;
     s_cache_load_calls++;
     memset(out_meta, 0, sizeof(*out_meta));
     if (s_cache_load_result != ESP_OK) {
@@ -122,10 +124,12 @@ esp_err_t track_meta_cache_load(uint32_t track_key, const char *dat_path,
     return ESP_OK;
 }
 
-esp_err_t track_meta_cache_save(uint32_t track_key, const char *dat_path,
+esp_err_t track_meta_cache_save(uint32_t track_key,
+                                const media_persistent_id_t *persistent_id,
+                                const char *dat_path,
                                 const char *ext_path, const anlz_metadata_t *meta)
 {
-    (void)track_key; (void)dat_path; (void)ext_path; (void)meta;
+    (void)track_key; (void)persistent_id; (void)dat_path; (void)ext_path; (void)meta;
     s_save_calls++;
     return s_save_result;
 }
@@ -307,6 +311,8 @@ static void make_track(library_track_t *t)
 {
     memset(t, 0, sizeof(*t));
     t->track_id = 100u;
+    t->persistent_id.valid = true;
+    t->persistent_id.bytes[0] = 0x64u;
     snprintf(t->anlz_path, sizeof(t->anlz_path), "/PIONEER/USBANLZ/x/ANLZ0000.DAT");
     snprintf(t->title, sizeof(t->title), "Test");
 }

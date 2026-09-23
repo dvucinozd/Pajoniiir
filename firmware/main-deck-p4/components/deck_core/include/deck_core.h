@@ -152,6 +152,7 @@ esp_err_t deck_core_queue_remote_event(const ctrl_event_t *ev);
 esp_err_t deck_core_publish_loaded_track(uint8_t deck,
                                          uint32_t media_generation,
                                          uint32_t track_key,
+                                         const media_persistent_id_t *persistent_id,
                                          uint16_t bpm,
                                          uint32_t duration_ms,
                                          const struct anlz_metadata *anlz);

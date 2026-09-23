@@ -209,6 +209,47 @@ static void test_product_setter_cannot_restore_retired_speaker(void)
     CHECK(g_test_nvs.set_u8_calls == 0u);
 }
 
+static void test_ota_configuration_is_one_durable_blob(void)
+{
+    printf("== OTA configuration is persisted as one coherent blob ==\n");
+    reset_all();
+    CHECK(app_settings_ota_set("Pajoniiir", "secret", "https://ota.example") == ESP_OK);
+    CHECK(g_test_nvs.set_blob_calls == 1u);
+    char value[APP_SETTINGS_OTA_URL_CAP];
+    app_settings_ota_get_url(value, sizeof(value));
+    CHECK(strcmp(value, "https://ota.example") == 0);
+    app_settings_ota_config_t snapshot = {0};
+    app_settings_ota_get_config(&snapshot);
+    CHECK(strcmp(snapshot.ssid, "Pajoniiir") == 0);
+    CHECK(strcmp(snapshot.password, "secret") == 0);
+    CHECK(strcmp(snapshot.url, "https://ota.example") == 0);
+
+    g_test_nvs.fail_next_set = 1;
+    CHECK(app_settings_ota_set("Other", NULL, "https://bad.example") != ESP_OK);
+    app_settings_ota_get_url(value, sizeof(value));
+    CHECK(strcmp(value, "https://ota.example") == 0);
+
+    app_settings_test_reset();
+    CHECK(app_settings_init() == ESP_OK);
+    app_settings_ota_get_url(value, sizeof(value));
+    CHECK(strcmp(value, "https://ota.example") == 0);
+}
+
+static void test_ota_clear_persists_tombstone_and_reports_failure(void)
+{
+    printf("== OTA clear persists a tombstone and reports write failure ==\n");
+    reset_all();
+    CHECK(app_settings_ota_set("Pajoniiir", "secret", "https://ota.example") == ESP_OK);
+    g_test_nvs.fail_next_set = 1;
+    CHECK(app_settings_ota_clear() != ESP_OK);
+    CHECK(app_settings_ota_has_password());
+    CHECK(app_settings_ota_clear() == ESP_OK);
+    CHECK(!app_settings_ota_has_password());
+    app_settings_test_reset();
+    CHECK(app_settings_init() == ESP_OK);
+    CHECK(!app_settings_ota_has_password());
+}
+
 int main(void)
 {
     test_setter_before_worker_persists_synchronously();
@@ -222,6 +263,8 @@ int main(void)
     test_legacy_speaker_value_is_migrated_to_safe_rca();
     test_invalid_audio_value_is_migrated_to_safe_rca();
     test_product_setter_cannot_restore_retired_speaker();
+    test_ota_configuration_is_one_durable_blob();
+    test_ota_clear_persists_tombstone_and_reports_failure();
 
     printf("TESTS_RUN=%d\n", s_checks);
     if (s_failures == 0) {

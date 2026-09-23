@@ -393,10 +393,8 @@ static void probe_note(wifi_link_probe_state_t state, esp_err_t err,
 static void wifi_link_probe_task(void *arg)
 {
     (void)arg;
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    char pass[APP_SETTINGS_OTA_PASS_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    app_settings_ota_copy_password(pass, sizeof(pass));
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
 
     /* Same reason as the update check: the caller's 202 has to leave before
      * this task tears down the server that is sending it. */
@@ -407,9 +405,9 @@ static void wifi_link_probe_task(void *arg)
 
     /* 20 s: long enough for a slow DHCP lease, short enough that a network
      * which will never answer does not strand the deck off its own AP. */
-    esp_err_t rc = wifi_link_switch_to_sta(ssid, pass, 20000u);
+    esp_err_t rc = wifi_link_switch_to_sta(config.ssid, config.password, 20000u);
     /* The passphrase has done its job; do not leave it on this stack. */
-    memset(pass, 0, sizeof(pass));
+    memset(config.password, 0, sizeof(config.password));
 
     if (rc == ESP_OK) {
         esp_netif_ip_info_t ip = {0};
@@ -450,9 +448,10 @@ esp_err_t wifi_link_probe_start(void)
     if (s_probe_running) return ESP_ERR_INVALID_STATE;
     if (!s_active || s_sta_mode) return ESP_ERR_INVALID_STATE;
 
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    if (ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
+    if (config.ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
+    memset(config.password, 0, sizeof(config.password));
 
     /* Reserve the cross-component Wi-Fi transition before anything touches the
      * stack: the probe and pull OTA both take the radio AP->STA->AP, and running

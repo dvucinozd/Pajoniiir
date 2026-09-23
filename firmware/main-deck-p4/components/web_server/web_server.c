@@ -467,6 +467,9 @@ static esp_err_t api_firmware_handler(httpd_req_t *req)
     return httpd_resp_send(req, json, (size_t)len);
 }
 
+#define DELAYED_RESTART_STACK_BYTES 4096u
+#define DELAYED_RESTART_CORE 0
+
 static void delayed_restart_task(void *arg)
 {
     (void)arg;
@@ -505,10 +508,10 @@ void web_server_set_probe_hooks(web_server_probe_start_fn start,
 static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
-    char ssid[APP_SETTINGS_OTA_SSID_CAP] = {0};
-    char url[APP_SETTINGS_OTA_URL_CAP] = {0};
-    app_settings_ota_get_ssid(ssid, sizeof(ssid));
-    app_settings_ota_get_url(url, sizeof(url));
+    app_settings_ota_config_t config = {0};
+    app_settings_ota_get_config(&config);
+    const bool has_password = config.password[0] != '\0';
+    memset(config.password, 0, sizeof(config.password));
     /* The probe result rides along here rather than on its own endpoint: the
      * httpd is capped at 24 URI handlers, and going over takes down the whole
      * web layer including OTA, recoverable only by a wired flash. */
@@ -522,8 +525,8 @@ static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
     char url_esc[APP_SETTINGS_OTA_URL_CAP * 2u + 1u];
     char detail_esc[sizeof(probe.detail) * 2u + 1u];
     char address_esc[sizeof(probe.address) * 2u + 1u];
-    web_api_json_escape(ssid, ssid_esc, sizeof(ssid_esc));
-    web_api_json_escape(url, url_esc, sizeof(url_esc));
+    web_api_json_escape(config.ssid, ssid_esc, sizeof(ssid_esc));
+    web_api_json_escape(config.url, url_esc, sizeof(url_esc));
     web_api_json_escape(probe.detail, detail_esc, sizeof(detail_esc));
     web_api_json_escape(probe.address, address_esc, sizeof(address_esc));
 
@@ -533,7 +536,7 @@ static esp_err_t api_ota_config_get_handler(httpd_req_t *req)
                      "\"probe\":{\"state\":\"%s\",\"detail\":\"%s\","
                      "\"address\":\"%s\"}}",
                      ssid_esc, url_esc,
-                     app_settings_ota_has_password() ? "true" : "false",
+                     has_password ? "true" : "false",
                      probe_name, detail_esc, address_esc);
     if (n < 0 || (size_t)n >= sizeof(json)) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
@@ -605,8 +608,12 @@ static esp_err_t api_ota_config_post_handler(httpd_req_t *req)
     }
 
     if (p4_ota_cfg_extract_true(body, len, "clear")) {
-        app_settings_ota_clear();
+        esp_err_t clear_rc = app_settings_ota_clear();
         memset(body, 0, sizeof(body));
+        if (clear_rc != ESP_OK) {
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                       "Failed to clear OTA configuration");
+        }
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"ok\":true,\"cleared\":true}");
     }
@@ -791,15 +798,21 @@ static esp_err_t api_p4_ota_handler(httpd_req_t *req)
     }
     service_log_note(SERVICE_LOG_P4_OTA_VERIFIED, SERVICE_LOG_INFO, "reboot pending");
 
+    /* Keep esp_restart() on core 0.  The production M2.2 push-OTA reboot
+     * panicked in the ESP32-P4 cache write-back register access, and the
+     * previously unpinned helper could run on either core. */
+    if (xTaskCreatePinnedToCore(delayed_restart_task, "ota_reboot",
+                                DELAYED_RESTART_STACK_BYTES, NULL, 5, NULL,
+                                DELAYED_RESTART_CORE) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create OTA reboot task");
+        audio_engine_resume_loads();
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Firmware verified but reboot scheduling failed");
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Connection", "close");
-    esp_err_t send_rc = httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
-                                        HTTPD_RESP_USE_STRLEN);
-    if (xTaskCreate(delayed_restart_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "failed to create OTA reboot task");
-        esp_restart();
-    }
-    return send_rc;
+    return httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
+                           HTTPD_RESP_USE_STRLEN);
 }
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
@@ -1290,18 +1303,19 @@ static esp_err_t api_validation_reboot_handler(httpd_req_t *req)
                                HTTPD_RESP_USE_STRLEN);
     }
 
+    if (xTaskCreatePinnedToCore(delayed_restart_task, "validation_reboot",
+                                DELAYED_RESTART_STACK_BYTES, NULL, 5, NULL,
+                                DELAYED_RESTART_CORE) != pdPASS) {
+        ESP_LOGE(TAG, "failed to create validation reboot task");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                                   "Reboot scheduling failed");
+    }
     httpd_resp_set_status(req, "202 Accepted");
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_set_hdr(req, "Connection", "close");
-    esp_err_t send_rc = httpd_resp_send(
-        req, "{\"ok\":true,\"rebooting\":true}", HTTPD_RESP_USE_STRLEN);
-    if (xTaskCreate(delayed_restart_task, "validation_reboot", 2048,
-                    NULL, 5, NULL) != pdPASS) {
-        ESP_LOGE(TAG, "failed to create validation reboot task");
-        esp_restart();
-    }
-    return send_rc;
+    return httpd_resp_send(req, "{\"ok\":true,\"rebooting\":true}",
+                           HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t api_status_handler(httpd_req_t *req)
@@ -1705,6 +1719,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         "\"limiter_positive\":%u,"
         "\"limiter_negative\":%u,"
         "\"limiter_peak\":%d,"
+        "\"main_meter_peak\":%u,"
         "\"usb_headphones\":{\"submitted_blocks\":%u,\"dropped_blocks\":%u,\"submitted_frames\":%u,"
         "\"ring_queued_frames\":%u,\"ring_capacity_frames\":%u,\"ring_high_water_frames\":%u,"
         "\"ring_low_alarm_frames\":%u,\"ring_high_alarm_frames\":%u,\"ring_state\":\"%s\","
@@ -1782,6 +1797,7 @@ static esp_err_t api_status_handler(httpd_req_t *req)
         (unsigned)diagnostics.limiter.positive_overloads,
         (unsigned)diagnostics.limiter.negative_overloads,
         (int)diagnostics.limiter.peak_input_abs,
+        (unsigned)diagnostics.main_meter_peak,
         (unsigned)diagnostics.usb_headphone_submitted_blocks,
         (unsigned)diagnostics.usb_headphone_dropped_blocks,
         (unsigned)diagnostics.usb_headphone_submitted_frames,
@@ -1819,12 +1835,19 @@ static esp_err_t api_library_handler(httpd_req_t *req)
 {
     if (!api_request_allowed(req, false)) return ESP_FAIL;
     ESP_LOGD(TAG, "GET /api/library: %s", req->uri);
-    int count = media_catalog_count();
+    media_catalog_snapshot_t snapshot;
+    esp_err_t snapshot_rc = media_catalog_snapshot_acquire(&snapshot);
+    if (snapshot_rc != ESP_OK) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "Library snapshot unavailable",
+                               HTTPD_RESP_USE_STRLEN);
+    }
 
     // Alociramo manji buffer u RAM-u za chunkove
     size_t chunk_sz = 4096;
     char *chunk = malloc(chunk_sz);
     if (!chunk) {
+        media_catalog_snapshot_release(&snapshot);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
                                    "No memory");
     }
@@ -1832,27 +1855,29 @@ static esp_err_t api_library_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
 
     // Publish one catalog generation for every row in this response.
-    const uint32_t generation = media_catalog_generation();
+    const uint32_t generation = snapshot.generation;
     char header[64];
     int header_len = snprintf(header, sizeof(header),
                               "{\"generation\":%u,\"tracks\":[",
                               (unsigned)generation);
     if (header_len < 0 || (size_t)header_len >= sizeof(header)) {
         free(chunk);
+        media_catalog_snapshot_release(&snapshot);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "encode");
     }
     esp_err_t send_rc = httpd_resp_send_chunk(req, header, (size_t)header_len);
     if (send_rc != ESP_OK) {
         free(chunk);
+        media_catalog_snapshot_release(&snapshot);
         return send_rc;
     }
 
     int chunk_len = 0;
     bool first = true;
 
-    for (int i = 0; i < count; i++) {
-        media_catalog_row_t row;
-        if (media_catalog_get_row(i, &row) == ESP_OK) {
+    for (size_t i = 0; i < snapshot.count; i++) {
+        const media_catalog_row_t row = snapshot.rows[i];
+        {
             char title_esc[256];
             char artist_esc[256];
             char item[768];
@@ -1861,10 +1886,10 @@ static esp_err_t api_library_handler(httpd_req_t *req)
             int item_len = snprintf(item, sizeof(item),
                                     "%s{\"index\":%d,\"track_key\":%u,\"title\":\"%s\",\"artist\":\"%s\",\"bpm\":%u,\"duration_ms\":%u}",
                                     first ? "" : ",",
-                                    i, (unsigned)row.track_key, title_esc, artist_esc,
+                                    (int)i, (unsigned)row.track_key, title_esc, artist_esc,
                                     row.bpm, (unsigned)row.duration_ms);
             if (item_len < 0 || (size_t)item_len >= sizeof(item)) {
-                ESP_LOGW(TAG, "Skipping oversized library JSON row index=%d", i);
+                ESP_LOGW(TAG, "Skipping oversized library JSON row index=%u", (unsigned)i);
                 continue;
             }
 
@@ -1890,6 +1915,7 @@ static esp_err_t api_library_handler(httpd_req_t *req)
     }
 
     free(chunk);
+    media_catalog_snapshot_release(&snapshot);
 
     if (send_rc != ESP_OK) {
         // Veza je pukla; abortaj prijenos (ne šalji footer ni terminating chunk).

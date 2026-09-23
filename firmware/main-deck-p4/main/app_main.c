@@ -200,26 +200,42 @@ static const char *reset_reason_str(void)
     }
 }
 
+typedef enum {
+    APP_PROBE_NONE = 0,
+    APP_PROBE_LINK,
+    APP_PROBE_OTA,
+} app_probe_kind_t;
+
+static portMUX_TYPE s_probe_kind_mux = portMUX_INITIALIZER_UNLOCKED;
+static app_probe_kind_t s_probe_kind;
+
 /* Adapters between the web layer and wifi_link. Thin on purpose: the only job
  * is to keep the two components from depending on each other. */
 static int app_probe_start(int mode, const char *arg)
 {
     /* 1 = check the update channel, 0 = prove the link only. Both make the
      * same AP->STA->AP round trip; the check adds one HTTPS GET. */
-    if (mode == 2) return (int)p4_ota_pull_install_start(arg);
-    return mode == 1 ? (int)p4_ota_pull_check_start()
-                     : (int)wifi_link_probe_start();
+    const int rc = mode == 2 ? (int)p4_ota_pull_install_start(arg)
+                 : mode == 1 ? (int)p4_ota_pull_check_start()
+                             : (int)wifi_link_probe_start();
+    if (rc == (int)ESP_OK) {
+        portENTER_CRITICAL(&s_probe_kind_mux);
+        s_probe_kind = mode == 0 ? APP_PROBE_LINK : APP_PROBE_OTA;
+        portEXIT_CRITICAL(&s_probe_kind_mux);
+    }
+    return rc;
 }
 
 static void app_probe_status(web_server_probe_status_t *out)
 {
     if (!out) return;
 
-    /* Whichever ran more recently is what the operator wants to see. The
-     * update check is reported in preference because it is the operation with
-     * something to say beyond "the link works". */
+    portENTER_CRITICAL(&s_probe_kind_mux);
+    const app_probe_kind_t kind = s_probe_kind;
+    portEXIT_CRITICAL(&s_probe_kind_mux);
+
     p4_ota_pull_status_t chk = p4_ota_pull_get_status();
-    if (chk.state != P4_OTA_PULL_IDLE) {
+    if (kind == APP_PROBE_OTA) {
         switch (chk.state) {
         case P4_OTA_PULL_CHECKING:    out->state = 1; break;
         case P4_OTA_PULL_UP_TO_DATE:  out->state = 2; break;

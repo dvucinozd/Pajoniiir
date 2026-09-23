@@ -3,7 +3,7 @@
 #include <string.h>
 
 typedef struct {
-    uint32_t key;
+    media_persistent_id_t id;
     hot_cue_store_blob_t blob;
     bool valid;
 } test_hot_cue_entry_t;
@@ -24,13 +24,13 @@ static void normalize_blob(hot_cue_store_blob_t *blob)
     }
 }
 
-esp_err_t hot_cue_store_load(uint32_t track_key, hot_cue_store_blob_t *out_blob)
+esp_err_t hot_cue_store_load(const media_persistent_id_t *id, hot_cue_store_blob_t *out_blob)
 {
-    if (track_key == 0 || !out_blob) {
+    if (!id || !id->valid || !out_blob) {
         return ESP_ERR_INVALID_ARG;
     }
     for (uint8_t i = 0; i < 8; i++) {
-        if (s_entries[i].valid && s_entries[i].key == track_key) {
+        if (s_entries[i].valid && media_persistent_id_equal(&s_entries[i].id, id)) {
             *out_blob = s_entries[i].blob;
             return ESP_OK;
         }
@@ -38,14 +38,14 @@ esp_err_t hot_cue_store_load(uint32_t track_key, hot_cue_store_blob_t *out_blob)
     return ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t hot_cue_store_save(uint32_t track_key, const hot_cue_store_blob_t *blob)
+esp_err_t hot_cue_store_save(const media_persistent_id_t *id, const hot_cue_store_blob_t *blob)
 {
-    if (track_key == 0 || !blob) {
+    if (!id || !id->valid || !blob) {
         return ESP_ERR_INVALID_ARG;
     }
     for (uint8_t i = 0; i < 8; i++) {
-        if (!s_entries[i].valid || s_entries[i].key == track_key) {
-            s_entries[i].key = track_key;
+        if (!s_entries[i].valid || media_persistent_id_equal(&s_entries[i].id, id)) {
+            s_entries[i].id = *id;
             s_entries[i].blob = *blob;
             normalize_blob(&s_entries[i].blob);
             s_entries[i].valid = true;
@@ -55,13 +55,13 @@ esp_err_t hot_cue_store_save(uint32_t track_key, const hot_cue_store_blob_t *blo
     return ESP_ERR_NO_MEM;
 }
 
-esp_err_t hot_cue_store_clear(uint32_t track_key)
+esp_err_t hot_cue_store_clear(const media_persistent_id_t *id)
 {
-    if (track_key == 0) {
+    if (!id || !id->valid) {
         return ESP_ERR_INVALID_ARG;
     }
     for (uint8_t i = 0; i < 8; i++) {
-        if (s_entries[i].valid && s_entries[i].key == track_key) {
+        if (s_entries[i].valid && media_persistent_id_equal(&s_entries[i].id, id)) {
             memset(&s_entries[i], 0, sizeof(s_entries[i]));
             return ESP_OK;
         }

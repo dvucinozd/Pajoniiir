@@ -14,6 +14,7 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 /* Host suites compile this source without sdkconfig.h and exercise the product
  * default. Firmware receives the Kconfig value from ESP-IDF. */
@@ -57,6 +58,8 @@ static int              s_active_buf = 0;
 static int              s_active_order_buf = 0;
 static int              s_track_count = 0;
 static uint32_t         s_generation = 0;
+static uint8_t          s_export_digest[32];
+static bool             s_export_digest_valid = false;
 static pdb_import_stats_t s_import_stats;
 static SemaphoreHandle_t s_library_mutex = NULL;
 static bool             s_index_building = false;
@@ -178,6 +181,61 @@ static int library_slot_for_row_unlocked(int row)
     return slot < s_track_count ? slot : -1;
 }
 
+static esp_err_t hash_export_file(uint8_t out[32])
+{
+#ifdef WIN32
+    /* Host catalog tests provide an in-memory PDB backend. Their contract is
+     * catalog publication, not VFS hashing; use a stable simulator export ID. */
+    media_sha256(USB_PDB_PATH, sizeof(USB_PDB_PATH) - 1u, out);
+    return ESP_OK;
+#else
+    struct stat before = {0};
+    struct stat after = {0};
+    media_io_gate_begin();
+    bool available = media_io_gate_is_available();
+    int stat_rc = available ? stat(USB_PDB_PATH, &before) : -1;
+    FILE *fp = stat_rc == 0 ? fopen(USB_PDB_PATH, "rb") : NULL;
+    media_io_gate_end();
+    if (!fp) return ESP_ERR_NOT_FOUND;
+
+    uint8_t *buf = malloc(8192u);
+    if (!buf) {
+        media_io_gate_begin();
+        fclose(fp);
+        media_io_gate_end();
+        return ESP_ERR_NO_MEM;
+    }
+    media_sha256_ctx_t sha;
+    media_sha256_init(&sha);
+    esp_err_t rc = ESP_OK;
+    for (;;) {
+        media_io_gate_begin();
+        bool can_read = media_io_gate_is_available();
+        size_t got = can_read ? fread(buf, 1u, 8192u, fp) : 0u;
+        bool eof = can_read && feof(fp);
+        bool error = !can_read || ferror(fp);
+        media_io_gate_end();
+        if (got) media_sha256_update(&sha, buf, got);
+        if (error) { rc = ESP_ERR_INVALID_STATE; break; }
+        if (eof) break;
+        if (got == 0u) { rc = ESP_FAIL; break; }
+    }
+    media_io_gate_begin();
+    bool still_available = media_io_gate_is_available();
+    int after_rc = still_available ? stat(USB_PDB_PATH, &after) : -1;
+    fclose(fp);
+    media_io_gate_end();
+    free(buf);
+    if (rc != ESP_OK || after_rc != 0 ||
+        before.st_size != after.st_size || before.st_mtime != after.st_mtime) {
+        memset(&sha, 0, sizeof(sha));
+        return rc == ESP_OK ? ESP_ERR_INVALID_STATE : rc;
+    }
+    media_sha256_final(&sha, out);
+    return ESP_OK;
+#endif
+}
+
 uint32_t library_track_key(const library_track_t *track)
 {
     if (!track) {
@@ -285,6 +343,16 @@ esp_err_t library_init(void)
     library_order_entry_t *build_order = s_order_buf[build_order_buf];
     int build_count = 0;
 
+    uint8_t build_export_digest[32];
+    rc = hash_export_file(build_export_digest);
+    if (rc != ESP_OK) {
+        xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+        s_index_building = false;
+        xSemaphoreGiveRecursive(s_library_mutex);
+        ESP_LOGW(TAG, "Cannot hash export.pdb: %s", esp_err_to_name(rc));
+        return rc;
+    }
+
     /* pdb_open() owns bounded media access and releases media_io_gate after at
      * most 8 KiB. This keeps audio cache reads schedulable and makes an
      * asynchronous disconnect observable while the catalog is being parsed. */
@@ -375,6 +443,8 @@ esp_err_t library_init(void)
     s_active_order_buf = build_order_buf;
     s_track_count = build_count;
     s_import_stats = import_stats;
+    memcpy(s_export_digest, build_export_digest, sizeof(s_export_digest));
+    s_export_digest_valid = true;
     if (s_ui_track_idx >= build_count) {
         s_ui_track_idx = 0;
     }
@@ -414,6 +484,19 @@ uint32_t library_generation(void)
     return gen;
 }
 
+esp_err_t library_export_digest(uint8_t out_digest[32], uint32_t *out_generation)
+{
+    if (!out_digest || !out_generation) return ESP_ERR_INVALID_ARG;
+    if (ensure_library_mutex() != ESP_OK) return ESP_ERR_NO_MEM;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    esp_err_t rc = s_export_digest_valid ? ESP_OK : ESP_ERR_NOT_FOUND;
+    if (rc == ESP_OK) memcpy(out_digest, s_export_digest, 32u);
+    else memset(out_digest, 0, 32u);
+    *out_generation = s_generation;
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return rc;
+}
+
 void library_get_import_stats(pdb_import_stats_t *stats)
 {
     if (!stats) return;
@@ -434,6 +517,8 @@ void library_clear(void)
     }
     s_track_count = 0;
     s_import_stats = (pdb_import_stats_t){0};
+    memset(s_export_digest, 0, sizeof(s_export_digest));
+    s_export_digest_valid = false;
     s_generation++;
     s_ui_track_idx = 0;
     xSemaphoreGiveRecursive(s_library_mutex);
@@ -521,6 +606,43 @@ esp_err_t library_get_row_key(int index, uint32_t *out_key)
     return rc;
 }
 
+esp_err_t library_snapshot_rows(library_catalog_row_t *rows,
+                                size_t capacity,
+                                size_t *out_count,
+                                uint32_t *out_generation)
+{
+    if (!out_count || !out_generation) return ESP_ERR_INVALID_ARG;
+    *out_count = 0u;
+    *out_generation = 0u;
+    if (ensure_library_mutex() != ESP_OK) return ESP_ERR_NO_MEM;
+    xSemaphoreTakeRecursive(s_library_mutex, portMAX_DELAY);
+    const size_t needed = s_track_count > 0 ? (size_t)s_track_count : 0u;
+    *out_count = needed;
+    *out_generation = s_generation;
+    if (needed > capacity || (needed > 0u && !rows)) {
+        xSemaphoreGiveRecursive(s_library_mutex);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    library_track_t *idx = active_tracks();
+    for (size_t row = 0u; row < needed; row++) {
+        const int slot = library_slot_for_row_unlocked((int)row);
+        if (!idx || slot < 0) {
+            xSemaphoreGiveRecursive(s_library_mutex);
+            return ESP_ERR_INVALID_STATE;
+        }
+        library_catalog_row_t *dst = &rows[row];
+        memset(dst, 0, sizeof(*dst));
+        dst->track_key = library_track_key(&idx[slot]);
+        dst->bpm = idx[slot].bpm;
+        dst->duration_ms = idx[slot].duration_ms;
+        library_copy_str(dst->title, sizeof(dst->title), idx[slot].title);
+        library_copy_str(dst->artist, sizeof(dst->artist), idx[slot].artist);
+        library_copy_str(dst->key, sizeof(dst->key), idx[slot].key);
+    }
+    xSemaphoreGiveRecursive(s_library_mutex);
+    return ESP_OK;
+}
+
 int library_find_row_by_key(uint32_t track_key)
 {
     if (track_key == 0u) return -1;
@@ -576,7 +698,8 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
 
     /* Warm path: a single cache load carrying the high-resolution waveform. */
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_USB_STAT, track_key);
-    esp_err_t cache_rc = track_meta_cache_load(track_key, dat_path, ext_path, true, out);
+    esp_err_t cache_rc = track_meta_cache_load(track_key, &track->persistent_id,
+                                               dat_path, ext_path, true, out);
     if (cache_rc == ESP_OK) {
         if (source) *source = LIBRARY_ANLZ_SRC_CACHE;
         return ESP_OK;
@@ -598,7 +721,8 @@ static esp_err_t library_resolve_anlz(const library_track_t *track,
 
 #if CONFIG_LIBRARY_ANLZ_CACHE_WRITE
     library_load_trace_mark(LIBRARY_LOAD_PHASE_CACHE_SAVE_USB_STAT, track_key);
-    esp_err_t save_rc = track_meta_cache_save(track_key, dat_path, ext_path, out);
+    esp_err_t save_rc = track_meta_cache_save(track_key, &track->persistent_id,
+                                              dat_path, ext_path, out);
     if (cache_written) *cache_written = (save_rc == ESP_OK);
 #else
     /* Optional acceleration only. On the experimental P4 power setup, the

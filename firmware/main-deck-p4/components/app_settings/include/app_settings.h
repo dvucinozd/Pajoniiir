@@ -61,6 +61,16 @@ void app_settings_set_wifi_remote(uint8_t on);
 #define APP_SETTINGS_OTA_PASS_CAP 65u   /* 64 + NUL */
 #define APP_SETTINGS_OTA_URL_CAP  161u
 
+typedef struct {
+    char ssid[APP_SETTINGS_OTA_SSID_CAP];
+    char password[APP_SETTINGS_OTA_PASS_CAP];
+    char url[APP_SETTINGS_OTA_URL_CAP];
+} app_settings_ota_config_t;
+
+/* Copy one coherent configuration generation under one critical section. The
+ * password field is for trusted association/update code and must not be logged. */
+void app_settings_ota_get_config(app_settings_ota_config_t *out);
+
 /* Copy the SSID / base URL out. Safe to show in the UI and in status. */
 void app_settings_ota_get_ssid(char *out, size_t cap);
 void app_settings_ota_get_url(char *out, size_t cap);
@@ -79,4 +89,4 @@ void app_settings_ota_copy_password(char *out, size_t cap);
 esp_err_t app_settings_ota_set(const char *ssid, const char *password, const char *url);
 
 /* Forget the network entirely - the CLEAR WI-FI action. */
-void app_settings_ota_clear(void);
+esp_err_t app_settings_ota_clear(void);

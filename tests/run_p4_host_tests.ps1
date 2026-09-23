@@ -1209,7 +1209,7 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 OTA config status reports only whether a password is stored" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
-    -LiteralPatterns @('app_settings_ota_has_password()', '\"has_password\":%s')
+    -LiteralPatterns @('app_settings_ota_get_config(&config)', 'const bool has_password = config.password[0]', 'memset(config.password, 0', '\"has_password\":%s')
 
 # Absence of a field in a hand-formatted JSON string; no symbol involved.
 Assert-FileDoesNotContain `
@@ -1488,6 +1488,25 @@ Assert-FileContains `
         "!audio.streaming",
         "deck1.state == AE_LOADING",
         '"/api/validation/reboot"'
+    )
+
+Assert-FileContains `
+    -Name "p4 delayed reboot task is pinned to core zero for ESP32-P4 cache reset" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/web_server/web_server.c") `
+    -LiteralPatterns @(
+        "#define DELAYED_RESTART_STACK_BYTES 4096u",
+        "#define DELAYED_RESTART_CORE 0",
+        'xTaskCreatePinnedToCore(delayed_restart_task, "ota_reboot",',
+        'xTaskCreatePinnedToCore(delayed_restart_task, "validation_reboot",',
+        "DELAYED_RESTART_CORE)"
+    )
+
+Assert-FileContains `
+    -Name "p4 pull OTA install and restart task is pinned to core zero" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @(
+        'xTaskCreatePinnedToCore(install_task, "ota_install", 10240, offer, 4,',
+        "NULL, 0)"
     )
 
 Assert-FileContains `
@@ -2182,6 +2201,7 @@ $tests = @(
         Args = @(
             "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11", "-pthread",
             "-I../../firmware/main-deck-p4/components/deck_core/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-I../support/stubs",
             "-o", "test_deck_loaded_track_store.exe",
@@ -2189,6 +2209,18 @@ $tests = @(
             "anlz_clone_stub.c",
             "../../firmware/main-deck-p4/components/library/anlz_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
+        )
+    },
+    @{
+        Name = "media_identity"
+        Dir = "tests/media_identity"
+        Target = "test_media_identity.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror", "-std=c11",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
+            "-o", "test_media_identity.exe",
+            "test_media_identity.c",
+            "../../firmware/main-deck-p4/components/media_identity/media_identity.c"
         )
     },
     @{
@@ -2237,6 +2269,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_deck_core_dual.exe",
             "test_deck_core_dual.c",
@@ -2247,6 +2280,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c"
         )
     },
@@ -2278,6 +2312,7 @@ $tests = @(
             "-I../../firmware/main-deck-p4/components/deck_core/include",
             "-I../../firmware/main-deck-p4/components/control_link/include",
             "-I../../firmware/main-deck-p4/components/hot_cue_store/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
             "-I../../firmware/main-deck-p4/components/library/include",
             "-o", "test_deck_core_dual_scratch.exe",
             "test_deck_core_dual.c",
@@ -2288,6 +2323,7 @@ $tests = @(
             "../../firmware/main-deck-p4/components/beat_jump/beat_jump.c",
             "../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c",
             "../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c",
+            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
             "deck_core_test_snapshot_wrapper.c"
         )
     },
@@ -2484,6 +2520,7 @@ $tests = @(
             "-DANLZ_STANDALONE_TEST",
             "-I../../firmware/main-deck-p4/components/ui/include",
             "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
             "-o", "test_ui_overview_motion.exe",
             "test_ui_overview_motion.c",
             "../../firmware/main-deck-p4/components/ui/ui_overview_motion.c"
@@ -2562,7 +2599,7 @@ $tests = @(
     },
     @{
         Name = "anlz"
-        MinTestsRun = 39
+        MinTestsRun = 41
         Dir = "tests/anlz"
         Target = "test_anlz.exe"
         Cleanup = @("test_synth.dat", "test_synth.ext")
@@ -2587,10 +2624,12 @@ $tests = @(
             "-DLIBRARY_LOAD_TRACE_HOST_TEST",
             "-I../support/stubs",
             "-I../../firmware/main-deck-p4/components/library/include",
+            "-I../../firmware/main-deck-p4/components/media_identity/include",
             "-I../../firmware/main-deck-p4/components/media_io_gate/include",
             "-o", "test_library_anlz.exe",
             "-DWIN32", "test_library_anlz.c",
             "../../firmware/main-deck-p4/components/library/library.c",
+            "../../firmware/main-deck-p4/components/media_identity/media_identity.c",
             "../../firmware/main-deck-p4/components/library/library_load_trace.c"
         )
     },

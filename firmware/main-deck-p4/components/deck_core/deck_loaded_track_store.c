@@ -164,6 +164,7 @@ deck_loaded_track_result_t deck_loaded_track_store_publish(
             .generation = next_generation(store),
             .media_generation = payload->media_generation,
             .track_key = payload->track_key,
+            .persistent_id = payload->persistent_id,
             .duration_ms = payload->duration_ms,
             .bpm_x100 = bpm_x100,
             .bpm = payload->bpm,

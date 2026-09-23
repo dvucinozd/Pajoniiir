@@ -398,6 +398,7 @@ static uint32_t         s_headphone_route =
     AE_HEADPHONE_ROUTE_PACK(AUDIO_HEADPHONE_MODE_MASTER_MONO, 0u);
 static uint16_t         s_deck_peak[AUDIO_ENGINE_DECK_COUNT];
 static uint16_t         s_deck_ui_peak[AUDIO_ENGINE_DECK_COUNT];
+static uint16_t         s_main_ui_peak;
 /* Best-effort limiter diagnostics shared by the output task, UI, HTTP and the
  * esp_timer health monitor. Keep every field independently atomic and never
  * spin for a coherent aggregate: esp_timer can preempt the output writer, so a
@@ -1229,6 +1230,21 @@ static void decay_idle_deck_ui_peaks(void)
     for (uint8_t deck = 0; deck < AUDIO_ENGINE_DECK_COUNT; deck++) {
         record_deck_ui_peak(deck, 0u);
     }
+}
+
+__attribute__((unused)) static void record_main_ui_peak(const int16_t *interleaved,
+                                                        size_t samples)
+{
+    uint16_t peak = 0u;
+    if (interleaved) {
+        for (size_t i = 0u; i < samples; i++) {
+            const int32_t sample = interleaved[i];
+            const uint16_t absolute = (uint16_t)(sample < 0 ? -sample : sample);
+            if (absolute > peak) peak = absolute;
+        }
+    }
+    atomic_store_u16(&s_main_ui_peak,
+                     vu_decay_peak(atomic_load_u16(&s_main_ui_peak), peak));
 }
 
 #if defined(AUDIO_ENGINE_PC_TEST)
@@ -3597,6 +3613,7 @@ static void ae_output_task(void *arg)
             /* No audio block will reach the normal peak-recording path below,
              * but the UI meter still needs zero-input release ticks. */
             decay_idle_deck_ui_peaks();
+            record_main_ui_peak(NULL, 0u);
             /* FLX4 UAC is isochronous and keeps consuming its ring while CUE,
              * seek or a startup gate temporarily makes both renderers
              * inactive. Sleeping here used to drain the ring for the full
@@ -3766,6 +3783,7 @@ static void ae_output_task(void *arg)
             record_deck_peak_value(deck1_index, block_peak[deck1_index]);
             record_deck_ui_peak(deck0_index, block_peak[deck0_index]);
             record_deck_ui_peak(deck1_index, block_peak[deck1_index]);
+            record_main_ui_peak(master_out, AE_OUT_FRAMES * 2u);
             limiter_stats_record(&block_limiter_stats);
         } else {
             /* Stateful resamplers/DSP have already rendered this block, so it
@@ -4000,6 +4018,7 @@ esp_err_t audio_engine_init(void)
                          __ATOMIC_RELAXED);
         s_beat_fx_filter_applied[i] = filter_command;
     }
+    s_main_ui_peak = 0u;
     init_beat_fx_echo_buffers();
     init_beat_fx_flanger_buffers();
     init_pad_fx_buffers();
@@ -5385,6 +5404,11 @@ void audio_engine_test_decay_idle_deck_peaks(void)
     decay_idle_deck_ui_peaks();
 }
 
+void audio_engine_test_record_main_peak(const int16_t *samples, size_t sample_count)
+{
+    record_main_ui_peak(samples, sample_count);
+}
+
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats)
 {
     if (!stats) return;
@@ -6039,6 +6063,7 @@ void audio_engine_get_diagnostics_snapshot(audio_engine_diagnostics_snapshot_t *
         0u;
 #endif
     limiter_stats_snapshot(&out_snapshot->limiter);
+    out_snapshot->main_meter_peak = atomic_load_u16(&s_main_ui_peak);
 #if AE_FW
     controller_usb_host_audio_stats_t direct_stats = { 0 };
     controller_usb_host_get_audio_stats(&direct_stats);

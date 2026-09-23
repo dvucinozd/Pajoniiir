@@ -9,6 +9,7 @@ CFLAGS  = -Wall -Wextra -Wpedantic -Werror=implicit-function-declaration -std=c9
            -I../../firmware/main-deck-p4/components/deck_core/include \
            -I../../firmware/main-deck-p4/components/control_link/include \
            -I../../firmware/main-deck-p4/components/hot_cue_store/include \
+           -I../../firmware/main-deck-p4/components/media_identity/include \
            -I../../firmware/main-deck-p4/components/library/include
 
 SRCS    = test_deck_core_dual.c \
@@ -18,6 +19,7 @@ SRCS    = test_deck_core_dual.c \
           ../../firmware/main-deck-p4/components/beat_jump/beat_jump.c \
           ../../firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c \
           ../../firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c \
+          ../../firmware/main-deck-p4/components/media_identity/media_identity.c \
           deck_core_test_snapshot_wrapper.c
 
 TARGET  = test_deck_core_dual

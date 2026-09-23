@@ -1,10 +1,12 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 \
            -DHOT_CUE_STORE_STANDALONE_TEST \
-           -I../../firmware/main-deck-p4/components/hot_cue_store/include
+           -I../../firmware/main-deck-p4/components/hot_cue_store/include \
+           -I../../firmware/main-deck-p4/components/media_identity/include
 
 SRCS    = test_hot_cue_store.c \
-          ../../firmware/main-deck-p4/components/hot_cue_store/hot_cue_store.c
+          ../../firmware/main-deck-p4/components/hot_cue_store/hot_cue_store.c \
+          ../../firmware/main-deck-p4/components/media_identity/media_identity.c
 
 TARGET  = test_hot_cue_store
 

@@ -35,6 +35,10 @@ typedef struct {
     int      has_stored_schema_version;
     /* Injection: non-zero makes the next set_u8 fail. */
     int      fail_next_set;
+    uint8_t  blob[512];
+    size_t   blob_len;
+    int      has_blob;
+    uint32_t set_blob_calls;
 } test_nvs_state_t;
 
 extern test_nvs_state_t g_test_nvs;
@@ -116,6 +120,36 @@ static inline esp_err_t nvs_set_str(nvs_handle_t handle, const char *key, const 
     (void)handle;
     (void)key;
     (void)value;
+    return ESP_OK;
+}
+
+static inline esp_err_t nvs_set_blob(nvs_handle_t handle, const char *key,
+                                     const void *value, size_t length)
+{
+    (void)handle;
+    (void)key;
+    g_test_nvs.set_blob_calls++;
+    if (g_test_nvs.fail_next_set) {
+        g_test_nvs.fail_next_set = 0;
+        return ESP_FAIL;
+    }
+    if (!value || length > sizeof(g_test_nvs.blob)) return ESP_FAIL;
+    memcpy(g_test_nvs.blob, value, length);
+    g_test_nvs.blob_len = length;
+    g_test_nvs.has_blob = 1;
+    return ESP_OK;
+}
+
+static inline esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key,
+                                     void *out, size_t *length)
+{
+    (void)handle;
+    (void)key;
+    if (!g_test_nvs.has_blob || !length) return ESP_ERR_NVS_NOT_FOUND;
+    if (!out) { *length = g_test_nvs.blob_len; return ESP_OK; }
+    if (*length < g_test_nvs.blob_len) return ESP_FAIL;
+    memcpy(out, g_test_nvs.blob, g_test_nvs.blob_len);
+    *length = g_test_nvs.blob_len;
     return ESP_OK;
 }
 
