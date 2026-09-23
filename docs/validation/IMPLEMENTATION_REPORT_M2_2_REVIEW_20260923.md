@@ -145,6 +145,9 @@ otvoren do dodatnih ponavljanja, pull OTA i validation reboot matrice.
 | Signed package verification | PASS, `rel-001`; bundle SHA-256 `0ecb3d73...c7c4a` |
 | Signed push OTA | PASS; `ota_0` M2.2 -> `ota_1` `M2.2-2-gaab2340` |
 | Reboot result | PASS; boot 492, reset `SW`, bez novog `PANIC` boota |
+| Validation reboot matrix | PARTIAL; 7 journalom potvrđenih `SW` bootova (493-496, 502-504), bez novog panic dumpa |
+| Dual-deck FLX4 MAIN/cue smoke | PASS; operator potvrdio čist MAIN i PFL D1 |
+| Dual-deck runtime counters | PASS; PCM 0/0, output-late 0, USB drop/overflow/packet failure/lost 0, `data_loss=false` |
 | Dependency lock | nepromijenjen |
 | `git diff --check` | PASS |
 
@@ -154,30 +157,53 @@ izvršeni cijeli host suite i P4 build.
 
 ## 4. Trenutno stanje production uređaja
 
-`pajoniiir.local` je dostupan na `192.168.4.1`. Uređaj sada prijavljuje
-`M2.2-2-gaab2340`, slot `ota_1`, OTA `idle` i prazan `last_error`. Boot 492 ima
-reset razlog `SW`. USB host je ready, storage je montiran s koherentnih 324
-Library retka, daemon errors i service-log drops su 0, kao i PCM underrun,
-output-late i aktualni data-loss status. Novi `main_meter_peak` dostupan je u API-ju.
+`pajoniiir.local` je dostupan na `192.168.4.1`. Uređaj prijavljuje
+`M2.2-2-gaab2340`, slot `ota_1`, OTA `idle` i prazan `last_error`. Aktualni boot
+521 ima reset razlog `POWERON`. USB host je ready, storage je montiran, Library
+snapshot ima koherentna 324 retka, FLX4 je aktivan kao `pioneer_ddj_flx4`, daemon
+errors i service-log drops su 0.
 
 OTA config GET nakon migracije prijavljuje spremljeni SSID/URL i `has_password`,
-ali ne izlaže password. FLX4 nije bio spojen, pa controller, MAIN/cue i slušni
-gateovi nisu izvršeni. Sačuvani stari M2.2 crash dump nije obrisan.
+ali ne izlaže password. Sačuvani stari M2.2 crash dump nije obrisan; njegov
+`ota_reboot` PC/RA i dalje su jednaki izvornom dumpu, pa nema dokaza o novom
+panic bootu kandidata.
+
+Nakon spajanja stvarnog DDJ-FLX4 uređaj je potvrdio točni VID/PID
+`2B73:0045`, MIDI IN/OUT, USB audio, lokalni runtime i aktivni ugrađeni profil.
+Na bootu 521 učitani su `TAINTED DUB - CLIP.mp3` na D1 i `Star Eater.mp3` na
+D2. Journal je zabilježio load latencije 182 ms i 105 ms. Namjerno prerani drugi
+load vraćen je s `409 Library changed or load busy`, nakon čega je uredno prošao
+kad je prvi load završio. Oba decka zatim su radila istodobno uz PFL D1. Tijekom
+smokea pozicije oba decka napredovale su, MAIN peak bio je nenulti, a PCM
+underrun, output-late, USB headphone dropped blocks, overflow, packet failures i
+lost frames ostali su nula. `data_loss` je ostao false. Operator je potvrdio
+čist zvuk bez prekida na MAIN izlazu i u slušalicama/PFL D1.
+
+Validation reboot matrica nije završena kao 10/10. Service journal izravno
+potvrđuje uredne `SW` bootove 493, 494, 495, 496, 502, 503 i 504. Bootovi 501 i
+521 zabilježeni su kao `POWERON`. NVS boot brojač preskače zapise 497-500 i
+505-520; to znači da su ti pokušaji barem povećali boot ID, ali journal nema
+dovoljno podataka za dokaz reset razloga ili pune inicijalizacije. Tijekom
+automatizacije Wi-Fi AP bio je privremeno nedostupan i potreban je bio fizički
+power-cycle. Zato je rezultat matrice PARTIAL i incident ostaje otvoren.
 
 ## 5. Otvoreni acceptance gateovi
 
 Prije production-ready tvrdnje treba na točno commitiranom i hashiranom kandidatu:
 
-1. Ponoviti push OTA, izvesti pull OTA i najmanje deset validation reboot
-   ciklusa; svaki mora završiti `SW` resetom bez novog panic boota.
+1. Izvesti pull OTA i ponoviti kontroliranu validation reboot matricu uz serijski
+   log ili drugi dokaz za svaki boot. Potrebno je najmanje deset uzastopnih
+   `SW` ciklusa bez nestanka AP-a, praznina u journalu ili novog panic dumpa.
+2. Razjasniti zašto NVS boot brojač ima praznine 497-500 i 505-520 te zašto je
+   tijekom matrice AP postao nedostupan. Ne zatvarati OTA reboot incident samo
+   na temelju sedam vidljivih prolaza.
 3. Na stvarnom Rekordbox exportu potvrditi cue A/C i loop vremena te dva medija
    s istim numeričkim track ID-jem, uključujući remount/reboot.
 4. Izmjeriti catalog import i cold/warm LOAD latenciju s novim PDB hashom te
    timeline critical-section maksimum i prisiljeni wrap/handoff raspored.
 5. Provesti desktop/telefon web smoke, sporu mrežu, dva klijenta i fizički MAIN
    meter decay.
-6. Provesti dual-deck FLX4 MAIN/cue smoke i najmanje 180 minuta završnog soaka
-   s Master Tempo, seek/cue/loop/scratch/censor scenarijima. Operator mora
-   potvrditi čujni MAIN i cue rezultat.
+6. Dual-deck FLX4 MAIN/cue smoke je prošao; preostaje najmanje 180 minuta
+   završnog soaka s Master Tempo, seek/cue/loop/scratch/censor scenarijima.
 7. Tek nakon tih dokaza odrediti release verziju, push/PR, immutable tag
    i javni OTA rollout. M2.2 tag i objavljeni artefakti ostaju nepromijenjeni.
