@@ -1261,6 +1261,18 @@ Assert-FilePatternsOrdered `
     -LiteralPatterns @("p4_ota_pull_validate_bundle_release", "p4_ota_begin(&manifest)")
 
 Assert-FileContains `
+    -Name "p4 pull OTA reports the failing download or flash stage" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @(
+        'stage = "read signed header"',
+        'stage = "stop audio"',
+        'stage = "begin flash"',
+        'stage = "download image"',
+        'stage = "finalize image"',
+        'failure_stage, esp_err_to_name(rc)'
+    )
+
+Assert-FileContains `
     -Name "pull OTA publisher derives channel version from a verified signed bundle" `
     -Path (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
     -LiteralPatterns @("verify-bundle", '$metadata["version"]')
