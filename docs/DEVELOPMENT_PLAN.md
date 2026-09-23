@@ -1,11 +1,11 @@
 # P4 post-release development plan
 
-Status: **M2.1 released; M2.2 Wi-Fi Remote refresh in development**.
+Status: **M2.2 released; post-M2.2 maintenance planning**.
 
 ## Current baseline
 
-- Production tag: `M2.1`
-- Frozen source: `70824d24dbb1c8d72d19f15797afa2946c5eb909`
+- Production tag: `M2.2`
+- Frozen source: `2c2ec32c253d368765123d7bbf8d37389b790b55`
 - Required toolchain: ESP-IDF v6.0.2
 - Active firmware target: `firmware/main-deck-p4`
 - Current architecture: direct P4 USB0 media plus USB1 FLX4 MIDI/UAC
@@ -32,7 +32,7 @@ Every change starts from its impact, not from the age of the previous test:
 Preserve firmware version, source commit, slot, boot identity, strict counter
 deltas and operator-visible/audible results in new validation records.
 
-## Active M2.2 scope
+## Completed M2.2 scope
 
 M2.2 is a focused Wi-Fi Remote upgrade. It preserves the M2.1 USB, playback,
 audio, OTA and controller topology while replacing the embedded HTML/CSS/JS
@@ -54,9 +54,14 @@ The implementation contract is:
   OTA installation and a focused physical Wi-Fi Remote playback/seek/mixer/OTA
   smoke on the exact candidate image.
 
+All implementation gates above passed on commit `2c2ec32`. The exact `M2.2`
+tag was built, signed, installed on `ota_0`, hardware/API-smoked and published
+through both the public pull channel and GitHub Releases. The release record is
+[`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
+
 ## Ordered future work
 
-These are optional post-M2.1 projects, not defects in the released product:
+These are optional post-M2.2 projects, not defects in the released product:
 
 1. **Non-FLX4 controller qualification.** Obtain real hardware and capture
    descriptors, MIDI, LEDs, reconnect behavior and four-channel audio before

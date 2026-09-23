@@ -1,7 +1,7 @@
 # Pajoniiir OTA Update Procedure
 
 Status on `master`: P4 is the only active OTA target. Production release
-`M2.1` freezes commit `70824d24`, was installed on `ota_1` during its accepted
+`M2.2` freezes commit `2c2ec32`, was installed on `ota_0` during its accepted
 release session and is published through the canonical HTTPS channel and
 GitHub Releases. This procedure is the current P4 operator authority.
 Superseded multi-target OTA procedures remain available in Git history only.
@@ -49,7 +49,7 @@ the new signed endpoint.
   for a supervised release build, keep it outside Git and artifacts, restrict
   access, and remove the working copy after publication verification.
 
-The current firmware trusts one key ID, `rel-001`. M2.1 retains this key.
+The current firmware trusts one key ID, `rel-001`. M2.2 retains this key.
 Adding or replacing trusted
 keys requires a firmware update signed by the existing key or a wired recovery
 flash. The remote pull channel accepts only a newer monotonic Pajoniiir
@@ -150,17 +150,18 @@ wired flash whenever either changes.
 
 The application version comes from `git describe`. The historical lines use
 `RC<tag>` and the beta line begins at the annotated `M2` tag. The selected
-production version is `M2.1`. A tagged build reports the bare tag; later commits
+production version is `M2.2`. A tagged build reports the bare tag; later commits
 report `<tag>-<distance>-g<hash>`.
 
 Pull OTA orders the milestone family (`M`) after the historical release-
 candidate family (`RC`), then orders milestone major, optional minor and commit
 distance. Therefore `M2` is newer than every `RC*`, `M2.1` is newer than every
-`M2-<distance>`, and a later `M2.1-<distance>` is newer than bare `M2.1`. The
+`M2-<distance>`, `M2.2` is newer than `M2.1`, and a later
+`M2.2-<distance>` is newer than bare `M2.2`. The
 signed local push path is still required for intentional rollback.
 
-After the exact clean production commit passes pre-tag gates, create `M2.1`
-locally and build/sign/install/smoke that tagged image. Do not push the tag or
+After the exact clean production commit passes pre-tag gates, create the next
+immutable annotated tag locally and build/sign/install/smoke that image. Do not push the tag or
 publish the channel until acceptance; never move a published tag. Hardware
 security and key custody policy is in
 [`SECURITY_PROVISIONING_POLICY.md`](SECURITY_PROVISIONING_POLICY.md).
@@ -201,7 +202,7 @@ python .\tools\ota_signing.py verify-file `
 ## Update P4
 
 1. Enable **Wi-Fi Remote** in P4 Settings.
-2. Connect to `Pajoniiir` using the shared service password `Pajoniiir`. M2.1
+2. Connect to `Pajoniiir` using the shared service password `Pajoniiir`. M2.2
    advertises WPA2/WPA3 transition mode with PMF capability. Then open
    `http://192.168.4.1`.
 3. Record the running P4 version, slot and state.
@@ -238,9 +239,9 @@ PCM5102A MAIN, FLX4 headphone cue and P4 UI/media access.
   slot remains bootable.
 - A reset or startup failure before confirmation triggers ESP-IDF rollback.
 
-M2.1 exact-tagged build, signed installation, public-channel and GitHub asset
+M2.2 exact-tagged build, signed installation, public-channel and GitHub asset
 verification are recorded in
-[`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
+[`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
 The retained pull/push recovery matrix is
 [`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md).
 

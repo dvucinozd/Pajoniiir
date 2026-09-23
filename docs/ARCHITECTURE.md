@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **current M2.1 P4-only architecture, reconciled 2026-09-20**. The P4 is
+Status: **current M2.2 P4-only architecture, reconciled 2026-09-23**. The P4 is
 both the authoritative playback/UI engine and the direct dual-root USB host.
 No secondary firmware target or inter-board transport belongs to the product.
 
@@ -208,7 +208,7 @@ is the proven source for input status/midino values, and
 reference for output LEDs and known XML/official-list conflicts. P4 behavior is
 implemented explicitly in the owning P4 component.
 
-Active `master` path inherited by the M2.1 production release:
+Active `master` path inherited by the M2.2 production release:
 
 - P4 USB0 remains the storage root and P4 USB1 directly owns the FLX4 MIDI and
   four-channel UAC interfaces; only a direct root child with VID:PID
@@ -235,7 +235,7 @@ Active `master` path inherited by the M2.1 production release:
   owner first stops MIDI OUT/UAC acceptance, retires active endpoint callbacks
   and releases device/interface ownership, then submits at most one deferred
   root-recovery request. A physical device-gone event cancels that soft request.
-  M2.1 inherits the repeated reconnect and post-reboot dual-playback evidence
+  M2.2 inherits the repeated reconnect and post-reboot dual-playback evidence
   summarized in
   [P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md](validation/P4_DUAL_USB_LIFECYCLE_MATRIX_20260911.md).
 

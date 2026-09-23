@@ -1,6 +1,6 @@
 # P4 Risk Register
 
-Status: **active P4-only register, reconciled 2026-09-20**.
+Status: **active P4-only register, reconciled 2026-09-23**.
 
 | Priority | Risk | Current evidence | Required disposition |
 | --- | --- | --- | --- |
@@ -11,17 +11,17 @@ Status: **active P4-only register, reconciled 2026-09-20**.
 | CLOSED (M2.1 baseline) | Audio teardown, Master Tempo or combined DSP misses real P4 deadlines | Bounded WSOLA fixed the reproduced WDT; focused mixed-rate dual-Master-Tempo and the final 180.156-minute combined scratch/FX/MAIN/cue soak passed without strict fault delta or audible defect | Direct cycle-margin profiling remains uncaptured; repeat after audio/DSP scheduling changes |
 | CLOSED | Lifetime idle UAC underflow is mistaken for active data loss | Session-scoped health passed focused transitions and the final multi-hour soak | Preserve session-scoped flags and regression coverage |
 | CLOSED | First remote transport action is consumed only to dismiss the screensaver | Fixed and exact-image smoked after more than 120 seconds idle | Preserve remote queue semantics and authoritative state confirmation |
-| CLOSED (M2.1 baseline) | Pull/push OTA or web mutation leaves the product unavailable | Public pull, AP-to-STA-to-AP recovery, interrupted upload, signed opposite-slot rollback, guarded mutations and post-reboot dual-USB recovery passed | Repeat the relevant matrix after OTA, network or partition-layout changes |
+| CLOSED (M2.2 baseline) | Pull/push OTA or web mutation leaves the product unavailable | M2.1 pull/push recovery evidence remains applicable; M2.2 additionally passed marked authoritative SYNC, interrupted-upload rejection, signed opposite-slot installation, embedded web UI smoke and public-channel verification | Repeat the relevant matrix after OTA, network, web mutation or partition-layout changes |
 | ACCEPTED LIMITATION | Final enclosure changes power, temperature, RF or service access | Operator reports the unit has operated in its current intended enclosure for approximately two months and confirms wired recovery access; dedicated numeric thermal/RF/strain evidence was not captured | Preserve the current topology and repeat qualification after any enclosure, wiring, supply or RF-layout change |
 | ACCEPTED LIMITATION | Shared service credential permits nearby disruption | Operator selected one shared service password; WPA2/WPA3 transition mode advertises PMF capability; firmware updates remain signature-protected | Verify association from the actual service client on the final image; restrict distribution/exposure and revisit per-device credentials or WPA3-only PMF-required mode if deployment expands |
-| CLOSED FOR M2.1 / DEFERRED | Signing key is lost or cannot rotate | Operator confirmed encrypted offline primary and separately stored encrypted backup copies for `rel-001` on 2026-09-20; M2.1 retains that key and the successor-key-before-retirement rotation boundary is documented. On 2026-09-20 the operator explicitly accepted untested backup recovery signing as deferred maintenance | Before a planned key rotation, verify backup recovery without exposing key material and implement multi-key overlap; emergency replacement retains wired recovery |
-| ACCEPTED LIMITATION (M2.1) | Physical access can bypass software-only trust because hardware-rooted protection is absent | There is no spare P4 board; Secure Boot, Flash Encryption and security eFuses remain disabled so the only unit and its wired recovery path are not put at irreversible risk | Preserve controlled physical access, closed enclosure, signed OTA and wired recovery; qualify RSA-PSS Secure Boot v2 plus release-mode Flash Encryption on a dedicated pilot before any later provisioning |
+| CLOSED FOR M2.2 / DEFERRED | Signing key is lost or cannot rotate | Operator confirmed encrypted offline primary and separately stored encrypted backup copies for `rel-001` on 2026-09-20; M2.2 retains that key and the successor-key-before-retirement rotation boundary is documented. Untested backup recovery signing remains accepted deferred maintenance | Before a planned key rotation, verify backup recovery without exposing key material and implement multi-key overlap; emergency replacement retains wired recovery |
+| ACCEPTED LIMITATION (M2.2) | Physical access can bypass software-only trust because hardware-rooted protection is absent | There is no spare P4 board; Secure Boot, Flash Encryption and security eFuses remain disabled so the only unit and its wired recovery path are not put at irreversible risk | Preserve controlled physical access, closed enclosure, signed OTA and wired recovery; qualify RSA-PSS Secure Boot v2 plus release-mode Flash Encryption on a dedicated pilot before any later provisioning |
 | P2 | A non-FLX4 profile is advertised without real hardware evidence | Host fixtures pass only | Keep non-FLX4 support out of first-release claims until physical descriptor/MIDI/LED/UAC acceptance |
 | P3 | Recorder is re-enabled on an unqualified card | Recorder remains compiled out | Keep disabled unless scope reopens with SD latency and power-loss qualification |
 
 ## Release rule
 
-M2.1 is released with exact-image acceptance complete and encrypted
+M2.2 is released with exact-image acceptance complete and encrypted
 primary/backup signing-key custody operator-confirmed. Untested backup recovery
 signing is explicitly accepted as deferred future maintenance. The security
 decisions themselves are recorded in

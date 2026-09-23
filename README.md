@@ -1,4 +1,4 @@
-# Pajoniiir M2.1
+# Pajoniiir M2.2
 
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
 [![ESP-IDF 6.0.2](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml)
@@ -10,7 +10,7 @@
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
 single ESP32-P4 board.**
 
-![Pajoniiir M2.1 running the dual-deck Overview screen](docs/images/Pajoniiir1.jpg)
+![Pajoniiir running the dual-deck Overview screen](docs/images/Pajoniiir1.jpg)
 
 Pajoniiir plays a Rekordbox-exported USB library without a laptop. The
 ESP32-P4 hosts both the USB drive and DDJ-FLX4, renders the touchscreen UI,
@@ -25,7 +25,7 @@ runs the two playback decks and mixer, and sends MAIN and headphone-cue audio.
 - Signed local and remote OTA updates are supported.
 
 The current production release is
-[`M2.1`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.1).
+[`M2.2`](https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.2).
 
 ## Hardware
 
@@ -125,8 +125,8 @@ verification, rollback and wired-recovery instructions.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/Pajoniiir2.jpg" alt="Pajoniiir M2.1 side view with touchscreen and USB cable"></td>
-    <td width="50%"><img src="docs/images/Pajoniiir3.jpg" alt="Pajoniiir M2.1 dual-deck Overview screen"></td>
+    <td width="50%"><img src="docs/images/Pajoniiir2.jpg" alt="Pajoniiir side view with touchscreen and USB cable"></td>
+    <td width="50%"><img src="docs/images/Pajoniiir3.jpg" alt="Pajoniiir dual-deck Overview screen"></td>
   </tr>
   <tr>
     <td align="center"><sub>Compact standalone player and touchscreen</sub></td>
@@ -194,11 +194,14 @@ at `firmware/main-deck-p4/dependencies.lock` is committed.
 
 ## Project status and documentation
 
-`M2.1` is the immutable production release based on commit `70824d24`. Its
-exact tagged ESP-IDF v6.0.2 build, signed OTA installation, dual-USB recovery,
-dual-deck audio, touchscreen UI and three-hour combined hardware soak passed.
-The detailed evidence is recorded in the
-[M2.1 production release report](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
+`M2.2` is the immutable production release based on commit `2c2ec32`. It adds
+the responsive embedded Wi-Fi Remote controller and authoritative SYNC state
+while preserving the qualified M2.1 playback, USB and audio baseline. Its exact
+tagged ESP-IDF v6.0.2 build, signed OTA installation, hardware/API smoke,
+public pull channel and GitHub assets passed. See the
+[M2.2 production release report](docs/validation/M2_2_PRODUCTION_RELEASE_20260923.md)
+and the inherited
+[M2.1 production baseline](docs/validation/M2_1_PRODUCTION_RELEASE_20260920.md).
 
 - [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture](docs/ARCHITECTURE.md)

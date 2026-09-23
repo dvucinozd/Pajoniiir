@@ -1,6 +1,6 @@
 # Documentation status
 
-Status: **current P4-only source of truth, reconciled 2026-09-20**.
+Status: **current P4-only source of truth, reconciled 2026-09-23**.
 
 ## Product boundary
 
@@ -16,30 +16,31 @@ in current code/file formats. They do not imply an active S3 processor.
 
 ## Production release
 
-| Item | M2.1 value |
+| Item | M2.2 value |
 | --- | --- |
-| Annotated tag | `M2.1` |
-| Frozen source | `70824d24dbb1c8d72d19f15797afa2946c5eb909` |
-| Tag object | `517bacaf04552f591d7f42fe3201ecbe10f2241c` |
+| Annotated tag | `M2.2` |
+| Frozen source | `2c2ec32c253d368765123d7bbf8d37389b790b55` |
+| Tag object | `d4e344cab3fb06c43d2b4bf78218032545e1c1ca` |
 | Toolchain | ESP-IDF v6.0.2 |
-| Installed release record | `M2.1`, `ota_1`, service-log boot `483` |
-| Application | 2,459,664 bytes; SHA-256 `73260a2d529fb7ee5e7f6dbf2c839cb769d3f06e01f56b095d93fdaaa6f39e76` |
-| Signed OTA bundle | 2,459,852 bytes; SHA-256 `a93f1a4cfab91d4c5f39abba70cfc011183f8b1e2666da219fd1592241ef2425` |
+| Installed release record | `M2.2`, `ota_0`, OTA state `idle` and empty `last_error` |
+| Application | 2,493,472 bytes; SHA-256 `d2aeced882c1c80c0df4b3a00e371898b3da7a1ffb470bb4be4162b4a2427e9b` |
+| Signed OTA bundle | 2,493,660 bytes; SHA-256 `5552d32527e55d7393fe89a49bdf1b753209af8d2a788f9e8d83fbda84ba0676` |
 | Public channel | `https://ota.pajoniiir.eu` |
-| GitHub Release | `https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.1` |
+| GitHub Release | `https://github.com/dvucinozd/Pajoniiir/releases/tag/M2.2` |
 
 The installation identity above records the accepted release session; it is
 not a claim about a later live boot unless `/api/firmware` is checked again.
 Commits after the immutable tag are maintenance/development commits and do not
-change the published M2.1 artifact.
+change the published M2.2 artifact.
 
 ## Acceptance summary
 
-M2.1 inherits the completed P4 qualification and passed its own exact-tagged
-build, signature/package verification, signed OTA installation, opposite-slot
-boot, USB0/USB1 recovery, dual-deck strict-counter smoke and operator-confirmed
-audio/display/touch smoke. The production release record is
-[`validation/M2_1_PRODUCTION_RELEASE_20260920.md`](validation/M2_1_PRODUCTION_RELEASE_20260920.md).
+M2.2 inherits the completed M2.1 P4 qualification and passed its focused
+Wi-Fi Remote gates: exact-tagged build, signature/package verification, signed
+OTA installation, opposite-slot boot, 324-track USB0 library, embedded UI and
+authoritative SYNC smoke, public-channel verification and GitHub asset
+round-trip verification. The production release record is
+[`validation/M2_2_PRODUCTION_RELEASE_20260923.md`](validation/M2_2_PRODUCTION_RELEASE_20260923.md).
 
 The retained supporting evidence covers:
 
