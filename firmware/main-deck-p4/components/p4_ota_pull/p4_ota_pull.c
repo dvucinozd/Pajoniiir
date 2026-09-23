@@ -258,8 +258,11 @@ static void check_task(void *arg)
 static esp_err_t download_and_install(const char *base_url, const char *rel_url,
                                       const char *expected_release,
                                       uint32_t expect_size,
-                                      const uint8_t expect_sha256[32])
+                                      const uint8_t expect_sha256[32],
+                                      const char **out_failure_stage)
 {
+    const char *stage = "setup";
+    if (out_failure_stage) *out_failure_stage = stage;
     char url[APP_SETTINGS_OTA_URL_CAP + P4_OTA_PULL_URL_MAX + 4u];
     size_t n = strnlen(base_url, APP_SETTINGS_OTA_URL_CAP);
     bool slash = n > 0u && base_url[n - 1u] == '/';
@@ -287,9 +290,11 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         return ESP_FAIL;
     }
 
+    stage = "open bundle";
     esp_err_t rc = esp_http_client_open(client, 0);
     if (rc != ESP_OK) goto done;
 
+    stage = "read headers";
     int64_t len = esp_http_client_fetch_headers(client);
     if (esp_http_client_get_status_code(client) != 200) {
         rc = ESP_ERR_NOT_FOUND;
@@ -307,17 +312,20 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     /* Header first, whole, before anything is written. */
     uint8_t header[DDJ_OTA_HEADER_SIZE];
     size_t have = 0;
+    stage = "read signed header";
     while (have < sizeof(header)) {
         int got = esp_http_client_read(client, (char *)header + have,
                                        (int)(sizeof(header) - have));
         if (got <= 0) { rc = ESP_ERR_INVALID_RESPONSE; goto done; }
         have += (size_t)got;
     }
+    stage = "hash signed header";
     if (psa_hash_update(&bundle_sha, header, sizeof(header)) != PSA_SUCCESS) {
         rc = ESP_FAIL;
         goto done;
     }
 
+    stage = "parse signed header";
     ddj_ota_manifest_t manifest;
     ddj_ota_manifest_result_t mrc = ddj_ota_manifest_parse(
         header, sizeof(header), DDJ_OTA_TARGET_P4, P4_OTA_ESP32P4_CHIP_ID,
@@ -327,6 +335,7 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         rc = ESP_ERR_INVALID_RESPONSE;
         goto done;
     }
+    stage = "verify signature";
     if (!ddj_ota_manifest_verify_signature(header, sizeof(header))) {
         ESP_LOGE(TAG, "manifest signature is not ours");
         rc = ESP_ERR_INVALID_MAC;
@@ -352,14 +361,17 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         goto done;
     }
 
+    stage = "stop audio";
     rc = audio_engine_suspend_loads_and_stop_all();
     if (rc != ESP_OK) goto done;
     audio_barrier_held = true;
 
+    stage = "begin flash";
     rc = p4_ota_begin(&manifest);
     if (rc != ESP_OK) goto done;
 
     size_t written = 0;
+    stage = "download image";
     while (written < manifest.image_size) {
         size_t want = manifest.image_size - written;
         if (want > DL_CHUNK) want = DL_CHUNK;
@@ -369,11 +381,13 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
             rc = ESP_ERR_INVALID_RESPONSE;
             goto done;
         }
+        stage = "write flash";
         rc = p4_ota_write(buf, (size_t)got);
         if (rc != ESP_OK) {
             p4_ota_abort("flash write failed");
             goto done;
         }
+        stage = "hash bundle";
         if (psa_hash_update(&bundle_sha, buf, (size_t)got) != PSA_SUCCESS) {
             p4_ota_abort("bundle hash failed");
             rc = ESP_FAIL;
@@ -381,8 +395,10 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
         }
         written += (size_t)got;
         update_downloaded((uint32_t)written);
+        stage = "download image";
     }
 
+    stage = "finish bundle hash";
     uint8_t actual_sha256[32];
     size_t actual_sha256_size = 0u;
     if (psa_hash_finish(&bundle_sha,
@@ -404,9 +420,11 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
 
     /* Verifies the image SHA-256 against the signed manifest and activates the
      * slot. Anything wrong here and nothing is booted. */
+    stage = "finalize image";
     rc = p4_ota_finish();
 
 done:
+    if (rc != ESP_OK && out_failure_stage) *out_failure_stage = stage;
     if (audio_barrier_held && rc != ESP_OK) {
         audio_engine_resume_loads();
     }
@@ -437,8 +455,9 @@ static void install_task(void *arg)
         note(P4_OTA_PULL_FAILED, rc, "could not join network");
     } else {
         note(P4_OTA_PULL_DOWNLOADING, ESP_OK, "downloading");
+        const char *failure_stage = "download";
         rc = download_and_install(config.url, offer.url, offer.release, offer.size,
-                                  offer.sha256);
+                                  offer.sha256, &failure_stage);
         if (rc == ESP_OK) {
             note(P4_OTA_PULL_READY_TO_REBOOT, ESP_OK, "verified, restarting");
         } else if (rc == ESP_ERR_INVALID_MAC) {
@@ -453,7 +472,10 @@ static void install_task(void *arg)
         } else if (rc == ESP_ERR_NOT_FOUND) {
             note(P4_OTA_PULL_FAILED, rc, "bundle not on the server");
         } else {
-            note(P4_OTA_PULL_FAILED, rc, "download or flash failed");
+            char detail[sizeof(s_status.detail)];
+            snprintf(detail, sizeof(detail), "%s: %s",
+                     failure_stage, esp_err_to_name(rc));
+            note(P4_OTA_PULL_FAILED, rc, detail);
         }
     }
 
