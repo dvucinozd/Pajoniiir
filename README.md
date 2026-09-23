@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
 [![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)
 [![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
-![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/dvucinozd/Pajoniiir?utm_source=oss&utm_medium=github&utm_campaign=dvucinozd%2FPajoniiir&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+[!CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/dvucinozd/Pajoniiir?utm_source=oss&utm_medium=github&utm_campaign=dvucinozd%2FPajoniiir&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
