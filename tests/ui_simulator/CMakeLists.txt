@@ -63,6 +63,7 @@ add_executable(ui_simulator_e2e
     "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/flx4_led_snapshot.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_core.c"
     "${REPO_ROOT}/firmware/main-deck-p4/components/deck_core/deck_loaded_track_store.c"
+    "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/media_identity.c"
     "${REPO_ROOT}/tests/deck_core_dual/control_link_stub.c"
     "${REPO_ROOT}/tests/deck_core_dual/hot_cue_store_stub.c"
 )
@@ -87,6 +88,7 @@ target_include_directories(ui_simulator_e2e PRIVATE
     "${REPO_ROOT}/firmware/main-deck-p4/components/beat_jump/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/control_link/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/hot_cue_store/include"
+    "${REPO_ROOT}/firmware/main-deck-p4/components/media_identity/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/audio_engine/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/audio_mixer/include"
     "${REPO_ROOT}/firmware/main-deck-p4/components/app_settings/include"

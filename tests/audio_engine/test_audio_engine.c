@@ -979,6 +979,8 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
 
     audio_engine_diagnostics_snapshot_t diag;
     audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.main_meter_peak == 0u,
+           "diagnostics MAIN meter starts at zero");
     EXPECT(diag.playback_session_epoch == 0u,
            "diagnostics playback session epoch starts at zero");
     EXPECT(diag.ring_capacity > AUDIO_PCM_RING_FRAMES,
@@ -1035,6 +1037,17 @@ static void test_diagnostics_snapshot_reports_audio_health_state(void)
     EXPECT(diag.limiter.positive_overloads == 6, "diagnostics includes positive overload count");
     EXPECT(diag.limiter.negative_overloads == 3, "diagnostics includes negative overload count");
     EXPECT(diag.limiter.peak_input_abs == 48000, "diagnostics includes limiter peak");
+
+    const int16_t main_samples[] = {1000, -2000, INT16_MIN, 12000};
+    audio_engine_test_record_main_peak(main_samples,
+                                       sizeof(main_samples) / sizeof(main_samples[0]));
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.main_meter_peak == 32768u,
+           "MAIN meter reports the final mixed signal and handles INT16_MIN");
+    audio_engine_test_record_main_peak(NULL, 0u);
+    audio_engine_get_diagnostics_snapshot(&diag);
+    EXPECT(diag.main_meter_peak < 32768u,
+           "MAIN meter releases when the output becomes silent");
 
     const char *path = "dummy_diag_audio.mp3";
     FILE *fp = fopen(path, "wb");

@@ -85,14 +85,25 @@ int control_link_stub_last_led_state(led_id_t led, uint8_t deck);
 
 static anlz_metadata_t beat_jump_meta(void);
 
+static media_persistent_id_t persistent_id_for_key(uint32_t track_key)
+{
+    media_persistent_id_t id = {.valid = true};
+    for (unsigned i = 0; i < sizeof(id.bytes); ++i) {
+        id.bytes[i] = (uint8_t)((track_key >> ((i & 3u) * 8u)) ^ i);
+    }
+    return id;
+}
+
 static void publish_loaded_track(uint8_t deck,
                                  uint32_t track_key,
                                  uint16_t bpm,
                                  const anlz_metadata_t *anlz)
 {
+    media_persistent_id_t id = persistent_id_for_key(track_key);
     assert(deck_core_publish_loaded_track(deck,
                                           1u,
                                           track_key,
+                                          &id,
                                           bpm,
                                           300000u,
                                           anlz) == ESP_OK);
@@ -352,9 +363,12 @@ static void reset_audio_engine_stub(void)
 
 static void clear_test_hot_cues(void)
 {
-    (void)hot_cue_store_clear(1001);
-    (void)hot_cue_store_clear(2002);
-    (void)hot_cue_store_clear(3003);
+    media_persistent_id_t id1 = persistent_id_for_key(1001u);
+    media_persistent_id_t id2 = persistent_id_for_key(2002u);
+    media_persistent_id_t id3 = persistent_id_for_key(3003u);
+    (void)hot_cue_store_clear(&id1);
+    (void)hot_cue_store_clear(&id2);
+    (void)hot_cue_store_clear(&id3);
 }
 
 static void test_decks_track_transport_independently(void)
@@ -2486,7 +2500,8 @@ static void test_hot_cue_pad_stores_empty_slot_at_requested_deck_position(void)
     deck_core_test_apply_event(&pad);
 
     hot_cue_store_blob_t blob = {0};
-    assert(hot_cue_store_load(1001, &blob) == ESP_OK);
+    media_persistent_id_t id = persistent_id_for_key(1001u);
+    assert(hot_cue_store_load(&id, &blob) == ESP_OK);
     assert((blob.valid_mask & (1u << 2)) != 0);
     assert(blob.slots[2].pos_ms == 12345);
     assert(blob.slots[2].end_ms == 0);
@@ -2509,7 +2524,8 @@ static void test_hot_cue_during_track_replace_cannot_use_previous_key(void)
     deck_core_test_apply_event(&pad);
 
     hot_cue_store_blob_t blob = {0};
-    assert(hot_cue_store_load(1001u, &blob) == ESP_ERR_NOT_FOUND);
+    media_persistent_id_t id = persistent_id_for_key(1001u);
+    assert(hot_cue_store_load(&id, &blob) == ESP_ERR_NOT_FOUND);
     assert(audio_engine_stub_deck_seek_count[CTRL_DECK_1] == 0);
 }
 
@@ -2545,7 +2561,8 @@ static void test_hot_cue_pad_recalls_existing_slot_on_requested_deck(void)
     blob.valid_mask = (1u << 4);
     blob.slots[4].pos_ms = 5555;
     blob.slots[4].type = HOT_CUE_STORE_TYPE_SINGLE;
-    assert(hot_cue_store_save(2002, &blob) == ESP_OK);
+    media_persistent_id_t id = persistent_id_for_key(2002u);
+    assert(hot_cue_store_save(&id, &blob) == ESP_OK);
 
     ctrl_event_t pad = deck_button(CTRL_ID_DECK2_PAD_ACTION);
     pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 4, false, true);
@@ -2571,7 +2588,8 @@ static void test_shift_hot_cue_pad_clears_requested_slot(void)
     blob.slots[1].type = HOT_CUE_STORE_TYPE_SINGLE;
     blob.slots[6].pos_ms = 6666;
     blob.slots[6].type = HOT_CUE_STORE_TYPE_SINGLE;
-    assert(hot_cue_store_save(3003, &blob) == ESP_OK);
+    media_persistent_id_t id = persistent_id_for_key(3003u);
+    assert(hot_cue_store_save(&id, &blob) == ESP_OK);
 
     ctrl_event_t pad = deck_button(CTRL_ID_DECK1_PAD_ACTION);
     pad.value = CTRL_PAD_ACTION_VALUE(CTRL_PAD_MODE_HOT_CUE, 1, true, true);
@@ -2579,7 +2597,7 @@ static void test_shift_hot_cue_pad_clears_requested_slot(void)
     deck_core_test_apply_event(&pad);
 
     hot_cue_store_blob_t loaded = {0};
-    assert(hot_cue_store_load(3003, &loaded) == ESP_OK);
+    assert(hot_cue_store_load(&id, &loaded) == ESP_OK);
     assert((loaded.valid_mask & (1u << 1)) == 0);
     assert((loaded.valid_mask & (1u << 6)) != 0);
     assert(loaded.slots[1].pos_ms == 0);

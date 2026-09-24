@@ -134,27 +134,32 @@ static void build_synthetic_dat(void)
     w_be32(fp, 412);  /* segment_size */
     for (int i = 0; i < 400; i++) fputc((unsigned char)(i & 0x1F), fp); /* sawtooth heights */
 
-    /* PCOB — 2 PCPT entries (each 56 bytes)
-     * header_size = 12, segment_size = 12 + 2×56 = 124 */
+    /* PCOB — hot-cue list with 2 tagged PCPT entries. */
     w_tag(fp, ANLZ_TAG_PCOB);
-    w_be32(fp, 12);   /* header_size */
-    w_be32(fp, 124);  /* segment_size */
+    w_be32(fp, 24);
+    w_be32(fp, 136);
+    w_be32(fp, 1);    /* hot-cue list */
+    w_be16(fp, 0);    /* unknown */
+    w_be16(fp, 2);    /* entry count */
+    w_be32(fp, 0);    /* memory count */
 
     /* PCPT 0: single point, index=0, start_ms=1000 */
     {
         uint8_t pcpt[56]; memset(pcpt, 0, 56);
-        pcpt[0] = 0x01; /* type = single */
-        pcpt[1] = 0x00; /* index = 0     */
-        pcpt[4] = 0x00; pcpt[5] = 0x00; pcpt[6] = 0x03; pcpt[7] = 0xE8; /* start=1000 */
+        memcpy(pcpt, "PCPT", 4); pcpt[7] = 28; pcpt[11] = 56;
+        pcpt[15] = 1;    /* Hot Cue A */
+        pcpt[28] = 1;    /* single */
+        pcpt[34] = 0x03; pcpt[35] = 0xE8;
         fwrite(pcpt, 1, 56, fp);
     }
     /* PCPT 1: loop, index=1, start_ms=2000, end_ms=4000 */
     {
         uint8_t pcpt[56]; memset(pcpt, 0, 56);
-        pcpt[0] = 0x02; /* type = loop   */
-        pcpt[1] = 0x01; /* index = 1     */
-        pcpt[4] = 0x00; pcpt[5] = 0x00; pcpt[6] = 0x07; pcpt[7] = 0xD0; /* start=2000 */
-        pcpt[8] = 0x00; pcpt[9] = 0x00; pcpt[10]= 0x0F; pcpt[11]= 0xA0; /* end=4000   */
+        memcpy(pcpt, "PCPT", 4); pcpt[7] = 28; pcpt[11] = 56;
+        pcpt[15] = 2;    /* Hot Cue B */
+        pcpt[28] = 2;    /* loop */
+        pcpt[34] = 0x07; pcpt[35] = 0xD0;
+        pcpt[38] = 0x0F; pcpt[39] = 0xA0;
         fwrite(pcpt, 1, 56, fp);
     }
 
@@ -457,20 +462,20 @@ static bool write_prefix(const char *path, const uint8_t *data, size_t length)
 static bool dat_truncation_corpus_rejects_partial_structures(void)
 {
     /* Generated layout: PMAI 0..27, PPTH 28..101, PVBR 102..129,
-     * PQTZ 130..157, PWAV 158..569, PCOB 570..693. */
+     * PQTZ 130..157, PWAV 158..569, PCOB 570..705. */
     static const size_t cuts[] = {
         0u, 1u, 4u, 8u, 11u, 27u,
         29u, 32u, 35u, 39u, 47u, 49u, 101u,
         103u, 106u, 109u, 113u, 129u,
         131u, 134u, 137u, 141u, 149u, 157u,
         159u, 162u, 165u, 169u, 300u, 569u,
-        571u, 574u, 577u, 581u, 600u, 693u,
+        571u, 574u, 577u, 581u, 600u, 705u,
     };
 
     build_synthetic_dat();
     size_t full_len = 0u;
     uint8_t *full = read_entire_file(SYNTH_DAT, &full_len);
-    if (!full || full_len != 694u) {
+    if (!full || full_len != 706u) {
         fprintf(stderr, "unexpected synthetic DAT length: %zu\n", full_len);
         free(full);
         return false;
@@ -553,6 +558,35 @@ static bool ext_truncation_corpus_retains_previous_metadata(void)
     return ok;
 }
 
+static bool dat_trailing_byte_is_rejected(void)
+{
+    build_synthetic_dat();
+    FILE *fp = fopen(SYNTH_DAT, "ab");
+    if (!fp) return false;
+    fputc(0x5a, fp);
+    fclose(fp);
+    anlz_metadata_t out = {0};
+    esp_err_t rc = anlz_parse_dat(SYNTH_DAT, &out);
+    if (rc == ESP_OK) anlz_free(&out);
+    remove(SYNTH_DAT);
+    return rc == ESP_ERR_INVALID_SIZE && out.beats == NULL && out.cue_count == 0u;
+}
+
+static bool duplicate_hot_cue_slot_is_rejected(void)
+{
+    build_synthetic_dat();
+    FILE *fp = fopen(SYNTH_DAT, "r+b");
+    if (!fp) return false;
+    /* Second PCPT starts at 650; hot-cue number is byte 0x0f from its tag. */
+    bool ok = fseek(fp, 665, SEEK_SET) == 0 && fputc(1, fp) != EOF;
+    ok = fclose(fp) == 0 && ok;
+    anlz_metadata_t out = {0};
+    esp_err_t rc = ok ? anlz_parse_dat(SYNTH_DAT, &out) : ESP_FAIL;
+    if (rc == ESP_OK) anlz_free(&out);
+    remove(SYNTH_DAT);
+    return rc == ESP_ERR_INVALID_SIZE && out.beats == NULL && out.cue_count == 0u;
+}
+
 int main(int argc, char *argv[])
 {
     printf("Pajoniiir ANLZ Parser Test\n");
@@ -574,6 +608,12 @@ int main(int argc, char *argv[])
 
     TEST("EXT truncations retain the previously published metadata");
     CHECK(ext_truncation_corpus_retains_previous_metadata(), "EXT truncation corpus failed");
+
+    TEST("DAT rejects a trailing partial section header");
+    CHECK(dat_trailing_byte_is_rejected(), "trailing byte accepted");
+
+    TEST("DAT rejects duplicate hot-cue slots transactionally");
+    CHECK(duplicate_hot_cue_slot_is_rejected(), "duplicate hot cue accepted");
 
     remove(SYNTH_UNICODE_DAT);
 

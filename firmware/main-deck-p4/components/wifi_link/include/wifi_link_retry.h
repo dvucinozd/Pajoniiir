@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /*
- * Bounded retry policy for Wi-Fi bring-up.
+ * Bounded retry policy for Wi-Fi bring-up and temporary STA association.
  *
  * Fixes a real failure mode rather than adding a feature. The worker loop runs
  * until `active == desired`; when a start fails, `active` stays false while
@@ -14,9 +14,10 @@
  * already shows intermittent brownouts, that turns one failed start into a
  * self-sustaining fault.
  *
- * Policy: three attempts, waiting 1 s then 2 s between them, then give up,
- * publish an error and restore the last stable mode. A further attempt requires
- * a new operator request - retrying on its own is what caused the problem.
+ * Policy: three attempts, waiting 1 s then 2 s between them, then give up and
+ * restore the last stable mode. A full-stack retry requires a new operator
+ * request. A temporary STA visit applies the same finite policy inside the
+ * caller's existing total timeout.
  *
  * Pure and host-tested: the delays are the whole point, and they are not
  * observable by watching a board that is misbehaving anyway.

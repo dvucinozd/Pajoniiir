@@ -4,12 +4,14 @@
 #include "esp_log.h"
 #include "library.h"
 #include "service_log.h"
+#include "media_io_gate.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static const char *TAG = "media_catalog";
 
@@ -88,6 +90,7 @@ static void fill_loaded_track(const library_track_t *track,
 {
     memset(out_loaded, 0, sizeof(*out_loaded));
     out_loaded->track_key = library_track_key(track);
+    out_loaded->persistent_id = track->persistent_id;
     snprintf(out_loaded->audio_path, sizeof(out_loaded->audio_path), "/usb%s", track->path);
     if (track->anlz_path[0] == '/') {
         snprintf(out_loaded->dat_path, sizeof(out_loaded->dat_path), "/usb%s", track->anlz_path);
@@ -157,6 +160,85 @@ esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row)
     copy_str(out_row->artist, sizeof(out_row->artist), track.artist);
     copy_str(out_row->key, sizeof(out_row->key), track.key);
     return ESP_OK;
+}
+
+static esp_err_t derive_persistent_id(const library_track_t *track,
+                                      uint32_t expected_generation,
+                                      media_persistent_id_t *out)
+{
+    if (!track || !out) return ESP_ERR_INVALID_ARG;
+    media_persistent_id_clear(out);
+    uint8_t export_digest[32];
+    uint32_t digest_generation = 0u;
+    esp_err_t rc = library_export_digest(export_digest, &digest_generation);
+    if (rc != ESP_OK || digest_generation != expected_generation) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    char audio_path[LIBRARY_PATH_MAX + 8u];
+    snprintf(audio_path, sizeof(audio_path), "/usb%s", track->path);
+    struct stat before = {0};
+    struct stat after = {0};
+    media_io_gate_begin();
+    bool available = media_io_gate_is_available();
+    int before_rc = available ? stat(audio_path, &before) : -1;
+    media_io_gate_end();
+    if (before_rc != 0 || before.st_size < 0) return ESP_ERR_NOT_FOUND;
+    if (!media_persistent_id_derive(export_digest, track->path,
+                                    (uint64_t)before.st_size,
+                                    (int64_t)before.st_mtime, out)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    media_io_gate_begin();
+    available = media_io_gate_is_available();
+    int after_rc = available ? stat(audio_path, &after) : -1;
+    media_io_gate_end();
+    if (after_rc != 0 || before.st_size != after.st_size ||
+        before.st_mtime != after.st_mtime ||
+        library_generation() != expected_generation) {
+        media_persistent_id_clear(out);
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+
+esp_err_t media_catalog_snapshot_acquire(media_catalog_snapshot_t *out_snapshot)
+{
+    if (!out_snapshot) return ESP_ERR_INVALID_ARG;
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+    size_t needed = 0u;
+    uint32_t generation = 0u;
+    esp_err_t rc = library_snapshot_rows(NULL, 0u, &needed, &generation);
+    if (rc != ESP_OK && rc != ESP_ERR_INVALID_SIZE) return rc;
+    for (unsigned attempt = 0u; attempt < 3u; attempt++) {
+        if (needed == 0u) {
+            out_snapshot->generation = generation;
+            return ESP_OK;
+        }
+        library_catalog_row_t *rows = heap_caps_calloc(
+            needed, sizeof(*rows), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!rows) return ESP_ERR_NO_MEM;
+        size_t actual = 0u;
+        rc = library_snapshot_rows(rows, needed, &actual, &generation);
+        if (rc == ESP_OK) {
+            _Static_assert(sizeof(library_catalog_row_t) == sizeof(media_catalog_row_t),
+                           "catalog snapshot row layout drift");
+            out_snapshot->rows = (media_catalog_row_t *)rows;
+            out_snapshot->count = actual;
+            out_snapshot->generation = generation;
+            return ESP_OK;
+        }
+        free(rows);
+        if (rc != ESP_ERR_INVALID_SIZE) return rc;
+        needed = actual;
+    }
+    return ESP_ERR_INVALID_STATE;
+}
+
+void media_catalog_snapshot_release(media_catalog_snapshot_t *snapshot)
+{
+    if (!snapshot) return;
+    free(snapshot->rows);
+    memset(snapshot, 0, sizeof(*snapshot));
 }
 
 esp_err_t media_catalog_row_key(int index, uint32_t *out_key)
@@ -241,6 +323,13 @@ esp_err_t media_catalog_load_by_identity(uint32_t track_key,
 
     service_log_event(SERVICE_LOG_TRACK_LOAD_START, SERVICE_LOG_INFO,
                       1u, track_key, 0u, 0u, 0u, NULL);
+
+    esp_err_t identity_rc = derive_persistent_id(track, expected_generation,
+                                                 &track->persistent_id);
+    if (identity_rc != ESP_OK) {
+        ESP_LOGW(TAG, "persistent cue/cache identity unavailable for track 0x%08x: %s",
+                 (unsigned)track_key, esp_err_to_name(identity_rc));
+    }
 
     /* Analysis data refines the PDB row but is not required for playback.
      * library_load_anlz() keeps any nonzero PDB/audio duration itself — the

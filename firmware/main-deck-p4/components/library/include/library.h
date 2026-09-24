@@ -21,12 +21,23 @@
 // See docs/rekordbox-format-analysis.md for full format spec.
 
 #include <stdint.h>
+#include <stddef.h>
 #include "esp_err.h"
 #include "rekordbox_anlz.h"
 #include "rekordbox_pdb.h"
+#include "../../media_identity/include/media_identity.h"
 
 #define LIBRARY_PATH_MAX  256
 #define LIBRARY_STR_MAX   128
+
+typedef struct {
+    uint32_t track_key;
+    uint16_t bpm;
+    uint32_t duration_ms;
+    char title[96];
+    char artist[64];
+    char key[16];
+} library_catalog_row_t;
 
 typedef struct {
     /* Populated by library_init() from export.pdb */
@@ -39,6 +50,8 @@ typedef struct {
     uint32_t track_id;
     uint16_t bpm;
     uint32_t duration_ms;
+    /* Set on the private load-worker copy before ANLZ/cache resolution. */
+    media_persistent_id_t persistent_id;
 
     /* Populated by library_load_anlz() */
     uint8_t  waveform_low[400];
@@ -54,6 +67,7 @@ typedef struct {
 esp_err_t library_init(void);
 void      library_clear(void);
 uint32_t  library_generation(void);
+esp_err_t library_export_digest(uint8_t out_digest[32], uint32_t *out_generation);
 int       library_count(void);
 void      library_get_import_stats(pdb_import_stats_t *stats);
 esp_err_t library_get(int index, library_track_t *out);
@@ -64,6 +78,12 @@ esp_err_t library_get_summary(int index,
  * (and library_find_row_by_key) for highlight/selection/lookup work; library_get()
  * is for callers that genuinely need the whole record. */
 esp_err_t library_get_row_key(int index, uint32_t *out_key);
+/* Copy one generation's compact logical rows under a single lock. With rows
+ * NULL or insufficient capacity, returns the required count in out_count. */
+esp_err_t library_snapshot_rows(library_catalog_row_t *rows,
+                                size_t capacity,
+                                size_t *out_count,
+                                uint32_t *out_generation);
 /* Logical row currently holding `track_key`, or -1. Single pass under one lock
  * instead of N locked full-record copies. */
 int       library_find_row_by_key(uint32_t track_key);

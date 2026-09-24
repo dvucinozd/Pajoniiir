@@ -910,6 +910,7 @@ static void ui_poll_track_load_result(void)
             deck,
             result.generation,
             result.loaded.track_key,
+            &result.loaded.persistent_id,
             bpm,
             result.loaded.duration_ms,
             meta);
@@ -968,6 +969,11 @@ static esp_err_t ui_library_publish_simulated_track(
         return ESP_ERR_INVALID_ARG;
     }
     const uint32_t generation = library_generation();
+    media_persistent_id_t persistent_id = {.valid = true};
+    persistent_id.bytes[0] = (uint8_t)track->track_id;
+    persistent_id.bytes[1] = (uint8_t)(track->track_id >> 8);
+    persistent_id.bytes[2] = (uint8_t)(track->track_id >> 16);
+    persistent_id.bytes[3] = (uint8_t)(track->track_id >> 24);
     deck_core_reset_deck(deck);
     esp_err_t rc = deck_core_clear_loaded_track(deck, generation);
     if (rc != ESP_OK) {
@@ -976,6 +982,7 @@ static esp_err_t ui_library_publish_simulated_track(
     return deck_core_publish_loaded_track(deck,
                                           generation,
                                           track->track_id,
+                                          &persistent_id,
                                           track->bpm,
                                           track->duration_ms,
                                           meta);

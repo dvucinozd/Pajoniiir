@@ -18,12 +18,130 @@ typedef struct {
     const char *end;
 } cur_t;
 
+static bool hex_nibble(char ch, uint8_t *out);
+
 static void skip_ws(cur_t *c)
 {
     while (c->p < c->end &&
            (*c->p == ' ' || *c->p == '\t' || *c->p == '\r' || *c->p == '\n')) {
         c->p++;
     }
+}
+
+#define JSON_MAX_DEPTH 8u
+
+static bool json_skip_value(cur_t *c, unsigned depth);
+
+static bool json_skip_string(cur_t *c)
+{
+    if (c->p >= c->end || *c->p != '"') return false;
+    c->p++;
+    while (c->p < c->end) {
+        const unsigned char ch = (unsigned char)*c->p++;
+        if (ch == '"') return true;
+        if (ch < 0x20u) return false;
+        if (ch != '\\') continue;
+        if (c->p >= c->end) return false;
+        const char esc = *c->p++;
+        if (strchr("\"\\/bfnrt", esc)) continue;
+        if (esc != 'u' || (size_t)(c->end - c->p) < 4u) return false;
+        for (unsigned i = 0u; i < 4u; i++) {
+            uint8_t nibble;
+            if (!hex_nibble(c->p[i], &nibble)) return false;
+        }
+        c->p += 4u;
+    }
+    return false;
+}
+
+static bool json_skip_number(cur_t *c)
+{
+    const char *start = c->p;
+    if (c->p < c->end && *c->p == '-') c->p++;
+    if (c->p >= c->end) return false;
+    if (*c->p == '0') {
+        c->p++;
+        if (c->p < c->end && isdigit((unsigned char)*c->p)) return false;
+    } else {
+        if (*c->p < '1' || *c->p > '9') return false;
+        while (c->p < c->end && isdigit((unsigned char)*c->p)) c->p++;
+    }
+    if (c->p < c->end && *c->p == '.') {
+        c->p++;
+        if (c->p >= c->end || !isdigit((unsigned char)*c->p)) return false;
+        while (c->p < c->end && isdigit((unsigned char)*c->p)) c->p++;
+    }
+    if (c->p < c->end && (*c->p == 'e' || *c->p == 'E')) {
+        c->p++;
+        if (c->p < c->end && (*c->p == '+' || *c->p == '-')) c->p++;
+        if (c->p >= c->end || !isdigit((unsigned char)*c->p)) return false;
+        while (c->p < c->end && isdigit((unsigned char)*c->p)) c->p++;
+    }
+    return c->p > start;
+}
+
+static bool json_skip_compound(cur_t *c, char open, char close, unsigned depth)
+{
+    if (depth >= JSON_MAX_DEPTH || c->p >= c->end || *c->p != open) return false;
+    c->p++;
+    skip_ws(c);
+    if (c->p < c->end && *c->p == close) { c->p++; return true; }
+    for (;;) {
+        if (open == '{') {
+            if (!json_skip_string(c)) return false;
+            skip_ws(c);
+            if (c->p >= c->end || *c->p++ != ':') return false;
+            skip_ws(c);
+        }
+        if (!json_skip_value(c, depth + 1u)) return false;
+        skip_ws(c);
+        if (c->p < c->end && *c->p == close) { c->p++; return true; }
+        if (c->p >= c->end || *c->p++ != ',') return false;
+        skip_ws(c);
+    }
+}
+
+static bool json_skip_value(cur_t *c, unsigned depth)
+{
+    skip_ws(c);
+    if (c->p >= c->end) return false;
+    if (*c->p == '"') return json_skip_string(c);
+    if (*c->p == '{') return json_skip_compound(c, '{', '}', depth);
+    if (*c->p == '[') return json_skip_compound(c, '[', ']', depth);
+    if (*c->p == '-' || isdigit((unsigned char)*c->p)) return json_skip_number(c);
+    static const char *const literals[] = { "true", "false", "null" };
+    for (size_t i = 0u; i < sizeof(literals) / sizeof(literals[0]); i++) {
+        const size_t n = strlen(literals[i]);
+        if ((size_t)(c->end - c->p) >= n && memcmp(c->p, literals[i], n) == 0) {
+            c->p += n;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool json_document_valid(const char *json, size_t len)
+{
+    cur_t c = { json, json + len };
+    skip_ws(&c);
+    if (c.p >= c.end || *c.p != '{' || !json_skip_value(&c, 0u)) return false;
+    skip_ws(&c);
+    return c.p == c.end;
+}
+
+static unsigned key_occurrences(const char *json, size_t len, const char *key)
+{
+    unsigned count = 0u;
+    const size_t klen = strlen(key);
+    for (size_t i = 0u; i + klen + 2u <= len; i++) {
+        if (json[i] == '"' && memcmp(json + i + 1u, key, klen) == 0 &&
+            json[i + klen + 1u] == '"') {
+            cur_t c = { json + i + klen + 2u, json + len };
+            skip_ws(&c);
+            if (c.p < c.end && *c.p == ':') count++;
+        }
+    }
+    return count;
 }
 
 /* Find `"key"` at any depth inside the bounded buffer, returning a cursor just
@@ -79,6 +197,9 @@ static p4_ota_pull_manifest_result_t read_u32(cur_t c, uint32_t *out)
         v = v * 10u + (uint64_t)(*c.p - '0');
         if (v > 0xFFFFFFFFull) return P4_OTA_PULL_MANIFEST_BAD_VALUE;
         c.p++;
+    }
+    if (c.p < c.end && !isspace((unsigned char)*c.p) && *c.p != ',' && *c.p != '}') {
+        return P4_OTA_PULL_MANIFEST_MALFORMED;
     }
     if (v == 0u) return P4_OTA_PULL_MANIFEST_BAD_VALUE;
     *out = (uint32_t)v;
@@ -140,6 +261,12 @@ p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
 {
     if (!json || !out || len == 0u) return P4_OTA_PULL_MANIFEST_INVALID_ARG;
     memset(out, 0, sizeof(*out));
+    if (!json_document_valid(json, len) ||
+        key_occurrences(json, len, "schema_version") != 1u ||
+        key_occurrences(json, len, "release") != 1u ||
+        key_occurrences(json, len, "p4") > 1u) {
+        return P4_OTA_PULL_MANIFEST_MALFORMED;
+    }
 
     cur_t c;
     if (!seek_key(json, len, "schema_version", &c)) {
@@ -174,6 +301,11 @@ p4_ota_pull_manifest_result_t p4_ota_pull_manifest_parse(
         }
     }
     if (obj_len == 0u) return P4_OTA_PULL_MANIFEST_MALFORMED;   /* unbalanced */
+    if (key_occurrences(obj, obj_len, "url") != 1u ||
+        key_occurrences(obj, obj_len, "size") != 1u ||
+        key_occurrences(obj, obj_len, "sha256") != 1u) {
+        return P4_OTA_PULL_MANIFEST_MALFORMED;
+    }
 
     if (!seek_key(obj, obj_len, "url", &c)) return P4_OTA_PULL_MANIFEST_MALFORMED;
     rc = copy_string(c, out->url, P4_OTA_PULL_URL_MAX);

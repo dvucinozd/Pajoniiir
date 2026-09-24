@@ -1,10 +1,12 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
 #include "rekordbox_anlz.h"
+#include "media_identity.h"
 
 typedef struct {
     uint32_t track_key;
@@ -26,7 +28,14 @@ typedef struct {
 } media_catalog_row_t;
 
 typedef struct {
+    uint32_t generation;
+    size_t count;
+    media_catalog_row_t *rows;
+} media_catalog_snapshot_t;
+
+typedef struct {
     uint32_t track_key;
+    media_persistent_id_t persistent_id;
     char audio_path[272];
     char dat_path[272];
     char ext_path[272];
@@ -44,6 +53,8 @@ uint32_t media_catalog_generation(void);
 bool media_catalog_load_in_progress(void);
 esp_err_t media_catalog_get(int index, media_catalog_track_t *out_track);
 esp_err_t media_catalog_get_row(int index, media_catalog_row_t *out_row);
+esp_err_t media_catalog_snapshot_acquire(media_catalog_snapshot_t *out_snapshot);
+void media_catalog_snapshot_release(media_catalog_snapshot_t *snapshot);
 /* Identity of one row without materialising its text/waveform columns. Prefer
  * this over media_catalog_get_row() wherever only the key is needed — notably
  * the LVGL draw path, which asks per cell. */

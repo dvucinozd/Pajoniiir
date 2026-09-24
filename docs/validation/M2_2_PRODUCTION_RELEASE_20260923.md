@@ -3,6 +3,15 @@
 Status: **PASS — exact tagged image built, signed, installed, hardware-smoked
 and published**.
 
+> **Naknadno otkriveno 2026-09-23:** service journal i sačuvani crash dump
+> pokazuju da je prvi boot nakon dovršenog M2.2 push OTA prijelaza imao reset
+> razlog `PANIC` u tasku `ota_reboot`. PC/RA mapiraju se na ESP32-P4
+> `Cache_WriteBack_All()` / `esp_restart_noos_inner()`. Uređaj je zatim uredno
+> podigao M2.2, a kasniji hladni bootovi bili su normalni. Izvorni artefakti i tag
+> ostaju nepromijenjeni; korektivna grana i obavezni ponovni OTA/reboot gate
+> dokumentirani su u
+> [implementacijskom izvješću](IMPLEMENTATION_REPORT_M2_2_REVIEW_20260923.md).
+
 ## Frozen source and automated gates
 
 - Annotated immutable tag: `M2.2`

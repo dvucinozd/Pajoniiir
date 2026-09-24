@@ -231,7 +231,7 @@ static deck_censor_shadow_t s_censor_shadow[DECK_CORE_DECK_COUNT];
  * every publish, and reading it from NVS each time puts flash reads on the
  * input-handling path. All cue writes go through this file, so the cache is
  * refreshed on save and only misses once per loaded track. */
-static uint32_t s_hot_cue_mask_cache_key[DECK_CORE_DECK_COUNT];
+static media_persistent_id_t s_hot_cue_mask_cache_id[DECK_CORE_DECK_COUNT];
 static uint8_t  s_hot_cue_mask_cache_value[DECK_CORE_DECK_COUNT];
 
 static void hot_cue_mask_cache_invalidate(uint8_t deck)
@@ -239,19 +239,21 @@ static void hot_cue_mask_cache_invalidate(uint8_t deck)
     if (deck >= DECK_CORE_DECK_COUNT) {
         return;
     }
-    s_hot_cue_mask_cache_key[deck] = 0;
+    media_persistent_id_clear(&s_hot_cue_mask_cache_id[deck]);
     s_hot_cue_mask_cache_value[deck] = 0;
 }
 
-static void hot_cue_mask_cache_store(uint8_t deck, uint32_t track_key, uint8_t mask)
+static void hot_cue_mask_cache_store(uint8_t deck,
+                                     const media_persistent_id_t *id,
+                                     uint8_t mask)
 {
-    if (deck < DECK_CORE_DECK_COUNT) {
-        s_hot_cue_mask_cache_key[deck] = track_key;
+    if (deck < DECK_CORE_DECK_COUNT && id && id->valid) {
+        s_hot_cue_mask_cache_id[deck] = *id;
         s_hot_cue_mask_cache_value[deck] = mask;
     }
     /* Keep the other deck coherent when both decks hold the same track. */
     for (uint8_t d = 0; d < DECK_CORE_DECK_COUNT; d++) {
-        if (d != deck && s_hot_cue_mask_cache_key[d] == track_key) {
+        if (d != deck && media_persistent_id_equal(&s_hot_cue_mask_cache_id[d], id)) {
             s_hot_cue_mask_cache_value[d] = mask;
         }
     }
@@ -670,33 +672,36 @@ static uint32_t current_deck_position_ms(uint8_t deck, const deck_state_t *state
     return state ? state->position_ms : 0u;
 }
 
-static uint32_t loaded_track_key_for_deck(uint8_t deck)
+static bool loaded_track_identity_for_deck(uint8_t deck,
+                                           media_persistent_id_t *out)
 {
     deck_loaded_track_summary_t loaded = {0};
     if (deck >= DECK_CORE_DECK_COUNT ||
         !deck_loaded_track_store_get(&s_loaded_tracks, deck, &loaded) ||
         !loaded.valid) {
-        return 0;
+        return false;
     }
-    return loaded.track_key;
+    if (out) *out = loaded.persistent_id;
+    return loaded.persistent_id.valid;
 }
 
 static uint8_t hot_cue_exists_mask_for_deck(uint8_t deck)
 {
-    uint32_t track_key = loaded_track_key_for_deck(deck);
-    if (track_key == 0) {
+    media_persistent_id_t id = {0};
+    if (!loaded_track_identity_for_deck(deck, &id)) {
         return 0;
     }
-    if (deck < DECK_CORE_DECK_COUNT && s_hot_cue_mask_cache_key[deck] == track_key) {
+    if (deck < DECK_CORE_DECK_COUNT &&
+        media_persistent_id_equal(&s_hot_cue_mask_cache_id[deck], &id)) {
         return s_hot_cue_mask_cache_value[deck];
     }
 
     hot_cue_store_blob_t blob = {0};
     uint8_t mask = 0;
-    if (hot_cue_store_load(track_key, &blob) == ESP_OK) {
+    if (hot_cue_store_load(&id, &blob) == ESP_OK) {
         mask = (uint8_t)(blob.valid_mask & 0xFFu);
     }
-    hot_cue_mask_cache_store(deck, track_key, mask);
+    hot_cue_mask_cache_store(deck, &id, mask);
     return mask;
 }
 
@@ -706,16 +711,16 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         return;
     }
 
-    uint32_t track_key = loaded_track_key_for_deck(deck);
-    if (track_key == 0) {
-        ESP_LOGW(TAG, "deck %u hot cue pad %u ignored: no loaded track key",
+    media_persistent_id_t id = {0};
+    if (!loaded_track_identity_for_deck(deck, &id)) {
+        ESP_LOGW(TAG, "deck %u hot cue pad %u ignored: persistent identity unavailable",
                  (unsigned)deck + 1,
                  (unsigned)pad + 1);
         return;
     }
 
     hot_cue_store_blob_t blob = {0};
-    esp_err_t rc = hot_cue_store_load(track_key, &blob);
+    esp_err_t rc = hot_cue_store_load(&id, &blob);
     if (rc == ESP_ERR_NOT_FOUND) {
         memset(&blob, 0, sizeof(blob));
     } else if (rc != ESP_OK) {
@@ -735,9 +740,9 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         }
         blob.valid_mask &= ~bit;
         memset(&blob.slots[pad], 0, sizeof(blob.slots[pad]));
-        rc = hot_cue_store_save(track_key, &blob);
+        rc = hot_cue_store_save(&id, &blob);
         if (rc == ESP_OK) {
-            hot_cue_mask_cache_store(deck, track_key, (uint8_t)(blob.valid_mask & 0xFFu));
+            hot_cue_mask_cache_store(deck, &id, (uint8_t)(blob.valid_mask & 0xFFu));
             ESP_LOGI(TAG, "deck %u hot cue %u cleared",
                      (unsigned)deck + 1,
                      (unsigned)pad + 1);
@@ -776,9 +781,9 @@ static void handle_hot_cue_pad_action(uint8_t deck, uint8_t pad, bool shifted, d
         .end_ms = 0,
         .type = HOT_CUE_STORE_TYPE_SINGLE,
     };
-    rc = hot_cue_store_save(track_key, &blob);
+    rc = hot_cue_store_save(&id, &blob);
     if (rc == ESP_OK) {
-        hot_cue_mask_cache_store(deck, track_key, (uint8_t)(blob.valid_mask & 0xFFu));
+        hot_cue_mask_cache_store(deck, &id, (uint8_t)(blob.valid_mask & 0xFFu));
         ESP_LOGI(TAG, "deck %u hot cue %u set -> %lu ms",
                  (unsigned)deck + 1,
                  (unsigned)pad + 1,
@@ -3202,13 +3207,17 @@ static esp_err_t loaded_track_result_to_esp(
 esp_err_t deck_core_publish_loaded_track(uint8_t deck,
                                          uint32_t media_generation,
                                          uint32_t track_key,
+                                         const media_persistent_id_t *persistent_id,
                                          uint16_t bpm,
                                          uint32_t duration_ms,
                                          const anlz_metadata_t *anlz)
 {
+    media_persistent_id_t cue_id = {0};
+    if (persistent_id) cue_id = *persistent_id;
     const deck_loaded_track_payload_t payload = {
         .media_generation = media_generation,
         .track_key = track_key,
+        .persistent_id = cue_id,
         .duration_ms = duration_ms,
         .bpm = bpm,
         .anlz = anlz,
@@ -3265,7 +3274,7 @@ void deck_core_test_reset(void)
     memset(s_jog_scratch_active, 0, sizeof(s_jog_scratch_active));
     memset(s_beat_jump_shift_helper_led_valid, 0, sizeof(s_beat_jump_shift_helper_led_valid));
     memset(s_beat_jump_shift_helper_led_state, 0, sizeof(s_beat_jump_shift_helper_led_state));
-    memset(s_hot_cue_mask_cache_key, 0, sizeof(s_hot_cue_mask_cache_key));
+    memset(s_hot_cue_mask_cache_id, 0, sizeof(s_hot_cue_mask_cache_id));
     memset(s_hot_cue_mask_cache_value, 0, sizeof(s_hot_cue_mask_cache_value));
 #if defined(DECK_CORE_PC_TEST)
     memset(s_deferred_mixer_last, 0, sizeof(s_deferred_mixer_last));

@@ -132,7 +132,7 @@ await test('HTML uses only embedded stylesheet and script assets', () => {
     const assetRefs = [...html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="([^"]+)"/gi)]
         .map(match => match[1])
         .filter(ref => !ref.startsWith('https://dvucinozd.github.io/'));
-    assert.deepEqual(assetRefs, ['style.css?v=15', 'app.js?v=13']);
+    assert.deepEqual(assetRefs, ['style.css?v=15', 'app.js?v=14']);
     assert.doesNotMatch(css, /@import\s|url\(\s*['"]?https?:/i);
 });
 
@@ -255,6 +255,43 @@ await test('waveform cancellation does not seek', () => {
     wave.listeners.get('pointerdown')({ pointerId: 9, clientX: 30 });
     wave.listeners.get('pointercancel')({ pointerId: 9, clientX: 0 });
     assert.equal(runtime.requests.length, 0);
+});
+
+await test('continuous controls serialize requests and keep the newest value', async () => {
+    const runtime = makeRuntime();
+    let releaseFirst;
+    const firstPending = new Promise(resolve => { releaseFirst = resolve; });
+    let calls = 0;
+    runtime.setResponseFactory(async () => {
+        calls++;
+        if (calls === 1) await firstPending;
+        return { ok: true, status: 200, text: async () => 'OK', json: async () => ({}) };
+    });
+
+    vm.runInContext("throttledSend('fader', v => '/fader=' + v, 100, 0)", runtime.context);
+    vm.runInContext("throttledSend('fader', v => '/fader=' + v, 200, 0)", runtime.context);
+    vm.runInContext("throttledSend('fader', v => '/fader=' + v, 300, 0)", runtime.context);
+    assert.deepEqual(runtime.requests.map(r => r.url), ['/fader=100']);
+
+    releaseFirst();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(runtime.requests.map(r => r.url), ['/fader=100', '/fader=300']);
+});
+
+await test('late library response cannot overwrite a newer catalog', async () => {
+    const runtime = makeRuntime();
+    runtime.elements.set('library-body', makeElement('library-body'));
+    const resolvers = [];
+    runtime.setResponseFactory(() => new Promise(resolve => resolvers.push(resolve)));
+
+    const first = vm.runInContext('fetchLibrary()', runtime.context);
+    const second = vm.runInContext('fetchLibrary()', runtime.context);
+    resolvers[1]({ ok: true, json: async () => ({ generation: 2, tracks: [] }) });
+    await second;
+    resolvers[0]({ ok: true, json: async () => ({ generation: 1, tracks: [] }) });
+    await first;
+    assert.equal(vm.runInContext('libraryGeneration', runtime.context), 2);
 });
 
 console.log(`TESTS_RUN=${testsRun}`);

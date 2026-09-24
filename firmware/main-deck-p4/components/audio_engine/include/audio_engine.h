@@ -229,6 +229,7 @@ typedef struct {
     audio_delay_fx_mode_t beat_fx_echo_mode[AUDIO_ENGINE_DECK_COUNT];
     bool pad_fx_active[AUDIO_ENGINE_DECK_COUNT];
     audio_mixer_limiter_stats_t limiter;
+    uint16_t main_meter_peak;
     uint32_t usb_headphone_submitted_blocks;
     uint32_t usb_headphone_dropped_blocks;
     uint32_t usb_headphone_submitted_frames;
@@ -382,6 +383,7 @@ bool audio_engine_test_snapshot_beat_fx_time_command(
     audio_delay_fx_config_t *out_config);
 void audio_engine_test_record_deck_peak(uint8_t deck, int16_t left, int16_t right);
 void audio_engine_test_decay_idle_deck_peaks(void);
+void audio_engine_test_record_main_peak(const int16_t *samples, size_t sample_count);
 void audio_engine_test_record_limiter_stats(const audio_mixer_limiter_stats_t *stats);
 void audio_engine_test_set_limiter_publish_hook(
     audio_engine_limiter_publish_test_hook_t hook);

@@ -4,7 +4,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <stdbool.h>
+#include <stddef.h>
 #include <string.h>
 
 /* Referenced only by ESP_LOG*, which the PC host stubs compile away. */
@@ -12,6 +14,33 @@ __attribute__((unused)) static const char *TAG = "settings";
 #define NS  "cdjcfg"
 #define APP_SETTINGS_SCHEMA_KEY       "schema_ver"
 #define APP_SETTINGS_SCHEMA_VERSION   1u
+#define OTA_CONFIG_BLOB_KEY           "ota_cfg_v2"
+#define OTA_CONFIG_BLOB_MAGIC         0x3241544fu
+
+#pragma pack(push, 1)
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t size;
+    char ssid[APP_SETTINGS_OTA_SSID_CAP];
+    char pass[APP_SETTINGS_OTA_PASS_CAP];
+    char url[APP_SETTINGS_OTA_URL_CAP];
+    uint32_t crc32;
+} ota_config_blob_t;
+#pragma pack(pop)
+
+static uint32_t ota_config_crc32(const void *data, size_t len)
+{
+    uint32_t crc = 0xffffffffu;
+    const uint8_t *p = (const uint8_t *)data;
+    while (len--) {
+        crc ^= *p++;
+        for (unsigned bit = 0u; bit < 8u; bit++) {
+            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+        }
+    }
+    return ~crc;
+}
 
 #if defined(CONFIG_BSP_PCM5102A_MAIN_OUT) && CONFIG_BSP_PCM5102A_MAIN_OUT && \
     (!defined(CONFIG_BSP_ES8311_MONITOR) || !CONFIG_BSP_ES8311_MONITOR)
@@ -23,6 +52,29 @@ __attribute__((unused)) static const char *TAG = "settings";
 /* Readers run in UI/http/OTA tasks. Publish coherent RAM snapshots only after
  * durable NVS writes have succeeded. */
 static portMUX_TYPE s_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t s_ota_write_mutex;
+
+static esp_err_t ota_write_lock(void)
+{
+    if (!s_ota_write_mutex) {
+        SemaphoreHandle_t created = xSemaphoreCreateMutex();
+        if (!created) return ESP_ERR_NO_MEM;
+        portENTER_CRITICAL(&s_cfg_mux);
+        if (!s_ota_write_mutex) {
+            s_ota_write_mutex = created;
+            created = NULL;
+        }
+        portEXIT_CRITICAL(&s_cfg_mux);
+        if (created) vSemaphoreDelete(created);
+    }
+    return xSemaphoreTake(s_ota_write_mutex, portMAX_DELAY) == pdTRUE
+        ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+static void ota_write_unlock(void)
+{
+    if (s_ota_write_mutex) (void)xSemaphoreGive(s_ota_write_mutex);
+}
 
 /* Defaults match the firmware's out-of-the-box behaviour. */
 #define APP_SETTINGS_DEFAULTS (app_settings_t){ \
@@ -123,17 +175,56 @@ static esp_err_t migrate_settings(nvs_handle_t handle,
     return rc;
 }
 
-static void load_ota_config(nvs_handle_t handle,
+static void make_ota_config_blob(ota_config_blob_t *blob,
+                                 const char *ssid,
+                                 const char *pass,
+                                 const char *url);
+
+static bool load_ota_config(nvs_handle_t handle,
                             char ssid[APP_SETTINGS_OTA_SSID_CAP],
                             char pass[APP_SETTINGS_OTA_PASS_CAP],
                             char url[APP_SETTINGS_OTA_URL_CAP])
 {
+    ota_config_blob_t blob;
+    size_t blob_len = sizeof(blob);
+    if (nvs_get_blob(handle, OTA_CONFIG_BLOB_KEY, &blob, &blob_len) == ESP_OK &&
+        blob_len == sizeof(blob) && blob.magic == OTA_CONFIG_BLOB_MAGIC &&
+        blob.version == 2u && blob.size == sizeof(blob) &&
+        blob.ssid[sizeof(blob.ssid) - 1u] == '\0' &&
+        blob.pass[sizeof(blob.pass) - 1u] == '\0' &&
+        blob.url[sizeof(blob.url) - 1u] == '\0' &&
+        blob.crc32 == ota_config_crc32(&blob, offsetof(ota_config_blob_t, crc32))) {
+        memcpy(ssid, blob.ssid, APP_SETTINGS_OTA_SSID_CAP);
+        memcpy(pass, blob.pass, APP_SETTINGS_OTA_PASS_CAP);
+        memcpy(url, blob.url, APP_SETTINGS_OTA_URL_CAP);
+        return false;
+    }
+    bool found_legacy = false;
     size_t len = APP_SETTINGS_OTA_SSID_CAP;
-    if (nvs_get_str(handle, "ota_ssid", ssid, &len) != ESP_OK) ssid[0] = '\0';
+    if (nvs_get_str(handle, "ota_ssid", ssid, &len) == ESP_OK) found_legacy = true;
+    else ssid[0] = '\0';
     len = APP_SETTINGS_OTA_PASS_CAP;
-    if (nvs_get_str(handle, "ota_pass", pass, &len) != ESP_OK) pass[0] = '\0';
+    if (nvs_get_str(handle, "ota_pass", pass, &len) == ESP_OK) found_legacy = true;
+    else pass[0] = '\0';
     len = APP_SETTINGS_OTA_URL_CAP;
-    if (nvs_get_str(handle, "ota_url", url, &len) != ESP_OK) url[0] = '\0';
+    if (nvs_get_str(handle, "ota_url", url, &len) == ESP_OK) found_legacy = true;
+    else url[0] = '\0';
+    return found_legacy;
+}
+
+static void make_ota_config_blob(ota_config_blob_t *blob,
+                                 const char *ssid,
+                                 const char *pass,
+                                 const char *url)
+{
+    memset(blob, 0, sizeof(*blob));
+    blob->magic = OTA_CONFIG_BLOB_MAGIC;
+    blob->version = 2u;
+    blob->size = sizeof(*blob);
+    copy_bounded(blob->ssid, sizeof(blob->ssid), ssid);
+    copy_bounded(blob->pass, sizeof(blob->pass), pass);
+    copy_bounded(blob->url, sizeof(blob->url), url);
+    blob->crc32 = ota_config_crc32(blob, offsetof(ota_config_blob_t, crc32));
 }
 
 /* Defined with the rest of the backlight debounce path, below the generated
@@ -167,7 +258,18 @@ esp_err_t app_settings_init(void)
         if (nvs_get_u8(handle, "cue_mode", &value) == ESP_OK && value <= 1) next.cue_mode = value;
         if (nvs_get_u8(handle, "master_trim", &value) == ESP_OK && value <= 2) next.master_trim_preset = value;
         if (nvs_get_u8(handle, "wifi_rem", &value) == ESP_OK && value <= 1) next.wifi_remote = value;
-        load_ota_config(handle, ota_ssid, ota_pass, ota_url);
+        bool migrate_legacy_ota = load_ota_config(handle, ota_ssid, ota_pass, ota_url);
+        if (migrate_legacy_ota) {
+            ota_config_blob_t blob;
+            make_ota_config_blob(&blob, ota_ssid, ota_pass, ota_url);
+            esp_err_t ota_migrate_rc = nvs_set_blob(handle, OTA_CONFIG_BLOB_KEY,
+                                                    &blob, sizeof(blob));
+            if (ota_migrate_rc == ESP_OK) ota_migrate_rc = nvs_commit(handle);
+            if (ota_migrate_rc != ESP_OK) {
+                ESP_LOGW(TAG, "legacy OTA config migration failed: %s",
+                         esp_err_to_name(ota_migrate_rc));
+            }
+        }
 
         uint8_t stored_schema = 0u;
         bool schema_found = nvs_get_u8(handle, APP_SETTINGS_SCHEMA_KEY, &stored_schema) == ESP_OK;
@@ -285,6 +387,7 @@ void app_settings_test_run_debounce_cycle(void)
 void app_settings_test_reset(void)
 {
     s_settings_worker = NULL;
+    s_ota_write_mutex = NULL;
     s_pending_backlight = 80u;
     portENTER_CRITICAL(&s_cfg_mux);
     s_cfg = APP_SETTINGS_DEFAULTS;
@@ -370,6 +473,8 @@ void app_settings_ota_copy_password(char *out, size_t cap)
 
 esp_err_t app_settings_ota_set(const char *ssid, const char *password, const char *url)
 {
+    esp_err_t rc = ota_write_lock();
+    if (rc != ESP_OK) return rc;
     char next_ssid[APP_SETTINGS_OTA_SSID_CAP];
     char next_pass[APP_SETTINGS_OTA_PASS_CAP];
     char next_url[APP_SETTINGS_OTA_URL_CAP];
@@ -386,18 +491,20 @@ esp_err_t app_settings_ota_set(const char *ssid, const char *password, const cha
     if (password) copy_bounded(next_pass, sizeof(next_pass), password);
 
     nvs_handle_t handle;
-    esp_err_t rc = nvs_open(NS, NVS_READWRITE, &handle);
+    rc = nvs_open(NS, NVS_READWRITE, &handle);
     if (rc != ESP_OK) {
         ESP_LOGW(TAG, "nvs_open(rw) failed for ota config: %s", esp_err_to_name(rc));
+        ota_write_unlock();
         return rc;
     }
-    rc = nvs_set_str(handle, "ota_ssid", next_ssid);
-    if (rc == ESP_OK) rc = nvs_set_str(handle, "ota_pass", next_pass);
-    if (rc == ESP_OK) rc = nvs_set_str(handle, "ota_url", next_url);
+    ota_config_blob_t blob;
+    make_ota_config_blob(&blob, next_ssid, next_pass, next_url);
+    rc = nvs_set_blob(handle, OTA_CONFIG_BLOB_KEY, &blob, sizeof(blob));
     if (rc == ESP_OK) rc = nvs_commit(handle);
     nvs_close(handle);
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "ota config persistence failed: %s", esp_err_to_name(rc));
+        ota_write_unlock();
         return rc;
     }
 
@@ -409,36 +516,65 @@ esp_err_t app_settings_ota_set(const char *ssid, const char *password, const cha
 
     ESP_LOGI(TAG, "ota config saved: ssid=\"%s\" url=\"%s\" password=%s",
              next_ssid, next_url, next_pass[0] ? "set" : "none");
+    ota_write_unlock();
     return ESP_OK;
 }
 
-void app_settings_ota_clear(void)
+esp_err_t app_settings_ota_clear(void)
 {
+    esp_err_t rc = ota_write_lock();
+    if (rc != ESP_OK) return rc;
     nvs_handle_t handle;
-    esp_err_t rc = nvs_open(NS, NVS_READWRITE, &handle);
+    rc = nvs_open(NS, NVS_READWRITE, &handle);
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "ota config clear open failed: %s", esp_err_to_name(rc));
-        return;
+        ota_write_unlock();
+        return rc;
     }
-    rc = nvs_erase_key(handle, "ota_ssid");
-    if (rc == ESP_ERR_NVS_NOT_FOUND) rc = ESP_OK;
+    ota_config_blob_t empty;
+    make_ota_config_blob(&empty, "", "", "");
+    rc = nvs_set_blob(handle, OTA_CONFIG_BLOB_KEY, &empty, sizeof(empty));
+    if (rc == ESP_OK) rc = nvs_commit(handle);
+    if (rc != ESP_OK) {
+        nvs_close(handle);
+        ESP_LOGE(TAG, "ota config clear failed: %s", esp_err_to_name(rc));
+        ota_write_unlock();
+        return rc;
+    }
+    portENTER_CRITICAL(&s_cfg_mux);
+    memset(s_ota_ssid, 0, sizeof(s_ota_ssid));
+    memset(s_ota_pass, 0, sizeof(s_ota_pass));
+    memset(s_ota_url, 0, sizeof(s_ota_url));
+    portEXIT_CRITICAL(&s_cfg_mux);
+
+    esp_err_t ssid_rc = nvs_erase_key(handle, "ota_ssid");
+    if (ssid_rc == ESP_ERR_NVS_NOT_FOUND) ssid_rc = ESP_OK;
     esp_err_t pass_rc = nvs_erase_key(handle, "ota_pass");
     if (pass_rc == ESP_ERR_NVS_NOT_FOUND) pass_rc = ESP_OK;
     esp_err_t url_rc = nvs_erase_key(handle, "ota_url");
     if (url_rc == ESP_ERR_NVS_NOT_FOUND) url_rc = ESP_OK;
+    if (rc == ESP_OK) rc = ssid_rc;
     if (rc == ESP_OK) rc = pass_rc;
     if (rc == ESP_OK) rc = url_rc;
     if (rc == ESP_OK) rc = nvs_commit(handle);
     nvs_close(handle);
     if (rc != ESP_OK) {
         ESP_LOGE(TAG, "ota config clear failed: %s", esp_err_to_name(rc));
-        return;
+        ota_write_unlock();
+        return rc;
     }
 
-    portENTER_CRITICAL(&s_cfg_mux);
-    memset(s_ota_ssid, 0, sizeof(s_ota_ssid));
-    memset(s_ota_pass, 0, sizeof(s_ota_pass));
-    memset(s_ota_url, 0, sizeof(s_ota_url));
-    portEXIT_CRITICAL(&s_cfg_mux);
     ESP_LOGI(TAG, "ota config cleared");
+    ota_write_unlock();
+    return ESP_OK;
+}
+
+void app_settings_ota_get_config(app_settings_ota_config_t *out)
+{
+    if (!out) return;
+    portENTER_CRITICAL(&s_cfg_mux);
+    memcpy(out->ssid, s_ota_ssid, sizeof(out->ssid));
+    memcpy(out->password, s_ota_pass, sizeof(out->password));
+    memcpy(out->url, s_ota_url, sizeof(out->url));
+    portEXIT_CRITICAL(&s_cfg_mux);
 }

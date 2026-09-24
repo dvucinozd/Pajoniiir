@@ -163,6 +163,17 @@ static tag_walk_result_t walk_sections_for_tag(FILE *fp, uint32_t target)
     return pos == file_len ? TAG_WALK_ABSENT : TAG_WALK_MALFORMED;
 }
 
+/* Validate the complete section chain before any payload is published. A
+ * successful lookup used to return as soon as it found its tag, which let a
+ * malformed trailing header escape every one of the five independent walks. */
+static esp_err_t validate_section_chain(FILE *fp)
+{
+    s_anlz_short_read = false;
+    const tag_walk_result_t walk = walk_sections_for_tag(fp, 0u);
+    return (!s_anlz_short_read && walk == TAG_WALK_ABSENT)
+        ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
 /* There is deliberately no byte-scan fallback. Scanning for a tag pattern with a
  * sliding window can false-match the same four bytes inside another section's
  * payload, and the "recovered" offsets then parse payload bytes as a header —
@@ -363,59 +374,60 @@ static esp_err_t parse_pwav(FILE *fp, anlz_metadata_t *out)
 }
 
 /* ── PCOB / PCPT parser ──────────────────────────────────────────────────── *
- *
- * PCOB is a container tag.  Its data section contains one or more PCPT
- * sub-records, each 56 bytes long.  We extract up to ANLZ_MAX_CUES cues.
- *
- * PCOB layout after tag:
- *   4B  header_size
- *   4B  segment_size
- *   (header_size − 12) bytes padding
- *   [PCPT sub-records, each 56B]
- *
- * Each PCPT (56 bytes):
- *   Byte 0     : entry_type  (0x01 = single, 0x02 = loop)
- *   Byte 1     : index       (0–7)
- *   Bytes 2–3  : unknown / color
- *   Bytes 4–7  : start_ms    (uint32 BE)
- *   Bytes 8–11 : end_ms      (uint32 BE, loops only)
- *   Bytes 12–55: name, color info (unused here)
- *
- * Note: The exact layout varies slightly between Rekordbox versions.
- * This follows the spectran/rekordbox + DeepSymmetry specifications.
- */
+ * PCOB has a 24-byte header. Its type at 0x0c distinguishes memory points (0)
+ * from hot cues (1), and its uint16 count is at 0x12. Each 56-byte PCPT is a
+ * tagged record of its own: hot-cue number at 0x0c, type at 0x1c, time at 0x20
+ * and loop time at 0x24. Hot Cue A is number 1 and maps to internal slot 0. */
+static uint32_t buf_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
 static esp_err_t parse_pcob(FILE *fp, anlz_metadata_t *out)
 {
     uint32_t header_size  = read_be32(fp);
     uint32_t segment_size = read_be32(fp);
 
-    if (segment_size < header_size || header_size < 12) {
+    if (segment_size < header_size || header_size < 24u) {
         ANLZ_LOGE(TAG, "PCOB: bad sizes");
         return ESP_ERR_INVALID_SIZE;
     }
 
-    uint32_t skip = header_size - 12u;
-    if (fseek(fp, (long)skip, SEEK_CUR) != 0) return ESP_ERR_INVALID_ARG;
+    uint8_t header[12];
+    if (!anlz_read_exact(header, sizeof(header), fp)) return ESP_ERR_INVALID_SIZE;
+    const uint32_t list_type = buf_be32(&header[0]);
+    const uint16_t declared_count = (uint16_t)(((uint16_t)header[6] << 8) | header[7]);
+    if (fseek(fp, (long)(header_size - 24u), SEEK_CUR) != 0) return ESP_ERR_INVALID_ARG;
 
     uint32_t data_len   = segment_size - header_size;
-    uint32_t pcpt_count = data_len / 56u;
-
-    out->cue_count = 0;
+    if ((data_len % 56u) != 0u || declared_count != data_len / 56u) {
+        ANLZ_LOGE(TAG, "PCOB: count/length mismatch");
+        return ESP_ERR_INVALID_SIZE;
+    }
+    uint32_t pcpt_count = declared_count;
 
     for (uint32_t i = 0; i < pcpt_count; i++) {
-        /* Read 56 bytes for this PCPT entry */
         uint8_t buf[56];
-        if (!anlz_read_exact(buf, sizeof(buf), fp)) break;
+        if (!anlz_read_exact(buf, sizeof(buf), fp)) return ESP_ERR_INVALID_SIZE;
+        if (memcmp(buf, "PCPT", 4u) != 0 || buf_be32(&buf[4]) < 28u ||
+            buf_be32(&buf[8]) != sizeof(buf)) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        if (list_type != 1u) continue; /* memory cues are not performance pads */
 
-        uint8_t entry_type = buf[0];
-        uint8_t index      = buf[1];
-
-        if (index >= ANLZ_MAX_CUES) continue; /* ignore out-of-range slots */
-
-        uint32_t start_ms = ((uint32_t)buf[4]  << 24) | ((uint32_t)buf[5]  << 16) |
-                            ((uint32_t)buf[6]  <<  8) |  (uint32_t)buf[7];
-        uint32_t end_ms   = ((uint32_t)buf[8]  << 24) | ((uint32_t)buf[9]  << 16) |
-                            ((uint32_t)buf[10] <<  8) |  (uint32_t)buf[11];
+        const uint32_t hot_cue = buf_be32(&buf[12]);
+        if (hot_cue == 0u || hot_cue > ANLZ_MAX_CUES) continue;
+        const uint8_t index = (uint8_t)(hot_cue - 1u);
+        const uint8_t entry_type = buf[28];
+        if (entry_type != 1u && entry_type != 2u) return ESP_ERR_INVALID_SIZE;
+        const uint32_t start_ms = buf_be32(&buf[32]);
+        const uint32_t end_ms = buf_be32(&buf[36]);
+        if (entry_type == 2u && end_ms <= start_ms) return ESP_ERR_INVALID_SIZE;
+        for (uint8_t c = 0u; c < out->cue_count; c++) {
+            if (out->cues[c].index == index) return ESP_ERR_INVALID_SIZE;
+        }
+        if (out->cue_count >= ANLZ_MAX_CUES) continue;
 
         anlz_cue_t *cue = &out->cues[out->cue_count];
         cue->type     = (entry_type == 2) ? ANLZ_CUE_LOOP : ANLZ_CUE_SINGLE;
@@ -424,11 +436,33 @@ static esp_err_t parse_pcob(FILE *fp, anlz_metadata_t *out)
         cue->end_ms   = (cue->type == ANLZ_CUE_LOOP) ? end_ms : 0u;
 
         out->cue_count++;
-        if (out->cue_count >= ANLZ_MAX_CUES) break;
     }
 
     ANLZ_LOGI(TAG, "PCOB: %u cue/loop entries", out->cue_count);
     return ESP_OK;
+}
+
+static esp_err_t parse_all_pcob(FILE *fp, anlz_metadata_t *out)
+{
+    if (fseek(fp, 0, SEEK_END) != 0) return ESP_ERR_INVALID_SIZE;
+    const long end = ftell(fp);
+    if (end < 12) return ESP_ERR_INVALID_SIZE;
+    uint32_t pos = 0u;
+    while (pos + 12u <= (uint32_t)end) {
+        if (fseek(fp, (long)pos, SEEK_SET) != 0) return ESP_ERR_INVALID_SIZE;
+        const uint32_t tag = read_be32(fp);
+        const uint32_t header_size = read_be32(fp);
+        const uint32_t segment_size = read_be32(fp);
+        if (s_anlz_short_read) return ESP_ERR_INVALID_SIZE;
+        const uint32_t advance = tag == ANLZ_TAG_PMAI ? header_size : segment_size;
+        if (tag == ANLZ_TAG_PCOB) {
+            if (fseek(fp, (long)(pos + 4u), SEEK_SET) != 0) return ESP_ERR_INVALID_SIZE;
+            const esp_err_t rc = parse_pcob(fp, out);
+            if (rc != ESP_OK) return rc;
+        }
+        pos += advance;
+    }
+    return pos == (uint32_t)end ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
 /* ── PWV3 parser ─────────────────────────────────────────────────────────── *
@@ -531,6 +565,13 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
         return ESP_ERR_NOT_FOUND;
     }
 
+    esp_err_t result = validate_section_chain(fp);
+    if (result != ESP_OK) {
+        fclose(fp);
+        memset(out, 0, sizeof(*out));
+        return result;
+    }
+
     /* Each tag is located by its own walk from the start, so the sections may
      * appear in any order. Rekordbox writes them in a fixed order today, but
      * nothing in the format requires it. */
@@ -540,17 +581,15 @@ esp_err_t anlz_parse_dat(const char *dat_path, anlz_metadata_t *out)
         ANLZ_TAG_PVBR,
         ANLZ_TAG_PQTZ,
         ANLZ_TAG_PWAV,
-        ANLZ_TAG_PCOB,
     };
     bool has_path = false;
-    esp_err_t result = ESP_OK;
-
-    for (size_t i = 0u; i < sizeof(tags) / sizeof(tags[0]); ++i) {
+    for (size_t i = 0u; result == ESP_OK && i < sizeof(tags) / sizeof(tags[0]); ++i) {
         bool found = false;
         result = parse_one_strict(fp, tags[i], &next, &found);
         if (result != ESP_OK) break;
         if (tags[i] == ANLZ_TAG_PPTH) has_path = found && next.audio_path[0] != '\0';
     }
+    if (result == ESP_OK) result = parse_all_pcob(fp, &next);
     fclose(fp);
 
     /* Without PPTH there is no audio path, so the analysis cannot be tied to a

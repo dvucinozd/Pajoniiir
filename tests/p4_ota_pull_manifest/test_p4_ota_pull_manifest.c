@@ -194,6 +194,30 @@ static void test_hostile_and_truncated_input_is_rejected_not_read_past(void)
     }
 }
 
+static void test_complete_json_and_unique_fields_are_required(void)
+{
+    p4_ota_pull_manifest_t m;
+    const char *suffix =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"fw.ddjota\",\"size\":200garbage,\"sha256\":\"" SHA "\"}}";
+    assert(parse(suffix, &m) == P4_OTA_PULL_MANIFEST_MALFORMED);
+
+    const char *missing_root_close =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"fw.ddjota\",\"size\":200,\"sha256\":\"" SHA "\"}";
+    assert(parse(missing_root_close, &m) == P4_OTA_PULL_MANIFEST_MALFORMED);
+
+    const char *duplicate =
+        "{\"schema_version\":1,\"release\":\"r\",\"release\":\"other\",\"p4\":{"
+        "\"url\":\"fw.ddjota\",\"size\":200,\"sha256\":\"" SHA "\"}}";
+    assert(parse(duplicate, &m) == P4_OTA_PULL_MANIFEST_MALFORMED);
+
+    const char *trailing =
+        "{\"schema_version\":1,\"release\":\"r\",\"p4\":{"
+        "\"url\":\"fw.ddjota\",\"size\":200,\"sha256\":\"" SHA "\"}}x";
+    assert(parse(trailing, &m) == P4_OTA_PULL_MANIFEST_MALFORMED);
+}
+
 static void test_bad_values_are_refused(void)
 {
     p4_ota_pull_manifest_t m;
@@ -285,6 +309,7 @@ int main(void)
     test_a_document_without_a_p4_target_is_distinguishable();
     test_fields_are_read_from_the_p4_object_only();
     test_hostile_and_truncated_input_is_rejected_not_read_past();
+    test_complete_json_and_unique_fields_are_required();
     test_bad_values_are_refused();
     test_oversized_fields_are_refused_not_truncated();
     test_null_and_empty_are_inert();

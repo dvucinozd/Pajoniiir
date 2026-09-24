@@ -38,23 +38,43 @@ async function sendMutation(url) {
 }
 
 function throttledSend(key, urlFor, value, minInterval = 90) {
-    const st = _throttle[key] || (_throttle[key] = { last: 0, timer: null, pending: null });
-    const send = (v) => {
-        st.last = Date.now();
-        sendMutation(urlFor(v)).catch(err => console.error(err));
-    };
-    const elapsed = Date.now() - st.last;
-    if (elapsed >= minInterval) {
-        send(value);
-    } else {
-        st.pending = value;
-        if (!st.timer) {
-            st.timer = setTimeout(() => {
-                st.timer = null;
-                if (st.pending !== null) { send(st.pending); st.pending = null; }
-            }, minInterval - elapsed);
+    const st = _throttle[key] || (_throttle[key] = {
+        last: -Infinity, timer: null, pending: null, inFlight: false,
+        urlFor: null, minInterval: 90
+    });
+    st.pending = value;
+    st.urlFor = urlFor;
+    st.minInterval = minInterval;
+
+    const pump = () => {
+        if (st.inFlight || st.pending === null) return;
+        const remaining = st.minInterval - (Date.now() - st.last);
+        if (remaining > 0) {
+            if (st.timer === null) {
+                st.timer = setTimeout(() => {
+                    st.timer = null;
+                    pump();
+                }, remaining);
+            }
+            return;
         }
-    }
+
+        if (st.timer !== null) {
+            clearTimeout(st.timer);
+            st.timer = null;
+        }
+        const next = st.pending;
+        st.pending = null;
+        st.inFlight = true;
+        st.last = Date.now();
+        sendMutation(st.urlFor(next))
+            .catch(err => console.error(err))
+            .finally(() => {
+                st.inFlight = false;
+                pump();
+            });
+    };
+    pump();
 }
 
 function setConnected(ok) {
@@ -262,10 +282,16 @@ if (document.readyState === 'loading') {
     init();
 }
 
+let libraryRequestSequence = 0;
 function fetchLibrary() {
-    fetch('/api/library')
-        .then(res => res.json())
+    const requestSequence = ++libraryRequestSequence;
+    return fetch('/api/library')
+        .then(res => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        })
         .then(data => {
+            if (requestSequence !== libraryRequestSequence) return;
             libraryGeneration = Number.isInteger(data.generation) ? data.generation : 0;
             libraryData = data.tracks || [];
             renderLibrary(libraryData);
@@ -359,7 +385,7 @@ function pollStatus() {
 function updateVu(diag) {
     const container = document.getElementById('vu-master');
     if (!container) return;
-    const peak = (diag && typeof diag.limiter_peak === 'number') ? diag.limiter_peak : 0;
+    const peak = (diag && typeof diag.main_meter_peak === 'number') ? diag.main_meter_peak : 0;
     const level = Math.max(0, Math.min(1, peak / 32767));
     const lit = Math.round(level * 10);
     const segs = container.querySelectorAll('.vu-seg');

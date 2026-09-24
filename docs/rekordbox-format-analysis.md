@@ -207,14 +207,20 @@ Verified header sizes from a real USB drive:
 ### PCOB / PCPT — Cue Point Structure (56 bytes per entry)
 
 ```c
-// Offsets within the 56-byte PCPT entry (big-endian):
-uint8_t  entry_type;  // byte 0: 1 = single point, 2 = loop
-uint8_t  index;       // byte 1: hot cue slot (0–7)
-// bytes 2–3: color/unknown
-uint32_t start_ms;    // bytes 4–7: position from track start (ms)
-uint32_t end_ms;      // bytes 8–11: loop end (only if type=2)
-// bytes 12–55: name, color info (not used)
+// PCOB fields, relative to the PCOB tag (big-endian):
+uint32_t list_type;   // 0x0c: 0 = memory cues, 1 = hot cues
+uint16_t entry_count; // 0x12
+
+// Fields within each tagged 56-byte PCPT record:
+uint32_t hot_cue_no;  // 0x0c: A=1 ... H=8 (0 for a memory cue)
+uint8_t  entry_type;  // 0x1c: 1 = single point, 2 = loop
+uint32_t start_ms;    // 0x20: position from track start
+uint32_t end_ms;      // 0x24: loop end (only if type=2)
 ```
+
+The parser validates every declared PCPT record even for memory-cue lists, walks
+all PCOB sections, and rejects duplicate supported hot-cue slots or invalid loop
+bounds. Memory cues are not mapped to the eight performance-pad slots.
 
 ### PQTZ — Beat Grid Entry (8 bytes, big-endian)
 

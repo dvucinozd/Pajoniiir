@@ -1,5 +1,15 @@
 #include "audio_pcm_timeline.h"
 
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+static portMUX_TYPE s_cursor_publish_mux = portMUX_INITIALIZER_UNLOCKED;
+#define CURSOR_PUBLISH_ENTER() taskENTER_CRITICAL(&s_cursor_publish_mux)
+#define CURSOR_PUBLISH_EXIT()  taskEXIT_CRITICAL(&s_cursor_publish_mux)
+#else
+#define CURSOR_PUBLISH_ENTER() do { } while (0)
+#define CURSOR_PUBLISH_EXIT()  do { } while (0)
+#endif
+
 static uint64_t cursor_load(const uint32_t *epoch,
                             const uint32_t *low,
                             const uint32_t *version)
@@ -21,10 +31,16 @@ static void cursor_store_absolute(uint32_t *epoch,
                                   uint32_t *version,
                                   uint64_t value)
 {
+    /* A higher-priority reader on the same core must not preempt after the odd
+     * version is published: it would spin forever while the writer cannot run.
+     * This section is reached only on a 32-bit cursor wrap or an explicit
+     * reposition, and contains four bounded atomic stores. */
+    CURSOR_PUBLISH_ENTER();
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_ACQ_REL);
     __atomic_store_n(epoch, (uint32_t)(value >> 32), __ATOMIC_RELAXED);
     __atomic_store_n(low, (uint32_t)value, __ATOMIC_RELAXED);
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_RELEASE);
+    CURSOR_PUBLISH_EXIT();
 }
 
 static void cursor_store_next(uint32_t *epoch,
