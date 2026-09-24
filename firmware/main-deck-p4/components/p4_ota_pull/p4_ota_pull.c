@@ -126,6 +126,27 @@ static int http_read_with_idle_retry(esp_http_client_handle_t client,
     }
 }
 
+/* fetch_headers() has the same timed-idle contract as read(): IDF 6.0.2
+ * returns -ESP_ERR_HTTP_EAGAIN when the peer has not produced response bytes
+ * within one transport timeout. Do not inspect status_code until a complete
+ * header was parsed; before that it is -1 and must not be mislabeled as 404. */
+static int64_t http_fetch_headers_with_idle_retry(esp_http_client_handle_t client)
+{
+    for (uint32_t idle = 0u; ; idle++) {
+        int64_t len = esp_http_client_fetch_headers(client);
+        if (len != -(int64_t)ESP_ERR_HTTP_EAGAIN) {
+            return len;
+        }
+        if (idle + 1u >= HTTP_IDLE_RETRY_MAX) {
+            ESP_LOGW(TAG, "HTTP headers stalled for %u consecutive timeouts",
+                     (unsigned)HTTP_IDLE_RETRY_MAX);
+            return len;
+        }
+        ESP_LOGW(TAG, "HTTP headers idle; retrying fetch (%u/%u)",
+                 (unsigned)(idle + 1u), (unsigned)HTTP_IDLE_RETRY_MAX);
+    }
+}
+
 /* Fetch <base>/latest.json into `buf`. Returns the byte count, or a negative
  * esp_err_t. */
 static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
@@ -152,7 +173,12 @@ static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
         result = -rc;
         goto done;
     }
-    int64_t len = esp_http_client_fetch_headers(client);
+    int64_t len = http_fetch_headers_with_idle_retry(client);
+    if (len < 0) {
+        result = len == -(int64_t)ESP_ERR_HTTP_EAGAIN ? -ESP_ERR_TIMEOUT
+                                                       : -ESP_FAIL;
+        goto done;
+    }
     int status = esp_http_client_get_status_code(client);
     if (status != 200) {
         /* A real 404 here is the useful answer "nothing published", which is
@@ -323,7 +349,11 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     if (rc != ESP_OK) goto done;
 
     stage = "read headers";
-    int64_t len = esp_http_client_fetch_headers(client);
+    int64_t len = http_fetch_headers_with_idle_retry(client);
+    if (len < 0) {
+        rc = len == -(int64_t)ESP_ERR_HTTP_EAGAIN ? ESP_ERR_TIMEOUT : ESP_FAIL;
+        goto done;
+    }
     if (esp_http_client_get_status_code(client) != 200) {
         rc = ESP_ERR_NOT_FOUND;
         goto done;

@@ -1288,6 +1288,8 @@ Assert-FileContains `
     -LiteralPatterns @(
         "HTTP_IDLE_RETRY_MAX 3u",
         "got != -ESP_ERR_HTTP_EAGAIN",
+        "http_fetch_headers_with_idle_retry(client)",
+        "len == -(int64_t)ESP_ERR_HTTP_EAGAIN ? ESP_ERR_TIMEOUT",
         "http_read_with_idle_retry(client, (char *)header + have",
         'p4_ota_abort(stalled ? "download stalled" : "download truncated")'
     )
