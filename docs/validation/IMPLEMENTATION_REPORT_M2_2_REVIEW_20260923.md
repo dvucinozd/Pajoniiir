@@ -275,6 +275,7 @@ zadržava ESP-Hosted/SDIO transport do reseta, dok OFF i dalje gasi remote
 Potpisani kandidat `M2.2-13-ge0f9add-12-gcde901d` instaliran je na `ota_1`, boot
 543. Cijeli P4 host suite, deset uzastopnih provjera produkcijskog OTA kanala i
 15-sekundni dual-deck FLAC/MP3 smoke prošli su bez reboota i bez PCM, output,
-UAC, USB daemon, service-log ili TWDT greške. Preostaje fizički ponoviti Settings
-OFF -> ON na tom točnom kandidatu; taj korak nije moguće automatizirati nakon
-gašenja jedinog mrežnog upravljačkog kanala.
+UAC, USB daemon, service-log ili TWDT greške. Operator je 2026-09-24 zatim
+fizički ponovio Settings Wi-Fi OFF -> ON na tom instaliranom kandidatu i
+potvrdio uredno odspajanje i ponovno spajanje bez reboota. Taj lifecycle gate
+je PASS.

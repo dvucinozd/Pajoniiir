@@ -230,7 +230,8 @@ ESP-IDF v6.0.2 and installed by signed local push OTA on `ota_1`, boot 543:
   current TWDT counters at zero.
 
 The old boot-541 coredump remains intentionally retained and unchanged as fault
-evidence. A physical Settings OFF -> ON repetition on this exact candidate is
-still required because turning Wi-Fi OFF removes the only remote control path;
-it cannot be completed through the web API alone. The public M2.2 channel and
-immutable release assets were not changed.
+evidence. On 2026-09-24 the operator physically repeated Settings Wi-Fi OFF ->
+ON on this installed candidate and confirmed that the device disconnected and
+reconnected normally, without a reboot. The exact lifecycle acceptance gate is
+therefore PASS. The public M2.2 channel and immutable release assets were not
+changed.
