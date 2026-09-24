@@ -204,8 +204,11 @@ Pre-merge review also identified the fixed 31-byte payload limit of
 `esp_app_desc_t.version`. The P4 CMake entrypoint now derives `PROJECT_VER`
 before ESP-IDF configuration, excludes distribution tags containing a derived
 `-g<hash>` suffix from ancestry selection, and fails configuration when the
-resolved UTF-8 value exceeds 31 bytes. This keeps existing chained versions
-orderable for installed images while preventing another chain in new builds.
+resolved UTF-8 value exceeds 31 bytes. It also requires a matching release tag;
+firmware CI fetches complete tag history and a tagless checkout fails instead
+of silently producing an OTA-unorderable commit hash. This keeps existing
+chained versions orderable for installed images while preventing another chain
+in new builds.
 
 The resulting signed candidate `M2.2-13-ge0f9add-12-gcde901d` was built with
 ESP-IDF v6.0.2 and installed by signed local push OTA on `ota_1`, boot 543:

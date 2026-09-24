@@ -1239,9 +1239,14 @@ Assert-FileContains `
     -Name "p4 app version excludes derived tags and enforces the descriptor limit" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
     -LiteralPatterns @(
-        'describe --always --tags --dirty --exclude "*-g*"',
+        'describe --tags --dirty --exclude "*-g*"',
         "PAJONIIIR_PROJECT_VER_BYTES GREATER 31",
         "ESP-IDF app descriptors allow at most 31 bytes")
+
+Assert-FileDoesNotContain `
+    -Name "p4 app version cannot fall back to an unordered commit hash" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -LiteralPatterns @("describe --always")
 
 Assert-FileContains `
     -Name "p4 Wi-Fi start retries are bounded" `

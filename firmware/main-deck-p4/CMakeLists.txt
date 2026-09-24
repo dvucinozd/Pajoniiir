@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.22)
 # instead of allowing the fixed 32-byte app descriptor field to truncate it.
 find_package(Git REQUIRED)
 execute_process(
-    COMMAND "${GIT_EXECUTABLE}" describe --always --tags --dirty --exclude "*-g*"
+    COMMAND "${GIT_EXECUTABLE}" describe --tags --dirty --exclude "*-g*"
     WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
     RESULT_VARIABLE PAJONIIIR_GIT_DESCRIBE_RESULT
     OUTPUT_VARIABLE PROJECT_VER
