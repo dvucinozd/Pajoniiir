@@ -135,6 +135,12 @@ The device rebooted into `M2.2-13-ge0f9add` on `ota_1`; `/api/firmware` reported
   packet failures and lost frames;
 - zero USB daemon errors and zero service-log drops.
 
+A following 180-second dual-deck digital soak used a 728-second FLAC on D1 and
+a 493-second MP3 on D2. Eighteen ten-second samples kept the exact candidate
+version running with both decks continuously playing. D1/D2 advanced
+184.367/184.366 seconds; PCM, output-late, UAC, USB daemon and service-log error
+counters remained zero, and automated cleanup stopped both decks.
+
 After the test, public `latest.json` was restored to immutable production
 release `M2.2`, 2.493.660 B, SHA-256
 `5552d32527e55d7393fe89a49bdf1b753209af8d2a788f9e8d83fbda84ba0676`.
