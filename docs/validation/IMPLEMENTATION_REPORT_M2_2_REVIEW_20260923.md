@@ -263,3 +263,19 @@ Prije production-ready tvrdnje treba na točno commitiranom i hashiranom kandida
    završnog soaka s Master Tempo, seek/cue/loop/scratch/censor scenarijima.
 7. Tek nakon tih dokaza odrediti release verziju, push/PR, immutable tag
    i javni OTA rollout. M2.2 tag i objavljeni artefakti ostaju nepromijenjeni.
+
+## 6. Dopuna 2026-09-24: Wi-Fi OFF/ON panic
+
+Ručni Wi-Fi OFF -> ON reproducirao je boot 541 `PANIC` u tasku `wifi_link`, s
+assertom `bus_init_internal sdio_drv.c:1530 (sdio_handle)`. Commit `a1cc05c`
+zadržava ESP-Hosted/SDIO transport do reseta, dok OFF i dalje gasi remote
+`esp_wifi`, AP netif i web servise. Commit `cde901d` dodatno podržava lančani
+`git describe` koji je nastao nakon objave prerelease taga.
+
+Potpisani kandidat `M2.2-13-ge0f9add-12-gcde901d` instaliran je na `ota_1`, boot
+543. Cijeli P4 host suite, deset uzastopnih provjera produkcijskog OTA kanala i
+15-sekundni dual-deck FLAC/MP3 smoke prošli su bez reboota i bez PCM, output,
+UAC, USB daemon, service-log ili TWDT greške. Operator je 2026-09-24 zatim
+fizički ponovio Settings Wi-Fi OFF -> ON na tom instaliranom kandidatu i
+potvrdio uredno odspajanje i ponovno spajanje bez reboota. Taj lifecycle gate
+je PASS.

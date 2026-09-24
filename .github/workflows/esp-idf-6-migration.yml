@@ -47,6 +47,8 @@ jobs:
     steps:
       - name: Check out tested revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       # The runner skips suites whose tooling is missing rather than failing the
       # whole gate, so anything installed here is the difference between a check
@@ -145,6 +147,8 @@ jobs:
     steps:
       - name: Check out tested revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Build main deck and verify silicon target
         run: |

@@ -83,10 +83,12 @@ const char *p4_ota_pull_manifest_result_name(p4_ota_pull_manifest_result_t r);
  *   RC<tag>-<commits-since-tag>-g<hash>[-dirty]
  *   M<tag>-<commits-since-tag>-g<hash>[-dirty]
  *   M<major>.<minor>-<commits-since-tag>-g<hash>[-dirty]
+ *   M<major>.<minor>-<distance>-g<hash>-<distance>-g<hash>[-dirty]
  *
  * Milestone (`M`) releases sort after the historical release-candidate (`RC`)
- * family; within a family, major, optional minor and commit distance remain
- * monotonic. Pull OTA
+ * family; within a family, major, optional minor and the sum of chained commit
+ * distances remain monotonic. Chained suffixes occur when a prerelease tag is
+ * itself named after `git describe`. Pull OTA
  * accepts only NEWER. A signed older bundle remains installable
  * through the local push-OTA service path, which keeps rollback possible
  * without allowing an unauthenticated channel document to force it.

@@ -1,4 +1,31 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Resolve the application version before ESP-IDF generates esp_app_desc_t.
+# Derived release tags such as M2.2-13-ge0f9add are distribution labels, not
+# version ancestry roots; excluding them prevents chained git-describe output.
+# The explicit byte limit turns a future overlong tag into a configure error
+# instead of allowing the fixed 32-byte app descriptor field to truncate it.
+find_package(Git REQUIRED)
+execute_process(
+    COMMAND "${GIT_EXECUTABLE}" describe --tags --dirty --exclude "*-g*"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}"
+    RESULT_VARIABLE PAJONIIIR_GIT_DESCRIBE_RESULT
+    OUTPUT_VARIABLE PROJECT_VER
+    ERROR_VARIABLE PAJONIIIR_GIT_DESCRIBE_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT PAJONIIIR_GIT_DESCRIBE_RESULT EQUAL 0)
+    string(STRIP "${PAJONIIIR_GIT_DESCRIBE_ERROR}" PAJONIIIR_GIT_DESCRIBE_ERROR)
+    message(FATAL_ERROR
+        "Unable to resolve PROJECT_VER with git describe: "
+        "${PAJONIIIR_GIT_DESCRIBE_ERROR}")
+endif()
+string(LENGTH "${PROJECT_VER}" PAJONIIIR_PROJECT_VER_BYTES)
+if(PAJONIIIR_PROJECT_VER_BYTES GREATER 31)
+    message(FATAL_ERROR
+        "PROJECT_VER '${PROJECT_VER}' is ${PAJONIIIR_PROJECT_VER_BYTES} bytes; "
+        "ESP-IDF app descriptors allow at most 31 bytes")
+endif()
+
 set(EXTRA_COMPONENT_DIRS
     "components"
     "${CMAKE_CURRENT_LIST_DIR}/../common/control_state_reconciler"

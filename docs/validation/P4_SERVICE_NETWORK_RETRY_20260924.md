@@ -2,7 +2,8 @@
 
 Status: **bounded network, HTTP-header and HTTP-body retries implemented;
 production-channel pull OTA PASS on controlled retry; exact candidate installed
-and functional smoke PASS; one pre-install controller watchdog remains an open
+and functional smoke PASS; Wi-Fi OFF/ON ESP-Hosted panic reproduced and fixed
+in a successor candidate; one earlier controller watchdog remains an open
 intermittent finding**.
 
 ## Reproduced boundary
@@ -176,3 +177,61 @@ evidence from the failed first pull attempt rather than a new reboot-matrix
 panic. The ten-cycle reboot criterion is PASS. The cause of the earlier
 pull-install watchdog is still not proven, so this result narrows but does not
 erase that separate release finding.
+
+## Wi-Fi OFF/ON ESP-Hosted lifecycle panic
+
+An operator Settings OFF -> ON cycle on `M2.2-13-ge0f9add` produced a new,
+fully diagnosed boot 541 panic. The service journal recorded `WIFI_STOPPED` at
+1,465,143 ms and a new `WIFI_ENABLE_REQUESTED` at 1,474,690 ms, followed by a
+reset before `WIFI_STARTED`. The retained 8,192-byte coredump identifies task
+`wifi_link` and panic reason
+`assert failed: bus_init_internal sdio_drv.c:1530 (sdio_handle)`.
+
+Commit `a1cc05c` makes ESP-Hosted transport ownership boot-scoped. Wi-Fi OFF
+still stops and deinitializes the remote `esp_wifi` interface, AP netif, HTTP
+and DNS services, but retains the SDIO control transport needed by a later ON
+request. The P4 host suite locks this invariant by rejecting any
+`esp_hosted_deinit();` call in `wifi_link.c`.
+
+The first signed candidate exposed a separate release-version issue. Publishing
+the prerelease tag `M2.2-13-ge0f9add` causes later `git describe` output to take
+the chained form `M2.2-13-ge0f9add-<distance>-g<hash>`, which the newer-only
+parser previously rejected. Commit `cde901d` parses every distance/hash suffix,
+sums the distances from the milestone and retains fail-closed behavior for
+malformed, overflowing or equal-distance divergent histories.
+
+Pre-merge review also identified the fixed 31-byte payload limit of
+`esp_app_desc_t.version`. The P4 CMake entrypoint now derives `PROJECT_VER`
+before ESP-IDF configuration, excludes distribution tags containing a derived
+`-g<hash>` suffix from ancestry selection, and fails configuration when the
+resolved UTF-8 value exceeds 31 bytes. It also requires a matching release tag;
+firmware CI fetches complete tag history and a tagless checkout fails instead
+of silently producing an OTA-unorderable commit hash. This keeps existing
+chained versions orderable for installed images while preventing another chain
+in new builds.
+
+The resulting signed candidate `M2.2-13-ge0f9add-12-gcde901d` was built with
+ESP-IDF v6.0.2 and installed by signed local push OTA on `ota_1`, boot 543:
+
+- application: 2,505,168 B, SHA-256
+  `639998a7840d2c30d341d920c15dde6f4d38cde22225dda38cd9f6c0271f97b2`;
+- signed bundle: 2,505,356 B, SHA-256
+  `d0dbf037cb32ab4d94b94cae540d5dfe3b25d711fe0aaf44e2c46409bdb3a1e9`;
+- ECDSA P-256/SHA-256 key `rel-001`; independent verification PASS;
+- full P4 host suite PASS, including chained-version and persistent-transport
+  regressions;
+- ten consecutive canonical production-channel checks PASS on boot 543; every
+  check returned `older release ignored; use signed local upload to roll back`;
+- FLX4 `2B73:0045`, active `pioneer_ddj_flx4`, both USB roots and the mounted
+  324-track library remained available with no reboot;
+- final 15-second dual-deck smoke advanced FLAC/MP3 positions by 15,238/15,058
+  ms, stopped both decks automatically, and kept PCM underrun, output-late,
+  UAC data-loss/overflow/packet-failure, USB daemon, service-log drop and
+  current TWDT counters at zero.
+
+The old boot-541 coredump remains intentionally retained and unchanged as fault
+evidence. On 2026-09-24 the operator physically repeated Settings Wi-Fi OFF ->
+ON on this installed candidate and confirmed that the device disconnected and
+reconnected normally, without a reboot. The exact lifecycle acceptance gate is
+therefore PASS. The public M2.2 channel and immutable release assets were not
+changed.

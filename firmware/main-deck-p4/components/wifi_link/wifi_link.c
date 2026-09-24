@@ -268,15 +268,6 @@ static void stop_ap_netif(void)
     s_ap_netif = NULL;
 }
 
-/* Releases the C6 link so it stops drawing RAM and radio. Deliberately the
- * last thing to go and the one an AP/STA switch must NOT do. */
-static void stop_hosted_transport(void)
-{
-    if (!s_hosted_ready) return;
-    esp_hosted_deinit();
-    s_hosted_ready = false;
-}
-
 static void stop_sta_netif(void)
 {
     if (!s_sta_netif) return;
@@ -534,7 +525,17 @@ esp_err_t wifi_link_stop(void)
     stop_ap_services();
     stop_wifi_stack();
     stop_ap_netif();
-    stop_hosted_transport();
+
+    /* Keep ESP-Hosted and its SDIO bus alive for the rest of this boot.
+     *
+     * ESP-Hosted deinit returns after tearing down the host objects, but a
+     * later init can still find the C6/SDIO side unavailable and assert in
+     * bus_init_internal(sdio_handle). This was reproduced by the ordinary
+     * Settings OFF -> ON flow after a successful start. Wi-Fi OFF already
+     * calls esp_wifi_stop()/esp_wifi_deinit(), which disables the remote Wi-Fi
+     * interface; retaining the transport only preserves the control path
+     * needed for a safe subsequent ON request. The transport is initialized
+     * once per P4 boot and is reclaimed by reset. */
 
     s_active = false;
     s_status.active = false;
@@ -561,13 +562,10 @@ static void wifi_link_worker(void *arg)
         }
         xSemaphoreGive(s_ctrl_lock);
 
-        /* A full operator ON/OFF cycle owns the same ESP-Hosted, esp_wifi and
-         * netif objects as an AP->STA->AP probe or pull OTA. Serialise it with
-         * those transitions. Without this gate, an ON/OFF request that lands
-         * while the pull worker is away from the AP can deinit the SDIO
-         * transport underneath it; the following esp_hosted_init then asserts
-         * in sdio_drv because the old handle is still being torn down. Keep
-         * the latest desired state and retry after the current transition. */
+        /* A full operator ON/OFF cycle owns the same esp_wifi and netif
+         * objects as an AP->STA->AP probe or pull OTA. Serialise it with those
+         * transitions so neither path removes an interface used by the other.
+         * Keep the latest desired state and retry after the transition. */
         if (wifi_transition_lease_acquire(WIFI_TRANSITION_OWNER_CONTROL) != ESP_OK) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;

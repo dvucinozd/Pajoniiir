@@ -1228,7 +1228,25 @@ Assert-FileContains `
 Assert-FileContains `
     -Name "p4 Wi-Fi teardown keeps the AP service and the C6 transport separable" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
-    -LiteralPatterns @("static void stop_ap_services(void)", "static void stop_hosted_transport(void)", "static void stop_ap_netif(void)")
+    -LiteralPatterns @("static void stop_ap_services(void)", "static void stop_wifi_stack(void)", "static void stop_ap_netif(void)")
+
+Assert-FileDoesNotContain `
+    -Name "p4 Wi-Fi OFF keeps the one-per-boot ESP-Hosted transport alive" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @("esp_hosted_deinit();")
+
+Assert-FileContains `
+    -Name "p4 app version excludes derived tags and enforces the descriptor limit" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -LiteralPatterns @(
+        'describe --tags --dirty --exclude "*-g*"',
+        "PAJONIIIR_PROJECT_VER_BYTES GREATER 31",
+        "ESP-IDF app descriptors allow at most 31 bytes")
+
+Assert-FileDoesNotContain `
+    -Name "p4 app version cannot fall back to an unordered commit hash" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -RegexPattern '\bdescribe\b[^\r\n]*--always(?:\s|$)'
 
 Assert-FileContains `
     -Name "p4 Wi-Fi start retries are bounded" `
@@ -1256,7 +1274,7 @@ Assert-FileContains `
 Assert-FileDoesNotContain `
     -Name "p4 STA switch does not tear down ESP-Hosted" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
-    -RegexPattern 'wifi_link_switch_to_sta[\s\S]*?stop_hosted_transport\(\)[\s\S]*?^\}'
+    -LiteralPatterns @("stop_hosted_transport()")
 
 # Pull OTA must gain no authority from having arrived over TLS: the same signed
 # manifest, verified by the same code, before anything reaches flash.
