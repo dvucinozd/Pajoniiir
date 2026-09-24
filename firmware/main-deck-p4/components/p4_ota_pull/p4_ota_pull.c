@@ -33,6 +33,7 @@ static const char *TAG = "ota_pull";
 /* Long enough for a slow uplink to answer, short enough that the deck does not
  * sit off its own AP waiting for a server that never will. */
 #define HTTP_TIMEOUT_MS 15000
+#define HTTP_IDLE_RETRY_MAX 3u
 #define STA_TIMEOUT_MS  20000u
 #define OFFER_TTL_MS    (10u * 60u * 1000u)
 
@@ -102,6 +103,29 @@ static void update_downloaded(uint32_t downloaded)
     portEXIT_CRITICAL(&s_state_mux);
 }
 
+/* esp_http_client_read() returns -ESP_ERR_HTTP_EAGAIN when the transport read
+ * timeout expires before the next body bytes arrive. That is not EOF and must
+ * not be reported as a truncated signed bundle. Slow TLS relays can pause
+ * between headers and the first body record, so allow a finite number of
+ * consecutive idle windows. Every successful read starts a fresh window. */
+static int http_read_with_idle_retry(esp_http_client_handle_t client,
+                                     char *buf, int len)
+{
+    for (uint32_t idle = 0u; ; idle++) {
+        int got = esp_http_client_read(client, buf, len);
+        if (got != -ESP_ERR_HTTP_EAGAIN) {
+            return got;
+        }
+        if (idle + 1u >= HTTP_IDLE_RETRY_MAX) {
+            ESP_LOGW(TAG, "HTTP body stalled for %u consecutive read timeouts",
+                     (unsigned)HTTP_IDLE_RETRY_MAX);
+            return got;
+        }
+        ESP_LOGW(TAG, "HTTP body idle; retrying read (%u/%u)",
+                 (unsigned)(idle + 1u), (unsigned)HTTP_IDLE_RETRY_MAX);
+    }
+}
+
 /* Fetch <base>/latest.json into `buf`. Returns the byte count, or a negative
  * esp_err_t. */
 static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
@@ -147,8 +171,12 @@ static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
 
     int total = 0;
     while ((size_t)total < cap) {
-        int got = esp_http_client_read(client, buf + total, (int)(cap - (size_t)total));
-        if (got < 0) { result = -ESP_FAIL; goto done; }
+        int got = http_read_with_idle_retry(client, buf + total,
+                                            (int)(cap - (size_t)total));
+        if (got < 0) {
+            result = got == -ESP_ERR_HTTP_EAGAIN ? -ESP_ERR_TIMEOUT : -ESP_FAIL;
+            goto done;
+        }
         if (got == 0) break;
         total += got;
     }
@@ -314,9 +342,13 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     size_t have = 0;
     stage = "read signed header";
     while (have < sizeof(header)) {
-        int got = esp_http_client_read(client, (char *)header + have,
-                                       (int)(sizeof(header) - have));
-        if (got <= 0) { rc = ESP_ERR_INVALID_RESPONSE; goto done; }
+        int got = http_read_with_idle_retry(client, (char *)header + have,
+                                            (int)(sizeof(header) - have));
+        if (got <= 0) {
+            rc = got == -ESP_ERR_HTTP_EAGAIN ? ESP_ERR_TIMEOUT
+                                              : ESP_ERR_INVALID_RESPONSE;
+            goto done;
+        }
         have += (size_t)got;
     }
     stage = "hash signed header";
@@ -375,10 +407,11 @@ static esp_err_t download_and_install(const char *base_url, const char *rel_url,
     while (written < manifest.image_size) {
         size_t want = manifest.image_size - written;
         if (want > DL_CHUNK) want = DL_CHUNK;
-        int got = esp_http_client_read(client, (char *)buf, (int)want);
+        int got = http_read_with_idle_retry(client, (char *)buf, (int)want);
         if (got <= 0) {
-            p4_ota_abort("download truncated");
-            rc = ESP_ERR_INVALID_RESPONSE;
+            bool stalled = got == -ESP_ERR_HTTP_EAGAIN;
+            p4_ota_abort(stalled ? "download stalled" : "download truncated");
+            rc = stalled ? ESP_ERR_TIMEOUT : ESP_ERR_INVALID_RESPONSE;
             goto done;
         }
         stage = "write flash";

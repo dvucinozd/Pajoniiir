@@ -1283,6 +1283,16 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pull OTA retries transport idle without accepting EOF" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @(
+        "HTTP_IDLE_RETRY_MAX 3u",
+        "got != -ESP_ERR_HTTP_EAGAIN",
+        "http_read_with_idle_retry(client, (char *)header + have",
+        'p4_ota_abort(stalled ? "download stalled" : "download truncated")'
+    )
+
+Assert-FileContains `
     -Name "pull OTA publisher derives channel version from a verified signed bundle" `
     -Path (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
     -LiteralPatterns @("verify-bundle", '$metadata["version"]')
