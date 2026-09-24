@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "audio_delay_fx.h"
 #include "audio_eq.h"
 #include "audio_filter.h"
