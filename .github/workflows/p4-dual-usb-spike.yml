@@ -103,6 +103,10 @@ jobs:
               -w "/project/$project" \
               "$IDF_IMAGE" bash -lc '
                 set -e
+                # These legacy Git dependency locks were generated from CRLF
+                # checkouts. Make Component Manager reproduce those bytes on
+                # Linux so its content-hash validation is deterministic.
+                git config --global core.autocrlf true
                 idf.py --version
                 rm -rf build sdkconfig sdkconfig.old managed_components
                 idf.py set-target esp32p4
@@ -126,6 +130,7 @@ jobs:
             -w /project/firmware/main-deck-p4 \
             "$IDF_IMAGE" bash -lc '
               set -e
+              git config --global core.autocrlf true
               rm -rf build-p4-only sdkconfig.p4-only sdkconfig.p4-only.old managed_components
               common=(-B build-p4-only -D SDKCONFIG=sdkconfig.p4-only)
               idf.py "${common[@]}" set-target esp32p4
