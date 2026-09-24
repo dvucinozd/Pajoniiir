@@ -1322,6 +1322,14 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pull OTA preserves connection-open transport errors" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @(
+        "esp_http_client_open(client, 0)",
+        "http_transport_error(client, rc)"
+    )
+
+Assert-FileContains `
     -Name "pull OTA publisher derives channel version from a verified signed bundle" `
     -Path (Join-Path $RepoRoot "tools/publish_ota_release.ps1") `
     -LiteralPatterns @("verify-bundle", '$metadata["version"]')

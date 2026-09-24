@@ -194,7 +194,7 @@ static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
     int result;
     esp_err_t rc = esp_http_client_open(client, 0);
     if (rc != ESP_OK) {
-        result = -rc;
+        result = -http_transport_error(client, rc);
         goto done;
     }
     int64_t len = http_fetch_headers_with_idle_retry(client);
