@@ -1,8 +1,9 @@
 # P4 service-network association retry — 2026-09-24
 
-Status: **bounded network and HTTP-body retries implemented; exact remediation
-image installed; AP -> STA -> AP probe PASS; loaded-deck pull OTA retest
-pending**.
+Status: **bounded network, HTTP-header and HTTP-body retries implemented;
+production-channel pull OTA PASS on controlled retry; exact candidate installed
+and functional smoke PASS; one pre-install controller watchdog remains an open
+intermittent finding**.
 
 ## Reproduced boundary
 
@@ -96,3 +97,55 @@ windows now report `ESP_ERR_TIMEOUT` with the `read headers` stage.
   `0a153668897925747632e62f71f9a01c1099522da4db7aca54493264193f66d6`.
 - Signed local push OTA: PASS, `M2.2-10-g7e2cc69` on `ota_1` to
   `M2.2-12-g626c2d9` on `ota_0`; firmware state `idle`, empty `last_error`.
+
+## Production-channel pull OTA
+
+The final candidate was built and signed as `M2.2-13-ge0f9add`:
+
+- application: 2.506.464 B, SHA-256
+  `eb3439702c3c590c1ff8a24df3fb19f47cbbd8671b41d2e7c3b91b3edc6d2624`;
+- signed bundle: 2.506.652 B, SHA-256
+  `b5b48161fa5cc346b2b55a2e7f4296672b59aa8211bb228bcce859b0825db959`;
+- ECDSA P-256/SHA-256 key `rel-001`; package verification PASS.
+
+The versioned bundle was uploaded over explicit FTPS and independently fetched
+from
+`https://ota.pajoniiir.eu/M2.2-13-ge0f9add/main-deck-p4.ddjota`. The public
+download had the exact expected size and SHA-256 before `latest.json` was
+changed. The channel was then temporarily set to the candidate, and the
+installed `M2.2-12-g626c2d9` image reported
+`update available: M2.2-13-ge0f9add` through the canonical HTTPS origin.
+
+The first install attempt ended in a task-watchdog reset while the old
+`M2.2-12-g626c2d9` image was still running. The retained crash summary names
+`controller_usb`, with IDLE0 as the task-watchdog victim; there is no evidence
+that the candidate slot booted during this attempt. The device recovered on
+`ota_0` with both decks idle and zero PCM/UAC counters. This is an intermittent
+open finding rather than a successful OTA attempt.
+
+A controlled retry from that clean idle state completed the signed pull OTA.
+The device rebooted into `M2.2-13-ge0f9add` on `ota_1`; `/api/firmware` reported
+`idle` and an empty `last_error`. Post-install checks confirmed:
+
+- DDJ-FLX4 `2B73:0045` present with active `pioneer_ddj_flx4` profile;
+- USB storage mounted and 324 library tracks available;
+- two real tracks loaded, then both decks played continuously for 15 seconds;
+- D1/D2 advanced 15.110/15.111 seconds and both stopped cleanly;
+- zero PCM underruns, output-late events, UAC dropped blocks, overflow frames,
+  packet failures and lost frames;
+- zero USB daemon errors and zero service-log drops.
+
+After the test, public `latest.json` was restored to immutable production
+release `M2.2`, 2.493.660 B, SHA-256
+`5552d32527e55d7393fe89a49bdf1b753209af8d2a788f9e8d83fbda84ba0676`.
+A channel check from the installed candidate then returned
+`older release ignored; use signed local upload to roll back`, confirming the
+newer-only policy and that no downgrade was attempted. The device keeps the
+canonical `https://ota.pajoniiir.eu` configuration.
+
+This automated smoke proves channel discovery, signed download/install,
+boot-slot selection and digital playback health for the exact candidate. It
+does not provide acoustic/listening acceptance. The intermittent
+`controller_usb` watchdog from the first install attempt must remain visible in
+release assessment until reproduced and resolved or closed by a defined soak
+limit.
