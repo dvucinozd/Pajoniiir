@@ -1301,6 +1301,15 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pull OTA web status preserves the concrete ESP-IDF error" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @(
+        "chk.state == P4_OTA_PULL_FAILED",
+        "p4_ota_pull_format_failure_detail",
+        "esp_err_to_name(chk.last_error)"
+    )
+
+Assert-FileContains `
     -Name "p4 pull OTA retries transport idle without accepting EOF" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
@@ -1310,6 +1319,14 @@ Assert-FileContains `
         "len == -(int64_t)ESP_ERR_HTTP_EAGAIN ? ESP_ERR_TIMEOUT",
         "http_read_with_idle_retry(client, (char *)header + have",
         'p4_ota_abort(stalled ? "download stalled" : "download truncated")'
+    )
+
+Assert-FileContains `
+    -Name "p4 pull OTA preserves connection-open transport errors" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
+    -LiteralPatterns @(
+        "esp_http_client_open(client, 0)",
+        "http_transport_error(client, rc)"
     )
 
 Assert-FileContains `
@@ -2474,6 +2491,18 @@ $tests = @(
             "-o", "test_wifi_link_retry.exe",
             "test_wifi_link_retry.c",
             "../../firmware/main-deck-p4/components/wifi_link/wifi_link_retry.c"
+        )
+    },
+    @{
+        Name = "p4_ota_pull_status"
+        Dir = "tests/p4_ota_pull_status"
+        Target = "test_p4_ota_pull_status.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-o", "test_p4_ota_pull_status.exe",
+            "test_p4_ota_pull_status.c",
+            "../../firmware/main-deck-p4/components/p4_ota_pull_core/p4_ota_pull_status.c"
         )
     },
     @{

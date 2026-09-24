@@ -15,6 +15,7 @@
 #include "media_io_gate.h"
 #include "wifi_link.h"
 #include "p4_ota_pull.h"
+#include "p4_ota_pull_status.h"
 #include "web_server.h"
 #include "service_log.h"
 #include "sdkconfig.h"
@@ -251,6 +252,10 @@ static void app_probe_status(web_server_probe_status_t *out)
         } else if (chk.state == P4_OTA_PULL_AVAILABLE) {
             snprintf(out->detail, sizeof(out->detail), "update available: %s",
                      chk.available_release);
+        } else if (chk.state == P4_OTA_PULL_FAILED) {
+            p4_ota_pull_format_failure_detail(out->detail, sizeof(out->detail),
+                                              chk.detail,
+                                              esp_err_to_name(chk.last_error));
         } else {
             snprintf(out->detail, sizeof(out->detail), "%s", chk.detail);
         }

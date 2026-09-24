@@ -5,5 +5,6 @@
 idf_component_register(
     SRCS "p4_ota_pull_manifest.c"
          "p4_ota_pull_config.c"
+         "p4_ota_pull_status.c"
     INCLUDE_DIRS "include"
 )

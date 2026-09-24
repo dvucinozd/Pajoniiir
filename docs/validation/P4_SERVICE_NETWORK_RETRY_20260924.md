@@ -235,3 +235,39 @@ ON on this installed candidate and confirmed that the device disconnected and
 reconnected normally, without a reboot. The exact lifecycle acceptance gate is
 therefore PASS. The public M2.2 channel and immutable release assets were not
 changed.
+
+## Final-master installation and production-channel retry
+
+The CI artifact for merge commit `69727a1` was independently downloaded and
+verified before installation. Its embedded identity was
+`M2.2-32-g69727a1`, ESP-IDF v6.0.2, 2,502,160 bytes, SHA-256
+`703fbb3c672128fd4e77c8daa5a06c30aee35b9c56f75fc3bd18ad309fb284c8`.
+The locally signed bundle was 2,502,348 bytes with SHA-256
+`71743975fd09e39f1c8c607a546ad7d94929e31d3784206a8316479b73e52089`.
+Signed push OTA moved the device from boot 543 on `ota_1` to boot 544 on
+`ota_0`. The new boot restored both USB roots, the 324-track library and the
+active FLX4 profile with zero current PCM, UAC, USB-daemon, service-log,
+output-late or TWDT faults. A 15-second dual-deck smoke passed.
+
+The canonical production-channel check then intermittently returned
+`could not reach update server`, although the public server returned HTTP 200
+and the published M2.2 bundle independently matched its 2,493,660-byte size and
+SHA-256. A link-only device probe successfully joined `ZAKLJUCANO`, obtained
+`192.168.0.241` and returned to the Pajoniiir AP. Resetting the service router
+restored successful HTTPS checks. Commit `396f87a` additionally preserves the
+concrete `esp_err_to_name()` value in failed pull-OTA web status so a future
+DNS, TLS, connect or read failure is no longer collapsed to one generic string.
+
+The signed diagnostic build `M2.2-33-g396f87a` was installed on `ota_1`, boot
+545. Its application is 2,505,136 bytes, SHA-256
+`c759327aa2b02df3bb1b630d09362d43052d5aa548afdc7e5459466dc47ab146`;
+the signed bundle is 2,505,324 bytes, SHA-256
+`36cdc41dab41142cab32fa6813c17b52449aff3f5d4729eef1bb27c1942691ca`.
+After the router reset the exact image completed ten consecutive canonical
+production-channel checks. Every check returned
+`older release ignored; use signed local upload to roll back`; no check rebooted
+the device, changed its slot or left an OTA error. A following 15-second
+dual-deck smoke advanced both decks by 15,285 ms and submitted 2,866 UAC blocks
+with zero gated fault deltas. The retained 8,192-byte boot-541 `wifi_link`
+coredump remained unchanged and no new crash was recorded. Public M2.2 assets
+and `latest.json` remained unchanged.
