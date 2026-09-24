@@ -155,3 +155,24 @@ does not provide acoustic/listening acceptance. The intermittent
 `controller_usb` watchdog from the first install attempt must remain visible in
 release assessment until reproduced and resolved or closed by a defined soak
 limit.
+
+## Ten-cycle software-reboot matrix
+
+The installed `M2.2-13-ge0f9add` candidate then completed ten consecutive
+guarded `/api/validation/reboot` cycles with USB0 media and the DDJ-FLX4
+continuously attached. The service-log boot sequence advanced without a gap
+from boot 530 through boots 531--540, and every new header reported reset reason
+`SW`, the same `ota_1` slot and the same firmware version.
+
+Every cycle restored both powered USB roots, the active
+`pioneer_ddj_flx4` profile and the complete 324-track library. OTA state stayed
+`idle` with an empty `last_error`; topology, recovery, daemon, runtime queue,
+service-log, PCM, output-late and session UAC fault counters remained zero. The
+current-boot audio watchdog flag stayed clear.
+
+The retained pre-matrix crash dump remained unchanged across all ten cycles:
+14.656 bytes, task `controller_usb`, PC `0x4FF0DAC8`. It is therefore historical
+evidence from the failed first pull attempt rather than a new reboot-matrix
+panic. The ten-cycle reboot criterion is PASS. The cause of the earlier
+pull-install watchdog is still not proven, so this result narrows but does not
+erase that separate release finding.

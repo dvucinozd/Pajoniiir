@@ -243,14 +243,16 @@ power-cycle. Zato je rezultat matrice PARTIAL i incident ostaje otvoren.
 
 Prije production-ready tvrdnje treba na točno commitiranom i hashiranom kandidatu:
 
-1. Pull OTA iz idle stanja je prošao. Treba ponoviti pull s učitanim deckovima
-   nakon stabilizacije service-network pridruživanja te ponoviti kontroliranu
-   validation reboot matricu uz serijski log ili drugi dokaz za svaki boot.
-   Potrebno je najmanje deset uzastopnih
-   `SW` ciklusa bez nestanka AP-a, praznina u journalu ili novog panic dumpa.
-2. Razjasniti zašto NVS boot brojač ima praznine 497-500 i 505-520 te zašto je
-   tijekom matrice AP postao nedostupan. Ne zatvarati OTA reboot incident samo
-   na temelju sedam vidljivih prolaza.
+1. Pull OTA s učitanim i zaustavljenim deckovima prošao je preko produkcijskog
+   kanala na kontroliranom retryju. Kandidat je zatim prošao deset uzastopnih
+   validation reboot ciklusa, bootove 531--540, sve s razlogom `SW`, bez praznine
+   u journalu, nestanka AP-a ili novog panic dumpa. Taj deset-ciklusni kriterij
+   je zatvoren.
+2. Prvi produkcijski pull pokušaj ipak je završio `controller_usb`/IDLE0
+   watchdogom dok je još radio prethodni image. Retained crash dump ostao je
+   nepromijenjen kroz svih deset novih ciklusa. Razjasniti uzrok tog pull-install
+   incidenta ili ga zatvoriti ponovljivom OTA matricom na završnom tagged imageu;
+   ranije praznine 497-500 i 505-520 ostaju povijesni nepotpuni dokaz, ne PASS.
 3. Na stvarnom Rekordbox exportu potvrditi cue A/C i loop vremena te dva medija
    s istim numeričkim track ID-jem, uključujući remount/reboot.
 4. Izmjeriti catalog import i cold/warm LOAD latenciju s novim PDB hashom te
