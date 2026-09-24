@@ -1,7 +1,8 @@
 # P4 service-network association retry — 2026-09-24
 
-Status: **bounded retry implemented; exact image installed; AP -> STA -> AP
-probe PASS; loaded-deck pull OTA retest pending**.
+Status: **bounded network and HTTP-body retries implemented; exact remediation
+image installed; AP -> STA -> AP probe PASS; loaded-deck pull OTA retest
+pending**.
 
 ## Reproduced boundary
 
@@ -46,3 +47,31 @@ with the disconnect reason and total-timeout guard.
   `round trip complete`.
 
 The public OTA channel and immutable `M2.2` release were not changed.
+
+## Slow HTTPS body boundary
+
+The first loaded-deck staging pull reached the temporary HTTPS origin and the
+origin returned HTTP 200 for the complete bundle. The device then failed at
+`read signed header: ESP_ERR_INVALID_RESPONSE` before opening the OTA
+partition. ESP-IDF 6.0.2 returns `-ESP_ERR_HTTP_EAGAIN` when a transport read
+times out before the next body bytes arrive; the pull client incorrectly
+treated that temporary idle window as EOF.
+
+Commit `7e2cc69` adds at most three consecutive body-read retries. The retry is
+restricted to `-ESP_ERR_HTTP_EAGAIN`; a zero-byte read remains EOF and still
+rejects a truncated header or image. Exhausting the idle budget reports
+`ESP_ERR_TIMEOUT`, and any received bytes reset the consecutive-idle budget.
+
+- Full P4 host suite: PASS, including the transport-idle/EOF static contract.
+- ESP-IDF `v6.0.2` full-clean `build_signed`: PASS for
+  `M2.2-10-g7e2cc69`.
+- Application: 2.506.208 B, SHA-256
+  `3b201b6314dc818fa43ac4419bbea36e4bc397eaf85f5299f99f4ef5e91c046b`.
+- Signed bundle: 2.506.396 B, SHA-256
+  `9b00b911cc684557e2cff6f498c657623ba6e40e80c7eff3a2d4d1f6e0882ce1`,
+  ECDSA P-256/SHA-256 key `rel-001`; independent package verification PASS.
+- Signed local push OTA: PASS, `M2.2-8-g5275c9b` on `ota_0` to
+  `M2.2-10-g7e2cc69` on `ota_1`; firmware state `idle`, empty `last_error`.
+
+The next documentation-only commit is intentionally used as the newer signed
+staging candidate for the loaded-deck pull OTA retest.
