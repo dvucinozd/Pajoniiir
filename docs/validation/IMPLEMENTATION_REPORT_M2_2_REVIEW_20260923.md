@@ -279,3 +279,20 @@ UAC, USB daemon, service-log ili TWDT greške. Operator je 2026-09-24 zatim
 fizički ponovio Settings Wi-Fi OFF -> ON na tom instaliranom kandidatu i
 potvrdio uredno odspajanje i ponovno spajanje bez reboota. Taj lifecycle gate
 je PASS.
+
+## 7. Dopuna 2026-09-24: završni master image i OTA dijagnostika
+
+CI image merge commita `69727a1` (`M2.2-32-g69727a1`) instaliran je potpisanim
+lokalnim OTA putem na `ota_0`, boot 544. Oba USB roota, FLX4 profil i 324-track
+library vratili su se bez aktualnog TWDT-a ili PCM/UAC/USB/service-log faulta;
+kratki dual-deck smoke je prošao.
+
+Production-channel check je zatim povremeno padao s generičkim
+`could not reach update server`, iako su javni `latest.json` i M2.2 bundle bili
+dostupni i hash-verificirani, a zasebni link probe dobio je servisni IP
+`192.168.0.241`. Commit `396f87a` zato u neuspjelom web statusu čuva konkretno
+`esp_err_to_name()` ime transportne greške. Nakon reseta servisnog rutera
+potpisani `M2.2-33-g396f87a` instaliran je na `ota_1`, boot 545, te je završio
+deset uzastopnih canonical production-channel provjera bez reboota ili OTA
+greške. Svaka je ispravno odbila javni M2.2 kao stariji. Završni 15-sekundni
+dual-deck smoke imao je nula gated fault delta. Javni M2.2 kanal nije mijenjan.
