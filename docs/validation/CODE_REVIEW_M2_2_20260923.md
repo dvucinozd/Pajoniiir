@@ -40,7 +40,7 @@ grešaka. Nisu provedeni novi fizički USB/audio/OTA testovi ni slušno prihvać
 
 Aktualni release dokument je
 [M2.2 production release](M2_2_PRODUCTION_RELEASE_20260923.md).
-Stariji navod M2.1 u lokalnom AGENTS.md nije korišten kao dokaz aktualne verzije.
+Stariji lokalni navod M2.1 nije korišten kao dokaz aktualne verzije.
 Nije obavljen commit, push, flash, OTA instalacija ni promjena produkcijskog kanala.
 
 ## 3. Obuhvat i metoda
