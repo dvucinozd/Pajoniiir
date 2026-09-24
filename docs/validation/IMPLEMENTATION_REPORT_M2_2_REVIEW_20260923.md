@@ -1,7 +1,7 @@
 # Izvješće o implementaciji popravaka nakon M2.2 reviewa
 
-Datum: 2026-09-23. Status: **software candidate installed; focused OTA smoke
-PASS; full hardware acceptance pending**.
+Datum: 2026-09-23/24. Status: **review candidate installed pull OTA putem;
+funkcionalni mrežni i dual-deck smoke PASS; full hardware acceptance pending**.
 
 ## 1. Kandidat i granice
 
@@ -10,18 +10,24 @@ PASS; full hardware acceptance pending**.
 | Grana | `codex/review-m2-2-fixes` |
 | Polazni commit | `ac237380af39bc7823f32a0b353a5e3d81fc27bf` |
 | Produkcijski tag | immutable `M2.2` na `2c2ec32c253d368765123d7bbf8d37389b790b55` |
-| Firmware candidate commit | `aab234058173f5c7783e1cd08c6bcec56ffeb85e` |
-| Ugrađena verzija | `M2.2-2-gaab2340` |
+| Firmware implementation commit | `ac0da971ba7298f65b1a50363d4523f305b0afab` |
+| Ugrađena verzija | `M2.2-5-gac0da97` |
 | ESP-IDF | `v6.0.2` |
-| Candidate binary | 2.504.672 B |
-| Binary SHA-256 | `3d11627bcd5a78c8209a3e17daeb68eb2ac3b523cc5d28cb7671d75ed66da579` |
-| Signed bundle SHA-256 | `0ecb3d737cba3d7588b09c6d4b261a200791edcbf62692867a705000834c7c4a` |
-| OTA prostor | 1.165.344 B slobodno, 40% |
+| Candidate binary | 2.505.120 B |
+| Binary SHA-256 | `1cde095d5fe118f119cbc28be689b3326179b077d3f09a82a9b3daddcc0ba039` |
+| Signed bundle SHA-256 | `f804a650fdab2349b4492a23f9918597bed8bb6502c303b1c77c354911e12283` |
+| OTA prostor | 1.164.896 B slobodno, 40% |
 
-Kandidat je lokalno commitan, full-clean izgrađen i potpisan ključem `rel-001`.
-Bundle i vanjski manifest neovisno su verificirani committed javnim ključem.
-Instaliran je lokalnim signed push OTA putem na `ota_1`. Commit nije pushan,
-release tag nije izrađen i javni OTA kanal nije promijenjen.
+Kandidat je lokalno commitan, izgrađen ESP-IDF-om 6.0.2 i potpisan ključem
+`rel-001`. Bundle i channel dokument neovisno su verificirani committed javnim
+ključem i SHA-256 hashom. Instaliran je staging pull OTA putem na `ota_1`.
+Commit nije pushan, release tag nije izrađen i javni OTA kanal nije promijenjen.
+Commit `097ff00` dodaje samo statički test za faznu dijagnostiku. Njegov
+`M2.2-6-g097ff00` validation bundle (binary SHA-256
+`e45b036a73c2fef0c6798e76a8eaa3d0b41dbc7e5512f580ba2d0a111845a769`, bundle
+SHA-256 `2e6c3cb2f83f1df831f862d04f096bfdfb7f80ec076d28d8a9ddd785d4fd6b85`)
+izgrađen je i verificiran, ali nije instaliran jer service-network association
+nije uspio prije downloada.
 
 ## 2. Implementirani popravci
 
@@ -104,6 +110,16 @@ link probea. Implementiran je potreban redoslijed bez uvođenja novog javnog API
 polja za operation ID; puna konkurentna operation-ID abstrakcija iz plana ostaje
 moguće kasnije učvršćenje ako API bude proširivan.
 
+### F10 — dijagnostika pull OTA faze
+
+Prvi staging pull pokušaj preuzeo je bundle, ali je na staroj slici vratio samo
+generički `download or flash failed`; autoritativni `p4_ota` status ostao je
+`idle`, pa flash transakcija nije bila otvorena. Pull worker sada označava faze
+`open bundle`, `read signed header`, `stop audio`, `begin flash`, `download
+image`, `write flash`, `hash bundle` i `finalize image`. Za prethodno generičke
+greške operator dobiva fazu i `esp_err_to_name()` bez izlaganja vjerodajnica.
+Host runner ima statički ugovor koji čuva ključne faze i format greške.
+
 ### Naknadni OTA-reboot incident
 
 Read-only status i 441.393 B service journala s uređaja pokazali su:
@@ -130,7 +146,7 @@ otvoren do dodatnih ponavljanja, pull OTA i validation reboot matrice.
 
 | Gate | Rezultat |
 | --- | --- |
-| `tests/run_p4_host_tests.ps1` | PASS nakon završne OTA-reboot izmjene |
+| `tests/run_p4_host_tests.ps1` | PASS nakon OTA-reboot i pull-diagnostic izmjena |
 | Web contract | 9/9 PASS |
 | PCM timeline | 309 PASS |
 | ANLZ | 41/41 PASS |
@@ -141,9 +157,15 @@ otvoren do dodatnih ponavljanja, pull OTA i validation reboot matrice.
 | Dual-deck keylock soak | 300 s virtualno; drift 0/0, click 0, clipping 0 |
 | ESP-IDF build | PASS, `ESP-IDF v6.0.2` |
 | Pre-freeze incremental binary budget | PASS, 2.504.624 B, 40% slobodno |
-| Exact-commit `build_signed` | PASS, 2.504.672 B, SHA-256 `3d11627b...da579` |
-| Signed package verification | PASS, `rel-001`; bundle SHA-256 `0ecb3d73...c7c4a` |
+| Exact-commit `build_signed` | PASS, 2.505.120 B, SHA-256 `1cde095d...a039` |
+| Signed package verification | PASS, `rel-001`; bundle SHA-256 `f804a650...2283` |
 | Signed push OTA | PASS; `ota_0` M2.2 -> `ota_1` `M2.2-2-gaab2340` |
+| Pull OTA | PASS; `ota_0` `M2.2-4-g2d3fb1c` -> `ota_1` `M2.2-5-gac0da97` |
+| Public channel newer-only check | PASS; javni `M2.2` odbijen kao stariji |
+| Dva paralelna API klijenta | PASS; 10/10 status i 10/10 Library odgovora |
+| Library snapshot | PASS; 324 retka, 324 jedinstvena ključa, generation 1 |
+| Dual-deck web funkcije | PASS; LOAD, PLAY/PAUSE, SEEK, LOOP/CLEAR, pitch i crossfader |
+| In-app desktop browser smoke | PASS; glavni UI i Library/Controller/Firmware/WiFi kartice |
 | Reboot result | PASS; boot 492, reset `SW`, bez novog `PANIC` boota |
 | Validation reboot matrix | PARTIAL; 7 journalom potvrđenih `SW` bootova (493-496, 502-504), bez novog panic dumpa |
 | Dual-deck FLX4 MAIN/cue smoke | PASS; operator potvrdio čist MAIN i PFL D1 |
@@ -151,15 +173,15 @@ otvoren do dodatnih ponavljanja, pull OTA i validation reboot matrice.
 | Dependency lock | nepromijenjen |
 | `git diff --check` | PASS |
 
-UI i keylock gateovi izvršeni su nakon funkcionalnih F01-F09 promjena. Završna
-naknadna izmjena zahvatila je samo raspored reboot taskova; nakon nje ponovno su
-izvršeni cijeli host suite i P4 build.
+UI i keylock gateovi izvršeni su nakon funkcionalnih F01-F09 promjena. Nakon
+OTA-reboot mitigacije, fazne pull dijagnostike i njezina statičkog ugovora
+ponovno su izvršeni cijeli host suite i P4 build.
 
 ## 4. Trenutno stanje production uređaja
 
 `pajoniiir.local` je dostupan na `192.168.4.1`. Uređaj prijavljuje
-`M2.2-2-gaab2340`, slot `ota_1`, OTA `idle` i prazan `last_error`. Aktualni boot
-521 ima reset razlog `POWERON`. USB host je ready, storage je montiran, Library
+`M2.2-5-gac0da97`, slot `ota_1`, OTA `idle` i prazan `last_error`. USB host je
+ready, storage je montiran, Library
 snapshot ima koherentna 324 retka, FLX4 je aktivan kao `pioneer_ddj_flx4`, daemon
 errors i service-log drops su 0.
 
@@ -179,6 +201,36 @@ underrun, output-late, USB headphone dropped blocks, overflow, packet failures i
 lost frames ostali su nula. `data_loss` je ostao false. Operator je potvrdio
 čist zvuk bez prekida na MAIN izlazu i u slušalicama/PFL D1.
 
+Na instaliranoj pull slici deset dvoklijentskih krugova paralelno je dohvatilo
+`/api/status` i `/api/library`: svi su uspjeli, svaki Library odgovor imao je
+generation 1, 324 retka i 324 jedinstvena `track_key` ključa. Web API je učitao
+`TAINTED DUB - CLIP.mp3` i `Star Eater.mp3`, pokrenuo oba decka, potvrdio rast
+pozicija, izveo seek, loop set/clear, pitch i crossfader mutacije te vratio
+kontrole u neutralno stanje. Kanali su tijekom automatiziranog dijela bili
+utišani. Završni PCM underrun, output-late, UAC dropped/overflow, packet failure,
+lost-frame, runtime queue-failure i service-log drop brojači ostali su nula;
+`data_loss=false`.
+
+Desktop in-app browser učitao je glavni kontroler bez console/API greške i
+otvorio Library, Controller Profile, P4 Firmware i WiFi Settings kartice.
+Firmware kartica prikazala je `M2.2-5-gac0da97` iz `ota_1`, profilna kartica
+četiri dostupna profila, a WiFi kartica spremljeni SSID bez povrata zaporke.
+Naknadni read-only API snapshot potvrdio je isti firmware/slot, aktivni FLX4
+`2B73:0045`, MIDI IN/OUT, USB audio, `pioneer_ddj_flx4`, canonical OTA URL i
+service log od 457.148 B bez dropova; `/api/diagnostic-log` vratio je svih
+457.148 B uz HTTP 200.
+
+Staging pull slijed dao je i dva važna negativna rezultata. Namjerno prekinuti
+lokalni upload ostavio je aktivni slot netaknut i prijavio 2.038.750/2.504.672 B
+uz `HTTP upload interrupted`. Prvi pull sa stare slike također je ostao
+fail-closed uz generičku poruku i bez otvorenog `p4_ota` stanja. Nakon ugradnje
+fazne dijagnostike pull `M2.2-4-g2d3fb1c` -> `M2.2-5-gac0da97` prošao je cijeli
+download, provjeru, aktivaciju suprotnog slota i boot. Naknadni pokušaj prema
+`M2.2-6-g097ff00` s oba decka u stanju READY dvaput je stao ranije na
+`could not join network`; staging origin nije primio bundle GET, pa taj rezultat
+ne govori ništa o audio-stop ili flash fazi. Produkcijski OTA URL vraćen je na
+`https://ota.pajoniiir.eu`, a privremeni HTTP i tunnel procesi su ugašeni.
+
 Validation reboot matrica nije završena kao 10/10. Service journal izravno
 potvrđuje uredne `SW` bootove 493, 494, 495, 496, 502, 503 i 504. Bootovi 501 i
 521 zabilježeni su kao `POWERON`. NVS boot brojač preskače zapise 497-500 i
@@ -191,8 +243,10 @@ power-cycle. Zato je rezultat matrice PARTIAL i incident ostaje otvoren.
 
 Prije production-ready tvrdnje treba na točno commitiranom i hashiranom kandidatu:
 
-1. Izvesti pull OTA i ponoviti kontroliranu validation reboot matricu uz serijski
-   log ili drugi dokaz za svaki boot. Potrebno je najmanje deset uzastopnih
+1. Pull OTA iz idle stanja je prošao. Treba ponoviti pull s učitanim deckovima
+   nakon stabilizacije service-network pridruživanja te ponoviti kontroliranu
+   validation reboot matricu uz serijski log ili drugi dokaz za svaki boot.
+   Potrebno je najmanje deset uzastopnih
    `SW` ciklusa bez nestanka AP-a, praznina u journalu ili novog panic dumpa.
 2. Razjasniti zašto NVS boot brojač ima praznine 497-500 i 505-520 te zašto je
    tijekom matrice AP postao nedostupan. Ne zatvarati OTA reboot incident samo
@@ -201,8 +255,8 @@ Prije production-ready tvrdnje treba na točno commitiranom i hashiranom kandida
    s istim numeričkim track ID-jem, uključujući remount/reboot.
 4. Izmjeriti catalog import i cold/warm LOAD latenciju s novim PDB hashom te
    timeline critical-section maksimum i prisiljeni wrap/handoff raspored.
-5. Provesti desktop/telefon web smoke, sporu mrežu, dva klijenta i fizički MAIN
-   meter decay.
+5. Dvoklijentski API i desktop in-app browser smoke su prošli; još treba provesti
+   fizički telefon/browser smoke, sporu mrežu i fizički MAIN meter decay.
 6. Dual-deck FLX4 MAIN/cue smoke je prošao; preostaje najmanje 180 minuta
    završnog soaka s Master Tempo, seek/cue/loop/scratch/censor scenarijima.
 7. Tek nakon tih dokaza odrediti release verziju, push/PR, immutable tag
