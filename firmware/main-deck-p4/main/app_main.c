@@ -251,6 +251,9 @@ static void app_probe_status(web_server_probe_status_t *out)
         } else if (chk.state == P4_OTA_PULL_AVAILABLE) {
             snprintf(out->detail, sizeof(out->detail), "update available: %s",
                      chk.available_release);
+        } else if (chk.state == P4_OTA_PULL_FAILED) {
+            snprintf(out->detail, sizeof(out->detail), "%s (%s)", chk.detail,
+                     esp_err_to_name(chk.last_error));
         } else {
             snprintf(out->detail, sizeof(out->detail), "%s", chk.detail);
         }

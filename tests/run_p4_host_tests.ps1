@@ -1301,6 +1301,14 @@ Assert-FileContains `
     )
 
 Assert-FileContains `
+    -Name "p4 pull OTA web status preserves the concrete ESP-IDF error" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @(
+        "chk.state == P4_OTA_PULL_FAILED",
+        "esp_err_to_name(chk.last_error)"
+    )
+
+Assert-FileContains `
     -Name "p4 pull OTA retries transport idle without accepting EOF" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/p4_ota_pull/p4_ota_pull.c") `
     -LiteralPatterns @(
