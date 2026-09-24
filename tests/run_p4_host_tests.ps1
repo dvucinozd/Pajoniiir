@@ -1305,6 +1305,7 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
     -LiteralPatterns @(
         "chk.state == P4_OTA_PULL_FAILED",
+        "p4_ota_pull_format_failure_detail",
         "esp_err_to_name(chk.last_error)"
     )
 
@@ -2482,6 +2483,18 @@ $tests = @(
             "-o", "test_wifi_link_retry.exe",
             "test_wifi_link_retry.c",
             "../../firmware/main-deck-p4/components/wifi_link/wifi_link_retry.c"
+        )
+    },
+    @{
+        Name = "p4_ota_pull_status"
+        Dir = "tests/p4_ota_pull_status"
+        Target = "test_p4_ota_pull_status.exe"
+        Args = @(
+            "-Wall", "-Wextra", "-Wpedantic", "-Werror=implicit-function-declaration", "-std=c99",
+            "-I../../firmware/main-deck-p4/components/p4_ota_pull_core/include",
+            "-o", "test_p4_ota_pull_status.exe",
+            "test_p4_ota_pull_status.c",
+            "../../firmware/main-deck-p4/components/p4_ota_pull_core/p4_ota_pull_status.c"
         )
     },
     @{

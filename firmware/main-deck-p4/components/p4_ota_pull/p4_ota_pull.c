@@ -11,6 +11,7 @@
 #include "ota_manifest.h"
 #include "p4_ota.h"
 #include "p4_ota_policy.h"
+#include <errno.h>
 #include <stdlib.h>
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -147,6 +148,29 @@ static int64_t http_fetch_headers_with_idle_retry(esp_http_client_handle_t clien
     }
 }
 
+static esp_err_t http_transport_error(esp_http_client_handle_t client,
+                                      esp_err_t fallback)
+{
+    int tls_code = 0;
+    int tls_flags = 0;
+    esp_err_t tls_error = esp_http_client_get_and_clear_last_tls_error(
+        client, &tls_code, &tls_flags);
+    if (tls_error != ESP_OK && tls_error != ESP_FAIL) {
+        return tls_error;
+    }
+
+    const int socket_error = esp_http_client_get_errno(client);
+    if (socket_error == ETIMEDOUT || socket_error == EAGAIN ||
+        socket_error == EWOULDBLOCK) {
+        return ESP_ERR_TIMEOUT;
+    }
+    if (socket_error == ECONNRESET || socket_error == ECONNABORTED ||
+        socket_error == ENOTCONN || socket_error == EPIPE) {
+        return ESP_ERR_HTTP_CONNECTION_CLOSED;
+    }
+    return fallback;
+}
+
 /* Fetch <base>/latest.json into `buf`. Returns the byte count, or a negative
  * esp_err_t. */
 static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
@@ -175,8 +199,9 @@ static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
     }
     int64_t len = http_fetch_headers_with_idle_retry(client);
     if (len < 0) {
-        result = len == -(int64_t)ESP_ERR_HTTP_EAGAIN ? -ESP_ERR_TIMEOUT
-                                                       : -ESP_FAIL;
+        result = len == -(int64_t)ESP_ERR_HTTP_EAGAIN
+                     ? -ESP_ERR_TIMEOUT
+                     : -http_transport_error(client, ESP_ERR_HTTP_FETCH_HEADER);
         goto done;
     }
     int status = esp_http_client_get_status_code(client);
@@ -200,7 +225,10 @@ static int fetch_channel_doc(const char *base_url, char *buf, size_t cap)
         int got = http_read_with_idle_retry(client, buf + total,
                                             (int)(cap - (size_t)total));
         if (got < 0) {
-            result = got == -ESP_ERR_HTTP_EAGAIN ? -ESP_ERR_TIMEOUT : -ESP_FAIL;
+            result = got == -ESP_ERR_HTTP_EAGAIN
+                         ? -ESP_ERR_TIMEOUT
+                         : -http_transport_error(client,
+                                                 ESP_ERR_HTTP_INCOMPLETE_DATA);
             goto done;
         }
         if (got == 0) break;
