@@ -387,20 +387,27 @@ static bool parse_release_version(const char *text, release_version_t *out)
         p++;
         if (!parse_u32_part(&p, &parsed.minor)) return false;
     }
-    if (*p == '\0') {
-        *out = parsed;
-        return true;
+    /* A prerelease tag may itself be a git-describe string. Once that tag is
+     * published, later builds become e.g.
+     * M2.2-13-ge0f9add-11-ga1cc05c. Treat every distance/hash suffix as one
+     * additional ancestry segment and sum the distances, preserving ordering
+     * from the milestone instead of making all later builds incomparable. */
+    while (*p != '\0' && strcmp(p, "-dirty") != 0) {
+        uint32_t segment_distance = 0u;
+        if (*p++ != '-' || !parse_u32_part(&p, &segment_distance) ||
+            *p++ != '-' || *p++ != 'g') {
+            return false;
+        }
+        if (segment_distance > UINT32_MAX - parsed.distance) return false;
+        parsed.distance += segment_distance;
+
+        size_t hash_digits = 0u;
+        while (isxdigit((unsigned char)*p)) {
+            hash_digits++;
+            p++;
+        }
+        if (hash_digits < 7u) return false;
     }
-    if (*p++ != '-' || !parse_u32_part(&p, &parsed.distance) ||
-        *p++ != '-' || *p++ != 'g') {
-        return false;
-    }
-    size_t hash_digits = 0u;
-    while (isxdigit((unsigned char)*p)) {
-        hash_digits++;
-        p++;
-    }
-    if (hash_digits < 7u) return false;
     if (strcmp(p, "-dirty") != 0 && *p != '\0') return false;
     *out = parsed;
     return true;
