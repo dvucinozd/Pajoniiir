@@ -1236,6 +1236,14 @@ Assert-FileDoesNotContain `
     -LiteralPatterns @("esp_hosted_deinit();")
 
 Assert-FileContains `
+    -Name "p4 app version excludes derived tags and enforces the descriptor limit" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
+    -LiteralPatterns @(
+        'describe --always --tags --dirty --exclude "*-g*"',
+        "PAJONIIIR_PROJECT_VER_BYTES GREATER 31",
+        "ESP-IDF app descriptors allow at most 31 bytes")
+
+Assert-FileContains `
     -Name "p4 Wi-Fi start retries are bounded" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_retry_note_failure(&retry)", "giving up, radio stays off")
