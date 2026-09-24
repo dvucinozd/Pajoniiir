@@ -75,3 +75,24 @@ rejects a truncated header or image. Exhausting the idle budget reports
 
 The next documentation-only commit is intentionally used as the newer signed
 staging candidate for the loaded-deck pull OTA retest.
+
+The first retest on `M2.2-10-g7e2cc69` confirmed the body retry but exposed the
+same idle condition one layer earlier. The origin recorded a complete HTTP 200
+bundle request and advertised the expected `Content-Length`; the ESP-IDF client
+timed out before receiving response-header bytes. Because the code inspected
+the unset status code after the negative `esp_http_client_fetch_headers()`
+result, the UI incorrectly reported `bundle not on the server`.
+
+Commit `626c2d9` applies the same three-window bound to response-header fetches
+and refuses to inspect the HTTP status until headers have parsed successfully.
+A real non-200 status still maps to `ESP_ERR_NOT_FOUND`; exhausted header idle
+windows now report `ESP_ERR_TIMEOUT` with the `read headers` stage.
+
+- Full P4 host suite: PASS after the response-header fix.
+- ESP-IDF `v6.0.2` build: PASS after the response-header fix.
+- Exact signed remediation image: `M2.2-12-g626c2d9`, 2.506.464 B,
+  SHA-256 `9b75c848d2fdc877e6a00c6b15c8ff218227d678faa122372a1b940964d6262b`.
+- Signed bundle: 2.506.652 B, SHA-256
+  `0a153668897925747632e62f71f9a01c1099522da4db7aca54493264193f66d6`.
+- Signed local push OTA: PASS, `M2.2-10-g7e2cc69` on `ota_1` to
+  `M2.2-12-g626c2d9` on `ota_0`; firmware state `idle`, empty `last_error`.
