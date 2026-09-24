@@ -1235,6 +1235,16 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
     -LiteralPatterns @("wifi_link_retry_note_failure(&retry)", "giving up, radio stays off")
 
+Assert-FileContains `
+    -Name "p4 STA association retries are bounded and diagnostic" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/wifi_link/wifi_link.c") `
+    -LiteralPatterns @(
+        "wifi_link_retry_note_failure(&join_retry)",
+        "wifi_link_retry_exhausted(&join_retry)",
+        "s_sta_disconnect_reason = event ? event->reason : 0u",
+        "timeout_ticks - elapsed"
+    )
+
 # Every exit from the STA visit must end back on the AP; the AP is the only way
 # the deck is reachable at all, so a path that leaves it down is unrecoverable
 # without a wired flash.

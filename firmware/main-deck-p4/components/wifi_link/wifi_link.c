@@ -60,6 +60,7 @@ static void copy_wifi_bytes(uint8_t *dst, size_t dst_len, const char *src)
 static EventGroupHandle_t s_sta_events;
 static esp_netif_t *s_sta_netif;
 static volatile bool s_sta_mode;
+static volatile uint8_t s_sta_disconnect_reason;
 
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
@@ -71,8 +72,11 @@ static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         /* Reported for a refused association and for a later drop alike. The
-         * waiter treats it as failure; a drop after we already have an address
-         * is handled by the caller finishing and restoring. */
+         * bounded join loop may retry a transient refusal; a drop after we
+         * already have an address is handled by the caller finishing and
+         * restoring. Keep the reason for diagnosis without logging secrets. */
+        const wifi_event_sta_disconnected_t *event = event_data;
+        s_sta_disconnect_reason = event ? event->reason : 0u;
         if (s_sta_events) xEventGroupSetBits(s_sta_events, STA_BIT_DISCONNECTED);
         return;
     }
@@ -308,36 +312,74 @@ esp_err_t wifi_link_switch_to_sta(const char *ssid, const char *password,
     cfg.sta.threshold.authmode =
         (password && password[0]) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
 
-    xEventGroupClearBits(s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED);
-
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "set STA mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &cfg), TAG, "set STA config");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start STA");
     s_sta_mode = true;
     ESP_LOGI(TAG, "joining service network \"%s\"", ssid);
-    ESP_RETURN_ON_ERROR(esp_wifi_connect(), TAG, "connect");
 
-    /* Bounded on purpose: a wrong passphrase produces a disconnect, but a
-     * network that associates and never serves DHCP produces nothing at all,
-     * and the deck must not sit off-AP indefinitely waiting for it. */
-    EventBits_t bits = xEventGroupWaitBits(
-        s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED,
-        pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+    /* A busy dual-band AP can reject the first association while steering or
+     * rotating state. One disconnect must not discard an otherwise valid OTA
+     * visit. Reuse the host-tested finite retry budget while preserving the
+     * caller's total timeout as the hard upper bound. */
+    wifi_link_retry_t join_retry;
+    wifi_link_retry_reset(&join_retry);
+    const TickType_t started = xTaskGetTickCount();
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    for (;;) {
+        s_sta_disconnect_reason = 0u;
+        xEventGroupClearBits(s_sta_events,
+                             STA_BIT_GOT_IP | STA_BIT_DISCONNECTED);
+        ESP_RETURN_ON_ERROR(esp_wifi_connect(), TAG, "connect");
 
-    if (bits & STA_BIT_GOT_IP) {
-        esp_netif_ip_info_t ip = {0};
-        if (esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
-            ESP_LOGI(TAG, "service network address " IPSTR, IP2STR(&ip.ip));
+        TickType_t elapsed = xTaskGetTickCount() - started;
+        if (elapsed >= timeout_ticks) {
+            ESP_LOGW(TAG, "service network gave no address within %u ms",
+                     (unsigned)timeout_ms);
+            return ESP_ERR_TIMEOUT;
         }
-        return ESP_OK;
+
+        /* Bounded on purpose: a wrong passphrase produces disconnects, while
+         * a network that associates and never serves DHCP produces no event.
+         * Either case must return the deck to its AP within timeout_ms. */
+        EventBits_t bits = xEventGroupWaitBits(
+            s_sta_events, STA_BIT_GOT_IP | STA_BIT_DISCONNECTED,
+            pdFALSE, pdFALSE, timeout_ticks - elapsed);
+
+        if (bits & STA_BIT_GOT_IP) {
+            esp_netif_ip_info_t ip = {0};
+            if (esp_netif_get_ip_info(s_sta_netif, &ip) == ESP_OK) {
+                ESP_LOGI(TAG, "service network address " IPSTR, IP2STR(&ip.ip));
+            }
+            return ESP_OK;
+        }
+        if (!(bits & STA_BIT_DISCONNECTED)) {
+            ESP_LOGW(TAG, "service network gave no address within %u ms",
+                     (unsigned)timeout_ms);
+            return ESP_ERR_TIMEOUT;
+        }
+
+        const uint8_t reason = s_sta_disconnect_reason;
+        uint32_t wait_ms = wifi_link_retry_note_failure(&join_retry);
+        if (wifi_link_retry_exhausted(&join_retry)) {
+            ESP_LOGW(TAG, "service network association failed after %u attempts (reason=%u)",
+                     (unsigned)wifi_link_retry_attempts(&join_retry),
+                     (unsigned)reason);
+            return ESP_ERR_WIFI_NOT_CONNECT;
+        }
+
+        elapsed = xTaskGetTickCount() - started;
+        TickType_t wait_ticks = pdMS_TO_TICKS(wait_ms);
+        if (elapsed >= timeout_ticks || wait_ticks >= timeout_ticks - elapsed) {
+            ESP_LOGW(TAG, "service network retry budget exceeded timeout (reason=%u)",
+                     (unsigned)reason);
+            return ESP_ERR_TIMEOUT;
+        }
+        ESP_LOGW(TAG, "service network association attempt %u failed (reason=%u); retrying in %u ms",
+                 (unsigned)wifi_link_retry_attempts(&join_retry),
+                 (unsigned)reason, (unsigned)wait_ms);
+        vTaskDelay(wait_ticks);
     }
-    if (bits & STA_BIT_DISCONNECTED) {
-        ESP_LOGW(TAG, "service network refused the association");
-        return ESP_ERR_WIFI_NOT_CONNECT;
-    }
-    ESP_LOGW(TAG, "service network gave no address within %u ms",
-             (unsigned)timeout_ms);
-    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t wifi_link_restore_ap(void)
