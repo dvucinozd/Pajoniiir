@@ -1246,7 +1246,7 @@ Assert-FileContains `
 Assert-FileDoesNotContain `
     -Name "p4 app version cannot fall back to an unordered commit hash" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/CMakeLists.txt") `
-    -LiteralPatterns @("describe --always")
+    -RegexPattern '\bdescribe\b[^\r\n]*--always(?:\s|$)'
 
 Assert-FileContains `
     -Name "p4 Wi-Fi start retries are bounded" `
