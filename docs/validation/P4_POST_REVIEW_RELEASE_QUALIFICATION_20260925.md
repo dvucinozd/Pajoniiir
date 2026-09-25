@@ -83,7 +83,9 @@ remained zero. Physical display decay still requires visual confirmation.
 Closed by this exact-image run:
 
 - 180-minute dual-deck automated soak and operator-confirmed MAIN/cue audio;
-- real-media distinct and repeat/warm load latency with concurrent playback;
+- real-media distinct-track load latency with concurrent D2 playback;
+- real-media repeat/warm end-to-end load latency without a separately recorded
+  concurrent-playback assertion;
 - catalog identity across a controlled reboot/remount;
 - slow-network mobile-viewport web command convergence;
 - API-level MAIN meter decay precheck.
