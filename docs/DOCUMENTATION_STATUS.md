@@ -53,6 +53,20 @@ The retained supporting evidence covers:
   post-reboot dual-USB recovery;
 - accepted common 5 V and protected dual-VBUS bench/enclosure wiring.
 
+## Post-release maintenance candidate
+
+Merge image `M2.2-37-g751d3c6` at `751d3c6` has passed a separate
+180.058-minute dual-deck soak with operator-confirmed MAIN/cue audio, real-media
+load timing, a 324-row catalog reboot/remount check, slow-network mobile
+viewport emulation and an API-level MAIN meter decay precheck. This evidence
+does not change the published M2.2 identity or public channel.
+
+The candidate still requires real Rekordbox cue/loop comparison, duplicate raw
+track-ID isolation across two media, instrumented P4 timeline wrap/handoff
+timing, and physical-phone/visible-meter acceptance before a new immutable
+release decision. The exact scope and measurements are recorded in
+[`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md).
+
 ## Accepted limitations
 
 - I3-I5 and J2-J5 remain operator-waived; they are not reported as passes.

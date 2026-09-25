@@ -296,3 +296,23 @@ potpisani `M2.2-33-g396f87a` instaliran je na `ota_1`, boot 545, te je završio
 deset uzastopnih canonical production-channel provjera bez reboota ili OTA
 greške. Svaka je ispravno odbila javni M2.2 kao stariji. Završni 15-sekundni
 dual-deck smoke imao je nula gated fault delta. Javni M2.2 kanal nije mijenjan.
+
+## 8. Dopuna 2026-09-25: završni soak, real-media i browser gateovi
+
+Merge image `M2.2-37-g751d3c6` instaliran je na `ota_0` i završio
+180.058-minutni dual-deck soak s 2.071 uzorkom i 60 seek/cue/loop operacija.
+Automatizirani kriteriji prošli su uz `output_late` +26/120, a operator je
+potvrdio čist MAIN i cue tijekom cijelog testa.
+
+Na stvarnom 324-track mediju 30 različitih loadova uz aktivan drugi deck imalo
+je p50 599.410 ms, p95 782.263 ms i maksimum 803.891 ms. Ispravljeni repeat/warm
+slijed imao je p50 778.144 ms, p95 1.009.590 ms i maksimum 1.044.590 ms. Nakon
+kontroliranog reboota 548 -> 549 broj redaka i canonical digest ostali su
+identični, a mount-to-library trajao je 218 ms. Produkcijski build namjerno nema
+ANLZ cache writes, pa repeat/warm rezultat nije cache-hit dokaz.
+
+Mobilni viewport s 900 ms dodanog API kašnjenja ispravno je pretražio, učitao i
+pokrenuo drugu pjesmu bez stale naslova. MAIN meter API vratio se na nulu 400 ms
+nakon STOP-a. Fizički telefon i vizualni meter decay ostaju otvoreni. Potpuni
+rezultat i preostali gateovi zapisani su u
+[`P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md).

@@ -71,6 +71,13 @@ whitespace. Changes to `docs/` also retain the separate Pages deployment gate.
 - [`validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md`](validation/P4_PULL_OTA_FAULT_MATRIX_20260920.md)
   — signed pull/push OTA recovery evidence.
 
+## M2.2 maintenance evidence
+
+- [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
+  records the installed post-review maintenance image soak, real-media latency,
+  catalog reboot/remount and slow-network browser evidence, together with the
+  remaining physical and instrumented release gates.
+
 Superseded S3/dual-processor documents, completed implementation plans and
 intermediate RC validation notes were removed from the working tree during the
 M2.1 documentation reconciliation. They remain available in Git history when
