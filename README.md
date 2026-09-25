@@ -1,13 +1,12 @@
 # Pajoniiir M2.2
 
-
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
-[![ESP-IDF 6.0.2](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/esp-idf-6-migration.yml)
-[![User manual](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml/badge.svg?branch=master)](https://github.com/dvucinozd/Pajoniiir/actions/workflows/pages-user-manual.yml)
 [![Platform](https://img.shields.io/badge/platform-ESP32--P4-E7352C?logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32-p4)
 [![License: MIT](https://img.shields.io/github/license/dvucinozd/Pajoniiir)](LICENSE)
-[![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/dvucinozd/Pajoniiir?utm_source=oss&utm_medium=github&utm_campaign=dvucinozd%2FPajoniiir&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+
+[![Watch the video](https://img.youtube.com/vi/3RuC3cYCGyE/maxresdefault.jpg)](https://youtu.be/3RuC3cYCGyE)
+
 
 
 **A standalone dual-deck DJ system for the Pioneer DDJ-FLX4, powered by a
