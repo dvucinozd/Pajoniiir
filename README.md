@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/pajoniiir-logo-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/images/pajoniiir-logo-black.svg">
+    <img alt="Pajoniiir" src="docs/images/pajoniiir-logo.svg" width="450">
+  </picture>
+</p>
+
 # Pajoniiir M2.2
 
 [![Latest release](https://img.shields.io/github/v/release/dvucinozd/Pajoniiir)](https://github.com/dvucinozd/Pajoniiir/releases/latest)
@@ -44,28 +52,46 @@ The current production release is
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/parts/Part-JC4880P443C-I-W-Y.jpg" alt="Guition JC4880P443C_I_W ESP32-P4 touchscreen development board"></td>
-    <td width="50%"><img src="docs/images/parts/Part-PCM5102A_side.jpg" alt="PCM5102A stereo RCA DAC module"></td>
+    <td width="50%" align="center"><img src="docs/images/parts/Part-JC4880P443C-I-W-Y.jpg" alt="Guition JC4880P443C_I_W ESP32-P4 touchscreen development board"></td>
+    <td width="50%" align="center"><img src="docs/images/parts/Part-PCM5102A_side.jpg" alt="PCM5102A stereo RCA DAC module"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Guition JC4880P443C_I_W touchscreen board</sub></td>
-    <td align="center"><sub>PCM5102A stereo RCA DAC</sub></td>
+    <td align="center">
+      <sub>Guition JC4880P443C_I_W touchscreen board</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c3V7wC9T"><sub>[AliExpress]</sub></a>
+    </td>
+    <td align="center">
+      <sub>PCM5102A stereo RCA DAC</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c3rru3vP"><sub>[AliExpress]</sub></a>
+    </td>
   </tr>
   <tr>
-    <td><img src="docs/images/parts/Part-USB-A.png" alt="Panel-mount USB-A socket"></td>
-    <td><img src="docs/images/parts/Part-Board2USB-A.jpg" alt="Board-to-panel USB cable"></td>
+    <td align="center"><img src="docs/images/parts/Part-USB-A.png" alt="Panel-mount USB-A socket"></td>
+    <td align="center"><img src="docs/images/parts/Part-Board2USB-A.jpg" alt="Board-to-panel USB cable"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Panel-mount USB-A socket for the Rekordbox drive</sub></td>
-    <td align="center"><sub>Board-to-panel USB cable</sub></td>
+    <td align="center">
+      <sub>Panel-mount USB-A socket for the Rekordbox drive</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c3xWR5DP"><sub>[AliExpress]</sub></a>
+    </td>
+    <td align="center">
+      <sub>Board-to-panel USB cable</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c3jC7GFX"><sub>[AliExpress]</sub></a>
+    </td>
   </tr>
   <tr>
-    <td><img src="docs/images/parts/Part-usb-c.jpg" alt="Panel-mount USB-C OTG cable"></td>
-    <td><img src="docs/images/parts/Part-power_usb_c.jpg" alt="Panel-mount USB-C power input"></td>
+    <td align="center"><img src="docs/images/parts/Part-usb-c.jpg" alt="Panel-mount USB-C OTG cable"></td>
+    <td align="center"><img src="docs/images/parts/Part-power_usb_c.jpg" alt="Panel-mount USB-C power input"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Panel-mount USB-C OTG lead for the DDJ-FLX4</sub></td>
-    <td align="center"><sub>Panel-mount USB-C power input</sub></td>
+    <td align="center">
+      <sub>Panel-mount USB-C OTG lead for the DDJ-FLX4</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c3fyaSjJ"><sub>[AliExpress]</sub></a>
+    </td>
+    <td align="center">
+      <sub>Panel-mount USB-C power input</sub><br>
+      <a href="https://s.click.aliexpress.com/e/_c4a9xDsN"><sub>[AliExpress]</sub></a>
+    </td>
   </tr>
 </table>
 
