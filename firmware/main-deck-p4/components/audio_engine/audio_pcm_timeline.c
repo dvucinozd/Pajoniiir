@@ -57,7 +57,7 @@ static void qualification_fail(void)
                              __ATOMIC_RELAXED);
 }
 
-static void qualification_after_odd_store(const uint32_t *version)
+static void qualification_after_publish(const uint32_t *version)
 {
     TaskHandle_t reader = __atomic_load_n(&s_qualification_reader,
                                            __ATOMIC_ACQUIRE);
@@ -73,7 +73,7 @@ static void note_publish_duration(uint32_t elapsed_us)
     if (elapsed_us > s_publish_max_us) s_publish_max_us = elapsed_us;
 }
 #else
-#define qualification_after_odd_store(version) do { (void)(version); } while (0)
+#define qualification_after_publish(version) do { (void)(version); } while (0)
 #endif
 
 static uint64_t cursor_load(const uint32_t *epoch,
@@ -112,7 +112,6 @@ static void cursor_store_absolute(uint32_t *epoch,
     if (measure_publish) started_us = esp_timer_get_time();
 #endif
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_ACQ_REL);
-    qualification_after_odd_store(version);
     __atomic_store_n(epoch, (uint32_t)(value >> 32), __ATOMIC_RELAXED);
     __atomic_store_n(low, (uint32_t)value, __ATOMIC_RELAXED);
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_RELEASE);
@@ -125,6 +124,9 @@ static void cursor_store_absolute(uint32_t *epoch,
 #if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
     if (measure_publish) note_publish_duration(elapsed_us);
 #endif
+    /* Task notifications can request an immediate context switch. Keep the
+     * probe handoff outside the bounded cursor publication critical section. */
+    qualification_after_publish(version);
 }
 
 static void cursor_store_next(uint32_t *epoch,
@@ -405,9 +407,9 @@ static void qualification_reader_task(void *arg)
         (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (!qualification_hook_enabled()) break;
 
-        /* Inspect the versions before using the seqlock readers. A scheduler
-         * regression must be reported, not turn the qualification task into
-         * an intentional infinite spin while its lower-priority writer waits. */
+        /* The writer notifies only after the complete publication and after
+         * leaving the critical section. Verify the higher-priority reader
+         * always observes an even, stable version before using the readers. */
         const uint32_t oldest_version = __atomic_load_n(
             &s_qualification_timeline.oldest_version, __ATOMIC_ACQUIRE);
         const uint32_t play_version = __atomic_load_n(

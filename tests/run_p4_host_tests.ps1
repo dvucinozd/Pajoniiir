@@ -1444,9 +1444,21 @@ Assert-FileContains `
     -LiteralPatterns @(
         "TIMELINE_QUALIFICATION_ITERATIONS 100u",
         "s_qualification_timeline",
-        "qualification_after_odd_store",
+        "qualification_after_publish",
         "s_publish_max_us >= 10u",
         "SERVICE_LOG_TIMELINE_SCHEDULER_PROBE"
+    )
+
+Assert-FilePatternsOrdered `
+    -Name "p4 PCM timeline scheduler handoff occurs after the cursor critical section" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -LiteralPatterns @(
+        "static void cursor_store_absolute",
+        "CURSOR_PUBLISH_ENTER();",
+        "__atomic_add_fetch(version, 1u",
+        "__atomic_add_fetch(version, 1u",
+        "CURSOR_PUBLISH_EXIT();",
+        "qualification_after_publish(version);"
     )
 
 Assert-FilePatternsOrdered `
