@@ -313,8 +313,9 @@ ANLZ cache writes, pa repeat/warm rezultat nije cache-hit dokaz.
 
 Mobilni viewport s 900 ms dodanog API kašnjenja ispravno je pretražio, učitao i
 pokrenuo drugu pjesmu bez stale naslova. MAIN meter API vratio se na nulu 400 ms
-nakon STOP-a. Fizički telefon i vizualni meter decay ostaju otvoreni. Potpuni
-rezultat i preostali gateovi zapisani su u
+nakon STOP-a. Fizički telefon i vizualni meter decay tada su ostali otvoreni;
+zatvoreni su dopunom od 2026-09-27 u odjeljku 10. Potpuni rezultat i preostali
+gateovi zapisani su u
 [`P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md).
 
 ## 9. Dopuna 2026-09-27: PCM timeline scheduler probe
@@ -330,3 +331,19 @@ akustički dokaz. Nakon provjere vraćen je kvalificirani
 `M2.2-37-g751d3c6` na `ota_0`, boot 552. Potpuni image-specific zapis nalazi se
 u
 [`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
+
+## 10. Dopuna 2026-09-27: fizički telefon i MAIN meter
+
+Na vraćenom kandidatu `M2.2-37-g751d3c6`, `ota_0`, boot 552, fizički telefon
+spojen na Pajoniiir AP prikazao je Web Remote tijekom stvarnog D1 playbacka.
+Automatika je potvrdila naslov `House Of Confusion.mp3`, kontinuirano
+napredovanje, četiri nenulta MAIN peak uzorka i pad metera na nulu 788 ms nakon
+STOP-a. Operator je potvrdio ispravan naslov, PLAY stanje, aktivan meter i
+vidljivi decay do nule na telefonu.
+
+Prvi pokušaj nije uračunat jer je jedan PC status request istekao prije završnog
+uzorkovanja; zaseban cleanup uredno je zaustavio deck bez reboota ili firmware
+greške. Ponovljeni bounded run završio je bez PCM, `output_late`, UAC,
+USB-daemon/recovery, service-log ili TWDT indikatora kvara. Time je
+physical-phone/visible-meter gate PASS. Preostaju stvarni Rekordbox cue/loop
+comparison i duplicate raw track-ID izolacija na dva medija.

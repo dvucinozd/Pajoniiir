@@ -76,7 +76,34 @@ emulation result, not a physical-phone acceptance result.
 
 The MAIN meter API precheck reached a playing peak of 14,790. After STOP it
 fell to 1,802 at 100 ms, 100 at 200 ms, 7 at 300 ms and zero at 400 ms, then
-remained zero. Physical display decay still requires visual confirmation.
+remained zero.
+
+The physical-phone follow-up ran on 2026-09-27 against the restored exact
+candidate `M2.2-37-g751d3c6`, `ota_0`, boot 552. A phone connected to the
+Pajoniiir AP displayed the Web Remote while D1 loaded and played real track key
+115, `House Of Confusion.mp3`. Four automated playback checkpoints reported
+advancing positions and non-zero MAIN peaks:
+
+| Elapsed | D1 position | MAIN peak |
+| ---: | ---: | ---: |
+| 1 s | 32,983 ms | 769 |
+| 4 s | 36,107 ms | 11,511 |
+| 8 s | 40,222 ms | 944 |
+| 12 s | 44,303 ms | 14,561 |
+
+After STOP, the API meter fell from 3,911 at 78 ms through 502 at 254 ms, 79
+at 426 ms and 18 at 600 ms to zero at 788 ms. It remained zero through the
+last 2,045 ms sample. The operator confirmed that the physical phone correctly
+showed the title, PLAY state, active MAIN meter and visible decay to zero.
+
+The first monitoring attempt was not counted because one PC-side status request
+hit its five-second HTTP timeout before the planned STOP sampling. A separate
+cleanup stopped D1 and verified `READY`; no firmware reboot or fault accompanied
+the timeout. The bounded retry completed with longer HTTP timeouts and mandatory
+cleanup. PCM underruns, `output_late`, UAC data-loss/drop/overflow/packet,
+USB daemon/recovery, service-log and TWDT indicators remained clear, and D1 was
+left stopped with the meter at zero. This closes the physical-phone and visible
+MAIN-meter gate; it is not a new acoustic claim.
 
 ## Acceptance status after this run
 
@@ -88,7 +115,8 @@ Closed by this exact-image run:
   concurrent-playback assertion;
 - catalog identity across a controlled reboot/remount;
 - slow-network mobile-viewport web command convergence;
-- API-level MAIN meter decay precheck.
+- API-level MAIN meter decay precheck;
+- physical-phone Web Remote state and visible MAIN meter decay.
 
 Still open before promoting this maintenance candidate to a new immutable
 production release:
@@ -97,11 +125,10 @@ production release:
    Rekordbox display.
 2. Exercise two media/export identities that deliberately share the same raw
    numeric track ID, including remount and reboot isolation.
-3. Run the Wi-Fi Remote on a physical phone connected to the Pajoniiir AP and
-   visually confirm MAIN meter decay on that client.
-4. If ANLZ cache writes are enabled later, separately qualify true cold versus
-   cache-hit loads; current production configuration has no cache-write path to
-   qualify.
+
+If ANLZ cache writes are enabled later, separately qualify true cold versus
+cache-hit loads; current production configuration has no cache-write path to
+qualify.
 
 The former timeline item was closed on 2026-09-27 by a default-OFF
 instrumented build from `07618a5`: 100 forced wrap/handoff iterations, 200
