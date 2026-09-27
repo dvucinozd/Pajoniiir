@@ -4,6 +4,7 @@
 #include "library.h"
 #include "library_load_trace.h"
 #include "audio_engine.h"
+#include "audio_pcm_timeline.h"
 #include "audio_uac_health.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -426,6 +427,7 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(audio_engine_init());
+    audio_pcm_timeline_start_scheduler_probe();
 #if CONFIG_AUDIO_RECORDER_ENABLED
     /* Prepare the recorder early so any crash-orphaned .part files on the SD
      * card are recovered before a new session starts. */

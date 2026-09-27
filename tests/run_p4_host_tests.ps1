@@ -1419,6 +1419,53 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("AE_TIMELINE_FORWARD_MS", "deck_pcm_push", "pop_deck_source", "sync_scratch_view_from_timeline", "audio_pcm_timeline_set_playhead_frames_back")
 
+# This path depends on the ESP-IDF scheduler and timer, so the real acceptance
+# is the instrumented P4 run. These source guards only prevent a release build
+# from silently enabling or bypassing the dedicated qualification switch.
+$timelineKconfigPath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/Kconfig"
+$timelineKconfig = Get-Content -LiteralPath $timelineKconfigPath -Raw
+$timelineOption = [regex]::Match(
+    $timelineKconfig,
+    '(?ms)^\s*config\s+AUDIO_PCM_TIMELINE_SCHEDULER_PROBE\b(?<body>.*?)(?=^\s*(?:config|choice|endmenu|menu)\b|\z)')
+Write-Host "==> static PCM timeline scheduler probe remains opt-in"
+if (-not $timelineOption.Success -or
+    $timelineOption.Groups["body"].Value -notmatch '(?m)^\s*default\s+n\s*$') {
+    throw "AUDIO_PCM_TIMELINE_SCHEDULER_PROBE must exist and default to n"
+}
+if (Select-String -LiteralPath (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+        -Pattern "CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE=y" -SimpleMatch) {
+    throw "production sdkconfig.defaults must not enable PCM timeline scheduler probe"
+}
+Write-Host "    PASS"
+
+Assert-FileContains `
+    -Name "p4 PCM timeline scheduler probe uses an isolated timeline and bounded repetitions" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -LiteralPatterns @(
+        "TIMELINE_QUALIFICATION_ITERATIONS 100u",
+        "s_qualification_timeline",
+        "qualification_after_publish",
+        "s_publish_max_us >= 10u",
+        "SERVICE_LOG_TIMELINE_SCHEDULER_PROBE"
+    )
+
+Assert-FilePatternsOrdered `
+    -Name "p4 PCM timeline scheduler handoff occurs after the cursor critical section" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -LiteralPatterns @(
+        "static void cursor_store_absolute",
+        "CURSOR_PUBLISH_ENTER();",
+        "__atomic_add_fetch(version, 1u",
+        "__atomic_add_fetch(version, 1u",
+        "CURSOR_PUBLISH_EXIT();",
+        "qualification_after_publish(version);"
+    )
+
+Assert-FilePatternsOrdered `
+    -Name "p4 starts the opt-in PCM timeline scheduler probe after audio initialization" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("audio_engine_init()", "audio_pcm_timeline_start_scheduler_probe();")
+
 Assert-FileContains `
     -Name "p4 decoder EOF drains pending PCM before natural transport completion" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
