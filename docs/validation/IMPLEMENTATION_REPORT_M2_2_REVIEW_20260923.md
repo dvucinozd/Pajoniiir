@@ -316,3 +316,17 @@ pokrenuo drugu pjesmu bez stale naslova. MAIN meter API vratio se na nulu 400 ms
 nakon STOP-a. Fizički telefon i vizualni meter decay ostaju otvoreni. Potpuni
 rezultat i preostali gateovi zapisani su u
 [`P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md).
+
+## 9. Dopuna 2026-09-27: PCM timeline scheduler probe
+
+Default-OFF instrumentirani build merge commita `07618a5` pokrenut je na P4 kao
+`M2.2-47-g07618a5`. Izolirani scheduler probe završio je 100 prisiljenih
+wrap/handoff iteracija i 200 reader handoffa bez greške; najveća izmjerena
+publication critical section bila je 1 us prema cilju manjem od 10 us.
+
+Ista slika zatim je prošla upareni trominutni live dual-deck runtime smoke bez
+PCM/UAC/USB/service-log/TWDT faulta i uz `output_late` delta 0. Ovaj smoke nije
+akustički dokaz. Nakon provjere vraćen je kvalificirani
+`M2.2-37-g751d3c6` na `ota_0`, boot 552. Potpuni image-specific zapis nalazi se
+u
+[`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).

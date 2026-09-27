@@ -97,15 +97,18 @@ production release:
    Rekordbox display.
 2. Exercise two media/export identities that deliberately share the same raw
    numeric track ID, including remount and reboot isolation.
-3. Measure the P4 timeline publication critical-section maximum and execute at
-   least 100 forced wrap/handoff repetitions in an instrumented hardware build.
-   The 309 host timeline tests cover wrap/reset/handoff logic but cannot prove
-   real scheduler timing.
-4. Run the Wi-Fi Remote on a physical phone connected to the Pajoniiir AP and
+3. Run the Wi-Fi Remote on a physical phone connected to the Pajoniiir AP and
    visually confirm MAIN meter decay on that client.
-5. If ANLZ cache writes are enabled later, separately qualify true cold versus
+4. If ANLZ cache writes are enabled later, separately qualify true cold versus
    cache-hit loads; current production configuration has no cache-write path to
    qualify.
+
+The former timeline item was closed on 2026-09-27 by a default-OFF
+instrumented build from `07618a5`: 100 forced wrap/handoff iterations, 200
+reader handoffs, a 1 us maximum publication critical section and zero failures.
+The same image passed a paired three-minute live dual-deck runtime smoke before
+the exact `M2.2-37-g751d3c6` candidate was restored. See
+[`P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).
 
 No new release tag or public `latest.json` change is justified until the
 applicable open gates are either passed or explicitly accepted with a recorded
