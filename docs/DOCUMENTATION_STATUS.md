@@ -62,13 +62,14 @@ viewport emulation and an API-level MAIN meter decay precheck. A default-OFF
 instrumented build from `07618a5` subsequently passed 100 forced PCM timeline
 wrap/handoff iterations, a 1 us maximum publication critical section and a
 paired live three-minute dual-deck runtime smoke. The release candidate was
-then restored and verified on `ota_0`. This evidence does not change the
-published M2.2 identity or public channel.
+then restored and verified on `ota_0`. Its physical-phone Web Remote follow-up
+also passed real-track title/PLAY state and visible MAIN meter decay, reaching
+zero 788 ms after STOP. This evidence does not change the published M2.2
+identity or public channel.
 
-The candidate still requires real Rekordbox cue/loop comparison, duplicate raw
-track-ID isolation across two media and physical-phone/visible-meter acceptance
-before a new immutable release decision. The exact scope and measurements are
-recorded in
+The candidate still requires real Rekordbox cue/loop comparison and duplicate
+raw track-ID isolation across two media before a new immutable release
+decision. The exact scope and measurements are recorded in
 [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
 and
 [`validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).

@@ -105,5 +105,7 @@ and current TWDT state were zero/clear.
 The forced scheduler/timing gate is PASS when the isolated probe result and
 paired live runtime smoke are considered together. The public M2.2 channel and
 immutable release artifacts were not changed. The remaining post-review release
-gates are the real Rekordbox cue/loop comparison, duplicate raw track-ID media
-isolation and physical-phone/visible-meter acceptance.
+gates are the real Rekordbox cue/loop comparison and duplicate raw track-ID
+media isolation. The physical-phone/visible-meter gate passed later on the same
+date and is recorded in
+[`P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md).
