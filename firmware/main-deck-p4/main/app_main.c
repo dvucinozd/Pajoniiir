@@ -4,6 +4,7 @@
 #include "library.h"
 #include "library_load_trace.h"
 #include "audio_engine.h"
+#include "audio_pcm_timeline.h"
 #include "audio_uac_health.h"
 #if CONFIG_AUDIO_RECORDER_ENABLED
 #include "audio_recorder.h"
@@ -374,6 +375,8 @@ void app_main(void)
                           (uint32_t)esp_rom_get_reset_reason(1), 0u,
                           reset_reason_str());
     }
+
+    audio_pcm_timeline_start_qualification();
 
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     // Controller profiles live on the SD/TF card; a missing directory is

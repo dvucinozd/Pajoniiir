@@ -1419,6 +1419,41 @@ Assert-FileContains `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
     -LiteralPatterns @("AE_TIMELINE_FORWARD_MS", "deck_pcm_push", "pop_deck_source", "sync_scratch_view_from_timeline", "audio_pcm_timeline_set_playhead_frames_back")
 
+# This path depends on the ESP-IDF scheduler and timer, so the real acceptance
+# is the instrumented P4 run. These source guards only prevent a release build
+# from silently enabling or bypassing the dedicated qualification switch.
+$timelineKconfigPath = Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/Kconfig"
+$timelineKconfig = Get-Content -LiteralPath $timelineKconfigPath -Raw
+$timelineOption = [regex]::Match(
+    $timelineKconfig,
+    '(?ms)^\s*config\s+AUDIO_PCM_TIMELINE_QUALIFICATION\b(?<body>.*?)(?=^\s*(?:config|choice|endmenu|menu)\b|\z)')
+Write-Host "==> static PCM timeline hardware qualification remains opt-in"
+if (-not $timelineOption.Success -or
+    $timelineOption.Groups["body"].Value -notmatch '(?m)^\s*default\s+n\s*$') {
+    throw "AUDIO_PCM_TIMELINE_QUALIFICATION must exist and default to n"
+}
+if (Select-String -LiteralPath (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
+        -Pattern "CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION=y" -SimpleMatch) {
+    throw "production sdkconfig.defaults must not enable PCM timeline qualification"
+}
+Write-Host "    PASS"
+
+Assert-FileContains `
+    -Name "p4 PCM timeline qualification uses an isolated timeline and bounded repetitions" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
+    -LiteralPatterns @(
+        "TIMELINE_QUALIFICATION_ITERATIONS 100u",
+        "s_qualification_timeline",
+        "qualification_after_odd_store",
+        "s_publish_max_us >= 10u",
+        "SERVICE_LOG_TIMELINE_QUALIFICATION"
+    )
+
+Assert-FilePatternsOrdered `
+    -Name "p4 starts the opt-in PCM timeline qualification after service-log initialization" `
+    -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
+    -LiteralPatterns @("service_log_init(", "audio_pcm_timeline_start_qualification();")
+
 Assert-FileContains `
     -Name "p4 decoder EOF drains pending PCM before natural transport completion" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_engine.c") `
