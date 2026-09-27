@@ -11,7 +11,7 @@ static portMUX_TYPE s_cursor_publish_mux = portMUX_INITIALIZER_UNLOCKED;
 #define CURSOR_PUBLISH_EXIT()  do { } while (0)
 #endif
 
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
 #include <limits.h>
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -101,14 +101,14 @@ static void cursor_store_absolute(uint32_t *epoch,
      * version is published: it would spin forever while the writer cannot run.
      * This section is reached only on a 32-bit cursor wrap or an explicit
      * reposition, and contains four bounded atomic stores. */
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
     const bool measure_publish = qualification_target_version(version) &&
                                  qualification_measure_enabled();
     int64_t started_us = 0;
     uint32_t elapsed_us = 0u;
 #endif
     CURSOR_PUBLISH_ENTER();
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
     if (measure_publish) started_us = esp_timer_get_time();
 #endif
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_ACQ_REL);
@@ -116,13 +116,13 @@ static void cursor_store_absolute(uint32_t *epoch,
     __atomic_store_n(epoch, (uint32_t)(value >> 32), __ATOMIC_RELAXED);
     __atomic_store_n(low, (uint32_t)value, __ATOMIC_RELAXED);
     (void)__atomic_add_fetch(version, 1u, __ATOMIC_RELEASE);
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
     if (measure_publish) {
         elapsed_us = (uint32_t)(esp_timer_get_time() - started_us);
     }
 #endif
     CURSOR_PUBLISH_EXIT();
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
     if (measure_publish) note_publish_duration(elapsed_us);
 #endif
 }
@@ -397,7 +397,7 @@ uint32_t audio_pcm_timeline_drop_newest(audio_pcm_timeline_t *t, uint32_t frames
     return frames;
 }
 
-#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION) && CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION
+#if defined(ESP_PLATFORM) && defined(CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE) && CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
 static void qualification_reader_task(void *arg)
 {
     (void)arg;
@@ -513,7 +513,7 @@ static void qualification_writer_task(void *arg)
              (unsigned)s_publish_measurements,
              (unsigned)s_publish_max_us,
              (unsigned)failures);
-    service_log_event(SERVICE_LOG_TIMELINE_QUALIFICATION,
+    service_log_event(SERVICE_LOG_TIMELINE_SCHEDULER_PROBE,
                       pass ? SERVICE_LOG_INFO : SERVICE_LOG_ERROR,
                       4u, TIMELINE_QUALIFICATION_ITERATIONS,
                       reader_runs, s_publish_max_us,
@@ -526,7 +526,7 @@ static void qualification_writer_task(void *arg)
     vTaskDelete(NULL);
 }
 
-void audio_pcm_timeline_start_qualification(void)
+void audio_pcm_timeline_start_scheduler_probe(void)
 {
     if (__atomic_load_n(&s_qualification_writer, __ATOMIC_ACQUIRE) ||
         __atomic_load_n(&s_qualification_reader, __ATOMIC_ACQUIRE)) return;
@@ -549,14 +549,14 @@ void audio_pcm_timeline_start_qualification(void)
         if (s_qualification_reader) vTaskDelete(s_qualification_reader);
         __atomic_store_n(&s_qualification_reader, NULL, __ATOMIC_RELEASE);
         __atomic_store_n(&s_qualification_writer, NULL, __ATOMIC_RELEASE);
-        service_log_event(SERVICE_LOG_TIMELINE_QUALIFICATION,
+        service_log_event(SERVICE_LOG_TIMELINE_SCHEDULER_PROBE,
                           SERVICE_LOG_ERROR, 4u,
                           TIMELINE_QUALIFICATION_ITERATIONS, 0u, 0u, 1u,
                           "task create failed");
     }
 }
 #else
-void audio_pcm_timeline_start_qualification(void)
+void audio_pcm_timeline_start_scheduler_probe(void)
 {
 }
 #endif

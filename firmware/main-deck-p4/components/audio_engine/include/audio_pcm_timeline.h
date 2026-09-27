@@ -87,6 +87,6 @@ uint32_t audio_pcm_timeline_future_frames(const audio_pcm_timeline_t *t);
 uint32_t audio_pcm_timeline_used_frames(const audio_pcm_timeline_t *t);
 uint32_t audio_pcm_timeline_generation(const audio_pcm_timeline_t *t);
 
-/* Starts the one-shot P4 wrap/handoff scheduler gate when the dedicated
- * qualification Kconfig option is enabled. It is a no-op in production. */
-void audio_pcm_timeline_start_qualification(void);
+/* Starts the one-shot P4 wrap/handoff scheduler probe when the dedicated
+ * scheduler-probe Kconfig option is enabled. It is a no-op in production. */
+void audio_pcm_timeline_start_scheduler_probe(void);

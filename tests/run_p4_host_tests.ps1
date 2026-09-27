@@ -1426,33 +1426,33 @@ $timelineKconfigPath = Join-Path $RepoRoot "firmware/main-deck-p4/components/aud
 $timelineKconfig = Get-Content -LiteralPath $timelineKconfigPath -Raw
 $timelineOption = [regex]::Match(
     $timelineKconfig,
-    '(?ms)^\s*config\s+AUDIO_PCM_TIMELINE_QUALIFICATION\b(?<body>.*?)(?=^\s*(?:config|choice|endmenu|menu)\b|\z)')
-Write-Host "==> static PCM timeline hardware qualification remains opt-in"
+    '(?ms)^\s*config\s+AUDIO_PCM_TIMELINE_SCHEDULER_PROBE\b(?<body>.*?)(?=^\s*(?:config|choice|endmenu|menu)\b|\z)')
+Write-Host "==> static PCM timeline scheduler probe remains opt-in"
 if (-not $timelineOption.Success -or
     $timelineOption.Groups["body"].Value -notmatch '(?m)^\s*default\s+n\s*$') {
-    throw "AUDIO_PCM_TIMELINE_QUALIFICATION must exist and default to n"
+    throw "AUDIO_PCM_TIMELINE_SCHEDULER_PROBE must exist and default to n"
 }
 if (Select-String -LiteralPath (Join-Path $RepoRoot "firmware/main-deck-p4/sdkconfig.defaults") `
-        -Pattern "CONFIG_AUDIO_PCM_TIMELINE_QUALIFICATION=y" -SimpleMatch) {
-    throw "production sdkconfig.defaults must not enable PCM timeline qualification"
+        -Pattern "CONFIG_AUDIO_PCM_TIMELINE_SCHEDULER_PROBE=y" -SimpleMatch) {
+    throw "production sdkconfig.defaults must not enable PCM timeline scheduler probe"
 }
 Write-Host "    PASS"
 
 Assert-FileContains `
-    -Name "p4 PCM timeline qualification uses an isolated timeline and bounded repetitions" `
+    -Name "p4 PCM timeline scheduler probe uses an isolated timeline and bounded repetitions" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/components/audio_engine/audio_pcm_timeline.c") `
     -LiteralPatterns @(
         "TIMELINE_QUALIFICATION_ITERATIONS 100u",
         "s_qualification_timeline",
         "qualification_after_odd_store",
         "s_publish_max_us >= 10u",
-        "SERVICE_LOG_TIMELINE_QUALIFICATION"
+        "SERVICE_LOG_TIMELINE_SCHEDULER_PROBE"
     )
 
 Assert-FilePatternsOrdered `
-    -Name "p4 starts the opt-in PCM timeline qualification after service-log initialization" `
+    -Name "p4 starts the opt-in PCM timeline scheduler probe after audio initialization" `
     -Path (Join-Path $RepoRoot "firmware/main-deck-p4/main/app_main.c") `
-    -LiteralPatterns @("service_log_init(", "audio_pcm_timeline_start_qualification();")
+    -LiteralPatterns @("audio_engine_init()", "audio_pcm_timeline_start_scheduler_probe();")
 
 Assert-FileContains `
     -Name "p4 decoder EOF drains pending PCM before natural transport completion" `

@@ -11,14 +11,17 @@ config AUDIO_SCRATCH_ENABLED
         Additive: with this off the output path is unchanged and touching the
         platter does the Phase 1 hold/scrub. See docs/VINYL_SCRATCH_PLAN.md.
 
-config AUDIO_PCM_TIMELINE_QUALIFICATION
-    bool "Run one-shot PCM timeline hardware qualification"
+config AUDIO_PCM_TIMELINE_SCHEDULER_PROBE
+    bool "Run one-shot PCM timeline scheduler probe"
     default n
     help
-        Test-build-only gate. On boot, run 100 forced low-word wrap and
-        playhead handoff repetitions with a higher-priority same-core reader,
-        then measure both unhooked publications for 100 repetitions. The
-        result is written as TIMELINE_QUALIFICATION in the service journal.
-        Keep this disabled in production and release-candidate images.
+        Test-build-only probe. After audio initialization, run 100 forced
+        low-word wrap and playhead handoff repetitions with a higher-priority
+        same-core reader, then measure both unhooked publications for 100
+        repetitions. The result is written as TIMELINE_SCHEDULER_PROBE in the
+        service journal.
+        This isolated scheduler probe must be paired with a live dual-deck
+        audio smoke; it does not qualify the ae_output path by itself. Keep
+        this disabled in production and release-candidate images.
 
 endmenu

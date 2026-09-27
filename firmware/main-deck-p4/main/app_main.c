@@ -376,8 +376,6 @@ void app_main(void)
                           reset_reason_str());
     }
 
-    audio_pcm_timeline_start_qualification();
-
 #if CONFIG_CONTROLLER_PROFILE_MANAGER
     // Controller profiles live on the SD/TF card; a missing directory is
     // normal (no profiles yet) and must not block boot.
@@ -429,6 +427,7 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(audio_engine_init());
+    audio_pcm_timeline_start_scheduler_probe();
 #if CONFIG_AUDIO_RECORDER_ENABLED
     /* Prepare the recorder early so any crash-orphaned .part files on the SD
      * card are recovered before a new session starts. */
