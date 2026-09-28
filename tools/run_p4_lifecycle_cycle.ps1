@@ -38,6 +38,37 @@ function Get-CounterDelta {
     return [uint64]0
 }
 
+function Get-RecoveryAccounting {
+    param($Final, $Baseline = $null)
+
+    $fields = @(
+        "recovery_requests", "recovery_coalesced",
+        "recovery_successes", "recovery_suppressed_active",
+        "recovery_failures"
+    )
+    $values = @{}
+    foreach ($field in $fields) {
+        $values[$field] = if ($null -eq $Baseline) {
+            [uint64]$Final.$field
+        } else {
+            Get-CounterDelta -Current $Final.$field -Previous $Baseline.$field
+        }
+    }
+    $terminal = [uint64]$values.recovery_coalesced +
+        [uint64]$values.recovery_successes +
+        [uint64]$values.recovery_suppressed_active +
+        [uint64]$values.recovery_failures
+    return [pscustomobject]@{
+        requests = [uint64]$values.recovery_requests
+        coalesced = [uint64]$values.recovery_coalesced
+        successes = [uint64]$values.recovery_successes
+        suppressed_active = [uint64]$values.recovery_suppressed_active
+        failures = [uint64]$values.recovery_failures
+        terminal = $terminal
+        balanced = ([uint64]$values.recovery_requests -eq $terminal)
+    }
+}
+
 function Add-Failure {
     param(
         [System.Collections.Generic.List[string]]$Failures,
@@ -268,7 +299,9 @@ function Get-DeviceSnapshot {
         root_power_mask = [uint32]$status.p4_usb.host.root_power_mask
         topology_probe_failures = [uint64]$status.p4_usb.topology.probe_failures
         recovery_requests = [uint64]$status.p4_usb.host.recovery_requests
+        recovery_coalesced = [uint64]$status.p4_usb.host.recovery_coalesced
         recovery_successes = [uint64]$status.p4_usb.host.recovery_successes
+        recovery_suppressed_active = [uint64]$status.p4_usb.host.recovery_suppressed_active
         recovery_failures = [uint64]$status.p4_usb.host.recovery_failures
         recovery_queue_drops = [uint64]$status.p4_usb.host.recovery_queue_drops
         daemon_errors = [uint64]$status.p4_usb.host.daemon_errors
@@ -487,15 +520,14 @@ function Get-CycleFailures {
     if ($Final.twdt_current) {
         Add-Failure $failures "final current TWDT ISR flag is set"
     }
-    $recoveryRequestDelta = Get-CounterDelta $Final.recovery_requests $Baseline.recovery_requests
-    $recoverySuccessDelta = Get-CounterDelta $Final.recovery_successes $Baseline.recovery_successes
-    if ($recoverySuccessDelta -ne $recoveryRequestDelta) {
-        Add-Failure $failures "host recovery successes do not match requests: $recoveryRequestDelta request(s), $recoverySuccessDelta success(es)"
+    $recovery = Get-RecoveryAccounting -Baseline $Baseline -Final $Final
+    if (-not $recovery.balanced) {
+        Add-Failure $failures "host recovery outcomes do not account for requests: $($recovery.requests) request(s), $($recovery.successes) success(es), $($recovery.suppressed_active) suppressed-active, $($recovery.coalesced) coalesced, $($recovery.failures) failure(s)"
     }
     elseif ($EnforceRecoveryRange -and
-            ($recoveryRequestDelta -lt $MinimumRecoveryCount -or
-             $recoveryRequestDelta -gt $MaximumRecoveryCount)) {
-        Add-Failure $failures "expected $MinimumRecoveryCount-$MaximumRecoveryCount bounded host recoveries with matching successes, observed $recoveryRequestDelta request(s) and $recoverySuccessDelta success(es)"
+            ($recovery.requests -lt $MinimumRecoveryCount -or
+             $recovery.requests -gt $MaximumRecoveryCount)) {
+        Add-Failure $failures "expected $MinimumRecoveryCount-$MaximumRecoveryCount bounded host recoveries with accounted outcomes, observed $($recovery.requests) request(s)"
     }
     if ($Final.storage_last_mount_result -ne 0) {
         Add-Failure $failures "final storage mount result is $($Final.storage_last_mount_result)"
@@ -513,7 +545,8 @@ function Get-CycleDeltas {
             "topology_probe_failures", "controller_interface_claim_failures",
             "controller_transfer_alloc_failures", "controller_probe_event_drops",
             "controller_fault_recovery_epochs", "recovery_requests",
-            "recovery_successes", "recovery_failures", "recovery_queue_drops",
+            "recovery_coalesced", "recovery_successes",
+            "recovery_suppressed_active", "recovery_failures", "recovery_queue_drops",
             "daemon_errors", "runtime_queue_failures", "service_log_dropped",
             "pcm1", "pcm2", "output_late")) {
         $deltas[$field] = Get-CounterDelta $Final.$field $Baseline.$field
@@ -684,7 +717,8 @@ function Invoke-SelfTest {
         controller_transfer_alloc_failures = [uint64]0
         controller_probe_event_drops = [uint64]0
         controller_fault_recovery_epochs = [uint64]0
-        recovery_requests = [uint64]8; recovery_successes = [uint64]8
+        recovery_requests = [uint64]8; recovery_coalesced = [uint64]0
+        recovery_successes = [uint64]8; recovery_suppressed_active = [uint64]0
         daemon_errors = [uint64]0; recovery_failures = [uint64]0
         recovery_queue_drops = [uint64]0; runtime_queue_failures = [uint64]0
         service_log_dropped = [uint64]0; pcm1 = [uint64]0; pcm2 = [uint64]0

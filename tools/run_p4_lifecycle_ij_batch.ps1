@@ -423,7 +423,8 @@ function Invoke-IjSelfTest {
         semantic_events = [uint64]0; controller_fault_recovery_epochs = [uint64]0
         topology_probe_failures = [uint64]0; controller_interface_claim_failures = [uint64]0
         controller_transfer_alloc_failures = [uint64]0; controller_probe_event_drops = [uint64]0
-        recovery_requests = [uint64]0; recovery_successes = [uint64]0
+        recovery_requests = [uint64]0; recovery_coalesced = [uint64]0
+        recovery_successes = [uint64]0; recovery_suppressed_active = [uint64]0
         recovery_failures = [uint64]0; recovery_queue_drops = [uint64]0
         daemon_errors = [uint64]0; runtime_queue_failures = [uint64]0
         service_log_dropped = [uint64]0; pcm1 = [uint64]0; pcm2 = [uint64]0

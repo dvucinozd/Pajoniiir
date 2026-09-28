@@ -1,6 +1,6 @@
 # Documentation status
 
-Status: **current P4-only source of truth, reconciled 2026-09-23**.
+Status: **current P4-only source of truth, reconciled 2026-09-28**.
 
 ## Product boundary
 
@@ -67,11 +67,17 @@ also passed real-track title/PLAY state and visible MAIN meter decay, reaching
 zero 788 ms after STOP. This evidence does not change the published M2.2
 identity or public channel.
 
-The candidate still requires real Rekordbox cue/loop comparison and duplicate
-raw track-ID isolation across two media before a new immutable release
-decision. The duplicate-ID host regression and guided physical harness are in
-place, but no two-media hardware PASS has been recorded. The exact scope and
-measurements are recorded in
+On 2026-09-28 the same candidate passed duplicate raw track-ID isolation across
+two independently generated Rekordbox exports. Both exposed `track_key=1`,
+while Hot Cue pad 8 retained separate 11000 ms and 22000 ms positions across
+media remount; A also retained its cue across software boot `553 -> 554`.
+Cleanup was operator-confirmed on both media and strict device health remained
+clean. The evidence is
+[`validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md`](validation/P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md).
+
+The candidate still requires the deferred real Rekordbox cue A/C and loop
+slot/time comparison before a new immutable release decision, unless that
+scope is explicitly accepted. The exact broader qualification status is in
 [`validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md`](validation/P4_POST_REVIEW_RELEASE_QUALIFICATION_20260925.md)
 and
 [`validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md`](validation/P4_PCM_TIMELINE_SCHEDULER_PROBE_20260927.md).

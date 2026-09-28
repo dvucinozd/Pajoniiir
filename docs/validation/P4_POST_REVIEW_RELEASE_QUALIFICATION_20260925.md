@@ -116,22 +116,23 @@ Closed by this exact-image run:
 - catalog identity across a controlled reboot/remount;
 - slow-network mobile-viewport web command convergence;
 - API-level MAIN meter decay precheck;
-- physical-phone Web Remote state and visible MAIN meter decay.
+- physical-phone Web Remote state and visible MAIN meter decay; and
+- duplicate raw track-ID isolation across two independent Rekordbox exports,
+  including separate store/recall positions, remount, software reboot and
+  cleanup.
 
 Still open before promoting this maintenance candidate to a new immutable
 production release:
 
 1. Compare cue A/C and loop slots/times from a real Rekordbox export with the
    Rekordbox display.
-2. Exercise two media/export identities that deliberately share the same raw
-   numeric track ID, including remount and reboot isolation.
 
-Host regression coverage now derives two different persistent identities for
-the same catalog key and proves separate Hot Cue blobs. The guided physical
-procedure and evidence harness are documented in
-[`P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md`](P4_DUPLICATE_TRACK_ID_ACCEPTANCE_PROCEDURE.md).
-This improves repeatability but does not close the open two-media hardware
-gate until the required exports are exercised on the installed candidate.
+The duplicate-ID hardware gate passed on 2026-09-28. Two independent exports
+shared raw `track_key=1` but recalled isolated Hot Cue positions at 11000 ms
+and 22000 ms after remount; A also retained its position across software boot
+`553 -> 554`. Both cues were cleared with operator-confirmed LED-off state,
+and all strict health counters remained clean. See
+[`P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md`](P4_DUPLICATE_TRACK_ID_ACCEPTANCE_20260928.md).
 
 If ANLZ cache writes are enabled later, separately qualify true cold versus
 cache-hit loads; current production configuration has no cache-write path to

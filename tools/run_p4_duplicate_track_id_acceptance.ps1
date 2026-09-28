@@ -276,8 +276,9 @@ function Get-DuplicateIdHealthFailures {
     if ($Final.storage_last_mount_result -ne 0) {
         Add-Failure $failures "storage mount result is $($Final.storage_last_mount_result)"
     }
-    if ($Final.recovery_requests -ne $Final.recovery_successes) {
-        Add-Failure $failures "host recovery requests/successes are $($Final.recovery_requests)/$($Final.recovery_successes)"
+    $recovery = Get-RecoveryAccounting -Final $Final
+    if (-not $recovery.balanced) {
+        Add-Failure $failures "host recovery outcomes do not account for requests: $($recovery.requests) request(s), $($recovery.successes) success(es), $($recovery.suppressed_active) suppressed-active, $($recovery.coalesced) coalesced, $($recovery.failures) failure(s)"
     }
     if ($Final.uac_data_loss -or $Final.uac_flags -ne 0) {
         Add-Failure $failures "active UAC data-loss state is set"
@@ -357,7 +358,8 @@ function Invoke-DuplicateIdSelfTest {
         controller_profile="active"; controller_midi_in=$true
         controller_midi_out=$true; controller_usb_audio=$true
         controller_accepting_midi_out=$true; storage_last_mount_result=0
-        recovery_requests=2; recovery_successes=2; uac_data_loss=$false
+        recovery_requests=2; recovery_coalesced=0; recovery_successes=2
+        recovery_suppressed_active=0; uac_data_loss=$false
         uac_flags=0; twdt_current=$false; topology_probe_failures=0
         controller_interface_claim_failures=0
         controller_transfer_alloc_failures=0; controller_probe_event_drops=0
@@ -369,6 +371,19 @@ function Invoke-DuplicateIdSelfTest {
     $script:ExpectedVersion = "test"
     if (@(Get-DuplicateIdHealthFailures -Baseline $clean -Final $clean).Count -ne 0) {
         throw "clean health self-test failed"
+    }
+    $suppressed = $clean | Select-Object *
+    $suppressed.recovery_requests = 3
+    $suppressed.recovery_suppressed_active = 1
+    if (@(Get-DuplicateIdHealthFailures `
+            -Baseline $clean -Final $suppressed).Count -ne 0) {
+        throw "suppressed-active recovery accounting self-test failed"
+    }
+    $unaccounted = $suppressed | Select-Object *
+    $unaccounted.recovery_requests = 4
+    if (@(Get-DuplicateIdHealthFailures `
+            -Baseline $clean -Final $unaccounted).Count -ne 1) {
+        throw "unaccounted recovery rejection self-test failed"
     }
     if (@(Get-DuplicateIdAbsoluteCounterFailures -Snapshot $clean).Count -ne 0) {
         throw "clean absolute-counter self-test failed"
